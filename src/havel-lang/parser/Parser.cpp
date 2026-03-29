@@ -728,6 +728,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     }
     failAt(at(), "Expected function name after 'fn'");
   }
+  
+  // Parse function name (lexer already includes ? suffix if present)
   auto name = makeIdentifier(advance());
 
   if (at().type != havel::TokenType::OpenParen) {

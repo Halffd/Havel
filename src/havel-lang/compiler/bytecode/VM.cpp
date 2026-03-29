@@ -925,6 +925,10 @@ void VM::registerDefaultHostFunctions() {
       typeName = "array";
     } else if (std::holds_alternative<ObjectRef>(value)) {
       typeName = "object";
+    } else if (std::holds_alternative<FunctionObject>(value)) {
+      typeName = "function";
+    } else if (std::holds_alternative<ClosureRef>(value)) {
+      typeName = "closure";
     } else if (std::holds_alternative<HostFunctionRef>(value)) {
       typeName = "function";
     } else {
@@ -983,7 +987,7 @@ void VM::registerDefaultHostFunctions() {
         }
         uint32_t type_id = registerStructType(name, fields);
         struct_type_ids_by_name_[name] = type_id;
-        return BytecodeValue(static_cast<int64_t>(type_id));
+        return BytecodeValue(std::in_place_type<int64_t>, static_cast<int64_t>(type_id));
       });
 
   registerHostFunction(

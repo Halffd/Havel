@@ -115,7 +115,7 @@ uint32_t GCHeap::createIterator(const BytecodeValue &iterable) {
 
 // Struct type registration
 uint32_t GCHeap::registerStructType(const std::string& name, const std::vector<std::string>& fields) {
-  uint32_t id = static_cast<uint32_t>(structTypes_.size());
+  uint32_t id = static_cast<uint32_t>(structTypes_.size()) + 1;  // Start at 1 to avoid 0=nullptr issue
   structTypes_.push_back(StructType{name, fields});
   return id;
 }
@@ -130,25 +130,25 @@ StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
 std::optional<uint32_t> GCHeap::findStructTypeId(const std::string& name) const {
   for (uint32_t i = 0; i < structTypes_.size(); ++i) {
     if (structTypes_[i].name == name) {
-      return i;
+      return i + 1;  // Return ID with +1 offset
     }
   }
   return std::nullopt;
 }
 
 size_t GCHeap::structFieldCount(uint32_t typeId) const {
-  if (typeId >= structTypes_.size()) {
+  if (typeId == 0 || typeId > structTypes_.size()) {
     return 0;
   }
-  return structTypes_[typeId].fieldNames.size();
+  return structTypes_[typeId - 1].fieldNames.size();
 }
 
 std::optional<size_t> GCHeap::structFieldIndex(uint32_t typeId,
                                                const std::string& field) const {
-  if (typeId >= structTypes_.size()) {
+  if (typeId == 0 || typeId > structTypes_.size()) {
     return std::nullopt;
   }
-  const auto &fields = structTypes_[typeId].fieldNames;
+  const auto &fields = structTypes_[typeId - 1].fieldNames;
   for (size_t i = 0; i < fields.size(); ++i) {
     if (fields[i] == field) {
       return i;

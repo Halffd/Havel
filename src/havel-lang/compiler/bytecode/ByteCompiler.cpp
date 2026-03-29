@@ -1332,8 +1332,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     case ResolvedBindingKind::Upvalue:
       emit(OpCode::LOAD_UPVALUE, binding->slot);
       break;
+    case ResolvedBindingKind::Function:
+      // User-defined function - load as FunctionObject
+      emit(OpCode::LOAD_CONST,
+           addConstant(FunctionObject{.function_index = top_level_function_indices_by_name_[binding->name]}));
+      break;
     case ResolvedBindingKind::Global:
-      // Global - runtime will decide if it exists or error
+      // Global variable or host function - runtime will decide
       emit(OpCode::LOAD_GLOBAL, binding->name);
       break;
     }

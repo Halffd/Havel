@@ -818,7 +818,11 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
 
   // Not found in local scopes
   if (function_index == 0) {
-    // In global scope - not found locally, treat as Global
+    // In global scope - check if it's a top-level function
+    if (top_level_functions_.count(name) > 0) {
+      return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
+    }
+    // Not found locally, treat as Global
     // Runtime will decide if it exists or error
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }

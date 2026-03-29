@@ -3312,6 +3312,10 @@ void VM::executeInstruction(const Instruction &instruction) {
       typeName = "object";
     } else if (std::holds_alternative<HostFunctionRef>(value)) {
       typeName = "function";
+    } else if (std::holds_alternative<FunctionObject>(value)) {
+      typeName = "function";
+    } else if (std::holds_alternative<ClosureRef>(value)) {
+      typeName = "function";
     } else {
       typeName = "unknown";
     }

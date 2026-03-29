@@ -1958,6 +1958,18 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::NEGATE: {
+    BytecodeValue value = pop();
+    if (std::holds_alternative<int64_t>(value)) {
+      push(-std::get<int64_t>(value));
+    } else if (std::holds_alternative<double>(value)) {
+      push(-std::get<double>(value));
+    } else {
+      throw std::runtime_error("Cannot negate non-numeric value");
+    }
+    break;
+  }
+
   case OpCode::JUMP: {
     uint32_t target = std::get<uint32_t>(instruction.operands[0]);
     currentFrame().ip = target;

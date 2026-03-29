@@ -218,12 +218,16 @@ struct HostFunctionRef {
   std::string name;
 };
 
+struct LazyPipelineRef {
+  uint32_t id = 0; // GC object id storing the lazy chain
+};
+
 using BytecodeValue =
     std::variant<std::nullptr_t, bool, int64_t, double, std::string,
                  uint32_t, // Index into constant pool
                  FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
                  RangeRef, StructRef, ClassRef, EnumRef, IteratorRef,
-                 HostFunctionRef>;
+                 HostFunctionRef, LazyPipelineRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

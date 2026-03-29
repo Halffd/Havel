@@ -265,6 +265,11 @@ void HostBridge::install() {
   registerAnyMethod("cancel");
   registerAnyMethod("running");
 
+  // Chain method aliases (LINQ-style naming)
+  registerAnyMethod("where");  // alias for filter
+  registerAnyMethod("select"); // alias for map
+  registerAnyMethod("count");  // alias for len
+
   // Generic iterable HOFs (array/string/object/set/range/tuple-as-array)
   auto truthy = [](const BytecodeValue &value) -> bool {
     if (std::holds_alternative<std::nullptr_t>(value))

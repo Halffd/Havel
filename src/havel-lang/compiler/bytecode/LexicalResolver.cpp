@@ -480,6 +480,31 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::HotkeyBinding: {
+    const auto &hotkey = static_cast<const ast::HotkeyBinding &>(statement);
+    // Create isolated scope for hotkey action
+    beginScope();
+    if (hotkey.action) {
+      resolveStatement(*hotkey.action);
+    }
+    endScope();
+    break;
+  }
+
+  case ast::NodeType::ConditionalHotkey: {
+    const auto &condHotkey =
+        static_cast<const ast::ConditionalHotkey &>(statement);
+    // Visit condition in current scope
+    if (condHotkey.condition) {
+      resolveExpression(*condHotkey.condition);
+    }
+    // Visit the wrapped hotkey binding (creates its own scope)
+    if (condHotkey.binding) {
+      resolveStatement(*condHotkey.binding);
+    }
+    break;
+  }
+
   // Type system declarations - register type names in scope
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
@@ -605,8 +630,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
 
       if (!binding) {
         // Implicit declaration on first assignment (Option C)
-        // Check if we're in global scope (function_index == 0)
-        bool isGlobalScope = (function_stack_.size() == 1);
+        // Check if we're in global scope (function_index == 0 AND at root
+        // scope)
+        bool isGlobalScope = (function_stack_.size() == 1 &&
+                              function_stack_[0].scopes.size() == 1);
 
         if (isGlobalScope) {
           // Declare as global variable
@@ -645,7 +672,8 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
             // Implicit declaration
-            bool isGlobalScope = (function_stack_.size() == 1);
+            bool isGlobalScope = (function_stack_.size() == 1 &&
+                                  function_stack_[0].scopes.size() == 1);
             if (isGlobalScope) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
@@ -688,7 +716,8 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               static_cast<const ast::Identifier &>(*pair.second);
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
-            bool isGlobalScope = (function_stack_.size() == 1);
+            bool isGlobalScope = (function_stack_.size() == 1 &&
+                                  function_stack_[0].scopes.size() == 1);
             if (isGlobalScope) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);

@@ -5,13 +5,14 @@
 // Host services (File, Process, Timer, Hotkey, Window, Clipboard, IO)
 // are exposed through HostBridge, NOT through stdlib.
 
+#include "../../modules/automation/AutomationModule.hpp"
+#include "../../modules/config/ConfigModule.hpp"
+#include "../../modules/help/HelpModule.hpp"
+#include "../../modules/hotkey/HotkeyModule.hpp"
+#include "../../modules/mouse/MouseModule.hpp"
+#include "../../modules/window/WindowMonitorModule.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
 #include "../compiler/bytecode/VMApi.hpp"
-#include "../../modules/config/ConfigModule.hpp"
-#include "../../modules/window/WindowMonitorModule.hpp"
-#include "../../modules/help/HelpModule.hpp"
-#include "../../modules/mouse/MouseModule.hpp"
-#include "../../modules/automation/AutomationModule.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
@@ -22,8 +23,11 @@ void registerObjectModule(compiler::VMApi &api);  // ObjectModule
 void registerTypeModule(compiler::VMApi &api);    // TypeModule
 void registerUtilityModule(compiler::VMApi &api); // UtilityModule
 void registerRegexModule(compiler::VMApi &api);   // RegexModule
-void registerPhysicsModule(compiler::VMApi &api); // PhysicsModule (constants only)
-void registerTimeModule(compiler::VMApi &api);    // TimeModule (timestamp ops only)
+void registerPhysicsModule(
+    compiler::VMApi &api); // PhysicsModule (constants only)
+void registerTimeModule(
+    compiler::VMApi &api); // TimeModule (timestamp ops only)
+void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -42,7 +46,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerRegexModule(*api);   // RegexModule
   stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
   stdlib::registerTimeModule(*api);    // TimeModule (timestamps)
-  
+  stdlib::registerHotkeyModule(*api);  // HotkeyModule
+
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
 
@@ -58,8 +63,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Register automation module (auto clicker, runner, key presser)
   modules::registerAutomationModule(*api);
 
-  // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are initialized
-  // This ensures we use the existing WindowMonitor from HotkeyManager
+  // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are
+  // initialized This ensures we use the existing WindowMonitor from
+  // HotkeyManager
 
   // Register host global names for pure stdlib only
   bridge.options().host_global_names.insert("PI");
@@ -105,27 +111,35 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("toString");
   bridge.options().host_global_names.insert("toNumber");
   bridge.options().host_global_names.insert("help");
-  // Pipeline function aliases - add to both host_functions and host_global_names
-  bridge.options().host_functions.insert({"upper", [](const std::vector<compiler::BytecodeValue>& args) {
-    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return compiler::BytecodeValue(nullptr);
-    std::string s = std::get<std::string>(args[0]);
-    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
-    return compiler::BytecodeValue(s);
-  }});
-  bridge.options().host_functions.insert({"lower", [](const std::vector<compiler::BytecodeValue>& args) {
-    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return compiler::BytecodeValue(nullptr);
-    std::string s = std::get<std::string>(args[0]);
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-    return compiler::BytecodeValue(s);
-  }});
-  bridge.options().host_functions.insert({"trim", [](const std::vector<compiler::BytecodeValue>& args) {
-    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return compiler::BytecodeValue(nullptr);
-    std::string s = std::get<std::string>(args[0]);
-    size_t start = s.find_first_not_of(" \t\n\r");
-    if (start == std::string::npos) return compiler::BytecodeValue(std::string(""));
-    size_t end = s.find_last_not_of(" \t\n\r");
-    return compiler::BytecodeValue(s.substr(start, end - start + 1));
-  }});
+  // Pipeline function aliases - add to both host_functions and
+  // host_global_names
+  bridge.options().host_functions.insert(
+      {"upper", [](const std::vector<compiler::BytecodeValue> &args) {
+         if (args.empty() || !std::holds_alternative<std::string>(args[0]))
+           return compiler::BytecodeValue(nullptr);
+         std::string s = std::get<std::string>(args[0]);
+         std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+         return compiler::BytecodeValue(s);
+       }});
+  bridge.options().host_functions.insert(
+      {"lower", [](const std::vector<compiler::BytecodeValue> &args) {
+         if (args.empty() || !std::holds_alternative<std::string>(args[0]))
+           return compiler::BytecodeValue(nullptr);
+         std::string s = std::get<std::string>(args[0]);
+         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+         return compiler::BytecodeValue(s);
+       }});
+  bridge.options().host_functions.insert(
+      {"trim", [](const std::vector<compiler::BytecodeValue> &args) {
+         if (args.empty() || !std::holds_alternative<std::string>(args[0]))
+           return compiler::BytecodeValue(nullptr);
+         std::string s = std::get<std::string>(args[0]);
+         size_t start = s.find_first_not_of(" \t\n\r");
+         if (start == std::string::npos)
+           return compiler::BytecodeValue(std::string(""));
+         size_t end = s.find_last_not_of(" \t\n\r");
+         return compiler::BytecodeValue(s.substr(start, end - start + 1));
+       }});
   bridge.options().host_global_names.insert("upper");
   bridge.options().host_global_names.insert("lower");
   bridge.options().host_global_names.insert("trim");

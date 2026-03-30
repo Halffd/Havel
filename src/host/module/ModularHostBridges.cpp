@@ -2,48 +2,49 @@
  * ModularHostBridges.cpp - Modular bridge component implementations
  */
 #include "ModularHostBridges.hpp"
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
-#include "process/Launcher.hpp"
+#include "../../havel-lang/stdlib/HotkeyModule.hpp"
+#include "core/ConfigManager.hpp"
+#include "core/DisplayManager.hpp"
+#include "core/HardwareDetector.hpp"
+#include "core/HotkeyManager.hpp"
+#include "core/IO.hpp"
+#include "core/ModeManager.hpp"
 #include "gui/ClipboardManager.hpp"
+#include "gui/GUIManager.hpp"
+#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "host/app/AppService.hpp"
 #include "host/async/AsyncService.hpp"
 #include "host/audio/AudioService.hpp"
 #include "host/automation/AutomationService.hpp"
-#include "host/browser/BrowserService.hpp"
 #include "host/brightness/BrightnessService.hpp"
+#include "host/browser/BrowserService.hpp"
 #include "host/chunker/TextChunkerService.hpp"
 #include "host/filesystem/FileSystemService.hpp"
 #include "host/hotkey/HotkeyService.hpp"
 #include "host/io/IOService.hpp"
 #include "host/io/MapManagerService.hpp"
-#include "host/process/ProcessService.hpp"
-#include "host/screenshot/ScreenshotService.hpp"
-#include "host/window/WindowService.hpp"
-#include "host/window/AltTabService.hpp"
 #include "host/media/MediaService.hpp"
 #include "host/network/NetworkService.hpp"
-#include "host/app/AppService.hpp"
-#include "window/WindowManager.hpp"
-#include "window/WindowManagerDetector.hpp"
-#include "core/DisplayManager.hpp"
-#include "core/HardwareDetector.hpp"
-#include "core/ConfigManager.hpp"
-#include "core/ModeManager.hpp"
-#include "core/HotkeyManager.hpp"
-#include "core/IO.hpp"
+#include "host/process/ProcessService.hpp"
+#include "host/screenshot/ScreenshotService.hpp"
+#include "host/window/AltTabService.hpp"
+#include "host/window/WindowService.hpp"
 #include "media/AudioManager.hpp"
 #include "media/MPVController.hpp"
-#include "gui/GUIManager.hpp"
+#include "process/Launcher.hpp"
+#include "window/WindowManager.hpp"
+#include "window/WindowManagerDetector.hpp"
 
 #include <QClipboard>
 #include <QString>
-#include <fstream>
-#include <sstream>
-#include <chrono>
 #include <atomic>
-#include <deque>
-#include <mutex>
-#include <unordered_map>
+#include <chrono>
 #include <climits>
+#include <deque>
+#include <fstream>
+#include <mutex>
+#include <sstream>
+#include <unordered_map>
 
 namespace havel::compiler {
 
@@ -98,8 +99,10 @@ ObjectRef makeHandleObject(VM *vm, const std::string &kind,
 }
 
 std::optional<std::pair<std::string, std::string>>
-extractHandle(const std::vector<BytecodeValue> &args, VM *vm, size_t index = 0) {
-  if (!vm || index >= args.size() || !std::holds_alternative<ObjectRef>(args[index])) {
+extractHandle(const std::vector<BytecodeValue> &args, VM *vm,
+              size_t index = 0) {
+  if (!vm || index >= args.size() ||
+      !std::holds_alternative<ObjectRef>(args[index])) {
     return std::nullopt;
   }
   ObjectRef obj = std::get<ObjectRef>(args[index]);
@@ -163,27 +166,29 @@ BytecodeValue IOBridge::handleSendText(const std::vector<BytecodeValue> &args,
     return BytecodeValue(false);
   }
   if (auto *text = std::get_if<std::string>(&args[0])) {
-    // Use clipboard for reliable text input (handles all characters, spaces, newlines)
+    // Use clipboard for reliable text input (handles all characters, spaces,
+    // newlines)
     if (ctx->clipboardManager) {
       // Backup old clipboard text
       QString oldText = ctx->clipboardManager->getClipboard()->text();
-      
+
       // Set new text
-      ctx->clipboardManager->getClipboard()->setText(QString::fromStdString(*text));
-      
+      ctx->clipboardManager->getClipboard()->setText(
+          QString::fromStdString(*text));
+
       // Minimal delay - just enough for clipboard to sync
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      
+
       // Send Ctrl+V to paste
       ctx->io->Send("{LCtrl down}");
       ctx->io->Send("v");
       ctx->io->Send("{LCtrl up}");
-      
+
       // Restore old clipboard
       ctx->clipboardManager->getClipboard()->setText(oldText);
     } else {
-      // Fallback: use IO::SendText (handles clipboard backup/restore on Windows)
-      // or key events on Linux
+      // Fallback: use IO::SendText (handles clipboard backup/restore on
+      // Windows) or key events on Linux
       ctx->io->SendText(*text);
     }
     return BytecodeValue(true);
@@ -203,18 +208,20 @@ void SystemBridge::install(PipelineOptions &options) {
   options.host_functions["system.hardware"] = [ctx = ctx_](const auto &args) {
     return handleSystemHardware(args, ctx);
   };
-  
+
   // Create system object with proper namespacing
   // This will be set globally by HostBridge after VM is available
   options.system_object_initializer = [](compiler::VM *vm) {
     auto systemObj = vm->createHostObject();
-    vm->setHostObjectField(systemObj, "detect",
+    vm->setHostObjectField(
+        systemObj, "detect",
         BytecodeValue(havel::compiler::HostFunctionRef{"system.detect"}));
-    vm->setHostObjectField(systemObj, "hardware",
+    vm->setHostObjectField(
+        systemObj, "hardware",
         BytecodeValue(havel::compiler::HostFunctionRef{"system.hardware"}));
     vm->setGlobal("system", BytecodeValue(systemObj));
   };
-  
+
   options.host_functions["readFile"] = [ctx = ctx_](const auto &args) {
     return handleFileRead(args, ctx);
   };
@@ -254,7 +261,8 @@ void SystemBridge::install(PipelineOptions &options) {
   options.host_functions["process.run"] = [ctx = ctx_](const auto &args) {
     return handleProcessRun(args, ctx);
   };
-  options.host_functions["process.runDetached"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["process.runDetached"] = [ctx =
+                                                       ctx_](const auto &args) {
     return handleProcessRunDetached(args, ctx);
   };
   // Global aliases for convenience
@@ -276,8 +284,9 @@ void SystemBridge::install(PipelineOptions &options) {
   };
 }
 
-BytecodeValue SystemBridge::handleFileRead(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleFileRead(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("readFile() requires a file path");
@@ -294,8 +303,9 @@ BytecodeValue SystemBridge::handleFileRead(const std::vector<BytecodeValue> &arg
   return BytecodeValue(content);
 }
 
-BytecodeValue SystemBridge::handleFileWrite(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleFileWrite(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("writeFile() requires path and content");
@@ -309,8 +319,9 @@ BytecodeValue SystemBridge::handleFileWrite(const std::vector<BytecodeValue> &ar
   return BytecodeValue(fs.writeFile(*path, *content));
 }
 
-BytecodeValue SystemBridge::handleFileExists(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleFileExists(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("fileExists() requires a file path");
@@ -323,8 +334,9 @@ BytecodeValue SystemBridge::handleFileExists(const std::vector<BytecodeValue> &a
   return BytecodeValue(fs.exists(*path));
 }
 
-BytecodeValue SystemBridge::handleFileSize(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleFileSize(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("fileSize() requires a file path");
@@ -340,8 +352,9 @@ BytecodeValue SystemBridge::handleFileSize(const std::vector<BytecodeValue> &arg
   return BytecodeValue(fs.getFileSize(*path));
 }
 
-BytecodeValue SystemBridge::handleFileDelete(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleFileDelete(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("deleteFile() requires a file path");
@@ -354,8 +367,9 @@ BytecodeValue SystemBridge::handleFileDelete(const std::vector<BytecodeValue> &a
   return BytecodeValue(fs.deleteFile(*path));
 }
 
-BytecodeValue SystemBridge::handleProcessExecute(const std::vector<BytecodeValue> &args,
-                                                 const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessExecute(const std::vector<BytecodeValue> &args,
+                                   const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("execute() requires a command");
@@ -377,22 +391,27 @@ BytecodeValue SystemBridge::handleProcessExecute(const std::vector<BytecodeValue
   return BytecodeValue(output.str());
 }
 
-BytecodeValue SystemBridge::handleProcessGetPid(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessGetPid(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  return BytecodeValue(static_cast<int64_t>(havel::host::ProcessService::getCurrentPid()));
+  return BytecodeValue(
+      static_cast<int64_t>(havel::host::ProcessService::getCurrentPid()));
 }
 
-BytecodeValue SystemBridge::handleProcessGetPpid(const std::vector<BytecodeValue> &args,
-                                                 const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessGetPpid(const std::vector<BytecodeValue> &args,
+                                   const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  return BytecodeValue(static_cast<int64_t>(havel::host::ProcessService::getParentPid()));
+  return BytecodeValue(
+      static_cast<int64_t>(havel::host::ProcessService::getParentPid()));
 }
 
-BytecodeValue SystemBridge::handleProcessFind(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessFind(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("process.find() requires a process name");
   }
@@ -412,8 +431,9 @@ BytecodeValue SystemBridge::handleProcessFind(const std::vector<BytecodeValue> &
   return BytecodeValue(arr);
 }
 
-BytecodeValue SystemBridge::handleProcessExists(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessExists(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("process.exists() requires a process name or PID");
@@ -429,8 +449,9 @@ BytecodeValue SystemBridge::handleProcessExists(const std::vector<BytecodeValue>
   return BytecodeValue(havel::host::ProcessService::processExists(*name));
 }
 
-BytecodeValue SystemBridge::handleProcessKill(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessKill(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("process.kill() requires PID and signal");
@@ -446,15 +467,21 @@ BytecodeValue SystemBridge::handleProcessKill(const std::vector<BytecodeValue> &
     throw std::runtime_error("process.kill() requires a string signal");
   }
   int signal_num = 15; // Default SIGTERM
-  if (*sig == "SIGKILL" || *sig == "kill") signal_num = 9;
-  else if (*sig == "SIGTERM" || *sig == "term") signal_num = 15;
-  else if (*sig == "SIGHUP" || *sig == "hangup") signal_num = 1;
-  else if (*sig == "SIGINT" || *sig == "int") signal_num = 2;
-  return BytecodeValue(havel::host::ProcessService::sendSignal(pid, signal_num));
+  if (*sig == "SIGKILL" || *sig == "kill")
+    signal_num = 9;
+  else if (*sig == "SIGTERM" || *sig == "term")
+    signal_num = 15;
+  else if (*sig == "SIGHUP" || *sig == "hangup")
+    signal_num = 1;
+  else if (*sig == "SIGINT" || *sig == "int")
+    signal_num = 2;
+  return BytecodeValue(
+      havel::host::ProcessService::sendSignal(pid, signal_num));
 }
 
-BytecodeValue SystemBridge::handleProcessNice(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessNice(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("process.nice() requires PID and nice value");
@@ -473,13 +500,16 @@ BytecodeValue SystemBridge::handleProcessNice(const std::vector<BytecodeValue> &
   }
   // Nice range: -20 (highest priority) to 19 (lowest)
   if (nice < -20 || nice > 19) {
-    throw std::runtime_error("process.nice() nice value must be between -20 and 19");
+    throw std::runtime_error(
+        "process.nice() nice value must be between -20 and 19");
   }
-  return BytecodeValue(havel::host::ProcessService::setNice(pid, static_cast<int>(nice)));
+  return BytecodeValue(
+      havel::host::ProcessService::setNice(pid, static_cast<int>(nice)));
 }
 
-BytecodeValue SystemBridge::handleProcessRun(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessRun(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("process.run() requires a command");
@@ -500,8 +530,9 @@ BytecodeValue SystemBridge::handleProcessRun(const std::vector<BytecodeValue> &a
   return BytecodeValue(obj);
 }
 
-BytecodeValue SystemBridge::handleProcessRunDetached(const std::vector<BytecodeValue> &args,
-                                                     const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleProcessRunDetached(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("process.runDetached() requires a command");
@@ -515,8 +546,9 @@ BytecodeValue SystemBridge::handleProcessRunDetached(const std::vector<BytecodeV
 }
 
 // Alias implementations - forward to appropriate bridge handlers
-BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   return MediaBridge::handleMediaPlay(args, ctx);
 }
 
@@ -524,14 +556,17 @@ BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &ar
 // System Detection Implementation
 // ============================================================================
 
-BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)args;
-  std::cerr << "[DEBUG] handleSystemDetect: ctx=" << ctx << " ctx->vm=" << (ctx ? ctx->vm : nullptr) << "\n";
+  std::cerr << "[DEBUG] handleSystemDetect: ctx=" << ctx
+            << " ctx->vm=" << (ctx ? ctx->vm : nullptr) << "\n";
 
   if (!ctx || !ctx->vm) {
     // Return a minimal object if VM is not available
-    std::cerr << "[DEBUG] handleSystemDetect: ctx or vm is null, returning empty string\n";
+    std::cerr << "[DEBUG] handleSystemDetect: ctx or vm is null, returning "
+                 "empty string\n";
     return BytecodeValue(std::string(""));
   }
 
@@ -539,7 +574,7 @@ BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> 
   std::cerr << "[DEBUG] handleSystemDetect: vm=" << vm << ", creating object\n";
   auto obj = vm->createHostObject();
   std::cerr << "[DEBUG] handleSystemDetect: object created, setting fields\n";
-  
+
   // Use HardwareDetector for system detection
   auto sysInfo = havel::HardwareDetector::detectSystem();
   std::cerr << "[DEBUG] handleSystemDetect: detected OS=" << sysInfo.os << "\n";
@@ -551,26 +586,30 @@ BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> 
   vm->setHostObjectField(obj, "home", BytecodeValue(sysInfo.home));
   vm->setHostObjectField(obj, "hostname", BytecodeValue(sysInfo.hostname));
   std::cerr << "[DEBUG] handleSystemDetect: all fields set, returning\n";
-  
+
   // Linux-specific fields
   if (!sysInfo.displayProtocol.empty()) {
-    vm->setHostObjectField(obj, "displayProtocol", BytecodeValue(sysInfo.displayProtocol));
+    vm->setHostObjectField(obj, "displayProtocol",
+                           BytecodeValue(sysInfo.displayProtocol));
   }
   if (!sysInfo.display.empty()) {
     vm->setHostObjectField(obj, "display", BytecodeValue(sysInfo.display));
   }
   if (!sysInfo.windowManager.empty()) {
-    vm->setHostObjectField(obj, "windowManager", BytecodeValue(sysInfo.windowManager));
+    vm->setHostObjectField(obj, "windowManager",
+                           BytecodeValue(sysInfo.windowManager));
   }
   if (!sysInfo.desktopEnv.empty()) {
-    vm->setHostObjectField(obj, "desktopEnv", BytecodeValue(sysInfo.desktopEnv));
+    vm->setHostObjectField(obj, "desktopEnv",
+                           BytecodeValue(sysInfo.desktopEnv));
   }
-  
+
   return BytecodeValue(obj);
 }
 
-BytecodeValue SystemBridge::handleSystemHardware(const std::vector<BytecodeValue> &args,
-                                                 const HostContext *ctx) {
+BytecodeValue
+SystemBridge::handleSystemHardware(const std::vector<BytecodeValue> &args,
+                                   const HostContext *ctx) {
   (void)args;
 
   if (!ctx || !ctx->vm) {
@@ -584,39 +623,56 @@ BytecodeValue SystemBridge::handleSystemHardware(const std::vector<BytecodeValue
   auto hwInfo = havel::HardwareDetector::detectHardware();
 
   vm->setHostObjectField(obj, "cpu", BytecodeValue(hwInfo.cpu));
-  vm->setHostObjectField(obj, "cpuCores", BytecodeValue(static_cast<int64_t>(hwInfo.cpuCores)));
-  vm->setHostObjectField(obj, "cpuThreads", BytecodeValue(static_cast<int64_t>(hwInfo.cpuThreads)));
-  vm->setHostObjectField(obj, "cpuFrequency", BytecodeValue(hwInfo.cpuFrequency));
+  vm->setHostObjectField(obj, "cpuCores",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.cpuCores)));
+  vm->setHostObjectField(
+      obj, "cpuThreads",
+      BytecodeValue(static_cast<int64_t>(hwInfo.cpuThreads)));
+  vm->setHostObjectField(obj, "cpuFrequency",
+                         BytecodeValue(hwInfo.cpuFrequency));
   vm->setHostObjectField(obj, "cpuUsage", BytecodeValue(hwInfo.cpuUsage));
   vm->setHostObjectField(obj, "gpu", BytecodeValue(hwInfo.gpu));
-  vm->setHostObjectField(obj, "gpuTemperature", BytecodeValue(hwInfo.gpuTemperature));
-  
+  vm->setHostObjectField(obj, "gpuTemperature",
+                         BytecodeValue(hwInfo.gpuTemperature));
+
   // Memory info (all in bytes)
-  vm->setHostObjectField(obj, "ramTotal", BytecodeValue(static_cast<int64_t>(hwInfo.ramTotal)));
-  vm->setHostObjectField(obj, "ramUsed", BytecodeValue(static_cast<int64_t>(hwInfo.ramUsed)));
-  vm->setHostObjectField(obj, "ramFree", BytecodeValue(static_cast<int64_t>(hwInfo.ramFree)));
-  
+  vm->setHostObjectField(obj, "ramTotal",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.ramTotal)));
+  vm->setHostObjectField(obj, "ramUsed",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.ramUsed)));
+  vm->setHostObjectField(obj, "ramFree",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.ramFree)));
+
   // Swap info (in bytes)
-  vm->setHostObjectField(obj, "swapTotal", BytecodeValue(static_cast<int64_t>(hwInfo.swapTotal)));
-  vm->setHostObjectField(obj, "swapUsed", BytecodeValue(static_cast<int64_t>(hwInfo.swapUsed)));
-  vm->setHostObjectField(obj, "swapFree", BytecodeValue(static_cast<int64_t>(hwInfo.swapFree)));
-  
+  vm->setHostObjectField(obj, "swapTotal",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.swapTotal)));
+  vm->setHostObjectField(obj, "swapUsed",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.swapUsed)));
+  vm->setHostObjectField(obj, "swapFree",
+                         BytecodeValue(static_cast<int64_t>(hwInfo.swapFree)));
+
   vm->setHostObjectField(obj, "motherboard", BytecodeValue(hwInfo.motherboard));
   vm->setHostObjectField(obj, "bios", BytecodeValue(hwInfo.bios));
-  vm->setHostObjectField(obj, "cpuTemperature", BytecodeValue(hwInfo.cpuTemperature));
+  vm->setHostObjectField(obj, "cpuTemperature",
+                         BytecodeValue(hwInfo.cpuTemperature));
 
   // Storage array
   auto storageArr = vm->createHostArray();
-  for (const auto& device : hwInfo.storage) {
+  for (const auto &device : hwInfo.storage) {
     auto storageObj = vm->createHostObject();
     vm->setHostObjectField(storageObj, "name", BytecodeValue(device.name));
     vm->setHostObjectField(storageObj, "model", BytecodeValue(device.model));
-    vm->setHostObjectField(storageObj, "size", BytecodeValue(static_cast<int64_t>(device.size)));
-    vm->setHostObjectField(storageObj, "used", BytecodeValue(static_cast<int64_t>(device.used)));
-    vm->setHostObjectField(storageObj, "free", BytecodeValue(static_cast<int64_t>(device.free)));
+    vm->setHostObjectField(storageObj, "size",
+                           BytecodeValue(static_cast<int64_t>(device.size)));
+    vm->setHostObjectField(storageObj, "used",
+                           BytecodeValue(static_cast<int64_t>(device.used)));
+    vm->setHostObjectField(storageObj, "free",
+                           BytecodeValue(static_cast<int64_t>(device.free)));
     vm->setHostObjectField(storageObj, "type", BytecodeValue(device.type));
-    vm->setHostObjectField(storageObj, "mountPoint", BytecodeValue(device.mountPoint));
-    vm->setHostObjectField(storageObj, "filesystem", BytecodeValue(device.filesystem));
+    vm->setHostObjectField(storageObj, "mountPoint",
+                           BytecodeValue(device.mountPoint));
+    vm->setHostObjectField(storageObj, "filesystem",
+                           BytecodeValue(device.filesystem));
     vm->pushHostArrayValue(storageArr, BytecodeValue(storageObj));
   }
   vm->setHostObjectField(obj, "storage", BytecodeValue(storageArr));
@@ -647,12 +703,14 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.move"] = [ctx = ctx_](const auto &args) {
     return handleWindowMove(args, ctx);
   };
-  options.host_functions["window.moveToMonitor"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMoveToMonitor(args, ctx);
-  };
-  options.host_functions["window.moveToNextMonitor"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMoveToNextMonitor(args, ctx);
-  };
+  options.host_functions["window.moveToMonitor"] =
+      [ctx = ctx_](const auto &args) {
+        return handleWindowMoveToMonitor(args, ctx);
+      };
+  options.host_functions["window.moveToNextMonitor"] =
+      [ctx = ctx_](const auto &args) {
+        return handleWindowMoveToNextMonitor(args, ctx);
+      };
   options.host_functions["window.focus"] = [ctx = ctx_](const auto &args) {
     return handleWindowFocus(args, ctx);
   };
@@ -705,7 +763,8 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotFull(args, ctx);
   };
-  options.host_functions["screenshot.monitor"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["screenshot.monitor"] = [ctx =
+                                                      ctx_](const auto &args) {
     return handleScreenshotMonitor(args, ctx);
   };
   // GUI notifications
@@ -716,16 +775,14 @@ void UIBridge::install(PipelineOptions &options) {
 
 // Helper: Create window object with data fields
 // Methods are shared static functions that take window ID as first argument
-static BytecodeValue createWindowObject(VM* vm, const HostContext* ctx, uint64_t windowId,
-                                        const std::string& title = "",
-                                        const std::string& windowClass = "",
-                                        const std::string& exe = "",
-                                        int pid = 0,
-                                        const std::string& cmdline = "") {
+static BytecodeValue createWindowObject(
+    VM *vm, const HostContext *ctx, uint64_t windowId,
+    const std::string &title = "", const std::string &windowClass = "",
+    const std::string &exe = "", int pid = 0, const std::string &cmdline = "") {
   if (!vm || !ctx || !ctx->windowManager) {
     return BytecodeValue(nullptr);
   }
-  
+
   VMApi api(*vm);
   auto obj = api.makeObject();
   api.setField(obj, "id", BytecodeValue(static_cast<int64_t>(windowId)));
@@ -734,7 +791,7 @@ static BytecodeValue createWindowObject(VM* vm, const HostContext* ctx, uint64_t
   api.setField(obj, "exe", BytecodeValue(exe));
   api.setField(obj, "pid", BytecodeValue(static_cast<int64_t>(pid)));
   api.setField(obj, "cmd", BytecodeValue(cmdline));
-  
+
   // Methods are shared - they take the object's id field as receiver
   // win.close() compiles to: window.close(win)
   api.setField(obj, "close", api.makeFunctionRef("window._close"));
@@ -745,12 +802,13 @@ static BytecodeValue createWindowObject(VM* vm, const HostContext* ctx, uint64_t
   api.setField(obj, "max", api.makeFunctionRef("window._max"));
   api.setField(obj, "resize", api.makeFunctionRef("window._resize"));
   api.setField(obj, "move", api.makeFunctionRef("window._move"));
-  
+
   return BytecodeValue(obj);
 }
 
-BytecodeValue UIBridge::handleWindowGetActive(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowGetActive(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
   if (!ctx->windowManager || !ctx->vm) {
     return BytecodeValue(nullptr);
@@ -760,8 +818,9 @@ BytecodeValue UIBridge::handleWindowGetActive(const std::vector<BytecodeValue> &
   if (!info.valid) {
     return BytecodeValue(nullptr);
   }
-  return createWindowObject(static_cast<VM*>(ctx->vm), ctx, info.id,
-                            info.title, info.windowClass, info.exe, info.pid, info.cmdline);
+  return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,
+                            info.title, info.windowClass, info.exe, info.pid,
+                            info.cmdline);
 }
 
 BytecodeValue UIBridge::handleWindowCmd(const std::vector<BytecodeValue> &args,
@@ -774,7 +833,7 @@ BytecodeValue UIBridge::handleWindowCmd(const std::vector<BytecodeValue> &args,
     wid = static_cast<uint64_t>(*v);
   else
     return BytecodeValue("");
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getWindowInfo(wid);
   if (!info.valid) {
@@ -784,15 +843,17 @@ BytecodeValue UIBridge::handleWindowCmd(const std::vector<BytecodeValue> &args,
 }
 
 // Shared window object methods - take object as first argument, extract id
-BytecodeValue UIBridge::handleWindowCloseObj(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowCloseObj(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager)
+    return BytecodeValue(false);
+
   // Extract id from object
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -801,19 +862,21 @@ BytecodeValue UIBridge::handleWindowCloseObj(const std::vector<BytecodeValue> &a
   } else {
     return BytecodeValue(false);
   }
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.closeWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowHideObj(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowHideObj(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -822,20 +885,22 @@ BytecodeValue UIBridge::handleWindowHideObj(const std::vector<BytecodeValue> &ar
   } else {
     return BytecodeValue(false);
   }
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   winService.hideWindow(wid);
   return BytecodeValue(true);
 }
 
-BytecodeValue UIBridge::handleWindowShowObj(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowShowObj(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -844,20 +909,22 @@ BytecodeValue UIBridge::handleWindowShowObj(const std::vector<BytecodeValue> &ar
   } else {
     return BytecodeValue(false);
   }
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   winService.showWindow(wid);
   return BytecodeValue(true);
 }
 
-BytecodeValue UIBridge::handleWindowFocusObj(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowFocusObj(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -866,19 +933,21 @@ BytecodeValue UIBridge::handleWindowFocusObj(const std::vector<BytecodeValue> &a
   } else {
     return BytecodeValue(false);
   }
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.focusWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowMinObj(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowMinObj(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -887,19 +956,21 @@ BytecodeValue UIBridge::handleWindowMinObj(const std::vector<BytecodeValue> &arg
   } else {
     return BytecodeValue(false);
   }
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.minimizeWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowMaxObj(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowMaxObj(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -908,19 +979,21 @@ BytecodeValue UIBridge::handleWindowMaxObj(const std::vector<BytecodeValue> &arg
   } else {
     return BytecodeValue(false);
   }
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.maximizeWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowResizeObj(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowResizeObj(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
+  if (args.size() < 3 || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -929,25 +1002,31 @@ BytecodeValue UIBridge::handleWindowResizeObj(const std::vector<BytecodeValue> &
   } else {
     return BytecodeValue(false);
   }
-  
+
   int w = 0, h = 0;
-  if (auto *v = std::get_if<int64_t>(&args[1])) w = static_cast<int>(*v);
-  else if (auto *v = std::get_if<double>(&args[1])) w = static_cast<int>(*v);
-  if (auto *v = std::get_if<int64_t>(&args[2])) h = static_cast<int>(*v);
-  else if (auto *v = std::get_if<double>(&args[2])) h = static_cast<int>(*v);
-  
+  if (auto *v = std::get_if<int64_t>(&args[1]))
+    w = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[1]))
+    w = static_cast<int>(*v);
+  if (auto *v = std::get_if<int64_t>(&args[2]))
+    h = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[2]))
+    h = static_cast<int>(*v);
+
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.resizeWindow(wid, w, h));
 }
 
-BytecodeValue UIBridge::handleWindowMoveObj(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->windowManager) return BytecodeValue(false);
-  
+BytecodeValue
+UIBridge::handleWindowMoveObj(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
+  if (args.size() < 3 || !ctx->windowManager)
+    return BytecodeValue(false);
+
   uint64_t wid = 0;
   if (std::holds_alternative<ObjectRef>(args[0])) {
     auto obj = std::get<ObjectRef>(args[0]);
-    auto *vm = static_cast<VM*>(ctx->vm);
+    auto *vm = static_cast<VM *>(ctx->vm);
     auto idVal = vm->getHostObjectField(obj, "id");
     if (auto *v = std::get_if<int64_t>(&idVal))
       wid = static_cast<uint64_t>(*v);
@@ -956,13 +1035,17 @@ BytecodeValue UIBridge::handleWindowMoveObj(const std::vector<BytecodeValue> &ar
   } else {
     return BytecodeValue(false);
   }
-  
+
   int x = 0, y = 0;
-  if (auto *v = std::get_if<int64_t>(&args[1])) x = static_cast<int>(*v);
-  else if (auto *v = std::get_if<double>(&args[1])) x = static_cast<int>(*v);
-  if (auto *v = std::get_if<int64_t>(&args[2])) y = static_cast<int>(*v);
-  else if (auto *v = std::get_if<double>(&args[2])) y = static_cast<int>(*v);
-  
+  if (auto *v = std::get_if<int64_t>(&args[1]))
+    x = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[1]))
+    x = static_cast<int>(*v);
+  if (auto *v = std::get_if<int64_t>(&args[2]))
+    y = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[2]))
+    y = static_cast<int>(*v);
+
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.moveWindow(wid, x, y));
 }
@@ -972,28 +1055,28 @@ BytecodeValue UIBridge::handleWindowFind(const std::vector<BytecodeValue> &args,
   if (args.empty() || !ctx->windowManager || !ctx->vm) {
     return BytecodeValue(nullptr);
   }
-  
+
   std::string selector;
   if (auto *v = std::get_if<std::string>(&args[0]))
     selector = *v;
   else
     return BytecodeValue(nullptr);
-  
+
   // Parse selector: "type value" where type is title/class/exe/pid/cmd
   size_t spacePos = selector.find(' ');
   if (spacePos == std::string::npos) {
     return BytecodeValue(nullptr);
   }
-  
+
   std::string type = selector.substr(0, spacePos);
   std::string value = selector.substr(spacePos + 1);
-  
+
   havel::host::WindowService winService(ctx->windowManager);
   auto windows = winService.getAllWindows();
-  
-  for (const auto& win : windows) {
+
+  for (const auto &win : windows) {
     bool match = false;
-    
+
     if (type == "title") {
       match = (win.title.find(value) != std::string::npos);
     } else if (type == "class") {
@@ -1006,10 +1089,11 @@ BytecodeValue UIBridge::handleWindowFind(const std::vector<BytecodeValue> &args,
     } else if (type == "cmd") {
       match = (win.cmdline.find(value) != std::string::npos);
     }
-    
+
     if (match) {
-      return createWindowObject(static_cast<VM*>(ctx->vm), ctx, win.id,
-                                win.title, win.windowClass, win.exe, win.pid, win.cmdline);
+      return createWindowObject(static_cast<VM *>(ctx->vm), ctx, win.id,
+                                win.title, win.windowClass, win.exe, win.pid,
+                                win.cmdline);
     }
   }
 
@@ -1017,9 +1101,10 @@ BytecodeValue UIBridge::handleWindowFind(const std::vector<BytecodeValue> &args,
 }
 
 // Helper: resolve window argument (ID or selector string) to window ID
-static uint64_t resolveWindowId(const BytecodeValue& arg, havel::host::WindowService& winService) {
+static uint64_t resolveWindowId(const BytecodeValue &arg,
+                                havel::host::WindowService &winService) {
   uint64_t wid = 0;
-  
+
   // Try as integer ID first
   if (auto *v = std::get_if<int64_t>(&arg)) {
     wid = static_cast<uint64_t>(*v);
@@ -1030,11 +1115,11 @@ static uint64_t resolveWindowId(const BytecodeValue& arg, havel::host::WindowSer
     if (spacePos != std::string::npos) {
       std::string type = selector.substr(0, spacePos);
       std::string value = selector.substr(spacePos + 1);
-      
+
       auto windows = winService.getAllWindows();
-      for (const auto& win : windows) {
+      for (const auto &win : windows) {
         bool match = false;
-        
+
         if (type == "title") {
           match = (win.title.find(value) != std::string::npos);
         } else if (type == "class") {
@@ -1045,40 +1130,45 @@ static uint64_t resolveWindowId(const BytecodeValue& arg, havel::host::WindowSer
           try {
             int pid = std::stoi(value);
             match = (win.pid == pid);
-          } catch (...) {}
+          } catch (...) {
+          }
         } else if (type == "cmd") {
           match = (win.cmdline.find(value) != std::string::npos);
         }
-        
+
         if (match) {
           return win.id;
         }
       }
     }
   }
-  
+
   return wid;
 }
 
-BytecodeValue UIBridge::handleWindowClose(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowClose(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   if (args.empty() || !ctx->windowManager) {
     return BytecodeValue(false);
   }
   havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService);
-  if (wid == 0) return BytecodeValue(false);
+  if (wid == 0)
+    return BytecodeValue(false);
   return BytecodeValue(winService.closeWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowResize(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowResize(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   if (args.size() < 3 || !ctx->windowManager) {
     return BytecodeValue(false);
   }
   havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService);
-  if (wid == 0) return BytecodeValue(false);
+  if (wid == 0)
+    return BytecodeValue(false);
   int w = 0, h = 0;
   if (auto *v = std::get_if<int64_t>(&args[1]))
     w = static_cast<int>(*v);
@@ -1091,8 +1181,9 @@ BytecodeValue UIBridge::handleWindowResize(const std::vector<BytecodeValue> &arg
   return BytecodeValue(winService.resizeWindow(wid, w, h));
 }
 
-BytecodeValue UIBridge::handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args,
-                                                  const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
   if (args.size() < 2 || !ctx->windowManager) {
     return BytecodeValue(false);
   }
@@ -1110,8 +1201,9 @@ BytecodeValue UIBridge::handleWindowMoveToMonitor(const std::vector<BytecodeValu
   return BytecodeValue(winService.moveWindowToMonitor(wid, monitor));
 }
 
-BytecodeValue UIBridge::handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args,
-                                                      const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
   (void)args;
   if (!ctx->windowManager) {
     return BytecodeValue(false);
@@ -1140,8 +1232,9 @@ BytecodeValue UIBridge::handleWindowMove(const std::vector<BytecodeValue> &args,
   return BytecodeValue(winService.moveWindow(wid, x, y));
 }
 
-BytecodeValue UIBridge::handleWindowFocus(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowFocus(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   if (args.empty() || !ctx->windowManager) {
     return BytecodeValue(false);
   }
@@ -1154,8 +1247,9 @@ BytecodeValue UIBridge::handleWindowFocus(const std::vector<BytecodeValue> &args
   return BytecodeValue(winService.focusWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowMinimize(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowMinimize(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   if (args.empty() || !ctx->windowManager) {
     return BytecodeValue(false);
   }
@@ -1168,8 +1262,9 @@ BytecodeValue UIBridge::handleWindowMinimize(const std::vector<BytecodeValue> &a
   return BytecodeValue(winService.minimizeWindow(wid));
 }
 
-BytecodeValue UIBridge::handleWindowMaximize(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleWindowMaximize(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   if (args.empty() || !ctx->windowManager) {
     return BytecodeValue(false);
   }
@@ -1212,8 +1307,9 @@ BytecodeValue UIBridge::handleWindowShow(const std::vector<BytecodeValue> &args,
   return BytecodeValue(true);
 }
 
-BytecodeValue UIBridge::handleClipboardGet(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleClipboardGet(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)args;
   if (!ctx->clipboardManager) {
     return BytecodeValue(nullptr);
@@ -1225,8 +1321,9 @@ BytecodeValue UIBridge::handleClipboardGet(const std::vector<BytecodeValue> &arg
   return BytecodeValue(clipboard->text().toStdString());
 }
 
-BytecodeValue UIBridge::handleClipboardSet(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleClipboardSet(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   if (args.empty() || !ctx->clipboardManager) {
     return BytecodeValue(false);
   }
@@ -1241,8 +1338,9 @@ BytecodeValue UIBridge::handleClipboardSet(const std::vector<BytecodeValue> &arg
   return BytecodeValue(false);
 }
 
-BytecodeValue UIBridge::handleClipboardClear(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleClipboardClear(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)args;
   if (!ctx->clipboardManager) {
     return BytecodeValue(false);
@@ -1255,8 +1353,9 @@ BytecodeValue UIBridge::handleClipboardClear(const std::vector<BytecodeValue> &a
   return BytecodeValue(true);
 }
 
-BytecodeValue UIBridge::handleScreenshotFull(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleScreenshotFull(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::ScreenshotService service;
@@ -1265,8 +1364,9 @@ BytecodeValue UIBridge::handleScreenshotFull(const std::vector<BytecodeValue> &a
   return BytecodeValue(nullptr);
 }
 
-BytecodeValue UIBridge::handleScreenshotMonitor(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+UIBridge::handleScreenshotMonitor(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   (void)ctx;
   int monitor = 0;
   if (!args.empty()) {
@@ -1287,24 +1387,24 @@ BytecodeValue UIBridge::handleGUINotify(const std::vector<BytecodeValue> &args,
   if (args.size() < 2) {
     throw std::runtime_error("gui.notify() requires title and message");
   }
-  
+
   const std::string *title = std::get_if<std::string>(&args[0]);
   const std::string *message = std::get_if<std::string>(&args[1]);
-  
+
   if (!title || !message) {
     throw std::runtime_error("gui.notify() requires string arguments");
   }
-  
+
   std::string icon = "info";
   int durationMs = 0;
-  
+
   if (args.size() > 2 && std::holds_alternative<std::string>(args[2])) {
     icon = std::get<std::string>(args[2]);
   }
   if (args.size() > 3 && std::holds_alternative<int64_t>(args[3])) {
     durationMs = static_cast<int>(std::get<int64_t>(args[3]));
   }
-  
+
   ctx->guiManager->showNotification(*title, *message, icon, durationMs);
   return BytecodeValue(true);
 }
@@ -1323,9 +1423,10 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["mapmanager.map"] = [ctx = ctx_](const auto &args) {
     return handleMapManagerMap(args, ctx);
   };
-  options.host_functions["mapmanager.getCurrentProfile"] = [ctx = ctx_](const auto &args) {
-    return handleMapManagerGetCurrentProfile(args, ctx);
-  };
+  options.host_functions["mapmanager.getCurrentProfile"] =
+      [ctx = ctx_](const auto &args) {
+        return handleMapManagerGetCurrentProfile(args, ctx);
+      };
   options.host_functions["alttab.show"] = [ctx = ctx_](const auto &args) {
     return handleAltTabShow(args, ctx);
   };
@@ -1349,17 +1450,18 @@ void InputBridge::install(PipelineOptions &options) {
   };
 }
 
-BytecodeValue InputBridge::handleHotkeyRegister(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleHotkeyRegister(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   // Args: [hotkey_string, callback_closure]
   if (args.size() < 2) {
     return BytecodeValue(false);
   }
-  
+
   if (!ctx || !ctx->hotkeyManager || !ctx->vm || !ctx->io) {
     return BytecodeValue(false);
   }
-  
+
   // Get hotkey string
   std::string hotkeyStr;
   if (std::holds_alternative<std::string>(args[0])) {
@@ -1367,56 +1469,72 @@ BytecodeValue InputBridge::handleHotkeyRegister(const std::vector<BytecodeValue>
   } else {
     return BytecodeValue(false);
   }
-  
-  // Register the closure as a callback
+
+  // Generate unique hotkey ID
+  std::string hotkeyId =
+      "hotkey_" + std::to_string(std::hash<std::string>{}(hotkeyStr));
+
+  // Register closure as a callback - this pins it as a GC root
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
-  
+
+  // Create hotkey context object using HotkeyModule
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto hotkeyContext = havel::stdlib::HotkeyModule::createHotkeyContext(
+      vm, hotkeyId, hotkeyStr, hotkeyStr, "",
+      "Hotkey registered via hotkey.register", callbackId);
+
   // Get HotkeyExecutor for thread-safe execution
   auto *executor = ctx->io->GetHotkeyExecutor();
-  
-  // Register hotkey with callback
-  bool success = ctx->hotkeyManager->AddHotkey(hotkeyStr, [ctx, callbackId, executor]() {
-    // Submit callback to HotkeyExecutor for thread-safe execution
-    if (executor) {
-      executor->submit([ctx, callbackId]() {
-        if (ctx && ctx->vm) {
-          ctx->vm->invokeCallback(callbackId, {});
+
+  // Register hotkey with execution context isolation
+  // This is the CORRECT way: each hotkey execution gets its own isolated
+  // stack/locals but shares globals/heap
+  bool success = ctx->hotkeyManager->AddHotkey(
+      hotkeyStr, [vm, callbackId, hotkeyContext, executor]() {
+        if (executor) {
+          // Use execution context for thread-safe isolated execution
+          executor->submitExecutionContext(
+              *vm, [callbackId, hotkeyContext](
+                       havel::compiler::VM::VMExecutionContext &ctx) {
+                // Execute in isolated context with @ context as first arg
+                ctx.invokeCallback(callbackId, {hotkeyContext});
+              });
+        } else {
+          // Fallback: direct execution (not thread-safe, for testing only)
+          auto execCtx = vm->createExecutionContext();
+          execCtx.invokeCallback(callbackId, {hotkeyContext});
         }
       });
-    } else {
-      // Fallback: invoke directly (not thread-safe)
-      if (ctx && ctx->vm) {
-        ctx->vm->invokeCallback(callbackId, {});
-      }
-    }
-  });
-  
+
   return BytecodeValue(success);
 }
 
-BytecodeValue InputBridge::handleHotkeyTrigger(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleHotkeyTrigger(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue InputBridge::handleMapManagerMap(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleMapManagerMap(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue InputBridge::handleMapManagerGetCurrentProfile(const std::vector<BytecodeValue> &args,
-                                                             const HostContext *ctx) {
+BytecodeValue InputBridge::handleMapManagerGetCurrentProfile(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(std::string("default"));
 }
 
-BytecodeValue InputBridge::handleAltTabShow(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabShow(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AltTabService altTab;
@@ -1424,8 +1542,9 @@ BytecodeValue InputBridge::handleAltTabShow(const std::vector<BytecodeValue> &ar
   return BytecodeValue(true);
 }
 
-BytecodeValue InputBridge::handleAltTabHide(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabHide(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AltTabService altTab;
@@ -1433,8 +1552,9 @@ BytecodeValue InputBridge::handleAltTabHide(const std::vector<BytecodeValue> &ar
   return BytecodeValue(true);
 }
 
-BytecodeValue InputBridge::handleAltTabToggle(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabToggle(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AltTabService altTab;
@@ -1442,8 +1562,9 @@ BytecodeValue InputBridge::handleAltTabToggle(const std::vector<BytecodeValue> &
   return BytecodeValue(true);
 }
 
-BytecodeValue InputBridge::handleAltTabNext(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabNext(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AltTabService altTab;
@@ -1451,8 +1572,9 @@ BytecodeValue InputBridge::handleAltTabNext(const std::vector<BytecodeValue> &ar
   return BytecodeValue(true);
 }
 
-BytecodeValue InputBridge::handleAltTabPrevious(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabPrevious(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AltTabService altTab;
@@ -1460,8 +1582,9 @@ BytecodeValue InputBridge::handleAltTabPrevious(const std::vector<BytecodeValue>
   return BytecodeValue(true);
 }
 
-BytecodeValue InputBridge::handleAltTabSelect(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabSelect(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AltTabService altTab;
@@ -1469,8 +1592,9 @@ BytecodeValue InputBridge::handleAltTabSelect(const std::vector<BytecodeValue> &
   return BytecodeValue(true);
 }
 
-BytecodeValue InputBridge::handleAltTabGetWindows(const std::vector<BytecodeValue> &args,
-                                                  const HostContext *ctx) {
+BytecodeValue
+InputBridge::handleAltTabGetWindows(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
   (void)args;
   havel::host::AltTabService altTab;
   auto windows = altTab.getWindows();
@@ -1483,8 +1607,10 @@ BytecodeValue InputBridge::handleAltTabGetWindows(const std::vector<BytecodeValu
     auto winObj = vm->createHostObject();
     vm->setHostObjectField(winObj, "title", BytecodeValue(win.title));
     vm->setHostObjectField(winObj, "className", BytecodeValue(win.className));
-    vm->setHostObjectField(winObj, "processName", BytecodeValue(win.processName));
-    vm->setHostObjectField(winObj, "windowId", BytecodeValue(static_cast<int64_t>(win.windowId)));
+    vm->setHostObjectField(winObj, "processName",
+                           BytecodeValue(win.processName));
+    vm->setHostObjectField(winObj, "windowId",
+                           BytecodeValue(static_cast<int64_t>(win.windowId)));
     vm->setHostObjectField(winObj, "active", BytecodeValue(win.active));
     vm->pushHostArrayValue(arr, BytecodeValue(winObj));
   }
@@ -1502,7 +1628,7 @@ void AsyncBridge::install(PipelineOptions &options) {
   options.host_functions["time.now"] = [ctx = ctx_](const auto &args) {
     return handleTimeNow(args, ctx);
   };
-  
+
   // Async module functions
   options.host_functions["async.run"] = [ctx = ctx_](const auto &args) {
     return handleAsyncRun(args, ctx);
@@ -1516,7 +1642,7 @@ void AsyncBridge::install(PipelineOptions &options) {
   options.host_functions["async.isRunning"] = [ctx = ctx_](const auto &args) {
     return handleAsyncIsRunning(args, ctx);
   };
-  
+
   // Channel functions
   options.host_functions["async.channel"] = [ctx = ctx_](const auto &args) {
     return handleChannelCreate(args, ctx);
@@ -1530,9 +1656,8 @@ void AsyncBridge::install(PipelineOptions &options) {
   options.host_functions["async.tryReceive"] = [ctx = ctx_](const auto &args) {
     return handleChannelTryReceive(args, ctx);
   };
-  options.host_functions["async.channel.close"] = [ctx = ctx_](const auto &args) {
-    return handleChannelClose(args, ctx);
-  };
+  options.host_functions["async.channel.close"] =
+      [ctx = ctx_](const auto &args) { return handleChannelClose(args, ctx); };
 
   // Concurrency primitives
   options.host_functions["thread"] = [ctx = ctx_](const auto &args) {
@@ -1578,34 +1703,46 @@ void AsyncBridge::install(PipelineOptions &options) {
   };
   options.host_functions["object.pause"] = [ctx = ctx_](const auto &args) {
     auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
-    if (!handle.has_value()) return BytecodeValue(false);
-    if (handle->first == "thread") return handleThreadPause(args, ctx);
-    if (handle->first == "interval") return handleIntervalPause(args, ctx);
+    if (!handle.has_value())
+      return BytecodeValue(false);
+    if (handle->first == "thread")
+      return handleThreadPause(args, ctx);
+    if (handle->first == "interval")
+      return handleIntervalPause(args, ctx);
     return BytecodeValue(false);
   };
   options.host_functions["object.resume"] = [ctx = ctx_](const auto &args) {
     auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
-    if (!handle.has_value()) return BytecodeValue(false);
-    if (handle->first == "thread") return handleThreadResume(args, ctx);
-    if (handle->first == "interval") return handleIntervalResume(args, ctx);
+    if (!handle.has_value())
+      return BytecodeValue(false);
+    if (handle->first == "thread")
+      return handleThreadResume(args, ctx);
+    if (handle->first == "interval")
+      return handleIntervalResume(args, ctx);
     return BytecodeValue(false);
   };
   options.host_functions["object.stop"] = [ctx = ctx_](const auto &args) {
     auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
-    if (!handle.has_value()) return BytecodeValue(false);
-    if (handle->first == "thread") return handleThreadStop(args, ctx);
-    if (handle->first == "interval") return handleIntervalStop(args, ctx);
+    if (!handle.has_value())
+      return BytecodeValue(false);
+    if (handle->first == "thread")
+      return handleThreadStop(args, ctx);
+    if (handle->first == "interval")
+      return handleIntervalStop(args, ctx);
     return BytecodeValue(false);
   };
   options.host_functions["object.cancel"] = [ctx = ctx_](const auto &args) {
     auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
-    if (!handle.has_value() || handle->first != "timeout") return BytecodeValue(false);
+    if (!handle.has_value() || handle->first != "timeout")
+      return BytecodeValue(false);
     return handleTimeoutCancel(args, ctx);
   };
   options.host_functions["object.running"] = [ctx = ctx_](const auto &args) {
     auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
-    if (!handle.has_value()) return BytecodeValue(false);
-    if (handle->first == "thread") return handleThreadRunning(args, ctx);
+    if (!handle.has_value())
+      return BytecodeValue(false);
+    if (handle->first == "thread")
+      return handleThreadRunning(args, ctx);
     if (handle->first == "interval") {
       std::lock_guard<std::mutex> lock(g_async_mutex);
       auto it = g_timers.find(handle->second);
@@ -1649,13 +1786,16 @@ BytecodeValue AsyncBridge::handleTimeNow(const std::vector<BytecodeValue> &args,
   (void)args;
   (void)ctx;
   auto now = std::chrono::system_clock::now();
-  auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       now.time_since_epoch())
+                       .count();
   return BytecodeValue(static_cast<int64_t>(timestamp));
 }
 
 // Async task handlers
-BytecodeValue AsyncBridge::handleAsyncRun(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleAsyncRun(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.run() requires a function argument");
   }
@@ -1698,18 +1838,19 @@ BytecodeValue AsyncBridge::handleAsyncRun(const std::vector<BytecodeValue> &args
   return BytecodeValue(taskId);
 }
 
-BytecodeValue AsyncBridge::handleAsyncAwait(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleAsyncAwait(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.await() requires a task ID");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("async.await() requires a string task ID");
   }
-  
+
   std::string taskId = std::get<std::string>(args[0]);
-  
+
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
     auto it = g_async_tasks.find(taskId);
@@ -1726,20 +1867,21 @@ BytecodeValue AsyncBridge::handleAsyncAwait(const std::vector<BytecodeValue> &ar
     bool completed = ctx->asyncService->await(taskId);
     return BytecodeValue(completed);
   }
-  
+
   return BytecodeValue(false);
 }
 
-BytecodeValue AsyncBridge::handleAsyncCancel(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleAsyncCancel(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.cancel() requires a task ID");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("async.cancel() requires a string task ID");
   }
-  
+
   std::string taskId = std::get<std::string>(args[0]);
 
   {
@@ -1756,20 +1898,21 @@ BytecodeValue AsyncBridge::handleAsyncCancel(const std::vector<BytecodeValue> &a
     bool cancelled = ctx->asyncService->cancel(taskId);
     return BytecodeValue(cancelled);
   }
-  
+
   return BytecodeValue(false);
 }
 
-BytecodeValue AsyncBridge::handleAsyncIsRunning(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleAsyncIsRunning(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.isRunning() requires a task ID");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("async.isRunning() requires a string task ID");
   }
-  
+
   std::string taskId = std::get<std::string>(args[0]);
 
   {
@@ -1784,21 +1927,22 @@ BytecodeValue AsyncBridge::handleAsyncIsRunning(const std::vector<BytecodeValue>
     bool running = ctx->asyncService->isRunning(taskId);
     return BytecodeValue(running);
   }
-  
+
   return BytecodeValue(false);
 }
 
 // Channel handlers
-BytecodeValue AsyncBridge::handleChannelCreate(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleChannelCreate(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.channel() requires a channel name");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("async.channel() requires a string name");
   }
-  
+
   std::string name = std::get<std::string>(args[0]);
 
   {
@@ -1813,16 +1957,17 @@ BytecodeValue AsyncBridge::handleChannelCreate(const std::vector<BytecodeValue> 
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleChannelSend(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleChannelSend(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   if (args.size() < 2) {
     throw std::runtime_error("async.send() requires channel name and value");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("async.send() requires a string channel name");
   }
-  
+
   std::string name = std::get<std::string>(args[0]);
 
   {
@@ -1840,16 +1985,17 @@ BytecodeValue AsyncBridge::handleChannelSend(const std::vector<BytecodeValue> &a
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleChannelReceive(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleChannelReceive(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.receive() requires a channel name");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("async.receive() requires a string channel name");
   }
-  
+
   std::string name = std::get<std::string>(args[0]);
 
   {
@@ -1864,16 +2010,18 @@ BytecodeValue AsyncBridge::handleChannelReceive(const std::vector<BytecodeValue>
   }
 }
 
-BytecodeValue AsyncBridge::handleChannelTryReceive(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleChannelTryReceive(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.tryReceive() requires a channel name");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
-    throw std::runtime_error("async.tryReceive() requires a string channel name");
+    throw std::runtime_error(
+        "async.tryReceive() requires a string channel name");
   }
-  
+
   std::string name = std::get<std::string>(args[0]);
 
   {
@@ -1888,16 +2036,18 @@ BytecodeValue AsyncBridge::handleChannelTryReceive(const std::vector<BytecodeVal
   }
 }
 
-BytecodeValue AsyncBridge::handleChannelClose(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleChannelClose(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("async.channel.close() requires a channel name");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
-    throw std::runtime_error("async.channel.close() requires a string channel name");
+    throw std::runtime_error(
+        "async.channel.close() requires a string channel name");
   }
-  
+
   std::string name = std::get<std::string>(args[0]);
 
   {
@@ -1916,8 +2066,9 @@ BytecodeValue AsyncBridge::handleChannelClose(const std::vector<BytecodeValue> &
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleThreadCreate(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleThreadCreate(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   if (!ctx || !ctx->vm || args.empty()) {
     throw std::runtime_error("thread(fn) requires VM context and callback");
   }
@@ -1926,13 +2077,15 @@ BytecodeValue AsyncBridge::handleThreadCreate(const std::vector<BytecodeValue> &
   const std::string id = allocateTaskId();
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_threads[id] = ThreadRecord{.callback = callback, .running = true, .paused = false};
+    g_threads[id] =
+        ThreadRecord{.callback = callback, .running = true, .paused = false};
   }
   return BytecodeValue(makeHandleObject(vm, "thread", id));
 }
 
-BytecodeValue AsyncBridge::handleThreadSend(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleThreadSend(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   if (!ctx || !ctx->vm || args.size() < 2) {
     throw std::runtime_error("thread.send(handle, message) requires 2 args");
   }
@@ -1959,8 +2112,9 @@ BytecodeValue AsyncBridge::handleThreadSend(const std::vector<BytecodeValue> &ar
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleThreadPause(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleThreadPause(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
   if (!handle.has_value() || handle->first != "thread") {
@@ -1968,13 +2122,15 @@ BytecodeValue AsyncBridge::handleThreadPause(const std::vector<BytecodeValue> &a
   }
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_threads.find(handle->second);
-  if (it == g_threads.end()) return BytecodeValue(false);
+  if (it == g_threads.end())
+    return BytecodeValue(false);
   it->second.paused = true;
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleThreadResume(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleThreadResume(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
   if (!handle.has_value() || handle->first != "thread") {
@@ -1982,13 +2138,15 @@ BytecodeValue AsyncBridge::handleThreadResume(const std::vector<BytecodeValue> &
   }
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_threads.find(handle->second);
-  if (it == g_threads.end()) return BytecodeValue(false);
+  if (it == g_threads.end())
+    return BytecodeValue(false);
   it->second.paused = false;
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleThreadStop(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleThreadStop(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
   if (!handle.has_value() || handle->first != "thread") {
@@ -1996,7 +2154,8 @@ BytecodeValue AsyncBridge::handleThreadStop(const std::vector<BytecodeValue> &ar
   }
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_threads.find(handle->second);
-  if (it == g_threads.end()) return BytecodeValue(false);
+  if (it == g_threads.end())
+    return BytecodeValue(false);
   if (vm) {
     vm->releaseCallback(it->second.callback);
   }
@@ -2005,8 +2164,9 @@ BytecodeValue AsyncBridge::handleThreadStop(const std::vector<BytecodeValue> &ar
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleThreadRunning(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleThreadRunning(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
   if (!handle.has_value() || handle->first != "thread") {
@@ -2017,8 +2177,9 @@ BytecodeValue AsyncBridge::handleThreadRunning(const std::vector<BytecodeValue> 
   return BytecodeValue(it != g_threads.end() && it->second.running);
 }
 
-BytecodeValue AsyncBridge::handleIntervalCreate(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleIntervalCreate(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   if (!ctx || !ctx->vm || args.size() < 2) {
     throw std::runtime_error("interval(ms, fn) requires delay and callback");
   }
@@ -2030,7 +2191,8 @@ BytecodeValue AsyncBridge::handleIntervalCreate(const std::vector<BytecodeValue>
   } else {
     throw std::runtime_error("interval delay must be number");
   }
-  if (delay_ms < 1) delay_ms = 1;
+  if (delay_ms < 1)
+    delay_ms = 1;
 
   auto *vm = static_cast<VM *>(ctx->vm);
   const CallbackId callback = vm->registerCallback(args[1]);
@@ -2048,30 +2210,31 @@ BytecodeValue AsyncBridge::handleIntervalCreate(const std::vector<BytecodeValue>
   }
 
   if (ctx->asyncService) {
-    std::string task_id = ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
-      auto *vm_local = static_cast<VM *>(ctx->vm);
-      while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-        bool should_run = false;
-        {
-          std::lock_guard<std::mutex> lock(g_async_mutex);
-          auto it = g_timers.find(id);
-          if (it == g_timers.end() || !it->second.running) {
-            break;
+    std::string task_id =
+        ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
+          auto *vm_local = static_cast<VM *>(ctx->vm);
+          while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            bool should_run = false;
+            {
+              std::lock_guard<std::mutex> lock(g_async_mutex);
+              auto it = g_timers.find(id);
+              if (it == g_timers.end() || !it->second.running) {
+                break;
+              }
+              should_run = !it->second.paused;
+            }
+            if (!should_run || !vm_local) {
+              continue;
+            }
+            std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+            try {
+              (void)vm_local->invokeCallback(callback, {});
+            } catch (...) {
+              // Keep timer alive; script side can stop it explicitly.
+            }
           }
-          should_run = !it->second.paused;
-        }
-        if (!should_run || !vm_local) {
-          continue;
-        }
-        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-        try {
-          (void)vm_local->invokeCallback(callback, {});
-        } catch (...) {
-          // Keep timer alive; script side can stop it explicitly.
-        }
-      }
-    });
+        });
     std::lock_guard<std::mutex> lock(g_async_mutex);
     g_timers[id].task_id = task_id;
   }
@@ -2079,38 +2242,47 @@ BytecodeValue AsyncBridge::handleIntervalCreate(const std::vector<BytecodeValue>
   return BytecodeValue(makeHandleObject(vm, "interval", id));
 }
 
-BytecodeValue AsyncBridge::handleIntervalPause(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleIntervalPause(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "interval") return BytecodeValue(false);
+  if (!handle.has_value() || handle->first != "interval")
+    return BytecodeValue(false);
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_timers.find(handle->second);
-  if (it == g_timers.end()) return BytecodeValue(false);
+  if (it == g_timers.end())
+    return BytecodeValue(false);
   it->second.paused = true;
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleIntervalResume(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleIntervalResume(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "interval") return BytecodeValue(false);
+  if (!handle.has_value() || handle->first != "interval")
+    return BytecodeValue(false);
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_timers.find(handle->second);
-  if (it == g_timers.end()) return BytecodeValue(false);
+  if (it == g_timers.end())
+    return BytecodeValue(false);
   it->second.paused = false;
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleIntervalStop(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleIntervalStop(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "interval") return BytecodeValue(false);
+  if (!handle.has_value() || handle->first != "interval")
+    return BytecodeValue(false);
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_timers.find(handle->second);
-  if (it == g_timers.end()) return BytecodeValue(false);
+  if (it == g_timers.end())
+    return BytecodeValue(false);
   it->second.running = false;
   if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
     (void)ctx->asyncService->cancel(it->second.task_id);
@@ -2121,8 +2293,9 @@ BytecodeValue AsyncBridge::handleIntervalStop(const std::vector<BytecodeValue> &
   return BytecodeValue(true);
 }
 
-BytecodeValue AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   if (!ctx || !ctx->vm || args.size() < 2) {
     throw std::runtime_error("timeout(ms, fn) requires delay and callback");
   }
@@ -2134,7 +2307,8 @@ BytecodeValue AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> 
   } else {
     throw std::runtime_error("timeout delay must be number");
   }
-  if (delay_ms < 1) delay_ms = 1;
+  if (delay_ms < 1)
+    delay_ms = 1;
 
   auto *vm = static_cast<VM *>(ctx->vm);
   const CallbackId callback = vm->registerCallback(args[1]);
@@ -2150,7 +2324,8 @@ BytecodeValue AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> 
   }
 
   if (ctx->asyncService) {
-    std::string task_id = ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
+    std::string task_id = ctx->asyncService->spawn([ctx, id, callback,
+                                                    delay_ms]() {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       auto *vm_local = static_cast<VM *>(ctx->vm);
       bool should_run = false;
@@ -2166,7 +2341,8 @@ BytecodeValue AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> 
         std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
         try {
           (void)vm_local->invokeCallback(callback, {});
-        } catch (...) {}
+        } catch (...) {
+        }
       }
     });
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -2176,14 +2352,17 @@ BytecodeValue AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> 
   return BytecodeValue(makeHandleObject(vm, "timeout", id));
 }
 
-BytecodeValue AsyncBridge::handleTimeoutCancel(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+AsyncBridge::handleTimeoutCancel(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
   auto handle = extractHandle(args, vm);
-  if (!handle.has_value() || handle->first != "timeout") return BytecodeValue(false);
+  if (!handle.has_value() || handle->first != "timeout")
+    return BytecodeValue(false);
   std::lock_guard<std::mutex> lock(g_async_mutex);
   auto it = g_timers.find(handle->second);
-  if (it == g_timers.end()) return BytecodeValue(false);
+  if (it == g_timers.end())
+    return BytecodeValue(false);
   it->second.running = false;
   if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
     (void)ctx->asyncService->cancel(it->second.task_id);
@@ -2199,63 +2378,69 @@ BytecodeValue AsyncBridge::handleTimeoutCancel(const std::vector<BytecodeValue> 
 // ============================================================================
 
 void AutomationBridge::install(PipelineOptions &options) {
-  options.host_functions["automation.createAutoClicker"] = [ctx = ctx_](const auto &args) {
-    return handleAutomationCreateAutoClicker(args, ctx);
-  };
-  options.host_functions["automation.createAutoRunner"] = [ctx = ctx_](const auto &args) {
-    return handleAutomationCreateAutoRunner(args, ctx);
-  };
-  options.host_functions["automation.createAutoKeyPresser"] = [ctx = ctx_](const auto &args) {
-    return handleAutomationCreateAutoKeyPresser(args, ctx);
-  };
-  options.host_functions["automation.hasTask"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["automation.createAutoClicker"] =
+      [ctx = ctx_](const auto &args) {
+        return handleAutomationCreateAutoClicker(args, ctx);
+      };
+  options.host_functions["automation.createAutoRunner"] =
+      [ctx = ctx_](const auto &args) {
+        return handleAutomationCreateAutoRunner(args, ctx);
+      };
+  options.host_functions["automation.createAutoKeyPresser"] =
+      [ctx = ctx_](const auto &args) {
+        return handleAutomationCreateAutoKeyPresser(args, ctx);
+      };
+  options.host_functions["automation.hasTask"] = [ctx =
+                                                      ctx_](const auto &args) {
     return handleAutomationHasTask(args, ctx);
   };
-  options.host_functions["automation.removeTask"] = [ctx = ctx_](const auto &args) {
-    return handleAutomationRemoveTask(args, ctx);
-  };
-  options.host_functions["automation.stopAll"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["automation.removeTask"] =
+      [ctx = ctx_](const auto &args) {
+        return handleAutomationRemoveTask(args, ctx);
+      };
+  options.host_functions["automation.stopAll"] = [ctx =
+                                                      ctx_](const auto &args) {
     return handleAutomationStopAll(args, ctx);
   };
 }
 
-BytecodeValue AutomationBridge::handleAutomationCreateAutoClicker(const std::vector<BytecodeValue> &args,
-                                                                  const HostContext *ctx) {
+BytecodeValue AutomationBridge::handleAutomationCreateAutoClicker(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue AutomationBridge::handleAutomationCreateAutoRunner(const std::vector<BytecodeValue> &args,
-                                                                 const HostContext *ctx) {
+BytecodeValue AutomationBridge::handleAutomationCreateAutoRunner(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue AutomationBridge::handleAutomationCreateAutoKeyPresser(const std::vector<BytecodeValue> &args,
-                                                                     const HostContext *ctx) {
+BytecodeValue AutomationBridge::handleAutomationCreateAutoKeyPresser(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue AutomationBridge::handleAutomationHasTask(const std::vector<BytecodeValue> &args,
-                                                        const HostContext *ctx) {
+BytecodeValue AutomationBridge::handleAutomationHasTask(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue AutomationBridge::handleAutomationRemoveTask(const std::vector<BytecodeValue> &args,
-                                                           const HostContext *ctx) {
+BytecodeValue AutomationBridge::handleAutomationRemoveTask(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
 }
 
-BytecodeValue AutomationBridge::handleAutomationStopAll(const std::vector<BytecodeValue> &args,
-                                                        const HostContext *ctx) {
+BytecodeValue AutomationBridge::handleAutomationStopAll(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(false);
@@ -2269,13 +2454,16 @@ void BrowserBridge::install(PipelineOptions &options) {
   options.host_functions["browser.connect"] = [ctx = ctx_](const auto &args) {
     return handleBrowserConnect(args, ctx);
   };
-  options.host_functions["browser.connectFirefox"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserConnectFirefox(args, ctx);
-  };
-  options.host_functions["browser.disconnect"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["browser.connectFirefox"] =
+      [ctx = ctx_](const auto &args) {
+        return handleBrowserConnectFirefox(args, ctx);
+      };
+  options.host_functions["browser.disconnect"] = [ctx =
+                                                      ctx_](const auto &args) {
     return handleBrowserDisconnect(args, ctx);
   };
-  options.host_functions["browser.isConnected"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["browser.isConnected"] = [ctx =
+                                                       ctx_](const auto &args) {
     return handleBrowserIsConnected(args, ctx);
   };
   options.host_functions["browser.open"] = [ctx = ctx_](const auto &args) {
@@ -2301,8 +2489,9 @@ void BrowserBridge::install(PipelineOptions &options) {
   };
 }
 
-BytecodeValue BrowserBridge::handleBrowserConnect(const std::vector<BytecodeValue> &args,
-                                                  const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserConnect(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
   (void)ctx;
   std::string browserUrl = "http://localhost:9222";
   if (!args.empty()) {
@@ -2314,8 +2503,8 @@ BytecodeValue BrowserBridge::handleBrowserConnect(const std::vector<BytecodeValu
   return BytecodeValue(browser.connect(browserUrl));
 }
 
-BytecodeValue BrowserBridge::handleBrowserConnectFirefox(const std::vector<BytecodeValue> &args,
-                                                         const HostContext *ctx) {
+BytecodeValue BrowserBridge::handleBrowserConnectFirefox(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)ctx;
   int port = 2828;
   if (!args.empty()) {
@@ -2327,8 +2516,9 @@ BytecodeValue BrowserBridge::handleBrowserConnectFirefox(const std::vector<Bytec
   return BytecodeValue(browser.connectFirefox(port));
 }
 
-BytecodeValue BrowserBridge::handleBrowserDisconnect(const std::vector<BytecodeValue> &args,
-                                                     const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserDisconnect(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::BrowserService browser;
@@ -2336,16 +2526,18 @@ BytecodeValue BrowserBridge::handleBrowserDisconnect(const std::vector<BytecodeV
   return BytecodeValue(true);
 }
 
-BytecodeValue BrowserBridge::handleBrowserIsConnected(const std::vector<BytecodeValue> &args,
-                                                      const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserIsConnected(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::BrowserService browser;
   return BytecodeValue(browser.isConnected());
 }
 
-BytecodeValue BrowserBridge::handleBrowserOpen(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserOpen(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("browser.open() requires a URL");
@@ -2358,8 +2550,9 @@ BytecodeValue BrowserBridge::handleBrowserOpen(const std::vector<BytecodeValue> 
   return BytecodeValue(browser.open(*url));
 }
 
-BytecodeValue BrowserBridge::handleBrowserNewTab(const std::vector<BytecodeValue> &args,
-                                                 const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserNewTab(const std::vector<BytecodeValue> &args,
+                                   const HostContext *ctx) {
   (void)ctx;
   std::string url;
   if (!args.empty()) {
@@ -2371,8 +2564,9 @@ BytecodeValue BrowserBridge::handleBrowserNewTab(const std::vector<BytecodeValue
   return BytecodeValue(browser.newTab(url));
 }
 
-BytecodeValue BrowserBridge::handleBrowserGoto(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserGoto(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("browser.goto() requires a URL");
@@ -2385,24 +2579,27 @@ BytecodeValue BrowserBridge::handleBrowserGoto(const std::vector<BytecodeValue> 
   return BytecodeValue(browser.gotoUrl(*url));
 }
 
-BytecodeValue BrowserBridge::handleBrowserBack(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserBack(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::BrowserService browser;
   return BytecodeValue(browser.back());
 }
 
-BytecodeValue BrowserBridge::handleBrowserForward(const std::vector<BytecodeValue> &args,
-                                                  const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserForward(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::BrowserService browser;
   return BytecodeValue(browser.forward());
 }
 
-BytecodeValue BrowserBridge::handleBrowserReload(const std::vector<BytecodeValue> &args,
-                                                 const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserReload(const std::vector<BytecodeValue> &args,
+                                   const HostContext *ctx) {
   (void)ctx;
   bool ignoreCache = false;
   if (!args.empty()) {
@@ -2414,8 +2611,9 @@ BytecodeValue BrowserBridge::handleBrowserReload(const std::vector<BytecodeValue
   return BytecodeValue(browser.reload(ignoreCache));
 }
 
-BytecodeValue BrowserBridge::handleBrowserListTabs(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
+BytecodeValue
+BrowserBridge::handleBrowserListTabs(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
   (void)args;
   havel::host::BrowserService browser;
   auto tabs = browser.listTabs();
@@ -2426,7 +2624,8 @@ BytecodeValue BrowserBridge::handleBrowserListTabs(const std::vector<BytecodeVal
   auto arr = vm->createHostArray();
   for (const auto &tab : tabs) {
     auto tabObj = vm->createHostObject();
-    vm->setHostObjectField(tabObj, "id", BytecodeValue(static_cast<int64_t>(tab.id)));
+    vm->setHostObjectField(tabObj, "id",
+                           BytecodeValue(static_cast<int64_t>(tab.id)));
     vm->setHostObjectField(tabObj, "title", BytecodeValue(tab.title));
     vm->setHostObjectField(tabObj, "url", BytecodeValue(tab.url));
     vm->setHostObjectField(tabObj, "type", BytecodeValue(tab.type));
@@ -2440,50 +2639,62 @@ BytecodeValue BrowserBridge::handleBrowserListTabs(const std::vector<BytecodeVal
 // ============================================================================
 
 namespace {
-  havel::host::TextChunkerService g_textChunker;
+havel::host::TextChunkerService g_textChunker;
 }
 
 void ToolsBridge::install(PipelineOptions &options) {
-  options.host_functions["textchunker.setText"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["textchunker.setText"] = [ctx =
+                                                       ctx_](const auto &args) {
     return handleTextChunkerSetText(args, ctx);
   };
-  options.host_functions["textchunker.getText"] = [ctx = ctx_](const auto &args) {
+  options.host_functions["textchunker.getText"] = [ctx =
+                                                       ctx_](const auto &args) {
     return handleTextChunkerGetText(args, ctx);
   };
-  options.host_functions["textchunker.setChunkSize"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerSetChunkSize(args, ctx);
-  };
-  options.host_functions["textchunker.getTotalChunks"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGetTotalChunks(args, ctx);
-  };
-  options.host_functions["textchunker.getCurrentChunk"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGetCurrentChunk(args, ctx);
-  };
-  options.host_functions["textchunker.setCurrentChunk"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerSetCurrentChunk(args, ctx);
-  };
-  options.host_functions["textchunker.getChunk"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGetChunk(args, ctx);
-  };
-  options.host_functions["textchunker.getNextChunk"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGetNextChunk(args, ctx);
-  };
-  options.host_functions["textchunker.getPreviousChunk"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGetPreviousChunk(args, ctx);
-  };
-  options.host_functions["textchunker.goToFirst"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGoToFirst(args, ctx);
-  };
-  options.host_functions["textchunker.goToLast"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerGoToLast(args, ctx);
-  };
+  options.host_functions["textchunker.setChunkSize"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerSetChunkSize(args, ctx);
+      };
+  options.host_functions["textchunker.getTotalChunks"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGetTotalChunks(args, ctx);
+      };
+  options.host_functions["textchunker.getCurrentChunk"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGetCurrentChunk(args, ctx);
+      };
+  options.host_functions["textchunker.setCurrentChunk"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerSetCurrentChunk(args, ctx);
+      };
+  options.host_functions["textchunker.getChunk"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGetChunk(args, ctx);
+      };
+  options.host_functions["textchunker.getNextChunk"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGetNextChunk(args, ctx);
+      };
+  options.host_functions["textchunker.getPreviousChunk"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGetPreviousChunk(args, ctx);
+      };
+  options.host_functions["textchunker.goToFirst"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGoToFirst(args, ctx);
+      };
+  options.host_functions["textchunker.goToLast"] =
+      [ctx = ctx_](const auto &args) {
+        return handleTextChunkerGoToLast(args, ctx);
+      };
   options.host_functions["textchunker.clear"] = [ctx = ctx_](const auto &args) {
     return handleTextChunkerClear(args, ctx);
   };
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerSetText(const std::vector<BytecodeValue> &args,
-                                                    const HostContext *ctx) {
+BytecodeValue
+ToolsBridge::handleTextChunkerSetText(const std::vector<BytecodeValue> &args,
+                                      const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("textchunker.setText() requires text");
@@ -2496,15 +2707,16 @@ BytecodeValue ToolsBridge::handleTextChunkerSetText(const std::vector<BytecodeVa
   return BytecodeValue(true);
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGetText(const std::vector<BytecodeValue> &args,
-                                                    const HostContext *ctx) {
+BytecodeValue
+ToolsBridge::handleTextChunkerGetText(const std::vector<BytecodeValue> &args,
+                                      const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(g_textChunker.getText());
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerSetChunkSize(const std::vector<BytecodeValue> &args,
-                                                         const HostContext *ctx) {
+BytecodeValue ToolsBridge::handleTextChunkerSetChunkSize(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("textchunker.setChunkSize() requires a size");
@@ -2517,25 +2729,26 @@ BytecodeValue ToolsBridge::handleTextChunkerSetChunkSize(const std::vector<Bytec
   return BytecodeValue(true);
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGetTotalChunks(const std::vector<BytecodeValue> &args,
-                                                           const HostContext *ctx) {
+BytecodeValue ToolsBridge::handleTextChunkerGetTotalChunks(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(static_cast<int64_t>(g_textChunker.getTotalChunks()));
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGetCurrentChunk(const std::vector<BytecodeValue> &args,
-                                                            const HostContext *ctx) {
+BytecodeValue ToolsBridge::handleTextChunkerGetCurrentChunk(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(static_cast<int64_t>(g_textChunker.getCurrentChunk()));
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerSetCurrentChunk(const std::vector<BytecodeValue> &args,
-                                                            const HostContext *ctx) {
+BytecodeValue ToolsBridge::handleTextChunkerSetCurrentChunk(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
-    throw std::runtime_error("textchunker.setCurrentChunk() requires a chunk index");
+    throw std::runtime_error(
+        "textchunker.setCurrentChunk() requires a chunk index");
   }
   int64_t index = 0;
   if (std::holds_alternative<int64_t>(args[0])) {
@@ -2545,8 +2758,9 @@ BytecodeValue ToolsBridge::handleTextChunkerSetCurrentChunk(const std::vector<By
   return BytecodeValue(true);
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGetChunk(const std::vector<BytecodeValue> &args,
-                                                     const HostContext *ctx) {
+BytecodeValue
+ToolsBridge::handleTextChunkerGetChunk(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("textchunker.getChunk() requires a chunk index");
@@ -2558,38 +2772,41 @@ BytecodeValue ToolsBridge::handleTextChunkerGetChunk(const std::vector<BytecodeV
   return BytecodeValue(g_textChunker.getChunk(static_cast<int>(index)));
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGetNextChunk(const std::vector<BytecodeValue> &args,
-                                                         const HostContext *ctx) {
+BytecodeValue ToolsBridge::handleTextChunkerGetNextChunk(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(g_textChunker.getNextChunk());
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGetPreviousChunk(const std::vector<BytecodeValue> &args,
-                                                             const HostContext *ctx) {
+BytecodeValue ToolsBridge::handleTextChunkerGetPreviousChunk(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   return BytecodeValue(g_textChunker.getPreviousChunk());
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args,
-                                                      const HostContext *ctx) {
+BytecodeValue
+ToolsBridge::handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
   (void)args;
   (void)ctx;
   g_textChunker.goToFirst();
   return BytecodeValue(true);
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args,
-                                                     const HostContext *ctx) {
+BytecodeValue
+ToolsBridge::handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
   (void)args;
   (void)ctx;
   g_textChunker.goToLast();
   return BytecodeValue(true);
 }
 
-BytecodeValue ToolsBridge::handleTextChunkerClear(const std::vector<BytecodeValue> &args,
-                                                  const HostContext *ctx) {
+BytecodeValue
+ToolsBridge::handleTextChunkerClear(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
   (void)args;
   (void)ctx;
   g_textChunker.clear();
@@ -2625,19 +2842,23 @@ void MediaBridge::install(PipelineOptions &options) {
   options.host_functions["media.setVolume"] = [ctx = ctx_](const auto &args) {
     return handleMediaSetVolume(args, ctx);
   };
-  options.host_functions["media.getActivePlayer"] = [ctx = ctx_](const auto &args) {
-    return handleMediaGetActivePlayer(args, ctx);
-  };
-  options.host_functions["media.setActivePlayer"] = [ctx = ctx_](const auto &args) {
-    return handleMediaSetActivePlayer(args, ctx);
-  };
-  options.host_functions["media.getAvailablePlayers"] = [ctx = ctx_](const auto &args) {
-    return handleMediaGetAvailablePlayers(args, ctx);
-  };
+  options.host_functions["media.getActivePlayer"] =
+      [ctx = ctx_](const auto &args) {
+        return handleMediaGetActivePlayer(args, ctx);
+      };
+  options.host_functions["media.setActivePlayer"] =
+      [ctx = ctx_](const auto &args) {
+        return handleMediaSetActivePlayer(args, ctx);
+      };
+  options.host_functions["media.getAvailablePlayers"] =
+      [ctx = ctx_](const auto &args) {
+        return handleMediaGetAvailablePlayers(args, ctx);
+      };
 }
 
-BytecodeValue MediaBridge::handleMediaPlayPause(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaPlayPause(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2648,8 +2869,9 @@ BytecodeValue MediaBridge::handleMediaPlayPause(const std::vector<BytecodeValue>
   }
 }
 
-BytecodeValue MediaBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2660,8 +2882,9 @@ BytecodeValue MediaBridge::handleMediaPlay(const std::vector<BytecodeValue> &arg
   }
 }
 
-BytecodeValue MediaBridge::handleMediaPause(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaPause(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2672,8 +2895,9 @@ BytecodeValue MediaBridge::handleMediaPause(const std::vector<BytecodeValue> &ar
   }
 }
 
-BytecodeValue MediaBridge::handleMediaStop(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaStop(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2684,8 +2908,9 @@ BytecodeValue MediaBridge::handleMediaStop(const std::vector<BytecodeValue> &arg
   }
 }
 
-BytecodeValue MediaBridge::handleMediaNext(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaNext(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2696,8 +2921,9 @@ BytecodeValue MediaBridge::handleMediaNext(const std::vector<BytecodeValue> &arg
   }
 }
 
-BytecodeValue MediaBridge::handleMediaPrevious(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaPrevious(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2708,8 +2934,9 @@ BytecodeValue MediaBridge::handleMediaPrevious(const std::vector<BytecodeValue> 
   }
 }
 
-BytecodeValue MediaBridge::handleMediaGetVolume(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaGetVolume(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2719,10 +2946,12 @@ BytecodeValue MediaBridge::handleMediaGetVolume(const std::vector<BytecodeValue>
   }
 }
 
-BytecodeValue MediaBridge::handleMediaSetVolume(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaSetVolume(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
   if (args.empty()) {
-    throw std::runtime_error("media.setVolume() requires a volume value (0.0-1.0)");
+    throw std::runtime_error(
+        "media.setVolume() requires a volume value (0.0-1.0)");
   }
   double volume = 0.0;
   if (std::holds_alternative<double>(args[0])) {
@@ -2739,8 +2968,9 @@ BytecodeValue MediaBridge::handleMediaSetVolume(const std::vector<BytecodeValue>
   }
 }
 
-BytecodeValue MediaBridge::handleMediaGetActivePlayer(const std::vector<BytecodeValue> &args,
-                                                      const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaGetActivePlayer(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
   (void)args;
   try {
     havel::host::MediaService media;
@@ -2750,8 +2980,9 @@ BytecodeValue MediaBridge::handleMediaGetActivePlayer(const std::vector<Bytecode
   }
 }
 
-BytecodeValue MediaBridge::handleMediaSetActivePlayer(const std::vector<BytecodeValue> &args,
-                                                      const HostContext *ctx) {
+BytecodeValue
+MediaBridge::handleMediaSetActivePlayer(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("media.setActivePlayer() requires a player name");
   }
@@ -2768,8 +2999,8 @@ BytecodeValue MediaBridge::handleMediaSetActivePlayer(const std::vector<Bytecode
   }
 }
 
-BytecodeValue MediaBridge::handleMediaGetAvailablePlayers(const std::vector<BytecodeValue> &args,
-                                                          const HostContext *ctx) {
+BytecodeValue MediaBridge::handleMediaGetAvailablePlayers(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm) {
@@ -2803,7 +3034,7 @@ void NetworkBridge::install(PipelineOptions &options) {
   options.host_functions["http.download"] = [ctx = ctx_](const auto &args) {
     return handleNetworkDownload(args, ctx);
   };
-  
+
   // Legacy network.* names
   options.host_functions["network.get"] = [ctx = ctx_](const auto &args) {
     return handleNetworkGet(args, ctx);
@@ -2814,26 +3045,30 @@ void NetworkBridge::install(PipelineOptions &options) {
   options.host_functions["network.isOnline"] = [ctx = ctx_](const auto &args) {
     return handleNetworkIsOnline(args, ctx);
   };
-  options.host_functions["network.getExternalIp"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkGetExternalIp(args, ctx);
-  };
+  options.host_functions["network.getExternalIp"] =
+      [ctx = ctx_](const auto &args) {
+        return handleNetworkGetExternalIp(args, ctx);
+      };
 }
 
-BytecodeValue NetworkBridge::handleNetworkGet(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+NetworkBridge::handleNetworkGet(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("http.get() requires a URL");
   }
-  
+
   // Try to get string from variant
   std::string url;
   if (std::holds_alternative<std::string>(args[0])) {
     url = std::get<std::string>(args[0]);
   } else {
-    throw std::runtime_error("http.get() requires a string URL, got type index " + std::to_string(args[0].index()));
+    throw std::runtime_error(
+        "http.get() requires a string URL, got type index " +
+        std::to_string(args[0].index()));
   }
-  
+
   int timeout_ms = 30000;
   if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
     timeout_ms = static_cast<int>(std::get<int64_t>(args[1]));
@@ -2846,13 +3081,14 @@ BytecodeValue NetworkBridge::handleNetworkGet(const std::vector<BytecodeValue> &
     } else {
       return BytecodeValue(nullptr);
     }
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     throw std::runtime_error(std::string("http.get() failed: ") + e.what());
   }
 }
 
-BytecodeValue NetworkBridge::handleNetworkPost(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+NetworkBridge::handleNetworkPost(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("network.post() requires URL and data");
@@ -2883,8 +3119,9 @@ BytecodeValue NetworkBridge::handleNetworkPost(const std::vector<BytecodeValue> 
   }
 }
 
-BytecodeValue NetworkBridge::handleNetworkIsOnline(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
+BytecodeValue
+NetworkBridge::handleNetworkIsOnline(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
   (void)args;
   (void)ctx;
   try {
@@ -2895,8 +3132,8 @@ BytecodeValue NetworkBridge::handleNetworkIsOnline(const std::vector<BytecodeVal
   }
 }
 
-BytecodeValue NetworkBridge::handleNetworkGetExternalIp(const std::vector<BytecodeValue> &args,
-                                                        const HostContext *ctx) {
+BytecodeValue NetworkBridge::handleNetworkGetExternalIp(
+    const std::vector<BytecodeValue> &args, const HostContext *ctx) {
   (void)args;
   (void)ctx;
   try {
@@ -2907,8 +3144,9 @@ BytecodeValue NetworkBridge::handleNetworkGetExternalIp(const std::vector<Byteco
   }
 }
 
-BytecodeValue NetworkBridge::handleNetworkDownload(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
+BytecodeValue
+NetworkBridge::handleNetworkDownload(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
   (void)ctx;
   if (args.size() < 2) {
     throw std::runtime_error("http.download() requires URL and path");
@@ -2953,17 +3191,19 @@ void AudioBridge::install(PipelineOptions &options) {
   };
 }
 
-BytecodeValue AudioBridge::handleGetVolume(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+AudioBridge::handleGetVolume(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->audioManager) {
-    return BytecodeValue(1.0);  // Default volume
+    return BytecodeValue(1.0); // Default volume
   }
   return BytecodeValue(ctx->audioManager->getVolume());
 }
 
-BytecodeValue AudioBridge::handleSetVolume(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+AudioBridge::handleSetVolume(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(false);
   }
@@ -2995,8 +3235,9 @@ BytecodeValue AudioBridge::handleSetMute(const std::vector<BytecodeValue> &args,
   return BytecodeValue(ctx->audioManager->setMute(muted));
 }
 
-BytecodeValue AudioBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+AudioBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(false);
@@ -3072,8 +3313,9 @@ BytecodeValue MPVBridge::handleVolumeUp(const std::vector<BytecodeValue> &args,
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleVolumeDown(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleVolumeDown(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue(false);
@@ -3082,8 +3324,9 @@ BytecodeValue MPVBridge::handleVolumeDown(const std::vector<BytecodeValue> &args
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue(false);
@@ -3175,8 +3418,9 @@ BytecodeValue MPVBridge::handleAddSpeed(const std::vector<BytecodeValue> &args,
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleAddSubScale(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleAddSubScale(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue(false);
   }
@@ -3188,8 +3432,9 @@ BytecodeValue MPVBridge::handleAddSubScale(const std::vector<BytecodeValue> &arg
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleAddSubDelay(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleAddSubDelay(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue(false);
   }
@@ -3214,8 +3459,9 @@ BytecodeValue MPVBridge::handleCycle(const std::vector<BytecodeValue> &args,
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleCopySubtitle(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleCopySubtitle(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue("");
@@ -3236,8 +3482,9 @@ BytecodeValue MPVBridge::handleIPCSet(const std::vector<BytecodeValue> &args,
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleIPCRestart(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleIPCRestart(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue(false);
@@ -3246,8 +3493,9 @@ BytecodeValue MPVBridge::handleIPCRestart(const std::vector<BytecodeValue> &args
   return BytecodeValue(true);
 }
 
-BytecodeValue MPVBridge::handleScreenshot(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+MPVBridge::handleScreenshot(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->mpvController) {
     return BytecodeValue(false);
@@ -3264,7 +3512,7 @@ BytecodeValue MPVBridge::handleCmd(const std::vector<BytecodeValue> &args,
   if (args.empty()) {
     throw std::runtime_error("mpv.cmd() requires at least a command name");
   }
-  
+
   // Build command list from arguments
   std::vector<std::string> cmd;
   for (const auto &arg : args) {
@@ -3280,7 +3528,7 @@ BytecodeValue MPVBridge::handleCmd(const std::vector<BytecodeValue> &args,
       cmd.push_back("null");
     }
   }
-  
+
   ctx->mpvController->SendCommand(cmd);
   return BytecodeValue(true);
 }
@@ -3290,78 +3538,91 @@ BytecodeValue MPVBridge::handleCmd(const std::vector<BytecodeValue> &args,
 // ============================================================================
 
 void DisplayBridge::install(PipelineOptions &options) {
-  options.host_functions["display.getMonitors"] = [ctx = ctx_](const auto &args) {
-    return handleGetMonitors(args, ctx);
-  };
-  options.host_functions["display.getPrimary"] = [ctx = ctx_](const auto &args) {
-    return handleGetPrimary(args, ctx);
-  };
+  options.host_functions["display.getMonitors"] =
+      [ctx = ctx_](const auto &args) { return handleGetMonitors(args, ctx); };
+  options.host_functions["display.getPrimary"] =
+      [ctx = ctx_](const auto &args) { return handleGetPrimary(args, ctx); };
   options.host_functions["display.getCount"] = [ctx = ctx_](const auto &args) {
     return handleGetCount(args, ctx);
   };
-  options.host_functions["display.getMonitorsArea"] = [ctx = ctx_](const auto &args) {
-    return handleGetMonitorsArea(args, ctx);
-  };
+  options.host_functions["display.getMonitorsArea"] =
+      [ctx = ctx_](const auto &args) {
+        return handleGetMonitorsArea(args, ctx);
+      };
 }
 
-BytecodeValue DisplayBridge::handleGetMonitors(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
+BytecodeValue
+DisplayBridge::handleGetMonitors(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
   (void)args;
-  if (!ctx) return BytecodeValue(nullptr);
+  if (!ctx)
+    return BytecodeValue(nullptr);
   // Return array of monitor info objects
   auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) return BytecodeValue(nullptr);
-  
+  if (!vm)
+    return BytecodeValue(nullptr);
+
   auto monitors = havel::DisplayManager::GetMonitors();
   auto arr = vm->createHostArray();
-  
-  for (const auto& mon : monitors) {
+
+  for (const auto &mon : monitors) {
     auto obj = vm->createHostObject();
     vm->setHostObjectField(obj, "name", BytecodeValue(mon.name));
-    vm->setHostObjectField(obj, "x", BytecodeValue(static_cast<int64_t>(mon.x)));
-    vm->setHostObjectField(obj, "y", BytecodeValue(static_cast<int64_t>(mon.y)));
-    vm->setHostObjectField(obj, "width", BytecodeValue(static_cast<int64_t>(mon.width)));
-    vm->setHostObjectField(obj, "height", BytecodeValue(static_cast<int64_t>(mon.height)));
+    vm->setHostObjectField(obj, "x",
+                           BytecodeValue(static_cast<int64_t>(mon.x)));
+    vm->setHostObjectField(obj, "y",
+                           BytecodeValue(static_cast<int64_t>(mon.y)));
+    vm->setHostObjectField(obj, "width",
+                           BytecodeValue(static_cast<int64_t>(mon.width)));
+    vm->setHostObjectField(obj, "height",
+                           BytecodeValue(static_cast<int64_t>(mon.height)));
     vm->setHostObjectField(obj, "isPrimary", BytecodeValue(mon.isPrimary));
     vm->pushHostArrayValue(arr, BytecodeValue(obj));
   }
-  
+
   return BytecodeValue(arr);
 }
 
-BytecodeValue DisplayBridge::handleGetPrimary(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+DisplayBridge::handleGetPrimary(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
-  if (!ctx) return BytecodeValue(nullptr);
+  if (!ctx)
+    return BytecodeValue(nullptr);
   auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) return BytecodeValue(nullptr);
-  
+  if (!vm)
+    return BytecodeValue(nullptr);
+
   auto mon = havel::DisplayManager::GetPrimaryMonitor();
   auto obj = vm->createHostObject();
   vm->setHostObjectField(obj, "name", BytecodeValue(mon.name));
   vm->setHostObjectField(obj, "x", BytecodeValue(static_cast<int64_t>(mon.x)));
   vm->setHostObjectField(obj, "y", BytecodeValue(static_cast<int64_t>(mon.y)));
-  vm->setHostObjectField(obj, "width", BytecodeValue(static_cast<int64_t>(mon.width)));
-  vm->setHostObjectField(obj, "height", BytecodeValue(static_cast<int64_t>(mon.height)));
+  vm->setHostObjectField(obj, "width",
+                         BytecodeValue(static_cast<int64_t>(mon.width)));
+  vm->setHostObjectField(obj, "height",
+                         BytecodeValue(static_cast<int64_t>(mon.height)));
   vm->setHostObjectField(obj, "isPrimary", BytecodeValue(mon.isPrimary));
-  
+
   return BytecodeValue(obj);
 }
 
-BytecodeValue DisplayBridge::handleGetCount(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+DisplayBridge::handleGetCount(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   (void)ctx;
   auto monitors = havel::DisplayManager::GetMonitors();
   return BytecodeValue(static_cast<int64_t>(monitors.size()));
 }
 
-BytecodeValue DisplayBridge::handleGetMonitorsArea(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
+BytecodeValue
+DisplayBridge::handleGetMonitorsArea(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
   (void)args;
   (void)ctx;
   auto monitors = havel::DisplayManager::GetMonitors();
-  
+
   // Calculate total area
   int64_t totalWidth = 0;
   int64_t totalHeight = 0;
@@ -3369,10 +3630,12 @@ BytecodeValue DisplayBridge::handleGetMonitorsArea(const std::vector<BytecodeVal
   int64_t minY = INT64_MAX;
   int64_t maxX = INT64_MIN;
   int64_t maxY = INT64_MIN;
-  
-  for (const auto& mon : monitors) {
-    if (static_cast<int64_t>(mon.x) < minX) minX = mon.x;
-    if (static_cast<int64_t>(mon.y) < minY) minY = mon.y;
+
+  for (const auto &mon : monitors) {
+    if (static_cast<int64_t>(mon.x) < minX)
+      minX = mon.x;
+    if (static_cast<int64_t>(mon.y) < minY)
+      minY = mon.y;
     if (static_cast<int64_t>(mon.x) + static_cast<int64_t>(mon.width) > maxX) {
       maxX = mon.x + mon.width;
     }
@@ -3380,18 +3643,21 @@ BytecodeValue DisplayBridge::handleGetMonitorsArea(const std::vector<BytecodeVal
       maxY = mon.y + mon.height;
     }
   }
-  
-  if (minX != INT64_MAX) totalWidth = maxX - minX;
-  if (minY != INT64_MIN) totalHeight = maxY - minY;
-  
+
+  if (minX != INT64_MAX)
+    totalWidth = maxX - minX;
+  if (minY != INT64_MIN)
+    totalHeight = maxY - minY;
+
   auto *vm = static_cast<VM *>(ctx->vm);
   auto obj = vm->createHostObject();
   vm->setHostObjectField(obj, "width", BytecodeValue(totalWidth));
   vm->setHostObjectField(obj, "height", BytecodeValue(totalHeight));
-  vm->setHostObjectField(obj, "totalArea", BytecodeValue(totalWidth * totalHeight));
+  vm->setHostObjectField(obj, "totalArea",
+                         BytecodeValue(totalWidth * totalHeight));
   vm->setHostObjectField(obj, "x", BytecodeValue(minX == INT64_MAX ? 0 : minX));
   vm->setHostObjectField(obj, "y", BytecodeValue(minY == INT64_MAX ? 0 : minY));
-  
+
   return BytecodeValue(obj);
 }
 
@@ -3417,14 +3683,14 @@ BytecodeValue ConfigBridge::handleGet(const std::vector<BytecodeValue> &args,
   if (args.size() < 2) {
     throw std::runtime_error("config.get() requires key and default value");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("config.get() key must be a string");
   }
-  
+
   std::string key = std::get<std::string>(args[0]);
-  auto& config = havel::Configs::Get();
-  
+  auto &config = havel::Configs::Get();
+
   // Return value based on default type
   if (std::holds_alternative<std::string>(args[1])) {
     std::string def = std::get<std::string>(args[1]);
@@ -3439,7 +3705,7 @@ BytecodeValue ConfigBridge::handleGet(const std::vector<BytecodeValue> &args,
     bool def = std::get<bool>(args[1]);
     return BytecodeValue(config.Get(key, def));
   }
-  
+
   return BytecodeValue(nullptr);
 }
 
@@ -3449,16 +3715,17 @@ BytecodeValue ConfigBridge::handleSet(const std::vector<BytecodeValue> &args,
   if (args.size() < 2) {
     throw std::runtime_error("config.set() requires key and value");
   }
-  
+
   if (!std::holds_alternative<std::string>(args[0])) {
     throw std::runtime_error("config.set() key must be a string");
   }
-  
+
   std::string key = std::get<std::string>(args[0]);
-  auto& config = havel::Configs::Get();
-  
-  bool save = (args.size() > 2 && std::holds_alternative<bool>(args[2]) && std::get<bool>(args[2]));
-  
+  auto &config = havel::Configs::Get();
+
+  bool save = (args.size() > 2 && std::holds_alternative<bool>(args[2]) &&
+               std::get<bool>(args[2]));
+
   if (std::holds_alternative<std::string>(args[1])) {
     config.Set(key, std::get<std::string>(args[1]), save);
   } else if (std::holds_alternative<int64_t>(args[1])) {
@@ -3468,7 +3735,7 @@ BytecodeValue ConfigBridge::handleSet(const std::vector<BytecodeValue> &args,
   } else if (std::holds_alternative<bool>(args[1])) {
     config.Set(key, std::get<bool>(args[1]), save);
   }
-  
+
   return BytecodeValue(true);
 }
 
@@ -3476,7 +3743,7 @@ BytecodeValue ConfigBridge::handleSave(const std::vector<BytecodeValue> &args,
                                        const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  auto& config = havel::Configs::Get();
+  auto &config = havel::Configs::Get();
   config.Save();
   return BytecodeValue(true);
 }
@@ -3510,15 +3777,16 @@ void ModeBridge::install(PipelineOptions &options) {
 
 BytecodeValue ModeBridge::handleRegister(const std::vector<BytecodeValue> &args,
                                          const HostContext *ctx) {
-  // Args: name, priority, condition, enter, exit, onEnterFromMode, onEnterFrom, onExitToMode, onExitTo
+  // Args: name, priority, condition, enter, exit, onEnterFromMode, onEnterFrom,
+  // onExitToMode, onExitTo
   if (args.size() < 9) {
     return BytecodeValue(false);
   }
-  
+
   if (!ctx || !ctx->modeManager || !ctx->vm) {
     return BytecodeValue(false);
   }
-  
+
   // Get mode name
   std::string modeName;
   if (std::holds_alternative<std::string>(args[0])) {
@@ -3526,31 +3794,32 @@ BytecodeValue ModeBridge::handleRegister(const std::vector<BytecodeValue> &args,
   } else {
     return BytecodeValue(false);
   }
-  
+
   // Get priority
   int priority = 0;
   if (std::holds_alternative<int64_t>(args[1])) {
     priority = static_cast<int>(std::get<int64_t>(args[1]));
   }
-  
+
   // Condition is evaluated by ModeManager's update loop
   // For now, we'll store it and let ModeManager handle it
   // The condition expression needs to be evaluated periodically
-  
+
   // Register callbacks for enter/exit
   // For now, we'll use placeholder implementations
   // Full implementation needs proper closure support
-  
+
   info("Mode registered: {} with priority {}", modeName, priority);
-  
+
   // TODO: Store condition expression and evaluate it in ModeManager update loop
   // TODO: Register enter/exit callbacks with proper closure support
-  
+
   return BytecodeValue(true);
 }
 
-BytecodeValue ModeBridge::handleGetCurrent(const std::vector<BytecodeValue> &args,
-                                           const HostContext *ctx) {
+BytecodeValue
+ModeBridge::handleGetCurrent(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->modeManager) {
     return BytecodeValue(std::string(""));
@@ -3571,8 +3840,9 @@ BytecodeValue ModeBridge::handleSet(const std::vector<BytecodeValue> &args,
   return BytecodeValue(true);
 }
 
-BytecodeValue ModeBridge::handleGetPrevious(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
+BytecodeValue
+ModeBridge::handleGetPrevious(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
   (void)args;
   if (!ctx || !ctx->modeManager) {
     return BytecodeValue(std::string(""));
@@ -3601,13 +3871,13 @@ BytecodeValue TimerBridge::handleAfter(const std::vector<BytecodeValue> &args,
   if (args.empty()) {
     throw std::runtime_error("timer.after() requires delay_ms");
   }
-  
+
   if (!std::holds_alternative<int64_t>(args[0])) {
     throw std::runtime_error("timer.after() delay must be an integer");
   }
-  
+
   int64_t delay_ms = std::get<int64_t>(args[0]);
-  
+
   // Simple implementation: just sleep
   // For callback support, use: sleep(delay_ms); callback()
   if (ctx && ctx->asyncService) {
@@ -3615,7 +3885,7 @@ BytecodeValue TimerBridge::handleAfter(const std::vector<BytecodeValue> &args,
   } else {
     std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
   }
-  
+
   return BytecodeValue(nullptr);
 }
 
@@ -3627,7 +3897,8 @@ BytecodeValue TimerBridge::handleEvery(const std::vector<BytecodeValue> &args,
   // For now, just return without doing anything
   // Users should use a while loop with sleep instead:
   // while (true) { body; sleep(interval); }
-  throw std::runtime_error("timer.every() requires closure support - use while loop with sleep() instead");
+  throw std::runtime_error("timer.every() requires closure support - use while "
+                           "loop with sleep() instead");
 }
 
 // ============================================================================
@@ -3675,16 +3946,18 @@ void AppBridge::install(PipelineOptions &options) {
   };
 }
 
-BytecodeValue AppBridge::handleAppGetName(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppGetName(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AppService app;
   return BytecodeValue(app.getAppName());
 }
 
-BytecodeValue AppBridge::handleAppGetVersion(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppGetVersion(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AppService app;
@@ -3699,32 +3972,36 @@ BytecodeValue AppBridge::handleAppGetOS(const std::vector<BytecodeValue> &args,
   return BytecodeValue(app.getOS());
 }
 
-BytecodeValue AppBridge::handleAppGetHostname(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppGetHostname(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AppService app;
   return BytecodeValue(app.getHostname());
 }
 
-BytecodeValue AppBridge::handleAppGetUsername(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppGetUsername(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AppService app;
   return BytecodeValue(app.getUsername());
 }
 
-BytecodeValue AppBridge::handleAppGetHomeDir(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppGetHomeDir(const std::vector<BytecodeValue> &args,
+                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AppService app;
   return BytecodeValue(app.getHomeDir());
 }
 
-BytecodeValue AppBridge::handleAppGetCpuCores(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppGetCpuCores(const std::vector<BytecodeValue> &args,
+                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
   havel::host::AppService app;
@@ -3758,8 +4035,9 @@ BytecodeValue AppBridge::handleAppSetEnv(const std::vector<BytecodeValue> &args,
   return BytecodeValue(app.setEnv(*name, *value));
 }
 
-BytecodeValue AppBridge::handleAppOpenUrl(const std::vector<BytecodeValue> &args,
-                                          const HostContext *ctx) {
+BytecodeValue
+AppBridge::handleAppOpenUrl(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
   if (args.empty()) {
     throw std::runtime_error("app.openUrl() requires a URL");
   }

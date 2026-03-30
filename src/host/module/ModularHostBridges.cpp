@@ -3189,6 +3189,35 @@ void AudioBridge::install(PipelineOptions &options) {
   options.host_functions["audio.toggleMute"] = [ctx = ctx_](const auto &args) {
     return handleToggleMute(args, ctx);
   };
+  options.host_functions["audio.getDevices"] = [ctx = ctx_](const auto &args) {
+    return handleGetDevices(args, ctx);
+  };
+  options.host_functions["audio.findDeviceByIndex"] =
+      [ctx = ctx_](const auto &args) {
+        return handleFindDeviceByIndex(args, ctx);
+      };
+  options.host_functions["audio.findDeviceByName"] =
+      [ctx = ctx_](const auto &args) {
+        return handleFindDeviceByName(args, ctx);
+      };
+  options.host_functions["audio.setDefaultOutput"] =
+      [ctx = ctx_](const auto &args) {
+        return handleSetDefaultOutput(args, ctx);
+      };
+  options.host_functions["audio.getDefaultOutput"] =
+      [ctx = ctx_](const auto &args) {
+        return handleGetDefaultOutput(args, ctx);
+      };
+  options.host_functions["audio.playTestSound"] =
+      [ctx = ctx_](const auto &args) { return handlePlayTestSound(args, ctx); };
+  options.host_functions["audio.increaseVolume"] =
+      [ctx = ctx_](const auto &args) {
+        return handleIncreaseVolume(args, ctx);
+      };
+  options.host_functions["audio.decreaseVolume"] =
+      [ctx = ctx_](const auto &args) {
+        return handleDecreaseVolume(args, ctx);
+      };
 }
 
 BytecodeValue
@@ -3243,6 +3272,219 @@ AudioBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
     return BytecodeValue(false);
   }
   return BytecodeValue(ctx->audioManager->toggleMute());
+}
+
+BytecodeValue
+AudioBridge::handleGetDevices(const std::vector<BytecodeValue> &args,
+                              const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(nullptr);
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+
+  const auto &devices = ctx->audioManager->getDevices();
+  auto arr = vm->createHostArray();
+
+  for (const auto &dev : devices) {
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "name", BytecodeValue(dev.name));
+    vm->setHostObjectField(obj, "description", BytecodeValue(dev.description));
+    vm->setHostObjectField(obj, "index",
+                           BytecodeValue(static_cast<int64_t>(dev.index)));
+    vm->setHostObjectField(obj, "isDefault", BytecodeValue(dev.isDefault));
+    vm->setHostObjectField(obj, "isMuted", BytecodeValue(dev.isMuted));
+    vm->setHostObjectField(obj, "volume", BytecodeValue(dev.volume));
+    vm->setHostObjectField(obj, "channels",
+                           BytecodeValue(static_cast<int64_t>(dev.channels)));
+    vm->pushHostArrayValue(arr, BytecodeValue(obj));
+  }
+
+  return BytecodeValue(arr);
+}
+
+BytecodeValue
+AudioBridge::handleFindDeviceByIndex(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(nullptr);
+  }
+  if (args.empty() || !std::holds_alternative<int64_t>(args[0])) {
+    throw std::runtime_error("audio.findDeviceByIndex() requires an index");
+  }
+  uint32_t index = static_cast<uint32_t>(std::get<int64_t>(args[0]));
+
+  auto *dev = ctx->audioManager->findDeviceByIndex(index);
+  if (!dev) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "name", BytecodeValue(dev->name));
+  vm->setHostObjectField(obj, "description", BytecodeValue(dev->description));
+  vm->setHostObjectField(obj, "index",
+                         BytecodeValue(static_cast<int64_t>(dev->index)));
+  vm->setHostObjectField(obj, "isDefault", BytecodeValue(dev->isDefault));
+  vm->setHostObjectField(obj, "isMuted", BytecodeValue(dev->isMuted));
+  vm->setHostObjectField(obj, "volume", BytecodeValue(dev->volume));
+  vm->setHostObjectField(obj, "channels",
+                         BytecodeValue(static_cast<int64_t>(dev->channels)));
+
+  return BytecodeValue(obj);
+}
+
+BytecodeValue
+AudioBridge::handleFindDeviceByName(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(nullptr);
+  }
+  if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("audio.findDeviceByName() requires a name string");
+  }
+  std::string name = std::get<std::string>(args[0]);
+
+  auto *dev = ctx->audioManager->findDeviceByName(name);
+  if (!dev) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "name", BytecodeValue(dev->name));
+  vm->setHostObjectField(obj, "description", BytecodeValue(dev->description));
+  vm->setHostObjectField(obj, "index",
+                         BytecodeValue(static_cast<int64_t>(dev->index)));
+  vm->setHostObjectField(obj, "isDefault", BytecodeValue(dev->isDefault));
+  vm->setHostObjectField(obj, "isMuted", BytecodeValue(dev->isMuted));
+  vm->setHostObjectField(obj, "volume", BytecodeValue(dev->volume));
+  vm->setHostObjectField(obj, "channels",
+                         BytecodeValue(static_cast<int64_t>(dev->channels)));
+
+  return BytecodeValue(obj);
+}
+
+BytecodeValue
+AudioBridge::handleSetDefaultOutput(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("audio.setDefaultOutput() requires a device name");
+  }
+  std::string device = std::get<std::string>(args[0]);
+  return BytecodeValue(ctx->audioManager->setDefaultOutput(device));
+}
+
+BytecodeValue
+AudioBridge::handleGetDefaultOutput(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(std::string(""));
+  }
+  return BytecodeValue(ctx->audioManager->getDefaultOutput());
+}
+
+BytecodeValue
+AudioBridge::handlePlayTestSound(const std::vector<BytecodeValue> &args,
+                                 const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+  return BytecodeValue(ctx->audioManager->playTestSound());
+}
+
+BytecodeValue
+AudioBridge::handleIncreaseVolume(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+
+  double amount = 0.05;
+  std::string device;
+
+  // Parse arguments: can be (amount) or (device, amount)
+  if (args.size() >= 2) {
+    // (device, amount)
+    if (std::holds_alternative<std::string>(args[0])) {
+      device = std::get<std::string>(args[0]);
+    }
+    if (std::holds_alternative<double>(args[1])) {
+      amount = std::get<double>(args[1]);
+    } else if (std::holds_alternative<int64_t>(args[1])) {
+      amount = static_cast<double>(std::get<int64_t>(args[1]));
+    }
+  } else if (args.size() == 1) {
+    // (amount) or (device)
+    if (std::holds_alternative<double>(args[0])) {
+      amount = std::get<double>(args[0]);
+    } else if (std::holds_alternative<int64_t>(args[0])) {
+      amount = static_cast<double>(std::get<int64_t>(args[0]));
+    } else if (std::holds_alternative<std::string>(args[0])) {
+      device = std::get<std::string>(args[0]);
+    }
+  }
+
+  if (device.empty()) {
+    return BytecodeValue(ctx->audioManager->increaseVolume(amount));
+  } else {
+    return BytecodeValue(ctx->audioManager->increaseVolume(device, amount));
+  }
+}
+
+BytecodeValue
+AudioBridge::handleDecreaseVolume(const std::vector<BytecodeValue> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+
+  double amount = 0.05;
+  std::string device;
+
+  // Parse arguments: can be (amount) or (device, amount)
+  if (args.size() >= 2) {
+    // (device, amount)
+    if (std::holds_alternative<std::string>(args[0])) {
+      device = std::get<std::string>(args[0]);
+    }
+    if (std::holds_alternative<double>(args[1])) {
+      amount = std::get<double>(args[1]);
+    } else if (std::holds_alternative<int64_t>(args[1])) {
+      amount = static_cast<double>(std::get<int64_t>(args[1]));
+    }
+  } else if (args.size() == 1) {
+    // (amount) or (device)
+    if (std::holds_alternative<double>(args[0])) {
+      amount = std::get<double>(args[0]);
+    } else if (std::holds_alternative<int64_t>(args[0])) {
+      amount = static_cast<double>(std::get<int64_t>(args[0]));
+    } else if (std::holds_alternative<std::string>(args[0])) {
+      device = std::get<std::string>(args[0]);
+    }
+  }
+
+  if (device.empty()) {
+    return BytecodeValue(ctx->audioManager->decreaseVolume(amount));
+  } else {
+    return BytecodeValue(ctx->audioManager->decreaseVolume(device, amount));
+  }
 }
 
 // ============================================================================

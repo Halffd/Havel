@@ -153,7 +153,40 @@ private:
                                         const HostContext *ctx);
   static BytecodeValue handleWindowShow(const std::vector<BytecodeValue> &args,
                                         const HostContext *ctx);
-  // Window object methods (shared prototype methods)
+  // Window query functions
+  static BytecodeValue handleWindowAny(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx);
+  static BytecodeValue handleWindowCount(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx);
+  static BytecodeValue
+  handleWindowFilter(const std::vector<BytecodeValue> &args,
+                     const HostContext *ctx);
+  // Active window namespace functions
+  static BytecodeValue handleActiveGet(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx);
+  static BytecodeValue handleActiveTitle(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx);
+  static BytecodeValue handleActiveClass(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx);
+  static BytecodeValue handleActiveExe(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx);
+  static BytecodeValue handleActivePid(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx);
+  static BytecodeValue handleActiveClose(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx);
+  static BytecodeValue handleActiveMin(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx);
+  static BytecodeValue handleActiveMax(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx);
+  static BytecodeValue handleActiveHide(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx);
+  static BytecodeValue handleActiveShow(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx);
+  static BytecodeValue handleActiveMove(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx);
+  static BytecodeValue
+  handleActiveResize(const std::vector<BytecodeValue> &args,
+                     const HostContext *ctx);
   static BytecodeValue
   handleWindowCloseObj(const std::vector<BytecodeValue> &args,
                        const HostContext *ctx);

@@ -928,13 +928,6 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         emit(OpCode::LOAD_CONST, addConstant(nullptr));
       }
 
-      // Compile onEnterFrom block
-      if (modeDef.onEnterFromBlock) {
-        emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(nullptr));
-      }
-
       // Load onExitTo mode name (or null)
       if (!modeDef.onExitTo.empty()) {
         emit(OpCode::LOAD_CONST, addConstant(modeDef.onExitTo));
@@ -942,14 +935,13 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         emit(OpCode::LOAD_CONST, addConstant(nullptr));
       }
 
-      // Compile onExitTo block
-      if (modeDef.onExitToBlock) {
-        emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(nullptr));
-      }
+      // Load preventRetrigger flag (commented out - field doesn't exist)
+      // emit(OpCode::LOAD_CONST, addConstant(modeDef.preventRetrigger));
+      emit(OpCode::LOAD_CONST, addConstant(false));
 
-      // Call mode.register(name, priority, condition, enter, exit,
+      // Call mode.register
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
+                                  "mode.register", static_cast<uint32_t>(8)});
       // onEnterFromMode, onEnterFrom, onExitToMode, onExitTo)
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
                                   "mode.register", static_cast<uint32_t>(9)});
@@ -1005,6 +997,17 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::ImplDeclaration: {
     const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
+    break;
+  }
+
+  case ast::NodeType::UseStatement: {
+    compileUseStatement(static_cast<const ast::UseStatement &>(statement));
+    break;
+  }
+
+  case ast::NodeType::ExportStatement: {
+    compileExportStatement(
+        static_cast<const ast::ExportStatement &>(statement));
     break;
   }
 
@@ -1090,6 +1093,51 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
   patchJump(jump_after_try, end_ip);
   for (const uint32_t jump : end_jumps) {
     patchJump(jump, end_ip);
+  }
+}
+
+std::unique_ptr<BytecodeChunk>
+ByteCompiler::compileWithModuleLoader(const ast::Program &program,
+                                      ModuleLoader &loader,
+                                      const std::filesystem::path &basePath) {
+  module_loader_ = &loader;
+  base_path_ = basePath;
+  return compile(program);
+}
+
+void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
+  if (!module_loader_) {
+    throw std::runtime_error("Module loader not available for use statement");
+  }
+
+  // Load the module
+  LoadedModule *module =
+      module_loader_->loadModule(statement.filePath, base_path_);
+  if (!module) {
+    throw std::runtime_error("Failed to load module: " + statement.filePath);
+  }
+
+  // For now, emit a NOP - the module's functions/classes will be compiled
+  // and merged into the main bytecode. In a full implementation, we would:
+  // 1. Parse and compile the module's AST
+  // 2. Merge its functions into our function table
+  // 3. Make exported names available
+
+  // Emit a debug marker for now
+  emit(OpCode::LOAD_CONST, addConstant("Loaded module: " + statement.filePath));
+  emit(OpCode::POP);
+}
+
+void ByteCompiler::compileExportStatement(
+    const ast::ExportStatement &statement) {
+  // Export statements are handled during semantic analysis
+  // They mark which declarations should be exported from the module
+  // For now, this is a no-op at the bytecode level
+  // In a full implementation, we would track exports for the module loader
+
+  if (statement.exported) {
+    // The exported value is already compiled as part of the normal compilation
+    // We just mark it as exported in the module's export table
   }
 }
 

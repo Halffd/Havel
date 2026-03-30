@@ -11,6 +11,7 @@
 #include "core/ModeManager.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "gui/GUIManager.hpp"
+#include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "havel-lang/compiler/bytecode/VMApi.hpp"
 #include "host/app/AppService.hpp"
 #include "host/async/AsyncService.hpp"
@@ -726,6 +727,53 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.show"] = [ctx = ctx_](const auto &args) {
     return handleWindowShow(args, ctx);
   };
+  // Window query functions
+  options.host_functions["window.any"] = [ctx = ctx_](const auto &args) {
+    return handleWindowAny(args, ctx);
+  };
+  options.host_functions["window.count"] = [ctx = ctx_](const auto &args) {
+    return handleWindowCount(args, ctx);
+  };
+  options.host_functions["window.filter"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFilter(args, ctx);
+  };
+  // Active window namespace functions
+  options.host_functions["active.get"] = [ctx = ctx_](const auto &args) {
+    return handleActiveGet(args, ctx);
+  };
+  options.host_functions["active.title"] = [ctx = ctx_](const auto &args) {
+    return handleActiveTitle(args, ctx);
+  };
+  options.host_functions["active.class"] = [ctx = ctx_](const auto &args) {
+    return handleActiveClass(args, ctx);
+  };
+  options.host_functions["active.exe"] = [ctx = ctx_](const auto &args) {
+    return handleActiveExe(args, ctx);
+  };
+  options.host_functions["active.pid"] = [ctx = ctx_](const auto &args) {
+    return handleActivePid(args, ctx);
+  };
+  options.host_functions["active.close"] = [ctx = ctx_](const auto &args) {
+    return handleActiveClose(args, ctx);
+  };
+  options.host_functions["active.min"] = [ctx = ctx_](const auto &args) {
+    return handleActiveMin(args, ctx);
+  };
+  options.host_functions["active.max"] = [ctx = ctx_](const auto &args) {
+    return handleActiveMax(args, ctx);
+  };
+  options.host_functions["active.hide"] = [ctx = ctx_](const auto &args) {
+    return handleActiveHide(args, ctx);
+  };
+  options.host_functions["active.show"] = [ctx = ctx_](const auto &args) {
+    return handleActiveShow(args, ctx);
+  };
+  options.host_functions["active.move"] = [ctx = ctx_](const auto &args) {
+    return handleActiveMove(args, ctx);
+  };
+  options.host_functions["active.resize"] = [ctx = ctx_](const auto &args) {
+    return handleActiveResize(args, ctx);
+  };
   // Window object prototype methods (shared, not per-instance)
   options.host_functions["window._close"] = [ctx = ctx_](const auto &args) {
     return handleWindowCloseObj(args, ctx);
@@ -1305,6 +1353,181 @@ BytecodeValue UIBridge::handleWindowShow(const std::vector<BytecodeValue> &args,
   havel::host::WindowService winService(ctx->windowManager);
   winService.showWindow(wid);
   return BytecodeValue(true);
+}
+
+// Window query functions implementation
+BytecodeValue UIBridge::handleWindowAny(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm) {
+    return BytecodeValue(false);
+  }
+  if (args.empty()) {
+    return BytecodeValue(false);
+  }
+
+  // Get selector string: "type value" where type is title/class/exe/pid/cmd
+  std::string selector;
+  if (auto *v = std::get_if<std::string>(&args[0])) {
+    selector = *v;
+  } else {
+    return BytecodeValue(false);
+  }
+
+  // Parse selector
+  size_t spacePos = selector.find(' ');
+  if (spacePos == std::string::npos) {
+    return BytecodeValue(false);
+  }
+
+  std::string type = selector.substr(0, spacePos);
+  std::string value = selector.substr(spacePos + 1);
+
+  havel::host::WindowService winService(ctx->windowManager);
+
+  // Use anyWindow with predicate
+  bool result = winService.anyWindow([&](const havel::host::WindowInfo &win) {
+    if (type == "title") {
+      return win.title.find(value) != std::string::npos;
+    } else if (type == "class") {
+      return win.windowClass.find(value) != std::string::npos;
+    } else if (type == "exe") {
+      return win.exe.find(value) != std::string::npos;
+    } else if (type == "pid") {
+      try {
+        int pid = std::stoi(value);
+        return win.pid == pid;
+      } catch (...) {
+        return false;
+      }
+    } else if (type == "cmd") {
+      return win.cmdline.find(value) != std::string::npos;
+    }
+    return false;
+  });
+
+  return BytecodeValue(result);
+}
+
+BytecodeValue
+UIBridge::handleWindowCount(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm) {
+    return BytecodeValue(static_cast<int64_t>(0));
+  }
+
+  havel::host::WindowService winService(ctx->windowManager);
+
+  // If no selector provided, count all windows
+  if (args.empty()) {
+    auto windows = winService.getAllWindows();
+    return BytecodeValue(static_cast<int64_t>(windows.size()));
+  }
+
+  // Get selector string
+  std::string selector;
+  if (auto *v = std::get_if<std::string>(&args[0])) {
+    selector = *v;
+  } else {
+    auto windows = winService.getAllWindows();
+    return BytecodeValue(static_cast<int64_t>(windows.size()));
+  }
+
+  // Parse selector
+  size_t spacePos = selector.find(' ');
+  if (spacePos == std::string::npos) {
+    auto windows = winService.getAllWindows();
+    return BytecodeValue(static_cast<int64_t>(windows.size()));
+  }
+
+  std::string type = selector.substr(0, spacePos);
+  std::string value = selector.substr(spacePos + 1);
+
+  // Use countWindows with predicate
+  int count = winService.countWindows([&](const havel::host::WindowInfo &win) {
+    if (type == "title") {
+      return win.title.find(value) != std::string::npos;
+    } else if (type == "class") {
+      return win.windowClass.find(value) != std::string::npos;
+    } else if (type == "exe") {
+      return win.exe.find(value) != std::string::npos;
+    } else if (type == "pid") {
+      try {
+        int pid = std::stoi(value);
+        return win.pid == pid;
+      } catch (...) {
+        return false;
+      }
+    } else if (type == "cmd") {
+      return win.cmdline.find(value) != std::string::npos;
+    }
+    return false;
+  });
+
+  return BytecodeValue(static_cast<int64_t>(count));
+}
+
+BytecodeValue
+UIBridge::handleWindowFilter(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
+  if (!ctx->windowManager || !ctx->vm) {
+    return BytecodeValue(nullptr);
+  }
+  if (args.empty()) {
+    return BytecodeValue(nullptr);
+  }
+
+  // Get selector string
+  std::string selector;
+  if (auto *v = std::get_if<std::string>(&args[0])) {
+    selector = *v;
+  } else {
+    return BytecodeValue(nullptr);
+  }
+
+  // Parse selector
+  size_t spacePos = selector.find(' ');
+  if (spacePos == std::string::npos) {
+    return BytecodeValue(nullptr);
+  }
+
+  std::string type = selector.substr(0, spacePos);
+  std::string value = selector.substr(spacePos + 1);
+
+  havel::host::WindowService winService(ctx->windowManager);
+
+  // Use filterWindows with predicate
+  auto matchingWindows =
+      winService.filterWindows([&](const havel::host::WindowInfo &win) {
+        if (type == "title") {
+          return win.title.find(value) != std::string::npos;
+        } else if (type == "class") {
+          return win.windowClass.find(value) != std::string::npos;
+        } else if (type == "exe") {
+          return win.exe.find(value) != std::string::npos;
+        } else if (type == "pid") {
+          try {
+            int pid = std::stoi(value);
+            return win.pid == pid;
+          } catch (...) {
+            return false;
+          }
+        } else if (type == "cmd") {
+          return win.cmdline.find(value) != std::string::npos;
+        }
+        return false;
+      });
+
+  // Create array of window objects
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto arr = vm->createHostArray();
+  for (const auto &win : matchingWindows) {
+    auto winObj =
+        createWindowObject(vm, ctx, win.id, win.title, win.windowClass, win.exe,
+                           win.pid, win.cmdline);
+    vm->pushHostArrayValue(arr, winObj);
+  }
+
+  return BytecodeValue(arr);
 }
 
 BytecodeValue
@@ -4095,19 +4318,104 @@ BytecodeValue ModeBridge::handleRegister(const std::vector<BytecodeValue> &args,
     priority = static_cast<int>(std::get<int64_t>(args[1]));
   }
 
-  // Condition is evaluated by ModeManager's update loop
-  // For now, we'll store it and let ModeManager handle it
-  // The condition expression needs to be evaluated periodically
+  auto *vm = static_cast<VM *>(ctx->vm);
 
-  // Register callbacks for enter/exit
-  // For now, we'll use placeholder implementations
-  // Full implementation needs proper closure support
+  // Helper to register a callback from BytecodeValue
+  auto registerCallbackIfValid = [&](const BytecodeValue &val) -> CallbackId {
+    if (std::holds_alternative<ClosureRef>(val) ||
+        std::holds_alternative<FunctionObject>(val)) {
+      return vm->registerCallback(val);
+    }
+    return INVALID_CALLBACK_ID;
+  };
+
+  // Register callbacks
+  CallbackId conditionId = registerCallbackIfValid(args[2]);
+  CallbackId enterId = registerCallbackIfValid(args[3]);
+  CallbackId exitId = registerCallbackIfValid(args[4]);
+  CallbackId onEnterFromId = registerCallbackIfValid(args[6]);
+  CallbackId onExitToId = registerCallbackIfValid(args[8]);
+
+  // Create mode definition
+  havel::ModeManager::ModeDefinition mode;
+  mode.name = modeName;
+  mode.priority = priority;
+
+  // Condition callback - wraps the VM callback invocation
+  if (conditionId != INVALID_CALLBACK_ID) {
+    mode.conditionCallback = [vm, conditionId]() -> bool {
+      try {
+        auto result = vm->invokeCallback(conditionId);
+        // Convert result to boolean
+        if (std::holds_alternative<bool>(result)) {
+          return std::get<bool>(result);
+        }
+        if (std::holds_alternative<int64_t>(result)) {
+          return std::get<int64_t>(result) != 0;
+        }
+        return false;
+      } catch (...) {
+        // Callback failed, treat as false
+        return false;
+      }
+    };
+  }
+
+  // Enter callback
+  if (enterId != INVALID_CALLBACK_ID) {
+    mode.onEnter = [vm, enterId]() {
+      try {
+        vm->invokeCallback(enterId);
+      } catch (...) {
+        // Callback failed, ignore
+      }
+    };
+  }
+
+  // Exit callback
+  if (exitId != INVALID_CALLBACK_ID) {
+    mode.onExit = [vm, exitId]() {
+      try {
+        vm->invokeCallback(exitId);
+      } catch (...) {
+        // Callback failed, ignore
+      }
+    };
+  }
+
+  // onEnterFrom callback (transition from specific mode)
+  if (onEnterFromId != INVALID_CALLBACK_ID) {
+    mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
+      (void)fromMode;
+      try {
+        vm->invokeCallback(onEnterFromId);
+      } catch (...) {
+        // Callback failed, ignore
+      }
+    };
+  }
+
+  // onExitTo callback (transition to specific mode)
+  if (onExitToId != INVALID_CALLBACK_ID) {
+    mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
+      (void)toMode;
+      try {
+        vm->invokeCallback(onExitToId);
+      } catch (...) {
+        // Callback failed, ignore
+      }
+    };
+  }
+
+  // Register with ModeManager
+  ctx->modeManager->defineMode(std::move(mode));
+
+  // Store callback IDs in HostBridge for cleanup
+  // This is stored in mode_bindings_ map
+  ctx->hostBridge->registerModeCallbacks(modeName, conditionId, enterId,
+                                         exitId);
 
   info("Mode registered: {} with priority {}", modeName, priority);
-
-  // TODO: Store condition expression and evaluate it in ModeManager update loop
-  // TODO: Register enter/exit callbacks with proper closure support
-
   return BytecodeValue(true);
 }
 
@@ -4341,6 +4649,176 @@ AppBridge::handleAppOpenUrl(const std::vector<BytecodeValue> &args,
   }
   havel::host::AppService app;
   return BytecodeValue(app.openUrl(*url));
+}
+
+// Active window namespace implementations
+BytecodeValue UIBridge::handleActiveGet(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  return handleWindowGetActive(args, ctx);
+}
+
+BytecodeValue
+UIBridge::handleActiveTitle(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue("");
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue("");
+  }
+  return BytecodeValue(info.title);
+}
+
+BytecodeValue
+UIBridge::handleActiveClass(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  return BytecodeValue(
+      havel::host::WindowService::getActiveWindowClassStatic());
+}
+
+BytecodeValue UIBridge::handleActiveExe(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  return BytecodeValue(
+      havel::host::WindowService::getActiveWindowProcessStatic());
+}
+
+BytecodeValue UIBridge::handleActivePid(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue(static_cast<int64_t>(0));
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(static_cast<int64_t>(0));
+  }
+  return BytecodeValue(static_cast<int64_t>(info.pid));
+}
+
+BytecodeValue
+UIBridge::handleActiveClose(const std::vector<BytecodeValue> &args,
+                            const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.closeWindow(info.id);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleActiveMin(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.minimizeWindow(info.id);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleActiveMax(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.maximizeWindow(info.id);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleActiveHide(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.hideWindow(info.id);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleActiveShow(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.showWindow(info.id);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleActiveMove(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.size() < 2 || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  int64_t x = 0, y = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    x = *v;
+  if (auto *v = std::get_if<int64_t>(&args[1]))
+    y = *v;
+
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.moveWindow(info.id, static_cast<int>(x), static_cast<int>(y));
+  return BytecodeValue(true);
+}
+
+BytecodeValue
+UIBridge::handleActiveResize(const std::vector<BytecodeValue> &args,
+                             const HostContext *ctx) {
+  if (args.size() < 2 || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  int64_t w = 0, h = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    w = *v;
+  if (auto *v = std::get_if<int64_t>(&args[1]))
+    h = *v;
+
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid) {
+    return BytecodeValue(false);
+  }
+  winService.resizeWindow(info.id, static_cast<int>(w), static_cast<int>(h));
+  return BytecodeValue(true);
 }
 
 } // namespace havel::compiler

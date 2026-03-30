@@ -1,6 +1,6 @@
 /*
  * ModuleLoader.cpp - Dynamic module loading
- * 
+ *
  * Simple lazy loading:
  * - Modules loaded on first 'use' statement
  * - No security checks here (that's ExecutionPolicy)
@@ -17,7 +17,7 @@
 
 namespace havel::compiler {
 
-ModuleLoader::ModuleLoader(const HostContext &ctx)
+HostModuleLoader::HostModuleLoader(const HostContext &ctx)
     : ctx_(ctx), policy_(ExecutionPolicy::DefaultPolicy()) {
   // Register built-in modules (metadata only - lazy loading)
   registerBuiltin("io", {"io", "1.0", true, false, ""});
@@ -38,7 +38,7 @@ ModuleLoader::ModuleLoader(const HostContext &ctx)
   registerBuiltin("async", {"async", "1.0", true, false, ""});
 }
 
-ModuleLoader::~ModuleLoader() {
+HostModuleLoader::~HostModuleLoader() {
   for (auto &[name, handle] : extensionHandles_) {
     if (handle) {
 #ifdef HAVE_DLFCN_H
@@ -49,18 +49,19 @@ ModuleLoader::~ModuleLoader() {
   extensionHandles_.clear();
 }
 
-void ModuleLoader::registerBuiltin(const std::string &name, const ModuleInfo &info) {
+void HostModuleLoader::registerBuiltin(const std::string &name,
+                                       const ModuleInfo &info) {
   registry_[name] = info;
 }
 
-void ModuleLoader::registerStdlib(const std::string &name,
-                                   std::function<void(VM &)> initFn,
-                                   const ModuleInfo &info) {
+void HostModuleLoader::registerStdlib(const std::string &name,
+                                      std::function<void(VM &)> initFn,
+                                      const ModuleInfo &info) {
   registry_[name] = info;
   stdlibInitFns_[name] = std::move(initFn);
 }
 
-bool ModuleLoader::loadModule(const std::string &name, VM &vm) {
+bool HostModuleLoader::loadModule(const std::string &name, VM &vm) {
   // Check if already loaded (idempotent)
   if (isLoaded(name)) {
     return true;
@@ -89,7 +90,7 @@ bool ModuleLoader::loadModule(const std::string &name, VM &vm) {
   }
 }
 
-bool ModuleLoader::loadBuiltin(const std::string &name, VM &vm) {
+bool HostModuleLoader::loadBuiltin(const std::string &name, VM &vm) {
   (void)name;
   (void)vm;
   // Built-in modules provided by HostBridge
@@ -98,7 +99,7 @@ bool ModuleLoader::loadBuiltin(const std::string &name, VM &vm) {
   return true;
 }
 
-bool ModuleLoader::loadStdlib(const std::string &name, VM &vm) {
+bool HostModuleLoader::loadStdlib(const std::string &name, VM &vm) {
   auto initIt = stdlibInitFns_.find(name);
   if (initIt == stdlibInitFns_.end()) {
     return false;
@@ -108,11 +109,11 @@ bool ModuleLoader::loadStdlib(const std::string &name, VM &vm) {
   return true;
 }
 
-bool ModuleLoader::isLoaded(const std::string &name) const {
+bool HostModuleLoader::isLoaded(const std::string &name) const {
   return loadedModules_.find(name) != loadedModules_.end();
 }
 
-std::vector<std::string> ModuleLoader::getAvailableModules() const {
+std::vector<std::string> HostModuleLoader::getAvailableModules() const {
   std::vector<std::string> modules;
   for (const auto &[name, info] : registry_) {
     modules.push_back(name);
@@ -121,19 +122,21 @@ std::vector<std::string> ModuleLoader::getAvailableModules() const {
   return modules;
 }
 
-std::vector<std::string> ModuleLoader::getLoadedModules() const {
+std::vector<std::string> HostModuleLoader::getLoadedModules() const {
   std::vector<std::string> modules;
   for (const auto &[name, loaded] : loadedModules_) {
-    if (loaded) modules.push_back(name);
+    if (loaded)
+      modules.push_back(name);
   }
   std::sort(modules.begin(), modules.end());
   return modules;
 }
 
-std::string ModuleLoader::loadExtension(const std::string &path) {
+std::string HostModuleLoader::loadExtension(const std::string &path) {
 #ifdef HAVE_DLFCN_H
   void *handle = dlopen(path.c_str(), RTLD_LAZY);
-  if (!handle) return "";
+  if (!handle)
+    return "";
 
   using NameFn = const char *(*)();
   auto nameFn = reinterpret_cast<NameFn>(dlsym(handle, "havel_module_name"));
@@ -156,12 +159,14 @@ std::string ModuleLoader::loadExtension(const std::string &path) {
 #endif
 }
 
-bool ModuleLoader::unloadExtension(const std::string &name) {
+bool HostModuleLoader::unloadExtension(const std::string &name) {
   auto it = extensionHandles_.find(name);
-  if (it == extensionHandles_.end()) return false;
+  if (it == extensionHandles_.end())
+    return false;
 
 #ifdef HAVE_DLFCN_H
-  if (it->second) dlclose(it->second);
+  if (it->second)
+    dlclose(it->second);
 #endif
 
   extensionHandles_.erase(it);
@@ -169,7 +174,7 @@ bool ModuleLoader::unloadExtension(const std::string &name) {
   return true;
 }
 
-bool ModuleLoader::import(const std::string &importSpec, VM &vm) {
+bool HostModuleLoader::import(const std::string &importSpec, VM &vm) {
   ImportSpec spec = parseImportSpec(importSpec);
 
   // Load the module (lazy loading triggered here)
@@ -199,7 +204,8 @@ ImportSpec parseImportSpec(const std::string &spec) {
 
   size_t start = specStr.find_first_not_of(" \t");
   size_t end = specStr.find_last_not_of(" \t");
-  if (start == std::string::npos) return result;
+  if (start == std::string::npos)
+    return result;
   specStr = specStr.substr(start, end - start + 1);
 
   // Check for "as" alias
@@ -224,7 +230,8 @@ ImportSpec parseImportSpec(const std::string &spec) {
     parts.push_back(part);
   }
 
-  if (parts.empty()) return result;
+  if (parts.empty())
+    return result;
 
   result.moduleName = parts[0];
 

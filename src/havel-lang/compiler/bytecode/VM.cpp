@@ -2716,18 +2716,22 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     if (std::holds_alternative<ArrayRef>(container)) {
       auto index = indexFromValue(index_or_key);
-      if (!index || *index < 0) {
-        throw std::runtime_error(
-            "ARRAY_GET expects non-negative integer index");
+      if (!index) {
+        throw std::runtime_error("ARRAY_GET expects integer index");
       }
       auto *array = heap_.array(std::get<ArrayRef>(container).id);
       if (!array) {
         throw std::runtime_error("ARRAY_GET unknown array id");
       }
-      if (static_cast<size_t>(*index) >= array->size()) {
+      // Handle negative indices: -1 = last element, -2 = second to last, etc.
+      int64_t idx = *index;
+      if (idx < 0) {
+        idx = static_cast<int64_t>(array->size()) + idx;
+      }
+      if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
         push(nullptr);
       } else {
-        push((*array)[static_cast<size_t>(*index)]);
+        push((*array)[static_cast<size_t>(idx)]);
       }
       break;
     }
@@ -2770,19 +2774,26 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     if (std::holds_alternative<ArrayRef>(container)) {
       auto index = indexFromValue(index_or_key);
-      if (!index || *index < 0) {
-        throw std::runtime_error(
-            "ARRAY_SET expects non-negative integer index");
+      if (!index) {
+        throw std::runtime_error("ARRAY_SET expects integer index");
       }
       auto *array = heap_.array(std::get<ArrayRef>(container).id);
       if (!array) {
         throw std::runtime_error("ARRAY_SET unknown array id");
       }
-      const auto idx = static_cast<size_t>(*index);
-      if (idx >= array->size()) {
-        array->resize(idx + 1, nullptr);
+      // Handle negative indices: -1 = last element, etc.
+      int64_t idx = *index;
+      if (idx < 0) {
+        idx = static_cast<int64_t>(array->size()) + idx;
       }
-      (*array)[idx] = value;
+      if (idx < 0) {
+        throw std::runtime_error("ARRAY_SET index out of bounds");
+      }
+      const auto idx_size = static_cast<size_t>(idx);
+      if (idx_size >= array->size()) {
+        array->resize(idx_size + 1, nullptr);
+      }
+      (*array)[idx_size] = value;
       break;
     }
 

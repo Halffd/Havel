@@ -1,0 +1,308 @@
+// Complete UI Demo - Havel UI Module Showcase
+// Run with: ./havel examples/ui_complete_demo.hv
+//
+// This example demonstrates all UI module features:
+// - Imperative API
+// - Declarative syntax
+// - Menu system
+// - Form handling
+// - Dialogs
+// - Event handling
+// - Layout containers
+
+print("=" * 50)
+print("Havel UI Module - Complete Demo")
+print("=" * 50)
+print("")
+
+// ============================================================================
+// Part 1: Imperative API - Building UI programmatically
+// ============================================================================
+print("Part 1: Imperative API")
+print("-" * 30)
+
+// Create main window
+mainWin = ui.window("Havel UI Demo", {width: 900, height: 700})
+
+// Create menu bar using imperative API
+fileMenu = ui.menu("File")
+fileMenu.add(ui.menuItem("New", "Ctrl+N"))
+fileMenu.add(ui.menuItem("Open", "Ctrl+O"))
+fileMenu.add(ui.menuSeparator())
+fileMenu.add(ui.menuItem("Exit", "Alt+F4"))
+
+editMenu = ui.menu("Edit")
+editMenu.add(ui.menuItem("Cut", "Ctrl+X"))
+editMenu.add(ui.menuItem("Copy", "Ctrl+C"))
+editMenu.add(ui.menuItem("Paste", "Ctrl+V"))
+
+helpMenu = ui.menu("Help")
+helpMenu.add(ui.menuItem("About"))
+
+// Add menus to window
+mainWin.addMenu(fileMenu)
+mainWin.addMenu(editMenu)
+mainWin.addMenu(helpMenu)
+
+// Create content area with tabs
+tabs = ui.tabs()
+
+// Tab 1: Basic Controls
+basicTab = ui.panel("Basic Controls")
+basicLayout = ui.col()
+
+basicLayout.add(ui.text("Buttons:"))
+btnRow = ui.row()
+btnRow.add(ui.btn("Primary").bg("#007bff").fg("white"))
+btnRow.add(ui.btn("Success").bg("#28a745").fg("white"))
+btnRow.add(ui.btn("Danger").bg("#dc3545").fg("white"))
+basicLayout.add(btnRow)
+
+basicLayout.add(ui.text("Inputs:"))
+nameInput = ui.input("Enter your name...")
+emailInput = ui.input("Enter your email...")
+basicLayout.add(nameInput)
+basicLayout.add(emailInput)
+
+basicLayout.add(ui.text("Checkbox & Toggle:"))
+checkRow = ui.row()
+checkRow.add(ui.checkbox("Enable feature").checked(true))
+checkRow.add(ui.toggle("Dark mode"))
+basicLayout.add(checkRow)
+
+basicLayout.add(ui.text("Slider:"))
+volSlider = ui.slider(0, 100, 50)
+basicLayout.add(volSlider)
+basicLayout.add(ui.label("Volume: 50%"))
+
+basicLayout.add(ui.text("Dropdown:"))
+cityDropdown = ui.dropdown(["New York", "London", "Tokyo", "Paris"])
+basicLayout.add(cityDropdown)
+
+tabs.addTab(basicTab.add(basicLayout), "Basic")
+
+// Tab 2: Layouts
+layoutTab = ui.panel("Layouts")
+
+// Row layout example
+layoutTab.add(ui.text("Row Layout (horizontal):"))
+rowDemo = ui.row()
+rowDemo.add(ui.btn("Button 1").pad(10))
+rowDemo.add(ui.btn("Button 2").pad(10))
+rowDemo.add(ui.btn("Button 3").pad(10))
+rowDemo.add(ui.spacer())
+rowDemo.add(ui.btn("Right Aligned"))
+layoutTab.add(rowDemo)
+
+// Column layout example  
+layoutTab.add(ui.text("Column Layout (vertical):").pad(10))
+colDemo = ui.col()
+colDemo.add(ui.label("Item 1").bg("#f0f0f0").pad(5))
+colDemo.add(ui.label("Item 2").bg("#e0e0e0").pad(5))
+colDemo.add(ui.label("Item 3").bg("#d0d0d0").pad(5))
+layoutTab.add(colDemo)
+
+// Grid layout example
+layoutTab.add(ui.text("Grid Layout (2 columns):").pad(10))
+gridDemo = ui.grid(2)
+gridDemo.add(ui.btn("Grid 1"))
+gridDemo.add(ui.btn("Grid 2"))
+gridDemo.add(ui.btn("Grid 3"))
+gridDemo.add(ui.btn("Grid 4"))
+layoutTab.add(gridDemo)
+
+tabs.addTab(layoutTab, "Layouts")
+
+// Tab 3: Forms
+formTab = ui.panel("Form Example")
+formLayout = ui.col()
+
+formLayout.add(ui.text("Registration Form").bold(true).font("", 18))
+formLayout.add(ui.divider())
+
+// Form fields
+formLayout.add(ui.label("Username:*"))
+usernameInput = ui.input("Choose a username...")
+formLayout.add(usernameInput)
+
+formLayout.add(ui.label("Password:*"))
+passwordInput = ui.input("Enter password...")
+formLayout.add(passwordInput)
+
+formLayout.add(ui.label("Bio:"))
+bioInput = ui.textarea("Tell us about yourself...")
+formLayout.add(bioInput)
+
+formLayout.add(ui.label("Experience Level:"))
+expSlider = ui.slider(0, 10, 5)
+formLayout.add(expSlider)
+
+formLayout.add(ui.label("Subscribe to:"))
+subsCheckbox = ui.checkbox("Newsletter")
+updatesCheckbox = ui.checkbox("Product updates")
+promoCheckbox = ui.checkbox("Promotions")
+formLayout.add(subsCheckbox)
+formLayout.add(updatesCheckbox)
+formLayout.add(promoCheckbox)
+
+// Form buttons
+formBtnRow = ui.row()
+submitBtn = ui.btn("Submit").bg("#28a745").fg("white")
+resetBtn = ui.btn("Reset")
+formBtnRow.add(submitBtn)
+formBtnRow.add(resetBtn)
+formLayout.add(formBtnRow)
+
+formTab.add(formLayout)
+tabs.addTab(formTab, "Forms")
+
+// Tab 4: Advanced
+advancedTab = ui.panel("Advanced")
+advLayout = ui.col()
+
+advLayout.add(ui.text("Progress & Activity:"))
+progressBar = ui.progress(65, 100)
+advLayout.add(progressBar)
+advLayout.add(ui.spinner())
+
+advLayout.add(ui.text("Image:"))
+advLayout.add(ui.image("/path/to/image.png"))
+
+advLayout.add(ui.text("Scroll Area:"))
+scrollArea = ui.scroll()
+scrollContent = ui.col()
+for i in range(1, 20) {
+    scrollContent.add(ui.label("Scroll item " + i).pad(5))
+}
+scrollArea.add(scrollContent)
+advLayout.add(scrollArea)
+
+advancedTab.add(advLayout)
+tabs.addTab(advancedTab, "Advanced")
+
+// Add tabs to main window
+mainWin.add(tabs)
+
+// Add status bar
+statusBar = ui.label("Ready").align("left")
+mainWin.addStatusBar(statusBar)
+
+// ============================================================================
+// Part 2: Event Handlers
+// ============================================================================
+print("")
+print("Part 2: Event Handlers")
+print("-" * 30)
+
+// Button events
+submitBtn.onClick(fn() {
+    username = usernameInput.value()
+    print("Form submitted by: " + username)
+    ui.notify("Welcome, " + username + "!", "success")
+    statusBar.text("User registered: " + username)
+})
+
+resetBtn.onClick(fn() {
+    usernameInput.value("")
+    passwordInput.value("")
+    bioInput.value("")
+    print("Form reset")
+})
+
+// Slider event
+volSlider.onChange(fn(value) {
+    print("Volume changed to: " + value)
+})
+
+// Dropdown event
+cityDropdown.onChange(fn(selected) {
+    print("City selected: " + selected)
+    statusBar.text("Selected city: " + selected)
+})
+
+// Checkbox events
+subsCheckbox.onChange(fn(checked) {
+    print("Newsletter subscription: " + checked)
+})
+
+// ============================================================================
+// Part 3: Dialogs
+// ============================================================================
+print("")
+print("Part 3: Dialogs")
+print("-" * 30)
+
+// Show initial alert
+ui.alert("Welcome to Havel UI Demo!\n\nThis demonstrates all UI capabilities.")
+
+// Confirm dialog example
+confirmBtn = ui.btn("Show Confirm Dialog")
+confirmBtn.onClick(fn() {
+    result = ui.confirm("Are you sure you want to proceed?")
+    if result {
+        print("User confirmed")
+        ui.notify("Action confirmed!", "info")
+    } else {
+        print("User cancelled")
+    }
+})
+mainWin.add(confirmBtn)
+
+// File picker example
+fileBtn = ui.btn("Select File")
+fileBtn.onClick(fn() {
+    path = ui.filePicker("Choose a file")
+    if path != "" {
+        print("Selected file: " + path)
+        statusBar.text("File: " + path)
+    }
+})
+mainWin.add(fileBtn)
+
+// Directory picker example
+dirBtn = ui.btn("Select Directory")
+dirBtn.onClick(fn() {
+    dir = ui.dirPicker("Choose a directory")
+    if dir != "" {
+        print("Selected directory: " + dir)
+        statusBar.text("Directory: " + dir)
+    }
+})
+mainWin.add(dirBtn)
+
+// ============================================================================
+// Part 4: Declarative Syntax (Alternative Approach)
+// ============================================================================
+print("")
+print("Part 4: Declarative Syntax Preview")
+print("-" * 30)
+print("The declarative syntax allows cleaner UI definitions:")
+print("")
+print("ui {")
+print("  window \"My App\" {")
+print("    column {")
+print("      text \"Hello, World!\"")
+print("      button \"Click Me\" {")
+print("        onClick => print(\"Clicked!\")")
+print("      }")
+print("    }")
+print("  }")
+print("}")
+print("")
+
+// ============================================================================
+// Show the UI
+// ============================================================================
+print("Showing UI...")
+mainWin.show()
+
+// Event loop
+print("Running event loop (close window to exit)...")
+while mainWin.isVisible() {
+    ui.pumpEvents(100)
+}
+
+print("")
+print("=" * 50)
+print("Demo completed!")
+print("=" * 50)

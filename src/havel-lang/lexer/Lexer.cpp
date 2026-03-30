@@ -65,6 +65,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"select", TokenType::Select},
     {"as", TokenType::As},
     {"use", TokenType::Use},
+    {"export", TokenType::Export},
     {"with", TokenType::With}};
 
 const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {

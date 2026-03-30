@@ -6,12 +6,16 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
-#include <cstdint>
 
 // Use existing WindowInfo from window query
-namespace havel { struct WindowInfo; struct WorkspaceInfo; class WindowManager; }
+namespace havel {
+struct WindowInfo;
+struct WorkspaceInfo;
+class WindowManager;
+} // namespace havel
 
 namespace havel::host {
 
@@ -22,200 +26,235 @@ using ::havel::WorkspaceInfo;
 /**
  * WindowService - Pure window business logic
  *
- * Provides system-level window operations without any language runtime coupling.
- * All methods return simple C++ types (bool, int, string, vector, etc.)
+ * Provides system-level window operations without any language runtime
+ * coupling. All methods return simple C++ types (bool, int, string, vector,
+ * etc.)
  */
 class WindowService {
 public:
-    explicit WindowService(havel::WindowManager* manager);
-    ~WindowService() = default;
+  explicit WindowService(havel::WindowManager *manager);
+  ~WindowService() = default;
 
-    // =========================================================================
-    // Window queries
-    // =========================================================================
+  // =========================================================================
+  // Window queries
+  // =========================================================================
 
-    /// Get active window info
-    /// @return WindowInfo (valid=false if no active window)
-    WindowInfo getActiveWindowInfo() const;
+  /// Get active window info
+  /// @return WindowInfo (valid=false if no active window)
+  WindowInfo getActiveWindowInfo() const;
 
-    /// Get window info by ID
-    /// @param id Window ID
-    /// @return WindowInfo (valid=false if not found)
-    WindowInfo getWindowInfo(uint64_t id) const;
+  /// Get window info by ID
+  /// @param id Window ID
+  /// @return WindowInfo (valid=false if not found)
+  WindowInfo getWindowInfo(uint64_t id) const;
 
-    /// Get all windows
-    /// @return vector of WindowInfo
-    std::vector<WindowInfo> getAllWindows() const;
+  /// Get all windows
+  /// @return vector of WindowInfo
+  std::vector<WindowInfo> getAllWindows() const;
 
-    /// Get active window ID
-    /// @return window ID (0 if none)
-    uint64_t getActiveWindow() const;
+  /// Get active window ID
+  /// @return window ID (0 if none)
+  uint64_t getActiveWindow() const;
 
-    // =========================================================================
-    // Window control
-    // =========================================================================
+  // =========================================================================
+  // Window query functions (for Havel window.* namespace)
+  // =========================================================================
 
-    /// Focus a window
-    /// @param id Window ID
-    /// @return true on success
-    bool focusWindow(uint64_t id);
+  /// Check if any window matches predicate
+  /// @param predicate Function that takes WindowInfo and returns bool
+  /// @return true if any window matches
+  bool
+  anyWindow(const std::function<bool(const WindowInfo &)> &predicate) const;
 
-    /// Close a window
-    /// @param id Window ID
-    /// @return true on success
-    bool closeWindow(uint64_t id);
+  /// Count windows matching predicate
+  /// @param predicate Function that takes WindowInfo and returns bool
+  /// @return count of matching windows
+  int countWindows(
+      const std::function<bool(const WindowInfo &)> &predicate) const;
 
-    /// Move window to position
-    /// @param id Window ID
-    /// @param x X coordinate
-    /// @param y Y coordinate
-    /// @return true on success
-    bool moveWindow(uint64_t id, int x, int y);
+  /// Filter windows by predicate
+  /// @param predicate Function that takes WindowInfo and returns bool
+  /// @return vector of matching WindowInfo
+  std::vector<WindowInfo>
+  filterWindows(const std::function<bool(const WindowInfo &)> &predicate) const;
 
-    /// Resize window
-    /// @param id Window ID
-    /// @param width New width
-    /// @param height New height
-    /// @return true on success
-    bool resizeWindow(uint64_t id, int width, int height);
+  /// Get active window process name (exe)
+  /// @return process name or empty string
+  std::string getActiveWindowProcess() const;
 
-    /// Move and resize window
-    /// @param id Window ID
-    /// @param x X coordinate
-    /// @param y Y coordinate
-    /// @param width New width
-    /// @param height New height
-    /// @return true on success
-    bool moveResizeWindow(uint64_t id, int x, int y, int width, int height);
+  /// Get active window title
+  /// @return window title or empty string
+  std::string getActiveWindowTitle() const;
 
-    /// Maximize window
-    /// @param id Window ID
-    /// @return true on success
-    bool maximizeWindow(uint64_t id);
+  /// Get active window class
+  /// @return window class or empty string
+  std::string getActiveWindowClass() const;
 
-    /// Minimize window
-    /// @param id Window ID
-    /// @return true on success
-    bool minimizeWindow(uint64_t id);
+  // =========================================================================
+  // Window control
+  // =========================================================================
 
-    /// Restore minimized window
-    /// @param id Window ID
-    /// @return true on success
-    bool restoreWindow(uint64_t id);
+  /// Focus a window
+  /// @param id Window ID
+  /// @return true on success
+  bool focusWindow(uint64_t id);
 
-    /// Hide window (remove from taskbar/desktop but don't close)
-    /// @param id Window ID
-    /// @return true on success
-    bool hideWindow(uint64_t id);
+  /// Close a window
+  /// @param id Window ID
+  /// @return true on success
+  bool closeWindow(uint64_t id);
 
-    /// Show previously hidden window
-    /// @param id Window ID
-    /// @return true on success
-    bool showWindow(uint64_t id);
+  /// Move window to position
+  /// @param id Window ID
+  /// @param x X coordinate
+  /// @param y Y coordinate
+  /// @return true on success
+  bool moveWindow(uint64_t id, int x, int y);
 
-    /// Toggle fullscreen
-    /// @param id Window ID
-    /// @return true on success
-    bool toggleFullscreen(uint64_t id);
+  /// Resize window
+  /// @param id Window ID
+  /// @param width New width
+  /// @param height New height
+  /// @return true on success
+  bool resizeWindow(uint64_t id, int width, int height);
 
-    /// Set floating state
-    /// @param id Window ID
-    /// @param floating True for floating, false for tiled
-    /// @return true on success
-    bool setFloating(uint64_t id, bool floating);
+  /// Move and resize window
+  /// @param id Window ID
+  /// @param x X coordinate
+  /// @param y Y coordinate
+  /// @param width New width
+  /// @param height New height
+  /// @return true on success
+  bool moveResizeWindow(uint64_t id, int x, int y, int width, int height);
 
-    /// Center window
-    /// @param id Window ID
-    /// @return true on success
-    bool centerWindow(uint64_t id);
+  /// Maximize window
+  /// @param id Window ID
+  /// @return true on success
+  bool maximizeWindow(uint64_t id);
 
-    /// Snap window to position
-    /// @param id Window ID
-    /// @param position Position code (0-3 for corners, etc.)
-    /// @return true on success
-    bool snapWindow(uint64_t id, int position);
+  /// Minimize window
+  /// @param id Window ID
+  /// @return true on success
+  bool minimizeWindow(uint64_t id);
 
-    /// Move window to workspace
-    /// @param id Window ID
-    /// @param workspace Workspace number
-    /// @return true on success
-    bool moveWindowToWorkspace(uint64_t id, int workspace);
+  /// Restore minimized window
+  /// @param id Window ID
+  /// @return true on success
+  bool restoreWindow(uint64_t id);
 
-    /// Set always on top
-    /// @param id Window ID
-    /// @param onTop True to set on top
-    /// @return true on success
-    bool setAlwaysOnTop(uint64_t id, bool onTop);
+  /// Hide window (remove from taskbar/desktop but don't close)
+  /// @param id Window ID
+  /// @return true on success
+  bool hideWindow(uint64_t id);
 
-    /// Move window to monitor
-    /// @param id Window ID
-    /// @param monitor Monitor index
-    /// @return true on success
-    bool moveWindowToMonitor(uint64_t id, int monitor);
+  /// Show previously hidden window
+  /// @param id Window ID
+  /// @return true on success
+  bool showWindow(uint64_t id);
 
-    // =========================================================================
-    // Workspace operations
-    // =========================================================================
+  /// Toggle fullscreen
+  /// @param id Window ID
+  /// @return true on success
+  bool toggleFullscreen(uint64_t id);
 
-    /// Get all workspaces
-    /// @return vector of WorkspaceInfo
-    std::vector<WorkspaceInfo> getWorkspaces() const;
+  /// Set floating state
+  /// @param id Window ID
+  /// @param floating True for floating, false for tiled
+  /// @return true on success
+  bool setFloating(uint64_t id, bool floating);
 
-    /// Switch to workspace
-    /// @param workspace Workspace number
-    /// @return true on success
-    bool switchToWorkspace(int workspace);
+  /// Center window
+  /// @param id Window ID
+  /// @return true on success
+  bool centerWindow(uint64_t id);
 
-    /// Get current workspace
-    /// @return workspace number
-    int getCurrentWorkspace() const;
+  /// Snap window to position
+  /// @param id Window ID
+  /// @param position Position code (0-3 for corners, etc.)
+  /// @return true on success
+  bool snapWindow(uint64_t id, int position);
 
-    // =========================================================================
-    // Window grouping
-    // =========================================================================
+  /// Move window to workspace
+  /// @param id Window ID
+  /// @param workspace Workspace number
+  /// @return true on success
+  bool moveWindowToWorkspace(uint64_t id, int workspace);
 
-    /// Get all group names
-    /// @return vector of group names
-    std::vector<std::string> getGroupNames() const;
+  /// Set always on top
+  /// @param id Window ID
+  /// @param onTop True to set on top
+  /// @return true on success
+  bool setAlwaysOnTop(uint64_t id, bool onTop);
 
-    /// Get windows in a group
-    /// @param groupName Group name
-    /// @return vector of WindowInfo
-    std::vector<WindowInfo> getGroupWindows(const std::string& groupName) const;
+  /// Move window to monitor
+  /// @param id Window ID
+  /// @param monitor Monitor index
+  /// @return true on success
+  bool moveWindowToMonitor(uint64_t id, int monitor);
 
-    /// Add window to group
-    /// @param id Window ID
-    /// @param groupName Group name
-    /// @return true on success
-    bool addWindowToGroup(uint64_t id, const std::string& groupName);
+  // =========================================================================
+  // Workspace operations
+  // =========================================================================
 
-    /// Remove window from group
-    /// @param id Window ID
-    /// @param groupName Group name
-    /// @return true on success
-    bool removeWindowFromGroup(uint64_t id, const std::string& groupName);
+  /// Get all workspaces
+  /// @return vector of WorkspaceInfo
+  std::vector<WorkspaceInfo> getWorkspaces() const;
 
-    // =========================================================================
-    // Global window operations (no window ID needed)
-    // =========================================================================
+  /// Switch to workspace
+  /// @param workspace Workspace number
+  /// @return true on success
+  bool switchToWorkspace(int workspace);
 
-    /// Move active window to next monitor
-    static void moveActiveWindowToNextMonitor();
+  /// Get current workspace
+  /// @return workspace number
+  int getCurrentWorkspace() const;
 
-    /// Get active window title
-    /// @return window title
-    static std::string getActiveWindowTitle();
+  // =========================================================================
+  // Window grouping
+  // =========================================================================
 
-    /// Get active window class
-    /// @return window class
-    static std::string getActiveWindowClass();
+  /// Get all group names
+  /// @return vector of group names
+  std::vector<std::string> getGroupNames() const;
 
-    /// Get active window process name
-    /// @return process name
-    static std::string getActiveWindowProcess();
+  /// Get windows in a group
+  /// @param groupName Group name
+  /// @return vector of WindowInfo
+  std::vector<WindowInfo> getGroupWindows(const std::string &groupName) const;
+
+  /// Add window to group
+  /// @param id Window ID
+  /// @param groupName Group name
+  /// @return true on success
+  bool addWindowToGroup(uint64_t id, const std::string &groupName);
+
+  /// Remove window from group
+  /// @param id Window ID
+  /// @param groupName Group name
+  /// @return true on success
+  bool removeWindowFromGroup(uint64_t id, const std::string &groupName);
+
+  // =========================================================================
+  // Global window operations (no window ID needed)
+  // =========================================================================
+
+  /// Move active window to next monitor
+  static void moveActiveWindowToNextMonitor();
+
+  /// Get active window title (static version for host bridge)
+  /// @return window title
+  static std::string getActiveWindowTitleStatic();
+
+  /// Get active window class (static version for host bridge)
+  /// @return window class
+  static std::string getActiveWindowClassStatic();
+
+  /// Get active window process name (static version for host bridge)
+  /// @return process name
+  static std::string getActiveWindowProcessStatic();
 
 private:
-    havel::WindowManager* wm_;  // Non-owning pointer
+  havel::WindowManager *wm_; // Non-owning pointer
 };
 
 } // namespace havel::host

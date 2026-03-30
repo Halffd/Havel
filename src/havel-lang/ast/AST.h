@@ -26,6 +26,7 @@ enum class NodeType {
   Module,
   ImportStatement, // import List from "std/collections"
   UseStatement,    // use io, use media
+  ExportStatement, // export fn foo() or export let x = 5
   WithStatement,   // with io { ... }
 
   // Core functional expressions
@@ -83,6 +84,7 @@ enum class NodeType {
   // Conditional hotkeys
   ConditionalHotkey,  // hotkey "Ctrl+A" if mode == foo then ...
   WhenBlockStatement, // when condition { ... }
+  WhenStatement,      // when signal { ... } - reactive when
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
@@ -908,6 +910,25 @@ struct WhenBlock : public Statement {
     return "WhenBlock{condition: " +
            (condition ? condition->toString() : "nullptr") + ", statements: [" +
            std::to_string(statements.size()) + "]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// When Statement - Reactive when for signal triggers
+struct WhenStatement : public Statement {
+  std::unique_ptr<Expression> trigger; // Signal expression to watch
+  std::unique_ptr<Statement> body;     // Body to execute when signal triggers
+
+  WhenStatement(std::unique_ptr<Expression> trig, std::unique_ptr<Statement> b)
+      : trigger(std::move(trig)), body(std::move(b)) {
+    kind = NodeType::WhenStatement;
+  }
+
+  std::string toString() const override {
+    return "WhenStatement{trigger: " +
+           (trigger ? trigger->toString() : "nullptr") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2530,6 +2551,23 @@ struct UseStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Export Statement (export fn foo() or export let x = 5 or export class Foo)
+struct ExportStatement : public Statement {
+  std::unique_ptr<Statement> exported; // The declaration being exported
+
+  explicit ExportStatement(std::unique_ptr<Statement> decl)
+      : exported(std::move(decl)) {
+    kind = NodeType::ExportStatement;
+  }
+
+  std::string toString() const override {
+    return "ExportStatement{" + (exported ? exported->toString() : "null") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // With Statement (with io { ... })
 struct WithStatement : public Statement {
   std::string objectName;                       // The object/module name
@@ -2630,6 +2668,7 @@ public:
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement &node) = 0;
   virtual void visitUseStatement(const UseStatement &node) = 0;
+  virtual void visitExportStatement(const ExportStatement &node) = 0;
   virtual void visitWithStatement(const WithStatement &node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
   virtual void visitTupleExpression(const TupleExpression &node) = 0;
@@ -2667,6 +2706,7 @@ public:
   virtual void visitOnComboStatement(const OnComboStatement &node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
   virtual void visitWhenBlock(const WhenBlock &node) = 0;
+  virtual void visitWhenStatement(const WhenStatement &node) = 0;
 
   // Type system - struct/enum/class support
   virtual void visitStructFieldDef(const StructFieldDef &node) = 0;
@@ -3002,6 +3042,10 @@ inline void UseStatement::accept(ASTVisitor &visitor) const {
   visitor.visitUseStatement(*this);
 }
 
+inline void ExportStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitExportStatement(*this);
+}
+
 inline void WithStatement::accept(ASTVisitor &visitor) const {
   visitor.visitWithStatement(*this);
 }
@@ -3012,6 +3056,10 @@ inline void ConditionalHotkey::accept(ASTVisitor &visitor) const {
 
 inline void WhenBlock::accept(ASTVisitor &visitor) const {
   visitor.visitWhenBlock(*this);
+}
+
+inline void WhenStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWhenStatement(*this);
 }
 
 // Type system - struct/enum accept methods

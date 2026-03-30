@@ -11,14 +11,14 @@
  * NOT a security layer - just loading mechanics.
  */
 
+#include "ExecutionPolicy.hpp"
 #include "havel-lang/compiler/bytecode/VM.hpp"
 #include "runtime/HostContext.hpp"
-#include "ExecutionPolicy.hpp"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <functional>
 #include <vector>
 
 namespace havel::compiler {
@@ -29,9 +29,9 @@ namespace havel::compiler {
 struct ModuleInfo {
   std::string name;
   std::string version;
-  bool isBuiltin = false;      // Provided by HostBridge
-  bool isExtension = false;    // Dynamically loaded (.so/.dll)
-  std::string extensionPath;   // Path for extension modules
+  bool isBuiltin = false;    // Provided by HostBridge
+  bool isExtension = false;  // Dynamically loaded (.so/.dll)
+  std::string extensionPath; // Path for extension modules
 };
 
 /**
@@ -46,10 +46,10 @@ struct ModuleInfo {
  * - Security/capability checks (that's ExecutionPolicy)
  * - Permission enforcement (that's HostBridge/services)
  */
-class ModuleLoader {
+class HostModuleLoader {
 public:
-  explicit ModuleLoader(const HostContext &ctx);
-  ~ModuleLoader();
+  HostModuleLoader(const HostContext &ctx);
+  ~HostModuleLoader();
 
   // =========================================================================
   // Module registration
@@ -59,8 +59,7 @@ public:
   void registerBuiltin(const std::string &name, const ModuleInfo &info);
 
   /// Register a stdlib module (pure VM)
-  void registerStdlib(const std::string &name,
-                      std::function<void(VM &)> initFn,
+  void registerStdlib(const std::string &name, std::function<void(VM &)> initFn,
                       const ModuleInfo &info);
 
   // =========================================================================
@@ -110,7 +109,7 @@ public:
 
 private:
   const HostContext &ctx_;
-  ExecutionPolicy policy_;  // Optional - defaults to allow all
+  ExecutionPolicy policy_; // Optional - defaults to allow all
 
   // Module registry (metadata only - lazy loading)
   std::unordered_map<std::string, ModuleInfo> registry_;
@@ -131,10 +130,10 @@ private:
  * ImportSpec - Parsed import statement
  */
 struct ImportSpec {
-  std::string moduleName;      // "clipboard"
+  std::string moduleName;           // "clipboard"
   std::vector<std::string> members; // ["get", "set"] or empty for all
-  bool importAll = false;      // "use io.*"
-  std::string alias;           // "use clipboard as cb"
+  bool importAll = false;           // "use io.*"
+  std::string alias;                // "use clipboard as cb"
 };
 
 /**

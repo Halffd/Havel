@@ -507,8 +507,8 @@ void HavelApp::initializeComponents(bool isStartup) {
           std::exit(0);
           
           // Test segfault crash
-          int *p = nullptr;
-          *p = 42;
+          //int *p = nullptr;
+          //*p = 42;
       }).detach();
   }
 }

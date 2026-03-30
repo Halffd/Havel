@@ -1,18 +1,18 @@
 #pragma once
 
+#include "../../../extensions/ExtensionLoader.hpp"
+#include "../../../extensions/HavelCAPI.h"
+#include "../../../host/module/ExecutionPolicy.hpp"
+#include "../../../host/module/ModuleLoader.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "Pipeline.hpp"
 #include "VM.hpp"
-#include "../../../host/module/ModuleLoader.hpp"
-#include "../../../host/module/ExecutionPolicy.hpp"
-#include "../../../extensions/ExtensionLoader.hpp"
-#include "../../../extensions/HavelCAPI.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <functional>
 
 namespace havel::compiler {
 
@@ -72,22 +72,29 @@ public:
   const ExecutionPolicy &executionPolicy() const { return policy_; }
 
   // Module loading (lazy loading)
-  ModuleLoader &moduleLoader() { return moduleLoader_; }
-  const ModuleLoader &moduleLoader() const { return moduleLoader_; }
+  HostModuleLoader &moduleLoader() { return moduleLoader_; }
+  const HostModuleLoader &moduleLoader() const { return moduleLoader_; }
 
   // Extension loading (native .so modules)
   ExtensionLoader &extensionLoader() { return *extensionLoader_; }
   const ExtensionLoader &extensionLoader() const { return *extensionLoader_; }
   void loadExtension(const std::string &name);
-  
+
   // Extension function registration (C API)
-  void registerExtensionFunction(const std::string &fullName, BytecodeHostFunction fn);
+  void registerExtensionFunction(const std::string &fullName,
+                                 BytecodeHostFunction fn);
 
   // Import system
   bool import(const std::string &importSpec);
 
+  // Mode callback registration
+  void registerModeCallbacks(const std::string &modeName,
+                             CallbackId conditionId, CallbackId enterId,
+                             CallbackId exitId);
+
   // Mode binding state (for mode system)
   struct ModeBinding {
+    std::string modeName;
     std::optional<CallbackId> condition_id;
     std::optional<CallbackId> enter_id;
     std::optional<CallbackId> exit_id;
@@ -96,13 +103,13 @@ public:
 private:
   const havel::HostContext *ctx_;
   PipelineOptions options_;
-  ExecutionPolicy policy_;  // Optional - defaults to allow all
+  ExecutionPolicy policy_; // Optional - defaults to allow all
 
   std::vector<std::function<void(VM &)>> vm_setup_callbacks_;
   std::vector<HostModule> modules_;
 
   // Module loader (lazy loading)
-  ModuleLoader moduleLoader_;
+  HostModuleLoader moduleLoader_;
 
   // Extension loader (native .so modules)
   std::unique_ptr<ExtensionLoader> extensionLoader_;

@@ -687,6 +687,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseImportStatement();
   case havel::TokenType::Use:
     return parseUseStatement();
+  case havel::TokenType::Export:
+    return parseExportStatement();
   case havel::TokenType::With:
     return parseWithStatement();
   case havel::TokenType::Config:
@@ -3060,6 +3062,26 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
 
   failAt(at(), "Expected module name or file path after 'use'");
   return nullptr;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseExportStatement() {
+  advance(); // consume 'export'
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  // Parse the declaration being exported (fn, let, const, class, etc.)
+  // For now, support: export fn name() {}, export let x = 5, export class Foo
+  // {}
+  auto exported = parseStatement();
+  if (!exported) {
+    failAt(at(), "Expected declaration after 'export'");
+    return nullptr;
+  }
+
+  return std::make_unique<havel::ast::ExportStatement>(std::move(exported));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {

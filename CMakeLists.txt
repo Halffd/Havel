@@ -522,6 +522,7 @@ if(ENABLE_HAVEL_LANG)
         src/havel-lang/compiler/bytecode/ByteCompiler.cpp
         src/havel-lang/compiler/bytecode/GC.cpp
         src/havel-lang/compiler/bytecode/LexicalResolver.cpp
+        src/havel-lang/compiler/bytecode/ModuleLoader.cpp
         src/havel-lang/compiler/bytecode/Pipeline.cpp
         src/havel-lang/compiler/bytecode/VM.cpp
         src/utils/Logger.cpp

@@ -131,6 +131,7 @@ enum class TokenType {
   From,         // from
   As,           // as
   Use,          // use
+  Export,       // export
   With,         // with
   Where,        // where - LINQ filter
   Select,       // select - LINQ transform

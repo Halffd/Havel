@@ -314,19 +314,8 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       done = true;
       value = nullptr;
     } else {
-      // For objects, return the value (not the key)
-      auto *obj = object(std::get<ObjectRef>(iter->iterable).id);
-      if (obj && iter->index < iter->keys.size()) {
-        const auto &key = iter->keys[iter->index++];
-        auto *val = obj->get(key);
-        if (val) {
-          value = *val;
-        } else {
-          value = nullptr;
-        }
-      } else {
-        value = nullptr;
-      }
+      // For objects, return the key (ByteCompiler expects key for lookup)
+      value = iter->keys[iter->index++];
     }
   } else if (std::holds_alternative<SetRef>(iter->iterable)) {
     if (iter->index >= iter->keys.size()) {

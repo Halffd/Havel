@@ -1,0 +1,13 @@
+// Test LINQ-style query syntax
+numbers := [1, 2, 3, 4, 5]
+
+// Query: from x in numbers where x > 2 select x * 2
+result := from x in numbers where x > 2 select x * 2
+print("Filtered and mapped: " + result)
+
+// Test chain methods
+result2 := numbers.where(x => x > 3).select(x => x * 10)
+print("Chain methods: " + result2)
+
+// Test count
+print("Count: " + numbers.count())

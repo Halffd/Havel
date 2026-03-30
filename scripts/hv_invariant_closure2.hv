@@ -1,0 +1,3 @@
+fn makeMul(k) { return (x) => x * k }
+let f = makeMul(3)
+print([1,2].map(f))

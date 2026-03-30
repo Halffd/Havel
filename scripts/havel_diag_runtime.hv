@@ -1,0 +1,9 @@
+fn calculate(x) {
+  return 10 / x
+}
+
+fn wrapper() {
+  return calculate(0)
+}
+
+return wrapper()

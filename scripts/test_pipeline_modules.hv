@@ -1,0 +1,73 @@
+#!/usr/bin/env havel
+// Pipeline Test: fs, regex, system, process modules
+// This tests the enhanced pipeline features with various modules
+
+print "=== Pipeline Test: fs, regex, system, process ==="
+
+// Test 1: fs module with pipelines
+print "\n--- Test 1: fs module pipelines ---"
+
+// Read directory and pipe through filter
+files = fs.readDir "/tmp"
+print "Files in /tmp: " + files.length
+
+// Pipeline: readDir | filter files | take first 5
+result = fs.readDir "/tmp" 
+  | f => f.length > 0 
+  | f => f.startsWith "."
+  | head 5
+
+print "Filtered files: " + result
+
+// Test 2: regex module with pipelines
+print "\n--- Test 2: regex module pipelines ---"
+
+text = "Hello World 123 test 456"
+
+// Pipeline: string | regex.match | extract matches
+matches = text 
+  | regex.match /[0-9]+/
+  | m => m.text
+
+print "Numbers found: " + matches
+
+// Test 3: system module with pipelines
+print "\n--- Test 3: system module pipelines ---"
+
+// Get system info and transform through pipeline
+sysInfo = system.platform
+print "Platform: " + sysInfo
+
+// Pipeline with system commands
+output = system.exec "echo 'line1\nline2\nline3'"
+  | lines
+  | l => l.upper
+  | reverse
+
+print "Transformed lines: " + output
+
+// Test 4: process module with pipelines
+print "\n--- Test 4: process module pipelines ---"
+
+// Simulate process management with pipelines
+procs = [1, 2, 3, 4, 5]
+  | p => process.info p
+  | info => info != null
+  | info => info.name
+
+print "Process names: " + procs
+
+// Combined pipeline test
+print "\n--- Combined Pipeline Test ---"
+
+// Complex chain: fs -> regex -> filter -> transform
+logFiles = fs.readDir "/var/log"
+  | f => f.endsWith ".log"
+  | f => f | regex.match /error/i
+  | f => f.text
+  | distinct
+  | take 10
+
+print "Log files with errors: " + logFiles
+
+print "\n=== All fs/regex/system/process pipeline tests complete ==="

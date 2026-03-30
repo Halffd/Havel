@@ -1,0 +1,18 @@
+let chars = "ab".map((c) => c + "!")
+let keys = {a: 1, b: 2}.map((k) => k)
+let nums = (1..5).reduce((a, b) => a + b, 0)
+let s = #{1, 2, 3}.filter((v) => v != "2")
+print(chars)
+print(keys)
+print(nums)
+print(s)
+if chars[1] == "b!" {
+  if keys.find("a") >= 0 {
+    if nums == 10 {
+      if s.len() == 2 {
+        return 1
+      }
+    }
+  }
+}
+return 0

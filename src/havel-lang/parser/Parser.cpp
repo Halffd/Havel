@@ -3750,12 +3750,16 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
 
   case havel::TokenType::String: {
     advance();
-    return std::make_unique<havel::ast::StringLiteral>(tk.value);
+    auto strLit = std::make_unique<havel::ast::StringLiteral>(tk.value);
+    // Allow string literals to have postfix operations like indexing/slicing
+    return parsePostfixExpression(std::move(strLit));
   }
 
   case havel::TokenType::MultilineString: {
     advance();
-    return std::make_unique<havel::ast::StringLiteral>(tk.value);
+    auto strLit = std::make_unique<havel::ast::StringLiteral>(tk.value);
+    // Allow string literals to have postfix operations like indexing/slicing
+    return parsePostfixExpression(std::move(strLit));
   }
 
   case havel::TokenType::Backtick: {
@@ -4420,10 +4424,78 @@ Parser::parseIndexExpression(std::unique_ptr<havel::ast::Expression> object) {
 
   advance(); // consume '['
 
-  auto index = parseExpression();
+  // Check for slice syntax: [start:end] or [start:] or [:end] or [:]
+  // We need to look ahead to see if there's a ':' in the index expression
+  bool isSlice = false;
+  size_t savedPos = position;
+  int bracketDepth = 1;
+
+  // Look ahead to find if there's a ':' at the top level
+  size_t lookahead = 0;
+  while (position + lookahead < tokens.size()) {
+    const Token &tok = tokens[position + lookahead];
+    if (tok.type == havel::TokenType::OpenBracket) {
+      bracketDepth++;
+    } else if (tok.type == havel::TokenType::CloseBracket) {
+      bracketDepth--;
+      if (bracketDepth == 0)
+        break;
+    } else if (tok.type == havel::TokenType::Colon && bracketDepth == 1) {
+      // Found a ':' at the top level - this is a slice
+      isSlice = true;
+      break;
+    } else if (tok.type == havel::TokenType::EOF_TOKEN) {
+      break;
+    }
+    lookahead++;
+  }
+
+  // Restore position
+  position = savedPos;
+
+  std::unique_ptr<havel::ast::Expression> index;
+
+  if (isSlice) {
+    // Parse slice: [start:end]
+    std::unique_ptr<havel::ast::Expression> start;
+    std::unique_ptr<havel::ast::Expression> end;
+
+    // Check if slice starts with ':' (implicit start = 0)
+    if (at().type == havel::TokenType::Colon) {
+      // [:end] form - start is null (implicit 0)
+      advance(); // consume ':'
+      if (at().type != havel::TokenType::CloseBracket) {
+        end = parseExpression();
+      }
+      // If end is null, it's an open-ended slice [:]
+    } else {
+      // [start:end] or [start:] form
+      start = parseExpression();
+      if (at().type == havel::TokenType::Colon) {
+        advance(); // consume ':'
+        if (at().type != havel::TokenType::CloseBracket) {
+          end = parseExpression();
+        }
+        // If no expression after ':', it's [start:] (open-ended)
+      } else {
+        // No colon found after parsing start - this shouldn't happen given
+        // lookahead But handle it gracefully as simple index
+        index = std::move(start);
+      }
+    }
+
+    // Create a range expression for the slice
+    if (!index) {
+      index = std::make_unique<havel::ast::RangeExpression>(std::move(start),
+                                                            std::move(end));
+    }
+  } else {
+    // Simple index: [expr]
+    index = parseExpression();
+  }
 
   if (at().type != havel::TokenType::CloseBracket) {
-    failAt(at(), "Expected ']' after array index");
+    failAt(at(), "Expected ']' after array index or slice");
   }
   advance(); // consume ']'
 

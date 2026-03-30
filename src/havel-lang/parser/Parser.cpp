@@ -4690,17 +4690,52 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayPattern() {
       break;
     }
 
-    // Pattern elements can be identifiers, rest patterns, or nested patterns
+    // Pattern elements can be identifiers, rest patterns, nested patterns, or
+    // patterns with defaults
     std::unique_ptr<havel::ast::Expression> element;
 
-    if (at().type == havel::TokenType::Identifier) {
-      element = makeIdentifier(advance());
+    if (at().type == havel::TokenType::Spread) {
+      // Rest pattern: ...rest
+      advance(); // consume '...'
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '...' in rest pattern");
+      }
+      auto restIdent = makeIdentifier(advance());
+      element =
+          std::make_unique<havel::ast::SpreadExpression>(std::move(restIdent));
+    } else if (at().type == havel::TokenType::Identifier) {
+      auto ident = makeIdentifier(advance());
+      // Check for default value: a = 10
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        // Wrap in AssignmentExpression to represent default
+        element = std::make_unique<havel::ast::AssignmentExpression>(
+            std::move(ident), std::move(defaultValue), "=", false);
+      } else {
+        element = std::move(ident);
+      }
     } else if (at().type == havel::TokenType::OpenBracket) {
       element = parseArrayPattern(); // Nested array pattern
+      // Check for default value after nested pattern
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        element = std::make_unique<havel::ast::AssignmentExpression>(
+            std::move(element), std::move(defaultValue), "=", false);
+      }
     } else if (at().type == havel::TokenType::OpenBrace) {
       element = parseObjectPattern(); // Nested object pattern
+      // Check for default value after nested pattern
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        element = std::make_unique<havel::ast::AssignmentExpression>(
+            std::move(element), std::move(defaultValue), "=", false);
+      }
     } else {
-      failAt(at(), "Expected identifier or pattern in array pattern");
+      failAt(at(), "Expected identifier, rest pattern, or nested pattern in "
+                   "array pattern");
     }
 
     elements.push_back(std::move(element));
@@ -4742,6 +4777,34 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
       break;
     }
 
+    // Check for rest pattern: ...rest
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '...' in object rest pattern");
+      }
+      auto restIdent = makeIdentifier(advance());
+      auto restExpr =
+          std::make_unique<havel::ast::SpreadExpression>(std::move(restIdent));
+      // Use special key "..." to indicate rest pattern
+      properties.push_back({"...", std::move(restExpr)});
+
+      // Rest pattern must be last
+      while (at().type == havel::TokenType::NewLine ||
+             at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance(); // consume optional comma
+      }
+      // Skip any trailing newlines
+      while (at().type == havel::TokenType::NewLine ||
+             at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      break; // Rest pattern must be last
+    }
+
     // Parse property key
     std::string key;
     Token keyToken = at(); // Copy current token
@@ -4752,6 +4815,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
     }
 
     // Check for renamed pattern: { originalName: newName }
+    // or shorthand with default: { key = defaultValue }
     std::unique_ptr<havel::ast::Expression> pattern;
     if (at().type == havel::TokenType::Colon) {
       advance(); // consume ':'
@@ -4767,6 +4831,23 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
         failAt(at(),
                "Expected identifier or pattern after ':' in object pattern");
       }
+
+      // Check for default value after renamed pattern: { key: pattern = default
+      // }
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        auto defaultValue = parseExpression();
+        pattern = std::make_unique<havel::ast::AssignmentExpression>(
+            std::move(pattern), std::move(defaultValue), "=", false);
+      }
+    } else if (at().type == havel::TokenType::Assign) {
+      // Shorthand with default: { key = defaultValue }
+      advance(); // consume '='
+      auto defaultValue = parseExpression();
+      auto ident = makeIdentifier(keyToken);
+      // Wrap in AssignmentExpression to represent pattern with default
+      pattern = std::make_unique<havel::ast::AssignmentExpression>(
+          std::move(ident), std::move(defaultValue), "=", false);
     } else {
       // Default: property name becomes variable name
       pattern = makeIdentifier(keyToken);

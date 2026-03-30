@@ -161,7 +161,7 @@ clipboardGetMethod(const std::vector<BytecodeValue> &args) {
   return BytecodeValue(methodStr);
 }
 
-// clipboard.detectMethod() -> string
+// clipboard.detectMethod() -> string (detect best available method)
 static BytecodeValue
 clipboardDetectMethod(const std::vector<BytecodeValue> &args) {
   (void)args;
@@ -191,6 +191,65 @@ clipboardDetectMethod(const std::vector<BytecodeValue> &args) {
     break;
   }
   return BytecodeValue(methodStr);
+}
+
+// clipboard.out() -> object with type, content, size, mimeType, files
+static BytecodeValue clipboardOut(VMApi &api,
+                                  const std::vector<BytecodeValue> &args) {
+  (void)args;
+  host::ClipboardInfo info = getClipboard().getInfo();
+
+  auto obj = api.makeObject();
+
+  // Set type as string
+  std::string typeStr;
+  switch (info.type) {
+  case host::ClipboardInfo::Type::TEXT:
+    typeStr = "text";
+    break;
+  case host::ClipboardInfo::Type::IMAGE:
+    typeStr = "image";
+    break;
+  case host::ClipboardInfo::Type::FILES:
+    typeStr = "files";
+    break;
+  case host::ClipboardInfo::Type::EMPTY:
+    typeStr = "empty";
+    break;
+  }
+  api.setField(obj, "type", BytecodeValue(typeStr));
+
+  // Set content (text or base64 image)
+  api.setField(obj, "content", BytecodeValue(info.content));
+
+  // Set size
+  api.setField(obj, "size", BytecodeValue(static_cast<int64_t>(info.size)));
+
+  // Set mime type
+  api.setField(obj, "mimeType", BytecodeValue(info.mimeType));
+
+  // Set files array if files type
+  if (info.type == host::ClipboardInfo::Type::FILES) {
+    auto filesArr = api.makeArray();
+    for (const auto &file : info.files) {
+      api.push(filesArr, BytecodeValue(file));
+    }
+    api.setField(obj, "files", filesArr);
+  } else {
+    api.setField(obj, "files", api.makeArray());
+  }
+
+  // Add helper methods
+  api.setField(obj, "isText", BytecodeValue(info.isText()));
+  api.setField(obj, "isImage", BytecodeValue(info.isImage()));
+  api.setField(obj, "isFiles", BytecodeValue(info.isFiles()));
+  api.setField(obj, "isEmpty", BytecodeValue(info.isEmpty()));
+
+  // Convenience getters
+  api.setField(obj, "getText", BytecodeValue(info.getText()));
+  api.setField(obj, "getImage", BytecodeValue(info.getImage()));
+
+  return obj;
 }
 
 // ============================================================================
@@ -410,6 +469,11 @@ void registerClipboardModule(compiler::VMApi &api) {
                          return clipboardDetectMethod(args);
                        });
 
+  api.registerFunction("clipboard.out",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return clipboardOut(api, args);
+                       });
+
   // History functions
   api.registerFunction("clipboard.history.add",
                        [](const std::vector<BytecodeValue> &args) {
@@ -507,6 +571,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                api.makeFunctionRef("clipboard.getMethod"));
   api.setField(clipboardObj, "detectMethod",
                api.makeFunctionRef("clipboard.detectMethod"));
+  api.setField(clipboardObj, "out", api.makeFunctionRef("clipboard.out"));
 
   // Create history sub-object
   auto historyObj = api.makeObject();

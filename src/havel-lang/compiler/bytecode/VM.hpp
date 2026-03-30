@@ -9,8 +9,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <span>
+#include <shared_mutex>
 #include <stack>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -101,6 +102,7 @@ private:
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
   std::unordered_map<std::string, BytecodeValue> globals;
+  mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
   std::unordered_map<std::string, uint32_t> class_type_ids_by_name_;
@@ -164,6 +166,7 @@ private:
   void runDispatchLoop(size_t stop_frame_depth);
   bool handleScriptThrow(const BytecodeValue &value);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
+
   std::vector<BytecodeValue> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
   void maybeCollectGarbage();
@@ -334,6 +337,63 @@ public:
                       const uint8_t *data);
   VMImage createImageFromRGBA(int width, int height,
                               const std::vector<uint8_t> &rgbaData);
+
+  // ============================================================================
+  // Execution Context System - Isolated execution with shared globals
+  // ============================================================================
+
+  // Lightweight execution context for async/threaded execution
+  // Shares: globals, heap, host_functions, prototypes, chunk
+  // Isolated: stack, locals, frames, open_upvalues
+  struct VMExecutionContext {
+  private:
+    VM *parent_vm_ = nullptr;
+    std::stack<BytecodeValue> stack;
+    std::vector<BytecodeValue> locals;
+    std::vector<CallFrame> frame_arena_;
+    size_t frame_count_ = 0;
+    std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
+        open_upvalues;
+    bool has_current_exception_ = false;
+    BytecodeValue current_exception_ = nullptr;
+    const BytecodeChunk *current_chunk = nullptr;
+
+    friend class VM;
+
+  public:
+    VMExecutionContext() = default;
+    ~VMExecutionContext() = default;
+
+    // Non-copyable (contains unique execution state)
+    VMExecutionContext(const VMExecutionContext &) = delete;
+    VMExecutionContext &operator=(const VMExecutionContext &) = delete;
+
+    // Movable
+    VMExecutionContext(VMExecutionContext &&) = default;
+    VMExecutionContext &operator=(VMExecutionContext &&) = default;
+
+    // Execute a callback in this isolated context
+    BytecodeValue invokeCallback(CallbackId id,
+                                 const std::vector<BytecodeValue> &args = {});
+
+    // Internal: execute single instruction in this context
+    void executeInstructionInContext(const Instruction &instruction);
+
+    // Check if context is valid (has parent VM)
+    bool isValid() const { return parent_vm_ != nullptr; }
+  };
+
+  // Create a lightweight execution context that shares globals/heap but has
+  // isolated stack This is the CORRECT way to execute hotkeys from threads
+  VMExecutionContext createExecutionContext();
+
+  // Thread-safe global variable access
+  void setGlobalThreadSafe(const std::string &name, BytecodeValue value);
+  std::optional<BytecodeValue>
+  getGlobalThreadSafe(const std::string &name) const;
+
+  // Get the current bytecode chunk (for execution contexts)
+  const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
 };
 
 } // namespace havel::compiler

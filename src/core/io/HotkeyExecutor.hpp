@@ -3,19 +3,30 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <string>
 #include <thread>
+#include <variant>
 #include <vector>
+
+#include "../../havel-lang/compiler/bytecode/VM.hpp"
 
 class HotkeyExecutor {
 public:
   struct SubmitResult {
     bool accepted; // false if queue full or shutting down
   };
+
+  // Callback types
+  using SimpleCallback = std::function<void()>;
+  using VMCallback = std::function<void(havel::compiler::VM &)>;
+  using ExecutionContextCallback =
+      std::function<void(havel::compiler::VM::VMExecutionContext &)>;
 
   // Create executor with `workers` threads and `maxQueue` capacity.
   HotkeyExecutor(size_t workers = 16, size_t maxQueue = 8192)
@@ -25,20 +36,60 @@ public:
 
   ~HotkeyExecutor() { shutdown(std::chrono::milliseconds(5000)); }
 
-  // Submit a callback with timeout detection using worker thread monitoring
-  // callback runs on a worker thread; timeout is handled by worker loop
+  // Submit a simple callback (legacy API)
   SubmitResult submit(std::function<void()> cb, int timeoutMs = 90000) {
+    return submitInternal([cb = std::move(cb)]() mutable { cb(); }, timeoutMs);
+  }
+
+  // Submit a callback with VM context access (legacy - prefer execution
+  // context)
+  SubmitResult submitVM(havel::compiler::VM &vm, VMCallback cb,
+                        int timeoutMs = 90000) {
+    return submitInternal([cb = std::move(cb), &vm]() mutable { cb(vm); },
+                          timeoutMs);
+  }
+
+  // Submit a callback with isolated execution context (RECOMMENDED for hotkeys)
+  // This ensures thread-safe execution with isolated stack/locals
+  SubmitResult submitExecutionContext(havel::compiler::VM &vm,
+                                      ExecutionContextCallback cb,
+                                      int timeoutMs = 90000) {
+    return submitInternal(
+        [cb = std::move(cb), &vm]() mutable {
+          auto ctx = vm.createExecutionContext();
+          cb(ctx);
+        },
+        timeoutMs);
+  }
+
+private:
+  std::atomic<bool> timedOut{false};
+
+  struct Task {
+    std::function<void()> fn;
+    std::shared_ptr<std::promise<void>> prom;
+    std::shared_future<void> fut;
+    int timeoutMs = 5000;
+    std::chrono::steady_clock::time_point createdTime;
+    std::atomic<bool> timedOut{false};
+
+    Task() = default;
+    Task(Task &&) = delete;
+    Task &operator=(Task &&) = delete;
+    Task(const Task &) = delete;
+    Task &operator=(const Task &) = delete;
+  };
+
+  SubmitResult submitInternal(std::function<void()> cb, int timeoutMs) {
     std::unique_lock<std::mutex> lk(queueMutex);
     if (stopFlag)
       return {false};
     if (taskQueue.size() >= maxQueue) {
-      // Log queue overflow instead of silently dropping
       std::cerr << "[HotkeyExecutor] Queue full (" << taskQueue.size() << "/"
                 << maxQueue << "), dropping hotkey\n";
       return {false};
     }
 
-    // Package task with timeout and creation time
     auto task = std::make_shared<Task>();
     task->fn = std::move(cb);
     task->prom = std::make_shared<std::promise<void>>();
@@ -53,59 +104,6 @@ public:
     return {true};
   }
 
-  // Graceful shutdown: stop accepting tasks, wait for workers to finish
-  // naturally Returns true if shutdown completed within timeout.
-  bool shutdown(
-      std::chrono::milliseconds waitTimeout = std::chrono::milliseconds(2000)) {
-    {
-      std::lock_guard<std::mutex> lk(queueMutex);
-      if (stopFlag)
-        return true;
-      stopFlag = true;
-    }
-    queueCv.notify_all();
-
-    // Wait for workers to finish their current tasks
-    auto start = std::chrono::steady_clock::now();
-
-    for (auto &t : workers) {
-      if (!t.joinable())
-        continue;
-
-      // Calculate remaining timeout
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now() - start);
-      auto remain = waitTimeout - elapsed;
-
-      if (remain.count() > 0) {
-        // Try to join with remaining timeout
-        t.join();
-      } else {
-        // Timeout expired, detach to avoid blocking
-        t.detach();
-      }
-    }
-    return true;
-  }
-
-private:
-  struct Task {
-    std::function<void()> fn;
-    std::shared_ptr<std::promise<void>> prom;
-    std::shared_future<void> fut;
-    int timeoutMs = 5000;
-    std::chrono::steady_clock::time_point createdTime;
-    std::atomic<bool> timedOut{false};
-
-    Task() = default;
-
-    // Delete move and copy operations since we have std::atomic member
-    Task(Task &&) = delete;
-    Task &operator=(Task &&) = delete;
-    Task(const Task &) = delete;
-    Task &operator=(const Task &) = delete;
-  };
-
   void startWorkers(size_t n) {
     for (size_t i = 0; i < n; ++i) {
       workers.emplace_back([this, i]() { workerLoop(i); });
@@ -113,6 +111,7 @@ private:
   }
 
   void workerLoop(size_t workerIndex) {
+    (void)workerIndex;
     while (true) {
       std::shared_ptr<Task> t;
       {
@@ -131,7 +130,6 @@ private:
       if (!t)
         continue;
 
-      // Check if task has already timed out before execution
       auto now = std::chrono::steady_clock::now();
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
           now - t->createdTime);
@@ -142,7 +140,6 @@ private:
         t->timedOut.store(true);
       }
 
-      // Execute task (even if timed out)
       try {
         t->fn();
       } catch (const std::exception &e) {
@@ -152,11 +149,10 @@ private:
         std::cerr << "[HotkeyExecutor] Task threw unknown exception\n";
       }
 
-      // Mark completion
       try {
         t->prom->set_value();
       } catch (...) {
-        // promise already satisfied or already set due to timeout
+        // promise already satisfied
       }
     }
   }
@@ -167,4 +163,19 @@ private:
   std::condition_variable queueCv;
   size_t maxQueue;
   std::atomic<bool> stopFlag;
+
+public:
+  void shutdown(std::chrono::milliseconds timeout) {
+    {
+      std::unique_lock<std::mutex> lk(queueMutex);
+      stopFlag.store(true);
+    }
+    queueCv.notify_all();
+    for (auto &worker : workers) {
+      if (worker.joinable()) {
+        worker.join();
+      }
+    }
+    workers.clear();
+  }
 };

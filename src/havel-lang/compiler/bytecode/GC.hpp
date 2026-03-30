@@ -2,6 +2,7 @@
 
 #include "BytecodeIR.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -33,7 +34,62 @@ public:
     std::vector<std::shared_ptr<UpvalueCell>> upvalues;
   };
 
-  // Iterator for iteration protocol
+  // Object entry with sorted flag and insertion order tracking
+  struct ObjectEntry {
+    std::unordered_map<std::string, BytecodeValue> data;
+    std::vector<std::string> insertionOrder; // For unsorted objects
+    bool sorted = true;
+
+    BytecodeValue *get(const std::string &key) {
+      auto it = data.find(key);
+      if (it != data.end())
+        return &it->second;
+      return nullptr;
+    }
+
+    void set(const std::string &key, BytecodeValue value) {
+      if (data.find(key) == data.end()) {
+        insertionOrder.push_back(key);
+      }
+      data[key] = std::move(value);
+    }
+
+    BytecodeValue &operator[](const std::string &key) {
+      if (data.find(key) == data.end()) {
+        insertionOrder.push_back(key);
+      }
+      return data[key];
+    }
+
+    // Iterator support for range-based for loops
+    auto begin() { return data.begin(); }
+    auto end() { return data.end(); }
+    auto begin() const { return data.begin(); }
+    auto end() const { return data.end(); }
+
+    // Map-like methods
+    auto find(const std::string &key) { return data.find(key); }
+    auto find(const std::string &key) const { return data.find(key); }
+    size_t size() const { return data.size(); }
+    size_t erase(const std::string &key) {
+      auto it = std::find(insertionOrder.begin(), insertionOrder.end(), key);
+      if (it != insertionOrder.end()) {
+        insertionOrder.erase(it);
+      }
+      return data.erase(key);
+    }
+
+    std::vector<std::string> getKeys() const {
+      if (sorted) {
+        std::vector<std::string> keys;
+        for (const auto &[k, _] : data)
+          keys.push_back(k);
+        std::sort(keys.begin(), keys.end());
+        return keys;
+      }
+      return insertionOrder;
+    }
+  };
   struct Iterator {
     BytecodeValue
         iterable;     // The original iterable (array, string, object, range)
@@ -90,7 +146,7 @@ public:
 
   ClosureRef allocateClosure(RuntimeClosure closure);
   ArrayRef allocateArray();
-  ObjectRef allocateObject();
+  ObjectRef allocateObject(bool sorted = true);
   SetRef allocateSet();
   RangeRef allocateRange(int64_t start, int64_t end, int64_t step);
   ErrorRef allocateError(const std::string &errorType,
@@ -133,7 +189,7 @@ public:
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
   std::vector<BytecodeValue> *array(uint32_t id);
-  std::unordered_map<std::string, BytecodeValue> *object(uint32_t id);
+  ObjectEntry *object(uint32_t id);
   std::unordered_map<std::string, BytecodeValue> *set(uint32_t id);
   Range *range(uint32_t id);
   const Range *range(uint32_t id) const;
@@ -183,8 +239,7 @@ private:
 
   std::unordered_map<uint32_t, RuntimeClosure> closures_;
   std::unordered_map<uint32_t, std::vector<BytecodeValue>> arrays_;
-  std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
-      objects_;
+  std::unordered_map<uint32_t, ObjectEntry> objects_;
   std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
       sets_;
   std::unordered_map<uint32_t, Range> ranges_;

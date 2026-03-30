@@ -181,7 +181,7 @@ private:
   std::unique_ptr<ast::Expression>
   parseIndexExpression(std::unique_ptr<ast::Expression> object);
   std::unique_ptr<ast::Expression> parseArrayLiteral();
-  std::unique_ptr<ast::Expression> parseObjectLiteral();
+  std::unique_ptr<ast::Expression> parseObjectLiteral(bool unsorted = false);
   std::unique_ptr<ast::Expression> parseBlockExpression();
   std::unique_ptr<ast::Expression> parseIfExpression();
   std::unique_ptr<ast::Expression> parseArrayPattern();

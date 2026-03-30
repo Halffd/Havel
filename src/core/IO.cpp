@@ -14,7 +14,6 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include "io/HotkeyExecutor.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
-#include "utils/Utils.hpp"
 #include "window/WindowManager.hpp"
 #include "window/WindowManagerDetector.hpp"
 #include <chrono>

@@ -3031,8 +3031,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
     std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
     params.push_back(std::move(param));
 
+    // Wrap the condition expression in an ExpressionStatement
+    auto body =
+        std::make_unique<havel::ast::ExpressionStatement>(std::move(condition));
     auto lambda = std::make_unique<havel::ast::LambdaExpression>(
-        std::move(params), std::move(condition));
+        std::move(params), std::move(body));
 
     filterCall->args.push_back(std::move(lambda));
     stages.push_back(std::move(filterCall));
@@ -3053,8 +3056,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
     std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
     params.push_back(std::move(param));
 
+    // Wrap the transform expression in an ExpressionStatement
+    auto body =
+        std::make_unique<havel::ast::ExpressionStatement>(std::move(transform));
     auto lambda = std::make_unique<havel::ast::LambdaExpression>(
-        std::move(params), std::move(transform));
+        std::move(params), std::move(body));
 
     mapCall->args.push_back(std::move(lambda));
     stages.push_back(std::move(mapCall));

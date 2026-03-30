@@ -1474,8 +1474,32 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       executeInstruction(instruction);
     } catch (const ScriptThrow &thrown) {
       if (!handleScriptThrow(thrown.value)) {
-        throw std::runtime_error("Uncaught exception: " +
-                                 toString(thrown.value, &heap_));
+        // Build stack trace for uncaught exception
+        std::string stackTrace = buildStackTrace(frame_count_);
+
+        // Get line number from current instruction
+        uint32_t line = 0;
+        uint32_t column = 0;
+        if (frame_count_ > 0) {
+          auto &frame = frame_arena_[frame_count_ - 1];
+          if (frame.function &&
+              frame.ip < frame.function->instruction_locations.size()) {
+            const auto &loc = frame.function->instruction_locations[frame.ip];
+            line = loc.line;
+            column = loc.column;
+          }
+        }
+
+        std::string errorMsg =
+            "Uncaught exception: " + toString(thrown.value, &heap_);
+        if (line > 0) {
+          errorMsg += " at line " + std::to_string(line);
+          if (column > 0) {
+            errorMsg += ":" + std::to_string(column);
+          }
+        }
+
+        throw ScriptError(thrown.value, errorMsg, stackTrace, line, column);
       }
       continue;
     }
@@ -1525,6 +1549,48 @@ bool VM::handleScriptThrow(const BytecodeValue &value) {
 
   // No handler found - exception is uncaught
   return false;
+}
+
+std::string VM::buildStackTrace(size_t frame_count) const {
+  std::string trace;
+  if (frame_count == 0) {
+    return trace;
+  }
+
+  trace = "Stack trace:\n";
+  for (size_t i = 0; i < frame_count; ++i) {
+    const auto &frame = frame_arena_[i];
+    if (!frame.function) {
+      continue;
+    }
+
+    // Get function name if available
+    std::string funcName = "<anonymous>";
+    if (!frame.function->name.empty()) {
+      funcName = frame.function->name;
+    }
+
+    // Get line/column from instruction location
+    uint32_t line = 0;
+    uint32_t column = 0;
+    if (frame.ip < frame.function->instruction_locations.size()) {
+      const auto &loc = frame.function->instruction_locations[frame.ip];
+      line = loc.line;
+      column = loc.column;
+    }
+
+    trace += "  at " + funcName;
+    if (line > 0) {
+      trace += " (line " + std::to_string(line);
+      if (column > 0) {
+        trace += ":" + std::to_string(column);
+      }
+      trace += ")";
+    }
+    trace += "\n";
+  }
+
+  return trace;
 }
 
 BytecodeValue VM::call(const BytecodeValue &callee_value,

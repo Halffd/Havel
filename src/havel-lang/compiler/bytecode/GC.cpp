@@ -58,6 +58,15 @@ RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
   return RangeRef{.id = id};
 }
 
+ErrorRef GCHeap::allocateError(const std::string &errorType,
+                               const std::string &message,
+                               const std::string &stackTrace, uint32_t line,
+                               uint32_t column) {
+  const uint32_t id = next_error_id_++;
+  errors_[id] = ErrorObject(errorType, message, stackTrace, line, column);
+  return ErrorRef{.id = id};
+}
+
 GCHeap::Range *GCHeap::range(uint32_t id) {
   auto it = ranges_.find(id);
   return it == ranges_.end() ? nullptr : &it->second;
@@ -66,6 +75,16 @@ GCHeap::Range *GCHeap::range(uint32_t id) {
 const GCHeap::Range *GCHeap::range(uint32_t id) const {
   auto it = ranges_.find(id);
   return it == ranges_.end() ? nullptr : &it->second;
+}
+
+GCHeap::ErrorObject *GCHeap::error(uint32_t id) {
+  auto it = errors_.find(id);
+  return it == errors_.end() ? nullptr : &it->second;
+}
+
+const GCHeap::ErrorObject *GCHeap::error(uint32_t id) const {
+  auto it = errors_.find(id);
+  return it == errors_.end() ? nullptr : &it->second;
 }
 
 IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {

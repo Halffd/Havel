@@ -69,6 +69,23 @@ public:
     std::vector<std::string> variantNames;
   };
 
+  // Error object for custom error types with stack traces
+  struct ErrorObject {
+    std::string errorType; // e.g., "TypeError", "RangeError", "CustomError"
+    std::string message;
+    std::string stackTrace;
+    uint32_t line = 0;
+    uint32_t column = 0;
+    BytecodeValue cause; // Optional chained error
+
+    ErrorObject() = default;
+    ErrorObject(const std::string &type, const std::string &msg,
+                const std::string &trace = "", uint32_t ln = 0,
+                uint32_t col = 0)
+        : errorType(type), message(msg), stackTrace(trace), line(ln),
+          column(col), cause(nullptr) {}
+  };
+
   void reset();
 
   ClosureRef allocateClosure(RuntimeClosure closure);
@@ -76,6 +93,10 @@ public:
   ObjectRef allocateObject();
   SetRef allocateSet();
   RangeRef allocateRange(int64_t start, int64_t end, int64_t step);
+  ErrorRef allocateError(const std::string &errorType,
+                         const std::string &message,
+                         const std::string &stackTrace = "", uint32_t line = 0,
+                         uint32_t column = 0);
 
   // Struct operations
   uint32_t registerStructType(const std::string &name,
@@ -118,6 +139,10 @@ public:
   const Range *range(uint32_t id) const;
   Iterator *iterator(uint32_t id);
   const Iterator *iterator(uint32_t id) const;
+
+  // Error accessors
+  ErrorObject *error(uint32_t id);
+  const ErrorObject *error(uint32_t id) const;
 
   // Iteration protocol
   uint32_t createIterator(const BytecodeValue &iterable);
@@ -163,6 +188,7 @@ private:
   std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
       sets_;
   std::unordered_map<uint32_t, Range> ranges_;
+  std::unordered_map<uint32_t, ErrorObject> errors_;
   std::unordered_map<uint32_t, std::vector<BytecodeValue>>
       structs_; // Field arrays (value type)
   std::unordered_map<uint32_t, std::vector<BytecodeValue>>
@@ -181,6 +207,7 @@ private:
   uint32_t next_object_id_ = 1;
   uint32_t next_set_id_ = 1;
   uint32_t next_range_id_ = 1;
+  uint32_t next_error_id_ = 1;
   uint32_t next_iterator_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;

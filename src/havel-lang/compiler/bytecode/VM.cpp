@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <regex>
 #include <sstream>
@@ -3536,6 +3537,608 @@ std::optional<int64_t> VM::parseDuration(const BytecodeValue &value) const {
   }
 
   return std::nullopt;
+}
+
+// ============================================================================
+// Execution Context System - Isolated execution with shared globals
+// ============================================================================
+
+VM::VMExecutionContext VM::createExecutionContext() {
+  VMExecutionContext ctx;
+  ctx.parent_vm_ = this;
+  ctx.current_chunk = current_chunk;
+  return ctx;
+}
+
+BytecodeValue
+VM::VMExecutionContext::invokeCallback(CallbackId id,
+                                       const std::vector<BytecodeValue> &args) {
+  if (!parent_vm_) {
+    throw std::runtime_error(
+        "VMExecutionContext::invokeCallback called on invalid context");
+  }
+  if (id == INVALID_CALLBACK_ID) {
+    throw std::runtime_error("invokeCallback called with invalid callback ID");
+  }
+
+  // Get the closure from parent's external roots
+  auto closureValue = parent_vm_->externalRootValue(id);
+  if (!closureValue.has_value()) {
+    throw std::runtime_error(
+        "invokeCallback: callback not found (may have been released)");
+  }
+
+  // Clear any previous state
+  while (!stack.empty())
+    stack.pop();
+  locals.clear();
+  frame_count_ = 0;
+  open_upvalues.clear();
+  has_current_exception_ = false;
+  current_exception_ = nullptr;
+
+  // Determine function index from closure
+  uint32_t function_index = 0;
+  uint32_t closure_id = 0;
+  if (std::holds_alternative<ClosureRef>(*closureValue)) {
+    closure_id = std::get<ClosureRef>(*closureValue).id;
+    auto *closure = parent_vm_->heap_.closure(closure_id);
+    if (!closure) {
+      throw std::runtime_error("Closure not found: " +
+                               std::to_string(closure_id));
+    }
+    function_index = closure->function_index;
+  } else if (std::holds_alternative<FunctionObject>(*closureValue)) {
+    function_index = std::get<FunctionObject>(*closureValue).function_index;
+  } else {
+    throw std::runtime_error("Callback must be a closure or function");
+  }
+
+  const auto *func = current_chunk->getFunction(function_index);
+  if (!func) {
+    throw std::runtime_error("Function index not found: " +
+                             std::to_string(function_index));
+  }
+
+  // Set up initial frame
+  if (frame_arena_.size() <= frame_count_) {
+    frame_arena_.push_back(CallFrame{func, 0, 0, closure_id});
+  } else {
+    frame_arena_[frame_count_] = CallFrame{func, 0, 0, closure_id};
+  }
+  frame_count_++;
+
+  // Set up arguments
+  for (size_t i = 0; i < args.size() && i < func->param_count; ++i) {
+    locals[i] = args[i];
+  }
+
+  // Execute dispatch loop with isolated state
+  const size_t stop_frame_depth = 0;
+  while (frame_count_ > stop_frame_depth) {
+    size_t active_frame_idx = frame_count_ - 1;
+    const auto *function = frame_arena_[active_frame_idx].function;
+    uint32_t ip = frame_arena_[active_frame_idx].ip;
+
+    const auto &instruction = function->instructions[ip];
+
+    try {
+      executeInstructionInContext(instruction);
+    } catch (const ScriptThrow &thrown) {
+      // Handle exception
+      has_current_exception_ = true;
+      current_exception_ = thrown.value;
+
+      bool handled = false;
+      while (frame_count_ > 0) {
+        auto &frame = frame_arena_[frame_count_ - 1];
+        if (!frame.try_stack.empty()) {
+          const auto handler = frame.try_stack.back();
+          frame.try_stack.pop_back();
+
+          while (stack.size() > handler.stack_depth) {
+            stack.pop();
+          }
+
+          frame.ip = handler.catch_ip;
+          handled = true;
+          break;
+        }
+
+        auto finished = frame;
+        frame_count_--;
+
+        for (auto it = open_upvalues.begin(); it != open_upvalues.end();) {
+          if (it->first >= finished.locals_base && it->first < locals.size()) {
+            it->second->closed_value = locals[it->first];
+            it->second->is_open = false;
+            it = open_upvalues.erase(it);
+          } else {
+            ++it;
+          }
+        }
+
+        if (locals.size() >= finished.locals_base) {
+          locals.resize(finished.locals_base);
+        }
+      }
+
+      if (!handled) {
+        throw std::runtime_error("Uncaught exception: " +
+                                 toString(thrown.value, &parent_vm_->heap_));
+      }
+      continue;
+    }
+
+    if (frame_count_ > stop_frame_depth) {
+      active_frame_idx = frame_count_ - 1;
+      if (frame_arena_[active_frame_idx].ip == ip) {
+        frame_arena_[active_frame_idx].ip++;
+      }
+    }
+  }
+
+  if (stack.empty()) {
+    return nullptr;
+  }
+  BytecodeValue result = stack.top();
+  stack.pop();
+  return result;
+}
+
+void VM::VMExecutionContext::executeInstructionInContext(
+    const Instruction &instruction) {
+  // Helper lambdas that operate on THIS context's state (not parent VM)
+  auto pop = [this]() -> BytecodeValue {
+    if (stack.empty()) {
+      throw std::runtime_error("Stack underflow");
+    }
+    BytecodeValue value = stack.top();
+    stack.pop();
+    return value;
+  };
+
+  auto push = [this](BytecodeValue value) { stack.push(std::move(value)); };
+
+  auto toAbsoluteLocal = [this](uint32_t local_index) -> uint32_t {
+    return static_cast<uint32_t>(frame_arena_[frame_count_ - 1].locals_base +
+                                 local_index);
+  };
+
+  auto ensureLocalIndex = [this](uint32_t absolute_index) {
+    if (absolute_index >= locals.size()) {
+      locals.resize(static_cast<size_t>(absolute_index) + 1, nullptr);
+    }
+  };
+
+  auto currentFrame = [this]() -> CallFrame & {
+    if (frame_count_ == 0) {
+      throw std::runtime_error("No active call frame");
+    }
+    return frame_arena_[frame_count_ - 1];
+  };
+
+  auto getConstant = [this](uint32_t index) -> BytecodeValue {
+    return frame_arena_[frame_count_ - 1].function->constants[index];
+  };
+
+  auto doReturn = [this, &pop, &push]() {
+    if (frame_count_ == 0) {
+      return;
+    }
+
+    BytecodeValue ret = nullptr;
+    if (!stack.empty()) {
+      ret = pop();
+    }
+
+    auto finished = frame_arena_[frame_count_ - 1];
+    frame_count_--;
+
+    // Close upvalues
+    for (auto it = open_upvalues.begin(); it != open_upvalues.end();) {
+      if (it->first >= finished.locals_base && it->first < locals.size()) {
+        it->second->closed_value = locals[it->first];
+        it->second->is_open = false;
+        it = open_upvalues.erase(it);
+      } else {
+        ++it;
+      }
+    }
+
+    if (locals.size() >= finished.locals_base) {
+      locals.resize(finished.locals_base);
+    }
+
+    push(ret);
+  };
+
+  switch (instruction.opcode) {
+  case OpCode::LOAD_CONST: {
+    uint32_t const_index = std::get<uint32_t>(instruction.operands[0]);
+    push(getConstant(const_index));
+    break;
+  }
+
+  case OpCode::LOAD_GLOBAL: {
+    const auto &name = std::get<std::string>(instruction.operands[0]);
+    // Thread-safe access to parent's globals
+    auto value = parent_vm_->getGlobalThreadSafe(name);
+    push(value.value_or(nullptr));
+    break;
+  }
+
+  case OpCode::STORE_GLOBAL: {
+    const auto &name = std::get<std::string>(instruction.operands[0]);
+    BytecodeValue value = pop();
+    parent_vm_->setGlobalThreadSafe(name, std::move(value));
+    break;
+  }
+
+  case OpCode::LOAD_VAR: {
+    uint32_t var_index = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t abs = toAbsoluteLocal(var_index);
+    ensureLocalIndex(abs);
+    push(locals[abs]);
+    break;
+  }
+
+  case OpCode::STORE_VAR: {
+    uint32_t var_index = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t abs = toAbsoluteLocal(var_index);
+    ensureLocalIndex(abs);
+    locals[abs] = pop();
+    break;
+  }
+
+  case OpCode::LOAD_UPVALUE: {
+    uint32_t upvalue_index = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t closure_id = currentFrame().closure_id;
+    auto *closure = parent_vm_->heap_.closure(closure_id);
+    if (!closure || upvalue_index >= closure->upvalues.size() ||
+        !closure->upvalues[upvalue_index]) {
+      throw std::runtime_error("LOAD_UPVALUE error");
+    }
+    const auto &cell = closure->upvalues[upvalue_index];
+    if (cell->is_open) {
+      ensureLocalIndex(cell->open_index);
+      push(locals[cell->open_index]);
+    } else {
+      push(cell->closed_value);
+    }
+    break;
+  }
+
+  case OpCode::STORE_UPVALUE: {
+    uint32_t upvalue_index = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t closure_id = currentFrame().closure_id;
+    auto *closure = parent_vm_->heap_.closure(closure_id);
+    if (!closure || upvalue_index >= closure->upvalues.size() ||
+        !closure->upvalues[upvalue_index]) {
+      throw std::runtime_error("STORE_UPVALUE error");
+    }
+    auto &cell = closure->upvalues[upvalue_index];
+    BytecodeValue value = pop();
+    if (cell->is_open) {
+      ensureLocalIndex(cell->open_index);
+      locals[cell->open_index] = value;
+    } else {
+      cell->closed_value = value;
+    }
+    break;
+  }
+
+  case OpCode::POP: {
+    pop();
+    break;
+  }
+
+  case OpCode::DUP: {
+    BytecodeValue value = pop();
+    push(value);
+    push(value);
+    break;
+  }
+
+  case OpCode::PUSH_NULL: {
+    push(nullptr);
+    break;
+  }
+
+  case OpCode::ADD: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      push(std::get<int64_t>(left) + std::get<int64_t>(right));
+    } else if ((std::holds_alternative<int64_t>(left) ||
+                std::holds_alternative<double>(left)) &&
+               (std::holds_alternative<int64_t>(right) ||
+                std::holds_alternative<double>(right))) {
+      double l = std::holds_alternative<int64_t>(left)
+                     ? static_cast<double>(std::get<int64_t>(left))
+                     : std::get<double>(left);
+      double r = std::holds_alternative<int64_t>(right)
+                     ? static_cast<double>(std::get<int64_t>(right))
+                     : std::get<double>(right);
+      push(l + r);
+    } else if (std::holds_alternative<std::string>(left) &&
+               std::holds_alternative<std::string>(right)) {
+      push(std::get<std::string>(left) + std::get<std::string>(right));
+    } else {
+      throw std::runtime_error("Type mismatch in ADD");
+    }
+    break;
+  }
+
+  case OpCode::SUB: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      push(std::get<int64_t>(left) - std::get<int64_t>(right));
+    } else {
+      double l = std::holds_alternative<int64_t>(left)
+                     ? static_cast<double>(std::get<int64_t>(left))
+                     : std::get<double>(left);
+      double r = std::holds_alternative<int64_t>(right)
+                     ? static_cast<double>(std::get<int64_t>(right))
+                     : std::get<double>(right);
+      push(l - r);
+    }
+    break;
+  }
+
+  case OpCode::MUL: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      push(std::get<int64_t>(left) * std::get<int64_t>(right));
+    } else {
+      double l = std::holds_alternative<int64_t>(left)
+                     ? static_cast<double>(std::get<int64_t>(left))
+                     : std::get<double>(left);
+      double r = std::holds_alternative<int64_t>(right)
+                     ? static_cast<double>(std::get<int64_t>(right))
+                     : std::get<double>(right);
+      push(l * r);
+    }
+    break;
+  }
+
+  case OpCode::DIV: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    double l = std::holds_alternative<int64_t>(left)
+                   ? static_cast<double>(std::get<int64_t>(left))
+                   : std::get<double>(left);
+    double r = std::holds_alternative<int64_t>(right)
+                   ? static_cast<double>(std::get<int64_t>(right))
+                   : std::get<double>(right);
+    if (r == 0)
+      throw ScriptThrow{BytecodeValue("Division by zero")};
+    push(l / r);
+    break;
+  }
+
+  case OpCode::EQ: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      push(std::get<int64_t>(left) == std::get<int64_t>(right));
+    } else if (std::holds_alternative<std::string>(left) &&
+               std::holds_alternative<std::string>(right)) {
+      push(std::get<std::string>(left) == std::get<std::string>(right));
+    } else {
+      // For other types, only equal if same index and both are nullptr
+      if (left.index() == right.index()) {
+        push(std::holds_alternative<std::nullptr_t>(left) &&
+             std::holds_alternative<std::nullptr_t>(right));
+      } else {
+        push(false);
+      }
+    }
+    break;
+  }
+
+  case OpCode::LT: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      push(std::get<int64_t>(left) < std::get<int64_t>(right));
+    } else {
+      double l = std::holds_alternative<int64_t>(left)
+                     ? static_cast<double>(std::get<int64_t>(left))
+                     : std::get<double>(left);
+      double r = std::holds_alternative<int64_t>(right)
+                     ? static_cast<double>(std::get<int64_t>(right))
+                     : std::get<double>(right);
+      push(l < r);
+    }
+    break;
+  }
+
+  case OpCode::GT: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      push(std::get<int64_t>(left) > std::get<int64_t>(right));
+    } else {
+      double l = std::holds_alternative<int64_t>(left)
+                     ? static_cast<double>(std::get<int64_t>(left))
+                     : std::get<double>(left);
+      double r = std::holds_alternative<int64_t>(right)
+                     ? static_cast<double>(std::get<int64_t>(right))
+                     : std::get<double>(right);
+      push(l > r);
+    }
+    break;
+  }
+
+  case OpCode::JUMP: {
+    uint32_t target = std::get<uint32_t>(instruction.operands[0]);
+    currentFrame().ip = target;
+    break;
+  }
+
+  case OpCode::JUMP_IF_FALSE: {
+    uint32_t target = std::get<uint32_t>(instruction.operands[0]);
+    BytecodeValue condition = pop();
+    if (!parent_vm_->isTruthy(condition)) {
+      currentFrame().ip = target;
+    }
+    break;
+  }
+
+  case OpCode::CALL: {
+    uint32_t arg_count = std::get<uint32_t>(instruction.operands[0]);
+    std::vector<BytecodeValue> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = pop();
+    }
+    BytecodeValue callee_value = pop();
+
+    // Handle host function call
+    if (std::holds_alternative<HostFunctionRef>(callee_value)) {
+      const auto &name = std::get<HostFunctionRef>(callee_value).name;
+      auto it = parent_vm_->host_functions.find(name);
+      if (it != parent_vm_->host_functions.end()) {
+        push(it->second(args));
+      } else {
+        throw std::runtime_error("Host function not found: " + name);
+      }
+      break;
+    }
+
+    // Handle VM function/closure call
+    uint32_t function_index = 0;
+    uint32_t new_closure_id = 0;
+    if (std::holds_alternative<FunctionObject>(callee_value)) {
+      function_index = std::get<FunctionObject>(callee_value).function_index;
+    } else if (std::holds_alternative<ClosureRef>(callee_value)) {
+      new_closure_id = std::get<ClosureRef>(callee_value).id;
+      auto *closure = parent_vm_->heap_.closure(new_closure_id);
+      if (!closure) {
+        throw std::runtime_error("Closure not found");
+      }
+      function_index = closure->function_index;
+    } else {
+      throw std::runtime_error("CALL expects function or closure");
+    }
+
+    const auto *callee = current_chunk->getFunction(function_index);
+    if (!callee) {
+      throw std::runtime_error("Function not found");
+    }
+
+    // Advance caller IP
+    currentFrame().ip++;
+
+    size_t base = locals.size();
+    locals.resize(base + callee->local_count, nullptr);
+    if (frame_arena_.size() <= frame_count_) {
+      frame_arena_.push_back(CallFrame{callee, 0, base, new_closure_id});
+    } else {
+      frame_arena_[frame_count_] = CallFrame{callee, 0, base, new_closure_id};
+    }
+    frame_count_++;
+
+    // Set up parameters
+    for (uint32_t i = 0; i < callee->param_count && i < args.size(); ++i) {
+      locals[base + i] = std::move(args[i]);
+    }
+    break;
+  }
+
+  case OpCode::RETURN: {
+    doReturn();
+    break;
+  }
+
+  case OpCode::CLOSURE: {
+    uint32_t function_index = std::get<uint32_t>(instruction.operands[0]);
+    const auto *target = current_chunk->getFunction(function_index);
+    if (!target) {
+      throw std::runtime_error("CLOSURE references unknown function index");
+    }
+
+    // Capture upvalues
+    std::vector<std::shared_ptr<GCHeap::UpvalueCell>> upvalues;
+    upvalues.reserve(target->upvalues.size());
+    for (const auto &descriptor : target->upvalues) {
+      if (descriptor.captures_local) {
+        uint32_t abs = toAbsoluteLocal(descriptor.index);
+        ensureLocalIndex(abs);
+        auto open_it = open_upvalues.find(abs);
+        if (open_it == open_upvalues.end()) {
+          auto cell = std::make_shared<GCHeap::UpvalueCell>();
+          cell->is_open = true;
+          cell->open_index = abs;
+          open_upvalues.emplace(abs, cell);
+          upvalues.push_back(std::move(cell));
+        } else {
+          upvalues.push_back(open_it->second);
+        }
+      } else {
+        uint32_t parent_closure_id = currentFrame().closure_id;
+        if (parent_closure_id != 0) {
+          auto *parent_closure = parent_vm_->heap_.closure(parent_closure_id);
+          if (parent_closure &&
+              descriptor.index < parent_closure->upvalues.size()) {
+            upvalues.push_back(parent_closure->upvalues[descriptor.index]);
+          }
+        }
+      }
+    }
+
+    push(parent_vm_->heap_.allocateClosure(GCHeap::RuntimeClosure{
+        .function_index = function_index, .upvalues = std::move(upvalues)}));
+    break;
+  }
+
+  case OpCode::CALL_HOST: {
+    const std::string &function_name =
+        std::get<std::string>(instruction.operands[0]);
+    uint32_t arg_count = std::get<uint32_t>(instruction.operands[1]);
+
+    std::vector<BytecodeValue> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = pop();
+    }
+
+    auto it = parent_vm_->host_functions.find(function_name);
+    if (it != parent_vm_->host_functions.end()) {
+      push(it->second(args));
+    } else {
+      throw std::runtime_error("Host function not found: " + function_name);
+    }
+    break;
+  }
+
+  default:
+    throw std::runtime_error(
+        "Unsupported opcode in execution context: " +
+        std::to_string(static_cast<int>(instruction.opcode)));
+  }
+}
+
+void VM::setGlobalThreadSafe(const std::string &name, BytecodeValue value) {
+  std::unique_lock<std::shared_mutex> lock(globals_mutex_);
+  globals[name] = std::move(value);
+}
+
+std::optional<BytecodeValue>
+VM::getGlobalThreadSafe(const std::string &name) const {
+  std::shared_lock<std::shared_mutex> lock(globals_mutex_);
+  auto it = globals.find(name);
+  if (it == globals.end()) {
+    return std::nullopt;
+  }
+  return it->second;
 }
 
 } // namespace havel::compiler

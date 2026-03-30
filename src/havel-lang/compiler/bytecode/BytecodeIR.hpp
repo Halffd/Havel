@@ -222,12 +222,17 @@ struct LazyPipelineRef {
   uint32_t id = 0; // GC object id storing the lazy chain
 };
 
+// Error: custom error type with stack trace and metadata
+struct ErrorRef {
+  uint32_t id = 0; // GC object id for the error object
+};
+
 using BytecodeValue =
     std::variant<std::nullptr_t, bool, int64_t, double, std::string,
                  uint32_t, // Index into constant pool
                  FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
                  RangeRef, StructRef, ClassRef, EnumRef, IteratorRef,
-                 HostFunctionRef, LazyPipelineRef>;
+                 HostFunctionRef, LazyPipelineRef, ErrorRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

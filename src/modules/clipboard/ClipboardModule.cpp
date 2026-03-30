@@ -8,6 +8,8 @@
 #include "host/clipboard/HistoryClipboard.hpp"
 #include "host/clipboard/MonitoringClipboard.hpp"
 
+#include <algorithm>
+
 namespace havel::modules {
 
 using compiler::ArrayRef;
@@ -363,6 +365,135 @@ clipboardHistoryFilter(VMApi &api, const std::vector<BytecodeValue> &args) {
   return arr;
 }
 
+// clipboard.history.find(pattern) -> string (first match)
+static BytecodeValue
+clipboardHistoryFind(const std::vector<BytecodeValue> &args) {
+  std::string pattern = "";
+  if (args.size() > 0) {
+    pattern = toString(args[0]);
+  }
+  auto results = getHistoryClipboard().find(pattern);
+  if (!results.empty()) {
+    return BytecodeValue(results[0]);
+  }
+  return BytecodeValue("");
+}
+
+// clipboard.history.getRange(start, end) -> array
+static BytecodeValue
+clipboardHistoryGetRange(VMApi &api, const std::vector<BytecodeValue> &args) {
+  int start = 0;
+  int end = 10;
+  if (args.size() > 0) {
+    start = toInt(args[0]);
+  }
+  if (args.size() > 1) {
+    end = toInt(args[1]);
+  }
+  auto results = getHistoryClipboard().getHistoryRange(start, end);
+  auto arr = api.makeArray();
+  for (const auto &item : results) {
+    api.push(arr, BytecodeValue(item));
+  }
+  return arr;
+}
+
+// clipboard.history.remove(index) -> bool
+static BytecodeValue
+clipboardHistoryRemove(const std::vector<BytecodeValue> &args) {
+  if (args.size() < 1) {
+    return BytecodeValue(false);
+  }
+  int index = toInt(args[0]);
+  // Get current history
+  auto history = getHistoryClipboard().getHistory();
+  if (index < 0 || index >= static_cast<int>(history.size())) {
+    return BytecodeValue(false);
+  }
+  // Clear and rebuild without the removed item
+  getHistoryClipboard().clearHistory();
+  for (int i = 0; i < static_cast<int>(history.size()); ++i) {
+    if (i != index) {
+      getHistoryClipboard().addToHistory(history[i]);
+    }
+  }
+  return BytecodeValue(true);
+}
+
+// clipboard.history.search(pattern) -> array (case-insensitive)
+static BytecodeValue
+clipboardHistorySearch(VMApi &api, const std::vector<BytecodeValue> &args) {
+  std::string pattern = "";
+  if (args.size() > 0) {
+    pattern = toString(args[0]);
+  }
+  // Convert pattern to lowercase for case-insensitive search
+  std::string patternLower = pattern;
+  std::transform(patternLower.begin(), patternLower.end(), patternLower.begin(),
+                 ::tolower);
+
+  auto history = getHistoryClipboard().getHistory();
+  auto arr = api.makeArray();
+  for (const auto &item : history) {
+    std::string itemLower = item;
+    std::transform(itemLower.begin(), itemLower.end(), itemLower.begin(),
+                   ::tolower);
+    if (itemLower.find(patternLower) != std::string::npos) {
+      api.push(arr, BytecodeValue(item));
+    }
+  }
+  return arr;
+}
+
+// clipboard.history.unique() -> array (remove duplicates)
+static BytecodeValue
+clipboardHistoryUnique(VMApi &api, const std::vector<BytecodeValue> &args) {
+  (void)args;
+  auto history = getHistoryClipboard().getHistory();
+  auto arr = api.makeArray();
+  std::vector<std::string> seen;
+  for (const auto &item : history) {
+    if (std::find(seen.begin(), seen.end(), item) == seen.end()) {
+      seen.push_back(item);
+      api.push(arr, BytecodeValue(item));
+    }
+  }
+  return arr;
+}
+
+// clipboard.history.stats() -> object with statistics
+static BytecodeValue
+clipboardHistoryStats(VMApi &api, const std::vector<BytecodeValue> &args) {
+  (void)args;
+  auto history = getHistoryClipboard().getHistory();
+
+  auto obj = api.makeObject();
+  api.setField(obj, "totalCount",
+               BytecodeValue(static_cast<int64_t>(history.size())));
+  api.setField(obj, "maxSize",
+               BytecodeValue(static_cast<int64_t>(
+                   getHistoryClipboard().getMaxHistorySize())));
+
+  // Calculate total size
+  size_t totalSize = 0;
+  for (const auto &item : history) {
+    totalSize += item.size();
+  }
+  api.setField(obj, "totalBytes",
+               BytecodeValue(static_cast<int64_t>(totalSize)));
+
+  // Average item size
+  if (!history.empty()) {
+    api.setField(
+        obj, "avgSize",
+        BytecodeValue(static_cast<int64_t>(totalSize / history.size())));
+  } else {
+    api.setField(obj, "avgSize", BytecodeValue(static_cast<int64_t>(0)));
+  }
+
+  return obj;
+}
+
 // ============================================================================
 // Monitoring Clipboard Functions
 // ============================================================================
@@ -525,6 +656,36 @@ void registerClipboardModule(compiler::VMApi &api) {
                          return clipboardHistoryFilter(api, args);
                        });
 
+  api.registerFunction("clipboard.history.find",
+                       [](const std::vector<BytecodeValue> &args) {
+                         return clipboardHistoryFind(args);
+                       });
+
+  api.registerFunction("clipboard.history.getRange",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return clipboardHistoryGetRange(api, args);
+                       });
+
+  api.registerFunction("clipboard.history.remove",
+                       [](const std::vector<BytecodeValue> &args) {
+                         return clipboardHistoryRemove(args);
+                       });
+
+  api.registerFunction("clipboard.history.search",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return clipboardHistorySearch(api, args);
+                       });
+
+  api.registerFunction("clipboard.history.unique",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return clipboardHistoryUnique(api, args);
+                       });
+
+  api.registerFunction("clipboard.history.stats",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return clipboardHistoryStats(api, args);
+                       });
+
   // Monitoring functions
   api.registerFunction("clipboard.monitor.start",
                        [](const std::vector<BytecodeValue> &args) {
@@ -593,6 +754,18 @@ void registerClipboardModule(compiler::VMApi &api) {
                api.makeFunctionRef("clipboard.history.getMaxSize"));
   api.setField(historyObj, "filter",
                api.makeFunctionRef("clipboard.history.filter"));
+  api.setField(historyObj, "find",
+               api.makeFunctionRef("clipboard.history.find"));
+  api.setField(historyObj, "getRange",
+               api.makeFunctionRef("clipboard.history.getRange"));
+  api.setField(historyObj, "remove",
+               api.makeFunctionRef("clipboard.history.remove"));
+  api.setField(historyObj, "search",
+               api.makeFunctionRef("clipboard.history.search"));
+  api.setField(historyObj, "unique",
+               api.makeFunctionRef("clipboard.history.unique"));
+  api.setField(historyObj, "stats",
+               api.makeFunctionRef("clipboard.history.stats"));
   api.setField(clipboardObj, "history", historyObj);
 
   // Create monitor sub-object

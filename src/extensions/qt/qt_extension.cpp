@@ -1589,6 +1589,243 @@ static HavelValue* qt_messageBox_warning(int argc, HavelValue** argv) {
 }
 
 /* ============================================================================
+ * TIMER FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_timer_new(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_int(0);
+    void* timer = g_qtLibs->qTimer_new(nullptr);
+    int64_t id = g_nextId++;
+    g_timers[id] = timer;
+    return havel_new_handle(reinterpret_cast<void*>(id), nullptr);
+}
+
+static HavelValue* qt_timer_start(int argc, HavelValue** argv) {
+    if (argc < 2 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_timers.find(id);
+    if (it == g_timers.end()) return havel_new_bool(0);
+    int msec = (int)havel_get_int(argv[1]);
+    g_qtLibs->qTimer_start(it->second, msec);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_timer_stop(int argc, HavelValue** argv) {
+    if (argc < 1 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_timers.find(id);
+    if (it == g_timers.end()) return havel_new_bool(0);
+    g_qtLibs->qTimer_stop(it->second);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_timer_setInterval(int argc, HavelValue** argv) {
+    if (argc < 2 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_timers.find(id);
+    if (it == g_timers.end()) return havel_new_bool(0);
+    int msec = (int)havel_get_int(argv[1]);
+    g_qtLibs->qTimer_setInterval(it->second, msec);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_timer_setSingleShot(int argc, HavelValue** argv) {
+    if (argc < 2 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_timers.find(id);
+    if (it == g_timers.end()) return havel_new_bool(0);
+    g_qtLibs->qTimer_setSingleShot(it->second, havel_get_bool(argv[1]));
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_timer_isActive(int argc, HavelValue** argv) {
+    if (argc < 1 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_timers.find(id);
+    if (it == g_timers.end()) return havel_new_bool(0);
+    return havel_new_bool(g_qtLibs->qTimer_isActive(it->second));
+}
+
+/* ============================================================================
+ * SETTINGS FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_settings_new(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_int(0);
+    const char* fileName = (argc >= 1) ? havel_get_string(argv[0]) : "settings.ini";
+    void* settings = g_qtLibs->qSettings_new(fileName, Qt_IniFormat, nullptr);
+    int64_t id = g_nextId++;
+    g_settings[id] = settings;
+    return havel_new_handle(reinterpret_cast<void*>(id), nullptr);
+}
+
+static HavelValue* qt_settings_setValue(int argc, HavelValue** argv) {
+    if (argc < 3 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_settings.find(id);
+    if (it == g_settings.end()) return havel_new_bool(0);
+    const char* key = havel_get_string(argv[1]);
+    const char* val = havel_get_string(argv[2]);
+    g_qtLibs->qSettings_setValue(it->second, key, val);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_settings_value(int argc, HavelValue** argv) {
+    if (argc < 2 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_settings.find(id);
+    if (it == g_settings.end()) return havel_new_string("");
+    const char* key = havel_get_string(argv[1]);
+    const char* defVal = (argc >= 3) ? havel_get_string(argv[2]) : "";
+    const char* val = g_qtLibs->qSettings_value(it->second, key, defVal);
+    return havel_new_string(val ? val : "");
+}
+
+static HavelValue* qt_settings_contains(int argc, HavelValue** argv) {
+    if (argc < 2 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_settings.find(id);
+    if (it == g_settings.end()) return havel_new_bool(0);
+    const char* key = havel_get_string(argv[1]);
+    return havel_new_bool(g_qtLibs->qSettings_contains(it->second, key));
+}
+
+static HavelValue* qt_settings_remove(int argc, HavelValue** argv) {
+    if (argc < 2 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_settings.find(id);
+    if (it == g_settings.end()) return havel_new_bool(0);
+    const char* key = havel_get_string(argv[1]);
+    g_qtLibs->qSettings_remove(it->second, key);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_settings_sync(int argc, HavelValue** argv) {
+    if (argc < 1 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    auto it = g_settings.find(id);
+    if (it == g_settings.end()) return havel_new_bool(0);
+    g_qtLibs->qSettings_sync(it->second);
+    return havel_new_bool(1);
+}
+
+/* ============================================================================
+ * CLIPBOARD FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_clipboard_text(int argc, HavelValue** argv) {
+    (void)argc; (void)argv;
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    void* cb = g_qtLibs->qApp_clipboard();
+    if (!cb) return havel_new_string("");
+    const char* text = g_qtLibs->qClipboard_text(cb, 0);
+    return havel_new_string(text ? text : "");
+}
+
+static HavelValue* qt_clipboard_setText(int argc, HavelValue** argv) {
+    if (argc < 1 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    void* cb = g_qtLibs->qApp_clipboard();
+    if (!cb) return havel_new_bool(0);
+    const char* text = havel_get_string(argv[0]);
+    g_qtLibs->qClipboard_setText(cb, text, 0);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_clipboard_clear(int argc, HavelValue** argv) {
+    (void)argc; (void)argv;
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_bool(0);
+    void* cb = g_qtLibs->qApp_clipboard();
+    if (!cb) return havel_new_bool(0);
+    g_qtLibs->qClipboard_clear(cb);
+    return havel_new_bool(1);
+}
+
+/* ============================================================================
+ * FILE DIALOG FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_fileDialog_getOpenFileName(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    QWidget* parent = (argc >= 1) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[0]))) : nullptr;
+    const char* caption = (argc >= 2) ? havel_get_string(argv[1]) : "Open File";
+    const char* dir = (argc >= 3) ? havel_get_string(argv[2]) : "";
+    const char* filter = (argc >= 4) ? havel_get_string(argv[3]) : "All Files (*)";
+    const char* fileName = g_qtLibs->qFileDialog_getOpenFileName(parent, caption, dir, filter, nullptr, 0);
+    return havel_new_string(fileName ? fileName : "");
+}
+
+static HavelValue* qt_fileDialog_getSaveFileName(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    QWidget* parent = (argc >= 1) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[0]))) : nullptr;
+    const char* caption = (argc >= 2) ? havel_get_string(argv[1]) : "Save File";
+    const char* dir = (argc >= 3) ? havel_get_string(argv[2]) : "";
+    const char* filter = (argc >= 4) ? havel_get_string(argv[3]) : "All Files (*)";
+    const char* fileName = g_qtLibs->qFileDialog_getSaveFileName(parent, caption, dir, filter, nullptr, 0);
+    return havel_new_string(fileName ? fileName : "");
+}
+
+static HavelValue* qt_fileDialog_getExistingDirectory(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    QWidget* parent = (argc >= 1) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[0]))) : nullptr;
+    const char* caption = (argc >= 2) ? havel_get_string(argv[1]) : "Select Directory";
+    const char* dir = (argc >= 3) ? havel_get_string(argv[2]) : "";
+    const char* path = g_qtLibs->qFileDialog_getExistingDirectory(parent, caption, dir, 0);
+    return havel_new_string(path ? path : "");
+}
+
+/* ============================================================================
+ * COLOR DIALOG FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_colorDialog_getColor(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    const char* initial = (argc >= 1) ? havel_get_string(argv[0]) : "#ffffff";
+    QWidget* parent = (argc >= 2) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[1]))) : nullptr;
+    const char* color = g_qtLibs->qColorDialog_getColor(nullptr, initial, parent, "Select Color", 0);
+    return havel_new_string(color ? color : "");
+}
+
+/* ============================================================================
+ * FONT DIALOG FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_fontDialog_getFont(int argc, HavelValue** argv) {
+    if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    QWidget* parent = (argc >= 1) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[0]))) : nullptr;
+    const char* font = g_qtLibs->qFontDialog_getFont(nullptr, nullptr, parent, "Select Font", 0);
+    return havel_new_string(font ? font : "");
+}
+
+/* ============================================================================
+ * INPUT DIALOG FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_inputDialog_getText(int argc, HavelValue** argv) {
+    if (argc < 3 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_string("");
+    QWidget* parent = (argc >= 1) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[0]))) : nullptr;
+    const char* title = havel_get_string(argv[1]);
+    const char* label = havel_get_string(argv[2]);
+    const char* text = (argc >= 4) ? havel_get_string(argv[3]) : "";
+    bool ok = false;
+    const char* result = g_qtLibs->qInputDialog_getText(parent, title, label, Qt_NormalEcho, text, &ok, 0);
+    return havel_new_string(ok ? (result ? result : "") : "");
+}
+
+static HavelValue* qt_inputDialog_getInteger(int argc, HavelValue** argv) {
+    if (argc < 4 || !g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_int(0);
+    QWidget* parent = (argc >= 1) ? getWidget(reinterpret_cast<int64_t>(havel_get_handle(argv[0]))) : nullptr;
+    const char* title = havel_get_string(argv[1]);
+    const char* label = havel_get_string(argv[2]);
+    int value = (int)havel_get_int(argv[3]);
+    int min = (argc >= 5) ? (int)havel_get_int(argv[4]) : 0;
+    int max = (argc >= 6) ? (int)havel_get_int(argv[5]) : 100;
+    int step = (argc >= 7) ? (int)havel_get_int(argv[6]) : 1;
+    bool ok = false;
+    int result = g_qtLibs->qInputDialog_getInteger(parent, title, label, &ok, value, min, max, step, 0);
+    return ok ? havel_new_int(result) : havel_new_int(0);
+}
+
+/* ============================================================================
  * REGISTRATION
  * ============================================================================ */
 
@@ -1602,7 +1839,7 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     api->register_function("qt", "processEvents", qt_processEvents);
     api->register_function("qt", "setApplicationName", qt_setApplicationName);
     api->register_function("qt", "setOrganizationName", qt_setOrganizationName);
-    
+
     /* Widget base */
     api->register_function("qt", "widgetShow", qt_widget_show);
     api->register_function("qt", "widgetHide", qt_widget_hide);
@@ -1616,24 +1853,24 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     api->register_function("qt", "widgetSetToolTip", qt_widget_setToolTip);
     api->register_function("qt", "widgetSetFocus", qt_widget_setFocus);
     api->register_function("qt", "widgetUpdate", qt_widget_update);
-    
+
     /* QMainWindow */
     api->register_function("qt", "mainWindowNew", qt_mainWindow_new);
     api->register_function("qt", "mainWindowSetCentralWidget", qt_mainWindow_setCentralWidget);
-    
+
     /* QLabel */
     api->register_function("qt", "labelNew", qt_label_new);
     api->register_function("qt", "labelSetText", qt_label_setText);
     api->register_function("qt", "labelSetAlignment", qt_label_setAlignment);
     api->register_function("qt", "labelSetWordWrap", qt_label_setWordWrap);
-    
+
     /* QPushButton */
     api->register_function("qt", "pushButtonNew", qt_pushButton_new);
     api->register_function("qt", "pushButtonSetText", qt_pushButton_setText);
     api->register_function("qt", "pushButtonSetCheckable", qt_pushButton_setCheckable);
     api->register_function("qt", "pushButtonSetChecked", qt_pushButton_setChecked);
     api->register_function("qt", "pushButtonClick", qt_pushButton_click);
-    
+
     /* QLineEdit */
     api->register_function("qt", "lineEditNew", qt_lineEdit_new);
     api->register_function("qt", "lineEditSetText", qt_lineEdit_setText);
@@ -1641,17 +1878,53 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     api->register_function("qt", "lineEditSetPlaceholderText", qt_lineEdit_setPlaceholderText);
     api->register_function("qt", "lineEditSetReadOnly", qt_lineEdit_setReadOnly);
     api->register_function("qt", "lineEditClear", qt_lineEdit_clear);
-    
+
     /* Layouts */
     api->register_function("qt", "vBoxLayoutNew", qt_vBoxLayout_new);
     api->register_function("qt", "hBoxLayoutNew", qt_hBoxLayout_new);
     api->register_function("qt", "layoutAddWidget", qt_layout_addWidget);
     api->register_function("qt", "layoutAddStretch", qt_layout_addStretch);
     api->register_function("qt", "widgetSetLayout", qt_widget_setLayout);
-    
+
     /* QMessageBox */
     api->register_function("qt", "messageBoxAbout", qt_messageBox_about);
     api->register_function("qt", "messageBoxInformation", qt_messageBox_information);
     api->register_function("qt", "messageBoxQuestion", qt_messageBox_question);
     api->register_function("qt", "messageBoxWarning", qt_messageBox_warning);
+
+    /* QTimer */
+    api->register_function("qt", "timerNew", qt_timer_new);
+    api->register_function("qt", "timerStart", qt_timer_start);
+    api->register_function("qt", "timerStop", qt_timer_stop);
+    api->register_function("qt", "timerSetInterval", qt_timer_setInterval);
+    api->register_function("qt", "timerSetSingleShot", qt_timer_setSingleShot);
+    api->register_function("qt", "timerIsActive", qt_timer_isActive);
+
+    /* QSettings */
+    api->register_function("qt", "settingsNew", qt_settings_new);
+    api->register_function("qt", "settingsSetValue", qt_settings_setValue);
+    api->register_function("qt", "settingsValue", qt_settings_value);
+    api->register_function("qt", "settingsContains", qt_settings_contains);
+    api->register_function("qt", "settingsRemove", qt_settings_remove);
+    api->register_function("qt", "settingsSync", qt_settings_sync);
+
+    /* QClipboard */
+    api->register_function("qt", "clipboardText", qt_clipboard_text);
+    api->register_function("qt", "clipboardSetText", qt_clipboard_setText);
+    api->register_function("qt", "clipboardClear", qt_clipboard_clear);
+
+    /* QFileDialog */
+    api->register_function("qt", "fileDialogGetOpenFileName", qt_fileDialog_getOpenFileName);
+    api->register_function("qt", "fileDialogGetSaveFileName", qt_fileDialog_getSaveFileName);
+    api->register_function("qt", "fileDialogGetExistingDirectory", qt_fileDialog_getExistingDirectory);
+
+    /* QColorDialog */
+    api->register_function("qt", "colorDialogGetColor", qt_colorDialog_getColor);
+
+    /* QFontDialog */
+    api->register_function("qt", "fontDialogGetFont", qt_fontDialog_getFont);
+
+    /* QInputDialog */
+    api->register_function("qt", "inputDialogGetText", qt_inputDialog_getText);
+    api->register_function("qt", "inputDialogGetInteger", qt_inputDialog_getInteger);
 }

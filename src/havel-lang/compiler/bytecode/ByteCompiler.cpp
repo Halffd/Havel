@@ -1335,7 +1335,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::ObjectLiteral: {
     const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
-    emit(OpCode::OBJECT_NEW);
+    // Emit sorted or unsorted object creation based on AST flag
+    if (object.unsorted) {
+      emit(OpCode::OBJECT_NEW_UNSORTED);
+    } else {
+      emit(OpCode::OBJECT_NEW);
+    }
     for (const auto &pair : object.pairs) {
       if (!pair.second) {
         throw std::runtime_error("Object literal contains null value");

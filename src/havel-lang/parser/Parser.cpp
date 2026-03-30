@@ -3647,6 +3647,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
                                                           op, true);
   }
 
+  if (at().type == havel::TokenType::Not) {
+    // Check if this is !{} for unsorted object
+    if (at(1).type == havel::TokenType::OpenBrace) {
+      // !{...} - unsorted object literal
+      advance();                       // consume '!'
+      return parseObjectLiteral(true); // true = unsorted
+    }
+  }
+
   if (at().type == havel::TokenType::Not ||
       at().type == havel::TokenType::Minus ||
       at().type == havel::TokenType::Plus) {
@@ -4578,7 +4587,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
   return std::make_unique<havel::ast::ArrayLiteral>(std::move(elements));
 }
 
-std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
+std::unique_ptr<havel::ast::Expression>
+Parser::parseObjectLiteral(bool unsorted) {
   std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
       pairs;
 
@@ -4656,7 +4666,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
   }
   advance(); // consume '}'
 
-  return std::make_unique<havel::ast::ObjectLiteral>(std::move(pairs));
+  return std::make_unique<havel::ast::ObjectLiteral>(std::move(pairs),
+                                                     unsorted);
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {

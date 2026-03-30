@@ -1998,18 +1998,21 @@ struct TupleExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Object Literal ({key: value, ...})
+// Object Literal ({key: value, ...} or !{key: value, ...} for unsorted)
 struct ObjectLiteral : public Expression {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+  bool unsorted = false; // true for !{} syntax (unsorted keys)
 
   ObjectLiteral(
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
-      : pairs(std::move(p)) {
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {},
+      bool unsortedFlag = false)
+      : pairs(std::move(p)), unsorted(unsortedFlag) {
     kind = NodeType::ObjectLiteral;
   }
 
   std::string toString() const override {
-    return "ObjectLiteral{" + std::to_string(pairs.size()) + " pairs}";
+    return "ObjectLiteral{" + std::to_string(pairs.size()) + " pairs, " +
+           (unsorted ? "unsorted" : "sorted") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;

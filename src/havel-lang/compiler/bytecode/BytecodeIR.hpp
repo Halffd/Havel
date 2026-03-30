@@ -136,6 +136,7 @@ enum class OpCode : uint8_t {
 
   // Object operations
   OBJECT_NEW,
+  OBJECT_NEW_UNSORTED, // Create object with unsorted keys (!{} syntax)
   OBJECT_GET,
   OBJECT_SET,
 
@@ -180,6 +181,7 @@ struct ArrayRef {
 
 struct ObjectRef {
   uint32_t id = 0;
+  bool sorted = true; // Default to sorted keys
 };
 
 struct SetRef {

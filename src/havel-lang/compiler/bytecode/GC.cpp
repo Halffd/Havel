@@ -36,10 +36,12 @@ ArrayRef GCHeap::allocateArray() {
   return ArrayRef{.id = id};
 }
 
-ObjectRef GCHeap::allocateObject() {
+ObjectRef GCHeap::allocateObject(bool sorted) {
   const uint32_t id = next_object_id_++;
-  objects_[id] = {};
-  return ObjectRef{.id = id};
+  ObjectEntry entry;
+  entry.sorted = sorted;
+  objects_[id] = std::move(entry);
+  return ObjectRef{.id = id, .sorted = sorted};
 }
 
 SetRef GCHeap::allocateSet() {
@@ -97,9 +99,7 @@ IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
   if (std::holds_alternative<ObjectRef>(iterable)) {
     auto *obj = object(std::get<ObjectRef>(iterable).id);
     if (obj) {
-      for (const auto &[key, _] : *obj) {
-        iter.keys.push_back(key);
-      }
+      iter.keys = obj->getKeys();
     }
   } else if (std::holds_alternative<SetRef>(iterable)) {
     auto *setObj = set(std::get<SetRef>(iterable).id);
@@ -315,13 +315,12 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       value = nullptr;
     } else {
       // For objects, return the value (not the key)
-      // Use object.keys()/values()/entries() for explicit control
       auto *obj = object(std::get<ObjectRef>(iter->iterable).id);
       if (obj && iter->index < iter->keys.size()) {
         const auto &key = iter->keys[iter->index++];
-        auto it = obj->find(key);
-        if (it != obj->end()) {
-          value = it->second;
+        auto *val = obj->get(key);
+        if (val) {
+          value = *val;
         } else {
           value = nullptr;
         }
@@ -381,7 +380,7 @@ std::vector<BytecodeValue> *GCHeap::array(uint32_t id) {
   return it == arrays_.end() ? nullptr : &it->second;
 }
 
-std::unordered_map<std::string, BytecodeValue> *GCHeap::object(uint32_t id) {
+GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
   auto it = objects_.find(id);
   return it == objects_.end() ? nullptr : &it->second;
 }
@@ -417,7 +416,7 @@ GCHeap::Stats GCHeap::stats() const {
   }
   for (const auto &[_, object] : objects_) {
     heap_size += sizeof(object);
-    for (const auto &[key, _] : object) {
+    for (const auto &[key, _] : object.data) {
       heap_size += static_cast<uint64_t>(key.size()) + sizeof(BytecodeValue);
     }
   }
@@ -489,7 +488,7 @@ void GCHeap::markValue(
     if (it == objects_.end()) {
       return;
     }
-    for (const auto &[_, entry] : it->second) {
+    for (const auto &[_, entry] : it->second.data) {
       markValue(entry, marked_arrays, marked_objects, marked_sets,
                 marked_closures, open_local_reader);
     }

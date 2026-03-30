@@ -2843,7 +2843,13 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::OBJECT_NEW: {
-    push(heap_.allocateObject());
+    push(heap_.allocateObject(true)); // sorted = true
+    maybeCollectGarbage();
+    break;
+  }
+
+  case OpCode::OBJECT_NEW_UNSORTED: {
+    push(heap_.allocateObject(false)); // sorted = false
     maybeCollectGarbage();
     break;
   }
@@ -2854,17 +2860,40 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!std::holds_alternative<ObjectRef>(object)) {
       throw std::runtime_error("OBJECT_GET expects object container");
     }
+    auto objRef = std::get<ObjectRef>(object);
+    auto *obj = heap_.object(objRef.id);
+    if (!obj) {
+      throw std::runtime_error("OBJECT_GET unknown object id");
+    }
+
+    // Check for numeric index (obj[0], obj[-1])
+    if (std::holds_alternative<int64_t>(key_value)) {
+      int64_t index = std::get<int64_t>(key_value);
+      auto keys = obj->getKeys();
+      // Handle negative indices
+      if (index < 0) {
+        index = static_cast<int64_t>(keys.size()) + index;
+      }
+      if (index >= 0 && static_cast<size_t>(index) < keys.size()) {
+        auto *val = obj->get(keys[static_cast<size_t>(index)]);
+        if (val) {
+          push(*val);
+        } else {
+          push(BytecodeValue(nullptr));
+        }
+      } else {
+        push(BytecodeValue(nullptr));
+      }
+      break;
+    }
+
     auto key = keyFromValue(key_value);
     if (!key) {
       throw std::runtime_error("OBJECT_GET expects string/number/bool key");
     }
-    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
-    if (!obj) {
-      throw std::runtime_error("OBJECT_GET unknown object id");
-    }
-    auto kv = obj->find(*key);
-    if (kv != obj->end()) {
-      push(kv->second);
+    auto *val = obj->get(*key);
+    if (val) {
+      push(*val);
     } else {
       // Property not found - check prototype methods
       auto method = getPrototypeMethod(object, *key);
@@ -2902,7 +2931,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!obj) {
       throw std::runtime_error("OBJECT_SET unknown object id");
     }
-    (*obj)[*keyStr] = value;
+    obj->set(*keyStr, std::move(value));
     push(object); // Return the object for chaining
     break;
   }
@@ -2919,7 +2948,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
-    for (const auto &[key, _] : *obj) {
+    auto keys = obj->getKeys();
+    for (const auto &key : keys) {
       arr->push_back(BytecodeValue(key));
     }
     push(BytecodeValue(arrRef));
@@ -2937,8 +2967,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
-    for (const auto &[_, value] : *obj) {
-      arr->push_back(value);
+    auto keys = obj->getKeys();
+    for (const auto &key : keys) {
+      auto *val = obj->get(key);
+      if (val) {
+        arr->push_back(*val);
+      }
     }
     push(BytecodeValue(arrRef));
     break;
@@ -2954,14 +2988,18 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("OBJECT_ENTRIES unknown object id");
     }
     auto arrRef = heap_.allocateArray();
-    for (const auto &[key, value] : *obj) {
-      // Create [key, value] tuple as array
-      auto tupleRef = heap_.allocateArray();
-      auto *tuple = heap_.array(tupleRef.id);
-      tuple->push_back(BytecodeValue(key));
-      tuple->push_back(value);
-      auto *arr = heap_.array(arrRef.id);
-      arr->push_back(BytecodeValue(tupleRef));
+    auto keys = obj->getKeys();
+    for (const auto &key : keys) {
+      auto *val = obj->get(key);
+      if (val) {
+        // Create [key, value] tuple as array
+        auto tupleRef = heap_.allocateArray();
+        auto *tuple = heap_.array(tupleRef.id);
+        tuple->push_back(BytecodeValue(key));
+        tuple->push_back(*val);
+        auto *arr = heap_.array(arrRef.id);
+        arr->push_back(BytecodeValue(tupleRef));
+      }
     }
     push(BytecodeValue(arrRef));
     break;
@@ -2981,7 +3019,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!obj) {
       push(BytecodeValue(false));
     } else {
-      push(BytecodeValue(obj->find(*key) != obj->end()));
+      push(BytecodeValue(obj->get(*key) != nullptr));
     }
     break;
   }
@@ -3000,7 +3038,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!obj) {
       push(BytecodeValue(false));
     } else {
-      push(BytecodeValue(obj->erase(*key) > 0));
+      push(BytecodeValue(obj->data.erase(*key) > 0));
     }
     break;
   }

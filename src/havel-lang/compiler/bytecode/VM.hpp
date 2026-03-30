@@ -25,6 +25,22 @@ namespace havel::compiler {
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
+// Error handling with stack traces
+struct ScriptError final {
+  BytecodeValue value;
+  std::string message;
+  std::string stackTrace;
+  uint32_t line = 0;
+  uint32_t column = 0;
+
+  ScriptError(BytecodeValue val, const std::string &msg,
+              const std::string &trace, uint32_t ln = 0, uint32_t col = 0)
+      : value(std::move(val)), message(msg), stackTrace(trace), line(ln),
+        column(col) {}
+
+  const char *what() const noexcept { return message.c_str(); }
+};
+
 class VM : public BytecodeInterpreter {
 public:
   class GCRoot {
@@ -165,6 +181,7 @@ private:
                   std::vector<BytecodeValue> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   bool handleScriptThrow(const BytecodeValue &value);
+  std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
 
   std::vector<BytecodeValue> stackValuesForRoots() const;

@@ -545,6 +545,26 @@ set_target_properties(imgui_extension PROPERTIES
     VISIBILITY_INLINES_HIDDEN OFF
 )
 
+# Qt6 extension (Qt6 Widgets)
+# Uses dynamic loading - no compile-time dependency on Qt6
+add_library(qt_extension MODULE src/extensions/qt/qt_extension.cpp)
+target_include_directories(qt_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
+)
+target_link_libraries(qt_extension PRIVATE
+    havel_extension_runtime
+    dl
+)
+set_target_properties(qt_extension PROPERTIES
+    PREFIX ""
+    C_STANDARD 11
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+)
+
 # ==============================================================================
 # MAIN EXECUTABLE
 # ==============================================================================

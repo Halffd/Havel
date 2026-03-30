@@ -292,6 +292,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/host/process/*.cpp"
     "src/host/screenshot/*.cpp"
     "src/host/timer/*.cpp"
+    "src/host/ui/*.cpp"
     "src/host/window/*.cpp"
     "src/window/*.cpp"
     "src/utils/*.cpp"
@@ -328,6 +329,7 @@ file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
+list(APPEND HOST_MODULES_SOURCES "src/modules/ui/UIModule.cpp")
 
 # Test sources (conditional)
 set(TEST_SOURCES "")

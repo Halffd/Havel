@@ -10,6 +10,7 @@
 #include "../../modules/help/HelpModule.hpp"
 #include "../../modules/hotkey/HotkeyModule.hpp"
 #include "../../modules/mouse/MouseModule.hpp"
+#include "../../modules/ui/UIModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
 #include "../compiler/bytecode/VMApi.hpp"
@@ -60,6 +61,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Register mouse module (mouse control)
   modules::registerMouseModule(*api);
 
+  // Register UI module (user interface)
+  modules::registerUIModule(*api);
+
   // Register automation module (auto clicker, runner, key presser)
   modules::registerAutomationModule(*api);
 
@@ -96,6 +100,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("E_CHARGE");
   bridge.options().host_global_names.insert("Time");
   bridge.options().host_global_names.insert("time");
+  bridge.options().host_global_names.insert("ui");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

@@ -196,6 +196,9 @@ private:
   // Helper to create Identifier with source location
   std::unique_ptr<ast::Identifier> makeIdentifier(const Token &token);
 
+  // Lookahead helper to detect destructuring patterns like {a, b} = obj
+  bool isDestructuringPattern() const;
+
   // Condition combination helpers
   std::unique_ptr<ast::Expression>
   combineConditions(std::unique_ptr<ast::Expression> left,

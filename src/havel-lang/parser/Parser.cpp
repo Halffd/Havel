@@ -112,6 +112,111 @@ bool Parser::notEOF() const {
          tokens[position].type != havel::TokenType::EOF_TOKEN;
 }
 
+// Lookahead helper to detect destructuring patterns like {a, b} = obj or {a: b}
+// = obj
+bool Parser::isDestructuringPattern() const {
+  // Must start with OpenBrace
+  if (at().type != havel::TokenType::OpenBrace) {
+    return false;
+  }
+
+  size_t offset = 1; // Skip past the '{'
+
+  // Look for pattern: { identifier (',' | ':' | '}') ... '='
+  while (true) {
+    // Check for EOF
+    if (position + offset >= tokens.size()) {
+      return false;
+    }
+
+    const Token &token = tokens[position + offset];
+
+    // End of object literal - check what comes after
+    if (token.type == havel::TokenType::CloseBrace) {
+      // Look for '=' after the closing brace (skipping newlines)
+      size_t afterBrace = offset + 1;
+      while (position + afterBrace < tokens.size()) {
+        const Token &nextToken = tokens[position + afterBrace];
+        if (nextToken.type == havel::TokenType::NewLine) {
+          afterBrace++;
+          continue;
+        }
+        if (nextToken.type == havel::TokenType::Assign) {
+          return true; // Found { ... } = pattern
+        }
+        // Any other token means it's not a destructuring assignment
+        return false;
+      }
+      return false;
+    }
+
+    // Statement boundary - not a destructuring pattern
+    if (token.type == havel::TokenType::Semicolon ||
+        token.type == havel::TokenType::EOF_TOKEN) {
+      return false;
+    }
+
+    // First token inside brace must be an identifier for shorthand
+    // or we could have {identifier} or {identifier: ...}
+    if (offset == 1) {
+      // First element must be an identifier
+      if (token.type != havel::TokenType::Identifier) {
+        return false;
+      }
+    } else {
+      // After first element, we expect comma, colon, or closing brace
+      if (token.type == havel::TokenType::Comma) {
+        offset++;
+        // After comma, expect another identifier
+        if (position + offset >= tokens.size()) {
+          return false;
+        }
+        const Token &nextToken = tokens[position + offset];
+        if (nextToken.type != havel::TokenType::Identifier) {
+          return false;
+        }
+      } else if (token.type == havel::TokenType::Colon) {
+        // {key: value} pattern - skip the value (could be complex)
+        offset++;
+        // Skip until we find comma or closing brace
+        int depth = 1;
+        while (position + offset < tokens.size()) {
+          const Token &t = tokens[position + offset];
+          if (t.type == havel::TokenType::OpenBrace ||
+              t.type == havel::TokenType::OpenParen ||
+              t.type == havel::TokenType::OpenBracket) {
+            depth++;
+          } else if (t.type == havel::TokenType::CloseBrace) {
+            depth--;
+            if (depth == 0)
+              break;
+          } else if (t.type == havel::TokenType::CloseParen ||
+                     t.type == havel::TokenType::CloseBracket) {
+            depth--;
+          } else if (t.type == havel::TokenType::Comma && depth == 1) {
+            break;
+          }
+          offset++;
+        }
+      } else if (token.type == havel::TokenType::CloseBrace) {
+        continue; // Will be handled at top of loop
+      } else if (token.type != havel::TokenType::Identifier) {
+        // Something unexpected - probably not destructuring
+        return false;
+      }
+    }
+
+    offset++;
+
+    // Safety limit to prevent infinite loops
+    if (offset > 1000) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 std::unique_ptr<havel::ast::Program>
 Parser::produceAST(const std::string &sourceCode) {
   // Tokenize source code
@@ -561,8 +666,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseWhenBlock();
   case havel::TokenType::Repeat:
     return parseRepeatStatement();
-  case havel::TokenType::OpenBrace:
+  case havel::TokenType::OpenBrace: {
+    // Check if this is a destructuring pattern like {a, b} = obj or {a: b} =
+    // obj We need to look ahead to see if the brace contains identifiers
+    // followed by =
+    if (isDestructuringPattern()) {
+      // Parse as expression statement with object pattern (destructuring)
+      auto expr = parseExpression();
+
+      // Consume optional semicolon
+      if (at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
     return parseBlockStatement();
+  }
   case havel::TokenType::Import:
     return parseImportStatement();
   case havel::TokenType::Use:

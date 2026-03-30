@@ -94,6 +94,109 @@ qt.quit()
 qt.processEvents()
 ```
 
+### Timer
+
+```havel
+// Create timer
+let timer = qt.timerNew()
+qt.timerSetInterval(timer, 1000)  // 1 second
+qt.timerSetSingleShot(timer, true)  // Fire once
+qt.timerStart(timer)
+
+// Check if active
+let active = qt.timerIsActive(timer)
+
+// Stop timer
+qt.timerStop(timer)
+```
+
+### Settings (INI File)
+
+```havel
+// Create settings object
+let settings = qt.settingsNew("settings.ini")
+
+// Save values
+qt.settingsSetValue(settings, "window/width", "800")
+qt.settingsSetValue(settings, "window/height", "600")
+qt.settingsSetValue(settings, "user/name", "John")
+
+// Load values
+let width = qt.settingsValue(settings, "window/width", "640")
+let height = qt.settingsValue(settings, "window/height", "480")
+let name = qt.settingsValue(settings, "user/name", "Guest")
+
+// Check if key exists
+if (qt.settingsContains(settings, "user/name")) {
+    print("Name exists")
+}
+
+// Remove key
+qt.settingsRemove(settings, "user/name")
+
+// Sync to disk
+qt.settingsSync(settings)
+```
+
+### Clipboard
+
+```havel
+// Get clipboard text
+let text = qt.clipboardText()
+
+// Set clipboard text
+qt.clipboardSetText("Hello Clipboard!")
+
+// Clear clipboard
+qt.clipboardClear()
+```
+
+### File Dialogs
+
+```havel
+// Open file dialog
+let fileName = qt.fileDialogGetOpenFileName(win, "Open File", "", "Images (*.png *.jpg);;All Files (*)")
+
+// Save file dialog
+let fileName = qt.fileDialogGetSaveFileName(win, "Save File", "", "Text Files (*.txt)")
+
+// Select directory
+let dirPath = qt.fileDialogGetExistingDirectory(win, "Select Directory", "")
+```
+
+### Color Dialog
+
+```havel
+// Get color from user
+let color = qt.colorDialogGetColor("#ff0000", win)
+if (color != "") {
+    print("Selected color: " + color)  // Returns "#RRGGBB"
+}
+```
+
+### Font Dialog
+
+```havel
+// Get font from user
+let font = qt.fontDialogGetFont(win)
+if (font != "") {
+    print("Selected font: " + font)
+}
+```
+
+### Input Dialogs
+
+```havel
+// Get text input
+let text = qt.inputDialogGetText(win, "Enter Name", "Name:", "Default")
+if (text != "") {
+    print("User entered: " + text)
+}
+
+// Get integer input
+let num = qt.inputDialogGetInteger(win, "Enter Number", "Number:", 50, 0, 100, 1)
+```
+
 ### Main Window
 
 ```havel

@@ -1,0 +1,69 @@
+// System Tray Example - Havel UI Module
+// Run with: ./havel examples/ui_tray_example.hv
+//
+// Demonstrates system tray functionality including:
+// - Tray icon setup
+// - Context menu with callbacks
+// - Tray notifications
+// - Show/hide window from tray
+
+print("System Tray Example")
+print("=" * 30)
+
+// Create a simple window
+win = ui.window("Tray Example App", {width: 400, height: 300})
+statusLabel = ui.label("Window is visible")
+win.add(statusLabel)
+
+// Set up system tray
+ui.trayIcon("", "Havel Tray Example")
+
+// Create tray menu
+fileMenu = ui.menu("Actions")
+fileMenu.add(ui.menuItem("Show Window", "Ctrl+S").onClick(() => {
+    win.show()
+    statusLabel.text("Window shown from tray")
+    print("Show Window clicked")
+}))
+
+fileMenu.add(ui.menuItem("Hide Window", "Ctrl+H").onClick(() => {
+    win.hide()
+    statusLabel.text("Window hidden to tray")
+    print("Hide Window clicked")
+}))
+
+fileMenu.add(ui.menuSeparator())
+
+fileMenu.add(ui.menuItem("Send Notification", "Ctrl+N").onClick(() => {
+    ui.trayNotify("Hello from Tray!", "This is a tray notification", "info")
+    print("Notification sent")
+}))
+
+fileMenu.add(ui.menuSeparator())
+
+fileMenu.add(ui.menuItem("Exit", "Alt+F4").onClick(() => {
+    print("Exit clicked - closing application")
+    win.close()
+}))
+
+// Attach menu to tray
+ui.trayMenu(fileMenu)
+
+// Show the tray icon
+ui.trayShow()
+
+// Show a startup notification
+ui.trayNotify("Tray Example Started", "Right-click the tray icon for menu", "info")
+
+// Show window initially
+win.show()
+
+// Main loop
+print("Application running - right-click the tray icon to access menu")
+print("Close the window or select 'Exit' from tray menu to quit")
+
+while win.isVisible() {
+    ui.pumpEvents(100)
+}
+
+print("Application closed")

@@ -188,6 +188,10 @@ private:
   std::unique_ptr<ast::Expression> parseObjectPattern();
   std::unique_ptr<ast::Statement> parseTryStatement();
   std::unique_ptr<ast::Statement> parseThrowStatement();
+  std::unique_ptr<ast::Statement> parseUIDeclaration();
+  void parseUIElementDeclaration(
+      const std::string &parentVar, bool addToParent,
+      std::vector<std::unique_ptr<ast::Statement>> &statements);
   std::unique_ptr<ast::Expression> parseLambdaFromParams(
       std::vector<std::unique_ptr<ast::FunctionParameter>> params);
   std::unique_ptr<ast::Expression>

@@ -477,6 +477,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     //   thread { ... }            -> thread(fn() { ... })
     //   interval <ms> { ... }     -> interval(<ms>, fn() { ... })
     //   timeout <ms> { ... }      -> timeout(<ms>, fn() { ... })
+    //   ui { ... }                -> desugared ui.create calls
     if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
       advance(); // consume "thread"
       auto body = parseBlockStatement();
@@ -487,6 +488,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto call = std::make_unique<havel::ast::CallExpression>(
           std::make_unique<havel::ast::Identifier>("thread"), std::move(args));
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(call));
+    }
+
+    if (at().value == "ui" && at(1).type == havel::TokenType::OpenBrace) {
+      return parseUIDeclaration();
     }
 
     if ((at().value == "interval" || at().value == "timeout") &&
@@ -1913,6 +1918,198 @@ std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
   advance(); // consume 'throw'
   auto value = parseExpression();
   return std::make_unique<havel::ast::ThrowStatement>(std::move(value));
+}
+
+// Parse UI declarative block: ui { window "Title" { ... } }
+// Desugars to imperative API calls
+std::unique_ptr<havel::ast::Statement> Parser::parseUIDeclaration() {
+  advance(); // consume "ui"
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'ui'");
+  }
+  advance(); // consume '{'
+
+  // Create a block to hold all the desugared statements
+  auto block = std::make_unique<havel::ast::BlockStatement>();
+
+  // Parse UI element declarations
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Parse each top-level UI element (like window, modal, etc.)
+    if (at().type == havel::TokenType::Identifier) {
+      parseUIElementDeclaration("", false, block->body);
+    } else {
+      // Unexpected token, skip it
+      advance();
+    }
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close ui block");
+  }
+  advance(); // consume '}'
+
+  return block;
+}
+
+// Parse a single UI element declaration and its children
+// Returns statements to add to parent block
+void Parser::parseUIElementDeclaration(
+    const std::string &parentVar, bool addToParent,
+    std::vector<std::unique_ptr<ast::Statement>> &statements) {
+
+  if (at().type != havel::TokenType::Identifier) {
+    return;
+  }
+
+  std::string elemType = advance().value; // e.g., "window", "button", "column"
+
+  // Generate a unique variable name for this element
+  static int elemCounter = 0;
+  std::string varName =
+      "__ui_" + elemType + "_" + std::to_string(elemCounter++);
+
+  // Parse element arguments (title, label, etc.)
+  std::vector<std::unique_ptr<havel::ast::Expression>> args;
+
+  // First argument is usually a string (title, label, placeholder)
+  if (at().type == havel::TokenType::String ||
+      at().type == havel::TokenType::MultilineString) {
+    args.push_back(
+        std::make_unique<havel::ast::StringLiteral>(advance().value));
+  }
+
+  // Create the constructor call: ui.window("Title")
+  auto uiMember = std::make_unique<havel::ast::MemberExpression>(
+      std::make_unique<havel::ast::Identifier>("ui"),
+      std::make_unique<havel::ast::Identifier>(elemType));
+  auto constructorCall = std::make_unique<havel::ast::CallExpression>(
+      std::move(uiMember), std::move(args));
+
+  // Create the let declaration: let varName = ui.elemType(...)
+  auto letDecl = std::make_unique<havel::ast::LetDeclaration>(
+      std::make_unique<havel::ast::Identifier>(varName),
+      std::move(constructorCall), std::nullopt, false);
+  statements.push_back(std::move(letDecl));
+
+  // Parse children if there's a block
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+
+    // Parse child elements and add them
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+      // Skip newlines
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+
+      if (at().type == havel::TokenType::CloseBrace) {
+        break;
+      }
+
+      // Check for event handlers: onClick => { ... }
+      if (at().type == havel::TokenType::Identifier &&
+          at().value.rfind("on", 0) == 0 && // starts with "on"
+          at(1).type == havel::TokenType::Arrow) {
+        std::string eventName = advance().value; // e.g., "onClick"
+        advance();                               // consume '=>'
+
+        // Parse the handler (lambda or expression)
+        std::unique_ptr<havel::ast::Expression> handler;
+        if (at().type == havel::TokenType::OpenBrace) {
+          // Block handler: create lambda
+          auto body = parseBlockStatement();
+          auto lambda = std::make_unique<havel::ast::LambdaExpression>();
+          lambda->body = std::move(body);
+          handler = std::move(lambda);
+        } else {
+          // Expression handler
+          handler = parseExpression();
+        }
+
+        // Create: varName.onClick(handler)
+        std::vector<std::unique_ptr<havel::ast::Expression>> handlerArgs;
+        handlerArgs.push_back(std::move(handler));
+        auto eventMember = std::make_unique<havel::ast::MemberExpression>(
+            std::make_unique<havel::ast::Identifier>(varName),
+            std::make_unique<havel::ast::Identifier>(eventName));
+        auto eventCall = std::make_unique<havel::ast::CallExpression>(
+            std::move(eventMember), std::move(handlerArgs));
+
+        statements.push_back(std::make_unique<havel::ast::ExpressionStatement>(
+            std::move(eventCall)));
+      }
+      // Check for style method calls: pad(10), bg("#000"), etc.
+      else if (at().type == havel::TokenType::Identifier &&
+               at(1).type == havel::TokenType::OpenParen) {
+        std::string methodName = advance().value;
+        advance(); // consume '('
+
+        std::vector<std::unique_ptr<havel::ast::Expression>> methodArgs;
+        while (at().type != havel::TokenType::CloseParen) {
+          methodArgs.push_back(parseExpression());
+          if (at().type == havel::TokenType::Comma) {
+            advance();
+          }
+        }
+        advance(); // consume ')'
+
+        // Create: varName.methodName(args)
+        auto methodMember = std::make_unique<havel::ast::MemberExpression>(
+            std::make_unique<havel::ast::Identifier>(varName),
+            std::make_unique<havel::ast::Identifier>(methodName));
+        auto methodCall = std::make_unique<havel::ast::CallExpression>(
+            std::move(methodMember), std::move(methodArgs));
+
+        statements.push_back(std::make_unique<havel::ast::ExpressionStatement>(
+            std::move(methodCall)));
+      }
+      // Regular child element
+      else if (at().type == havel::TokenType::Identifier) {
+        parseUIElementDeclaration(varName, true, statements);
+      } else {
+        advance(); // skip unexpected token
+      }
+
+      // Skip newlines
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+    }
+
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close element block");
+    }
+    advance(); // consume '}'
+  }
+
+  // If we have a parent, add the .add() call
+  if (addToParent && !parentVar.empty()) {
+    std::vector<std::unique_ptr<havel::ast::Expression>> addArgs;
+    addArgs.push_back(std::make_unique<havel::ast::Identifier>(varName));
+    auto addMember = std::make_unique<havel::ast::MemberExpression>(
+        std::make_unique<havel::ast::Identifier>(parentVar),
+        std::make_unique<havel::ast::Identifier>("add"));
+    auto addCall = std::make_unique<havel::ast::CallExpression>(
+        std::move(addMember), std::move(addArgs));
+
+    statements.push_back(
+        std::make_unique<havel::ast::ExpressionStatement>(std::move(addCall)));
+  }
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {

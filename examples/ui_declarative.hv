@@ -1,0 +1,69 @@
+// UI Declarative Syntax Demo - Havel UI Module
+// Run with: ./havel examples/ui_declarative.hv
+
+// Phase 1: Imperative API (existing)
+print("=== Imperative API ===")
+win = ui.window("My App", {width: 800, height: 600})
+btn = ui.btn("Click me!")
+win.add(btn)
+win.show()
+sleep(1000)
+win.close()
+
+// Phase 2: Declarative Syntax (NEW!)
+print("=== Declarative Syntax ===")
+
+ui {
+  window "My App" {
+    column {
+      text "Hello, World!"
+      
+      button "Click Me" {
+        onClick => print("Button clicked!")
+      }
+      
+      row {
+        input "Enter your name..."
+        button "Submit" {
+          onClick => print("Form submitted!")
+        }
+      }
+    }
+  }
+}
+
+// Phase 3: Complex Layout Example
+print("=== Complex Layout ===")
+
+ui {
+  window "Settings" {
+    column {
+      text "Application Settings"
+      
+      row {
+        text "Dark Mode"
+        checkbox "Enable" {
+          onChange => print("Dark mode toggled")
+        }
+      }
+      
+      row {
+        text "Volume"
+        slider 50 {
+          onChange => print("Volume changed")
+        }
+      }
+      
+      row {
+        button "Save" {
+          onClick => print("Settings saved!")
+        }
+        button "Cancel" {
+          onClick => print("Cancelled")
+        }
+      }
+    }
+  }
+}
+
+print("UI demos complete!")

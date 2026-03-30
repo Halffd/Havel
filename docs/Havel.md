@@ -111,6 +111,127 @@ hotkey => action
 data | transform1 | transform2
 ```
 
+### Enhanced Pipeline Features
+
+Havel pipelines support advanced features for functional composition and data flow:
+
+#### Auto-Currying
+Functions with missing first arguments automatically receive the piped value:
+```havel
+// Partial call - piped value fills first argument
+files = fs.readDir "/tmp"
+  | find "ERROR"           // find(files, "ERROR")
+  | head 5                  // head(result, 5)
+
+// Equivalent to:
+// files = head(find(fs.readDir("/tmp"), "ERROR"), 5)
+```
+
+#### Tap Behavior
+Functions like `print` output and pass value through:
+```havel
+data
+  | print                   // Print and continue with original value
+  | process                 // Process the same data
+  | print                   // Print result and continue
+```
+
+#### Lambda Filter/Map Detection
+Lambdas in pipelines act as filter (if returns bool) or map (if returns value):
+```havel
+// Lambda = filter if returns bool
+files = fs.readDir "/tmp"
+  | f => f.endsWith ".log"  // Keep only .log files
+  | f => f.size > 1024       // Keep only files > 1KB
+
+// Lambda = map if returns value
+numbers = [1, 2, 3, 4, 5]
+  | x => x * 2              // Double each: [2, 4, 6, 8, 10]
+  | x => x + 10             // Add 10: [12, 14, 16, 18, 20]
+```
+
+#### Void Pass-Through
+Functions returning void/nil pass previous pipe value:
+```havel
+data
+  | logToFile               // logToFile returns void, data continues
+  | process                 // Process the original data
+```
+
+#### Pipeline with Modules
+```havel
+// fs module pipelines
+logFiles = fs.readDir "/var/log"
+  | f => f.endsWith ".log"
+  | f => f | regex.match /error/i
+  | take 10
+
+// regex module pipelines
+text = "Hello World 123"
+matches = text
+  | regex.match /[0-9]+/
+  | m => m.text
+
+// system module pipelines
+output = system.exec "ls -la"
+  | lines
+  | l => l.upper
+  | reverse
+
+// process module pipelines
+procs = process.list()
+  | p => p.name
+  | distinct
+  | sort
+```
+
+#### Pipeline with Classes and Structs
+```havel
+// Class methods in pipelines
+class StringProcessor {
+  fn process(text) { return text.upper }
+  fn filter(text) { return text.length > 3 }
+}
+processor = StringProcessor.new()
+items = ["hello", "hi", "world"]
+  | processor.process
+  | processor.filter
+
+// Struct field access in pipelines
+struct Person { name, age }
+people = [
+  Person { name: "Alice", age: 30 },
+  Person { name: "Bob", age: 25 }
+]
+names = people
+  | p => p.name
+  | n => n.upper
+
+// Struct methods in pipelines
+struct Point {
+  x, y
+  fn magnitude() { return math.sqrt(@x * @x + @y * @y) }
+}
+points = [Point { x: 3, y: 4 }, Point { x: 6, y: 8 }]
+magnitudes = points
+  | p => p.magnitude()
+```
+
+#### Complex Pipeline Example
+```havel
+// File processing pipeline
+fs.readDir "/tmp"
+  | print                          // Tap: print files
+  | f => f.isFile                  // Filter: keep files only
+  | f => f.endsWith ".log"         // Filter: .log files
+  | head 5                         // Take first 5
+  | f => fs.read f                 // Read content
+  | content => content | regex.find /ERROR.*/  // Find errors
+  | flatten                        // Flatten results
+  | take 10                        // Take first 10
+  | print                          // Print final results
+```
+
 ### Blocks
 ```
 hotkey => {
@@ -1269,16 +1390,16 @@ havel hello.hv
 "In automation, as in battle, preparation and reliability triumph over complexity."
 
 ---
-### Hotkey Self-Management with `this` Context
+### Hotkey Self-Management with `@` Context
 
-Hotkeys can now manage themselves from within their action blocks using the `this` context:
+Hotkeys can now manage themselves from within their action blocks using the `@` context:
 
 ```havel
 // Self-disable based on window title
 Enter if mode == "default" => {
     if window.title == "vscode" {
-        print("Disabling " + this.alias)
-        this.disable()
+        print("Disabling " + @alias)
+        @disable()
     } else {
         clipboard.send()
     }
@@ -1287,27 +1408,29 @@ Enter if mode == "default" => {
 // Self-remove after first use
 F1 => {
     print("This hotkey only works once!")
-    this.remove()  // Remove myself
+    @remove()  // Remove myself
 }
 
 // Toggle based on state
 F2 => {
-    this.toggle()
+    @toggle()
     print("Hotkey is now " + (isEnabled ? "enabled" : "disabled"))
 }
 ```
 
-**Available `this` Properties:**
-- `this.id` - Hotkey ID
-- `this.alias` - Hotkey alias/name
-- `this.key` - Hotkey key combination
-- `this.condition` - Condition string
+**Available `@` Properties:**
+- `@id` - Hotkey ID
+- `@alias` - Hotkey alias/name
+- `@key` - Hotkey key combination
+- `@condition` - Condition string
+- `@info` - Every Hotkey information
+- `@callback` - Callback function for this hotkey
 
-**Available `this` Methods:**
-- `this.enable()` - Enable this hotkey
-- `this.disable()` - Disable this hotkey
-- `this.toggle()` - Toggle hotkey enabled state
-- `this.remove()` - Remove this hotkey
+**Available `@` Methods:**
+- `@enable()` - Enable this hotkey
+- `@disable()` - Disable this hotkey
+- `@toggle()` - Toggle hotkey enabled state
+- `@remove()` - Remove this hotkey
 
 ### Window Groups
 
@@ -1775,19 +1898,19 @@ trait Area {
 struct Circle {
   radius
   fn init(r) {
-    this.radius = r
+    @radius = r
   }
 }
 
 impl Drawable for Circle {
   fn draw() {
-    print("Drawing circle with radius " + this.radius)
+    print("Drawing circle with radius " + @radius)
   }
 }
 
 impl Area for Circle {
   fn area() {
-    return 3.14 * this.radius * this.radius
+    return 3.14 * @radius * @radius
   }
 }
 
@@ -1919,17 +2042,17 @@ struct MousePos {
   y
 
   fn init(x, y) {
-    this.x = x
-    this.y = y
+    @x = x
+    @y = y
   }
 
   fn moveTo(speed) {
-    mouse.moveTo(this.x, this.y, speed)
+    mouse.moveTo(@x, @y, speed)
   }
 
   fn distance(other) {
-    let dx = this.x - other.x
-    let dy = this.y - other.y
+    let dx = @x - other.x
+    let dy = @y - other.y
     return sqrt(dx*dx + dy*dy)
   }
 }
@@ -2085,6 +2208,283 @@ match r {
     Err(e) => print("Error: " + e)
 }
 ```
+
+---
+
+## Classes, Structs and Inheritance
+
+Havel supports object-oriented programming with classes, structs, traits, and inheritance.
+
+### Classes
+
+Classes are reference types with methods and inheritance support.
+
+#### Basic Class Definition
+```havel
+class Person {
+  fn init(name, age) {
+    @name = name
+    @age = age
+  }
+  
+  fn greet() {
+    print("Hello, I'm " + @name)
+  }
+  
+  fn haveBirthday() {
+    @age = @age + 1
+    print(@name + " is now " + @age)
+  }
+}
+
+// Create instance
+let person = Person.new("Alice", 30)
+person.greet()           // "Hello, I'm Alice"
+person.haveBirthday()    // "Alice is now 31"
+```
+
+#### Class Inheritance
+```havel
+class Employee extends Person {
+  fn init(name, age, department) {
+    super.init(name, age)
+    @department = department
+  }
+  
+  fn work() {
+    print(@name + " is working in " + @department)
+  }
+  
+  // Override parent method
+  fn greet() {
+    super.greet()
+    print("I work in " + @department)
+  }
+}
+
+let emp = Employee.new("Bob", 25, "Engineering")
+emp.greet()    // Calls both parent and child greet
+emp.work()     // "Bob is working in Engineering"
+```
+
+#### Abstract Classes
+```havel
+abstract class Shape {
+  fn init(color) {
+    @color = color
+  }
+  
+  // Abstract method - must be implemented by subclasses
+  abstract fn area()
+  
+  // Concrete method
+  fn describe() {
+    print("A " + @color + " shape")
+  }
+}
+
+class Circle extends Shape {
+  fn init(color, radius) {
+    super.init(color)
+    @radius = radius
+  }
+  
+  fn area() {
+    return 3.14159 * @radius * @radius
+  }
+}
+
+let circle = Circle.new("red", 5)
+print(circle.area())     // 78.53975
+circle.describe()        // "A red shape"
+```
+
+### Structs
+
+Structs are value types (copied on assignment) with optional methods and typed fields.
+
+#### Basic Struct Definition
+```havel
+struct Point {
+  x: Num
+  y: Num
+}
+
+// Create struct instance
+let p1 = Point { x: 10, y: 20 }
+let p2 = Point { x: 30, y: 40 }
+
+// Field access
+print(p1.x)    // 10
+print(p1.y)    // 20
+```
+
+#### Structs with Methods
+```havel
+struct Vector2 {
+  x: Num
+  y: Num
+  
+  fn init(x, y) {
+    @x = x
+    @y = y
+  }
+  
+  fn magnitude() {
+    return math.sqrt(@x * @x + @y * @y)
+  }
+  
+  fn add(other) {
+    return Vector2 {
+      x: @x + other.x,
+      y: @y + other.y
+    }
+  }
+}
+
+let v1 = Vector2.new(3, 4)
+let v2 = Vector2.new(1, 2)
+let v3 = v1.add(v2)
+
+print(v1.magnitude())    // 5
+print(v3.x)              // 4
+print(v3.y)              // 6
+```
+
+#### Struct Constructor Sugar
+```havel
+// Traditional constructor
+let p1 = Point.new(10, 20)
+
+// Sugar syntax - same result
+let p2 = Point(30, 40)
+```
+
+#### Untyped Structs (Dynamic)
+```havel
+struct Flexible {
+  x
+  y
+}
+
+let f = Flexible { x: "hello", y: 42 }
+print(f.x)     // "hello"
+```
+
+### Traits
+
+Traits define interfaces that types can implement without inheritance.
+
+#### Defining Traits
+```havel
+trait Drawable {
+  fn draw()
+}
+
+trait Resizable {
+  fn resize(width, height)
+}
+```
+
+#### Implementing Traits for Classes
+```havel
+class Button {
+  fn init(label) {
+    @label = label
+    @width = 100
+    @height = 30
+  }
+}
+
+impl Drawable for Button {
+  fn draw() {
+    print("Drawing button: " + @label)
+  }
+}
+
+impl Resizable for Button {
+  fn resize(width, height) {
+    @width = width
+    @height = height
+    print("Resized to " + width + "x" + height)
+  }
+}
+
+let btn = Button.new("Click me")
+btn.draw()           // "Drawing button: Click me"
+btn.resize(200, 50)  // "Resized to 200x50"
+```
+
+#### Implementing Traits for Structs
+```havel
+struct Rectangle {
+  width: Num
+  height: Num
+}
+
+impl Drawable for Rectangle {
+  fn draw() {
+    print("Drawing rectangle " + @width + "x" + @height)
+  }
+}
+
+impl Resizable for Rectangle {
+  fn resize(width, height) {
+    @width = width
+    @height = height
+  }
+}
+
+let rect = Rectangle { width: 100, height: 50 }
+rect.draw()
+rect.resize(200, 100)
+```
+
+#### Checking Trait Implementation
+```havel
+// Runtime check if object implements a trait
+let btn = Button.new("Test")
+
+if implements(btn, "Drawable") {
+  btn.draw()
+}
+
+if implements(btn, "Resizable") {
+  btn.resize(300, 100)
+}
+```
+
+### Key Differences
+
+| Feature | Class | Struct |
+|---------|-------|--------|
+| Type | Reference | Value |
+| Assignment | Shared reference | Copied |
+| Inheritance | Yes (`extends`) | No |
+| Traits | Yes (`impl`) | Yes (`impl`) |
+| Methods | Yes | Yes |
+| Abstract | Yes | No |
+| Performance | Heap allocated | Stack allocated |
+
+### Best Practices
+
+**Use Classes when:**
+- Need inheritance hierarchies
+- Want shared mutable state
+- Modeling complex entities with behavior
+- Need abstract base classes
+
+**Use Structs when:**
+- Need value semantics (copy-on-assign)
+- Modeling simple data containers
+- Working with geometric/point data
+- Want lightweight objects
+
+**Use Traits when:**
+- Defining shared interfaces
+- Want mixin-style behavior
+- Need polymorphism without inheritance
+- Defining contracts for functionality
 
 ---
 
@@ -2720,12 +3120,12 @@ Raw key event handling:
 ```havel
 // Catch ALL key down events
 on keyDown {
-    print("Key pressed: " + this.key)
+    print("Key pressed: " + @key)
 }
 
 // Catch ALL key up events
 on keyUp {
-    print("Key released: " + this.key)
+    print("Key released: " + @key)
 }
 
 // Catch specific keys only
@@ -2743,7 +3143,7 @@ on keyUp(lctrl, rctrl, lshift, rshift, esc) {
 **Features:**
 - Fires on every key event
 - Optional key filtering
-- `this.key` contains key code
+- `@key` contains key code
 - Works with mode system
 
 ---

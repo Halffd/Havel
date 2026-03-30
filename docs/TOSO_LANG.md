@@ -16,7 +16,7 @@ Tracking implementation progress against docs/Havel.md specification.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Hotkey mapping (`=>`) | ✅ | Basic hotkey syntax |
-| Pipeline operator (`|`) | ⚠️ | Limited support |
+| Pipeline operator (`|`) | ✅ | Auto-currying, tap, lambda filter/map, void pass-through |
 | Block structure (`{}`) | ✅ | |
 | Variables (`let`) | ✅ | |
 | Constants (`const`) | ❌ | Defined in docs |
@@ -963,3 +963,43 @@ Becomes:
 - `any.*` dispatch needs string/array functions in HostBridge options_
 - Arrays print as `array[N]` not values (need toString/__repr__)
 - Object iteration order is undefined (hash map iteration)
+
+### Enhanced Pipeline Features (2026-03-29) - COMPLETE
+
+**Status:** ✅ Fully Implemented and Documented
+
+**Features Implemented:**
+- **Auto-Currying**: Functions with missing first args automatically receive piped value
+  - `| find "ERROR"` → `find(pipeValue, "ERROR")`
+  - `| head 5` → `head(pipeValue, 5)`
+  
+- **Tap Behavior**: Functions like `print` output and pass value through
+  - `data | print | process` - print shows value, continues with original
+  
+- **Lambda Filter/Map Detection**: Lambdas act as filter (bool return) or map (value return)
+  - `| f => f.endsWith ".log"` - Filter mode (keeps true values)
+  - `| x => x * 2` - Map mode (transforms each value)
+  
+- **Void Pass-Through**: Functions returning void/nil pass previous pipe value
+  - `data | logToFile | process` - logToFile returns void, data continues
+
+**Files Modified:**
+- `src/havel-lang/compiler/bytecode/ByteCompiler.cpp` (lines 1519-1644)
+  - Enhanced `compilePipelineExpression` with all pipeline features
+  - Added auto-currying logic for CallExpression
+  - Added tap behavior for print-like functions
+  - Added LambdaExpression support for filter/map
+  
+- `src/havel-lang/parser/Parser.cpp` (lines 3028-3037)
+  - Fixed LambdaExpression constructor to wrap expression in ExpressionStatement
+  
+- `docs/Havel.md` (lines 114-233)
+  - Added comprehensive "Enhanced Pipeline Features" documentation
+  - Documented all syntax and usage patterns
+
+**Test Files Created:**
+- `/tmp/test_pipeline_modules.hv` - fs, regex, system, process module pipelines
+- `/tmp/test_pipeline_classes.hv` - Classes, methods, and struct pipelines
+- `/tmp/test_pipeline_features.hv` - Feature demonstration script
+
+**Build Status:** ✅ Compiles successfully

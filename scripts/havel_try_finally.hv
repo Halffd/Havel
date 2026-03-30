@@ -1,0 +1,21 @@
+let x = 0
+try {
+  x = 1
+} finally {
+  x += 1
+}
+print(x)
+fn inner() {
+  try {
+    throw 7
+  } finally {
+    x += 10
+  }
+}
+try {
+  inner()
+  return 0
+} catch (e) {
+  print(x)
+  return e
+}

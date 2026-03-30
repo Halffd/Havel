@@ -1,0 +1,30 @@
+fn double(x) { return x * 2 }
+fn isEven(x) { return x % 2 == 0 }
+fn add(acc, x = 1) { return acc + x }
+fn printItem(x) { print("    "); print(x) }
+fn compare(a, b) { return a > b }
+
+print("=== Array Higher-Order Functions Test ===\n")
+
+print("1. Testing map:")
+let nums = [1, 2, 3, 4]
+let doubled = nums.map(double)
+print("  [1,2,3,4].map(double): ")
+print(doubled)
+print("")
+
+print("2. Testing filter:")
+let evens = nums.filter(isEven)
+print("  [1,2,3,4].filter(isEven): ")
+print(evens)
+print("")
+
+print("3. Testing reduce:")
+let sum = nums.reduce(add, 10)
+print(sum)
+print("")
+
+print("4. Testing foreach:")
+nums.foreach(printItem)
+print("done")
+return 0

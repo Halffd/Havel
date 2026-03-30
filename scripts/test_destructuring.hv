@@ -1,0 +1,3 @@
+let sys = {os: "linux", shell: "bash"}
+{os, shell} = sys
+print("OS: " + os)

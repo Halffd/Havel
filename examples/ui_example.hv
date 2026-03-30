@@ -1,0 +1,23 @@
+// UI Example - Havel UI Module Demo
+// Run with: ./havel examples/ui_example.hv
+
+// Phase 1: Basic window with button
+print("UI Module Demo")
+
+// Create a simple window
+win = ui.window("My App", {width: 800, height: 600, resizable: true})
+
+// Add a button
+btn = ui.btn("Click me!")
+win.add(btn)
+
+// Show the window
+win.show()
+
+// Keep the window open
+sleep(5000)
+
+// Close the window
+win.close()
+
+print("Demo complete!")

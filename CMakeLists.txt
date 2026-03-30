@@ -379,6 +379,43 @@ if(OpenCV_LIBS MATCHES "avfilter")
     set(OPENCV_FFMPEG_WORKAROUND "-Wl,--unresolved-symbols=ignore-in-shared-libs")
 endif()
 
+# ==============================================================================
+# GTK4 EXTENSION (OPTIONAL - Dynamic Loading)
+# ==============================================================================
+# GTK4 is loaded dynamically at runtime via dlopen
+# No compile-time dependency required
+pkg_check_modules(GTK4 QUIET gtk4)
+if(GTK4_FOUND)
+    message(STATUS "GTK4:           ✓ Available (will be loaded dynamically)")
+else()
+    message(STATUS "GTK4:           ✗ Not found (extension will load dynamically if available)")
+endif()
+# Always build GTK extension - it uses dynamic loading
+set(BUILD_GTK_EXTENSION TRUE)
+
+# ==============================================================================
+# IMGUI EXTENSION (OPTIONAL - Dynamic Loading)
+# ==============================================================================
+# ImGui, GLFW, and OpenGL are loaded dynamically at runtime via dlopen
+# No compile-time dependency required
+pkg_check_modules(GLFW3 QUIET glfw3)
+find_package(OpenGL QUIET)
+
+if(GLFW3_FOUND)
+    message(STATUS "GLFW3:          ✓ Available (will be loaded dynamically)")
+else()
+    message(STATUS "GLFW3:          ✗ Not found (extension will load dynamically if available)")
+endif()
+
+if(OpenGL_FOUND)
+    message(STATUS "OpenGL:         ✓ Available (will be loaded dynamically)")
+else()
+    message(STATUS "OpenGL:         ✗ Not found (extension will load dynamically if available)")
+endif()
+
+# Always build ImGui extension - it uses dynamic loading
+set(BUILD_IMGUI_EXTENSION TRUE)
+
 set(COMMON_LIBS
     # System libraries
     ${PCRE2_8_LIBRARIES}
@@ -453,13 +490,53 @@ target_include_directories(ocr_extension PRIVATE
     ${TESSERACT_INCLUDE_DIRS}
     ${LEPTONICA_INCLUDE_DIRS}
 )
-target_link_libraries(ocr_extension PRIVATE 
+target_link_libraries(ocr_extension PRIVATE
     havel_extension_runtime
-    ${TESSERACT_LIBRARIES} 
+    ${TESSERACT_LIBRARIES}
     ${LEPTONICA_LIBRARIES}
 )
 target_compile_definitions(ocr_extension PRIVATE HAVE_TESSERACT)
 set_target_properties(ocr_extension PROPERTIES
+    PREFIX ""
+    C_STANDARD 11
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+)
+
+# GTK4 extension (GTK4-based UI)
+# Uses dynamic loading - no compile-time dependency on GTK4
+add_library(gtk_extension MODULE src/extensions/gtk/gtk_extension.cpp)
+target_include_directories(gtk_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
+)
+target_link_libraries(gtk_extension PRIVATE
+    havel_extension_runtime
+    dl
+)
+set_target_properties(gtk_extension PROPERTIES
+    PREFIX ""
+    C_STANDARD 11
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+)
+
+# ImGui extension (Dear ImGui with GLFW/OpenGL)
+# Uses dynamic loading - no compile-time dependency on ImGui/GLFW/OpenGL
+add_library(imgui_extension MODULE src/extensions/imgui/imgui_extension.cpp)
+target_include_directories(imgui_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
+)
+target_link_libraries(imgui_extension PRIVATE
+    havel_extension_runtime
+    dl
+)
+set_target_properties(imgui_extension PROPERTIES
     PREFIX ""
     C_STANDARD 11
     CXX_STANDARD 23

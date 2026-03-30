@@ -4,8 +4,13 @@
  * Core clipboard implementation - minimal overhead.
  */
 #include "Clipboard.hpp"
+#include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QIODevice>
+#include <QList>
+#include <QMimeData>
+#include <QUrl>
 #include <cstdlib>
 
 namespace havel::host {
@@ -419,6 +424,48 @@ bool Clipboard::setFiles(const std::vector<std::string> &paths) {
 }
 
 bool Clipboard::hasFiles() const { return !getFiles().empty(); }
+
+// ============================================================================
+// ClipboardInfo Support
+// ============================================================================
+
+ClipboardInfo Clipboard::getInfo() const {
+  ClipboardInfo info;
+
+  // Try to get text first
+  std::string text = getText();
+  if (!text.empty()) {
+    info.type = ClipboardInfo::Type::TEXT;
+    info.content = text;
+    info.size = text.size();
+    info.mimeType = "text/plain";
+    return info;
+  }
+
+  // Try to get image
+  std::string image = getImage();
+  if (!image.empty()) {
+    info.type = ClipboardInfo::Type::IMAGE;
+    info.content = image;
+    info.size = image.size();
+    info.mimeType = "image/png";
+    return info;
+  }
+
+  // Try to get files
+  std::vector<std::string> files = getFiles();
+  if (!files.empty()) {
+    info.type = ClipboardInfo::Type::FILES;
+    info.files = files;
+    info.size = 0; // Size would require stat calls
+    info.mimeType = "text/uri-list";
+    return info;
+  }
+
+  // Empty clipboard
+  info.type = ClipboardInfo::Type::EMPTY;
+  return info;
+}
 
 // Qt File Implementation
 std::vector<std::string> Clipboard::getFilesQt() const {

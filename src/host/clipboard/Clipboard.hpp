@@ -8,6 +8,8 @@
  */
 #pragma once
 
+#include "ClipboardInfo.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -68,7 +70,10 @@ public:
   // Aliases for convenience
   std::string get() const { return getText(); }
   std::string in() const { return getText(); }
-  std::string out() const { return getText(); }
+  ClipboardInfo out() const { return getInfo(); }
+
+  // Get full clipboard information
+  ClipboardInfo getInfo() const;
 
   // =========================================================================
   // Image support

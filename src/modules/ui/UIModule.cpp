@@ -587,6 +587,71 @@ static BytecodeValue uiNotify(const std::vector<BytecodeValue> &args) {
 }
 
 // ============================================================================
+// System Tray
+// ============================================================================
+
+// ui.trayIcon(iconPath, tooltip)
+static BytecodeValue uiTrayIcon(const std::vector<BytecodeValue> &args) {
+  std::string iconPath = "";
+  std::string tooltip = "";
+
+  if (args.size() > 0) {
+    iconPath = toString(args[0]);
+  }
+  if (args.size() > 1) {
+    tooltip = toString(args[1]);
+  }
+
+  getUIService().trayIcon(iconPath, tooltip);
+  return BytecodeValue(true);
+}
+
+// ui.trayShow()
+static BytecodeValue uiTrayShow(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  getUIService().trayShow();
+  return BytecodeValue(true);
+}
+
+// ui.trayHide()
+static BytecodeValue uiTrayHide(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  getUIService().trayHide();
+  return BytecodeValue(true);
+}
+
+// ui.trayMenu(menuElement)
+static BytecodeValue uiTrayMenu(VMApi &api,
+                                const std::vector<BytecodeValue> &args) {
+  // Menu element would need to be extracted from args
+  // For now, just set up an empty tray menu
+  (void)api;
+  (void)args;
+  getUIService().trayMenu(nullptr);
+  return BytecodeValue(true);
+}
+
+// ui.trayNotify(title, message, iconType)
+static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
+  std::string title = "Notification";
+  std::string message = "";
+  std::string iconType = "info";
+
+  if (args.size() > 0) {
+    title = toString(args[0]);
+  }
+  if (args.size() > 1) {
+    message = toString(args[1]);
+  }
+  if (args.size() > 2) {
+    iconType = toString(args[2]);
+  }
+
+  getUIService().trayNotify(title, message, iconType);
+  return BytecodeValue(true);
+}
+
+// ============================================================================
 // Element Methods (operate on element objects)
 // ============================================================================
 
@@ -879,6 +944,29 @@ void registerUIModule(compiler::VMApi &api) {
     return uiNotify(args);
   });
 
+  // System Tray
+  api.registerFunction(
+      "ui.trayIcon",
+      [](const std::vector<BytecodeValue> &args) { return uiTrayIcon(args); });
+
+  api.registerFunction(
+      "ui.trayShow",
+      [](const std::vector<BytecodeValue> &args) { return uiTrayShow(args); });
+
+  api.registerFunction(
+      "ui.trayHide",
+      [](const std::vector<BytecodeValue> &args) { return uiTrayHide(args); });
+
+  api.registerFunction("ui.trayMenu",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiTrayMenu(api, args);
+                       });
+
+  api.registerFunction("ui.trayNotify",
+                       [](const std::vector<BytecodeValue> &args) {
+                         return uiTrayNotify(args);
+                       });
+
   // Element methods
   api.registerFunction("ui.element.add",
                        [&api](const std::vector<BytecodeValue> &args) {
@@ -975,6 +1063,11 @@ void registerUIModule(compiler::VMApi &api) {
   api.setField(uiObj, "filePicker", api.makeFunctionRef("ui.filePicker"));
   api.setField(uiObj, "dirPicker", api.makeFunctionRef("ui.dirPicker"));
   api.setField(uiObj, "notify", api.makeFunctionRef("ui.notify"));
+  api.setField(uiObj, "trayIcon", api.makeFunctionRef("ui.trayIcon"));
+  api.setField(uiObj, "trayShow", api.makeFunctionRef("ui.trayShow"));
+  api.setField(uiObj, "trayHide", api.makeFunctionRef("ui.trayHide"));
+  api.setField(uiObj, "trayMenu", api.makeFunctionRef("ui.trayMenu"));
+  api.setField(uiObj, "trayNotify", api.makeFunctionRef("ui.trayNotify"));
 
   api.setGlobal("ui", uiObj);
 }

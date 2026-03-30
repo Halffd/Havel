@@ -25,6 +25,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QSystemTrayIcon>
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -119,6 +120,15 @@ public:
   void setValue(std::shared_ptr<ui::UIElement> element,
                 const std::string &value);
 
+  // System Tray
+  void trayIcon(const std::string &iconPath, const std::string &tooltip = "");
+  void trayMenu(std::shared_ptr<ui::UIElement> menu);
+  void trayNotify(const std::string &title, const std::string &message,
+                  const std::string &iconType = "info");
+  void trayShow();
+  void trayHide();
+  bool trayIsVisible() const;
+
   // Style helpers
   void applyStyle(std::shared_ptr<ui::UIElement> element,
                   const std::string &key, const ui::PropValue &value);
@@ -175,6 +185,10 @@ private:
 
   // Count of open windows
   int openWindowCount_ = 0;
+
+  // System Tray
+  QSystemTrayIcon *trayIcon_ = nullptr;
+  QMenu *trayMenu_ = nullptr;
 
   // Ensure QApplication exists
   void ensureApp();

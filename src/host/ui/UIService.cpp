@@ -4,9 +4,11 @@
 #include "UIService.hpp"
 
 #include <QGuiApplication>
+#include <QMenu>
 #include <QScreen>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QSystemTrayIcon>
 
 namespace havel::host {
 
@@ -965,6 +967,110 @@ std::shared_ptr<ui::UIElement> UIService::menuSeparator() {
   auto elem = std::make_shared<ui::UIElement>(ui::ElementType::MENU_SEP);
   elem->id = nextId_++;
   return elem;
+}
+
+// ============================================================================
+// System Tray
+// ============================================================================
+
+void UIService::trayIcon(const std::string &iconPath,
+                         const std::string &tooltip) {
+  ensureApp();
+
+  if (!trayIcon_) {
+    trayIcon_ = new QSystemTrayIcon();
+  }
+
+  if (!iconPath.empty()) {
+    trayIcon_->setIcon(QIcon(QString::fromStdString(iconPath)));
+  }
+
+  if (!tooltip.empty()) {
+    trayIcon_->setToolTip(QString::fromStdString(tooltip));
+  }
+}
+
+void UIService::trayMenu(std::shared_ptr<ui::UIElement> menu) {
+  ensureApp();
+
+  if (!trayIcon_) {
+    trayIcon_ = new QSystemTrayIcon();
+  }
+
+  // Clean up old menu
+  if (trayMenu_) {
+    trayMenu_->clear();
+  } else {
+    trayMenu_ = new QMenu();
+  }
+
+  // Build menu from UIElement
+  if (menu) {
+    for (const auto &child : menu->children) {
+      if (child->type == ui::ElementType::MENU_ITEM) {
+        std::string label = child->getProp("label", std::string("Item"));
+        std::string shortcut = child->getProp("shortcut", std::string(""));
+
+        QString text = QString::fromStdString(label);
+        if (!shortcut.empty()) {
+          text += "\t" + QString::fromStdString(shortcut);
+        }
+
+        QAction *action = trayMenu_->addAction(text);
+
+        // Connect click handler if present
+        if (auto it = child->events.find("click"); it != child->events.end()) {
+          auto &handler = it->second;
+          if (std::holds_alternative<ui::UIEventCallback>(handler)) {
+            auto callback = std::get<ui::UIEventCallback>(handler);
+            QObject::connect(action, &QAction::triggered, [callback]() {
+              if (callback)
+                callback();
+            });
+          }
+        }
+      } else if (child->type == ui::ElementType::MENU_SEP) {
+        trayMenu_->addSeparator();
+      }
+    }
+  }
+
+  trayIcon_->setContextMenu(trayMenu_);
+}
+
+void UIService::trayNotify(const std::string &title, const std::string &message,
+                           const std::string &iconType) {
+  ensureApp();
+
+  if (!trayIcon_) {
+    trayIcon_ = new QSystemTrayIcon();
+  }
+
+  QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::Information;
+  if (iconType == "warning") {
+    icon = QSystemTrayIcon::Warning;
+  } else if (iconType == "error") {
+    icon = QSystemTrayIcon::Critical;
+  }
+
+  trayIcon_->showMessage(QString::fromStdString(title),
+                         QString::fromStdString(message), icon, 5000);
+}
+
+void UIService::trayShow() {
+  if (trayIcon_) {
+    trayIcon_->show();
+  }
+}
+
+void UIService::trayHide() {
+  if (trayIcon_) {
+    trayIcon_->hide();
+  }
+}
+
+bool UIService::trayIsVisible() const {
+  return trayIcon_ && trayIcon_->isVisible();
 }
 
 } // namespace havel::host

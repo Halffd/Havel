@@ -1,0 +1,19 @@
+// Test advanced LINQ features
+numbers := [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]
+
+// Test orderby
+sorted := numbers.orderby()
+print("Sorted: " + sorted)
+
+// Test groupby
+words := ["apple", "banana", "apricot", "cherry", "blueberry"]
+grouped := words.groupby(w => w[0])
+print("Grouped: " + grouped)
+
+// Test concat
+a := [1, 2, 3]
+b := [4, 5, 6]
+combined := a.concat(b)
+print("Concat: " + combined)
+
+print("Advanced tests passed!")

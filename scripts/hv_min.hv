@@ -1,0 +1,4 @@
+fn double(x) { return x * 2 }
+let f = double
+print(f)
+return f(3)

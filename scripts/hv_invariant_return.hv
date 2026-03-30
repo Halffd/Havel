@@ -1,0 +1,8 @@
+fn cb(x) { return x + 1 }
+fn run() {
+  let arr = [1,2]
+  let out = arr.map(cb)
+  print(out)
+  return 42
+}
+print(run())

@@ -1,0 +1,14 @@
+let x = 0
+fn run() {
+  try {
+    throw 5
+  } catch (e) {
+    x += e
+    return 10
+  } finally {
+    x += 1
+  }
+}
+let r = run()
+print(x)
+return r + x

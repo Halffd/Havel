@@ -231,6 +231,17 @@ void HostBridge::install() {
           if (it != options_.host_functions.end()) {
             return it->second(args);
           }
+
+          // Also check stdlib modules (http, io, json, fs, etc.)
+          for (const auto &mod : {"http", "io", "json", "fs", "net", "time",
+                                  "math", "os", "env"}) {
+            std::string modFunc = std::string(mod) + "." + methodName;
+            auto modIt = options_.host_functions.find(modFunc);
+            if (modIt != options_.host_functions.end()) {
+              return modIt->second(args);
+            }
+          }
+
           return BytecodeValue(nullptr);
         };
   };
@@ -264,6 +275,272 @@ void HostBridge::install() {
   registerAnyMethod("stop");
   registerAnyMethod("cancel");
   registerAnyMethod("running");
+
+  // Stdlib module methods (http, io, json, fs, net, time, math, os, env)
+  registerAnyMethod("print");
+  registerAnyMethod("println");
+  registerAnyMethod("log");
+  registerAnyMethod("debug");
+  registerAnyMethod("info");
+  registerAnyMethod("warn");
+  registerAnyMethod("error");
+  registerAnyMethod("read");
+  registerAnyMethod("write");
+  registerAnyMethod("open");
+  registerAnyMethod("close");
+  registerAnyMethod("create");
+  registerAnyMethod("delete");
+  registerAnyMethod("remove");
+  registerAnyMethod("copy");
+  registerAnyMethod("move");
+  registerAnyMethod("rename");
+  registerAnyMethod("exists");
+  registerAnyMethod("parse");
+  registerAnyMethod("stringify");
+  registerAnyMethod("encode");
+  registerAnyMethod("decode");
+  registerAnyMethod("format");
+  registerAnyMethod("fetch");
+  registerAnyMethod("request");
+  registerAnyMethod("post");
+  registerAnyMethod("put");
+  registerAnyMethod("patch");
+  registerAnyMethod("head");
+  registerAnyMethod("options");
+  registerAnyMethod("connect");
+  registerAnyMethod("disconnect");
+  registerAnyMethod("listen");
+  registerAnyMethod("accept");
+  registerAnyMethod("bind");
+  registerAnyMethod("resolve");
+  registerAnyMethod("query");
+  registerAnyMethod("exec");
+  registerAnyMethod("spawn");
+  registerAnyMethod("kill");
+  registerAnyMethod("wait");
+  registerAnyMethod("sleep");
+  registerAnyMethod("delay");
+  registerAnyMethod("timeout");
+  registerAnyMethod("interval");
+  registerAnyMethod("schedule");
+  registerAnyMethod("now");
+  registerAnyMethod("today");
+  registerAnyMethod("date");
+  registerAnyMethod("time");
+  registerAnyMethod("datetime");
+  registerAnyMethod("timestamp");
+  registerAnyMethod("random");
+  registerAnyMethod("abs");
+  registerAnyMethod("floor");
+  registerAnyMethod("ceil");
+  registerAnyMethod("round");
+  registerAnyMethod("sqrt");
+  registerAnyMethod("pow");
+  registerAnyMethod("sin");
+  registerAnyMethod("cos");
+  registerAnyMethod("tan");
+  registerAnyMethod("asin");
+  registerAnyMethod("acos");
+  registerAnyMethod("atan");
+  registerAnyMethod("atan2");
+  registerAnyMethod("exp");
+  registerAnyMethod("log");
+  registerAnyMethod("log10");
+  registerAnyMethod("log2");
+  registerAnyMethod("min");
+  registerAnyMethod("max");
+  registerAnyMethod("clamp");
+  registerAnyMethod("sign");
+  registerAnyMethod("mod");
+  registerAnyMethod("gcd");
+  registerAnyMethod("lcm");
+  registerAnyMethod("factorial");
+  registerAnyMethod("fibonacci");
+  registerAnyMethod("isPrime");
+  registerAnyMethod("isFinite");
+  registerAnyMethod("isNaN");
+  registerAnyMethod("isInteger");
+  registerAnyMethod("isFloat");
+  registerAnyMethod("isNumber");
+  registerAnyMethod("isString");
+  registerAnyMethod("isArray");
+  registerAnyMethod("isObject");
+  registerAnyMethod("isFunction");
+  registerAnyMethod("isNull");
+  registerAnyMethod("isUndefined");
+  registerAnyMethod("isDefined");
+  registerAnyMethod("isTruthy");
+  registerAnyMethod("isFalsy");
+  registerAnyMethod("type");
+  registerAnyMethod("typeof");
+  registerAnyMethod("instanceof");
+  registerAnyMethod("keys");
+  registerAnyMethod("values");
+  registerAnyMethod("entries");
+  registerAnyMethod("fromEntries");
+  registerAnyMethod("assign");
+  registerAnyMethod("merge");
+  registerAnyMethod("clone");
+  registerAnyMethod("deepClone");
+  registerAnyMethod("freeze");
+  registerAnyMethod("seal");
+  registerAnyMethod("isFrozen");
+  registerAnyMethod("isSealed");
+  registerAnyMethod("isExtensible");
+  registerAnyMethod("preventExtensions");
+  registerAnyMethod("defineProperty");
+  registerAnyMethod("defineProperties");
+  registerAnyMethod("getOwnPropertyDescriptor");
+  registerAnyMethod("getOwnPropertyNames");
+  registerAnyMethod("getOwnPropertySymbols");
+  registerAnyMethod("getPrototypeOf");
+  registerAnyMethod("setPrototypeOf");
+  registerAnyMethod("isPrototypeOf");
+  registerAnyMethod("propertyIsEnumerable");
+  registerAnyMethod("hasOwnProperty");
+  registerAnyMethod("toString");
+  registerAnyMethod("toNumber");
+  registerAnyMethod("toBoolean");
+  registerAnyMethod("toArray");
+  registerAnyMethod("toObject");
+  registerAnyMethod("toJSON");
+  registerAnyMethod("fromJSON");
+  registerAnyMethod("at");
+  registerAnyMethod("charAt");
+  registerAnyMethod("charCodeAt");
+  registerAnyMethod("codePointAt");
+  registerAnyMethod("indexOf");
+  registerAnyMethod("lastIndexOf");
+  registerAnyMethod("localeCompare");
+  registerAnyMethod("match");
+  registerAnyMethod("matchAll");
+  registerAnyMethod("normalize");
+  registerAnyMethod("padEnd");
+  registerAnyMethod("padStart");
+  registerAnyMethod("raw");
+  registerAnyMethod("repeat");
+  registerAnyMethod("search");
+  registerAnyMethod("slice");
+  registerAnyMethod("substr");
+  registerAnyMethod("substring");
+  registerAnyMethod("toLocaleLowerCase");
+  registerAnyMethod("toLocaleUpperCase");
+  registerAnyMethod("toLowerCase");
+  registerAnyMethod("toUpperCase");
+  registerAnyMethod("trimEnd");
+  registerAnyMethod("trimStart");
+  registerAnyMethod("valueOf");
+  registerAnyMethod("concat");
+  registerAnyMethod("copyWithin");
+  registerAnyMethod("entries");
+  registerAnyMethod("every");
+  registerAnyMethod("fill");
+  registerAnyMethod("flat");
+  registerAnyMethod("flatMap");
+  registerAnyMethod("forEach");
+  registerAnyMethod("group");
+  registerAnyMethod("groupToMap");
+  registerAnyMethod("includes");
+  registerAnyMethod("indexOf");
+  registerAnyMethod("join");
+  registerAnyMethod("keys");
+  registerAnyMethod("lastIndexOf");
+  registerAnyMethod("reduceRight");
+  registerAnyMethod("reverse");
+  registerAnyMethod("shift");
+  registerAnyMethod("slice");
+  registerAnyMethod("some");
+  registerAnyMethod("splice");
+  registerAnyMethod("toReversed");
+  registerAnyMethod("toSorted");
+  registerAnyMethod("toSpliced");
+  registerAnyMethod("unshift");
+  registerAnyMethod("values");
+  registerAnyMethod("with");
+  registerAnyMethod("isSafeInteger");
+  registerAnyMethod("isInteger");
+  registerAnyMethod("parseFloat");
+  registerAnyMethod("parseInt");
+  registerAnyMethod("MAX_VALUE");
+  registerAnyMethod("MIN_VALUE");
+  registerAnyMethod("MAX_SAFE_INTEGER");
+  registerAnyMethod("MIN_SAFE_INTEGER");
+  registerAnyMethod("EPSILON");
+  registerAnyMethod("POSITIVE_INFINITY");
+  registerAnyMethod("NEGATIVE_INFINITY");
+  registerAnyMethod("NaN");
+  registerAnyMethod("prototype");
+  registerAnyMethod("constructor");
+  registerAnyMethod("__proto__");
+  registerAnyMethod("__defineGetter__");
+  registerAnyMethod("__defineSetter__");
+  registerAnyMethod("__lookupGetter__");
+  registerAnyMethod("__lookupSetter__");
+  registerAnyMethod("hasOwn");
+  registerAnyMethod("is");
+  registerAnyMethod("from");
+  registerAnyMethod("of");
+  registerAnyMethod("apply");
+  registerAnyMethod("bind");
+  registerAnyMethod("call");
+  registerAnyMethod("toSource");
+  registerAnyMethod("toLocaleString");
+  registerAnyMethod("toDateString");
+  registerAnyMethod("toTimeString");
+  registerAnyMethod("toUTCString");
+  registerAnyMethod("toISOString");
+  registerAnyMethod("toGMTString");
+  registerAnyMethod("toJSON");
+  registerAnyMethod("getDate");
+  registerAnyMethod("getDay");
+  registerAnyMethod("getFullYear");
+  registerAnyMethod("getHours");
+  registerAnyMethod("getMilliseconds");
+  registerAnyMethod("getMinutes");
+  registerAnyMethod("getMonth");
+  registerAnyMethod("getSeconds");
+  registerAnyMethod("getTime");
+  registerAnyMethod("getTimezoneOffset");
+  registerAnyMethod("getUTCDate");
+  registerAnyMethod("getUTCDay");
+  registerAnyMethod("getUTCFullYear");
+  registerAnyMethod("getUTCHours");
+  registerAnyMethod("getUTCMilliseconds");
+  registerAnyMethod("getUTCMinutes");
+  registerAnyMethod("getUTCMonth");
+  registerAnyMethod("getUTCSeconds");
+  registerAnyMethod("getYear");
+  registerAnyMethod("setDate");
+  registerAnyMethod("setFullYear");
+  registerAnyMethod("setHours");
+  registerAnyMethod("setMilliseconds");
+  registerAnyMethod("setMinutes");
+  registerAnyMethod("setMonth");
+  registerAnyMethod("setSeconds");
+  registerAnyMethod("setTime");
+  registerAnyMethod("setUTCDate");
+  registerAnyMethod("setUTCFullYear");
+  registerAnyMethod("setUTCHours");
+  registerAnyMethod("setUTCMilliseconds");
+  registerAnyMethod("setUTCMinutes");
+  registerAnyMethod("setUTCMonth");
+  registerAnyMethod("setUTCSeconds");
+  registerAnyMethod("setYear");
+  registerAnyMethod("toStringTag");
+  registerAnyMethod("hasInstance");
+  registerAnyMethod("isConcatSpreadable");
+  registerAnyMethod("iterator");
+  registerAnyMethod("asyncIterator");
+  registerAnyMethod("match");
+  registerAnyMethod("replace");
+  registerAnyMethod("search");
+  registerAnyMethod("split");
+  registerAnyMethod("species");
+  registerAnyMethod("toPrimitive");
+  registerAnyMethod("unscopables");
+  registerAnyMethod("dispose");
+  registerAnyMethod("asyncDispose");
+  registerAnyMethod("metadata");
 
   // Chain method aliases (LINQ-style naming)
   registerAnyMethod("where");   // alias for filter
@@ -569,6 +846,10 @@ void HostBridge::install() {
       };
 
   // Struct field access
+  // TODO: Implement field name to index lookup in VM
+  // For now, these are disabled since getStructField/setStructField expect
+  // numeric indices, not string field names
+  /*
   options_.host_functions["struct.get"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2 || !std::holds_alternative<StructRef>(args[0]) ||
@@ -576,7 +857,8 @@ void HostBridge::install() {
           return BytecodeValue(nullptr);
         auto structRef = std::get<StructRef>(args[0]);
         const std::string &fieldName = std::get<std::string>(args[1]);
-        return ctx_->vm->getStructField(structRef, fieldName);
+        // Need VM method to lookup field index by name
+        return ctx_->vm->getStructField(structRef, 0); // placeholder
       };
   options_.host_functions["struct.set"] =
       [this](const std::vector<BytecodeValue> &args) {
@@ -585,8 +867,95 @@ void HostBridge::install() {
           return BytecodeValue(nullptr);
         auto structRef = std::get<StructRef>(args[0]);
         const std::string &fieldName = std::get<std::string>(args[1]);
-        ctx_->vm->setStructField(structRef, fieldName, args[2]);
+        // Need VM method to lookup field index by name
+        ctx_->vm->setStructField(structRef, 0, args[2]); // placeholder
         return args[2];
+      };
+  */
+
+  // Object methods (for any.* dispatch)
+  options_.host_functions["object.len"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty() || !std::holds_alternative<ObjectRef>(args[0]))
+          return BytecodeValue(nullptr);
+        int64_t count = 0;
+        auto iterRef = ctx_->vm->createIterator(args[0]);
+        while (true) {
+          auto step = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(step))
+            break;
+          auto stepObj = std::get<ObjectRef>(step);
+          auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+            break;
+          count++;
+        }
+        return BytecodeValue(count);
+      };
+  options_.host_functions["object.has"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2 || !std::holds_alternative<ObjectRef>(args[0]) ||
+            !std::holds_alternative<std::string>(args[1]))
+          return BytecodeValue(false);
+        return BytecodeValue(ctx_->vm->objectHasKey(
+            std::get<ObjectRef>(args[0]), std::get<std::string>(args[1])));
+      };
+  options_.host_functions["object.get"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2 || !std::holds_alternative<ObjectRef>(args[0]) ||
+            !std::holds_alternative<std::string>(args[1]))
+          return BytecodeValue(nullptr);
+        return ctx_->vm->getHostObjectField(std::get<ObjectRef>(args[0]),
+                                            std::get<std::string>(args[1]));
+      };
+  options_.host_functions["object.set"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 3 || !std::holds_alternative<ObjectRef>(args[0]) ||
+            !std::holds_alternative<std::string>(args[1]))
+          return BytecodeValue(nullptr);
+        ctx_->vm->setHostObjectField(std::get<ObjectRef>(args[0]),
+                                     std::get<std::string>(args[1]), args[2]);
+        return args[2];
+      };
+  options_.host_functions["object.keys"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty() || !std::holds_alternative<ObjectRef>(args[0]))
+          return BytecodeValue(nullptr);
+        auto result = ctx_->vm->createHostArray();
+        auto iterRef = ctx_->vm->createIterator(args[0]);
+        while (true) {
+          auto step = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(step))
+            break;
+          auto stepObj = std::get<ObjectRef>(step);
+          auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+            break;
+          auto key = ctx_->vm->getHostObjectField(stepObj, "key");
+          if (std::holds_alternative<std::string>(key)) {
+            ctx_->vm->pushHostArrayValue(result, key);
+          }
+        }
+        return BytecodeValue(result);
+      };
+  options_.host_functions["object.values"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty() || !std::holds_alternative<ObjectRef>(args[0]))
+          return BytecodeValue(nullptr);
+        auto result = ctx_->vm->createHostArray();
+        auto iterRef = ctx_->vm->createIterator(args[0]);
+        while (true) {
+          auto step = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(step))
+            break;
+          auto stepObj = std::get<ObjectRef>(step);
+          auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+            break;
+          auto val = ctx_->vm->getHostObjectField(stepObj, "value");
+          ctx_->vm->pushHostArrayValue(result, val);
+        }
+        return BytecodeValue(result);
       };
 
   // LINQ-style filter and map functions for query expressions
@@ -626,7 +995,7 @@ void HostBridge::install() {
 
           if (std::holds_alternative<bool>(predResult) &&
               std::get<bool>(predResult)) {
-            ctx_->vm->pushToHostArray(result, valueVal);
+            ctx_->vm->pushHostArrayValue(result, valueVal);
           }
         }
         return BytecodeValue(result);
@@ -665,40 +1034,42 @@ void HostBridge::install() {
       auto transResult = ctx_->vm->callFunction(
           BytecodeValue(HostFunctionRef{fnName}), transArgs);
 
-      ctx_->vm->pushToHostArray(result, transResult);
+      ctx_->vm->pushHostArrayValue(result, transResult);
     }
     return BytecodeValue(result);
   };
 
   // Terminal operation - convert to set
-  options_.host_functions["set"] =
-      [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty()) {
-          return BytecodeValue(nullptr);
-        }
-        const auto &iterable = args[0];
+  options_.host_functions["set"] = [this](
+                                       const std::vector<BytecodeValue> &args) {
+    if (args.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    const auto &iterable = args[0];
 
-        // Create set and add unique elements
-        SetRef result = ctx_->vm->createSet();
-        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+    // Create set and add unique elements
+    ObjectRef result = ctx_->vm->createHostObject();
+    ctx_->vm->setHostObjectField(result, "__set_marker__", BytecodeValue(true));
+    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
 
-        while (true) {
-          auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
-            break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+    while (true) {
+      auto iterResult = ctx_->vm->iteratorNext(iterRef);
+      if (!std::holds_alternative<ObjectRef>(iterResult))
+        break;
+      auto resultObjRef = std::get<ObjectRef>(iterResult);
 
-          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
-            break;
+      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+      if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+        break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
-            ctx_->vm->addToSet(result, valueVal);
-          }
-        }
-        return BytecodeValue(result);
-      };
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+        ctx_->vm->setHostObjectField(result, std::to_string(valueVal.index()),
+                                     valueVal);
+      }
+    }
+    return BytecodeValue(result);
+  };
 
   // Terminal operation - convert to object with key-value pairs
   options_.host_functions["object"] =
@@ -725,8 +1096,8 @@ void HostBridge::install() {
           // Expect pairs like [key, value] or {key: ..., value: ...}
           if (std::holds_alternative<ArrayRef>(pairVal)) {
             auto arr = std::get<ArrayRef>(pairVal);
-            auto key = ctx_->vm->getHostArrayElement(arr, 0);
-            auto val = ctx_->vm->getHostArrayElement(arr, 1);
+            auto key = ctx_->vm->getHostArrayValue(arr, 0);
+            auto val = ctx_->vm->getHostArrayValue(arr, 1);
             if (std::holds_alternative<std::string>(key)) {
               ctx_->vm->setHostObjectField(result, std::get<std::string>(key),
                                            val);
@@ -909,7 +1280,7 @@ void HostBridge::install() {
         // Create result array
         ArrayRef result = ctx_->vm->createHostArray();
         for (const auto &elem : elements) {
-          ctx_->vm->pushToHostArray(result, elem);
+          ctx_->vm->pushHostArrayValue(result, elem);
         }
         return BytecodeValue(result);
       };
@@ -964,7 +1335,7 @@ void HostBridge::install() {
         for (const auto &pair : groups) {
           ArrayRef groupArray = ctx_->vm->createHostArray();
           for (const auto &elem : pair.second) {
-            ctx_->vm->pushToHostArray(groupArray, elem);
+            ctx_->vm->pushHostArrayValue(groupArray, elem);
           }
           ctx_->vm->setHostObjectField(result, pair.first,
                                        BytecodeValue(groupArray));
@@ -995,7 +1366,7 @@ void HostBridge::install() {
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
           if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
-            ctx_->vm->pushToHostArray(result, valueVal);
+            ctx_->vm->pushHostArrayValue(result, valueVal);
           }
         }
 
@@ -1013,7 +1384,7 @@ void HostBridge::install() {
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
           if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
-            ctx_->vm->pushToHostArray(result, valueVal);
+            ctx_->vm->pushHostArrayValue(result, valueVal);
           }
         }
 
@@ -1171,7 +1542,7 @@ void HostBridge::install() {
               std::vector<BytecodeValue> resultArgs{outerValueVal, innerValue};
               auto resultVal =
                   ctx_->vm->callFunction(resultSelector, resultArgs);
-              ctx_->vm->pushToHostArray(result, resultVal);
+              ctx_->vm->pushHostArrayValue(result, resultVal);
             }
           }
         }

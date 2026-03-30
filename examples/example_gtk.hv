@@ -1,0 +1,49 @@
+/*
+ * Example GTK4 extension usage in Havel
+ * 
+ * Prerequisites:
+ * - GTK4 development libraries installed
+ * - gtk_extension.so built and available
+ * 
+ * Run with: ./build-release/havel examples/example_gtk.hv
+ */
+
+// Load the GTK extension
+import gtk from "extension:gtk"
+
+// Initialize GTK
+gtk.init()
+
+// Create a simple window
+let win = gtk.windowNew("Hello GTK from Havel!")
+gtk.windowSetSize(win, 400, 300)
+gtk.windowSetPosition(win, 100, 100)
+
+// Create a vertical box layout
+let vbox = gtk.boxNew("vertical", 10)
+
+// Create a label
+let label = gtk.labelNew("Welcome to Havel + GTK4!")
+gtk.boxAppend(vbox, label)
+
+// Create a button
+let button = gtk.buttonNewWithLabel("Click Me!")
+gtk.boxAppend(vbox, button)
+
+// Create an entry field
+let entry = gtk.entryNew()
+gtk.entrySetText(entry, "Type something...")
+gtk.boxAppend(vbox, entry)
+
+// Set the box as the window's child
+gtk.windowSetChild(win, vbox)
+
+// Show the window
+gtk.windowShow(win)
+
+print("GTK window created. Running main loop...")
+
+// Run the GTK main loop (blocks until window is closed)
+gtk.run()
+
+print("GTK main loop exited")

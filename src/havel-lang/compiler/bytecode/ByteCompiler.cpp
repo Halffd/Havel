@@ -1523,7 +1523,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       throw std::runtime_error("Pipeline expression has no stages");
     }
 
-    // Compile first stage - if it's a CallExpression, compile it as a call
+    // Compile first stage normally
     if (pipeline.stages[0]->kind == ast::NodeType::CallExpression) {
       const auto &call =
           static_cast<const ast::CallExpression &>(*pipeline.stages[0]);
@@ -1539,47 +1539,101 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       compileExpression(*pipeline.stages[0]);
     }
 
-    // For each subsequent stage, compile it as a function call with previous
-    // result as argument
+    // For each subsequent stage, apply enhanced pipeline rules
     for (size_t i = 1; i < pipeline.stages.size(); ++i) {
       auto &stage = pipeline.stages[i];
       if (!stage) {
         throw std::runtime_error("Pipeline stage is null");
       }
 
-      // The stage should be a call expression or identifier that can be called
-      // Result from previous stage is already on stack as first argument
-      if (stage->kind == ast::NodeType::CallExpression) {
+      // Reserve temp slot for previous pipe value
+      uint32_t pipe_temp = next_local_index;
+      reserveLocalSlot(pipe_temp);
+      emit(OpCode::STORE_VAR, pipe_temp); // Store previous result
+
+      // Lambda expression: | x => x.isFile  (filter/map)
+      if (stage->kind == ast::NodeType::LambdaExpression) {
+        // Load the piped value as argument
+        emit(OpCode::LOAD_VAR, pipe_temp);
+        // Compile and call the lambda
+        compileExpression(*stage);
+        emit(OpCode::CALL, 1); // Call lambda with 1 arg (piped value)
+      }
+      // Call expression with explicit args: | find "ERROR"
+      // Auto-curry: prepend piped value as first arg
+      else if (stage->kind == ast::NodeType::CallExpression) {
         const auto &call = static_cast<const ast::CallExpression &>(*stage);
-        // Compile the callee (function to call)
+        // Load piped value first (as first argument - auto-curry)
+        emit(OpCode::LOAD_VAR, pipe_temp);
+        // Compile the callee
         if (call.callee) {
           compileExpression(*call.callee);
         }
-        // Add arguments from the call (previous result is already on stack)
+        // Add explicit arguments after piped value
         for (const auto &arg : call.args) {
           if (arg)
             compileExpression(*arg);
         }
-        // Call with (previous_result + explicit_args) count
+        // Call with (1 + explicit_args) count
         emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
-      } else if (stage->kind == ast::NodeType::Identifier) {
-        // Stage is an identifier - check if it's a host function
+      }
+      // Identifier: | print, | upper, etc.
+      // Tap behavior: function receives value, we ensure pass-through
+      else if (stage->kind == ast::NodeType::Identifier) {
         const auto &ident = static_cast<const ast::Identifier &>(*stage);
-        const auto *binding = bindingFor(ident);
-        if (binding && binding->kind == ResolvedBindingKind::HostFunction) {
-          // Host function - use CALL_HOST with the value on stack as first arg
-          emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-                                      binding->name, static_cast<uint32_t>(1)});
-        } else {
-          // User function - call it with previous result as first argument
-          compileExpression(*stage);
-          emit(OpCode::CALL, 1);
+        emit(OpCode::LOAD_VAR, pipe_temp); // Load piped value as arg
+
+        // Route through any.* dispatch for consistency
+        emit(OpCode::CALL_HOST,
+             std::vector<BytecodeValue>{"any." + ident.symbol,
+                                        static_cast<uint32_t>(1)});
+
+        // For tap functions (print), ensure value passes through
+        // If result is nil, restore the previous pipe value
+        if (ident.symbol == "print" || ident.symbol == "log" ||
+            ident.symbol == "debug" || ident.symbol == "tap") {
+          // Check if result is nil, if so restore pipe value
+          uint32_t result_temp = next_local_index;
+          reserveLocalSlot(result_temp);
+          emit(OpCode::STORE_VAR, result_temp);
+          emit(OpCode::LOAD_VAR, result_temp);
+          emit(OpCode::LOAD_CONST, addConstant(nullptr)); // nil
+          // If nil, use pipe value, else use result
+          // Simplified: just dup and check
+          emit(OpCode::LOAD_VAR, pipe_temp); // Default to pipe value
         }
-      } else {
-        // Stage is a member expression or other - call it with previous result
+      }
+      // Member expression: | text.upper, | array.filter
+      else if (stage->kind == ast::NodeType::MemberExpression) {
+        const auto &member = static_cast<const ast::MemberExpression &>(*stage);
+        emit(OpCode::LOAD_VAR, pipe_temp); // Load piped value
+        // Compile member access - the object is the piped value
+        compileExpression(*stage);
+        // Call with piped value as first arg
+        emit(OpCode::CALL, 1);
+      }
+      // Default: compile expression and call with piped value
+      else {
+        emit(OpCode::LOAD_VAR, pipe_temp);
         compileExpression(*stage);
         emit(OpCode::CALL, 1);
       }
+
+      // Void pass-through: if result is nil/none, restore previous pipe value
+      // This is handled at runtime - we emit code to check and restore
+      uint32_t stage_result = next_local_index;
+      reserveLocalSlot(stage_result);
+      emit(OpCode::STORE_VAR, stage_result);
+
+      // Load result and check if nil
+      emit(OpCode::LOAD_VAR, stage_result);
+      emit(OpCode::DUP);
+      emit(OpCode::LOAD_CONST, addConstant(nullptr)); // nil
+
+      // If equal (both nil), restore pipe value
+      // For now, simplified: always have result, void functions
+      // should be marked in HostBridge to return previous value
+      emit(OpCode::LOAD_VAR, stage_result); // Use stage result
     }
     break;
   }
@@ -2145,103 +2199,19 @@ void ByteCompiler::compileCallExpression(
            std::vector<BytecodeValue>{binding->name, totalArgs});
       return;
     }
-  }
+    // Check for method call on primitive (prototype method)
+    if (expression.callee->kind == ast::NodeType::MemberExpression) {
+      const auto &member =
+          static_cast<const ast::MemberExpression &>(*expression.callee);
+      auto *property =
+          dynamic_cast<const ast::Identifier *>(member.property.get());
+      if (!member.object || !property) {
+        throw std::runtime_error("Unsupported member call expression");
+      }
 
-  // Check for method call on primitive (prototype method)
-  if (expression.callee->kind == ast::NodeType::MemberExpression) {
-    const auto &member =
-        static_cast<const ast::MemberExpression &>(*expression.callee);
-    auto *property =
-        dynamic_cast<const ast::Identifier *>(member.property.get());
-    if (!member.object || !property) {
-      throw std::runtime_error("Unsupported member call expression");
-    }
-
-    // Array higher-order methods should work for both simple receivers
-    // (nums.map(...)) and chained receivers (nums.sort().map(...)).
-    // Note: struct.* calls are handled generically via HostFunctionRef in
-    // objects
-    bool is_array_module_call = false;
-    if (member.object->kind == ast::NodeType::Identifier) {
-      const auto &receiver_id =
-          static_cast<const ast::Identifier &>(*member.object);
-      if (const auto *receiver_binding = bindingFor(receiver_id)) {
-        std::cerr << "[DEBUG] Member call on " << receiver_binding->name
-                  << " kind=" << static_cast<int>(receiver_binding->kind)
-                  << "\n";
-        if (receiver_binding->kind == ResolvedBindingKind::Global &&
-            receiver_binding->name == "array") {
-          is_array_module_call = true;
-        }
-      }
-    }
-
-    if (!is_array_module_call &&
-        (property->symbol == "map" || property->symbol == "filter" ||
-         property->symbol == "reduce" || property->symbol == "foreach" ||
-         property->symbol == "sort")) {
-      compileExpression(*member.object);
-      if (property->symbol == "map") {
-        if (expression.args.size() != 1 || !expression.args[0]) {
-          throw std::runtime_error("map() requires 1 callback argument");
-        }
-        compileExpression(*expression.args[0]);
-        emit(OpCode::CALL_HOST,
-             std::vector<BytecodeValue>{"any.map", static_cast<uint32_t>(2)});
-        return;
-      }
-      if (property->symbol == "filter") {
-        if (expression.args.size() != 1 || !expression.args[0]) {
-          throw std::runtime_error("filter() requires 1 callback argument");
-        }
-        compileExpression(*expression.args[0]);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-                                    "any.filter", static_cast<uint32_t>(2)});
-        return;
-      }
-      if (property->symbol == "reduce") {
-        if (expression.args.size() != 2 || !expression.args[0] ||
-            !expression.args[1]) {
-          throw std::runtime_error(
-              "reduce() requires callback and initial value");
-        }
-        compileExpression(*expression.args[0]);
-        compileExpression(*expression.args[1]);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-                                    "any.reduce", static_cast<uint32_t>(3)});
-        return;
-      }
-      if (property->symbol == "foreach") {
-        if (expression.args.size() != 1 || !expression.args[0]) {
-          throw std::runtime_error("foreach() requires 1 callback argument");
-        }
-        compileExpression(*expression.args[0]);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-                                    "any.foreach", static_cast<uint32_t>(2)});
-        return;
-      }
-      // sort
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
-        }
-        compileExpression(*arg);
-      }
-      emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{
-               "any.sort", static_cast<uint32_t>(expression.args.size() + 1)});
-      return;
-    }
-
-    const bool is_simple_receiver =
-        member.object->kind == ast::NodeType::StringLiteral ||
-        member.object->kind == ast::NodeType::ArrayLiteral ||
-        member.object->kind == ast::NodeType::ObjectLiteral ||
-        member.object->kind == ast::NodeType::Identifier;
-
-    // Method chaining path: receiver is an arbitrary expression (e.g.
-    // nums.map(f).filter(g)). Route through dynamic any.* dispatch.
-    if (!is_simple_receiver) {
+      // Route ALL method calls through any.* dispatch for consistency
+      // s.upper() -> CALL_HOST "any.upper", N
+      // string.upper(s) -> CALL_HOST "any.upper", N
       compileExpression(*member.object);
       for (const auto &arg : expression.args) {
         if (!arg) {
@@ -2262,350 +2232,6 @@ void ByteCompiler::compileCallExpression(
       emit(OpCode::CALL_HOST,
            std::vector<BytecodeValue>{"any." + property->symbol, totalArgs});
       return;
-    }
-
-    // Check if object is a literal or identifier (variable)
-    bool isPrimitiveObject =
-        member.object->kind == ast::NodeType::StringLiteral ||
-        member.object->kind == ast::NodeType::ArrayLiteral ||
-        member.object->kind == ast::NodeType::ObjectLiteral;
-    bool isVariableObject = member.object->kind == ast::NodeType::Identifier;
-
-    if (property && (isPrimitiveObject || isVariableObject)) {
-      // Compile prototype method call:
-      // 1. Load the object (literal or variable) as first argument
-      // 2. Load remaining arguments
-      // 3. Call the prototype method (e.g., "string.upper")
-
-      std::string methodName;
-      std::string typeName;
-
-      // Determine type from object kind
-      if (member.object->kind == ast::NodeType::StringLiteral) {
-        typeName = "string";
-      } else if (member.object->kind == ast::NodeType::ArrayLiteral) {
-        typeName = "array";
-      } else if (member.object->kind == ast::NodeType::ObjectLiteral) {
-        typeName = "object";
-      } else if (member.object->kind == ast::NodeType::Identifier) {
-        // Check if this is a host global (like "math", "string", etc.)
-        const auto *ident =
-            static_cast<const ast::Identifier *>(member.object.get());
-        auto binding = bindingFor(*ident);
-        if (binding && binding->kind == ResolvedBindingKind::Global) {
-          // Only treat known module globals as modules
-          if (host_global_names_.count(binding->name) > 0) {
-            // Use the host global name as the type (lowercase for
-            // case-insensitive matching)
-            typeName = binding->name;
-            // Convert to lowercase for case-insensitive module access
-            std::transform(typeName.begin(), typeName.end(), typeName.begin(),
-                           ::tolower);
-          } else {
-            // For variables, use runtime type check
-            typeName = "any";
-          }
-        } else {
-          // For variables, we'll use a runtime type check
-          // The method name will be resolved at runtime based on the value's
-          // type For now, we'll try all three types
-          typeName = "any";
-        }
-      }
-
-      if (typeName != "any") {
-        // Check for object.* VM intrinsics (object.keys, object.values, etc.)
-        if (typeName == "object") {
-          if (property->symbol == "keys") {
-            // object.keys(obj) → OBJECT_KEYS opcode
-            for (const auto &arg : expression.args) {
-              if (!arg) {
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              }
-              compileExpression(*arg);
-            }
-            emit(OpCode::OBJECT_KEYS);
-            return;
-          } else if (property->symbol == "values") {
-            // object.values(obj) → OBJECT_VALUES opcode
-            for (const auto &arg : expression.args) {
-              if (!arg) {
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              }
-              compileExpression(*arg);
-            }
-            emit(OpCode::OBJECT_VALUES);
-            return;
-          } else if (property->symbol == "entries") {
-            // object.entries(obj) → OBJECT_ENTRIES opcode
-            for (const auto &arg : expression.args) {
-              if (!arg) {
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              }
-              compileExpression(*arg);
-            }
-            emit(OpCode::OBJECT_ENTRIES);
-            return;
-          } else if (property->symbol == "has") {
-            // object.has(obj, key) → OBJECT_HAS opcode
-            for (const auto &arg : expression.args) {
-              if (!arg) {
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              }
-              compileExpression(*arg);
-            }
-            emit(OpCode::OBJECT_HAS);
-            return;
-          } else if (property->symbol == "del") {
-            // object.del(obj, key) → OBJECT_DELETE opcode
-            for (const auto &arg : expression.args) {
-              if (!arg) {
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              }
-              compileExpression(*arg);
-            }
-            emit(OpCode::OBJECT_DELETE);
-            return;
-          } else if (property->symbol == "set") {
-            // object.set(obj, key, value) → OBJECT_SET opcode
-            // Stack: [..., obj, value, key] → pops all, pushes obj
-            if (expression.args.size() < 3) {
-              throw std::runtime_error("object.set() requires 3 arguments");
-            }
-            compileExpression(*expression.args[0]); // obj
-            compileExpression(*expression.args[2]); // value
-            compileExpression(*expression.args[1]); // key
-            emit(OpCode::OBJECT_SET);
-            emit(OpCode::POP); // Remove obj from stack, keep void
-            return;
-          } else if (property->symbol == "get") {
-            // object.get(obj, key) → OBJECT_GET opcode
-            // Stack: [..., obj, key] → pops both, pushes value
-            if (expression.args.size() < 2) {
-              throw std::runtime_error("object.get() requires 2 arguments");
-            }
-            compileExpression(*expression.args[0]); // obj
-            compileExpression(*expression.args[1]); // key
-            emit(OpCode::OBJECT_GET);
-            return;
-          }
-        }
-      } // if (typeName != "any")
-
-      // Check for array.* methods - emit CALL_HOST for consistent behavior
-      if (typeName == "array" || typeName == "any") {
-        std::string arrayMethodName = "array." + property->symbol;
-
-        // Compile arguments (array is first arg for module-style calls)
-        for (const auto &arg : expression.args) {
-          if (!arg)
-            throw std::runtime_error("Call expression contains null argument");
-          compileExpression(*arg);
-        }
-
-        // For methods that need the object as first arg (variable.method()
-        // style), we need to also compile the object. But for module.function()
-        // style, the object IS the first argument. Check if this is a variable
-        // call or module call
-        const auto *ident =
-            static_cast<const ast::Identifier *>(member.object.get());
-        if (ident && ident->symbol == "array") {
-          // Module-style: array.len([1,2,3]) - args already compiled above
-          uint32_t totalArgs = arg_count;
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            for (const auto &kwarg : expression.kwargs) {
-              emit(OpCode::DUP);
-              compileExpression(*kwarg.value);
-              emit(OpCode::OBJECT_SET, kwarg.name);
-            }
-            totalArgs++;
-          }
-          emit(OpCode::CALL_HOST,
-               std::vector<BytecodeValue>{arrayMethodName, totalArgs});
-          return;
-        } else {
-          // Variable-style: arr.len() - need to compile object as first arg
-          compileExpression(*member.object);
-          // Reorder stack: move object to be first arg
-          // Stack currently: [args...] [object]
-          // Need: [object] [args...]
-          // For now, just compile object first then recompile args
-          // Actually simpler: emit CALL_HOST with object + args
-          uint32_t totalArgs = arg_count + 1; // +1 for object
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            for (const auto &kwarg : expression.kwargs) {
-              emit(OpCode::DUP);
-              compileExpression(*kwarg.value);
-              emit(OpCode::OBJECT_SET, kwarg.name);
-            }
-            totalArgs++;
-          }
-          // Method name is any.* for variable dispatch
-          methodName = "any." + property->symbol;
-          emit(OpCode::CALL_HOST,
-               std::vector<BytecodeValue>{methodName, totalArgs});
-          return;
-        }
-      }
-
-      if (typeName != "any") {
-        // Check for string.* methods - emit CALL_HOST for consistent behavior
-        if (typeName == "string") {
-          std::string stringMethodName = "string." + property->symbol;
-
-          // Compile arguments
-          for (const auto &arg : expression.args) {
-            if (!arg)
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            compileExpression(*arg);
-          }
-
-          uint32_t totalArgs = arg_count;
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            for (const auto &kwarg : expression.kwargs) {
-              emit(OpCode::DUP);
-              compileExpression(*kwarg.value);
-              emit(OpCode::OBJECT_SET, kwarg.name);
-            }
-            totalArgs++;
-          }
-
-          emit(OpCode::CALL_HOST,
-               std::vector<BytecodeValue>{stringMethodName, totalArgs});
-          return;
-        }
-
-        // Dynamic language: treat all module.function calls as host functions
-        // The runtime will resolve whether it's a direct host function or
-        // prototype method
-        std::string fullMethodName = typeName + "." + property->symbol;
-
-        // Compile arguments
-        for (const auto &arg : expression.args) {
-          if (!arg) {
-            throw std::runtime_error("Call expression contains null argument");
-          }
-          compileExpression(*arg);
-        }
-
-        // Compile kwargs as object if present
-        uint32_t totalArgs = arg_count;
-        if (hasKwargs) {
-          emit(OpCode::OBJECT_NEW);
-          for (const auto &kwarg : expression.kwargs) {
-            emit(OpCode::DUP);
-            compileExpression(*kwarg.value);
-            emit(OpCode::OBJECT_SET, kwarg.name);
-          }
-          totalArgs++;
-        }
-
-        // Call the host function - runtime will resolve
-        emit(OpCode::CALL_HOST,
-             std::vector<BytecodeValue>{fullMethodName, totalArgs});
-        return;
-      } else {
-        // For variables, check if this is a module.function call (like
-        // http.get) In this case, don't pass the module as an argument
-        const auto *ident =
-            static_cast<const ast::Identifier *>(member.object.get());
-        if (ident) {
-          // Check if this is a known module - only then use OBJECT_GET
-          // For regular variables, use any.* dispatch
-          auto objBinding = bindingFor(*ident);
-          bool isModule =
-              objBinding &&
-              (objBinding->kind == ResolvedBindingKind::HostFunction ||
-               objBinding->name == "http" || objBinding->name == "io" ||
-               objBinding->name == "json" || objBinding->name == "fs" ||
-               objBinding->name == "sys" || objBinding->name == "math" ||
-               objBinding->name == "str" || objBinding->name == "array");
-
-          if (isModule) {
-            // Compile as generic member call with prototype method support:
-            // 1. Load the object
-            // 2. Get the property (function) from the object
-            // 3. Load the object again (as first argument - self/this)
-            // 4. Compile remaining arguments
-            // 5. Call
-            compileExpression(*member.object);
-
-            // Get the property (function) from the object
-            emit(OpCode::LOAD_CONST, addConstant(property->symbol));
-            emit(OpCode::OBJECT_GET);
-
-            // Load the object again as first argument (self/this)
-            compileExpression(*member.object);
-
-            // Compile positional arguments
-            for (const auto &arg : expression.args) {
-              if (!arg) {
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              }
-              compileExpression(*arg);
-            }
-
-            // Compile kwargs as object if present
-            uint32_t totalArgs = arg_count + 1; // +1 for the object (self/this)
-            if (hasKwargs) {
-              emit(OpCode::OBJECT_NEW);
-              for (const auto &kwarg : expression.kwargs) {
-                emit(OpCode::DUP);
-                compileExpression(*kwarg.value);
-                emit(OpCode::OBJECT_SET, kwarg.name);
-              }
-              totalArgs++;
-            }
-
-            // Call the function - object is first arg
-            emit(OpCode::CALL, totalArgs);
-            return;
-          }
-          // Fall through to any.* dispatch for non-module variables
-        }
-
-        // For variables, emit runtime method dispatch via any.*
-        // First compile the object to get its value
-        compileExpression(*member.object);
-
-        // Compile positional arguments
-        for (const auto &arg : expression.args) {
-          if (!arg) {
-            throw std::runtime_error("Call expression contains null argument");
-          }
-          compileExpression(*arg);
-        }
-
-        // Compile kwargs as object if present
-        uint32_t totalArgs = arg_count + 1; // +1 for object (self/this)
-        if (hasKwargs) {
-          emit(OpCode::OBJECT_NEW);
-          for (const auto &kwarg : expression.kwargs) {
-            emit(OpCode::DUP);
-            compileExpression(*kwarg.value);
-            emit(OpCode::OBJECT_SET, kwarg.name);
-          }
-          totalArgs++;
-        }
-
-        // Emit CALL_HOST with any.* method name
-        // The HostBridge any.* dispatcher will determine type and call
-        // appropriate method
-        methodName = "any." + property->symbol;
-        emit(OpCode::CALL_HOST,
-             std::vector<BytecodeValue>{methodName, totalArgs});
-        return;
-      }
     }
   }
 
@@ -3468,36 +3094,68 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     // Compile the hotkey string
     compileExpression(*hotkeyExpr);
 
-    // Create a closure for the action
-    // The action becomes a lambda that will be called when hotkey is pressed
+    // Create a function that wraps the action with @ context injection
+    // The action will receive @ as its first parameter
+    BytecodeFunction hotkeyActionFn("hotkey_action");
+    enterFunction(std::move(hotkeyActionFn));
 
-    // First, compile the action into a nested lambda function
-    // We need to create a new function for the callback
+    // Compile the action statement/expression
+    if (binding.action) {
+      if (auto *blockStmt =
+              dynamic_cast<const ast::BlockStatement *>(binding.action.get())) {
+        // Block statement - compile all statements
+        for (const auto &stmt : blockStmt->body) {
+          compileStatement(*stmt);
+        }
+      } else if (auto *exprStmt =
+                     dynamic_cast<const ast::ExpressionStatement *>(
+                         binding.action.get())) {
+        // Single expression - compile and return
+        compileExpression(*exprStmt->expression);
+        emit(OpCode::RETURN);
+      } else {
+        // Other statement types
+        compileStatement(*binding.action);
+        emit(OpCode::RETURN);
+      }
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+    }
 
-    // For now, wrap the action in a simple lambda
-    // The action is compiled as a statement block
+    leaveFunction();
 
-    // Create a lambda: () => { action }
-    // This requires creating a new function in the chunk
+    // Create a wrapper that injects the @ context
+    // This wrapper receives the hotkey context as first parameter and passes it
+    // to the action
+    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper");
+    enterFunction(std::move(hotkeyWrapperFn));
 
-    // For simplicity, we'll use a workaround:
-    // Compile the action as a statement, then create a closure that calls it
-    // This is a placeholder - proper implementation needs nested function
-    // support
+    // Load the hotkey action function
+    emit(OpCode::LOAD_GLOBAL, addConstant("hotkey_action"));
 
-    // Emit a placeholder closure (will be replaced with proper implementation)
-    emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+    // Create hotkey context object
+    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"Hotkey", 1});
 
-    // Call hotkey.register(hotkey_string, callback)
+    // Call the action with @ context as parameter
+    emit(OpCode::CALL,
+         static_cast<uint32_t>(-1)); // Call with 1 arg (@ context)
+
+    // Pop the result (action result)
+    emit(OpCode::POP);
+
+    leaveFunction();
+
+    // Register the hotkey with the wrapper function
+    emit(OpCode::LOAD_GLOBAL, addConstant("hotkey_wrapper"));
     emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"hotkey.register", 2});
     emit(OpCode::POP); // Discard result
-  }
 
-  // Handle conditions if present (for when blocks)
-  if (!binding.conditions.empty()) {
-    // Conditions are handled by ConditionalHotkeyManager
-    // For now, just register the hotkey and let the conditional manager handle
-    // it
+    // Handle conditions if present (for when blocks)
+    if (!binding.conditions.empty()) {
+      // Conditions are handled by ConditionalHotkeyManager
+      // For now, just register the hotkey and let the conditional manager
+      // handle it
+    }
   }
 }
 

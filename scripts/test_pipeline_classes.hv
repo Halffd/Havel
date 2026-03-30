@@ -1,0 +1,188 @@
+#!/usr/bin/env havel
+// Pipeline Test: Classes, Methods, and Structs
+// This tests the enhanced pipeline features with OOP constructs
+
+print "=== Pipeline Test: Classes, Methods, Structs ==="
+
+// Test 1: Classes with methods in pipelines
+print "\n--- Test 1: Class Methods in Pipelines ---"
+
+class StringProcessor {
+  fn new() {
+    this.count = 0
+  }
+  
+  fn process(text) {
+    this.count = this.count + 1
+    return text.upper
+  }
+  
+  fn filter(text) {
+    return text.length > 3
+  }
+}
+
+// Create instance and use in pipeline
+processor = StringProcessor.new()
+
+// Test pipeline with class method calls
+items = ["hello", "hi", "world", "a", "test"]
+  | processor.process
+  | processor.filter
+
+print "Processed items: " + items
+print "Process count: " + processor.count
+
+// Test 2: Structs in pipelines
+print "\n--- Test 2: Structs in Pipelines ---"
+
+struct Person {
+  name: string
+  age: number
+}
+
+// Create array of structs
+people = [
+  Person { name: "Alice", age: 30 },
+  Person { name: "Bob", age: 25 },
+  Person { name: "Charlie", age: 35 }
+]
+
+// Pipeline with struct fields
+names = people
+  | p => p.name
+  | n => n.upper
+
+print "Names: " + names
+
+// Filter structs by field
+adults = people
+  | p => p.age >= 30
+
+print "Adults: " + adults.length
+
+// Test 3: Chaining methods and pipelines
+print "\n--- Test 3: Method Chaining with Pipelines ---"
+
+class DataTransformer {
+  fn new() {
+    this.transformations = []
+  }
+  
+  fn transform(data) {
+    // Use pipeline internally
+    result = data
+      | d => d * 2
+      | d => d + 10
+    
+    this.transformations.push(result)
+    return result
+  }
+  
+  fn batchTransform(items) {
+    return items
+      | this.transform
+      | t => t > 15
+  }
+}
+
+transformer = DataTransformer.new()
+numbers = [1, 2, 3, 4, 5]
+
+// Use instance method in pipeline
+doubled = numbers
+  | transformer.batchTransform
+
+print "Doubled numbers > 15: " + doubled
+
+// Test 4: Complex pipeline with mixed types
+print "\n--- Test 4: Mixed Type Pipelines ---"
+
+// Start with primitives, transform through objects, end with results
+result = [1, 2, 3, 4, 5]
+  | n => Person { name: "Person" + n, age: n * 10 }
+  | p => p.age
+  | a => a / 2
+
+print "Ages divided: " + result
+
+// Test 5: Nested pipeline operations
+print "\n--- Test 5: Nested Pipeline Operations ---"
+
+class Collection {
+  fn new(items) {
+    this.items = items
+  }
+  
+  fn map(fn) {
+    return this.items
+      | fn
+  }
+  
+  fn filter(fn) {
+    return this.items
+      | fn
+  }
+}
+
+collection = Collection.new([10, 20, 30, 40, 50])
+
+// Use class methods that internally use pipelines
+filtered = collection.filter(x => x > 20)
+mapped = collection.map(x => x / 10)
+
+print "Filtered: " + filtered
+print "Mapped: " + mapped
+
+// Test 6: Pipeline with struct methods
+print "\n--- Test 6: Struct Methods in Pipelines ---"
+
+struct Point {
+  x: number
+  y: number
+  
+  fn distance(other) {
+    dx = this.x - other.x
+    dy = this.y - other.y
+    return math.sqrt(dx * dx + dy * dy)
+  }
+  
+  fn magnitude() {
+    return math.sqrt(this.x * this.x + this.y * this.y)
+  }
+}
+
+points = [
+  Point { x: 0, y: 0 },
+  Point { x: 3, y: 4 },
+  Point { x: 6, y: 8 }
+]
+
+// Use struct methods in pipeline
+magnitudes = points
+  | p => p.magnitude()
+  | m => m > 0
+
+print "Point magnitudes: " + magnitudes
+
+// Test 7: Combined class and struct pipelines
+print "\n--- Test 7: Combined Class and Struct Pipelines ---"
+
+class PointAnalyzer {
+  fn new() {
+    this.totalDistance = 0
+  }
+  
+  fn analyze(points) {
+    return points
+      | p => p.magnitude()
+      | m => this.totalDistance = this.totalDistance + m
+  }
+}
+
+analyzer = PointAnalyzer.new()
+analyzer.analyze(points)
+
+print "Total distance: " + analyzer.totalDistance
+
+print "\n=== All class/struct pipeline tests complete ==="

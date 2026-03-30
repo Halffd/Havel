@@ -1,0 +1,5 @@
+fn double(x) { return x * 2 }
+let nums = [1,2,3]
+let out = nums.map(double)
+print(out)
+return out[1]

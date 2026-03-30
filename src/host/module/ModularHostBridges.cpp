@@ -3223,10 +3223,15 @@ void AudioBridge::install(PipelineOptions &options) {
 BytecodeValue
 AudioBridge::handleGetVolume(const std::vector<BytecodeValue> &args,
                              const HostContext *ctx) {
-  (void)args;
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(1.0); // Default volume
   }
+  // Check for device-specific overload: getVolume(device)
+  if (!args.empty() && std::holds_alternative<std::string>(args[0])) {
+    std::string device = std::get<std::string>(args[0]);
+    return BytecodeValue(ctx->audioManager->getVolume(device));
+  }
+  // Default device
   return BytecodeValue(ctx->audioManager->getVolume());
 }
 
@@ -3236,19 +3241,51 @@ AudioBridge::handleSetVolume(const std::vector<BytecodeValue> &args,
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(false);
   }
-  if (args.empty() || !std::holds_alternative<double>(args[0])) {
+  if (args.empty()) {
+    throw std::runtime_error(
+        "audio.setVolume() requires at least a volume number");
+  }
+
+  // Check for (device, volume) overload
+  if (args.size() >= 2) {
+    if (std::holds_alternative<std::string>(args[0])) {
+      std::string device = std::get<std::string>(args[0]);
+      double volume = 1.0;
+      if (std::holds_alternative<double>(args[1])) {
+        volume = std::get<double>(args[1]);
+      } else if (std::holds_alternative<int64_t>(args[1])) {
+        volume = static_cast<double>(std::get<int64_t>(args[1]));
+      } else {
+        throw std::runtime_error(
+            "audio.setVolume(device, volume) requires volume as number");
+      }
+      return BytecodeValue(ctx->audioManager->setVolume(device, volume));
+    }
+  }
+
+  // Single argument: setVolume(volume) for default device
+  double volume = 1.0;
+  if (std::holds_alternative<double>(args[0])) {
+    volume = std::get<double>(args[0]);
+  } else if (std::holds_alternative<int64_t>(args[0])) {
+    volume = static_cast<double>(std::get<int64_t>(args[0]));
+  } else {
     throw std::runtime_error("audio.setVolume() requires a number");
   }
-  double volume = std::get<double>(args[0]);
   return BytecodeValue(ctx->audioManager->setVolume(volume));
 }
 
 BytecodeValue AudioBridge::handleIsMuted(const std::vector<BytecodeValue> &args,
                                          const HostContext *ctx) {
-  (void)args;
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(false);
   }
+  // Check for device-specific overload: isMuted(device)
+  if (!args.empty() && std::holds_alternative<std::string>(args[0])) {
+    std::string device = std::get<std::string>(args[0]);
+    return BytecodeValue(ctx->audioManager->isMuted(device));
+  }
+  // Default device
   return BytecodeValue(ctx->audioManager->isMuted());
 }
 
@@ -3257,6 +3294,16 @@ BytecodeValue AudioBridge::handleSetMute(const std::vector<BytecodeValue> &args,
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(false);
   }
+  // Check for (device, muted) overload
+  if (args.size() >= 2) {
+    if (std::holds_alternative<std::string>(args[0]) &&
+        std::holds_alternative<bool>(args[1])) {
+      std::string device = std::get<std::string>(args[0]);
+      bool muted = std::get<bool>(args[1]);
+      return BytecodeValue(ctx->audioManager->setMute(device, muted));
+    }
+  }
+  // Single argument: setMute(muted) for default device
   if (args.empty() || !std::holds_alternative<bool>(args[0])) {
     throw std::runtime_error("audio.setMute() requires a boolean");
   }
@@ -3267,10 +3314,15 @@ BytecodeValue AudioBridge::handleSetMute(const std::vector<BytecodeValue> &args,
 BytecodeValue
 AudioBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
                               const HostContext *ctx) {
-  (void)args;
   if (!ctx || !ctx->audioManager) {
     return BytecodeValue(false);
   }
+  // Check for device-specific overload: toggleMute(device)
+  if (!args.empty() && std::holds_alternative<std::string>(args[0])) {
+    std::string device = std::get<std::string>(args[0]);
+    return BytecodeValue(ctx->audioManager->toggleMute(device));
+  }
+  // Default device
   return BytecodeValue(ctx->audioManager->toggleMute());
 }
 

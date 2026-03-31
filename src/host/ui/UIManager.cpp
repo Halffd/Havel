@@ -2,8 +2,16 @@
  * UIManager.cpp - UI backend manager implementation
  */
 #include "UIManager.hpp"
-#include "QtBackend.hpp"
 #include "ExtensionUIBridge.hpp"
+
+// Include native backends conditionally based on compile-time flags
+#ifdef HAVE_GTK_BACKEND
+#include "GtkBackend.hpp"
+#endif
+
+#ifdef HAVE_IMGUI_BACKEND
+#include "ImGuiBackend.hpp"
+#endif
 
 namespace havel::host {
 
@@ -46,13 +54,13 @@ bool UIManager::setBackend(UIBackend::Api api) {
 }
 
 bool UIManager::setBackend(const std::string& apiName) {
-    if (apiName == "qt" || apiName == "QT") {
+    if (apiName == "qt" || apiName == "QT" || apiName == "Qt") {
         return setBackend(UIBackend::Api::QT);
-    } else if (apiName == "gtk" || apiName == "GTK") {
+    } else if (apiName == "gtk" || apiName == "GTK" || apiName == "Gtk") {
         return setBackend(UIBackend::Api::GTK);
     } else if (apiName == "imgui" || apiName == "IMGUI" || apiName == "ImGui") {
         return setBackend(UIBackend::Api::IMGUI);
-    } else if (apiName == "auto" || apiName == "AUTO") {
+    } else if (apiName == "auto" || apiName == "AUTO" || apiName == "Auto") {
         return setBackend(UIBackend::Api::AUTO);
     }
     return false;
@@ -60,8 +68,16 @@ bool UIManager::setBackend(const std::string& apiName) {
 
 UIBackend* UIManager::backend() {
     if (!backend_) {
-        // Initialize with default (QT)
-        setBackend(UIBackend::Api::QT);
+        // Initialize with default (try Qt extension first)
+        #if defined(HAVE_QT_EXTENSION)
+            setBackend(UIBackend::Api::QT);
+        #elif defined(HAVE_GTK_BACKEND)
+            setBackend(UIBackend::Api::GTK);
+        #elif defined(HAVE_IMGUI_BACKEND)
+            setBackend(UIBackend::Api::IMGUI);
+        #else
+            setBackend(UIBackend::Api::QT); // Fallback
+        #endif
     }
     return backend_.get();
 }
@@ -80,20 +96,23 @@ std::string UIManager::currentApiName() const {
 bool UIManager::isBackendAvailable(UIBackend::Api api) const {
     switch (api) {
         case UIBackend::Api::QT:
-            // Qt is always available in this build
-            return true;
+            // Check if Qt extension is available
+            {
+                auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
+                return extBridge->isExtensionAvailable();
+            }
         case UIBackend::Api::GTK:
-            // Try to load extension to check availability
-            {
-                auto extBridge = std::make_unique<ExtensionUIBridge>("gtk");
-                return extBridge->loadExtension();
-            }
+            #if defined(HAVE_GTK_BACKEND)
+                return true;
+            #else
+                return false;
+            #endif
         case UIBackend::Api::IMGUI:
-            // Try to load extension to check availability
-            {
-                auto extBridge = std::make_unique<ExtensionUIBridge>("imgui");
-                return extBridge->loadExtension();
-            }
+            #if defined(HAVE_IMGUI_BACKEND)
+                return true;
+            #else
+                return false;
+            #endif
         case UIBackend::Api::AUTO:
             return true;
     }
@@ -101,9 +120,9 @@ bool UIManager::isBackendAvailable(UIBackend::Api api) const {
 }
 
 bool UIManager::isBackendAvailable(const std::string& apiName) const {
-    if (apiName == "qt" || apiName == "QT") {
+    if (apiName == "qt" || apiName == "QT" || apiName == "Qt") {
         return isBackendAvailable(UIBackend::Api::QT);
-    } else if (apiName == "gtk" || apiName == "GTK") {
+    } else if (apiName == "gtk" || apiName == "GTK" || apiName == "Gtk") {
         return isBackendAvailable(UIBackend::Api::GTK);
     } else if (apiName == "imgui" || apiName == "IMGUI" || apiName == "ImGui") {
         return isBackendAvailable(UIBackend::Api::IMGUI);
@@ -112,18 +131,25 @@ bool UIManager::isBackendAvailable(const std::string& apiName) const {
 }
 
 UIBackend::Api UIManager::detectBestBackend() const {
-    // Default to Qt
+    // Check Qt extension availability first
     if (isBackendAvailable(UIBackend::Api::QT)) {
         return UIBackend::Api::QT;
     }
-    // Fallback order: GTK -> ImGui
-    if (isBackendAvailable(UIBackend::Api::GTK)) {
-        return UIBackend::Api::GTK;
-    }
-    if (isBackendAvailable(UIBackend::Api::IMGUI)) {
-        return UIBackend::Api::IMGUI;
-    }
-    return UIBackend::Api::QT; // Default even if unavailable
+    
+    #if defined(HAVE_GTK_BACKEND)
+        if (isBackendAvailable(UIBackend::Api::GTK)) {
+            return UIBackend::Api::GTK;
+        }
+    #endif
+    
+    #if defined(HAVE_IMGUI_BACKEND)
+        if (isBackendAvailable(UIBackend::Api::IMGUI)) {
+            return UIBackend::Api::IMGUI;
+        }
+    #endif
+    
+    // Default fallback
+    return UIBackend::Api::QT;
 }
 
 void UIManager::shutdown() {
@@ -142,25 +168,26 @@ bool UIManager::isInitialized() const {
 std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
     switch (api) {
         case UIBackend::Api::QT:
-            return std::make_unique<QtBackend>();
+            // Load Qt extension dynamically
+            {
+                auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
+                if (extBridge->loadExtension()) {
+                    return extBridge;
+                }
+                return nullptr;
+            }
         case UIBackend::Api::GTK:
-            // Load GTK extension backend
-            {
-                auto extBridge = std::make_unique<ExtensionUIBridge>("gtk");
-                if (extBridge->loadExtension()) {
-                    return extBridge;
-                }
+            #if defined(HAVE_GTK_BACKEND)
+                return std::make_unique<GtkBackend>();
+            #else
                 return nullptr;
-            }
+            #endif
         case UIBackend::Api::IMGUI:
-            // Load ImGui extension backend
-            {
-                auto extBridge = std::make_unique<ExtensionUIBridge>("imgui");
-                if (extBridge->loadExtension()) {
-                    return extBridge;
-                }
+            #if defined(HAVE_IMGUI_BACKEND)
+                return std::make_unique<ImGuiBackend>();
+            #else
                 return nullptr;
-            }
+            #endif
         default:
             return nullptr;
     }

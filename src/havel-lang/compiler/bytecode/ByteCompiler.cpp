@@ -1433,9 +1433,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
 
-    // Global scope access (::identifier)
+    // Skip resolution for global scope identifiers (::x)
     if (id.isGlobalScope) {
-      emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{id.symbol});
       break;
     }
 
@@ -3029,8 +3028,7 @@ ByteCompiler::getCalleeName(const ast::Expression &callee) const {
   return std::nullopt;
 }
 
-const ResolvedBinding *
-ByteCompiler::bindingFor(const ast::Identifier &id) const {
+const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const {
   auto it = lexical_resolution_.identifier_bindings.find(&id);
   if (it == lexical_resolution_.identifier_bindings.end()) {
     return nullptr;

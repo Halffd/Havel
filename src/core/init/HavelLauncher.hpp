@@ -1,5 +1,9 @@
 #pragma once
+
+#ifdef HAVE_QT_EXTENSION
 #include "qt.hpp"
+#endif
+
 #include <string>
 
 namespace havel::init {
@@ -18,6 +22,9 @@ public:
   int run(int argc, char *argv[]);
 
 private:
+#ifdef HAVE_QT_EXTENSION
+  std::unique_ptr<QApplication> app_;
+#endif
   struct LaunchConfig {
     Mode mode = Mode::DAEMON;
     std::string scriptFile;

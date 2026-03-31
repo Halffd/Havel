@@ -4,7 +4,10 @@
 #include <memory>
 #include <vector>
 #include <chrono>
+
+#ifdef HAVE_QT_EXTENSION
 #include <qt.hpp>
+#endif
 
 // Undefine conflicting macros before including OpenCV
 #ifdef COUNT

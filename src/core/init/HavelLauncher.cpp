@@ -1,5 +1,7 @@
 #include "HavelLauncher.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "gui/HavelApp.hpp"
+#endif
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "havel-lang/compiler/bytecode/Pipeline.hpp"
@@ -10,8 +12,10 @@
 #include "havel-lang/tools/REPL.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include <QApplication>
 #include <QProcess>
+#endif
 #include <csignal>
 #include <fstream>
 #include <iostream>

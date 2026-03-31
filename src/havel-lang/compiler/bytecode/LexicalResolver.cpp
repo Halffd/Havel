@@ -628,35 +628,46 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);
 
-    // Handle assignment target - may be implicit declaration
+    // STEP 1: Pre-declare assignment targets before resolving RHS.
+    // This ensures that lambdas in the RHS can capture variables from
+    // outer scopes that are being assigned in the same function.
     if (assignment.target &&
         assignment.target->kind == ast::NodeType::Identifier) {
       const auto &ident =
           static_cast<const ast::Identifier &>(*assignment.target);
       auto binding = resolveIdentifier(ident.symbol);
 
-      if (!binding) {
-        // Implicit declaration on first assignment (Option C)
-        // Check if we're in global scope (function_index == 0 AND at root
-        // scope)
+      // Declare as local if:
+      // 1. No binding exists, OR
+      // 2. Binding is Global but we're inside a function (not at program top-level)
+      // 3. Binding is Upvalue (capture from outer scope, don't create new local)
+      bool insideFunction = function_stack_.size() > 1;
+      bool shouldDeclareLocal = !binding ||
+          (binding->kind == ResolvedBindingKind::Global && insideFunction);
+      // Note: If binding is Local or Upvalue, use existing (don't shadow)
+      if (binding && (binding->kind == ResolvedBindingKind::Local ||
+                     binding->kind == ResolvedBindingKind::Upvalue)) {
+        shouldDeclareLocal = false;
+      }
+
+      if (shouldDeclareLocal) {
+        // Implicit declaration on first assignment
         bool isGlobalScope = (function_stack_.size() == 1 &&
                               function_stack_[0].scopes.size() == 1);
 
         if (isGlobalScope) {
-          // Declare as global variable
+          // At top-level program scope - declare as global variable
           uint32_t slot = declareLocal(ident.symbol, &ident, false);
           global_variables_.insert(ident.symbol);
-          // Record as HostGlobal for proper LOAD_GLOBAL/STORE_GLOBAL
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
-          newBinding.slot = 0; // Slot doesn't matter for HostGlobal
+          newBinding.slot = 0;
           newBinding.name = ident.symbol;
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-          // Declare as local variable in current scope
+          // Inside a function - declare as local variable
           uint32_t slot = declareLocal(ident.symbol, &ident, false);
-          // Record the binding so ByteCompiler can find it
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Local;
           newBinding.slot = slot;
@@ -664,13 +675,11 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           noteIdentifierBinding(ident, newBinding);
         }
       } else {
-        // Variable exists, just note the binding
         noteIdentifierBinding(ident, *binding);
       }
     } else if (assignment.target &&
                assignment.target->kind == ast::NodeType::ArrayLiteral) {
-      // Destructuring assignment: [a, b, c] = [...]
-      // Resolve each element as potential implicit declaration
+      // Pre-declare destructuring targets
       const auto &arrayLit =
           static_cast<const ast::ArrayLiteral &>(*assignment.target);
       for (const auto &element : arrayLit.elements) {
@@ -678,7 +687,6 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           const auto &ident = static_cast<const ast::Identifier &>(*element);
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
-            // Implicit declaration
             bool isGlobalScope = (function_stack_.size() == 1 &&
                                   function_stack_[0].scopes.size() == 1);
             if (isGlobalScope) {
@@ -698,26 +706,21 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               newBinding.name = ident.symbol;
               noteIdentifierBinding(ident, newBinding);
             }
+          } else if (binding->kind == ResolvedBindingKind::Local ||
+                     binding->kind == ResolvedBindingKind::Upvalue) {
+            // Use existing binding, don't shadow
+            noteIdentifierBinding(ident, *binding);
           } else {
             noteIdentifierBinding(ident, *binding);
           }
-        } else if (element) {
-          resolveExpression(*element);
         }
       }
-      // Resolve the right side
-      if (assignment.value) {
-        resolveExpression(*assignment.value);
-      }
-      break;
     } else if (assignment.target &&
                assignment.target->kind == ast::NodeType::ObjectLiteral) {
-      // Object destructuring: {cpu, gpu, ram} = hardware
+      // Pre-declare object destructuring targets
       const auto &objLit =
           static_cast<const ast::ObjectLiteral &>(*assignment.target);
       for (const auto &pair : objLit.pairs) {
-        // pair.first is the key (string), pair.second is the value (Expression)
-        // For destructuring like {cpu, gpu}, value is an Identifier
         if (pair.second && pair.second->kind == ast::NodeType::Identifier) {
           const auto &ident =
               static_cast<const ast::Identifier &>(*pair.second);
@@ -742,26 +745,30 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               newBinding.name = ident.symbol;
               noteIdentifierBinding(ident, newBinding);
             }
+          } else if (binding->kind == ResolvedBindingKind::Local ||
+                     binding->kind == ResolvedBindingKind::Upvalue) {
+            // Use existing binding, don't shadow
+            noteIdentifierBinding(ident, *binding);
           } else {
             noteIdentifierBinding(ident, *binding);
           }
-        } else if (pair.second) {
-          resolveExpression(*pair.second);
         }
       }
-      // Resolve the right side
-      if (assignment.value) {
-        resolveExpression(*assignment.value);
-      }
-      break;
-    } else if (assignment.target) {
-      resolveExpression(*assignment.target);
     }
 
-    // Resolve right side
+    // STEP 2: Now resolve the RHS (lambdas can find pre-declared targets)
     if (assignment.value) {
       resolveExpression(*assignment.value);
     }
+
+    // STEP 3: Resolve any complex targets (member/index expressions)
+    if (assignment.target &&
+        assignment.target->kind != ast::NodeType::Identifier &&
+        assignment.target->kind != ast::NodeType::ArrayLiteral &&
+        assignment.target->kind != ast::NodeType::ObjectLiteral) {
+      resolveExpression(*assignment.target);
+    }
+
     break;
   }
 
@@ -889,6 +896,15 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::UnaryExpression: {
+    const auto &unary_expr =
+        static_cast<const ast::UnaryExpression &>(expression);
+    if (unary_expr.operand) {
+      resolveExpression(*unary_expr.operand);
+    }
+    break;
+  }
+
   default:
     break;
   }
@@ -915,6 +931,18 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
+  // SECOND: If at global scope (function_index == 0), check if it's a top-level
+  // function BEFORE searching local scopes. This ensures top-level functions
+  // are resolved as Function kind, not as Local/upvalue captures.
+  if (function_index == 0) {
+    if (top_level_functions_.count(name) > 0) {
+      return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
+    }
+    // Dynamic language: treat all other identifiers as globals
+    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+  }
+
+  // THIRD: Search local scopes (only for nested functions, not global)
   auto &ctx = function_stack_[function_index];
   for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
     const auto &scope = ctx.scopes[sc - 1];
@@ -929,31 +957,24 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
         name, it->second.is_const};
   }
 
-  // Not found in local scopes
-  if (function_index == 0) {
-    // In global scope - check if it's a top-level function
-    if (top_level_functions_.count(name) > 0) {
-      return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
-    }
-    // Dynamic language: treat all other identifiers as globals
-    // Runtime will resolve host functions dynamically
-    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
-  }
-
-  // In nested function - check enclosing scope
+  // FOURTH: In nested function - check enclosing scope recursively
   auto enclosing = resolveIdentifierInFunction(name, function_index - 1);
   if (!enclosing) {
-    // Not found anywhere - treat as Global
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
   if (enclosing->kind == ResolvedBindingKind::Global) {
-    // Propagate Global binding
+    return enclosing;
+  }
+
+  // If enclosing scope found a top-level function or host function, return it
+  // directly without trying to capture it as an upvalue
+  if (enclosing->kind == ResolvedBindingKind::Function ||
+      enclosing->kind == ResolvedBindingKind::HostFunction) {
     return enclosing;
   }
 
   if (enclosing->kind == ResolvedBindingKind::Local) {
-    // Capture as upvalue
     uint32_t upvalue_slot =
         addUpvalue(function_index, name, enclosing->slot, true);
     return ResolvedBinding{
@@ -962,7 +983,6 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
         name, enclosing->is_const};
   }
 
-  // Upvalue from enclosing function
   uint32_t upvalue_slot =
       addUpvalue(function_index, name, enclosing->slot, false);
   return ResolvedBinding{

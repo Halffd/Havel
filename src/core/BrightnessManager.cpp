@@ -7,7 +7,9 @@
 #include <X11/extensions/Xrandr.h>
 #include <algorithm>
 #include <cmath>
+#ifdef HAVE_QT_EXTENSION
 #include <qguiapplication_platform.h>
+#endif
 #ifdef __WAYLAND__
 #include <wayland-client.h>
 #endif

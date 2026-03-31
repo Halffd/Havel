@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AST.h"
-#include "BytecodeIR.hpp"
+#include "havel-lang/ast/AST.h"
+#include "havel-lang/compiler/bytecode/BytecodeIR.hpp"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>

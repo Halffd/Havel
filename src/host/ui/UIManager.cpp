@@ -99,7 +99,7 @@ bool UIManager::isBackendAvailable(UIBackend::Api api) const {
             // Check if Qt extension is available
             {
                 auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
-                return extBridge->isExtensionAvailable();
+                return extBridge->isExtensionLoaded();
             }
         case UIBackend::Api::GTK:
             #if defined(HAVE_GTK_BACKEND)

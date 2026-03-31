@@ -1,6 +1,6 @@
 #pragma once
 
-#include "AST.h"
+#include "havel-lang/ast/AST.h"
 #include <memory>
 #include <vector>
 #include <functional>

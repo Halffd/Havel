@@ -1,5 +1,5 @@
 #include "BindingResolver.hpp"
-#include "AST.h"
+#include "havel-lang/ast/AST.h"
 
 namespace havel::compiler {
 

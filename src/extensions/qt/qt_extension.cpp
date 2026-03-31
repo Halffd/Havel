@@ -9,6 +9,78 @@
 #include "HavelCAPI.h"
 #include "DynamicLoader.hpp"
 
+// Include Qt headers for proper type information
+#include <QApplication>
+#include <QWidget>
+#include <QMainWindow>
+#include <QLabel>
+#include <QPushButton>
+#include <QLineEdit>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QGridLayout>
+#include <QFormLayout>
+#include <QStackedWidget>
+#include <QTabWidget>
+#include <QScrollArea>
+#include <QSplitter>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
+#include <QStatusBar>
+#include <QToolBar>
+#include <QMessageBox>
+#include <QInputDialog>
+#include <QFileDialog>
+#include <QColorDialog>
+#include <QFontDialog>
+#include <QProgressDialog>
+#include <QWizard>
+#include <QGroupBox>
+#include <QFrame>
+#include <QDockWidget>
+#include <QTextEdit>
+#include <QPlainTextEdit>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QSlider>
+#include <QProgressBar>
+#include <QCheckBox>
+#include <QRadioButton>
+#include <QButtonGroup>
+#include <QListWidget>
+#include <QTreeWidget>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTimer>
+#include <QSettings>
+#include <QClipboard>
+#include <QMimeData>
+#include <QStyle>
+#include <QStyleFactory>
+#include <QPalette>
+#include <QFont>
+#include <QFontDatabase>
+#include <QIcon>
+#include <QPixmap>
+#include <QImage>
+#include <QPicture>
+#include <QCursor>
+#include <QKeySequence>
+#include <QShortcut>
+#include <QFileSystemWatcher>
+#include <QThread>
+#include <QThreadPool>
+#include <QRunnable>
+#include <QSemaphore>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QReadWriteLock>
+#include <QWaitCondition>
+
 #include <unordered_map>
 #include <cstdio>
 #include <cstring>
@@ -362,6 +434,7 @@ typedef const char* (*QSettingsValueFn)(void* s, const char* key, const char* de
 typedef bool (*QSettingsContainsFn)(void* s, const char* key);
 typedef void (*QSettingsRemoveFn)(void* s, const char* key);
 typedef void (*QSettingsSyncFn)(void* s);
+typedef QSettingsSyncFn QsyncFn;
 
 /* QCoreApplication functions */
 typedef const char* (*QAppApplicationNameFn)();
@@ -826,281 +899,493 @@ struct Qt6Libs {
         LOAD_CORE(layout);
         
         /* QMainWindow */
-        LOAD(QMainWindow);
-        LOAD(setCentralWidget);
-        LOAD(centralWidget);
-        LOAD(setMenuBar);
-        LOAD(setStatusBar);
+        qMainWindow_new = qtWidgets.getSymbol<QMainWindowCtorFn>("_ZN11QMainWindowC1EP7QWidget6QFlagsIN2Qt10WindowTypeEE");
+        if (!qMainWindow_new) qMainWindow_new = qtWidgets.getSymbol<QMainWindowCtorFn>("QMainWindow");
+        qMainWindow_setCentralWidget = qtWidgets.getSymbol<QMainWindowSetCentralWidgetFn>("_ZN11QMainWindow16setCentralWidgetEP7QWidget");
+        if (!qMainWindow_setCentralWidget) qMainWindow_setCentralWidget = qtWidgets.getSymbol<QMainWindowSetCentralWidgetFn>("setCentralWidget");
+        qMainWindow_centralWidget = qtWidgets.getSymbol<QMainWindowCentralWidgetFn>("_ZNK11QMainWindow13centralWidgetEv");
+        if (!qMainWindow_centralWidget) qMainWindow_centralWidget = qtWidgets.getSymbol<QMainWindowCentralWidgetFn>("centralWidget");
+        qMainWindow_setMenuBar = qtWidgets.getSymbol<QMainWindowSetMenuBarFn>("_ZN11QMainWindow10setMenuBarEP8QMenuBar");
+        if (!qMainWindow_setMenuBar) qMainWindow_setMenuBar = qtWidgets.getSymbol<QMainWindowSetMenuBarFn>("setMenuBar");
+        qMainWindow_setStatusBar = qtWidgets.getSymbol<QMainWindowSetStatusBarFn>("_ZN11QMainWindow12setStatusBarEP11QStatusBar");
+        if (!qMainWindow_setStatusBar) qMainWindow_setStatusBar = qtWidgets.getSymbol<QMainWindowSetStatusBarFn>("setStatusBar");
         
         /* QLabel */
-        LOAD(QLabel);
-        LOAD(setText);
-        LOAD(text);
-        LOAD(setAlignment);
-        LOAD(setWordWrap);
-        LOAD(setPixmap);
-        LOAD(clear);
+        qLabel_new = qtWidgets.getSymbol<QLabelCtorFn>("_ZN6QLabelC1EP7QWidget6QFlagsIN2Qt10WindowTypeEE");
+        if (!qLabel_new) qLabel_new = qtWidgets.getSymbol<QLabelCtorFn>("QLabel");
+        qLabel_setText = qtWidgets.getSymbol<QLabelSetTextFn>("_ZN6QLabel7setTextERK7QString");
+        if (!qLabel_setText) qLabel_setText = qtWidgets.getSymbol<QLabelSetTextFn>("setText");
+        qLabel_text = qtWidgets.getSymbol<QLabelTextFn>("_ZNK6QLabel4textEv");
+        if (!qLabel_text) qLabel_text = qtWidgets.getSymbol<QLabelTextFn>("text");
+        qLabel_setAlignment = qtWidgets.getSymbol<QLabelSetAlignmentFn>("_ZN6QLabel12setAlignmentE6QFlagsIN2Qt13AlignmentFlagEE");
+        if (!qLabel_setAlignment) qLabel_setAlignment = qtWidgets.getSymbol<QLabelSetAlignmentFn>("setAlignment");
+        qLabel_setWordWrap = qtWidgets.getSymbol<QLabelSetWordWrapFn>("_ZN6QLabel12setWordWrapEb");
+        if (!qLabel_setWordWrap) qLabel_setWordWrap = qtWidgets.getSymbol<QLabelSetWordWrapFn>("setWordWrap");
+        qLabel_setPixmap = qtWidgets.getSymbol<QLabelSetPixmapFn>("_ZN6QLabel10setPixmapERK7QPixmap");
+        if (!qLabel_setPixmap) qLabel_setPixmap = qtWidgets.getSymbol<QLabelSetPixmapFn>("setPixmap");
+        qLabel_clear = qtWidgets.getSymbol<QLabelClearFn>("_ZN6QLabel5clearEv");
+        if (!qLabel_clear) qLabel_clear = qtWidgets.getSymbol<QLabelClearFn>("clear");
         
         /* QPushButton */
-        LOAD(QPushButton);
-        LOAD(setText);
-        LOAD(text);
-        LOAD(setIcon);
-        LOAD(setCheckable);
-        LOAD(isCheckable);
-        LOAD(setChecked);
-        LOAD(isChecked);
-        LOAD(setDefault);
-        LOAD(setFlat);
-        LOAD(click);
-        LOAD(toggle);
+        qPushButton_new = qtWidgets.getSymbol<QPushButtonCtorFn>("_ZN11QPushButtonC1EP7QWidget");
+        if (!qPushButton_new) qPushButton_new = qtWidgets.getSymbol<QPushButtonCtorFn>("QPushButton");
+        qPushButton_setText = qtWidgets.getSymbol<QPushButtonSetTextFn>("_ZN11QPushButton7setTextERK7QString");
+        if (!qPushButton_setText) qPushButton_setText = qtWidgets.getSymbol<QPushButtonSetTextFn>("setText");
+        qPushButton_text = qtWidgets.getSymbol<QPushButtonTextFn>("_ZNK11QPushButton4textEv");
+        if (!qPushButton_text) qPushButton_text = qtWidgets.getSymbol<QPushButtonTextFn>("text");
+        qPushButton_setIcon = qtWidgets.getSymbol<QPushButtonSetIconFn>("_ZN11QPushButton7setIconERK5QIcon");
+        if (!qPushButton_setIcon) qPushButton_setIcon = qtWidgets.getSymbol<QPushButtonSetIconFn>("setIcon");
+        qPushButton_setCheckable = qtWidgets.getSymbol<QPushButtonSetCheckableFn>("_ZN11QPushButton12setCheckableEb");
+        if (!qPushButton_setCheckable) qPushButton_setCheckable = qtWidgets.getSymbol<QPushButtonSetCheckableFn>("setCheckable");
+        qPushButton_isCheckable = qtWidgets.getSymbol<QPushButtonIsCheckableFn>("_ZNK11QPushButton11isCheckableEv");
+        if (!qPushButton_isCheckable) qPushButton_isCheckable = qtWidgets.getSymbol<QPushButtonIsCheckableFn>("isCheckable");
+        qPushButton_setChecked = qtWidgets.getSymbol<QPushButtonSetCheckedFn>("_ZN11QPushButton11setCheckedEb");
+        if (!qPushButton_setChecked) qPushButton_setChecked = qtWidgets.getSymbol<QPushButtonSetCheckedFn>("setChecked");
+        qPushButton_isChecked = qtWidgets.getSymbol<QPushButtonIsCheckedFn>("_ZNK11QPushButton9isCheckedEv");
+        if (!qPushButton_isChecked) qPushButton_isChecked = qtWidgets.getSymbol<QPushButtonIsCheckedFn>("isChecked");
+        qPushButton_setDefault = qtWidgets.getSymbol<QPushButtonSetDefaultFn>("_ZN11QPushButton11setDefaultEb");
+        if (!qPushButton_setDefault) qPushButton_setDefault = qtWidgets.getSymbol<QPushButtonSetDefaultFn>("setDefault");
+        qPushButton_setFlat = qtWidgets.getSymbol<QPushButtonSetFlatFn>("_ZN11QPushButton8setFlatEb");
+        if (!qPushButton_setFlat) qPushButton_setFlat = qtWidgets.getSymbol<QPushButtonSetFlatFn>("setFlat");
+        qPushButton_click = qtWidgets.getSymbol<QPushButtonClickFn>("_ZN11QPushButton5clickEv");
+        if (!qPushButton_click) qPushButton_click = qtWidgets.getSymbol<QPushButtonClickFn>("click");
+        qPushButton_toggle = qtWidgets.getSymbol<QPushButtonToggleFn>("_ZN11QPushButton6toggleEv");
+        if (!qPushButton_toggle) qPushButton_toggle = qtWidgets.getSymbol<QPushButtonToggleFn>("toggle");
         
         /* QCheckBox */
-        LOAD(QCheckBox);
-        LOAD(setText);
-        LOAD(text);
-        LOAD(setCheckState);
-        LOAD(checkState);
-        LOAD(setTristate);
+        qCheckBox_new = qtWidgets.getSymbol<QCheckBoxCtorFn>("_ZN9QCheckBoxC1EP7QWidget");
+        if (!qCheckBox_new) qCheckBox_new = qtWidgets.getSymbol<QCheckBoxCtorFn>("QCheckBox");
+        qCheckBox_setText = qtWidgets.getSymbol<QCheckBoxSetTextFn>("_ZN9QCheckBox7setTextERK7QString");
+        if (!qCheckBox_setText) qCheckBox_setText = qtWidgets.getSymbol<QCheckBoxSetTextFn>("setText");
+        qCheckBox_text = qtWidgets.getSymbol<QCheckBoxTextFn>("_ZNK9QCheckBox4textEv");
+        if (!qCheckBox_text) qCheckBox_text = qtWidgets.getSymbol<QCheckBoxTextFn>("text");
+        qCheckBox_setCheckState = qtWidgets.getSymbol<QCheckBoxSetCheckStateFn>("_ZN9QCheckBox13setCheckStateEN2Qt10CheckStateE");
+        if (!qCheckBox_setCheckState) qCheckBox_setCheckState = qtWidgets.getSymbol<QCheckBoxSetCheckStateFn>("setCheckState");
+        qCheckBox_checkState = qtWidgets.getSymbol<QCheckBoxCheckStateFn>("_ZNK9QCheckBox9checkStateEv");
+        if (!qCheckBox_checkState) qCheckBox_checkState = qtWidgets.getSymbol<QCheckBoxCheckStateFn>("checkState");
+        qCheckBox_setTristate = qtWidgets.getSymbol<QCheckBoxSetTristateFn>("_ZN9QCheckBox11setTristateEb");
+        if (!qCheckBox_setTristate) qCheckBox_setTristate = qtWidgets.getSymbol<QCheckBoxSetTristateFn>("setTristate");
         
         /* QRadioButton */
-        LOAD(QRadioButton);
-        LOAD(setText);
+        qRadioButton_new = qtWidgets.getSymbol<QRadioButtonCtorFn>("_ZN12QRadioButtonC1EP7QWidget");
+        if (!qRadioButton_new) qRadioButton_new = qtWidgets.getSymbol<QRadioButtonCtorFn>("QRadioButton");
+        qRadioButton_setText = qtWidgets.getSymbol<QRadioButtonSetTextFn>("_ZN12QRadioButton7setTextERK7QString");
+        if (!qRadioButton_setText) qRadioButton_setText = qtWidgets.getSymbol<QRadioButtonSetTextFn>("setText");
         
         /* QGroupBox */
-        LOAD(QGroupBox);
-        LOAD(setTitle);
-        LOAD(setCheckable);
+        qGroupBox_new = qtWidgets.getSymbol<QGroupBoxCtorFn>("_ZN9QGroupBoxC1EP7QWidget");
+        if (!qGroupBox_new) qGroupBox_new = qtWidgets.getSymbol<QGroupBoxCtorFn>("QGroupBox");
+        qGroupBox_setTitle = qtWidgets.getSymbol<QGroupBoxSetTitleFn>("_ZN9QGroupBox8setTitleERK7QString");
+        if (!qGroupBox_setTitle) qGroupBox_setTitle = qtWidgets.getSymbol<QGroupBoxSetTitleFn>("setTitle");
+        qGroupBox_setCheckable = qtWidgets.getSymbol<QGroupBoxSetCheckableFn>("_ZN9QGroupBox12setCheckableEb");
+        if (!qGroupBox_setCheckable) qGroupBox_setCheckable = qtWidgets.getSymbol<QGroupBoxSetCheckableFn>("setCheckable");
         
         /* QLineEdit */
-        LOAD(QLineEdit);
-        LOAD(setText);
-        LOAD(text);
-        LOAD(setPlaceholderText);
-        LOAD(placeholderText);
-        LOAD(setMaxLength);
-        LOAD(setReadOnly);
-        LOAD(isReadOnly);
-        LOAD(setEchoMode);
-        LOAD(setAlignment);
-        LOAD(setFrame);
-        LOAD(clear);
-        LOAD(deselect);
-        LOAD(undo);
-        LOAD(redo);
+        qLineEdit_new = qtWidgets.getSymbol<QLineEditCtorFn>("_ZN9QLineEditC1EP7QWidget");
+        if (!qLineEdit_new) qLineEdit_new = qtWidgets.getSymbol<QLineEditCtorFn>("QLineEdit");
+        qLineEdit_setText = qtWidgets.getSymbol<QLineEditSetTextFn>("_ZN9QLineEdit7setTextERK7QString");
+        if (!qLineEdit_setText) qLineEdit_setText = qtWidgets.getSymbol<QLineEditSetTextFn>("setText");
+        qLineEdit_text = qtWidgets.getSymbol<QLineEditTextFn>("_ZNK9QLineEdit4textEv");
+        if (!qLineEdit_text) qLineEdit_text = qtWidgets.getSymbol<QLineEditTextFn>("text");
+        qLineEdit_setPlaceholderText = qtWidgets.getSymbol<QLineEditSetPlaceholderTextFn>("_ZN9QLineEdit18setPlaceholderTextERK7QString");
+        if (!qLineEdit_setPlaceholderText) qLineEdit_setPlaceholderText = qtWidgets.getSymbol<QLineEditSetPlaceholderTextFn>("setPlaceholderText");
+        qLineEdit_placeholderText = qtWidgets.getSymbol<QLineEditPlaceholderTextFn>("_ZNK9QLineEdit14placeholderTextEv");
+        if (!qLineEdit_placeholderText) qLineEdit_placeholderText = qtWidgets.getSymbol<QLineEditPlaceholderTextFn>("placeholderText");
+        qLineEdit_setMaxLength = qtWidgets.getSymbol<QLineEditSetMaxLengthFn>("_ZN9QLineEdit12setMaxLengthEi");
+        if (!qLineEdit_setMaxLength) qLineEdit_setMaxLength = qtWidgets.getSymbol<QLineEditSetMaxLengthFn>("setMaxLength");
+        qLineEdit_setReadOnly = qtWidgets.getSymbol<QLineEditSetReadOnlyFn>("_ZN9QLineEdit11setReadOnlyEb");
+        if (!qLineEdit_setReadOnly) qLineEdit_setReadOnly = qtWidgets.getSymbol<QLineEditSetReadOnlyFn>("setReadOnly");
+        qLineEdit_isReadOnly = qtWidgets.getSymbol<QLineEditIsReadOnlyFn>("_ZNK9QLineEdit10isReadOnlyEv");
+        if (!qLineEdit_isReadOnly) qLineEdit_isReadOnly = qtWidgets.getSymbol<QLineEditIsReadOnlyFn>("isReadOnly");
+        qLineEdit_setEchoMode = qtWidgets.getSymbol<QLineEditSetEchoModeFn>("_ZN9QLineEdit11setEchoModeENS_8EchoModeE");
+        if (!qLineEdit_setEchoMode) qLineEdit_setEchoMode = qtWidgets.getSymbol<QLineEditSetEchoModeFn>("setEchoMode");
+        qLineEdit_setAlignment = qtWidgets.getSymbol<QLineEditSetAlignmentFn>("_ZN9QLineEdit12setAlignmentE6QFlagsIN2Qt13AlignmentFlagEE");
+        if (!qLineEdit_setAlignment) qLineEdit_setAlignment = qtWidgets.getSymbol<QLineEditSetAlignmentFn>("setAlignment");
+        qLineEdit_setFrame = qtWidgets.getSymbol<QLineEditSetFrameFn>("_ZN9QLineEdit8setFrameEb");
+        if (!qLineEdit_setFrame) qLineEdit_setFrame = qtWidgets.getSymbol<QLineEditSetFrameFn>("setFrame");
+        qLineEdit_clear = qtWidgets.getSymbol<QLineEditClearFn>("_ZN9QLineEdit5clearEv");
+        if (!qLineEdit_clear) qLineEdit_clear = qtWidgets.getSymbol<QLineEditClearFn>("clear");
+        qLineEdit_deselect = qtWidgets.getSymbol<QLineEditDeselectFn>("_ZN9QLineEdit8deselectEv");
+        if (!qLineEdit_deselect) qLineEdit_deselect = qtWidgets.getSymbol<QLineEditDeselectFn>("deselect");
+        qLineEdit_undo = qtWidgets.getSymbol<QLineEditUndoFn>("_ZN9QLineEdit4undoEv");
+        if (!qLineEdit_undo) qLineEdit_undo = qtWidgets.getSymbol<QLineEditUndoFn>("undo");
+        qLineEdit_redo = qtWidgets.getSymbol<QLineEditRedoFn>("_ZN9QLineEdit4redoEv");
+        if (!qLineEdit_redo) qLineEdit_redo = qtWidgets.getSymbol<QLineEditRedoFn>("redo");
         
         /* QTextEdit */
-        LOAD(QTextEdit);
-        LOAD(setPlainText);
-        LOAD(toPlainText);
-        LOAD(setHtml);
-        LOAD(toHtml);
-        LOAD(append);
-        LOAD(clear);
-        LOAD(setReadOnly);
-        LOAD(isReadOnly);
-        LOAD(setPlaceholderText);
-        LOAD(copy);
-        LOAD(cut);
-        LOAD(paste);
+        qTextEdit_new = qtWidgets.getSymbol<QTextEditCtorFn>("_ZN9QTextEditC1EP7QWidget");
+        if (!qTextEdit_new) qTextEdit_new = qtWidgets.getSymbol<QTextEditCtorFn>("QTextEdit");
+        qTextEdit_setPlainText = qtWidgets.getSymbol<QTextEditSetPlainTextFn>("_ZN9QTextEdit12setPlainTextERK7QString");
+        if (!qTextEdit_setPlainText) qTextEdit_setPlainText = qtWidgets.getSymbol<QTextEditSetPlainTextFn>("setPlainText");
+        qTextEdit_toPlainText = qtWidgets.getSymbol<QTextEditToPlainTextFn>("_ZNK9QTextEdit11toPlainTextEv");
+        if (!qTextEdit_toPlainText) qTextEdit_toPlainText = qtWidgets.getSymbol<QTextEditToPlainTextFn>("toPlainText");
+        qTextEdit_setHtml = qtWidgets.getSymbol<QTextEditSetHtmlFn>("_ZN9QTextEdit7setHtmlERK7QString");
+        if (!qTextEdit_setHtml) qTextEdit_setHtml = qtWidgets.getSymbol<QTextEditSetHtmlFn>("setHtml");
+        qTextEdit_toHtml = qtWidgets.getSymbol<QTextEditToHtmlFn>("_ZNK9QTextEdit6toHtmlEv");
+        if (!qTextEdit_toHtml) qTextEdit_toHtml = qtWidgets.getSymbol<QTextEditToHtmlFn>("toHtml");
+        qTextEdit_append = qtWidgets.getSymbol<QTextEditAppendFn>("_ZN9QTextEdit6appendERK7QString");
+        if (!qTextEdit_append) qTextEdit_append = qtWidgets.getSymbol<QTextEditAppendFn>("append");
+        qTextEdit_clear = qtWidgets.getSymbol<QTextEditClearFn>("_ZN9QTextEdit5clearEv");
+        if (!qTextEdit_clear) qTextEdit_clear = qtWidgets.getSymbol<QTextEditClearFn>("clear");
+        qTextEdit_setReadOnly = qtWidgets.getSymbol<QTextEditSetReadOnlyFn>("_ZN9QTextEdit11setReadOnlyEb");
+        if (!qTextEdit_setReadOnly) qTextEdit_setReadOnly = qtWidgets.getSymbol<QTextEditSetReadOnlyFn>("setReadOnly");
+        qTextEdit_isReadOnly = qtWidgets.getSymbol<QTextEditIsReadOnlyFn>("_ZNK9QTextEdit10isReadOnlyEv");
+        if (!qTextEdit_isReadOnly) qTextEdit_isReadOnly = qtWidgets.getSymbol<QTextEditIsReadOnlyFn>("isReadOnly");
+        qTextEdit_setPlaceholderText = qtWidgets.getSymbol<QTextEditSetPlaceholderTextFn>("_ZN9QTextEdit18setPlaceholderTextERK7QString");
+        if (!qTextEdit_setPlaceholderText) qTextEdit_setPlaceholderText = qtWidgets.getSymbol<QTextEditSetPlaceholderTextFn>("setPlaceholderText");
+        qTextEdit_copy = qtWidgets.getSymbol<QTextEditCopyFn>("_ZN9QTextEdit4copyEv");
+        if (!qTextEdit_copy) qTextEdit_copy = qtWidgets.getSymbol<QTextEditCopyFn>("copy");
+        qTextEdit_cut = qtWidgets.getSymbol<QTextEditCutFn>("_ZN9QTextEdit3cutEv");
+        if (!qTextEdit_cut) qTextEdit_cut = qtWidgets.getSymbol<QTextEditCutFn>("cut");
+        qTextEdit_paste = qtWidgets.getSymbol<QTextEditPasteFn>("_ZN9QTextEdit5pasteEv");
+        if (!qTextEdit_paste) qTextEdit_paste = qtWidgets.getSymbol<QTextEditPasteFn>("paste");
         
         /* QComboBox */
-        LOAD(QComboBox);
-        LOAD(addItem);
-        LOAD(insertItem);
-        LOAD(removeItem);
-        LOAD(clear);
-        LOAD(count);
-        LOAD(setCurrentIndex);
-        LOAD(currentIndex);
-        LOAD(currentText);
-        LOAD(itemText);
-        LOAD(setEditable);
-        LOAD(setMaxVisibleItems);
+        qComboBox_new = qtWidgets.getSymbol<QComboBoxCtorFn>("_ZN9QComboBoxC1EP7QWidget");
+        if (!qComboBox_new) qComboBox_new = qtWidgets.getSymbol<QComboBoxCtorFn>("QComboBox");
+        qComboBox_addItem = qtWidgets.getSymbol<QComboBoxAddItemFn>("_ZN9QComboBox7addItemERK7QStringRK8QVariant");
+        if (!qComboBox_addItem) qComboBox_addItem = qtWidgets.getSymbol<QComboBoxAddItemFn>("addItem");
+        qComboBox_insertItem = qtWidgets.getSymbol<QComboBoxInsertItemFn>("_ZN9QComboBox10insertItemEiRK7QString");
+        if (!qComboBox_insertItem) qComboBox_insertItem = qtWidgets.getSymbol<QComboBoxInsertItemFn>("insertItem");
+        qComboBox_removeItem = qtWidgets.getSymbol<QComboBoxRemoveItemFn>("_ZN9QComboBox10removeItemEi");
+        if (!qComboBox_removeItem) qComboBox_removeItem = qtWidgets.getSymbol<QComboBoxRemoveItemFn>("removeItem");
+        qComboBox_clear = qtWidgets.getSymbol<QComboBoxClearFn>("_ZN9QComboBox5clearEv");
+        if (!qComboBox_clear) qComboBox_clear = qtWidgets.getSymbol<QComboBoxClearFn>("clear");
+        qComboBox_count = qtWidgets.getSymbol<QComboBoxCountFn>("_ZNK9QComboBox5countEv");
+        if (!qComboBox_count) qComboBox_count = qtWidgets.getSymbol<QComboBoxCountFn>("count");
+        qComboBox_setCurrentIndex = qtWidgets.getSymbol<QComboBoxSetCurrentIndexFn>("_ZN9QComboBox16setCurrentIndexEi");
+        if (!qComboBox_setCurrentIndex) qComboBox_setCurrentIndex = qtWidgets.getSymbol<QComboBoxSetCurrentIndexFn>("setCurrentIndex");
+        qComboBox_currentIndex = qtWidgets.getSymbol<QComboBoxCurrentIndexFn>("_ZNK9QComboBox11currentIndexEv");
+        if (!qComboBox_currentIndex) qComboBox_currentIndex = qtWidgets.getSymbol<QComboBoxCurrentIndexFn>("currentIndex");
+        qComboBox_currentText = qtWidgets.getSymbol<QComboBoxCurrentTextFn>("_ZNK9QComboBox10currentTextEv");
+        if (!qComboBox_currentText) qComboBox_currentText = qtWidgets.getSymbol<QComboBoxCurrentTextFn>("currentText");
+        qComboBox_itemText = qtWidgets.getSymbol<QComboBoxItemTextFn>("_ZNK9QComboBox8itemTextEi");
+        if (!qComboBox_itemText) qComboBox_itemText = qtWidgets.getSymbol<QComboBoxItemTextFn>("itemText");
+        qComboBox_setEditable = qtWidgets.getSymbol<QComboBoxSetEditableFn>("_ZN9QComboBox11setEditableEb");
+        if (!qComboBox_setEditable) qComboBox_setEditable = qtWidgets.getSymbol<QComboBoxSetEditableFn>("setEditable");
+        qComboBox_setMaxVisibleItems = qtWidgets.getSymbol<QComboBoxSetMaxVisibleItemsFn>("_ZN9QComboBox17setMaxVisibleItemsEi");
+        if (!qComboBox_setMaxVisibleItems) qComboBox_setMaxVisibleItems = qtWidgets.getSymbol<QComboBoxSetMaxVisibleItemsFn>("setMaxVisibleItems");
         
         /* QSpinBox */
-        LOAD(QSpinBox);
-        LOAD(setRange);
-        LOAD(minimum);
-        LOAD(maximum);
-        LOAD(setValue);
-        LOAD(value);
-        LOAD(setSingleStep);
-        LOAD(setPrefix);
-        LOAD(setSuffix);
-        LOAD(setWrapping);
+        qSpinBox_new = qtWidgets.getSymbol<QSpinBoxCtorFn>("_ZN8QSpinBoxC1EP7QWidget");
+        if (!qSpinBox_new) qSpinBox_new = qtWidgets.getSymbol<QSpinBoxCtorFn>("QSpinBox");
+        qSpinBox_setRange = qtWidgets.getSymbol<QSpinBoxSetRangeFn>("_ZN8QSpinBox8setRangeEii");
+        if (!qSpinBox_setRange) qSpinBox_setRange = qtWidgets.getSymbol<QSpinBoxSetRangeFn>("setRange");
+        qSpinBox_minimum = qtWidgets.getSymbol<QSpinBoxMinimumFn>("_ZNK8QSpinBox8minimumEv");
+        if (!qSpinBox_minimum) qSpinBox_minimum = qtWidgets.getSymbol<QSpinBoxMinimumFn>("minimum");
+        qSpinBox_maximum = qtWidgets.getSymbol<QSpinBoxMaximumFn>("_ZNK8QSpinBox8maximumEv");
+        if (!qSpinBox_maximum) qSpinBox_maximum = qtWidgets.getSymbol<QSpinBoxMaximumFn>("maximum");
+        qSpinBox_setValue = qtWidgets.getSymbol<QSpinBoxSetValueFn>("_ZN8QSpinBox9setValueEi");
+        if (!qSpinBox_setValue) qSpinBox_setValue = qtWidgets.getSymbol<QSpinBoxSetValueFn>("setValue");
+        qSpinBox_value = qtWidgets.getSymbol<QSpinBoxValueFn>("_ZNK8QSpinBox5valueEv");
+        if (!qSpinBox_value) qSpinBox_value = qtWidgets.getSymbol<QSpinBoxValueFn>("value");
+        qSpinBox_setSingleStep = qtWidgets.getSymbol<QSpinBoxSetSingleStepFn>("_ZN8QSpinBox13setSingleStepEi");
+        if (!qSpinBox_setSingleStep) qSpinBox_setSingleStep = qtWidgets.getSymbol<QSpinBoxSetSingleStepFn>("setSingleStep");
+        qSpinBox_setPrefix = qtWidgets.getSymbol<QSpinBoxSetPrefixFn>("_ZN8QSpinBox10setPrefixERK7QString");
+        if (!qSpinBox_setPrefix) qSpinBox_setPrefix = qtWidgets.getSymbol<QSpinBoxSetPrefixFn>("setPrefix");
+        qSpinBox_setSuffix = qtWidgets.getSymbol<QSpinBoxSetSuffixFn>("_ZN8QSpinBox10setSuffixERK7QString");
+        if (!qSpinBox_setSuffix) qSpinBox_setSuffix = qtWidgets.getSymbol<QSpinBoxSetSuffixFn>("setSuffix");
+        qSpinBox_setWrapping = qtWidgets.getSymbol<QSpinBoxSetWrappingFn>("_ZN8QSpinBox11setWrappingEb");
+        if (!qSpinBox_setWrapping) qSpinBox_setWrapping = qtWidgets.getSymbol<QSpinBoxSetWrappingFn>("setWrapping");
         
         /* QDoubleSpinBox */
-        LOAD(QDoubleSpinBox);
-        LOAD(setRange);
-        LOAD(setValue);
-        LOAD(value);
-        LOAD(setDecimals);
+        qDoubleSpinBox_new = qtWidgets.getSymbol<QDoubleSpinBoxCtorFn>("_ZN14QDoubleSpinBoxC1EP7QWidget");
+        if (!qDoubleSpinBox_new) qDoubleSpinBox_new = qtWidgets.getSymbol<QDoubleSpinBoxCtorFn>("QDoubleSpinBox");
+        qDoubleSpinBox_setRange = qtWidgets.getSymbol<QDoubleSpinBoxSetRangeFn>("_ZN14QDoubleSpinBox8setRangeEdd");
+        if (!qDoubleSpinBox_setRange) qDoubleSpinBox_setRange = qtWidgets.getSymbol<QDoubleSpinBoxSetRangeFn>("setRange");
+        qDoubleSpinBox_setValue = qtWidgets.getSymbol<QDoubleSpinBoxSetValueFn>("_ZN14QDoubleSpinBox9setValueEd");
+        if (!qDoubleSpinBox_setValue) qDoubleSpinBox_setValue = qtWidgets.getSymbol<QDoubleSpinBoxSetValueFn>("setValue");
+        qDoubleSpinBox_value = qtWidgets.getSymbol<QDoubleSpinBoxValueFn>("_ZNK14QDoubleSpinBox5valueEv");
+        if (!qDoubleSpinBox_value) qDoubleSpinBox_value = qtWidgets.getSymbol<QDoubleSpinBoxValueFn>("value");
+        qDoubleSpinBox_setDecimals = qtWidgets.getSymbol<QDoubleSpinBoxSetDecimalsFn>("_ZN14QDoubleSpinBox12setDecimalsEi");
+        if (!qDoubleSpinBox_setDecimals) qDoubleSpinBox_setDecimals = qtWidgets.getSymbol<QDoubleSpinBoxSetDecimalsFn>("setDecimals");
         
         /* QSlider */
-        LOAD(QSlider);
-        LOAD(setOrientation);
-        LOAD(setMinimum);
-        LOAD(setMaximum);
-        LOAD(setRange);
-        LOAD(setValue);
-        LOAD(value);
-        LOAD(setSingleStep);
-        LOAD(setTickPosition);
-        LOAD(setInvertedAppearance);
+        qSlider_new = qtWidgets.getSymbol<QSliderCtorFn>("_ZN7QSliderC1EP7QWidget");
+        if (!qSlider_new) qSlider_new = qtWidgets.getSymbol<QSliderCtorFn>("QSlider");
+        qSlider_setOrientation = qtWidgets.getSymbol<QSliderSetOrientationFn>("_ZN7QSlider14setOrientationEN2Qt11OrientationE");
+        if (!qSlider_setOrientation) qSlider_setOrientation = qtWidgets.getSymbol<QSliderSetOrientationFn>("setOrientation");
+        qSlider_setMinimum = qtWidgets.getSymbol<QSliderSetMinimumFn>("_ZN7QSlider10setMinimumEi");
+        if (!qSlider_setMinimum) qSlider_setMinimum = qtWidgets.getSymbol<QSliderSetMinimumFn>("setMinimum");
+        qSlider_setMaximum = qtWidgets.getSymbol<QSliderSetMaximumFn>("_ZN7QSlider10setMaximumEi");
+        if (!qSlider_setMaximum) qSlider_setMaximum = qtWidgets.getSymbol<QSliderSetMaximumFn>("setMaximum");
+        qSlider_setRange = qtWidgets.getSymbol<QSliderSetRangeFn>("_ZN7QSlider8setRangeEii");
+        if (!qSlider_setRange) qSlider_setRange = qtWidgets.getSymbol<QSliderSetRangeFn>("setRange");
+        qSlider_setValue = qtWidgets.getSymbol<QSliderSetValueFn>("_ZN7QSlider9setValueEi");
+        if (!qSlider_setValue) qSlider_setValue = qtWidgets.getSymbol<QSliderSetValueFn>("setValue");
+        qSlider_value = qtWidgets.getSymbol<QSliderValueFn>("_ZNK7QSlider5valueEv");
+        if (!qSlider_value) qSlider_value = qtWidgets.getSymbol<QSliderValueFn>("value");
+        qSlider_setSingleStep = qtWidgets.getSymbol<QSliderSetSingleStepFn>("_ZN7QSlider13setSingleStepEi");
+        if (!qSlider_setSingleStep) qSlider_setSingleStep = qtWidgets.getSymbol<QSliderSetSingleStepFn>("setSingleStep");
+        qSlider_setTickPosition = qtWidgets.getSymbol<QSliderSetTickPositionFn>("_ZN7QSlider15setTickPositionENS_10TickPositionE");
+        if (!qSlider_setTickPosition) qSlider_setTickPosition = qtWidgets.getSymbol<QSliderSetTickPositionFn>("setTickPosition");
+        qSlider_setInvertedAppearance = qtWidgets.getSymbol<QSliderSetInvertedAppearanceFn>("_ZN7QSlider19setInvertedAppearanceEb");
+        if (!qSlider_setInvertedAppearance) qSlider_setInvertedAppearance = qtWidgets.getSymbol<QSliderSetInvertedAppearanceFn>("setInvertedAppearance");
         
         /* QScrollBar */
-        LOAD(QScrollBar);
-        LOAD(setMinimum);
-        LOAD(setMaximum);
-        LOAD(setValue);
-        LOAD(value);
+        qScrollBar_new = qtWidgets.getSymbol<QScrollBarCtorFn>("_ZN10QScrollBarC1EP7QWidget");
+        if (!qScrollBar_new) qScrollBar_new = qtWidgets.getSymbol<QScrollBarCtorFn>("QScrollBar");
+        qScrollBar_setMinimum = qtWidgets.getSymbol<QScrollBarSetMinimumFn>("_ZN10QScrollBar10setMinimumEi");
+        if (!qScrollBar_setMinimum) qScrollBar_setMinimum = qtWidgets.getSymbol<QScrollBarSetMinimumFn>("setMinimum");
+        qScrollBar_setMaximum = qtWidgets.getSymbol<QScrollBarSetMaximumFn>("_ZN10QScrollBar10setMaximumEi");
+        if (!qScrollBar_setMaximum) qScrollBar_setMaximum = qtWidgets.getSymbol<QScrollBarSetMaximumFn>("setMaximum");
+        qScrollBar_setValue = qtWidgets.getSymbol<QScrollBarSetValueFn>("_ZN10QScrollBar9setValueEi");
+        if (!qScrollBar_setValue) qScrollBar_setValue = qtWidgets.getSymbol<QScrollBarSetValueFn>("setValue");
+        qScrollBar_value = qtWidgets.getSymbol<QScrollBarValueFn>("_ZNK10QScrollBar5valueEv");
+        if (!qScrollBar_value) qScrollBar_value = qtWidgets.getSymbol<QScrollBarValueFn>("value");
         
         /* QDial */
-        LOAD(QDial);
-        LOAD(setMinimum);
-        LOAD(setMaximum);
-        LOAD(setValue);
-        LOAD(value);
-        LOAD(setWrapping);
-        LOAD(setNotchesVisible);
+        qDial_new = qtWidgets.getSymbol<QDialCtorFn>("_ZN5QDialC1EP7QWidget");
+        if (!qDial_new) qDial_new = qtWidgets.getSymbol<QDialCtorFn>("QDial");
+        qDial_setMinimum = qtWidgets.getSymbol<QDialSetMinimumFn>("_ZN5QDial10setMinimumEi");
+        if (!qDial_setMinimum) qDial_setMinimum = qtWidgets.getSymbol<QDialSetMinimumFn>("setMinimum");
+        qDial_setMaximum = qtWidgets.getSymbol<QDialSetMaximumFn>("_ZN5QDial10setMaximumEi");
+        if (!qDial_setMaximum) qDial_setMaximum = qtWidgets.getSymbol<QDialSetMaximumFn>("setMaximum");
+        qDial_setValue = qtWidgets.getSymbol<QDialSetValueFn>("_ZN5QDial9setValueEi");
+        if (!qDial_setValue) qDial_setValue = qtWidgets.getSymbol<QDialSetValueFn>("setValue");
+        qDial_value = qtWidgets.getSymbol<QDialValueFn>("_ZNK5QDial5valueEv");
+        if (!qDial_value) qDial_value = qtWidgets.getSymbol<QDialValueFn>("value");
+        qDial_setWrapping = qtWidgets.getSymbol<QDialSetWrappingFn>("_ZN5QDial11setWrappingEb");
+        if (!qDial_setWrapping) qDial_setWrapping = qtWidgets.getSymbol<QDialSetWrappingFn>("setWrapping");
+        qDial_setNotchesVisible = qtWidgets.getSymbol<QDialSetNotchesVisibleFn>("_ZN5QDial16setNotchesVisibleEb");
+        if (!qDial_setNotchesVisible) qDial_setNotchesVisible = qtWidgets.getSymbol<QDialSetNotchesVisibleFn>("setNotchesVisible");
         
         /* QProgressBar */
-        LOAD(QProgressBar);
-        LOAD(setRange);
-        LOAD(setValue);
-        LOAD(value);
-        LOAD(setFormat);
-        LOAD(setOrientation);
-        LOAD(setTextVisible);
-        LOAD(reset);
+        qProgressBar_new = qtWidgets.getSymbol<QProgressBarCtorFn>("_ZN12QProgressBarC1EP7QWidget");
+        if (!qProgressBar_new) qProgressBar_new = qtWidgets.getSymbol<QProgressBarCtorFn>("QProgressBar");
+        qProgressBar_setRange = qtWidgets.getSymbol<QProgressBarSetRangeFn>("_ZN12QProgressBar8setRangeEii");
+        if (!qProgressBar_setRange) qProgressBar_setRange = qtWidgets.getSymbol<QProgressBarSetRangeFn>("setRange");
+        qProgressBar_setValue = qtWidgets.getSymbol<QProgressBarSetValueFn>("_ZN12QProgressBar9setValueEi");
+        if (!qProgressBar_setValue) qProgressBar_setValue = qtWidgets.getSymbol<QProgressBarSetValueFn>("setValue");
+        qProgressBar_value = qtWidgets.getSymbol<QProgressBarValueFn>("_ZNK12QProgressBar5valueEv");
+        if (!qProgressBar_value) qProgressBar_value = qtWidgets.getSymbol<QProgressBarValueFn>("value");
+        qProgressBar_setFormat = qtWidgets.getSymbol<QProgressBarSetFormatFn>("_ZN12QProgressBar10setFormatERK7QString");
+        if (!qProgressBar_setFormat) qProgressBar_setFormat = qtWidgets.getSymbol<QProgressBarSetFormatFn>("setFormat");
+        qProgressBar_setOrientation = qtWidgets.getSymbol<QProgressBarSetOrientationFn>("_ZN12QProgressBar14setOrientationEN2Qt11OrientationE");
+        if (!qProgressBar_setOrientation) qProgressBar_setOrientation = qtWidgets.getSymbol<QProgressBarSetOrientationFn>("setOrientation");
+        qProgressBar_setTextVisible = qtWidgets.getSymbol<QProgressBarSetTextVisibleFn>("_ZN12QProgressBar14setTextVisibleEb");
+        if (!qProgressBar_setTextVisible) qProgressBar_setTextVisible = qtWidgets.getSymbol<QProgressBarSetTextVisibleFn>("setTextVisible");
+        qProgressBar_reset = qtWidgets.getSymbol<QProgressBarResetFn>("_ZN12QProgressBar5resetEv");
+        if (!qProgressBar_reset) qProgressBar_reset = qtWidgets.getSymbol<QProgressBarResetFn>("reset");
         
         /* QFrame */
-        LOAD(QFrame);
-        LOAD(setFrameShape);
-        LOAD(setFrameShadow);
-        LOAD(setLineWidth);
-        LOAD(setFrameStyle);
+        qFrame_new = qtWidgets.getSymbol<QFrameCtorFn>("_ZN6QFrameC1EP7QWidgetNS_10ShapeE");
+        if (!qFrame_new) qFrame_new = qtWidgets.getSymbol<QFrameCtorFn>("QFrame");
+        qFrame_setFrameShape = qtWidgets.getSymbol<QFrameSetFrameShapeFn>("_ZN6QFrame14setFrameShapeENS_5ShapeE");
+        if (!qFrame_setFrameShape) qFrame_setFrameShape = qtWidgets.getSymbol<QFrameSetFrameShapeFn>("setFrameShape");
+        qFrame_setFrameShadow = qtWidgets.getSymbol<QFrameSetFrameShadowFn>("_ZN6QFrame15setFrameShadowENS_6ShadowE");
+        if (!qFrame_setFrameShadow) qFrame_setFrameShadow = qtWidgets.getSymbol<QFrameSetFrameShadowFn>("setFrameShadow");
+        qFrame_setLineWidth = qtWidgets.getSymbol<QFrameSetLineWidthFn>("_ZN6QFrame13setLineWidthEi");
+        if (!qFrame_setLineWidth) qFrame_setLineWidth = qtWidgets.getSymbol<QFrameSetLineWidthFn>("setLineWidth");
+        qFrame_setFrameStyle = qtWidgets.getSymbol<QFrameSetFrameStyleFn>("_ZN6QFrame14setFrameStyleEi");
+        if (!qFrame_setFrameStyle) qFrame_setFrameStyle = qtWidgets.getSymbol<QFrameSetFrameStyleFn>("setFrameStyle");
         
         /* Layouts */
-        LOAD(QVBoxLayout);
-        LOAD(addStretch);
-        LOAD(addSpacing);
-        LOAD(QHBoxLayout);
-        LOAD(QGridLayout);
-        LOAD(setRowSpacing);
-        LOAD(setColumnSpacing);
-        LOAD(setRowStretch);
-        LOAD(setColumnStretch);
+        qVBoxLayout_new = qtWidgets.getSymbol<QVBoxLayoutCtorFn>("_ZN11QVBoxLayoutC1EP7QWidget");
+        if (!qVBoxLayout_new) qVBoxLayout_new = qtWidgets.getSymbol<QVBoxLayoutCtorFn>("QVBoxLayout");
+        qVBoxLayout_addStretch = qtWidgets.getSymbol<QVBoxLayoutAddStretchFn>("_ZN11QVBoxLayout10addStretchEi");
+        if (!qVBoxLayout_addStretch) qVBoxLayout_addStretch = qtWidgets.getSymbol<QVBoxLayoutAddStretchFn>("addStretch");
+        qVBoxLayout_addSpacing = qtWidgets.getSymbol<QVBoxLayoutAddSpacingFn>("_ZN11QVBoxLayout10addSpacingEi");
+        if (!qVBoxLayout_addSpacing) qVBoxLayout_addSpacing = qtWidgets.getSymbol<QVBoxLayoutAddSpacingFn>("addSpacing");
+        qHBoxLayout_new = qtWidgets.getSymbol<QHBoxLayoutCtorFn>("_ZN11QHBoxLayoutC1EP7QWidget");
+        if (!qHBoxLayout_new) qHBoxLayout_new = qtWidgets.getSymbol<QHBoxLayoutCtorFn>("QHBoxLayout");
+        qGridLayout_new = qtWidgets.getSymbol<QGridLayoutCtorFn>("_ZN11QGridLayoutC1EP7QWidget");
+        if (!qGridLayout_new) qGridLayout_new = qtWidgets.getSymbol<QGridLayoutCtorFn>("QGridLayout");
+        qGridLayout_setRowSpacing = qtWidgets.getSymbol<QGridLayoutSetRowSpacingFn>("_ZN11QGridLayout13setRowSpacingEii");
+        if (!qGridLayout_setRowSpacing) qGridLayout_setRowSpacing = qtWidgets.getSymbol<QGridLayoutSetRowSpacingFn>("setRowSpacing");
+        qGridLayout_setColumnSpacing = qtWidgets.getSymbol<QGridLayoutSetColumnSpacingFn>("_ZN11QGridLayout16setColumnSpacingEii");
+        if (!qGridLayout_setColumnSpacing) qGridLayout_setColumnSpacing = qtWidgets.getSymbol<QGridLayoutSetColumnSpacingFn>("setColumnSpacing");
+        qGridLayout_setRowStretch = qtWidgets.getSymbol<QGridLayoutSetRowStretchFn>("_ZN11QGridLayout13setRowStretchEii");
+        if (!qGridLayout_setRowStretch) qGridLayout_setRowStretch = qtWidgets.getSymbol<QGridLayoutSetRowStretchFn>("setRowStretch");
+        qGridLayout_setColumnStretch = qtWidgets.getSymbol<QGridLayoutSetColumnStretchFn>("_ZN11QGridLayout16setColumnStretchEii");
+        if (!qGridLayout_setColumnStretch) qGridLayout_setColumnStretch = qtWidgets.getSymbol<QGridLayoutSetColumnStretchFn>("setColumnStretch");
         
         /* QTabWidget */
-        LOAD(QTabWidget);
-        LOAD(addTab);
-        LOAD(insertTab);
-        LOAD(removeTab);
-        LOAD(setCurrentIndex);
-        LOAD(currentIndex);
-        LOAD(currentWidget);
-        LOAD(setCurrentWidget);
-        LOAD(count);
-        LOAD(setTabText);
-        LOAD(tabText);
-        LOAD(setTabEnabled);
-        LOAD(isTabEnabled);
-        LOAD(setTabsClosable);
-        LOAD(setMovable);
-        LOAD(setTabPosition);
-        LOAD(clear);
+        qTabWidget_new = qtWidgets.getSymbol<QTabWidgetCtorFn>("_ZN10QTabWidgetC1EP7QWidget");
+        if (!qTabWidget_new) qTabWidget_new = qtWidgets.getSymbol<QTabWidgetCtorFn>("QTabWidget");
+        qTabWidget_addTab = qtWidgets.getSymbol<QTabWidgetAddTabFn>("_ZN10QTabWidget6addTabEP7QWidgetRK7QString");
+        if (!qTabWidget_addTab) qTabWidget_addTab = qtWidgets.getSymbol<QTabWidgetAddTabFn>("addTab");
+        qTabWidget_insertTab = qtWidgets.getSymbol<QTabWidgetInsertTabFn>("_ZN10QTabWidget9insertTabEiP7QWidgetRK7QString");
+        if (!qTabWidget_insertTab) qTabWidget_insertTab = qtWidgets.getSymbol<QTabWidgetInsertTabFn>("insertTab");
+        qTabWidget_removeTab = qtWidgets.getSymbol<QTabWidgetRemoveTabFn>("_ZN10QTabWidget9removeTabEi");
+        if (!qTabWidget_removeTab) qTabWidget_removeTab = qtWidgets.getSymbol<QTabWidgetRemoveTabFn>("removeTab");
+        qTabWidget_setCurrentIndex = qtWidgets.getSymbol<QTabWidgetSetCurrentIndexFn>("_ZN10QTabWidget16setCurrentIndexEi");
+        if (!qTabWidget_setCurrentIndex) qTabWidget_setCurrentIndex = qtWidgets.getSymbol<QTabWidgetSetCurrentIndexFn>("setCurrentIndex");
+        qTabWidget_currentIndex = qtWidgets.getSymbol<QTabWidgetCurrentIndexFn>("_ZNK10QTabWidget11currentIndexEv");
+        if (!qTabWidget_currentIndex) qTabWidget_currentIndex = qtWidgets.getSymbol<QTabWidgetCurrentIndexFn>("currentIndex");
+        qTabWidget_currentWidget = qtWidgets.getSymbol<QTabWidgetCurrentWidgetFn>("_ZNK10QTabWidget12currentWidgetEv");
+        if (!qTabWidget_currentWidget) qTabWidget_currentWidget = qtWidgets.getSymbol<QTabWidgetCurrentWidgetFn>("currentWidget");
+        qTabWidget_setCurrentWidget = qtWidgets.getSymbol<QTabWidgetSetCurrentWidgetFn>("_ZN10QTabWidget17setCurrentWidgetEP7QWidget");
+        if (!qTabWidget_setCurrentWidget) qTabWidget_setCurrentWidget = qtWidgets.getSymbol<QTabWidgetSetCurrentWidgetFn>("setCurrentWidget");
+        qTabWidget_count = qtWidgets.getSymbol<QTabWidgetCountFn>("_ZNK10QTabWidget5countEv");
+        if (!qTabWidget_count) qTabWidget_count = qtWidgets.getSymbol<QTabWidgetCountFn>("count");
+        qTabWidget_setTabText = qtWidgets.getSymbol<QTabWidgetSetTabTextFn>("_ZN10QTabWidget11setTabTextEiRK7QString");
+        if (!qTabWidget_setTabText) qTabWidget_setTabText = qtWidgets.getSymbol<QTabWidgetSetTabTextFn>("setTabText");
+        qTabWidget_tabText = qtWidgets.getSymbol<QTabWidgetTabTextFn>("_ZNK10QTabWidget7tabTextEi");
+        if (!qTabWidget_tabText) qTabWidget_tabText = qtWidgets.getSymbol<QTabWidgetTabTextFn>("tabText");
+        qTabWidget_setTabEnabled = qtWidgets.getSymbol<QTabWidgetSetTabEnabledFn>("_ZN10QTabWidget14setTabEnabledEib");
+        if (!qTabWidget_setTabEnabled) qTabWidget_setTabEnabled = qtWidgets.getSymbol<QTabWidgetSetTabEnabledFn>("setTabEnabled");
+        qTabWidget_isTabEnabled = qtWidgets.getSymbol<QTabWidgetIsTabEnabledFn>("_ZNK10QTabWidget10isTabEnabledEi");
+        if (!qTabWidget_isTabEnabled) qTabWidget_isTabEnabled = qtWidgets.getSymbol<QTabWidgetIsTabEnabledFn>("isTabEnabled");
+        qTabWidget_setTabsClosable = qtWidgets.getSymbol<QTabWidgetSetTabsClosableFn>("_ZN10QTabWidget16setTabsClosableEb");
+        if (!qTabWidget_setTabsClosable) qTabWidget_setTabsClosable = qtWidgets.getSymbol<QTabWidgetSetTabsClosableFn>("setTabsClosable");
+        qTabWidget_setMovable = qtWidgets.getSymbol<QTabWidgetSetMovableFn>("_ZN10QTabWidget11setMovableEb");
+        if (!qTabWidget_setMovable) qTabWidget_setMovable = qtWidgets.getSymbol<QTabWidgetSetMovableFn>("setMovable");
+        qTabWidget_setTabPosition = qtWidgets.getSymbol<QTabWidgetSetTabPositionFn>("_ZN10QTabWidget15setTabPositionENS_10TabPositionE");
+        if (!qTabWidget_setTabPosition) qTabWidget_setTabPosition = qtWidgets.getSymbol<QTabWidgetSetTabPositionFn>("setTabPosition");
+        qTabWidget_clear = qtWidgets.getSymbol<QTabWidgetClearFn>("_ZN10QTabWidget5clearEv");
+        if (!qTabWidget_clear) qTabWidget_clear = qtWidgets.getSymbol<QTabWidgetClearFn>("clear");
         
         /* QStackedWidget */
-        LOAD(QStackedWidget);
-        LOAD(addWidget);
-        LOAD(insertWidget);
-        LOAD(setCurrentIndex);
-        LOAD(currentIndex);
-        LOAD(currentWidget);
-        LOAD(setCurrentWidget);
-        LOAD(count);
-        LOAD(widget);
-        LOAD(indexOf);
-        LOAD(removeWidget);
+        qStackedWidget_new = qtWidgets.getSymbol<QStackedWidgetCtorFn>("_ZN14QStackedWidgetC1EP7QWidget");
+        if (!qStackedWidget_new) qStackedWidget_new = qtWidgets.getSymbol<QStackedWidgetCtorFn>("QStackedWidget");
+        qStackedWidget_addWidget = qtWidgets.getSymbol<QStackedWidgetAddWidgetFn>("_ZN14QStackedWidget10addWidgetEP7QWidget");
+        if (!qStackedWidget_addWidget) qStackedWidget_addWidget = qtWidgets.getSymbol<QStackedWidgetAddWidgetFn>("addWidget");
+        qStackedWidget_insertWidget = qtWidgets.getSymbol<QStackedWidgetInsertWidgetFn>("_ZN14QStackedWidget11insertWidgetEiP7QWidget");
+        if (!qStackedWidget_insertWidget) qStackedWidget_insertWidget = qtWidgets.getSymbol<QStackedWidgetInsertWidgetFn>("insertWidget");
+        qStackedWidget_setCurrentIndex = qtWidgets.getSymbol<QStackedWidgetSetCurrentIndexFn>("_ZN14QStackedWidget16setCurrentIndexEi");
+        if (!qStackedWidget_setCurrentIndex) qStackedWidget_setCurrentIndex = qtWidgets.getSymbol<QStackedWidgetSetCurrentIndexFn>("setCurrentIndex");
+        qStackedWidget_currentIndex = qtWidgets.getSymbol<QStackedWidgetCurrentIndexFn>("_ZNK14QStackedWidget11currentIndexEv");
+        if (!qStackedWidget_currentIndex) qStackedWidget_currentIndex = qtWidgets.getSymbol<QStackedWidgetCurrentIndexFn>("currentIndex");
+        qStackedWidget_currentWidget = qtWidgets.getSymbol<QStackedWidgetCurrentWidgetFn>("_ZNK14QStackedWidget12currentWidgetEv");
+        if (!qStackedWidget_currentWidget) qStackedWidget_currentWidget = qtWidgets.getSymbol<QStackedWidgetCurrentWidgetFn>("currentWidget");
+        qStackedWidget_setCurrentWidget = qtWidgets.getSymbol<QStackedWidgetSetCurrentWidgetFn>("_ZN14QStackedWidget17setCurrentWidgetEP7QWidget");
+        if (!qStackedWidget_setCurrentWidget) qStackedWidget_setCurrentWidget = qtWidgets.getSymbol<QStackedWidgetSetCurrentWidgetFn>("setCurrentWidget");
+        qStackedWidget_count = qtWidgets.getSymbol<QStackedWidgetCountFn>("_ZNK14QStackedWidget5countEv");
+        if (!qStackedWidget_count) qStackedWidget_count = qtWidgets.getSymbol<QStackedWidgetCountFn>("count");
+        qStackedWidget_widget = qtWidgets.getSymbol<QStackedWidgetWidgetFn>("_ZNK14QStackedWidget6widgetEi");
+        if (!qStackedWidget_widget) qStackedWidget_widget = qtWidgets.getSymbol<QStackedWidgetWidgetFn>("widget");
+        qStackedWidget_indexOf = qtWidgets.getSymbol<QStackedWidgetIndexOfFn>("_ZNK14QStackedWidget7indexOfEP7QWidget");
+        if (!qStackedWidget_indexOf) qStackedWidget_indexOf = qtWidgets.getSymbol<QStackedWidgetIndexOfFn>("indexOf");
+        qStackedWidget_removeWidget = qtWidgets.getSymbol<QStackedWidgetRemoveWidgetFn>("_ZN14QStackedWidget11removeWidgetEP7QWidget");
+        if (!qStackedWidget_removeWidget) qStackedWidget_removeWidget = qtWidgets.getSymbol<QStackedWidgetRemoveWidgetFn>("removeWidget");
         
         /* QScrollArea */
-        LOAD(QScrollArea);
-        LOAD(setWidget);
-        LOAD(widget);
-        LOAD(setWidgetResizable);
-        LOAD(setHScrollBarPolicy);
-        LOAD(setVScrollBarPolicy);
+        qScrollArea_new = qtWidgets.getSymbol<QScrollAreaCtorFn>("_ZN11QScrollAreaC1EP7QWidget");
+        if (!qScrollArea_new) qScrollArea_new = qtWidgets.getSymbol<QScrollAreaCtorFn>("QScrollArea");
+        qScrollArea_setWidget = qtWidgets.getSymbol<QScrollAreaSetWidgetFn>("_ZN11QScrollArea9setWidgetEP7QWidget");
+        if (!qScrollArea_setWidget) qScrollArea_setWidget = qtWidgets.getSymbol<QScrollAreaSetWidgetFn>("setWidget");
+        qScrollArea_widget = qtWidgets.getSymbol<QScrollAreaWidgetFn>("_ZNK11QScrollArea6widgetEv");
+        if (!qScrollArea_widget) qScrollArea_widget = qtWidgets.getSymbol<QScrollAreaWidgetFn>("widget");
+        qScrollArea_setWidgetResizable = qtWidgets.getSymbol<QScrollAreaSetWidgetResizableFn>("_ZN11QScrollArea19setWidgetResizableEb");
+        if (!qScrollArea_setWidgetResizable) qScrollArea_setWidgetResizable = qtWidgets.getSymbol<QScrollAreaSetWidgetResizableFn>("setWidgetResizable");
+        qScrollArea_setHScrollBarPolicy = qtWidgets.getSymbol<QScrollAreaSetHScrollBarPolicyFn>("_ZN11QScrollArea20setHorizontalScrollBarPolicyEN2Qt15ScrollBarPolicyE");
+        if (!qScrollArea_setHScrollBarPolicy) qScrollArea_setHScrollBarPolicy = qtWidgets.getSymbol<QScrollAreaSetHScrollBarPolicyFn>("setHScrollBarPolicy");
+        qScrollArea_setVScrollBarPolicy = qtWidgets.getSymbol<QScrollAreaSetVScrollBarPolicyFn>("_ZN11QScrollArea18setVerticalScrollBarPolicyEN2Qt15ScrollBarPolicyE");
+        if (!qScrollArea_setVScrollBarPolicy) qScrollArea_setVScrollBarPolicy = qtWidgets.getSymbol<QScrollAreaSetVScrollBarPolicyFn>("setVScrollBarPolicy");
         
         /* QSplitter */
-        LOAD(QSplitter);
-        LOAD(addWidget);
-        LOAD(setOrientation);
-        LOAD(setHandleWidth);
+        qSplitter_new = qtWidgets.getSymbol<QSplitterCtorFn>("_ZN9QSplitterC1EP7QWidget");
+        if (!qSplitter_new) qSplitter_new = qtWidgets.getSymbol<QSplitterCtorFn>("QSplitter");
+        qSplitter_addWidget = qtWidgets.getSymbol<QSplitterAddWidgetFn>("_ZN9QSplitter9addWidgetEP7QWidget");
+        if (!qSplitter_addWidget) qSplitter_addWidget = qtWidgets.getSymbol<QSplitterAddWidgetFn>("addWidget");
+        qSplitter_setOrientation = qtWidgets.getSymbol<QSplitterSetOrientationFn>("_ZN9QSplitter14setOrientationEN2Qt11OrientationE");
+        if (!qSplitter_setOrientation) qSplitter_setOrientation = qtWidgets.getSymbol<QSplitterSetOrientationFn>("setOrientation");
+        qSplitter_setHandleWidth = qtWidgets.getSymbol<QSplitterSetHandleWidthFn>("_ZN9QSplitter14setHandleWidthEi");
+        if (!qSplitter_setHandleWidth) qSplitter_setHandleWidth = qtWidgets.getSymbol<QSplitterSetHandleWidthFn>("setHandleWidth");
         
         /* QMenuBar */
-        LOAD(QMenuBar);
-        LOAD(addMenu);
-        LOAD(addAction);
+        qMenuBar_new = qtWidgets.getSymbol<QMenuBarCtorFn>("_ZN8QMenuBarC1EP7QWidget");
+        if (!qMenuBar_new) qMenuBar_new = qtWidgets.getSymbol<QMenuBarCtorFn>("QMenuBar");
+        qMenuBar_addMenu = qtWidgets.getSymbol<QMenuBarAddMenuFn>("_ZN8QMenuBar7addMenuERK7QString");
+        if (!qMenuBar_addMenu) qMenuBar_addMenu = qtWidgets.getSymbol<QMenuBarAddMenuFn>("addMenu");
+        qMenuBar_addAction = qtWidgets.getSymbol<QMenuBarAddActionFn>("_ZN8QMenuBar9addActionERK7QString");
+        if (!qMenuBar_addAction) qMenuBar_addAction = qtWidgets.getSymbol<QMenuBarAddActionFn>("addAction");
         
         /* QMenu */
-        LOAD(QMenu);
-        LOAD(addAction);
-        LOAD(addSeparator);
-        LOAD(clear);
+        qMenu_new = qtWidgets.getSymbol<QMenuCtorFn>("_ZN5QMenuC1EP7QWidget");
+        if (!qMenu_new) qMenu_new = qtWidgets.getSymbol<QMenuCtorFn>("QMenu");
+        qMenu_addAction = qtWidgets.getSymbol<QMenuAddActionFn>("_ZN5QMenu9addActionERK7QString");
+        if (!qMenu_addAction) qMenu_addAction = qtWidgets.getSymbol<QMenuAddActionFn>("addAction");
+        qMenu_addSeparator = qtWidgets.getSymbol<QMenuAddSeparatorFn>("_ZN5QMenu12addSeparatorEv");
+        if (!qMenu_addSeparator) qMenu_addSeparator = qtWidgets.getSymbol<QMenuAddSeparatorFn>("addSeparator");
+        qMenu_clear = qtWidgets.getSymbol<QMenuClearFn>("_ZN5QMenu5clearEv");
+        if (!qMenu_clear) qMenu_clear = qtWidgets.getSymbol<QMenuClearFn>("clear");
         
         /* QStatusBar */
-        LOAD(QStatusBar);
-        LOAD(showMessage);
-        LOAD(clearMessage);
-        LOAD(addWidget);
-        LOAD(addPermanentWidget);
+        qStatusBar_new = qtWidgets.getSymbol<QStatusBarCtorFn>("_ZN11QStatusBarC1EP7QWidget");
+        if (!qStatusBar_new) qStatusBar_new = qtWidgets.getSymbol<QStatusBarCtorFn>("QStatusBar");
+        qStatusBar_showMessage = qtWidgets.getSymbol<QStatusBarShowMessageFn>("_ZN11QStatusBar11showMessageERK7QStringi");
+        if (!qStatusBar_showMessage) qStatusBar_showMessage = qtWidgets.getSymbol<QStatusBarShowMessageFn>("showMessage");
+        qStatusBar_clearMessage = qtWidgets.getSymbol<QStatusBarClearMessageFn>("_ZN11QStatusBar12clearMessageEv");
+        if (!qStatusBar_clearMessage) qStatusBar_clearMessage = qtWidgets.getSymbol<QStatusBarClearMessageFn>("clearMessage");
+        qStatusBar_addWidget = qtWidgets.getSymbol<QStatusBarAddWidgetFn>("_ZN11QStatusBar9addWidgetEP7QWidgeti");
+        if (!qStatusBar_addWidget) qStatusBar_addWidget = qtWidgets.getSymbol<QStatusBarAddWidgetFn>("addWidget");
+        qStatusBar_addPermanentWidget = qtWidgets.getSymbol<QStatusBarAddPermanentWidgetFn>("_ZN11QStatusBar17addPermanentWidgetEP7QWidgeti");
+        if (!qStatusBar_addPermanentWidget) qStatusBar_addPermanentWidget = qtWidgets.getSymbol<QStatusBarAddPermanentWidgetFn>("addPermanentWidget");
         
         /* QMessageBox */
-        LOAD_CORE(about);
-        LOAD_CORE(aboutQt);
-        LOAD_CORE(question);
-        LOAD_CORE(information);
-        LOAD_CORE(warning);
-        LOAD_CORE(critical);
+        qMessageBox_about = qtWidgets.getSymbol<QMessageBoxAboutFn>("_ZN11QMessageBox5aboutEP7QWidgetRK7QStringS4_");
+        if (!qMessageBox_about) qMessageBox_about = qtWidgets.getSymbol<QMessageBoxAboutFn>("about");
+        qMessageBox_aboutQt = qtWidgets.getSymbol<QMessageBoxAboutQtFn>("_ZN11QMessageBox7aboutQtEP7QWidgetRK7QString");
+        if (!qMessageBox_aboutQt) qMessageBox_aboutQt = qtWidgets.getSymbol<QMessageBoxAboutQtFn>("aboutQt");
+        qMessageBox_question = qtWidgets.getSymbol<QMessageBoxQuestionFn>("_ZN11QMessageBox8questionEP7QWidgetRK7QStringS4_NS_14StandardButtonES5_");
+        if (!qMessageBox_question) qMessageBox_question = qtWidgets.getSymbol<QMessageBoxQuestionFn>("question");
+        qMessageBox_information = qtWidgets.getSymbol<QMessageBoxInformationFn>("_ZN11QMessageBox11informationEP7QWidgetRK7QStringS4_NS_14StandardButtonES5_");
+        if (!qMessageBox_information) qMessageBox_information = qtWidgets.getSymbol<QMessageBoxInformationFn>("information");
+        qMessageBox_warning = qtWidgets.getSymbol<QMessageBoxWarningFn>("_ZN11QMessageBox7warningEP7QWidgetRK7QStringS4_NS_14StandardButtonES5_");
+        if (!qMessageBox_warning) qMessageBox_warning = qtWidgets.getSymbol<QMessageBoxWarningFn>("warning");
+        qMessageBox_critical = qtWidgets.getSymbol<QMessageBoxCriticalFn>("_ZN11QMessageBox7criticalEP7QWidgetRK7QStringS4_NS_14StandardButtonES5_");
+        if (!qMessageBox_critical) qMessageBox_critical = qtWidgets.getSymbol<QMessageBoxCriticalFn>("critical");
         
         /* QInputDialog */
-        LOAD_CORE(getText);
-        LOAD_CORE(getInteger);
+        qInputDialog_getText = qtCore.getSymbol<QInputDialogGetTextFn>("_ZN11QInputDialog7getTextEP7QWidgetRK7QStringS4_S4_6QFlagsIN2Qt10WindowTypeEEPb");
+        if (!qInputDialog_getText) qInputDialog_getText = qtCore.getSymbol<QInputDialogGetTextFn>("getText");
+        qInputDialog_getInteger = qtCore.getSymbol<QInputDialogGetIntegerFn>("_ZN11QInputDialog11getIntValueEP7QWidgetRK7QStringS4_Riiiiii6QFlagsIN2Qt10WindowTypeEE");
+        if (!qInputDialog_getInteger) qInputDialog_getInteger = qtCore.getSymbol<QInputDialogGetIntegerFn>("getInteger");
         
         /* QFileDialog */
-        LOAD_CORE(getOpenFileName);
-        LOAD_CORE(getSaveFileName);
-        LOAD_CORE(getExistingDirectory);
+        qFileDialog_getOpenFileName = qtCore.getSymbol<QFileDialogGetOpenFileNameFn>("_ZN11QFileDialog16getOpenFileNameEP7QWidgetRK7QStringS4_S4_PS0_6QFlagsIN2Qt10WindowTypeEE");
+        if (!qFileDialog_getOpenFileName) qFileDialog_getOpenFileName = qtCore.getSymbol<QFileDialogGetOpenFileNameFn>("getOpenFileName");
+        qFileDialog_getSaveFileName = qtCore.getSymbol<QFileDialogGetSaveFileNameFn>("_ZN11QFileDialog16getSaveFileNameEP7QWidgetRK7QStringS4_S4_PS0_6QFlagsIN2Qt10WindowTypeEE");
+        if (!qFileDialog_getSaveFileName) qFileDialog_getSaveFileName = qtCore.getSymbol<QFileDialogGetSaveFileNameFn>("getSaveFileName");
+        qFileDialog_getExistingDirectory = qtCore.getSymbol<QFileDialogGetExistingDirectoryFn>("_ZN11QFileDialog20getExistingDirectoryEP7QWidgetRK7QStringS4_6QFlagsINS0_8OptionEE");
+        if (!qFileDialog_getExistingDirectory) qFileDialog_getExistingDirectory = qtCore.getSymbol<QFileDialogGetExistingDirectoryFn>("getExistingDirectory");
         
         /* QColorDialog */
-        LOAD_CORE(getColor);
+        qColorDialog_getColor = qtCore.getSymbol<QColorDialogGetColorFn>("_ZN11QColorDialog8getColorERK6QColorP7QWidgetRK7QStringNS_10ColorDialog12ColorDialogOptionsE");
+        if (!qColorDialog_getColor) qColorDialog_getColor = qtCore.getSymbol<QColorDialogGetColorFn>("getColor");
         
         /* QFontDialog */
-        LOAD_CORE(getFont);
+        qFontDialog_getFont = qtCore.getSymbol<QFontDialogGetFontFn>("_ZN11QFontDialog7getFontEPbP5QFontP7QWidgetRK7QString");
+        if (!qFontDialog_getFont) qFontDialog_getFont = qtCore.getSymbol<QFontDialogGetFontFn>("getFont");
         
         /* QClipboard */
         /* qApp_clipboard already loaded */
-        LOAD_CORE(text);
-        LOAD_CORE(setText);
-        LOAD_CORE(clear);
+        qClipboard_text = qtCore.getSymbol<QClipboardTextFn>("_ZNK10QClipboard4textENS_4ModeE");
+        if (!qClipboard_text) qClipboard_text = qtCore.getSymbol<QClipboardTextFn>("text");
+        qClipboard_setText = qtCore.getSymbol<QClipboardSetTextFn>("_ZN10QClipboard7setTextERK7QStringNS_4ModeE");
+        if (!qClipboard_setText) qClipboard_setText = qtCore.getSymbol<QClipboardSetTextFn>("setText");
+        qClipboard_clear = qtCore.getSymbol<QClipboardClearFn>("_ZN10QClipboard5clearENS_4ModeE");
+        if (!qClipboard_clear) qClipboard_clear = qtCore.getSymbol<QClipboardClearFn>("clear");
         
         /* QTimer */
-        LOAD(QTimer);
-        LOAD(start);
-        LOAD(stop);
-        LOAD(isActive);
-        LOAD(setInterval);
-        LOAD(setSingleShot);
+        qTimer_new = qtWidgets.getSymbol<QTimerCtorFn>("_ZN6QTimerC1EP7QObject");
+        if (!qTimer_new) qTimer_new = qtWidgets.getSymbol<QTimerCtorFn>("QTimer");
+        qTimer_start = qtWidgets.getSymbol<QTimerStartFn>("_ZN6QTimer5startEi");
+        if (!qTimer_start) qTimer_start = qtWidgets.getSymbol<QTimerStartFn>("start");
+        qTimer_stop = qtWidgets.getSymbol<QTimerStopFn>("_ZN6QTimer4stopEv");
+        if (!qTimer_stop) qTimer_stop = qtWidgets.getSymbol<QTimerStopFn>("stop");
+        qTimer_isActive = qtWidgets.getSymbol<QTimerIsActiveFn>("_ZNK6QTimer7isActiveEv");
+        if (!qTimer_isActive) qTimer_isActive = qtWidgets.getSymbol<QTimerIsActiveFn>("isActive");
+        qTimer_setInterval = qtWidgets.getSymbol<QTimerSetIntervalFn>("_ZN6QTimer12setIntervalEi");
+        if (!qTimer_setInterval) qTimer_setInterval = qtWidgets.getSymbol<QTimerSetIntervalFn>("setInterval");
+        qTimer_setSingleShot = qtWidgets.getSymbol<QTimerSetSingleShotFn>("_ZN6QTimer14setSingleShotEb");
+        if (!qTimer_setSingleShot) qTimer_setSingleShot = qtWidgets.getSymbol<QTimerSetSingleShotFn>("setSingleShot");
         
         /* QSettings */
-        LOAD(QSettings);
-        LOAD(setValue);
-        LOAD(value);
-        LOAD(contains);
-        LOAD(remove);
-        LOAD(sync);
+        qSettings_new = qtWidgets.getSymbol<QSettingsCtorFn>("_ZN9QSettingsC1EP7QObject");
+        if (!qSettings_new) qSettings_new = qtWidgets.getSymbol<QSettingsCtorFn>("QSettings");
+        qSettings_setValue = qtWidgets.getSymbol<QSettingsSetValueFn>("_ZN9QSettings8setValueERK7QStringRK8QVariant");
+        if (!qSettings_setValue) qSettings_setValue = qtWidgets.getSymbol<QSettingsSetValueFn>("setValue");
+        qSettings_value = qtWidgets.getSymbol<QSettingsValueFn>("_ZNK9QSettings5valueERK7QStringRK8QVariant");
+        if (!qSettings_value) qSettings_value = qtWidgets.getSymbol<QSettingsValueFn>("value");
+        qSettings_contains = qtWidgets.getSymbol<QSettingsContainsFn>("_ZN9QSettings8containsERK7QString");
+        if (!qSettings_contains) qSettings_contains = qtWidgets.getSymbol<QSettingsContainsFn>("contains");
+        qSettings_remove = qtWidgets.getSymbol<QSettingsRemoveFn>("_ZN9QSettings6removeERK7QString");
+        if (!qSettings_remove) qSettings_remove = qtWidgets.getSymbol<QSettingsRemoveFn>("remove");
+        qSettings_sync = qtWidgets.getSymbol<QSettingsSyncFn>("_ZN9QSettings4syncEv");
+        if (!qSettings_sync) qSettings_sync = qtWidgets.getSymbol<QSettingsSyncFn>("sync");
         
         return true;
     }

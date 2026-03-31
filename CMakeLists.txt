@@ -9,6 +9,13 @@ option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
 
+# UI Backend Options
+set(UI_BACKEND "QT" CACHE STRING "UI Backend to use (QT, GTK, IMGUI, AUTO)")
+set_property(CACHE UI_BACKEND PROPERTY STRINGS QT GTK IMGUI AUTO)
+option(ENABLE_GTK "Enable GTK4 native backend" OFF)
+option(ENABLE_IMGUI "Enable Dear ImGui native backend" OFF)
+option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
+
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
 # ==============================================================================
@@ -178,24 +185,38 @@ target_include_directories(wayland-protos PUBLIC ${GENERATED_PROTO_DIR})
 target_link_libraries(wayland-protos PUBLIC ${WAYLAND_LIBRARIES})
 
 # ==============================================================================
-# QT6 GUI FRAMEWORK (REQUIRED)
+# QT6 GUI FRAMEWORK (CONDITIONAL - Default)
 # ==============================================================================
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON) 
-set(CMAKE_AUTOUIC ON)
+if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
+    set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON) 
+    set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Charts Test)
-
-# Handle X11/Qt keyword conflicts in MOC
-set(CMAKE_AUTOMOC_MOC_OPTIONS 
-    "-DMOC_PARSING"
-    "-DNone=0L"
-    "-DTrue=1"
-    "-DFalse=0"
-    "-DStatus=int"
-    "-DBool=int" 
-    "-DSuccess=0"
-)
+    find_package(Qt6 COMPONENTS Core Widgets Charts Test)
+    
+    if(Qt6_FOUND)
+        # Handle X11/Qt keyword conflicts in MOC
+        set(CMAKE_AUTOMOC_MOC_OPTIONS 
+            "-DMOC_PARSING"
+            "-DNone=0L"
+            "-DTrue=1"
+            "-DFalse=0"
+            "-DStatus=int"
+            "-DBool=int" 
+            "-DSuccess=0"
+        )
+        set(QT_BACKEND_AVAILABLE TRUE)
+        message(STATUS "Qt6 backend:     ✓ AVAILABLE")
+    else()
+        set(QT_BACKEND_AVAILABLE FALSE)
+        message(STATUS "Qt6 backend:     ✗ NOT FOUND")
+        if(UI_BACKEND STREQUAL "QT")
+            message(FATAL_ERROR "Qt6 backend requested but Qt6 not found")
+        endif()
+    endif()
+else()
+    set(QT_BACKEND_AVAILABLE FALSE)
+endif()
 
 # ==============================================================================
 # TESTING FRAMEWORK (OPTIONAL)
@@ -304,8 +325,13 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/ai/ocr/*.cpp"
 )
 
-# GUI sources (always included)
+# GUI sources (conditionally included based on backend)
 file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
+
+# When using Qt as dynamic extension, GUI sources go to the extension, not main executable
+if(UI_BACKEND STREQUAL "QT")
+    set(GUI_SOURCES "")  # Clear for main executable, will be added to qt_extension
+endif()
 
 # Havel language sources (conditional)
 set(HAVEL_LANG_SOURCES "")
@@ -380,41 +406,109 @@ if(OpenCV_LIBS MATCHES "avfilter")
 endif()
 
 # ==============================================================================
-# GTK4 EXTENSION (OPTIONAL - Dynamic Loading)
+# UI BACKEND LIBRARIES (DYNAMIC - Qt linked to main for core, extensions for additional UI)
 # ==============================================================================
-# GTK4 is loaded dynamically at runtime via dlopen
-# No compile-time dependency required
-pkg_check_modules(GTK4 QUIET gtk4)
-if(GTK4_FOUND)
-    message(STATUS "GTK4:           ✓ Available (will be loaded dynamically)")
-else()
-    message(STATUS "GTK4:           ✗ Not found (extension will load dynamically if available)")
-endif()
-# Always build GTK extension - it uses dynamic loading
-set(BUILD_GTK_EXTENSION TRUE)
+set(UI_BACKEND_DEFS "")
+set(UI_BACKEND_INCLUDES "")
 
-# ==============================================================================
-# IMGUI EXTENSION (OPTIONAL - Dynamic Loading)
-# ==============================================================================
-# ImGui, GLFW, and OpenGL are loaded dynamically at runtime via dlopen
-# No compile-time dependency required
-pkg_check_modules(GLFW3 QUIET glfw3)
-find_package(OpenGL QUIET)
-
-if(GLFW3_FOUND)
-    message(STATUS "GLFW3:          ✓ Available (will be loaded dynamically)")
-else()
-    message(STATUS "GLFW3:          ✗ Not found (extension will load dynamically if available)")
-endif()
-
-if(OpenGL_FOUND)
-    message(STATUS "OpenGL:         ✓ Available (will be loaded dynamically)")
-else()
-    message(STATUS "OpenGL:         ✗ Not found (extension will load dynamically if available)")
+if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE)
+    # Qt6 include directories - use standard paths
+    list(APPEND UI_BACKEND_INCLUDES 
+        /usr/include/qt6 
+        /usr/include/qt6/QtCore
+        /usr/include/qt6/QtWidgets
+        /usr/include/qt6/QtGui
+    )
+    list(APPEND COMMON_LIBS Qt6::Core Qt6::Widgets)
+    list(APPEND UI_BACKEND_DEFS HAVE_QT_EXTENSION)
+    message(STATUS "Qt6:             ✓ Linked to main + dynamic extension available")
+elseif(UI_BACKEND STREQUAL "GTK" AND GTK_BACKEND_AVAILABLE)
+    list(APPEND UI_BACKEND_LIBS ${GTK4_LIBRARIES})
+    list(APPEND UI_BACKEND_INCLUDES ${GTK4_INCLUDE_DIRS})
+    list(APPEND UI_BACKEND_DEFS HAVE_GTK_BACKEND)
+elseif(UI_BACKEND STREQUAL "IMGUI" AND IMGUI_BACKEND_AVAILABLE)
+    list(APPEND UI_BACKEND_LIBS ${GLFW3_LIBRARIES} OpenGL::GL)
+    list(APPEND UI_BACKEND_INCLUDES ${GLFW3_INCLUDE_DIRS} ${IMGUI_INCLUDE_DIR})
+    list(APPEND UI_BACKEND_DEFS HAVE_IMGUI_BACKEND)
 endif()
 
-# Always build ImGui extension - it uses dynamic loading
-set(BUILD_IMGUI_EXTENSION TRUE)
+# ==============================================================================
+# GTK4 BACKEND (OPTIONAL)
+# ==============================================================================
+if(ENABLE_GTK OR UI_BACKEND STREQUAL "GTK")
+    pkg_check_modules(GTK4 gtk4)
+    if(GTK4_FOUND)
+        set(GTK_BACKEND_AVAILABLE TRUE)
+        set(ENABLE_QT OFF)  # Disable Qt when GTK is selected
+        set(UI_BACKEND "GTK")
+        message(STATUS "GTK4 backend:    ✓ ENABLED")
+    else()
+        set(GTK_BACKEND_AVAILABLE FALSE)
+        message(STATUS "GTK4 backend:    ✗ NOT FOUND (gtk4-dev not installed)")
+        if(UI_BACKEND STREQUAL "GTK")
+            message(FATAL_ERROR "GTK backend requested but GTK4 not found")
+        endif()
+    endif()
+else()
+    set(GTK_BACKEND_AVAILABLE FALSE)
+endif()
+
+# ==============================================================================
+# IMGUI BACKEND (OPTIONAL)
+# ==============================================================================
+if(ENABLE_IMGUI OR UI_BACKEND STREQUAL "IMGUI")
+    pkg_check_modules(GLFW3 glfw3)
+    find_package(OpenGL)
+    
+    # Find ImGui (typically bundled or system-installed)
+    find_path(IMGUI_INCLUDE_DIR imgui.h
+        PATHS 
+            /usr/include/imgui
+            /usr/local/include/imgui
+            ${CMAKE_SOURCE_DIR}/third_party/imgui
+            ${CMAKE_SOURCE_DIR}/vendor/imgui
+    )
+    
+    if(GLFW3_FOUND AND OpenGL_FOUND AND IMGUI_INCLUDE_DIR)
+        set(IMGUI_BACKEND_AVAILABLE TRUE)
+        set(ENABLE_QT OFF)  # Disable Qt when ImGui is selected
+        set(UI_BACKEND "IMGUI")
+        message(STATUS "ImGui backend:   ✓ ENABLED")
+        message(STATUS "  GLFW3:         ${GLFW3_VERSION}")
+        message(STATUS "  OpenGL:        ${OPENGL_VERSION}")
+    else()
+        set(IMGUI_BACKEND_AVAILABLE FALSE)
+        message(STATUS "ImGui backend:   ✗ NOT FOUND")
+        if(NOT GLFW3_FOUND)
+            message(STATUS "  Missing:       glfw3-dev")
+        endif()
+        if(NOT OpenGL_FOUND)
+            message(STATUS "  Missing:       OpenGL development libraries")
+        endif()
+        if(NOT IMGUI_INCLUDE_DIR)
+            message(STATUS "  Missing:       Dear ImGui headers")
+        endif()
+        if(UI_BACKEND STREQUAL "IMGUI")
+            message(FATAL_ERROR "ImGui backend requested but dependencies not found")
+        endif()
+    endif()
+else()
+    set(IMGUI_BACKEND_AVAILABLE FALSE)
+endif()
+
+# Auto-select backend if not specified
+if(UI_BACKEND STREQUAL "AUTO")
+    if(QT_BACKEND_AVAILABLE)
+        set(UI_BACKEND "QT")
+    elseif(GTK_BACKEND_AVAILABLE)
+        set(UI_BACKEND "GTK")
+    elseif(IMGUI_BACKEND_AVAILABLE)
+        set(UI_BACKEND "IMGUI")
+    else()
+        message(FATAL_ERROR "No UI backend available. Install Qt6, GTK4, or ImGui+GLFW3+OpenGL")
+    endif()
+    message(STATUS "Auto-selected UI backend: ${UI_BACKEND}")
+endif()
 
 set(COMMON_LIBS
     # System libraries
@@ -444,9 +538,7 @@ set(COMMON_LIBS
     # ZIP libraries (use minizip if available, otherwise fall back to generic zip)
     $<$<BOOL:${MINIZIP_FOUND}>:${MINIZIP_LIBRARIES}>
     $<$<NOT:$<BOOL:${MINIZIP_FOUND}>>:zip>
-    # Qt6 libraries (only what's actually used)
-    Qt6::Core
-    Qt6::Widgets
+    # Note: Qt6 is loaded dynamically as an extension, not linked here
 )
 
 # ==============================================================================
@@ -545,15 +637,20 @@ set_target_properties(imgui_extension PROPERTIES
     VISIBILITY_INLINES_HIDDEN OFF
 )
 
-# Qt6 extension (Qt6 Widgets)
-# Uses dynamic loading - no compile-time dependency on Qt6
-add_library(qt_extension MODULE src/extensions/qt/qt_extension.cpp)
+# Qt6 extension (Qt6 Widgets) - for additional dynamic UI capabilities
+# Uses dynamic loading but main executable still links Qt for core functionality
+add_library(qt_extension MODULE 
+    src/extensions/qt/qt_extension.cpp
+)
 target_include_directories(qt_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
+    ${UI_BACKEND_INCLUDES}
 )
 target_link_libraries(qt_extension PRIVATE
     havel_extension_runtime
+    Qt6::Core
+    Qt6::Widgets
     dl
 )
 set_target_properties(qt_extension PROPERTIES
@@ -654,6 +751,8 @@ set_target_properties(havel PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
+
+# Precompiled headers - standard library only (Qt headers cause issues)
 target_precompile_headers(havel PRIVATE
     # Standard library (frequently used)
     <iostream>
@@ -669,12 +768,6 @@ target_precompile_headers(havel PRIVATE
     <fstream>
     <sstream>
     <regex>
-    # Qt core (used throughout)
-    <QObject>
-    <QTimer>
-    <QClipboard>
-    <QGuiApplication>
-    <QApplication>
     # Common system headers
     <unistd.h>
     <signal.h>
@@ -704,6 +797,7 @@ target_include_directories(havel PRIVATE
     ${TESSERACT_INCLUDE_DIRS}
     ${LEPTONICA_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
+    ${UI_BACKEND_INCLUDES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
 )
@@ -723,6 +817,8 @@ target_compile_definitions(havel PRIVATE
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
     $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
     $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+    ${UI_BACKEND_DEFS}
+    UI_BACKEND=\"${UI_BACKEND}\"
 )
 
 # ==============================================================================
@@ -863,7 +959,11 @@ message(STATUS "C++ Standard:    C++${CMAKE_CXX_STANDARD}")
 # Feature status
 message(STATUS "")
 message(STATUS "=== FEATURES ===")
-message(STATUS "GUI (Qt6):       ✓ ENABLED (${Qt6_VERSION})")
+if(QT_BACKEND_AVAILABLE)
+    message(STATUS "GUI (Qt6):       ✓ DYNAMIC EXTENSION (${Qt6_VERSION})")
+else()
+    message(STATUS "GUI (Qt6):       ✗ Not available")
+endif()
 if(PIPEWIRE_FOUND)
     message(STATUS "PipeWire:        ✓ ENABLED")
 endif()

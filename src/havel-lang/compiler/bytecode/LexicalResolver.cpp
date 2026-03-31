@@ -413,8 +413,15 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
         binding.name = fn.name->symbol;
         result_.identifier_bindings[fn.name.get()] = binding;
       } else {
-        // Nested function - declare as local
-        declareLocal(fn.name->symbol, fn.name.get(), false);
+        // Nested function - declare as local in current (enclosing) scope
+        uint32_t slot = declareLocal(fn.name->symbol, fn.name.get(), false);
+        // Also record the binding for the function name itself so ByteCompiler can find it
+        ResolvedBinding binding;
+        binding.kind = ResolvedBindingKind::Local;
+        binding.slot = slot;
+        binding.name = fn.name->symbol;
+        binding.is_const = false;
+        result_.identifier_bindings[fn.name.get()] = binding;
       }
     }
     resolveFunctionDeclaration(fn);

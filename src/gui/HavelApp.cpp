@@ -503,8 +503,13 @@ void HavelApp::initializeComponents(bool isStartup) {
       std::thread([this]() {
           std::this_thread::sleep_for(std::chrono::seconds(20));
           
-          // Test normal exit
-          std::exit(0);
+          info("AutoExit triggered - initiating graceful shutdown");
+          
+          // Use exitApp() for proper cleanup instead of std::exit()
+          // This stops EventListener before static destructors run
+          QMetaObject::invokeMethod(this, [this]() {
+              exitApp();
+          }, Qt::QueuedConnection);
           
           // Test segfault crash
           //int *p = nullptr;

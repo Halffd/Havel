@@ -31,9 +31,9 @@ protected:
   // Dispatch to specific visit methods
   ReturnType dispatch(ast::ASTNode& node) {
     switch (node.kind) {
-      #define VISIT_CASE(NodeType) \
-        case ast::NodeType::NodeType: \
-          return visit##NodeType(static_cast<ast::NodeType&>(node))
+      #define VISIT_CASE(NodeT) \
+        case ast::NodeType::NodeT: \
+          return visit##NodeT(static_cast<ast::NodeT&>(node))
 
       VISIT_CASE(Program);
       VISIT_CASE(Identifier);
@@ -65,7 +65,7 @@ protected:
       VISIT_CASE(BlockStatement);
       VISIT_CASE(TryExpression);
       VISIT_CASE(ThrowStatement);
-      VISIT_CASE(WhenBlock);
+      // VISIT_CASE(WhenBlock);  // Not in AST.h NodeType enum
       VISIT_CASE(ModeBlock);
       VISIT_CASE(HotkeyBinding);
       VISIT_CASE(ConditionalHotkey);
@@ -84,9 +84,9 @@ protected:
 
   ReturnType dispatch(const ast::ASTNode& node) {
     switch (node.kind) {
-      #define VISIT_CASE(NodeType) \
-        case ast::NodeType::NodeType: \
-          return visit##NodeType(static_cast<const ast::NodeType&>(node))
+      #define VISIT_CASE(NodeT) \
+        case ast::NodeType::NodeT: \
+          return visit##NodeT(static_cast<const ast::NodeT&>(node))
 
       VISIT_CASE(Program);
       VISIT_CASE(Identifier);
@@ -118,7 +118,7 @@ protected:
       VISIT_CASE(BlockStatement);
       VISIT_CASE(TryExpression);
       VISIT_CASE(ThrowStatement);
-      VISIT_CASE(WhenBlock);
+      // VISIT_CASE(WhenBlock);  // Not in AST.h NodeType enum
       VISIT_CASE(ModeBlock);
       VISIT_CASE(HotkeyBinding);
       VISIT_CASE(ConditionalHotkey);

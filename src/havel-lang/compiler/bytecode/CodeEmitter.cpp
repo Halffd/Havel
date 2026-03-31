@@ -1,5 +1,5 @@
 #include "CodeEmitter.hpp"
-#include "AST.h"
+#include "havel-lang/ast/AST.h"
 
 namespace havel::compiler {
 
@@ -73,22 +73,19 @@ uint32_t CodeEmitter::emitJump(OpCode op) {
   return static_cast<uint32_t>(currentContext_.function->instructions.size() - 1);
 }
 
-void CodeEmitter::patchJump(uint32_t jumpInstructionIndex, uint32_t target) {
   if (jumpInstructionIndex >= currentContext_.function->instructions.size()) {
     throw std::runtime_error("Invalid jump instruction index");
   }
 
   auto& instruction = currentContext_.function->instructions[jumpInstructionIndex];
-  if (instruction.operands.empty()) {
-    instruction.operands.push_back(target);
-  } else {
-    instruction.operands[0] = target;
+  for (const auto& desc : descriptors) {
+    Upvalue::Type type = desc.captures_local ? Upvalue::Type::Local
+                                             : Upvalue::Type::Upvalue;
   }
+  instruction.operands[0] = target;
 }
 
-uint32_t CodeEmitter::addConstant(const BytecodeValue& value) {
-  uint32_t index = static_cast<uint32_t>(chunk_.constants.size());
-  chunk_.constants.push_back(value);
+// ...
   return index;
 }
 

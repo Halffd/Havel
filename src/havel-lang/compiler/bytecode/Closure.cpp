@@ -54,7 +54,7 @@ Closure Closure::create(
 
   for (const auto& desc : descriptors) {
     Upvalue::Type type = desc.captures_local ? Upvalue::Type::Local
-n                                              : Upvalue::Type::Upvalue;
+                                             : Upvalue::Type::Upvalue;
     Upvalue upvalue(desc.index, type);
 
     if (desc.captures_local) {
@@ -131,7 +131,7 @@ Closure ClosureFactory::createWithUpvalues(
 
   for (const auto& desc : descriptors) {
     Upvalue::Type type = desc.captures_local ? Upvalue::Type::Local
-n                                              : Upvalue::Type::Upvalue;
+                                             : Upvalue::Type::Upvalue;
     upvalues.emplace_back(desc.index, type);
   }
 

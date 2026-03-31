@@ -1,6 +1,7 @@
 #include "AnalysisTools.hpp"
 #include <algorithm>
 #include <chrono>
+#include <queue>
 #include <sstream>
 #include <fstream>
 #include <stack>

@@ -46,7 +46,7 @@ public:
     bool success = false;
   };
 
-  explicit CompilationPipeline(const Options& options = Options{});
+  explicit CompilationPipeline(const Options& options);
   ~CompilationPipeline();
 
   // Main compilation entry point

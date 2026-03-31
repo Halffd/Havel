@@ -472,55 +472,8 @@ bool ModuleCache::isEntryValid(const CacheEntry& entry) const {
 }
 
 // ============================================================================
-// JITCompiler Implementation (Stub)
-// ============================================================================
-
-struct JITCompiler::Impl {
-  // Platform-specific JIT implementation would go here
-  bool initialized = false;
-};
-
-JITCompiler::JITCompiler(const Options& options) : options_(options) {
-  impl_ = std::make_unique<Impl>();
-  impl_->initialized = false;
-}
-
-JITCompiler::~JITCompiler() = default;
-
-void* JITCompiler::compileFunction(const BytecodeFunction& function) {
-  if (!options_.enabled) {
-    return nullptr;
-  }
-
-  if (function.instructions.size() < options_.minFunctionSize) {
-    return nullptr;
-  }
-
-  // Placeholder - real implementation would generate machine code
-  (void)function;
-  stats_.functionsCompiled++;
-  return nullptr;
-}
-
-void JITCompiler::compileChunk(const BytecodeChunk& chunk) {
-  if (!options_.enabled) {
-    return;
-  }
-
-  for (const auto& func : chunk.functions) {
-    compileFunction(func);
-  }
-}
-
-BytecodeValue JITCompiler::executeCompiled(void* compiledCode,
-                                              const std::vector<BytecodeValue>& args) {
-  (void)compiledCode;
-  (void)args;
-  // Would execute compiled machine code
-  return nullptr;
-}
-
 // Explicit template instantiations for ConfigManager
+// ============================================================================
 template bool ConfigManager::get<bool>(const std::string&, const bool&) const;
 template int64_t ConfigManager::get<int64_t>(const std::string&, const int64_t&) const;
 template double ConfigManager::get<double>(const std::string&, const double&) const;

@@ -15,7 +15,7 @@ public:
         int indent = 0;
     };
 
-    explicit BytecodeDisassembler(const Options& options = Options{})
+    explicit BytecodeDisassembler(const Options& options)
         : options_(options) {}
 
     // Disassemble a single instruction

@@ -70,17 +70,21 @@ int Color::distance(const Color &other) const {
 // ScreenRegion Implementation
 // ============================================================================
 
+#ifdef HAVE_QT_EXTENSION
 QRect ScreenRegion::toQRect() const { return QRect(x, y, w, h); }
+#endif
 
 cv::Rect ScreenRegion::toCvRect() const { return cv::Rect(x, y, w, h); }
 
 ScreenRegion ScreenRegion::fullScreen() {
+#ifdef HAVE_QT_EXTENSION
   QScreen *primaryScreen = QGuiApplication::primaryScreen();
   if (primaryScreen) {
     QRect geometry = primaryScreen->geometry();
     return ScreenRegion(geometry.x(), geometry.y(), geometry.width(),
                         geometry.height());
   }
+#endif
   return ScreenRegion(0, 0, 1920, 1080);
 }
 
@@ -115,6 +119,7 @@ ScreenshotCache::ScreenshotCache() {}
 ScreenshotCache::~ScreenshotCache() {}
 
 void ScreenshotCache::capture() {
+#ifdef HAVE_QT_EXTENSION
   QScreen *primaryScreen = QGuiApplication::primaryScreen();
   if (primaryScreen) {
     QPixmap pixmap = primaryScreen->grabWindow(0);
@@ -126,10 +131,12 @@ void ScreenshotCache::capture() {
                 const_cast<uchar *>(image.bits()), image.bytesPerLine());
     cv::cvtColor(cachedScreenshot, cachedScreenshot, cv::COLOR_BGRA2BGR);
   }
+#endif
   captureTime = std::chrono::steady_clock::now();
 }
 
 void ScreenshotCache::captureRegion(const ScreenRegion &region) {
+#ifdef HAVE_QT_EXTENSION
   QScreen *primaryScreen = QGuiApplication::primaryScreen();
   if (primaryScreen) {
     QPixmap pixmap =
@@ -141,6 +148,7 @@ void ScreenshotCache::captureRegion(const ScreenRegion &region) {
                 const_cast<uchar *>(image.bits()), image.bytesPerLine());
     cv::cvtColor(cachedScreenshot, cachedScreenshot, cv::COLOR_BGRA2BGR);
   }
+#endif
   captureTime = std::chrono::steady_clock::now();
 }
 
@@ -179,6 +187,7 @@ cv::Mat PixelAutomation::captureScreenInternal() {
 }
 
 Color PixelAutomation::getPixel(int x, int y) {
+#ifdef HAVE_QT_EXTENSION
   QScreen *primaryScreen = QGuiApplication::primaryScreen();
   if (!primaryScreen) {
     return Color(0, 0, 0);
@@ -237,6 +246,10 @@ Color PixelAutomation::getPixel(int x, int y) {
   // Get center pixel of captured region
   QRgb rgb = image.pixel(1, 1);
   return Color(qRed(rgb), qGreen(rgb), qBlue(rgb), qAlpha(rgb));
+#else
+  (void)x; (void)y;
+  return Color(0, 0, 0);
+#endif
 }
 
 bool PixelAutomation::pixelMatch(int x, int y, const Color &expectedColor,

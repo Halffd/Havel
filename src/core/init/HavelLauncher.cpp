@@ -2,6 +2,7 @@
 #ifdef HAVE_QT_EXTENSION
 #include "gui/HavelApp.hpp"
 #endif
+#include "core/ConfigManager.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "havel-lang/compiler/bytecode/Pipeline.hpp"
@@ -156,6 +157,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 }
 
 int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
+#ifdef HAVE_QT_EXTENSION
   // Restart loop - keeps restarting until exit code is not 42
   while (true) {
     QApplication app(argc, argv);
@@ -274,9 +276,15 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     return exitCode; // Normal exit
   }
+#else
+  (void)cfg; (void)argc; (void)argv;
+  error("Qt extension not available - daemon mode requires Qt");
+  return 1;
+#endif
 }
 
 int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
+#ifdef HAVE_QT_EXTENSION
   // Restart loop
   while (true) {
     info("Running Havel script: {}", cfg.scriptFile);
@@ -366,8 +374,12 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
   }
 
   return 0; // No restart in headless mode
+#else
+  (void)cfg; (void)argc; (void)argv;
+  error("Qt extension not available - script mode requires Qt");
+  return 1;
+#endif
 } // End of restart loop
-} // namespace havel::init
 
 int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
                                               char *argv[]) {
@@ -566,6 +578,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       info("Entering REPL...");
       return repl.run();
     } else {
+#ifdef HAVE_QT_EXTENSION
       info("Running script and starting REPL with full features...");
 
       // Read script file
@@ -644,6 +657,10 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
       // Enter REPL
       return repl.run();
+#else
+      error("Qt extension not available for full mode. Use --minimal flag.");
+      return 1;
+#endif
     }
   } catch (const std::exception &e) {
     error("Script+REPL error: {}", e.what());
@@ -687,7 +704,8 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --debug-bytecode        Print bytecode to console\n";
   std::cout << "  --diff                  Compare bytecode with previous run\n";
   std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
-} // namespace havel::init
+}
+
 // REPL implementation using bytecode VM
 int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
   try {
@@ -713,6 +731,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       // Run REPL
       return repl.run();
     } else {
+#ifdef HAVE_QT_EXTENSION
       info("Starting Havel REPL with full features (hotkeys, GUI)...");
       
       // Debug: Show mode information
@@ -768,6 +787,10 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
       // Run REPL
       return repl.run();
+#else
+      error("Qt extension not available for full REPL mode. Use --minimal flag.");
+      return 1;
+#endif
     }
   } catch (const std::exception &e) {
     error("REPL error: {}", e.what());
@@ -782,3 +805,5 @@ int havel::init::HavelLauncher::runCli(int, char *[]) {
 
 // DEBUG
 #include <iostream>
+
+} // namespace havel::init

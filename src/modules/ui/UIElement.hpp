@@ -185,11 +185,43 @@ inline constexpr const char *MENU_SEP = "menu_sep";
 
 // Event name constants
 namespace EventType {
+// Mouse Events
+inline constexpr const char *MOUSEDOWN = "mousedown";
+inline constexpr const char *MOUSEUP = "mouseup";
 inline constexpr const char *CLICK = "click";
-inline constexpr const char *CHANGE = "change";
+inline constexpr const char *DBLCLICK = "dblclick";
+inline constexpr const char *MOUSEMOVE = "mousemove";
+inline constexpr const char *MOUSEOVER = "mouseover";
+inline constexpr const char *MOUSEOUT = "mouseout";
+inline constexpr const char *DRAG = "drag";
+inline constexpr const char *DRAGENTER = "dragenter";
+inline constexpr const char *DRAGLEAVE = "dragleave";
+inline constexpr const char *DROPENTER = "dropenter";
+inline constexpr const char *DROPLEAVE = "dropleave";
+inline constexpr const char *DROP = "drop";
+inline constexpr const char *RIGHTCLICK = "rightclick";
+
+// Keyboard Events
+inline constexpr const char *KEYDOWN = "keydown";
+inline constexpr const char *KEYUP = "keyup";
+inline constexpr const char *KEYPRESS = "keypress";
+
+// UI Events
 inline constexpr const char *SUBMIT = "submit";
-inline constexpr const char *CLOSE = "close";
+inline constexpr const char *CHANGE = "change";
+inline constexpr const char *FOCUS = "focus";
+inline constexpr const char *BLUR = "blur";
+inline constexpr const char *LOAD = "load";
+inline constexpr const char *UNLOAD = "unload";
 inline constexpr const char *RESIZE = "resize";
+inline constexpr const char *SCROLL = "scroll";
+inline constexpr const char *COPY = "copy";
+inline constexpr const char *CUT = "cut";
+inline constexpr const char *PASTE = "paste";
+inline constexpr const char *LOADED = "loaded";
+
+// Window/Other Events
+inline constexpr const char *CLOSE = "close";
 inline constexpr const char *MOVE = "move";
 inline constexpr const char *SELECT = "select";
 } // namespace EventType

@@ -97,6 +97,16 @@ fn main() {
         updateDisplay(display)
     }
     
+    // Helper to check if string contains a character
+    fn hasChar(s, c) {
+        for let i = 0; i < len(s); i = i + 1 {
+            if s[i] == c {
+                return true
+            }
+        }
+        return false
+    }
+    
     // Create number buttons 7-9
     let btn7 = ui.btn("7")
     btn7.onClick(fn() { handleNumber(7) })
@@ -140,19 +150,9 @@ fn main() {
     let btn0 = ui.btn("0")
     btn0.onClick(fn() { handleNumber(0) })
     
-    // Pre-declare loop variable at function scope for closure access
-    let dotIndex = 0
-    
     let btnDot = ui.btn(".")
     btnDot.onClick(fn() {
-        // Find if display contains decimal point
-        dotIndex = -1
-        for let i = 0; i < len(display); i = i + 1 {
-            if display[i] == "." {
-                dotIndex = i
-            }
-        }
-        if dotIndex == -1 {
+        if !hasChar(display, ".") {
             display = display + "."
             updateDisplay(display)
         }

@@ -142,7 +142,14 @@ fn main() {
     
     let btnDot = ui.btn(".")
     btnDot.onClick(fn() {
-        if !contains(display, ".") {
+        // Check if display already contains decimal point
+        let hasDot = false
+        for let i = 0; i < len(display); i = i + 1 {
+            if display[i] == "." {
+                hasDot = true
+            }
+        }
+        if !hasDot {
             display = display + "."
             updateDisplay(display)
         }

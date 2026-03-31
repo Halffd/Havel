@@ -721,6 +721,159 @@ static BytecodeValue uiElementOnChange(VMApi &api,
   return args[0];
 }
 
+// Mouse Events
+static BytecodeValue uiElementOnMouseDown(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnMouseUp(VMApi &api,
+                                        const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDblClick(VMApi &api,
+                                         const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnMouseMove(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnMouseOver(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnMouseOut(VMApi &api,
+                                         const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDrag(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDragEnter(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDragLeave(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDropEnter(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDropLeave(VMApi &api,
+                                          const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnDrop(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnRightClick(VMApi &api,
+                                           const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+// Keyboard Events
+static BytecodeValue uiElementOnKeyDown(VMApi &api,
+                                        const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnKeyUp(VMApi &api,
+                                      const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnKeyPress(VMApi &api,
+                                         const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+// UI Events
+static BytecodeValue uiElementOnFocus(VMApi &api,
+                                      const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnBlur(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnLoad(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnUnload(VMApi &api,
+                                       const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnScroll(VMApi &api,
+                                       const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnCopy(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnCut(VMApi &api,
+                                    const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnPaste(VMApi &api,
+                                      const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
+static BytecodeValue uiElementOnLoaded(VMApi &api,
+                                       const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
 // element.pad(n)
 static BytecodeValue uiElementPad(VMApi &api,
                                   const std::vector<BytecodeValue> &args) {
@@ -1023,6 +1176,134 @@ void registerUIModule(compiler::VMApi &api) {
   api.registerFunction("ui.element.onChange",
                        [&api](const std::vector<BytecodeValue> &args) {
                          return uiElementOnChange(api, args);
+                       });
+
+  // Mouse event handlers
+  api.registerFunction("ui.element.onMouseDown",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnMouseDown(api, args);
+                       });
+
+  api.registerFunction("ui.element.onMouseUp",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnMouseUp(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDblClick",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDblClick(api, args);
+                       });
+
+  api.registerFunction("ui.element.onMouseMove",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnMouseMove(api, args);
+                       });
+
+  api.registerFunction("ui.element.onMouseOver",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnMouseOver(api, args);
+                       });
+
+  api.registerFunction("ui.element.onMouseOut",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnMouseOut(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDrag",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDrag(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDragEnter",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDragEnter(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDragLeave",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDragLeave(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDropEnter",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDropEnter(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDropLeave",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDropLeave(api, args);
+                       });
+
+  api.registerFunction("ui.element.onDrop",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnDrop(api, args);
+                       });
+
+  api.registerFunction("ui.element.onRightClick",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnRightClick(api, args);
+                       });
+
+  // Keyboard event handlers
+  api.registerFunction("ui.element.onKeyDown",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnKeyDown(api, args);
+                       });
+
+  api.registerFunction("ui.element.onKeyUp",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnKeyUp(api, args);
+                       });
+
+  api.registerFunction("ui.element.onKeyPress",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnKeyPress(api, args);
+                       });
+
+  // UI event handlers
+  api.registerFunction("ui.element.onFocus",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnFocus(api, args);
+                       });
+
+  api.registerFunction("ui.element.onBlur",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnBlur(api, args);
+                       });
+
+  api.registerFunction("ui.element.onLoad",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnLoad(api, args);
+                       });
+
+  api.registerFunction("ui.element.onUnload",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnUnload(api, args);
+                       });
+
+  api.registerFunction("ui.element.onScroll",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnScroll(api, args);
+                       });
+
+  api.registerFunction("ui.element.onCopy",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnCopy(api, args);
+                       });
+
+  api.registerFunction("ui.element.onCut",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnCut(api, args);
+                       });
+
+  api.registerFunction("ui.element.onPaste",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnPaste(api, args);
+                       });
+
+  api.registerFunction("ui.element.onLoaded",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnLoaded(api, args);
                        });
 
   api.registerFunction("ui.element.pad",

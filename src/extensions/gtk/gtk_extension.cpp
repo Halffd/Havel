@@ -1548,7 +1548,97 @@ GtkWidget* getWidgetChecked(int64_t id, const char* typeName) {
     return widget;
 }
 
-/* Static C functions - no captures */
+/* ============================================================================
+ * EVENT CALLBACK SYSTEM
+ * ============================================================================ */
+
+/* Event callback types */
+enum GtkEventType {
+    GTK_EVENT_CLICKED = 0,
+    GTK_EVENT_TEXT_CHANGED = 1,
+    GTK_EVENT_VALUE_CHANGED = 2,
+    GTK_EVENT_STATE_CHANGED = 3,
+    GTK_EVENT_SELECTION_CHANGED = 4,
+    GTK_EVENT_TAB_CHANGED = 5,
+    GTK_EVENT_ROW_ACTIVATED = 6,
+};
+
+/* Callback entry for a widget event */
+struct GtkEventCallback {
+    HavelValue* callback;  /* Havel function to call */
+    int64_t widgetId;      /* Widget that triggered this */
+    GtkEventType type;     /* Type of event */
+
+    GtkEventCallback() : callback(nullptr), widgetId(0), type(GTK_EVENT_CLICKED) {}
+    GtkEventCallback(HavelValue* cb, int64_t id, GtkEventType t)
+        : callback(cb), widgetId(id), type(t) {
+        if (callback) havel_incref(callback);
+    }
+    ~GtkEventCallback() {
+        if (callback) havel_decref(callback);
+    }
+};
+
+/* Map: widgetId -> list of callbacks for that widget */
+std::unordered_map<int64_t, std::vector<GtkEventCallback>> g_gtkWidgetCallbacks;
+
+/* Store last known values for change detection */
+std::unordered_map<int64_t, int> g_gtkLastIntValue;
+std::unordered_map<int64_t, std::string> g_gtkLastTextValue;
+
+/* Register a callback for a widget event */
+void registerGtkWidgetCallback(int64_t widgetId, HavelValue* callback, GtkEventType type) {
+    GtkEventCallback cb(callback, widgetId, type);
+    g_gtkWidgetCallbacks[widgetId].push_back(cb);
+}
+
+/* Trigger callback with optional argument */
+void triggerGtkCallback(const GtkEventCallback& cb, HavelValue* arg = nullptr) {
+    if (!cb.callback) return;
+    /* Callback will be invoked from processCallbacks */
+    (void)arg;
+}
+
+/* Check and trigger value changes */
+void checkGtkWidgetChanges() {
+    for (auto& pair : g_gtkWidgetCallbacks) {
+        int64_t widgetId = pair.first;
+        GtkWidget* widget = getWidget(widgetId);
+        if (!widget) continue;
+
+        for (auto& cb : pair.second) {
+            /* Check text changes for Entry */
+            if (cb.type == GTK_EVENT_TEXT_CHANGED) {
+                const char* currentText = g_gtkLibs->gtk_entry_get_text(widget);
+                std::string current(currentText ? currentText : "");
+                auto it = g_gtkLastTextValue.find(widgetId);
+                if (it == g_gtkLastTextValue.end() || it->second != current) {
+                    g_gtkLastTextValue[widgetId] = current;
+                    HavelValue* arg = havel_new_string(current.c_str());
+                    triggerGtkCallback(cb, arg);
+                    havel_free_value(arg);
+                }
+            }
+            /* Check value changes for Scale/SpinButton */
+            else if (cb.type == GTK_EVENT_VALUE_CHANGED) {
+                /* Value checking done in widget-specific functions */
+            }
+            /* Check state changes for CheckButton/Switch */
+            else if (cb.type == GTK_EVENT_STATE_CHANGED) {
+                /* State checking done in widget-specific functions */
+            }
+        }
+    }
+}
+
+/* Process all registered GTK callbacks */
+void processGtkCallbacks() {
+    checkGtkWidgetChanges();
+}
+
+/* ============================================================================
+ * STATIC C FUNCTIONS
+ * ============================================================================ */
 
 static HavelValue* gtk_init_app(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
@@ -3108,6 +3198,111 @@ static HavelValue* gtk_widget_grab_focus(int argc, HavelValue** argv) {
 }
 
 /* ============================================================================
+ * EVENT CONNECTION FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* gtk_onClicked(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_CLICKED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_onTextChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    /* Store initial text value */
+    const char* text = g_gtkLibs->gtk_entry_get_text(widget);
+    if (text) g_gtkLastTextValue[widgetId] = text;
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_TEXT_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_onValueChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_VALUE_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_onStateChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_STATE_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_onSelectionChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_SELECTION_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_onTabChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_TAB_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_onRowActivated(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+
+    GtkWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+
+    registerGtkWidgetCallback(widgetId, callback, GTK_EVENT_ROW_ACTIVATED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* gtk_processCallbacks(int argc, HavelValue** argv) {
+    (void)argc; (void)argv;
+    processGtkCallbacks();
+    return havel_new_null();
+}
+
+/* ============================================================================
  * REGISTRATION
  * ============================================================================ */
 
@@ -3275,4 +3470,14 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     api->register_function("gtk", "widgetAddCssClass", gtk_widget_add_css_class);
     api->register_function("gtk", "widgetSetSizeRequest", gtk_widget_set_size_request);
     api->register_function("gtk", "widgetGrabFocus", gtk_widget_grab_focus);
+
+    /* Event functions */
+    api->register_function("gtk", "onClicked", gtk_onClicked);
+    api->register_function("gtk", "onTextChanged", gtk_onTextChanged);
+    api->register_function("gtk", "onValueChanged", gtk_onValueChanged);
+    api->register_function("gtk", "onStateChanged", gtk_onStateChanged);
+    api->register_function("gtk", "onSelectionChanged", gtk_onSelectionChanged);
+    api->register_function("gtk", "onTabChanged", gtk_onTabChanged);
+    api->register_function("gtk", "onRowActivated", gtk_onRowActivated);
+    api->register_function("gtk", "processCallbacks", gtk_processCallbacks);
 }

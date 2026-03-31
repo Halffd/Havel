@@ -14,6 +14,7 @@
 #include <string>
 #include <unordered_map>
 #include <functional>
+#include <memory>
 #include <cstdio>
 
 #ifdef HAVE_DLFCN_H

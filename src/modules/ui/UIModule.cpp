@@ -874,6 +874,12 @@ static BytecodeValue uiElementOnLoaded(VMApi &api,
   return args[0];
 }
 
+static BytecodeValue uiElementOnSubmit(VMApi &api,
+                                       const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) return BytecodeValue(nullptr);
+  return args[0];
+}
+
 // element.pad(n)
 static BytecodeValue uiElementPad(VMApi &api,
                                   const std::vector<BytecodeValue> &args) {
@@ -1304,6 +1310,11 @@ void registerUIModule(compiler::VMApi &api) {
   api.registerFunction("ui.element.onLoaded",
                        [&api](const std::vector<BytecodeValue> &args) {
                          return uiElementOnLoaded(api, args);
+                       });
+
+  api.registerFunction("ui.element.onSubmit",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementOnSubmit(api, args);
                        });
 
   api.registerFunction("ui.element.pad",

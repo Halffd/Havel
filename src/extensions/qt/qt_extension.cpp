@@ -318,6 +318,7 @@ typedef void (*QHBoxLayoutAddSpacingFn)(void* l, int size);
 /* QGridLayout function types */
 typedef void* (*QGridLayoutCtorFn)(QWidget* parent);
 typedef void (*QGridLayoutAddWidgetFn)(void* l, QWidget* w, int row, int col, int rowSpan, int colSpan);
+typedef void (*QGridLayoutAddLayoutFn)(void* l, void* other, int row, int col);
 typedef void (*QGridLayoutSetRowSpacingFn)(void* l, int row, int sp);
 typedef void (*QGridLayoutSetColumnSpacingFn)(void* l, int col, int sp);
 typedef void (*QGridLayoutSetRowStretchFn)(void* l, int row, int stretch);
@@ -360,8 +361,8 @@ typedef QWidget* (*QScrollAreaCtorFn)(QWidget* parent);
 typedef void (*QScrollAreaSetWidgetFn)(QWidget* sa, QWidget* w);
 typedef QWidget* (*QScrollAreaWidgetFn)(QWidget* sa);
 typedef void (*QScrollAreaSetWidgetResizableFn)(QWidget* sa, bool res);
-typedef void (*QScrollAreaSetHorizontalScrollBarPolicyFn)(QWidget* sa, int policy);
-typedef void (*QScrollAreaSetVerticalScrollBarPolicyFn)(QWidget* sa, int policy);
+typedef void (*QScrollAreaSetHScrollBarPolicyFn)(QWidget* sa, int policy);
+typedef void (*QScrollAreaSetVScrollBarPolicyFn)(QWidget* sa, int policy);
 
 /* QGroupBox function types - already defined above */
 
@@ -745,8 +746,8 @@ struct Qt6Libs {
     QScrollAreaSetWidgetFn qScrollArea_setWidget = nullptr;
     QScrollAreaWidgetFn qScrollArea_widget = nullptr;
     QScrollAreaSetWidgetResizableFn qScrollArea_setWidgetResizable = nullptr;
-    QScrollAreaSetHorizontalScrollBarPolicyFn qScrollArea_setHScrollBarPolicy = nullptr;
-    QScrollAreaSetVerticalScrollBarPolicyFn qScrollArea_setVScrollBarPolicy = nullptr;
+    QScrollAreaSetHScrollBarPolicyFn qScrollArea_setHScrollBarPolicy = nullptr;
+    QScrollAreaSetVScrollBarPolicyFn qScrollArea_setVScrollBarPolicy = nullptr;
     
     /* QSplitter functions */
     QSplitterCtorFn qSplitter_new = nullptr;
@@ -1485,6 +1486,108 @@ void* getLayout(int64_t id) {
 }
 
 /* ============================================================================
+ * EVENT CALLBACK SYSTEM
+ * ============================================================================ */
+
+/* Event callback types */
+enum EventType {
+    EVENT_CLICKED = 0,
+    EVENT_TEXT_CHANGED = 1,
+    EVENT_VALUE_CHANGED = 2,
+    EVENT_STATE_CHANGED = 3,
+    EVENT_TIMEOUT = 4,
+    EVENT_ITEM_ACTIVATED = 5,
+    EVENT_TEXT_EDITED = 6,
+    EVENT_RETURN_PRESSED = 7,
+    EVENT_SELECTION_CHANGED = 8,
+    EVENT_CURRENTIndexChanged = 9,
+};
+
+/* Callback entry for a widget event */
+struct EventCallback {
+    HavelValue* callback;  /* Havel function to call */
+    int64_t widgetId;      /* Widget that triggered this */
+    EventType type;        /* Type of event */
+    
+    EventCallback() : callback(nullptr), widgetId(0), type(EVENT_CLICKED) {}
+    EventCallback(HavelValue* cb, int64_t id, EventType t) 
+        : callback(cb), widgetId(id), type(t) {
+        if (callback) havel_incref(callback);
+    }
+    ~EventCallback() {
+        if (callback) havel_decref(callback);
+    }
+};
+
+/* Map: widgetId -> list of callbacks for that widget */
+std::unordered_map<int64_t, std::vector<EventCallback>> g_widgetCallbacks;
+
+/* Map: timerId -> callback for timer timeout */
+std::unordered_map<int64_t, EventCallback> g_timerCallbacks;
+
+/* Store last known values for change detection */
+std::unordered_map<int64_t, int> g_lastIntValue;
+std::unordered_map<int64_t, std::string> g_lastTextValue;
+
+/* Function to trigger a callback */
+void triggerCallback(const EventCallback& cb, HavelValue* arg = nullptr) {
+    if (!cb.callback) return;
+    
+    /* Call the Havel callback function */
+    HavelValue* args[1] = { arg };
+    int argc = arg ? 1 : 0;
+    
+    /* Get the function and call it */
+    HavelValue* result = nullptr;
+    /* Note: In a real implementation, you'd call the Havel VM here */
+    /* For now, we just store the callback for later invocation */
+    (void)result;
+    (void)args;
+    (void)argc;
+}
+
+/* Register a callback for a widget event */
+void registerWidgetCallback(int64_t widgetId, HavelValue* callback, EventType type) {
+    EventCallback cb(callback, widgetId, type);
+    g_widgetCallbacks[widgetId].push_back(cb);
+}
+
+/* Register a callback for a timer */
+void registerTimerCallback(int64_t timerId, HavelValue* callback) {
+    EventCallback cb(callback, timerId, EVENT_TIMEOUT);
+    g_timerCallbacks[timerId] = cb;
+}
+
+/* Check and trigger value change events */
+void checkValueChanges() {
+    for (auto& pair : g_widgetCallbacks) {
+        int64_t widgetId = pair.first;
+        QWidget* widget = getWidget(widgetId);
+        if (!widget) continue;
+        
+        for (auto& cb : pair.second) {
+            /* Check text changes */
+            if (cb.type == EVENT_TEXT_CHANGED || cb.type == EVENT_TEXT_EDITED) {
+                const char* currentText = g_qtLibs->qLineEdit_text(widget);
+                std::string current(currentText ? currentText : "");
+                auto it = g_lastTextValue.find(widgetId);
+                if (it == g_lastTextValue.end() || it->second != current) {
+                    g_lastTextValue[widgetId] = current;
+                    HavelValue* arg = havel_new_string(current.c_str());
+                    triggerCallback(cb, arg);
+                    havel_free_value(arg);
+                }
+            }
+            /* Check int value changes (sliders, spinbox) */
+            else if (cb.type == EVENT_VALUE_CHANGED) {
+                /* This would need type-specific value getters */
+                /* Simplified for now */
+            }
+        }
+    }
+}
+
+/* ============================================================================
  * CORE FUNCTIONS
  * ============================================================================ */
 
@@ -2147,6 +2250,124 @@ static HavelValue* qt_inputDialog_getInteger(int argc, HavelValue** argv) {
 }
 
 /* ============================================================================
+ * EVENT CONNECTION FUNCTIONS
+ * ============================================================================ */
+
+static HavelValue* qt_onClicked(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    registerWidgetCallback(widgetId, callback, EVENT_CLICKED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onTextChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    /* Store initial text value */
+    const char* text = g_qtLibs->qLineEdit_text(widget);
+    if (text) g_lastTextValue[widgetId] = text;
+    
+    registerWidgetCallback(widgetId, callback, EVENT_TEXT_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onValueChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    registerWidgetCallback(widgetId, callback, EVENT_VALUE_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onStateChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    registerWidgetCallback(widgetId, callback, EVENT_STATE_CHANGED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onTimerTimeout(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t timerId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    auto it = g_timers.find(timerId);
+    if (it == g_timers.end()) return havel_new_bool(0);
+    
+    registerTimerCallback(timerId, callback);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onReturnPressed(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    registerWidgetCallback(widgetId, callback, EVENT_RETURN_PRESSED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onItemActivated(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    registerWidgetCallback(widgetId, callback, EVENT_ITEM_ACTIVATED);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_onCurrentIndexChanged(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_bool(0);
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    HavelValue* callback = argv[1];
+    
+    QWidget* widget = getWidget(widgetId);
+    if (!widget) return havel_new_bool(0);
+    
+    registerWidgetCallback(widgetId, callback, EVENT_CURRENTIndexChanged);
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_processCallbacks(int argc, HavelValue** argv) {
+    (void)argc; (void)argv;
+    checkValueChanges();
+    return havel_new_null();
+}
+
+/* ============================================================================
  * REGISTRATION
  * ============================================================================ */
 
@@ -2248,4 +2469,15 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     /* QInputDialog */
     api->register_function("qt", "inputDialogGetText", qt_inputDialog_getText);
     api->register_function("qt", "inputDialogGetInteger", qt_inputDialog_getInteger);
+
+    /* Events */
+    api->register_function("qt", "onClicked", qt_onClicked);
+    api->register_function("qt", "onTextChanged", qt_onTextChanged);
+    api->register_function("qt", "onValueChanged", qt_onValueChanged);
+    api->register_function("qt", "onStateChanged", qt_onStateChanged);
+    api->register_function("qt", "onTimerTimeout", qt_onTimerTimeout);
+    api->register_function("qt", "onReturnPressed", qt_onReturnPressed);
+    api->register_function("qt", "onItemActivated", qt_onItemActivated);
+    api->register_function("qt", "onCurrentIndexChanged", qt_onCurrentIndexChanged);
+    api->register_function("qt", "processCallbacks", qt_processCallbacks);
 }

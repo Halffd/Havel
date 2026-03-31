@@ -4,7 +4,7 @@
 #include "UIModule.hpp"
 #include "UIElement.hpp"
 #include "havel-lang/compiler/bytecode/VM.hpp"
-#include "host/ui/UIService.hpp"
+#include "host/ui/UIManager.hpp"
 
 #include <sstream>
 
@@ -15,14 +15,9 @@ using compiler::BytecodeValue;
 using compiler::ObjectRef;
 using compiler::VMApi;
 
-// Global UI service instance (singleton per VM)
-static std::unique_ptr<host::UIService> g_uiService;
-
-static host::UIService &getUIService() {
-  if (!g_uiService) {
-    g_uiService = std::make_unique<host::UIService>();
-  }
-  return *g_uiService;
+// Global UI backend instance (via UIManager singleton)
+static host::UIBackend *getUIBackend() {
+  return host::UIManager::instance().backend();
 }
 
 // Helper to convert BytecodeValue to string
@@ -142,7 +137,7 @@ static BytecodeValue uiWindow(VMApi &api,
                               const std::vector<BytecodeValue> &args) {
   std::string title = getStringArg(api, args, 0, "Window");
 
-  auto elem = getUIService().window(title);
+  auto elem = getUIBackend()->window(title);
 
   // Parse named args from options object if provided
   if (args.size() > 1) {
@@ -192,7 +187,7 @@ static BytecodeValue uiWindow(VMApi &api,
 static BytecodeValue uiBtn(VMApi &api, const std::vector<BytecodeValue> &args) {
   std::string label = getStringArg(api, args, 0, "Button");
 
-  auto elem = getUIService().btn(label);
+  auto elem = getUIBackend()->btn(label);
 
   // Parse callback if provided
   if (args.size() > 1) {
@@ -216,7 +211,7 @@ static BytecodeValue uiText(VMApi &api,
                             const std::vector<BytecodeValue> &args) {
   std::string content = getStringArg(api, args, 0, "");
 
-  auto elem = getUIService().text(content);
+  auto elem = getUIBackend()->text(content);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -232,7 +227,7 @@ static BytecodeValue uiLabel(VMApi &api,
                              const std::vector<BytecodeValue> &args) {
   std::string content = getStringArg(api, args, 0, "");
 
-  auto elem = getUIService().label(content);
+  auto elem = getUIBackend()->label(content);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -245,7 +240,7 @@ static BytecodeValue uiInput(VMApi &api,
                              const std::vector<BytecodeValue> &args) {
   std::string placeholder = getStringArg(api, args, 0, "");
 
-  auto elem = getUIService().input(placeholder);
+  auto elem = getUIBackend()->input(placeholder);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -262,7 +257,7 @@ static BytecodeValue uiTextarea(VMApi &api,
                                 const std::vector<BytecodeValue> &args) {
   std::string placeholder = getStringArg(api, args, 0, "");
 
-  auto elem = getUIService().textarea(placeholder);
+  auto elem = getUIBackend()->textarea(placeholder);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -283,7 +278,7 @@ static BytecodeValue uiCheckbox(VMApi &api,
     checked = toBool(args[1]);
   }
 
-  auto elem = getUIService().checkbox(label, checked);
+  auto elem = getUIBackend()->checkbox(label, checked);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -301,7 +296,7 @@ static BytecodeValue uiSlider(VMApi &api,
   int max = getIntArg(args, 1, 100);
   int value = getIntArg(args, 2, 0);
 
-  auto elem = getUIService().slider(min, max, value);
+  auto elem = getUIBackend()->slider(min, max, value);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -327,7 +322,7 @@ static BytecodeValue uiDropdown(VMApi &api,
     }
   }
 
-  auto elem = getUIService().dropdown(options);
+  auto elem = getUIBackend()->dropdown(options);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -343,7 +338,7 @@ static BytecodeValue uiImage(VMApi &api,
                              const std::vector<BytecodeValue> &args) {
   std::string path = getStringArg(api, args, 0, "");
 
-  auto elem = getUIService().image(path);
+  auto elem = getUIBackend()->image(path);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -355,7 +350,7 @@ static BytecodeValue uiImage(VMApi &api,
 static BytecodeValue uiDivider(VMApi &api,
                                const std::vector<BytecodeValue> &args) {
   (void)args;
-  auto elem = getUIService().divider();
+  auto elem = getUIBackend()->divider();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -368,7 +363,7 @@ static BytecodeValue uiSpacer(VMApi &api,
                               const std::vector<BytecodeValue> &args) {
   int size = getIntArg(args, 0, 10);
 
-  auto elem = getUIService().spacer(size);
+  auto elem = getUIBackend()->spacer(size);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -382,7 +377,7 @@ static BytecodeValue uiProgress(VMApi &api,
   int value = getIntArg(args, 0, 0);
   int max = getIntArg(args, 1, 100);
 
-  auto elem = getUIService().progress(value, max);
+  auto elem = getUIBackend()->progress(value, max);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -394,7 +389,7 @@ static BytecodeValue uiProgress(VMApi &api,
 static BytecodeValue uiSpinner(VMApi &api,
                                const std::vector<BytecodeValue> &args) {
   (void)args;
-  auto elem = getUIService().spinner();
+  auto elem = getUIBackend()->spinner();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -411,7 +406,7 @@ static BytecodeValue uiMenu(VMApi &api,
                             const std::vector<BytecodeValue> &args) {
   std::string title = getStringArg(api, args, 0, "Menu");
 
-  auto elem = getUIService().menu(title);
+  auto elem = getUIBackend()->menu(title);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -427,7 +422,7 @@ static BytecodeValue uiMenuItem(VMApi &api,
   std::string label = getStringArg(api, args, 0, "Item");
   std::string shortcut = getStringArg(api, args, 1, "");
 
-  auto elem = getUIService().menuItem(label, shortcut);
+  auto elem = getUIBackend()->menuItem(label, shortcut);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -442,7 +437,7 @@ static BytecodeValue uiMenuItem(VMApi &api,
 static BytecodeValue uiMenuSeparator(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
   (void)args;
-  auto elem = getUIService().menuSeparator();
+  auto elem = getUIBackend()->menuSeparator();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -458,7 +453,7 @@ static BytecodeValue uiMenuSeparator(VMApi &api,
 
 // ui.row([...])
 static BytecodeValue uiRow(VMApi &api, const std::vector<BytecodeValue> &args) {
-  auto elem = getUIService().row();
+  auto elem = getUIBackend()->row();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -476,7 +471,7 @@ static BytecodeValue uiRow(VMApi &api, const std::vector<BytecodeValue> &args) {
 
 // ui.col([...])
 static BytecodeValue uiCol(VMApi &api, const std::vector<BytecodeValue> &args) {
-  auto elem = getUIService().col();
+  auto elem = getUIBackend()->col();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -495,7 +490,7 @@ static BytecodeValue uiGrid(VMApi &api,
                             const std::vector<BytecodeValue> &args) {
   int cols = getIntArg(args, 0, 2);
 
-  auto elem = getUIService().grid(cols);
+  auto elem = getUIBackend()->grid(cols);
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -512,7 +507,7 @@ static BytecodeValue uiGrid(VMApi &api,
 // ui.scroll([...])
 static BytecodeValue uiScroll(VMApi &api,
                               const std::vector<BytecodeValue> &args) {
-  auto elem = getUIService().scroll();
+  auto elem = getUIBackend()->scroll();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
@@ -536,7 +531,7 @@ static BytecodeValue uiAlert(const std::vector<BytecodeValue> &args) {
   if (args.size() > 0) {
     message = toString(args[0]);
   }
-  getUIService().alert(message);
+  getUIBackend()->alert(message);
   return BytecodeValue(true);
 }
 
@@ -546,7 +541,7 @@ static BytecodeValue uiConfirm(const std::vector<BytecodeValue> &args) {
   if (args.size() > 0) {
     message = toString(args[0]);
   }
-  bool result = getUIService().confirm(message);
+  bool result = getUIBackend()->confirm(message);
   return BytecodeValue(result);
 }
 
@@ -556,7 +551,7 @@ static BytecodeValue uiFilePicker(const std::vector<BytecodeValue> &args) {
   if (args.size() > 0) {
     title = toString(args[0]);
   }
-  std::string result = getUIService().filePicker(title);
+  std::string result = getUIBackend()->filePicker(title);
   return BytecodeValue(result);
 }
 
@@ -566,7 +561,7 @@ static BytecodeValue uiDirPicker(const std::vector<BytecodeValue> &args) {
   if (args.size() > 0) {
     title = toString(args[0]);
   }
-  std::string result = getUIService().dirPicker(title);
+  std::string result = getUIBackend()->dirPicker(title);
   return BytecodeValue(result);
 }
 
@@ -582,7 +577,7 @@ static BytecodeValue uiNotify(const std::vector<BytecodeValue> &args) {
     type = toString(args[1]);
   }
 
-  getUIService().notify(message, type);
+  getUIBackend()->notify(message, type);
   return BytecodeValue(true);
 }
 
@@ -602,21 +597,21 @@ static BytecodeValue uiTrayIcon(const std::vector<BytecodeValue> &args) {
     tooltip = toString(args[1]);
   }
 
-  getUIService().trayIcon(iconPath, tooltip);
+  getUIBackend()->trayIcon(iconPath, tooltip);
   return BytecodeValue(true);
 }
 
 // ui.trayShow()
 static BytecodeValue uiTrayShow(const std::vector<BytecodeValue> &args) {
   (void)args;
-  getUIService().trayShow();
+  getUIBackend()->trayShow();
   return BytecodeValue(true);
 }
 
 // ui.trayHide()
 static BytecodeValue uiTrayHide(const std::vector<BytecodeValue> &args) {
   (void)args;
-  getUIService().trayHide();
+  getUIBackend()->trayHide();
   return BytecodeValue(true);
 }
 
@@ -627,7 +622,7 @@ static BytecodeValue uiTrayMenu(VMApi &api,
   // For now, just set up an empty tray menu
   (void)api;
   (void)args;
-  getUIService().trayMenu(nullptr);
+  getUIBackend()->trayMenu(nullptr);
   return BytecodeValue(true);
 }
 
@@ -647,7 +642,7 @@ static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
     iconType = toString(args[2]);
   }
 
-  getUIService().trayNotify(title, message, iconType);
+  getUIBackend()->trayNotify(title, message, iconType);
   return BytecodeValue(true);
 }
 
@@ -677,7 +672,7 @@ static BytecodeValue uiElementShow(VMApi &api,
   if (std::holds_alternative<int64_t>(idVal)) {
     ui::ElementId id = static_cast<ui::ElementId>(std::get<int64_t>(idVal));
     // Would need to retrieve element from registry and show
-    // getUIService().show(element);
+    // getUIBackend()->show(element);
     (void)id;
   }
 
@@ -807,6 +802,38 @@ static BytecodeValue uiTextareaValue(VMApi &api,
   } else {
     return args[0];
   }
+}
+
+// ============================================================================
+// API Selection Functions
+// ============================================================================
+
+// ui.setApi(apiName) - switch between qt/gtk/imgui
+static BytecodeValue uiSetApi(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    return BytecodeValue(false);
+  }
+
+  std::string apiName = toString(args[0]);
+  bool success = host::UIManager::instance().setBackend(apiName);
+  return BytecodeValue(success);
+}
+
+// ui.getApi() -> current API name
+static BytecodeValue uiGetApi() {
+  std::string apiName = host::UIManager::instance().currentApiName();
+  return BytecodeValue(apiName);
+}
+
+// ui.isAvailable(apiName) -> bool
+static BytecodeValue uiIsAvailable(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    return BytecodeValue(false);
+  }
+
+  std::string apiName = toString(args[0]);
+  bool available = host::UIManager::instance().isBackendAvailable(apiName);
+  return BytecodeValue(available);
 }
 
 // ============================================================================
@@ -1033,6 +1060,21 @@ void registerUIModule(compiler::VMApi &api) {
                          return uiTextareaValue(api, args);
                        });
 
+  // API selection functions
+  api.registerFunction("ui.setApi", [](const std::vector<BytecodeValue> &args) {
+    return uiSetApi(args);
+  });
+
+  api.registerFunction("ui.getApi", [](const std::vector<BytecodeValue> &args) {
+    (void)args;
+    return uiGetApi();
+  });
+
+  api.registerFunction("ui.isAvailable",
+                       [](const std::vector<BytecodeValue> &args) {
+                         return uiIsAvailable(args);
+                       });
+
   // Register global 'ui' object
   auto uiObj = api.makeObject();
 
@@ -1068,6 +1110,11 @@ void registerUIModule(compiler::VMApi &api) {
   api.setField(uiObj, "trayHide", api.makeFunctionRef("ui.trayHide"));
   api.setField(uiObj, "trayMenu", api.makeFunctionRef("ui.trayMenu"));
   api.setField(uiObj, "trayNotify", api.makeFunctionRef("ui.trayNotify"));
+
+  // API selection methods
+  api.setField(uiObj, "setApi", api.makeFunctionRef("ui.setApi"));
+  api.setField(uiObj, "getApi", api.makeFunctionRef("ui.getApi"));
+  api.setField(uiObj, "isAvailable", api.makeFunctionRef("ui.isAvailable"));
 
   api.setGlobal("ui", uiObj);
 }

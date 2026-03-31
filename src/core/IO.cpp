@@ -22,8 +22,10 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <mutex>
+#ifdef HAVE_QT_EXTENSION
 #include <qapplication.h>
 #include <qtmetamacros.h>
+#endif
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/select.h>

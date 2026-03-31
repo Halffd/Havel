@@ -1,11 +1,15 @@
 #include "PixelAutomation.hpp"
 #include "ai/ocr/OCR.hpp"
 #include "core/IO.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "gui/ScreenshotManager.hpp"
+#endif
 #include "window/WindowManager.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include <QCursor>
 #include <QGuiApplication>
 #include <QScreen>
+#endif
 #include <chrono>
 #include <thread>
 

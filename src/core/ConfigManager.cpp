@@ -16,12 +16,14 @@ namespace havel {
 namespace ConfigPaths {
 // Get config directory with fallback to $HOME/.config/havel/
 std::string GetDefaultConfigDir() {
+#ifdef HAVE_QT_EXTENSION
   // Try Qt standard location first
   QString qtPath =
       QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
   if (!qtPath.isEmpty()) {
     return qtPath.toStdString() + "/havel/";
   }
+#endif
 
   // Fallback to $HOME/.config/havel/
   const char *home = std::getenv("HOME");

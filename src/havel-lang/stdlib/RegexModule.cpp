@@ -31,7 +31,7 @@ void registerRegexModule(VMApi &api) {
         }
       });
 
-  // regex_search(pattern, text) - Search for pattern in text
+  // regex_search(pattern, text) - Search for substring pattern in text
   api.registerFunction(
       "regex_search", [&api](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2)
@@ -41,17 +41,14 @@ void registerRegexModule(VMApi &api) {
             !std::holds_alternative<std::string>(args[1]))
           throw std::runtime_error("regex_search() requires string arguments");
 
-        const auto &pattern = std::get<std::string>(args[0]);
-        const auto &text = std::get<std::string>(args[1]);
+        // ByteCompiler pushes: left (text), then right (pattern)
+        // So args[0] = text (string to search in), args[1] = pattern (substring)
+        const auto &text = std::get<std::string>(args[0]);
+        const auto &pattern = std::get<std::string>(args[1]);
 
-        try {
-          std::regex re(pattern);
-          bool found = std::regex_search(text, re);
-          return BytecodeValue(found);
-        } catch (const std::regex_error &e) {
-          throw std::runtime_error("Invalid regex pattern: " +
-                                   std::string(e.what()));
-        }
+        // Simple substring search (not regex)
+        bool found = text.find(pattern) != std::string::npos;
+        return BytecodeValue(found);
       });
 
   // regex_replace(pattern, text, replacement) - Replace pattern matches

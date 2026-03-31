@@ -11,7 +11,11 @@
 
 #include "ConfigObject.hpp"
 #include "types.hpp"
+
+#ifdef HAVE_QT_EXTENSION
 #include <QStandardPaths>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <filesystem>

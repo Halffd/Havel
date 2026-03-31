@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef HAVE_QT_EXTENSION
+
 // Save X11 macros before Qt headers
 #ifdef None
 #define X11_None None
@@ -69,3 +71,5 @@ namespace havel {
 #ifndef emit
 #define emit
 #endif
+
+#endif // HAVE_QT_EXTENSION

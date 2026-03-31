@@ -1,0 +1,226 @@
+// Paint App - Demonstrates Havel UI module with mouse events and drawing
+// Usage: havel paint.havel
+
+fn main() {
+    // Check if UI is available
+    if !ui.isAvailable("qt") {
+        print("UI not available")
+        return
+    }
+    
+    // Set Qt backend
+    ui.setApi("qt")
+    
+    // Canvas state
+    let isDrawing = false
+    let currentColor = "black"
+    let brushSize = 3
+    let lastX = 0
+    let lastY = 0
+    
+    // Available colors
+    let colors = ["black", "red", "green", "blue", "yellow", "white"]
+    let colorIndex = 0
+    
+    // Create main window
+    let window = ui.window("Paint", {
+        width: 800,
+        height: 600,
+        resizable: true
+    })
+    
+    // Toolbar
+    let toolbar = ui.row()
+    
+    // Color picker button
+    let colorBtn = ui.btn("Color: " + currentColor)
+    colorBtn.bg(currentColor)
+    if currentColor == "white" {
+        colorBtn.fg("black")
+    } else {
+        colorBtn.fg("white")
+    }
+    colorBtn.onClick(fn() {
+        colorIndex = (colorIndex + 1) % len(colors)
+        currentColor = colors[colorIndex]
+        colorBtn.text("Color: " + currentColor)
+        colorBtn.bg(currentColor)
+        if currentColor == "white" {
+            colorBtn.fg("black")
+        } else {
+            colorBtn.fg("white")
+        }
+    })
+    
+    // Brush size buttons
+    let sizeLabel = ui.label("Size: " + str(brushSize))
+    
+    let btnSmaller = ui.btn("-")
+    btnSmaller.onClick(fn() {
+        if brushSize > 1 {
+            brushSize = brushSize - 1
+            sizeLabel.text("Size: " + str(brushSize))
+        }
+    })
+    
+    let btnLarger = ui.btn("+")
+    btnLarger.onClick(fn() {
+        if brushSize < 20 {
+            brushSize = brushSize + 1
+            sizeLabel.text("Size: " + str(brushSize))
+        }
+    })
+    
+    // Clear button
+    let btnClear = ui.btn("Clear")
+    btnClear.bg("red")
+    btnClear.fg("white")
+    // Clear would reset the canvas - implementation depends on backend
+    
+    // Save button
+    let btnSave = ui.btn("Save")
+    btnSave.onClick(fn() {
+        let filename = ui.filePicker("Save painting")
+        if filename != "" {
+            print("Saving to: " + filename)
+            // Save functionality would be implemented here
+        }
+    })
+    
+    toolbar.add(colorBtn)
+    toolbar.add(btnSmaller)
+    toolbar.add(sizeLabel)
+    toolbar.add(btnLarger)
+    toolbar.add(btnClear)
+    toolbar.add(btnSave)
+    
+    // Canvas area
+    let canvas = ui.panel("center")
+    canvas.bg("white")
+    canvas.width(780)
+    canvas.height(520)
+    
+    // Mouse event handlers for drawing
+    canvas.onMouseDown(fn(x, y) {
+        isDrawing = true
+        lastX = x
+        lastY = y
+        // Draw initial dot
+        drawPoint(x, y, currentColor, brushSize)
+    })
+    
+    canvas.onMouseUp(fn(x, y) {
+        isDrawing = false
+    })
+    
+    canvas.onMouseOut(fn() {
+        isDrawing = false
+    })
+    
+    canvas.onMouseMove(fn(x, y) {
+        if isDrawing {
+            drawLine(lastX, lastY, x, y, currentColor, brushSize)
+            lastX = x
+            lastY = y
+        }
+    })
+    
+    // Right click to erase
+    canvas.onRightClick(fn(x, y) {
+        drawPoint(x, y, "white", brushSize * 2)
+    })
+    
+    // Double click to fill (would need backend support)
+    canvas.onDblClick(fn(x, y) {
+        print("Fill at (" + str(x) + ", " + str(y) + ") with " + currentColor)
+    })
+    
+    // Drag and drop support for loading images
+    canvas.onDragEnter(fn() {
+        canvas.bg("lightgray")
+    })
+    
+    canvas.onDragLeave(fn() {
+        canvas.bg("white")
+    })
+    
+    canvas.onDrop(fn(files) {
+        canvas.bg("white")
+        print("Dropped files: " + str(files))
+        // Load image functionality would go here
+    })
+    
+    // Keyboard shortcuts
+    window.onKeyDown(fn(key) {
+        if key == "c" {
+            // Clear on 'C' key
+            print("Clear canvas")
+        } else if key == "s" && window.onKeyDown.ctrl {
+            // Save on Ctrl+S
+            btnSave.click()
+        } else if key == "+" || key == "=" {
+            // Increase brush size
+            if brushSize < 20 {
+                brushSize = brushSize + 1
+                sizeLabel.text("Size: " + str(brushSize))
+            }
+        } else if key == "-" {
+            // Decrease brush size
+            if brushSize > 1 {
+                brushSize = brushSize - 1
+                sizeLabel.text("Size: " + str(brushSize))
+            }
+        }
+    })
+    
+    // Status bar
+    let statusBar = ui.label("Ready - Left click to draw, Right click to erase")
+    statusBar.font("sans", 10)
+    
+    // Main layout
+    let layout = ui.col()
+    layout.add(toolbar)
+    layout.add(canvas)
+    layout.add(statusBar)
+    
+    window.add(layout)
+    
+    // Window events
+    window.onResize(fn(width, height) {
+        print("Window resized to " + str(width) + "x" + str(height))
+        // Adjust canvas size
+    })
+    
+    window.onFocus(fn() {
+        statusBar.text("Ready")
+    })
+    
+    window.onBlur(fn() {
+        statusBar.text("Window inactive")
+    })
+    
+    window.onClose(fn() {
+        print("Paint closed")
+    })
+    
+    // Show window
+    window.show()
+    
+    // Run event loop
+    while window.visible() {
+        sleep(16) // ~60fps
+    }
+}
+
+// Helper functions for drawing (would be implemented by backend)
+fn drawPoint(x, y, color, size) {
+    // Backend would draw a filled circle at x,y with given color and size
+    print("drawPoint(" + str(x) + ", " + str(y) + ", " + color + ", " + str(size) + ")")
+}
+
+fn drawLine(x1, y1, x2, y2, color, size) {
+    // Backend would draw a line from x1,y1 to x2,y2 with given color and size
+    print("drawLine(" + str(x1) + ", " + str(y1) + ", " + str(x2) + ", " + str(y2) + ", " + color + ", " + str(size) + ")")
+}
+
+main()

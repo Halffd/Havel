@@ -603,11 +603,14 @@ add_library(gtk_extension MODULE src/extensions/gtk/gtk_extension.cpp)
 target_include_directories(gtk_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
+    ${GTK4_INCLUDE_DIRS}
 )
 target_link_libraries(gtk_extension PRIVATE
     havel_extension_runtime
+    ${GTK4_LIBRARIES}
     dl
 )
+target_compile_definitions(gtk_extension PRIVATE HAVE_GTK_BACKEND)
 set_target_properties(gtk_extension PROPERTIES
     PREFIX ""
     C_STANDARD 11
@@ -623,11 +626,16 @@ add_library(imgui_extension MODULE src/extensions/imgui/imgui_extension.cpp)
 target_include_directories(imgui_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
+    ${GLFW3_INCLUDE_DIRS}
+    ${IMGUI_INCLUDE_DIR}
 )
 target_link_libraries(imgui_extension PRIVATE
     havel_extension_runtime
+    ${GLFW3_LIBRARIES}
+    OpenGL::GL
     dl
 )
+target_compile_definitions(imgui_extension PRIVATE HAVE_IMGUI_BACKEND)
 set_target_properties(imgui_extension PROPERTIES
     PREFIX ""
     C_STANDARD 11

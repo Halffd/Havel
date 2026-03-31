@@ -7,6 +7,7 @@
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QImage>
 #include <QIODevice>
 #include <QList>
 #include <QMimeData>

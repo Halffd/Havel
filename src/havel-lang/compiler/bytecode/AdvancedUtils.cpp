@@ -1,5 +1,6 @@
-#include "AdvancedUtils.hpp"
-#include "BytecodeDisassembler.hpp"
+#include "havel-lang/ast/AST.h"
+#include "havel-lang/compiler/bytecode/AdvancedUtils.hpp"
+#include "havel-lang/compiler/bytecode/BytecodeDisassembler.hpp"
 #include <chrono>
 #include <fstream>
 #include <sstream>

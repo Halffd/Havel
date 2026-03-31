@@ -1,0 +1,203 @@
+// Calculator App - Demonstrates Havel UI module with events
+// Usage: havel calculator.havel
+
+fn main() {
+    // Check if UI is available
+    if !ui.isAvailable("qt") {
+        print("UI not available")
+        return
+    }
+    
+    // Set Qt backend (default)
+    ui.setApi("qt")
+    
+    // Current calculation state
+    let display = "0"
+    let currentVal = 0.0
+    let prevVal = 0.0
+    let operator = ""
+    let newNumber = true
+    
+    // Create main window
+    let window = ui.window("Calculator", {
+        width: 300,
+        height: 400,
+        resizable: false
+    })
+    
+    // Display field
+    let displayField = ui.text(display)
+    displayField.alignRight()
+    displayField.font("monospace", 24)
+    
+    // Number buttons container
+    let buttons = ui.grid(4)
+    
+    // Helper to update display
+    fn updateDisplay(val) {
+        display = val
+        displayField.text(display)
+    }
+    
+    // Helper to handle number input
+    fn handleNumber(num) {
+        if newNumber {
+            display = str(num)
+            newNumber = false
+        } else {
+            if display == "0" {
+                display = str(num)
+            } else {
+                display = display + str(num)
+            }
+        }
+        updateDisplay(display)
+        currentVal = toNum(display)
+    }
+    
+    // Helper to handle operator
+    fn handleOperator(op) {
+        prevVal = currentVal
+        operator = op
+        newNumber = true
+    }
+    
+    // Helper to calculate result
+    fn calculate() {
+        let result = 0.0
+        if operator == "+" {
+            result = prevVal + currentVal
+        } else if operator == "-" {
+            result = prevVal - currentVal
+        } else if operator == "*" {
+            result = prevVal * currentVal
+        } else if operator == "/" {
+            if currentVal != 0 {
+                result = prevVal / currentVal
+            } else {
+                updateDisplay("Error")
+                return
+            }
+        }
+        
+        currentVal = result
+        display = str(result)
+        updateDisplay(display)
+        newNumber = true
+        operator = ""
+    }
+    
+    // Helper to clear
+    fn clear() {
+        display = "0"
+        currentVal = 0.0
+        prevVal = 0.0
+        operator = ""
+        newNumber = true
+        updateDisplay(display)
+    }
+    
+    // Create number buttons 7-9
+    let btn7 = ui.btn("7")
+    btn7.onClick(fn() { handleNumber(7) })
+    
+    let btn8 = ui.btn("8")
+    btn8.onClick(fn() { handleNumber(8) })
+    
+    let btn9 = ui.btn("9")
+    btn9.onClick(fn() { handleNumber(9) })
+    
+    let btnDiv = ui.btn("/")
+    btnDiv.onClick(fn() { handleOperator("/") })
+    
+    // Row 4-6
+    let btn4 = ui.btn("4")
+    btn4.onClick(fn() { handleNumber(4) })
+    
+    let btn5 = ui.btn("5")
+    btn5.onClick(fn() { handleNumber(5) })
+    
+    let btn6 = ui.btn("6")
+    btn6.onClick(fn() { handleNumber(6) })
+    
+    let btnMul = ui.btn("*")
+    btnMul.onClick(fn() { handleOperator("*") })
+    
+    // Row 1-3
+    let btn1 = ui.btn("1")
+    btn1.onClick(fn() { handleNumber(1) })
+    
+    let btn2 = ui.btn("2")
+    btn2.onClick(fn() { handleNumber(2) })
+    
+    let btn3 = ui.btn("3")
+    btn3.onClick(fn() { handleNumber(3) })
+    
+    let btnSub = ui.btn("-")
+    btnSub.onClick(fn() { handleOperator("-") })
+    
+    // Row 0 and operators
+    let btn0 = ui.btn("0")
+    btn0.onClick(fn() { handleNumber(0) })
+    
+    let btnDot = ui.btn(".")
+    btnDot.onClick(fn() {
+        if !contains(display, ".") {
+            display = display + "."
+            updateDisplay(display)
+        }
+    })
+    
+    let btnEq = ui.btn("=")
+    btnEq.onClick(calculate)
+    
+    let btnAdd = ui.btn("+")
+    btnAdd.onClick(fn() { handleOperator("+") })
+    
+    // Clear button
+    let btnClear = ui.btn("C")
+    btnClear.onClick(clear)
+    btnClear.bg("red")
+    btnClear.fg("white")
+    
+    // Add all buttons to grid
+    buttons.add(btn7)
+    buttons.add(btn8)
+    buttons.add(btn9)
+    buttons.add(btnDiv)
+    buttons.add(btn4)
+    buttons.add(btn5)
+    buttons.add(btn6)
+    buttons.add(btnMul)
+    buttons.add(btn1)
+    buttons.add(btn2)
+    buttons.add(btn3)
+    buttons.add(btnSub)
+    buttons.add(btn0)
+    buttons.add(btnDot)
+    buttons.add(btnEq)
+    buttons.add(btnAdd)
+    
+    // Main layout
+    let layout = ui.col()
+    layout.add(displayField)
+    layout.add(btnClear)
+    layout.add(buttons)
+    
+    window.add(layout)
+    
+    // Handle window close
+    window.onClose(fn() {
+        print("Calculator closed")
+    })
+    
+    // Show window
+    window.show()
+    
+    // Run event loop
+    while window.visible() {
+        sleep(10)
+    }
+}
+
+main()

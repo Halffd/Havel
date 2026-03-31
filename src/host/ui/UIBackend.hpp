@@ -69,6 +69,7 @@ public:
     virtual std::shared_ptr<ui::UIElement> col() = 0;
     virtual std::shared_ptr<ui::UIElement> grid(int cols) = 0;
     virtual std::shared_ptr<ui::UIElement> scroll() = 0;
+    virtual std::shared_ptr<ui::UIElement> canvas(int width, int height) = 0;
 
     // Menu elements
     virtual std::shared_ptr<ui::UIElement> menu(const std::string &title) = 0;

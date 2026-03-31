@@ -213,6 +213,14 @@ std::shared_ptr<ui::UIElement> ExtensionUIBridge::scroll() {
   return createElement(ui::ElementType::SCROLL);
 }
 
+std::shared_ptr<ui::UIElement> ExtensionUIBridge::canvas(int width, int height) {
+  auto elem = createElement(ui::ElementType::CANVAS);
+  elem->set("width", static_cast<int64_t>(width));
+  elem->set("height", static_cast<int64_t>(height));
+  elem->set("background", std::string("white"));
+  return elem;
+}
+
 std::shared_ptr<ui::UIElement> ExtensionUIBridge::menu(const std::string& title) {
   auto elem = createElement(ui::ElementType::MENU);
   elem->set("title", title);

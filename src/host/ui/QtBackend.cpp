@@ -113,6 +113,14 @@ std::shared_ptr<ui::UIElement> QtBackend::scroll() {
     return service_->scroll();
 }
 
+std::shared_ptr<ui::UIElement> QtBackend::canvas(int width, int height) {
+    auto elem = std::make_shared<ui::UIElement>(ui::ElementType::CANVAS);
+    elem->set("width", static_cast<int64_t>(width));
+    elem->set("height", static_cast<int64_t>(height));
+    elem->set("background", std::string("white"));
+    return elem;
+}
+
 std::shared_ptr<ui::UIElement> QtBackend::menu(const std::string &title) {
     return service_->menu(title);
 }

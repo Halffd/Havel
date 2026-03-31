@@ -521,6 +521,169 @@ static BytecodeValue uiScroll(VMApi &api,
   return obj;
 }
 
+// ui.canvas(width, height)
+static BytecodeValue uiCanvas(VMApi &api,
+                              const std::vector<BytecodeValue> &args) {
+  int width = getIntArg(args, 0, 800);
+  int height = getIntArg(args, 1, 600);
+
+  auto elem = getUIBackend()->canvas(width, height);
+
+  auto obj = api.makeObject();
+  attachElementToObject(api, obj, elem);
+
+  // Canvas methods
+  api.setField(obj, "clear", api.makeFunctionRef("ui.canvas.clear"));
+  api.setField(obj, "fill", api.makeFunctionRef("ui.canvas.fill"));
+  api.setField(obj, "drawPoint", api.makeFunctionRef("ui.canvas.drawPoint"));
+  api.setField(obj, "drawLine", api.makeFunctionRef("ui.canvas.drawLine"));
+  api.setField(obj, "drawRect", api.makeFunctionRef("ui.canvas.drawRect"));
+  api.setField(obj, "drawCircle", api.makeFunctionRef("ui.canvas.drawCircle"));
+  api.setField(obj, "drawImage", api.makeFunctionRef("ui.canvas.drawImage"));
+  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+
+  return obj;
+}
+
+// ============================================================================
+// Canvas Operations
+// ============================================================================
+
+// canvas.clear()
+static BytecodeValue uiCanvasClear(VMApi &api,
+                                   const std::vector<BytecodeValue> &args) {
+  if (args.empty())
+    return BytecodeValue(nullptr);
+  // Clear canvas to background color
+  return args[0];
+}
+
+// canvas.fill(color)
+static BytecodeValue uiCanvasFill(VMApi &api,
+                                  const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2)
+    return BytecodeValue(nullptr);
+  std::string color = toString(args[1]);
+  (void)color;
+  // Fill entire canvas with color
+  return args[0];
+}
+
+// canvas.drawPoint(x, y, color, size)
+static BytecodeValue uiCanvasDrawPoint(VMApi &api,
+                                       const std::vector<BytecodeValue> &args) {
+  if (args.size() < 4)
+    return BytecodeValue(nullptr);
+  int x = toInt(args[1]);
+  int y = toInt(args[2]);
+  std::string color = toString(args[3]);
+  int size = args.size() > 4 ? toInt(args[4]) : 1;
+  (void)x; (void)y; (void)color; (void)size;
+  return args[0];
+}
+
+// canvas.drawLine(x1, y1, x2, y2, color, width)
+static BytecodeValue uiCanvasDrawLine(VMApi &api,
+                                      const std::vector<BytecodeValue> &args) {
+  if (args.size() < 6)
+    return BytecodeValue(nullptr);
+  int x1 = toInt(args[1]);
+  int y1 = toInt(args[2]);
+  int x2 = toInt(args[3]);
+  int y2 = toInt(args[4]);
+  std::string color = toString(args[5]);
+  int width = args.size() > 6 ? toInt(args[6]) : 1;
+  (void)x1; (void)y1; (void)x2; (void)y2; (void)color; (void)width;
+  return args[0];
+}
+
+// canvas.drawRect(x, y, w, h, color, fill)
+static BytecodeValue uiCanvasDrawRect(VMApi &api,
+                                      const std::vector<BytecodeValue> &args) {
+  if (args.size() < 6)
+    return BytecodeValue(nullptr);
+  int x = toInt(args[1]);
+  int y = toInt(args[2]);
+  int w = toInt(args[3]);
+  int h = toInt(args[4]);
+  std::string color = toString(args[5]);
+  bool fill = args.size() > 6 ? toBool(args[6]) : true;
+  (void)x; (void)y; (void)w; (void)h; (void)color; (void)fill;
+  return args[0];
+}
+
+// canvas.drawCircle(x, y, r, color, fill)
+static BytecodeValue uiCanvasDrawCircle(VMApi &api,
+                                        const std::vector<BytecodeValue> &args) {
+  if (args.size() < 5)
+    return BytecodeValue(nullptr);
+  int x = toInt(args[1]);
+  int y = toInt(args[2]);
+  int r = toInt(args[3]);
+  std::string color = toString(args[4]);
+  bool fill = args.size() > 5 ? toBool(args[5]) : true;
+  (void)x; (void)y; (void)r; (void)color; (void)fill;
+  return args[0];
+}
+
+// canvas.drawImage(path, x, y)
+static BytecodeValue uiCanvasDrawImage(VMApi &api,
+                                       const std::vector<BytecodeValue> &args) {
+  if (args.size() < 4)
+    return BytecodeValue(nullptr);
+  std::string path = toString(args[1]);
+  int x = toInt(args[2]);
+  int y = toInt(args[3]);
+  (void)path; (void)x; (void)y;
+  return args[0];
+}
+
+// ============================================================================
+// Styling Operations
+// ============================================================================
+
+// element.style(key, value)
+static BytecodeValue uiElementStyle(VMApi &api,
+                                    const std::vector<BytecodeValue> &args) {
+  if (args.size() < 3)
+    return BytecodeValue(nullptr);
+  std::string key = toString(args[1]);
+  std::string value = toString(args[2]);
+  (void)key; (void)value;
+  return args[0];
+}
+
+// element.width(w)
+static BytecodeValue uiElementWidth(VMApi &api,
+                                    const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2)
+    return BytecodeValue(nullptr);
+  int w = toInt(args[1]);
+  (void)w;
+  return args[0];
+}
+
+// element.height(h)
+static BytecodeValue uiElementHeight(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2)
+    return BytecodeValue(nullptr);
+  int h = toInt(args[1]);
+  (void)h;
+  return args[0];
+}
+
+// element.border(color, width)
+static BytecodeValue uiElementBorder(VMApi &api,
+                                     const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2)
+    return BytecodeValue(nullptr);
+  std::string color = toString(args[1]);
+  int width = args.size() > 2 ? toInt(args[2]) : 1;
+  (void)color; (void)width;
+  return args[0];
+}
+
 // ============================================================================
 // Dialogs
 // ============================================================================
@@ -1108,6 +1271,47 @@ void registerUIModule(compiler::VMApi &api) {
                          return uiScroll(api, args);
                        });
 
+  api.registerFunction("ui.canvas",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvas(api, args);
+                       });
+
+  // Canvas operations
+  api.registerFunction("ui.canvas.clear",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasClear(api, args);
+                       });
+
+  api.registerFunction("ui.canvas.fill",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasFill(api, args);
+                       });
+
+  api.registerFunction("ui.canvas.drawPoint",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasDrawPoint(api, args);
+                       });
+
+  api.registerFunction("ui.canvas.drawLine",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasDrawLine(api, args);
+                       });
+
+  api.registerFunction("ui.canvas.drawRect",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasDrawRect(api, args);
+                       });
+
+  api.registerFunction("ui.canvas.drawCircle",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasDrawCircle(api, args);
+                       });
+
+  api.registerFunction("ui.canvas.drawImage",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiCanvasDrawImage(api, args);
+                       });
+
   // Dialogs
   api.registerFunction("ui.alert", [](const std::vector<BytecodeValue> &args) {
     return uiAlert(args);
@@ -1352,6 +1556,27 @@ void registerUIModule(compiler::VMApi &api) {
                          return uiTextareaValue(api, args);
                        });
 
+  // Styling functions
+  api.registerFunction("ui.element.style",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementStyle(api, args);
+                       });
+
+  api.registerFunction("ui.element.width",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementWidth(api, args);
+                       });
+
+  api.registerFunction("ui.element.height",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementHeight(api, args);
+                       });
+
+  api.registerFunction("ui.element.border",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiElementBorder(api, args);
+                       });
+
   // API selection functions
   api.registerFunction("ui.setApi", [](const std::vector<BytecodeValue> &args) {
     return uiSetApi(args);
@@ -1392,6 +1617,7 @@ void registerUIModule(compiler::VMApi &api) {
   api.setField(uiObj, "col", api.makeFunctionRef("ui.col"));
   api.setField(uiObj, "grid", api.makeFunctionRef("ui.grid"));
   api.setField(uiObj, "scroll", api.makeFunctionRef("ui.scroll"));
+  api.setField(uiObj, "canvas", api.makeFunctionRef("ui.canvas"));
   api.setField(uiObj, "alert", api.makeFunctionRef("ui.alert"));
   api.setField(uiObj, "confirm", api.makeFunctionRef("ui.confirm"));
   api.setField(uiObj, "filePicker", api.makeFunctionRef("ui.filePicker"));

@@ -176,6 +176,7 @@ inline constexpr const char *ROW = "row";
 inline constexpr const char *COL = "col";
 inline constexpr const char *GRID = "grid";
 inline constexpr const char *SCROLL = "scroll";
+inline constexpr const char *CANVAS = "canvas";
 
 inline constexpr const char *MENU = "menu";
 inline constexpr const char *MENU_ITEM = "menu_item";

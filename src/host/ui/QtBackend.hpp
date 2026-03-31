@@ -62,6 +62,7 @@ public:
     std::shared_ptr<ui::UIElement> col() override;
     std::shared_ptr<ui::UIElement> grid(int cols) override;
     std::shared_ptr<ui::UIElement> scroll() override;
+    std::shared_ptr<ui::UIElement> canvas(int width, int height) override;
 
     // Menu elements
     std::shared_ptr<ui::UIElement> menu(const std::string &title) override;

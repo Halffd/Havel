@@ -1073,4 +1073,13 @@ bool UIService::trayIsVisible() const {
   return trayIcon_ && trayIcon_->isVisible();
 }
 
+// Apply style to element
+void UIService::applyStyle(std::shared_ptr<ui::UIElement> element,
+                           const std::string &key,
+                           const ui::PropValue &value) {
+  if (!element)
+    return;
+  element->set(key, value);
+}
+
 } // namespace havel::host

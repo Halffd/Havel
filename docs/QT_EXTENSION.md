@@ -92,6 +92,113 @@ qt.quit()
 
 // Process pending events
 qt.processEvents()
+
+// Process registered callbacks (call in your main loop)
+qt.processCallbacks()
+```
+
+### Event System
+
+The Qt extension supports event callbacks for widget interactions:
+
+```havel
+// Button click event
+qt.onClicked(button, fn() {
+    print("Button clicked!")
+})
+
+// Text change event (QLineEdit)
+qt.onTextChanged(lineEdit, fn(text) {
+    print("Text changed: " + text)
+})
+
+// Value change event (QSlider, QSpinBox)
+qt.onValueChanged(slider, fn(value) {
+    print("Value: " + value)
+})
+
+// State change event (QCheckBox, QRadioButton)
+qt.onStateChanged(checkbox, fn() {
+    print("State changed")
+})
+
+// Timer timeout event
+qt.onTimerTimeout(timer, fn() {
+    print("Timer ticked")
+})
+
+// Return pressed event (QLineEdit)
+qt.onReturnPressed(lineEdit, fn() {
+    print("Enter pressed")
+})
+
+// Item activated event (QComboBox, QListWidget)
+qt.onItemActivated(comboBox, fn() {
+    print("Item activated")
+})
+
+// Current index changed event (QComboBox, QTabWidget)
+qt.onCurrentIndexChanged(comboBox, fn() {
+    let text = qt.comboBoxCurrentText(comboBox)
+    print("Selected: " + text)
+})
+```
+
+### Complete Event Example
+
+```havel
+import qt from "extension:qt"
+
+qt.init()
+
+let win = qt.mainWindowNew()
+qt.widgetSetWindowTitle(win, "Events Demo")
+qt.widgetResize(win, 400, 300)
+
+let layout = qt.vBoxLayoutNew()
+
+// Button with click handler
+let button = qt.pushButtonNew("Click Me")
+qt.onClicked(button, fn() {
+    print("Button clicked!")
+})
+qt.layoutAddWidget(layout, button)
+
+// Line edit with text change handler
+let edit = qt.lineEditNew("")
+qt.onTextChanged(edit, fn(text) {
+    print("Typed: " + text)
+})
+qt.layoutAddWidget(layout, edit)
+
+// Slider with value change handler
+let slider = qt.sliderNew(1)  // Vertical
+qt.sliderSetRange(slider, 0, 100)
+qt.onValueChanged(slider, fn(v) {
+    print("Slider: " + str(v))
+})
+qt.layoutAddWidget(layout, slider)
+
+// Timer with timeout handler
+let timer = qt.timerNew()
+qt.timerSetInterval(timer, 1000)
+qt.onTimerTimeout(timer, fn() {
+    print("Timer tick!")
+})
+qt.timerStart(timer)
+
+let container = qt.mainWindowNew()
+qt.widgetSetLayout(container, layout)
+qt.mainWindowSetCentralWidget(win, container)
+
+qt.widgetShow(win)
+
+// Main loop with callback processing
+while (true) {
+    qt.processEvents()
+    qt.processCallbacks()
+    sleep(0.016)
+}
 ```
 
 ### Timer

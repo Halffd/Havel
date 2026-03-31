@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BytecodeIR.hpp"
+#include "GC.hpp"
 #include <cstdint>
 #include <memory>
 #include <vector>

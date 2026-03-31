@@ -1,6 +1,9 @@
 #pragma once
 
 #include "havel-lang/ast/AST.h"
+#include "havel-lang/compiler/bytecode/BytecodeIR.hpp"
+#include "havel-lang/compiler/bytecode/CompilationPipeline.hpp"
+#include <filesystem>
 #include <memory>
 #include <vector>
 #include <functional>
@@ -267,86 +270,6 @@ private:
 };
 
 // ============================================================================
-// BytecodeInterpreter - Direct interpreter for bytecode
-// ============================================================================
-class BytecodeInterpreter {
-public:
-  struct Options {
-    bool traceExecution = false;
-    bool enableProfiling = false;
-    size_t maxStackSize = 10000;
-    size_t maxCallDepth = 1000;
-  };
-
-  explicit BytecodeInterpreter(const Options& options = Options{});
-
-  // Execution
-  BytecodeValue execute(const BytecodeChunk& chunk,
-                        const std::string& functionName = "main",
-                        const std::vector<BytecodeValue>& args = {});
-
-  // Step execution (for debugging)
-  bool step();
-  bool isRunning() const { return state_ == State::Running; }
-  bool isFinished() const { return state_ == State::Finished; }
-  bool hasError() const { return state_ == State::Error; }
-
-  // State inspection
-  const BytecodeValue& getRegister(uint32_t index) const;
-  void setRegister(uint32_t index, const BytecodeValue& value);
-  const Instruction& getCurrentInstruction() const;
-
-  // Control
-  void pause();
-  void resume();
-  void stop();
-  void reset();
-
-  // Profiling
-  struct Profile {
-    uint64_t instructionsExecuted = 0;
-    uint64_t functionCalls = 0;
-    double executionTimeMs = 0.0;
-    std::unordered_map<OpCode, uint64_t> opcodeCounts;
-  };
-
-  Profile getProfile() const { return profile_; }
-  void resetProfile() { profile_ = Profile{}; }
-
-private:
-  enum class State { Idle, Running, Paused, Finished, Error };
-
-  Options options_;
-  State state_ = State::Idle;
-  Profile profile_;
-
-  // Execution state
-  const BytecodeChunk* currentChunk_ = nullptr;
-  const BytecodeFunction* currentFunction_ = nullptr;
-  size_t ip_ = 0; // Instruction pointer
-  std::vector<BytecodeValue> registers_;
-  std::vector<BytecodeValue> stack_;
-  std::vector<CallFrame> callStack_;
-
-  // Execution
-  void executeInstruction(const Instruction& instr);
-  void executeBinary(OpCode op);
-  void executeCall(uint32_t argCount);
-  void executeReturn();
-  void executeJump(uint32_t target);
-  void executeConditionalJump(bool condition, uint32_t target);
-
-  // Error handling
-  void setError(const std::string& message);
-  std::string errorMessage_;
-
-  // Helper
-  BytecodeValue pop();
-  void push(const BytecodeValue& value);
-  BytecodeValue& top(size_t offset = 0);
-};
-
-// ============================================================================
 // ConfigManager - Compiler configuration management
 // ============================================================================
 class ConfigManager {
@@ -432,53 +355,6 @@ private:
 
   std::string computeHash(const std::filesystem::path& path) const;
   bool isEntryValid(const CacheEntry& entry) const;
-};
-
-// ============================================================================
-// JITCompiler - Stub for future JIT compilation support
-// ============================================================================
-class JITCompiler {
-public:
-  struct Options {
-    bool enabled = false;
-    int optimizationLevel = 2;
-    size_t minFunctionSize = 10; // Only JIT functions larger than this
-    bool useInlineCaching = true;
-  };
-
-  explicit JITCompiler(const Options& options = Options{});
-  ~JITCompiler();
-
-  // JIT compilation
-  void* compileFunction(const BytecodeFunction& function);
-  void compileChunk(const BytecodeChunk& chunk);
-
-  // Execution
-  BytecodeValue executeCompiled(void* compiledCode,
-                                 const std::vector<BytecodeValue>& args);
-
-  // Statistics
-  struct Stats {
-    size_t functionsCompiled = 0;
-    size_t bytesGenerated = 0;
-    double compileTimeMs = 0.0;
-    double executionTimeMs = 0.0;
-  };
-
-  Stats getStats() const { return stats_; }
-
-  // Control
-  void enable() { options_.enabled = true; }
-  void disable() { options_.enabled = false; }
-  bool isEnabled() const { return options_.enabled; }
-
-private:
-  Options options_;
-  Stats stats_;
-
-  // Platform-specific implementation would go here
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
 };
 
 } // namespace havel::compiler

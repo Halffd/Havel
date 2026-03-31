@@ -892,11 +892,16 @@ struct Qt6Libs {
         LOAD_CORE(raise);
         LOAD_CORE(lower);
         LOAD_CORE(activateWindow);
-        LOAD_CORE(setStyleSheet);
-        LOAD_CORE(styleSheet);
-        LOAD_CORE(setFont);
-        LOAD_CORE(setLayout);
-        LOAD_CORE(layout);
+        qWidget_setStyleSheet = qtCore.getSymbol<QWidgetSetStyleSheetFn>("_ZN7QWidget14setStyleSheetERK7QString");
+        if (!qWidget_setStyleSheet) qWidget_setStyleSheet = qtCore.getSymbol<QWidgetSetStyleSheetFn>("setStyleSheet");
+        qWidget_styleSheet = qtCore.getSymbol<QWidgetStyleSheetFn>("_ZNK7QWidget10styleSheetEv");
+        if (!qWidget_styleSheet) qWidget_styleSheet = qtCore.getSymbol<QWidgetStyleSheetFn>("styleSheet");
+        qWidget_setFont = qtCore.getSymbol<QWidgetSetFontFn>("_ZN7QWidget7setFontERK5QFont");
+        if (!qWidget_setFont) qWidget_setFont = qtCore.getSymbol<QWidgetSetFontFn>("setFont");
+        qWidget_setLayout = qtCore.getSymbol<QWidgetSetLayoutFn>("_ZN7QWidget9setLayoutEP7QLayout");
+        if (!qWidget_setLayout) qWidget_setLayout = qtCore.getSymbol<QWidgetSetLayoutFn>("setLayout");
+        qWidget_layout = qtCore.getSymbol<QWidgetLayoutFn>("_ZNK7QWidget6layoutEv");
+        if (!qWidget_layout) qWidget_layout = qtCore.getSymbol<QWidgetLayoutFn>("layout");
         
         /* QMainWindow */
         qMainWindow_new = qtWidgets.getSymbol<QMainWindowCtorFn>("_ZN11QMainWindowC1EP7QWidget6QFlagsIN2Qt10WindowTypeEE");

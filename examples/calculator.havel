@@ -140,16 +140,19 @@ fn main() {
     let btn0 = ui.btn("0")
     btn0.onClick(fn() { handleNumber(0) })
     
+    // Pre-declare loop variable at function scope for closure access
+    let dotIndex = 0
+    
     let btnDot = ui.btn(".")
     btnDot.onClick(fn() {
-        // Check if display already contains decimal point
-        let hasDot = false
+        // Find if display contains decimal point
+        dotIndex = -1
         for let i = 0; i < len(display); i = i + 1 {
             if display[i] == "." {
-                hasDot = true
+                dotIndex = i
             }
         }
-        if !hasDot {
+        if dotIndex == -1 {
             display = display + "."
             updateDisplay(display)
         }

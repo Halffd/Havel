@@ -100,6 +100,49 @@ gtk.run()      // Run main loop (blocking)
 gtk.quit()     // Quit main loop
 ```
 
+### Event System
+
+The GTK extension supports event callbacks for widget interactions:
+
+```havel
+// Button click event
+gtk.onClicked(button, fn() {
+    print("Button clicked!")
+})
+
+// Text change event (GtkEntry)
+gtk.onTextChanged(entry, fn(text) {
+    print("Text changed: " + text)
+})
+
+// Value change event (GtkScale, GtkSpinButton)
+gtk.onValueChanged(scale, fn() {
+    let val = gtk.scaleGetValue(scale)
+    print("Value: " + val)
+})
+
+// State change event (GtkCheckButton, GtkSwitch)
+gtk.onStateChanged(checkButton, fn() {
+    let active = gtk.toggleButtonGetActive(checkButton)
+    print("State: " + active)
+})
+
+// Selection change event (GtkComboBoxText)
+gtk.onSelectionChanged(comboBox, fn() {
+    let text = gtk.comboBoxTextGetActiveId(comboBox)
+    print("Selected: " + text)
+})
+
+// Tab change event (GtkNotebook, GtkStack)
+gtk.onTabChanged(notebook, fn() {
+    let idx = gtk.notebookGetCurrentPage(notebook)
+    print("Tab: " + idx)
+})
+
+// Process callbacks in main loop
+gtk.processCallbacks()
+```
+
 ### Windows
 
 ```havel

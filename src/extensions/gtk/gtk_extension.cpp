@@ -21,6 +21,8 @@ typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
 typedef struct _GtkApplication GtkApplication;
 typedef struct _GtkTextBuffer GtkTextBuffer;
+typedef struct _GtkTextView GtkTextView;
+typedef struct _GtkDialog GtkDialog;
 typedef struct _GtkAdjustment GtkAdjustment;
 typedef struct _GtkPixbuf GtkPixbuf;
 typedef struct _GdkPixbuf GdkPixbuf;
@@ -55,6 +57,29 @@ typedef int (*GtkWindowIsMaximizedFn)(GtkWindow* win);
 typedef void (*GtkWindowMinimizeFn)(GtkWindow* win);
 typedef void (*GtkWindowPresentFn)(GtkWindow* win);
 
+/* Typedef aliases for macro naming convention */
+typedef GtkWindowNewFn gtk_window_newFn;
+typedef GtkWindowSetTitleFn gtk_window_set_titleFn;
+typedef GtkWindowSetDefaultSizeFn gtk_window_set_default_sizeFn;
+typedef GtkWindowMoveFn gtk_window_moveFn;
+typedef GtkWindowSetPositionFn gtk_window_set_positionFn;
+typedef GtkWindowShowFn gtk_window_showFn;
+typedef GtkWindowSetChildFn gtk_window_set_childFn;
+typedef GtkWindowDestroyFn gtk_window_destroyFn;
+typedef GtkWindowCloseFn gtk_window_closeFn;
+typedef GtkWindowGetWidthFn gtk_window_get_widthFn;
+typedef GtkWindowGetHeightFn gtk_window_get_heightFn;
+typedef GtkWindowSetResizableFn gtk_window_set_resizableFn;
+typedef GtkWindowGetResizableFn gtk_window_get_resizableFn;
+typedef GtkWindowSetDecoratedFn gtk_window_set_decoratedFn;
+typedef GtkWindowSetModalFn gtk_window_set_modalFn;
+typedef GtkWindowIsModalFn gtk_window_is_modalFn;
+typedef GtkWindowMaximizeFn gtk_window_maximizeFn;
+typedef GtkWindowUnmaximizeFn gtk_window_unmaximizeFn;
+typedef GtkWindowIsMaximizedFn gtk_window_is_maximizedFn;
+typedef GtkWindowMinimizeFn gtk_window_minimizeFn;
+typedef GtkWindowPresentFn gtk_window_presentFn;
+
 /* GTK4 function pointer types - Label */
 typedef GtkWidget* (*GtkLabelNewFn)(const char* str);
 typedef void (*GtkLabelSetTextFn)(GtkWidget* label, const char* text);
@@ -68,6 +93,19 @@ typedef int (*GtkLabelGetSelectableFn)(GtkWidget* label);
 typedef void (*GtkLabelSetLineWrapFn)(GtkWidget* label, int wrap);
 typedef void (*GtkLabelSetEllipsizeFn)(GtkWidget* label, int mode);
 
+/* Typedef aliases for label functions */
+typedef GtkLabelNewFn gtk_label_newFn;
+typedef GtkLabelSetTextFn gtk_label_set_textFn;
+typedef GtkLabelGetTextFn gtk_label_get_textFn;
+typedef GtkLabelSetMarkupFn gtk_label_set_markupFn;
+typedef GtkLabelSetJustifyFn gtk_label_set_justifyFn;
+typedef GtkLabelSetXalignFn gtk_label_set_xalignFn;
+typedef GtkLabelSetYalignFn gtk_label_set_yalignFn;
+typedef GtkLabelSetSelectableFn gtk_label_set_selectableFn;
+typedef GtkLabelGetSelectableFn gtk_label_get_selectableFn;
+typedef GtkLabelSetLineWrapFn gtk_label_set_line_wrapFn;
+typedef GtkLabelSetEllipsizeFn gtk_label_set_ellipsizeFn;
+
 /* GTK4 function pointer types - Button */
 typedef GtkWidget* (*GtkButtonNewFn)(void);
 typedef GtkWidget* (*GtkButtonNewWithLabelFn)(const char* label);
@@ -78,6 +116,17 @@ typedef void (*GtkButtonSetChildFn)(GtkWidget* button, GtkWidget* child);
 typedef void (*GtkButtonClickedFn)(GtkWidget* button);
 typedef int (*GtkButtonGetHasFrameFn)(GtkWidget* button);
 typedef void (*GtkButtonSetHasFrameFn)(GtkWidget* button, int has_frame);
+
+/* Typedef aliases for Button functions */
+typedef GtkButtonNewFn gtk_button_newFn;
+typedef GtkButtonNewWithLabelFn gtk_button_new_with_labelFn;
+typedef GtkButtonSetLabelFn gtk_button_set_labelFn;
+typedef GtkButtonGetLabelFn gtk_button_get_labelFn;
+typedef GtkButtonSetIconNameFn gtk_button_set_icon_nameFn;
+typedef GtkButtonSetChildFn gtk_button_set_childFn;
+typedef GtkButtonClickedFn gtk_button_clickedFn;
+typedef GtkButtonGetHasFrameFn gtk_button_get_has_frameFn;
+typedef GtkButtonSetHasFrameFn gtk_button_set_has_frameFn;
 
 /* GTK4 function pointer types - ToggleButton/CheckButton */
 typedef GtkWidget* (*GtkToggleButtonNewFn)(void);
@@ -90,12 +139,30 @@ typedef GtkWidget* (*GtkCheckButtonNewWithLabelFn)(const char* label);
 typedef void (*GtkCheckButtonSetGroupFn)(GtkWidget* button, GtkWidget* group);
 typedef GtkWidget* (*GtkCheckButtonGetGroupFn)(GtkWidget* button);
 
+/* Typedef aliases for ToggleButton/CheckButton functions */
+typedef GtkToggleButtonNewFn gtk_toggle_button_newFn;
+typedef GtkToggleButtonNewWithLabelFn gtk_toggle_button_new_with_labelFn;
+typedef GtkToggleButtonSetActiveFn gtk_toggle_button_set_activeFn;
+typedef GtkToggleButtonGetActiveFn gtk_toggle_button_get_activeFn;
+typedef GtkToggleButtonToggledFn gtk_toggle_button_toggledFn;
+typedef GtkCheckButtonNewFn gtk_check_button_newFn;
+typedef GtkCheckButtonNewWithLabelFn gtk_check_button_new_with_labelFn;
+typedef GtkCheckButtonSetGroupFn gtk_check_button_set_groupFn;
+typedef GtkCheckButtonGetGroupFn gtk_check_button_get_groupFn;
+
 /* GTK4 function pointer types - Switch */
 typedef GtkWidget* (*GtkSwitchNewFn)(void);
 typedef void (*GtkSwitchSetActiveFn)(GtkWidget* sw, int is_active);
 typedef int (*GtkSwitchGetActiveFn)(GtkWidget* sw);
 typedef void (*GtkSwitchSetStateFn)(GtkWidget* sw, int state);
 typedef int (*GtkSwitchGetStateFn)(GtkWidget* sw);
+
+/* Typedef aliases for Switch functions */
+typedef GtkSwitchNewFn gtk_switch_newFn;
+typedef GtkSwitchSetActiveFn gtk_switch_set_activeFn;
+typedef GtkSwitchGetActiveFn gtk_switch_get_activeFn;
+typedef GtkSwitchSetStateFn gtk_switch_set_stateFn;
+typedef GtkSwitchGetStateFn gtk_switch_get_stateFn;
 
 /* GTK4 function pointer types - Entry */
 typedef GtkWidget* (*GtkEntryNewFn)(void);
@@ -116,6 +183,25 @@ typedef void (*GtkEntrySetWidthCharsFn)(GtkWidget* entry, int n_chars);
 typedef void (*GtkEntrySetXalignFn)(GtkWidget* entry, float xalign);
 typedef void (*GtkEntrySetInputPurposeFn)(GtkWidget* entry, int purpose);
 
+/* Typedef aliases for Entry functions */
+typedef GtkEntryNewFn gtk_entry_newFn;
+typedef GtkEntryGetTextFn gtk_entry_get_textFn;
+typedef GtkEntrySetTextFn gtk_entry_set_textFn;
+typedef GtkEntryAppendTextFn gtk_entry_append_textFn;
+typedef GtkEntryGetTextLengthFn gtk_entry_get_text_lengthFn;
+typedef GtkEntrySetPlaceholderTextFn gtk_entry_set_placeholder_textFn;
+typedef GtkEntryGetPlaceholderTextFn gtk_entry_get_placeholder_textFn;
+typedef GtkEntrySetEditableFn gtk_entry_set_editableFn;
+typedef GtkEntryGetEditableFn gtk_entry_get_editableFn;
+typedef GtkEntrySetVisibilityFn gtk_entry_set_visibilityFn;
+typedef GtkEntryGetVisibilityFn gtk_entry_get_visibilityFn;
+typedef GtkEntrySetMaxLengthFn gtk_entry_set_max_lengthFn;
+typedef GtkEntryGetMaxLengthFn gtk_entry_get_max_lengthFn;
+typedef GtkEntrySetActivatesDefaultFn gtk_entry_set_activates_defaultFn;
+typedef GtkEntrySetWidthCharsFn gtk_entry_set_width_charsFn;
+typedef GtkEntrySetXalignFn gtk_entry_set_xalignFn;
+typedef GtkEntrySetInputPurposeFn gtk_entry_set_input_purposeFn;
+
 /* GTK4 function pointer types - Box */
 typedef GtkWidget* (*GtkBoxNewFn)(int orientation, int spacing);
 typedef void (*GtkBoxAppendFn)(GtkWidget* box, GtkWidget* child);
@@ -128,6 +214,19 @@ typedef void (*GtkBoxSetSpacingFn)(GtkWidget* box, int spacing);
 typedef int (*GtkBoxGetSpacingFn)(GtkWidget* box);
 typedef void (*GtkBoxSetHomogeneousFn)(GtkWidget* box, int homogeneous);
 typedef int (*GtkBoxGetHomogeneousFn)(GtkWidget* box);
+
+/* Typedef aliases for Box functions */
+typedef GtkBoxNewFn gtk_box_newFn;
+typedef GtkBoxAppendFn gtk_box_appendFn;
+typedef GtkBoxPrependFn gtk_box_prependFn;
+typedef GtkBoxInsertChildAfterFn gtk_box_insert_child_afterFn;
+typedef GtkBoxInsertChildBeforeFn gtk_box_insert_child_beforeFn;
+typedef GtkBoxRemoveFn gtk_box_removeFn;
+typedef GtkBoxReorderChildFn gtk_box_reorder_childFn;
+typedef GtkBoxSetSpacingFn gtk_box_set_spacingFn;
+typedef GtkBoxGetSpacingFn gtk_box_get_spacingFn;
+typedef GtkBoxSetHomogeneousFn gtk_box_set_homogeneousFn;
+typedef GtkBoxGetHomogeneousFn gtk_box_get_homogeneousFn;
 
 /* GTK4 function pointer types - Grid */
 typedef GtkWidget* (*GtkGridNewFn)(void);
@@ -144,10 +243,30 @@ typedef int (*GtkGridGetRowHomogeneousFn)(GtkWidget* grid);
 typedef void (*GtkGridSetColumnHomogeneousFn)(GtkWidget* grid, int homogeneous);
 typedef int (*GtkGridGetColumnHomogeneousFn)(GtkWidget* grid);
 
+/* Typedef aliases for Grid functions */
+typedef GtkGridNewFn gtk_grid_newFn;
+typedef GtkGridAttachFn gtk_grid_attachFn;
+typedef GtkGridRemoveFn gtk_grid_removeFn;
+typedef GtkGridInsertRowFn gtk_grid_insert_rowFn;
+typedef GtkGridInsertColumnFn gtk_grid_insert_columnFn;
+typedef GtkGridSetRowSpacingFn gtk_grid_set_row_spacingFn;
+typedef GtkGridGetRowSpacingFn gtk_grid_get_row_spacingFn;
+typedef GtkGridSetColumnSpacingFn gtk_grid_set_column_spacingFn;
+typedef GtkGridGetColumnSpacingFn gtk_grid_get_column_spacingFn;
+typedef GtkGridSetRowHomogeneousFn gtk_grid_set_row_homogeneousFn;
+typedef GtkGridGetRowHomogeneousFn gtk_grid_get_row_homogeneousFn;
+typedef GtkGridSetColumnHomogeneousFn gtk_grid_set_column_homogeneousFn;
+typedef GtkGridGetColumnHomogeneousFn gtk_grid_get_column_homogeneousFn;
+
 /* GTK4 function pointer types - Fixed */
 typedef GtkWidget* (*GtkFixedNewFn)(void);
 typedef void (*GtkFixedPutFn)(GtkWidget* fixed, GtkWidget* widget, int x, int y);
 typedef void (*GtkFixedMoveFn)(GtkWidget* fixed, GtkWidget* widget, int x, int y);
+
+/* Typedef aliases for Fixed functions */
+typedef GtkFixedNewFn gtk_fixed_newFn;
+typedef GtkFixedPutFn gtk_fixed_putFn;
+typedef GtkFixedMoveFn gtk_fixed_moveFn;
 
 /* GTK4 function pointer types - Frame */
 typedef GtkWidget* (*GtkFrameNewFn)(const char* label);
@@ -156,8 +275,18 @@ typedef const char* (*GtkFrameGetLabelFn)(GtkWidget* frame);
 typedef void (*GtkFrameSetLabelAlignFn)(GtkWidget* frame, float xalign, float yalign);
 typedef void (*GtkFrameSetChildFn)(GtkWidget* frame, GtkWidget* child);
 
+/* Typedef aliases for Frame functions */
+typedef GtkFrameNewFn gtk_frame_newFn;
+typedef GtkFrameSetLabelFn gtk_frame_set_labelFn;
+typedef GtkFrameGetLabelFn gtk_frame_get_labelFn;
+typedef GtkFrameSetLabelAlignFn gtk_frame_set_label_alignFn;
+typedef GtkFrameSetChildFn gtk_frame_set_childFn;
+
 /* GTK4 function pointer types - Separator */
 typedef GtkWidget* (*GtkSeparatorNewFn)(int orientation);
+
+/* Typedef alias for Separator function */
+typedef GtkSeparatorNewFn gtk_separator_newFn;
 
 /* GTK4 function pointer types - Paned */
 typedef GtkWidget* (*GtkPanedNewFn)(int orientation);
@@ -166,6 +295,14 @@ typedef void (*GtkPanedPack2Fn)(GtkWidget* paned, GtkWidget* child, int resize, 
 typedef void (*GtkPanedSetPositionFn)(GtkWidget* paned, int position);
 typedef int (*GtkPanedGetPositionFn)(GtkWidget* paned);
 typedef void (*GtkPanedSetWideHandleFn)(GtkWidget* paned, int wide);
+
+/* Typedef aliases for Paned functions */
+typedef GtkPanedNewFn gtk_paned_newFn;
+typedef GtkPanedPack1Fn gtk_paned_pack1Fn;
+typedef GtkPanedPack2Fn gtk_paned_pack2Fn;
+typedef GtkPanedSetPositionFn gtk_paned_set_positionFn;
+typedef GtkPanedGetPositionFn gtk_paned_get_positionFn;
+typedef GtkPanedSetWideHandleFn gtk_paned_set_wide_handleFn;
 
 /* GTK4 function pointer types - Notebook */
 typedef GtkWidget* (*GtkNotebookNewFn)(void);
@@ -180,6 +317,19 @@ typedef void (*GtkNotebookSetTabLabelTextFn)(GtkWidget* notebook, GtkWidget* chi
 typedef void (*GtkNotebookSetShowTabsFn)(GtkWidget* notebook, int show_tabs);
 typedef void (*GtkNotebookSetScrollableFn)(GtkWidget* notebook, int scrollable);
 
+/* Typedef aliases for Notebook functions */
+typedef GtkNotebookNewFn gtk_notebook_newFn;
+typedef GtkNotebookAppendPageFn gtk_notebook_append_pageFn;
+typedef GtkNotebookPrependPageFn gtk_notebook_prepend_pageFn;
+typedef GtkNotebookInsertPageFn gtk_notebook_insert_pageFn;
+typedef GtkNotebookRemovePageFn gtk_notebook_remove_pageFn;
+typedef GtkNotebookGetCurrentPageFn gtk_notebook_get_current_pageFn;
+typedef GtkNotebookSetCurrentPageFn gtk_notebook_set_current_pageFn;
+typedef GtkNotebookGetNPagesFn gtk_notebook_get_n_pagesFn;
+typedef GtkNotebookSetTabLabelTextFn gtk_notebook_set_tab_label_textFn;
+typedef GtkNotebookSetShowTabsFn gtk_notebook_set_show_tabsFn;
+typedef GtkNotebookSetScrollableFn gtk_notebook_set_scrollableFn;
+
 /* GTK4 function pointer types - Stack */
 typedef GtkWidget* (*GtkStackNewFn)(void);
 typedef void (*GtkStackAddNamedFn)(GtkWidget* stack, GtkWidget* widget, const char* name);
@@ -190,6 +340,16 @@ typedef const char* (*GtkStackGetVisibleChildNameFn)(GtkWidget* stack);
 typedef void (*GtkStackSetTransitionTypeFn)(GtkWidget* stack, int transition);
 typedef void (*GtkStackSetTransitionDurationFn)(GtkWidget* stack, unsigned int duration);
 
+/* Typedef aliases for Stack functions */
+typedef GtkStackNewFn gtk_stack_newFn;
+typedef GtkStackAddNamedFn gtk_stack_add_namedFn;
+typedef GtkStackAddTitledFn gtk_stack_add_titledFn;
+typedef GtkStackSetVisibleChildFn gtk_stack_set_visible_childFn;
+typedef GtkStackSetVisibleChildByNameFn gtk_stack_set_visible_child_by_nameFn;
+typedef GtkStackGetVisibleChildNameFn gtk_stack_get_visible_child_nameFn;
+typedef GtkStackSetTransitionTypeFn gtk_stack_set_transition_typeFn;
+typedef GtkStackSetTransitionDurationFn gtk_stack_set_transition_durationFn;
+
 /* GTK4 function pointer types - Revealer */
 typedef GtkWidget* (*GtkRevealerNewFn)(void);
 typedef void (*GtkRevealerSetChildFn)(GtkWidget* revealer, GtkWidget* child);
@@ -198,11 +358,25 @@ typedef int (*GtkRevealerGetRevealChildFn)(GtkWidget* revealer);
 typedef void (*GtkRevealerSetTransitionTypeFn)(GtkWidget* revealer, int transition);
 typedef void (*GtkRevealerSetTransitionDurationFn)(GtkWidget* revealer, unsigned int duration);
 
+/* Typedef aliases for Revealer functions */
+typedef GtkRevealerNewFn gtk_revealer_newFn;
+typedef GtkRevealerSetChildFn gtk_revealer_set_childFn;
+typedef GtkRevealerSetRevealChildFn gtk_revealer_set_reveal_childFn;
+typedef GtkRevealerGetRevealChildFn gtk_revealer_get_reveal_childFn;
+typedef GtkRevealerSetTransitionTypeFn gtk_revealer_set_transition_typeFn;
+typedef GtkRevealerSetTransitionDurationFn gtk_revealer_set_transition_durationFn;
+
 /* GTK4 function pointer types - Expander */
 typedef GtkWidget* (*GtkExpanderNewFn)(const char* label);
 typedef void (*GtkExpanderSetExpandedFn)(GtkWidget* expander, int expanded);
 typedef int (*GtkExpanderGetExpandedFn)(GtkWidget* expander);
 typedef void (*GtkExpanderSetLabelFn)(GtkWidget* expander, const char* label);
+
+/* Typedef aliases for Expander functions */
+typedef GtkExpanderNewFn gtk_expander_newFn;
+typedef GtkExpanderSetExpandedFn gtk_expander_set_expandedFn;
+typedef GtkExpanderGetExpandedFn gtk_expander_get_expandedFn;
+typedef GtkExpanderSetLabelFn gtk_expander_set_labelFn;
 
 /* GTK4 function pointer types - ScrolledWindow */
 typedef GtkWidget* (*GtkScrolledWindowNewFn)(void);
@@ -210,14 +384,24 @@ typedef void (*GtkScrolledWindowSetChildFn)(GtkWidget* scrolled, GtkWidget* chil
 typedef void (*GtkScrolledWindowSetPolicyFn)(GtkWidget* scrolled, int hscrollbar, int vscrollbar);
 typedef void (*GtkScrolledWindowSetKineticScrollingFn)(GtkWidget* scrolled, int kinetic);
 
+/* Typedef aliases for ScrolledWindow functions */
+typedef GtkScrolledWindowNewFn gtk_scrolled_window_newFn;
+typedef GtkScrolledWindowSetChildFn gtk_scrolled_window_set_childFn;
+typedef GtkScrolledWindowSetPolicyFn gtk_scrolled_window_set_policyFn;
+typedef GtkScrolledWindowSetKineticScrollingFn gtk_scrolled_window_set_kinetic_scrollingFn;
+
 /* GTK4 function pointer types - Viewport */
 typedef GtkWidget* (*GtkViewportNewFn)(void);
 typedef void (*GtkViewportSetChildFn)(GtkWidget* viewport, GtkWidget* child);
 
+/* Typedef aliases for Viewport functions */
+typedef GtkViewportNewFn gtk_viewport_newFn;
+typedef GtkViewportSetChildFn gtk_viewport_set_childFn;
+
 /* GTK4 function pointer types - TextView */
 typedef GtkWidget* (*GtkTextViewNewFn)(void);
-typedef GtkTextBuffer* (*GtkTextViewGetBufferFn)(GtkWidget* text_view);
-typedef void (*GtkTextViewSetBufferFn)(GtkWidget* text_view, GtkTextBuffer* buffer);
+typedef void* (*GtkTextViewGetBufferFn)(GtkWidget* text_view);
+typedef void (*GtkTextViewSetBufferFn)(GtkWidget* text_view, void* buffer);
 typedef void (*GtkTextViewSetEditableFn)(GtkWidget* text_view, int editable);
 typedef void (*GtkTextViewSetWrapModeFn)(GtkWidget* text_view, int wrap_mode);
 typedef void (*GtkTextViewSetLeftMarginFn)(GtkWidget* text_view, int margin);
@@ -226,13 +410,34 @@ typedef void (*GtkTextViewSetTopMarginFn)(GtkWidget* text_view, int margin);
 typedef void (*GtkTextViewSetBottomMarginFn)(GtkWidget* text_view, int margin);
 typedef void (*GtkTextViewSetMonospaceFn)(GtkWidget* text_view, int monospace);
 
+/* Typedef aliases for TextView functions */
+typedef GtkTextViewNewFn gtk_text_view_newFn;
+typedef GtkTextViewGetBufferFn gtk_text_view_get_bufferFn;
+typedef GtkTextViewSetBufferFn gtk_text_view_set_bufferFn;
+typedef GtkTextViewSetEditableFn gtk_text_view_set_editableFn;
+typedef int (*GtkTextViewGetEditableFn)(GtkWidget* text_view);
+typedef GtkTextViewSetWrapModeFn gtk_text_view_set_wrap_modeFn;
+typedef GtkTextViewSetLeftMarginFn gtk_text_view_set_left_marginFn;
+typedef GtkTextViewSetRightMarginFn gtk_text_view_set_right_marginFn;
+typedef GtkTextViewSetTopMarginFn gtk_text_view_set_top_marginFn;
+typedef GtkTextViewSetBottomMarginFn gtk_text_view_set_bottom_marginFn;
+typedef GtkTextViewSetMonospaceFn gtk_text_view_set_monospaceFn;
+
 /* GTK4 function pointer types - TextBuffer */
-typedef GtkTextBuffer* (*GtkTextBufferNewFn)(void);
-typedef char* (*GtkTextBufferGetTextFn)(GtkTextBuffer* buffer, void* start, void* end, int include_hidden_chars);
-typedef void (*GtkTextBufferSetTextFn)(GtkTextBuffer* buffer, const char* text, int len);
-typedef int (*GtkTextBufferGetCharCountFn)(GtkTextBuffer* buffer);
-typedef void (*GtkTextBufferInsertFn)(GtkTextBuffer* buffer, void* iter, const char* text, int len);
-typedef void (*GtkTextBufferInsertAtCursorFn)(GtkTextBuffer* buffer, const char* text, int len);
+typedef void* (*GtkTextBufferNewFn)(void);
+typedef char* (*GtkTextBufferGetTextFn)(void* buffer, void* start, void* end, int include_hidden_chars);
+typedef void (*GtkTextBufferSetTextFn)(void* buffer, const char* text, int len);
+typedef int (*GtkTextBufferGetCharCountFn)(void* buffer);
+typedef void (*GtkTextBufferInsertFn)(void* buffer, void* iter, const char* text, int len);
+typedef void (*GtkTextBufferInsertAtCursorFn)(void* buffer, const char* text, int len);
+
+/* Typedef aliases for TextBuffer functions */
+typedef GtkTextBufferNewFn gtk_text_buffer_newFn;
+typedef GtkTextBufferGetTextFn gtk_text_buffer_get_textFn;
+typedef GtkTextBufferSetTextFn gtk_text_buffer_set_textFn;
+typedef GtkTextBufferGetCharCountFn gtk_text_buffer_get_char_countFn;
+typedef GtkTextBufferInsertFn gtk_text_buffer_insertFn;
+typedef GtkTextBufferInsertAtCursorFn gtk_text_buffer_insert_at_cursorFn;
 
 /* GTK4 function pointer types - Image */
 typedef GtkWidget* (*GtkImageNewFn)(void);
@@ -240,6 +445,13 @@ typedef GtkWidget* (*GtkImageNewFromIconNameFn)(const char* icon_name);
 typedef void (*GtkImageSetFromIconNameFn)(GtkWidget* image, const char* icon_name);
 typedef void (*GtkImageSetFromPixbufFn)(GtkWidget* image, GdkPixbuf* pixbuf);
 typedef void (*GtkImageClearFn)(GtkWidget* image);
+
+/* Typedef aliases for Image functions */
+typedef GtkImageNewFn gtk_image_newFn;
+typedef GtkImageNewFromIconNameFn gtk_image_new_from_icon_nameFn;
+typedef GtkImageSetFromIconNameFn gtk_image_set_from_icon_nameFn;
+typedef GtkImageSetFromPixbufFn gtk_image_set_from_pixbufFn;
+typedef GtkImageClearFn gtk_image_clearFn;
 
 /* GTK4 function pointer types - ProgressBar */
 typedef GtkWidget* (*GtkProgressBarNewFn)(void);
@@ -251,6 +463,17 @@ typedef void (*GtkProgressBarSetTextFn)(GtkWidget* progress, const char* text);
 typedef const char* (*GtkProgressBarGetTextFn)(GtkWidget* progress);
 typedef void (*GtkProgressBarSetShowTextFn)(GtkWidget* progress, int show_text);
 typedef void (*GtkProgressBarSetEllipsizeFn)(GtkWidget* progress, int mode);
+
+/* Typedef aliases for ProgressBar functions */
+typedef GtkProgressBarNewFn gtk_progress_bar_newFn;
+typedef GtkProgressBarSetFractionFn gtk_progress_bar_set_fractionFn;
+typedef GtkProgressBarGetFractionFn gtk_progress_bar_get_fractionFn;
+typedef GtkProgressBarSetPulseFn gtk_progress_bar_set_pulseFn;
+typedef GtkProgressBarPulseFn gtk_progress_bar_pulseFn;
+typedef GtkProgressBarSetTextFn gtk_progress_bar_set_textFn;
+typedef GtkProgressBarGetTextFn gtk_progress_bar_get_textFn;
+typedef GtkProgressBarSetShowTextFn gtk_progress_bar_set_show_textFn;
+typedef GtkProgressBarSetEllipsizeFn gtk_progress_bar_set_ellipsizeFn;
 
 /* GTK4 function pointer types - LevelBar */
 typedef GtkWidget* (*GtkLevelBarNewFn)(void);
@@ -264,6 +487,18 @@ typedef double (*GtkLevelBarGetMaxValueFn)(GtkWidget* levelbar);
 typedef void (*GtkLevelBarSetBarModeFn)(GtkWidget* levelbar, int mode);
 typedef int (*GtkLevelBarGetBarModeFn)(GtkWidget* levelbar);
 
+/* Typedef aliases for LevelBar functions */
+typedef GtkLevelBarNewFn gtk_level_bar_newFn;
+typedef GtkLevelBarNewForIntervalFn gtk_level_bar_new_for_intervalFn;
+typedef GtkLevelBarSetValueFn gtk_level_bar_set_valueFn;
+typedef GtkLevelBarGetValueFn gtk_level_bar_get_valueFn;
+typedef GtkLevelBarSetMinValueFn gtk_level_bar_set_min_valueFn;
+typedef GtkLevelBarGetMinValueFn gtk_level_bar_get_min_valueFn;
+typedef GtkLevelBarSetMaxValueFn gtk_level_bar_set_max_valueFn;
+typedef GtkLevelBarGetMaxValueFn gtk_level_bar_get_max_valueFn;
+typedef GtkLevelBarSetBarModeFn gtk_level_bar_set_bar_modeFn;
+typedef GtkLevelBarGetBarModeFn gtk_level_bar_get_bar_modeFn;
+
 /* GTK4 function pointer types - Scale */
 typedef GtkWidget* (*GtkScaleNewFn)(int orientation, GtkAdjustment* adjustment);
 typedef GtkWidget* (*GtkScaleNewWithRangeFn)(int orientation, double min, double max, double step);
@@ -276,6 +511,18 @@ typedef double (*GtkScaleGetValueFn)(GtkWidget* scale);
 typedef void (*GtkScaleSetHasOriginFn)(GtkWidget* scale, int has_origin);
 typedef void (*GtkScaleSetFillLevelFn)(GtkWidget* scale, double fill_level);
 
+/* Typedef aliases for Scale functions */
+typedef GtkScaleNewFn gtk_scale_newFn;
+typedef GtkScaleNewWithRangeFn gtk_scale_new_with_rangeFn;
+typedef GtkScaleSetDigitsFn gtk_scale_set_digitsFn;
+typedef GtkScaleGetDigitsFn gtk_scale_get_digitsFn;
+typedef GtkScaleSetDrawValueFn gtk_scale_set_draw_valueFn;
+typedef GtkScaleGetDrawValueFn gtk_scale_get_draw_valueFn;
+typedef GtkScaleSetValueFn gtk_scale_set_valueFn;
+typedef GtkScaleGetValueFn gtk_scale_get_valueFn;
+typedef GtkScaleSetHasOriginFn gtk_scale_set_has_originFn;
+typedef GtkScaleSetFillLevelFn gtk_scale_set_fill_levelFn;
+
 /* GTK4 function pointer types - SpinButton */
 typedef GtkWidget* (*GtkSpinButtonNewFn)(GtkAdjustment* adjustment, double climb_rate, unsigned int digits);
 typedef GtkWidget* (*GtkSpinButtonNewWithRangeFn)(double min, double max, double step);
@@ -286,6 +533,17 @@ typedef void (*GtkSpinButtonSetRangeFn)(GtkWidget* spin, double min, double max)
 typedef void (*GtkSpinButtonSetIncrementsFn)(GtkWidget* spin, double step, double page);
 typedef void (*GtkSpinButtonSetDigitsFn)(GtkWidget* spin, unsigned int digits);
 typedef void (*GtkSpinButtonSpinFn)(GtkWidget* spin, int direction, double increment);
+
+/* Typedef aliases for SpinButton functions */
+typedef GtkSpinButtonNewFn gtk_spin_button_newFn;
+typedef GtkSpinButtonNewWithRangeFn gtk_spin_button_new_with_rangeFn;
+typedef GtkSpinButtonSetValueFn gtk_spin_button_set_valueFn;
+typedef GtkSpinButtonGetValueFn gtk_spin_button_get_valueFn;
+typedef GtkSpinButtonGetValueAsIntFn gtk_spin_button_get_value_as_intFn;
+typedef GtkSpinButtonSetRangeFn gtk_spin_button_set_rangeFn;
+typedef GtkSpinButtonSetIncrementsFn gtk_spin_button_set_incrementsFn;
+typedef GtkSpinButtonSetDigitsFn gtk_spin_button_set_digitsFn;
+typedef GtkSpinButtonSpinFn gtk_spin_button_spinFn;
 
 /* GTK4 function pointer types - ComboBox/ComboBoxText */
 typedef GtkWidget* (*GtkComboBoxTextNewFn)(void);
@@ -300,6 +558,19 @@ typedef void (*GtkComboBoxTextSetActiveFn)(GtkWidget* combo, int index_);
 typedef int (*GtkComboBoxTextGetActiveFn)(GtkWidget* combo);
 typedef const char* (*GtkComboBoxTextGetActiveTextFn)(GtkWidget* combo);
 
+/* Typedef aliases for ComboBoxText functions */
+typedef GtkComboBoxTextNewFn gtk_combo_box_text_newFn;
+typedef GtkComboBoxTextAppendFn gtk_combo_box_text_appendFn;
+typedef GtkComboBoxTextPrependFn gtk_combo_box_text_prependFn;
+typedef GtkComboBoxTextInsertFn gtk_combo_box_text_insertFn;
+typedef GtkComboBoxTextRemoveFn gtk_combo_box_text_removeFn;
+typedef GtkComboBoxTextRemoveAllFn gtk_combo_box_text_remove_allFn;
+typedef GtkComboBoxTextGetActiveIdFn gtk_combo_box_text_get_active_idFn;
+typedef GtkComboBoxTextSetActiveIdFn gtk_combo_box_text_set_active_idFn;
+typedef GtkComboBoxTextSetActiveFn gtk_combo_box_text_set_activeFn;
+typedef GtkComboBoxTextGetActiveFn gtk_combo_box_text_get_activeFn;
+typedef GtkComboBoxTextGetActiveTextFn gtk_combo_box_text_get_active_textFn;
+
 /* GTK4 function pointer types - ListBox */
 typedef GtkWidget* (*GtkListBoxNewFn)(void);
 typedef void (*GtkListBoxAppendFn)(GtkWidget* listbox, GtkWidget* child);
@@ -312,6 +583,18 @@ typedef void (*GtkListBoxUnselectAllFn)(GtkWidget* listbox);
 typedef void (*GtkListBoxSetSelectionModeFn)(GtkWidget* listbox, int mode);
 typedef int (*GtkListBoxGetSelectionModeFn)(GtkWidget* listbox);
 
+/* Typedef aliases for ListBox functions */
+typedef GtkListBoxNewFn gtk_list_box_newFn;
+typedef GtkListBoxAppendFn gtk_list_box_appendFn;
+typedef GtkListBoxPrependFn gtk_list_box_prependFn;
+typedef GtkListBoxInsertFn gtk_list_box_insertFn;
+typedef GtkListBoxRemoveFn gtk_list_box_removeFn;
+typedef GtkListBoxSelectRowFn gtk_list_box_select_rowFn;
+typedef GtkListBoxUnselectRowFn gtk_list_box_unselect_rowFn;
+typedef GtkListBoxUnselectAllFn gtk_list_box_unselect_allFn;
+typedef GtkListBoxSetSelectionModeFn gtk_list_box_set_selection_modeFn;
+typedef GtkListBoxGetSelectionModeFn gtk_list_box_get_selection_modeFn;
+
 /* GTK4 function pointer types - FlowBox */
 typedef GtkWidget* (*GtkFlowBoxNewFn)(void);
 typedef void (*GtkFlowBoxAppendFn)(GtkWidget* flowbox, GtkWidget* child);
@@ -323,6 +606,18 @@ typedef void (*GtkFlowBoxSetMinChildrenPerLineFn)(GtkWidget* flowbox, int n_chil
 typedef void (*GtkFlowBoxSetMaxChildrenPerLineFn)(GtkWidget* flowbox, int n_children);
 typedef void (*GtkFlowBoxSetColumnSpacingFn)(GtkWidget* flowbox, int spacing);
 typedef void (*GtkFlowBoxSetRowSpacingFn)(GtkWidget* flowbox, int spacing);
+
+/* Typedef aliases for FlowBox functions */
+typedef GtkFlowBoxNewFn gtk_flow_box_newFn;
+typedef GtkFlowBoxAppendFn gtk_flow_box_appendFn;
+typedef GtkFlowBoxInsertFn gtk_flow_box_insertFn;
+typedef GtkFlowBoxSelectChildFn gtk_flow_box_select_childFn;
+typedef GtkFlowBoxUnselectAllFn gtk_flow_box_unselect_allFn;
+typedef GtkFlowBoxSetSelectionModeFn gtk_flow_box_set_selection_modeFn;
+typedef GtkFlowBoxSetMinChildrenPerLineFn gtk_flow_box_set_min_children_per_lineFn;
+typedef GtkFlowBoxSetMaxChildrenPerLineFn gtk_flow_box_set_max_children_per_lineFn;
+typedef GtkFlowBoxSetColumnSpacingFn gtk_flow_box_set_column_spacingFn;
+typedef GtkFlowBoxSetRowSpacingFn gtk_flow_box_set_row_spacingFn;
 
 /* GTK4 function pointer types - Menu */
 typedef GtkWidget* (*GtkMenuBarNewFn)(void);
@@ -339,11 +634,32 @@ typedef void (*GtkMenuItemSetLabelFn)(GtkWidget* menuitem, const char* label);
 typedef void (*GtkMenuItemSetSubmenuFn)(GtkWidget* menuitem, GtkWidget* submenu);
 typedef void (*GtkMenuItemActivateFn)(GtkWidget* menuitem);
 
+/* Typedef aliases for Menu functions */
+typedef GtkMenuBarNewFn gtk_menu_bar_newFn;
+typedef GtkMenuBarAppendFn gtk_menu_bar_appendFn;
+typedef GtkMenuNewFn gtk_menu_newFn;
+typedef GtkMenuAppendFn gtk_menu_appendFn;
+typedef GtkMenuPrependFn gtk_menu_prependFn;
+typedef GtkMenuInsertFn gtk_menu_insertFn;
+typedef GtkMenuRemoveFn gtk_menu_removeFn;
+typedef GtkMenuPopupAtPointerFn gtk_menu_popup_at_pointerFn;
+typedef GtkMenuItemNewFn gtk_menu_item_newFn;
+typedef GtkMenuItemNewWithLabelFn gtk_menu_item_new_with_labelFn;
+typedef GtkMenuItemSetLabelFn gtk_menu_item_set_labelFn;
+typedef GtkMenuItemSetSubmenuFn gtk_menu_item_set_submenuFn;
+typedef GtkMenuItemActivateFn gtk_menu_item_activateFn;
+
 /* GTK4 function pointer types - Popover */
 typedef GtkWidget* (*GtkPopoverNewFn)(void);
 typedef void (*GtkPopoverSetChildFn)(GtkWidget* popover, GtkWidget* child);
 typedef void (*GtkPopoverPopupFn)(GtkWidget* popover);
 typedef void (*GtkPopoverPopdownFn)(GtkWidget* popover);
+
+/* Typedef aliases for Popover functions */
+typedef GtkPopoverNewFn gtk_popover_newFn;
+typedef GtkPopoverSetChildFn gtk_popover_set_childFn;
+typedef GtkPopoverPopupFn gtk_popover_popupFn;
+typedef GtkPopoverPopdownFn gtk_popover_popdownFn;
 
 /* GTK4 function pointer types - Dialog */
 typedef GtkWidget* (*GtkDialogNewFn)(void);
@@ -352,9 +668,20 @@ typedef void (*GtkDialogAddActionWidgetFn)(GtkWidget* dialog, GtkWidget* child, 
 typedef int (*GtkDialogRunFn)(GtkWidget* dialog);
 typedef void (*GtkDialogResponseFn)(GtkWidget* dialog, int response_id);
 typedef void (*GtkDialogSetDefaultResponseFn)(GtkWidget* dialog, int response_id);
-typedef void (*GtkDialogSetUseHeaderBarFn)(GtkWidget* dialog, int use_header_bar);
+typedef void (*GtkDialogSetUseHeaderBarFn)(GtkWidget* dialog, int setting);
 typedef GtkWidget* (*GtkDialogGetContentAreaFn)(GtkWidget* dialog);
 typedef GtkWidget* (*GtkDialogGetHeaderBarFn)(GtkWidget* dialog);
+
+/* Typedef aliases for Dialog functions */
+typedef GtkDialogNewFn gtk_dialog_newFn;
+typedef GtkDialogAddButtonFn gtk_dialog_add_buttonFn;
+typedef GtkDialogAddActionWidgetFn gtk_dialog_add_action_widgetFn;
+typedef GtkDialogRunFn gtk_dialog_runFn;
+typedef GtkDialogResponseFn gtk_dialog_responseFn;
+typedef GtkDialogSetDefaultResponseFn gtk_dialog_set_default_responseFn;
+typedef GtkDialogSetUseHeaderBarFn gtk_dialog_set_use_header_barFn;
+typedef GtkDialogGetContentAreaFn gtk_dialog_get_content_areaFn;
+typedef GtkDialogGetHeaderBarFn gtk_dialog_get_header_barFn;
 
 /* GTK4 function pointer types - AboutDialog */
 typedef GtkWidget* (*GtkAboutDialogNewFn)(void);
@@ -366,10 +693,22 @@ typedef void (*GtkAboutDialogSetAuthorsFn)(GtkWidget* dialog, void** authors);
 typedef void (*GtkAboutDialogSetLicenseFn)(GtkWidget* dialog, const char* license);
 typedef void (*GtkAboutDialogSetLogoFn)(GtkWidget* dialog, GdkPixbuf* logo);
 
+/* Typedef aliases for AboutDialog functions */
+typedef GtkAboutDialogNewFn gtk_about_dialog_newFn;
+typedef GtkAboutDialogSetProgramNameFn gtk_about_dialog_set_program_nameFn;
+typedef GtkAboutDialogSetVersionFn gtk_about_dialog_set_versionFn;
+typedef GtkAboutDialogSetCommentsFn gtk_about_dialog_set_commentsFn;
+typedef GtkAboutDialogSetWebsiteFn gtk_about_dialog_set_websiteFn;
+typedef GtkAboutDialogSetLicenseFn gtk_about_dialog_set_licenseFn;
+
 /* GTK4 function pointer types - MessageDialog */
 typedef GtkWidget* (*GtkMessageDialogNewFn)(GtkWindow* parent, int flags, int type, int buttons, const char* message_format, ...);
 typedef void (*GtkMessageDialogSetMarkupFn)(GtkWidget* dialog, const char* str);
 typedef void (*GtkMessageDialogFormatSecondaryTextFn)(GtkWidget* dialog, const char* message_format, ...);
+
+/* Typedef aliases for MessageDialog functions */
+typedef GtkMessageDialogNewFn gtk_message_dialog_newFn;
+typedef GtkMessageDialogSetMarkupFn gtk_message_dialog_set_markupFn;
 
 /* GTK4 function pointer types - FileChooserDialog */
 typedef GtkWidget* (*GtkFileChooserDialogNewFn)(const char* title, GtkWindow* parent, int action, const char* first_button_text, int first_response_id, void* end);
@@ -378,6 +717,14 @@ typedef int (*GtkFileChooserGetActionFn)(GtkWidget* chooser);
 typedef void (*GtkFileChooserSetCurrentFolderFn)(GtkWidget* chooser, void* file, void** error);
 typedef void* (*GtkFileChooserGetFileFn)(GtkWidget* chooser);
 typedef void (*GtkFileChooserSetFilterFn)(GtkWidget* chooser, void* filter);
+
+/* Typedef aliases for FileChooser functions */
+typedef GtkFileChooserDialogNewFn gtk_file_chooser_dialog_newFn;
+typedef GtkFileChooserSetActionFn gtk_file_chooser_set_actionFn;
+typedef GtkFileChooserGetActionFn gtk_file_chooser_get_actionFn;
+typedef GtkFileChooserSetCurrentFolderFn gtk_file_chooser_set_current_folderFn;
+typedef GtkFileChooserGetFileFn gtk_file_chooser_get_fileFn;
+typedef GtkFileChooserSetFilterFn gtk_file_chooser_set_filterFn;
 
 /* GTK4 function pointer types - HeaderBar */
 typedef GtkWidget* (*GtkHeaderBarNewFn)(void);
@@ -391,13 +738,33 @@ typedef void (*GtkHeaderBarPackEndFn)(GtkWidget* bar, GtkWidget* child);
 typedef void (*GtkHeaderBarAppendFn)(GtkWidget* bar, GtkWidget* child);
 typedef void (*GtkHeaderBarInsertChildAfterFn)(GtkWidget* bar, GtkWidget* child, GtkWidget* sibling);
 
+/* Typedef aliases for HeaderBar functions */
+typedef GtkHeaderBarNewFn gtk_header_bar_newFn;
+typedef GtkHeaderBarSetTitleFn gtk_header_bar_set_titleFn;
+typedef GtkHeaderBarGetTitleFn gtk_header_bar_get_titleFn;
+typedef GtkHeaderBarSetSubtitleFn gtk_header_bar_set_subtitleFn;
+typedef GtkHeaderBarGetSubtitleFn gtk_header_bar_get_subtitleFn;
+typedef GtkHeaderBarSetShowTitleButtonsFn gtk_header_bar_set_show_title_buttonsFn;
+typedef GtkHeaderBarPackStartFn gtk_header_bar_pack_startFn;
+typedef GtkHeaderBarPackEndFn gtk_header_bar_pack_endFn;
+typedef GtkHeaderBarAppendFn gtk_header_bar_appendFn;
+typedef GtkHeaderBarInsertChildAfterFn gtk_header_bar_insert_child_afterFn;
+
 /* GTK4 function pointer types - ActionBar */
 typedef GtkWidget* (*GtkActionBarNewFn)(void);
 typedef void (*GtkActionBarSetRevealChildFn)(GtkWidget* bar, int reveals);
 typedef int (*GtkActionBarGetRevealChildFn)(GtkWidget* bar);
 typedef void (*GtkActionBarPackStartFn)(GtkWidget* bar, GtkWidget* child);
 typedef void (*GtkActionBarPackEndFn)(GtkWidget* bar, GtkWidget* child);
-typedef void (*GtkActionBarSetCenterWidgetFn)(GtkWidget* bar, GtkWidget* widget);
+typedef void (*GtkActionBarSetCenterWidgetFn)(GtkWidget* action_bar, GtkWidget* widget);
+
+/* Typedef aliases for ActionBar functions */
+typedef GtkActionBarNewFn gtk_action_bar_newFn;
+typedef GtkActionBarSetRevealChildFn gtk_action_bar_set_reveal_childFn;
+typedef GtkActionBarGetRevealChildFn gtk_action_bar_get_reveal_childFn;
+typedef GtkActionBarPackStartFn gtk_action_bar_pack_startFn;
+typedef GtkActionBarPackEndFn gtk_action_bar_pack_endFn;
+typedef GtkActionBarSetCenterWidgetFn gtk_action_bar_set_center_widgetFn;
 
 /* GTK4 function pointer types - Toolbar */
 typedef GtkWidget* (*GtkToolbarNewFn)(void);
@@ -415,6 +782,12 @@ typedef GtkWidget* (*GtkSpinnerNewFn)(void);
 typedef void (*GtkSpinnerStartFn)(GtkWidget* spinner);
 typedef void (*GtkSpinnerStopFn)(GtkWidget* spinner);
 typedef void (*GtkSpinnerSetSpinningFn)(GtkWidget* spinner, int spinning);
+
+/* Typedef aliases for Spinner functions */
+typedef GtkSpinnerNewFn gtk_spinner_newFn;
+typedef GtkSpinnerStartFn gtk_spinner_startFn;
+typedef GtkSpinnerStopFn gtk_spinner_stopFn;
+typedef GtkSpinnerSetSpinningFn gtk_spinner_set_spinningFn;
 
 /* GTK4 function pointer types - SearchEntry */
 typedef GtkWidget* (*GtkSearchEntryNewFn)(void);
@@ -438,45 +811,97 @@ typedef GtkWidget* (*GtkCenterBoxGetStartWidgetFn)(GtkWidget* box);
 typedef GtkWidget* (*GtkCenterBoxGetCenterWidgetFn)(GtkWidget* box);
 typedef GtkWidget* (*GtkCenterBoxGetEndWidgetFn)(GtkWidget* box);
 
+/* Typedef aliases for CenterBox functions */
+typedef GtkCenterBoxNewFn gtk_center_box_newFn;
+typedef GtkCenterBoxSetStartWidgetFn gtk_center_box_set_start_widgetFn;
+typedef GtkCenterBoxSetCenterWidgetFn gtk_center_box_set_center_widgetFn;
+typedef GtkCenterBoxSetEndWidgetFn gtk_center_box_set_end_widgetFn;
+typedef GtkCenterBoxGetStartWidgetFn gtk_center_box_get_start_widgetFn;
+typedef GtkCenterBoxGetCenterWidgetFn gtk_center_box_get_center_widgetFn;
+typedef GtkCenterBoxGetEndWidgetFn gtk_center_box_get_end_widgetFn;
+
 /* GTK4 function pointer types - ShortcutsLabel */
 typedef GtkWidget* (*GtkShortcutLabelNewFn)(const char* accelerator);
 typedef void (*GtkShortcutLabelSetAcceleratorFn)(GtkWidget* label, const char* accelerator);
+
+/* GTK4 function pointer types - SearchEntry */
+typedef GtkWidget* (*GtkSearchEntryNewFn)(void);
+
+/* Typedef aliases for SearchEntry functions */
+typedef GtkSearchEntryNewFn gtk_search_entry_newFn;
+
+/* GTK4 function pointer types - PasswordEntry */
+typedef GtkWidget* (*GtkPasswordEntryNewFn)(void);
+
+/* Typedef aliases for PasswordEntry functions */
+typedef GtkPasswordEntryNewFn gtk_password_entry_newFn;
 
 /* GTK4 function pointer types - Overlay */
 typedef GtkWidget* (*GtkOverlayNewFn)(void);
 typedef void (*GtkOverlaySetChildFn)(GtkWidget* overlay, GtkWidget* child);
 typedef void (*GtkOverlayAddOverlayFn)(GtkWidget* overlay, GtkWidget* widget);
 
+/* Typedef aliases for overlay functions */
+typedef GtkOverlayNewFn gtk_overlay_newFn;
+typedef GtkOverlaySetChildFn gtk_overlay_set_childFn;
+typedef GtkOverlayAddOverlayFn gtk_overlay_add_overlayFn;
+
 /* GTK4 function pointer types - AspectFrame */
 typedef GtkWidget* (*GtkAspectFrameNewFn)(const char* label, float xalign, float yalign, float ratio, int obey_child);
 
 /* GTK4 function pointer types - Widget base */
 typedef void (*GtkWidgetDestroyFn)(GtkWidget* widget);
+typedef GtkWidgetDestroyFn gtk_widget_destroyFn;
 typedef void (*GtkWidgetShowFn)(GtkWidget* widget);
+typedef GtkWidgetShowFn gtk_widget_showFn;
 typedef void (*GtkWidgetHideFn)(GtkWidget* widget);
+typedef GtkWidgetHideFn gtk_widget_hideFn;
 typedef void (*GtkWidgetSetVisibleFn)(GtkWidget* widget, int visible);
+typedef GtkWidgetSetVisibleFn gtk_widget_set_visibleFn;
 typedef int (*GtkWidgetGetVisibleFn)(GtkWidget* widget);
+typedef GtkWidgetGetVisibleFn gtk_widget_get_visibleFn;
 typedef void (*GtkWidgetSetSensitiveFn)(GtkWidget* widget, int sensitive);
+typedef GtkWidgetSetSensitiveFn gtk_widget_set_sensitiveFn;
 typedef int (*GtkWidgetGetSensitiveFn)(GtkWidget* widget);
+typedef GtkWidgetGetSensitiveFn gtk_widget_get_sensitiveFn;
 typedef void (*GtkWidgetSetTooltipTextFn)(GtkWidget* widget, const char* text);
+typedef GtkWidgetSetTooltipTextFn gtk_widget_set_tooltip_textFn;
 typedef const char* (*GtkWidgetGetTooltipTextFn)(GtkWidget* widget);
+typedef GtkWidgetGetTooltipTextFn gtk_widget_get_tooltip_textFn;
 typedef void (*GtkWidgetSetCursorFromNameFn)(GtkWidget* widget, const char* name);
+typedef GtkWidgetSetCursorFromNameFn gtk_widget_set_cursor_from_nameFn;
 typedef void (*GtkWidgetSetCssClassesFn)(GtkWidget* widget, void** classes);
+typedef GtkWidgetSetCssClassesFn gtk_widget_set_css_classesFn;
 typedef void (*GtkWidgetAddCssClassFn)(GtkWidget* widget, const char* css_class);
+typedef GtkWidgetAddCssClassFn gtk_widget_add_css_classFn;
 typedef void (*GtkWidgetRemoveCssClassFn)(GtkWidget* widget, const char* css_class);
+typedef GtkWidgetRemoveCssClassFn gtk_widget_remove_css_classFn;
 typedef int (*GtkWidgetHasCssClassFn)(GtkWidget* widget, const char* css_class);
+typedef GtkWidgetHasCssClassFn gtk_widget_has_css_classFn;
 typedef void (*GtkWidgetSetMarginTopFn)(GtkWidget* widget, int margin);
+typedef GtkWidgetSetMarginTopFn gtk_widget_set_margin_topFn;
 typedef void (*GtkWidgetSetMarginBottomFn)(GtkWidget* widget, int margin);
+typedef GtkWidgetSetMarginBottomFn gtk_widget_set_margin_bottomFn;
 typedef void (*GtkWidgetSetMarginStartFn)(GtkWidget* widget, int margin);
+typedef GtkWidgetSetMarginStartFn gtk_widget_set_margin_startFn;
 typedef void (*GtkWidgetSetMarginEndFn)(GtkWidget* widget, int margin);
+typedef GtkWidgetSetMarginEndFn gtk_widget_set_margin_endFn;
 typedef int (*GtkWidgetGetWidthFn)(GtkWidget* widget);
+typedef GtkWidgetGetWidthFn gtk_widget_get_widthFn;
 typedef int (*GtkWidgetGetHeightFn)(GtkWidget* widget);
+typedef GtkWidgetGetHeightFn gtk_widget_get_heightFn;
 typedef void (*GtkWidgetSetSizeRequestFn)(GtkWidget* widget, int width, int height);
+typedef GtkWidgetSetSizeRequestFn gtk_widget_set_size_requestFn;
 typedef void (*GtkWidgetQueueDrawFn)(GtkWidget* widget);
+typedef GtkWidgetQueueDrawFn gtk_widget_queue_drawFn;
 typedef void (*GtkWidgetGrabFocusFn)(GtkWidget* widget);
+typedef GtkWidgetGrabFocusFn gtk_widget_grab_focusFn;
 typedef int (*GtkWidgetHasFocusFn)(GtkWidget* widget);
+typedef GtkWidgetHasFocusFn gtk_widget_has_focusFn;
 typedef void (*GtkWidgetSetFocusableFn)(GtkWidget* widget, int focusable);
+typedef GtkWidgetSetFocusableFn gtk_widget_set_focusableFn;
 typedef void (*GtkWidgetSetFocusOnClickFn)(GtkWidget* widget, int focus_on_click);
+typedef GtkWidgetSetFocusOnClickFn gtk_widget_set_focus_on_clickFn;
 
 /* GTK4 function pointer types - Application */
 typedef void* (*GtkApplicationNewFn)(const char* app_id, int flags);
@@ -1527,7 +1952,7 @@ int64_t storeWidget(GtkWidget* widget) {
 int64_t storeWindow(GtkWindow* window) {
     int64_t id = g_nextWidgetId++;
     g_windows[id] = window;
-    g_widgets[id] = GTK_WIDGET(window);
+    g_widgets[id] = (GtkWidget*)window;
     return id;
 }
 
@@ -1697,7 +2122,7 @@ static HavelValue* gtk_window_new(int argc, HavelValue** argv) {
         title = havel_get_string(argv[0]);
     }
     
-    GtkWindow* window = GTK_WINDOW(g_gtkLibs->gtk_window_new());
+    GtkWindow* window = (GtkWindow*)g_gtkLibs->gtk_window_new();
     g_gtkLibs->gtk_window_set_title(window, title);
     g_gtkLibs->gtk_window_set_default_size(window, 800, 600);
     
@@ -1794,8 +2219,8 @@ static HavelValue* gtk_window_get_size(int argc, HavelValue** argv) {
         return result;
     }
     
-    int width = g_gtkLibs->gtk_window_get_width(GTK_WINDOW(winIt->second));
-    int height = g_gtkLibs->gtk_window_get_height(GTK_WINDOW(winIt->second));
+    int width = g_gtkLibs->gtk_window_get_width((GtkWindow*)winIt->second);
+    int height = g_gtkLibs->gtk_window_get_height((GtkWindow*)winIt->second);
     
     HavelValue* result = havel_new_object();
     havel_object_set(result, "width", havel_new_int(width));
@@ -2526,8 +2951,8 @@ static HavelValue* gtk_text_view_get_buffer(int argc, HavelValue** argv) {
     GtkWidget* widget = getWidgetChecked(id, "GtkTextView");
     if (!widget) return havel_new_null();
     
-    GtkTextBuffer* buffer = g_gtkLibs->gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
-    int64_t bufferId = storeWidget(GTK_WIDGET(buffer));
+    void* buffer = g_gtkLibs->gtk_text_view_get_buffer(widget);
+    int64_t bufferId = storeWidget((GtkWidget*)buffer);
     return havel_new_handle(reinterpret_cast<void*>(bufferId), nullptr);
 }
 
@@ -2542,7 +2967,7 @@ static HavelValue* gtk_text_buffer_set_text(int argc, HavelValue** argv) {
     const char* text = havel_get_string(argv[1]);
     if (!text) return havel_new_bool(0);
     
-    g_gtkLibs->gtk_text_buffer_set_text(GTK_TEXT_BUFFER(widget), text, -1);
+    g_gtkLibs->gtk_text_buffer_set_text((GtkWidget*)widget, text, -1);
     return havel_new_bool(1);
 }
 
@@ -2554,7 +2979,7 @@ static HavelValue* gtk_text_buffer_get_text(int argc, HavelValue** argv) {
     GtkWidget* widget = getWidget(id);
     if (!widget) return havel_new_string("");
     
-    char* text = g_gtkLibs->gtk_text_buffer_get_text(GTK_TEXT_BUFFER(widget), nullptr, nullptr, 0);
+    char* text = g_gtkLibs->gtk_text_buffer_get_text((GtkWidget*)widget, nullptr, nullptr, 0);
     
     HavelValue* result = havel_new_string(text ? text : "");
     if (text && g_gtkLibs->g_free) {
@@ -3037,7 +3462,7 @@ static HavelValue* gtk_dialog_add_button(int argc, HavelValue** argv) {
     GtkWidget* dialog = getWidget(dialogId);
     if (!dialog) return havel_new_int(0);
     
-    g_gtkLibs->gtk_dialog_add_button(GTK_DIALOG(dialog), buttonText, responseId);
+    g_gtkLibs->gtk_dialog_add_button((GtkWidget*)dialog, buttonText, responseId);
     return havel_new_int(responseId);
 }
 
@@ -3049,7 +3474,7 @@ static HavelValue* gtk_dialog_run(int argc, HavelValue** argv) {
     GtkWidget* dialog = getWidget(dialogId);
     if (!dialog) return havel_new_int(0);
     
-    int response = g_gtkLibs->gtk_dialog_run(GTK_DIALOG(dialog));
+    int response = g_gtkLibs->gtk_dialog_run((GtkWidget*)dialog);
     return havel_new_int(response);
 }
 

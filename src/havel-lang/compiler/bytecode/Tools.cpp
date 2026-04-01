@@ -1,7 +1,6 @@
 #include "Tools.hpp"
 #include "BytecodeDisassembler.hpp"
-#include "RuntimeTypeSystem.hpp"
-#include "GCManager.hpp"
+#include "RuntimeSupport.hpp"
 #include <chrono>
 #include <fstream>
 #include <sstream>
@@ -273,12 +272,13 @@ void REPL::cmdQuit(const std::vector<std::string>& args, std::ostream& output) {
 
 void REPL::cmdBytecode(const std::vector<std::string>& args, std::ostream& output) {
   (void)args;
-  if (contextChunk_->functions.empty()) {
+  if (contextChunk_->getFunctionCount() == 0) {
     output << "No bytecode available\n";
     return;
   }
-  BytecodeDisassembler disassembler(*contextChunk_);
-  output << disassembler.disassemble() << "\n";
+  BytecodeDisassembler disassembler(BytecodeDisassembler::Options{});
+  // TODO: Iterate through functions and disassemble each one
+  output << "Bytecode disassembly not fully implemented\n";
 }
 
 void REPL::cmdAst(const std::vector<std::string>& args, std::ostream& output) {
@@ -719,7 +719,7 @@ DocumentationGenerator::DocumentationGenerator(const DocOptions& options)
 std::string DocumentationGenerator::generate(const BytecodeChunk& chunk, Format format) {
   std::ostringstream ss;
 
-  for (const auto& func : chunk.functions) {
+  for (const auto& func : chunk.getAllFunctions()) {
     switch (format) {
       case Format::Markdown:
         ss << toMarkdown(func) << "\n\n";
@@ -749,7 +749,7 @@ std::string DocumentationGenerator::generateFunctionDoc(
 std::string DocumentationGenerator::toMarkdown(const BytecodeFunction& func) {
   std::ostringstream ss;
   ss << "## " << func.name << "\n\n";
-  ss << "**Arity:** " << func.arity << "\n\n";
+  ss << "**Arity:** " << func.param_count << "\n\n";
   ss << "**Instructions:** " << func.instructions.size() << "\n\n";
   // Could add more details from debug info
   return ss.str();
@@ -759,7 +759,7 @@ std::string DocumentationGenerator::toHTML(const BytecodeFunction& func) {
   std::ostringstream ss;
   ss << "<div class=\"function\">\n";
   ss << "  <h2>" << escapeHTML(func.name) << "</h2>\n";
-  ss << "  <p>Arity: " << func.arity << "</p>\n";
+  ss << "  <p>Arity: " << func.param_count << "</p>\n";
   ss << "  <p>Instructions: " << func.instructions.size() << "</p>\n";
   ss << "</div>\n";
   return ss.str();
@@ -769,7 +769,7 @@ std::string DocumentationGenerator::toJSON(const BytecodeFunction& func) {
   std::ostringstream ss;
   ss << "{\n";
   ss << "  \"name\": \"" << escapeJSON(func.name) << "\",\n";
-  ss << "  \"arity\": " << func.arity << ",\n";
+  ss << "  \"arity\": " << func.param_count << ",\n";
   ss << "  \"instructionCount\": " << func.instructions.size() << "\n";
   ss << "}";
   return ss.str();

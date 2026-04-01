@@ -3,6 +3,8 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <numeric>
+#include <cmath>
 
 namespace havel::compiler {
 
@@ -113,7 +115,7 @@ std::vector<std::string> PluginSystem::listPlugins() const {
   return result;
 }
 
-Plugin* PluginSystem::getPlugin(const std::string& name) {
+PluginSystem::Plugin* PluginSystem::getPlugin(const std::string& name) {
   auto it = loadedPlugins_.find(name);
   if (it != loadedPlugins_.end()) {
     return it->second.get();
@@ -134,13 +136,13 @@ void PluginSystem::executeHooks(const std::string& extensionPoint) {
   }
 }
 
-void PluginSystem::registerOptimizationPass(std::unique_ptr<OptimizationPass> pass) {
-  (void)pass;
-  // Would add to global optimizer
-}
+// void PluginSystem::registerOptimizationPass(std::unique_ptr<OptimizationPass> pass) {
+//   (void)pass;
+//   // Would add to global optimizer
+// }
 
 void PluginSystem::registerNativeFunction(const std::string& name,
-                                           NativeFunctionBridge::NativeFunction func) {
+                                           BytecodeHostFunction func) {
   (void)name;
   (void)func;
   // Would register with native bridge
@@ -268,8 +270,8 @@ std::vector<std::filesystem::path> HotReloadManager::scanForChanges() {
 std::string SerializationFormats::toJSON(const BytecodeChunk& chunk) {
   std::ostringstream ss;
   ss << "{\n";
-  ss << "  \"functions\": " << chunk.functions.size() << ",\n";
-  ss << "  \"constants\": " << chunk.constants.size() << "\n";
+  ss << "  \"functions\": " << chunk.getFunctionCount() << ",\n";
+  ss << "  \"constants\": 0\n";
   ss << "}\n";
   return ss.str();
 }
@@ -305,8 +307,8 @@ std::string SerializationFormats::toXML(const BytecodeChunk& chunk) {
   std::ostringstream ss;
   ss << "<?xml version=\"1.0\"?>\n";
   ss << "<bytecodeChunk>\n";
-  ss << "  <functions>" << chunk.functions.size() << "</functions>\n";
-  ss << "  <constants>" << chunk.constants.size() << "</constants>\n";
+  ss << "  <functions>" << chunk.getFunctionCount() << "</functions>\n";
+  ss << "  <constants>0</constants>\n";
   ss << "</bytecodeChunk>\n";
   return ss.str();
 }
@@ -318,8 +320,8 @@ std::optional<BytecodeChunk> SerializationFormats::fromXML(const std::string& xm
 
 std::string SerializationFormats::toYAML(const BytecodeChunk& chunk) {
   std::ostringstream ss;
-  ss << "functions: " << chunk.functions.size() << "\n";
-  ss << "constants: " << chunk.constants.size() << "\n";
+  ss << "functions: " << chunk.getFunctionCount() << "\n";
+  ss << "constants: 0\n";
   return ss.str();
 }
 
@@ -352,7 +354,7 @@ std::vector<uint8_t> WASMTarget::compile(const BytecodeChunk& chunk) {
   std::vector<uint8_t> result;
   // Would generate actual WASM bytecode
 
-  for (const auto& func : chunk.functions) {
+  for (const auto& func : chunk.getAllFunctions()) {
     stats_.functionsGenerated++;
     // Generate WASM for each function
     (void)func;
@@ -393,7 +395,7 @@ LLVMTarget::~LLVMTarget() = default;
 std::string LLVMTarget::generateIR(const BytecodeChunk& chunk) {
   std::ostringstream ss;
   ss << "; LLVM IR generated from Havel bytecode\n";
-  ss << "; Functions: " << chunk.functions.size() << "\n";
+  ss << "; Functions: " << chunk.getFunctionCount() << "\n";
   // Would generate actual LLVM IR
   return ss.str();
 }
@@ -441,7 +443,7 @@ std::string LLVMTarget::optimizeIR(const std::string& ir) {
 // ============================================================================
 
 void CodeCoverage::instrument(BytecodeChunk& chunk) {
-  for (auto& func : chunk.functions) {
+  for (auto& func : chunk.getAllFunctions()) {
     // Insert coverage tracking instructions
     (void)func;
   }
@@ -518,9 +520,9 @@ bool CodeCoverage::exportLCOV(const std::filesystem::path& filename) const {
 
   // LCOV format
   auto all = getAllCoverage();
-  for (const auto& file : all) {
-    file << "SF:" << file.filename << "\n";
-    for (const auto& line : file.lines) {
+  for (const auto& fc : all) {
+    file << "SF:" << fc.filename << "\n";
+    for (const auto& line : fc.lines) {
       file << "DA:" << line.line << "," << line.executionCount << "\n";
     }
     file << "end_of_record\n";
@@ -585,7 +587,7 @@ FuzzingHarness::FuzzResult FuzzingHarness::run(const std::string& targetName,
     // Check time limit
     auto now = std::chrono::steady_clock::now();
     result.timeSec = std::chrono::duration<double>(now - start).count();
-    if (result.timeSec > options.maxExecutionTimeSec) {
+    if (result.timeSec > options.maxExecutionTimeSec || !result.passed) {
       break;
     }
   }
@@ -820,6 +822,10 @@ void IntegrationTests::registerPipelineTests() {
 // ============================================================================
 // BenchmarkingFramework Implementation
 // ============================================================================
+
+BenchmarkingFramework::BenchmarkingFramework() {
+  // Private constructor - initialization done in instance()
+}
 
 BenchmarkingFramework& BenchmarkingFramework::instance() {
   static BenchmarkingFramework instance;

@@ -151,7 +151,7 @@ std::shared_ptr<GCHeap::UpvalueCell> UpvalueManager::openUpvalue(
     return it->second;
   }
 
-  auto cell = heap_.createUpvalue(value);
+  auto cell = heap_.createUpvalue(localIndex);
   openUpvalues_[localIndex] = cell;
   return cell;
 }

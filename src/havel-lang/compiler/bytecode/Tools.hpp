@@ -3,10 +3,12 @@
 #include "CompilationPipeline.hpp"
 #include "VMExecutionContext.hpp"
 #include "BytecodeIR.hpp"
+#include "RuntimeSupport.hpp"
 #include <string>
 #include <vector>
 #include <functional>
 #include <iostream>
+#include <map>
 
 namespace havel::compiler {
 
@@ -16,12 +18,14 @@ namespace havel::compiler {
 class REPL {
 public:
   struct Options {
-    bool showBytecode = false;
-    bool showAst = false;
-    bool enableOptimizations = true;
-    bool strictMode = false;
-    std::string prompt = "havel> ";
-    std::string continuationPrompt = "...> ";
+    bool showBytecode;
+    bool showAst;
+    bool enableOptimizations;
+    bool strictMode;
+    std::string prompt;
+    std::string continuationPrompt;
+    Options() : showBytecode(false), showAst(false), enableOptimizations(true),
+                strictMode(false), prompt("havel> "), continuationPrompt("...> ") {}
   };
 
   struct Result {
@@ -226,6 +230,23 @@ public:
     std::string containerName;
   };
 
+  struct TextEdit {
+    Range range;
+    std::string newText;
+  };
+
+  struct WorkspaceEdit {
+    std::map<std::string, std::vector<TextEdit>> changes;
+  };
+
+  struct CodeAction {
+    std::string title;
+    std::string kind;
+    std::vector<Diagnostic> diagnostics;
+    std::optional<WorkspaceEdit> edit;
+    std::optional<std::string> command;
+  };
+
   explicit LSPAdapter(CompilationPipeline& pipeline);
 
   // Document operations
@@ -254,23 +275,6 @@ public:
   // Code actions
   std::vector<CodeAction> getCodeActions(const std::string& uri, Range range);
 
-  struct TextEdit {
-    Range range;
-    std::string newText;
-  };
-
-  struct WorkspaceEdit {
-    std::map<std::string, std::vector<TextEdit>> changes;
-  };
-
-  struct CodeAction {
-    std::string title;
-    std::string kind;
-    std::vector<Diagnostic> diagnostics;
-    std::optional<WorkspaceEdit> edit;
-    std::optional<std::string> command;
-  };
-
 private:
   CompilationPipeline& pipeline_;
   std::unordered_map<std::string, std::string> documents_;
@@ -292,10 +296,11 @@ public:
   };
 
   struct DocOptions {
-    bool includePrivate = false;
-    bool includeExamples = true;
-    bool includeSourceLinks = false;
+    bool includePrivate;
+    bool includeExamples;
+    bool includeSourceLinks;
     std::string sourceBaseUrl;
+    DocOptions() : includePrivate(false), includeExamples(true), includeSourceLinks(false) {}
   };
 
   explicit DocumentationGenerator(const DocOptions& options = DocOptions{});

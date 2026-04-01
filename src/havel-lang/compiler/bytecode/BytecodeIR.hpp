@@ -239,11 +239,19 @@ using BytecodeValue =
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;
 
+struct SourceLocation {
+  std::string filename;
+  uint32_t line = 0;
+  uint32_t column = 0;
+};
+
 // Bytecode instruction
 struct Instruction {
   OpCode opcode;
   std::vector<BytecodeValue> operands;
+  std::optional<SourceLocation> location;
 
+  Instruction() : opcode(OpCode::NOP) {}
   Instruction(OpCode op, std::vector<BytecodeValue> ops = {})
       : opcode(op), operands(std::move(ops)) {}
 };
@@ -252,11 +260,6 @@ struct Instruction {
 struct UpvalueDescriptor {
   uint32_t index = 0;
   bool captures_local = false;
-};
-
-struct SourceLocation {
-  uint32_t line = 0;
-  uint32_t column = 0;
 };
 
 // Bytecode function

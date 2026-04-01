@@ -2,7 +2,7 @@
 
 #include "AdvancedUtils.hpp"
 #include "BytecodeIR.hpp"
-#include "SymbolTable.hpp"
+#include "CompilationPipeline.hpp"
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -221,10 +221,11 @@ private:
 class InlineExpansion : public OptimizationPass {
 public:
   struct Options {
-    size_t maxFunctionSize = 50;     // Don't inline functions larger than this
-    size_t maxCallSites = 5;         // Max inline occurrences per function
-    int maxDepth = 3;                // Max inline nesting depth
-    bool preserveDebugInfo = true;
+    size_t maxFunctionSize;     // Don't inline functions larger than this
+    size_t maxCallSites;         // Max inline occurrences per function
+    int maxDepth;                // Max inline nesting depth
+    bool preserveDebugInfo;
+    Options() : maxFunctionSize(50), maxCallSites(5), maxDepth(3), preserveDebugInfo(true) {}
   };
 
   explicit InlineExpansion(const Options& options = Options{});
@@ -356,14 +357,18 @@ private:
 class GlobalOptimizer {
 public:
   struct Options {
-    bool enableDeadCodeElimination = true;
-    bool enableConstantPropagation = true;
-    bool enableInlining = true;
-    bool enableLoopOptimization = true;
-    bool enableRegisterAllocation = true;
-    bool enableTailCallOptimization = true;
-    bool enablePeepholeOptimization = true;
-    int maxPasses = 3;
+    bool enableDeadCodeElimination;
+    bool enableConstantPropagation;
+    bool enableInlining;
+    bool enableLoopOptimization;
+    bool enableRegisterAllocation;
+    bool enableTailCallOptimization;
+    bool enablePeepholeOptimization;
+    int maxPasses;
+    Options() : enableDeadCodeElimination(true), enableConstantPropagation(true),
+                enableInlining(true), enableLoopOptimization(true),
+                enableRegisterAllocation(true), enableTailCallOptimization(true),
+                enablePeepholeOptimization(true), maxPasses(3) {}
   };
 
   explicit GlobalOptimizer(const Options& options = Options{});
@@ -392,7 +397,7 @@ private:
   std::vector<std::unique_ptr<OptimizationPass>> passes_;
 
   void initializePasses();
-  bool runPass(OptimizationPass& pass, BytecodeFunction& function);
+  OptimizationPass::Result runPass(OptimizationPass& pass, BytecodeFunction& function);
 };
 
 } // namespace havel::compiler

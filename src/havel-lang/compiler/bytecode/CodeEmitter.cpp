@@ -73,27 +73,32 @@ uint32_t CodeEmitter::emitJump(OpCode op) {
   return static_cast<uint32_t>(currentContext_.function->instructions.size() - 1);
 }
 
+void CodeEmitter::patchJump(uint32_t jumpInstructionIndex, uint32_t target) {
   if (jumpInstructionIndex >= currentContext_.function->instructions.size()) {
     throw std::runtime_error("Invalid jump instruction index");
   }
 
   auto& instruction = currentContext_.function->instructions[jumpInstructionIndex];
-  for (const auto& desc : descriptors) {
-    Upvalue::Type type = desc.captures_local ? Upvalue::Type::Local
-                                             : Upvalue::Type::Upvalue;
-  }
   instruction.operands[0] = target;
 }
 
-// ...
+uint32_t CodeEmitter::addConstant(const BytecodeValue& value) {
+  if (!currentContext_.function) {
+    throw std::runtime_error("Cannot add constant: no active function");
+  }
+  uint32_t index = static_cast<uint32_t>(currentContext_.function->constants.size());
+  currentContext_.function->constants.push_back(value);
   return index;
 }
 
 const BytecodeValue& CodeEmitter::getConstant(uint32_t index) const {
-  if (index >= chunk_.constants.size()) {
+  if (!currentContext_.function) {
+    throw std::runtime_error("Cannot get constant: no active function");
+  }
+  if (index >= currentContext_.function->constants.size()) {
     throw std::out_of_range("Constant index out of range");
   }
-  return chunk_.constants[index];
+  return currentContext_.function->constants[index];
 }
 
 uint32_t CodeEmitter::reserveLocalSlot() {
@@ -120,7 +125,7 @@ void CodeEmitter::exitTailPosition() {
 }
 
 void CodeEmitter::setSourceLocation(uint32_t line, uint32_t column) {
-  currentSourceLocation_ = SourceLocation{line, column};
+  currentSourceLocation_ = SourceLocation{"", line, column};
 }
 
 void CodeEmitter::clearSourceLocation() {
@@ -180,7 +185,7 @@ InstructionBuilder& InstructionBuilder::operands(const std::vector<BytecodeValue
 }
 
 InstructionBuilder& InstructionBuilder::atLocation(uint32_t line, uint32_t column) {
-  location_ = SourceLocation{line, column};
+  location_ = SourceLocation{"", line, column};
   return *this;
 }
 

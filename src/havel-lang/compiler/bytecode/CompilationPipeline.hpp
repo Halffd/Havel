@@ -135,7 +135,12 @@ private:
   void removeInstruction(size_t functionIndex, size_t instructionIndex);
   void replaceInstruction(size_t functionIndex,
                           size_t instructionIndex,
-                          const Instruction& newInstruction);
+                          const Instruction& newInstruction) {
+    if (functionIndex >= chunk_.getFunctionCount()) return;
+    auto* function = const_cast<BytecodeFunction*>(chunk_.getFunction(functionIndex));
+    if (!function) return;
+  }
+
 };
 
 // ============================================================================
@@ -188,7 +193,7 @@ private:
 // ============================================================================
 // SymbolTable - Efficient hierarchical symbol lookup
 // ============================================================================
-class SymbolTable {
+class SymbolTable : public std::enable_shared_from_this<SymbolTable> {
 public:
   struct Symbol {
     std::string name;

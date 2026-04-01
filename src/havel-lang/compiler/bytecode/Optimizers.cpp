@@ -185,8 +185,8 @@ GlobalOptimizer::GlobalOptimizer(const Options& options) : options_(options) {
 }
 
 void GlobalOptimizer::optimize(BytecodeChunk& chunk) {
-  for (auto& function : chunk.functions) {
-    optimizeFunction(function);
+  for (auto& function : chunk.getAllFunctions()) {
+    optimizeFunction(const_cast<BytecodeFunction&>(function));
   }
 }
 

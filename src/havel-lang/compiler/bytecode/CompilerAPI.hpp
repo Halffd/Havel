@@ -1,12 +1,14 @@
 #pragma once
 
+#include <future>
+#include <queue>
+#include <thread>
+#include <shared_mutex>
 #include "CompilationPipeline.hpp"
 #include "VMExecutionContext.hpp"
-#include "ModuleCache.hpp"
+#include "AdvancedUtils.hpp"
 #include "ModuleResolver.hpp"
-#include "ErrorReporter.hpp"
-#include "ConfigManager.hpp"
-#include "NativeFunctionBridge.hpp"
+#include "RuntimeSupport.hpp"
 #include <filesystem>
 #include <memory>
 #include <functional>
@@ -198,7 +200,7 @@ public:
                                               const SourceLocation& end) const;
 
   // Build from debug info
-  void buildFromDebugInfo(const DebugInfo& debugInfo);
+  void buildFromDebugInfo(const void* debugInfo);
 
   // Serialization
   std::string serialize() const;
@@ -257,7 +259,22 @@ public:
 
   // Task submission
   template<typename Func, typename... Args>
-  auto submit(Func&& func, Args&&... args) -> std::future<decltype(func(args...))>;
+  auto submit(Func&& func, Args&&... args) -> std::future<decltype(func(args...))> {
+    using ReturnType = decltype(func(args...));
+    auto task = std::make_shared<std::packaged_task<ReturnType()>>(
+        std::bind(std::forward<Func>(func), std::forward<Args>(args)...));
+    std::future<ReturnType> result = task->get_future();
+    {
+      std::unique_lock<std::mutex> lock(queueMutex_);
+      if (stop_) {
+        throw std::runtime_error("Cannot submit task: thread pool is stopped");
+      }
+      tasks_.emplace([task]() { (*task)(); });
+      pending_++;
+    }
+    condition_.notify_one();
+    return result;
+  }
 
   // Control
   void pause();

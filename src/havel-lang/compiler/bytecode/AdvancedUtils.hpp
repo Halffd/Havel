@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include "havel-lang/ast/AST.h"
 #include "havel-lang/compiler/bytecode/BytecodeIR.hpp"
 #include "havel-lang/compiler/bytecode/CompilationPipeline.hpp"
@@ -307,8 +308,10 @@ public:
   // Clear
   void clear();
 
-private:
+  // Allow creating instances for getSection
   ConfigManager() = default;
+
+private:
   std::unordered_map<std::string, Value> values_;
   std::unordered_map<std::string, std::unique_ptr<ConfigManager>> sections_;
 

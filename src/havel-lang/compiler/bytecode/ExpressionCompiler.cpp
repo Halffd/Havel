@@ -1,5 +1,5 @@
 #include "ExpressionCompiler.hpp"
-#include "AST.h"
+#include "havel-lang/ast/AST.h"
 
 namespace havel::compiler {
 
@@ -237,7 +237,6 @@ void ExpressionCompiler::compileObjectLiteral(const ast::ObjectLiteral& object) 
       compile(*value);
       emitter_.emit(OpCode::DUP); // Dup object
       emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(key));
-      emitter_.emit(OpCode::ROT); // Rotate to get value on top
       emitter_.emit(OpCode::OBJECT_SET, key);
     }
   }
@@ -371,7 +370,7 @@ void ExpressionCompiler::compileInterpolatedString(
 
   for (const auto& segment : interp.segments) {
     if (segment.isString) {
-      emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(segment.value));
+      emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(segment.stringValue));
     } else if (segment.expression) {
       compile(*segment.expression);
     }
@@ -411,31 +410,25 @@ void ExpressionCompiler::emitLoadConst(const BytecodeValue& value) {
 OpCode ExpressionCompiler::binaryOpToBytecode(ast::BinaryOperator op) const {
   switch (op) {
     case ast::BinaryOperator::Add: return OpCode::ADD;
-    case ast::BinaryOperator::Subtract: return OpCode::SUB;
-    case ast::BinaryOperator::Multiply: return OpCode::MUL;
-    case ast::BinaryOperator::Divide: return OpCode::DIV;
-    case ast::BinaryOperator::Modulo: return OpCode::MOD;
-    case ast::BinaryOperator::Power: return OpCode::POW;
+    case ast::BinaryOperator::Sub: return OpCode::SUB;
+    case ast::BinaryOperator::Mul: return OpCode::MUL;
+    case ast::BinaryOperator::Div: return OpCode::DIV;
+    case ast::BinaryOperator::Mod: return OpCode::MOD;
+    case ast::BinaryOperator::Pow: return OpCode::POW;
     case ast::BinaryOperator::Equal: return OpCode::EQ;
-    case ast::BinaryOperator::NotEqual: return OpCode::NE;
+    case ast::BinaryOperator::NotEqual: return OpCode::NEQ;
     case ast::BinaryOperator::Less: return OpCode::LT;
-    case ast::BinaryOperator::LessEqual: return OpCode::LE;
+    case ast::BinaryOperator::LessEqual: return OpCode::LTE;
     case ast::BinaryOperator::Greater: return OpCode::GT;
-    case ast::BinaryOperator::GreaterEqual: return OpCode::GE;
+    case ast::BinaryOperator::GreaterEqual: return OpCode::GTE;
     case ast::BinaryOperator::And: return OpCode::AND;
     case ast::BinaryOperator::Or: return OpCode::OR;
-    case ast::BinaryOperator::BitAnd: return OpCode::BIT_AND;
-    case ast::BinaryOperator::BitOr: return OpCode::BIT_OR;
-    case ast::BinaryOperator::BitXor: return OpCode::BIT_XOR;
-    case ast::BinaryOperator::ShiftLeft: return OpCode::SHL;
-    case ast::BinaryOperator::ShiftRight: return OpCode::SHR;
     default: throw std::runtime_error("Unsupported binary operator");
   }
 }
 
 bool ExpressionCompiler::isAssignmentOp(ast::BinaryOperator op) const {
-  return op == ast::BinaryOperator::Assign ||
-         op == ast::BinaryOperator::AddAssign ||
+  return op == ast::BinaryOperator::AddAssign ||
          op == ast::BinaryOperator::SubAssign ||
          op == ast::BinaryOperator::MulAssign ||
          op == ast::BinaryOperator::DivAssign;
@@ -743,9 +736,9 @@ void StatementCompiler::compileTryStatement(const ast::TryExpression& tryExpr) {
     throw std::runtime_error("Try statement missing body");
   }
 
-  uint32_t catchJump = emitter_.emitJump(OpCode::TRY_BEGIN);
+  uint32_t catchJump = emitter_.emitJump(OpCode::TRY_ENTER);
   compile(*tryExpr.tryBody);
-  uint32_t finallyJump = emitter_.emitJump(OpCode::TRY_END);
+  uint32_t finallyJump = emitter_.emitJump(OpCode::TRY_EXIT);
 
   emitter_.patchJump(catchJump,
     static_cast<uint32_t>(emitter_.currentFunction().instructions.size()));
@@ -995,9 +988,8 @@ FunctionCompiler::FunctionCompiler(CodeEmitter& emitter,
       bindingResolver_(bindingResolver) {}
 
 uint32_t FunctionCompiler::compileFunction(const ast::FunctionDeclaration& function) {
-  BytecodeFunction func;
-  func.name = function.name ? function.name->symbol : "<anonymous>";
-  func.arity = static_cast<uint32_t>(function.parameters.size());
+  BytecodeFunction func(function.name ? function.name->symbol : "<anonymous>",
+                        static_cast<uint32_t>(function.parameters.size()), 0);
 
   emitter_.beginFunction(std::move(func));
   bindingResolver_.beginFunction(&function);
@@ -1016,9 +1008,8 @@ uint32_t FunctionCompiler::compileFunction(const ast::FunctionDeclaration& funct
 }
 
 uint32_t FunctionCompiler::compileLambda(const ast::LambdaExpression& lambda) {
-  BytecodeFunction func;
-  func.name = "<lambda>";
-  func.arity = static_cast<uint32_t>(lambda.parameters.size());
+  BytecodeFunction func("<lambda>",
+                        static_cast<uint32_t>(lambda.parameters.size()), 0);
 
   emitter_.beginFunction(std::move(func));
   bindingResolver_.beginFunction(&lambda);
@@ -1035,7 +1026,8 @@ uint32_t FunctionCompiler::compileLambda(const ast::LambdaExpression& lambda) {
       }
       emitter_.emit(OpCode::RETURN);
     } else {
-      compileFunctionBody(*lambda.body);
+      // Block lambda body
+      stmtCompiler_.compile(*lambda.body);
     }
   }
 

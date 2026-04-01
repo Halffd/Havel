@@ -389,7 +389,7 @@ std::string BytecodeDisassembler::disassemble(const Options& options) const {
     ss << "\n";
   }
 
-  for (size_t i = 0; i < chunk_.functions.size(); ++i) {
+  for (size_t i = 0; i < chunk_.getFunctionCount(); ++i) {
     if (i > 0) ss << "\n";
     ss << disassembleFunction(static_cast<uint32_t>(i), options);
   }
@@ -400,27 +400,27 @@ std::string BytecodeDisassembler::disassemble(const Options& options) const {
 std::string BytecodeDisassembler::disassembleFunction(
     uint32_t functionIndex,
     const Options& options) const {
-  if (functionIndex >= chunk_.functions.size()) {
+  auto* function = chunk_.getFunction(functionIndex);
+  if (!function) {
     return "Invalid function index\n";
   }
 
-  const auto& function = chunk_.functions[functionIndex];
   std::stringstream ss;
 
   if (options.showFunctionInfo) {
     ss << "=== Function " << functionIndex << " ===\n";
-    ss << "Name: " << function.name << "\n";
-    ss << "Arity: " << function.arity << "\n";
-    ss << "Instructions: " << function.instructions.size() << "\n";
+    ss << "Name: " << function->name << "\n";
+    ss << "Params: " << function->param_count << "\n";
+    ss << "Instructions: " << function->instructions.size() << "\n";
   }
 
   ss << "\n";
 
-  for (size_t i = 0; i < function.instructions.size(); ++i) {
+  for (size_t i = 0; i < function->instructions.size(); ++i) {
     if (options.showLineNumbers) {
       ss << std::setw(4) << i << ": ";
     }
-    ss << disassembleInstruction(function.instructions[i],
+    ss << disassembleInstruction(function->instructions[i],
                                   static_cast<uint32_t>(i),
                                   options);
     ss << "\n";
@@ -452,11 +452,7 @@ std::string BytecodeDisassembler::disassembleInstruction(
 std::string BytecodeDisassembler::disassembleConstantPool() const {
   std::stringstream ss;
   ss << "=== Constant Pool ===\n";
-
-  for (size_t i = 0; i < chunk_.constants.size(); ++i) {
-    ss << std::setw(4) << i << ": " << operandToString(chunk_.constants[i]) << "\n";
-  }
-
+  ss << "(Constants are now function-level)\n";
   return ss.str();
 }
 
@@ -471,7 +467,6 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
     case OpCode::STORE_UPVALUE: return "STORE_UPVALUE";
     case OpCode::POP: return "POP";
     case OpCode::DUP: return "DUP";
-    case OpCode::ROT: return "ROT";
     case OpCode::ADD: return "ADD";
     case OpCode::SUB: return "SUB";
     case OpCode::MUL: return "MUL";
@@ -479,11 +474,11 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
     case OpCode::MOD: return "MOD";
     case OpCode::POW: return "POW";
     case OpCode::EQ: return "EQ";
-    case OpCode::NE: return "NE";
+    case OpCode::NEQ: return "NEQ";
     case OpCode::LT: return "LT";
-    case OpCode::LE: return "LE";
+    case OpCode::LTE: return "LTE";
     case OpCode::GT: return "GT";
-    case OpCode::GE: return "GE";
+    case OpCode::GTE: return "GTE";
     case OpCode::AND: return "AND";
     case OpCode::OR: return "OR";
     case OpCode::NOT: return "NOT";
@@ -504,8 +499,8 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
     case OpCode::SPREAD: return "SPREAD";
     case OpCode::RANGE_NEW: return "RANGE_NEW";
     case OpCode::RANGE_STEP_NEW: return "RANGE_STEP_NEW";
-    case OpCode::TRY_BEGIN: return "TRY_BEGIN";
-    case OpCode::TRY_END: return "TRY_END";
+    case OpCode::TRY_ENTER: return "TRY_ENTER";
+    case OpCode::TRY_EXIT: return "TRY_EXIT";
     case OpCode::THROW: return "THROW";
     case OpCode::CALL_HOST: return "CALL_HOST";
     default: return "UNKNOWN";
@@ -528,7 +523,7 @@ std::string BytecodeDisassembler::operandToString(const BytecodeValue& operand) 
     } else if constexpr (std::is_same_v<T, uint32_t>) {
       return std::to_string(val);
     } else {
-      return "<?>";
+      return "<?>"; // For FunctionObject, ClosureRef, etc.
     }
   }, operand);
 }
@@ -603,7 +598,7 @@ std::string ConstantPool::hashValue(const BytecodeValue& value) const {
     } else if constexpr (std::is_same_v<T, nullptr_t>) {
       return "n:null";
     } else {
-      return "u:" + std::to_string(val); // For ObjectRef, ArrayRef, etc.
+      return "u:ref"; // For ObjectRef, ArrayRef, etc.
     }
   }, value);
 }
@@ -612,7 +607,7 @@ std::string ConstantPool::serialize() const {
   std::stringstream ss;
   ss << constants_.size() << "\n";
   for (const auto& constant : constants_) {
-    ss << operandToString(constant) << "\n";
+    ss << BytecodeDisassembler::operandToString(constant) << "\n";
   }
   return ss.str();
 }

@@ -36,58 +36,66 @@ std::unique_ptr<ast::ASTNode> ASTTransformer::visitProgram(ast::Program& node) {
 
 std::unique_ptr<ast::ASTNode> ASTTransformer::visitBinaryExpression(
     ast::BinaryExpression& node) {
-  auto newExpr = std::make_unique<ast::BinaryExpression>();
-  newExpr->line = node.line;
-  newExpr->column = node.column;
-  newExpr->operator_ = node.operator_;
+  std::unique_ptr<ast::Expression> newLeft;
+  std::unique_ptr<ast::Expression> newRight;
 
   if (node.left) {
-    auto newLeft = transform(std::move(node.left));
-    newExpr->left.reset(static_cast<ast::Expression*>(newLeft.release()));
+    newLeft = std::unique_ptr<ast::Expression>(
+      static_cast<ast::Expression*>(transform(std::move(node.left)).release()));
   }
   if (node.right) {
-    auto newRight = transform(std::move(node.right));
-    newExpr->right.reset(static_cast<ast::Expression*>(newRight.release()));
+    newRight = std::unique_ptr<ast::Expression>(
+      static_cast<ast::Expression*>(transform(std::move(node.right)).release()));
   }
+
+  auto newExpr = std::make_unique<ast::BinaryExpression>(
+    std::move(newLeft), node.operator_, std::move(newRight));
+  newExpr->line = node.line;
+  newExpr->column = node.column;
 
   return newExpr;
 }
 
 std::unique_ptr<ast::ASTNode> ASTTransformer::visitUnaryExpression(
     ast::UnaryExpression& node) {
-  auto newExpr = std::make_unique<ast::UnaryExpression>();
-  newExpr->line = node.line;
-  newExpr->column = node.column;
-  newExpr->operator_ = node.operator_;
+  std::unique_ptr<ast::Expression> newOperand;
 
   if (node.operand) {
-    auto newOperand = transform(std::move(node.operand));
-    newExpr->operand.reset(static_cast<ast::Expression*>(newOperand.release()));
+    newOperand = std::unique_ptr<ast::Expression>(
+      static_cast<ast::Expression*>(transform(std::move(node.operand)).release()));
   }
+
+  auto newExpr = std::make_unique<ast::UnaryExpression>(node.operator_, std::move(newOperand));
+  newExpr->line = node.line;
+  newExpr->column = node.column;
 
   return newExpr;
 }
 
 std::unique_ptr<ast::ASTNode> ASTTransformer::visitCallExpression(
     ast::CallExpression& node) {
-  auto newExpr = std::make_unique<ast::CallExpression>();
-  newExpr->line = node.line;
-  newExpr->column = node.column;
+  std::vector<std::unique_ptr<ast::Expression>> newArgs;
+  std::vector<ast::KeywordArg> newKwargs;
 
   if (node.callee) {
     auto newCallee = transform(std::move(node.callee));
-    newExpr->callee.reset(static_cast<ast::Expression*>(newCallee.release()));
-  }
-
-  for (auto& arg : node.args) {
-    if (arg) {
-      auto newArg = transform(std::move(arg));
-      newExpr->args.push_back(std::unique_ptr<ast::Expression>(
-        static_cast<ast::Expression*>(newArg.release())));
+    for (auto& arg : node.args) {
+      if (arg) {
+        auto newArg = transform(std::move(arg));
+        newArgs.push_back(std::unique_ptr<ast::Expression>(static_cast<ast::Expression*>(newArg.release())));
+      }
     }
+    auto newExpr = std::make_unique<ast::CallExpression>(
+      std::unique_ptr<ast::Expression>(static_cast<ast::Expression*>(newCallee.release())),
+      std::move(newArgs),
+      std::move(newKwargs)
+    );
+    newExpr->line = node.line;
+    newExpr->column = node.column;
+    return newExpr;
   }
 
-  return newExpr;
+  return nullptr;
 }
 
 // ============================================================================
@@ -270,10 +278,6 @@ bool ConfigManager::has(const std::string& key) const {
   return values_.count(key) > 0;
 }
 
-void ConfigManager::remove(const std::string& key) {
-  values_.erase(key);
-}
-
 std::vector<std::string> ConfigManager::getKeys() const {
   std::vector<std::string> keys;
   for (const auto& [key, _] : values_) {
@@ -284,17 +288,21 @@ std::vector<std::string> ConfigManager::getKeys() const {
 }
 
 std::unique_ptr<ConfigManager> ConfigManager::getSection(const std::string& name) const {
-  auto section = std::make_unique<ConfigManager>();
+  auto result = std::make_unique<ConfigManager>();
   std::string prefix = name + ".";
 
   for (const auto& [key, value] : values_) {
     if (key.find(prefix) == 0) {
       std::string newKey = key.substr(prefix.length());
-      section->values_[newKey] = value;
+      result->values_[newKey] = value;
     }
   }
 
-  return section;
+  return result;
+}
+
+void ConfigManager::remove(const std::string& key) {
+  values_.erase(key);
 }
 
 void ConfigManager::setSection(const std::string& name, const ConfigManager& section) {

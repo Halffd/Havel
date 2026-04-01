@@ -27,6 +27,15 @@ public:
     bool is_open = false;
     uint32_t open_index = 0;
     BytecodeValue closed_value = nullptr;
+
+    // Methods for closure/upvalue management
+    BytecodeValue get() const { return is_open ? nullptr : closed_value; }
+    void set(BytecodeValue value) { closed_value = value; }
+    void close(BytecodeValue value = nullptr) {
+      closed_value = value;
+      is_open = false;
+    }
+    bool isClosed() const { return !is_open; }
   };
 
   struct RuntimeClosure {
@@ -145,6 +154,10 @@ public:
   void reset();
 
   ClosureRef allocateClosure(RuntimeClosure closure);
+
+  // Upvalue operations
+  std::shared_ptr<UpvalueCell> createUpvalue(uint32_t index);
+
   ArrayRef allocateArray();
   ObjectRef allocateObject(bool sorted = true);
   SetRef allocateSet();

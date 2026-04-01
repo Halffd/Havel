@@ -1,5 +1,6 @@
 #include "VMExecutionContext.hpp"
 #include "BytecodeIR.hpp"
+#include "VM.hpp"
 #include <stdexcept>
 
 namespace havel::compiler {
@@ -314,13 +315,14 @@ std::vector<std::string> VMHostBridge::getRegisteredFunctions() const {
 VMExecutionContext::VMExecutionContext(VM& parent, const BytecodeChunk& chunk)
     : parent_(parent),
       chunk_(chunk),
-      upvalues_(heap_) {}
+      upvalues_(parent.getHeap()) {}
 
 BytecodeValue VMExecutionContext::execute(const std::string& functionName,
                                             const std::vector<BytecodeValue>& args) {
   // Find function in chunk
-  for (size_t i = 0; i < chunk_.functions.size(); ++i) {
-    if (chunk_.functions[i].name == functionName) {
+  for (size_t i = 0; i < chunk_.getFunctionCount(); ++i) {
+    auto func = chunk_.getFunction(static_cast<uint32_t>(i));
+    if (func && func->name == functionName) {
       return callFunction(static_cast<uint32_t>(i), args);
     }
   }
@@ -329,14 +331,13 @@ BytecodeValue VMExecutionContext::execute(const std::string& functionName,
 
 BytecodeValue VMExecutionContext::callFunction(uint32_t functionIndex,
                                               const std::vector<BytecodeValue>& args) {
-  if (functionIndex >= chunk_.functions.size()) {
+  auto function = chunk_.getFunction(functionIndex);
+  if (!function) {
     throw std::out_of_range("Function index out of range");
   }
 
-  const auto& function = chunk_.functions[functionIndex];
-
   // Check arity
-  if (args.size() != function.arity) {
+  if (args.size() != function->param_count) {
     throw std::runtime_error("Argument count mismatch");
   }
 
@@ -347,7 +348,7 @@ BytecodeValue VMExecutionContext::callFunction(uint32_t functionIndex,
   }
 
   // Push frame
-  auto& frame = frames_.pushFrame(&function, localsBase);
+  auto& frame = frames_.pushFrame(function, localsBase);
 
   // Execute
   isExecuting_ = true;

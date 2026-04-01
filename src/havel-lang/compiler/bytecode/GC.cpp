@@ -649,4 +649,11 @@ void GCHeap::collectGarbage(
           .count());
 }
 
+std::shared_ptr<GCHeap::UpvalueCell> GCHeap::createUpvalue(uint32_t index) {
+  auto cell = std::make_shared<UpvalueCell>();
+  cell->is_open = true;
+  cell->open_index = index;
+  return cell;
+}
+
 } // namespace havel::compiler

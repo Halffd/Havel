@@ -3,6 +3,7 @@
 #include "BytecodeIR.hpp"
 #include "Closure.hpp"
 #include "GC.hpp"
+#include <shared_mutex>
 #include <stack>
 #include <vector>
 #include <unordered_map>
@@ -89,7 +90,11 @@ public:
   // Stack inspection
   bool isEmpty() const { return stack_.empty(); }
   size_t size() const { return stack_.size(); }
-  void clear() { stack_.clear(); }
+  void clear() {
+    while (!stack_.empty()) {
+      stack_.pop();
+    }
+  }
 
   // Get all values for GC roots
   std::vector<BytecodeValue> getValues() const;

@@ -227,6 +227,8 @@ public:
   void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
   void runGarbageCollection() { collectGarbage(); }
   GCHeap::Stats gcStats() const { return heap_.stats(); }
+  GCHeap& getHeap() { return heap_; }
+  const GCHeap& getHeap() const { return heap_; }
   void setGlobal(std::string name, BytecodeValue value) {
     globals[std::move(name)] = std::move(value);
   }

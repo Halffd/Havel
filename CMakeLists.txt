@@ -192,7 +192,7 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTORCC ON) 
     set(CMAKE_AUTOUIC ON)
 
-    find_package(Qt6 COMPONENTS Core Widgets Charts Test)
+    find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test)
     
     if(Qt6_FOUND)
         # Handle X11/Qt keyword conflicts in MOC
@@ -328,10 +328,8 @@ file(GLOB_RECURSE CORE_SOURCES
 # GUI sources (conditionally included based on backend)
 file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
 
-# When using Qt as dynamic extension, GUI sources go to the extension, not main executable
-if(UI_BACKEND STREQUAL "QT")
-    set(GUI_SOURCES "")  # Clear for main executable, will be added to qt_extension
-endif()
+# Note: GUI sources are needed by main executable for ClipboardManager, GUIManager etc.
+# Qt extension gets its own copy of Qt-specific GUI sources
 
 # Havel language sources (conditional)
 set(HAVEL_LANG_SOURCES "")
@@ -419,7 +417,7 @@ if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE)
         /usr/include/qt6/QtWidgets
         /usr/include/qt6/QtGui
     )
-    list(APPEND COMMON_LIBS Qt6::Core Qt6::Widgets)
+    list(APPEND COMMON_LIBS Qt6::Core Qt6::Widgets Qt6::Gui)
     list(APPEND UI_BACKEND_DEFS HAVE_QT_EXTENSION)
     message(STATUS "Qt6:             ✓ Linked to main + dynamic extension available")
 elseif(UI_BACKEND STREQUAL "GTK" AND GTK_BACKEND_AVAILABLE)
@@ -813,6 +811,8 @@ target_include_directories(havel PRIVATE
 # Link libraries
 target_link_libraries(havel PRIVATE
     ${COMMON_LIBS}
+    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
+    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
     spdlog::spdlog
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     ${OPENCV_FFMPEG_WORKAROUND}

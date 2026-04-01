@@ -109,6 +109,19 @@ std::shared_ptr<ui::UIElement> QtBackend::grid(int cols) {
     return service_->grid(cols);
 }
 
+std::shared_ptr<ui::UIElement> QtBackend::table(int rows, int cols) {
+    auto elem = std::make_shared<ui::UIElement>(ui::ElementType::TABLE);
+    elem->set("rows", static_cast<int64_t>(rows));
+    elem->set("cols", static_cast<int64_t>(cols));
+    return elem;
+}
+
+std::shared_ptr<ui::UIElement> QtBackend::flex(const std::string &direction) {
+    auto elem = std::make_shared<ui::UIElement>(ui::ElementType::FLEX);
+    elem->set("direction", direction);
+    return elem;
+}
+
 std::shared_ptr<ui::UIElement> QtBackend::scroll() {
     return service_->scroll();
 }

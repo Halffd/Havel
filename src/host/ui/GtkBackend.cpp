@@ -392,6 +392,23 @@ std::shared_ptr<ui::UIElement> GtkBackend::grid(int cols) {
     return element;
 }
 
+std::shared_ptr<ui::UIElement> GtkBackend::table(int rows, int cols) {
+    auto element = std::make_shared<ui::UIElement>();
+    element->id = "table_" + std::to_string(reinterpret_cast<uintptr_t>(element.get()));
+    element->type = ui::UIElement::Type::Table;
+    element->props["rows"] = rows;
+    element->props["cols"] = cols;
+    return element;
+}
+
+std::shared_ptr<ui::UIElement> GtkBackend::flex(const std::string &direction) {
+    auto element = std::make_shared<ui::UIElement>();
+    element->id = "flex_" + std::to_string(reinterpret_cast<uintptr_t>(element.get()));
+    element->type = ui::UIElement::Type::Flex;
+    element->props["direction"] = direction;
+    return element;
+}
+
 std::shared_ptr<ui::UIElement> GtkBackend::scroll() {
     auto scrolled = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),

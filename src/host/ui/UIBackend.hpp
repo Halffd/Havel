@@ -68,6 +68,8 @@ public:
     virtual std::shared_ptr<ui::UIElement> row() = 0;
     virtual std::shared_ptr<ui::UIElement> col() = 0;
     virtual std::shared_ptr<ui::UIElement> grid(int cols) = 0;
+    virtual std::shared_ptr<ui::UIElement> table(int rows, int cols) = 0;
+    virtual std::shared_ptr<ui::UIElement> flex(const std::string &direction) = 0;
     virtual std::shared_ptr<ui::UIElement> scroll() = 0;
     virtual std::shared_ptr<ui::UIElement> canvas(int width, int height) = 0;
 

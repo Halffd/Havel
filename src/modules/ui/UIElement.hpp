@@ -175,6 +175,8 @@ inline constexpr const char *COLORPICKER = "colorpicker";
 inline constexpr const char *ROW = "row";
 inline constexpr const char *COL = "col";
 inline constexpr const char *GRID = "grid";
+inline constexpr const char *TABLE = "table";
+inline constexpr const char *FLEX = "flex";
 inline constexpr const char *SCROLL = "scroll";
 inline constexpr const char *CANVAS = "canvas";
 

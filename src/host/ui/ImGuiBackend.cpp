@@ -382,6 +382,29 @@ std::shared_ptr<ui::UIElement> ImGuiBackend::grid(int cols) {
     return element;
 }
 
+std::shared_ptr<ui::UIElement> ImGuiBackend::table(int rows, int cols) {
+    auto element = std::make_shared<ui::UIElement>();
+    element->id = generateId("table");
+    element->type = ui::UIElement::Type::Table;
+    element->props["rows"] = rows;
+    element->props["cols"] = cols;
+    
+    elements_[element->id] = element;
+    
+    return element;
+}
+
+std::shared_ptr<ui::UIElement> ImGuiBackend::flex(const std::string &direction) {
+    auto element = std::make_shared<ui::UIElement>();
+    element->id = generateId("flex");
+    element->type = ui::UIElement::Type::Flex;
+    element->props["direction"] = direction;
+    
+    elements_[element->id] = element;
+    
+    return element;
+}
+
 std::shared_ptr<ui::UIElement> ImGuiBackend::scroll() {
     auto element = std::make_shared<ui::UIElement>();
     element->id = generateId("scroll");

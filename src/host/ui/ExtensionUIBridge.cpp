@@ -209,6 +209,19 @@ std::shared_ptr<ui::UIElement> ExtensionUIBridge::grid(int cols) {
   return elem;
 }
 
+std::shared_ptr<ui::UIElement> ExtensionUIBridge::table(int rows, int cols) {
+  auto elem = createElement(ui::ElementType::TABLE);
+  elem->set("rows", static_cast<int64_t>(rows));
+  elem->set("cols", static_cast<int64_t>(cols));
+  return elem;
+}
+
+std::shared_ptr<ui::UIElement> ExtensionUIBridge::flex(const std::string& direction) {
+  auto elem = createElement(ui::ElementType::FLEX);
+  elem->set("direction", direction);
+  return elem;
+}
+
 std::shared_ptr<ui::UIElement> ExtensionUIBridge::scroll() {
   return createElement(ui::ElementType::SCROLL);
 }

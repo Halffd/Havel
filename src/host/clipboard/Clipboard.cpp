@@ -4,6 +4,8 @@
  * Core clipboard implementation - minimal overhead.
  */
 #include "Clipboard.hpp"
+
+#ifdef HAVE_QT_EXTENSION
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -12,6 +14,7 @@
 #include <QList>
 #include <QMimeData>
 #include <QUrl>
+#endif
 #include <cstdlib>
 
 namespace havel::host {

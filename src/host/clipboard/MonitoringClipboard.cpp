@@ -5,8 +5,11 @@
  */
 #include "MonitoringClipboard.hpp"
 
+#ifdef HAVE_QT_EXTENSION
+#include "Clipboard.hpp"
 #include <QApplication>
 #include <QClipboard>
+#endif
 
 namespace havel::host {
 

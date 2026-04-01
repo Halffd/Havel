@@ -1,6 +1,7 @@
 #include "VMExecutionContext.hpp"
 #include "BytecodeIR.hpp"
 #include "VM.hpp"
+#include <mutex>
 #include <stdexcept>
 
 namespace havel::compiler {

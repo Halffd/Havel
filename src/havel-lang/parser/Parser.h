@@ -37,6 +37,41 @@ struct DebugOptions {
   bool ast = false;
 };
 
+// ============================================================================
+// PRATT PARSER (Top-Down Operator Precedence)
+// ============================================================================
+
+// Binding power (precedence) levels - higher = tighter binding
+enum class BindingPower : int {
+  None = 0,
+  Assignment = 10,    // =, +=, -=, etc.
+  Nullish = 20,       // ??
+  LogicalOr = 30,     // ||
+  LogicalAnd = 40,    // &&
+  Equality = 50,      // ==, !=
+  Comparison = 60,    // <, >, <=, >=
+  Range = 70,         // ..
+  Pipe = 75,          // |
+  BitwiseOr = 80,     // |
+  BitwiseXor = 90,    // ^
+  BitwiseAnd = 100,   // &
+  Shift = 110,        // <<, >>
+  Additive = 120,     // +, -
+  Multiplicative = 130, // *, /, %, **
+  Prefix = 140,       // -x, !x, ~x, ++x, --x
+  Postfix = 150,      // x++, x--, x.y, x[y], x()
+  Call = 160,         // function calls
+  Member = 170,       // ., [], ?., !
+  Primary = 180       // literals, identifiers, (expr)
+};
+
+// Convert binding power to int for comparison
+inline int bp(BindingPower power) { return static_cast<int>(power); }
+
+// ============================================================================
+// EXISTING PARSER CLASS
+// ============================================================================
+
 class Parser {
 private:
   std::vector<Token> tokens;
@@ -208,6 +243,32 @@ private:
   std::unique_ptr<ast::Expression>
   combineConditions(std::unique_ptr<ast::Expression> left,
                     std::unique_ptr<ast::Expression> right);
+
+  // ============================================================================
+  // PRATT PARSER METHODS (Top-Down Operator Precedence)
+  // ============================================================================
+
+  // Main Pratt expression parser - parse with given right binding power
+  std::unique_ptr<ast::Expression> parsePrattExpression(int rbp = 0);
+
+  // Get left binding power for a token type
+  int getBindingPower(TokenType type) const;
+
+  // Get right binding power for a token type (for right-associative operators)
+  int getRightBindingPower(TokenType type) const;
+
+  // Null denotation - parse token at start of expression
+  std::unique_ptr<ast::Expression> nud(const Token &token);
+
+  // Left denotation - parse token in infix/postfix position with left operand
+  std::unique_ptr<ast::Expression> led(const Token &token,
+                                       std::unique_ptr<ast::Expression> left);
+
+  // Check if token can start an expression (has nud)
+  bool canStartExpression(TokenType type) const;
+
+  // Check if token is an infix/postfix operator (has led)
+  bool isInfixOperator(TokenType type) const;
 
 public:
   explicit Parser(const DebugOptions &debug_opts = {}) : debug(debug_opts) {}

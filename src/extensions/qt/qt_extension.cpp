@@ -2368,6 +2368,349 @@ static HavelValue* qt_processCallbacks(int argc, HavelValue** argv) {
 }
 
 /* ============================================================================
+ * CANVAS API - QuickDraw Style
+ * ============================================================================ */
+
+#include <QPainter>
+#include <QPixmap>
+#include <QStack>
+
+struct QtCanvas {
+    int64_t id;
+    QPixmap* display;      // What you see
+    QPixmap* working;      // Offscreen buffer for drawing
+    QPixmap* snapshot;     // For undo
+    int width;
+    int height;
+    QColor penColor;
+    int penWidth;
+    
+    QtCanvas(int w, int h) : width(w), height(h), penColor(Qt::black), penWidth(1) {
+        display = new QPixmap(w, h);
+        working = new QPixmap(w, h);
+        snapshot = new QPixmap(w, h);
+        display->fill(Qt::white);
+        working->fill(Qt::white);
+        snapshot->fill(Qt::white);
+    }
+    
+    ~QtCanvas() {
+        delete display;
+        delete working;
+        delete snapshot;
+    }
+    
+    void saveSnapshot() {
+        *snapshot = *working;
+    }
+    
+    void restoreSnapshot() {
+        *working = *snapshot;
+    }
+    
+    void commitToDisplay() {
+        *display = *working;
+    }
+};
+
+static std::unordered_map<int64_t, QtCanvas*> g_canvases;
+static int64_t g_nextCanvasId = 1;
+
+static QtCanvas* getCanvas(int64_t id) {
+    auto it = g_canvases.find(id);
+    if (it != g_canvases.end()) return it->second;
+    return nullptr;
+}
+
+static HavelValue* qt_canvasNew(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_null();
+    
+    int width = static_cast<int>(havel_get_int(argv[0]));
+    int height = static_cast<int>(havel_get_int(argv[1]));
+    
+    QtCanvas* canvas = new QtCanvas(width, height);
+    canvas->id = g_nextCanvasId++;
+    g_canvases[canvas->id] = canvas;
+    
+    return havel_new_handle(reinterpret_cast<void*>(canvas->id), 0);
+}
+
+static HavelValue* qt_canvasClear(int argc, HavelValue** argv) {
+    if (argc < 1) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    canvas->working->fill(Qt::white);
+    canvas->commitToDisplay();
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasSetPen(int argc, HavelValue** argv) {
+    if (argc < 3) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    int r = static_cast<int>(havel_get_int(argv[1]));
+    int g = static_cast<int>(havel_get_int(argv[2]));
+    int b = static_cast<int>(argc > 3 ? havel_get_int(argv[3]) : 0);
+    
+    canvas->penColor = QColor(r, g, b);
+    if (argc > 4) {
+        canvas->penWidth = static_cast<int>(havel_get_int(argv[4]));
+    }
+    
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasDrawLine(int argc, HavelValue** argv) {
+    if (argc < 5) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    int x1 = static_cast<int>(havel_get_int(argv[1]));
+    int y1 = static_cast<int>(havel_get_int(argv[2]));
+    int x2 = static_cast<int>(havel_get_int(argv[3]));
+    int y2 = static_cast<int>(havel_get_int(argv[4]));
+    
+    QPainter painter(canvas->working);
+    painter.setPen(QPen(canvas->penColor, canvas->penWidth));
+    painter.drawLine(x1, y1, x2, y2);
+    painter.end();
+    
+    canvas->commitToDisplay();
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasDrawRect(int argc, HavelValue** argv) {
+    if (argc < 5) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    int x = static_cast<int>(havel_get_int(argv[1]));
+    int y = static_cast<int>(havel_get_int(argv[2]));
+    int w = static_cast<int>(havel_get_int(argv[3]));
+    int h = static_cast<int>(havel_get_int(argv[4]));
+    
+    QPainter painter(canvas->working);
+    painter.setPen(QPen(canvas->penColor, canvas->penWidth));
+    if (argc > 5 && havel_get_bool(argv[5])) {
+        painter.fillRect(x, y, w, h, canvas->penColor);
+    } else {
+        painter.drawRect(x, y, w, h);
+    }
+    painter.end();
+    
+    canvas->commitToDisplay();
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasDrawCircle(int argc, HavelValue** argv) {
+    if (argc < 4) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    int x = static_cast<int>(havel_get_int(argv[1]));
+    int y = static_cast<int>(havel_get_int(argv[2]));
+    int r = static_cast<int>(havel_get_int(argv[3]));
+    
+    QPainter painter(canvas->working);
+    painter.setPen(QPen(canvas->penColor, canvas->penWidth));
+    if (argc > 4 && havel_get_bool(argv[4])) {
+        painter.setBrush(canvas->penColor);
+    }
+    painter.drawEllipse(x - r, y - r, r * 2, r * 2);
+    painter.end();
+    
+    canvas->commitToDisplay();
+    return havel_new_bool(1);
+}
+
+static void floodFill(QPixmap* pixmap, int startX, int startY, const QColor& fillColor) {
+    QImage image = pixmap->toImage();
+    if (startX < 0 || startX >= image.width() || startY < 0 || startY >= image.height())
+        return;
+    
+    QRgb targetColor = image.pixel(startX, startY);
+    QRgb fillRgb = fillColor.rgb();
+    
+    if (targetColor == fillRgb) return;
+    
+    QStack<QPoint> stack;
+    stack.push(QPoint(startX, startY));
+    
+    while (!stack.isEmpty()) {
+        QPoint p = stack.pop();
+        int x = p.x();
+        int y = p.y();
+        
+        if (x < 0 || x >= image.width() || y < 0 || y >= image.height())
+            continue;
+        if (image.pixel(x, y) != targetColor)
+            continue;
+        
+        image.setPixel(x, y, fillRgb);
+        
+        stack.push(QPoint(x + 1, y));
+        stack.push(QPoint(x - 1, y));
+        stack.push(QPoint(x, y + 1));
+        stack.push(QPoint(x, y - 1));
+    }
+    
+    *pixmap = QPixmap::fromImage(image);
+}
+
+static HavelValue* qt_canvasFill(int argc, HavelValue** argv) {
+    if (argc < 3) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    int x = static_cast<int>(havel_get_int(argv[1]));
+    int y = static_cast<int>(havel_get_int(argv[2]));
+    
+    floodFill(canvas->working, x, y, canvas->penColor);
+    canvas->commitToDisplay();
+    
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasBeginStroke(int argc, HavelValue** argv) {
+    if (argc < 1) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    // Save current state for undo
+    canvas->saveSnapshot();
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasEndStroke(int argc, HavelValue** argv) {
+    if (argc < 1) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    canvas->commitToDisplay();
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasUndo(int argc, HavelValue** argv) {
+    if (argc < 1) return havel_new_bool(0);
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_bool(0);
+    
+    canvas->restoreSnapshot();
+    canvas->commitToDisplay();
+    return havel_new_bool(1);
+}
+
+static HavelValue* qt_canvasGetImage(int argc, HavelValue** argv) {
+    if (argc < 1) return havel_new_null();
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_null();
+    
+    // Convert to QLabel for display
+    QLabel* label = new QLabel();
+    label->setPixmap(*canvas->display);
+    label->setFixedSize(canvas->width, canvas->height);
+    label->show();
+    
+    int64_t widgetId = reinterpret_cast<int64_t>(label);
+    g_widgets[widgetId] = label;
+    
+    return havel_new_handle(reinterpret_cast<void*>(widgetId), 0);
+}
+
+static HavelValue* qt_canvasLassoSelect(int argc, HavelValue** argv) {
+    if (argc < 3) return havel_new_null();
+    
+    int64_t canvasId = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    QtCanvas* canvas = getCanvas(canvasId);
+    if (!canvas) return havel_new_null();
+    
+    int startX = static_cast<int>(havel_get_int(argv[1]));
+    int startY = static_cast<int>(havel_get_int(argv[2]));
+    
+    // Use flood fill to find connected region (lasso)
+    QImage image = canvas->working->toImage();
+    if (startX < 0 || startX >= image.width() || startY < 0 || startY >= image.height())
+        return havel_new_null();
+    
+    QRgb targetColor = image.pixel(startX, startY);
+    QColor highlightColor(255, 0, 0, 128); // Semi-transparent red
+    
+    // Create mask of selected region using flood fill logic
+    QStack<QPoint> stack;
+    QImage mask(image.width(), image.height(), QImage::Format_ARGB32);
+    mask.fill(Qt::transparent);
+    
+    stack.push(QPoint(startX, startY));
+    while (!stack.isEmpty()) {
+        QPoint p = stack.pop();
+        int x = p.x();
+        int y = p.y();
+        
+        if (x < 0 || x >= image.width() || y < 0 || y >= image.height())
+            continue;
+        if (mask.pixel(x, y) != QColor(Qt::transparent).rgba())
+            continue;
+        if (image.pixel(x, y) != targetColor)
+            continue;
+        
+        mask.setPixel(x, y, highlightColor.rgba());
+        
+        stack.push(QPoint(x + 1, y));
+        stack.push(QPoint(x - 1, y));
+        stack.push(QPoint(x, y + 1));
+        stack.push(QPoint(x, y - 1));
+    }
+    
+    // Return bounds of selection as [x, y, w, h]
+    int minX = image.width(), minY = image.height();
+    int maxX = 0, maxY = 0;
+    
+    for (int y = 0; y < mask.height(); y++) {
+        for (int x = 0; x < mask.width(); x++) {
+            if (mask.pixel(x, y) == highlightColor.rgba()) {
+                minX = std::min(minX, x);
+                minY = std::min(minY, y);
+                maxX = std::max(maxX, x);
+                maxY = std::max(maxY, y);
+            }
+        }
+    }
+    
+    if (maxX < minX) return havel_new_null();
+    
+    // Return array [x, y, width, height]
+    HavelValue* arr = havel_new_array(4);
+    havel_array_set(arr, 0, havel_new_int(minX));
+    havel_array_set(arr, 1, havel_new_int(minY));
+    havel_array_set(arr, 2, havel_new_int(maxX - minX + 1));
+    havel_array_set(arr, 3, havel_new_int(maxY - minY + 1));
+    
+    return arr;
+}
+
+/* ============================================================================
  * REGISTRATION
  * ============================================================================ */
 
@@ -2480,4 +2823,18 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     api->register_function("qt", "onItemActivated", qt_onItemActivated);
     api->register_function("qt", "onCurrentIndexChanged", qt_onCurrentIndexChanged);
     api->register_function("qt", "processCallbacks", qt_processCallbacks);
+
+    /* Canvas API - QuickDraw Style */
+    api->register_function("qt", "canvasNew", qt_canvasNew);
+    api->register_function("qt", "canvasClear", qt_canvasClear);
+    api->register_function("qt", "canvasSetPen", qt_canvasSetPen);
+    api->register_function("qt", "canvasDrawLine", qt_canvasDrawLine);
+    api->register_function("qt", "canvasDrawRect", qt_canvasDrawRect);
+    api->register_function("qt", "canvasDrawCircle", qt_canvasDrawCircle);
+    api->register_function("qt", "canvasFill", qt_canvasFill);
+    api->register_function("qt", "canvasBeginStroke", qt_canvasBeginStroke);
+    api->register_function("qt", "canvasEndStroke", qt_canvasEndStroke);
+    api->register_function("qt", "canvasUndo", qt_canvasUndo);
+    api->register_function("qt", "canvasGetImage", qt_canvasGetImage);
+    api->register_function("qt", "canvasLassoSelect", qt_canvasLassoSelect);
 }

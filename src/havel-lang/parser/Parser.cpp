@@ -217,6 +217,534 @@ bool Parser::isDestructuringPattern() const {
   return false;
 }
 
+// ============================================================================
+// PRATT PARSER IMPLEMENTATION (Top-Down Operator Precedence)
+// ============================================================================
+
+int Parser::getBindingPower(TokenType type) const {
+  switch (type) {
+    // Assignment (right-associative, low precedence)
+    case TokenType::Assign:
+    case TokenType::PlusAssign:
+    case TokenType::MinusAssign:
+    case TokenType::MultiplyAssign:
+    case TokenType::DivideAssign:
+    case TokenType::ModuloAssign:
+    case TokenType::PowerAssign:
+      return 10;
+
+    // Nullish coalescing
+    case TokenType::Nullish:
+      return 20;
+
+    // Logical OR
+    case TokenType::Or:
+      return 30;
+
+    // Logical AND
+    case TokenType::And:
+      return 40;
+
+    // Equality
+    case TokenType::Equals:
+    case TokenType::NotEquals:
+      return 50;
+
+    // Comparison
+    case TokenType::Less:
+    case TokenType::Greater:
+    case TokenType::LessEquals:
+    case TokenType::GreaterEquals:
+      return 60;
+
+    // Range
+    case TokenType::DotDot:
+      return 70;
+
+    // Pipe
+    case TokenType::Pipe:
+      return 75;
+
+    // Additive
+    case TokenType::Plus:
+    case TokenType::Minus:
+      return 120;
+
+    // Multiplicative
+    case TokenType::Multiply:
+    case TokenType::Divide:
+    case TokenType::Modulo:
+    case TokenType::Backslash:
+      return 130;
+
+    // Power (right-associative)
+    case TokenType::Power:
+      return 135;
+
+    // Postfix operators
+    case TokenType::PlusPlus:
+    case TokenType::MinusMinus:
+      return 150;
+
+    // Member access, calls, indexing
+    case TokenType::Dot:
+    case TokenType::OpenParen:
+    case TokenType::OpenBracket:
+      return 170;
+
+    default:
+      return 0;
+  }
+}
+
+int Parser::getRightBindingPower(TokenType type) const {
+  // For right-associative operators, return a lower right binding power
+  switch (type) {
+    case TokenType::Assign:
+    case TokenType::PlusAssign:
+    case TokenType::MinusAssign:
+    case TokenType::MultiplyAssign:
+    case TokenType::DivideAssign:
+    case TokenType::ModuloAssign:
+    case TokenType::PowerAssign:
+      return 5;  // Right-associative: 10 - 1 = 9, but use lower for safety
+
+    case TokenType::Power:
+      return 130;  // Right-associative: 135 - 5 = 130
+
+    case TokenType::Nullish:
+      return 15;  // Right-associative
+
+    default:
+      return getBindingPower(type);
+  }
+}
+
+bool Parser::canStartExpression(TokenType type) const {
+  switch (type) {
+    case TokenType::Number:
+    case TokenType::String:
+    case TokenType::MultilineString:
+    case TokenType::InterpolatedString:
+    case TokenType::Identifier:
+    case TokenType::True:
+    case TokenType::False:
+    case TokenType::Null:
+    case TokenType::OpenParen:
+    case TokenType::OpenBracket:
+    case TokenType::OpenBrace:
+    case TokenType::Fn:
+    case TokenType::Match:
+    case TokenType::If:
+    case TokenType::Not:
+    case TokenType::Minus:
+    case TokenType::Plus:
+    case TokenType::PlusPlus:
+    case TokenType::MinusMinus:
+    case TokenType::Length:
+    case TokenType::Spread:
+    case TokenType::Hash:  // For set literals
+    case TokenType::Backtick:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool Parser::isInfixOperator(TokenType type) const {
+  return getBindingPower(type) > 0;
+}
+
+std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
+  if (debug.parser) {
+    havel::debug("PRATT: parseExpression with rbp={} at {}", rbp, at().toString());
+  }
+
+  // Get the first token (null denotation)
+  Token token = advance();
+  auto left = nud(token);
+
+  if (!left) {
+    return nullptr;
+  }
+
+  // While the next token has higher binding power than our right binding power
+  while (rbp < getBindingPower(at().type)) {
+    token = advance();
+    left = led(token, std::move(left));
+    if (!left) {
+      return nullptr;
+    }
+  }
+
+  return left;
+}
+
+// Null denotation - parse token at start of expression
+std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
+  if (debug.parser) {
+    havel::debug("PRATT: nud for {}", token.toString());
+  }
+
+  switch (token.type) {
+    case TokenType::Number:
+      return std::make_unique<ast::NumberLiteral>(token.value);
+
+    case TokenType::String:
+    case TokenType::MultilineString:
+      return std::make_unique<ast::StringLiteral>(token.value);
+
+    case TokenType::InterpolatedString:
+      // TODO: Parse interpolated strings properly
+      return std::make_unique<ast::InterpolatedStringExpression>(token.value);
+
+    case TokenType::Identifier:
+      return makeIdentifier(token);
+
+    case TokenType::True:
+      return std::make_unique<ast::BooleanLiteral>(true);
+
+    case TokenType::False:
+      return std::make_unique<ast::BooleanLiteral>(false);
+
+    case TokenType::Null:
+      return std::make_unique<ast::NullLiteral>();
+
+    case TokenType::OpenParen:
+      return parseParenthesizedExpression();
+
+    case TokenType::OpenBracket:
+      return parseArrayLiteral();
+
+    case TokenType::OpenBrace:
+      return parseObjectLiteral();
+
+    case TokenType::Fn:
+      return parseLambdaExpression();
+
+    case TokenType::Match:
+      return parseMatchExpression();
+
+    case TokenType::If:
+      return parseIfExpression();
+
+    case TokenType::Not: {
+      auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+      return std::make_unique<ast::UnaryExpression>(
+          std::move(operand), ast::UnaryOperator::LogicalNot);
+    }
+
+    case TokenType::Minus: {
+      auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+      return std::make_unique<ast::UnaryExpression>(
+          std::move(operand), ast::UnaryOperator::Negate);
+    }
+
+    case TokenType::Plus: {
+      // Unary plus - just return the operand
+      return parsePrattExpression(bp(BindingPower::Prefix));
+    }
+
+    case TokenType::PlusPlus: {
+      // Prefix increment
+      auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+      return std::make_unique<ast::UpdateExpression>(
+          std::move(operand), ast::UpdateExpression::Operator::Increment, true);
+    }
+
+    case TokenType::MinusMinus: {
+      // Prefix decrement
+      auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+      return std::make_unique<ast::UpdateExpression>(
+          std::move(operand), ast::UpdateExpression::Operator::Decrement, true);
+    }
+
+    case TokenType::Length: {
+      // #length operator
+      auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+      return std::make_unique<ast::UnaryExpression>(
+          std::move(operand), ast::UnaryOperator::Length);
+    }
+
+    case TokenType::Backtick:
+      return parseBacktickExpression();
+
+    default:
+      errorAt(token, "Unexpected token in expression");
+      return nullptr;
+  }
+}
+
+// Left denotation - parse infix/postfix operators
+std::unique_ptr<ast::Expression> Parser::led(const Token &token,
+                                              std::unique_ptr<ast::Expression> left) {
+  if (debug.parser) {
+    havel::debug("PRATT: led for {} with left operand", token.toString());
+  }
+
+  switch (token.type) {
+    // Assignment operators (right-associative)
+    case TokenType::Assign:
+    case TokenType::PlusAssign:
+    case TokenType::MinusAssign:
+    case TokenType::MultiplyAssign:
+    case TokenType::DivideAssign:
+    case TokenType::ModuloAssign:
+    case TokenType::PowerAssign: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      std::string op = token.value;
+      return std::make_unique<ast::AssignmentExpression>(
+          std::move(left), std::move(right), op, false);
+    }
+
+    // Binary operators
+    case TokenType::Plus: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Add);
+    }
+
+    case TokenType::Minus: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Subtract);
+    }
+
+    case TokenType::Multiply: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Multiply);
+    }
+
+    case TokenType::Divide: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Divide);
+    }
+
+    case TokenType::Modulo: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Modulo);
+    }
+
+    case TokenType::Power: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Power);
+    }
+
+    case TokenType::Equals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Equals);
+    }
+
+    case TokenType::NotEquals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::NotEquals);
+    }
+
+    case TokenType::Less: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Less);
+    }
+
+    case TokenType::Greater: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Greater);
+    }
+
+    case TokenType::LessEquals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::LessEquals);
+    }
+
+    case TokenType::GreaterEquals: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::GreaterEquals);
+    }
+
+    case TokenType::And: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::LogicalAnd);
+    }
+
+    case TokenType::Or: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::LogicalOr);
+    }
+
+    case TokenType::Nullish: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), std::move(right), ast::BinaryOperator::Nullish);
+    }
+
+    case TokenType::DotDot: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::RangeExpression>(
+          std::move(left), std::move(right));
+    }
+
+    // Member access
+    case TokenType::Dot: {
+      if (at().type != TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '.'");
+      }
+      auto property = makeIdentifier(advance());
+      return std::make_unique<ast::MemberExpression>(
+          std::move(left), std::move(property));
+    }
+
+    // Function call
+    case TokenType::OpenParen: {
+      std::vector<std::unique_ptr<ast::Expression>> args;
+      
+      // Parse arguments
+      while (at().type != TokenType::CloseParen) {
+        if (!args.empty()) {
+          if (at().type == TokenType::Comma) {
+            advance();
+          }
+        }
+        
+        if (at().type == TokenType::CloseParen) {
+          break;
+        }
+        
+        args.push_back(parsePrattExpression(0));
+      }
+      
+      if (at().type != TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after arguments");
+      }
+      advance(); // consume ')'
+      
+      return std::make_unique<ast::CallExpression>(
+          std::move(left), std::move(args));
+    }
+
+    // Array/Object index
+    case TokenType::OpenBracket: {
+      auto index = parsePrattExpression(0);
+      
+      if (at().type != TokenType::CloseBracket) {
+        failAt(at(), "Expected ']' after index");
+      }
+      advance(); // consume ']'
+      
+      return std::make_unique<ast::IndexExpression>(
+          std::move(left), std::move(index));
+    }
+
+    // Postfix increment/decrement
+    case TokenType::PlusPlus:
+      return std::make_unique<ast::UpdateExpression>(
+          std::move(left), ast::UpdateExpression::Operator::Increment, false);
+
+    case TokenType::MinusMinus:
+      return std::make_unique<ast::UpdateExpression>(
+          std::move(left), ast::UpdateExpression::Operator::Decrement, false);
+
+    case TokenType::Pipe: {
+      // Pipeline: expr | func(args)
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      
+      // Convert to call expression: func(args..., expr)
+      // If right is already a call, append left as last arg
+      if (auto *call = dynamic_cast<ast::CallExpression*>(right.get())) {
+        call->args.push_back(std::move(left));
+        return right;
+      }
+      
+      // Otherwise wrap right in a call with left as argument
+      std::vector<std::unique_ptr<ast::Expression>> args;
+      args.push_back(std::move(left));
+      return std::make_unique<ast::CallExpression>(
+          std::move(right), std::move(args));
+    }
+
+    default:
+      errorAt(token, "Unexpected token in infix position");
+      return nullptr;
+  }
+}
+
+// Helper methods for Pratt parser
+std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
+  auto expr = parsePrattExpression(0);
+  
+  if (at().type != TokenType::CloseParen) {
+    failAt(at(), "Expected ')'");
+  }
+  advance(); // consume ')'
+  
+  return expr;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseBacktickExpression() {
+  // Parse backtick string for shell output: `command`
+  // The lexer already extracted the content
+  return std::make_unique<ast::BacktickExpression>(at().value);
+}
+
+std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
+  // We already consumed 'fn', now parse parameters and body
+  std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+  
+  if (at().type == TokenType::OpenParen) {
+    advance(); // consume '('
+    
+    while (at().type != TokenType::CloseParen) {
+      if (!params.empty()) {
+        if (at().type == TokenType::Comma) {
+          advance();
+        }
+      }
+      
+      if (at().type == TokenType::Identifier) {
+        auto pattern = makeIdentifier(advance());
+        params.push_back(std::make_unique<ast::FunctionParameter>(
+            std::move(pattern), std::nullopt, std::nullopt, false));
+      } else if (at().type == TokenType::Spread) {
+        advance(); // consume '...'
+        auto pattern = makeIdentifier(advance());
+        params.push_back(std::make_unique<ast::FunctionParameter>(
+            std::move(pattern), std::nullopt, std::nullopt, true));
+      }
+    }
+    
+    advance(); // consume ')'
+  }
+  
+  // Parse body
+  std::unique_ptr<ast::BlockStatement> body;
+  if (at().type == TokenType::OpenBrace) {
+    body = parseBlockStatement();
+  } else {
+    // Expression body: wrap in return
+    auto expr = parsePrattExpression(0);
+    auto stmt = std::make_unique<ast::ExpressionStatement>(std::move(expr));
+    body = std::make_unique<ast::BlockStatement>();
+    body->body.push_back(std::move(stmt));
+  }
+  
+  return std::make_unique<ast::LambdaExpression>(std::move(params), std::move(body));
+}
+
+// Replace the old parseExpression with a wrapper that calls Pratt parser
+std::unique_ptr<ast::Expression> Parser::parseExpression() {
+  return parsePrattExpression(0);
+}
+
 std::unique_ptr<havel::ast::Program>
 Parser::produceAST(const std::string &sourceCode) {
   // Tokenize source code

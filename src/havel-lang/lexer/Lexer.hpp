@@ -124,6 +124,7 @@ enum class TokenType {
   ModuloAssign, // %=
   PowerAssign,  // **=
   Nullish,      // ?? nullish coalescing
+  Length,       // # length operator
   Pipe,
   Comment,
   NewLine,

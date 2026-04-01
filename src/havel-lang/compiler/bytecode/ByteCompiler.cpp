@@ -2153,6 +2153,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     case ast::UnaryExpression::UnaryOperator::Plus:
       // No-op for unary plus
       break;
+    case ast::UnaryExpression::UnaryOperator::Length:
+      // Length operator: call any.len on the operand
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.len", 1});
+      break;
     default:
       throw std::runtime_error("Unsupported unary operator");
     }

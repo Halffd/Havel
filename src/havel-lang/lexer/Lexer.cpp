@@ -50,6 +50,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"true", TokenType::True},
     {"false", TokenType::False},
     {"null", TokenType::Null},
+    {"nil", TokenType::Null}, // nil as alias for null
     {"send", TokenType::Identifier},
     {"clipboard", TokenType::Identifier}, // Built-in module
     {"text", TokenType::Identifier},      // Built-in module
@@ -606,12 +607,20 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-    // Handle # as hotkey modifier or set literal ONLY
-    // Comments MUST use // or /* */ - # is NEVER a comment
+    // Handle # as length operator, set literal, or hotkey modifier
     if (c == '#') {
       // If the next char is '{', treat as set literal start
       if (peek() == '{') {
         tokens.push_back(makeToken("#", TokenType::Hash));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+
+      // If followed by identifier, '(', '[', string, or number - treat as length operator
+      if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
+        tokens.push_back(makeToken("#", TokenType::Length));
         if (debug_lexer) {
           std::cout << "LEX: " << tokens.back().toString() << std::endl;
         }

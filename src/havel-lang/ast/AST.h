@@ -1936,9 +1936,10 @@ struct EnumDeclaration : public Statement {
 
 struct UnaryExpression : public Expression {
   enum class UnaryOperator {
-    Not,   // !expr, not expr
-    Minus, // -expr
-    Plus   // +expr (unary plus)
+    Not,    // !expr, not expr
+    Minus,  // -expr
+    Plus,   // +expr (unary plus)
+    Length  // #expr (length operator)
   };
 
   UnaryOperator operator_;

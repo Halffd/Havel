@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <type_traits>
 #include <memory>
+#include <span>
 
 namespace havel::compiler {
 

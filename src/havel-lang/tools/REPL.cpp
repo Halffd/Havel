@@ -56,6 +56,11 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   hostBridge_ = compiler::createHostBridge(ctx);
   hostBridge_->install();
 
+  // Register HostBridge host functions with the VM
+  for (const auto& [name, fn] : hostBridge_->options().host_functions) {
+    vm_->registerHostFunction(name, fn);
+  }
+
   initialized = true;
   info("REPL initialized successfully");
 }

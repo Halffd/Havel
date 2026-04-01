@@ -261,6 +261,19 @@ void HostBridge::install() {
 
   // Register all any.* methods
   registerAnyMethod("len");
+
+  // Global len() function - delegates to any.len dispatch
+  options_.host_functions["len"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        auto it = options_.host_functions.find("any.len");
+        if (it != options_.host_functions.end()) {
+          return it->second(args);
+        }
+        return BytecodeValue(nullptr);
+      };
   registerAnyMethod("has");
   registerAnyMethod("find");
   registerAnyMethod("trim");

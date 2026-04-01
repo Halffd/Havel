@@ -3018,6 +3018,25 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
+  case ast::NodeType::MatchExpression: {
+    const auto &match_expr =
+        static_cast<const ast::MatchExpression &>(expression);
+    if (match_expr.value) {
+      collectLambdaExpressions(*match_expr.value, out);
+    }
+    for (const auto &casePair : match_expr.cases) {
+      if (casePair.first) {
+        collectLambdaExpressions(*casePair.first, out);
+      }
+      if (casePair.second) {
+        collectLambdaExpressions(*casePair.second, out);
+      }
+    }
+    if (match_expr.defaultCase) {
+      collectLambdaExpressions(*match_expr.defaultCase, out);
+    }
+    break;
+  }
   default:
     break;
   }

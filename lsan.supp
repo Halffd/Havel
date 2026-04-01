@@ -1,0 +1,10 @@
+# LeakSanitizer suppressions for Havel
+# External library leaks - not Havel code issues
+
+# Fontconfig/Qt font database leaks
+leak:libfontconfig.so
+leak:libexpat.so
+leak:QFontDatabase::hasFamily
+leak:QFontconfigDatabase::resolveFontFamilyAlias
+leak:FcValueSave
+leak:XML_ParseBuffer

@@ -1,0 +1,189 @@
+// move helpers to top, before main()
+fn sqrtApprox(x) {
+    return x * 0.5
+}
+
+fn toInt(x) {
+    return x - (x % 1)
+}
+
+fn main() {
+    // state - all globals with :: in closures
+    isDrawing = false
+    currentColor = "black"
+    brushSize = 3
+    tool = "brush"
+    lastX = 0
+    lastY = 0
+    startX = 0
+    startY = 0
+
+    let win = ui.window("Paint", width=900, height=700, resizable=true)
+
+    // toolbar
+    let toolbar = ui.row()
+    toolbar.bg("lightgray")
+
+    fn setTool(t) {
+        ::tool = t
+    }
+
+    let btnBrush  = ui.btn("Brush",  fn() { setTool("brush")  })
+    let btnLine   = ui.btn("Line",   fn() { setTool("line")   })
+    let btnRect   = ui.btn("Rect",   fn() { setTool("rect")   })
+    let btnCircle = ui.btn("Circle", fn() { setTool("circle") })
+    let btnEraser = ui.btn("Eraser", fn() { setTool("eraser") })
+
+    toolbar.add(btnBrush)
+    toolbar.add(btnLine)
+    toolbar.add(btnRect)
+    toolbar.add(btnCircle)
+    toolbar.add(btnEraser)
+
+    // brush size
+    let sizeLabel = ui.label("3")
+    toolbar.add(ui.btn("-", fn() {
+        if ::brushSize > 1 {
+            ::brushSize = ::brushSize - 1
+            sizeLabel.text(str(::brushSize))
+        }
+    }))
+    toolbar.add(sizeLabel)
+    toolbar.add(ui.btn("+", fn() {
+        if ::brushSize < 50 {
+            ::brushSize = ::brushSize + 1
+            sizeLabel.text(str(::brushSize))
+        }
+    }))
+
+    // canvas
+    let canvas = ui.canvas(800, 600)
+    canvas.bg("white")
+
+    // clear + save
+    toolbar.add(ui.btn("Clear", fn() { canvas.clear() }))
+    toolbar.add(ui.btn("Save", fn() {
+        let f = ui.filePicker("Save painting")
+        if f != "" {
+            ui.notify("Saved: " + f, "success")
+        }
+    }))
+
+    // color palette - avoid closure loop capture bug
+    // define each color explicitly or use index
+    let palette = ui.col()
+    let paletteColors = ["black","white","red","green","blue",
+                         "yellow","orange","purple","cyan","magenta",
+                         "pink","lime","teal","brown","gray"]
+
+    fn makeColorBtn(c) {
+        let sw = ui.btn(" ")
+        sw.bg(c)
+        sw.width(30)
+        sw.height(30)
+        sw.onClick(fn() {
+            ::currentColor = c  // ✅ c is param, not loop var - safe capture
+        })
+        return sw
+    }
+
+    let row1 = ui.row()
+    let row2 = ui.row()
+    let row3 = ui.row()
+
+    // row 1
+    row1.add(makeColorBtn("black"))
+    row1.add(makeColorBtn("white"))
+    row1.add(makeColorBtn("red"))
+    row1.add(makeColorBtn("green"))
+    row1.add(makeColorBtn("blue"))
+
+    // row 2
+    row2.add(makeColorBtn("yellow"))
+    row2.add(makeColorBtn("orange"))
+    row2.add(makeColorBtn("purple"))
+    row2.add(makeColorBtn("cyan"))
+    row2.add(makeColorBtn("magenta"))
+
+    // row 3
+    row3.add(makeColorBtn("pink"))
+    row3.add(makeColorBtn("lime"))
+    row3.add(makeColorBtn("teal"))
+    row3.add(makeColorBtn("brown"))
+    row3.add(makeColorBtn("gray"))
+
+    palette.add(row1)
+    palette.add(row2)
+    palette.add(row3)
+
+    // canvas events
+    canvas.onMouseDown(fn(x, y) {
+        ::isDrawing = true
+        ::lastX = x
+        ::lastY = y
+        ::startX = x
+        ::startY = y
+        if ::tool == "brush" {
+            canvas.drawPoint(x, y, ::currentColor, ::brushSize)
+        }
+        if ::tool == "eraser" {
+            canvas.drawPoint(x, y, "white", ::brushSize)
+        }
+    })
+
+    canvas.onMouseMove(fn(x, y) {
+        if ::isDrawing {
+            if ::tool == "brush" {
+                canvas.drawLine(::lastX, ::lastY, x, y, ::currentColor, ::brushSize)
+            }
+            if ::tool == "eraser" {
+                canvas.drawLine(::lastX, ::lastY, x, y, "white", ::brushSize)
+            }
+            ::lastX = x
+            ::lastY = y
+        }
+    })
+
+    canvas.onMouseUp(fn(x, y) {
+        if ::isDrawing {
+            if ::tool == "line" {
+                canvas.drawLine(::startX, ::startY, x, y, ::currentColor, ::brushSize)
+            }
+            if ::tool == "rect" {
+                canvas.drawRect(::startX, ::startY, x - ::startX, y - ::startY, ::currentColor, true)
+            }
+            if ::tool == "circle" {
+                let dx = x - ::startX
+                let dy = y - ::startY
+                let r = toInt(sqrtApprox(dx * dx + dy * dy))
+                canvas.drawCircle(::startX, ::startY, r, ::currentColor, true)
+            }
+        }
+        ::isDrawing = false
+    })
+
+    canvas.onMouseOut(fn() { ::isDrawing = false })
+
+    // keyboard shortcuts
+    win.onKeyDown(fn(key) {
+        if key == "b" { setTool("brush") }
+        if key == "l" { setTool("line") }
+        if key == "r" { setTool("rect") }
+        if key == "c" { setTool("circle") }
+        if key == "e" { setTool("eraser") }
+        if key == "x" { canvas.clear() }
+    })
+
+    // layout
+    let content = ui.row()
+    content.add(palette)
+    content.add(canvas)
+
+    let status = ui.label("Ready")
+
+    win.add(ui.col([toolbar, content, status]))
+    win.onClose(fn() { print("Paint closed") })
+    win.show()
+}
+
+main()

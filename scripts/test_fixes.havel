@@ -1,0 +1,14 @@
+n = 5
+++n
+print n
+n = n + 1
+print n
+o = {a: 1, b: 2}
+o.a = 3
+print o.a
+print o.keys()
+arr = [1, 2, 3]
+print arr.len()
+obj = {0: "zero", 1: "one"}
+print obj.0
+print obj.1

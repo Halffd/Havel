@@ -1,0 +1,14 @@
+
+let win = ui.window("Clipboard History", width=400, height=300)
+let log = ui.textarea()
+
+every(1000, fn() {
+    let clip = clipboard.get()
+    if clip != lastClip {
+        ::lastClip = clip
+        log.append(time.now() + ": " + clip + "\n---\n")
+    }
+})
+
+win.add(log)
+win.show()

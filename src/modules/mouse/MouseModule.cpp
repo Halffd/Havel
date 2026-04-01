@@ -5,6 +5,8 @@
 #include "MouseModule.hpp"
 #include "host/mouse/MouseService.hpp"
 #include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include <cmath>
+#include <sstream>
 
 namespace havel::modules {
 

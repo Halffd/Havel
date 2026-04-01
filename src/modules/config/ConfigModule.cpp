@@ -8,6 +8,7 @@
 #include "havel-lang/compiler/bytecode/VMApi.hpp"
 #include "utils/Logger.hpp"
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 

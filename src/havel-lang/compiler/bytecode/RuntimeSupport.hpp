@@ -29,7 +29,24 @@ public:
   // Register a native function
   template<typename ReturnType, typename... ArgTypes>
   void registerFunction(const std::string& name,
-                        ReturnType (*func)(ArgTypes...));
+                        ReturnType (*func)(ArgTypes...)) {
+    FunctionInfo info;
+    info.name = name;
+    info.arity = sizeof...(ArgTypes);
+    info.isVariadic = false;
+    info.returnTypeName = typeid(ReturnType).name();
+    (void)(info.paramTypeNames.push_back(typeid(ArgTypes).name()), ...);
+
+    // Wrap the native function
+    NativeFunction wrapper = [this, func](const std::vector<BytecodeValue>& args) -> BytecodeValue {
+      if (args.size() != sizeof...(ArgTypes)) {
+        throw std::runtime_error("Argument count mismatch");
+      }
+      return invokeWithArgs(func, args, std::index_sequence_for<ArgTypes...>{});
+    };
+
+    functions_[name] = RegisteredFunction{wrapper, info};
+  }
 
   // Register with std::function
   void registerFunction(const std::string& name, NativeFunction func);
@@ -73,8 +90,49 @@ private:
   template<typename ReturnType, typename... ArgTypes, size_t... Indices>
   BytecodeValue invokeWithArgs(ReturnType (*func)(ArgTypes...),
                                const std::vector<BytecodeValue>& args,
-                               std::index_sequence<Indices...>) const;
+                               std::index_sequence<Indices...>) const {
+    // Convert and call - expand parameter pack using Indices
+    if constexpr (std::is_void_v<ReturnType>) {
+      func(TypeTraits<ArgTypes>::fromValue(args[Indices])...);
+      return nullptr;
+    } else {
+      ReturnType result = func(TypeTraits<ArgTypes>::fromValue(args[Indices])...);
+      return TypeTraits<ReturnType>::toValue(result);
+    }
+  }
 };
+
+// TypeTraits specializations
+
+// void
+template<>
+struct NativeFunctionBridge::TypeTraits<void> {
+  static void fromValue(const BytecodeValue&) {}
+  static BytecodeValue toValue() { return nullptr; }
+  static const char* name() { return "void"; }
+};
+
+// int
+template<>
+inline int NativeFunctionBridge::TypeTraits<int>::fromValue(const BytecodeValue& value) {
+  if (std::holds_alternative<int64_t>(value)) {
+    return static_cast<int>(std::get<int64_t>(value));
+  }
+  if (std::holds_alternative<double>(value)) {
+    return static_cast<int>(std::get<double>(value));
+  }
+  return 0;
+}
+
+template<>
+inline BytecodeValue NativeFunctionBridge::TypeTraits<int>::toValue(const int& value) {
+  return static_cast<int64_t>(value);
+}
+
+template<>
+inline const char* NativeFunctionBridge::TypeTraits<int>::name() {
+  return "int";
+}
 
 // ============================================================================
 // RuntimeTypeSystem - Runtime type checking and operations
@@ -184,7 +242,7 @@ class IterableFactory {
 public:
   using IteratorCreator = std::function<std::unique_ptr<IteratorProtocol>(const BytecodeValue&)>;
 
-  void registerIterator(Type type, IteratorCreator creator);
+  void registerIterator(RuntimeTypeSystem::Type type, IteratorCreator creator);
 
   std::unique_ptr<IteratorProtocol> createIterator(const BytecodeValue& value);
   bool isIterable(const BytecodeValue& value) const;
@@ -196,7 +254,7 @@ public:
   static std::unique_ptr<IteratorProtocol> createStringIterator(const BytecodeValue& string);
 
 private:
-  std::unordered_map<Type, IteratorCreator> creators_;
+  std::unordered_map<RuntimeTypeSystem::Type, IteratorCreator> creators_;
 };
 
 // ============================================================================
@@ -205,7 +263,7 @@ private:
 class ExceptionHandler {
 public:
   struct CatchClause {
-    std::optional<Type> typeFilter; // Null means catch all
+    std::optional<RuntimeTypeSystem::Type> typeFilter; // Null means catch all
     std::string variableName;
     uint32_t handlerAddress;
   };

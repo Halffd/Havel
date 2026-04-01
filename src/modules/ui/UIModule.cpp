@@ -6,6 +6,7 @@
 #include "havel-lang/compiler/bytecode/VM.hpp"
 #include "host/ui/UIManager.hpp"
 
+#include <cmath>
 #include <sstream>
 
 namespace havel::modules {

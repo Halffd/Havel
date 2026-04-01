@@ -3855,7 +3855,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
 
   if (at().type == havel::TokenType::Not ||
       at().type == havel::TokenType::Minus ||
-      at().type == havel::TokenType::Plus) {
+      at().type == havel::TokenType::Plus ||
+      at().type == havel::TokenType::Length) {
 
     // Convert TokenType to UnaryOperator
     havel::ast::UnaryExpression::UnaryOperator unaryOp;
@@ -3869,6 +3870,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
       break;
     case havel::TokenType::Plus:
       unaryOp = havel::ast::UnaryExpression::UnaryOperator::Plus;
+      break;
+    case havel::TokenType::Length:
+      unaryOp = havel::ast::UnaryExpression::UnaryOperator::Length;
       break;
     default:
       failAt(at(), "Invalid unary operator");

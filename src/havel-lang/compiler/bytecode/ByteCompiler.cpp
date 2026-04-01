@@ -1762,8 +1762,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       reserveLocalSlot(temp_slot);
       emit(OpCode::STORE_VAR, temp_slot);
       compileExpression(*member.object);
+      emit(OpCode::LOAD_CONST, addConstant(property->symbol));
       emit(OpCode::LOAD_VAR, temp_slot);
-      emit(OpCode::OBJECT_SET, property->symbol);
+      emit(OpCode::OBJECT_SET);
       emit(OpCode::LOAD_VAR, temp_slot);
     };
 
@@ -1929,8 +1930,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::DUP);
         emit(OpCode::STORE_VAR, temp_result);
         emit(OpCode::LOAD_VAR, temp_object);
+        emit(OpCode::LOAD_CONST, addConstant(property->symbol));
         emit(OpCode::LOAD_VAR, temp_result);
-        emit(OpCode::OBJECT_SET, property->symbol);
+        emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
@@ -2087,8 +2089,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
-        // Can't update globals with ++/--
-        throw std::runtime_error("Cannot update global: " + target_id->symbol);
+        emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{binding->name});
       } else {
         throw std::runtime_error(
             "Cannot update variable with binding kind: " +
@@ -2101,6 +2102,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::STORE_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Global) {
+        emit(OpCode::STORE_GLOBAL, std::vector<BytecodeValue>{binding->name});
       }
     } else {
       // Postfix: x++ or x--
@@ -2109,8 +2112,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Global) {
+        emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{binding->name});
       } else {
-        throw std::runtime_error("Cannot update non-local variable");
+        throw std::runtime_error("Cannot update variable with binding kind: " +
+                                 std::to_string(static_cast<int>(binding->kind)));
       }
       emit(OpCode::DUP); // Save old value
       emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(1)));
@@ -2119,6 +2125,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::STORE_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Global) {
+        emit(OpCode::STORE_GLOBAL, std::vector<BytecodeValue>{binding->name});
       }
       emit(OpCode::POP); // Remove new value, leave old value on stack
     }
@@ -2242,8 +2250,9 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
+          emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
           compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET, kwarg.name);
+          emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
       }
@@ -2276,8 +2285,9 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
+          emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
           compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET, kwarg.name);
+          emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
       }
@@ -2311,8 +2321,9 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
+          emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
           compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET, kwarg.name);
+          emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
       }
@@ -2339,8 +2350,9 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
+          emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
           compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET, kwarg.name);
+          emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
       }
@@ -2388,8 +2400,9 @@ void ByteCompiler::compileCallExpression(
     emit(OpCode::OBJECT_NEW);
     for (const auto &kwarg : expression.kwargs) {
       emit(OpCode::DUP);
+      emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
       compileExpression(*kwarg.value);
-      emit(OpCode::OBJECT_SET, kwarg.name);
+      emit(OpCode::OBJECT_SET);
     }
     actualArgCount++;
   }

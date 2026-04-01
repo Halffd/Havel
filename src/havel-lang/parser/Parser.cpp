@@ -4820,7 +4820,7 @@ Parser::parseObjectLiteral(bool unsorted) {
       continue;
     }
 
-    // Parse key - can be identifier, string, or certain keywords
+    // Parse key - can be identifier, string, number, or certain keywords
     std::string key;
     if (at().type == havel::TokenType::Identifier ||
         at().type == havel::TokenType::Config ||
@@ -4831,8 +4831,11 @@ Parser::parseObjectLiteral(bool unsorted) {
     } else if (at().type == havel::TokenType::String ||
                at().type == havel::TokenType::MultilineString) {
       key = advance().value;
+    } else if (at().type == havel::TokenType::Number) {
+      // Numeric keys like {0: value}
+      key = advance().value;
     } else {
-      failAt(at(), "Expected identifier, string, or spread for object literal");
+      failAt(at(), "Expected identifier, string, number, or spread for object literal");
     }
 
     // Expect colon

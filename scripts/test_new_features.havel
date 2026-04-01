@@ -1,0 +1,32 @@
+// Test null coalescing operator (??), nil alias, and length operator (#)
+
+// Test 1: nil as alias for null
+let x = nil
+print("Test 1 - nil alias:")
+print(x)
+
+// Test 2: null coalescing operator ??
+let y = null
+let result = y ?? "default"
+print("\nTest 2 - null coalescing:")
+print(result)
+
+let z = "actual value"
+let result2 = z ?? "default"
+print(result2)
+
+// Test 3: length operator #
+let arr = [1, 2, 3, 4, 5]
+print("\nTest 3 - length operator:")
+print(#arr)
+
+// Test with string
+let str = "hello"
+print(#str)
+
+// Test chaining null coalescing
+let a = nil
+let b = nil
+let c = "found"
+print("\nTest 4 - chained null coalescing:")
+print(a ?? b ?? c)

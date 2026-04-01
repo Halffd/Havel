@@ -1,26 +1,12 @@
 #pragma once
 
+#include "BytecodeIR.hpp"
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
 
 namespace havel::compiler {
-
-// ============================================================================
-// SourceLocation - Location in source code
-// ============================================================================
-struct SourceLocation {
-  uint32_t line = 0;
-  uint32_t column = 0;
-  std::string filename;
-
-  SourceLocation() = default;
-  SourceLocation(uint32_t l, uint32_t c, std::string f = "")
-    : line(l), column(c), filename(std::move(f)) {}
-
-  bool isValid() const { return line > 0; }
-};
 
 // ============================================================================
 // DebugInfo - Debug information for a compiled chunk
@@ -195,11 +181,13 @@ public:
 
   // Disassembly options
   struct Options {
-    bool showLineNumbers = true;
-    bool showSourceLocations = true;
-    bool showConstantPool = true;
-    bool showFunctionInfo = true;
-    bool useLabels = true;
+    bool showLineNumbers;
+    bool showSourceLocations;
+    bool showConstantPool;
+    bool showFunctionInfo;
+    bool useLabels;
+    Options() : showLineNumbers(true), showSourceLocations(true),
+                showConstantPool(true), showFunctionInfo(true), useLabels(true) {}
   };
 
   // Main disassembly

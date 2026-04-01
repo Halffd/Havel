@@ -234,9 +234,8 @@ public:
   void executeHooks(const std::string& extensionPoint);
 
   // Compiler extensions
-  void registerOptimizationPass(std::unique_ptr<OptimizationPass> pass);
   void registerNativeFunction(const std::string& name,
-                               NativeFunctionBridge::NativeFunction func);
+                               BytecodeHostFunction func);
 
   // Event system
   using EventHandler = std::function<void(const std::string& event, const void* data)>;
@@ -346,11 +345,13 @@ public:
 class WASMTarget {
 public:
   struct Options {
-    bool optimize = true;
-    bool enableSIMD = false;
-    bool enableThreads = false;
-    bool enableBulkMemory = true;
-    bool enableMutableGlobals = true;
+    bool optimize;
+    bool enableSIMD;
+    bool enableThreads;
+    bool enableBulkMemory;
+    bool enableMutableGlobals;
+    Options() : optimize(true), enableSIMD(false), enableThreads(false),
+                enableBulkMemory(true), enableMutableGlobals(true) {}
   };
 
   explicit WASMTarget(const Options& options = Options{});
@@ -384,11 +385,12 @@ class LLVMTarget {
 public:
   struct Options {
     enum class OptimizationLevel { O0, O1, O2, O3, Os, Oz };
-    OptimizationLevel optLevel = OptimizationLevel::O2;
-    bool enableLTO = false;
+    OptimizationLevel optLevel;
+    bool enableLTO;
     std::string targetTriple;
     std::string cpu;
     std::string features;
+    Options() : optLevel(OptimizationLevel::O2), enableLTO(false) {}
   };
 
   explicit LLVMTarget(const Options& options = Options{});
@@ -489,6 +491,7 @@ public:
     size_t hangs = 0;
     std::vector<std::vector<uint8_t>> crashInputs;
     double timeSec = 0.0;
+    std::string error;
   };
 
   FuzzResult run(const std::string& targetName, const FuzzOptions& options);

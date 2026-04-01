@@ -1,9 +1,10 @@
 #include "CompilationPipeline.hpp"
-#include "Lexer.hpp"
-#include "Parser.h"
-#include "AST.h"
+#include "havel-lang/lexer/Lexer.hpp"
+#include "havel-lang/parser/Parser.h"
+#include "havel-lang/ast/AST.h"
 #include "ModuleLoader.hpp"
 #include <chrono>
+#include <fstream>
 
 namespace havel::compiler {
 
@@ -224,16 +225,18 @@ BytecodeOptimizer::Stats BytecodeOptimizer::optimize(size_t maxPasses) {
 }
 
 void BytecodeOptimizer::constantFolding() {
-  for (auto& function : chunk_.functions) {
-    for (size_t i = 0; i < function.instructions.size(); ++i) {
-      auto& instr = function.instructions[i];
+  for (size_t funcIdx = 0; funcIdx < chunk_.getFunctionCount(); ++funcIdx) {
+    auto* function = const_cast<BytecodeFunction*>(chunk_.getFunction(funcIdx));
+    if (!function) continue;
+    for (size_t i = 0; i < function->instructions.size(); ++i) {
+      auto& instr = function->instructions[i];
 
       // Look for binary operations with constant operands
       if (instr.opcode == OpCode::LOAD_CONST) {
         // Check if next two instructions are also LOAD_CONST followed by a binary op
-        if (i + 2 < function.instructions.size()) {
-          auto& next = function.instructions[i + 1];
-          auto& after = function.instructions[i + 2];
+        if (i + 2 < function->instructions.size()) {
+          auto& next = function->instructions[i + 1];
+          auto& after = function->instructions[i + 2];
 
           if (next.opcode == OpCode::LOAD_CONST &&
               (after.opcode >= OpCode::ADD && after.opcode <= OpCode::POW)) {
@@ -245,8 +248,8 @@ void BytecodeOptimizer::constantFolding() {
             if (result) {
               // Replace three instructions with one constant load
               instr.operands[0] = *result;
-              removeInstruction(function.id, i + 1);
-              removeInstruction(function.id, i + 1); // i+2 is now i+1
+              removeInstruction(funcIdx, i + 1);
+              removeInstruction(funcIdx, i + 1); // i+2 is now i+1
               stats_.instructionsRemoved += 2;
               stats_.constantsFolded++;
             }
@@ -258,16 +261,18 @@ void BytecodeOptimizer::constantFolding() {
 }
 
 void BytecodeOptimizer::deadCodeElimination() {
-  for (auto& function : chunk_.functions) {
-    for (size_t i = 0; i < function.instructions.size(); ++i) {
-      const auto& instr = function.instructions[i];
+  for (size_t funcIdx = 0; funcIdx < chunk_.getFunctionCount(); ++funcIdx) {
+    auto* function = const_cast<BytecodeFunction*>(chunk_.getFunction(funcIdx));
+    if (!function) continue;
+    for (size_t i = 0; i < function->instructions.size(); ++i) {
+      const auto& instr = function->instructions[i];
 
       // Remove POP immediately after LOAD_CONST (unused constant)
       if (instr.opcode == OpCode::LOAD_CONST &&
-          i + 1 < function.instructions.size() &&
-          function.instructions[i + 1].opcode == OpCode::POP) {
-        removeInstruction(function.id, i);
-        removeInstruction(function.id, i); // POP is now at i
+          i + 1 < function->instructions.size() &&
+          function->instructions[i + 1].opcode == OpCode::POP) {
+        removeInstruction(funcIdx, i);
+        removeInstruction(funcIdx, i); // POP is now at i
         stats_.instructionsRemoved += 2;
         stats_.deadCodeEliminated++;
         --i; // Adjust index
@@ -279,19 +284,15 @@ void BytecodeOptimizer::deadCodeElimination() {
         size_t unreachableStart = i + 1;
         size_t unreachableEnd = unreachableStart;
 
-        for (size_t j = unreachableStart; j < function.instructions.size(); ++j) {
-          // Simple heuristic: stop at label-like patterns
-          // In real implementation, we'd track actual jump targets
-          if (function.instructions[j].opcode == OpCode::LABEL) {
-            break;
-          }
+        for (size_t j = unreachableStart; j < function->instructions.size(); ++j) {
+          // Simple heuristic: stop at certain opcodes
           unreachableEnd = j;
         }
 
         if (unreachableEnd > unreachableStart) {
           // Remove unreachable instructions
           for (size_t j = unreachableEnd; j >= unreachableStart; --j) {
-            removeInstruction(function.id, j);
+            removeInstruction(funcIdx, j);
           }
           stats_.instructionsRemoved += (unreachableEnd - unreachableStart + 1);
         }
@@ -301,15 +302,17 @@ void BytecodeOptimizer::deadCodeElimination() {
 }
 
 void BytecodeOptimizer::jumpOptimization() {
-  for (auto& function : chunk_.functions) {
-    for (size_t i = 0; i < function.instructions.size(); ++i) {
-      auto& instr = function.instructions[i];
+  for (size_t funcIdx = 0; funcIdx < chunk_.getFunctionCount(); ++funcIdx) {
+    auto* function = const_cast<BytecodeFunction*>(chunk_.getFunction(funcIdx));
+    if (!function) continue;
+    for (size_t i = 0; i < function->instructions.size(); ++i) {
+      auto& instr = function->instructions[i];
 
       // Jump to next instruction (can be eliminated)
       if (instr.opcode == OpCode::JUMP && !instr.operands.empty()) {
         uint32_t target = std::get<uint32_t>(instr.operands[0]);
         if (target == i + 1) {
-          removeInstruction(function.id, i);
+          removeInstruction(funcIdx, i);
           stats_.instructionsRemoved++;
           stats_.jumpsOptimized++;
           --i;
@@ -318,8 +321,8 @@ void BytecodeOptimizer::jumpOptimization() {
 
       // Jump over unconditional jump (can be folded)
       if ((instr.opcode == OpCode::JUMP_IF_FALSE || instr.opcode == OpCode::JUMP_IF_TRUE) &&
-          i + 1 < function.instructions.size()) {
-        auto& next = function.instructions[i + 1];
+          i + 1 < function->instructions.size()) {
+        auto& next = function->instructions[i + 1];
         if (next.opcode == OpCode::JUMP) {
           // Invert condition and jump further
           // This is a more complex optimization that would need careful implementation
@@ -330,10 +333,12 @@ void BytecodeOptimizer::jumpOptimization() {
 }
 
 void BytecodeOptimizer::peepholeOptimization() {
-  for (auto& function : chunk_.functions) {
-    for (size_t i = 0; i + 1 < function.instructions.size(); ++i) {
-      const auto& instr = function.instructions[i];
-      const auto& next = function.instructions[i + 1];
+  for (size_t funcIdx = 0; funcIdx < chunk_.getFunctionCount(); ++funcIdx) {
+    auto* function = const_cast<BytecodeFunction*>(chunk_.getFunction(funcIdx));
+    if (!function) continue;
+    for (size_t i = 0; i + 1 < function->instructions.size(); ++i) {
+      const auto& instr = function->instructions[i];
+      const auto& next = function->instructions[i + 1];
 
       // LOAD_VAR followed by STORE_VAR on same slot (useless)
       if (instr.opcode == OpCode::LOAD_VAR && next.opcode == OpCode::STORE_VAR) {
@@ -341,8 +346,8 @@ void BytecodeOptimizer::peepholeOptimization() {
         uint32_t storeSlot = std::get<uint32_t>(next.operands[0]);
         if (loadSlot == storeSlot) {
           // This pattern shouldn't normally happen, but if it does:
-          removeInstruction(function.id, i);
-          removeInstruction(function.id, i);
+          removeInstruction(funcIdx, i);
+          removeInstruction(funcIdx, i);
           stats_.instructionsRemoved += 2;
           --i;
         }
@@ -350,8 +355,8 @@ void BytecodeOptimizer::peepholeOptimization() {
 
       // DUP followed by POP (cancel out)
       if (instr.opcode == OpCode::DUP && next.opcode == OpCode::POP) {
-        removeInstruction(function.id, i);
-        removeInstruction(function.id, i);
+        removeInstruction(funcIdx, i);
+        removeInstruction(funcIdx, i);
         stats_.instructionsRemoved += 2;
         --i;
       }
@@ -361,8 +366,8 @@ void BytecodeOptimizer::peepholeOptimization() {
           (next.opcode == OpCode::ADD || next.opcode == OpCode::SUB)) {
         if (std::holds_alternative<int64_t>(instr.operands[0]) &&
             std::get<int64_t>(instr.operands[0]) == 0) {
-          removeInstruction(function.id, i);
-          removeInstruction(function.id, i);
+          removeInstruction(funcIdx, i);
+          removeInstruction(funcIdx, i);
           stats_.instructionsRemoved += 2;
           --i;
         }
@@ -406,11 +411,11 @@ std::optional<BytecodeValue> BytecodeOptimizer::evaluateBinaryOp(
       case OpCode::DIV: return r != 0 ? l / r : 0;
       case OpCode::MOD: return r != 0 ? l % r : 0;
       case OpCode::EQ: return l == r;
-      case OpCode::NE: return l != r;
+      case OpCode::NEQ: return l != r;
       case OpCode::LT: return l < r;
-      case OpCode::LE: return l <= r;
+      case OpCode::LTE: return l <= r;
       case OpCode::GT: return l > r;
-      case OpCode::GE: return l >= r;
+      case OpCode::GTE: return l >= r;
       default: return std::nullopt;
     }
   }
@@ -426,11 +431,11 @@ std::optional<BytecodeValue> BytecodeOptimizer::evaluateBinaryOp(
       case OpCode::MUL: return l * r;
       case OpCode::DIV: return r != 0.0 ? l / r : 0.0;
       case OpCode::EQ: return l == r;
-      case OpCode::NE: return l != r;
+      case OpCode::NEQ: return l != r;
       case OpCode::LT: return l < r;
-      case OpCode::LE: return l <= r;
+      case OpCode::LTE: return l <= r;
       case OpCode::GT: return l > r;
-      case OpCode::GE: return l >= r;
+      case OpCode::GTE: return l >= r;
       default: return std::nullopt;
     }
   }
@@ -446,22 +451,12 @@ std::optional<BytecodeValue> BytecodeOptimizer::evaluateBinaryOp(
 }
 
 void BytecodeOptimizer::removeInstruction(size_t functionIndex, size_t instructionIndex) {
-  if (functionIndex >= chunk_.functions.size()) return;
-  auto& function = chunk_.functions[functionIndex];
-  if (instructionIndex >= function.instructions.size()) return;
+  if (functionIndex >= chunk_.getFunctionCount()) return;
+  auto* function = const_cast<BytecodeFunction*>(chunk_.getFunction(functionIndex));
+  if (!function) return;
+  if (instructionIndex >= function->instructions.size()) return;
 
-  function.instructions.erase(function.instructions.begin() + instructionIndex);
-}
-
-void BytecodeOptimizer::replaceInstruction(size_t functionIndex,
-                                           size_t instructionIndex,
-                                           const Instruction& newInstruction) {
-  if (functionIndex >= chunk_.functions.size()) return;
-  auto& function = chunk_.functions[functionIndex];
-  if (instructionIndex >= function.instructions.size()) return;
-
-  function.instructions[instructionIndex] = newInstruction;
-  stats_.instructionsModified++;
+  function->instructions.erase(function->instructions.begin() + instructionIndex);
 }
 
 // ============================================================================
@@ -628,11 +623,11 @@ uint32_t SymbolTable::allocateSlot() {
 
 bool ParserUtils::isLiteral(const Token& token) {
   switch (token.type) {
-    case TokenType::NUMBER:
-    case TokenType::STRING:
-    case TokenType::TRUE:
-    case TokenType::FALSE:
-    case TokenType::NIL:
+    case TokenType::Number:
+    case TokenType::String:
+    case TokenType::True:
+    case TokenType::False:
+    case TokenType::Null:
       return true;
     default:
       return false;
@@ -641,22 +636,22 @@ bool ParserUtils::isLiteral(const Token& token) {
 
 bool ParserUtils::isOperator(const Token& token) {
   switch (token.type) {
-    case TokenType::PLUS:
-    case TokenType::MINUS:
-    case TokenType::STAR:
-    case TokenType::SLASH:
-    case TokenType::PERCENT:
-    case TokenType::EQ:
-    case TokenType::NE:
-    case TokenType::LT:
-    case TokenType::LE:
-    case TokenType::GT:
-    case TokenType::GE:
-    case TokenType::AND:
-    case TokenType::OR:
-    case TokenType::ASSIGN:
-    case TokenType::PLUS_ASSIGN:
-    case TokenType::MINUS_ASSIGN:
+    case TokenType::Plus:
+    case TokenType::Minus:
+    case TokenType::Multiply:
+    case TokenType::Divide:
+    case TokenType::Modulo:
+    case TokenType::Equals:
+    case TokenType::NotEquals:
+    case TokenType::Less:
+    case TokenType::LessEquals:
+    case TokenType::Greater:
+    case TokenType::GreaterEquals:
+    case TokenType::And:
+    case TokenType::Or:
+    case TokenType::Assign:
+    case TokenType::PlusAssign:
+    case TokenType::MinusAssign:
       return true;
     default:
       return false;
@@ -665,19 +660,19 @@ bool ParserUtils::isOperator(const Token& token) {
 
 bool ParserUtils::isKeyword(const Token& token) {
   switch (token.type) {
-    case TokenType::FN:
-    case TokenType::LET:
-    case TokenType::CONST:
-    case TokenType::IF:
-    case TokenType::ELSE:
-    case TokenType::WHILE:
-    case TokenType::FOR:
-    case TokenType::RETURN:
-    case TokenType::TRUE:
-    case TokenType::FALSE:
-    case TokenType::NIL:
-    case TokenType::AND:
-    case TokenType::OR:
+    case TokenType::Fn:
+    case TokenType::Let:
+    case TokenType::Const:
+    case TokenType::If:
+    case TokenType::Else:
+    case TokenType::While:
+    case TokenType::For:
+    case TokenType::Return:
+    case TokenType::True:
+    case TokenType::False:
+    case TokenType::Null:
+    case TokenType::And:
+    case TokenType::Or:
       return true;
     default:
       return false;
@@ -686,26 +681,26 @@ bool ParserUtils::isKeyword(const Token& token) {
 
 int ParserUtils::getPrecedence(TokenType type) {
   switch (type) {
-    case TokenType::OR:          return 1;
-    case TokenType::AND:         return 2;
-    case TokenType::EQ:
-    case TokenType::NE:          return 3;
-    case TokenType::LT:
-    case TokenType::LE:
-    case TokenType::GT:
-    case TokenType::GE:          return 4;
-    case TokenType::PLUS:
-    case TokenType::MINUS:       return 5;
-    case TokenType::STAR:
-    case TokenType::SLASH:
-    case TokenType::PERCENT:     return 6;
-    case TokenType::POWER:       return 7;
+    case TokenType::Or:          return 1;
+    case TokenType::And:         return 2;
+    case TokenType::Equals:
+    case TokenType::NotEquals:   return 3;
+    case TokenType::Less:
+    case TokenType::LessEquals:
+    case TokenType::Greater:
+    case TokenType::GreaterEquals: return 4;
+    case TokenType::Plus:
+    case TokenType::Minus:       return 5;
+    case TokenType::Multiply:
+    case TokenType::Divide:
+    case TokenType::Modulo:      return 6;
+    case TokenType::Power:       return 7;
     default:                     return 0;
   }
 }
 
 bool ParserUtils::isRightAssociative(TokenType type) {
-  return type == TokenType::POWER || type == TokenType::ASSIGN;
+  return type == TokenType::Power || type == TokenType::Assign;
 }
 
 } // namespace havel::compiler

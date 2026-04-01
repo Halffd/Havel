@@ -452,7 +452,7 @@ CodeMetricsAnalyzer::ModuleMetrics CodeMetricsAnalyzer::analyzeBytecode(
     const BytecodeChunk& chunk) {
   ModuleMetrics metrics;
 
-  for (const auto& func : chunk.functions) {
+  for (const auto& func : chunk.getAllFunctions()) {
     FunctionMetrics funcMetrics;
     funcMetrics.name = func.name;
     funcMetrics.instructionCount = func.instructions.size();
@@ -900,7 +900,7 @@ std::vector<DocumentationExtractor::DocumentedSymbol> DocumentationExtractor::ex
 
       DocumentedSymbol symbol;
       symbol.type = "function";
-      symbol.location = SourceLocation{stmt->line, stmt->column, ""};
+      symbol.location = SourceLocation{"", static_cast<uint32_t>(stmt->line), static_cast<uint32_t>(stmt->column)};
 
       if (func.name) {
         symbol.name = func.name->symbol;

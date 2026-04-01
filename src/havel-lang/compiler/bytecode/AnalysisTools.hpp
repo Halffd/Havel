@@ -1,5 +1,8 @@
 #pragma once
 
+#include <chrono>
+#include <iostream>
+#include <filesystem>
 #include "havel-lang/ast/AST.h"
 #include "havel-lang/compiler/bytecode/BytecodeIR.hpp"
 #include <unordered_map>
@@ -114,6 +117,14 @@ private:
                 CycleInfo& cycleInfo) const;
 };
 
+// Thresholds struct defined before CodeMetricsAnalyzer
+struct CodeMetricsThresholds {
+  uint32_t maxFunctionLength = 50;
+  uint32_t maxComplexity = 10;
+  uint32_t maxParameters = 5;
+  uint32_t maxNestingDepth = 4;
+};
+
 // ============================================================================
 // CodeMetricsAnalyzer - Code quality and complexity metrics
 // ============================================================================
@@ -136,7 +147,7 @@ public:
     uint32_t totalLines = 0;
     uint32_t codeLines = 0;
     uint32_t commentLines = 0;
-    uint32 blankLines = 0;
+    uint32_t blankLines = 0;
     uint32_t functionCount = 0;
     uint32_t classCount = 0;
     double averageComplexity = 0.0;
@@ -148,16 +159,11 @@ public:
   ModuleMetrics analyzeModule(const ast::Program& program);
   ModuleMetrics analyzeBytecode(const BytecodeChunk& chunk);
 
-  // Thresholds
-  struct Thresholds {
-    uint32_t maxFunctionLength = 50;
-    uint32_t maxComplexity = 10;
-    uint32_t maxParameters = 5;
-    uint32_t maxNestingDepth = 4;
-  };
+  // Thresholds (alias for compatibility)
+  using Thresholds = CodeMetricsThresholds;
 
   std::vector<std::string> findIssues(const FunctionMetrics& metrics,
-                                       const Thresholds& thresholds = Thresholds{});
+                                       const Thresholds& thresholds = Thresholds());
 
   // Reporting
   std::string generateReport(const ModuleMetrics& metrics) const;

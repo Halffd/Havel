@@ -505,6 +505,54 @@ static BytecodeValue uiGrid(VMApi &api,
   return obj;
 }
 
+// ui.table(rows, cols, data)
+static BytecodeValue uiTable(VMApi &api,
+                             const std::vector<BytecodeValue> &args) {
+  int rows = getIntArg(args, 0, 3);
+  int cols = getIntArg(args, 1, 2);
+
+  auto elem = getUIBackend()->table(rows, cols);
+
+  auto obj = api.makeObject();
+  attachElementToObject(api, obj, elem);
+
+  // Add data from array if provided
+  if (args.size() > 2 && std::holds_alternative<ArrayRef>(args[2])) {
+    api.setField(obj, "data", args[2]);
+  }
+
+  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+
+  return obj;
+}
+
+// ui.flex(direction, [...]) - direction: "row" or "col"
+static BytecodeValue uiFlex(VMApi &api,
+                            const std::vector<BytecodeValue> &args) {
+  std::string direction = "row";
+  if (args.size() > 0 && std::holds_alternative<std::string>(args[0])) {
+    direction = std::get<std::string>(args[0]);
+  }
+
+  auto elem = getUIBackend()->flex(direction);
+
+  auto obj = api.makeObject();
+  attachElementToObject(api, obj, elem);
+
+  // Add children from array if provided (second arg or first if it's an array)
+  size_t childrenIdx = 1;
+  if (args.size() > 0 && std::holds_alternative<ArrayRef>(args[0])) {
+    childrenIdx = 0;
+  }
+  if (args.size() > childrenIdx && std::holds_alternative<ArrayRef>(args[childrenIdx])) {
+    api.setField(obj, "children", args[childrenIdx]);
+  }
+
+  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+
+  return obj;
+}
+
 // ui.scroll([...])
 static BytecodeValue uiScroll(VMApi &api,
                               const std::vector<BytecodeValue> &args) {
@@ -1265,6 +1313,16 @@ void registerUIModule(compiler::VMApi &api) {
   api.registerFunction("ui.grid",
                        [&api](const std::vector<BytecodeValue> &args) {
                          return uiGrid(api, args);
+                       });
+
+  api.registerFunction("ui.table",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiTable(api, args);
+                       });
+
+  api.registerFunction("ui.flex",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         return uiFlex(api, args);
                        });
 
   api.registerFunction("ui.scroll",

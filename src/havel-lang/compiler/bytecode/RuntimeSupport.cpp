@@ -1,6 +1,7 @@
 #include "RuntimeSupport.hpp"
 #include <sstream>
 #include <iomanip>
+#include <cstring>
 
 namespace havel::compiler {
 
@@ -171,8 +172,6 @@ RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const BytecodeValue& value) {
       return Type::Enum;
     } else if constexpr (std::is_same_v<T, IteratorRef>) {
       return Type::Iterator;
-    } else if constexpr (std::is_same_v<T, NativeDataRef>) {
-      return Type::NativeData;
     } else {
       return Type::Null;
     }
@@ -180,7 +179,8 @@ RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const BytecodeValue& value) {
 }
 
 std::string RuntimeTypeSystem::typeName(const BytecodeValue& value) {
-  auto info = getTypeInfo(getType(value));
+  RuntimeTypeSystem rts;
+  auto info = rts.getTypeInfo(getType(value));
   if (info) return info->name;
   return "unknown";
 }
@@ -230,7 +230,8 @@ bool RuntimeTypeSystem::isObject(const BytecodeValue& value) {
 
 bool RuntimeTypeSystem::isCallable(const BytecodeValue& value) {
   Type type = getType(value);
-  auto info = getTypeInfo(type);
+  RuntimeTypeSystem rts;
+  auto info = rts.getTypeInfo(type);
   return info && info->isCallable;
 }
 
@@ -315,7 +316,7 @@ BytecodeValue RuntimeTypeSystem::convert(const BytecodeValue& value, Type target
       return result ? *result : BytecodeValue(nullptr);
     }
     case Type::Boolean:
-      return toBoolean(value);
+      return toBoolean(value).value_or(false);
     default:
       return BytecodeValue(nullptr);
   }
@@ -324,12 +325,13 @@ BytecodeValue RuntimeTypeSystem::convert(const BytecodeValue& value, Type target
 bool RuntimeTypeSystem::checkType(const BytecodeValue& value, Type expected,
                                   std::string& errorMessage) {
   Type actual = getType(value);
-  if (actual == expected || isSubtype(actual, expected)) {
+  RuntimeTypeSystem rts;
+  if (actual == expected || rts.isSubtype(actual, expected)) {
     return true;
   }
 
-  auto actualInfo = getTypeInfo(actual);
-  auto expectedInfo = getTypeInfo(expected);
+  auto actualInfo = rts.getTypeInfo(actual);
+  auto expectedInfo = rts.getTypeInfo(expected);
 
   errorMessage = "Type mismatch: expected " +
                  (expectedInfo ? expectedInfo->name : "unknown") +
@@ -357,11 +359,15 @@ bool RuntimeTypeSystem::equals(const BytecodeValue& a, const BytecodeValue& b) {
     using T = std::decay_t<decltype(val)>;
     if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, double> ||
                   std::is_same_v<T, bool> || std::is_same_v<T, std::string> ||
-                  std::is_same_v<T, nullptr_t>) {
+                  std::is_same_v<T, nullptr_t> || std::is_same_v<T, uint32_t>) {
       return val == std::get<T>(b);
+    } else if constexpr (std::is_same_v<T, FunctionObject>) {
+      return val.function_index == std::get<T>(b).function_index;
+    } else if constexpr (std::is_same_v<T, HostFunctionRef>) {
+      return val.name == std::get<T>(b).name;
     } else {
-      // For reference types, compare IDs
-      return val == std::get<T>(b);
+      // For reference types with id, compare IDs
+      return val.id == std::get<T>(b).id;
     }
   }, a);
 }
@@ -437,12 +443,12 @@ bool RuntimeTypeSystem::canConvert(Type from, Type to) const {
 // IterableFactory Implementation
 // ============================================================================
 
-void IterableFactory::registerIterator(Type type, IteratorCreator creator) {
+void IterableFactory::registerIterator(RuntimeTypeSystem::Type type, IteratorCreator creator) {
   creators_[type] = creator;
 }
 
 std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const BytecodeValue& value) {
-  Type type = RuntimeTypeSystem::getType(value);
+  RuntimeTypeSystem::Type type = RuntimeTypeSystem::getType(value);
 
   auto it = creators_.find(type);
   if (it != creators_.end()) {
@@ -462,7 +468,7 @@ std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const Bytecode
 }
 
 bool IterableFactory::isIterable(const BytecodeValue& value) const {
-  Type type = RuntimeTypeSystem::getType(value);
+  RuntimeTypeSystem::Type type = RuntimeTypeSystem::getType(value);
 
   if (creators_.count(type) > 0) return true;
 

@@ -483,18 +483,29 @@ void ClipboardManager::setupFonts() {
     // Get system default font
     QFont appFont = QApplication::font();
     
-    // Set a safe default font family
-    QStringList preferredFonts = {
-        "Segoe UI", "Arial", "Noto Sans", "DejaVu Sans", "Liberation Sans",
-        "Helvetica", "Verdana", "Tahoma", "Ubuntu", "Roboto"
-    };
+    // Static cache - font family lookup only once per app lifetime
+    static QString cachedFontFamily;
+    static bool fontCached = false;
     
-    // Try to find and set a preferred font
-    for (const QString& fontName : preferredFonts) {
-        if (QFontDatabase::hasFamily(fontName)) {
-            appFont.setFamily(fontName);
-            break;
+    if (!fontCached) {
+        QStringList preferredFonts = {
+            "Segoe UI", "Arial", "Noto Sans", "DejaVu Sans", "Liberation Sans",
+            "Helvetica", "Verdana", "Tahoma", "Ubuntu", "Roboto"
+        };
+        
+        // Find first available font
+        for (const QString& fontName : preferredFonts) {
+            if (QFontDatabase::hasFamily(fontName)) {
+                cachedFontFamily = fontName;
+                break;
+            }
         }
+        fontCached = true;
+    }
+    
+    // Apply cached font family if found
+    if (!cachedFontFamily.isEmpty()) {
+        appFont.setFamily(cachedFontFamily);
     }
     
     // Set reasonable font size and style

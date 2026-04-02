@@ -176,6 +176,19 @@ HavelValue* havel_array_get(const HavelValue* arr, size_t index) {
     return a->values[index];
 }
 
+void havel_array_set(HavelValue* arr, size_t index, HavelValue* v) {
+    if (!arr || arr->type != HAVEL_ARRAY) return;
+    HavelArray* a = arr->data.array;
+    if (index >= a->capacity) return;
+    if (a->values[index]) {
+        havel_free_value(a->values[index]);
+    }
+    a->values[index] = v;
+    if (index >= a->length) {
+        a->length = index + 1;
+    }
+}
+
 void havel_array_push(HavelValue* arr, HavelValue* v) {
     if (!arr || arr->type != HAVEL_ARRAY || !v) return;
     HavelArray* a = arr->data.array;

@@ -2371,9 +2371,19 @@ static HavelValue* qt_processCallbacks(int argc, HavelValue** argv) {
  * CANVAS API - QuickDraw Style
  * ============================================================================ */
 
+/* Qt headers must be included outside the anonymous namespace to avoid conflicts
+ * with our forward declarations. We need to temporarily exit the namespace.
+ */
+
+} // end anonymous namespace
+
+// Include Qt headers in global scope
 #include <QPainter>
 #include <QPixmap>
 #include <QStack>
+
+// Re-enter anonymous namespace
+namespace {
 
 struct QtCanvas {
     int64_t id;

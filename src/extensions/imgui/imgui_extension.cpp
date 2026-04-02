@@ -465,7 +465,7 @@ struct ImGuiLibs {
     ImGuiPopStyleColorFn ImGui_PopStyleColor = nullptr;
     ImGuiPushStyleVarFn ImGui_PushStyleVar = nullptr;
     ImGuiPopStyleVarFn ImGui_PopStyleVar = nullptr;
-    ImGuiPushIDStrFn ImGui_PushID_Str = nullptr;
+    ImGuiPushIDStrFn ImGui_PushIDStr = nullptr;
     ImGuiPopIDFn ImGui_PopID = nullptr;
     ImGuiIsItemHoveredFn ImGui_IsItemHovered = nullptr;
     ImGuiIsItemActiveFn ImGui_IsItemActive = nullptr;
@@ -636,7 +636,7 @@ struct ImGuiLibs {
         LOAD_IMGUI(PopStyleColor)
         LOAD_IMGUI(PushStyleVar)
         LOAD_IMGUI(PopStyleVar)
-        LOAD_IMGUI(PushID_Str)
+        LOAD_IMGUI(PushIDStr)
         LOAD_IMGUI(PopID)
         LOAD_IMGUI(IsItemHovered)
         LOAD_IMGUI(IsItemActive)
@@ -1226,8 +1226,8 @@ static HavelValue* imgui_push_id(int argc, HavelValue** argv) {
         return havel_new_null();
     }
     const char* strId = havel_get_string(argv[0]);
-    if (strId && g_imguiLibs->ImGui_PushID_Str) {
-        g_imguiLibs->ImGui_PushID_Str(strId);
+    if (strId && g_imguiLibs->ImGui_PushIDStr) {
+        g_imguiLibs->ImGui_PushIDStr(strId);
     }
     return havel_new_null();
 }

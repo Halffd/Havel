@@ -34,6 +34,11 @@ typedef void (*GtkInitFn)(int* argc, char*** argv);
 typedef void (*GtkMainFn)(void);
 typedef void (*GtkQuitFn)(void);
 
+/* GTK4 function pointer type aliases - Core (for macro compatibility) */
+typedef GtkInitFn gtk_initFn;
+typedef GtkMainFn gtk_mainFn;
+typedef GtkQuitFn gtk_quitFn;
+
 /* GTK4 function pointer types - Window */
 typedef GtkWidget* (*GtkWindowNewFn)(void);
 typedef void (*GtkWindowSetTitleFn)(GtkWindow* win, const char* title);

@@ -1,8 +1,8 @@
 #include "HotkeyManager.hpp"
 #include "IO.hpp"
-#include "core/io/EventListener.hpp"
-#include "core/ConfigManager.hpp"
-#include "core/io/KeyMap.hpp"
+#include "io/EventListener.hpp"
+#include "ConfigManager.hpp"
+#include "io/KeyMap.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
 #include <cmath>

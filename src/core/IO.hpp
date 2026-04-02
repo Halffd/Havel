@@ -1,10 +1,10 @@
 #pragma once
-#include "core/CallbackTypes.hpp"     // Include callback types
-#include "core/MouseGestureTypes.hpp" // Include the mouse gesture types
-#include "core/io/Device.hpp"
-#include "core/io/HotkeyExecutor.hpp"
-#include "core/io/KeyMap.hpp"
-#include "core/io/MouseController.hpp"
+#include "CallbackTypes.hpp"     // Include callback types
+#include "MouseGestureTypes.hpp" // Include the mouse gesture types
+#include "io/Device.hpp"
+#include "io/HotkeyExecutor.hpp"
+#include "io/KeyMap.hpp"
+#include "io/MouseController.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/runtime/ImportManager.hpp"
 #include "types.hpp"

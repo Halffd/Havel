@@ -1,9 +1,9 @@
-#include "core/IO.hpp"
-#include "core/ConfigManager.hpp"
-#include "core/DisplayManager.hpp"
-#include "core/HotkeyManager.hpp"
-#include "core/io/KeyTap.hpp"
-#include "core/process/ProcessManager.hpp"
+#include "IO.hpp"
+#include "ConfigManager.hpp"
+#include "DisplayManager.hpp"
+#include "HotkeyManager.hpp"
+#include "io/KeyTap.hpp"
+#include "process/ProcessManager.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;

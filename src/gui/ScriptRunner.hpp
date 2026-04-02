@@ -1,14 +1,15 @@
 #pragma once
+#include "qt.hpp"
 
-#include <QProcess>
-#include <QMainWindow>
-#include <QTabWidget>
-#include <QTextEdit>
-#include <QPushButton>
-#include <QSplitter>
-#include <QTreeWidget>
-#include <QVBoxLayout>
-#include <QProgressBar>
+// #include <QProcess>
+// #include <QMainWindow>
+// #include <QTabWidget>
+// #include <QTextEdit>
+// #include <QPushButton>
+// #include <QSplitter>
+// #include <QTreeWidget>
+// #include <QVBoxLayout>
+// #include <QProgressBar>
 
 #undef Window // Undefine X11 macro
 #undef None // Undefine X11 macro

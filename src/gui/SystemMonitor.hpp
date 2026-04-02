@@ -1,15 +1,16 @@
 #pragma once
+#include "qt.hpp"
 
 #undef Window
 #undef None
 
-#include <QTimer>
-#include <QWidget>
-#include <QProgressBar>
-#include <QLabel>
-#include <QTreeWidget>
-#include <QMainWindow>
-#include <QVBoxLayout>
+// #include <QTimer>
+// #include <QWidget>
+// #include <QProgressBar>
+// #include <QLabel>
+// #include <QTreeWidget>
+// #include <QMainWindow>
+// #include <QVBoxLayout>
 #include "types.hpp"
 
 // Stub chart classes since Qt Charts is no longer linked

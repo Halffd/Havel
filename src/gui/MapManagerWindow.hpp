@@ -1,21 +1,22 @@
 #pragma once
-#include <QWidget>
-#include <QDialog>
-#include <QListWidget>
-#include <QPushButton>
-#include <QComboBox>
-#include <QLineEdit>
-#include <QSpinBox>
-#include <QCheckBox>
-#include <QTableWidget>
-#include <QLabel>
-#include <QGroupBox>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QSplitter>
-#include <QTabWidget>
+#include "qt.hpp"
+// #include <QWidget>
+// #include <QDialog>
+// #include <QListWidget>
+// #include <QPushButton>
+// #include <QComboBox>
+// #include <QLineEdit>
+// #include <QSpinBox>
+// #include <QCheckBox>
+// #include <QTableWidget>
+// #include <QLabel>
+// #include <QGroupBox>
+// #include <QVBoxLayout>
+// #include <QHBoxLayout>
+// #include <QSplitter>
+// #include <QTabWidget>
 #include <memory>
-#include "../core/io/MapManager.hpp"
+#include "core/io/MapManager.hpp"
 
 namespace havel {
 

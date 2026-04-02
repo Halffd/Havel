@@ -1,12 +1,13 @@
 #pragma once
+#include "qt.hpp"
 
 #include "qt.hpp" // Moved to top
-#include <QFileSystemModel>
-#include <QSplitter>
-#include <QListView>
-#include <QTreeView>
-#include <QDir>
-#include <QMainWindow> // Added for QMainWindow definition
+// #include <QFileSystemModel>
+// #include <QSplitter>
+// #include <QListView>
+// #include <QTreeView>
+// #include <QDir>
+// #include <QMainWindow> // Added for QMainWindow definition
 #include "types.hpp"
 
 class FileAutomator : public ::QMainWindow {

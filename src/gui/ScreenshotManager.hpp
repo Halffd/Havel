@@ -1,11 +1,12 @@
 #pragma once
+#include "qt.hpp"
 
 #include "qt.hpp"
 #include "types.hpp"
 #include "ScreenRegionSelector.hpp"
-#include <QFileSystemWatcher>
-#include <QClipboard>
-#include <QProcess>
+// #include <QFileSystemWatcher>
+// #include <QClipboard>
+// #include <QProcess>
 #include "ClipboardManager.hpp"  // Include ClipboardManager
 
 namespace havel {

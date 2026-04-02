@@ -1,12 +1,13 @@
 #pragma once
+#include "qt.hpp"
 
 #include "SystemMonitor.hpp"
 #include "FileAutomator.hpp"
 #include "ScriptRunner.hpp"
-#include <QMainWindow>
-#include <QWidget>
-#include <QPushButton>
-#include <QVBoxLayout>
+// #include <QMainWindow>
+// #include <QWidget>
+// #include <QPushButton>
+// #include <QVBoxLayout>
 
 #undef Window
 #undef None

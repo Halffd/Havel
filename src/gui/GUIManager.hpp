@@ -1,14 +1,15 @@
 #pragma once
+#include "qt.hpp"
 
 #include "window/WindowManager.hpp"
-#include <QApplication>
-#include <QDialog>
-#include <QGenericArgument>
-#include <QMenu>
-#include <QMessageBox>
-#include <QMetaObject>
-#include <QThread>
-#include <QWidget>
+// #include <QApplication>
+// #include <QDialog>
+// #include <QGenericArgument>
+// #include <QMenu>
+// #include <QMessageBox>
+// #include <QMetaObject>
+// #include <QThread>
+// #include <QWidget>
 #include <functional>
 #include <memory>
 #include <string>

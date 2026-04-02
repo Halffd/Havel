@@ -1,7 +1,8 @@
 // TextChunkerWindow.hpp
+#include "qt.hpp"
 #pragma once
 
-#include <QMainWindow>
+// #include <QMainWindow>
 #include <string>
 
 class QLabel;

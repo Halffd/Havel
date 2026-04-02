@@ -1,28 +1,29 @@
 #pragma once
+#include "qt.hpp"
 
 #include "x11.h"
-#include <QApplication>
-#include <QHBoxLayout>
-#include <QImage>
-#include <QKeyEvent>
-#include <QLabel>
-#include <QListWidget>
-#include <QListWidgetItem>
-#include <QPaintEvent>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPixmap>
-#include <QScreen>
-#include <QScrollArea>
-#include <QScrollBar>
-#include <QScroller>
-#include <QScrollerProperties>
-#include <QStyle>
-#include <QStyleOption>
-#include <QTimer>
-#include <QVBoxLayout>
-#include <QWidget>
-#include <QWindow>
+// #include <QApplication>
+// #include <QHBoxLayout>
+// #include <QImage>
+// #include <QKeyEvent>
+// #include <QLabel>
+// #include <QListWidget>
+// #include <QListWidgetItem>
+// #include <QPaintEvent>
+// #include <QPainter>
+// #include <QPainterPath>
+// #include <QPixmap>
+// #include <QScreen>
+// #include <QScrollArea>
+// #include <QScrollBar>
+// #include <QScroller>
+// #include <QScrollerProperties>
+// #include <QStyle>
+// #include <QStyleOption>
+// #include <QTimer>
+// #include <QVBoxLayout>
+// #include <QWidget>
+// #include <QWindow>
 
 #include <memory>
 #include <string>

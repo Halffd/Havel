@@ -1,6 +1,7 @@
 #pragma once
+#include "qt.hpp"
 
-#include <QMainWindow>
+// #include <QMainWindow>
 #include "AutomationSuite.hpp"
 #include "core/ConfigManager.hpp"
 

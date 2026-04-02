@@ -1069,6 +1069,12 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle single character tokens
     auto singleCharIt = SINGLE_CHAR_TOKENS.find(c);
+    if (debug_lexer) {
+      std::cerr << "[LEXER] Looking up char '" << c << "' in SINGLE_CHAR_TOKENS, found=" << (singleCharIt != SINGLE_CHAR_TOKENS.end()) << std::endl;
+      if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
+        std::cerr << "[LEXER] Mapped to type=" << static_cast<int>(singleCharIt->second) << std::endl;
+      }
+    }
     if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
       tokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
       continue;

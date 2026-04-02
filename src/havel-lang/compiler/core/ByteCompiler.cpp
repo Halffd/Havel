@@ -88,7 +88,10 @@ ByteCompiler::compile(const ast::Program &program) {
   declared_functions.reserve(program.body.size());
 
   uint32_t next_function_index = 0;
-  for (const auto &statement : program.body) {
+  std::cerr << "[DEBUG ByteCompiler] Program has " << program.body.size() << " statements" << std::endl;
+  for (size_t i = 0; i < program.body.size(); i++) {
+    const auto &statement = program.body[i];
+    std::cerr << "[DEBUG ByteCompiler] Statement " << i << ": kind=" << (statement ? static_cast<int>(statement->kind) : -1) << std::endl;
     if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
       if (statement && statement->kind == ast::NodeType::StructDeclaration) {
         const auto &decl =
@@ -642,6 +645,10 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::LetDeclaration: {
     const auto &let = static_cast<const ast::LetDeclaration &>(statement);
+    std::cerr << "[DEBUG ByteCompiler] LetDeclaration: value=" << (let.value ? "present" : "null") << std::endl;
+    if (let.value) {
+      std::cerr << "[DEBUG ByteCompiler]   value kind=" << static_cast<int>(let.value->kind) << std::endl;
+    }
     if (auto *identifier =
             dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
       if (let.value) {

@@ -1,29 +1,30 @@
 #pragma once
+#include "qt.hpp"
 
-#include <QMainWindow>
-#include <QClipboard>
-#include <QSystemTrayIcon>
-#include <QListWidget>
-#include <QLineEdit>
-#include <QTextEdit>
-#include <QSplitter>
-#include <QVBoxLayout>
-#include <QShortcut>
-#include <QIcon>
-#include <QSettings>
-#include <QAction>
-#include <QSize>
-#include <QMimeData>
-#include <QDateTime>
-#include <QImage>
-#include <QFileInfo>
-#include <QUrl>
-#include <QJsonArray>
-#include <QDir>
-#include <QPropertyAnimation>
-#include <QParallelAnimationGroup>
-#include <QGraphicsOpacityEffect>
-#include <QEasingCurve>
+// #include <QMainWindow>
+// #include <QClipboard>
+// #include <QSystemTrayIcon>
+// #include <QListWidget>
+// #include <QLineEdit>
+// #include <QTextEdit>
+// #include <QSplitter>
+// #include <QVBoxLayout>
+// #include <QShortcut>
+// #include <QIcon>
+// #include <QSettings>
+// #include <QAction>
+// #include <QSize>
+// #include <QMimeData>
+// #include <QDateTime>
+// #include <QImage>
+// #include <QFileInfo>
+// #include <QUrl>
+// #include <QJsonArray>
+// #include <QDir>
+// #include <QPropertyAnimation>
+// #include <QParallelAnimationGroup>
+// #include <QGraphicsOpacityEffect>
+// #include <QEasingCurve>
 #include "core/IO.hpp"
 
 namespace havel {

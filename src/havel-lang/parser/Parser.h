@@ -238,6 +238,7 @@ private:
 
   // Lookahead helper to detect destructuring patterns like {a, b} = obj
   bool isDestructuringPattern() const;
+  bool isObjectLiteral() const;
 
   // Condition combination helpers
   std::unique_ptr<ast::Expression>

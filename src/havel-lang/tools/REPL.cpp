@@ -10,7 +10,7 @@
 #include "../runtime/HostAPI.hpp"
 #include "../../utils/Logger.hpp"
 #include "../parser/Parser.h"
-#include "../compiler/bytecode/ByteCompiler.hpp"
+#include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>

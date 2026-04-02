@@ -6,9 +6,9 @@
  */
 #pragma once
 
-#include "havel-lang/compiler/bytecode/VM.hpp"
-#include "havel-lang/compiler/bytecode/HostBridge.hpp"
-#include "havel-lang/compiler/bytecode/Pipeline.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
 #include <string>
 #include <memory>
 #include <functional>

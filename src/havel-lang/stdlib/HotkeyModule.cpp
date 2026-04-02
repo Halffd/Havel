@@ -1,6 +1,6 @@
 #include "HotkeyModule.hpp"
 #include "../../core/HotkeyManager.hpp"
-#include "../../havel-lang/runtime/HostContext.hpp"
+#include "havel-lang/runtime/HostContext.hpp"
 #include <mutex>
 #include <unordered_map>
 

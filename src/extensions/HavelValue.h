@@ -120,6 +120,7 @@ void* havel_get_handle(const HavelValue* v);
 
 size_t havel_array_length(const HavelValue* arr);
 HavelValue* havel_array_get(const HavelValue* arr, size_t index);
+void havel_array_set(HavelValue* arr, size_t index, HavelValue* v);
 void havel_array_push(HavelValue* arr, HavelValue* v);
 
 /* ==========================================================================

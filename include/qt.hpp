@@ -58,12 +58,38 @@
 #include <QTabWidget>
 #include <QScrollArea>
 #include <QSplitter>
+#include <QFileSystemWatcher>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QMenuBar>
 #include <QTreeView>
 #include <QFileSystemModel>
 #include <QStyle>
+#include <QClipboard>
+#include <QSystemTrayIcon>
+#include <QShortcut>
+#include <QSize>
+#include <QMimeData>
+#include <QDateTime>
+#include <QImage>
+#include <QFileInfo>
+#include <QUrl>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QDir>
+#include <QPropertyAnimation>
+#include <QParallelAnimationGroup>
+#include <QGraphicsOpacityEffect>
+#include <QEasingCurve>
+#include <QPoint>
+#include <QVariant>
+#include <QStringList>
+#include <QCloseEvent>
+#include <QKeyEvent>
+#include <QListWidgetItem>
+#include <QSplitter>
+#include <QFileSystemWatcher>
 
 namespace havel {
     using App = QApplication;
@@ -72,4 +98,7 @@ namespace havel {
 #define emit
 #endif
 
-#endif // HAVE_QT_EXTENSION
+#endif // HAVE_QT_EXTENSION#include <QGuiApplication>
+#include <QProcess>
+#include <QSpinBox>
+#include <QDoubleSpinBox>

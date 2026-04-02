@@ -2,9 +2,9 @@
 
 #include "ConditionalHotkeyManager.hpp"
 #include "ModeManager.hpp"
-#include "core/CallbackTypes.hpp"
-#include "core/MouseGestureTypes.hpp"
-#include "core/io/MouseGestureEngine.hpp"
+#include "CallbackTypes.hpp"
+#include "MouseGestureTypes.hpp"
+#include "io/MouseGestureEngine.hpp"
 #include <chrono>
 #include <functional>
 #include <memory>

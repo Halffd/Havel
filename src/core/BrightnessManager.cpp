@@ -13,7 +13,7 @@
 #ifdef __WAYLAND__
 #include <wayland-client.h>
 #endif
-#include "core/DisplayManager.hpp"
+#include "DisplayManager.hpp"
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>

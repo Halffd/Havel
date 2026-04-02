@@ -1,4 +1,4 @@
-#include "../../havel-lang/runtime/HostAPI.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
 /*
  * BrightnessModule.hpp
  * 

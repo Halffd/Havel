@@ -5,7 +5,7 @@
  */
 #include "WindowMonitorModule.hpp"
 #include "window/WindowMonitor.hpp"
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 
 namespace havel::modules {

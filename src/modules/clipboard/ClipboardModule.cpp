@@ -3,7 +3,7 @@
  */
 #include "ClipboardModule.hpp"
 #include "havel-lang/compiler/bytecode/VM.hpp"
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/clipboard/Clipboard.hpp"
 #include "host/clipboard/HistoryClipboard.hpp"
 #include "host/clipboard/MonitoringClipboard.hpp"

@@ -2,10 +2,10 @@
 // Register all host modules
 // Simple, explicit registration
 
-#include "../havel-lang/runtime/ModuleLoader.hpp"
-#include "../havel-lang/runtime/HostAPI.hpp"
+#include "havel-lang/runtime/ModuleLoader.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
 #include "../utils/Logger.hpp"
-#include "../havel-lang/compiler/bytecode/HostBridge.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "../host/ServiceRegistry.hpp"
 #include "../host/io/IOService.hpp"
 #include "../host/hotkey/HotkeyService.hpp"

@@ -5,7 +5,7 @@
  */
 #include "ConfigModule.hpp"
 #include "core/ConfigManager.hpp"
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 
 #include <cmath>

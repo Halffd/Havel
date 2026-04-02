@@ -2,7 +2,7 @@
  * MouseModule.hpp - Mouse control module for bytecode VM
  */
 #pragma once
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
 namespace havel::modules {
 

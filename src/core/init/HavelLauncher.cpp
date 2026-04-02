@@ -1,11 +1,10 @@
+#include "core/Havel.hpp"
 #include "HavelLauncher.hpp"
-#ifdef HAVE_QT_EXTENSION
-#include "gui/HavelApp.hpp"
-#endif
+#include "Havel.hpp"
 #include "core/ConfigManager.hpp"
 #include "havel-lang/common/Debug.hpp"
-#include "havel-lang/compiler/bytecode/HostBridge.hpp"
-#include "havel-lang/compiler/bytecode/Pipeline.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/StdLibModules.hpp"
@@ -166,16 +165,16 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
     app.setOrganizationName("havel");
     app.setQuitOnLastWindowClosed(false);
 
-    // Convert argc/argv to vector<string> for HavelApp
+    // Convert argc/argv to vector<string> for havel::Havel
     std::vector<std::string> args;
     for (int i = 0; i < argc; ++i) {
       args.emplace_back(argv[i]);
     }
 
-    HavelApp havelApp(cfg.isStartup, "", false, true, args);
+    havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
 
-    if (!havelApp.isInitialized()) {
-      error("Failed to initialize HavelApp");
+    if (!havel_inst.isInitialized()) {
+      error("Failed to initialize havel::Havel");
       return 1;
     }
 
@@ -190,9 +189,9 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
         // Execute with bytecode VM (only execution engine)
         auto *bytecodeVM =
-            reinterpret_cast<havel::compiler::VM *>(havelApp.getBytecodeVM());
+            reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
         auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
-            havelApp.getHostBridge());
+            havel_inst.getHostBridge());
 
         if (bytecodeVM && hostBridge) {
           info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
@@ -315,25 +314,25 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     char *dummy_argv[] = {dummy_name, nullptr};
     QApplication app(dummy_argc, dummy_argv);
 
-    // Convert argc/argv to vector<string> for HavelApp
+    // Convert argc/argv to vector<string> for havel::Havel
     std::vector<std::string> args;
     for (int i = 0; i < argc; ++i) {
       args.emplace_back(argv[i]);
     }
 
-    HavelApp havelApp(false, cfg.scriptFile, false, true,
+    havel::Havel havel_inst(false, cfg.scriptFile, false, true,
                       args); // Enable GUI for full mode
 
-    if (!havelApp.isInitialized()) {
-      error("Failed to initialize HavelApp");
+    if (!havel_inst.isInitialized()) {
+      error("Failed to initialize havel::Havel");
       return 1;
     }
     
-    std::cerr << "[DEBUG] HavelApp initialized, checking VM..." << std::endl;
+    std::cerr << "[DEBUG] havel::Havel initialized, checking VM..." << std::endl;
 
-    // Execute with bytecode VM through HavelApp
-    auto *bytecodeVM = havelApp.getBytecodeVM();
-    auto *hostBridge = havelApp.getHostBridge();
+    // Execute with bytecode VM through havel::Havel
+    auto *bytecodeVM = havel_inst.getBytecodeVM();
+    auto *hostBridge = havel_inst.getHostBridge();
 
     if (!bytecodeVM || !hostBridge) {
       error("Bytecode VM not available");
@@ -359,8 +358,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
 
     // Assume hotkeys might be present - let hotkeyManager handle it
-    havelApp.hotkeyManager->printHotkeys();
-    havelApp.hotkeyManager->updateAllConditionalHotkeys();
+    havel_inst.getHotkeyManagerPtr()->printHotkeys();
+    havel_inst.getHotkeyManagerPtr()->updateAllConditionalHotkeys();
     info("Script loaded. Hotkeys registered. Press Ctrl+C to exit.");
     int exitCode = app.exec();
 
@@ -592,25 +591,25 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       buffer << file.rdbuf();
       std::string code = buffer.str();
 
-      // Full mode - initialize Qt and HavelApp
+      // Full mode - initialize Qt and havel::Havel
       int dummy_argc = 1;
       char dummy_name[] = "havel-script-repl";
       char *dummy_argv[] = {dummy_name, nullptr};
       QApplication app(dummy_argc, dummy_argv);
       app.setQuitOnLastWindowClosed(false);
       
-      // Create HavelApp with full features
+      // Create havel::Havel with full features
       std::vector<std::string> args;
-      HavelApp havelApp(false, cfg.scriptFile, false, true, args);
+      havel::Havel havel_inst(false, cfg.scriptFile, false, true, args);
       
-      if (!havelApp.isInitialized()) {
-        error("Failed to initialize HavelApp");
+      if (!havel_inst.isInitialized()) {
+        error("Failed to initialize havel::Havel");
         return 1;
       }
       
       // Execute script with full features
-      auto *bytecodeVM = havelApp.getBytecodeVM();
-      auto *hostBridge = havelApp.getHostBridge();
+      auto *bytecodeVM = havel_inst.getBytecodeVM();
+      auto *hostBridge = havel_inst.getHostBridge();
       
       if (!bytecodeVM || !hostBridge) {
         error("Bytecode VM not available");
@@ -630,8 +629,8 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       }
 
       // Print registered hotkeys
-      havelApp.hotkeyManager->printHotkeys();
-      havelApp.hotkeyManager->updateAllConditionalHotkeys();
+      havel_inst.getHotkeyManagerPtr()->printHotkeys();
+      havel_inst.getHotkeyManagerPtr()->updateAllConditionalHotkeys();
       info("Script loaded. Hotkeys registered. Enter REPL...");
       
       // Create REPL with full host API
@@ -643,13 +642,13 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       
       // Create host API with full features
       auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
-          havelApp.io.get(),
-          havelApp.hotkeyManager.get(),
+          havel_inst.getIOPtr(),
+          havel_inst.getHotkeyManagerPtr(),
           Configs::Get(),
-          havelApp.windowManager.get(),
+          havel_inst.getWindowManagerPtr(),
           nullptr, nullptr, nullptr, nullptr, nullptr,
           nullptr, nullptr, nullptr, nullptr, nullptr,
-          havelApp.hotkeyManager->getModeManager().get(),
+          havel_inst.getHotkeyManagerPtr()->getModeManager().get(),
           std::vector<std::string>{}));
       
       havel::initializeServiceRegistry(hostAPI);
@@ -739,25 +738,25 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       std::cerr << "  - GUI: enabled" << std::endl;
       std::cerr << "  - IO/Hotkeys: enabled" << std::endl;
 
-      // Full mode - initialize Qt and HavelApp
+      // Full mode - initialize Qt and havel::Havel
       int dummy_argc = 1;
       char dummy_name[] = "havel-repl";
       char *dummy_argv[] = {dummy_name, nullptr};
       QApplication app(dummy_argc, dummy_argv);
       app.setQuitOnLastWindowClosed(false);
 
-      // Create HavelApp with full features
+      // Create havel::Havel with full features
       std::vector<std::string> args;
-      HavelApp havelApp(false, "", false, true, args);
+      havel::Havel havel_inst(false, "", false, true, args);
       
-      if (!havelApp.isInitialized()) {
-        error("Failed to initialize HavelApp");
+      if (!havel_inst.isInitialized()) {
+        error("Failed to initialize havel::Havel");
         return 1;
       }
       
-      // Get VM and host bridge from HavelApp
-      auto *bytecodeVM = reinterpret_cast<havel::compiler::VM *>(havelApp.getBytecodeVM());
-      auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(havelApp.getHostBridge());
+      // Get VM and host bridge from havel::Havel
+      auto *bytecodeVM = reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
+      auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(havel_inst.getHostBridge());
       
       if (!bytecodeVM || !hostBridge) {
         error("Bytecode VM or HostBridge not available");
@@ -773,13 +772,13 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       
       // Create host API with full features
       auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
-          havelApp.io.get(),
-          havelApp.hotkeyManager.get(),
+          havel_inst.getIOPtr(),
+          havel_inst.getHotkeyManagerPtr(),
           Configs::Get(),
-          havelApp.windowManager.get(),
+          havel_inst.getWindowManagerPtr(),
           nullptr, nullptr, nullptr, nullptr, nullptr,
           nullptr, nullptr, nullptr, nullptr, nullptr,
-          havelApp.hotkeyManager->getModeManager().get(),
+          havel_inst.getHotkeyManagerPtr()->getModeManager().get(),
           std::vector<std::string>{}));
       
       havel::initializeServiceRegistry(hostAPI);

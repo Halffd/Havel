@@ -14,7 +14,7 @@
 #include <variant>
 #include <vector>
 
-#include "../../havel-lang/compiler/bytecode/VM.hpp"
+#include "../../havel-lang/compiler/vm/VM.hpp"
 
 class HotkeyExecutor {
 public:

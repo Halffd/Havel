@@ -4,7 +4,7 @@
  * Handles uinput device setup and event injection.
  * Separated from EventListener to break monolithic design.
  */
-#include "core/io/UinputDevice.hpp"
+#include "UinputDevice.hpp"
 #include "utils/Logger.hpp"
 #include <fcntl.h>
 #include <linux/uinput.h>

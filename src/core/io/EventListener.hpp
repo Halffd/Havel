@@ -3,7 +3,7 @@
 #include "MouseGestureEngine.hpp"
 #include "UinputDevice.hpp"           // Include UinputDevice
 #include "core/CallbackTypes.hpp"     // Include callback types
-#include "core/MouseGestureTypes.hpp" // Include mouse gesture types
+#include "../MouseGestureTypes.hpp" // Include mouse gesture types
 #include <atomic>
 #include <chrono>
 #include <csignal>

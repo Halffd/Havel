@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/MouseGestureTypes.hpp"
+#include "../MouseGestureTypes.hpp"
 #include <chrono>
 #include <mutex>
 #include <string>

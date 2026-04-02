@@ -911,6 +911,10 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             ${GENERATED_PROTO_DIR}
             $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtCore>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtWidgets>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
         )
         
         target_link_libraries(${test_name} PRIVATE 
@@ -919,7 +923,10 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             GTest::gtest 
             GTest::gtest_main 
             Qt6::Test
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+            havel_extension_runtime
         )
         
         target_compile_definitions(${test_name} PRIVATE
@@ -930,6 +937,10 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
             $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
             $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:HAVE_QT_EXTENSION>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
+            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
         )
         
         # Add to CTest

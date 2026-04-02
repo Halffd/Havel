@@ -184,6 +184,12 @@ private:
   std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
 
+  // Source location helper for error messages
+  std::string currentSourceLocation() const;
+
+  // Rust-style error formatting with source line and arrow
+  std::string formatErrorWithContext(const std::string &message) const;
+
   std::vector<BytecodeValue> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
   void maybeCollectGarbage();

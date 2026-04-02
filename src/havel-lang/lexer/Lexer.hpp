@@ -218,8 +218,8 @@ private:
                   const std::string &raw = "");
 
   Token scanNumber();
-  Token scanString();
-  Token scanMultilineString();
+  Token scanString(bool isFString = false);
+  Token scanMultilineString(bool isFString = false);
   Token scanBacktick();
   Token scanRegexLiteral();
   Token scanShellCommand(bool captureOutput = false);

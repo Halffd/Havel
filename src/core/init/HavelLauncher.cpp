@@ -256,6 +256,25 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
             info("Bytecode execution completed successfully");
           } catch (const std::exception &e) {
+            // Print bytecode debug info even on error (if available)
+            if (cfg.debugBytecode) {
+              info("=== Bytecode Debug Output (error occurred) ===");
+              std::string sanitized;
+              for (char c : cfg.scriptFile) {
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') || c == '-' || c == '_') {
+                  sanitized.push_back(c);
+                } else {
+                  sanitized.push_back('_');
+                }
+              }
+              std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
+              if (snapshot) {
+                std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
+                                     std::istreambuf_iterator<char>());
+                info("{}", bytecode);
+              }
+            }
             error("Bytecode execution error: {}", e.what());
           }
         }
@@ -353,6 +372,25 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       std::cerr << "[DEBUG] Bytecode pipeline completed" << std::endl;
       info("Startup script executed successfully with bytecode VM");
     } catch (const std::exception &e) {
+      // Print bytecode debug info even on error (if available)
+      if (cfg.debugBytecode) {
+        info("=== Bytecode Debug Output (error occurred) ===");
+        std::string sanitized;
+        for (char c : cfg.scriptFile) {
+          if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            sanitized.push_back(c);
+          } else {
+            sanitized.push_back('_');
+          }
+        }
+        std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
+        if (snapshot) {
+          std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
+                               std::istreambuf_iterator<char>());
+          info("{}", bytecode);
+        }
+      }
       error("Startup script error: {}", e.what());
       return 1;
     }
@@ -524,6 +562,25 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
       return 0;
     } catch (const std::exception &e) {
+      // Print bytecode debug info even on error (if available)
+      if (cfg.debugBytecode) {
+        info("=== Bytecode Debug Output (error occurred) ===");
+        std::string sanitized;
+        for (char c : cfg.scriptFile) {
+          if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            sanitized.push_back(c);
+          } else {
+            sanitized.push_back('_');
+          }
+        }
+        std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
+        if (snapshot) {
+          std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
+                               std::istreambuf_iterator<char>());
+          info("{}", bytecode);
+        }
+      }
       error("Bytecode error: {}", e.what());
       return 1;
     }
@@ -624,6 +681,25 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
         info("Script executed successfully with bytecode VM");
       } catch (const std::exception &e) {
+        // Print bytecode debug info even on error (if available)
+        if (cfg.debugBytecode) {
+          info("=== Bytecode Debug Output (error occurred) ===");
+          std::string sanitized;
+          for (char c : cfg.scriptFile) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '-' || c == '_') {
+              sanitized.push_back(c);
+            } else {
+              sanitized.push_back('_');
+            }
+          }
+          std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
+          if (snapshot) {
+            std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
+                                 std::istreambuf_iterator<char>());
+            info("{}", bytecode);
+          }
+        }
         error("Script execution error: {}", e.what());
         return 1;
       }

@@ -341,8 +341,9 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
-        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/bytecode/HavelAPI.cpp
-        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/bytecode/HavelValue.cpp
+        # Note: Disabled C API files (not implemented)
+        # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
+        # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
     )
 endif()
 
@@ -440,6 +441,11 @@ if(ENABLE_GTK OR UI_BACKEND STREQUAL "GTK")
         set(ENABLE_QT OFF)  # Disable Qt when GTK is selected
         set(UI_BACKEND "GTK")
         message(STATUS "GTK4 backend:    ✓ ENABLED")
+        # Also check for cairo (required for canvas API)
+        pkg_check_modules(CAIRO cairo)
+        if(CAIRO_FOUND)
+            list(APPEND GTK4_INCLUDE_DIRS ${CAIRO_INCLUDE_DIRS})
+        endif()
     else()
         set(GTK_BACKEND_AVAILABLE FALSE)
         message(STATUS "GTK4 backend:    ✗ NOT FOUND (gtk4-dev not installed)")
@@ -602,6 +608,10 @@ target_include_directories(gtk_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${GTK4_INCLUDE_DIRS}
+    /usr/include/cairo
+    /usr/include/freetype2
+    /usr/include/libpng16
+    /usr/include/pixman-1
 )
 target_link_libraries(gtk_extension PRIVATE
     havel_extension_runtime
@@ -721,12 +731,12 @@ if(ENABLE_HAVEL_LANG)
         src/havel-lang/ast/AST.cpp
         src/havel-lang/lexer/Lexer.cpp
         src/havel-lang/parser/Parser.cpp
-        src/havel-lang/compiler/bytecode/ByteCompiler.cpp
-        src/havel-lang/compiler/bytecode/GC.cpp
-        src/havel-lang/compiler/bytecode/LexicalResolver.cpp
-        src/havel-lang/compiler/bytecode/ModuleLoader.cpp
-        src/havel-lang/compiler/bytecode/Pipeline.cpp
-        src/havel-lang/compiler/bytecode/VM.cpp
+        src/havel-lang/compiler/core/ByteCompiler.cpp
+        src/havel-lang/compiler/gc/GC.cpp
+        src/havel-lang/compiler/semantic/LexicalResolver.cpp
+        src/havel-lang/compiler/module/ModuleLoader.cpp
+        src/havel-lang/compiler/core/Pipeline.cpp
+        src/havel-lang/compiler/vm/VM.cpp
         src/utils/Logger.cpp
     )
 

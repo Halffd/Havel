@@ -1,6 +1,7 @@
 #pragma once
+#include "qt.hpp"
 
-#include <QWidget>
+// #include <QWidget>
 #include <memory>
 
 namespace havel {

@@ -1,8 +1,9 @@
 #pragma once
+#include "qt.hpp"
 
 #include "types.hpp"
-#include <QSystemTrayIcon>
-#include <QMainWindow> // Added for QWindow (QMainWindow) definition
+// #include <QSystemTrayIcon>
+// #include <QMainWindow> // Added for QWindow (QMainWindow) definition
 
 #include "core/BrightnessManager.hpp"
 #include "qt.hpp"

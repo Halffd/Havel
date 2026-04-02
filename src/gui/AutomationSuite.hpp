@@ -1,9 +1,10 @@
 #pragma once
+#include "qt.hpp"
 
 #include "core/automation/PixelAutomation.hpp"
-#include <QObject>
-#include <QSystemTrayIcon>
-#include <QMainWindow>
+// #include <QObject>
+// #include <QSystemTrayIcon>
+// #include <QMainWindow>
 #include <memory>
 #include "SettingsWindow.hpp"
 namespace havel {

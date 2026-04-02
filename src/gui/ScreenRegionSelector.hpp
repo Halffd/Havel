@@ -1,8 +1,9 @@
 #pragma once
+#include "qt.hpp"
 
-#include <QWidget>
-#include <QRect>
-#include <QPoint>
+// #include <QWidget>
+// #include <QRect>
+// #include <QPoint>
 
 QT_BEGIN_NAMESPACE
 class QPaintEvent;

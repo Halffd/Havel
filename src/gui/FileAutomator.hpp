@@ -1,7 +1,6 @@
 #pragma once
 #include "qt.hpp"
 
-#include "qt.hpp" // Moved to top
 // #include <QFileSystemModel>
 // #include <QSplitter>
 // #include <QListView>

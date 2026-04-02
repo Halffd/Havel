@@ -1,4 +1,5 @@
 #include "GUILauncher.hpp"
+#include "qt.hpp"
 #include <QMainWindow>
 #include <QWidget>
 #include <QPushButton>

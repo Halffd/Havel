@@ -2,7 +2,7 @@
  * ClipboardModule.cpp - Clipboard module implementation for Havel bytecode VM
  */
 #include "ClipboardModule.hpp"
-#include "havel-lang/compiler/bytecode/VM.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/clipboard/Clipboard.hpp"
 #include "host/clipboard/HistoryClipboard.hpp"

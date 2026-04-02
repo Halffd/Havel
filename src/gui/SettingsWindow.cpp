@@ -1,4 +1,5 @@
 #include "SettingsWindow.hpp"
+#include "qt.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "gui/BrightnessPanel.hpp"

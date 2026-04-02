@@ -1,4 +1,5 @@
 #include "ScriptRunner.hpp"
+#include "qt.hpp"
 #include <QSplitter>
 #include <QTreeWidget>
 #include <QVBoxLayout>

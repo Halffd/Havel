@@ -30,6 +30,7 @@
 
 // Include Qt headers
 #include <QApplication>
+#include <QObject>
 #include <QPushButton>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -91,10 +92,15 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QGroupBox>
+#include <QPaintEvent>
+#include <QMouseEvent>
+#include <QPixmap>
+#include <QRect>
 
 namespace havel {
     using App = QApplication;
 }
+
 #ifndef emit
 #define emit
 #endif

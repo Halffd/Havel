@@ -1,4 +1,5 @@
 #include "AltTab.hpp"
+#include "qt.hpp"
 #include "core/DisplayManager.hpp"
 #include <QApplication>
 #include <QCursor>

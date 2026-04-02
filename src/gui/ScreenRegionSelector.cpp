@@ -1,4 +1,5 @@
 #include "ScreenRegionSelector.hpp"
+#include "qt.hpp"
 #include <QPainter>
 #include <QPen>
 #include <QMouseEvent>

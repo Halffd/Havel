@@ -1,4 +1,5 @@
 #include "BrightnessPanel.hpp"
+#include "qt.hpp"
 
 #include <QShortcut>
 

@@ -1,4 +1,5 @@
 #include "BaseWidget.hpp"
+#include "qt.hpp"
 
 namespace havel {
 

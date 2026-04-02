@@ -1,3 +1,5 @@
+#include <functional>
+#include <stdexcept>
 /*
  * WindowService.cpp
  *

@@ -826,6 +826,7 @@ target_link_libraries(havel PRIVATE
     spdlog::spdlog
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     ${OPENCV_FFMPEG_WORKAROUND}
+    havel_extension_runtime
 )
 
 # Compile definitions
@@ -859,6 +860,10 @@ if(ENABLE_HAVEL_LANG)
         ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtCore>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtWidgets>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
     )
     
     target_link_libraries(havel_lang PRIVATE 
@@ -870,6 +875,10 @@ if(ENABLE_HAVEL_LANG)
     target_compile_definitions(havel_lang PRIVATE
         $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
         $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:HAVE_QT_EXTENSION>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
+        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
     )
 endif()
 

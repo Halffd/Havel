@@ -1,6 +1,6 @@
 // TextChunkerWindow.hpp
-#include "qt.hpp"
 #pragma once
+#include "qt.hpp"
 
 // #include <QMainWindow>
 #include <string>

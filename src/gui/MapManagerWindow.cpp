@@ -1,4 +1,5 @@
 #include "MapManagerWindow.hpp"
+#include "qt.hpp"
 #include "core/IO.hpp"
 #include <QDebug>
 #include <QFileDialog>

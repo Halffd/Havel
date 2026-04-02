@@ -1402,18 +1402,30 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Repeat:
     return parseRepeatStatement();
   case havel::TokenType::OpenBrace: {
-    // Check if this is a destructuring pattern like {a, b} = obj or {a: b} =
-    // obj We need to look ahead to see if the brace contains identifiers
-    // followed by =
-    if (isDestructuringPattern()) {
-      // Parse as expression statement with object pattern (destructuring)
+    // Check if this is an object literal or destructuring pattern
+    // Object literal: {key: value, ...}
+    // Destructuring: {a, b} = obj or {a: b} = obj
+    
+    // Look ahead to determine the context
+    if (isObjectLiteral()) {
+      // Parse as expression statement with object literal
       auto expr = parseExpression();
-
+      
       // Consume optional semicolon
       if (at().type == havel::TokenType::Semicolon) {
         advance();
       }
-
+      
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    } else if (isDestructuringPattern()) {
+      // Parse as expression statement with object pattern (destructuring)
+      auto expr = parseExpression();
+      
+      // Consume optional semicolon
+      if (at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
     return parseBlockStatement();

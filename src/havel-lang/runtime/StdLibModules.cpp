@@ -12,8 +12,8 @@
 #include "../../modules/mouse/MouseModule.hpp"
 #include "../../modules/ui/UIModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
-#include "../compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies

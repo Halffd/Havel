@@ -4,7 +4,7 @@
 
 #pragma once
 #include "ModuleLoader.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
+#include "../compiler/runtime/HostBridge.hpp"
 
 namespace havel {
 

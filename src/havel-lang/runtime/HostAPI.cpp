@@ -1,4 +1,5 @@
 // HostAPI.cpp
+#include "qt.hpp"
 // Concrete implementation of split host API interfaces
 // Composes subsystems rather than inheriting from IO
 
@@ -18,8 +19,8 @@
 #include "gui/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
 #include "window/WindowManager.hpp"
-#include <QClipboard>
-#include <QGuiApplication>
+#include "qt.hpp"
+// #include <QGuiApplication>
 
 namespace havel {
 

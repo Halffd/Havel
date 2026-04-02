@@ -28,9 +28,7 @@
 #undef False
 #endif
 
-// Include Qt headers here or after this header
-// Qt headers will now work without conflicts
-
+// Include Qt headers
 #include <QApplication>
 #include <QPushButton>
 #include <QLabel>
@@ -58,7 +56,6 @@
 #include <QTabWidget>
 #include <QScrollArea>
 #include <QSplitter>
-#include <QFileSystemWatcher>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QMenuBar>
@@ -88,8 +85,12 @@
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QListWidgetItem>
-#include <QSplitter>
 #include <QFileSystemWatcher>
+#include <QGuiApplication>
+#include <QProcess>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QGroupBox>
 
 namespace havel {
     using App = QApplication;
@@ -98,7 +99,4 @@ namespace havel {
 #define emit
 #endif
 
-#endif // HAVE_QT_EXTENSION#include <QGuiApplication>
-#include <QProcess>
-#include <QSpinBox>
-#include <QDoubleSpinBox>
+#endif // HAVE_QT_EXTENSION

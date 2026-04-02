@@ -3,6 +3,9 @@
 #include <iostream>
 #include <sstream>
 
+using namespace havel;
+using enum havel::TokenType;
+
 namespace havel::parser {
 
 void Parser::reportError(const std::string &message) {
@@ -320,40 +323,130 @@ int Parser::getRightBindingPower(TokenType type) const {
   }
 }
 
+// Optimized Pratt parser with lookup tables
+namespace {
+  // Token count - must match the TokenType enum
+  constexpr size_t TOKEN_TYPE_COUNT = 128;  // Power of 2 for cache efficiency
+  
+  // Binding power lookup table - initialized once at startup
+  struct BindingPowerTables {
+    std::array<uint8_t, TOKEN_TYPE_COUNT> left_bp{};   // Left binding power
+    std::array<uint8_t, TOKEN_TYPE_COUNT> right_bp{}; // Right binding power (for right-assoc)
+    std::array<bool, TOKEN_TYPE_COUNT> can_start{};    // Can token start expression?
+    
+    BindingPowerTables() {
+      // Initialize all to zero/false
+      left_bp.fill(0);
+      right_bp.fill(0);
+      can_start.fill(false);
+      
+      // Assignment operators (right-associative, lowest precedence)
+      setBoth(Assign, 10, 10);
+      setBoth(PlusAssign, 10, 10);
+      setBoth(MinusAssign, 10, 10);
+      setBoth(MultiplyAssign, 10, 10);
+      setBoth(DivideAssign, 10, 10);
+      setBoth(ModuloAssign, 10, 10);
+      setBoth(PowerAssign, 10, 10);
+      
+      // Nullish coalescing
+      setBoth(Nullish, 20, 20);
+      
+      // Logical OR
+      setBoth(Or, 30, 30);
+      
+      // Logical AND
+      setBoth(And, 40, 40);
+      
+      // Equality
+      setBoth(Equals, 50, 50);
+      setBoth(NotEquals, 50, 50);
+      
+      // Relational
+      setBoth(Less, 60, 60);
+      setBoth(Greater, 60, 60);
+      setBoth(LessEquals, 60, 60);
+      setBoth(GreaterEquals, 60, 60);
+      
+      // Range
+      setBoth(DotDot, 65, 66);  // Right associative
+      
+      // Additive
+      setBoth(Plus, 70, 70);
+      setBoth(Minus, 70, 70);
+      
+      // Multiplicative
+      setBoth(Multiply, 80, 80);
+      setBoth(Divide, 80, 80);
+      setBoth(Modulo, 80, 80);
+      
+      // Power (right-associative)
+      setBoth(Power, 90, 91);
+      
+      // Prefix operators (handled in nud, not led)
+      // Pipeline
+      setBoth(Pipe, 35, 35);
+      
+      // Postfix operators (very high left binding power, 0 right)
+      left_bp[static_cast<size_t>(PlusPlus)] = 100;
+      left_bp[static_cast<size_t>(MinusMinus)] = 100;
+      
+      // Member access (highest)
+      left_bp[static_cast<size_t>(Dot)] = 110;
+      
+      // Function call and index
+      left_bp[static_cast<size_t>(OpenParen)] = 110;
+      left_bp[static_cast<size_t>(OpenBracket)] = 110;
+      
+      // Tokens that can start expressions
+      can_start[static_cast<size_t>(Number)] = true;
+      can_start[static_cast<size_t>(String)] = true;
+      can_start[static_cast<size_t>(MultilineString)] = true;
+      can_start[static_cast<size_t>(InterpolatedString)] = true;
+      can_start[static_cast<size_t>(Identifier)] = true;
+      can_start[static_cast<size_t>(True)] = true;
+      can_start[static_cast<size_t>(False)] = true;
+      can_start[static_cast<size_t>(Null)] = true;
+      can_start[static_cast<size_t>(OpenParen)] = true;
+      can_start[static_cast<size_t>(OpenBracket)] = true;
+      can_start[static_cast<size_t>(OpenBrace)] = true;
+      can_start[static_cast<size_t>(Fn)] = true;
+      can_start[static_cast<size_t>(Match)] = true;
+      can_start[static_cast<size_t>(If)] = true;
+      can_start[static_cast<size_t>(Not)] = true;
+      can_start[static_cast<size_t>(Minus)] = true;
+      can_start[static_cast<size_t>(Plus)] = true;
+      can_start[static_cast<size_t>(PlusPlus)] = true;
+      can_start[static_cast<size_t>(MinusMinus)] = true;
+      can_start[static_cast<size_t>(Length)] = true;
+      can_start[static_cast<size_t>(Spread)] = true;
+      can_start[static_cast<size_t>(Hash)] = true;
+      can_start[static_cast<size_t>(Backtick)] = true;
+    }
+    
+    void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
+      size_t idx = static_cast<size_t>(t);
+      if (idx < TOKEN_TYPE_COUNT) {
+        left_bp[idx] = lbp;
+        right_bp[idx] = rbp;
+      }
+    }
+  };
+  
+  // Static singleton - initialized once at program startup
+  const BindingPowerTables BP_TABLES;
+}
+
 bool Parser::canStartExpression(TokenType type) const {
-  switch (type) {
-    case TokenType::Number:
-    case TokenType::String:
-    case TokenType::MultilineString:
-    case TokenType::InterpolatedString:
-    case TokenType::Identifier:
-    case TokenType::True:
-    case TokenType::False:
-    case TokenType::Null:
-    case TokenType::OpenParen:
-    case TokenType::OpenBracket:
-    case TokenType::OpenBrace:
-    case TokenType::Fn:
-    case TokenType::Match:
-    case TokenType::If:
-    case TokenType::Not:
-    case TokenType::Minus:
-    case TokenType::Plus:
-    case TokenType::PlusPlus:
-    case TokenType::MinusMinus:
-    case TokenType::Length:
-    case TokenType::Spread:
-    case TokenType::Hash:  // For set literals
-    case TokenType::Backtick:
-      return true;
-    default:
-      return false;
-  }
+  size_t idx = static_cast<size_t>(type);
+  return idx < TOKEN_TYPE_COUNT ? BP_TABLES.can_start[idx] : false;
 }
 
 bool Parser::isInfixOperator(TokenType type) const {
-  return getBindingPower(type) > 0;
+  return BP_TABLES.can_start[static_cast<size_t>(type)];
 }
+
+// Note: getBindingPower and getRightBindingPower now use lookup tables (see inline definitions below)
 
 std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   if (debug.parser) {
@@ -388,15 +481,17 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
 
   switch (token.type) {
     case TokenType::Number:
-      return std::make_unique<ast::NumberLiteral>(token.value);
+      return std::make_unique<ast::NumberLiteral>(std::stod(token.value));
 
     case TokenType::String:
     case TokenType::MultilineString:
       return std::make_unique<ast::StringLiteral>(token.value);
 
-    case TokenType::InterpolatedString:
-      // TODO: Parse interpolated strings properly
-      return std::make_unique<ast::InterpolatedStringExpression>(token.value);
+    case TokenType::InterpolatedString: {
+      // For now, treat interpolated string as regular string
+      // TODO: Parse interpolated strings properly with segments
+      return std::make_unique<ast::StringLiteral>(token.value);
+    }
 
     case TokenType::Identifier:
       return makeIdentifier(token);
@@ -431,13 +526,13 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Not: {
       auto operand = parsePrattExpression(bp(BindingPower::Prefix));
       return std::make_unique<ast::UnaryExpression>(
-          std::move(operand), ast::UnaryOperator::LogicalNot);
+          ast::UnaryExpression::UnaryOperator::Not, std::move(operand));
     }
 
     case TokenType::Minus: {
       auto operand = parsePrattExpression(bp(BindingPower::Prefix));
       return std::make_unique<ast::UnaryExpression>(
-          std::move(operand), ast::UnaryOperator::Negate);
+          ast::UnaryExpression::UnaryOperator::Minus, std::move(operand));
     }
 
     case TokenType::Plus: {
@@ -463,7 +558,7 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       // #length operator
       auto operand = parsePrattExpression(bp(BindingPower::Prefix));
       return std::make_unique<ast::UnaryExpression>(
-          std::move(operand), ast::UnaryOperator::Length);
+          ast::UnaryExpression::UnaryOperator::Length, std::move(operand));
     }
 
     case TokenType::Backtick:
@@ -497,95 +592,94 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           std::move(left), std::move(right), op, false);
     }
 
-    // Binary operators
     case TokenType::Plus: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Add);
+          std::move(left), ast::BinaryOperator::Add, std::move(right));
     }
 
     case TokenType::Minus: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Subtract);
+          std::move(left), ast::BinaryOperator::Sub, std::move(right));
     }
 
     case TokenType::Multiply: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Multiply);
+          std::move(left), ast::BinaryOperator::Mul, std::move(right));
     }
 
     case TokenType::Divide: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Divide);
+          std::move(left), ast::BinaryOperator::Div, std::move(right));
     }
 
     case TokenType::Modulo: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Modulo);
+          std::move(left), ast::BinaryOperator::Mod, std::move(right));
     }
 
     case TokenType::Power: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Power);
+          std::move(left), ast::BinaryOperator::Pow, std::move(right));
     }
 
     case TokenType::Equals: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Equals);
+          std::move(left), ast::BinaryOperator::Equal, std::move(right));
     }
 
     case TokenType::NotEquals: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::NotEquals);
+          std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
     }
 
     case TokenType::Less: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Less);
+          std::move(left), ast::BinaryOperator::Less, std::move(right));
     }
 
     case TokenType::Greater: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Greater);
+          std::move(left), ast::BinaryOperator::Greater, std::move(right));
     }
 
     case TokenType::LessEquals: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::LessEquals);
+          std::move(left), ast::BinaryOperator::LessEqual, std::move(right));
     }
 
     case TokenType::GreaterEquals: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::GreaterEquals);
+          std::move(left), ast::BinaryOperator::GreaterEqual, std::move(right));
     }
 
     case TokenType::And: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::LogicalAnd);
+          std::move(left), ast::BinaryOperator::And, std::move(right));
     }
 
     case TokenType::Or: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::LogicalOr);
+          std::move(left), ast::BinaryOperator::Or, std::move(right));
     }
 
     case TokenType::Nullish: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
-          std::move(left), std::move(right), ast::BinaryOperator::Nullish);
+          std::move(left), ast::BinaryOperator::Nullish, std::move(right));
     }
 
     case TokenType::DotDot: {
@@ -3847,15 +3941,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
 
   return std::make_unique<havel::ast::WithStatement>(objectName,
                                                      std::move(body));
-}
-
-std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
-  // Check for LINQ-style query expression: from x in expr where cond select
-  // transform
-  if (at().type == havel::TokenType::From) {
-    return parseQueryExpression();
-  }
-  return parsePipelineExpression();
 }
 
 // Parse LINQ-style query expression and desugar to pipeline

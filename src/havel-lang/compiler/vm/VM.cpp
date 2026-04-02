@@ -261,6 +261,62 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
   return std::to_string(location.line) + ":" + std::to_string(location.column);
 }
 
+// Rust-style error formatting with source line and arrow
+std::string VM::formatErrorWithContext(const std::string &message) const {
+  if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
+    return message + " (at <unknown>)";
+  }
+
+  const auto &frame = frame_arena_[frame_count_ - 1];
+  const auto *function = frame.function;
+
+  if (frame.ip >= function->instruction_locations.size()) {
+    return message + " (at <unknown>)";
+  }
+
+  const auto &loc = function->instruction_locations[frame.ip];
+  if (loc.line == 0) {
+    return message + " (at <unknown>)";
+  }
+
+  std::string result = message + "\n";
+  result += "  --> " + loc.filename + ":" + std::to_string(loc.line) + ":" +
+            std::to_string(loc.column) + "\n";
+
+  // Try to read the source line from file
+  if (!loc.filename.empty()) {
+    std::ifstream file(loc.filename);
+    if (file.is_open()) {
+      std::string line;
+      uint32_t current_line = 1;
+      while (std::getline(file, line)) {
+        if (current_line == loc.line) {
+          // Show the source line
+          result += "   |\n";
+          result += "   | " + line + "\n";
+
+          // Create arrow pointing to column
+          std::string arrow = "   | ";
+          // Calculate position: clamp column to line length
+          size_t arrow_pos = static_cast<size_t>(loc.column > 1 ? loc.column - 1 : 0);
+          if (arrow_pos > line.length()) {
+            arrow_pos = line.length();
+          }
+          for (size_t i = 0; i < arrow_pos; i++) {
+            arrow += " ";
+          }
+          arrow += "^";
+          result += arrow + "\n";
+          break;
+        }
+        current_line++;
+      }
+    }
+  }
+
+  return result;
+}
+
 VM::VM() { registerDefaultHostFunctions(); }
 
 VM::VM(const havel::HostContext &ctx) {
@@ -4229,15 +4285,16 @@ void VM::VMExecutionContext::executeInstructionInContext(
     if (it != parent_vm_->host_functions.end()) {
       push(it->second(args));
     } else {
-      throw std::runtime_error("Host function not found: " + function_name);
+      throw std::runtime_error(parent_vm_->formatErrorWithContext(
+          "Host function not found: " + function_name));
     }
     break;
   }
 
   default:
-    throw std::runtime_error(
+    throw std::runtime_error(parent_vm_->formatErrorWithContext(
         "Unsupported opcode in execution context: " +
-        std::to_string(static_cast<int>(instruction.opcode)));
+        std::to_string(static_cast<int>(instruction.opcode))));
   }
 }
 

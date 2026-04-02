@@ -16,9 +16,9 @@
  */
 
 #include "ExecutionPolicy.hpp"
-#include "havel-lang/compiler/bytecode/Pipeline.hpp"
-#include "havel-lang/compiler/bytecode/VM.hpp"
-#include "runtime/HostContext.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
+#include "havel-lang/runtime/HostContext.hpp"
 
 #include <functional>
 #include <memory>

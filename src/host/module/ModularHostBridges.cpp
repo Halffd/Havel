@@ -2,7 +2,7 @@
  * ModularHostBridges.cpp - Modular bridge component implementations
  */
 #include "ModularHostBridges.hpp"
-#include "../../havel-lang/stdlib/HotkeyModule.hpp"
+#include "havel-lang/stdlib/HotkeyModule.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HardwareDetector.hpp"
@@ -11,8 +11,8 @@
 #include "core/ModeManager.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "gui/GUIManager.hpp"
-#include "havel-lang/compiler/bytecode/HostBridge.hpp"
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/app/AppService.hpp"
 #include "host/async/AsyncService.hpp"
 #include "host/audio/AudioService.hpp"

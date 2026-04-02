@@ -5,7 +5,7 @@
  * No VM, no interpreter, no HavelValue - just system logic.
  */
 #include "ModeService.hpp"
-#include "havel-lang/compiler/bytecode/VM.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
 #include "core/ModeManager.hpp"
 
 namespace havel::host {

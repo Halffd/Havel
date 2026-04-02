@@ -1,3 +1,5 @@
+#define CV__DEBUG_NS_START namespace cv {
+#define CV__DEBUG_NS_END }
 /*
  * image_extension.cpp - Native image processing extension
  *

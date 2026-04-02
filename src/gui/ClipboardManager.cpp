@@ -1,4 +1,5 @@
 #include "ClipboardManager.hpp"
+#include "qt.hpp"
 #include "core/ConfigManager.hpp"
 #include <QApplication>
 #include <QThread>

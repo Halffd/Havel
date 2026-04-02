@@ -1,3 +1,5 @@
+#include <functional>
+#include <stdexcept>
 /*
  * NetworkService.cpp - Network operations using libcurl
  */

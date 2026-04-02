@@ -1,4 +1,5 @@
 #include "GUIManager.hpp"
+#include "qt.hpp"
 #include "utils/Logger.hpp"
 #include <QApplication>
 #include <QColorDialog>

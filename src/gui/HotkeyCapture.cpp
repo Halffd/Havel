@@ -1,4 +1,5 @@
 #include "MapManagerWindow.hpp"
+#include "qt.hpp"
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>

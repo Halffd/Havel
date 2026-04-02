@@ -1,4 +1,5 @@
 #include "ScreenshotManager.hpp"
+#include "qt.hpp"
 #include "ScreenRegionSelector.hpp"
 #include <QApplication>
 #include <QScreen>

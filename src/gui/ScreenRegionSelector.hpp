@@ -5,10 +5,10 @@
 // #include <QRect>
 // #include <QPoint>
 
-QT_BEGIN_NAMESPACE
+// QT_BEGIN_NAMESPACE - not needed with qt.hpp
 class QPaintEvent;
 class QMouseEvent;
-QT_END_NAMESPACE
+// QT_END_NAMESPACE
 
 namespace havel {
 

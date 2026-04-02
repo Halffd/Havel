@@ -1,4 +1,5 @@
 #include "SystemMonitor.hpp"
+#include "qt.hpp"
 #include <fstream>
 #include <iostream>
 #include <string>

@@ -1,4 +1,5 @@
 #include "MapManagerWindow.hpp"
+#include "qt.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>

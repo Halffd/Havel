@@ -3,7 +3,7 @@
  */
 #include "UIModule.hpp"
 #include "UIElement.hpp"
-#include "havel-lang/compiler/bytecode/VM.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
 #include "host/ui/UIManager.hpp"
 
 #include <cmath>

@@ -1,4 +1,5 @@
 #include "FileAutomator.hpp"
+#include "qt.hpp"
 #include <QMainWindow>
 
 FileAutomator::FileAutomator(QWidget* parent) : QMainWindow(parent) {

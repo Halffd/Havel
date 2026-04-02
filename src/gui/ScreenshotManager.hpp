@@ -1,7 +1,6 @@
 #pragma once
 #include "qt.hpp"
 
-#include "qt.hpp"
 #include "types.hpp"
 #include "ScreenRegionSelector.hpp"
 // #include <QFileSystemWatcher>

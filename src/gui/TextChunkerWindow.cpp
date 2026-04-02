@@ -1,4 +1,5 @@
 // TextChunkerWindow.cpp
+#include "qt.hpp"
 #include "TextChunkerWindow.hpp"
 #include <QApplication>
 #include <QClipboard>

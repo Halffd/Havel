@@ -31,6 +31,20 @@ public:
   const LexicalResolutionResult &lexicalResolution() const {
     return lexical_resolution_;
   }
+  // Extract current chunk even if compilation failed (for debugging)
+  std::unique_ptr<BytecodeChunk> takeCurrentChunk() {
+    if (current_function) {
+      leaveFunction();
+    }
+    // Add any compiled functions to the chunk before taking it
+    for (auto &fn : compiled_functions) {
+      if (fn) {
+        chunk->addFunction(std::move(*fn));
+      }
+    }
+    compiled_functions.clear();
+    return std::move(chunk);
+  }
 
 private:
   struct SourceLocationScope {

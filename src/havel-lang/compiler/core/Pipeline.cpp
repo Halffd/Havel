@@ -574,7 +574,13 @@ BytecodeSmokeResult runBytecodePipeline(
           std::max<size_t>(1, symbol.size()), "already defined in this scope");
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
-    result.snapshot.bytecode = "<not-emitted>";
+    // Try to emit partial bytecode even if compilation failed
+    chunk = compiler.takeCurrentChunk();
+    if (chunk && !chunk->getAllFunctions().empty()) {
+      result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
+    } else {
+      result.snapshot.bytecode = "<no bytecode generated>";
+    }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, formatted);
     throw std::runtime_error(formatted);
   }

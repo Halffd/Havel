@@ -3,7 +3,7 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-#include "../compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
 #include <cmath> // for std::ceil, std::floor, std::round, std::sin, etc.
 

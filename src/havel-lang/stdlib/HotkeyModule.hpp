@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 #include <string>
 
 namespace havel {

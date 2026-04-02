@@ -251,11 +251,11 @@ private:
   // Main Pratt expression parser - parse with given right binding power
   std::unique_ptr<ast::Expression> parsePrattExpression(int rbp = 0);
 
-  // Get left binding power for a token type
-  int getBindingPower(TokenType type) const;
+  // Get left binding power for a token type - inline for performance
+  inline int getBindingPower(TokenType type) const;
 
-  // Get right binding power for a token type (for right-associative operators)
-  int getRightBindingPower(TokenType type) const;
+  // Get right binding power for a token type - inline for performance
+  inline int getRightBindingPower(TokenType type) const;
 
   // Null denotation - parse token at start of expression
   std::unique_ptr<ast::Expression> nud(const Token &token);
@@ -264,11 +264,16 @@ private:
   std::unique_ptr<ast::Expression> led(const Token &token,
                                        std::unique_ptr<ast::Expression> left);
 
-  // Check if token can start an expression (has nud)
-  bool canStartExpression(TokenType type) const;
+  // Check if token can start an expression (has nud) - inline for performance
+  inline bool canStartExpression(TokenType type) const;
 
-  // Check if token is an infix/postfix operator (has led)
-  bool isInfixOperator(TokenType type) const;
+  // Check if token is an infix/postfix operator (has led) - inline for performance
+  inline bool isInfixOperator(TokenType type) const;
+
+  // Helper methods for Pratt parser
+  std::unique_ptr<ast::Expression> parseParenthesizedExpression();
+  std::unique_ptr<ast::Expression> parseBacktickExpression();
+  std::unique_ptr<ast::Expression> parseLambdaExpression();
 
 public:
   explicit Parser(const DebugOptions &debug_opts = {}) : debug(debug_opts) {}

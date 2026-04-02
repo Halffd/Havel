@@ -235,7 +235,6 @@ void ExpressionCompiler::compileObjectLiteral(const ast::ObjectLiteral& object) 
   for (const auto& [key, value] : object.pairs) {
     if (value) {
       compile(*value);
-      emitter_.emit(OpCode::DUP); // Dup object
       emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(key));
       emitter_.emit(OpCode::OBJECT_SET, key);
     }

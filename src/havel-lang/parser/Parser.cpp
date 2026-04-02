@@ -271,7 +271,7 @@ int Parser::getBindingPower(TokenType type) const {
     // Additive
     case TokenType::Plus:
     case TokenType::Minus:
-      return 120;
+      return 70;
 
     // Multiplicative
     case TokenType::Multiply:
@@ -443,7 +443,7 @@ bool Parser::canStartExpression(TokenType type) const {
 }
 
 bool Parser::isInfixOperator(TokenType type) const {
-  return BP_TABLES.can_start[static_cast<size_t>(type)];
+  return BP_TABLES.left_bp[static_cast<size_t>(type)] > 0;
 }
 
 // Note: getBindingPower and getRightBindingPower now use lookup tables (see inline definitions below)
@@ -488,9 +488,89 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       return std::make_unique<ast::StringLiteral>(token.value);
 
     case TokenType::InterpolatedString: {
-      // For now, treat interpolated string as regular string
-      // TODO: Parse interpolated strings properly with segments
-      return std::make_unique<ast::StringLiteral>(token.value);
+      // Parse interpolated string into segments
+      std::vector<ast::InterpolatedStringExpression::Segment> segments;
+      const std::string &value = token.value;
+      size_t pos = 0;
+      std::string currentLiteral;
+      
+      while (pos < value.length()) {
+        // Check for ${...} pattern (regular interpolated strings)
+        if (value[pos] == '$' && pos + 1 < value.length() && value[pos + 1] == '{') {
+          // Found interpolation start: ${
+          if (!currentLiteral.empty()) {
+            segments.emplace_back(currentLiteral);
+            currentLiteral.clear();
+          }
+          pos += 2; // skip ${
+          
+          // Find matching } (accounting for nested braces)
+          size_t braceDepth = 1;
+          size_t exprStart = pos;
+          while (pos < value.length() && braceDepth > 0) {
+            if (value[pos] == '{') braceDepth++;
+            else if (value[pos] == '}') braceDepth--;
+            if (braceDepth > 0) pos++;
+          }
+          
+          if (braceDepth == 0) {
+            // Extract expression string (excluding closing })
+            std::string exprStr = value.substr(exprStart, pos - exprStart);
+            // Parse the expression
+            auto expr = parseExpressionFromString(exprStr);
+            if (expr) {
+              segments.emplace_back(std::move(expr));
+            }
+            pos++; // skip }
+          } else {
+            // Unclosed interpolation - treat rest as literal
+            currentLiteral += value.substr(exprStart - 2);
+            break;
+          }
+        }
+        // Check for {...} pattern (f-strings) - but not ${ which is handled above
+        else if (value[pos] == '{' && !(pos > 0 && value[pos-1] == '$')) {
+          // Found f-string interpolation start: {
+          if (!currentLiteral.empty()) {
+            segments.emplace_back(currentLiteral);
+            currentLiteral.clear();
+          }
+          pos += 1; // skip {
+          
+          // Find matching } (accounting for nested braces)
+          size_t braceDepth = 1;
+          size_t exprStart = pos;
+          while (pos < value.length() && braceDepth > 0) {
+            if (value[pos] == '{') braceDepth++;
+            else if (value[pos] == '}') braceDepth--;
+            if (braceDepth > 0) pos++;
+          }
+          
+          if (braceDepth == 0) {
+            // Extract expression string (excluding closing })
+            std::string exprStr = value.substr(exprStart, pos - exprStart);
+            // Parse the expression
+            auto expr = parseExpressionFromString(exprStr);
+            if (expr) {
+              segments.emplace_back(std::move(expr));
+            }
+            pos++; // skip }
+          } else {
+            // Unclosed interpolation - treat rest as literal
+            currentLiteral += value.substr(exprStart - 1);
+            break;
+          }
+        } else {
+          currentLiteral += value[pos++];
+        }
+      }
+      
+      // Add remaining literal
+      if (!currentLiteral.empty()) {
+        segments.emplace_back(currentLiteral);
+      }
+      
+      return std::make_unique<ast::InterpolatedStringExpression>(std::move(segments));
     }
 
     case TokenType::Identifier:
@@ -837,6 +917,34 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
 // Replace the old parseExpression with a wrapper that calls Pratt parser
 std::unique_ptr<ast::Expression> Parser::parseExpression() {
   return parsePrattExpression(0);
+}
+
+std::unique_ptr<ast::Expression> Parser::parseExpressionFromString(const std::string &expr) {
+  // Tokenize the expression string
+  havel::Lexer lexer(expr, debug.lexer);
+  auto savedTokens = tokens;
+  auto savedPosition = position;
+  
+  tokens = lexer.tokenize();
+  position = 0;
+  
+  // Collect lexer errors but don't propagate them
+  // (they're for the expression context, not the main parser)
+  
+  std::unique_ptr<ast::Expression> result = nullptr;
+  try {
+    if (notEOF()) {
+      result = parsePrattExpression(0);
+    }
+  } catch (...) {
+    // Ignore errors - if parsing fails, return nullptr
+  }
+  
+  // Restore parser state
+  tokens = std::move(savedTokens);
+  position = savedPosition;
+  
+  return result;
 }
 
 std::unique_ptr<havel::ast::Program>
@@ -1294,18 +1402,30 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Repeat:
     return parseRepeatStatement();
   case havel::TokenType::OpenBrace: {
-    // Check if this is a destructuring pattern like {a, b} = obj or {a: b} =
-    // obj We need to look ahead to see if the brace contains identifiers
-    // followed by =
-    if (isDestructuringPattern()) {
-      // Parse as expression statement with object pattern (destructuring)
+    // Check if this is an object literal or destructuring pattern
+    // Object literal: {key: value, ...}
+    // Destructuring: {a, b} = obj or {a: b} = obj
+    
+    // Look ahead to determine the context
+    if (isObjectLiteral()) {
+      // Parse as expression statement with object literal
       auto expr = parseExpression();
-
+      
       // Consume optional semicolon
       if (at().type == havel::TokenType::Semicolon) {
         advance();
       }
-
+      
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    } else if (isDestructuringPattern()) {
+      // Parse as expression statement with object pattern (destructuring)
+      auto expr = parseExpression();
+      
+      // Consume optional semicolon
+      if (at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
     return parseBlockStatement();

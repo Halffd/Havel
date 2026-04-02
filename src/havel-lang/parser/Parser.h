@@ -238,6 +238,7 @@ private:
 
   // Lookahead helper to detect destructuring patterns like {a, b} = obj
   bool isDestructuringPattern() const;
+  bool isObjectLiteral() const;
 
   // Condition combination helpers
   std::unique_ptr<ast::Expression>
@@ -274,6 +275,7 @@ private:
   std::unique_ptr<ast::Expression> parseParenthesizedExpression();
   std::unique_ptr<ast::Expression> parseBacktickExpression();
   std::unique_ptr<ast::Expression> parseLambdaExpression();
+  std::unique_ptr<ast::Expression> parseExpressionFromString(const std::string &expr);
 
 public:
   explicit Parser(const DebugOptions &debug_opts = {}) : debug(debug_opts) {}

@@ -218,18 +218,19 @@ Token Lexer::scanNumber() {
   return makeToken(number, TokenType::Number);
 }
 
-Token Lexer::scanString() {
+Token Lexer::scanString(bool isFString) {
   std::string value;
   std::string raw;
-  bool hasInterpolation = false;
+  bool hasInterpolation = isFString;  // f-strings always have interpolation enabled
 
   // Skip opening quote
   char quote = source[position - 1];
-  int braceDepth = 0; // Tracks depth inside ${ ... }
+  int braceDepth = 0; // Tracks depth inside ${ ... } or { ... } for f-strings
 
-  // Single quotes = literal string (no interpolation)
-  // Double quotes = interpolated string
-  bool allowInterpolation = (quote == '"');
+  // Single quotes = literal string (no interpolation) unless it's an f-string
+  // Double quotes = interpolated string (with $)
+  // f-strings use {...} without $
+  bool allowInterpolation = (quote == '"') || isFString;
 
   while (!isAtEnd()) {
     char c = peek();
@@ -271,8 +272,8 @@ Token Lexer::scanString() {
         value += escaped;
         break;
       }
-    } else if (c == '$' && allowInterpolation) {
-      // Found interpolation marker (only in double-quoted strings)
+    } else if (c == '$' && allowInterpolation && !isFString) {
+      // Found interpolation marker (only in double-quoted strings, not f-strings)
       hasInterpolation = true;
       value += advance(); // $
 
@@ -296,6 +297,30 @@ Token Lexer::scanString() {
       } else {
         // Just a $ not followed by { or identifier, treat as literal '$'
         // Do not mark as interpolation in this case
+      }
+    } else if (c == '{' && isFString && braceDepth == 0) {
+      // F-string interpolation: {...}
+      // Check if this is a format specifier (has :) or just an expression
+      // Simple heuristic: if next char is not {, it's an interpolation
+      if (peek(1) != '{') {
+        hasInterpolation = true;
+        value += advance(); // {
+        braceDepth++;       // Enter interpolation context
+      } else {
+        // Escaped brace {{ - consume both and add single {
+        advance(); // first {
+        advance(); // second {
+        value += '{';
+      }
+    } else if (c == '}' && isFString && braceDepth == 0) {
+      // Check for escaped brace }}
+      if (peek(1) == '}') {
+        advance(); // first }
+        advance(); // second }
+        value += '}';
+      } else {
+        // Single } in f-string without matching { - treat as literal
+        value += advance();
       }
     } else {
       // Regular character processing
@@ -328,14 +353,15 @@ Token Lexer::scanString() {
   return makeToken(value, type, raw);
 }
 
-Token Lexer::scanMultilineString() {
+Token Lexer::scanMultilineString(bool isFString) {
   std::string value;
   std::string raw;
-  bool hasInterpolation = false;
-  int braceDepth = 0; // Tracks depth inside ${ ... }
+  bool hasInterpolation = isFString;  // f-strings always have interpolation enabled
+  int braceDepth = 0; // Tracks depth inside ${ ... } or { ... } for f-strings
 
   // Skip opening """ (already consumed by caller)
   // Multiline strings support interpolation like regular double-quoted strings
+  // f-strings always support interpolation
 
   // Skip initial newline if present (for """\n... style)
   if (!isAtEnd() && peek() == '\n') {
@@ -383,8 +409,8 @@ Token Lexer::scanMultilineString() {
         value += escaped;
         break;
       }
-    } else if (c == '$' && braceDepth == 0) {
-      // Interpolation in multiline strings
+    } else if (c == '$' && braceDepth == 0 && !isFString) {
+      // Interpolation in multiline strings (not f-strings)
       hasInterpolation = true;
       value += advance(); // $
 
@@ -401,6 +427,27 @@ Token Lexer::scanMultilineString() {
           value += advance();
         }
         value += '}';
+      }
+    } else if (c == '{' && isFString && braceDepth == 0) {
+      // F-string interpolation: {...}
+      if (peek(1) != '{') {
+        hasInterpolation = true;
+        value += advance(); // {
+        braceDepth++;
+      } else {
+        // Escaped brace {{
+        advance();
+        advance();
+        value += '{';
+      }
+    } else if (c == '}' && isFString && braceDepth == 0) {
+      // Check for escaped brace }}
+      if (peek(1) == '}') {
+        advance();
+        advance();
+        value += '}';
+      } else {
+        value += advance();
       }
     } else {
       char consumed = advance();
@@ -646,14 +693,25 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle strings
     if (c == '"' || c == '\'') {
+      // Check for f-string prefix: f'...' or f"..." or F'...' or F"..."
+      // The 'f' would have been tokenized as an identifier already
+      bool isFString = false;
+      if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
+        if (tokens.back().value == "f" || tokens.back().value == "F") {
+          isFString = true;
+          // Remove the 'f' identifier token - it was just a prefix
+          tokens.pop_back();
+        }
+      }
+      
       // Check for multiline string """
       if (c == '"' && position + 2 < source.length() &&
           source[position] == '"' && source[position + 1] == '"') {
         advance(); // consume first " (second one)
         advance(); // consume second " (third one)
-        tokens.push_back(scanMultilineString());
+        tokens.push_back(scanMultilineString(isFString));
       } else {
-        tokens.push_back(scanString());
+        tokens.push_back(scanString(isFString));
       }
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;

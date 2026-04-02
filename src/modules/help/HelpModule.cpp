@@ -3,7 +3,7 @@
  * Provides help() function with documentation for all modules
  */
 #include "HelpModule.hpp"
-#include "havel-lang/compiler/bytecode/VMApi.hpp"
+#include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 
 #include <sstream>

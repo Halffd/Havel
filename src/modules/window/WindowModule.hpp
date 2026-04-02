@@ -4,7 +4,7 @@
  * Window query module for Havel language.
  */
 #pragma once
-#include "../../havel-lang/runtime/HostAPI.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
 
 namespace havel::modules {
 

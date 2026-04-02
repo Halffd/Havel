@@ -2,8 +2,8 @@
 // Host module registration
 
 #pragma once
-#include "../havel-lang/runtime/ModuleLoader.hpp"
-#include "../havel-lang/compiler/bytecode/HostBridge.hpp"
+#include "havel-lang/runtime/ModuleLoader.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
 
 namespace havel {
 

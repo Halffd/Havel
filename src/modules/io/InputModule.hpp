@@ -1,4 +1,4 @@
-#include "../../havel-lang/runtime/HostAPI.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
 /*
  * InputModule.hpp
  *
@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include "../../havel-lang/ast/AST.h"
+#include "havel-lang/ast/AST.h"
 #include <string>
 #include <vector>
 

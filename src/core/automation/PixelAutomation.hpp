@@ -7,6 +7,7 @@
 
 #ifdef HAVE_QT_EXTENSION
 #include <qt.hpp>
+#include <QRect>
 #endif
 
 // Undefine conflicting macros before including OpenCV

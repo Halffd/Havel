@@ -32,7 +32,7 @@ public:
     bool success = false;
     std::string output;
     std::string error;
-    BytecodeValue value;
+    Value value;
     double compileTimeMs = 0.0;
     double execTimeMs = 0.0;
   };
@@ -114,7 +114,7 @@ private:
 
   // Helper methods
   bool isCompleteExpression(const std::string& input) const;
-  void printValue(const BytecodeValue& value, std::ostream& output) const;
+  void printValue(const Value& value, std::ostream& output) const;
   void printError(const std::string& error, std::ostream& output) const;
 };
 
@@ -171,12 +171,12 @@ public:
   // Assertions
   static void assertTrue(bool condition, const std::string& message = "");
   static void assertFalse(bool condition, const std::string& message = "");
-  static void assertEquals(const BytecodeValue& expected, const BytecodeValue& actual,
+  static void assertEquals(const Value& expected, const Value& actual,
                          const std::string& message = "");
-  static void assertNull(const BytecodeValue& value, const std::string& message = "");
-  static void assertNotNull(const BytecodeValue& value, const std::string& message = "");
+  static void assertNull(const Value& value, const std::string& message = "");
+  static void assertNotNull(const Value& value, const std::string& message = "");
   static void assertThrows(std::function<void()> func, const std::string& message = "");
-  static void assertType(const BytecodeValue& value, RuntimeTypeSystem::Type type,
+  static void assertType(const Value& value, RuntimeTypeSystem::Type type,
                          const std::string& message = "");
   static void fail(const std::string& message = "");
 

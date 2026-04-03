@@ -398,7 +398,7 @@ bool REPL::isCompleteExpression(const std::string& input) const {
   return true;
 }
 
-void REPL::printValue(const BytecodeValue& value, std::ostream& output) const {
+void REPL::printValue(const Value& value, std::ostream& output) const {
   output << RuntimeTypeSystem::stringify(value);
 }
 
@@ -543,8 +543,8 @@ void TestFramework::assertFalse(bool condition, const std::string& message) {
   }
 }
 
-void TestFramework::assertEquals(const BytecodeValue& expected,
-                                  const BytecodeValue& actual,
+void TestFramework::assertEquals(const Value& expected,
+                                  const Value& actual,
                                   const std::string& message) {
   if (!RuntimeTypeSystem::equals(expected, actual)) {
     throw std::runtime_error(message.empty() ?
@@ -553,13 +553,13 @@ void TestFramework::assertEquals(const BytecodeValue& expected,
   }
 }
 
-void TestFramework::assertNull(const BytecodeValue& value, const std::string& message) {
+void TestFramework::assertNull(const Value& value, const std::string& message) {
   if (!RuntimeTypeSystem::isNull(value)) {
     throw std::runtime_error(message.empty() ? "Expected null" : message);
   }
 }
 
-void TestFramework::assertNotNull(const BytecodeValue& value, const std::string& message) {
+void TestFramework::assertNotNull(const Value& value, const std::string& message) {
   if (RuntimeTypeSystem::isNull(value)) {
     throw std::runtime_error(message.empty() ? "Expected non-null" : message);
   }
@@ -577,7 +577,7 @@ void TestFramework::assertThrows(std::function<void()> func, const std::string& 
   }
 }
 
-void TestFramework::assertType(const BytecodeValue& value,
+void TestFramework::assertType(const Value& value,
                                 RuntimeTypeSystem::Type type,
                                 const std::string& message) {
   if (RuntimeTypeSystem::getType(value) != type) {

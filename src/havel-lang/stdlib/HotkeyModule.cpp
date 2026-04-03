@@ -4,7 +4,7 @@
 #include <mutex>
 #include <unordered_map>
 
-using havel::compiler::BytecodeValue;
+using havel::compiler::Value;
 using havel::compiler::CallbackId;
 using havel::compiler::ObjectRef;
 using havel::compiler::VM;
@@ -43,7 +43,7 @@ static HotkeyContextData *getHotkeyContextData(const std::string &hotkeyId) {
 }
 
 // Helper function to create hotkey context object
-static BytecodeValue
+static Value
 createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
                           const std::string &alias, const std::string &key,
                           const std::string &condition, const std::string &info,
@@ -59,22 +59,22 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
   }
 
   // Set properties on the object
-  vm->setHostObjectField(contextObj, "id", BytecodeValue(hotkeyId));
-  vm->setHostObjectField(contextObj, "alias", BytecodeValue(alias));
-  vm->setHostObjectField(contextObj, "key", BytecodeValue(key));
-  vm->setHostObjectField(contextObj, "condition", BytecodeValue(condition));
-  vm->setHostObjectField(contextObj, "info", BytecodeValue(info));
-  vm->setHostObjectField(contextObj, "enabled", BytecodeValue(enabled));
+  vm->setHostObjectField(contextObj, "id", Value::makeStringValId(0)); // TODO: string pool
+  vm->setHostObjectField(contextObj, "alias", Value::makeStringValId(0)); // TODO: string pool
+  vm->setHostObjectField(contextObj, "key", Value::makeStringValId(0)); // TODO: string pool
+  vm->setHostObjectField(contextObj, "condition", Value::makeStringValId(0)); // TODO: string pool
+  vm->setHostObjectField(contextObj, "info", Value::makeStringValId(0)); // TODO: string pool
+  vm->setHostObjectField(contextObj, "enabled", Value::makeBool(enabled));
 
-  return BytecodeValue(contextObj);
+  return Value::makeObjectId(contextObj.id);
 }
 
 // Property getter functions
-static BytecodeValue hotkey_getId(const std::vector<BytecodeValue> &args,
+static Value hotkey_getId(const std::vector<Value> &args,
                                   const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(nullptr);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -84,11 +84,11 @@ static BytecodeValue hotkey_getId(const std::vector<BytecodeValue> &args,
   return vm->getHostObjectField(objRef, "id");
 }
 
-static BytecodeValue hotkey_getAlias(const std::vector<BytecodeValue> &args,
+static Value hotkey_getAlias(const std::vector<Value> &args,
                                      const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(nullptr);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -97,11 +97,11 @@ static BytecodeValue hotkey_getAlias(const std::vector<BytecodeValue> &args,
   return vm->getHostObjectField(objRef, "alias");
 }
 
-static BytecodeValue hotkey_getKey(const std::vector<BytecodeValue> &args,
+static Value hotkey_getKey(const std::vector<Value> &args,
                                    const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(nullptr);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -110,11 +110,11 @@ static BytecodeValue hotkey_getKey(const std::vector<BytecodeValue> &args,
   return vm->getHostObjectField(objRef, "key");
 }
 
-static BytecodeValue hotkey_getCondition(const std::vector<BytecodeValue> &args,
+static Value hotkey_getCondition(const std::vector<Value> &args,
                                          const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(nullptr);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -123,11 +123,11 @@ static BytecodeValue hotkey_getCondition(const std::vector<BytecodeValue> &args,
   return vm->getHostObjectField(objRef, "condition");
 }
 
-static BytecodeValue hotkey_getInfo(const std::vector<BytecodeValue> &args,
+static Value hotkey_getInfo(const std::vector<Value> &args,
                                     const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(nullptr);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -136,11 +136,11 @@ static BytecodeValue hotkey_getInfo(const std::vector<BytecodeValue> &args,
   return vm->getHostObjectField(objRef, "info");
 }
 
-static BytecodeValue hotkey_getCallback(const std::vector<BytecodeValue> &args,
+static Value hotkey_getCallback(const std::vector<Value> &args,
                                         const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(nullptr);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -149,7 +149,7 @@ static BytecodeValue hotkey_getCallback(const std::vector<BytecodeValue> &args,
   // Get id first, then use it to get the callback
   auto idValue = vm->getHostObjectField(objRef, "id");
   if (!idValue.isStringValId()) {
-    return BytecodeValue(nullptr);
+    return Value(nullptr);
   }
 
   // TODO: string pool lookup
@@ -157,20 +157,20 @@ static BytecodeValue hotkey_getCallback(const std::vector<BytecodeValue> &args,
   auto *contextData = getHotkeyContextData(hotkeyId);
 
   if (!contextData) {
-    return BytecodeValue(nullptr);
+    return Value(nullptr);
   }
 
   // Return callback as a function reference
   // This would need to be implemented as a proper function wrapper
-  return BytecodeValue(nullptr); // Placeholder
+  return Value::makeNull(); // Placeholder
 }
 
 // Method functions
-static BytecodeValue hotkey_enable(const std::vector<BytecodeValue> &args,
+static Value hotkey_enable(const std::vector<Value> &args,
                                    const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -179,7 +179,7 @@ static BytecodeValue hotkey_enable(const std::vector<BytecodeValue> &args,
   // Get hotkey id
   auto idValue = vm->getHostObjectField(objRef, "id");
   if (!idValue.isStringValId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // TODO: string pool lookup
@@ -187,7 +187,7 @@ static BytecodeValue hotkey_enable(const std::vector<BytecodeValue> &args,
   auto *contextData = getHotkeyContextData(hotkeyId);
 
   if (!contextData) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // Enable hotkey through HotkeyManager
@@ -195,17 +195,17 @@ static BytecodeValue hotkey_enable(const std::vector<BytecodeValue> &args,
     ctx->hotkeyManager->EnableHotkey(hotkeyId);
     contextData->enabled = true;
     vm->setHostObjectField(objRef, "enabled", Value::makeBool(true));
-    return BytecodeValue(true);
+    return Value::makeBool(true);
   }
 
-  return BytecodeValue(false);
+  return Value::makeBool(false);
 }
 
-static BytecodeValue hotkey_disable(const std::vector<BytecodeValue> &args,
+static Value hotkey_disable(const std::vector<Value> &args,
                                     const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -214,7 +214,7 @@ static BytecodeValue hotkey_disable(const std::vector<BytecodeValue> &args,
   // Get hotkey id
   auto idValue = vm->getHostObjectField(objRef, "id");
   if (!idValue.isStringValId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // TODO: string pool lookup
@@ -222,7 +222,7 @@ static BytecodeValue hotkey_disable(const std::vector<BytecodeValue> &args,
   auto *contextData = getHotkeyContextData(hotkeyId);
 
   if (!contextData) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // Disable hotkey through HotkeyManager
@@ -230,17 +230,17 @@ static BytecodeValue hotkey_disable(const std::vector<BytecodeValue> &args,
     ctx->hotkeyManager->DisableHotkey(hotkeyId);
     contextData->enabled = false;
     vm->setHostObjectField(objRef, "enabled", Value::makeBool(false));
-    return BytecodeValue(true);
+    return Value::makeBool(true);
   }
 
-  return BytecodeValue(false);
+  return Value::makeBool(false);
 }
 
-static BytecodeValue hotkey_toggle(const std::vector<BytecodeValue> &args,
+static Value hotkey_toggle(const std::vector<Value> &args,
                                    const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -249,7 +249,7 @@ static BytecodeValue hotkey_toggle(const std::vector<BytecodeValue> &args,
   // Get hotkey id
   auto idValue = vm->getHostObjectField(objRef, "id");
   if (!idValue.isStringValId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // TODO: string pool lookup
@@ -257,7 +257,7 @@ static BytecodeValue hotkey_toggle(const std::vector<BytecodeValue> &args,
   auto *contextData = getHotkeyContextData(hotkeyId);
 
   if (!contextData) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // Toggle hotkey through HotkeyManager
@@ -270,17 +270,17 @@ static BytecodeValue hotkey_toggle(const std::vector<BytecodeValue> &args,
     }
     contextData->enabled = newState;
     vm->setHostObjectField(objRef, "enabled", Value::makeBool(newState));
-    return BytecodeValue(true);
+    return Value::makeBool(true);
   }
 
-  return BytecodeValue(false);
+  return Value(false);
 }
 
-static BytecodeValue hotkey_remove(const std::vector<BytecodeValue> &args,
+static Value hotkey_remove(const std::vector<Value> &args,
                                    const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -289,7 +289,7 @@ static BytecodeValue hotkey_remove(const std::vector<BytecodeValue> &args,
   // Get hotkey id
   auto idValue = vm->getHostObjectField(objRef, "id");
   if (!idValue.isStringValId()) {
-    return BytecodeValue(false);
+    return Value::makeBool(false);
   }
 
   // TODO: string pool lookup
@@ -303,10 +303,10 @@ static BytecodeValue hotkey_remove(const std::vector<BytecodeValue> &args,
       std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
       g_hotkeyContexts.erase(hotkeyId);
     }
-    return BytecodeValue(success);
+    return Value::makeBool(success);
   }
 
-  return BytecodeValue(false);
+  return Value::makeBool(false);
 }
 
 void registerHotkeyModule(VMApi &api) {
@@ -332,7 +332,7 @@ void registerHotkeyModule(VMApi &api) {
 }
 
 // Factory function to be called from hotkey registration
-BytecodeValue HotkeyModule::createHotkeyContext(
+Value HotkeyModule::createHotkeyContext(
     VM *vm, const std::string &hotkeyId, const std::string &alias,
     const std::string &key, const std::string &condition,
     const std::string &info, CallbackId callback) {

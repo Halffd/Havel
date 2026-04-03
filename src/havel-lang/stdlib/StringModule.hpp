@@ -1,6 +1,6 @@
 /*
  * StringModule.hpp - String stdlib for VM with method chaining support
- * Pure VM implementation using BytecodeValue
+ * Pure VM implementation using Value
  */
 #pragma once
 #include "havel-lang/compiler/vm/VMApi.hpp"

@@ -32,13 +32,13 @@ private:
         std::cout << "\n--- Testing Null Handling ---" << std::endl;
         
         tests.test("null detection", [this]() {
-            return vm->isNull(BytecodeValue(nullptr));
+            return vm->isNull(Value(nullptr));
         });
         
         tests.test("null is not other types", [this]() {
-            return !vm->isNull(BytecodeValue(42)) &&
-                   !vm->isNull(BytecodeValue(true)) &&
-                   !vm->isNull(BytecodeValue("hello"));
+            return !vm->isNull(Value(42)) &&
+                   !vm->isNull(Value(true)) &&
+                   !vm->isNull(Value("hello"));
         });
     }
     
@@ -47,40 +47,40 @@ private:
         
         // Falsy values
         tests.test("null is falsy", [this]() {
-            return !vm->isTruthy(BytecodeValue(nullptr));
+            return !vm->isTruthy(Value(nullptr));
         });
         
         tests.test("false is falsy", [this]() {
-            return !vm->isTruthy(BytecodeValue(false));
+            return !vm->isTruthy(Value(false));
         });
         
         tests.test("zero is falsy", [this]() {
-            return !vm->isTruthy(BytecodeValue(0)) &&
-                   !vm->isTruthy(BytecodeValue(0.0));
+            return !vm->isTruthy(Value(0)) &&
+                   !vm->isTruthy(Value(0.0));
         });
         
         tests.test("empty string is falsy", [this]() {
-            return !vm->isTruthy(BytecodeValue(""));
+            return !vm->isTruthy(Value(""));
         });
         
         // Truthy values
         tests.test("true is truthy", [this]() {
-            return vm->isTruthy(BytecodeValue(true));
+            return vm->isTruthy(Value(true));
         });
         
         tests.test("non-zero numbers are truthy", [this]() {
-            return vm->isTruthy(BytecodeValue(1)) &&
-                   vm->isTruthy(BytecodeValue(-1)) &&
-                   vm->isTruthy(BytecodeValue(3.14));
+            return vm->isTruthy(Value(1)) &&
+                   vm->isTruthy(Value(-1)) &&
+                   vm->isTruthy(Value(3.14));
         });
         
         tests.test("non-empty string is truthy", [this]() {
-            return vm->isTruthy(BytecodeValue("hello"));
+            return vm->isTruthy(Value("hello"));
         });
         
         tests.test("objects are always truthy", [this]() {
             auto obj = vm->createHostObject();
-            return vm->isTruthy(BytecodeValue(obj));
+            return vm->isTruthy(Value(obj));
         });
     }
     
@@ -100,13 +100,13 @@ private:
         
         tests.test("array creation", [this]() {
             auto arr = vm->createHostArray();
-            return std::holds_alternative<ArrayRef>(BytecodeValue(arr));
+            return std::holds_alternative<ArrayRef>(Value(arr));
         });
         
         tests.test("array operations", [this]() {
             auto arr = vm->createHostArray();
-            vm->pushHostArrayValue(arr, BytecodeValue(42));
-            vm->pushHostArrayValue(arr, BytecodeValue("hello"));
+            vm->pushHostArrayValue(arr, Value(42));
+            vm->pushHostArrayValue(arr, Value("hello"));
             
             auto val1 = vm->getHostArrayValue(arr, 0);
             auto val2 = vm->getHostArrayValue(arr, 1);
@@ -121,13 +121,13 @@ private:
             auto inner1 = vm->createHostArray();
             auto inner2 = vm->createHostArray();
             
-            vm->pushHostArrayValue(inner1, BytecodeValue(1));
-            vm->pushHostArrayValue(inner1, BytecodeValue(2));
-            vm->pushHostArrayValue(inner2, BytecodeValue(3));
-            vm->pushHostArrayValue(inner2, BytecodeValue(4));
+            vm->pushHostArrayValue(inner1, Value(1));
+            vm->pushHostArrayValue(inner1, Value(2));
+            vm->pushHostArrayValue(inner2, Value(3));
+            vm->pushHostArrayValue(inner2, Value(4));
             
-            vm->pushHostArrayValue(outer, BytecodeValue(inner1));
-            vm->pushHostArrayValue(outer, BytecodeValue(inner2));
+            vm->pushHostArrayValue(outer, Value(inner1));
+            vm->pushHostArrayValue(outer, Value(inner2));
             
             // Test accessing nested values
             auto inner1_val = vm->getHostArrayValue(outer, 0);
@@ -157,9 +157,9 @@ private:
         std::cout << "\n--- Testing Duration Parsing ---" << std::endl;
         
         tests.test("numeric duration parsing", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue(100));
-            auto result2 = vm->parseDuration(BytecodeValue(0));
-            auto result3 = vm->parseDuration(BytecodeValue(-50));
+            auto result1 = vm->parseDuration(Value(100));
+            auto result2 = vm->parseDuration(Value(0));
+            auto result3 = vm->parseDuration(Value(-50));
             
             return result1 && *result1 == 100 &&
                    result2 && *result2 == 0 &&
@@ -167,49 +167,49 @@ private:
         });
         
         tests.test("float duration parsing", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue(1.5));
-            auto result2 = vm->parseDuration(BytecodeValue(0.0));
+            auto result1 = vm->parseDuration(Value(1.5));
+            auto result2 = vm->parseDuration(Value(0.0));
             
             return result1 && *result1 == 1 &&
                    result2 && *result2 == 0;
         });
         
         tests.test("string duration parsing - milliseconds", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue("100ms"));
-            auto result2 = vm->parseDuration(BytecodeValue("500ms"));
+            auto result1 = vm->parseDuration(Value("100ms"));
+            auto result2 = vm->parseDuration(Value("500ms"));
             
             return result1 && *result1 == 100 &&
                    result2 && *result2 == 500;
         });
         
         tests.test("string duration parsing - seconds", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue("1s"));
-            auto result2 = vm->parseDuration(BytecodeValue("2.5s"));
+            auto result1 = vm->parseDuration(Value("1s"));
+            auto result2 = vm->parseDuration(Value("2.5s"));
             
             return result1 && *result1 == 1000 &&
                    result2 && *result2 == 2500;
         });
         
         tests.test("string duration parsing - minutes", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue("1m"));
-            auto result2 = vm->parseDuration(BytecodeValue("0.5m"));
+            auto result1 = vm->parseDuration(Value("1m"));
+            auto result2 = vm->parseDuration(Value("0.5m"));
             
             return result1 && *result1 == 60000 &&
                    result2 && *result2 == 30000;
         });
         
         tests.test("string duration parsing - hours", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue("1h"));
-            auto result2 = vm->parseDuration(BytecodeValue("2.5h"));
+            auto result1 = vm->parseDuration(Value("1h"));
+            auto result2 = vm->parseDuration(Value("2.5h"));
             
             return result1 && *result1 == 3600000 &&
                    result2 && *result2 == 9000000;
         });
         
         tests.test("invalid duration parsing", [this]() {
-            auto result1 = vm->parseDuration(BytecodeValue("invalid"));
-            auto result2 = vm->parseDuration(BytecodeValue("1x"));
-            auto result3 = vm->parseDuration(BytecodeValue("abc123"));
+            auto result1 = vm->parseDuration(Value("invalid"));
+            auto result2 = vm->parseDuration(Value("1x"));
+            auto result3 = vm->parseDuration(Value("abc123"));
             
             return !result1 && !result2 && !result3;
         });

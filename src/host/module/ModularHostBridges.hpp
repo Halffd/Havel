@@ -45,11 +45,11 @@ public:
   void install(PipelineOptions &options) override;
 
   const HostContext *ctx_;
-  static BytecodeValue handleSend(const std::vector<BytecodeValue> &args,
+  static Value handleSend(const std::vector<Value> &args,
                                   const HostContext *ctx);
-  static BytecodeValue handleSendKey(const std::vector<BytecodeValue> &args,
+  static Value handleSendKey(const std::vector<Value> &args,
                                      const HostContext *ctx);
-  static BytecodeValue handleSendText(const std::vector<BytecodeValue> &args,
+  static Value handleSendText(const std::vector<Value> &args,
                                       const HostContext *ctx);
 };
 
@@ -64,49 +64,49 @@ public:
 private:
   const HostContext *ctx_;
   // File operations
-  static BytecodeValue handleFileRead(const std::vector<BytecodeValue> &args,
+  static Value handleFileRead(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleFileWrite(const std::vector<BytecodeValue> &args,
+  static Value handleFileWrite(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleFileExists(const std::vector<BytecodeValue> &args,
+  static Value handleFileExists(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleFileSize(const std::vector<BytecodeValue> &args,
+  static Value handleFileSize(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleFileDelete(const std::vector<BytecodeValue> &args,
+  static Value handleFileDelete(const std::vector<Value> &args,
                                         const HostContext *ctx);
   // Process operations
-  static BytecodeValue
-  handleProcessExecute(const std::vector<BytecodeValue> &args,
+  static Value
+  handleProcessExecute(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleProcessGetPid(const std::vector<BytecodeValue> &args,
+  static Value
+  handleProcessGetPid(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleProcessGetPpid(const std::vector<BytecodeValue> &args,
+  static Value
+  handleProcessGetPpid(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue handleProcessFind(const std::vector<BytecodeValue> &args,
+  static Value handleProcessFind(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleProcessExists(const std::vector<BytecodeValue> &args,
+  static Value
+  handleProcessExists(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue handleProcessKill(const std::vector<BytecodeValue> &args,
+  static Value handleProcessKill(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleProcessNice(const std::vector<BytecodeValue> &args,
+  static Value handleProcessNice(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleProcessRun(const std::vector<BytecodeValue> &args,
+  static Value handleProcessRun(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleProcessRunDetached(const std::vector<BytecodeValue> &args,
+  static Value
+  handleProcessRunDetached(const std::vector<Value> &args,
                            const HostContext *ctx);
   // Alias from MediaBridge
-  static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args,
+  static Value handleMediaPlay(const std::vector<Value> &args,
                                        const HostContext *ctx);
   // System detection
-  static BytecodeValue
-  handleSystemDetect(const std::vector<BytecodeValue> &args,
+  static Value
+  handleSystemDetect(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleSystemHardware(const std::vector<BytecodeValue> &args,
+  static Value
+  handleSystemHardware(const std::vector<Value> &args,
                        const HostContext *ctx);
 };
 
@@ -121,114 +121,114 @@ public:
 private:
   const HostContext *ctx_;
   // Window operations
-  static BytecodeValue
-  handleWindowGetActive(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowGetActive(const std::vector<Value> &args,
                         const HostContext *ctx);
-  static BytecodeValue handleWindowCmd(const std::vector<BytecodeValue> &args,
+  static Value handleWindowCmd(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleWindowFind(const std::vector<BytecodeValue> &args,
+  static Value handleWindowFind(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args,
+  static Value handleWindowClose(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleWindowResize(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowResize(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue handleWindowMove(const std::vector<BytecodeValue> &args,
+  static Value handleWindowMove(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMoveToMonitor(const std::vector<Value> &args,
                             const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMoveToNextMonitor(const std::vector<Value> &args,
                                 const HostContext *ctx);
-  static BytecodeValue handleWindowFocus(const std::vector<BytecodeValue> &args,
+  static Value handleWindowFocus(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMinimize(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMinimize(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMaximize(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMaximize(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue handleWindowHide(const std::vector<BytecodeValue> &args,
+  static Value handleWindowHide(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleWindowShow(const std::vector<BytecodeValue> &args,
+  static Value handleWindowShow(const std::vector<Value> &args,
                                         const HostContext *ctx);
   // Window query functions
-  static BytecodeValue handleWindowAny(const std::vector<BytecodeValue> &args,
+  static Value handleWindowAny(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleWindowCount(const std::vector<BytecodeValue> &args,
+  static Value handleWindowCount(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleWindowFilter(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowFilter(const std::vector<Value> &args,
                      const HostContext *ctx);
   // Active window namespace functions
-  static BytecodeValue handleActiveGet(const std::vector<BytecodeValue> &args,
+  static Value handleActiveGet(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleActiveTitle(const std::vector<BytecodeValue> &args,
+  static Value handleActiveTitle(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleActiveClass(const std::vector<BytecodeValue> &args,
+  static Value handleActiveClass(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleActiveExe(const std::vector<BytecodeValue> &args,
+  static Value handleActiveExe(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleActivePid(const std::vector<BytecodeValue> &args,
+  static Value handleActivePid(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleActiveClose(const std::vector<BytecodeValue> &args,
+  static Value handleActiveClose(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleActiveMin(const std::vector<BytecodeValue> &args,
+  static Value handleActiveMin(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleActiveMax(const std::vector<BytecodeValue> &args,
+  static Value handleActiveMax(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleActiveHide(const std::vector<BytecodeValue> &args,
+  static Value handleActiveHide(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleActiveShow(const std::vector<BytecodeValue> &args,
+  static Value handleActiveShow(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleActiveMove(const std::vector<BytecodeValue> &args,
+  static Value handleActiveMove(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleActiveResize(const std::vector<BytecodeValue> &args,
+  static Value
+  handleActiveResize(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleWindowCloseObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowCloseObj(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleWindowHideObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowHideObj(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleWindowShowObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowShowObj(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleWindowFocusObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowFocusObj(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMinObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMinObj(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMaxObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMaxObj(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleWindowResizeObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowResizeObj(const std::vector<Value> &args,
                         const HostContext *ctx);
-  static BytecodeValue
-  handleWindowMoveObj(const std::vector<BytecodeValue> &args,
+  static Value
+  handleWindowMoveObj(const std::vector<Value> &args,
                       const HostContext *ctx);
   // Clipboard operations
-  static BytecodeValue
-  handleClipboardGet(const std::vector<BytecodeValue> &args,
+  static Value
+  handleClipboardGet(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleClipboardSet(const std::vector<BytecodeValue> &args,
+  static Value
+  handleClipboardSet(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleClipboardClear(const std::vector<BytecodeValue> &args,
+  static Value
+  handleClipboardClear(const std::vector<Value> &args,
                        const HostContext *ctx);
   // Screenshot operations
-  static BytecodeValue
-  handleScreenshotFull(const std::vector<BytecodeValue> &args,
+  static Value
+  handleScreenshotFull(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleScreenshotMonitor(const std::vector<BytecodeValue> &args,
+  static Value
+  handleScreenshotMonitor(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static BytecodeValue handleGUINotify(const std::vector<BytecodeValue> &args,
+  static Value handleGUINotify(const std::vector<Value> &args,
                                        const HostContext *ctx);
 };
 
@@ -242,35 +242,35 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue
-  handleHotkeyRegister(const std::vector<BytecodeValue> &args,
+  static Value
+  handleHotkeyRegister(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleHotkeyTrigger(const std::vector<BytecodeValue> &args,
+  static Value
+  handleHotkeyTrigger(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleMapManagerMap(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMapManagerMap(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleMapManagerGetCurrentProfile(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMapManagerGetCurrentProfile(const std::vector<Value> &args,
                                     const HostContext *ctx);
-  static BytecodeValue handleAltTabShow(const std::vector<BytecodeValue> &args,
+  static Value handleAltTabShow(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleAltTabHide(const std::vector<BytecodeValue> &args,
+  static Value handleAltTabHide(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleAltTabToggle(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAltTabToggle(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue handleAltTabNext(const std::vector<BytecodeValue> &args,
+  static Value handleAltTabNext(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleAltTabPrevious(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAltTabPrevious(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleAltTabSelect(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAltTabSelect(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleAltTabGetWindows(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAltTabGetWindows(const std::vector<Value> &args,
                          const HostContext *ctx);
 };
 
@@ -283,34 +283,34 @@ public:
   void install(PipelineOptions &options) override;
 
   const HostContext *ctx_;
-  static BytecodeValue
-  handleMediaPlayPause(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaPlayPause(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args,
+  static Value handleMediaPlay(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleMediaPause(const std::vector<BytecodeValue> &args,
+  static Value handleMediaPause(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleMediaStop(const std::vector<BytecodeValue> &args,
+  static Value handleMediaStop(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleMediaNext(const std::vector<BytecodeValue> &args,
+  static Value handleMediaNext(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue
-  handleMediaPrevious(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaPrevious(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleMediaGetVolume(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaGetVolume(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleMediaSetVolume(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaSetVolume(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleMediaGetActivePlayer(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaGetActivePlayer(const std::vector<Value> &args,
                              const HostContext *ctx);
-  static BytecodeValue
-  handleMediaSetActivePlayer(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaSetActivePlayer(const std::vector<Value> &args,
                              const HostContext *ctx);
-  static BytecodeValue
-  handleMediaGetAvailablePlayers(const std::vector<BytecodeValue> &args,
+  static Value
+  handleMediaGetAvailablePlayers(const std::vector<Value> &args,
                                  const HostContext *ctx);
 };
 
@@ -324,71 +324,71 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleSleep(const std::vector<BytecodeValue> &args,
+  static Value handleSleep(const std::vector<Value> &args,
                                    const HostContext *ctx);
-  static BytecodeValue handleTimeNow(const std::vector<BytecodeValue> &args,
+  static Value handleTimeNow(const std::vector<Value> &args,
                                      const HostContext *ctx);
 
   // Async task functions
-  static BytecodeValue handleAsyncRun(const std::vector<BytecodeValue> &args,
+  static Value handleAsyncRun(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleAsyncAwait(const std::vector<BytecodeValue> &args,
+  static Value handleAsyncAwait(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleAsyncCancel(const std::vector<BytecodeValue> &args,
+  static Value handleAsyncCancel(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleAsyncIsRunning(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAsyncIsRunning(const std::vector<Value> &args,
                        const HostContext *ctx);
 
   // Channel functions
-  static BytecodeValue
-  handleChannelCreate(const std::vector<BytecodeValue> &args,
+  static Value
+  handleChannelCreate(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue handleChannelSend(const std::vector<BytecodeValue> &args,
+  static Value handleChannelSend(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleChannelReceive(const std::vector<BytecodeValue> &args,
+  static Value
+  handleChannelReceive(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleChannelTryReceive(const std::vector<BytecodeValue> &args,
+  static Value
+  handleChannelTryReceive(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static BytecodeValue
-  handleChannelClose(const std::vector<BytecodeValue> &args,
+  static Value
+  handleChannelClose(const std::vector<Value> &args,
                      const HostContext *ctx);
 
   // Thread/Timer controls
-  static BytecodeValue
-  handleThreadCreate(const std::vector<BytecodeValue> &args,
+  static Value
+  handleThreadCreate(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue handleThreadSend(const std::vector<BytecodeValue> &args,
+  static Value handleThreadSend(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleThreadPause(const std::vector<BytecodeValue> &args,
+  static Value handleThreadPause(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleThreadResume(const std::vector<BytecodeValue> &args,
+  static Value
+  handleThreadResume(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue handleThreadStop(const std::vector<BytecodeValue> &args,
+  static Value handleThreadStop(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleThreadRunning(const std::vector<BytecodeValue> &args,
+  static Value
+  handleThreadRunning(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleIntervalCreate(const std::vector<BytecodeValue> &args,
+  static Value
+  handleIntervalCreate(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleIntervalPause(const std::vector<BytecodeValue> &args,
+  static Value
+  handleIntervalPause(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleIntervalResume(const std::vector<BytecodeValue> &args,
+  static Value
+  handleIntervalResume(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleIntervalStop(const std::vector<BytecodeValue> &args,
+  static Value
+  handleIntervalStop(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue
-  handleTimeoutCreate(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTimeoutCreate(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleTimeoutCancel(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTimeoutCancel(const std::vector<Value> &args,
                       const HostContext *ctx);
 };
 
@@ -402,23 +402,23 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue
-  handleAutomationCreateAutoClicker(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAutomationCreateAutoClicker(const std::vector<Value> &args,
                                     const HostContext *ctx);
-  static BytecodeValue
-  handleAutomationCreateAutoRunner(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAutomationCreateAutoRunner(const std::vector<Value> &args,
                                    const HostContext *ctx);
-  static BytecodeValue
-  handleAutomationCreateAutoKeyPresser(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAutomationCreateAutoKeyPresser(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue
-  handleAutomationHasTask(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAutomationHasTask(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static BytecodeValue
-  handleAutomationRemoveTask(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAutomationRemoveTask(const std::vector<Value> &args,
                              const HostContext *ctx);
-  static BytecodeValue
-  handleAutomationStopAll(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAutomationStopAll(const std::vector<Value> &args,
                           const HostContext *ctx);
 };
 
@@ -432,35 +432,35 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue
-  handleBrowserConnect(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserConnect(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserConnectFirefox(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserConnectFirefox(const std::vector<Value> &args,
                               const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserDisconnect(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserDisconnect(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserIsConnected(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserIsConnected(const std::vector<Value> &args,
                            const HostContext *ctx);
-  static BytecodeValue handleBrowserOpen(const std::vector<BytecodeValue> &args,
+  static Value handleBrowserOpen(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserNewTab(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserNewTab(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue handleBrowserGoto(const std::vector<BytecodeValue> &args,
+  static Value handleBrowserGoto(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleBrowserBack(const std::vector<BytecodeValue> &args,
+  static Value handleBrowserBack(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserForward(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserForward(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserReload(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserReload(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleBrowserListTabs(const std::vector<BytecodeValue> &args,
+  static Value
+  handleBrowserListTabs(const std::vector<Value> &args,
                         const HostContext *ctx);
 };
 
@@ -474,41 +474,41 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue
-  handleTextChunkerSetText(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerSetText(const std::vector<Value> &args,
                            const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGetText(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGetText(const std::vector<Value> &args,
                            const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerSetChunkSize(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerSetChunkSize(const std::vector<Value> &args,
                                 const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGetTotalChunks(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGetTotalChunks(const std::vector<Value> &args,
                                   const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGetCurrentChunk(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGetCurrentChunk(const std::vector<Value> &args,
                                    const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerSetCurrentChunk(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerSetCurrentChunk(const std::vector<Value> &args,
                                    const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGetChunk(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGetChunk(const std::vector<Value> &args,
                             const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGetNextChunk(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGetNextChunk(const std::vector<Value> &args,
                                 const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGetPreviousChunk(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGetPreviousChunk(const std::vector<Value> &args,
                                     const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGoToFirst(const std::vector<Value> &args,
                              const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerGoToLast(const std::vector<Value> &args,
                             const HostContext *ctx);
-  static BytecodeValue
-  handleTextChunkerClear(const std::vector<BytecodeValue> &args,
+  static Value
+  handleTextChunkerClear(const std::vector<Value> &args,
                          const HostContext *ctx);
 };
 
@@ -522,18 +522,18 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleNetworkGet(const std::vector<BytecodeValue> &args,
+  static Value handleNetworkGet(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleNetworkPost(const std::vector<BytecodeValue> &args,
+  static Value handleNetworkPost(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue
-  handleNetworkDownload(const std::vector<BytecodeValue> &args,
+  static Value
+  handleNetworkDownload(const std::vector<Value> &args,
                         const HostContext *ctx);
-  static BytecodeValue
-  handleNetworkIsOnline(const std::vector<BytecodeValue> &args,
+  static Value
+  handleNetworkIsOnline(const std::vector<Value> &args,
                         const HostContext *ctx);
-  static BytecodeValue
-  handleNetworkGetExternalIp(const std::vector<BytecodeValue> &args,
+  static Value
+  handleNetworkGetExternalIp(const std::vector<Value> &args,
                              const HostContext *ctx);
 };
 
@@ -547,38 +547,38 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleGetVolume(const std::vector<BytecodeValue> &args,
+  static Value handleGetVolume(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleSetVolume(const std::vector<BytecodeValue> &args,
+  static Value handleSetVolume(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleIsMuted(const std::vector<BytecodeValue> &args,
+  static Value handleIsMuted(const std::vector<Value> &args,
                                      const HostContext *ctx);
-  static BytecodeValue handleSetMute(const std::vector<BytecodeValue> &args,
+  static Value handleSetMute(const std::vector<Value> &args,
                                      const HostContext *ctx);
-  static BytecodeValue handleToggleMute(const std::vector<BytecodeValue> &args,
+  static Value handleToggleMute(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleGetDevices(const std::vector<BytecodeValue> &args,
+  static Value handleGetDevices(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleFindDeviceByIndex(const std::vector<BytecodeValue> &args,
+  static Value
+  handleFindDeviceByIndex(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static BytecodeValue
-  handleFindDeviceByName(const std::vector<BytecodeValue> &args,
+  static Value
+  handleFindDeviceByName(const std::vector<Value> &args,
                          const HostContext *ctx);
-  static BytecodeValue
-  handleSetDefaultOutput(const std::vector<BytecodeValue> &args,
+  static Value
+  handleSetDefaultOutput(const std::vector<Value> &args,
                          const HostContext *ctx);
-  static BytecodeValue
-  handleGetDefaultOutput(const std::vector<BytecodeValue> &args,
+  static Value
+  handleGetDefaultOutput(const std::vector<Value> &args,
                          const HostContext *ctx);
-  static BytecodeValue
-  handlePlayTestSound(const std::vector<BytecodeValue> &args,
+  static Value
+  handlePlayTestSound(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleIncreaseVolume(const std::vector<BytecodeValue> &args,
+  static Value
+  handleIncreaseVolume(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleDecreaseVolume(const std::vector<BytecodeValue> &args,
+  static Value
+  handleDecreaseVolume(const std::vector<Value> &args,
                        const HostContext *ctx);
 };
 
@@ -592,40 +592,40 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleVolumeUp(const std::vector<BytecodeValue> &args,
+  static Value handleVolumeUp(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleVolumeDown(const std::vector<BytecodeValue> &args,
+  static Value handleVolumeDown(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleToggleMute(const std::vector<BytecodeValue> &args,
+  static Value handleToggleMute(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleStop(const std::vector<BytecodeValue> &args,
+  static Value handleStop(const std::vector<Value> &args,
                                   const HostContext *ctx);
-  static BytecodeValue handleNext(const std::vector<BytecodeValue> &args,
+  static Value handleNext(const std::vector<Value> &args,
                                   const HostContext *ctx);
-  static BytecodeValue handlePrevious(const std::vector<BytecodeValue> &args,
+  static Value handlePrevious(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleSeek(const std::vector<BytecodeValue> &args,
+  static Value handleSeek(const std::vector<Value> &args,
                                   const HostContext *ctx);
-  static BytecodeValue handleSubSeek(const std::vector<BytecodeValue> &args,
+  static Value handleSubSeek(const std::vector<Value> &args,
                                      const HostContext *ctx);
-  static BytecodeValue handleAddSpeed(const std::vector<BytecodeValue> &args,
+  static Value handleAddSpeed(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleAddSubScale(const std::vector<BytecodeValue> &args,
+  static Value handleAddSubScale(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleAddSubDelay(const std::vector<BytecodeValue> &args,
+  static Value handleAddSubDelay(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleCycle(const std::vector<BytecodeValue> &args,
+  static Value handleCycle(const std::vector<Value> &args,
                                    const HostContext *ctx);
-  static BytecodeValue
-  handleCopySubtitle(const std::vector<BytecodeValue> &args,
+  static Value
+  handleCopySubtitle(const std::vector<Value> &args,
                      const HostContext *ctx);
-  static BytecodeValue handleIPCSet(const std::vector<BytecodeValue> &args,
+  static Value handleIPCSet(const std::vector<Value> &args,
                                     const HostContext *ctx);
-  static BytecodeValue handleIPCRestart(const std::vector<BytecodeValue> &args,
+  static Value handleIPCRestart(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleScreenshot(const std::vector<BytecodeValue> &args,
+  static Value handleScreenshot(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleCmd(const std::vector<BytecodeValue> &args,
+  static Value handleCmd(const std::vector<Value> &args,
                                  const HostContext *ctx);
 };
 
@@ -639,14 +639,14 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleGetMonitors(const std::vector<BytecodeValue> &args,
+  static Value handleGetMonitors(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static BytecodeValue handleGetPrimary(const std::vector<BytecodeValue> &args,
+  static Value handleGetPrimary(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleGetCount(const std::vector<BytecodeValue> &args,
+  static Value handleGetCount(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue
-  handleGetMonitorsArea(const std::vector<BytecodeValue> &args,
+  static Value
+  handleGetMonitorsArea(const std::vector<Value> &args,
                         const HostContext *ctx);
 };
 
@@ -660,11 +660,11 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleGet(const std::vector<BytecodeValue> &args,
+  static Value handleGet(const std::vector<Value> &args,
                                  const HostContext *ctx);
-  static BytecodeValue handleSet(const std::vector<BytecodeValue> &args,
+  static Value handleSet(const std::vector<Value> &args,
                                  const HostContext *ctx);
-  static BytecodeValue handleSave(const std::vector<BytecodeValue> &args,
+  static Value handleSave(const std::vector<Value> &args,
                                   const HostContext *ctx);
 };
 
@@ -678,13 +678,13 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleRegister(const std::vector<BytecodeValue> &args,
+  static Value handleRegister(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue handleGetCurrent(const std::vector<BytecodeValue> &args,
+  static Value handleGetCurrent(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue handleSet(const std::vector<BytecodeValue> &args,
+  static Value handleSet(const std::vector<Value> &args,
                                  const HostContext *ctx);
-  static BytecodeValue handleGetPrevious(const std::vector<BytecodeValue> &args,
+  static Value handleGetPrevious(const std::vector<Value> &args,
                                          const HostContext *ctx);
 };
 
@@ -698,9 +698,9 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleAfter(const std::vector<BytecodeValue> &args,
+  static Value handleAfter(const std::vector<Value> &args,
                                    const HostContext *ctx);
-  static BytecodeValue handleEvery(const std::vector<BytecodeValue> &args,
+  static Value handleEvery(const std::vector<Value> &args,
                                    const HostContext *ctx);
 };
 
@@ -718,30 +718,30 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleAppGetName(const std::vector<BytecodeValue> &args,
+  static Value handleAppGetName(const std::vector<Value> &args,
                                         const HostContext *ctx);
-  static BytecodeValue
-  handleAppGetVersion(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAppGetVersion(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue handleAppGetOS(const std::vector<BytecodeValue> &args,
+  static Value handleAppGetOS(const std::vector<Value> &args,
                                       const HostContext *ctx);
-  static BytecodeValue
-  handleAppGetHostname(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAppGetHostname(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleAppGetUsername(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAppGetUsername(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue
-  handleAppGetHomeDir(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAppGetHomeDir(const std::vector<Value> &args,
                       const HostContext *ctx);
-  static BytecodeValue
-  handleAppGetCpuCores(const std::vector<BytecodeValue> &args,
+  static Value
+  handleAppGetCpuCores(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static BytecodeValue handleAppGetEnv(const std::vector<BytecodeValue> &args,
+  static Value handleAppGetEnv(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleAppSetEnv(const std::vector<BytecodeValue> &args,
+  static Value handleAppSetEnv(const std::vector<Value> &args,
                                        const HostContext *ctx);
-  static BytecodeValue handleAppOpenUrl(const std::vector<BytecodeValue> &args,
+  static Value handleAppOpenUrl(const std::vector<Value> &args,
                                         const HostContext *ctx);
 };
 

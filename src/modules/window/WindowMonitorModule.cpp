@@ -10,25 +10,25 @@
 
 namespace havel::modules {
 
-using compiler::BytecodeValue;
+using compiler::Value;
 using compiler::VMApi;
 
 // Shared window monitor pointer (set by setupDynamicWindowGlobals)
 static WindowMonitor* g_sharedMonitor = nullptr;
 
-// Helper to convert to BytecodeValue
+// Helper to convert to Value
 // TODO: String values need string pool registration - use makeNull() for now
-static BytecodeValue toValue(const std::string &s) {
+static Value toValue(const std::string &s) {
   (void)s;
-  return BytecodeValue::makeNull();
+  return Value::makeNull();
 }
 
-static BytecodeValue toValue(int64_t i) {
-  return BytecodeValue::makeInt(i);
+static Value toValue(int64_t i) {
+  return Value::makeInt(i);
 }
 
 // window.activeTitle() - Get active window title
-static BytecodeValue windowActiveTitle(const std::vector<BytecodeValue> &args) {
+static Value windowActiveTitle(const std::vector<Value> &args) {
   (void)args;
   if (!g_sharedMonitor) return toValue("");
   auto info = g_sharedMonitor->GetActiveWindowInfo();
@@ -39,7 +39,7 @@ static BytecodeValue windowActiveTitle(const std::vector<BytecodeValue> &args) {
 }
 
 // window.activeClass() - Get active window class
-static BytecodeValue windowActiveClass(const std::vector<BytecodeValue> &args) {
+static Value windowActiveClass(const std::vector<Value> &args) {
   (void)args;
   if (!g_sharedMonitor) return toValue("");
   auto info = g_sharedMonitor->GetActiveWindowInfo();
@@ -50,7 +50,7 @@ static BytecodeValue windowActiveClass(const std::vector<BytecodeValue> &args) {
 }
 
 // window.activeExe() - Get active window executable
-static BytecodeValue windowActiveExe(const std::vector<BytecodeValue> &args) {
+static Value windowActiveExe(const std::vector<Value> &args) {
   (void)args;
   if (!g_sharedMonitor) return toValue("");
   auto info = g_sharedMonitor->GetActiveWindowInfo();
@@ -61,7 +61,7 @@ static BytecodeValue windowActiveExe(const std::vector<BytecodeValue> &args) {
 }
 
 // window.activePid() - Get active window PID
-static BytecodeValue windowActivePid(const std::vector<BytecodeValue> &args) {
+static Value windowActivePid(const std::vector<Value> &args) {
   (void)args;
   if (!g_sharedMonitor) return toValue(static_cast<int64_t>(0));
   auto info = g_sharedMonitor->GetActiveWindowInfo();
@@ -72,7 +72,7 @@ static BytecodeValue windowActivePid(const std::vector<BytecodeValue> &args) {
 }
 
 // window.active() - Get all active window info as object
-static BytecodeValue windowActive(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value windowActive(VMApi &api, const std::vector<Value> &args) {
   (void)args;
   
   auto obj = api.makeObject();
@@ -83,7 +83,7 @@ static BytecodeValue windowActive(VMApi &api, const std::vector<BytecodeValue> &
       api.setField(obj, "class", toValue(info->windowClass));
       api.setField(obj, "exe", toValue(info->processName));
       api.setField(obj, "pid", toValue(static_cast<int64_t>(info->pid)));
-      return BytecodeValue::makeObjectId(obj.id);
+      return obj;
     }
   }
 
@@ -91,33 +91,33 @@ static BytecodeValue windowActive(VMApi &api, const std::vector<BytecodeValue> &
   api.setField(obj, "class", toValue(""));
   api.setField(obj, "exe", toValue(""));
   api.setField(obj, "pid", toValue(static_cast<int64_t>(0)));
-  return BytecodeValue::makeObjectId(obj.id);
+  return obj;
 }
 
 // Register window monitor module with VM
 void registerWindowMonitorModule(VMApi &api) {
   // window.activeTitle()
-  api.registerFunction("window.activeTitle", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("window.activeTitle", [](const std::vector<Value> &args) {
     return windowActiveTitle(args);
   });
 
   // window.activeClass()
-  api.registerFunction("window.activeClass", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("window.activeClass", [](const std::vector<Value> &args) {
     return windowActiveClass(args);
   });
 
   // window.activeExe()
-  api.registerFunction("window.activeExe", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("window.activeExe", [](const std::vector<Value> &args) {
     return windowActiveExe(args);
   });
 
   // window.activePid()
-  api.registerFunction("window.activePid", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("window.activePid", [](const std::vector<Value> &args) {
     return windowActivePid(args);
   });
 
   // window.active()
-  api.registerFunction("window.active", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("window.active", [&api](const std::vector<Value> &args) {
     return windowActive(api, args);
   });
 
@@ -161,10 +161,10 @@ void setupDynamicWindowGlobals(VMApi &api, WindowMonitor *monitor) {
   
   // Set initial global values
   // TODO: String values need string pool registration
-  api.setGlobal("title", BytecodeValue::makeNull());
-  api.setGlobal("class", BytecodeValue::makeNull());
-  api.setGlobal("exe", BytecodeValue::makeNull());
-  api.setGlobal("pid", BytecodeValue::makeInt(pid));
+  api.setGlobal("title", Value::makeNull());
+  api.setGlobal("class", Value::makeNull());
+  api.setGlobal("exe", Value::makeNull());
+  api.setGlobal("pid", Value::makeInt(pid));
   
   debug("Dynamic window globals setup: title=" + title + ", exe=" + exe);
 }

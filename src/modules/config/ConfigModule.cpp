@@ -14,16 +14,16 @@
 
 namespace havel::modules {
 
-using compiler::BytecodeValue;
+using compiler::Value;
 using compiler::VMApi;
 
-// Helper to convert BytecodeValue to string
-static std::string toString(const BytecodeValue &v) {
-  if (std::holds_alternative<std::nullptr_t>(v)) return "";
-  if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? "true" : "false";
-  if (std::holds_alternative<int64_t>(v)) return std::to_string(std::get<int64_t>(v));
-  if (std::holds_alternative<double>(v)) {
-    double val = std::get<double>(v);
+// Helper to convert Value to string
+static std::string toString(const Value &v) {
+  if (v.isNull()) return "";
+  if (v.isBool()) return v.asBool() ? "true" : "false";
+  if (v.isInt()) return std::to_string(v.asInt());
+  if (v.isDouble()) {
+    double val = v.asDouble();
     if (val == std::floor(val) && std::abs(val) < 1e15) {
       return std::to_string(static_cast<long long>(val));
     }
@@ -32,36 +32,41 @@ static std::string toString(const BytecodeValue &v) {
     oss << val;
     return oss.str();
   }
-  if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+  if (v.isStringValId()) {
+    // TODO: string pool lookup - for now return placeholder
+    return "<string>";
+  }
   return "";
 }
 
-// Helper to convert string to appropriate BytecodeValue
-static BytecodeValue fromString(const std::string &s) {
+// Helper to convert string to appropriate Value
+static Value fromString(const std::string &s) {
   // Try boolean
-  if (s == "true") return BytecodeValue(true);
-  if (s == "false") return BytecodeValue(false);
+  if (s == "true") return Value::makeBool(true);
+  if (s == "false") return Value::makeBool(false);
 
   // Try integer
   try {
     size_t pos;
     int64_t i = std::stoll(s, &pos);
-    if (pos == s.length()) return BytecodeValue(i);
+    if (pos == s.length()) return Value::makeInt(i);
   } catch (...) {}
 
   // Try double
   try {
     size_t pos;
     double d = std::stod(s, &pos);
-    if (pos == s.length()) return BytecodeValue(d);
+    if (pos == s.length()) return Value::makeDouble(d);
   } catch (...) {}
 
   // Default to string
-  return BytecodeValue(s);
+  // TODO: string pool integration - for now return null
+  (void)s;
+  return Value::makeNull();
 }
 
 // config.get(key, default?) - Get config value
-BytecodeValue configGet(const std::vector<BytecodeValue> &args) {
+Value configGet(const std::vector<Value> &args) {
   if (args.empty()) {
     throw std::runtime_error("config.get() requires at least 1 argument: key");
   }
@@ -81,7 +86,7 @@ BytecodeValue configGet(const std::vector<BytecodeValue> &args) {
 }
 
 // config.set(key, value) - Set config value (in memory only)
-BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
+Value configSet(const std::vector<Value> &args) {
   if (args.size() < 2) {
     throw std::runtime_error("config.set() requires 2 arguments: key, value");
   }
@@ -92,21 +97,21 @@ BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
   auto &config = Configs::Get();
   config.Set(key, value, false);  // Don't save yet
 
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // config.save() - Save config to file
-BytecodeValue configSave(const std::vector<BytecodeValue> &args) {
+Value configSave(const std::vector<Value> &args) {
   (void)args;
   
   auto &config = Configs::Get();
   config.Save();
   
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // config.getAll() - Get all config as object
-BytecodeValue configGetAll(VMApi &api, const std::vector<BytecodeValue> &args) {
+Value configGetAll(VMApi &api, const std::vector<Value> &args) {
   (void)args;
   
   auto &config = Configs::Get();
@@ -118,43 +123,43 @@ BytecodeValue configGetAll(VMApi &api, const std::vector<BytecodeValue> &args) {
     api.setField(obj, key, fromString(value));
   }
   
-  return BytecodeValue(obj);
+  return Value(obj);
 }
 
 // config.load() - Reload config from file
-BytecodeValue configLoad(const std::vector<BytecodeValue> &args) {
+Value configLoad(const std::vector<Value> &args) {
   (void)args;
   
   auto &config = Configs::Get();
   config.Load();
   
-  return BytecodeValue(true);
+  return Value(true);
 }
 
 // Register config module with VM
 void registerConfigModule(VMApi &api) {
   // config.get(key, default?)
-  api.registerFunction("config.get", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("config.get", [](const std::vector<Value> &args) {
     return configGet(args);
   });
 
   // config.set(key, value)
-  api.registerFunction("config.set", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("config.set", [](const std::vector<Value> &args) {
     return configSet(args);
   });
   
   // config.save()
-  api.registerFunction("config.save", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("config.save", [](const std::vector<Value> &args) {
     return configSave(args);
   });
   
   // config.getAll()
-  api.registerFunction("config.getAll", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("config.getAll", [&api](const std::vector<Value> &args) {
     return configGetAll(api, args);
   });
   
   // config.load()
-  api.registerFunction("config.load", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("config.load", [](const std::vector<Value> &args) {
     return configLoad(args);
   });
 

@@ -23,12 +23,12 @@ static host::UIBackend *getUIBackend() {
 
 // Helper to convert BytecodeValue to string
 static std::string toString(const BytecodeValue &v) {
-  if (std::holds_alternative<std::string>(v))
-    return std::get<std::string>(v);
-  if (std::holds_alternative<int64_t>(v))
-    return std::to_string(std::get<int64_t>(v));
-  if (std::holds_alternative<double>(v)) {
-    double val = std::get<double>(v);
+  if (v.isStringValId())
+    return ""; // TODO: retrieve from string pool
+  if (v.isInt())
+    return std::to_string(v.asInt());
+  if (v.isDouble()) {
+    double val = v.asDouble();
     if (val == std::floor(val) && std::abs(val) < 1e15) {
       return std::to_string(static_cast<long long>(val));
     }
@@ -37,20 +37,21 @@ static std::string toString(const BytecodeValue &v) {
     oss << val;
     return oss.str();
   }
-  if (std::holds_alternative<bool>(v))
-    return std::get<bool>(v) ? "true" : "false";
+  if (v.isBool())
+    return v.asBool() ? "true" : "false";
   return "";
 }
 
 // Helper to convert BytecodeValue to int
 static int toInt(const BytecodeValue &v) {
-  if (std::holds_alternative<int64_t>(v))
-    return static_cast<int>(std::get<int64_t>(v));
-  if (std::holds_alternative<double>(v))
-    return static_cast<int>(std::get<double>(v));
-  if (std::holds_alternative<std::string>(v)) {
+  if (v.isInt())
+    return static_cast<int>(v.asInt());
+  if (v.isDouble())
+    return static_cast<int>(v.asDouble());
+  if (v.isStringValId()) {
+    // TODO: retrieve from string pool
     try {
-      return std::stoi(std::get<std::string>(v));
+      return std::stoi("");
     } catch (...) {
     }
   }
@@ -58,15 +59,15 @@ static int toInt(const BytecodeValue &v) {
 }
 
 static bool toBool(const BytecodeValue &v) {
-  if (std::holds_alternative<bool>(v))
-    return std::get<bool>(v);
-  if (std::holds_alternative<int64_t>(v))
-    return std::get<int64_t>(v) != 0;
-  if (std::holds_alternative<double>(v))
-    return std::get<double>(v) != 0;
-  if (std::holds_alternative<std::string>(v)) {
-    const auto &s = std::get<std::string>(v);
-    return !s.empty() && s != "false" && s != "0";
+  if (v.isBool())
+    return v.asBool();
+  if (v.isInt())
+    return v.asInt() != 0;
+  if (v.isDouble())
+    return v.asDouble() != 0;
+  if (v.isStringValId()) {
+    // TODO: retrieve from string pool
+    return false;
   }
   return false;
 }
@@ -80,13 +81,14 @@ static std::string getStringArg(VMApi &api,
     return defaultVal;
 
   const auto &arg = args[index];
-  if (std::holds_alternative<std::string>(arg)) {
-    return std::get<std::string>(arg);
+  if (arg.isStringValId()) {
+    // TODO: retrieve from string pool
+    return defaultVal;
   }
-  if (std::holds_alternative<ObjectRef>(arg)) {
+  if (arg.isObjectId()) {
     // Try to get from object field
     auto val = api.getField(arg, "text");
-    if (!std::holds_alternative<std::nullptr_t>(val)) {
+    if (!val.isNull()) {
       return toString(val);
     }
   }
@@ -105,22 +107,23 @@ static int getIntArg(const std::vector<BytecodeValue> &args, size_t index,
 static void attachElementToObject(VMApi &api, BytecodeValue obj,
                                   std::shared_ptr<ui::UIElement> element) {
   // Store element ID as special field
-  api.setField(obj, "__ui_type", BytecodeValue(element->type));
+  // TODO: String values need string pool registration
+  api.setField(obj, "__ui_type", BytecodeValue::makeNull());
   api.setField(obj, "__ui_id",
-               BytecodeValue(static_cast<int64_t>(element->id)));
+               BytecodeValue::makeInt(static_cast<int64_t>(element->id)));
 }
 
 static std::shared_ptr<ui::UIElement>
 getElementFromObject(VMApi &api, const BytecodeValue &obj) {
-  if (!std::holds_alternative<ObjectRef>(obj))
+  if (!obj.isObjectId())
     return nullptr;
 
   // Get element ID from object
   auto idVal = api.getField(obj, "__ui_id");
-  if (!std::holds_alternative<int64_t>(idVal))
+  if (!idVal.isInt())
     return nullptr;
 
-  ui::ElementId id = static_cast<ui::ElementId>(std::get<int64_t>(idVal));
+  ui::ElementId id = static_cast<ui::ElementId>(idVal.asInt());
 
   // TODO: Keep a registry of elements by ID in UIService
   // For now, we can't easily retrieve elements, so we'll store a pointer in the
@@ -143,19 +146,19 @@ static BytecodeValue uiWindow(VMApi &api,
   // Parse named args from options object if provided
   if (args.size() > 1) {
     const auto &opts = args[1];
-    if (std::holds_alternative<ObjectRef>(opts)) {
+    if (opts.isObjectId()) {
       auto widthVal = api.getField(opts, "width");
-      if (!std::holds_alternative<std::nullptr_t>(widthVal)) {
+      if (!widthVal.isNull()) {
         elem->set("width", static_cast<int64_t>(toInt(widthVal)));
       }
 
       auto heightVal = api.getField(opts, "height");
-      if (!std::holds_alternative<std::nullptr_t>(heightVal)) {
+      if (!heightVal.isNull()) {
         elem->set("height", static_cast<int64_t>(toInt(heightVal)));
       }
 
       auto resizeVal = api.getField(opts, "resizable");
-      if (!std::holds_alternative<std::nullptr_t>(resizeVal)) {
+      if (!resizeVal.isNull()) {
         elem->set("resizable", toBool(resizeVal));
       }
     }
@@ -179,7 +182,7 @@ static BytecodeValue uiWindow(VMApi &api,
   api.setField(obj, "status", api.makeFunctionRef("ui.window.status"));
   api.setField(obj, "panel", api.makeFunctionRef("ui.window.panel"));
   api.setField(obj, "menu", api.makeFunctionRef("ui.window.menu"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -202,7 +205,7 @@ static BytecodeValue uiBtn(VMApi &api, const std::vector<BytecodeValue> &args) {
 
   api.setField(obj, "onClick", api.makeFunctionRef("ui.element.onClick"));
   api.setField(obj, "alignRight", api.makeFunctionRef("ui.element.alignRight"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -218,7 +221,7 @@ static BytecodeValue uiText(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "bold", api.makeFunctionRef("ui.element.bold"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -248,7 +251,7 @@ static BytecodeValue uiInput(VMApi &api,
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
   api.setField(obj, "value", api.makeFunctionRef("ui.input.value"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -265,7 +268,7 @@ static BytecodeValue uiTextarea(VMApi &api,
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
   api.setField(obj, "value", api.makeFunctionRef("ui.textarea.value"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -285,7 +288,7 @@ static BytecodeValue uiCheckbox(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -303,7 +306,7 @@ static BytecodeValue uiSlider(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -313,9 +316,9 @@ static BytecodeValue uiDropdown(VMApi &api,
                                 const std::vector<BytecodeValue> &args) {
   std::vector<std::string> options;
 
-  if (args.size() > 0 && std::holds_alternative<ArrayRef>(args[0])) {
+  if (args.size() > 0 && args[0].isArrayId()) {
     // Extract from array
-    auto arr = std::get<ArrayRef>(args[0]);
+    auto arr = ArrayRef{args[0].asArrayId()};
     size_t len = api.getArrayLength(args[0]);
     for (size_t i = 0; i < len; i++) {
       auto val = api.getArrayValue(args[0], i);
@@ -329,7 +332,7 @@ static BytecodeValue uiDropdown(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -412,7 +415,7 @@ static BytecodeValue uiMenu(VMApi &api,
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -429,7 +432,7 @@ static BytecodeValue uiMenuItem(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onClick", api.makeFunctionRef("ui.element.onClick"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -443,7 +446,7 @@ static BytecodeValue uiMenuSeparator(VMApi &api,
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -460,12 +463,12 @@ static BytecodeValue uiRow(VMApi &api, const std::vector<BytecodeValue> &args) {
   attachElementToObject(api, obj, elem);
 
   // Add children from array if provided
-  if (args.size() > 0 && std::holds_alternative<ArrayRef>(args[0])) {
+  if (args.size() > 0 && args[0].isArrayId()) {
     // Store children array reference
     api.setField(obj, "children", args[0]);
   }
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -477,11 +480,11 @@ static BytecodeValue uiCol(VMApi &api, const std::vector<BytecodeValue> &args) {
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  if (args.size() > 0 && std::holds_alternative<ArrayRef>(args[0])) {
+  if (args.size() > 0 && args[0].isArrayId()) {
     api.setField(obj, "children", args[0]);
   }
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -496,11 +499,11 @@ static BytecodeValue uiGrid(VMApi &api,
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  if (args.size() > 1 && std::holds_alternative<ArrayRef>(args[1])) {
+  if (args.size() > 1 && args[1].isArrayId()) {
     api.setField(obj, "children", args[1]);
   }
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -517,11 +520,11 @@ static BytecodeValue uiTable(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   // Add data from array if provided
-  if (args.size() > 2 && std::holds_alternative<ArrayRef>(args[2])) {
+  if (args.size() > 2 && args[2].isArrayId()) {
     api.setField(obj, "data", args[2]);
   }
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -530,8 +533,9 @@ static BytecodeValue uiTable(VMApi &api,
 static BytecodeValue uiFlex(VMApi &api,
                             const std::vector<BytecodeValue> &args) {
   std::string direction = "row";
-  if (args.size() > 0 && std::holds_alternative<std::string>(args[0])) {
-    direction = std::get<std::string>(args[0]);
+  if (args.size() > 0 && args[0].isStringValId()) {
+    // TODO: retrieve from string pool
+    direction = "";
   }
 
   auto elem = getUIBackend()->flex(direction);
@@ -541,14 +545,14 @@ static BytecodeValue uiFlex(VMApi &api,
 
   // Add children from array if provided (second arg or first if it's an array)
   size_t childrenIdx = 1;
-  if (args.size() > 0 && std::holds_alternative<ArrayRef>(args[0])) {
+  if (args.size() > 0 && args[0].isArrayId()) {
     childrenIdx = 0;
   }
-  if (args.size() > childrenIdx && std::holds_alternative<ArrayRef>(args[childrenIdx])) {
+  if (args.size() > childrenIdx && args[childrenIdx].isArrayId()) {
     api.setField(obj, "children", args[childrenIdx]);
   }
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -561,11 +565,11 @@ static BytecodeValue uiScroll(VMApi &api,
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  if (args.size() > 0 && std::holds_alternative<ArrayRef>(args[0])) {
+  if (args.size() > 0 && args[0].isArrayId()) {
     api.setField(obj, "children", args[0]);
   }
 
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -589,7 +593,7 @@ static BytecodeValue uiCanvas(VMApi &api,
   api.setField(obj, "drawRect", api.makeFunctionRef("ui.canvas.drawRect"));
   api.setField(obj, "drawCircle", api.makeFunctionRef("ui.canvas.drawCircle"));
   api.setField(obj, "drawImage", api.makeFunctionRef("ui.canvas.drawImage"));
-  api.setField(obj, "__element", BytecodeValue(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -602,7 +606,7 @@ static BytecodeValue uiCanvas(VMApi &api,
 static BytecodeValue uiCanvasClear(VMApi &api,
                                    const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   // Clear canvas to background color
   return args[0];
 }
@@ -611,7 +615,7 @@ static BytecodeValue uiCanvasClear(VMApi &api,
 static BytecodeValue uiCanvasFill(VMApi &api,
                                   const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   std::string color = toString(args[1]);
   (void)color;
   // Fill entire canvas with color
@@ -622,7 +626,7 @@ static BytecodeValue uiCanvasFill(VMApi &api,
 static BytecodeValue uiCanvasDrawPoint(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
   if (args.size() < 4)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   int x = toInt(args[1]);
   int y = toInt(args[2]);
   std::string color = toString(args[3]);
@@ -635,7 +639,7 @@ static BytecodeValue uiCanvasDrawPoint(VMApi &api,
 static BytecodeValue uiCanvasDrawLine(VMApi &api,
                                       const std::vector<BytecodeValue> &args) {
   if (args.size() < 6)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   int x1 = toInt(args[1]);
   int y1 = toInt(args[2]);
   int x2 = toInt(args[3]);
@@ -650,7 +654,7 @@ static BytecodeValue uiCanvasDrawLine(VMApi &api,
 static BytecodeValue uiCanvasDrawRect(VMApi &api,
                                       const std::vector<BytecodeValue> &args) {
   if (args.size() < 6)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   int x = toInt(args[1]);
   int y = toInt(args[2]);
   int w = toInt(args[3]);
@@ -665,7 +669,7 @@ static BytecodeValue uiCanvasDrawRect(VMApi &api,
 static BytecodeValue uiCanvasDrawCircle(VMApi &api,
                                         const std::vector<BytecodeValue> &args) {
   if (args.size() < 5)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   int x = toInt(args[1]);
   int y = toInt(args[2]);
   int r = toInt(args[3]);
@@ -679,7 +683,7 @@ static BytecodeValue uiCanvasDrawCircle(VMApi &api,
 static BytecodeValue uiCanvasDrawImage(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
   if (args.size() < 4)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   std::string path = toString(args[1]);
   int x = toInt(args[2]);
   int y = toInt(args[3]);
@@ -695,7 +699,7 @@ static BytecodeValue uiCanvasDrawImage(VMApi &api,
 static BytecodeValue uiElementStyle(VMApi &api,
                                     const std::vector<BytecodeValue> &args) {
   if (args.size() < 3)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   std::string key = toString(args[1]);
   std::string value = toString(args[2]);
   (void)key; (void)value;
@@ -706,7 +710,7 @@ static BytecodeValue uiElementStyle(VMApi &api,
 static BytecodeValue uiElementWidth(VMApi &api,
                                     const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   int w = toInt(args[1]);
   (void)w;
   return args[0];
@@ -716,7 +720,7 @@ static BytecodeValue uiElementWidth(VMApi &api,
 static BytecodeValue uiElementHeight(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   int h = toInt(args[1]);
   (void)h;
   return args[0];
@@ -726,7 +730,7 @@ static BytecodeValue uiElementHeight(VMApi &api,
 static BytecodeValue uiElementBorder(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   std::string color = toString(args[1]);
   int width = args.size() > 2 ? toInt(args[2]) : 1;
   (void)color; (void)width;
@@ -744,7 +748,7 @@ static BytecodeValue uiAlert(const std::vector<BytecodeValue> &args) {
     message = toString(args[0]);
   }
   getUIBackend()->alert(message);
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ui.confirm(message)
@@ -754,7 +758,7 @@ static BytecodeValue uiConfirm(const std::vector<BytecodeValue> &args) {
     message = toString(args[0]);
   }
   bool result = getUIBackend()->confirm(message);
-  return BytecodeValue(result);
+  return BytecodeValue::makeBool(result);
 }
 
 // ui.filePicker(title)
@@ -763,8 +767,10 @@ static BytecodeValue uiFilePicker(const std::vector<BytecodeValue> &args) {
   if (args.size() > 0) {
     title = toString(args[0]);
   }
+  // TODO: String values need string pool registration
   std::string result = getUIBackend()->filePicker(title);
-  return BytecodeValue(result);
+  (void)result;
+  return BytecodeValue::makeNull();
 }
 
 // ui.dirPicker(title)
@@ -773,8 +779,10 @@ static BytecodeValue uiDirPicker(const std::vector<BytecodeValue> &args) {
   if (args.size() > 0) {
     title = toString(args[0]);
   }
+  // TODO: String values need string pool registration
   std::string result = getUIBackend()->dirPicker(title);
-  return BytecodeValue(result);
+  (void)result;
+  return BytecodeValue::makeNull();
 }
 
 // ui.notify(message, type)
@@ -790,7 +798,7 @@ static BytecodeValue uiNotify(const std::vector<BytecodeValue> &args) {
   }
 
   getUIBackend()->notify(message, type);
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ============================================================================
@@ -810,21 +818,21 @@ static BytecodeValue uiTrayIcon(const std::vector<BytecodeValue> &args) {
   }
 
   getUIBackend()->trayIcon(iconPath, tooltip);
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ui.trayShow()
 static BytecodeValue uiTrayShow(const std::vector<BytecodeValue> &args) {
   (void)args;
   getUIBackend()->trayShow();
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ui.trayHide()
 static BytecodeValue uiTrayHide(const std::vector<BytecodeValue> &args) {
   (void)args;
   getUIBackend()->trayHide();
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ui.trayMenu(menuElement)
@@ -835,7 +843,7 @@ static BytecodeValue uiTrayMenu(VMApi &api,
   (void)api;
   (void)args;
   getUIBackend()->trayMenu(nullptr);
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ui.trayNotify(title, message, iconType)
@@ -855,7 +863,7 @@ static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
   }
 
   getUIBackend()->trayNotify(title, message, iconType);
-  return BytecodeValue(true);
+  return BytecodeValue::makeBool(true);
 }
 
 // ============================================================================
@@ -866,7 +874,7 @@ static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
 static BytecodeValue uiElementAdd(VMApi &api,
                                   const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // This would need proper element registry to implement correctly
   // For now, return the element for chaining
@@ -877,12 +885,12 @@ static BytecodeValue uiElementAdd(VMApi &api,
 static BytecodeValue uiElementShow(VMApi &api,
                                    const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Get element from object
   auto idVal = api.getField(args[0], "__element");
-  if (std::holds_alternative<int64_t>(idVal)) {
-    ui::ElementId id = static_cast<ui::ElementId>(std::get<int64_t>(idVal));
+  if (idVal.isInt()) {
+    ui::ElementId id = static_cast<ui::ElementId>(idVal.asInt());
     // Would need to retrieve element from registry and show
     // getUIBackend()->show(element);
     (void)id;
@@ -895,7 +903,7 @@ static BytecodeValue uiElementShow(VMApi &api,
 static BytecodeValue uiElementHide(VMApi &api,
                                    const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Similar to show
   return args[0];
@@ -905,7 +913,7 @@ static BytecodeValue uiElementHide(VMApi &api,
 static BytecodeValue uiElementClose(VMApi &api,
                                     const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Similar to show but close
   return args[0];
@@ -915,7 +923,7 @@ static BytecodeValue uiElementClose(VMApi &api,
 static BytecodeValue uiElementOnClick(VMApi &api,
                                       const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Store callback for element
   // TODO: Register callback with element
@@ -927,7 +935,7 @@ static BytecodeValue uiElementOnClick(VMApi &api,
 static BytecodeValue uiElementOnChange(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Store callback
   return args[0];
@@ -936,159 +944,159 @@ static BytecodeValue uiElementOnChange(VMApi &api,
 // Mouse Events
 static BytecodeValue uiElementOnMouseDown(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnMouseUp(VMApi &api,
                                         const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDblClick(VMApi &api,
                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnMouseMove(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnMouseOver(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnMouseOut(VMApi &api,
                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDrag(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDragEnter(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDragLeave(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDropEnter(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDropLeave(VMApi &api,
                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnDrop(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnRightClick(VMApi &api,
                                            const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 // Keyboard Events
 static BytecodeValue uiElementOnKeyDown(VMApi &api,
                                         const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnKeyUp(VMApi &api,
                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnKeyPress(VMApi &api,
                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 // UI Events
 static BytecodeValue uiElementOnFocus(VMApi &api,
                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnBlur(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnLoad(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnUnload(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnScroll(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnCopy(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnCut(VMApi &api,
                                     const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnPaste(VMApi &api,
                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnLoaded(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
 static BytecodeValue uiElementOnSubmit(VMApi &api,
                                        const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue(nullptr);
+  if (args.size() < 2) return BytecodeValue::makeNull();
   return args[0];
 }
 
@@ -1096,7 +1104,7 @@ static BytecodeValue uiElementOnSubmit(VMApi &api,
 static BytecodeValue uiElementPad(VMApi &api,
                                   const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Set padding property
   return args[0];
@@ -1106,7 +1114,7 @@ static BytecodeValue uiElementPad(VMApi &api,
 static BytecodeValue uiElementBg(VMApi &api,
                                  const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   std::string color = toString(args[1]);
   // Set background property
@@ -1119,7 +1127,7 @@ static BytecodeValue uiElementBg(VMApi &api,
 static BytecodeValue uiElementFg(VMApi &api,
                                  const std::vector<BytecodeValue> &args) {
   if (args.size() < 2)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   std::string color = toString(args[1]);
   (void)color;
@@ -1131,7 +1139,7 @@ static BytecodeValue uiElementFg(VMApi &api,
 static BytecodeValue
 uiElementAlignRight(VMApi &api, const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Set align property
   return args[0];
@@ -1141,7 +1149,7 @@ uiElementAlignRight(VMApi &api, const std::vector<BytecodeValue> &args) {
 static BytecodeValue uiElementBold(VMApi &api,
                                    const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   // Set bold property
   return args[0];
@@ -1151,11 +1159,12 @@ static BytecodeValue uiElementBold(VMApi &api,
 static BytecodeValue uiInputValue(VMApi &api,
                                   const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   if (args.size() == 1) {
     // Getter - return current value
-    return BytecodeValue(std::string(""));
+    // TODO: String values need string pool registration
+    return BytecodeValue::makeNull();
   } else {
     // Setter - set value
     return args[0];
@@ -1166,10 +1175,11 @@ static BytecodeValue uiInputValue(VMApi &api,
 static BytecodeValue uiTextareaValue(VMApi &api,
                                      const std::vector<BytecodeValue> &args) {
   if (args.empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
 
   if (args.size() == 1) {
-    return BytecodeValue(std::string(""));
+    // TODO: String values need string pool registration
+    return BytecodeValue::makeNull();
   } else {
     return args[0];
   }
@@ -1182,29 +1192,31 @@ static BytecodeValue uiTextareaValue(VMApi &api,
 // ui.setApi(apiName) - switch between qt/gtk/imgui
 static BytecodeValue uiSetApi(const std::vector<BytecodeValue> &args) {
   if (args.empty()) {
-    return BytecodeValue(false);
+    return BytecodeValue::makeBool(false);
   }
 
   std::string apiName = toString(args[0]);
   bool success = host::UIManager::instance().setBackend(apiName);
-  return BytecodeValue(success);
+  return BytecodeValue::makeBool(success);
 }
 
 // ui.getApi() -> current API name
 static BytecodeValue uiGetApi() {
+  // TODO: String values need string pool registration
   std::string apiName = host::UIManager::instance().currentApiName();
-  return BytecodeValue(apiName);
+  (void)apiName;
+  return BytecodeValue::makeNull();
 }
 
 // ui.isAvailable(apiName) -> bool
 static BytecodeValue uiIsAvailable(const std::vector<BytecodeValue> &args) {
   if (args.empty()) {
-    return BytecodeValue(false);
+    return BytecodeValue::makeBool(false);
   }
 
   std::string apiName = toString(args[0]);
   bool available = host::UIManager::instance().isBackendAvailable(apiName);
-  return BytecodeValue(available);
+  return BytecodeValue::makeBool(available);
 }
 
 // ============================================================================

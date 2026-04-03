@@ -1,5 +1,7 @@
 #pragma once
 
+#include "havel-lang/core/Value.hpp"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -15,6 +17,10 @@ struct Program;
 }
 
 namespace havel::compiler {
+
+// BytecodeValue is now an alias to the NaN-boxed Value class
+// The Value class uses canonical NaN boxing for zero-cost double storage
+using BytecodeValue = havel::core::Value;
 
 // Forward declarations
 class BytecodeCompiler;
@@ -228,13 +234,6 @@ struct LazyPipelineRef {
 struct ErrorRef {
   uint32_t id = 0; // GC object id for the error object
 };
-
-using BytecodeValue =
-    std::variant<std::nullptr_t, bool, int64_t, double, std::string,
-                 uint32_t, // Index into constant pool
-                 FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
-                 RangeRef, StructRef, ClassRef, EnumRef, IteratorRef,
-                 HostFunctionRef, LazyPipelineRef, ErrorRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

@@ -96,16 +96,16 @@ IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
   iter.index = 0;
 
   // For objects, pre-compute keys
-  if (std::holds_alternative<ObjectRef>(iterable)) {
-    auto *obj = object(std::get<ObjectRef>(iterable).id);
+  if (iterable.isObjectId()) {
+    auto *obj = object(iterable.asObjectId());
     if (obj) {
       iter.keys = obj->getKeys();
     }
-  } else if (std::holds_alternative<SetRef>(iterable)) {
-    auto *setObj = set(std::get<SetRef>(iterable).id);
+  } else if (iterable.isSetId()) {
+    auto *setObj = set(iterable.asSetId());
     if (setObj) {
       for (const auto &[key, present] : *setObj) {
-        if (std::holds_alternative<bool>(present) && !std::get<bool>(present)) {
+        if (present.isBool() && !present.asBool()) {
           continue;
         }
         iter.keys.push_back(key);
@@ -284,74 +284,74 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
     // Return {value: null, done: true}
     auto resultObj = allocateObject();
     auto *obj = object(resultObj.id);
-    (*obj)["value"] = BytecodeValue(nullptr);
-    (*obj)["done"] = BytecodeValue(true);
-    return BytecodeValue(resultObj);
+    (*obj)["value"] = BytecodeValue::makeNull();
+    (*obj)["done"] = BytecodeValue::makeBool(true);
+    return BytecodeValue::makeObjectId(resultObj.id);
   }
 
   bool done = false;
   BytecodeValue value;
 
   // Dispatch based on iterable type
-  if (std::holds_alternative<ArrayRef>(iter->iterable)) {
-    auto *arr = array(std::get<ArrayRef>(iter->iterable).id);
+  if (iter->iterable.isArrayId()) {
+    auto *arr = array(iter->iterable.asArrayId());
     if (!arr || iter->index >= arr->size()) {
       done = true;
-      value = nullptr;
+      value = BytecodeValue::makeNull();
     } else {
       value = (*arr)[iter->index++];
     }
-  } else if (std::holds_alternative<std::string>(iter->iterable)) {
-    const auto &str = std::get<std::string>(iter->iterable);
-    if (iter->index >= str.length()) {
+  } else if (iter->iterable.isStringValId()) {
+    // String iteration - return character codes as integers
+    if (iter->index >= 256) { // Placeholder: strings stored as IDs
       done = true;
-      value = std::string("");
+      value = BytecodeValue::makeNull();
     } else {
-      value = std::string(1, str[iter->index++]);
+      value = BytecodeValue::makeInt(iter->index++); // TODO: real string iteration
     }
-  } else if (std::holds_alternative<ObjectRef>(iter->iterable)) {
+  } else if (iter->iterable.isObjectId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
-      value = nullptr;
+      value = BytecodeValue::makeNull();
     } else {
       // For objects, return the key (ByteCompiler expects key for lookup)
       value = iter->keys[iter->index++];
     }
-  } else if (std::holds_alternative<SetRef>(iter->iterable)) {
+  } else if (iter->iterable.isSetId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
-      value = nullptr;
+      value = BytecodeValue::makeNull();
     } else {
       value = iter->keys[iter->index++];
     }
-  } else if (std::holds_alternative<RangeRef>(iter->iterable)) {
-    auto *r = range(std::get<RangeRef>(iter->iterable).id);
+  } else if (iter->iterable.isRangeId()) {
+    auto *r = range(iter->iterable.asRangeId());
     if (!r) {
       done = true;
-      value = nullptr;
+      value = BytecodeValue::makeNull();
     } else {
       int64_t current = r->start + (iter->index * r->step);
       if ((r->step > 0 && current >= r->end) ||
           (r->step < 0 && current <= r->end)) {
         done = true;
-        value = nullptr;
+        value = BytecodeValue::makeNull();
       } else {
-        value = BytecodeValue(current);
+        value = BytecodeValue::makeInt(current);
         iter->index++;
       }
     }
   } else {
     // Unknown type, just return done
     done = true;
-    value = nullptr;
+    value = BytecodeValue::makeNull();
   }
 
   // Return {value, done}
   auto resultObj = allocateObject();
   auto *obj = object(resultObj.id);
   (*obj)["value"] = value;
-  (*obj)["done"] = BytecodeValue(done);
-  return BytecodeValue(resultObj);
+  (*obj)["done"] = BytecodeValue::makeBool(done);
+  return BytecodeValue::makeObjectId(resultObj.id);
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {

@@ -10,10 +10,10 @@ namespace havel::stdlib {
 void registerMathModule(VMApi &api) {
   // Helper: convert BytecodeValue to double
   auto toNum = [](const BytecodeValue &v) -> double {
-    if (std::holds_alternative<int64_t>(v))
-      return static_cast<double>(std::get<int64_t>(v));
-    if (std::holds_alternative<double>(v))
-      return std::get<double>(v);
+    if (v.isInt())
+      return static_cast<double>(v.asInt());
+    if (v.isDouble())
+      return v.asDouble();
     return 0.0;
   };
 

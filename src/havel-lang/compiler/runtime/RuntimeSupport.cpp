@@ -26,8 +26,8 @@ void NativeFunctionBridge::registerFunction(const std::string& name,
                                             NativeFunctionVariadic func,
                                             int arity) {
   // Wrap variadic function
-  NativeFunction wrapper = [func](const std::vector<BytecodeValue>& args) -> BytecodeValue {
-    return func(std::span<const BytecodeValue>(args));
+  NativeFunction wrapper = [func](const std::vector<Value>& args) -> Value {
+    return func(std::span<const Value>(args));
   };
 
   RegisteredFunction reg;
@@ -38,8 +38,8 @@ void NativeFunctionBridge::registerFunction(const std::string& name,
   functions_[name] = reg;
 }
 
-BytecodeValue NativeFunctionBridge::call(const std::string& name,
-                                         const std::vector<BytecodeValue>& args) const {
+Value NativeFunctionBridge::call(const std::string& name,
+                                         const std::vector<Value>& args) const {
   auto it = functions_.find(name);
   if (it == functions_.end()) {
     COMPILER_THROW("Native function not found: " + name);
@@ -147,186 +147,124 @@ std::optional<RuntimeTypeSystem::TypeInfo> RuntimeTypeSystem::getTypeInfo(Type t
   return std::nullopt;
 }
 
-RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> Type {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      return Type::Null;
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return Type::Boolean;
-    } else if constexpr (std::is_same_v<T, int64_t>) {
-      return Type::Integer;
-    } else if constexpr (std::is_same_v<T, double>) {
-      return Type::Float;
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return Type::String;
-    } else if constexpr (std::is_same_v<T, ArrayRef>) {
-      return Type::Array;
-    } else if constexpr (std::is_same_v<T, ObjectRef>) {
-      return Type::Object;
-    } else if constexpr (std::is_same_v<T, FunctionObject>) {
-      return Type::Function;
-    } else if constexpr (std::is_same_v<T, ClosureRef>) {
-      return Type::Closure;
-    } else if constexpr (std::is_same_v<T, StructRef>) {
-      return Type::Struct;
-    } else if constexpr (std::is_same_v<T, ClassRef>) {
-      return Type::Class;
-    } else if constexpr (std::is_same_v<T, EnumRef>) {
-      return Type::Enum;
-    } else if constexpr (std::is_same_v<T, IteratorRef>) {
-      return Type::Iterator;
-    } else {
-      return Type::Null;
-    }
-  }, value);
+RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const Value& value) {
+  if (value.isNull()) return Type::Null;
+  if (value.isBool()) return Type::Boolean;
+  if (value.isInt()) return Type::Integer;
+  if (value.isDouble()) return Type::Float;
+  if (value.isStringValId()) return Type::String;
+  if (value.isArrayId()) return Type::Array;
+  if (value.isObjectId()) return Type::Object;
+  if (value.isFunctionObjId()) return Type::Function;
+  if (value.isClosureId()) return Type::Closure;
+  if (value.isStructId()) return Type::Struct;
+  if (value.isClassId()) return Type::Class;
+  if (value.isEnumId()) return Type::Enum;
+  if (value.isIteratorId()) return Type::Iterator;
+  return Type::Null;
 }
 
-std::string RuntimeTypeSystem::typeName(const BytecodeValue& value) {
+std::string RuntimeTypeSystem::typeName(const Value& value) {
   RuntimeTypeSystem rts;
   auto info = rts.getTypeInfo(getType(value));
   if (info) return info->name;
   return "unknown";
 }
 
-bool RuntimeTypeSystem::isTruthy(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> bool {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      return false;
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return val;
-    } else if constexpr (std::is_same_v<T, int64_t>) {
-      return val != 0;
-    } else if constexpr (std::is_same_v<T, double>) {
-      return val != 0.0;
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return !val.empty();
-    } else {
-      return true; // All reference types are truthy
-    }
-  }, value);
+bool RuntimeTypeSystem::isTruthy(const Value& value) {
+  if (value.isNull()) return false;
+  if (value.isBool()) return value.asBool();
+  if (value.isInt()) return value.asInt() != 0;
+  if (value.isDouble()) return value.asDouble() != 0.0;
+  if (value.isStringValId()) return true; // All strings are truthy
+  return true; // All reference types are truthy
 }
 
-bool RuntimeTypeSystem::isNull(const BytecodeValue& value) {
-  return std::holds_alternative<std::nullptr_t>(value);
+bool RuntimeTypeSystem::isNull(const Value& value) {
+  return value.isNull();
 }
 
-bool RuntimeTypeSystem::isNumber(const BytecodeValue& value) {
-  return std::holds_alternative<int64_t>(value) || std::holds_alternative<double>(value);
+bool RuntimeTypeSystem::isNumber(const Value& value) {
+  return value.isInt() || value.isDouble();
 }
 
-bool RuntimeTypeSystem::isInteger(const BytecodeValue& value) {
-  return std::holds_alternative<int64_t>(value);
+bool RuntimeTypeSystem::isInteger(const Value& value) {
+  return value.isInt();
 }
 
-bool RuntimeTypeSystem::isString(const BytecodeValue& value) {
-  return std::holds_alternative<std::string>(value);
+bool RuntimeTypeSystem::isString(const Value& value) {
+  return value.isStringValId();
 }
 
-bool RuntimeTypeSystem::isArray(const BytecodeValue& value) {
-  return std::holds_alternative<ArrayRef>(value);
+bool RuntimeTypeSystem::isArray(const Value& value) {
+  return value.isArrayId();
 }
 
-bool RuntimeTypeSystem::isObject(const BytecodeValue& value) {
-  return std::holds_alternative<ObjectRef>(value);
+bool RuntimeTypeSystem::isObject(const Value& value) {
+  return value.isObjectId();
 }
 
-bool RuntimeTypeSystem::isCallable(const BytecodeValue& value) {
+bool RuntimeTypeSystem::isCallable(const Value& value) {
   Type type = getType(value);
   RuntimeTypeSystem rts;
   auto info = rts.getTypeInfo(type);
   return info && info->isCallable;
 }
 
-std::optional<int64_t> RuntimeTypeSystem::toInteger(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> std::optional<int64_t> {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, int64_t>) {
-      return val;
-    } else if constexpr (std::is_same_v<T, double>) {
-      return static_cast<int64_t>(val);
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return val ? 1 : 0;
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      try {
-        return std::stoll(val);
-      } catch (...) {
-        return std::nullopt;
-      }
-    } else {
-      return std::nullopt;
-    }
-  }, value);
+std::optional<int64_t> RuntimeTypeSystem::toInteger(const Value& value) {
+  if (value.isInt()) return value.asInt();
+  if (value.isDouble()) return static_cast<int64_t>(value.asDouble());
+  if (value.isBool()) return value.asBool() ? 1 : 0;
+  // TODO: string pool lookup for string conversion
+  return std::nullopt;
 }
 
-std::optional<double> RuntimeTypeSystem::toFloat(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> std::optional<double> {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, double>) {
-      return val;
-    } else if constexpr (std::is_same_v<T, int64_t>) {
-      return static_cast<double>(val);
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      try {
-        return std::stod(val);
-      } catch (...) {
-        return std::nullopt;
-      }
-    } else {
-      return std::nullopt;
-    }
-  }, value);
+std::optional<double> RuntimeTypeSystem::toFloat(const Value& value) {
+  if (value.isDouble()) return value.asDouble();
+  if (value.isInt()) return static_cast<double>(value.asInt());
+  // TODO: string pool lookup for string conversion
+  return std::nullopt;
 }
 
-std::optional<std::string> RuntimeTypeSystem::toString(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> std::optional<std::string> {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, std::string>) {
-      return val;
-    } else if constexpr (std::is_same_v<T, int64_t>) {
-      return std::to_string(val);
-    } else if constexpr (std::is_same_v<T, double>) {
-      return std::to_string(val);
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return val ? "true" : "false";
-    } else if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      return "null";
-    } else {
-      return "<object>"; // Simplified
-    }
-  }, value);
+std::optional<std::string> RuntimeTypeSystem::toString(const Value& value) {
+  if (value.isInt()) return std::to_string(value.asInt());
+  if (value.isDouble()) return std::to_string(value.asDouble());
+  if (value.isBool()) return value.asBool() ? "true" : "false";
+  if (value.isNull()) return "null";
+  // TODO: string pool lookup for string conversion
+  return "<object>"; // Simplified
 }
 
-std::optional<bool> RuntimeTypeSystem::toBoolean(const BytecodeValue& value) {
+std::optional<bool> RuntimeTypeSystem::toBoolean(const Value& value) {
   return isTruthy(value);
 }
 
-BytecodeValue RuntimeTypeSystem::convert(const BytecodeValue& value, Type targetType) {
+Value RuntimeTypeSystem::convert(const Value& value, Type targetType) {
   Type sourceType = getType(value);
   if (sourceType == targetType) return value;
 
   switch (targetType) {
     case Type::Integer: {
       auto result = toInteger(value);
-      return result ? *result : BytecodeValue(nullptr);
+      return result ? *result : Value(nullptr);
     }
     case Type::Float: {
       auto result = toFloat(value);
-      return result ? *result : BytecodeValue(nullptr);
+      return result ? Value::makeDouble(*result) : Value::makeNull();
     }
     case Type::String: {
       auto result = toString(value);
-      return result ? *result : BytecodeValue(nullptr);
+      // TODO: string pool integration
+      return result ? Value::makeNull() : Value::makeNull();
     }
     case Type::Boolean:
-      return toBoolean(value).value_or(false);
+      return Value::makeBool(toBoolean(value).value_or(false));
     default:
-      return BytecodeValue(nullptr);
+      return Value::makeNull();
   }
 }
 
-bool RuntimeTypeSystem::checkType(const BytecodeValue& value, Type expected,
+bool RuntimeTypeSystem::checkType(const Value& value, Type expected,
                                   std::string& errorMessage) {
   Type actual = getType(value);
   RuntimeTypeSystem rts;
@@ -344,7 +282,7 @@ bool RuntimeTypeSystem::checkType(const BytecodeValue& value, Type expected,
   return false;
 }
 
-bool RuntimeTypeSystem::equals(const BytecodeValue& a, const BytecodeValue& b) {
+bool RuntimeTypeSystem::equals(const Value& a, const Value& b) {
   if (getType(a) != getType(b)) {
     // Try numeric comparison
     if (isNumber(a) && isNumber(b)) {
@@ -359,24 +297,26 @@ bool RuntimeTypeSystem::equals(const BytecodeValue& a, const BytecodeValue& b) {
     return false;
   }
 
-  return std::visit([&b](const auto& val) -> bool {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, double> ||
-                  std::is_same_v<T, bool> || std::is_same_v<T, std::string> ||
-                  std::is_same_v<T, std::nullptr_t> || std::is_same_v<T, uint32_t>) {
-      return val == std::get<T>(b);
-    } else if constexpr (std::is_same_v<T, FunctionObject>) {
-      return val.function_index == std::get<T>(b).function_index;
-    } else if constexpr (std::is_same_v<T, HostFunctionRef>) {
-      return val.name == std::get<T>(b).name;
-    } else {
-      // For reference types with id, compare IDs
-      return val.id == std::get<T>(b).id;
-    }
-  }, a);
+  // Same type - compare values directly
+  if (a.isNull()) return true; // null == null
+  if (a.isBool()) return a.asBool() == b.asBool();
+  if (a.isInt()) return a.asInt() == b.asInt();
+  if (a.isDouble()) return a.asDouble() == b.asDouble();
+  if (a.isStringValId()) return a.asStringValId() == b.asStringValId();
+  if (a.isFunctionObjId()) return a.asFunctionObjId() == b.asFunctionObjId();
+  if (a.isHostFuncId()) return a.asHostFuncId() == b.asHostFuncId();
+  if (a.isArrayId()) return a.asArrayId() == b.asArrayId();
+  if (a.isObjectId()) return a.asObjectId() == b.asObjectId();
+  if (a.isRangeId()) return a.asRangeId() == b.asRangeId();
+  if (a.isIteratorId()) return a.asIteratorId() == b.asIteratorId();
+  if (a.isStructId()) return a.asStructId() == b.asStructId();
+  if (a.isClassId()) return a.asClassId() == b.asClassId();
+  if (a.isEnumId()) return a.asEnumId() == b.asEnumId();
+  if (a.isClosureId()) return a.asClosureId() == b.asClosureId();
+  return false;
 }
 
-int RuntimeTypeSystem::compare(const BytecodeValue& a, const BytecodeValue& b) {
+int RuntimeTypeSystem::compare(const Value& a, const Value& b) {
   if (!isNumber(a) || !isNumber(b)) {
     return 0; // Can't compare
   }
@@ -390,26 +330,23 @@ int RuntimeTypeSystem::compare(const BytecodeValue& a, const BytecodeValue& b) {
   return 0;
 }
 
-std::string RuntimeTypeSystem::stringify(const BytecodeValue& value) {
+std::string RuntimeTypeSystem::stringify(const Value& value) {
   auto result = toString(value);
   return result ? *result : "<unknown>";
 }
 
-size_t RuntimeTypeSystem::hash(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> size_t {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, int64_t>) {
-      return std::hash<int64_t>{}(val);
-    } else if constexpr (std::is_same_v<T, double>) {
-      return std::hash<double>{}(val);
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return std::hash<bool>{}(val);
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return std::hash<std::string>{}(val);
-    } else {
-      return 0;
-    }
-  }, value);
+size_t RuntimeTypeSystem::hash(const Value& value) {
+  if (value.isInt()) return std::hash<int64_t>{}(value.asInt());
+  if (value.isDouble()) return std::hash<double>{}(value.asDouble());
+  if (value.isBool()) return std::hash<bool>{}(value.asBool());
+  if (value.isStringValId()) return std::hash<uint32_t>{}(value.asStringValId());
+  if (value.isNull()) return 0;
+  // For reference types, hash the ID
+  if (value.isArrayId()) return std::hash<uint32_t>{}(value.asArrayId());
+  if (value.isObjectId()) return std::hash<uint32_t>{}(value.asObjectId());
+  if (value.isFunctionObjId()) return std::hash<uint32_t>{}(value.asFunctionObjId());
+  if (value.isHostFuncId()) return std::hash<uint32_t>{}(value.asHostFuncId());
+  return 0;
 }
 
 bool RuntimeTypeSystem::isSubtype(Type subtype, Type supertype) const {
@@ -451,7 +388,7 @@ void IterableFactory::registerIterator(RuntimeTypeSystem::Type type, IteratorCre
   creators_[type] = creator;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const BytecodeValue& value) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const Value& value) {
   RuntimeTypeSystem::Type type = RuntimeTypeSystem::getType(value);
 
   auto it = creators_.find(type);
@@ -471,7 +408,7 @@ std::unique_ptr<IteratorProtocol> IterableFactory::createIterator(const Bytecode
   return nullptr;
 }
 
-bool IterableFactory::isIterable(const BytecodeValue& value) const {
+bool IterableFactory::isIterable(const Value& value) const {
   RuntimeTypeSystem::Type type = RuntimeTypeSystem::getType(value);
 
   if (creators_.count(type) > 0) return true;
@@ -480,25 +417,25 @@ bool IterableFactory::isIterable(const BytecodeValue& value) const {
   return info && info->isIterable;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createArrayIterator(const BytecodeValue& array) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createArrayIterator(const Value& array) {
   (void)array;
   // TODO: Implement array iterator
   return nullptr;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createObjectIterator(const BytecodeValue& object) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createObjectIterator(const Value& object) {
   (void)object;
   // TODO: Implement object iterator
   return nullptr;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createRangeIterator(const BytecodeValue& range) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createRangeIterator(const Value& range) {
   (void)range;
   // TODO: Implement range iterator
   return nullptr;
 }
 
-std::unique_ptr<IteratorProtocol> IterableFactory::createStringIterator(const BytecodeValue& string) {
+std::unique_ptr<IteratorProtocol> IterableFactory::createStringIterator(const Value& string) {
   (void)string;
   // TODO: Implement string iterator
   return nullptr;
@@ -518,7 +455,7 @@ void ExceptionHandler::popTryBlock() {
   }
 }
 
-std::optional<uint32_t> ExceptionHandler::findHandler(const BytecodeValue& exception,
+std::optional<uint32_t> ExceptionHandler::findHandler(const Value& exception,
                                                        uint32_t currentAddress) const {
   (void)exception;
 
@@ -553,7 +490,7 @@ void ExceptionHandler::unwindTo(uint32_t targetDepth) {
   }
 }
 
-void ExceptionHandler::setPendingException(const BytecodeValue& ex) {
+void ExceptionHandler::setPendingException(const Value& ex) {
   pendingException_ = ex;
 }
 
@@ -561,7 +498,7 @@ bool ExceptionHandler::hasPendingException() const {
   return pendingException_.has_value();
 }
 
-BytecodeValue ExceptionHandler::getPendingException() const {
+Value ExceptionHandler::getPendingException() const {
   return pendingException_.value_or(nullptr);
 }
 
@@ -573,7 +510,7 @@ void ExceptionHandler::clearPendingException() {
 // ValueSerializer Implementation
 // ============================================================================
 
-std::string ValueSerializer::serialize(const BytecodeValue& value, Format format) {
+std::string ValueSerializer::serialize(const Value& value, Format format) {
   switch (format) {
     case Format::Binary:
       return std::string(serializeBinary(value).begin(), serializeBinary(value).end());
@@ -586,45 +523,44 @@ std::string ValueSerializer::serialize(const BytecodeValue& value, Format format
   return "";
 }
 
-std::vector<uint8_t> ValueSerializer::serializeBinary(const BytecodeValue& value) {
+std::vector<uint8_t> ValueSerializer::serializeBinary(const Value& value) {
   std::vector<uint8_t> result;
 
   // Simple binary format: type tag + data
-  std::visit([&result](const auto& val) {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      result.push_back(0);
-    } else if constexpr (std::is_same_v<T, bool>) {
-      result.push_back(1);
-      result.push_back(val ? 1 : 0);
-    } else if constexpr (std::is_same_v<T, int64_t>) {
-      result.push_back(2);
-      for (int i = 0; i < 8; ++i) {
-        result.push_back(static_cast<uint8_t>((val >> (i * 8)) & 0xFF));
-      }
-    } else if constexpr (std::is_same_v<T, double>) {
-      result.push_back(3);
-      // Simplified - just write bytes
-      const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&val);
-      result.insert(result.end(), bytes, bytes + sizeof(double));
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      result.push_back(4);
-      uint32_t len = val.size();
-      for (int i = 0; i < 4; ++i) {
-        result.push_back(static_cast<uint8_t>((len >> (i * 8)) & 0xFF));
-      }
-      result.insert(result.end(), val.begin(), val.end());
+  if (value.isNull()) {
+    result.push_back(0);
+  } else if (value.isBool()) {
+    result.push_back(1);
+    result.push_back(value.asBool() ? 1 : 0);
+  } else if (value.isInt()) {
+    result.push_back(2);
+    int64_t val = value.asInt();
+    for (int i = 0; i < 8; ++i) {
+      result.push_back(static_cast<uint8_t>((val >> (i * 8)) & 0xFF));
     }
-  }, value);
+  } else if (value.isDouble()) {
+    result.push_back(3);
+    // Simplified - just write bytes
+    double val = value.asDouble();
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&val);
+    result.insert(result.end(), bytes, bytes + sizeof(double));
+  } else if (value.isStringValId()) {
+    result.push_back(4);
+    // TODO: string pool integration - write string ID
+    uint32_t len = 0;
+    for (int i = 0; i < 4; ++i) {
+      result.push_back(static_cast<uint8_t>((len >> (i * 8)) & 0xFF));
+    }
+  }
 
   return result;
 }
 
-std::string ValueSerializer::serializeJSON(const BytecodeValue& value) {
+std::string ValueSerializer::serializeJSON(const Value& value) {
   return valueToJson(value);
 }
 
-std::optional<BytecodeValue> ValueSerializer::deserialize(const std::string& data,
+std::optional<Value> ValueSerializer::deserialize(const std::string& data,
                                                            Format format) {
   switch (format) {
     case Format::Binary:
@@ -637,7 +573,7 @@ std::optional<BytecodeValue> ValueSerializer::deserialize(const std::string& dat
   return std::nullopt;
 }
 
-std::optional<BytecodeValue> ValueSerializer::deserializeBinary(std::span<const uint8_t> data) {
+std::optional<Value> ValueSerializer::deserializeBinary(std::span<const uint8_t> data) {
   if (data.empty()) return std::nullopt;
 
   uint8_t type = data[0];
@@ -673,14 +609,15 @@ std::optional<BytecodeValue> ValueSerializer::deserializeBinary(std::span<const 
         }
         if (data.size() < 5 + len) return std::nullopt;
         std::string str(data.begin() + 5, data.begin() + 5 + len);
-        return str;
+        // TODO: string pool integration
+        return Value::makeNull();
       }
     default:
       return std::nullopt;
   }
 }
 
-std::optional<BytecodeValue> ValueSerializer::deserializeJSON(const std::string& json) {
+std::optional<Value> ValueSerializer::deserializeJSON(const std::string& json) {
   return jsonToValue(json);
 }
 
@@ -695,26 +632,19 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
   return std::nullopt;
 }
 
-std::string ValueSerializer::valueToJson(const BytecodeValue& value) {
-  return std::visit([](const auto& val) -> std::string {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      return "null";
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return val ? "true" : "false";
-    } else if constexpr (std::is_same_v<T, int64_t>) {
-      return std::to_string(val);
-    } else if constexpr (std::is_same_v<T, double>) {
-      return std::to_string(val);
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return "\"" + val + "\"";
-    } else {
-      return "null";
-    }
-  }, value);
+std::string ValueSerializer::valueToJson(const Value& value) {
+  if (value.isNull()) return "null";
+  if (value.isBool()) return value.asBool() ? "true" : "false";
+  if (value.isInt()) return std::to_string(value.asInt());
+  if (value.isDouble()) return std::to_string(value.asDouble());
+  if (value.isStringValId()) {
+    // TODO: string pool integration
+    return "\"<string>\"";
+  }
+  return "null";
 }
 
-BytecodeValue ValueSerializer::jsonToValue(const std::string& json) {
+Value ValueSerializer::jsonToValue(const std::string& json) {
   // Simplified JSON parsing
   if (json == "null") return nullptr;
   if (json == "true") return true;
@@ -736,7 +666,8 @@ BytecodeValue ValueSerializer::jsonToValue(const std::string& json) {
 
   // String (remove quotes)
   if (json.size() >= 2 && json.front() == '"' && json.back() == '"') {
-    return json.substr(1, json.size() - 2);
+    // TODO: string pool integration
+    return Value::makeNull();
   }
 
   return nullptr;

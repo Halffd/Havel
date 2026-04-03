@@ -755,6 +755,7 @@ if(ENABLE_HAVEL_LANG)
 
     target_link_libraries(havel-bytecode-smoke PRIVATE
         spdlog::spdlog
+        havel_lang
     )
 
     enable_testing()

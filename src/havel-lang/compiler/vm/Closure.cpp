@@ -10,20 +10,20 @@ namespace havel::compiler {
 Upvalue::Upvalue(uint32_t sourceIndex, Type type, bool isConst)
     : sourceIndex_(sourceIndex), type_(type), isConst_(isConst) {}
 
-BytecodeValue Upvalue::getValue() const {
+Value Upvalue::getValue() const {
   if (gcCell_) {
     return gcCell_->get();
   }
   return nullptr;
 }
 
-void Upvalue::setValue(const BytecodeValue& value) {
+void Upvalue::setValue(const Value& value) {
   if (gcCell_) {
     gcCell_->set(value);
   }
 }
 
-void Upvalue::close(const BytecodeValue& value) {
+void Upvalue::close(const Value& value) {
   if (gcCell_) {
     gcCell_->close(value);
   }
@@ -47,7 +47,7 @@ Closure Closure::create(
     uint32_t functionIndex,
     const std::vector<UpvalueDescriptor>& descriptors,
     const std::vector<std::shared_ptr<GCHeap::UpvalueCell>>& parentUpvalues,
-    const std::vector<BytecodeValue>& locals) {
+    const std::vector<Value>& locals) {
 
   std::vector<Upvalue> upvalues;
   upvalues.reserve(descriptors.size());
@@ -90,11 +90,11 @@ const Upvalue& Closure::getUpvalue(size_t index) const {
   return upvalues_[index];
 }
 
-BytecodeValue Closure::getUpvalueValue(size_t index) const {
+Value Closure::getUpvalueValue(size_t index) const {
   return getUpvalue(index).getValue();
 }
 
-void Closure::setUpvalueValue(size_t index, const BytecodeValue& value) {
+void Closure::setUpvalueValue(size_t index, const Value& value) {
   getUpvalue(index).setValue(value);
 }
 
@@ -111,8 +111,8 @@ std::optional<size_t> Closure::findUpvalueIndex(uint32_t sourceIndex) const {
   return std::nullopt;
 }
 
-BytecodeValue Closure::toValue(uint32_t closureId) const {
-  return ClosureRef{.id = closureId};
+Value Closure::toValue(uint32_t closureId) const {
+  return Value::makeClosureId(closureId);
 }
 
 // ============================================================================
@@ -145,7 +145,7 @@ Closure ClosureFactory::createWithUpvalues(
 UpvalueManager::UpvalueManager(GCHeap& heap) : heap_(heap) {}
 
 std::shared_ptr<GCHeap::UpvalueCell> UpvalueManager::openUpvalue(
-    uint32_t localIndex, const BytecodeValue& value) {
+    uint32_t localIndex, const Value& value) {
   auto it = openUpvalues_.find(localIndex);
   if (it != openUpvalues_.end()) {
     return it->second;
@@ -157,7 +157,7 @@ std::shared_ptr<GCHeap::UpvalueCell> UpvalueManager::openUpvalue(
 }
 
 void UpvalueManager::closeUpvalues(uint32_t localsBase, uint32_t localsEnd,
-                                     const std::vector<BytecodeValue>& locals) {
+                                     const std::vector<Value>& locals) {
   std::vector<uint32_t> toClose;
 
   for (const auto& [index, cell] : openUpvalues_) {
@@ -169,16 +169,16 @@ void UpvalueManager::closeUpvalues(uint32_t localsBase, uint32_t localsEnd,
   for (uint32_t index : toClose) {
     auto it = openUpvalues_.find(index);
     if (it != openUpvalues_.end()) {
-      BytecodeValue value = (index < locals.size()) ? locals[index] : nullptr;
+      Value value = (index < locals.size()) ? locals[index] : nullptr;
       it->second->close(value);
       openUpvalues_.erase(it);
     }
   }
 }
 
-void UpvalueManager::closeAllUpvalues(const std::vector<BytecodeValue>& locals) {
+void UpvalueManager::closeAllUpvalues(const std::vector<Value>& locals) {
   for (const auto& [index, cell] : openUpvalues_) {
-    BytecodeValue value = (index < locals.size()) ? locals[index] : nullptr;
+    Value value = (index < locals.size()) ? locals[index] : nullptr;
     cell->close(value);
   }
   openUpvalues_.clear();

@@ -492,25 +492,20 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       options.vm_override = &tempVm;
 
       // Add pipeline function aliases for lexical resolution (directly to options)
-      options.host_functions.insert({"upper", [](const std::vector<havel::compiler::BytecodeValue>& args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0])) return havel::compiler::BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
-        std::transform(s.begin(), s.end(), s.begin(), ::toupper);
-        return havel::compiler::BytecodeValue(s);
+      options.host_functions.insert({"upper", [](const std::vector<havel::compiler::Value>& args) {
+        if (args.empty() || !args[0].isStringValId()) return havel::compiler::Value::makeNull();
+        // TODO: Get string from constant pool by index
+        return havel::compiler::Value::makeNull();
       }});
-      options.host_functions.insert({"lower", [](const std::vector<havel::compiler::BytecodeValue>& args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0])) return havel::compiler::BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-        return havel::compiler::BytecodeValue(s);
+      options.host_functions.insert({"lower", [](const std::vector<havel::compiler::Value>& args) {
+        if (args.empty() || !args[0].isStringValId()) return havel::compiler::Value::makeNull();
+        // TODO: Get string from constant pool by index
+        return havel::compiler::Value::makeNull();
       }});
-      options.host_functions.insert({"trim", [](const std::vector<havel::compiler::BytecodeValue>& args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0])) return havel::compiler::BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
-        size_t start = s.find_first_not_of(" \t\n\r");
-        if (start == std::string::npos) return havel::compiler::BytecodeValue(std::string(""));
-        size_t end = s.find_last_not_of(" \t\n\r");
-        return havel::compiler::BytecodeValue(s.substr(start, end - start + 1));
+      options.host_functions.insert({"trim", [](const std::vector<havel::compiler::Value>& args) {
+        if (args.empty() || !args[0].isStringValId()) return havel::compiler::Value::makeNull();
+        // TODO: Get string from constant pool by index
+        return havel::compiler::Value::makeNull();
       }});
       options.host_global_names.insert("upper");
       options.host_global_names.insert("lower");

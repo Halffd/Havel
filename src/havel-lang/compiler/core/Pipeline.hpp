@@ -28,7 +28,7 @@ struct PipelineOptions {
 };
 
 struct BytecodeSmokeResult {
-  BytecodeValue return_value = nullptr;
+  Value return_value = nullptr;
   CompileSnapshot snapshot;
 };
 

@@ -1,6 +1,6 @@
 /*
  * ObjectModule.hpp - Object manipulation stdlib for VM with method chaining
- * Pure VM implementation using BytecodeValue
+ * Pure VM implementation using Value
  */
 #pragma once
 #include "havel-lang/compiler/vm/VMApi.hpp"

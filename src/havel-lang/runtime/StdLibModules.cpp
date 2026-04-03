@@ -5,6 +5,8 @@
 // Host services (File, Process, Timer, Hotkey, Window, Clipboard, IO)
 // are exposed through HostBridge, NOT through stdlib.
 
+#include "../../modules/ModuleRegistry.hpp"
+#include "../../modules/SingleFileMathModule.cpp"
 #include "../../modules/automation/AutomationModule.hpp"
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
@@ -36,6 +38,9 @@ namespace havel {
 void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Create VMApi from bridge's VM - store as shared to ensure lifetime
   static auto api = std::make_shared<compiler::VMApi>(*bridge.context().vm);
+
+  // Register all auto-registered single-file modules first
+  REGISTER_ALL_MODULES(*api);
 
   // Register PURE stdlib modules (no OS access)
   stdlib::registerMathModule(*api);    // MathModule
@@ -119,31 +124,25 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Pipeline function aliases - add to both host_functions and
   // host_global_names
   bridge.options().host_functions.insert(
-      {"upper", [](const std::vector<compiler::BytecodeValue> &args) {
-         if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-           return compiler::BytecodeValue(nullptr);
-         std::string s = std::get<std::string>(args[0]);
-         std::transform(s.begin(), s.end(), s.begin(), ::toupper);
-         return compiler::BytecodeValue(s);
+      {"upper", [](const std::vector<compiler::Value> &args) {
+         if (args.empty() || !args[0].isStringValId())
+           return compiler::Value::makeNull();
+         // TODO: string pool lookup
+         return compiler::Value::makeNull();
        }});
   bridge.options().host_functions.insert(
-      {"lower", [](const std::vector<compiler::BytecodeValue> &args) {
-         if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-           return compiler::BytecodeValue(nullptr);
-         std::string s = std::get<std::string>(args[0]);
-         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-         return compiler::BytecodeValue(s);
+      {"lower", [](const std::vector<compiler::Value> &args) {
+         if (args.empty() || !args[0].isStringValId())
+           return compiler::Value::makeNull();
+         // TODO: string pool lookup
+         return compiler::Value::makeNull();
        }});
   bridge.options().host_functions.insert(
-      {"trim", [](const std::vector<compiler::BytecodeValue> &args) {
-         if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-           return compiler::BytecodeValue(nullptr);
-         std::string s = std::get<std::string>(args[0]);
-         size_t start = s.find_first_not_of(" \t\n\r");
-         if (start == std::string::npos)
-           return compiler::BytecodeValue(std::string(""));
-         size_t end = s.find_last_not_of(" \t\n\r");
-         return compiler::BytecodeValue(s.substr(start, end - start + 1));
+      {"trim", [](const std::vector<compiler::Value> &args) {
+         if (args.empty() || !args[0].isStringValId())
+           return compiler::Value::makeNull();
+         // TODO: string pool lookup
+         return compiler::Value::makeNull();
        }});
   bridge.options().host_global_names.insert("upper");
   bridge.options().host_global_names.insert("lower");

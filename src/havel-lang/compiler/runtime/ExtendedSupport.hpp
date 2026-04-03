@@ -142,8 +142,8 @@ public:
 
     // Old VM interface methods
     void execute(const BytecodeChunk& chunk);
-    void pushValue(const BytecodeValue& value);
-    BytecodeValue popValue();
+    void pushValue(const Value& value);
+    Value popValue();
 
   private:
     VMExecutionContext& newVM_;

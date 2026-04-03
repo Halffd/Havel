@@ -92,9 +92,9 @@ public:
   const Config& getConfig() const { return config_; }
 
   // Collection control
-  void maybeCollect(const std::vector<BytecodeValue>& roots);
-  void collect(const std::vector<BytecodeValue>& roots);
-  void forceFullCollect(const std::vector<BytecodeValue>& roots);
+  void maybeCollect(const std::vector<Value>& roots);
+  void collect(const std::vector<Value>& roots);
+  void forceFullCollect(const std::vector<Value>& roots);
 
   // Object registration
   uint32_t registerObject(std::unique_ptr<GCObject> obj);
@@ -133,11 +133,11 @@ private:
   uint32_t nextObjectId_ = 1;
 
   // Mark-sweep implementation
-  void mark(const std::vector<BytecodeValue>& roots);
+  void mark(const std::vector<Value>& roots);
   void markObject(uint32_t id);
   void sweep();
-  void markRoots(const std::vector<BytecodeValue>& roots);
-  void markValue(const BytecodeValue& value);
+  void markRoots(const std::vector<Value>& roots);
+  void markValue(const Value& value);
 };
 
 // ============================================================================
@@ -186,7 +186,7 @@ struct GCString : GCObject {
 // GCArray - Array object for GC heap
 // ============================================================================
 struct GCArray : GCObject {
-  std::vector<BytecodeValue> elements;
+  std::vector<Value> elements;
 
   GCArray() : GCObject(GCObject::Type::Array) {}
 
@@ -198,7 +198,7 @@ struct GCArray : GCObject {
 // GCObjectMap - Object/map for GC heap
 // ============================================================================
 struct GCObjectMap : GCObject {
-  std::unordered_map<std::string, BytecodeValue> properties;
+  std::unordered_map<std::string, Value> properties;
 
   GCObjectMap() : GCObject(GCObject::Type::Object) {}
 

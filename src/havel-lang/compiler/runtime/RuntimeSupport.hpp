@@ -20,14 +20,14 @@ namespace havel::compiler {
 // ============================================================================
 class NativeFunctionBridge {
 public:
-  using NativeFunction = std::function<BytecodeValue(const std::vector<BytecodeValue>&)>;
-  using NativeFunctionVariadic = std::function<BytecodeValue(std::span<const BytecodeValue>)>;
+  using NativeFunction = std::function<Value(const std::vector<Value>&)>;
+  using NativeFunctionVariadic = std::function<Value(std::span<const Value>)>;
 
   // Function traits for automatic type conversion
   template<typename T>
   struct TypeTraits {
-    static T fromValue(const BytecodeValue& value);
-    static BytecodeValue toValue(const T& value);
+    static T fromValue(const Value& value);
+    static Value toValue(const T& value);
     static const char* name();
   };
 
@@ -43,7 +43,7 @@ public:
     (void)(info.paramTypeNames.push_back(typeid(ArgTypes).name()), ...);
 
     // Wrap the native function
-    NativeFunction wrapper = [this, func](const std::vector<BytecodeValue>& args) -> BytecodeValue {
+    NativeFunction wrapper = [this, func](const std::vector<Value>& args) -> Value {
       if (args.size() != sizeof...(ArgTypes)) {
         COMPILER_THROW("Argument count mismatch");
       }
@@ -58,7 +58,7 @@ public:
   void registerFunction(const std::string& name, NativeFunctionVariadic func, int arity = -1);
 
   // Call a native function
-  BytecodeValue call(const std::string& name, const std::vector<BytecodeValue>& args) const;
+  Value call(const std::string& name, const std::vector<Value>& args) const;
 
   // Check if function exists
   bool hasFunction(const std::string& name) const;
@@ -93,13 +93,13 @@ private:
 
   // Template helpers for automatic binding
   template<typename ReturnType, typename... ArgTypes, size_t... Indices>
-  BytecodeValue invokeWithArgs(ReturnType (*func)(ArgTypes...),
-                               const std::vector<BytecodeValue>& args,
+  Value invokeWithArgs(ReturnType (*func)(ArgTypes...),
+                               const std::vector<Value>& args,
                                std::index_sequence<Indices...>) const {
     // Convert and call - expand parameter pack using Indices
     if constexpr (std::is_void_v<ReturnType>) {
       func(TypeTraits<ArgTypes>::fromValue(args[Indices])...);
-      return nullptr;
+      return Value::makeNull();
     } else {
       ReturnType result = func(TypeTraits<ArgTypes>::fromValue(args[Indices])...);
       return TypeTraits<ReturnType>::toValue(result);
@@ -112,25 +112,25 @@ private:
 // void
 template<>
 struct NativeFunctionBridge::TypeTraits<void> {
-  static void fromValue(const BytecodeValue&) {}
-  static BytecodeValue toValue() { return nullptr; }
+  static void fromValue(const Value&) {}
+  static Value toValue() { return Value::makeNull(); }
   static const char* name() { return "void"; }
 };
 
 // int
 template<>
-inline int NativeFunctionBridge::TypeTraits<int>::fromValue(const BytecodeValue& value) {
-  if (std::holds_alternative<int64_t>(value)) {
-    return static_cast<int>(std::get<int64_t>(value));
+inline int NativeFunctionBridge::TypeTraits<int>::fromValue(const Value& value) {
+  if (value.isInt()) {
+    return static_cast<int>(value.asInt());
   }
-  if (std::holds_alternative<double>(value)) {
-    return static_cast<int>(std::get<double>(value));
+  if (value.isDouble()) {
+    return static_cast<int>(value.asDouble());
   }
   return 0;
 }
 
 template<>
-inline BytecodeValue NativeFunctionBridge::TypeTraits<int>::toValue(const int& value) {
+inline Value NativeFunctionBridge::TypeTraits<int>::toValue(const int& value) {
   return static_cast<int64_t>(value);
 }
 
@@ -179,35 +179,35 @@ public:
   std::optional<TypeInfo> getTypeInfo(Type type) const;
 
   // Type checking
-  static Type getType(const BytecodeValue& value);
-  static std::string typeName(const BytecodeValue& value);
-  static bool isTruthy(const BytecodeValue& value);
-  static bool isNull(const BytecodeValue& value);
-  static bool isNumber(const BytecodeValue& value);
-  static bool isInteger(const BytecodeValue& value);
-  static bool isString(const BytecodeValue& value);
-  static bool isArray(const BytecodeValue& value);
-  static bool isObject(const BytecodeValue& value);
-  static bool isCallable(const BytecodeValue& value);
+  static Type getType(const Value& value);
+  static std::string typeName(const Value& value);
+  static bool isTruthy(const Value& value);
+  static bool isNull(const Value& value);
+  static bool isNumber(const Value& value);
+  static bool isInteger(const Value& value);
+  static bool isString(const Value& value);
+  static bool isArray(const Value& value);
+  static bool isObject(const Value& value);
+  static bool isCallable(const Value& value);
 
   // Type coercion
-  static std::optional<int64_t> toInteger(const BytecodeValue& value);
-  static std::optional<double> toFloat(const BytecodeValue& value);
-  static std::optional<std::string> toString(const BytecodeValue& value);
-  static std::optional<bool> toBoolean(const BytecodeValue& value);
+  static std::optional<int64_t> toInteger(const Value& value);
+  static std::optional<double> toFloat(const Value& value);
+  static std::optional<std::string> toString(const Value& value);
+  static std::optional<bool> toBoolean(const Value& value);
 
   // Type conversion
-  static BytecodeValue convert(const BytecodeValue& value, Type targetType);
+  static Value convert(const Value& value, Type targetType);
 
   // Type checking with error
-  static bool checkType(const BytecodeValue& value, Type expected,
+  static bool checkType(const Value& value, Type expected,
                        std::string& errorMessage);
 
   // Generic operations
-  static bool equals(const BytecodeValue& a, const BytecodeValue& b);
-  static int compare(const BytecodeValue& a, const BytecodeValue& b);
-  static std::string stringify(const BytecodeValue& value);
-  static size_t hash(const BytecodeValue& value);
+  static bool equals(const Value& a, const Value& b);
+  static int compare(const Value& a, const Value& b);
+  static std::string stringify(const Value& value);
+  static size_t hash(const Value& value);
 
   // Type hierarchy
   bool isSubtype(Type subtype, Type supertype) const;
@@ -229,15 +229,15 @@ public:
 
   // Iterator operations
   virtual bool hasNext() const = 0;
-  virtual BytecodeValue next() = 0;
-  virtual BytecodeValue peek() const = 0;
+  virtual Value next() = 0;
+  virtual Value peek() const = 0;
 
   // Reset if possible
   virtual bool canReset() const { return false; }
   virtual void reset() {}
 
   // Get underlying value
-  virtual BytecodeValue getIterable() const = 0;
+  virtual Value getIterable() const = 0;
 };
 
 // ============================================================================
@@ -245,18 +245,18 @@ public:
 // ============================================================================
 class IterableFactory {
 public:
-  using IteratorCreator = std::function<std::unique_ptr<IteratorProtocol>(const BytecodeValue&)>;
+  using IteratorCreator = std::function<std::unique_ptr<IteratorProtocol>(const Value&)>;
 
   void registerIterator(RuntimeTypeSystem::Type type, IteratorCreator creator);
 
-  std::unique_ptr<IteratorProtocol> createIterator(const BytecodeValue& value);
-  bool isIterable(const BytecodeValue& value) const;
+  std::unique_ptr<IteratorProtocol> createIterator(const Value& value);
+  bool isIterable(const Value& value) const;
 
   // Standard iterators
-  static std::unique_ptr<IteratorProtocol> createArrayIterator(const BytecodeValue& array);
-  static std::unique_ptr<IteratorProtocol> createObjectIterator(const BytecodeValue& object);
-  static std::unique_ptr<IteratorProtocol> createRangeIterator(const BytecodeValue& range);
-  static std::unique_ptr<IteratorProtocol> createStringIterator(const BytecodeValue& string);
+  static std::unique_ptr<IteratorProtocol> createArrayIterator(const Value& array);
+  static std::unique_ptr<IteratorProtocol> createObjectIterator(const Value& object);
+  static std::unique_ptr<IteratorProtocol> createRangeIterator(const Value& range);
+  static std::unique_ptr<IteratorProtocol> createStringIterator(const Value& string);
 
 private:
   std::unordered_map<RuntimeTypeSystem::Type, IteratorCreator> creators_;
@@ -285,7 +285,7 @@ public:
   void popTryBlock();
 
   // Exception handling
-  std::optional<uint32_t> findHandler(const BytecodeValue& exception,
+  std::optional<uint32_t> findHandler(const Value& exception,
                                        uint32_t currentAddress) const;
   bool hasFinallyBlock() const;
   uint32_t getFinallyAddress() const;
@@ -295,14 +295,14 @@ public:
   uint32_t currentStackDepth() const { return tryBlocks_.size(); }
 
   // Rethrow
-  void setPendingException(const BytecodeValue& ex);
+  void setPendingException(const Value& ex);
   bool hasPendingException() const;
-  BytecodeValue getPendingException() const;
+  Value getPendingException() const;
   void clearPendingException();
 
 private:
   std::vector<TryBlock> tryBlocks_;
-  std::optional<BytecodeValue> pendingException_;
+  std::optional<Value> pendingException_;
 };
 
 // ============================================================================
@@ -317,23 +317,23 @@ public:
   };
 
   // Serialization
-  std::string serialize(const BytecodeValue& value, Format format = Format::Binary);
-  std::vector<uint8_t> serializeBinary(const BytecodeValue& value);
-  std::string serializeJSON(const BytecodeValue& value);
+  std::string serialize(const Value& value, Format format = Format::Binary);
+  std::vector<uint8_t> serializeBinary(const Value& value);
+  std::string serializeJSON(const Value& value);
 
   // Deserialization
-  std::optional<BytecodeValue> deserialize(const std::string& data,
+  std::optional<Value> deserialize(const std::string& data,
                                               Format format = Format::Binary);
-  std::optional<BytecodeValue> deserializeBinary(std::span<const uint8_t> data);
-  std::optional<BytecodeValue> deserializeJSON(const std::string& json);
+  std::optional<Value> deserializeBinary(std::span<const uint8_t> data);
+  std::optional<Value> deserializeJSON(const std::string& json);
 
   // Chunk serialization
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk);
   std::optional<BytecodeChunk> deserializeChunk(std::span<const uint8_t> data);
 
 private:
-  std::string valueToJson(const BytecodeValue& value);
-  BytecodeValue jsonToValue(const std::string& json);
+  std::string valueToJson(const Value& value);
+  Value jsonToValue(const std::string& json);
 };
 
 } // namespace havel::compiler

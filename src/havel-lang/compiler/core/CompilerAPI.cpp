@@ -168,9 +168,10 @@ CompileResult CompilerDriver::executeCompilation(const std::string& source,
 
   // Execute if requested
   if (result.success && options_.executeImmediately && result.chunk) {
-    std::vector<BytecodeValue> args;
+    std::vector<Value> args;
     for (const auto& arg : options_.entryPointArgs) {
-      args.push_back(arg); // Simplified
+      (void)arg;
+      args.push_back(Value::makeNull()); // TODO: string pool integration
     }
     result.executionResult = execute(*result.chunk, "main", args);
   }
@@ -182,9 +183,9 @@ CompileResult CompilerDriver::executeCompilation(const std::string& source,
   return result;
 }
 
-BytecodeValue CompilerDriver::execute(const BytecodeChunk& chunk,
+Value CompilerDriver::execute(const BytecodeChunk& chunk,
                                        const std::string& functionName,
-                                       const std::vector<BytecodeValue>& args) {
+                                       const std::vector<Value>& args) {
   stats_.executions++;
   auto start = std::chrono::steady_clock::now();
 
@@ -333,7 +334,7 @@ bool BytecodeVerifier::checkJumpTargets(const BytecodeFunction& function) {
         instr.opcode == OpCode::JUMP_IF_TRUE ||
         instr.opcode == OpCode::JUMP_IF_FALSE) {
       if (!instr.operands.empty()) {
-        uint32_t target = std::get<uint32_t>(instr.operands[0]);
+        uint32_t target = static_cast<uint32_t>(instr.operands[0].asInt());
         if (target >= function.instructions.size()) {
           return false;
         }
@@ -727,7 +728,7 @@ void MemoryPool<T>::grow() {
 
 // Explicit instantiations
 template class MemoryPool<ast::ASTNode>;
-template class MemoryPool<BytecodeValue>;
+template class MemoryPool<Value>;
 template class MemoryPool<Instruction>;
 
 // Explicit template instantiations for CompilerDriver

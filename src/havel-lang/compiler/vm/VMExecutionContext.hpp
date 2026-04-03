@@ -78,14 +78,14 @@ public:
   explicit VMStack(size_t initialCapacity);
 
   // Stack operations
-  void push(const BytecodeValue& value);
-  BytecodeValue pop();
-  BytecodeValue& peek(size_t distance = 0);
-  const BytecodeValue& peek(size_t distance = 0) const;
+  void push(const Value& value);
+  Value pop();
+  Value& peek(size_t distance = 0);
+  const Value& peek(size_t distance = 0) const;
 
   // Bulk operations
-  void pushMultiple(const std::vector<BytecodeValue>& values);
-  std::vector<BytecodeValue> popMultiple(size_t count);
+  void pushMultiple(const std::vector<Value>& values);
+  std::vector<Value> popMultiple(size_t count);
 
   // Stack inspection
   bool isEmpty() const { return stack_.empty(); }
@@ -97,10 +97,10 @@ public:
   }
 
   // Get all values for GC roots
-  std::vector<BytecodeValue> getValues() const;
+  std::vector<Value> getValues() const;
 
 private:
-  std::stack<BytecodeValue> stack_;
+  std::stack<Value> stack_;
 };
 
 // ============================================================================
@@ -112,9 +112,9 @@ public:
   explicit VMLocals(size_t initialCapacity);
 
   // Slot operations
-  BytecodeValue& get(size_t index);
-  const BytecodeValue& get(size_t index) const;
-  void set(size_t index, const BytecodeValue& value);
+  Value& get(size_t index);
+  const Value& get(size_t index) const;
+  void set(size_t index, const Value& value);
 
   // Range operations
   void ensureCapacity(size_t capacity);
@@ -127,10 +127,10 @@ public:
   void releaseSlots(size_t count);
 
   // Get all values for GC roots
-  std::vector<BytecodeValue> getValues() const;
+  std::vector<Value> getValues() const;
 
 private:
-  std::vector<BytecodeValue> locals_;
+  std::vector<Value> locals_;
 };
 
 // ============================================================================
@@ -141,19 +141,19 @@ public:
   VMExecutionContext(VM& parent, const BytecodeChunk& chunk);
 
   // Execution
-  BytecodeValue execute(const std::string& functionName,
-                        const std::vector<BytecodeValue>& args = {});
-  BytecodeValue callFunction(uint32_t functionIndex,
-                              const std::vector<BytecodeValue>& args = {});
-  BytecodeValue callClosure(uint32_t closureId,
-                            const std::vector<BytecodeValue>& args = {});
+  Value execute(const std::string& functionName,
+                        const std::vector<Value>& args = {});
+  Value callFunction(uint32_t functionIndex,
+                              const std::vector<Value>& args = {});
+  Value callClosure(uint32_t closureId,
+                            const std::vector<Value>& args = {});
 
   // Stack management
-  void pushValue(const BytecodeValue& value);
-  BytecodeValue popValue();
+  void pushValue(const Value& value);
+  Value popValue();
 
   // Frame management
-  void enterFunction(uint32_t functionIndex, const std::vector<BytecodeValue>& args);
+  void enterFunction(uint32_t functionIndex, const std::vector<Value>& args);
   void exitFunction();
 
   // Upvalue management
@@ -166,7 +166,7 @@ public:
   const std::string& getError() const { return errorMessage_; }
 
   // GC integration
-  std::vector<BytecodeValue> getGCRoots() const;
+  std::vector<Value> getGCRoots() const;
 
 private:
   VM& parent_;
@@ -198,18 +198,18 @@ private:
 // ============================================================================
 class VMGlobals {
 public:
-  void set(const std::string& name, const BytecodeValue& value);
-  std::optional<BytecodeValue> get(const std::string& name) const;
+  void set(const std::string& name, const Value& value);
+  std::optional<Value> get(const std::string& name) const;
   bool has(const std::string& name) const;
   void remove(const std::string& name);
   void clear();
 
-  std::unordered_map<std::string, BytecodeValue> snapshot() const;
-  void restore(const std::unordered_map<std::string, BytecodeValue>& snapshot);
+  std::unordered_map<std::string, Value> snapshot() const;
+  void restore(const std::unordered_map<std::string, Value>& snapshot);
 
 private:
   mutable std::shared_mutex mutex_;
-  std::unordered_map<std::string, BytecodeValue> globals_;
+  std::unordered_map<std::string, Value> globals_;
 };
 
 // ============================================================================
@@ -217,11 +217,11 @@ private:
 // ============================================================================
 class VMHostBridge {
 public:
-  using HostFunction = std::function<BytecodeValue(const std::vector<BytecodeValue>&)>;
+  using HostFunction = std::function<Value(const std::vector<Value>&)>;
 
   void registerFunction(const std::string& name, HostFunction func);
   bool hasFunction(const std::string& name) const;
-  BytecodeValue call(const std::string& name, const std::vector<BytecodeValue>& args);
+  Value call(const std::string& name, const std::vector<Value>& args);
 
   std::vector<std::string> getRegisteredFunctions() const;
 

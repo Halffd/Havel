@@ -208,18 +208,17 @@ public:
     return id;
   }
 
-  uint32_t getTypeId(const BytecodeValue &value) {
-    if (std::holds_alternative<std::nullptr_t>(value)) return registerType<std::nullptr_t>();
-    if (std::holds_alternative<bool>(value)) return registerType<bool>();
-    if (std::holds_alternative<int64_t>(value)) return registerType<int64_t>();
-    if (std::holds_alternative<double>(value)) return registerType<double>();
-    if (std::holds_alternative<std::string>(value)) return registerType<std::string>();
-    if (std::holds_alternative<uint32_t>(value)) return registerType<uint32_t>();
-    if (std::holds_alternative<FunctionObject>(value)) return registerType<FunctionObject>();
-    if (std::holds_alternative<ClosureRef>(value)) return registerType<ClosureRef>();
-    if (std::holds_alternative<ArrayRef>(value)) return registerType<ArrayRef>();
-    if (std::holds_alternative<ObjectRef>(value)) return registerType<ObjectRef>();
-    if (std::holds_alternative<SetRef>(value)) return registerType<SetRef>();
+  uint32_t getTypeId(const Value &value) {
+    if (value.isNull()) return registerType<std::nullptr_t>();
+    if (value.isBool()) return registerType<bool>();
+    if (value.isInt()) return registerType<int64_t>();
+    if (value.isDouble()) return registerType<double>();
+    if (value.isStringValId()) return registerType<std::string>();
+    if (value.isArrayId()) return registerType<ArrayRef>();
+    if (value.isObjectId()) return registerType<ObjectRef>();
+    if (value.isClosureId()) return registerType<ClosureRef>();
+    if (value.isSetId()) return registerType<SetRef>();
+    if (value.isFunctionObjId()) return registerType<FunctionObject>();
     return 0;
   }
 };
@@ -230,9 +229,9 @@ public:
 
 class FastVM : public BytecodeInterpreter {
 protected:
-  std::stack<BytecodeValue> stack;
-  std::vector<BytecodeValue> locals;
-  std::vector<BytecodeValue> constants;
+  std::stack<Value> stack;
+  std::vector<Value> locals;
+  std::vector<Value> constants;
   size_t instruction_pointer = 0;
   bool debug_mode = false;
 
@@ -249,40 +248,38 @@ protected:
   uint64_t total_cache_hits = 0;
   uint64_t total_cache_misses = 0;
 
-  uint32_t getTypeId(const BytecodeValue &value) {
+  uint32_t getTypeId(const Value &value) {
     return type_system.getTypeId(value);
   }
 
-  BytecodeValue performBinaryOp(OpCode op, const BytecodeValue &left,
-                                const BytecodeValue &right) {
-    if (std::holds_alternative<int64_t>(left) &&
-        std::holds_alternative<int64_t>(right)) {
-      int64_t l = std::get<int64_t>(left);
-      int64_t r = std::get<int64_t>(right);
+  Value performBinaryOp(OpCode op, const Value &left,
+                                const Value &right) {
+    if (left.isInt() && right.isInt()) {
+      int64_t l = left.asInt();
+      int64_t r = right.asInt();
       switch (op) {
-        case OpCode::ADD: return BytecodeValue(l + r);
-        case OpCode::MUL: return BytecodeValue(l * r);
-        case OpCode::SUB: return BytecodeValue(l - r);
-        case OpCode::DIV: return r != 0 ? BytecodeValue(l / r) : BytecodeValue(int64_t(0));
+        case OpCode::ADD: return Value::makeInt(l + r);
+        case OpCode::MUL: return Value::makeInt(l * r);
+        case OpCode::SUB: return Value::makeInt(l - r);
+        case OpCode::DIV: return r != 0 ? Value::makeInt(l / r) : Value::makeInt(0);
         default: break;
       }
     }
-    if (std::holds_alternative<double>(left) &&
-        std::holds_alternative<double>(right)) {
-      double l = std::get<double>(left);
-      double r = std::get<double>(right);
+    if (left.isDouble() && right.isDouble()) {
+      double l = left.asDouble();
+      double r = right.asDouble();
       switch (op) {
-        case OpCode::ADD: return BytecodeValue(l + r);
-        case OpCode::MUL: return BytecodeValue(l * r);
-        case OpCode::SUB: return BytecodeValue(l - r);
-        case OpCode::DIV: return r != 0.0 ? BytecodeValue(l / r) : BytecodeValue(0.0);
+        case OpCode::ADD: return Value::makeDouble(l + r);
+        case OpCode::MUL: return Value::makeDouble(l * r);
+        case OpCode::SUB: return Value::makeDouble(l - r);
+        case OpCode::DIV: return r != 0.0 ? Value::makeDouble(l / r) : Value::makeDouble(0.0);
         default: break;
       }
     }
-    return BytecodeValue(int64_t(0));
+    return Value::makeInt(0);
   }
 
-  BytecodeValue fastAdd(const BytecodeValue &left, const BytecodeValue &right,
+  Value fastAdd(const Value &left, const Value &right,
                         uint32_t cache_key) {
     auto &cache = add_caches[cache_key];
     uint32_t left_type = getTypeId(left);
@@ -312,35 +309,35 @@ protected:
 
     switch (instruction.opcode) {
       case OpCode::LOAD_CONST: {
-        uint32_t idx = std::get<uint32_t>(instruction.operands[0]);
+        uint32_t idx = instruction.operands[0].asInt();
         stack.push(constants[idx]);
         break;
       }
       case OpCode::ADD: {
-        BytecodeValue right = stack.top(); stack.pop();
-        BytecodeValue left = stack.top(); stack.pop();
+        Value right = stack.top(); stack.pop();
+        Value left = stack.top(); stack.pop();
         stack.push(fastAdd(left, right, instruction_pointer));
         break;
       }
       case OpCode::MUL: {
-        BytecodeValue right = stack.top(); stack.pop();
-        BytecodeValue left = stack.top(); stack.pop();
+        Value right = stack.top(); stack.pop();
+        Value left = stack.top(); stack.pop();
         mul_caches[instruction_pointer].hit_count++;
         total_instructions_executed++;
         stack.push(performBinaryOp(OpCode::MUL, left, right));
         break;
       }
       case OpCode::SUB: {
-        BytecodeValue right = stack.top(); stack.pop();
-        BytecodeValue left = stack.top(); stack.pop();
+        Value right = stack.top(); stack.pop();
+        Value left = stack.top(); stack.pop();
         sub_caches[instruction_pointer].hit_count++;
         total_instructions_executed++;
         stack.push(performBinaryOp(OpCode::SUB, left, right));
         break;
       }
       case OpCode::DIV: {
-        BytecodeValue right = stack.top(); stack.pop();
-        BytecodeValue left = stack.top(); stack.pop();
+        Value right = stack.top(); stack.pop();
+        Value left = stack.top(); stack.pop();
         div_caches[instruction_pointer].hit_count++;
         total_instructions_executed++;
         stack.push(performBinaryOp(OpCode::DIV, left, right));
@@ -361,9 +358,9 @@ public:
 
   void setDebugMode(bool enabled) override { debug_mode = enabled; }
 
-  BytecodeValue execute(const BytecodeChunk &chunk,
+  Value execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
-                        const std::vector<BytecodeValue> &args = {}) override {
+                        const std::vector<Value> &args = {}) override {
     const auto *function = chunk.getFunction(function_name);
     if (!function) {
       throw std::runtime_error("Function not found: " + function_name);
@@ -405,7 +402,7 @@ public:
       instruction_pointer++;
     }
 
-    return stack.empty() ? BytecodeValue(nullptr) : stack.top();
+    return stack.empty() ? Value::makeNull() : stack.top();
   }
 
   struct PerformanceStats {

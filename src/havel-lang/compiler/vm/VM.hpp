@@ -27,13 +27,13 @@ constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
 // Error handling with stack traces
 struct ScriptError final {
-  BytecodeValue value;
+  Value value;
   std::string message;
   std::string stackTrace;
   uint32_t line = 0;
   uint32_t column = 0;
 
-  ScriptError(BytecodeValue val, const std::string &msg,
+  ScriptError(Value val, const std::string &msg,
               const std::string &trace, uint32_t ln = 0, uint32_t col = 0)
       : value(std::move(val)), message(msg), stackTrace(trace), line(ln),
         column(col) {}
@@ -46,7 +46,7 @@ public:
   class GCRoot {
   public:
     GCRoot() = default;
-    GCRoot(VM &vm, const BytecodeValue &value) : vm_(&vm) {
+    GCRoot(VM &vm, const Value &value) : vm_(&vm) {
       id_ = vm.pinExternalRoot(value);
     }
     GCRoot(const GCRoot &) = delete;
@@ -68,7 +68,7 @@ public:
     }
     ~GCRoot() { reset(); }
 
-    std::optional<BytecodeValue> get() const {
+    std::optional<Value> get() const {
       if (!vm_ || id_ == 0) {
         return std::nullopt;
       }
@@ -110,20 +110,20 @@ private:
     std::vector<TryHandler> try_stack;
   };
 
-  std::stack<BytecodeValue> stack;
-  std::vector<BytecodeValue> locals;
+  std::stack<Value> stack;
+  std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
   size_t frame_count_ = 0;
   GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
-  std::unordered_map<std::string, BytecodeValue> globals;
+  std::unordered_map<std::string, Value> globals;
   mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
   std::unordered_map<std::string, uint32_t> class_type_ids_by_name_;
   bool has_current_exception_ = false;
-  BytecodeValue current_exception_ = nullptr;
+  Value current_exception_ = nullptr;
 
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> function
@@ -145,15 +145,15 @@ private:
   using SystemObjectInitializer = std::function<void(VM *)>;
   SystemObjectInitializer system_object_initializer_;
 
-  template <typename T> T getValue(const BytecodeValue &value);
+  template <typename T> T getValue(const Value &value);
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
-  BytecodeValue getConstant(uint32_t index);
+  Value getConstant(uint32_t index);
 
   // State snapshot for re-entrant calls (HOF callbacks)
   struct ExecutionState {
-    std::stack<BytecodeValue> stack;
-    std::vector<BytecodeValue> locals;
+    std::stack<Value> stack;
+    std::vector<Value> locals;
     std::vector<CallFrame> frames;
     size_t frame_count = 0;
   };
@@ -162,25 +162,25 @@ private:
 
   // Callback queue for non-reentrant execution
   struct PendingCall {
-    BytecodeValue fn;
-    std::vector<BytecodeValue> args;
-    BytecodeValue *result; // Pointer to store result
+    Value fn;
+    std::vector<Value> args;
+    Value *result; // Pointer to store result
     bool *completed;       // Flag to signal completion
   };
   std::vector<PendingCall> pending_calls;
-  void scheduleCall(const BytecodeValue &fn,
-                    const std::vector<BytecodeValue> &args,
-                    BytecodeValue &result, bool &completed);
+  void scheduleCall(const Value &fn,
+                    const std::vector<Value> &args,
+                    Value &result, bool &completed);
   void processPendingCalls();
-  BytecodeValue callFunctionSync(const BytecodeValue &fn,
-                                 const std::vector<BytecodeValue> &args);
+  Value callFunctionSync(const Value &fn,
+                                 const std::vector<Value> &args);
   void executeInstruction(const Instruction &instruction);
-  void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
+  void doCall(Value callee_value, std::vector<Value> args,
               bool advance_caller_ip = true);
-  void doTailCall(BytecodeValue callee_value,
-                  std::vector<BytecodeValue> args); // TCO
+  void doTailCall(Value callee_value,
+                  std::vector<Value> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);
-  bool handleScriptThrow(const BytecodeValue &value);
+  bool handleScriptThrow(const Value &value);
   std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
 
@@ -190,27 +190,27 @@ private:
   // Rust-style error formatting with source line and arrow
   std::string formatErrorWithContext(const std::string &message) const;
 
-  std::vector<BytecodeValue> stackValuesForRoots() const;
+  std::vector<Value> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
   void maybeCollectGarbage();
   void collectGarbage();
   void registerDefaultHostFunctions();
   void registerDefaultHostGlobals();
-  BytecodeValue invokeHostFunction(const std::string &name, uint32_t arg_count);
+  Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:
   VM();
   VM(const class havel::HostContext &ctx);
   ~VM() override;
-  BytecodeValue execute(const BytecodeChunk &chunk,
-                        const std::string &function_name,
-                        const std::vector<BytecodeValue> &args = {}) override;
+  Value execute(const BytecodeChunk &chunk,
+                const std::string &function_name,
+                const std::vector<Value> &args = {}) override;
   // Execute persistently (preserves globals and heap - for REPL)
-  BytecodeValue executePersistent(const BytecodeChunk &chunk,
-                                  const std::string &function_name,
-                                  const std::vector<BytecodeValue> &args = {});
-  BytecodeValue call(const BytecodeValue &callee_value,
-                     const std::vector<BytecodeValue> &args = {});
+  Value executePersistent(const BytecodeChunk &chunk,
+                          const std::string &function_name,
+                          const std::vector<Value> &args = {});
+  Value call(const Value &callee_value,
+             const std::vector<Value> &args = {});
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,
                             BytecodeHostFunction function) override;
@@ -235,26 +235,26 @@ public:
   GCHeap::Stats gcStats() const { return heap_.stats(); }
   GCHeap& getHeap() { return heap_; }
   const GCHeap& getHeap() const { return heap_; }
-  void setGlobal(std::string name, BytecodeValue value) {
+  void setGlobal(std::string name, Value value) {
     globals[std::move(name)] = std::move(value);
   }
-  [[nodiscard]] GCRoot makeRoot(const BytecodeValue &value) {
+  [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);
   }
   ObjectRef createHostObject();
   ArrayRef createHostArray();
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
-                          BytecodeValue value);
-  void pushHostArrayValue(ArrayRef array_ref, BytecodeValue value);
+                          Value value);
+  void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers
   size_t getHostArrayLength(ArrayRef array_ref);
-  BytecodeValue getHostArrayValue(ArrayRef array_ref, size_t index);
-  void setHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value);
-  BytecodeValue popHostArrayValue(ArrayRef array_ref);
+  Value getHostArrayValue(ArrayRef array_ref, size_t index);
+  void setHostArrayValue(ArrayRef array_ref, size_t index, Value value);
+  Value popHostArrayValue(ArrayRef array_ref);
   void insertHostArrayValue(ArrayRef array_ref, size_t index,
-                            BytecodeValue value);
-  BytecodeValue removeHostArrayValue(ArrayRef array_ref, size_t index);
+                            Value value);
+  Value removeHostArrayValue(ArrayRef array_ref, size_t index);
 
   // Range helpers
   bool isInRange(RangeRef range_ref, int64_t value);
@@ -263,9 +263,9 @@ public:
   uint32_t registerStructType(const std::string &name,
                               const std::vector<std::string> &fields);
   StructRef createStruct(uint32_t typeId, size_t fieldCount);
-  BytecodeValue getStructField(StructRef struct_ref, size_t index);
+  Value getStructField(StructRef struct_ref, size_t index);
   void setStructField(StructRef struct_ref, size_t index,
-                      const BytecodeValue &value);
+                      const Value &value);
   uint32_t getStructTypeId(StructRef struct_ref);
 
   // Class helpers
@@ -279,9 +279,9 @@ public:
                            uint32_t functionIndex);
   std::optional<uint32_t> findClassMethod(uint32_t typeId,
                                           const std::string &methodName) const;
-  BytecodeValue getClassField(ClassRef class_ref, size_t index);
+  Value getClassField(ClassRef class_ref, size_t index);
   void setClassField(ClassRef class_ref, size_t index,
-                     const BytecodeValue &value);
+                     const Value &value);
   uint32_t getClassTypeId(ClassRef class_ref);
 
   // Copy a struct (value type semantics)
@@ -292,44 +292,44 @@ public:
                             const std::vector<std::string> &variants);
   EnumRef createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
   uint32_t getEnumTag(EnumRef enum_ref);
-  BytecodeValue getEnumPayload(EnumRef enum_ref, size_t index);
+  Value getEnumPayload(EnumRef enum_ref, size_t index);
   void setEnumPayload(EnumRef enum_ref, size_t index,
-                      const BytecodeValue &value);
+                      const Value &value);
 
   // Membership helpers
-  bool arrayContains(ArrayRef array_ref, const BytecodeValue &value);
+  bool arrayContains(ArrayRef array_ref, const Value &value);
   bool objectHasKey(ObjectRef object_ref, const std::string &key);
 
   // Iterator helpers
-  IteratorRef createIterator(const BytecodeValue &iterable);
-  BytecodeValue iteratorNext(IteratorRef iterRef);
+  IteratorRef createIterator(const Value &iterable);
+  Value iteratorNext(IteratorRef iterRef);
 
   // Object helpers
   std::vector<std::string> getHostObjectKeys(ObjectRef object_ref);
-  std::vector<std::pair<std::string, BytecodeValue>>
+  std::vector<std::pair<std::string, Value>>
   getHostObjectEntries(ObjectRef object_ref);
   bool hasHostObjectField(ObjectRef object_ref, const std::string &key);
-  BytecodeValue getHostObjectField(ObjectRef object_ref,
+  Value getHostObjectField(ObjectRef object_ref,
                                    const std::string &key);
   bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
   void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
   void setHostObjectSealed(ObjectRef object_ref, bool sealed);
 
   // Function calling
-  BytecodeValue callHostFunction(const BytecodeValue &fn,
-                                 const std::vector<BytecodeValue> &args);
+  Value callHostFunction(const Value &fn,
+                                 const std::vector<Value> &args);
 
   // General function call (handles both VM closures and host functions)
-  BytecodeValue callFunction(const BytecodeValue &fn,
-                             const std::vector<BytecodeValue> &args);
+  Value callFunction(const Value &fn,
+                             const std::vector<Value> &args);
 
   // Prototype system - methods on types
   void registerPrototypeMethod(const std::string &typeName,
                                const std::string &methodName,
                                HostFunctionRef method);
   std::optional<HostFunctionRef>
-  getPrototypeMethod(const BytecodeValue &value, const std::string &methodName);
-  std::vector<std::string> getPrototypeMethods(const BytecodeValue &value);
+  getPrototypeMethod(const Value &value, const std::string &methodName);
+  std::vector<std::string> getPrototypeMethods(const Value &value);
 
   // Get registered host functions (for copying to options)
   std::unordered_map<std::string, BytecodeHostFunction> &getHostFunctions() {
@@ -340,22 +340,22 @@ public:
     return host_functions;
   }
 
-  uint64_t pinExternalRoot(const BytecodeValue &value);
+  uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
-  std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;
+  std::optional<Value> externalRootValue(uint64_t root_id) const;
   size_t externalRootCount() const { return heap_.externalRootCount(); }
 
   // Callback system - VM owns closures, systems use opaque IDs
-  CallbackId registerCallback(const BytecodeValue &closure);
-  BytecodeValue invokeCallback(CallbackId id,
-                               const std::vector<BytecodeValue> &args = {});
+  CallbackId registerCallback(const Value &closure);
+  Value invokeCallback(CallbackId id,
+                               const std::vector<Value> &args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
 
   // Value utility functions
-  bool isNull(const BytecodeValue &value) const;
-  bool isTruthy(const BytecodeValue &value);
-  std::optional<int64_t> parseDuration(const BytecodeValue &value) const;
+  bool isNull(const Value &value) const;
+  bool isTruthy(const Value &value);
+  std::optional<int64_t> parseDuration(const Value &value) const;
 
   // Image helpers - create GC-managed images
   VMImage createImage(int width, int height, int stride, PixelFormat format,
@@ -373,14 +373,14 @@ public:
   struct VMExecutionContext {
   private:
     VM *parent_vm_ = nullptr;
-    std::stack<BytecodeValue> stack;
-    std::vector<BytecodeValue> locals;
+    std::stack<Value> stack;
+    std::vector<Value> locals;
     std::vector<CallFrame> frame_arena_;
     size_t frame_count_ = 0;
     std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
         open_upvalues;
     bool has_current_exception_ = false;
-    BytecodeValue current_exception_ = nullptr;
+    Value current_exception_ = nullptr;
     const BytecodeChunk *current_chunk = nullptr;
 
     friend class VM;
@@ -398,8 +398,8 @@ public:
     VMExecutionContext &operator=(VMExecutionContext &&) = default;
 
     // Execute a callback in this isolated context
-    BytecodeValue invokeCallback(CallbackId id,
-                                 const std::vector<BytecodeValue> &args = {});
+    Value invokeCallback(CallbackId id,
+                                 const std::vector<Value> &args = {});
 
     // Internal: execute single instruction in this context
     void executeInstructionInContext(const Instruction &instruction);
@@ -413,8 +413,8 @@ public:
   VMExecutionContext createExecutionContext();
 
   // Thread-safe global variable access
-  void setGlobalThreadSafe(const std::string &name, BytecodeValue value);
-  std::optional<BytecodeValue>
+  void setGlobalThreadSafe(const std::string &name, Value value);
+  std::optional<Value>
   getGlobalThreadSafe(const std::string &name) const;
 
   // Get the current bytecode chunk (for execution contexts)

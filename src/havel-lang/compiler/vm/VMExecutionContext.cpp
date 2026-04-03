@@ -130,39 +130,39 @@ VMStack::VMStack(size_t initialCapacity) {
   (void)initialCapacity;
 }
 
-void VMStack::push(const BytecodeValue& value) {
+void VMStack::push(const Value& value) {
   stack_.push(value);
 }
 
-BytecodeValue VMStack::pop() {
+Value VMStack::pop() {
   if (stack_.empty()) {
     throw std::runtime_error("Stack underflow");
   }
-  BytecodeValue value = stack_.top();
+  Value value = stack_.top();
   stack_.pop();
   return value;
 }
 
-BytecodeValue& VMStack::peek(size_t distance) {
+Value& VMStack::peek(size_t distance) {
   // This is tricky with std::stack - we need to access by index
   // For now, throw if trying to peek beyond top
   (void)distance;
-  return const_cast<BytecodeValue&>(stack_.top());
+  return const_cast<Value&>(stack_.top());
 }
 
-const BytecodeValue& VMStack::peek(size_t distance) const {
+const Value& VMStack::peek(size_t distance) const {
   (void)distance;
   return stack_.top();
 }
 
-void VMStack::pushMultiple(const std::vector<BytecodeValue>& values) {
+void VMStack::pushMultiple(const std::vector<Value>& values) {
   for (const auto& value : values) {
     push(value);
   }
 }
 
-std::vector<BytecodeValue> VMStack::popMultiple(size_t count) {
-  std::vector<BytecodeValue> result;
+std::vector<Value> VMStack::popMultiple(size_t count) {
+  std::vector<Value> result;
   result.reserve(count);
   for (size_t i = 0; i < count; ++i) {
     result.push_back(pop());
@@ -171,9 +171,9 @@ std::vector<BytecodeValue> VMStack::popMultiple(size_t count) {
   return result;
 }
 
-std::vector<BytecodeValue> VMStack::getValues() const {
+std::vector<Value> VMStack::getValues() const {
   // Copy stack contents
-  std::vector<BytecodeValue> result;
+  std::vector<Value> result;
   auto temp = stack_;
   while (!temp.empty()) {
     result.push_back(temp.top());
@@ -191,21 +191,21 @@ VMLocals::VMLocals(size_t initialCapacity) {
   ensureCapacity(initialCapacity);
 }
 
-BytecodeValue& VMLocals::get(size_t index) {
+Value& VMLocals::get(size_t index) {
   if (index >= locals_.size()) {
     throw std::out_of_range("Local index out of range");
   }
   return locals_[index];
 }
 
-const BytecodeValue& VMLocals::get(size_t index) const {
+const Value& VMLocals::get(size_t index) const {
   if (index >= locals_.size()) {
     throw std::out_of_range("Local index out of range");
   }
   return locals_[index];
 }
 
-void VMLocals::set(size_t index, const BytecodeValue& value) {
+void VMLocals::set(size_t index, const Value& value) {
   ensureCapacity(index + 1);
   locals_[index] = value;
 }
@@ -233,7 +233,7 @@ void VMLocals::releaseSlots(size_t count) {
   locals_.resize(locals_.size() - count);
 }
 
-std::vector<BytecodeValue> VMLocals::getValues() const {
+std::vector<Value> VMLocals::getValues() const {
   return locals_;
 }
 
@@ -241,12 +241,12 @@ std::vector<BytecodeValue> VMLocals::getValues() const {
 // VMGlobals Implementation
 // ============================================================================
 
-void VMGlobals::set(const std::string& name, const BytecodeValue& value) {
+void VMGlobals::set(const std::string& name, const Value& value) {
   std::unique_lock lock(mutex_);
   globals_[name] = value;
 }
 
-std::optional<BytecodeValue> VMGlobals::get(const std::string& name) const {
+std::optional<Value> VMGlobals::get(const std::string& name) const {
   std::shared_lock lock(mutex_);
   auto it = globals_.find(name);
   if (it != globals_.end()) {
@@ -270,12 +270,12 @@ void VMGlobals::clear() {
   globals_.clear();
 }
 
-std::unordered_map<std::string, BytecodeValue> VMGlobals::snapshot() const {
+std::unordered_map<std::string, Value> VMGlobals::snapshot() const {
   std::shared_lock lock(mutex_);
   return globals_;
 }
 
-void VMGlobals::restore(const std::unordered_map<std::string, BytecodeValue>& snapshot) {
+void VMGlobals::restore(const std::unordered_map<std::string, Value>& snapshot) {
   std::unique_lock lock(mutex_);
   globals_ = snapshot;
 }
@@ -292,8 +292,8 @@ bool VMHostBridge::hasFunction(const std::string& name) const {
   return functions_.count(name) > 0;
 }
 
-BytecodeValue VMHostBridge::call(const std::string& name,
-                                  const std::vector<BytecodeValue>& args) {
+Value VMHostBridge::call(const std::string& name,
+                                  const std::vector<Value>& args) {
   auto it = functions_.find(name);
   if (it == functions_.end()) {
     throw std::runtime_error("Unknown host function: " + name);
@@ -318,8 +318,8 @@ VMExecutionContext::VMExecutionContext(VM& parent, const BytecodeChunk& chunk)
       chunk_(chunk),
       upvalues_(parent.getHeap()) {}
 
-BytecodeValue VMExecutionContext::execute(const std::string& functionName,
-                                            const std::vector<BytecodeValue>& args) {
+Value VMExecutionContext::execute(const std::string& functionName,
+                                            const std::vector<Value>& args) {
   // Find function in chunk
   for (size_t i = 0; i < chunk_.getFunctionCount(); ++i) {
     auto func = chunk_.getFunction(static_cast<uint32_t>(i));
@@ -330,8 +330,8 @@ BytecodeValue VMExecutionContext::execute(const std::string& functionName,
   throw std::runtime_error("Function not found: " + functionName);
 }
 
-BytecodeValue VMExecutionContext::callFunction(uint32_t functionIndex,
-                                              const std::vector<BytecodeValue>& args) {
+Value VMExecutionContext::callFunction(uint32_t functionIndex,
+                                              const std::vector<Value>& args) {
   auto function = chunk_.getFunction(functionIndex);
   if (!function) {
     throw std::out_of_range("Function index out of range");
@@ -380,24 +380,24 @@ BytecodeValue VMExecutionContext::callFunction(uint32_t functionIndex,
   return stack_.isEmpty() ? nullptr : stack_.pop();
 }
 
-BytecodeValue VMExecutionContext::callClosure(uint32_t closureId,
-                                               const std::vector<BytecodeValue>& args) {
+Value VMExecutionContext::callClosure(uint32_t closureId,
+                                               const std::vector<Value>& args) {
   (void)closureId;
   (void)args;
   // TODO: Implement closure calling
   throw std::runtime_error("Closure calling not yet implemented");
 }
 
-void VMExecutionContext::pushValue(const BytecodeValue& value) {
+void VMExecutionContext::pushValue(const Value& value) {
   stack_.push(value);
 }
 
-BytecodeValue VMExecutionContext::popValue() {
+Value VMExecutionContext::popValue() {
   return stack_.pop();
 }
 
 void VMExecutionContext::enterFunction(uint32_t functionIndex,
-                                        const std::vector<BytecodeValue>& args) {
+                                        const std::vector<Value>& args) {
   (void)functionIndex;
   (void)args;
   // TODO: Implement function entry
@@ -479,7 +479,7 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
       default: throw std::runtime_error("Unknown binary op");
     }
 
-    stack_.push(BytecodeValue::makeInt(result));
+    stack_.push(Value::makeInt(result));
   } else if (a.isDouble() && b.isDouble()) {
     double ad = a.asDouble();
     double bd = b.asDouble();
@@ -493,7 +493,7 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
       default: throw std::runtime_error("Unknown binary op");
     }
 
-    stack_.push(BytecodeValue::makeDouble(result));
+    stack_.push(Value::makeDouble(result));
   } else {
     throw std::runtime_error("Type error in binary operation");
   }
@@ -509,8 +509,8 @@ void VMExecutionContext::executeReturn() {
   isExecuting_ = false;
 }
 
-std::vector<BytecodeValue> VMExecutionContext::getGCRoots() const {
-  std::vector<BytecodeValue> roots;
+std::vector<Value> VMExecutionContext::getGCRoots() const {
+  std::vector<Value> roots;
 
   // Stack roots
   auto stackRoots = stack_.getValues();

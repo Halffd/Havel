@@ -18,9 +18,7 @@ struct Program;
 
 namespace havel::compiler {
 
-// BytecodeValue is now an alias to the NaN-boxed Value class
-// The Value class uses canonical NaN boxing for zero-cost double storage
-using BytecodeValue = havel::core::Value;
+using Value = havel::core::Value;
 
 // Forward declarations
 class BytecodeCompiler;
@@ -236,7 +234,7 @@ struct ErrorRef {
 };
 
 using BytecodeHostFunction =
-    std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;
+    std::function<Value(const std::vector<Value> &)>;
 
 struct SourceLocation {
   std::string filename;
@@ -247,11 +245,11 @@ struct SourceLocation {
 // Bytecode instruction
 struct Instruction {
   OpCode opcode;
-  std::vector<BytecodeValue> operands;
+  std::vector<Value> operands;
   std::optional<SourceLocation> location;
 
   Instruction() : opcode(OpCode::NOP) {}
-  Instruction(OpCode op, std::vector<BytecodeValue> ops = {})
+  Instruction(OpCode op, std::vector<Value> ops = {})
       : opcode(op), operands(std::move(ops)) {}
 };
 
@@ -266,13 +264,13 @@ struct BytecodeFunction {
   std::string name;
   std::vector<Instruction> instructions;
   std::vector<SourceLocation> instruction_locations;
-  std::vector<BytecodeValue> constants;
+  std::vector<Value> constants;
   std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;
   uint32_t local_count;
   // Default parameter values (indexed by param index, empty if no default)
   // Stored as constant values for simple defaults
-  std::vector<std::optional<BytecodeValue>> default_values;
+  std::vector<std::optional<Value>> default_values;
   // Index of variadic parameter (UINT32_MAX if none)
   uint32_t variadic_param_index = UINT32_MAX;
 
@@ -324,9 +322,8 @@ public:
 class BytecodeInterpreter {
 public:
   virtual ~BytecodeInterpreter() = default;
-  virtual BytecodeValue
-  execute(const BytecodeChunk &chunk, const std::string &function_name,
-          const std::vector<BytecodeValue> &args = {}) = 0;
+  virtual Value execute(const BytecodeChunk &chunk, const std::string &function_name,
+                        const std::vector<Value> &args = {}) = 0;
   virtual void setDebugMode(bool enabled) = 0;
   virtual void registerHostFunction(const std::string &name,
                                     BytecodeHostFunction function) {
@@ -344,9 +341,8 @@ class JITCompiler {
 public:
   virtual ~JITCompiler() = default;
   virtual void compileFunction(const BytecodeFunction &func) = 0;
-  virtual BytecodeValue
-  executeCompiled(const std::string &func_name,
-                  const std::vector<BytecodeValue> &args) = 0;
+  virtual Value executeCompiled(const std::string &func_name,
+                                const std::vector<Value> &args) = 0;
   virtual bool isCompiled(const std::string &func_name) const = 0;
 };
 
@@ -371,8 +367,8 @@ public:
   virtual ~Hybrid() = default;
 
   virtual bool compile(const ast::Program &program);
-  virtual BytecodeValue execute(const std::string &function_name,
-                                const std::vector<BytecodeValue> &args = {});
+  virtual Value execute(const std::string &function_name,
+                        const std::vector<Value> &args = {});
 
   // Configure JIT
   void setJITEnabled(bool enabled) { jit_enabled = enabled; }

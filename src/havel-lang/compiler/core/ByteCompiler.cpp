@@ -185,19 +185,19 @@ ByteCompiler::compile(const ast::Program &program) {
         emit(OpCode::CLOSURE, index_it->second);
       } else {
         emit(OpCode::LOAD_CONST,
-             addConstant(BytecodeValue::makeFunctionObjId(index_it->second)));
+             addConstant(Value::makeFunctionObjId(index_it->second)));
       }
 
       // Store in global scope so it's callable
       uint32_t fnNameStrId = addStringConstant(functionDecl.name->symbol);
-      emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(fnNameStrId));
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
       continue;
     }
 
     compileStatement(*statement);
   }
 
-  emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
   emit(OpCode::RETURN);
   leaveFunction();
 
@@ -211,13 +211,13 @@ ByteCompiler::compile(const ast::Program &program) {
   return std::move(chunk);
 }
 
-void ByteCompiler::emit(OpCode op) { emit(op, std::vector<BytecodeValue>{}); }
+void ByteCompiler::emit(OpCode op) { emit(op, std::vector<Value>{}); }
 
-void ByteCompiler::emit(OpCode op, BytecodeValue operand) {
-  emit(op, std::vector<BytecodeValue>{std::move(operand)});
+void ByteCompiler::emit(OpCode op, Value operand) {
+  emit(op, std::vector<Value>{std::move(operand)});
 }
 
-void ByteCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
+void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
   if (!current_function) {
     throw std::runtime_error(
         "Attempted to emit bytecode without active function");
@@ -227,7 +227,7 @@ void ByteCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
       current_source_location_.value_or(SourceLocation{}));
 }
 
-uint32_t ByteCompiler::addConstant(const BytecodeValue &value) {
+uint32_t ByteCompiler::addConstant(const Value &value) {
   if (!current_function) {
     throw std::runtime_error(
         "Attempted to add constant without active function");
@@ -243,7 +243,7 @@ uint32_t ByteCompiler::addStringConstant(const std::string &str) {
         "Attempted to add string constant without active function");
   }
   uint32_t index = static_cast<uint32_t>(current_function->constants.size());
-  current_function->constants.push_back(BytecodeValue::makeStringValId(index));
+  current_function->constants.push_back(Value::makeStringValId(index));
   (void)str; // TODO: Store actual string data for VM resolution
   return index;
 }
@@ -320,20 +320,20 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
         const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
         if (isIntegerLiteral(num.value)) {
           current_function->default_values.push_back(
-              BytecodeValue::makeInt(static_cast<int64_t>(num.value)));
+              Value::makeInt(static_cast<int64_t>(num.value)));
         } else {
           current_function->default_values.push_back(
-              BytecodeValue::makeDouble(num.value));
+              Value::makeDouble(num.value));
         }
       } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
         const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
-            BytecodeValue::makeNull()); // TODO: string default
+            Value::makeNull()); // TODO: string default
       } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
         const auto &boolean =
             static_cast<const ast::BooleanLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
-            BytecodeValue::makeBool(boolean.value));
+            Value::makeBool(boolean.value));
       } else {
         current_function->default_values.push_back(std::nullopt);
       }
@@ -370,7 +370,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
             emit(OpCode::RETURN);
           }
         } else {
-          emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
           emit(OpCode::RETURN);
         }
       } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
@@ -390,16 +390,16 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
           emit(OpCode::RETURN);
         }
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::RETURN);
       }
     } else {
       // Empty function body
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       emit(OpCode::RETURN);
     }
   } else {
-    emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }
   leaveFunction();
@@ -441,20 +441,20 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
         const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
         if (isIntegerLiteral(num.value)) {
           current_function->default_values.push_back(
-              BytecodeValue::makeInt(static_cast<int64_t>(num.value)));
+              Value::makeInt(static_cast<int64_t>(num.value)));
         } else {
           current_function->default_values.push_back(
-              BytecodeValue::makeDouble(num.value));
+              Value::makeDouble(num.value));
         }
       } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
         const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
-            BytecodeValue::makeNull()); // TODO: string default
+            Value::makeNull()); // TODO: string default
       } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
         const auto &boolean =
             static_cast<const ast::BooleanLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
-            BytecodeValue::makeBool(boolean.value));
+            Value::makeBool(boolean.value));
       } else {
         current_function->default_values.push_back(std::nullopt);
       }
@@ -476,7 +476,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
           emit(OpCode::RETURN);
         }
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::RETURN);
       }
     } else if (lambda.body->kind == ast::NodeType::ReturnStatement) {
@@ -493,7 +493,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
       }
     }
   } else {
-    emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }
 
@@ -547,7 +547,7 @@ void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
 
       // Emit: LOAD_VAR paramIndex, LOAD_CONST index, ARRAY_GET
       emit(OpCode::LOAD_VAR, paramIndex);
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(i))));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
       emit(OpCode::ARRAY_GET);
 
       // Recursively compile the element pattern - result is on stack
@@ -601,7 +601,7 @@ void ByteCompiler::compileParameterPatternValue(
 
       // Emit: LOAD_VAR tempSlot, LOAD_CONST index, ARRAY_GET
       emit(OpCode::LOAD_VAR, tempSlot);
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(i))));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
       emit(OpCode::ARRAY_GET);
 
       compileParameterPatternValue(*elemPattern);
@@ -671,13 +671,13 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       if (let.value) {
         compileExpression(*let.value);
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Check if this is a global variable (top-level let)
       if (lexical_resolution_.global_variables.count(identifier->symbol) > 0) {
         emit(OpCode::STORE_GLOBAL,
-             std::vector<BytecodeValue>{identifier->symbol});
+             std::vector<Value>{Value::makeStringValId(addStringConstant(identifier->symbol))});
       } else {
         uint32_t slot = declarationSlot(*identifier);
         reserveLocalSlot(slot);
@@ -723,11 +723,11 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
               tuple_value->elements[i]) {
             compileExpression(*tuple_value->elements[i]);
           } else {
-            emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
           }
         } else {
           emit(OpCode::LOAD_VAR, temp_slot);
-          emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(i))));
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
           emit(OpCode::ARRAY_GET);
         }
         emit(OpCode::STORE_VAR, slot);
@@ -745,7 +745,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     if (ret.argument) {
       compileExpression(*ret.argument);
     } else {
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     }
     emit(OpCode::RETURN);
     break;
@@ -816,7 +816,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         emit(OpCode::CLOSURE, index_it->second);
       } else {
         emit(OpCode::LOAD_CONST,
-             addConstant(BytecodeValue::makeFunctionObjId(index_it->second)));
+             addConstant(Value::makeFunctionObjId(index_it->second)));
       }
       emit(OpCode::STORE_VAR, slot);
     }
@@ -846,7 +846,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       // Set conf.key = value (conf object is global)
       {
         uint32_t confStrId = addStringConstant("conf");
-        emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(confStrId));
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(confStrId));
       }
       emit(OpCode::LOAD_CONST, addStringConstant(key));
       emit(OpCode::OBJECT_SET);
@@ -856,9 +856,9 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       compileExpression(*valueExpr); // Re-compile value for config.set
       {
         uint32_t strId = addStringConstant("config.set");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(2))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(2))});
       }
       emit(OpCode::POP); // Discard result
     }
@@ -879,9 +879,9 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     emit(OpCode::LOAD_CONST, addStringConstant("mode"));
     {
       uint32_t modeStrId = addStringConstant("mode");
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-          BytecodeValue::makeStringValId(modeStrId),
-          BytecodeValue(static_cast<uint32_t>(0))});
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(modeStrId),
+          Value(static_cast<uint32_t>(0))});
     }
 
     // Load the mode name to compare against
@@ -926,13 +926,13 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
       // Load priority
       emit(OpCode::LOAD_CONST,
-           addConstant(BytecodeValue::makeInt(static_cast<int64_t>(modeDef.priority))));
+           addConstant(Value::makeInt(static_cast<int64_t>(modeDef.priority))));
 
       // Compile condition expression (or null if not provided)
       if (modeDef.condition) {
         compileExpression(*modeDef.condition);
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Create closures for enter/exit blocks
@@ -944,42 +944,42 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       if (modeDef.enterBlock) {
         // Create a closure for enter block
         // For simplicity, we'll emit a placeholder
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(0)));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(0)));
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Compile exit block
       if (modeDef.exitBlock) {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(0)));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(0)));
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Load onEnterFrom mode name (or null)
       if (!modeDef.onEnterFrom.empty()) {
         emit(OpCode::LOAD_CONST, addStringConstant(modeDef.onEnterFrom));
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Load onExitTo mode name (or null)
       if (!modeDef.onExitTo.empty()) {
         emit(OpCode::LOAD_CONST, addStringConstant(modeDef.onExitTo));
       } else {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Load preventRetrigger flag (commented out - field doesn't exist)
       // emit(OpCode::LOAD_CONST, addConstant(modeDef.preventRetrigger));
-      emit(OpCode::LOAD_CONST, BytecodeValue::makeBool(false));
+      emit(OpCode::LOAD_CONST, Value::makeBool(false));
 
       // Call mode.register
       {
         uint32_t strId = addStringConstant("mode.register");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(8))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(8))});
       }
       emit(OpCode::POP); // Discard result
     }
@@ -992,7 +992,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     if (throw_stmt.value) {
       compileExpression(*throw_stmt.value);
     } else {
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     }
     emit(OpCode::THROW);
     break;
@@ -1011,9 +1011,9 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     }
     {
       uint32_t strId = addStringConstant("struct.define");
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-          BytecodeValue::makeStringValId(strId),
-          BytecodeValue(static_cast<uint32_t>(2))});
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(2))});
     }
     emit(OpCode::POP);
     break;
@@ -1067,7 +1067,7 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
   // Emit TRY_ENTER with placeholder operands (catch_ip and finally_ip patched
   // later)
   emit(OpCode::TRY_ENTER,
-       std::vector<BytecodeValue>{
+       std::vector<Value>{
            static_cast<uint32_t>(0), // catch_ip - patched later
            static_cast<uint32_t>(
                0) // finally_ip - patched later (0 if no finally)
@@ -1187,9 +1187,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::NumberLiteral: {
     const auto &num = static_cast<const ast::NumberLiteral &>(expression);
     if (isIntegerLiteral(num.value)) {
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(num.value))));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(num.value))));
     } else {
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeDouble(num.value)));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(num.value)));
     }
     break;
   }
@@ -1231,12 +1231,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::BooleanLiteral: {
     const auto &boolean = static_cast<const ast::BooleanLiteral &>(expression);
-    emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeBool(boolean.value)));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(boolean.value)));
     break;
   }
 
   case ast::NodeType::NullLiteral: {
-    emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     break;
   }
 
@@ -1298,7 +1298,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           // Initialize index
           uint32_t idxSlot = next_local_index++;
           reserveLocalSlot(idxSlot);
-          emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(0)));
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(0)));
           emit(OpCode::STORE_VAR, idxSlot);
 
           uint32_t loopStart =
@@ -1322,7 +1322,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
           // Increment index
           emit(OpCode::LOAD_VAR, idxSlot);
-          emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(1)));
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(1)));
           emit(OpCode::ADD);
           emit(OpCode::STORE_VAR, idxSlot);
 
@@ -1349,7 +1349,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     emit(OpCode::ARRAY_NEW);
     for (const auto &element : tuple.elements) {
       if (!element) {
-        emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       } else {
         compileExpression(*element);
       }
@@ -1367,7 +1367,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       emit(OpCode::DUP);
       compileExpression(*element);
-      emit(OpCode::LOAD_CONST, BytecodeValue::makeBool(true));
+      emit(OpCode::LOAD_CONST, Value::makeBool(true));
       emit(OpCode::ARRAY_SET);
     }
     break;
@@ -1436,7 +1436,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     if (match.defaultCase) {
       compileExpression(*match.defaultCase);
     } else {
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull()));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     }
 
     uint32_t endTarget =
@@ -1465,7 +1465,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::CLOSURE, it->second);
     } else {
       emit(OpCode::LOAD_CONST,
-           addConstant(BytecodeValue::makeFunctionObjId(it->second)));
+           addConstant(Value::makeFunctionObjId(it->second)));
     }
     break;
   }
@@ -1494,18 +1494,18 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     case ResolvedBindingKind::Function:
       // User-defined function - load as FunctionObject
       emit(OpCode::LOAD_CONST,
-           addConstant(BytecodeValue::makeFunctionObjId(
+           addConstant(Value::makeFunctionObjId(
                top_level_function_indices_by_name_[binding->name])));
       break;
     case ResolvedBindingKind::HostFunction:
       // Host function - TODO: register and use makeHostFuncId
-      emit(OpCode::LOAD_CONST, BytecodeValue::makeNull());
+      emit(OpCode::LOAD_CONST, Value::makeNull());
       break;
     case ResolvedBindingKind::Global:
       // Global variable - runtime will decide
       {
         uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       }
       break;
     }
@@ -1533,7 +1533,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     // Load 'this' (current object)
     {
       uint32_t strId = addStringConstant("this");
-      emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
     // Get the field from this
     emit(OpCode::LOAD_CONST, addStringConstant(fieldId->symbol));
@@ -1555,7 +1555,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       std::string fnName =
           binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
       emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{fnName, static_cast<uint32_t>(2)});
+           std::vector<Value>{Value::makeStringValId(addStringConstant(fnName)), Value::makeInt(static_cast<int64_t>(2))});
     } else if (binary.operator_ == ast::BinaryOperator::Matches ||
                binary.operator_ == ast::BinaryOperator::Tilde) {
       // Regex/string matching - compile as regex_search host function call
@@ -1563,9 +1563,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       compileExpression(*binary.right); // pattern
       {
         uint32_t strId = addStringConstant("regex_search");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(2))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(2))});
       }
     } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
       // Nullish coalescing: left ?? right
@@ -1687,9 +1687,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         // Route through any.* dispatch for consistency
         {
           uint32_t strId = addStringConstant("any." + ident.symbol);
-          emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-              BytecodeValue::makeStringValId(strId),
-              BytecodeValue(static_cast<uint32_t>(1))});
+          emit(OpCode::CALL_HOST, std::vector<Value>{
+              Value::makeStringValId(strId),
+              Value(static_cast<uint32_t>(1))});
         }
 
         // For tap functions (print), ensure value passes through
@@ -1701,7 +1701,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           reserveLocalSlot(result_temp);
           emit(OpCode::STORE_VAR, result_temp);
           emit(OpCode::LOAD_VAR, result_temp);
-          emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull())); // nil
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull())); // nil
           // If nil, use pipe value, else use result
           // Simplified: just dup and check
           emit(OpCode::LOAD_VAR, pipe_temp); // Default to pipe value
@@ -1732,7 +1732,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Load result and check if nil
       emit(OpCode::LOAD_VAR, stage_result);
       emit(OpCode::DUP);
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeNull())); // nil
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull())); // nil
 
       // If equal (both nil), restore pipe value
       // For now, simplified: always have result, void functions
@@ -1783,7 +1783,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding.kind == ResolvedBindingKind::Global) {
         {
           uint32_t strId = addStringConstant(binding.name);
-          emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+          emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
         throw std::runtime_error("Assignment target is not mutable");
@@ -1802,7 +1802,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding.kind == ResolvedBindingKind::Global) {
         {
           uint32_t strId = addStringConstant(binding.name);
-          emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
         throw std::runtime_error("Assignment target is not mutable");
@@ -1849,7 +1849,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         if (assignment.isGlobalScope) {
           emit(OpCode::DUP);
           emit(OpCode::STORE_GLOBAL,
-               std::vector<BytecodeValue>{target_id->symbol});
+               std::vector<Value>{Value::makeStringValId(addStringConstant(target_id->symbol))});
           break;
         }
 
@@ -1894,7 +1894,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             }
             // Load array, get element at index i
             emit(OpCode::LOAD_VAR, temp_slot);
-            emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(i))));
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
             emit(OpCode::ARRAY_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
@@ -1902,7 +1902,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             } else if (binding->kind == ResolvedBindingKind::Global) {
               {
                 uint32_t strId = addStringConstant(binding->name);
-                emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
               }
             } else {
               throw std::runtime_error(
@@ -1944,7 +1944,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             } else if (binding->kind == ResolvedBindingKind::Global) {
               {
                 uint32_t strId = addStringConstant(binding->name);
-                emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
               }
             } else {
               throw std::runtime_error(
@@ -2076,9 +2076,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_CONST, addStringConstant(property->symbol));
       {
         uint32_t strId = addStringConstant("any.get");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(2))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(2))});
       }
     } else {
       // For literals, use OBJECT_GET directly
@@ -2119,9 +2119,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     compileExpression(*await_expr.argument);
     {
       uint32_t strId = addStringConstant("async.await");
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-          BytecodeValue::makeStringValId(strId),
-          BytecodeValue(static_cast<uint32_t>(1))});
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(1))});
     }
     break;
   }
@@ -2161,14 +2161,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding->kind == ResolvedBindingKind::Global) {
         {
           uint32_t strId = addStringConstant(binding->name);
-          emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
         throw std::runtime_error(
             "Cannot update variable with binding kind: " +
             std::to_string(static_cast<int>(binding->kind)));
       }
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(1))));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
       emit(OpCode::DUP); // Save result for return value
       if (binding->kind == ResolvedBindingKind::Local) {
@@ -2178,7 +2178,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding->kind == ResolvedBindingKind::Global) {
         {
           uint32_t strId = addStringConstant(binding->name);
-          emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+          emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
       }
     } else {
@@ -2191,14 +2191,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding->kind == ResolvedBindingKind::Global) {
         {
           uint32_t strId = addStringConstant(binding->name);
-          emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
         throw std::runtime_error("Cannot update variable with binding kind: " +
                                  std::to_string(static_cast<int>(binding->kind)));
       }
       emit(OpCode::DUP); // Save old value
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(1))));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
       if (binding->kind == ResolvedBindingKind::Local) {
         emit(OpCode::STORE_VAR, binding->slot);
@@ -2207,7 +2207,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding->kind == ResolvedBindingKind::Global) {
         {
           uint32_t strId = addStringConstant(binding->name);
-          emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+          emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
       }
       emit(OpCode::POP); // Remove new value, leave old value on stack
@@ -2239,9 +2239,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Length operator: call any.len on the operand
       {
         uint32_t strId = addStringConstant("any.len");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(1))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(1))});
       }
       break;
     default:
@@ -2304,7 +2304,7 @@ void ByteCompiler::compileCallExpression(
     }
     // Emit CALL_SUPER opcode with method name and arg count
     emit(OpCode::CALL_SUPER,
-         std::vector<BytecodeValue>{expression.superMethodName, arg_count});
+         std::vector<Value>{Value::makeStringValId(addStringConstant(expression.superMethodName)), Value::makeInt(static_cast<int64_t>(arg_count))});
     return;
   }
 
@@ -2326,9 +2326,9 @@ void ByteCompiler::compileCallExpression(
       }
       {
         uint32_t strId = addStringConstant("struct.new");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(totalArgs)});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(totalArgs)});
       }
       return;
     }
@@ -2353,9 +2353,9 @@ void ByteCompiler::compileCallExpression(
       }
       {
         uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(totalArgs)});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(totalArgs)});
       }
       return;
     }
@@ -2392,9 +2392,9 @@ void ByteCompiler::compileCallExpression(
       }
       {
         uint32_t strId = addStringConstant("any." + property->symbol);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(totalArgs)});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(totalArgs)});
       }
       return;
     }
@@ -2433,9 +2433,9 @@ void ByteCompiler::compileCallExpression(
 
       {
         uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(totalArgs)});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(totalArgs)});
       }
       return;
     }
@@ -2444,7 +2444,7 @@ void ByteCompiler::compileCallExpression(
       // Global variable that might contain a function - load and call
       {
         uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       }
 
       for (const auto &arg : expression.args) {
@@ -2737,7 +2737,7 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
     // Create counter variable starting at 0
     uint32_t counterSlot = next_local_index++;
     reserveLocalSlot(counterSlot);
-    emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(0))));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
     emit(OpCode::STORE_VAR, counterSlot);
 
     uint32_t loop_start =
@@ -2754,7 +2754,7 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
 
     // Increment counter
     emit(OpCode::LOAD_VAR, counterSlot);
-    emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(1))));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
     emit(OpCode::ADD);
     emit(OpCode::STORE_VAR, counterSlot);
 
@@ -3254,7 +3254,7 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
     compileExpression(*whenBlock.condition);
   } else {
     emit(OpCode::LOAD_CONST,
-         BytecodeValue::makeBool(true)); // Default to true if no condition
+         Value::makeBool(true)); // Default to true if no condition
   }
 
   // Store condition result
@@ -3312,7 +3312,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
         emit(OpCode::RETURN);
       }
     } else {
-      emit(OpCode::LOAD_CONST, addConstant(BytecodeValue::makeInt(static_cast<int64_t>(0))));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
     }
 
     leaveFunction();
@@ -3326,15 +3326,15 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     // Load the hotkey action function
     {
       uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
 
     // Create hotkey context object
     {
       uint32_t strId = addStringConstant("Hotkey");
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-          BytecodeValue::makeStringValId(strId),
-          BytecodeValue(static_cast<uint32_t>(1))});
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(1))});
     }
 
     // Call the action with @ context as parameter
@@ -3349,13 +3349,13 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     // Register the hotkey with the wrapper function
     {
       uint32_t strId = addStringConstant("hotkey_wrapper");
-      emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
     {
       uint32_t strId = addStringConstant("hotkey.register");
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-          BytecodeValue::makeStringValId(strId),
-          BytecodeValue(static_cast<uint32_t>(2))});
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(2))});
     }
     emit(OpCode::POP); // Discard result
 
@@ -3378,9 +3378,9 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       emit(OpCode::LOAD_CONST, addStringConstant(cmd.text));
       {
         uint32_t strId = addStringConstant("io.send");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(1))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(1))});
       }
       break;
     case ast::InputCommand::SendKey:
@@ -3388,9 +3388,9 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       emit(OpCode::LOAD_CONST, addStringConstant(cmd.key));
       {
         uint32_t strId = addStringConstant("io.sendKey");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(1))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(1))});
       }
       break;
     case ast::InputCommand::MouseClick:
@@ -3398,9 +3398,9 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       emit(OpCode::LOAD_CONST, addStringConstant(cmd.text));
       {
         uint32_t strId = addStringConstant("io.mouseClick");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(1))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(1))});
       }
       break;
     case ast::InputCommand::MouseMove:
@@ -3411,9 +3411,9 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       emit(OpCode::LOAD_CONST, addStringConstant(cmd.yExprStr));
       {
         uint32_t strId = addStringConstant("io.mouseMove");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(2))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(2))});
       }
       break;
     case ast::InputCommand::MouseRelative:
@@ -3422,19 +3422,19 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       emit(OpCode::LOAD_CONST, addStringConstant(cmd.yExprStr));
       {
         uint32_t strId = addStringConstant("io.mouseMoveRel");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(2))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(2))});
       }
       break;
     case ast::InputCommand::Sleep:
       // sleep_ms(cmd.duration)
-      emit(OpCode::LOAD_CONST, BytecodeValue::makeInt(std::stoi(cmd.duration)));
+      emit(OpCode::LOAD_CONST, Value::makeInt(std::stoi(cmd.duration)));
       {
         uint32_t strId = addStringConstant("sleep_ms");
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-            BytecodeValue::makeStringValId(strId),
-            BytecodeValue(static_cast<uint32_t>(1))});
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(1))});
       }
       break;
     default:

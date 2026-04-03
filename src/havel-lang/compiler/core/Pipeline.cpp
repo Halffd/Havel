@@ -234,7 +234,7 @@ std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
   return out.str();
 }
 
-std::string formatValue(const BytecodeValue &value) {
+std::string formatValue(const Value &value) {
   if (value.isNull()) {
     return "null";
   }

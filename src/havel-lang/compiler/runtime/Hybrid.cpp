@@ -17,9 +17,9 @@ public:
   void compileFunction(const BytecodeFunction &func) {
     compiled_functions[func.name] = true;
   }
-  BytecodeValue executeCompiled(const std::string &func_name,
-                                const std::vector<BytecodeValue> &args) {
-    return BytecodeValue{std::in_place_index<0>}; // Placeholder
+  Value executeCompiled(const std::string &func_name,
+                                const std::vector<Value> &args) {
+    return Value::makeNull(); // Placeholder
   }
   bool isCompiled(const std::string &func_name) const {
     return compiled_functions.count(func_name) > 0;
@@ -43,8 +43,8 @@ bool Hybrid::compile(const ast::Program &program) {
   }
 }
 
-BytecodeValue Hybrid::execute(const std::string &function_name,
-                                    const std::vector<BytecodeValue> &args) {
+Value Hybrid::execute(const std::string &function_name,
+                                    const std::vector<Value> &args) {
   if (!this->current_chunk) {
     throw std::runtime_error("No compiled program available");
   }

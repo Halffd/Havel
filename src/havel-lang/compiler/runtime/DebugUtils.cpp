@@ -507,25 +507,19 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
   }
 }
 
-std::string BytecodeDisassembler::operandToString(const BytecodeValue& operand) {
-  return std::visit([](const auto& val) -> std::string {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, int64_t>) {
-      return std::to_string(val);
-    } else if constexpr (std::is_same_v<T, double>) {
-      return std::to_string(val);
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return val ? "true" : "false";
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return "\"" + val + "\"";
-    } else if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      return "nil";
-    } else if constexpr (std::is_same_v<T, uint32_t>) {
-      return std::to_string(val);
-    } else {
-      return "<?>"; // For FunctionObject, ClosureRef, etc.
-    }
-  }, operand);
+std::string BytecodeDisassembler::operandToString(const Value& operand) {
+  if (operand.isInt()) return std::to_string(operand.asInt());
+  if (operand.isDouble()) return std::to_string(operand.asDouble());
+  if (operand.isBool()) return operand.asBool() ? "true" : "false";
+  if (operand.isNull()) return "nil";
+  if (operand.isStringValId()) {
+    // TODO: string pool lookup
+    return "\"<string>\"";
+  }
+  if (operand.isStringId()) return std::to_string(operand.asStringId());
+  if (operand.isObjectId()) return std::to_string(operand.asObjectId());
+  if (operand.isArrayId()) return std::to_string(operand.asArrayId());
+  return "<?>"; // For FunctionObject, ClosureRef, etc.
 }
 
 std::string BytecodeDisassembler::formatInstruction(
@@ -542,7 +536,7 @@ std::string BytecodeDisassembler::formatInstruction(
 // ConstantPool Implementation
 // ============================================================================
 
-uint32_t ConstantPool::add(const BytecodeValue& value) {
+uint32_t ConstantPool::add(const Value& value) {
   // Check if already exists
   auto existing = find(value);
   if (existing) {
@@ -556,18 +550,18 @@ uint32_t ConstantPool::add(const BytecodeValue& value) {
   return index;
 }
 
-const BytecodeValue& ConstantPool::get(uint32_t index) const {
+const Value& ConstantPool::get(uint32_t index) const {
   if (index >= constants_.size()) {
     throw std::out_of_range("Constant index out of range");
   }
   return constants_[index];
 }
 
-bool ConstantPool::has(const BytecodeValue& value) const {
+bool ConstantPool::has(const Value& value) const {
   return find(value).has_value();
 }
 
-std::optional<uint32_t> ConstantPool::find(const BytecodeValue& value) const {
+std::optional<uint32_t> ConstantPool::find(const Value& value) const {
   auto it = indexMap_.find(hashValue(value));
   if (it != indexMap_.end()) {
     return it->second;
@@ -584,23 +578,16 @@ void ConstantPool::reserve(size_t capacity) {
   constants_.reserve(capacity);
 }
 
-std::string ConstantPool::hashValue(const BytecodeValue& value) const {
-  return std::visit([](const auto& val) -> std::string {
-    using T = std::decay_t<decltype(val)>;
-    if constexpr (std::is_same_v<T, int64_t>) {
-      return "i:" + std::to_string(val);
-    } else if constexpr (std::is_same_v<T, double>) {
-      return "d:" + std::to_string(val);
-    } else if constexpr (std::is_same_v<T, bool>) {
-      return val ? "b:true" : "b:false";
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return "s:" + val;
-    } else if constexpr (std::is_same_v<T, std::nullptr_t>) {
-      return "n:null";
-    } else {
-      return "u:ref"; // For ObjectRef, ArrayRef, etc.
-    }
-  }, value);
+std::string ConstantPool::hashValue(const Value& value) const {
+  if (value.isInt()) return "i:" + std::to_string(value.asInt());
+  if (value.isDouble()) return "d:" + std::to_string(value.asDouble());
+  if (value.isBool()) return value.asBool() ? "b:true" : "b:false";
+  if (value.isNull()) return "n:null";
+  if (value.isStringValId()) {
+    // TODO: string pool lookup
+    return "s:<string>";
+  }
+  return "u:ref"; // For ObjectRef, ArrayRef, etc.
 }
 
 std::string ConstantPool::serialize() const {

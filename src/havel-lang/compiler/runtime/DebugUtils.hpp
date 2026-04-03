@@ -205,7 +205,7 @@ public:
 
   // Helper
   static std::string opcodeToString(OpCode opcode);
-  static std::string operandToString(const BytecodeValue& operand);
+  static std::string operandToString(const Value& operand);
 
 private:
   const BytecodeChunk& chunk_;
@@ -223,16 +223,16 @@ public:
   ConstantPool() = default;
 
   // Add constant, returns index (existing or new)
-  uint32_t add(const BytecodeValue& value);
+  uint32_t add(const Value& value);
 
   // Get constant by index
-  const BytecodeValue& get(uint32_t index) const;
+  const Value& get(uint32_t index) const;
 
   // Check if constant exists
-  bool has(const BytecodeValue& value) const;
+  bool has(const Value& value) const;
 
   // Find existing constant
-  std::optional<uint32_t> find(const BytecodeValue& value) const;
+  std::optional<uint32_t> find(const Value& value) const;
 
   // Size
   size_t size() const { return constants_.size(); }
@@ -240,17 +240,17 @@ public:
 
   // Bulk operations
   void reserve(size_t capacity);
-  std::vector<BytecodeValue> getAll() const { return constants_; }
+  std::vector<Value> getAll() const { return constants_; }
 
   // Serialization
   std::string serialize() const;
   bool deserialize(const std::string& data);
 
 private:
-  std::vector<BytecodeValue> constants_;
+  std::vector<Value> constants_;
   std::unordered_map<std::string, uint32_t> indexMap_; // Hash -> index
 
-  std::string hashValue(const BytecodeValue& value) const;
+  std::string hashValue(const Value& value) const;
 };
 
 } // namespace havel::compiler

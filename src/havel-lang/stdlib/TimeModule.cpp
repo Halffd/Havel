@@ -5,7 +5,7 @@
 #include <iomanip>
 #include <sstream>
 
-using havel::compiler::BytecodeValue;
+using havel::compiler::Value;
 using havel::compiler::VMApi;
 
 namespace havel::stdlib {
@@ -14,17 +14,17 @@ namespace havel::stdlib {
 // NOTE: time.sleep is now provided by the host layer (AsyncService)
 void registerTimeModule(VMApi &api) {
   // Get current timestamp
-  api.registerFunction("time.now", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("time.now", [](const std::vector<Value> &args) {
     auto now = std::chrono::system_clock::now();
     auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                          now.time_since_epoch())
                          .count();
-    return BytecodeValue(static_cast<int64_t>(timestamp));
+    return Value(static_cast<int64_t>(timestamp));
   });
 
   // Format timestamp as string
   api.registerFunction(
-      "time.format", [](const std::vector<BytecodeValue> &args) {
+      "time.format", [](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.format() requires timestamp");
 
@@ -43,33 +43,35 @@ void registerTimeModule(VMApi &api) {
         std::time_t time = timestamp / 1000;
         std::stringstream ss;
         ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
-        return BytecodeValue(ss.str());
+        // TODO: string pool integration - for now return null
+        (void)ss;
+        return Value::makeNull();
       });
 
   // Advanced: time.hour - get current hour
-  api.registerFunction("time.hour", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("time.hour", [](const std::vector<Value> &args) {
     auto now = std::chrono::system_clock::now();
     std::time_t time = std::chrono::system_clock::to_time_t(now);
     std::tm *tm = std::localtime(&time);
-    return BytecodeValue(static_cast<int64_t>(tm->tm_hour));
+    return Value(static_cast<int64_t>(tm->tm_hour));
   });
 
   // Advanced: time.minute - get current minute
   api.registerFunction(
-      "time.minute", [](const std::vector<BytecodeValue> &args) {
+      "time.minute", [](const std::vector<Value> &args) {
         auto now = std::chrono::system_clock::now();
         std::time_t time = std::chrono::system_clock::to_time_t(now);
         std::tm *tm = std::localtime(&time);
-        return BytecodeValue(static_cast<int64_t>(tm->tm_min));
+        return Value(static_cast<int64_t>(tm->tm_min));
       });
 
   // Advanced: time.second - get current second
   api.registerFunction(
-      "time.second", [](const std::vector<BytecodeValue> &args) {
+      "time.second", [](const std::vector<Value> &args) {
         auto now = std::chrono::system_clock::now();
         std::time_t time = std::chrono::system_clock::to_time_t(now);
         std::tm *tm = std::localtime(&time);
-        return BytecodeValue(static_cast<int64_t>(tm->tm_sec));
+        return Value(static_cast<int64_t>(tm->tm_sec));
       });
 
   // Register time object (no sleep - that's in host layer)

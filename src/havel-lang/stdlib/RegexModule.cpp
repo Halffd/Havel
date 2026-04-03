@@ -1,7 +1,7 @@
 /* RegexModule.cpp - VM-native stdlib module */
 #include "RegexModule.hpp"
 
-using havel::compiler::BytecodeValue;
+using havel::compiler::Value;
 using havel::compiler::VMApi;
 
 namespace havel::stdlib {
@@ -9,7 +9,7 @@ namespace havel::stdlib {
 // Register regex module with VMApi (stable API layer)
 void registerRegexModule(VMApi &api) {
   // Helper to get string from Value (TODO: string pool lookup)
-  auto getString = [](const BytecodeValue &v) -> std::string {
+  auto getString = [](const Value &v) -> std::string {
     if (v.isStringValId()) {
       return "<string:" + std::to_string(v.asStringValId()) + ">";
     }
@@ -18,7 +18,7 @@ void registerRegexModule(VMApi &api) {
 
   // regex_match(pattern, text) - Test if text matches pattern
   api.registerFunction(
-      "regex_match", [&api, getString](const std::vector<BytecodeValue> &args) {
+      "regex_match", [&api, getString](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("regex_match() requires pattern and text");
 
@@ -31,7 +31,7 @@ void registerRegexModule(VMApi &api) {
         try {
           std::regex re(pattern);
           bool matches = std::regex_match(text, re);
-          return BytecodeValue(matches);
+          return Value(matches);
         } catch (const std::regex_error &e) {
           throw std::runtime_error("Invalid regex pattern: " +
                                    std::string(e.what()));
@@ -40,7 +40,7 @@ void registerRegexModule(VMApi &api) {
 
   // regex_search(pattern, text) - Search for substring pattern in text
   api.registerFunction(
-      "regex_search", [&api, getString](const std::vector<BytecodeValue> &args) {
+      "regex_search", [&api, getString](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("regex_search() requires pattern and text");
 
@@ -54,12 +54,12 @@ void registerRegexModule(VMApi &api) {
 
         // Simple substring search (not regex)
         bool found = text.find(pattern) != std::string::npos;
-        return BytecodeValue(found);
+        return Value(found);
       });
 
   // regex_replace(pattern, text, replacement) - Replace pattern matches
   api.registerFunction(
-      "regex_replace", [&api, getString](const std::vector<BytecodeValue> &args) {
+      "regex_replace", [&api, getString](const std::vector<Value> &args) {
         if (args.size() < 3)
           throw std::runtime_error(
               "regex_replace() requires pattern, text, and replacement");
@@ -84,7 +84,7 @@ void registerRegexModule(VMApi &api) {
 
   // regex_extract(pattern, text) - Extract all matches as array
   api.registerFunction(
-      "regex_extract", [&api, getString](const std::vector<BytecodeValue> &args) {
+      "regex_extract", [&api, getString](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("regex_extract() requires pattern and text");
 
@@ -107,7 +107,7 @@ void registerRegexModule(VMApi &api) {
             api.push(result, Value::makeNull());
           }
 
-          return BytecodeValue(result);
+          return Value(result);
         } catch (const std::regex_error &e) {
           throw std::runtime_error("Invalid regex pattern: " +
                                    std::string(e.what()));
@@ -116,7 +116,7 @@ void registerRegexModule(VMApi &api) {
 
   // regex_split(pattern, text) - Split text by pattern
   api.registerFunction(
-      "regex_split", [&api, getString](const std::vector<BytecodeValue> &args) {
+      "regex_split", [&api, getString](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("regex_split() requires pattern and text");
 
@@ -138,7 +138,7 @@ void registerRegexModule(VMApi &api) {
             api.push(result, Value::makeNull());
           }
 
-          return BytecodeValue(result);
+          return Value(result);
         } catch (const std::regex_error &e) {
           throw std::runtime_error("Invalid regex pattern: " +
                                    std::string(e.what()));
@@ -147,7 +147,7 @@ void registerRegexModule(VMApi &api) {
 
   // escape_regex(text) - Escape regex special characters
   api.registerFunction(
-      "escape_regex", [&api, getString](const std::vector<BytecodeValue> &args) {
+      "escape_regex", [&api, getString](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("escape_regex() requires text");
 

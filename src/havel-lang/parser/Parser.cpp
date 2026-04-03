@@ -299,6 +299,10 @@ int Parser::getBindingPower(TokenType type) const {
     case TokenType::Nullish:
       return 20;
 
+    // Arrow (lambda) - low precedence like assignment
+    case TokenType::Arrow:
+      return 10;
+
     // Logical OR
     case TokenType::Or:
       return 30;
@@ -410,6 +414,9 @@ namespace {
       
       // Nullish coalescing
       setBoth(Nullish, 20, 20);
+      
+      // Arrow (lambda) - low precedence like assignment
+      setBoth(Arrow, 10, 5);
       
       // Logical OR
       setBoth(Or, 30, 30);
@@ -909,6 +916,37 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
       args.push_back(std::move(left));
       return std::make_unique<ast::CallExpression>(
           std::move(right), std::move(args));
+    }
+
+    case TokenType::Arrow: {
+      // Arrow function: identifier => body
+      // left should be an identifier (the parameter)
+      auto *ident = dynamic_cast<ast::Identifier*>(left.get());
+      if (!ident) {
+        errorAt(token, "Arrow function requires an identifier parameter");
+        return nullptr;
+      }
+      
+      // Parse the body with appropriate precedence
+      auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
+      if (!bodyExpr) {
+        return nullptr;
+      }
+      
+      // Create function parameter from the identifier
+      std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+      auto param = std::make_unique<ast::FunctionParameter>(
+          std::make_unique<ast::Identifier>(ident->symbol),
+          std::nullopt, std::nullopt, false);
+      params.push_back(std::move(param));
+      
+      // Wrap body in a block statement
+      auto body = std::make_unique<ast::BlockStatement>();
+      auto exprStmt = std::make_unique<ast::ExpressionStatement>(std::move(bodyExpr));
+      body->body.push_back(std::move(exprStmt));
+      
+      return std::make_unique<ast::LambdaExpression>(
+          std::move(params), std::move(body));
     }
 
     default:

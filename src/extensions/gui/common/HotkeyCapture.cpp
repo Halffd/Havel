@@ -1,4 +1,4 @@
-#include "map_manager/MapManagerWindow.hpp"
+#include "gui/map_manager/MapManagerWindow.hpp"
 #include "qt.hpp"
 #include <QKeyEvent>
 #include <QMouseEvent>

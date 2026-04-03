@@ -91,8 +91,13 @@ ByteCompiler::compile(const ast::Program &program) {
   std::cerr << "[DEBUG ByteCompiler] Program has " << program.body.size() << " statements" << std::endl;
   for (size_t i = 0; i < program.body.size(); i++) {
     const auto &statement = program.body[i];
-    std::cerr << "[DEBUG ByteCompiler] Statement " << i << ": kind=" << (statement ? static_cast<int>(statement->kind) : -1) << std::endl;
+    std::cerr << "[DEBUG ByteCompiler] Statement " << i << ": kind=" << (statement ? static_cast<int>(statement->kind) : -1);
+    if (statement) {
+      std::cerr << " type=" << statement->toString();
+    }
+    std::cerr << std::endl;
     if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
+      std::cerr << "[DEBUG ByteCompiler]   Not a function declaration, skipping" << std::endl;
       if (statement && statement->kind == ast::NodeType::StructDeclaration) {
         const auto &decl =
             static_cast<const ast::StructDeclaration &>(*statement);
@@ -100,6 +105,7 @@ ByteCompiler::compile(const ast::Program &program) {
       }
       continue;
     }
+    std::cerr << "[DEBUG ByteCompiler]   Found function declaration!" << std::endl;
     const auto &decl =
         static_cast<const ast::FunctionDeclaration &>(*statement);
     if (!decl.name) {
@@ -108,7 +114,9 @@ ByteCompiler::compile(const ast::Program &program) {
     top_level_function_indices_by_name_[decl.name->symbol] =
         next_function_index;
     function_indices_by_node_[&decl] = next_function_index++;
+    declared_functions.push_back(&decl);  // Add top-level function to compilation list
   }
+  std::cerr << "[DEBUG ByteCompiler] After first loop: declared_functions.size()=" << declared_functions.size() << std::endl;
 
   for (const auto &statement : program.body) {
     if (!statement) {
@@ -143,6 +151,7 @@ ByteCompiler::compile(const ast::Program &program) {
   compiled_functions.resize(main_function_index + 1);
 
   // Compile all declared functions (top-level + nested) before __main__.
+  std::cerr << "[DEBUG ByteCompiler] Compiling " << declared_functions.size() << " functions" << std::endl;
   for (const auto *decl : declared_functions) {
     if (!decl) {
       continue;
@@ -273,6 +282,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     throw std::runtime_error("Function declaration missing name");
   }
+  std::cerr << "[DEBUG ByteCompiler] compileFunction: " << function.name->symbol << " params=" << function.parameters.size() << std::endl;
 
   auto index_it = function_indices_by_node_.find(&function);
   if (index_it == function_indices_by_node_.end()) {
@@ -296,6 +306,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
       throw std::runtime_error("Function parameter missing pattern");
     }
     collectParameterPatternSlots(*param->pattern);
+    std::cerr << "[DEBUG ByteCompiler] Param " << i << " next_local_index=" << next_local_index << std::endl;
 
     // Track variadic parameter
     if (param->isVariadic) {
@@ -2272,41 +2283,43 @@ void ByteCompiler::compileCallExpression(
            std::vector<BytecodeValue>{binding->name, totalArgs});
       return;
     }
-    // Check for method call on primitive (prototype method)
-    if (expression.callee->kind == ast::NodeType::MemberExpression) {
-      const auto &member =
-          static_cast<const ast::MemberExpression &>(*expression.callee);
-      auto *property =
-          dynamic_cast<const ast::Identifier *>(member.property.get());
-      if (!member.object || !property) {
-        throw std::runtime_error("Unsupported member call expression");
-      }
+  }
 
-      // Route ALL method calls through any.* dispatch for consistency
-      // s.upper() -> CALL_HOST "any.upper", N
-      // string.upper(s) -> CALL_HOST "any.upper", N
-      compileExpression(*member.object);
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
-        }
-        compileExpression(*arg);
-      }
-      uint32_t totalArgs = arg_count + 1;
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
-          compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET);
-        }
-        totalArgs++;
-      }
-      emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{"any." + property->symbol, totalArgs});
-      return;
+  // Handle method calls on objects (e.g., nums.map(double))
+  // This must come before generic callee compilation
+  if (expression.callee->kind == ast::NodeType::MemberExpression) {
+    const auto &member =
+        static_cast<const ast::MemberExpression &>(*expression.callee);
+    auto *property =
+        dynamic_cast<const ast::Identifier *>(member.property.get());
+    if (!member.object || !property) {
+      throw std::runtime_error("Unsupported member call expression");
     }
+
+    // Route ALL method calls through any.* dispatch for consistency
+    // s.upper() -> CALL_HOST "any.upper", N
+    // string.upper(s) -> CALL_HOST "any.upper", N
+    compileExpression(*member.object);
+    for (const auto &arg : expression.args) {
+      if (!arg) {
+        throw std::runtime_error("Call expression contains null argument");
+      }
+      compileExpression(*arg);
+    }
+    uint32_t totalArgs = arg_count + 1;
+    if (hasKwargs) {
+      emit(OpCode::OBJECT_NEW);
+      for (const auto &kwarg : expression.kwargs) {
+        emit(OpCode::DUP);
+        emit(OpCode::LOAD_CONST, addConstant(kwarg.name));
+        compileExpression(*kwarg.value);
+        emit(OpCode::OBJECT_SET);
+      }
+      totalArgs++;
+    }
+    emit(OpCode::CALL_HOST,
+         std::vector<BytecodeValue>{"any." + property->symbol, totalArgs});
+    return;
   }
 
   if (expression.callee->kind == ast::NodeType::Identifier) {

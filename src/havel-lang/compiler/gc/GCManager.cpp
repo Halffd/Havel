@@ -23,7 +23,7 @@ void GCArray::markChildren(std::function<void(uint32_t)> marker) {
 
 size_t GCArray::size() const {
   size_t total = sizeof(*this);
-  total += elements.capacity() * sizeof(BytecodeValue);
+  total += elements.capacity() * sizeof(Value);
   return total;
 }
 
@@ -108,14 +108,14 @@ GCManager::GCManager(GCHeap& heap) : heap_(heap) {
 
 GCManager::~GCManager() = default;
 
-void GCManager::maybeCollect(const std::vector<BytecodeValue>& roots) {
+void GCManager::maybeCollect(const std::vector<Value>& roots) {
   if (paused_) return;
   if (currentAllocation_ < nextCollectionThreshold_) return;
 
   collect(roots);
 }
 
-void GCManager::collect(const std::vector<BytecodeValue>& roots) {
+void GCManager::collect(const std::vector<Value>& roots) {
   if (paused_) return;
 
   auto startTime = std::chrono::steady_clock::now();
@@ -137,7 +137,7 @@ void GCManager::collect(const std::vector<BytecodeValue>& roots) {
   currentAllocation_ = 0;
 }
 
-void GCManager::forceFullCollect(const std::vector<BytecodeValue>& roots) {
+void GCManager::forceFullCollect(const std::vector<Value>& roots) {
   if (paused_) return;
 
   // Reset allocation counter to force full collection
@@ -199,7 +199,7 @@ void GCManager::resume() {
   paused_ = false;
 }
 
-void GCManager::mark(const std::vector<BytecodeValue>& roots) {
+void GCManager::mark(const std::vector<Value>& roots) {
   // Clear all marks
   for (auto& [id, obj] : objects_) {
     (void)id;
@@ -242,13 +242,13 @@ void GCManager::sweep() {
   }
 }
 
-void GCManager::markRoots(const std::vector<BytecodeValue>& roots) {
+void GCManager::markRoots(const std::vector<Value>& roots) {
   for (const auto& root : roots) {
     markValue(root);
   }
 }
 
-void GCManager::markValue(const BytecodeValue& value) {
+void GCManager::markValue(const Value& value) {
   if (value.isObjectId()) {
     markObject(value.asObjectId());
   } else if (value.isArrayId()) {

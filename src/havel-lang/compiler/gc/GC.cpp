@@ -89,7 +89,7 @@ const GCHeap::ErrorObject *GCHeap::error(uint32_t id) const {
   return it == errors_.end() ? nullptr : &it->second;
 }
 
-IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
+IteratorRef GCHeap::allocateIterator(const Value &iterable) {
   const uint32_t id = next_iterator_id_++;
   Iterator iter;
   iter.iterable = iterable;
@@ -127,7 +127,7 @@ const GCHeap::Iterator *GCHeap::iterator(uint32_t id) const {
   return it == iterators_.end() ? nullptr : &it->second;
 }
 
-uint32_t GCHeap::createIterator(const BytecodeValue &iterable) {
+uint32_t GCHeap::createIterator(const Value &iterable) {
   IteratorRef ref = allocateIterator(iterable);
   return ref.id;
 }
@@ -144,7 +144,7 @@ uint32_t GCHeap::registerStructType(const std::string &name,
 // Struct allocation
 StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
   const uint32_t id = next_array_id_++;
-  structs_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue::makeNull());
+  structs_[id] = std::vector<Value>(fieldCount, Value::makeNull());
   return StructRef{.id = id, .typeId = typeId};
 }
 
@@ -197,7 +197,7 @@ uint32_t GCHeap::registerClassType(const std::string &name,
 ClassRef GCHeap::allocateClass(uint32_t typeId, size_t fieldCount,
                                uint32_t parentInstanceId) {
   const uint32_t id = next_array_id_++;
-  classes_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue::makeNull());
+  classes_[id] = std::vector<Value>(fieldCount, Value::makeNull());
   return ClassRef{.id = id, .typeId = typeId, .parentId = parentInstanceId};
 }
 
@@ -274,30 +274,30 @@ EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag,
                              size_t payloadCount) {
   const uint32_t id = next_array_id_++;
   enums_[id] = {
-      tag, std::vector<BytecodeValue>(payloadCount, BytecodeValue::makeNull())};
+      tag, std::vector<Value>(payloadCount, Value::makeNull())};
   return EnumRef{.id = id, .tag = tag, .typeId = typeId};
 }
 
-BytecodeValue GCHeap::iteratorNext(uint32_t id) {
+Value GCHeap::iteratorNext(uint32_t id) {
   auto *iter = iterator(id);
   if (!iter) {
     // Return {value: null, done: true}
     auto resultObj = allocateObject();
     auto *obj = object(resultObj.id);
-    (*obj)["value"] = BytecodeValue::makeNull();
-    (*obj)["done"] = BytecodeValue::makeBool(true);
-    return BytecodeValue::makeObjectId(resultObj.id);
+    (*obj)["value"] = Value::makeNull();
+    (*obj)["done"] = Value::makeBool(true);
+    return Value::makeObjectId(resultObj.id);
   }
 
   bool done = false;
-  BytecodeValue value;
+  Value value;
 
   // Dispatch based on iterable type
   if (iter->iterable.isArrayId()) {
     auto *arr = array(iter->iterable.asArrayId());
     if (!arr || iter->index >= arr->size()) {
       done = true;
-      value = BytecodeValue::makeNull();
+      value = Value::makeNull();
     } else {
       value = (*arr)[iter->index++];
     }
@@ -305,57 +305,57 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
     // String iteration - return character codes as integers
     if (iter->index >= 256) { // Placeholder: strings stored as IDs
       done = true;
-      value = BytecodeValue::makeNull();
+      value = Value::makeNull();
     } else {
-      value = BytecodeValue::makeInt(iter->index++); // TODO: real string iteration
+      value = Value::makeInt(iter->index++); // TODO: real string iteration
     }
   } else if (iter->iterable.isObjectId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
-      value = BytecodeValue::makeNull();
+      value = Value::makeNull();
     } else {
       // For objects, return the key as a string ID
       // TODO: integrate with proper string pool
-      value = BytecodeValue::makeNull(); // Placeholder - keys returned via OBJECT_GET
+      value = Value::makeNull(); // Placeholder - keys returned via OBJECT_GET
       iter->index++;
     }
   } else if (iter->iterable.isSetId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
-      value = BytecodeValue::makeNull();
+      value = Value::makeNull();
     } else {
       // Return set element as string ID
-      value = BytecodeValue::makeNull(); // Placeholder
+      value = Value::makeNull(); // Placeholder
       iter->index++;
     }
   } else if (iter->iterable.isRangeId()) {
     auto *r = range(iter->iterable.asRangeId());
     if (!r) {
       done = true;
-      value = BytecodeValue::makeNull();
+      value = Value::makeNull();
     } else {
       int64_t current = r->start + (iter->index * r->step);
       if ((r->step > 0 && current >= r->end) ||
           (r->step < 0 && current <= r->end)) {
         done = true;
-        value = BytecodeValue::makeNull();
+        value = Value::makeNull();
       } else {
-        value = BytecodeValue::makeInt(current);
+        value = Value::makeInt(current);
         iter->index++;
       }
     }
   } else {
     // Unknown type, just return done
     done = true;
-    value = BytecodeValue::makeNull();
+    value = Value::makeNull();
   }
 
   // Return {value, done}
   auto resultObj = allocateObject();
   auto *obj = object(resultObj.id);
   (*obj)["value"] = value;
-  (*obj)["done"] = BytecodeValue::makeBool(done);
-  return BytecodeValue::makeObjectId(resultObj.id);
+  (*obj)["done"] = Value::makeBool(done);
+  return Value::makeObjectId(resultObj.id);
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {
@@ -368,7 +368,7 @@ const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
   return it == closures_.end() ? nullptr : &it->second;
 }
 
-std::vector<BytecodeValue> *GCHeap::array(uint32_t id) {
+std::vector<Value> *GCHeap::array(uint32_t id) {
   auto it = arrays_.find(id);
   return it == arrays_.end() ? nullptr : &it->second;
 }
@@ -378,12 +378,12 @@ GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
   return it == objects_.end() ? nullptr : &it->second;
 }
 
-std::unordered_map<std::string, BytecodeValue> *GCHeap::set(uint32_t id) {
+std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) {
   auto it = sets_.find(id);
   return it == sets_.end() ? nullptr : &it->second;
 }
 
-uint64_t GCHeap::pinExternalRoot(const BytecodeValue &value) {
+uint64_t GCHeap::pinExternalRoot(const Value &value) {
   const uint64_t id = next_external_root_id_++;
   external_roots_[id] = value;
   return id;
@@ -393,7 +393,7 @@ bool GCHeap::unpinExternalRoot(uint64_t root_id) {
   return external_roots_.erase(root_id) > 0;
 }
 
-std::optional<BytecodeValue> GCHeap::externalRoot(uint64_t root_id) const {
+std::optional<Value> GCHeap::externalRoot(uint64_t root_id) const {
   auto it = external_roots_.find(root_id);
   if (it == external_roots_.end()) {
     return std::nullopt;
@@ -405,18 +405,18 @@ GCHeap::Stats GCHeap::stats() const {
   uint64_t heap_size = 0;
   for (const auto &[_, array] : arrays_) {
     heap_size += sizeof(array) +
-                 static_cast<uint64_t>(array.size()) * sizeof(BytecodeValue);
+                 static_cast<uint64_t>(array.size()) * sizeof(Value);
   }
   for (const auto &[_, object] : objects_) {
     heap_size += sizeof(object);
     for (const auto &[key, _] : object.data) {
-      heap_size += static_cast<uint64_t>(key.size()) + sizeof(BytecodeValue);
+      heap_size += static_cast<uint64_t>(key.size()) + sizeof(Value);
     }
   }
   for (const auto &[_, set] : sets_) {
     heap_size += sizeof(set);
     for (const auto &[key, _] : set) {
-      heap_size += static_cast<uint64_t>(key.size()) + sizeof(BytecodeValue);
+      heap_size += static_cast<uint64_t>(key.size()) + sizeof(Value);
     }
   }
   for (const auto &[_, closure] : closures_) {
@@ -435,11 +435,11 @@ GCHeap::Stats GCHeap::stats() const {
 }
 
 void GCHeap::maybeCollectGarbage(
-    const std::vector<BytecodeValue> &stack_values,
-    const std::vector<BytecodeValue> &locals,
-    const std::unordered_map<std::string, BytecodeValue> &globals,
+    const std::vector<Value> &stack_values,
+    const std::vector<Value> &locals,
+    const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<BytecodeValue>(uint32_t)>
+    const std::function<std::optional<Value>(uint32_t)>
         &open_local_reader) {
   allocations_since_last_++;
   if (allocations_since_last_ < allocation_budget_) {
@@ -450,11 +450,11 @@ void GCHeap::maybeCollectGarbage(
 }
 
 void GCHeap::markValue(
-    const BytecodeValue &value, std::unordered_set<uint32_t> &marked_arrays,
+    const Value &value, std::unordered_set<uint32_t> &marked_arrays,
     std::unordered_set<uint32_t> &marked_objects,
     std::unordered_set<uint32_t> &marked_sets,
     std::unordered_set<uint32_t> &marked_closures,
-    const std::function<std::optional<BytecodeValue>(uint32_t)>
+    const std::function<std::optional<Value>(uint32_t)>
         &open_local_reader) const {
   if (value.isArrayId()) {
     uint32_t id = value.asArrayId();
@@ -579,11 +579,11 @@ void GCHeap::markValue(
 }
 
 void GCHeap::collectGarbage(
-    const std::vector<BytecodeValue> &stack_values,
-    const std::vector<BytecodeValue> &locals,
-    const std::unordered_map<std::string, BytecodeValue> &globals,
+    const std::vector<Value> &stack_values,
+    const std::vector<Value> &locals,
+    const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<BytecodeValue>(uint32_t)>
+    const std::function<std::optional<Value>(uint32_t)>
         &open_local_reader) {
   const auto pause_start = std::chrono::steady_clock::now();
 
@@ -612,7 +612,7 @@ void GCHeap::collectGarbage(
     if (closure_id == 0) {
       continue;
     }
-    markValue(ClosureRef{.id = closure_id}, marked_arrays, marked_objects,
+    markValue(Value::makeClosureId(closure_id), marked_arrays, marked_objects,
               marked_sets, marked_closures, open_local_reader);
   }
 

@@ -1,8 +1,8 @@
 #include "AutomationSuite.hpp"
 #include "qt.hpp"
-#include "gui/ClipboardManager.hpp"
-#include "gui/ScreenshotManager.hpp"
-#include "gui/BrightnessPanel.hpp"
+#include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
+#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
+#include "extensions/gui/brightness_panel/BrightnessPanel.hpp"
 #include "core/automation/PixelAutomation.hpp"
 #include <QApplication>
 #include <QMenu>

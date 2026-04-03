@@ -6,7 +6,7 @@
 // #include <QSystemTrayIcon>
 // #include <QMainWindow>
 #include <memory>
-#include "SettingsWindow.hpp"
+#include "extensions/gui/common/SettingsWindow.hpp"
 namespace havel {
 class IO;  // Forward declare IO
 class SettingsWindow;

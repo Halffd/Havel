@@ -243,32 +243,33 @@ bool REPL::execute(const std::string& code) {
     auto result = vm_->executePersistent(*chunk, "__main__");
 
     // Print result if not null (use simple type-based conversion)
-    if (!std::holds_alternative<std::nullptr_t>(result)) {
-      if (std::holds_alternative<std::string>(result)) {
-        printValue(std::get<std::string>(result));
-      } else if (std::holds_alternative<int64_t>(result)) {
-        printValue(std::to_string(std::get<int64_t>(result)));
-      } else if (std::holds_alternative<double>(result)) {
-        printValue(std::to_string(std::get<double>(result)));
-      } else if (std::holds_alternative<bool>(result)) {
-        printValue(std::get<bool>(result) ? "true" : "false");
-      } else if (std::holds_alternative<compiler::ArrayRef>(result)) {
+    if (!result.isNull()) {
+      if (result.isStringValId()) {
+        // TODO: string pool lookup
+        printValue("<string>");
+      } else if (result.isInt()) {
+        printValue(std::to_string(result.asInt()));
+      } else if (result.isDouble()) {
+        printValue(std::to_string(result.asDouble()));
+      } else if (result.isBool()) {
+        printValue(result.asBool() ? "true" : "false");
+      } else if (result.isArrayId()) {
         // Print array as [elem1, elem2, ...]
-        auto arrRef = std::get<compiler::ArrayRef>(result);
+        auto arrRef = compiler::ArrayRef{result.asArrayId()};
         std::string arrStr = "[";
         size_t len = vm_->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           if (i > 0) arrStr += ", ";
           const auto& elem = vm_->getHostArrayValue(arrRef, i);
-          if (std::holds_alternative<std::string>(elem)) {
-            arrStr += std::get<std::string>(elem);
-          } else if (std::holds_alternative<int64_t>(elem)) {
-            arrStr += std::to_string(std::get<int64_t>(elem));
-          } else if (std::holds_alternative<double>(elem)) {
-            arrStr += std::to_string(std::get<double>(elem));
-          } else if (std::holds_alternative<bool>(elem)) {
-            arrStr += std::get<bool>(elem) ? "true" : "false";
-          } else if (std::holds_alternative<std::nullptr_t>(elem)) {
+          if (elem.isStringValId()) {
+            arrStr += "<string>";
+          } else if (elem.isInt()) {
+            arrStr += std::to_string(elem.asInt());
+          } else if (elem.isDouble()) {
+            arrStr += std::to_string(elem.asDouble());
+          } else if (elem.isBool()) {
+            arrStr += elem.asBool() ? "true" : "false";
+          } else if (elem.isNull()) {
             arrStr += "null";
           } else {
             arrStr += "?";

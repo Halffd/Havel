@@ -6,7 +6,7 @@
 #include "HotkeyManager.hpp"
 #include "modules/HostModules.hpp"
 #include "window/WindowManager.hpp"
-#include "gui/AutomationSuite.hpp"
+#include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include <atomic>
 #include <chrono>
 #include <csignal>

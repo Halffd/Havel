@@ -2,7 +2,7 @@
 #include "qt.hpp"
 
 // #include <QMainWindow>
-#include "AutomationSuite.hpp"
+#include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "core/ConfigManager.hpp"
 
 namespace havel {

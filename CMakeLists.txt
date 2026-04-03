@@ -326,10 +326,10 @@ file(GLOB_RECURSE CORE_SOURCES
 )
 
 # GUI sources (conditionally included based on backend)
-file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
+file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
 
-# Note: GUI sources are needed by main executable for ClipboardManager, GUIManager etc.
-# Qt extension gets its own copy of Qt-specific GUI sources
+# Note: gui extensions are independent GUI modules, each with its own __init__.py
+# for Python import support. Common utilities are in src/extensions/gui/common/
 
 # Havel language sources (conditional)
 set(HAVEL_LANG_SOURCES "")

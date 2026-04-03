@@ -1,6 +1,6 @@
 #include "Havel.hpp"
 #include "havel-lang/runtime/StdLibModules.hpp"
-#include "gui/AutomationSuite.hpp"
+#include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "BrightnessManager.hpp"
 #include "ConfigManager.hpp"
 #include "DisplayManager.hpp"

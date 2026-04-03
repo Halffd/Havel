@@ -6,7 +6,7 @@
 // #include <QFileSystemWatcher>
 // #include <QClipboard>
 // #include <QProcess>
-#include "ClipboardManager.hpp"  // Include ClipboardManager
+#include "extensions/gui/clipboard_manager/ClipboardManager.hpp"  // Include ClipboardManager
 
 namespace havel {
 

@@ -2,7 +2,7 @@
 #include "ai/ocr/OCR.hpp"
 #include "core/IO.hpp"
 #ifdef HAVE_QT_EXTENSION
-#include "gui/ScreenshotManager.hpp"
+#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #endif
 #include "window/WindowManager.hpp"
 #ifdef HAVE_QT_EXTENSION

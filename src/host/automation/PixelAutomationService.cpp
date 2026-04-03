@@ -5,7 +5,7 @@
  */
 #include "PixelAutomationService.hpp"
 #include "core/automation/PixelAutomation.hpp"
-#include "gui/ScreenshotManager.hpp"
+#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #include <QApplication>
 #include <QGuiApplication>
 #include <QScreen>

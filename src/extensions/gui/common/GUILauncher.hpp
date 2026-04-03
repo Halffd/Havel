@@ -1,8 +1,8 @@
 #pragma once
 #include "qt.hpp"
 
-#include "SystemMonitor.hpp"
-#include "FileAutomator.hpp"
+#include "../system_monitor/SystemMonitor.hpp"
+#include "../file_automator/FileAutomator.hpp"
 #include "ScriptRunner.hpp"
 // #include <QMainWindow>
 // #include <QWidget>

@@ -10,6 +10,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <fstream>
 
 namespace havel::compiler {
 

@@ -220,6 +220,65 @@ bool Parser::isDestructuringPattern() const {
   return false;
 }
 
+// Lookahead helper to detect object literals vs block statements
+// Object literal: {key: value, ...}
+// Block statement: { statements }
+bool Parser::isObjectLiteral() const {
+  // Must start with OpenBrace
+  if (at().type != havel::TokenType::OpenBrace) {
+    return false;
+  }
+
+  size_t offset = 1; // Skip past the '{'
+
+  // Skip newlines to find first significant token
+  while (position + offset < tokens.size() &&
+         tokens[position + offset].type == havel::TokenType::NewLine) {
+    offset++;
+  }
+
+  // Empty braces {} is an object literal in expression context
+  if (position + offset >= tokens.size()) {
+    return true;
+  }
+
+  const Token &firstToken = tokens[position + offset];
+
+  // If next token is '}', it's an empty object literal {}
+  if (firstToken.type == havel::TokenType::CloseBrace) {
+    return true;
+  }
+
+  // Object keys can be: identifier, string, number, or certain keywords
+  // followed by ':'
+  bool couldBeKey = (firstToken.type == havel::TokenType::Identifier ||
+                     firstToken.type == havel::TokenType::String ||
+                     firstToken.type == havel::TokenType::MultilineString ||
+                     firstToken.type == havel::TokenType::Number ||
+                     firstToken.type == havel::TokenType::Config ||
+                     firstToken.type == havel::TokenType::Devices ||
+                     firstToken.type == havel::TokenType::Modes ||
+                     firstToken.type == havel::TokenType::Mode);
+
+  if (!couldBeKey) {
+    return false;
+  }
+
+  // Look ahead to see if there's a ':' after the key
+  offset++;
+  while (position + offset < tokens.size() &&
+         tokens[position + offset].type == havel::TokenType::NewLine) {
+    offset++;
+  }
+
+  if (position + offset >= tokens.size()) {
+    return false;
+  }
+
+  // If we see ':' after a potential key, this is an object literal
+  return tokens[position + offset].type == havel::TokenType::Colon;
+}
+
 // ============================================================================
 // PRATT PARSER IMPLEMENTATION (Top-Down Operator Precedence)
 // ============================================================================
@@ -589,9 +648,15 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       return parseParenthesizedExpression();
 
     case TokenType::OpenBracket:
+      // parsePrattExpression already consumed '[', but parseArrayLiteral
+      // expects to consume it. Back up one position.
+      position--;
       return parseArrayLiteral();
 
     case TokenType::OpenBrace:
+      // parsePrattExpression already consumed '{', but parseObjectLiteral
+      // expects to consume it. Back up one position.
+      position--;
       return parseObjectLiteral();
 
     case TokenType::Fn:

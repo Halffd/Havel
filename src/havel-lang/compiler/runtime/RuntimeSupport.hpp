@@ -95,7 +95,7 @@ private:
     // Convert and call - expand parameter pack using Indices
     if constexpr (std::is_void_v<ReturnType>) {
       func(TypeTraits<ArgTypes>::fromValue(args[Indices])...);
-      return nullptr;
+      return BytecodeValue::makeNull();
     } else {
       ReturnType result = func(TypeTraits<ArgTypes>::fromValue(args[Indices])...);
       return TypeTraits<ReturnType>::toValue(result);
@@ -109,18 +109,18 @@ private:
 template<>
 struct NativeFunctionBridge::TypeTraits<void> {
   static void fromValue(const BytecodeValue&) {}
-  static BytecodeValue toValue() { return nullptr; }
+  static BytecodeValue toValue() { return BytecodeValue::makeNull(); }
   static const char* name() { return "void"; }
 };
 
 // int
 template<>
 inline int NativeFunctionBridge::TypeTraits<int>::fromValue(const BytecodeValue& value) {
-  if (std::holds_alternative<int64_t>(value)) {
-    return static_cast<int>(std::get<int64_t>(value));
+  if (value.isInt()) {
+    return static_cast<int>(value.asInt());
   }
-  if (std::holds_alternative<double>(value)) {
-    return static_cast<int>(std::get<double>(value));
+  if (value.isDouble()) {
+    return static_cast<int>(value.asDouble());
   }
   return 0;
 }

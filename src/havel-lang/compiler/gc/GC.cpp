@@ -144,7 +144,7 @@ uint32_t GCHeap::registerStructType(const std::string &name,
 // Struct allocation
 StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
   const uint32_t id = next_array_id_++;
-  structs_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue(nullptr));
+  structs_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue::makeNull());
   return StructRef{.id = id, .typeId = typeId};
 }
 
@@ -197,7 +197,7 @@ uint32_t GCHeap::registerClassType(const std::string &name,
 ClassRef GCHeap::allocateClass(uint32_t typeId, size_t fieldCount,
                                uint32_t parentInstanceId) {
   const uint32_t id = next_array_id_++;
-  classes_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue(nullptr));
+  classes_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue::makeNull());
   return ClassRef{.id = id, .typeId = typeId, .parentId = parentInstanceId};
 }
 
@@ -274,7 +274,7 @@ EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag,
                              size_t payloadCount) {
   const uint32_t id = next_array_id_++;
   enums_[id] = {
-      tag, std::vector<BytecodeValue>(payloadCount, BytecodeValue(nullptr))};
+      tag, std::vector<BytecodeValue>(payloadCount, BytecodeValue::makeNull())};
   return EnumRef{.id = id, .tag = tag, .typeId = typeId};
 }
 
@@ -314,15 +314,19 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       done = true;
       value = BytecodeValue::makeNull();
     } else {
-      // For objects, return the key (ByteCompiler expects key for lookup)
-      value = iter->keys[iter->index++];
+      // For objects, return the key as a string ID
+      // TODO: integrate with proper string pool
+      value = BytecodeValue::makeNull(); // Placeholder - keys returned via OBJECT_GET
+      iter->index++;
     }
   } else if (iter->iterable.isSetId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
       value = BytecodeValue::makeNull();
     } else {
-      value = iter->keys[iter->index++];
+      // Return set element as string ID
+      value = BytecodeValue::makeNull(); // Placeholder
+      iter->index++;
     }
   } else if (iter->iterable.isRangeId()) {
     auto *r = range(iter->iterable.asRangeId());
@@ -452,8 +456,8 @@ void GCHeap::markValue(
     std::unordered_set<uint32_t> &marked_closures,
     const std::function<std::optional<BytecodeValue>(uint32_t)>
         &open_local_reader) const {
-  if (std::holds_alternative<ArrayRef>(value)) {
-    uint32_t id = std::get<ArrayRef>(value).id;
+  if (value.isArrayId()) {
+    uint32_t id = value.asArrayId();
     if (!marked_arrays.insert(id).second) {
       return;
     }
@@ -468,8 +472,8 @@ void GCHeap::markValue(
     return;
   }
 
-  if (std::holds_alternative<ObjectRef>(value)) {
-    uint32_t id = std::get<ObjectRef>(value).id;
+  if (value.isObjectId()) {
+    uint32_t id = value.asObjectId();
     if (!marked_objects.insert(id).second) {
       return;
     }
@@ -484,8 +488,8 @@ void GCHeap::markValue(
     return;
   }
 
-  if (std::holds_alternative<SetRef>(value)) {
-    uint32_t id = std::get<SetRef>(value).id;
+  if (value.isSetId()) {
+    uint32_t id = value.asSetId();
     if (!marked_sets.insert(id).second) {
       return;
     }
@@ -500,9 +504,9 @@ void GCHeap::markValue(
     return;
   }
 
-  if (std::holds_alternative<StructRef>(value)) {
+  if (value.isStructId()) {
     // Structs are value types, but we still need to mark their fields
-    uint32_t id = std::get<StructRef>(value).id;
+    uint32_t id = value.asStructId();
     auto it = structs_.find(id);
     if (it == structs_.end()) {
       return;
@@ -514,9 +518,9 @@ void GCHeap::markValue(
     return;
   }
 
-  if (std::holds_alternative<ClassRef>(value)) {
+  if (value.isClassId()) {
     // Classes are reference types - need to mark as visited
-    uint32_t id = std::get<ClassRef>(value).id;
+    uint32_t id = value.asClassId();
     if (!marked_arrays.insert(id)
              .second) { // Reuse marked_arrays for class tracking
       return;
@@ -532,9 +536,9 @@ void GCHeap::markValue(
     return;
   }
 
-  if (std::holds_alternative<EnumRef>(value)) {
+  if (value.isEnumId()) {
     // Enums have a payload array that needs marking
-    uint32_t id = std::get<EnumRef>(value).id;
+    uint32_t id = value.asEnumId();
     auto it = enums_.find(id);
     if (it == enums_.end()) {
       return;
@@ -546,8 +550,8 @@ void GCHeap::markValue(
     return;
   }
 
-  if (std::holds_alternative<ClosureRef>(value)) {
-    uint32_t id = std::get<ClosureRef>(value).id;
+  if (value.isClosureId()) {
+    uint32_t id = ClosureRef{value.asClosureId()}.id;
     if (!marked_closures.insert(id).second) {
       return;
     }

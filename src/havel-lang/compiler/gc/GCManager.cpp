@@ -10,12 +10,12 @@ namespace havel::compiler {
 
 void GCArray::markChildren(std::function<void(uint32_t)> marker) {
   for (const auto& elem : elements) {
-    if (std::holds_alternative<ObjectRef>(elem)) {
-      marker(std::get<ObjectRef>(elem).id);
-    } else if (std::holds_alternative<ArrayRef>(elem)) {
-      marker(std::get<ArrayRef>(elem).id);
-    } else if (std::holds_alternative<ClosureRef>(elem)) {
-      marker(std::get<ClosureRef>(elem).id);
+    if (elem.isObjectId()) {
+      marker(elem.asObjectId());
+    } else if (elem.isArrayId()) {
+      marker(elem.asArrayId());
+    } else if (elem.isClosureId()) {
+      marker(elem.asClosureId());
     }
     // Other types don't contain GC references
   }
@@ -34,12 +34,12 @@ size_t GCArray::size() const {
 void GCObjectMap::markChildren(std::function<void(uint32_t)> marker) {
   for (const auto& [key, value] : properties) {
     (void)key;
-    if (std::holds_alternative<ObjectRef>(value)) {
-      marker(std::get<ObjectRef>(value).id);
-    } else if (std::holds_alternative<ArrayRef>(value)) {
-      marker(std::get<ArrayRef>(value).id);
-    } else if (std::holds_alternative<ClosureRef>(value)) {
-      marker(std::get<ClosureRef>(value).id);
+    if (value.isObjectId()) {
+      marker(value.asObjectId());
+    } else if (value.isArrayId()) {
+      marker(value.asArrayId());
+    } else if (value.isClosureId()) {
+      marker(value.asClosureId());
     }
   }
 }
@@ -249,12 +249,12 @@ void GCManager::markRoots(const std::vector<BytecodeValue>& roots) {
 }
 
 void GCManager::markValue(const BytecodeValue& value) {
-  if (std::holds_alternative<ObjectRef>(value)) {
-    markObject(std::get<ObjectRef>(value).id);
-  } else if (std::holds_alternative<ArrayRef>(value)) {
-    markObject(std::get<ArrayRef>(value).id);
-  } else if (std::holds_alternative<ClosureRef>(value)) {
-    markObject(std::get<ClosureRef>(value).id);
+  if (value.isObjectId()) {
+    markObject(value.asObjectId());
+  } else if (value.isArrayId()) {
+    markObject(value.asArrayId());
+  } else if (value.isClosureId()) {
+    markObject(value.asClosureId());
   }
   // Other types don't contain GC references
 }

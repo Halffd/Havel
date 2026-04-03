@@ -128,10 +128,10 @@ private:
   Stats stats_;
 
   // Helper methods
-  bool isConstant(const BytecodeValue& value) const;
-  std::optional<BytecodeValue> evaluateBinaryOp(OpCode op,
-                                                const BytecodeValue& left,
-                                                const BytecodeValue& right) const;
+  bool isConstant(const Value& value) const;
+  std::optional<Value> evaluateBinaryOp(OpCode op,
+                                                const Value& left,
+                                                const Value& right) const;
   void removeInstruction(size_t functionIndex, size_t instructionIndex);
   void replaceInstruction(size_t functionIndex,
                           size_t instructionIndex,

@@ -1,6 +1,6 @@
 /*
  * MathModule.hpp - Math stdlib for VM (no host/service)
- * Pure VM implementation using BytecodeValue
+ * Pure VM implementation using Value
  */
 #pragma once
 #include "havel-lang/compiler/vm/VMApi.hpp"

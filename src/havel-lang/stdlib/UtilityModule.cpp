@@ -2,7 +2,7 @@
 #include "UtilityModule.hpp"
 
 using havel::compiler::ArrayRef;
-using havel::compiler::BytecodeValue;
+using havel::compiler::Value;
 using havel::compiler::ObjectRef;
 using havel::compiler::VMApi;
 
@@ -11,124 +11,129 @@ namespace havel::stdlib {
 // Register utility module with VMApi (stable API layer)
 void registerUtilityModule(VMApi &api) {
   // keys(obj) - Get keys from object/map
-  api.registerFunction("keys", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("keys", [&api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("keys() requires an object");
-    if (!std::holds_alternative<ObjectRef>(args[0]))
+    if (!args[0].isObjectId())
       throw std::runtime_error("keys() requires an object argument");
 
-    auto objRef = std::get<ObjectRef>(args[0]);
-    auto keys = api.getObjectKeys(objRef);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto keys = api.getObjectKeys(args[0]);
     auto result = api.makeArray();
 
     for (const auto &key : keys) {
-      api.push(result, BytecodeValue(key));
+      // TODO: string pool registration
+      api.push(result, Value::makeNull());
     }
 
-    return BytecodeValue(result);
+    return Value(result);
   });
 
   // items(obj) - Get key-value pairs from object/map
-  api.registerFunction("items", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("items", [&api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("items() requires an object");
-    if (!std::holds_alternative<ObjectRef>(args[0]))
+    if (!args[0].isObjectId())
       throw std::runtime_error("items() requires an object argument");
 
-    auto objRef = std::get<ObjectRef>(args[0]);
-    auto keys = api.getObjectKeys(objRef);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto keys = api.getObjectKeys(args[0]);
     auto result = api.makeArray();
 
     for (const auto &key : keys) {
       auto pair = api.makeArray();
-      api.push(pair, BytecodeValue(key));
+      // TODO: string pool registration
+      api.push(pair, Value::makeNull());
       // Note: getObjectValue not available in VMApi, so we'll use hasField
       // and return a placeholder for the value
-      if (api.hasField(objRef, key)) {
-        api.push(pair, BytecodeValue(std::string("value")));
+      if (api.hasField(args[0], key)) {
+        api.push(pair, api.getField(args[0], key));
       } else {
-        api.push(pair, BytecodeValue(nullptr));
+        api.push(pair, Value::makeNull());
       }
-      api.push(result, BytecodeValue(pair));
+      api.push(result, pair);
     }
 
-    return BytecodeValue(result);
+    return Value(result);
   });
 
   // list(value) - Convert to list
-  api.registerFunction("list", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("list", [&api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("list() requires an argument");
 
     const auto &arg = args[0];
 
     // If already an array, return it
-    if (std::holds_alternative<ArrayRef>(arg)) {
+    if (arg.isArrayId()) {
       return arg;
     }
 
     // If string, convert to array of characters
-    if (std::holds_alternative<std::string>(arg)) {
-      const auto &str = std::get<std::string>(arg);
+    if (arg.isStringValId()) {
+      // TODO: string pool lookup
+      std::string str = "<string:" + std::to_string(arg.asStringValId()) + ">";
       auto result = api.makeArray();
       for (char c : str) {
-        api.push(result, BytecodeValue(std::string(1, c)));
+        // TODO: string pool registration
+        api.push(result, Value::makeNull());
       }
-      return BytecodeValue(result);
+      return result;
     }
 
     // Otherwise, wrap in array
     auto result = api.makeArray();
     api.push(result, arg);
-    return BytecodeValue(result);
+    return Value(result);
   });
 
   // type(value) - Get type of value (alias for type.of)
-  api.registerFunction("type", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("type", [](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("type() requires an argument");
 
     const auto &arg = args[0];
 
-    if (std::holds_alternative<std::nullptr_t>(arg))
-      return BytecodeValue(std::string("null"));
-    if (std::holds_alternative<bool>(arg))
-      return BytecodeValue(std::string("bool"));
-    if (std::holds_alternative<int64_t>(arg))
-      return BytecodeValue(std::string("int"));
-    if (std::holds_alternative<double>(arg))
-      return BytecodeValue(std::string("num"));
-    if (std::holds_alternative<std::string>(arg))
-      return BytecodeValue(std::string("string"));
-    if (std::holds_alternative<ArrayRef>(arg))
-      return BytecodeValue(std::string("array"));
-    if (std::holds_alternative<ObjectRef>(arg))
-      return BytecodeValue(std::string("object"));
+    if (arg.isNull())
+      return Value::makeNull();
+    if (arg.isBool())
+      return Value::makeNull();
+    if (arg.isInt())
+      return Value::makeNull();
+    if (arg.isDouble())
+      return Value::makeNull();
+    if (arg.isStringValId())
+      return arg;
+    if (arg.isArrayId())
+      return Value::makeNull();
+    if (arg.isObjectId())
+      return Value::makeNull();
 
-    return BytecodeValue(std::string("unknown"));
+    return Value::makeNull();
   });
 
   // len(value) - Get length of string or array
-  api.registerFunction("len", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("len", [&api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("len() requires an argument");
 
     const auto &arg = args[0];
 
-    if (std::holds_alternative<std::string>(arg)) {
-      return BytecodeValue(
-          static_cast<int64_t>(std::get<std::string>(arg).length()));
+    if (arg.isStringValId()) {
+      // TODO: string pool lookup
+      std::string s = "<string:" + std::to_string(arg.asStringValId()) + ">";
+      return Value::makeInt(static_cast<int64_t>(s.length()));
     }
 
-    if (std::holds_alternative<ArrayRef>(arg)) {
-      return BytecodeValue(static_cast<int64_t>(api.getArrayLength(arg)));
+    if (arg.isArrayId()) {
+      return Value::makeInt(static_cast<int64_t>(api.getArrayLength(Value::makeArrayId(arg.asArrayId()))));
     }
 
     throw std::runtime_error("len() requires a string or array");
   });
 
   // tap(value, fn) - Call function with value, return value (for pipeline debugging)
-  api.registerFunction("tap", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("tap", [&api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("tap() requires value and function");
 
@@ -136,7 +141,7 @@ void registerUtilityModule(VMApi &api) {
     const auto &fnArg = args[1];
 
     // Call the function with the value
-    std::vector<BytecodeValue> callArgs = {value};
+    std::vector<Value> callArgs = {value};
     api.callFunction(fnArg, callArgs);
 
     // Return the original value

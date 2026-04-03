@@ -75,36 +75,34 @@ static void* api_get_host_service(const char* name) {
  * ========================================================================== */
 
 /**
- * Wrapper that converts C API call to C++ BytecodeValue call
+ * Wrapper that converts C API call to C++ Value call
  */
 struct ExtensionFunctionWrapper {
     HavelNativeFn c_function;
     
-    static BytecodeValue callWrapper(const std::vector<BytecodeValue>& args, 
+    static Value callWrapper(const std::vector<Value>& args, 
                                       void* userData) {
         auto* wrapper = static_cast<ExtensionFunctionWrapper*>(userData);
         if (!wrapper || !wrapper->c_function) {
-            return BytecodeValue(nullptr);
+            return Value::makeNull();
         }
         
-        /* Convert BytecodeValue args to HavelValue args */
+        /* Convert Value args to HavelValue args */
         std::vector<HavelValue*> c_args;
         c_args.reserve(args.size());
         
         for (const auto& arg : args) {
             HavelValue* havelVal = nullptr;
-            
-            /* Convert BytecodeValue to HavelValue */
-            if (std::holds_alternative<std::nullptr_t>(arg)) {
+
+            /* Convert Value to HavelValue */
+            if (arg.isNull()) {
                 havelVal = havel_new_null();
-            } else if (std::holds_alternative<bool>(arg)) {
-                havelVal = havel_new_bool(std::get<bool>(arg) ? 1 : 0);
-            } else if (std::holds_alternative<int64_t>(arg)) {
-                havelVal = havel_new_int(std::get<int64_t>(arg));
-            } else if (std::holds_alternative<double>(arg)) {
-                havelVal = havel_new_float(std::get<double>(arg));
-            } else if (std::holds_alternative<std::string>(arg)) {
-                havelVal = havel_new_string(std::get<std::string>(arg).c_str());
+            } else if (arg.isBool()) {
+                havelVal = havel_new_bool(arg.asBool() ? 1 : 0);
+            } else if (arg.isInt()) {
+                havelVal = havel_new_int(arg.asInt());
+            } else if (arg.isDouble()) {
+                havelVal = havel_new_float(arg.asDouble());
             } else {
                 havelVal = havel_new_null();  /* Unsupported type */
             }
@@ -118,43 +116,44 @@ struct ExtensionFunctionWrapper {
             c_args.data()
         );
         
-        /* Convert HavelValue result to BytecodeValue */
-        BytecodeValue bytecodeResult;
+        /* Convert HavelValue result to Value */
+        Value bytecodeResult;
         if (result) {
             switch (havel_get_type(result)) {
                 case HAVEL_NULL:
-                    bytecodeResult = BytecodeValue(nullptr);
+                    bytecodeResult = Value::makeNull();
                     break;
                 case HAVEL_BOOL:
-                    bytecodeResult = BytecodeValue(havel_get_bool(result) != 0);
+                    bytecodeResult = Value::makeBool(havel_get_bool(result) != 0);
                     break;
                 case HAVEL_INT:
-                    bytecodeResult = BytecodeValue(havel_get_int(result));
+                    bytecodeResult = Value::makeInt(havel_get_int(result));
                     break;
                 case HAVEL_FLOAT:
-                    bytecodeResult = BytecodeValue(havel_get_float(result));
+                    bytecodeResult = Value::makeDouble(havel_get_float(result));
                     break;
                 case HAVEL_STRING: {
-                    const char* str = havel_get_string(result);
-                    bytecodeResult = BytecodeValue(str ? str : "");
+                    // TODO: Store string in pool and use makeStringValId
+                    (void)havel_get_string(result);
+                    bytecodeResult = Value::makeNull();
                     break;
                 }
                 case HAVEL_HANDLE: {
                     /* For now, handles return nullptr to VM */
-                    bytecodeResult = BytecodeValue(nullptr);
+                    bytecodeResult = Value::makeNull();
                     break;
                 }
                 case HAVEL_ARRAY:
                 case HAVEL_OBJECT:
                     /* Complex types not yet supported */
-                    bytecodeResult = BytecodeValue(nullptr);
+                    bytecodeResult = Value::makeNull();
                     break;
             }
-            
+
             /* Free the result - ownership transferred */
             havel_decref(result);
         } else {
-            bytecodeResult = BytecodeValue(nullptr);
+            bytecodeResult = Value::makeNull();
         }
         
         /* Free argument values */
@@ -180,7 +179,7 @@ static void api_register_function(const char* module, const char* name,
     auto* wrapper = new ExtensionFunctionWrapper{fn};
     
     /* Create C++ function that calls the wrapper */
-    BytecodeHostFunction cppFn = [wrapper](const std::vector<BytecodeValue>& args) {
+    BytecodeHostFunction cppFn = [wrapper](const std::vector<Value>& args) {
         return ExtensionFunctionWrapper::callWrapper(args, wrapper);
     };
     

@@ -14,7 +14,7 @@ public:
   static void install(havel::compiler::VMApi &api);
 
   // Factory function to create hotkey context objects
-  static havel::compiler::BytecodeValue
+  static havel::compiler::Value
   createHotkeyContext(havel::compiler::VM *vm, const std::string &hotkeyId,
                       const std::string &alias, const std::string &key,
                       const std::string &condition, const std::string &info,

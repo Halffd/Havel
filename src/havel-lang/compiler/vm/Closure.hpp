@@ -35,11 +35,11 @@ public:
   bool hasGCTarget() const { return gcCell_ != nullptr; }
 
   // Value access (delegates to GC cell if present)
-  BytecodeValue getValue() const;
-  void setValue(const BytecodeValue& value);
+  Value getValue() const;
+  void setValue(const Value& value);
 
   // Close the upvalue - captures the current value
-  void close(const BytecodeValue& value);
+  void close(const Value& value);
   bool isClosed() const;
 
 private:
@@ -61,7 +61,7 @@ public:
                         const std::vector<UpvalueDescriptor>& descriptors,
                         const std::vector<std::shared_ptr<GCHeap::UpvalueCell>>&
                             parentUpvalues,
-                        const std::vector<BytecodeValue>& locals);
+                        const std::vector<Value>& locals);
 
   // Accessors
   uint32_t getFunctionIndex() const { return functionIndex_; }
@@ -72,15 +72,15 @@ public:
   // Upvalue access
   Upvalue& getUpvalue(size_t index);
   const Upvalue& getUpvalue(size_t index) const;
-  BytecodeValue getUpvalueValue(size_t index) const;
-  void setUpvalueValue(size_t index, const BytecodeValue& value);
+  Value getUpvalueValue(size_t index) const;
+  void setUpvalueValue(size_t index, const Value& value);
 
   // Check if this closure has a specific upvalue by source index
   bool hasUpvalue(uint32_t sourceIndex) const;
   std::optional<size_t> findUpvalueIndex(uint32_t sourceIndex) const;
 
-  // Convert to BytecodeValue (ClosureRef)
-  BytecodeValue toValue(uint32_t closureId) const;
+  // Convert to Value (ClosureRef)
+  Value toValue(uint32_t closureId) const;
 
   // Validation
   bool isValid() const { return functionIndex_ != UINT32_MAX; }
@@ -110,14 +110,14 @@ public:
 
   // Open a new upvalue or return existing one
   std::shared_ptr<GCHeap::UpvalueCell> openUpvalue(uint32_t localIndex,
-                                                    const BytecodeValue& value);
+                                                    const Value& value);
 
   // Close upvalues for a range of locals (when function returns)
   void closeUpvalues(uint32_t localsBase, uint32_t localsEnd,
-                       const std::vector<BytecodeValue>& locals);
+                       const std::vector<Value>& locals);
 
   // Close all upvalues
-  void closeAllUpvalues(const std::vector<BytecodeValue>& locals);
+  void closeAllUpvalues(const std::vector<Value>& locals);
 
   // Get existing open upvalue if present
   std::shared_ptr<GCHeap::UpvalueCell> getOpenUpvalue(uint32_t localIndex) const;

@@ -13,10 +13,10 @@ void registerConfigModule(compiler::VMApi &api);
 void autoLoadConfig(compiler::VMApi &api);
 
 // Config functions (exported for direct registration)
-compiler::BytecodeValue configGet(const std::vector<compiler::BytecodeValue> &args);
-compiler::BytecodeValue configSet(const std::vector<compiler::BytecodeValue> &args);
-compiler::BytecodeValue configSave(const std::vector<compiler::BytecodeValue> &args);
-compiler::BytecodeValue configGetAll(compiler::VMApi &api, const std::vector<compiler::BytecodeValue> &args);
-compiler::BytecodeValue configLoad(const std::vector<compiler::BytecodeValue> &args);
+compiler::Value configGet(const std::vector<compiler::Value> &args);
+compiler::Value configSet(const std::vector<compiler::Value> &args);
+compiler::Value configSave(const std::vector<compiler::Value> &args);
+compiler::Value configGetAll(compiler::VMApi &api, const std::vector<compiler::Value> &args);
+compiler::Value configLoad(const std::vector<compiler::Value> &args);
 
 } // namespace havel::modules

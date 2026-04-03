@@ -65,7 +65,7 @@ struct CompileResult {
   std::vector<std::string> warnings;
 
   // Execution result (if executeImmediately was true)
-  std::optional<BytecodeValue> executionResult;
+  std::optional<Value> executionResult;
 
   // Output file (if outputPath was specified)
   std::optional<std::filesystem::path> outputFile;
@@ -99,9 +99,9 @@ public:
   CompileResult compileFiles(const std::vector<std::filesystem::path>& paths);
 
   // Execution
-  BytecodeValue execute(const BytecodeChunk& chunk,
+  Value execute(const BytecodeChunk& chunk,
                         const std::string& functionName = "main",
-                        const std::vector<BytecodeValue>& args = {});
+                        const std::vector<Value>& args = {});
 
   // REPL
   void startREPL();

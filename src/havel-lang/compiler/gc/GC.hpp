@@ -26,12 +26,12 @@ public:
   struct UpvalueCell {
     bool is_open = false;
     uint32_t open_index = 0;
-    BytecodeValue closed_value = nullptr;
+    Value closed_value = nullptr;
 
     // Methods for closure/upvalue management
-    BytecodeValue get() const { return is_open ? nullptr : closed_value; }
-    void set(BytecodeValue value) { closed_value = value; }
-    void close(BytecodeValue value = nullptr) {
+    Value get() const { return is_open ? nullptr : closed_value; }
+    void set(Value value) { closed_value = value; }
+    void close(Value value = nullptr) {
       closed_value = value;
       is_open = false;
     }
@@ -45,25 +45,25 @@ public:
 
   // Object entry with sorted flag and insertion order tracking
   struct ObjectEntry {
-    std::unordered_map<std::string, BytecodeValue> data;
+    std::unordered_map<std::string, Value> data;
     std::vector<std::string> insertionOrder; // For unsorted objects
     bool sorted = true;
 
-    BytecodeValue *get(const std::string &key) {
+    Value *get(const std::string &key) {
       auto it = data.find(key);
       if (it != data.end())
         return &it->second;
       return nullptr;
     }
 
-    void set(const std::string &key, BytecodeValue value) {
+    void set(const std::string &key, Value value) {
       if (data.find(key) == data.end()) {
         insertionOrder.push_back(key);
       }
       data[key] = std::move(value);
     }
 
-    BytecodeValue &operator[](const std::string &key) {
+    Value &operator[](const std::string &key) {
       if (data.find(key) == data.end()) {
         insertionOrder.push_back(key);
       }
@@ -100,7 +100,7 @@ public:
     }
   };
   struct Iterator {
-    BytecodeValue
+    Value
         iterable;     // The original iterable (array, string, object, range)
     size_t index = 0; // Current position
     std::vector<std::string> keys; // For object iteration
@@ -141,7 +141,7 @@ public:
     std::string stackTrace;
     uint32_t line = 0;
     uint32_t column = 0;
-    BytecodeValue cause; // Optional chained error
+    Value cause; // Optional chained error
 
     ErrorObject() = default;
     ErrorObject(const std::string &type, const std::string &msg,
@@ -197,13 +197,13 @@ public:
                             const std::vector<std::string> &variants);
   EnumRef allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
 
-  IteratorRef allocateIterator(const BytecodeValue &iterable);
+  IteratorRef allocateIterator(const Value &iterable);
 
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
-  std::vector<BytecodeValue> *array(uint32_t id);
+  std::vector<Value> *array(uint32_t id);
   ObjectEntry *object(uint32_t id);
-  std::unordered_map<std::string, BytecodeValue> *set(uint32_t id);
+  std::unordered_map<std::string, Value> *set(uint32_t id);
   Range *range(uint32_t id);
   const Range *range(uint32_t id) const;
   Iterator *iterator(uint32_t id);
@@ -214,54 +214,54 @@ public:
   const ErrorObject *error(uint32_t id) const;
 
   // Iteration protocol
-  uint32_t createIterator(const BytecodeValue &iterable);
-  BytecodeValue iteratorNext(uint32_t id);
+  uint32_t createIterator(const Value &iterable);
+  Value iteratorNext(uint32_t id);
 
   void setAllocationBudget(size_t value) { allocation_budget_ = value; }
 
-  uint64_t pinExternalRoot(const BytecodeValue &value);
+  uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
-  std::optional<BytecodeValue> externalRoot(uint64_t root_id) const;
+  std::optional<Value> externalRoot(uint64_t root_id) const;
   size_t externalRootCount() const { return external_roots_.size(); }
   Stats stats() const;
 
   void maybeCollectGarbage(
-      const std::vector<BytecodeValue> &stack_values,
-      const std::vector<BytecodeValue> &locals,
-      const std::unordered_map<std::string, BytecodeValue> &globals,
+      const std::vector<Value> &stack_values,
+      const std::vector<Value> &locals,
+      const std::unordered_map<std::string, Value> &globals,
       const std::vector<uint32_t> &active_closure_ids,
-      const std::function<std::optional<BytecodeValue>(uint32_t)>
+      const std::function<std::optional<Value>(uint32_t)>
           &open_local_reader);
 
   void
-  collectGarbage(const std::vector<BytecodeValue> &stack_values,
-                 const std::vector<BytecodeValue> &locals,
-                 const std::unordered_map<std::string, BytecodeValue> &globals,
+  collectGarbage(const std::vector<Value> &stack_values,
+                 const std::vector<Value> &locals,
+                 const std::unordered_map<std::string, Value> &globals,
                  const std::vector<uint32_t> &active_closure_ids,
-                 const std::function<std::optional<BytecodeValue>(uint32_t)>
+                 const std::function<std::optional<Value>(uint32_t)>
                      &open_local_reader);
 
 private:
-  void markValue(const BytecodeValue &value,
+  void markValue(const Value &value,
                  std::unordered_set<uint32_t> &marked_arrays,
                  std::unordered_set<uint32_t> &marked_objects,
                  std::unordered_set<uint32_t> &marked_sets,
                  std::unordered_set<uint32_t> &marked_closures,
-                 const std::function<std::optional<BytecodeValue>(uint32_t)>
+                 const std::function<std::optional<Value>(uint32_t)>
                      &open_local_reader) const;
 
   std::unordered_map<uint32_t, RuntimeClosure> closures_;
-  std::unordered_map<uint32_t, std::vector<BytecodeValue>> arrays_;
+  std::unordered_map<uint32_t, std::vector<Value>> arrays_;
   std::unordered_map<uint32_t, ObjectEntry> objects_;
-  std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
+  std::unordered_map<uint32_t, std::unordered_map<std::string, Value>>
       sets_;
   std::unordered_map<uint32_t, Range> ranges_;
   std::unordered_map<uint32_t, ErrorObject> errors_;
-  std::unordered_map<uint32_t, std::vector<BytecodeValue>>
+  std::unordered_map<uint32_t, std::vector<Value>>
       structs_; // Field arrays (value type)
-  std::unordered_map<uint32_t, std::vector<BytecodeValue>>
+  std::unordered_map<uint32_t, std::vector<Value>>
       classes_; // Field arrays (reference type)
-  std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<BytecodeValue>>>
+  std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<Value>>>
       enums_; // tag + payload
   std::unordered_map<uint32_t, Iterator> iterators_;
 
@@ -279,7 +279,7 @@ private:
   uint32_t next_iterator_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;
-  std::unordered_map<uint64_t, BytecodeValue> external_roots_;
+  std::unordered_map<uint64_t, Value> external_roots_;
   uint64_t next_external_root_id_ = 1;
   uint64_t collections_ = 0;
   uint64_t last_pause_ns_ = 0;

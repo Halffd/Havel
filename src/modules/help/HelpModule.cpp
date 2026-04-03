@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-using compiler::BytecodeValue;
+using compiler::Value;
 using compiler::VMApi;
 
 // Module documentation structure
@@ -158,7 +158,7 @@ static const ModuleDoc moduleDocs[] = {
 };
 
 // help() - Show general help or specific module/function help
-static BytecodeValue helpFunc(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value helpFunc(VMApi &api, const std::vector<Value> &args) {
   std::ostringstream oss;
   
   if (args.empty()) {
@@ -180,10 +180,11 @@ static BytecodeValue helpFunc(VMApi &api, const std::vector<BytecodeValue> &args
   } else {
     // Get requested topic
     std::string topic;
-    if (std::holds_alternative<std::string>(args[0])) {
-      topic = std::get<std::string>(args[0]);
+    if (args[0].isStringValId()) {
+      // TODO: string pool lookup
+      topic = "<string:" + std::to_string(args[0].asStringValId()) + ">";
     } else {
-      return BytecodeValue("help() requires a string argument");
+      return Value::makeNull(); // TODO: string pool - "help() requires a string argument"
     }
     
     // Check if it's a module.function request
@@ -205,16 +206,19 @@ static BytecodeValue helpFunc(VMApi &api, const std::vector<BytecodeValue> &args
                 oss << mod.name << "." << func.second << "\n";
                 oss << "Usage: " << func.first << "\n";
                 oss << "Description: " << func.second << "\n";
-                return BytecodeValue(oss.str());
+                // TODO: string pool integration
+                return Value::makeNull();
               }
             }
           }
           oss << "Function '" << funcName << "' not found in module '" << moduleName << "'\n";
-          return BytecodeValue(oss.str());
+          // TODO: string pool integration
+          return Value::makeNull();
         }
       }
       oss << "Module '" << moduleName << "' not found\n";
-      return BytecodeValue(oss.str());
+      // TODO: string pool integration
+      return Value::makeNull();
     }
     
     // Show module documentation
@@ -225,7 +229,8 @@ static BytecodeValue helpFunc(VMApi &api, const std::vector<BytecodeValue> &args
         for (const auto& func : mod.functions) {
           oss << "  " << func.first << " - " << func.second << "\n";
         }
-        return BytecodeValue(oss.str());
+        // TODO: string pool integration
+        return Value::makeNull();
       }
     }
     
@@ -240,13 +245,14 @@ static BytecodeValue helpFunc(VMApi &api, const std::vector<BytecodeValue> &args
     oss << "\n";
   }
   
-  return BytecodeValue(oss.str());
+  // TODO: string pool integration
+  return Value::makeNull();
 }
 
 // Register help module with VM
 void registerHelpModule(VMApi &api) {
   // help() function
-  api.registerFunction("help", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("help", [&api](const std::vector<Value> &args) {
     return helpFunc(api, args);
   });
   

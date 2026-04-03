@@ -21,7 +21,7 @@ struct LoadedModule {
   std::string source;
   std::unique_ptr<ast::Program> ast;
   std::unique_ptr<BytecodeChunk> bytecode;
-  std::unordered_map<std::string, BytecodeValue> exports;
+  std::unordered_map<std::string, Value> exports;
   std::vector<std::string> exportNames; // Preserve order
   bool compiled = false;
 };

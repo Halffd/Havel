@@ -45,8 +45,8 @@ void ConstantPropagator::foldConstants(BytecodeFunction& function) {
   (void)function;
 }
 
-std::optional<BytecodeValue> ConstantPropagator::evaluateConstantExpression(
-    OpCode op, const BytecodeValue& left, const BytecodeValue& right) {
+std::optional<Value> ConstantPropagator::evaluateConstantExpression(
+    OpCode op, const Value& left, const Value& right) {
   (void)op;
   (void)left;
   (void)right;

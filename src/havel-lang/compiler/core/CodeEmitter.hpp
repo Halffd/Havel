@@ -37,8 +37,8 @@ public:
   // Instruction emission
   // ============================================================================
   void emit(OpCode op);
-  void emit(OpCode op, BytecodeValue operand);
-  void emit(OpCode op, std::vector<BytecodeValue> operands);
+  void emit(OpCode op, Value operand);
+  void emit(OpCode op, std::vector<Value> operands);
 
   // ============================================================================
   // Jump handling
@@ -49,8 +49,9 @@ public:
   // ============================================================================
   // Constant management
   // ============================================================================
-  uint32_t addConstant(const BytecodeValue& value);
-  const BytecodeValue& getConstant(uint32_t index) const;
+  uint32_t addConstant(const Value& value);
+  uint32_t addStringConstant(const std::string& str);
+  const Value& getConstant(uint32_t index) const;
 
   // ============================================================================
   // Local slot management
@@ -114,8 +115,8 @@ public:
   explicit InstructionBuilder(CodeEmitter& emitter);
 
   InstructionBuilder& op(OpCode opcode);
-  InstructionBuilder& operand(const BytecodeValue& value);
-  InstructionBuilder& operands(const std::vector<BytecodeValue>& values);
+  InstructionBuilder& operand(const Value& value);
+  InstructionBuilder& operands(const std::vector<Value>& values);
   InstructionBuilder& atLocation(uint32_t line, uint32_t column);
 
   void emit();
@@ -124,7 +125,7 @@ public:
 private:
   CodeEmitter& emitter_;
   std::optional<OpCode> opcode_;
-  std::vector<BytecodeValue> operands_;
+  std::vector<Value> operands_;
   std::optional<SourceLocation> location_;
 };
 

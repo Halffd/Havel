@@ -1,7 +1,7 @@
 /* ObjectModule.cpp - VM-native stdlib module */
 #include "ObjectModule.hpp"
 
-using havel::compiler::BytecodeValue;
+using havel::compiler::Value;
 using havel::compiler::VMApi;
 using havel::compiler::ObjectRef;
 
@@ -10,108 +10,112 @@ namespace havel::stdlib {
 // Register object module with VMApi (stable API layer)
 void registerObjectModule(VMApi& api) {
     // Object.keys(obj) - Get array of keys (sorted)
-    api.registerFunction("object.keys", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.keys", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.keys() requires object");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.keys() arg must be object");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
 
-        auto obj = std::get<ObjectRef>(args[0]);
-        auto keys = api.getObjectKeys(obj);
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        auto keys = api.getObjectKeys(args[0]);
 
         // Sort keys alphabetically
         std::sort(keys.begin(), keys.end());
 
         auto arr = api.makeArray();
         for (const auto& key : keys) {
-            api.push(arr, BytecodeValue(key));
+            // TODO: string pool registration
+            api.push(arr, Value::makeNull());
         }
-        return BytecodeValue(arr);
+        return arr;
     });
 
     // Object.values(obj) - Get array of values
-    api.registerFunction("object.values", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.values", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.values() requires object");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.values() arg must be object");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.values() arg must be object");
 
-        auto obj = std::get<ObjectRef>(args[0]);
-        auto keys = api.getObjectKeys(obj);
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        auto keys = api.getObjectKeys(args[0]);
 
         auto arr = api.makeArray();
         for (const auto& key : keys) {
-            if (api.hasField(obj, key)) {
-                api.push(arr, api.getField(obj, key));
+            if (api.hasField(args[0], key)) {
+                api.push(arr, api.getField(args[0], key));
             } else {
-                api.push(arr, BytecodeValue(nullptr));
+                api.push(arr, Value::makeNull());
             }
         }
-        return BytecodeValue(arr);
+        return arr;
     });
 
     // Object.entries(obj) - Get array of [key, value] pairs
-    api.registerFunction("object.entries", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.entries", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.entries() requires object");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.entries() arg must be object");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.entries() arg must be object");
 
-        auto obj = std::get<ObjectRef>(args[0]);
-        auto keys = api.getObjectKeys(obj);
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        auto keys = api.getObjectKeys(args[0]);
 
         auto arr = api.makeArray();
         for (const auto& key : keys) {
             auto pair = api.makeArray();
-            api.push(pair, BytecodeValue(key));
-            if (api.hasField(obj, key)) {
-                api.push(pair, api.getField(obj, key));
+            // TODO: string pool registration
+            api.push(pair, Value::makeNull());
+            if (api.hasField(args[0], key)) {
+                api.push(pair, api.getField(args[0], key));
             } else {
-                api.push(pair, BytecodeValue(nullptr));
+                api.push(pair, Value::makeNull());
             }
-            api.push(arr, BytecodeValue(pair));
+            api.push(arr, pair);
         }
-        return BytecodeValue(arr);
+        return arr;
     });
-    
+
     // Object.has(obj, key) - Check if object has key
-    api.registerFunction("object.has", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.has", [&api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.has() requires object and key");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.has() first arg must be object");
-        
-        auto obj = std::get<ObjectRef>(args[0]);
-        std::string key = std::get<std::string>(args[1]);
-        
-        return BytecodeValue(api.hasField(obj, key));
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.has() first arg must be object");
+
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        // TODO: string pool lookup
+        std::string key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
+
+        return Value::makeBool(api.hasField(args[0], key));
     });
-    
+
     // Object.set(obj, key, value) - Set value by key
-    api.registerFunction("object.set", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.set", [&api](const std::vector<Value>& args) {
         if (args.size() < 3) throw std::runtime_error("Object.set() requires object, key, and value");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.set() first arg must be object");
-        
-        auto obj = std::get<ObjectRef>(args[0]);
-        std::string key = std::get<std::string>(args[1]);
-        BytecodeValue value = args[2];
-        
-        api.setField(obj, key, value);
-        return BytecodeValue(obj);
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.set() first arg must be object");
+
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        // TODO: string pool lookup
+        std::string key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
+        Value value = args[2];
+
+        api.setField(args[0], key, value);
+        return Value::makeObjectId(args[0].asObjectId());
     });
-    
+
     // Object.isEmpty(obj) - Check if object is empty
-    api.registerFunction("object.isEmpty", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.isEmpty", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.isEmpty() requires object");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.isEmpty() arg must be object");
-        
-        auto obj = std::get<ObjectRef>(args[0]);
-        auto keys = api.getObjectKeys(obj);
-        
-        return BytecodeValue(keys.empty());
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.isEmpty() arg must be object");
+
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        auto keys = api.getObjectKeys(args[0]);
+
+        return Value::makeBool(keys.empty());
     });
-    
+
     // Object.size(obj) - Get number of keys in object
-    api.registerFunction("object.size", [&api](const std::vector<BytecodeValue>& args) {
+    api.registerFunction("object.size", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.size() requires object");
-        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.size() arg must be object");
-        
-        auto obj = std::get<ObjectRef>(args[0]);
-        auto keys = api.getObjectKeys(obj);
-        
-        return BytecodeValue(static_cast<int64_t>(keys.size()));
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.size() arg must be object");
+
+        auto obj = ObjectRef{args[0].asObjectId(), true};
+        auto keys = api.getObjectKeys(args[0]);
+
+        return Value::makeInt(static_cast<int64_t>(keys.size()));
     });
     
     // Register object object

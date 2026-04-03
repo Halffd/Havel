@@ -5,6 +5,10 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -533,13 +537,13 @@ void TestFramework::printReport(const std::vector<SuiteResult>& results,
 
 void TestFramework::assertTrue(bool condition, const std::string& message) {
   if (!condition) {
-    throw std::runtime_error(message.empty() ? "Expected true" : message);
+    COMPILER_THROW(message.empty() ? "Expected true" : message);
   }
 }
 
 void TestFramework::assertFalse(bool condition, const std::string& message) {
   if (condition) {
-    throw std::runtime_error(message.empty() ? "Expected false" : message);
+    COMPILER_THROW(message.empty() ? "Expected false" : message);
   }
 }
 
@@ -547,7 +551,7 @@ void TestFramework::assertEquals(const BytecodeValue& expected,
                                   const BytecodeValue& actual,
                                   const std::string& message) {
   if (!RuntimeTypeSystem::equals(expected, actual)) {
-    throw std::runtime_error(message.empty() ?
+    COMPILER_THROW(message.empty() ?
       "Expected " + RuntimeTypeSystem::stringify(expected) +
       " but got " + RuntimeTypeSystem::stringify(actual) : message);
   }
@@ -555,13 +559,13 @@ void TestFramework::assertEquals(const BytecodeValue& expected,
 
 void TestFramework::assertNull(const BytecodeValue& value, const std::string& message) {
   if (!RuntimeTypeSystem::isNull(value)) {
-    throw std::runtime_error(message.empty() ? "Expected null" : message);
+    COMPILER_THROW(message.empty() ? "Expected null" : message);
   }
 }
 
 void TestFramework::assertNotNull(const BytecodeValue& value, const std::string& message) {
   if (RuntimeTypeSystem::isNull(value)) {
-    throw std::runtime_error(message.empty() ? "Expected non-null" : message);
+    COMPILER_THROW(message.empty() ? "Expected non-null" : message);
   }
 }
 
@@ -573,7 +577,7 @@ void TestFramework::assertThrows(std::function<void()> func, const std::string& 
     threw = true;
   }
   if (!threw) {
-    throw std::runtime_error(message.empty() ? "Expected exception" : message);
+    COMPILER_THROW(message.empty() ? "Expected exception" : message);
   }
 }
 
@@ -581,12 +585,12 @@ void TestFramework::assertType(const BytecodeValue& value,
                                 RuntimeTypeSystem::Type type,
                                 const std::string& message) {
   if (RuntimeTypeSystem::getType(value) != type) {
-    throw std::runtime_error(message.empty() ? "Type mismatch" : message);
+    COMPILER_THROW(message.empty() ? "Type mismatch" : message);
   }
 }
 
 void TestFramework::fail(const std::string& message) {
-  throw std::runtime_error(message.empty() ? "Test failed" : message);
+  COMPILER_THROW(message.empty() ? "Test failed" : message);
 }
 
 // ============================================================================

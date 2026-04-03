@@ -1,5 +1,9 @@
 #include "CodeEmitter.hpp"
 #include "havel-lang/ast/AST.h"
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -17,7 +21,7 @@ void CodeEmitter::beginFunction(BytecodeFunction&& function, std::optional<uint3
 
 uint32_t CodeEmitter::endFunction() {
   if (!currentContext_.function) {
-    throw std::runtime_error("endFunction called without beginFunction");
+    COMPILER_THROW("endFunction called without beginFunction");
   }
 
   uint32_t index = static_cast<uint32_t>(compiledFunctions_.size());
@@ -84,7 +88,7 @@ void CodeEmitter::patchJump(uint32_t jumpInstructionIndex, uint32_t target) {
 
 uint32_t CodeEmitter::addConstant(const BytecodeValue& value) {
   if (!currentContext_.function) {
-    throw std::runtime_error("Cannot add constant: no active function");
+    COMPILER_THROW("Cannot add constant: no active function");
   }
   uint32_t index = static_cast<uint32_t>(currentContext_.function->constants.size());
   currentContext_.function->constants.push_back(value);
@@ -93,7 +97,7 @@ uint32_t CodeEmitter::addConstant(const BytecodeValue& value) {
 
 const BytecodeValue& CodeEmitter::getConstant(uint32_t index) const {
   if (!currentContext_.function) {
-    throw std::runtime_error("Cannot get constant: no active function");
+    COMPILER_THROW("Cannot get constant: no active function");
   }
   if (index >= currentContext_.function->constants.size()) {
     throw std::out_of_range("Constant index out of range");
@@ -158,7 +162,7 @@ std::optional<uint32_t> CodeEmitter::getLambdaIndex(const ast::LambdaExpression*
 
 void CodeEmitter::addInstruction(const Instruction& instruction) {
   if (!currentContext_.function) {
-    throw std::runtime_error("Cannot emit instruction: no active function");
+    COMPILER_THROW("Cannot emit instruction: no active function");
   }
   currentContext_.function->instructions.push_back(instruction);
 }

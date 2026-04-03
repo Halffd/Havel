@@ -4,6 +4,9 @@
 #include <mutex>
 #include <stdexcept>
 
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace havel::compiler {
 
 // ============================================================================
@@ -44,7 +47,7 @@ CallFrame& CallFrameManager::pushFrame(const BytecodeFunction* function,
                                         size_t localsBase,
                                         uint32_t closureId) {
   if (frameCount_ >= maxDepth_) {
-    throw std::runtime_error("Call stack overflow");
+    COMPILER_THROW("Call stack overflow");
   }
 
   if (frameCount_ >= frames_.size()) {
@@ -64,21 +67,21 @@ CallFrame& CallFrameManager::pushFrame(const BytecodeFunction* function,
 
 void CallFrameManager::popFrame() {
   if (frameCount_ == 0) {
-    throw std::runtime_error("No frame to pop");
+    COMPILER_THROW("No frame to pop");
   }
   --frameCount_;
 }
 
 CallFrame& CallFrameManager::currentFrame() {
   if (frameCount_ == 0) {
-    throw std::runtime_error("No active frame");
+    COMPILER_THROW("No active frame");
   }
   return frames_[frameCount_ - 1];
 }
 
 const CallFrame& CallFrameManager::currentFrame() const {
   if (frameCount_ == 0) {
-    throw std::runtime_error("No active frame");
+    COMPILER_THROW("No active frame");
   }
   return frames_[frameCount_ - 1];
 }
@@ -136,7 +139,7 @@ void VMStack::push(const BytecodeValue& value) {
 
 BytecodeValue VMStack::pop() {
   if (stack_.empty()) {
-    throw std::runtime_error("Stack underflow");
+    COMPILER_THROW("Stack underflow");
   }
   BytecodeValue value = stack_.top();
   stack_.pop();
@@ -228,7 +231,7 @@ size_t VMLocals::reserveSlots(size_t count) {
 
 void VMLocals::releaseSlots(size_t count) {
   if (count > locals_.size()) {
-    throw std::runtime_error("Cannot release more slots than available");
+    COMPILER_THROW("Cannot release more slots than available");
   }
   locals_.resize(locals_.size() - count);
 }
@@ -296,7 +299,7 @@ BytecodeValue VMHostBridge::call(const std::string& name,
                                   const std::vector<BytecodeValue>& args) {
   auto it = functions_.find(name);
   if (it == functions_.end()) {
-    throw std::runtime_error("Unknown host function: " + name);
+    COMPILER_THROW("Unknown host function: " + name);
   }
   return it->second(args);
 }
@@ -339,7 +342,7 @@ BytecodeValue VMExecutionContext::callFunction(uint32_t functionIndex,
 
   // Check arity
   if (args.size() != function->param_count) {
-    throw std::runtime_error("Argument count mismatch");
+    COMPILER_THROW("Argument count mismatch");
   }
 
   // Push arguments as locals
@@ -384,8 +387,8 @@ BytecodeValue VMExecutionContext::callClosure(uint32_t closureId,
                                                const std::vector<BytecodeValue>& args) {
   (void)closureId;
   (void)args;
-  // TODO: Implement closure calling
-  throw std::runtime_error("Closure calling not yet implemented");
+    // TODO: Implement closure calling
+    COMPILER_THROW("Closure calling not yet implemented");
 }
 
 void VMExecutionContext::pushValue(const BytecodeValue& value) {
@@ -457,7 +460,7 @@ void VMExecutionContext::executeInstruction(const Instruction& instruction) {
       executeReturn();
       break;
     default:
-      throw std::runtime_error("Unknown opcode");
+      COMPILER_THROW("Unknown opcode");
   }
 }
 
@@ -476,7 +479,7 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
       case OpCode::SUB: result = ai - bi; break;
       case OpCode::MUL: result = ai * bi; break;
       case OpCode::DIV: result = ai / bi; break;
-      default: throw std::runtime_error("Unknown binary op");
+      default: COMPILER_THROW("Unknown binary op");
     }
 
     stack_.push(result);
@@ -490,19 +493,19 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
       case OpCode::SUB: result = ad - bd; break;
       case OpCode::MUL: result = ad * bd; break;
       case OpCode::DIV: result = ad / bd; break;
-      default: throw std::runtime_error("Unknown binary op");
+      default: COMPILER_THROW("Unknown binary op");
     }
 
     stack_.push(result);
   } else {
-    throw std::runtime_error("Type error in binary operation");
+    COMPILER_THROW("Type error in binary operation");
   }
 }
 
 void VMExecutionContext::executeCall(uint32_t argCount) {
   (void)argCount;
-  // TODO: Implement function calling
-  throw std::runtime_error("CALL not fully implemented");
+    // TODO: Implement function calling
+    COMPILER_THROW("CALL not fully implemented");
 }
 
 void VMExecutionContext::executeReturn() {

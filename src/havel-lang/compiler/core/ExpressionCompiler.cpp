@@ -1,5 +1,9 @@
 #include "ExpressionCompiler.hpp"
 #include "havel-lang/ast/AST.h"
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -65,7 +69,7 @@ void ExpressionCompiler::compile(const ast::Expression& expression) {
       compileInterpolatedString(static_cast<const ast::InterpolatedStringExpression&>(expression));
       break;
     default:
-      throw std::runtime_error("Unsupported expression type: " + expression.toString());
+      COMPILER_THROW("Unsupported expression type: " + expression.toString());
   }
 }
 
@@ -77,7 +81,7 @@ void ExpressionCompiler::compileIdentifier(const ast::Identifier& id) {
 
   auto binding = lexicalResult_.identifier_bindings.find(&id);
   if (binding == lexicalResult_.identifier_bindings.end()) {
-    throw std::runtime_error("Missing binding for identifier: " + id.symbol);
+    COMPILER_THROW("Missing binding for identifier: " + id.symbol);
   }
 
   const auto& resolved = binding->second;
@@ -127,13 +131,13 @@ void ExpressionCompiler::compileUnaryExpression(const ast::UnaryExpression& unar
       // No-op
       break;
     default:
-      throw std::runtime_error("Unsupported unary operator");
+      COMPILER_THROW("Unsupported unary operator");
   }
 }
 
 void ExpressionCompiler::compileCallExpression(const ast::CallExpression& call) {
   if (!call.callee) {
-    throw std::runtime_error("Call expression missing callee");
+    COMPILER_THROW("Call expression missing callee");
   }
 
   // Compile arguments first
@@ -153,7 +157,7 @@ void ExpressionCompiler::compileCallExpression(const ast::CallExpression& call) 
 void ExpressionCompiler::compileAssignmentExpression(
     const ast::AssignmentExpression& assignment) {
   if (!assignment.value) {
-    throw std::runtime_error("Assignment missing value");
+    COMPILER_THROW("Assignment missing value");
   }
 
   // Compile value first (RHS)
@@ -165,7 +169,7 @@ void ExpressionCompiler::compileAssignmentExpression(
 
     auto binding = lexicalResult_.identifier_bindings.find(&id);
     if (binding == lexicalResult_.identifier_bindings.end()) {
-      throw std::runtime_error("Missing binding for assignment target: " + id.symbol);
+      COMPILER_THROW("Missing binding for assignment target: " + id.symbol);
     }
 
     const auto& resolved = binding->second;
@@ -182,7 +186,7 @@ void ExpressionCompiler::compileAssignmentExpression(
         emitStoreGlobal(resolved.name);
         break;
       default:
-        throw std::runtime_error("Cannot assign to this binding type");
+        COMPILER_THROW("Cannot assign to this binding type");
     }
   } else if (assignment.target) {
     // Complex target (member, index, etc.)
@@ -192,7 +196,7 @@ void ExpressionCompiler::compileAssignmentExpression(
 
 void ExpressionCompiler::compileMemberExpression(const ast::MemberExpression& member) {
   if (!member.object) {
-    throw std::runtime_error("Member expression missing object");
+    COMPILER_THROW("Member expression missing object");
   }
 
   compile(*member.object);
@@ -206,7 +210,7 @@ void ExpressionCompiler::compileMemberExpression(const ast::MemberExpression& me
 
 void ExpressionCompiler::compileIndexExpression(const ast::IndexExpression& index) {
   if (!index.object || !index.index) {
-    throw std::runtime_error("Index expression missing components");
+    COMPILER_THROW("Index expression missing components");
   }
 
   compile(*index.object);
@@ -243,7 +247,7 @@ void ExpressionCompiler::compileObjectLiteral(const ast::ObjectLiteral& object) 
 
 void ExpressionCompiler::compileTernaryExpression(const ast::TernaryExpression& ternary) {
   if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
-    throw std::runtime_error("Ternary expression missing components");
+    COMPILER_THROW("Ternary expression missing components");
   }
 
   compile(*ternary.condition);
@@ -262,13 +266,13 @@ void ExpressionCompiler::compileTernaryExpression(const ast::TernaryExpression& 
 
 void ExpressionCompiler::compileUpdateExpression(const ast::UpdateExpression& update) {
   if (!update.argument || update.argument->kind != ast::NodeType::Identifier) {
-    throw std::runtime_error("Update expression must have identifier argument");
+    COMPILER_THROW("Update expression must have identifier argument");
   }
 
   const auto& id = static_cast<const ast::Identifier&>(*update.argument);
   auto binding = lexicalResult_.identifier_bindings.find(&id);
   if (binding == lexicalResult_.identifier_bindings.end()) {
-    throw std::runtime_error("Missing binding for update expression");
+    COMPILER_THROW("Missing binding for update expression");
   }
 
   const auto& resolved = binding->second;
@@ -280,7 +284,7 @@ void ExpressionCompiler::compileUpdateExpression(const ast::UpdateExpression& up
   } else if (resolved.kind == ResolvedBindingKind::Upvalue) {
     emitLoadUpvalue(resolved.slot);
   } else {
-    throw std::runtime_error("Cannot update non-local variable");
+    COMPILER_THROW("Cannot update non-local variable");
   }
 
   if (update.isPrefix) {
@@ -324,7 +328,7 @@ void ExpressionCompiler::compileSpreadExpression(const ast::SpreadExpression& sp
 
 void ExpressionCompiler::compileRangeExpression(const ast::RangeExpression& range) {
   if (!range.start || !range.end) {
-    throw std::runtime_error("Range expression missing bounds");
+    COMPILER_THROW("Range expression missing bounds");
   }
 
   compile(*range.start);
@@ -340,7 +344,7 @@ void ExpressionCompiler::compileRangeExpression(const ast::RangeExpression& rang
 
 void ExpressionCompiler::compilePipelineExpression(const ast::PipelineExpression& pipeline) {
   if (pipeline.stages.empty()) {
-    throw std::runtime_error("Pipeline expression has no stages");
+    COMPILER_THROW("Pipeline expression has no stages");
   }
 
   // Compile first stage
@@ -422,7 +426,7 @@ OpCode ExpressionCompiler::binaryOpToBytecode(ast::BinaryOperator op) const {
     case ast::BinaryOperator::GreaterEqual: return OpCode::GTE;
     case ast::BinaryOperator::And: return OpCode::AND;
     case ast::BinaryOperator::Or: return OpCode::OR;
-    default: throw std::runtime_error("Unsupported binary operator");
+    default: COMPILER_THROW("Unsupported binary operator");
   }
 }
 
@@ -510,7 +514,7 @@ void StatementCompiler::compile(const ast::Statement& statement) {
       compileExportStatement(static_cast<const ast::ExportStatement&>(statement));
       break;
     default:
-      throw std::runtime_error("Unsupported statement type: " + statement.toString());
+      COMPILER_THROW("Unsupported statement type: " + statement.toString());
   }
 }
 
@@ -547,7 +551,7 @@ void StatementCompiler::compileLetDeclaration(const ast::LetDeclaration& let) {
 
 void StatementCompiler::compileIfStatement(const ast::IfStatement& ifStmt) {
   if (!ifStmt.condition) {
-    throw std::runtime_error("If statement missing condition");
+    COMPILER_THROW("If statement missing condition");
   }
 
   exprCompiler_.compile(*ifStmt.condition);
@@ -572,7 +576,7 @@ void StatementCompiler::compileIfStatement(const ast::IfStatement& ifStmt) {
 
 void StatementCompiler::compileWhileStatement(const ast::WhileStatement& whileStmt) {
   if (!whileStmt.condition || !whileStmt.body) {
-    throw std::runtime_error("While statement missing components");
+    COMPILER_THROW("While statement missing components");
   }
 
   uint32_t loopStart = static_cast<uint32_t>(emitter_.currentFunction().instructions.size());
@@ -594,7 +598,7 @@ void StatementCompiler::compileWhileStatement(const ast::WhileStatement& whileSt
 
 void StatementCompiler::compileDoWhileStatement(const ast::DoWhileStatement& doWhile) {
   if (!doWhile.body || !doWhile.condition) {
-    throw std::runtime_error("Do-while statement missing components");
+    COMPILER_THROW("Do-while statement missing components");
   }
 
   uint32_t loopStart = static_cast<uint32_t>(emitter_.currentFunction().instructions.size());
@@ -611,7 +615,7 @@ void StatementCompiler::compileDoWhileStatement(const ast::DoWhileStatement& doW
 
 void StatementCompiler::compileForStatement(const ast::ForStatement& forStmt) {
   if (!forStmt.iterable || !forStmt.body) {
-    throw std::runtime_error("For statement missing components");
+    COMPILER_THROW("For statement missing components");
   }
 
   bindingResolver_.beginScope();
@@ -732,7 +736,7 @@ void StatementCompiler::compileBlockStatement(const ast::BlockStatement& block) 
 
 void StatementCompiler::compileTryStatement(const ast::TryExpression& tryExpr) {
   if (!tryExpr.tryBody) {
-    throw std::runtime_error("Try statement missing body");
+    COMPILER_THROW("Try statement missing body");
   }
 
   uint32_t catchJump = emitter_.emitJump(OpCode::TRY_ENTER);
@@ -772,7 +776,7 @@ void StatementCompiler::compileThrowStatement(const ast::ThrowStatement& throwSt
 
 void StatementCompiler::compileWhenBlock(const ast::WhenBlock& when) {
   if (!when.condition) {
-    throw std::runtime_error("When block missing condition");
+    COMPILER_THROW("When block missing condition");
   }
 
   exprCompiler_.compile(*when.condition);
@@ -874,7 +878,7 @@ void PatternCompiler::compilePatternMatch(const ast::Expression& pattern, uint32
       compileObjectPattern(static_cast<const ast::ObjectPattern&>(pattern), valueSlot);
       break;
     default:
-      throw std::runtime_error("Unsupported pattern type");
+      COMPILER_THROW("Unsupported pattern type");
   }
 }
 

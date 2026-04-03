@@ -4,6 +4,10 @@
 #include "../vm/VM.hpp"
 #include <iostream>
 #include <unordered_map>
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -46,7 +50,7 @@ bool Hybrid::compile(const ast::Program &program) {
 BytecodeValue Hybrid::execute(const std::string &function_name,
                                     const std::vector<BytecodeValue> &args) {
   if (!this->current_chunk) {
-    throw std::runtime_error("No compiled program available");
+    COMPILER_THROW("No compiled program available");
   }
   return this->interpreter->execute(*this->current_chunk, function_name, args);
 }

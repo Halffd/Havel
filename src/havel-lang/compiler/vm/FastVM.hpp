@@ -13,6 +13,10 @@
 #include <cstring>
 #include <sys/mman.h>
 #include <cerrno>
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 

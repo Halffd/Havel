@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace havel::compiler {
 
 /**
@@ -52,7 +55,7 @@ struct VMApi {
   void setField(BytecodeValue obj, const std::string &key,
                 BytecodeValue value) {
     if (!std::holds_alternative<ObjectRef>(obj)) {
-      throw std::runtime_error("VMApi::setField: expected object");
+      COMPILER_THROW("VMApi::setField: expected object");
     }
     vm.setHostObjectField(std::get<ObjectRef>(obj), key, std::move(value));
   }
@@ -84,7 +87,7 @@ struct VMApi {
   // Array operations
   void push(BytecodeValue arr, BytecodeValue value) {
     if (!std::holds_alternative<ArrayRef>(arr)) {
-      throw std::runtime_error("VMApi::push: expected array");
+      COMPILER_THROW("VMApi::push: expected array");
     }
     vm.pushHostArrayValue(std::get<ArrayRef>(arr), std::move(value));
   }

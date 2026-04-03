@@ -14,6 +14,9 @@
 #include <stdexcept>
 #include <tuple>
 
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace havel::compiler {
 
 namespace {
@@ -499,7 +502,7 @@ BytecodeSmokeResult runBytecodePipeline(
         std::filesystem::path(options.snapshot_dir) / artifact_name;
     std::ofstream out(artifact_path, std::ios::trunc);
     if (!out.is_open()) {
-      throw std::runtime_error("Failed to open snapshot artifact: " +
+      COMPILER_THROW("Failed to open snapshot artifact: " +
                                artifact_path.string());
     }
     out << "=== RESOLVER SNAPSHOT ===\n";
@@ -527,7 +530,7 @@ BytecodeSmokeResult runBytecodePipeline(
         e.column, e.length, "here"));
   }
   if (!program) {
-    throw std::runtime_error(
+    COMPILER_THROW(
         "Bytecode pipeline failed: parser returned null AST");
   }
 
@@ -540,7 +543,7 @@ BytecodeSmokeResult runBytecodePipeline(
   try {
     chunk = compiler.compile(*program);
     if (!chunk) {
-      throw std::runtime_error(
+      COMPILER_THROW(
           "Bytecode smoke pipeline failed: compiler returned null chunk");
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
@@ -582,7 +585,7 @@ BytecodeSmokeResult runBytecodePipeline(
       result.snapshot.bytecode = "<no bytecode generated>";
     }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, formatted);
-    throw std::runtime_error(formatted);
+    COMPILER_THROW(formatted);
   }
 
   VM owned_vm;
@@ -601,7 +604,7 @@ BytecodeSmokeResult runBytecodePipeline(
   try {
     result.return_value = vm->execute(*chunk, entry_function);
   } catch (const std::exception &e) {
-    throw std::runtime_error(
+    COMPILER_THROW(
         enrichRuntimeError(e.what(), options.compile_unit_name, source));
   }
   return result;

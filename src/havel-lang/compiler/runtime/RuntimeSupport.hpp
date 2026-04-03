@@ -8,6 +8,10 @@
 #include <type_traits>
 #include <memory>
 #include <span>
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -41,7 +45,7 @@ public:
     // Wrap the native function
     NativeFunction wrapper = [this, func](const std::vector<BytecodeValue>& args) -> BytecodeValue {
       if (args.size() != sizeof...(ArgTypes)) {
-        throw std::runtime_error("Argument count mismatch");
+        COMPILER_THROW("Argument count mismatch");
       }
       return invokeWithArgs(func, args, std::index_sequence_for<ArgTypes...>{});
     };

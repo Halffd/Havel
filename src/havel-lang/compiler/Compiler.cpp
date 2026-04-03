@@ -4,6 +4,9 @@
 #include <cmath>
 #include <stdexcept>
 
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace {
 template <typename Container, typename Key>
 bool contains(const Container &container, const Key &key) {
@@ -35,7 +38,7 @@ void Compiler::Initialize() {
       engineBuilder.setEngineKind(llvm::EngineKind::JIT).create());
 
   if (!executionEngine) {
-    throw std::runtime_error("Failed to create execution engine: " + error);
+    COMPILER_THROW("Failed to create execution engine: " + error);
   }
 
   CreateStandardLibrary();
@@ -46,7 +49,7 @@ llvm::Value *Compiler::GenerateBinary(const ast::BinaryExpression &binary) {
   llvm::Value *right = GenerateExpression(*binary.right);
 
   if (!left || !right) {
-    throw std::runtime_error("Null operand in binary expression");
+    COMPILER_THROW("Null operand in binary expression");
   }
 
   // Check types for arithmetic operations
@@ -56,7 +59,7 @@ llvm::Value *Compiler::GenerateBinary(const ast::BinaryExpression &binary) {
       left->getType()->isIntegerTy() && right->getType()->isIntegerTy();
 
   if (isFloat && isInt) {
-    throw std::runtime_error("Type mismatch: mixed integer and float operands");
+    COMPILER_THROW("Type mismatch: mixed integer and float operands");
   }
 
   switch (binary.operator_) {
@@ -102,7 +105,7 @@ llvm::Value *Compiler::GenerateBinary(const ast::BinaryExpression &binary) {
   case ast::BinaryOperator::ModAssign:
   case ast::BinaryOperator::PowAssign: {
     if (!left->getType()->isPointerTy()) {
-      throw std::runtime_error("Left operand of assignment must be an lvalue");
+      COMPILER_THROW("Left operand of assignment must be an lvalue");
     }
     llvm::Value *result;
     switch (binary.operator_) {
@@ -139,7 +142,7 @@ llvm::Value *Compiler::GenerateBinary(const ast::BinaryExpression &binary) {
       break;
     }
     default:
-      throw std::runtime_error("Unknown assignment operator");
+      COMPILER_THROW("Unknown assignment operator");
     }
     return builder.CreateStore(result, left);
   }
@@ -219,7 +222,7 @@ llvm::Value *Compiler::GenerateBinary(const ast::BinaryExpression &binary) {
   }
 
   default:
-    throw std::runtime_error("Unknown binary operator: " +
+    COMPILER_THROW("Unknown binary operator: " +
                              toString(binary.operator_));
   }
 }
@@ -248,7 +251,7 @@ llvm::Value *Compiler::GenerateExpression(const ast::Expression &expr) {
     return GenerateBinary(static_cast<const ast::BinaryExpression &>(expr));
 
   default:
-    throw std::runtime_error("Unknown expression type in LLVM generation");
+    COMPILER_THROW("Unknown expression type in LLVM generation");
   }
 }
 
@@ -264,7 +267,7 @@ llvm::Value *Compiler::GenerateIdentifier(const ast::Identifier &id) {
   }
 
   // Unknown identifier - throw clear error
-  throw std::runtime_error("Unknown identifier: " + id.symbol);
+  COMPILER_THROW("Unknown identifier: " + id.symbol);
 }
 
 llvm::Function *Compiler::CompileProgram(const ast::Program &program) {
@@ -292,7 +295,7 @@ llvm::Value *Compiler::GenerateCall(const ast::CallExpression &call) {
   // Must be a function
   llvm::Function *calleeFunc = llvm::dyn_cast<llvm::Function>(calleeValue);
   if (!calleeFunc) {
-    throw std::runtime_error("Called value is not a function");
+    COMPILER_THROW("Called value is not a function");
   }
 
   // Generate arguments
@@ -303,7 +306,7 @@ llvm::Value *Compiler::GenerateCall(const ast::CallExpression &call) {
 
   // Verify argument count
   if (args.size() != calleeFunc->arg_size()) {
-    throw std::runtime_error("Incorrect number of arguments for function call");
+    COMPILER_THROW("Incorrect number of arguments for function call");
   }
 
   return builder.CreateCall(calleeFunc, args, "calltmp");
@@ -333,7 +336,7 @@ Compiler::GeneratePipeline(const ast::PipelineExpression &pipeline) {
       func = llvm::dyn_cast<llvm::Function>(calleeValue);
 
       if (!func) {
-        throw std::runtime_error("Pipeline stage is not a callable function");
+        COMPILER_THROW("Pipeline stage is not a callable function");
       }
 
       // Add additional arguments from the call
@@ -345,7 +348,7 @@ Compiler::GeneratePipeline(const ast::PipelineExpression &pipeline) {
       const auto &id = static_cast<const ast::Identifier &>(*stageExpr);
 
       if (!contains(functions, id.symbol)) {
-        throw std::runtime_error("Unknown pipeline function: " + id.symbol);
+        COMPILER_THROW("Unknown pipeline function: " + id.symbol);
       }
 
       func = functions[id.symbol];
@@ -357,20 +360,20 @@ Compiler::GeneratePipeline(const ast::PipelineExpression &pipeline) {
       func = llvm::dyn_cast<llvm::Function>(memberValue);
 
       if (!func) {
-        throw std::runtime_error("Pipeline member is not a function");
+        COMPILER_THROW("Pipeline member is not a function");
       }
     } else {
-      throw std::runtime_error("Invalid pipeline stage - must be function "
+      COMPILER_THROW("Invalid pipeline stage - must be function "
                                "call, identifier, or member access");
     }
 
     if (!func) {
-      throw std::runtime_error("Failed to resolve function in pipeline stage");
+      COMPILER_THROW("Failed to resolve function in pipeline stage");
     }
 
     // Verify argument count matches function signature
     if (args.size() != func->arg_size()) {
-      throw std::runtime_error("Pipeline function argument count mismatch");
+      COMPILER_THROW("Pipeline function argument count mismatch");
     }
 
     // Execute the pipeline stage: result = func(previous_result, ...args)
@@ -389,7 +392,7 @@ llvm::Value *Compiler::GenerateMember(const ast::MemberExpression &member) {
       dynamic_cast<const ast::Identifier *>(member.property.get());
 
   if (!objectId || !propertyId) {
-    throw std::runtime_error("Complex member expressions not yet supported");
+    COMPILER_THROW("Complex member expressions not yet supported");
   }
 
   // Construct fully qualified name: "clipboard.out", "text.upper", etc.
@@ -400,7 +403,7 @@ llvm::Value *Compiler::GenerateMember(const ast::MemberExpression &member) {
     return functions[memberName];
   }
 
-  throw std::runtime_error("Unknown member function: " + memberName);
+  COMPILER_THROW("Unknown member function: " + memberName);
 }
 
 // Generate Variable management - for let bindings and function params!
@@ -412,7 +415,7 @@ llvm::Value *Compiler::GetVariable(const std::string &name) {
   if (contains(namedValues, name)) {
     return namedValues[name];
   }
-  throw std::runtime_error("Unknown variable: " + name);
+  COMPILER_THROW("Unknown variable: " + name);
 }
 void Compiler::RegisterHotkey(const ast::HotkeyLiteral &hotkey,
                               llvm::Function *handler) {
@@ -545,7 +548,7 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
 
     // Check if there's a value to assign
     if (!letStmt.value) {
-      throw std::runtime_error(
+      COMPILER_THROW(
           "LetDeclaration without value not supported in LLVM codegen");
     }
 
@@ -807,7 +810,7 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
   }
 
   default:
-    throw std::runtime_error("Unsupported statement kind in LLVM codegen: " +
+    COMPILER_THROW("Unsupported statement kind in LLVM codegen: " +
                              std::to_string(static_cast<int>(stmt.kind)));
   }
 }

@@ -941,18 +941,26 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
         return nullptr;
       }
       
-      // Parse the body with appropriate precedence
-      auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
-      if (!bodyExpr) {
-        return nullptr;
-      }
-      
       // Create function parameter from the identifier
       std::vector<std::unique_ptr<ast::FunctionParameter>> params;
       auto param = std::make_unique<ast::FunctionParameter>(
           std::make_unique<ast::Identifier>(ident->symbol),
           std::nullopt, std::nullopt, false);
       params.push_back(std::move(param));
+      
+      // Check if body is a block (starts with {)
+      if (at().type == TokenType::OpenBrace) {
+        // Block body: use parseBlockStatement for proper statement parsing
+        auto body = parseBlockStatement();
+        return std::make_unique<ast::LambdaExpression>(
+            std::move(params), std::move(body));
+      }
+      
+      // Expression body: parse with appropriate precedence
+      auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
+      if (!bodyExpr) {
+        return nullptr;
+      }
       
       // Wrap body in a block statement
       auto body = std::make_unique<ast::BlockStatement>();

@@ -12,6 +12,9 @@
 #include <thread>
 #include <fstream>
 
+// Helper macro for throwing runtime errors with source location
+#define VM_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace havel::compiler {
 
 namespace {
@@ -262,27 +265,67 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
   return std::to_string(location.line) + ":" + std::to_string(location.column);
 }
 
-// Rust-style error formatting with source line and arrow
+// ANSI color codes for Rust-style error formatting
+namespace {
+  const char* RESET = "\033[0m";
+  const char* BOLD = "\033[1m";
+  const char* RED = "\033[31m";
+  const char* GREEN = "\033[32m";
+  const char* YELLOW = "\033[33m";
+  const char* BLUE = "\033[34m";
+  const char* MAGENTA = "\033[35m";
+  const char* CYAN = "\033[36m";
+  const char* GRAY = "\033[90m";
+  const char* BRIGHT_RED = "\033[91m";
+  const char* BRIGHT_GREEN = "\033[92m";
+  const char* BRIGHT_YELLOW = "\033[93m";
+  const char* BRIGHT_BLUE = "\033[94m";
+  const char* BRIGHT_MAGENTA = "\033[95m";
+  const char* BRIGHT_CYAN = "\033[96m";
+
+  // Generate error code from message hash
+  std::string generateErrorCode(const std::string& msg) {
+    std::hash<std::string> hasher;
+    auto hash = hasher(msg);
+    return "E" + std::to_string(1000 + (hash % 9000));
+  }
+}
+
+// Rust-style error formatting with source line, colors, and enhanced visuals
 std::string VM::formatErrorWithContext(const std::string &message) const {
   if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
-    return message + " (at <unknown>)";
+    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+           std::string(RESET) + ": " + message + "\n";
   }
 
   const auto &frame = frame_arena_[frame_count_ - 1];
   const auto *function = frame.function;
 
   if (frame.ip >= function->instruction_locations.size()) {
-    return message + " (at <unknown>)";
+    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+           std::string(RESET) + ": " + message + "\n";
   }
 
   const auto &loc = function->instruction_locations[frame.ip];
   if (loc.line == 0) {
-    return message + " (at <unknown>)";
+    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+           std::string(RESET) + ": " + message + "\n";
   }
 
-  std::string result = message + "\n";
-  result += "  --> " + loc.filename + ":" + std::to_string(loc.line) + ":" +
+  std::string error_code = generateErrorCode(message);
+  std::string result;
+  
+  // Error header with code
+  result += std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+            std::string(RESET) + std::string(BOLD) + "[" + error_code + "]: " + 
+            message + std::string(RESET) + "\n";
+  
+  // Location line
+  result += "     " + std::string(BRIGHT_CYAN) + "--> " + 
+            std::string(RESET) + loc.filename + ":" + 
+            std::to_string(loc.line) + ":" + 
             std::to_string(loc.column) + "\n";
+  result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
 
   // Try to read the source line from file
   if (!loc.filename.empty()) {
@@ -290,27 +333,79 @@ std::string VM::formatErrorWithContext(const std::string &message) const {
     if (file.is_open()) {
       std::string line;
       uint32_t current_line = 1;
+      // Read lines to find context (show up to 2 lines before)
+      std::vector<std::pair<uint32_t, std::string>> context_lines;
+      
       while (std::getline(file, line)) {
-        if (current_line == loc.line) {
-          // Show the source line
-          result += "   |\n";
-          result += "   | " + line + "\n";
-
-          // Create arrow pointing to column
-          std::string arrow = "   | ";
+        if (current_line >= loc.line - 2 && current_line <= loc.line + 1) {
+          context_lines.push_back({current_line, line});
+        }
+        if (current_line > loc.line + 1) break;
+        current_line++;
+      }
+      
+      // Show context lines
+      for (const auto& [line_num, line_content] : context_lines) {
+        // Line number in gray
+        result += std::string(GRAY) + std::to_string(line_num) + 
+                  " | " + std::string(RESET);
+        
+        if (line_num == loc.line) {
+          // Highlight error line in bold
+          result += std::string(BOLD) + line_content + std::string(RESET) + "\n";
+          
+          // Arrow line with caret pointing to column
+          result += std::string(GRAY) + "  | " + std::string(RESET);
+          
           // Calculate position: clamp column to line length
           size_t arrow_pos = static_cast<size_t>(loc.column > 1 ? loc.column - 1 : 0);
-          if (arrow_pos > line.length()) {
-            arrow_pos = line.length();
+          if (arrow_pos > line_content.length()) {
+            arrow_pos = line_content.length();
           }
+          
+          // Add spaces up to error position
           for (size_t i = 0; i < arrow_pos; i++) {
-            arrow += " ";
+            result += " ";
           }
-          arrow += "^";
-          result += arrow + "\n";
-          break;
+          
+          // Red caret under the error location
+          result += std::string(BOLD) + std::string(BRIGHT_RED) + "^" + 
+                    std::string(RESET);
+          
+          // Add underline squiggles for multi-character errors
+          if (message.find("expect") != std::string::npos || 
+              message.find("invalid") != std::string::npos) {
+            result += std::string(BRIGHT_RED) + "~~~~" + std::string(RESET);
+          }
+          result += "\n";
+        } else {
+          // Context lines in normal color
+          result += line_content + "\n";
         }
-        current_line++;
+      }
+      
+      // Show function name if available
+      if (function && !function->name.empty()) {
+        result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
+        result += "      " + std::string(BRIGHT_YELLOW) + "= " + 
+                  std::string(RESET) + "in function `" + 
+                  std::string(BRIGHT_MAGENTA) + function->name + 
+                  std::string(RESET) + "`\n";
+      }
+      
+      // Add helpful hint for common errors
+      if (message.find("type") != std::string::npos) {
+        result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
+        result += "      " + std::string(BRIGHT_GREEN) + "help: " + 
+                  std::string(RESET) + "check that types match the expected signature\n";
+      } else if (message.find("not found") != std::string::npos) {
+        result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
+        result += "      " + std::string(BRIGHT_GREEN) + "help: " + 
+                  std::string(RESET) + "verify the name is spelled correctly and in scope\n";
+      } else if (message.find("stack") != std::string::npos) {
+        result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
+        result += "      " + std::string(BRIGHT_GREEN) + "help: " + 
+                  std::string(RESET) + "ensure values are properly pushed/popped from the stack\n";
       }
     }
   }
@@ -348,19 +443,19 @@ template <typename T> T VM::getValue(const BytecodeValue &value) {
     return std::get<std::string>(value);
   }
 
-  throw std::runtime_error("Invalid type conversion");
+  VM_THROW("Invalid type conversion");
 }
 
 const VM::CallFrame &VM::currentFrame() const {
   if (frame_count_ == 0) {
-    throw std::runtime_error("No active call frame");
+    VM_THROW("No active call frame");
   }
   return frame_arena_[frame_count_ - 1];
 }
 
 VM::CallFrame &VM::currentFrame() {
   if (frame_count_ == 0) {
-    throw std::runtime_error("No active call frame");
+    VM_THROW("No active call frame");
   }
   return frame_arena_[frame_count_ - 1];
 }
@@ -442,7 +537,7 @@ void VM::registerHostFunction(const std::string &name, size_t arity,
       [arity, function = std::move(function),
        name](const std::vector<BytecodeValue> &args) -> BytecodeValue {
         if (args.size() != arity) {
-          throw std::runtime_error("Host function '" + name + "' expects " +
+          VM_THROW("Host function '" + name + "' expects " +
                                    std::to_string(arity) + " arguments, got " +
                                    std::to_string(args.size()));
         }
@@ -470,7 +565,7 @@ void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
                             BytecodeValue value) {
   auto *object = heap_.object(object_ref.id);
   if (!object) {
-    throw std::runtime_error("setHostObjectField unknown object id");
+    VM_THROW("setHostObjectField unknown object id");
   }
   (*object)[key] = std::move(value);
 }
@@ -478,7 +573,7 @@ void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
 void VM::pushHostArrayValue(ArrayRef array_ref, BytecodeValue value) {
   auto *array = heap_.array(array_ref.id);
   if (!array) {
-    throw std::runtime_error("pushHostArrayValue unknown array id");
+    VM_THROW("pushHostArrayValue unknown array id");
   }
   array->push_back(std::move(value));
 }
@@ -895,12 +990,12 @@ void VM::registerDefaultHostFunctions() {
   // fmt(format_string, ...) - Python-style string formatting
   registerHostFunction("fmt", [this](const std::vector<BytecodeValue> &args) {
     if (args.empty()) {
-      throw std::runtime_error("fmt() requires at least a format string");
+      VM_THROW("fmt() requires at least a format string");
     }
 
     // Get format string
     if (!std::holds_alternative<std::string>(args[0])) {
-      throw std::runtime_error("fmt() format must be a string");
+      VM_THROW("fmt() format must be a string");
     }
     std::string formatStr = std::get<std::string>(args[0]);
 
@@ -950,13 +1045,12 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "sleep_ms", 1, [](const std::vector<BytecodeValue> &args) {
         if (!std::holds_alternative<int64_t>(args[0])) {
-          throw std::runtime_error(
-              "sleep_ms expects exactly 1 integer argument");
+          VM_THROW("sleep_ms expects exactly 1 integer argument");
         }
 
         int64_t duration_ms = std::get<int64_t>(args[0]);
         if (duration_ms < 0) {
-          throw std::runtime_error("sleep_ms duration cannot be negative");
+          VM_THROW("sleep_ms duration cannot be negative");
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
@@ -967,18 +1061,18 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "sleep", 1, [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          throw std::runtime_error("sleep() requires one argument");
+          VM_THROW("sleep() requires one argument");
         }
 
         auto duration_ms = parseDuration(args[0]);
         if (!duration_ms) {
-          throw std::runtime_error(
+          VM_THROW(
               "sleep(): invalid duration format. Use numbers (ms) or strings "
               "like '1s', '500ms', '2.5m', '1h'");
         }
 
         if (*duration_ms < 0) {
-          throw std::runtime_error("sleep(): duration cannot be negative");
+          VM_THROW("sleep(): duration cannot be negative");
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(*duration_ms));
@@ -997,7 +1091,7 @@ void VM::registerDefaultHostFunctions() {
   // Instrumentation: assert(condition, message?)
   registerHostFunction("assert", [](const std::vector<BytecodeValue> &args) {
     if (args.empty()) {
-      throw std::runtime_error(
+      VM_THROW(
           "assert() requires at least a condition argument");
     }
     bool condition = false;
@@ -1011,7 +1105,7 @@ void VM::registerDefaultHostFunctions() {
       if (args.size() > 1 && std::holds_alternative<std::string>(args[1])) {
         msg = std::get<std::string>(args[1]);
       }
-      throw std::runtime_error(msg);
+      VM_THROW(msg);
     }
     return BytecodeValue(nullptr);
   });
@@ -1109,14 +1203,14 @@ void VM::registerDefaultHostFunctions() {
         if (args.size() != 2 || !std::holds_alternative<std::string>(args[0]) ||
             !std::holds_alternative<ArrayRef>(args[1])) {
           std::cerr << "[DEBUG] struct.define: argument type check failed\n";
-          throw std::runtime_error(
+          VM_THROW(
               "struct.define(name, fields) expects (string, array)");
         }
         const auto &name = std::get<std::string>(args[0]);
         auto *field_array = heap_.array(std::get<ArrayRef>(args[1]).id);
         if (!field_array) {
           std::cerr << "[DEBUG] struct.define: field_array is null\n";
-          throw std::runtime_error(
+          VM_THROW(
               "struct.define received invalid fields array");
         }
         std::cerr << "[DEBUG] struct.define: field_array size = "
@@ -1126,7 +1220,7 @@ void VM::registerDefaultHostFunctions() {
         for (const auto &value : *field_array) {
           if (!std::holds_alternative<std::string>(value)) {
             std::cerr << "[DEBUG] struct.define: field value is not a string\n";
-            throw std::runtime_error(
+            VM_THROW(
                 "struct.define fields must contain only strings");
           }
           fields.push_back(std::get<std::string>(value));
@@ -1141,7 +1235,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "struct.new", [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          throw std::runtime_error(
+          VM_THROW(
               "struct.new(type, ...values) requires a type argument");
         }
         uint32_t type_id = 0;
@@ -1151,11 +1245,11 @@ void VM::registerDefaultHostFunctions() {
           const auto &name = std::get<std::string>(args[0]);
           auto it = struct_type_ids_by_name_.find(name);
           if (it == struct_type_ids_by_name_.end()) {
-            throw std::runtime_error("Unknown struct type: " + name);
+            VM_THROW("Unknown struct type: " + name);
           }
           type_id = it->second;
         } else {
-          throw std::runtime_error("struct.new type must be string or int");
+          VM_THROW("struct.new type must be string or int");
         }
 
         const size_t field_count = heap_.structFieldCount(type_id);
@@ -1170,7 +1264,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "struct.get", [this](const std::vector<BytecodeValue> &args) {
         if (args.size() != 2 || !std::holds_alternative<StructRef>(args[0])) {
-          throw std::runtime_error("struct.get(struct, field) expects struct");
+          VM_THROW("struct.get(struct, field) expects struct");
         }
         StructRef ref = std::get<StructRef>(args[0]);
         size_t index = 0;
@@ -1184,7 +1278,7 @@ void VM::registerDefaultHostFunctions() {
           }
           index = *idx;
         } else {
-          throw std::runtime_error("struct.get field must be string or int");
+          VM_THROW("struct.get field must be string or int");
         }
         return getStructField(ref, index);
       });
@@ -1192,7 +1286,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "struct.set", [this](const std::vector<BytecodeValue> &args) {
         if (args.size() != 3 || !std::holds_alternative<StructRef>(args[0])) {
-          throw std::runtime_error(
+          VM_THROW(
               "struct.set(struct, field, value) expects struct");
         }
         StructRef ref = std::get<StructRef>(args[0]);
@@ -1203,11 +1297,11 @@ void VM::registerDefaultHostFunctions() {
           auto idx = heap_.structFieldIndex(ref.typeId,
                                             std::get<std::string>(args[1]));
           if (!idx.has_value()) {
-            throw std::runtime_error("Unknown struct field name");
+            VM_THROW("Unknown struct field name");
           }
           index = *idx;
         } else {
-          throw std::runtime_error("struct.set field must be string or int");
+          VM_THROW("struct.set field must be string or int");
         }
         setStructField(ref, index, args[2]);
         return BytecodeValue(ref);
@@ -1218,20 +1312,20 @@ void VM::registerDefaultHostFunctions() {
       "class.define", [this](const std::vector<BytecodeValue> &args) {
         if (args.size() != 2 || !std::holds_alternative<std::string>(args[0]) ||
             !std::holds_alternative<ArrayRef>(args[1])) {
-          throw std::runtime_error(
+          VM_THROW(
               "class.define(name, fields) expects (string, array)");
         }
         const auto &name = std::get<std::string>(args[0]);
         auto *field_array = heap_.array(std::get<ArrayRef>(args[1]).id);
         if (!field_array) {
-          throw std::runtime_error(
+          VM_THROW(
               "class.define received invalid fields array");
         }
         std::vector<std::string> fields;
         fields.reserve(field_array->size());
         for (const auto &value : *field_array) {
           if (!std::holds_alternative<std::string>(value)) {
-            throw std::runtime_error(
+            VM_THROW(
                 "class.define fields must contain only strings");
           }
           fields.push_back(std::get<std::string>(value));
@@ -1244,7 +1338,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "class.new", [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          throw std::runtime_error(
+          VM_THROW(
               "class.new(type, ...values) requires a type argument");
         }
         uint32_t type_id = 0;
@@ -1254,11 +1348,11 @@ void VM::registerDefaultHostFunctions() {
           const auto &name = std::get<std::string>(args[0]);
           auto it = class_type_ids_by_name_.find(name);
           if (it == class_type_ids_by_name_.end()) {
-            throw std::runtime_error("Unknown class type: " + name);
+            VM_THROW("Unknown class type: " + name);
           }
           type_id = it->second;
         } else {
-          throw std::runtime_error("class.new type must be string or int");
+          VM_THROW("class.new type must be string or int");
         }
 
         const size_t field_count = heap_.classFieldCount(type_id);
@@ -1273,7 +1367,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "class.get", [this](const std::vector<BytecodeValue> &args) {
         if (args.size() != 2 || !std::holds_alternative<ClassRef>(args[0])) {
-          throw std::runtime_error("class.get(class, field) expects class");
+          VM_THROW("class.get(class, field) expects class");
         }
         ClassRef ref = std::get<ClassRef>(args[0]);
         size_t index = 0;
@@ -1287,7 +1381,7 @@ void VM::registerDefaultHostFunctions() {
           }
           index = *idx;
         } else {
-          throw std::runtime_error("class.get field must be string or int");
+          VM_THROW("class.get field must be string or int");
         }
         return getClassField(ref, index);
       });
@@ -1295,7 +1389,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction(
       "class.set", [this](const std::vector<BytecodeValue> &args) {
         if (args.size() != 3 || !std::holds_alternative<ClassRef>(args[0])) {
-          throw std::runtime_error(
+          VM_THROW(
               "class.set(class, field, value) expects class");
         }
         ClassRef ref = std::get<ClassRef>(args[0]);
@@ -1306,11 +1400,11 @@ void VM::registerDefaultHostFunctions() {
           auto idx =
               heap_.classFieldIndex(ref.typeId, std::get<std::string>(args[1]));
           if (!idx.has_value()) {
-            throw std::runtime_error("Unknown class field name");
+            VM_THROW("Unknown class field name");
           }
           index = *idx;
         } else {
-          throw std::runtime_error("class.set field must be string or int");
+          VM_THROW("class.set field must be string or int");
         }
         setClassField(ref, index, args[2]);
         return BytecodeValue(ref);
@@ -1364,13 +1458,13 @@ BytecodeValue VM::invokeHostFunction(const std::string &name,
                                      uint32_t arg_count) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
-    throw std::runtime_error("Host function not found: " + name);
+    VM_THROW("Host function not found: " + name);
   }
 
   std::vector<BytecodeValue> args(arg_count);
   for (uint32_t i = 0; i < arg_count; ++i) {
     if (stack.empty()) {
-      throw std::runtime_error("Stack underflow while reading host arguments");
+      VM_THROW("Stack underflow while reading host arguments");
     }
     args[arg_count - 1 - i] = stack.top();
     stack.pop();
@@ -1386,7 +1480,7 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
 
   const auto *entry = chunk.getFunction(function_name);
   if (!entry) {
-    throw std::runtime_error("Function not found: " + function_name);
+    VM_THROW("Function not found: " + function_name);
   }
 
   while (!stack.empty()) {
@@ -1414,7 +1508,7 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
 
   if (!args.empty()) {
     if (args.size() != entry->param_count) {
-      throw std::runtime_error("Argument count mismatch for entry function '" +
+      VM_THROW("Argument count mismatch for entry function '" +
                                function_name + "' (expected " +
                                std::to_string(entry->param_count) + ", got " +
                                std::to_string(args.size()) + ")");
@@ -1448,7 +1542,7 @@ BytecodeValue VM::executePersistent(const BytecodeChunk &chunk,
 
   const auto *entry = chunk.getFunction(function_name);
   if (!entry) {
-    throw std::runtime_error("Function not found: " + function_name);
+    VM_THROW("Function not found: " + function_name);
   }
 
   // Clear stack and locals for this execution, but PRESERVE:
@@ -1476,7 +1570,7 @@ BytecodeValue VM::executePersistent(const BytecodeChunk &chunk,
 
   if (!args.empty()) {
     if (args.size() != entry->param_count) {
-      throw std::runtime_error("Argument count mismatch for entry function '" +
+      VM_THROW("Argument count mismatch for entry function '" +
                                function_name + "' (expected " +
                                std::to_string(entry->param_count) + ", got " +
                                std::to_string(args.size()) + ")");
@@ -1556,7 +1650,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
           }
         }
 
-        throw ScriptError(thrown.value, errorMsg, stackTrace, line, column);
+        VM_THROW(errorMsg);
       }
       continue;
     }
@@ -1653,7 +1747,7 @@ std::string VM::buildStackTrace(size_t frame_count) const {
 BytecodeValue VM::call(const BytecodeValue &callee_value,
                        const std::vector<BytecodeValue> &args) {
   if (!current_chunk) {
-    throw std::runtime_error(
+    VM_THROW(
         "VM::call requires an active bytecode chunk (run execute first)");
   }
 
@@ -1677,14 +1771,14 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
     const auto &name = std::get<HostFunctionRef>(callee_value).name;
     auto it = host_functions.find(name);
     if (it == host_functions.end()) {
-      throw std::runtime_error("Host function not found: " + name);
+      VM_THROW("Host function not found: " + name);
     }
     stack.push(it->second(args));
     return;
   }
 
   if (frame_count_ >= max_call_depth_) {
-    throw std::runtime_error("Stack overflow: maximum call depth " +
+    VM_THROW("Stack overflow: maximum call depth " +
                              std::to_string(max_call_depth_) + " reached");
   }
 
@@ -1693,7 +1787,7 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
     const auto &name = std::get<HostFunctionRef>(callee_value).name;
     auto it = host_functions.find(name);
     if (it == host_functions.end()) {
-      throw std::runtime_error("Host function not found: " + name);
+      VM_THROW("Host function not found: " + name);
     }
     stack.push(it->second(args));
     return;
@@ -1707,17 +1801,17 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
     closure_id = std::get<ClosureRef>(callee_value).id;
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
-      throw std::runtime_error("Closure not found: " +
+      VM_THROW("Closure not found: " +
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
   } else {
-    throw std::runtime_error("CALL expects function or closure as callee");
+    VM_THROW("CALL expects function or closure as callee");
   }
 
   const auto *callee = current_chunk->getFunction(function_index);
   if (!callee) {
-    throw std::runtime_error("Function index not found: " +
+    VM_THROW("Function index not found: " +
                              std::to_string(function_index));
   }
 
@@ -1730,7 +1824,7 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
   // For variadic functions, allow MORE arguments than parameters
   if (callee->variadic_param_index == UINT32_MAX &&
       args.size() > callee->param_count) {
-    throw std::runtime_error("Argument count mismatch calling function index " +
+    VM_THROW("Argument count mismatch calling function index " +
                              std::to_string(function_index) +
                              " (expected at most " +
                              std::to_string(callee->param_count) + ", got " +
@@ -1741,7 +1835,7 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
   // params
   if (callee->variadic_param_index != UINT32_MAX &&
       args.size() < callee->variadic_param_index) {
-    throw std::runtime_error("Argument count mismatch calling function index " +
+    VM_THROW("Argument count mismatch calling function index " +
                              std::to_string(function_index) +
                              " (expected at least " +
                              std::to_string(callee->variadic_param_index) +
@@ -1792,7 +1886,7 @@ void VM::doTailCall(BytecodeValue callee_value,
     const auto &name = std::get<HostFunctionRef>(callee_value).name;
     auto it = host_functions.find(name);
     if (it == host_functions.end()) {
-      throw std::runtime_error("Host function not found: " + name);
+      VM_THROW("Host function not found: " + name);
     }
     // For host functions, just call and push result (no frame manipulation
     // needed)
@@ -1808,17 +1902,17 @@ void VM::doTailCall(BytecodeValue callee_value,
     closure_id = std::get<ClosureRef>(callee_value).id;
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
-      throw std::runtime_error("Closure not found: " +
+      VM_THROW("Closure not found: " +
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
   } else {
-    throw std::runtime_error("TAIL_CALL expects function or closure as callee");
+    VM_THROW("TAIL_CALL expects function or closure as callee");
   }
 
   const auto *callee = current_chunk->getFunction(function_index);
   if (!callee) {
-    throw std::runtime_error("Function index not found: " +
+    VM_THROW("Function index not found: " +
                              std::to_string(function_index));
   }
 
@@ -1826,7 +1920,7 @@ void VM::doTailCall(BytecodeValue callee_value,
   // For variadic functions, allow MORE arguments than parameters
   if (callee->variadic_param_index == UINT32_MAX &&
       args.size() > callee->param_count) {
-    throw std::runtime_error(
+    VM_THROW(
         "Argument count mismatch for tail call to function index " +
         std::to_string(function_index) + " (expected at most " +
         std::to_string(callee->param_count) + ", got " +
@@ -1837,7 +1931,7 @@ void VM::doTailCall(BytecodeValue callee_value,
   // params
   if (callee->variadic_param_index != UINT32_MAX &&
       args.size() < callee->variadic_param_index) {
-    throw std::runtime_error(
+    VM_THROW(
         "Argument count mismatch for tail call to function index " +
         std::to_string(function_index) + " (expected at least " +
         std::to_string(callee->variadic_param_index) + ", got " +
@@ -1886,6 +1980,49 @@ void VM::doTailCall(BytecodeValue callee_value,
   for (size_t i = old_base + args.size(); i < new_locals_needed; i++) {
     locals[i] = nullptr;
   }
+}
+
+void VM::execReturn() {
+  if (frame_count_ == 0) {
+    VM_THROW("RETURN with no active frame");
+  }
+  
+  auto &frame = frame_arena_[frame_count_ - 1];
+  
+  // Handle try/finally blocks
+  for (auto it = frame.try_stack.rbegin(); it != frame.try_stack.rend(); ++it) {
+    if (it->finally_ip != 0) {
+      // Execute finally block before returning
+      frame.ip = it->finally_ip;
+      it->finally_return_ip = UINT32_MAX; // Mark as return pending
+      return;
+    }
+  }
+  
+  // Pop return value (if any)
+  BytecodeValue return_value = nullptr;
+  if (!stack.empty()) {
+    return_value = popStack();
+  }
+  
+  // Close upvalues for this frame
+  closeFrameUpvalues(frame.locals_base, 
+                     frame.locals_base + frame.function->local_count);
+  
+  // Pop the frame
+  frame_count_--;
+  
+  if (frame_count_ == 0) {
+    // We're returning from the entry point - push return value and stop
+    stack.push(return_value);
+    return;
+  }
+  
+  // Push return value onto caller's stack
+  stack.push(return_value);
+  
+  // Continue execution in caller's frame
+  frame_arena_[frame_count_ - 1].ip++;
 }
 
 void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
@@ -1965,7 +2102,7 @@ void VM::collectGarbage() {
 // Inline helpers for stack operations (extracted to reduce executeInstruction stack frame)
 BytecodeValue VM::popStack() {
   if (stack.empty()) {
-    throw std::runtime_error("Stack underflow");
+    VM_THROW("Stack underflow");
   }
   BytecodeValue value = stack.top();
   stack.pop();
@@ -1997,7 +2134,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::LOAD_GLOBAL: {
     if (instruction.operands.empty() ||
         !std::holds_alternative<std::string>(instruction.operands[0])) {
-      throw std::runtime_error("LOAD_GLOBAL expects string operand");
+      VM_THROW("LOAD_GLOBAL expects string operand");
     }
     const auto &name = std::get<std::string>(instruction.operands[0]);
     auto it = globals.find(name);
@@ -2008,7 +2145,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::STORE_GLOBAL: {
     if (instruction.operands.empty() ||
         !std::holds_alternative<std::string>(instruction.operands[0])) {
-      throw std::runtime_error("STORE_GLOBAL expects string operand");
+      VM_THROW("STORE_GLOBAL expects string operand");
     }
     const auto &name = std::get<std::string>(instruction.operands[0]);
     BytecodeValue value = popStack();
@@ -2043,15 +2180,15 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t upvalue_index = std::get<uint32_t>(instruction.operands[0]);
     uint32_t closure_id = currentFrame().closure_id;
     if (closure_id == 0) {
-      throw std::runtime_error("LOAD_UPVALUE used without active closure");
+      VM_THROW("LOAD_UPVALUE used without active closure");
     }
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
-      throw std::runtime_error("Closure not found for LOAD_UPVALUE");
+      VM_THROW("Closure not found for LOAD_UPVALUE");
     }
     if (upvalue_index >= closure->upvalues.size() ||
         !closure->upvalues[upvalue_index]) {
-      throw std::runtime_error("LOAD_UPVALUE index out of range");
+      VM_THROW("LOAD_UPVALUE index out of range");
     }
     const auto &cell = closure->upvalues[upvalue_index];
     if (cell->is_open) {
@@ -2067,15 +2204,15 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t upvalue_index = std::get<uint32_t>(instruction.operands[0]);
     uint32_t closure_id = currentFrame().closure_id;
     if (closure_id == 0) {
-      throw std::runtime_error("STORE_UPVALUE used without active closure");
+      VM_THROW("STORE_UPVALUE used without active closure");
     }
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
-      throw std::runtime_error("Closure not found for STORE_UPVALUE");
+      VM_THROW("Closure not found for STORE_UPVALUE");
     }
     if (upvalue_index >= closure->upvalues.size() ||
         !closure->upvalues[upvalue_index]) {
-      throw std::runtime_error("STORE_UPVALUE index out of range");
+      VM_THROW("STORE_UPVALUE index out of range");
     }
     auto &cell = closure->upvalues[upvalue_index];
     BytecodeValue value = popStack();
@@ -2159,7 +2296,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     } else if (std::holds_alternative<double>(value)) {
       stack.push(-std::get<double>(value));
     } else {
-      throw std::runtime_error("Cannot negate non-numeric value");
+      VM_THROW("Cannot negate non-numeric value");
     }
     break;
   }
@@ -2201,7 +2338,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::CALL: {
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[0]);
     if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-      throw std::runtime_error("Stack underflow during CALL");
+      VM_THROW("Stack underflow during CALL");
     }
     std::vector<BytecodeValue> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
@@ -2215,7 +2352,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::TAIL_CALL: {
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[0]);
     if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-      throw std::runtime_error("Stack underflow during TAIL_CALL");
+      VM_THROW("Stack underflow during TAIL_CALL");
     }
     std::vector<BytecodeValue> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
@@ -2230,7 +2367,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (instruction.operands.size() != 2 ||
         !std::holds_alternative<std::string>(instruction.operands[0]) ||
         !std::holds_alternative<uint32_t>(instruction.operands[1])) {
-      throw std::runtime_error("CALL_HOST expects operands: <string "
+      VM_THROW("CALL_HOST expects operands: <string "
                                "function_name, uint32 arg_count>");
     }
 
@@ -2247,7 +2384,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (instruction.operands.size() != 2 ||
         !std::holds_alternative<std::string>(instruction.operands[0]) ||
         !std::holds_alternative<uint32_t>(instruction.operands[1])) {
-      throw std::runtime_error("CALL_SUPER expects operands: <string "
+      VM_THROW("CALL_SUPER expects operands: <string "
                                "method_name, uint32 arg_count>");
     }
 
@@ -2256,13 +2393,13 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[1]);
 
     if (stack.size() < static_cast<size_t>(arg_count)) {
-      throw std::runtime_error("Stack underflow during CALL_SUPER");
+      VM_THROW("Stack underflow during CALL_SUPER");
     }
 
     // Pop arguments from stack
     std::vector<BytecodeValue> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
+      args[arg_count - 1 - i] = popStack();
     }
 
     // Get current 'this' from local scope (slot 0 typically)
@@ -2278,20 +2415,20 @@ void VM::executeInstruction(const Instruction &instruction) {
     args.insert(args.begin(), this_value);
 
     // Call as host function - runtime will need to resolve via parent class
-    push(invokeHostFunction(super_method_name,
+    stack.push(invokeHostFunction(super_method_name,
                             static_cast<uint32_t>(args.size())));
     break;
   }
 
   case OpCode::RETURN: {
-    doReturn();
+    execReturn();
     break;
   }
 
   case OpCode::TRY_ENTER: {
     if (instruction.operands.size() < 1 ||
         !std::holds_alternative<uint32_t>(instruction.operands[0])) {
-      throw std::runtime_error("TRY_ENTER expects catch ip operand");
+      VM_THROW("TRY_ENTER expects catch ip operand");
     }
     const uint32_t catch_ip = std::get<uint32_t>(instruction.operands[0]);
     uint32_t finally_ip = 0;
@@ -2331,7 +2468,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t function_index = std::get<uint32_t>(instruction.operands[0]);
     const auto *target = current_chunk->getFunction(function_index);
     if (!target) {
-      throw std::runtime_error("CLOSURE references unknown function index");
+      VM_THROW("CLOSURE references unknown function index");
     }
 
     RuntimeClosure closure;
@@ -2354,15 +2491,15 @@ void VM::executeInstruction(const Instruction &instruction) {
       } else {
         uint32_t parent_closure_id = currentFrame().closure_id;
         if (parent_closure_id == 0) {
-          throw std::runtime_error(
+          VM_THROW(
               "CLOSURE tried to capture upvalue without parent closure");
         }
         auto *parent_closure = heap_.closure(parent_closure_id);
         if (!parent_closure) {
-          throw std::runtime_error("Parent closure not found for CLOSURE");
+          VM_THROW("Parent closure not found for CLOSURE");
         }
         if (descriptor.index >= parent_closure->upvalues.size()) {
-          throw std::runtime_error("CLOSURE upvalue index out of range");
+          VM_THROW("CLOSURE upvalue index out of range");
         }
         closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
       }
@@ -2391,12 +2528,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue value = popStack();
     BytecodeValue container = popStack();
     if (!std::holds_alternative<ArrayRef>(container)) {
-      throw std::runtime_error("ARRAY_PUSH expects array container");
+      VM_THROW("ARRAY_PUSH expects array container");
     }
     uint32_t id = std::get<ArrayRef>(container).id;
     auto *array = heap_.array(id);
     if (!array) {
-      throw std::runtime_error("ARRAY_PUSH unknown array id");
+      VM_THROW("ARRAY_PUSH unknown array id");
     }
     array->push_back(value);
     stack.push(container);
@@ -2406,12 +2543,12 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::ARRAY_LEN: {
     BytecodeValue container = popStack();
     if (!std::holds_alternative<ArrayRef>(container)) {
-      throw std::runtime_error("ARRAY_LEN expects array container");
+      VM_THROW("ARRAY_LEN expects array container");
     }
     uint32_t id = std::get<ArrayRef>(container).id;
     auto *array = heap_.array(id);
     if (!array) {
-      throw std::runtime_error("ARRAY_LEN unknown array id");
+      VM_THROW("ARRAY_LEN unknown array id");
     }
     stack.push(BytecodeValue(static_cast<int64_t>(array->size())));
     break;
@@ -2451,7 +2588,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue structVal = popStack();
     if (!std::holds_alternative<StructRef>(structVal) ||
         !std::holds_alternative<int64_t>(indexVal)) {
-      throw std::runtime_error("STRUCT_GET expects struct and int index");
+      VM_THROW("STRUCT_GET expects struct and int index");
     }
     auto structRef = std::get<StructRef>(structVal);
     size_t index = static_cast<size_t>(std::get<int64_t>(indexVal));
@@ -2466,7 +2603,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue structVal = popStack();
     if (!std::holds_alternative<StructRef>(structVal) ||
         !std::holds_alternative<int64_t>(indexVal)) {
-      throw std::runtime_error(
+      VM_THROW(
           "STRUCT_SET expects struct, int index, and value");
     }
     auto structRef = std::get<StructRef>(structVal);
@@ -2489,7 +2626,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::ENUM_TAG: {
     BytecodeValue enumVal = popStack();
     if (!std::holds_alternative<EnumRef>(enumVal)) {
-      throw std::runtime_error("ENUM_TAG expects enum");
+      VM_THROW("ENUM_TAG expects enum");
     }
     auto enumRef = std::get<EnumRef>(enumVal);
     stack.push(BytecodeValue(static_cast<int64_t>(enumRef.tag)));
@@ -2501,7 +2638,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue enumVal = popStack();
     if (!std::holds_alternative<EnumRef>(enumVal) ||
         !std::holds_alternative<int64_t>(indexVal)) {
-      throw std::runtime_error("ENUM_PAYLOAD expects enum and int index");
+      VM_THROW("ENUM_PAYLOAD expects enum and int index");
     }
     auto enumRef = std::get<EnumRef>(enumVal);
     size_t index = static_cast<size_t>(std::get<int64_t>(indexVal));
@@ -2515,7 +2652,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue enumVal = popStack();
     if (!std::holds_alternative<EnumRef>(enumVal) ||
         !std::holds_alternative<int64_t>(tagVal)) {
-      throw std::runtime_error("ENUM_MATCH expects enum and int tag");
+      VM_THROW("ENUM_MATCH expects enum and int tag");
     }
     auto enumRef = std::get<EnumRef>(enumVal);
     int64_t expectedTag = std::get<int64_t>(tagVal);
@@ -2538,7 +2675,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::ITER_NEXT: {
     BytecodeValue iterator_val = popStack();
     if (!std::holds_alternative<IteratorRef>(iterator_val)) {
-      throw std::runtime_error("ITER_NEXT expects iterator");
+      VM_THROW("ITER_NEXT expects iterator");
     }
 
     uint32_t id = std::get<IteratorRef>(iterator_val).id;
@@ -2556,11 +2693,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (std::holds_alternative<ArrayRef>(container)) {
       auto index = indexFromValue(index_or_key);
       if (!index) {
-        throw std::runtime_error("ARRAY_GET expects integer index");
+        VM_THROW("ARRAY_GET expects integer index");
       }
       auto *array = heap_.array(std::get<ArrayRef>(container).id);
       if (!array) {
-        throw std::runtime_error("ARRAY_GET unknown array id");
+        VM_THROW("ARRAY_GET unknown array id");
       }
       // Handle negative indices: -1 = last element, -2 = second to last, etc.
       int64_t idx = *index;
@@ -2578,12 +2715,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (std::holds_alternative<SetRef>(container)) {
       auto key = keyFromValue(index_or_key);
       if (!key) {
-        throw std::runtime_error(
+        VM_THROW(
             "SET membership expects string/number/bool key");
       }
       auto *set = heap_.set(std::get<SetRef>(container).id);
       if (!set) {
-        throw std::runtime_error("ARRAY_GET unknown set id");
+        VM_THROW("ARRAY_GET unknown set id");
       }
       stack.push(set->find(*key) != set->end());
       break;
@@ -2592,18 +2729,18 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (std::holds_alternative<ObjectRef>(container)) {
       auto key = keyFromValue(index_or_key);
       if (!key) {
-        throw std::runtime_error("OBJECT index expects string/number/bool key");
+        VM_THROW("OBJECT index expects string/number/bool key");
       }
       auto *object = heap_.object(std::get<ObjectRef>(container).id);
       if (!object) {
-        throw std::runtime_error("ARRAY_GET unknown object id");
+        VM_THROW("ARRAY_GET unknown object id");
       }
       auto kv = object->find(*key);
       stack.push(kv == object->end() ? BytecodeValue(nullptr) : kv->second);
       break;
     }
 
-    throw std::runtime_error("ARRAY_GET expects array/set/object container");
+    VM_THROW("ARRAY_GET expects array/set/object container");
   }
 
   case OpCode::ARRAY_SET: {
@@ -2614,11 +2751,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (std::holds_alternative<ArrayRef>(container)) {
       auto index = indexFromValue(index_or_key);
       if (!index) {
-        throw std::runtime_error("ARRAY_SET expects integer index");
+        VM_THROW("ARRAY_SET expects integer index");
       }
       auto *array = heap_.array(std::get<ArrayRef>(container).id);
       if (!array) {
-        throw std::runtime_error("ARRAY_SET unknown array id");
+        VM_THROW("ARRAY_SET unknown array id");
       }
       // Handle negative indices: -1 = last element, etc.
       int64_t idx = *index;
@@ -2626,7 +2763,7 @@ void VM::executeInstruction(const Instruction &instruction) {
         idx = static_cast<int64_t>(array->size()) + idx;
       }
       if (idx < 0) {
-        throw std::runtime_error("ARRAY_SET index out of bounds");
+        VM_THROW("ARRAY_SET index out of bounds");
       }
       const auto idx_size = static_cast<size_t>(idx);
       if (idx_size >= array->size()) {
@@ -2639,12 +2776,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (std::holds_alternative<SetRef>(container)) {
       auto key = keyFromValue(index_or_key);
       if (!key) {
-        throw std::runtime_error(
+        VM_THROW(
             "SET assignment expects string/number/bool key");
       }
       auto *set = heap_.set(std::get<SetRef>(container).id);
       if (!set) {
-        throw std::runtime_error("ARRAY_SET unknown set id");
+        VM_THROW("ARRAY_SET unknown set id");
       }
       bool present = false;
       if (std::holds_alternative<bool>(value)) {
@@ -2654,7 +2791,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       } else if (std::holds_alternative<double>(value)) {
         present = std::get<double>(value) != 0.0;
       } else {
-        throw std::runtime_error(
+        VM_THROW(
             "SET assignment value must be bool/number to indicate presence");
       }
       if (present) {
@@ -2668,17 +2805,17 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (std::holds_alternative<ObjectRef>(container)) {
       auto key = keyFromValue(index_or_key);
       if (!key) {
-        throw std::runtime_error("OBJECT index assignment expects valid key");
+        VM_THROW("OBJECT index assignment expects valid key");
       }
       auto *object = heap_.object(std::get<ObjectRef>(container).id);
       if (!object) {
-        throw std::runtime_error("ARRAY_SET unknown object id");
+        VM_THROW("ARRAY_SET unknown object id");
       }
       (*object)[*key] = value;
       break;
     }
 
-    throw std::runtime_error("ARRAY_SET expects array/set/object container");
+    VM_THROW("ARRAY_SET expects array/set/object container");
   }
 
   case OpCode::OBJECT_NEW: {
@@ -2697,12 +2834,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue key_value = popStack();
     BytecodeValue object = popStack();
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_GET expects object container");
+      VM_THROW("OBJECT_GET expects object container");
     }
     auto objRef = std::get<ObjectRef>(object);
     auto *obj = heap_.object(objRef.id);
     if (!obj) {
-      throw std::runtime_error("OBJECT_GET unknown object id");
+      VM_THROW("OBJECT_GET unknown object id");
     }
 
     // Check for numeric index (obj[0], obj[-1])
@@ -2728,7 +2865,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     auto key = keyFromValue(key_value);
     if (!key) {
-      throw std::runtime_error("OBJECT_GET expects string/number/bool key");
+      VM_THROW("OBJECT_GET expects string/number/bool key");
     }
     auto *val = obj->get(*key);
     if (val) {
@@ -2753,22 +2890,22 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue object = popStack();
 
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_SET expects object container");
+      VM_THROW("OBJECT_SET expects object container");
     }
     auto keyStr = keyFromValue(key);
     if (!keyStr) {
-      throw std::runtime_error("OBJECT_SET expects string/number/bool key");
+      VM_THROW("OBJECT_SET expects string/number/bool key");
     }
 
     // Safety: reject __ prefixed keys (reserved for internal use)
     if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_') {
-      throw std::runtime_error(
+      VM_THROW(
           "OBJECT_SET: keys starting with '__' are reserved");
     }
 
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
-      throw std::runtime_error("OBJECT_SET unknown object id");
+      VM_THROW("OBJECT_SET unknown object id");
     }
     obj->set(*keyStr, std::move(value));
     stack.push(object); // Return the object for chaining
@@ -2779,11 +2916,11 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::OBJECT_KEYS: {
     BytecodeValue object = popStack();
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_KEYS expects object");
+      VM_THROW("OBJECT_KEYS expects object");
     }
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
-      throw std::runtime_error("OBJECT_KEYS unknown object id");
+      VM_THROW("OBJECT_KEYS unknown object id");
     }
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
@@ -2798,11 +2935,11 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::OBJECT_VALUES: {
     BytecodeValue object = popStack();
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_VALUES expects object");
+      VM_THROW("OBJECT_VALUES expects object");
     }
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
-      throw std::runtime_error("OBJECT_VALUES unknown object id");
+      VM_THROW("OBJECT_VALUES unknown object id");
     }
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
@@ -2820,11 +2957,11 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::OBJECT_ENTRIES: {
     BytecodeValue object = popStack();
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_ENTRIES expects object");
+      VM_THROW("OBJECT_ENTRIES expects object");
     }
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
-      throw std::runtime_error("OBJECT_ENTRIES unknown object id");
+      VM_THROW("OBJECT_ENTRIES unknown object id");
     }
     auto arrRef = heap_.allocateArray();
     auto keys = obj->getKeys();
@@ -2848,11 +2985,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue keyValue = popStack();
     BytecodeValue object = popStack();
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_HAS expects object");
+      VM_THROW("OBJECT_HAS expects object");
     }
     auto key = keyFromValue(keyValue);
     if (!key) {
-      throw std::runtime_error("OBJECT_HAS expects string/number/bool key");
+      VM_THROW("OBJECT_HAS expects string/number/bool key");
     }
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
@@ -2867,11 +3004,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue keyValue = popStack();
     BytecodeValue object = popStack();
     if (!std::holds_alternative<ObjectRef>(object)) {
-      throw std::runtime_error("OBJECT_DELETE expects object");
+      VM_THROW("OBJECT_DELETE expects object");
     }
     auto key = keyFromValue(keyValue);
     if (!key) {
-      throw std::runtime_error("OBJECT_DELETE expects string/number/bool key");
+      VM_THROW("OBJECT_DELETE expects string/number/bool key");
     }
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
@@ -2886,7 +3023,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::ARRAY_POP: {
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_POP expects array");
+      VM_THROW("ARRAY_POP expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr || arr->empty()) {
@@ -2902,7 +3039,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue value = popStack();
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_HAS expects array");
+      VM_THROW("ARRAY_HAS expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr) {
@@ -2924,7 +3061,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue value = popStack();
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_FIND expects array");
+      VM_THROW("ARRAY_FIND expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr) {
@@ -2947,7 +3084,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue fn = popStack();
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_MAP expects array");
+      VM_THROW("ARRAY_MAP expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr) {
@@ -2956,7 +3093,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     if (!std::holds_alternative<FunctionObject>(fn) &&
         !std::holds_alternative<ClosureRef>(fn)) {
-      throw std::runtime_error("ARRAY_MAP expects function/closure");
+      VM_THROW("ARRAY_MAP expects function/closure");
     }
 
     auto resultRef = heap_.allocateArray();
@@ -2977,7 +3114,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue fn = popStack();
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_FILTER expects array");
+      VM_THROW("ARRAY_FILTER expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr) {
@@ -3007,7 +3144,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue fn = popStack();
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_REDUCE expects array");
+      VM_THROW("ARRAY_REDUCE expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr) {
@@ -3028,7 +3165,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue fn = popStack();
     BytecodeValue array = popStack();
     if (!std::holds_alternative<ArrayRef>(array)) {
-      throw std::runtime_error("ARRAY_FOREACH expects array");
+      VM_THROW("ARRAY_FOREACH expects array");
     }
     auto *arr = heap_.array(std::get<ArrayRef>(array).id);
     if (!arr) {
@@ -3048,7 +3185,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::STRING_LEN: {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str)) {
-      throw std::runtime_error("STRING_LEN expects string");
+      VM_THROW("STRING_LEN expects string");
     }
     stack.push(BytecodeValue(int64_t(std::get<std::string>(str).length())));
     break;
@@ -3057,7 +3194,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::STRING_UPPER: {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str)) {
-      throw std::runtime_error("STRING_UPPER expects string");
+      VM_THROW("STRING_UPPER expects string");
     }
     std::string s = std::get<std::string>(str);
     std::transform(s.begin(), s.end(), s.begin(), ::toupper);
@@ -3068,7 +3205,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::STRING_LOWER: {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str)) {
-      throw std::runtime_error("STRING_LOWER expects string");
+      VM_THROW("STRING_LOWER expects string");
     }
     std::string s = std::get<std::string>(str);
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
@@ -3079,7 +3216,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::STRING_TRIM: {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str)) {
-      throw std::runtime_error("STRING_TRIM expects string");
+      VM_THROW("STRING_TRIM expects string");
     }
     std::string s = std::get<std::string>(str);
     size_t start = s.find_first_not_of(" \t\n\r");
@@ -3097,7 +3234,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str) ||
         !std::holds_alternative<std::string>(substr)) {
-      throw std::runtime_error("STRING_HAS expects strings");
+      VM_THROW("STRING_HAS expects strings");
     }
     const std::string &s = std::get<std::string>(str);
     const std::string &sub = std::get<std::string>(substr);
@@ -3110,7 +3247,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str) ||
         !std::holds_alternative<std::string>(prefix)) {
-      throw std::runtime_error("STRING_STARTS expects strings");
+      VM_THROW("STRING_STARTS expects strings");
     }
     const std::string &s = std::get<std::string>(str);
     const std::string &pre = std::get<std::string>(prefix);
@@ -3124,7 +3261,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue str = popStack();
     if (!std::holds_alternative<std::string>(str) ||
         !std::holds_alternative<std::string>(suffix)) {
-      throw std::runtime_error("STRING_ENDS expects strings");
+      VM_THROW("STRING_ENDS expects strings");
     }
     const std::string &s = std::get<std::string>(str);
     const std::string &suf = std::get<std::string>(suffix);
@@ -3179,7 +3316,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   // Type conversion - as operator
   case OpCode::AS_TYPE: {
     if (instruction.operands.size() < 1) {
-      throw std::runtime_error("AS_TYPE requires type operand");
+      VM_THROW("AS_TYPE requires type operand");
     }
     const std::string &typeName =
         std::get<std::string>(instruction.operands[0]);
@@ -3295,8 +3432,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
 
   default:
-    throw std::runtime_error(
-        "Unknown opcode: " +
+    VM_THROW("Unknown opcode: " +
         std::to_string(static_cast<int>(instruction.opcode)));
   }
 }
@@ -3322,7 +3458,7 @@ void VM::execBinaryOp(OpCode opcode) {
       stack.push(false);
       return;
     default:
-      throw std::runtime_error("Cannot perform arithmetic with null values");
+      VM_THROW("Cannot perform arithmetic with null values");
     }
   }
 
@@ -3349,7 +3485,7 @@ void VM::execBinaryOp(OpCode opcode) {
     case OpCode::LTE: stack.push(l <= r); return;
     case OpCode::GT: stack.push(l > r); return;
     case OpCode::GTE: stack.push(l >= r); return;
-    default: throw std::runtime_error("Unsupported integer operation");
+    default: VM_THROW("Unsupported integer operation");
     }
   }
 
@@ -3365,7 +3501,7 @@ void VM::execBinaryOp(OpCode opcode) {
       if (r == 0.0) throw ScriptThrow{BytecodeValue("Division by zero")};
       stack.push(l / r); return;
     case OpCode::MOD:
-      if (r == 0.0) throw std::runtime_error("Modulo by zero");
+      if (r == 0.0) VM_THROW("Modulo by zero");
       stack.push(std::fmod(l, r)); return;
     case OpCode::POW: stack.push(std::pow(l, r)); return;
     case OpCode::EQ: stack.push(l == r); return;
@@ -3374,7 +3510,7 @@ void VM::execBinaryOp(OpCode opcode) {
     case OpCode::LTE: stack.push(l <= r); return;
     case OpCode::GT: stack.push(l > r); return;
     case OpCode::GTE: stack.push(l >= r); return;
-    default: throw std::runtime_error("Unsupported floating point operation");
+    default: VM_THROW("Unsupported floating point operation");
     }
   }
 
@@ -3385,7 +3521,7 @@ void VM::execBinaryOp(OpCode opcode) {
     case OpCode::ADD: stack.push(l + r); return;
     case OpCode::EQ: stack.push(l == r); return;
     case OpCode::NEQ: stack.push(l != r); return;
-    default: throw std::runtime_error("Invalid string operation");
+    default: VM_THROW("Invalid string operation");
     }
   }
 
@@ -3401,7 +3537,7 @@ void VM::execBinaryOp(OpCode opcode) {
     }
   }
 
-  throw std::runtime_error("Type mismatch in binary operation");
+  VM_THROW("Type mismatch in binary operation");
 }
 
 // ============================================================================
@@ -3412,14 +3548,14 @@ CallbackId VM::registerCallback(const BytecodeValue &closure) {
   // Accept both ClosureRef and FunctionObject
   if (!std::holds_alternative<ClosureRef>(closure) &&
       !std::holds_alternative<FunctionObject>(closure)) {
-    throw std::runtime_error("registerCallback expects a closure or function");
+    VM_THROW("registerCallback expects a closure or function");
   }
 
   // Pin the closure as an external root (GC will not collect it)
   CallbackId id = static_cast<CallbackId>(pinExternalRoot(closure));
 
   if (id == INVALID_CALLBACK_ID) {
-    throw std::runtime_error("Failed to register callback - invalid ID");
+    VM_THROW("Failed to register callback - invalid ID");
   }
 
   return id;
@@ -3428,13 +3564,13 @@ CallbackId VM::registerCallback(const BytecodeValue &closure) {
 BytecodeValue VM::invokeCallback(CallbackId id,
                                  const std::vector<BytecodeValue> &args) {
   if (id == INVALID_CALLBACK_ID) {
-    throw std::runtime_error("invokeCallback called with invalid callback ID");
+    VM_THROW("invokeCallback called with invalid callback ID");
   }
 
   // Get the closure from external roots
   auto closureValue = externalRootValue(id);
   if (!closureValue.has_value()) {
-    throw std::runtime_error(
+    VM_THROW(
         "invokeCallback: callback not found (may have been released)");
   }
 
@@ -3611,17 +3747,17 @@ BytecodeValue
 VM::VMExecutionContext::invokeCallback(CallbackId id,
                                        const std::vector<BytecodeValue> &args) {
   if (!parent_vm_) {
-    throw std::runtime_error(
+    VM_THROW(
         "VMExecutionContext::invokeCallback called on invalid context");
   }
   if (id == INVALID_CALLBACK_ID) {
-    throw std::runtime_error("invokeCallback called with invalid callback ID");
+    VM_THROW("invokeCallback called with invalid callback ID");
   }
 
   // Get the closure from parent's external roots
   auto closureValue = parent_vm_->externalRootValue(id);
   if (!closureValue.has_value()) {
-    throw std::runtime_error(
+    VM_THROW(
         "invokeCallback: callback not found (may have been released)");
   }
 
@@ -3641,19 +3777,19 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
     closure_id = std::get<ClosureRef>(*closureValue).id;
     auto *closure = parent_vm_->heap_.closure(closure_id);
     if (!closure) {
-      throw std::runtime_error("Closure not found: " +
+      VM_THROW("Closure not found: " +
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
   } else if (std::holds_alternative<FunctionObject>(*closureValue)) {
     function_index = std::get<FunctionObject>(*closureValue).function_index;
   } else {
-    throw std::runtime_error("Callback must be a closure or function");
+    VM_THROW("Callback must be a closure or function");
   }
 
   const auto *func = current_chunk->getFunction(function_index);
   if (!func) {
-    throw std::runtime_error("Function index not found: " +
+    VM_THROW("Function index not found: " +
                              std::to_string(function_index));
   }
 
@@ -3721,7 +3857,7 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
       }
 
       if (!handled) {
-        throw std::runtime_error("Uncaught exception: " +
+        VM_THROW("Uncaught exception: " +
                                  toString(thrown.value, &parent_vm_->heap_));
       }
       continue;
@@ -3748,7 +3884,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
   // Helper lambdas that operate on THIS context's state (not parent VM)
   auto pop = [this]() -> BytecodeValue {
     if (stack.empty()) {
-      throw std::runtime_error("Stack underflow");
+      VM_THROW("Stack underflow");
     }
     BytecodeValue value = stack.top();
     stack.pop();
@@ -3770,7 +3906,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
 
   auto currentFrame = [this]() -> CallFrame & {
     if (frame_count_ == 0) {
-      throw std::runtime_error("No active call frame");
+      VM_THROW("No active call frame");
     }
     return frame_arena_[frame_count_ - 1];
   };
@@ -3854,7 +3990,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
     auto *closure = parent_vm_->heap_.closure(closure_id);
     if (!closure || upvalue_index >= closure->upvalues.size() ||
         !closure->upvalues[upvalue_index]) {
-      throw std::runtime_error("LOAD_UPVALUE error");
+      VM_THROW("LOAD_UPVALUE error");
     }
     const auto &cell = closure->upvalues[upvalue_index];
     if (cell->is_open) {
@@ -3872,7 +4008,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
     auto *closure = parent_vm_->heap_.closure(closure_id);
     if (!closure || upvalue_index >= closure->upvalues.size() ||
         !closure->upvalues[upvalue_index]) {
-      throw std::runtime_error("STORE_UPVALUE error");
+      VM_THROW("STORE_UPVALUE error");
     }
     auto &cell = closure->upvalues[upvalue_index];
     BytecodeValue value = pop();
@@ -3923,7 +4059,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
                std::holds_alternative<std::string>(right)) {
       push(std::get<std::string>(left) + std::get<std::string>(right));
     } else {
-      throw std::runtime_error("Type mismatch in ADD");
+      VM_THROW("Type mismatch in ADD");
     }
     break;
   }
@@ -4066,7 +4202,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
       if (it != parent_vm_->host_functions.end()) {
         push(it->second(args));
       } else {
-        throw std::runtime_error("Host function not found: " + name);
+        VM_THROW("Host function not found: " + name);
       }
       break;
     }
@@ -4080,16 +4216,16 @@ void VM::VMExecutionContext::executeInstructionInContext(
       new_closure_id = std::get<ClosureRef>(callee_value).id;
       auto *closure = parent_vm_->heap_.closure(new_closure_id);
       if (!closure) {
-        throw std::runtime_error("Closure not found");
+        VM_THROW("Closure not found");
       }
       function_index = closure->function_index;
     } else {
-      throw std::runtime_error("CALL expects function or closure");
+      VM_THROW("CALL expects function or closure");
     }
 
     const auto *callee = current_chunk->getFunction(function_index);
     if (!callee) {
-      throw std::runtime_error("Function not found");
+      VM_THROW("Function not found");
     }
 
     // Advance caller IP
@@ -4120,7 +4256,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
     uint32_t function_index = std::get<uint32_t>(instruction.operands[0]);
     const auto *target = current_chunk->getFunction(function_index);
     if (!target) {
-      throw std::runtime_error("CLOSURE references unknown function index");
+      VM_THROW("CLOSURE references unknown function index");
     }
 
     // Capture upvalues
@@ -4171,14 +4307,14 @@ void VM::VMExecutionContext::executeInstructionInContext(
     if (it != parent_vm_->host_functions.end()) {
       push(it->second(args));
     } else {
-      throw std::runtime_error(parent_vm_->formatErrorWithContext(
+      VM_THROW(parent_vm_->formatErrorWithContext(
           "Host function not found: " + function_name));
     }
     break;
   }
 
   default:
-    throw std::runtime_error(parent_vm_->formatErrorWithContext(
+    VM_THROW(parent_vm_->formatErrorWithContext(
         "Unsupported opcode in execution context: " +
         std::to_string(static_cast<int>(instruction.opcode))));
   }

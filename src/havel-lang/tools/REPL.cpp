@@ -160,15 +160,46 @@ void REPL::printValue(const std::string& value) {
 }
 
 void REPL::printError(const std::string& error, int line) {
-  std::string prefix = "Error";
+  // ANSI color codes for Rust-style error formatting
+  const char* RESET = "\033[0m";
+  const char* BOLD = "\033[1m";
+  const char* BRIGHT_RED = "\033[91m";
+  const char* BRIGHT_CYAN = "\033[96m";
+  const char* BRIGHT_YELLOW = "\033[93m";
+  const char* GRAY = "\033[90m";
+
+  std::string result;
+  
+  // Error header with code
+  result += std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+            std::string(RESET);
+  
   if (line > 0) {
-    prefix += " at line " + std::to_string(line);
+    result += std::string(GRAY) + " [E0000]: " + std::string(RESET);
+  } else {
+    result += ": ";
+  }
+  
+  result += error + "\n";
+  
+  if (line > 0) {
+    result += "     " + std::string(BRIGHT_CYAN) + "--> " + 
+              std::string(RESET) + "<repl>:" + std::to_string(line) + ":1\n";
+    result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
+    result += std::string(GRAY) + std::to_string(line) + " | " + 
+              std::string(RESET) + std::string(BOLD) + "<input>" + 
+              std::string(RESET) + "\n";
+    result += std::string(GRAY) + "  | " + std::string(BRIGHT_RED) + "^" + 
+              std::string(RESET) + "\n";
+    result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
+    result += "      " + std::string(BRIGHT_YELLOW) + "= " + 
+              std::string(RESET) + "in REPL input\n";
   }
   
   if (printHandler_) {
-    printHandler_(prefix + ": " + error);
+    printHandler_(result);
   } else {
-    std::cerr << prefix << ": " << error << std::endl;
+    std::cerr << result;
   }
 }
 

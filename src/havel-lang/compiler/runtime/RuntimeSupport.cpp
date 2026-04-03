@@ -2,6 +2,10 @@
 #include <sstream>
 #include <iomanip>
 #include <cstring>
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -38,14 +42,14 @@ BytecodeValue NativeFunctionBridge::call(const std::string& name,
                                          const std::vector<BytecodeValue>& args) const {
   auto it = functions_.find(name);
   if (it == functions_.end()) {
-    throw std::runtime_error("Native function not found: " + name);
+    COMPILER_THROW("Native function not found: " + name);
   }
 
   const auto& reg = it->second;
 
   // Check arity if known
   if (reg.info.arity >= 0 && static_cast<int>(args.size()) != reg.info.arity) {
-    throw std::runtime_error("Arity mismatch for " + name);
+    COMPILER_THROW("Arity mismatch for " + name);
   }
 
   return reg.func(args);

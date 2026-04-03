@@ -13,9 +13,9 @@
 #include "core/io/MapManager.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
-#include "gui/ClipboardManager.hpp"
-#include "gui/GUIManager.hpp"
-#include "gui/ScreenshotManager.hpp"
+#include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
+#include "extensions/gui/common/GUIManager.hpp"
+#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
 #include "window/WindowManager.hpp"
 // #include <QGuiApplication>

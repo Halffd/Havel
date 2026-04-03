@@ -12,6 +12,10 @@
 #include <filesystem>
 #include <memory>
 #include <functional>
+#include <stdexcept>
+
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
 
 namespace havel::compiler {
 
@@ -267,7 +271,7 @@ public:
     {
       std::unique_lock<std::mutex> lock(queueMutex_);
       if (stop_) {
-        throw std::runtime_error("Cannot submit task: thread pool is stopped");
+        COMPILER_THROW("Cannot submit task: thread pool is stopped");
       }
       tasks_.emplace([task]() { (*task)(); });
       pending_++;

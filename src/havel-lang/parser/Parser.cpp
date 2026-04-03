@@ -1248,34 +1248,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     if (at().type == havel::TokenType::Arrow) {
       advance(); // consume '=>'
 
-      // Parse the action (block, statement, or expression)
-      std::unique_ptr<havel::ast::Statement> action;
-      if (at().type == havel::TokenType::OpenBrace) {
-        action = parseBlockStatement();
-      } else if (at().type == havel::TokenType::Let ||
-                 at().type == havel::TokenType::If ||
-                 at().type == havel::TokenType::While ||
-                 at().type == havel::TokenType::For ||
-                 at().type == havel::TokenType::Loop ||
-                 at().type == havel::TokenType::Repeat ||
-                 at().type == havel::TokenType::Break ||
-                 at().type == havel::TokenType::Continue ||
-                 at().type == havel::TokenType::Return ||
-                 at().type == havel::TokenType::Ret ||
-                 at().type == havel::TokenType::When ||
-                 at().type == havel::TokenType::On ||
-                 at().type == havel::TokenType::Off ||
-                 at().type == havel::TokenType::Fn ||
-                 at().type == havel::TokenType::Import ||
-                 at().type == havel::TokenType::Config ||
-                 at().type == havel::TokenType::Devices ||
-                 at().type == havel::TokenType::Modes) {
-        action = parseStatement();
-      } else {
-        auto expr = parseExpression();
-        action =
-            std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+      // New grammar: => MUST be followed by { } block
+      if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after '=>' in hotkey definition");
       }
+      auto action = parseBlockStatement(true); // true = input context
 
       // Check for suffix condition (after action)
       std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
@@ -1374,33 +1351,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       if (at().type == havel::TokenType::Arrow) {
         advance(); // consume '=>'
 
-        // Parse the action (block, statement, or expression)
-        std::unique_ptr<havel::ast::Statement> action;
-        if (at().type == havel::TokenType::OpenBrace) {
-          action = parseBlockStatement();
-        } else if (at().type == havel::TokenType::Let ||
-                   at().type == havel::TokenType::If ||
-                   at().type == havel::TokenType::While ||
-                   at().type == havel::TokenType::For ||
-                   at().type == havel::TokenType::Loop ||
-                   at().type == havel::TokenType::Break ||
-                   at().type == havel::TokenType::Continue ||
-                   at().type == havel::TokenType::Return ||
-                   at().type == havel::TokenType::Ret ||
-                   at().type == havel::TokenType::When ||
-                   at().type == havel::TokenType::On ||
-                   at().type == havel::TokenType::Off ||
-                   at().type == havel::TokenType::Fn ||
-                   at().type == havel::TokenType::Import ||
-                   at().type == havel::TokenType::Config ||
-                   at().type == havel::TokenType::Devices ||
-                   at().type == havel::TokenType::Modes) {
-          action = parseStatement();
-        } else {
-          auto expr = parseExpression();
-          action = std::make_unique<havel::ast::ExpressionStatement>(
-              std::move(expr));
+        // New grammar: => MUST be followed by { } block
+        if (at().type != havel::TokenType::OpenBrace) {
+          failAt(at(), "Expected '{' after '=>' in hotkey definition");
         }
+        auto action = parseBlockStatement(true); // true = input context
 
         // Check for suffix condition (after action)
         std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
@@ -3948,41 +3903,119 @@ std::unique_ptr<havel::ast::BlockStatement>
 Parser::parseBlockStatement(bool inputContext) {
   auto block = std::make_unique<havel::ast::BlockStatement>();
 
-  // Consume opening brace
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{'");
-  }
-  advance();
-
-  // Save and set input context
-  bool savedInputContext = context.inInputContext;
-  context.inInputContext = inputContext;
-
-  // Parse statements until closing brace
-  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-    // Skip newlines and semicolons (empty statements)
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Semicolon) {
+  // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
+  if (at().type == havel::TokenType::Colon) {
+    // Colon block: consume ':' and parse indented statements
+    advance(); // consume ':'
+    
+    // Skip newline after colon
+    while (at().type == havel::TokenType::NewLine) {
       advance();
-      continue;
     }
-
-    // Fail fast on unexpected tokens in block context
-    // Don't try to recover - this is a hard error
-    auto stmt = parseStatement();
-    if (stmt) {
-      block->body.push_back(std::move(stmt));
+    
+    // Save and set input context
+    bool savedInputContext = context.inInputContext;
+    context.inInputContext = inputContext;
+    
+    // Parse statements until we hit a dedent (line with same or less indentation)
+    // For now, we parse until we hit a line that starts at column 1 (no indent)
+    // or EOF, or a closing brace (if within braces)
+    while (notEOF()) {
+      // Skip empty lines
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      
+      // Check for end of block conditions
+      if (at().type == havel::TokenType::CloseBrace ||
+          at().type == havel::TokenType::EOF_TOKEN) {
+        break;
+      }
+      
+      // Check if we're back at base indentation (column 1 and not a continuation)
+      // This is a simplified heuristic - we check if it's a statement-starting token
+      // at the beginning of a line
+      auto stmt = parseStatement();
+      if (stmt) {
+        block->body.push_back(std::move(stmt));
+      }
     }
+    
+    // Restore input context
+    context.inInputContext = savedInputContext;
+    
+  } else if (at().type == havel::TokenType::ColonColon) {
+    // Double colon block: consume '::' and parse indented statements (hotkey style)
+    advance(); // consume '::'
+    
+    // Skip newline after ::
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    
+    // Save and set input context (always true for :: blocks)
+    bool savedInputContext = context.inInputContext;
+    context.inInputContext = true; // Hotkey blocks are always in input context
+    
+    // Parse statements until end of block
+    while (notEOF()) {
+      // Skip empty lines
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      
+      // Check for end of block
+      if (at().type == havel::TokenType::CloseBrace ||
+          at().type == havel::TokenType::EOF_TOKEN) {
+        break;
+      }
+      
+      auto stmt = parseStatement();
+      if (stmt) {
+        block->body.push_back(std::move(stmt));
+      }
+    }
+    
+    // Restore input context
+    context.inInputContext = savedInputContext;
+    
+  } else if (at().type == havel::TokenType::OpenBrace) {
+    // Brace block: original behavior
+    advance(); // consume '{'
+    
+    // Save and set input context
+    bool savedInputContext = context.inInputContext;
+    context.inInputContext = inputContext;
+    
+    // Parse statements until closing brace
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+      // Skip newlines and semicolons (empty statements)
+      if (at().type == havel::TokenType::NewLine ||
+          at().type == havel::TokenType::Semicolon) {
+        advance();
+        continue;
+      }
+      
+      auto stmt = parseStatement();
+      if (stmt) {
+        block->body.push_back(std::move(stmt));
+      }
+    }
+    
+    // Restore input context
+    context.inInputContext = savedInputContext;
+    
+    // Consume closing brace
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}'");
+    }
+    advance();
+    
+  } else {
+    failAt(at(), "Expected ':', '::', or '{' to start block");
   }
-
-  // Restore input context
-  context.inInputContext = savedInputContext;
-
-  // Consume closing brace - it might not be there if error recovery happened
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}'");
-  }
-  advance();
 
   return block;
 }
@@ -4795,19 +4828,6 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
 }
 std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   havel::Token tk = at();
-
-  // Handle global scope assignment: ::identifier = value
-  if (tk.type == havel::TokenType::GlobalScope) {
-    advance(); // consume '::'
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected identifier after '::'");
-    }
-    auto ident = makeIdentifier(advance());
-    // Return identifier marked for global scope assignment
-    // The actual assignment handling is in parseAssignmentExpression
-    ident->isGlobalScope = true;
-    return ident;
-  }
 
   switch (tk.type) {
   case havel::TokenType::Number: {

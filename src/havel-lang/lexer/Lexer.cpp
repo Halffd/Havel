@@ -779,10 +779,10 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-    // Handle global scope operator ::
+    // Handle hotkey block trigger ::
     if (c == ':' && peek() == ':') {
       advance(); // consume second ':'
-      tokens.push_back(makeToken("::", TokenType::GlobalScope));
+      tokens.push_back(makeToken("::", TokenType::ColonColon));
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;
       }

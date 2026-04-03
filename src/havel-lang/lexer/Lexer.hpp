@@ -83,7 +83,7 @@ enum class TokenType {
   Hotkey,
   Arrow,       // => (fat arrow for lambdas)
   ReturnType,  // -> (thin arrow for return types)
-  GlobalScope, // :: (global scope assignment)
+//  GlobalScope, // :: (global scope assignment) - REPLACED by ColonColon for hotkeys
   BinaryOp,
   OpenParen,
   CloseParen,
@@ -136,6 +136,7 @@ enum class TokenType {
   With,         // with
   Where,        // where - LINQ filter
   Select,       // select - LINQ transform
+  ColonColon,   // :: hotkey block trigger
   Colon,        // :
   Question,     // ?
   OpenBracket,  // [

@@ -1,0 +1,6 @@
+// Test without f-strings
+fn add(a, b):
+    print "adding values"
+    a + b
+
+print add(5, 3)

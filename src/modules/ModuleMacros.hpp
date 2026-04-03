@@ -33,6 +33,7 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "utils/Logger.hpp"
+#include <cmath>
 #include <sstream>
 
 namespace havel {

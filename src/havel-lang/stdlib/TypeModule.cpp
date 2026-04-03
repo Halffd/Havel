@@ -14,8 +14,7 @@ void registerTypeModule(VMApi &api) {
       throw std::runtime_error("isNumber() requires an argument");
 
     const auto &arg = args[0];
-    return BytecodeValue(std::holds_alternative<int64_t>(arg) ||
-                         std::holds_alternative<double>(arg));
+    return BytecodeValue(arg.isInt() || arg.isDouble());
   });
 
   // isString(value) - Check if value is a string
@@ -24,7 +23,7 @@ void registerTypeModule(VMApi &api) {
       throw std::runtime_error("isString() requires an argument");
 
     const auto &arg = args[0];
-    return BytecodeValue(std::holds_alternative<std::string>(arg));
+    return BytecodeValue(arg.isStringValId());
   });
 
   // isArray(value) - Check if value is an array
@@ -33,8 +32,7 @@ void registerTypeModule(VMApi &api) {
       throw std::runtime_error("isArray() requires an argument");
 
     const auto &arg = args[0];
-    return BytecodeValue(
-        std::holds_alternative<havel::compiler::ArrayRef>(arg));
+    return BytecodeValue(arg.isArrayId());
   });
 
   // isObject(value) - Check if value is an object
@@ -43,8 +41,7 @@ void registerTypeModule(VMApi &api) {
       throw std::runtime_error("isObject() requires an argument");
 
     const auto &arg = args[0];
-    return BytecodeValue(
-        std::holds_alternative<havel::compiler::ObjectRef>(arg));
+    return BytecodeValue(arg.isObjectId());
   });
 
   // isNull(value) - Check if value is null
@@ -53,7 +50,7 @@ void registerTypeModule(VMApi &api) {
       throw std::runtime_error("isNull() requires an argument");
 
     const auto &arg = args[0];
-    return BytecodeValue(std::holds_alternative<std::nullptr_t>(arg));
+    return BytecodeValue(arg.isNull());
   });
 
   // isBoolean(value) - Check if value is a boolean
@@ -62,7 +59,7 @@ void registerTypeModule(VMApi &api) {
       throw std::runtime_error("isBoolean() requires an argument");
 
     const auto &arg = args[0];
-    return BytecodeValue(std::holds_alternative<bool>(arg));
+    return BytecodeValue(arg.isBool());
   });
 
   // toString(value) - Convert value to string
@@ -72,21 +69,21 @@ void registerTypeModule(VMApi &api) {
 
     const auto &arg = args[0];
 
-    if (std::holds_alternative<std::nullptr_t>(arg))
+    if (arg.isNull())
       return BytecodeValue(std::string("null"));
-    if (std::holds_alternative<bool>(arg))
-      return BytecodeValue(std::get<bool>(arg) ? "true" : "false");
-    if (std::holds_alternative<int64_t>(arg)) {
+    if (arg.isBool())
+      return BytecodeValue(arg.asBool() ? "true" : "false");
+    if (arg.isInt()) {
       std::ostringstream oss;
-      oss << std::get<int64_t>(arg);
+      oss << arg.asInt();
       return BytecodeValue(oss.str());
     }
-    if (std::holds_alternative<double>(arg)) {
+    if (arg.isDouble()) {
       std::ostringstream oss;
-      oss << std::get<double>(arg);
+      oss << arg.asDouble();
       return BytecodeValue(oss.str());
     }
-    if (std::holds_alternative<std::string>(arg))
+    if (arg.isStringValId())
       return arg;
 
     return BytecodeValue(std::string("unknown"));
@@ -99,22 +96,26 @@ void registerTypeModule(VMApi &api) {
 
     const auto &arg = args[0];
 
-    if (std::holds_alternative<std::nullptr_t>(arg))
+    if (arg.isNull())
       return BytecodeValue(static_cast<int64_t>(0));
-    if (std::holds_alternative<bool>(arg))
-      return BytecodeValue(static_cast<int64_t>(std::get<bool>(arg) ? 1 : 0));
-    if (std::holds_alternative<int64_t>(arg))
+    if (arg.isBool())
+      return BytecodeValue(static_cast<int64_t>(arg.asBool() ? 1 : 0));
+    if (arg.isInt())
       return arg;
-    if (std::holds_alternative<double>(arg))
+    if (arg.isDouble())
       return arg;
-    if (std::holds_alternative<std::string>(arg)) {
+    if (arg.isStringValId()) {
       try {
+        // TODO: string pool lookup
+        std::string s = "<string:" + std::to_string(arg.asStringValId()) + ">";
         size_t pos;
-        int64_t result = std::stoll(std::get<std::string>(arg), &pos);
+        int64_t result = std::stoll(s, &pos);
         return BytecodeValue(result);
       } catch (...) {
         try {
-          double result = std::stod(std::get<std::string>(arg));
+          // TODO: string pool lookup
+          std::string s = "<string:" + std::to_string(arg.asStringValId()) + ">";
+          double result = std::stod(s);
           return BytecodeValue(result);
         } catch (...) {
           return BytecodeValue(static_cast<int64_t>(0));

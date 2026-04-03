@@ -432,12 +432,12 @@ void VMExecutionContext::executeInstruction(const Instruction& instruction) {
       stack_.push(instruction.operands[0]);
       break;
     case OpCode::LOAD_VAR: {
-      uint32_t slot = std::get<uint32_t>(instruction.operands[0]);
+      uint32_t slot = static_cast<uint32_t>(instruction.operands[0].asInt());
       stack_.push(locals_.get(frames_.currentFrame().localsBase + slot));
       break;
     }
     case OpCode::STORE_VAR: {
-      uint32_t slot = std::get<uint32_t>(instruction.operands[0]);
+      uint32_t slot = static_cast<uint32_t>(instruction.operands[0].asInt());
       locals_.set(frames_.currentFrame().localsBase + slot, stack_.pop());
       break;
     }
@@ -451,7 +451,7 @@ void VMExecutionContext::executeInstruction(const Instruction& instruction) {
       executeBinaryOp(instruction.opcode);
       break;
     case OpCode::CALL:
-      executeCall(std::get<uint32_t>(instruction.operands[0]));
+      executeCall(static_cast<uint32_t>(instruction.operands[0].asInt()));
       break;
     case OpCode::RETURN:
       executeReturn();
@@ -466,9 +466,9 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
   auto a = stack_.pop();
 
   // Simple numeric operations
-  if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b)) {
-    int64_t ai = std::get<int64_t>(a);
-    int64_t bi = std::get<int64_t>(b);
+  if (a.isInt() && b.isInt()) {
+    int64_t ai = a.asInt();
+    int64_t bi = b.asInt();
     int64_t result = 0;
 
     switch (op) {
@@ -479,10 +479,10 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
       default: throw std::runtime_error("Unknown binary op");
     }
 
-    stack_.push(result);
-  } else if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-    double ad = std::get<double>(a);
-    double bd = std::get<double>(b);
+    stack_.push(BytecodeValue::makeInt(result));
+  } else if (a.isDouble() && b.isDouble()) {
+    double ad = a.asDouble();
+    double bd = b.asDouble();
     double result = 0;
 
     switch (op) {
@@ -493,7 +493,7 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
       default: throw std::runtime_error("Unknown binary op");
     }
 
-    stack_.push(result);
+    stack_.push(BytecodeValue::makeDouble(result));
   } else {
     throw std::runtime_error("Type error in binary operation");
   }

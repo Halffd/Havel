@@ -30,17 +30,21 @@ struct VMApi {
   VM &vm;
 
   // Value creation
-  BytecodeValue makeNull() { return BytecodeValue(nullptr); }
-  BytecodeValue makeBool(bool v) { return BytecodeValue(v); }
-  BytecodeValue makeNumber(int64_t v) { return BytecodeValue(v); }
-  BytecodeValue makeNumber(double v) { return BytecodeValue(v); }
+  BytecodeValue makeNull() { return BytecodeValue::makeNull(); }
+  BytecodeValue makeBool(bool v) { return BytecodeValue::makeBool(v); }
+  BytecodeValue makeNumber(int64_t v) { return BytecodeValue::makeInt(v); }
+  BytecodeValue makeNumber(double v) { return BytecodeValue::makeDouble(v); }
   BytecodeValue makeString(std::string v) {
-    return BytecodeValue(std::move(v));
+    // Strings are stored as string IDs - register in pool and return ID
+    // For now, use a placeholder - the VM's string pool handles this
+    (void)v;
+    return BytecodeValue::makeNull(); // TODO: integrate with string pool
   }
-  BytecodeValue makeObject() { return BytecodeValue(vm.createHostObject()); }
-  BytecodeValue makeArray() { return BytecodeValue(vm.createHostArray()); }
+  BytecodeValue makeObject() { return BytecodeValue::makeObjectId(vm.createHostObject().id); }
+  BytecodeValue makeArray() { return BytecodeValue::makeArrayId(vm.createHostArray().id); }
   BytecodeValue makeFunctionRef(const std::string &name) {
-    return BytecodeValue(HostFunctionRef{.name = name});
+    return BytecodeValue::makeHostFuncId(0); // TODO: register and get function ID
+    (void)name;
   }
 
   // Global scope
@@ -51,78 +55,78 @@ struct VMApi {
   // Object operations
   void setField(BytecodeValue obj, const std::string &key,
                 BytecodeValue value) {
-    if (!std::holds_alternative<ObjectRef>(obj)) {
+    if (!obj.isObjectId()) {
       throw std::runtime_error("VMApi::setField: expected object");
     }
-    vm.setHostObjectField(std::get<ObjectRef>(obj), key, std::move(value));
+    vm.setHostObjectField(ObjectRef{obj.asObjectId(), true}, key, std::move(value));
   }
 
   std::vector<std::string> getObjectKeys(BytecodeValue obj) {
-    if (!std::holds_alternative<ObjectRef>(obj))
+    if (!obj.isObjectId())
       return {};
-    return vm.getHostObjectKeys(std::get<ObjectRef>(obj));
+    return vm.getHostObjectKeys(ObjectRef{obj.asObjectId(), true});
   }
 
   bool hasField(BytecodeValue obj, const std::string &key) {
-    if (!std::holds_alternative<ObjectRef>(obj))
+    if (!obj.isObjectId())
       return false;
-    return vm.hasHostObjectField(std::get<ObjectRef>(obj), key);
+    return vm.hasHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
   }
 
   BytecodeValue getField(BytecodeValue obj, const std::string &key) {
-    if (!std::holds_alternative<ObjectRef>(obj))
-      return BytecodeValue(nullptr);
-    return vm.getHostObjectField(std::get<ObjectRef>(obj), key);
+    if (!obj.isObjectId())
+      return BytecodeValue::makeNull();
+    return vm.getHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
   }
 
   bool deleteField(BytecodeValue obj, const std::string &key) {
-    if (!std::holds_alternative<ObjectRef>(obj))
+    if (!obj.isObjectId())
       return false;
-    return vm.deleteHostObjectField(std::get<ObjectRef>(obj), key);
+    return vm.deleteHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
   }
 
   // Array operations
   void push(BytecodeValue arr, BytecodeValue value) {
-    if (!std::holds_alternative<ArrayRef>(arr)) {
+    if (!arr.isArrayId()) {
       throw std::runtime_error("VMApi::push: expected array");
     }
-    vm.pushHostArrayValue(std::get<ArrayRef>(arr), std::move(value));
+    vm.pushHostArrayValue(ArrayRef{arr.asArrayId()}, std::move(value));
   }
 
   size_t getArrayLength(BytecodeValue arr) {
-    if (!std::holds_alternative<ArrayRef>(arr))
+    if (!arr.isArrayId())
       return 0;
-    return vm.getHostArrayLength(std::get<ArrayRef>(arr));
+    return vm.getHostArrayLength(ArrayRef{arr.asArrayId()});
   }
 
   BytecodeValue getArrayValue(BytecodeValue arr, size_t index) {
-    if (!std::holds_alternative<ArrayRef>(arr))
-      return BytecodeValue(nullptr);
-    return vm.getHostArrayValue(std::get<ArrayRef>(arr), index);
+    if (!arr.isArrayId())
+      return BytecodeValue::makeNull();
+    return vm.getHostArrayValue(ArrayRef{arr.asArrayId()}, index);
   }
 
   void setArrayValue(BytecodeValue arr, size_t index, BytecodeValue value) {
-    if (!std::holds_alternative<ArrayRef>(arr))
+    if (!arr.isArrayId())
       return;
-    vm.setHostArrayValue(std::get<ArrayRef>(arr), index, std::move(value));
+    vm.setHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
   }
 
   BytecodeValue popArrayValue(BytecodeValue arr) {
-    if (!std::holds_alternative<ArrayRef>(arr))
-      return BytecodeValue(nullptr);
-    return vm.popHostArrayValue(std::get<ArrayRef>(arr));
+    if (!arr.isArrayId())
+      return BytecodeValue::makeNull();
+    return vm.popHostArrayValue(ArrayRef{arr.asArrayId()});
   }
 
   void insertArrayValue(BytecodeValue arr, size_t index, BytecodeValue value) {
-    if (!std::holds_alternative<ArrayRef>(arr))
+    if (!arr.isArrayId())
       return;
-    vm.insertHostArrayValue(std::get<ArrayRef>(arr), index, std::move(value));
+    vm.insertHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
   }
 
   BytecodeValue removeArrayValue(BytecodeValue arr, size_t index) {
-    if (!std::holds_alternative<ArrayRef>(arr))
-      return BytecodeValue(nullptr);
-    return vm.removeHostArrayValue(std::get<ArrayRef>(arr), index);
+    if (!arr.isArrayId())
+      return BytecodeValue::makeNull();
+    return vm.removeHostArrayValue(ArrayRef{arr.asArrayId()}, index);
   }
 
   // Function registration

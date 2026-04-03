@@ -235,42 +235,38 @@ std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
 }
 
 std::string formatValue(const BytecodeValue &value) {
-  if (std::holds_alternative<std::nullptr_t>(value)) {
+  if (value.isNull()) {
     return "null";
   }
-  if (std::holds_alternative<bool>(value)) {
-    return std::get<bool>(value) ? "true" : "false";
+  if (value.isBool()) {
+    return value.asBool() ? "true" : "false";
   }
-  if (std::holds_alternative<int64_t>(value)) {
-    return std::to_string(std::get<int64_t>(value));
+  if (value.isInt()) {
+    return std::to_string(value.asInt());
   }
-  if (std::holds_alternative<double>(value)) {
-    return std::to_string(std::get<double>(value));
+  if (value.isDouble()) {
+    return std::to_string(value.asDouble());
   }
-  if (std::holds_alternative<std::string>(value)) {
-    return "\"" + std::get<std::string>(value) + "\"";
+  if (value.isStringValId()) {
+    return "\"" + value.toString() + "\"";
   }
-  if (std::holds_alternative<uint32_t>(value)) {
-    return std::to_string(std::get<uint32_t>(value));
+  if (value.isFunctionObjId()) {
+    return "fn[" + std::to_string(value.asFunctionObjId()) + "]";
   }
-  if (std::holds_alternative<FunctionObject>(value)) {
-    return "fn[" +
-           std::to_string(std::get<FunctionObject>(value).function_index) + "]";
+  if (value.isClosureId()) {
+    return "closure[" + std::to_string(value.asClosureId()) + "]";
   }
-  if (std::holds_alternative<ClosureRef>(value)) {
-    return "closure[" + std::to_string(std::get<ClosureRef>(value).id) + "]";
+  if (value.isArrayId()) {
+    return "array[" + std::to_string(value.asArrayId()) + "]";
   }
-  if (std::holds_alternative<ArrayRef>(value)) {
-    return "array[" + std::to_string(std::get<ArrayRef>(value).id) + "]";
+  if (value.isObjectId()) {
+    return "object[" + std::to_string(value.asObjectId()) + "]";
   }
-  if (std::holds_alternative<ObjectRef>(value)) {
-    return "object[" + std::to_string(std::get<ObjectRef>(value).id) + "]";
+  if (value.isSetId()) {
+    return "set[" + std::to_string(value.asSetId()) + "]";
   }
-  if (std::holds_alternative<SetRef>(value)) {
-    return "set[" + std::to_string(std::get<SetRef>(value).id) + "]";
-  }
-  if (std::holds_alternative<HostFunctionRef>(value)) {
-    return "hostfn[" + std::get<HostFunctionRef>(value).name + "]";
+  if (value.isHostFuncId()) {
+    return "hostfn[" + std::to_string(value.asHostFuncId()) + "]";
   }
   return "<unknown>";
 }

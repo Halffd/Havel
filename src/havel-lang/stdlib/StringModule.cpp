@@ -10,12 +10,12 @@ namespace havel::stdlib {
 void registerStringModule(VMApi &api) {
   // Helper: convert BytecodeValue to string
   auto toString = [](const BytecodeValue &v) -> std::string {
-    if (std::holds_alternative<std::string>(v))
-      return std::get<std::string>(v);
-    if (std::holds_alternative<int64_t>(v))
-      return std::to_string(std::get<int64_t>(v));
-    if (std::holds_alternative<double>(v)) {
-      double val = std::get<double>(v);
+    if (v.isStringValId())
+      return "<string:" + std::to_string(v.asStringValId()) + ">";
+    if (v.isInt())
+      return std::to_string(v.asInt());
+    if (v.isDouble()) {
+      double val = v.asDouble();
       if (val == std::floor(val) && std::abs(val) < 1e15) {
         return std::to_string(static_cast<long long>(val));
       }
@@ -24,8 +24,8 @@ void registerStringModule(VMApi &api) {
       oss << val;
       return oss.str();
     }
-    if (std::holds_alternative<bool>(v))
-      return std::get<bool>(v) ? "true" : "false";
+    if (v.isBool())
+      return v.asBool() ? "true" : "false";
     return "";
   };
 
@@ -91,8 +91,8 @@ void registerStringModule(VMApi &api) {
           throw std::runtime_error(
               "string.sub() requires at least 2 arguments");
         std::string str = toString(args[0]);
-        int64_t start = std::get<int64_t>(args[1]);
-        int64_t len = (args.size() > 2) ? std::get<int64_t>(args[2])
+        int64_t start = args[1].asInt();
+        int64_t len = (args.size() > 2) ? args[2].asInt()
                                         : str.length() - start;
 
         if (start < 0)
@@ -161,7 +161,7 @@ void registerStringModule(VMApi &api) {
         if (args.empty())
           throw std::runtime_error(
               "string.join() requires at least 1 argument");
-        if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
+        if (!args[0].isArrayId()) {
           throw std::runtime_error(
               "string.join() first argument must be array");
         }

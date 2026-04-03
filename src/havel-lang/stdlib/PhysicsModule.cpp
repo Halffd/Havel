@@ -40,17 +40,17 @@ void registerPhysicsModule(VMApi &api) {
 
     double mass = 0.0, accel = 0.0;
 
-    if (std::holds_alternative<int64_t>(args[0]))
-      mass = static_cast<double>(std::get<int64_t>(args[0]));
-    else if (std::holds_alternative<double>(args[0]))
-      mass = std::get<double>(args[0]);
+    if (args[0].isInt())
+      mass = static_cast<double>(args[0].asInt());
+    else if (args[0].isDouble())
+      mass = args[0].asDouble();
     else
       throw std::runtime_error("force() mass must be a number");
 
-    if (std::holds_alternative<int64_t>(args[1]))
-      accel = static_cast<double>(std::get<int64_t>(args[1]));
-    else if (std::holds_alternative<double>(args[1]))
-      accel = std::get<double>(args[1]);
+    if (args[1].isInt())
+      accel = static_cast<double>(args[1].asInt());
+    else if (args[1].isDouble())
+      accel = args[1].asDouble();
     else
       throw std::runtime_error("force() acceleration must be a number");
 
@@ -66,17 +66,17 @@ void registerPhysicsModule(VMApi &api) {
 
         double mass = 0.0, velocity = 0.0;
 
-        if (std::holds_alternative<int64_t>(args[0]))
-          mass = static_cast<double>(std::get<int64_t>(args[0]));
-        else if (std::holds_alternative<double>(args[0]))
-          mass = std::get<double>(args[0]);
+        if (args[0].isInt())
+          mass = static_cast<double>(args[0].asInt());
+        else if (args[0].isDouble())
+          mass = args[0].asDouble();
         else
           throw std::runtime_error("kinetic_energy() mass must be a number");
 
-        if (std::holds_alternative<int64_t>(args[1]))
-          velocity = static_cast<double>(std::get<int64_t>(args[1]));
-        else if (std::holds_alternative<double>(args[1]))
-          velocity = std::get<double>(args[1]);
+        if (args[1].isInt())
+          velocity = static_cast<double>(args[1].asInt());
+        else if (args[1].isDouble())
+          velocity = args[1].asDouble();
         else
           throw std::runtime_error(
               "kinetic_energy() velocity must be a number");
@@ -94,26 +94,26 @@ void registerPhysicsModule(VMApi &api) {
 
         double mass = 0.0, height = 0.0, gravity = 9.80665;
 
-        if (std::holds_alternative<int64_t>(args[0]))
-          mass = static_cast<double>(std::get<int64_t>(args[0]));
-        else if (std::holds_alternative<double>(args[0]))
-          mass = std::get<double>(args[0]);
+        if (args[0].isInt())
+          mass = static_cast<double>(args[0].asInt());
+        else if (args[0].isDouble())
+          mass = args[0].asDouble();
         else
           throw std::runtime_error("potential_energy() mass must be a number");
 
-        if (std::holds_alternative<int64_t>(args[1]))
-          height = static_cast<double>(std::get<int64_t>(args[1]));
-        else if (std::holds_alternative<double>(args[1]))
-          height = std::get<double>(args[1]);
+        if (args[1].isInt())
+          height = static_cast<double>(args[1].asInt());
+        else if (args[1].isDouble())
+          height = args[1].asDouble();
         else
           throw std::runtime_error(
               "potential_energy() height must be a number");
 
         if (args.size() >= 3) {
-          if (std::holds_alternative<int64_t>(args[2]))
-            gravity = static_cast<double>(std::get<int64_t>(args[2]));
-          else if (std::holds_alternative<double>(args[2]))
-            gravity = std::get<double>(args[2]);
+          if (args[2].isInt())
+            gravity = static_cast<double>(args[2].asInt());
+          else if (args[2].isDouble())
+            gravity = args[2].asDouble();
           else
             throw std::runtime_error(
                 "potential_energy() gravity must be a number");
@@ -130,17 +130,17 @@ void registerPhysicsModule(VMApi &api) {
 
         double mass = 0.0, velocity = 0.0;
 
-        if (std::holds_alternative<int64_t>(args[0]))
-          mass = static_cast<double>(std::get<int64_t>(args[0]));
-        else if (std::holds_alternative<double>(args[0]))
-          mass = std::get<double>(args[0]);
+        if (args[0].isInt())
+          mass = static_cast<double>(args[0].asInt());
+        else if (args[0].isDouble())
+          mass = args[0].asDouble();
         else
           throw std::runtime_error("momentum() mass must be a number");
 
-        if (std::holds_alternative<int64_t>(args[1]))
-          velocity = static_cast<double>(std::get<int64_t>(args[1]));
-        else if (std::holds_alternative<double>(args[1]))
-          velocity = std::get<double>(args[1]);
+        if (args[1].isInt())
+          velocity = static_cast<double>(args[1].asInt());
+        else if (args[1].isDouble())
+          velocity = args[1].asDouble();
         else
           throw std::runtime_error("momentum() velocity must be a number");
 
@@ -155,10 +155,10 @@ void registerPhysicsModule(VMApi &api) {
 
         double frequency = 0.0;
 
-        if (std::holds_alternative<int64_t>(args[0]))
-          frequency = static_cast<double>(std::get<int64_t>(args[0]));
-        else if (std::holds_alternative<double>(args[0]))
-          frequency = std::get<double>(args[0]);
+        if (args[0].isInt())
+          frequency = static_cast<double>(args[0].asInt());
+        else if (args[0].isDouble())
+          frequency = args[0].asDouble();
         else
           throw std::runtime_error("wavelength() frequency must be a number");
 

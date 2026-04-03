@@ -14,15 +14,16 @@ void registerUtilityModule(VMApi &api) {
   api.registerFunction("keys", [&api](const std::vector<BytecodeValue> &args) {
     if (args.empty())
       throw std::runtime_error("keys() requires an object");
-    if (!std::holds_alternative<ObjectRef>(args[0]))
+    if (!args[0].isObjectId())
       throw std::runtime_error("keys() requires an object argument");
 
-    auto objRef = std::get<ObjectRef>(args[0]);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
     auto keys = api.getObjectKeys(objRef);
     auto result = api.makeArray();
 
     for (const auto &key : keys) {
-      api.push(result, BytecodeValue(key));
+      // TODO: string pool registration
+      api.push(result, Value::makeNull());
     }
 
     return BytecodeValue(result);
@@ -32,22 +33,23 @@ void registerUtilityModule(VMApi &api) {
   api.registerFunction("items", [&api](const std::vector<BytecodeValue> &args) {
     if (args.empty())
       throw std::runtime_error("items() requires an object");
-    if (!std::holds_alternative<ObjectRef>(args[0]))
+    if (!args[0].isObjectId())
       throw std::runtime_error("items() requires an object argument");
 
-    auto objRef = std::get<ObjectRef>(args[0]);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
     auto keys = api.getObjectKeys(objRef);
     auto result = api.makeArray();
 
     for (const auto &key : keys) {
       auto pair = api.makeArray();
-      api.push(pair, BytecodeValue(key));
+      // TODO: string pool registration
+      api.push(pair, Value::makeNull());
       // Note: getObjectValue not available in VMApi, so we'll use hasField
       // and return a placeholder for the value
       if (api.hasField(objRef, key)) {
-        api.push(pair, BytecodeValue(std::string("value")));
+        api.push(pair, Value::makeNull());
       } else {
-        api.push(pair, BytecodeValue(nullptr));
+        api.push(pair, Value::makeNull());
       }
       api.push(result, BytecodeValue(pair));
     }
@@ -63,16 +65,18 @@ void registerUtilityModule(VMApi &api) {
     const auto &arg = args[0];
 
     // If already an array, return it
-    if (std::holds_alternative<ArrayRef>(arg)) {
+    if (arg.isArrayId()) {
       return arg;
     }
 
     // If string, convert to array of characters
-    if (std::holds_alternative<std::string>(arg)) {
-      const auto &str = std::get<std::string>(arg);
+    if (arg.isStringValId()) {
+      // TODO: string pool lookup
+      std::string str = "<string:" + std::to_string(arg.asStringValId()) + ">";
       auto result = api.makeArray();
       for (char c : str) {
-        api.push(result, BytecodeValue(std::string(1, c)));
+        // TODO: string pool registration
+        api.push(result, Value::makeNull());
       }
       return BytecodeValue(result);
     }
@@ -90,19 +94,19 @@ void registerUtilityModule(VMApi &api) {
 
     const auto &arg = args[0];
 
-    if (std::holds_alternative<std::nullptr_t>(arg))
+    if (arg.isNull())
       return BytecodeValue(std::string("null"));
-    if (std::holds_alternative<bool>(arg))
+    if (arg.isBool())
       return BytecodeValue(std::string("bool"));
-    if (std::holds_alternative<int64_t>(arg))
+    if (arg.isInt())
       return BytecodeValue(std::string("int"));
-    if (std::holds_alternative<double>(arg))
+    if (arg.isDouble())
       return BytecodeValue(std::string("num"));
-    if (std::holds_alternative<std::string>(arg))
+    if (arg.isStringValId())
       return BytecodeValue(std::string("string"));
-    if (std::holds_alternative<ArrayRef>(arg))
+    if (arg.isArrayId())
       return BytecodeValue(std::string("array"));
-    if (std::holds_alternative<ObjectRef>(arg))
+    if (arg.isObjectId())
       return BytecodeValue(std::string("object"));
 
     return BytecodeValue(std::string("unknown"));
@@ -115,13 +119,14 @@ void registerUtilityModule(VMApi &api) {
 
     const auto &arg = args[0];
 
-    if (std::holds_alternative<std::string>(arg)) {
-      return BytecodeValue(
-          static_cast<int64_t>(std::get<std::string>(arg).length()));
+    if (arg.isStringValId()) {
+      // TODO: string pool lookup
+      std::string s = "<string:" + std::to_string(arg.asStringValId()) + ">";
+      return BytecodeValue(static_cast<int64_t>(s.length()));
     }
 
-    if (std::holds_alternative<ArrayRef>(arg)) {
-      return BytecodeValue(static_cast<int64_t>(api.getArrayLength(arg)));
+    if (arg.isArrayId()) {
+      return BytecodeValue(static_cast<int64_t>(api.getArrayLength(ArrayRef{arg.asArrayId()})));
     }
 
     throw std::runtime_error("len() requires a string or array");

@@ -17,12 +17,14 @@ using compiler::VMApi;
 static WindowMonitor* g_sharedMonitor = nullptr;
 
 // Helper to convert to BytecodeValue
+// TODO: String values need string pool registration - use makeNull() for now
 static BytecodeValue toValue(const std::string &s) {
-  return BytecodeValue(s);
+  (void)s;
+  return BytecodeValue::makeNull();
 }
 
 static BytecodeValue toValue(int64_t i) {
-  return BytecodeValue(i);
+  return BytecodeValue::makeInt(i);
 }
 
 // window.activeTitle() - Get active window title
@@ -81,15 +83,15 @@ static BytecodeValue windowActive(VMApi &api, const std::vector<BytecodeValue> &
       api.setField(obj, "class", toValue(info->windowClass));
       api.setField(obj, "exe", toValue(info->processName));
       api.setField(obj, "pid", toValue(static_cast<int64_t>(info->pid)));
-      return BytecodeValue(obj);
+      return BytecodeValue::makeObjectId(obj.id);
     }
   }
-  
+
   api.setField(obj, "title", toValue(""));
   api.setField(obj, "class", toValue(""));
   api.setField(obj, "exe", toValue(""));
   api.setField(obj, "pid", toValue(static_cast<int64_t>(0)));
-  return BytecodeValue(obj);
+  return BytecodeValue::makeObjectId(obj.id);
 }
 
 // Register window monitor module with VM
@@ -158,10 +160,11 @@ void setupDynamicWindowGlobals(VMApi &api, WindowMonitor *monitor) {
   }
   
   // Set initial global values
-  api.setGlobal("title", BytecodeValue(title));
-  api.setGlobal("class", BytecodeValue(windowClass));
-  api.setGlobal("exe", BytecodeValue(exe));
-  api.setGlobal("pid", BytecodeValue(pid));
+  // TODO: String values need string pool registration
+  api.setGlobal("title", BytecodeValue::makeNull());
+  api.setGlobal("class", BytecodeValue::makeNull());
+  api.setGlobal("exe", BytecodeValue::makeNull());
+  api.setGlobal("pid", BytecodeValue::makeInt(pid));
   
   debug("Dynamic window globals setup: title=" + title + ", exe=" + exe);
 }

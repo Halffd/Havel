@@ -29,12 +29,13 @@ void registerTimeModule(VMApi &api) {
           throw std::runtime_error("time.format() requires timestamp");
 
         int64_t timestamp = 0;
-        if (std::holds_alternative<int64_t>(args[0])) {
-          timestamp = std::get<int64_t>(args[0]);
-        } else if (std::holds_alternative<double>(args[0])) {
-          timestamp = static_cast<int64_t>(std::get<double>(args[0]));
-        } else if (std::holds_alternative<std::string>(args[0])) {
-          timestamp = std::stoll(std::get<std::string>(args[0]));
+        if (args[0].isInt()) {
+          timestamp = args[0].asInt();
+        } else if (args[0].isDouble()) {
+          timestamp = static_cast<int64_t>(args[0].asDouble());
+        } else if (args[0].isStringValId()) {
+          // TODO: string pool lookup
+          timestamp = std::stoll("<string:" + std::to_string(args[0].asStringValId()) + ">");
         } else {
           throw std::runtime_error("time.format() requires numeric timestamp");
         }

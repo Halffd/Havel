@@ -12,6 +12,9 @@
 #include <thread>
 #include <fstream>
 
+// Helper macro for throwing runtime errors with source location
+#define VM_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace havel::compiler {
 
 namespace {
@@ -265,27 +268,66 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
   return std::to_string(location.line) + ":" + std::to_string(location.column);
 }
 
-// Rust-style error formatting with source line and arrow
+// ANSI color codes for Rust-style error formatting
+namespace {
+  const char* RESET = "\033[0m";
+  const char* BOLD = "\033[1m";
+  const char* RED = "\033[31m";
+  const char* GREEN = "\033[32m";
+  const char* YELLOW = "\033[33m";
+  const char* BLUE = "\033[34m";
+  const char* MAGENTA = "\033[35m";
+  const char* CYAN = "\033[36m";
+  const char* GRAY = "\033[90m";
+  const char* BRIGHT_RED = "\033[91m";
+  const char* BRIGHT_GREEN = "\033[92m";
+  const char* BRIGHT_YELLOW = "\033[93m";
+  const char* BRIGHT_BLUE = "\033[94m";
+  const char* BRIGHT_CYAN = "\033[96m";
+
+  // Generate error code from message hash
+  std::string generateErrorCode(const std::string& msg) {
+    std::hash<std::string> hasher;
+    auto hash = hasher(msg);
+    return "E" + std::to_string(1000 + (hash % 9000));
+  }
+}
+
+// Rust-style error formatting with source line, colors, and enhanced visuals
 std::string VM::formatErrorWithContext(const std::string &message) const {
   if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
-    return message + " (at <unknown>)";
+    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+           std::string(RESET) + ": " + message + "\n";
   }
 
   const auto &frame = frame_arena_[frame_count_ - 1];
   const auto *function = frame.function;
 
   if (frame.ip >= function->instruction_locations.size()) {
-    return message + " (at <unknown>)";
+    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+           std::string(RESET) + ": " + message + "\n";
   }
 
   const auto &loc = function->instruction_locations[frame.ip];
   if (loc.line == 0) {
-    return message + " (at <unknown>)";
+    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+           std::string(RESET) + ": " + message + "\n";
   }
 
-  std::string result = message + "\n";
-  result += "  --> " + loc.filename + ":" + std::to_string(loc.line) + ":" +
+  std::string error_code = generateErrorCode(message);
+  std::string result;
+  
+  // Error header with code
+  result += std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
+            std::string(RESET) + std::string(BOLD) + "[" + error_code + "]: " + 
+            message + std::string(RESET) + "\n";
+  
+  // Location line
+  result += "     " + std::string(BRIGHT_CYAN) + "--> " + 
+            std::string(RESET) + loc.filename + ":" + 
+            std::to_string(loc.line) + ":" + 
             std::to_string(loc.column) + "\n";
+  result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
 
   // Try to read the source line from file
   if (!loc.filename.empty()) {
@@ -293,27 +335,54 @@ std::string VM::formatErrorWithContext(const std::string &message) const {
     if (file.is_open()) {
       std::string line;
       uint32_t current_line = 1;
+      // Read lines to find context (show up to 2 lines before)
+      std::vector<std::pair<uint32_t, std::string>> context_lines;
+      
       while (std::getline(file, line)) {
-        if (current_line == loc.line) {
-          // Show the source line
-          result += "   |\n";
-          result += "   | " + line + "\n";
-
-          // Create arrow pointing to column
-          std::string arrow = "   | ";
+        if (current_line >= loc.line - 2 && current_line <= loc.line + 1) {
+          context_lines.push_back({current_line, line});
+        }
+        if (current_line > loc.line + 1) break;
+        current_line++;
+      }
+      
+      // Show context lines
+      for (const auto& [line_num, line_content] : context_lines) {
+        // Line number in gray
+        result += std::string(GRAY) + std::to_string(line_num) + 
+                  " | " + std::string(RESET);
+        
+        if (line_num == loc.line) {
+          // Highlight error line in bold
+          result += std::string(BOLD) + line_content + std::string(RESET) + "\n";
+          
+          // Arrow line with caret pointing to column
+          result += std::string(GRAY) + "  | " + std::string(RESET);
+          
           // Calculate position: clamp column to line length
           size_t arrow_pos = static_cast<size_t>(loc.column > 1 ? loc.column - 1 : 0);
-          if (arrow_pos > line.length()) {
-            arrow_pos = line.length();
+          if (arrow_pos > line_content.length()) {
+            arrow_pos = line_content.length();
           }
+          
+          // Add spaces up to error position
           for (size_t i = 0; i < arrow_pos; i++) {
-            arrow += " ";
+            result += " ";
           }
-          arrow += "^";
-          result += arrow + "\n";
-          break;
+          
+          // Red caret under the error location
+          result += std::string(BOLD) + std::string(BRIGHT_RED) + "^" + 
+                    std::string(RESET);
+          
+          // Add underline squiggles for multi-character errors
+          if (message.find("expect") != std::string::npos || 
+              message.find("invalid") != std::string::npos) {
+            result += std::string(BRIGHT_RED) + "~~~~" + std::string(RESET);
+          }
+          result += "\n";
+        } else {
+          result += line_content + "\n";
         }
-        current_line++;
       }
     }
   }

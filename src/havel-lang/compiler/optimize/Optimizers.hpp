@@ -203,7 +203,7 @@ public:
 private:
   struct ConstantValue {
     bool isConstant = false;
-    BytecodeValue value;
+    Value value;
   };
 
   std::unordered_map<uint32_t, ConstantValue> constants_; // slot -> value
@@ -211,8 +211,8 @@ private:
   void propagateConstants(BytecodeFunction& function);
   void foldConstants(BytecodeFunction& function);
 
-  std::optional<BytecodeValue> evaluateConstantExpression(
-      OpCode op, const BytecodeValue& left, const BytecodeValue& right);
+  std::optional<Value> evaluateConstantExpression(
+      OpCode op, const Value& left, const Value& right);
 };
 
 // ============================================================================

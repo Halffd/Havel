@@ -245,21 +245,49 @@ void HostBridge::install() {
             return it->second(args);
           }
 
-          // Also check stdlib modules (http, io, json, fs, etc.)
-          for (const auto &mod : {"http", "io", "json", "fs", "net", "time",
-                                  "math", "os", "env"}) {
-            std::string modFunc = std::string(mod) + "." + methodName;
-            auto modIt = options_.host_functions.find(modFunc);
-            if (modIt != options_.host_functions.end()) {
-              return modIt->second(args);
-            }
-          }
-
+          // Method not found for this type
           return BytecodeValue(nullptr);
         };
   };
 
-  // Register all any.* methods
+  // Special implementation for any.get - returns method reference, not value
+  options_.host_functions["any.get"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2 || !std::holds_alternative<std::string>(args[1])) {
+          return BytecodeValue(nullptr);
+        }
+        std::string methodName = std::get<std::string>(args[1]);
+        
+        // Determine type and look up appropriate module
+        std::string type = getTypeName(args[0]);
+        std::string modulePrefix;
+        if (type == "string")
+          modulePrefix = "string";
+        else if (type == "array")
+          modulePrefix = "array";
+        else if (type == "object")
+          modulePrefix = "object";
+        else if (type == "struct")
+          modulePrefix = "struct";
+        else
+          return BytecodeValue(nullptr);
+
+        // First check for type-specific method (e.g., array.map)
+        std::string fullName = modulePrefix + "." + methodName;
+        if (options_.host_functions.find(fullName) != options_.host_functions.end()) {
+          return BytecodeValue(HostFunctionRef{.name = fullName});
+        }
+        
+        // Then check for any.* method (e.g., any.map)
+        std::string anyName = "any." + methodName;
+        if (options_.host_functions.find(anyName) != options_.host_functions.end()) {
+          return BytecodeValue(HostFunctionRef{.name = anyName});
+        }
+        
+        return BytecodeValue(nullptr);
+      };
+
+  // Register all any.* methods (excluding get which is handled above)
   registerAnyMethod("len");
 
   // Global len() function - delegates to any.len dispatch
@@ -288,7 +316,7 @@ void HostBridge::install() {
   registerAnyMethod("sub");
   registerAnyMethod("push");
   registerAnyMethod("pop");
-  registerAnyMethod("get");
+  // Note: "get" is handled specially above to return HostFunctionRef
   registerAnyMethod("set");
   registerAnyMethod("sort");
   registerAnyMethod("filter");

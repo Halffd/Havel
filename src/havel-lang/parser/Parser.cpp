@@ -535,6 +535,20 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
       return nullptr;
     }
   }
+  
+  // Implicit call sugar: expr "string" -> expr("string")
+  // This handles function calls without parentheses like: print "hello"
+  if (context.allowBraceSugar &&
+      (at().type == TokenType::String ||
+       at().type == TokenType::MultilineString ||
+       at().type == TokenType::Number ||
+       at().type == TokenType::Identifier ||
+       at().type == TokenType::InterpolatedString)) {
+    auto arg = nud(advance()); // Parse the argument using nud
+    std::vector<std::unique_ptr<ast::Expression>> args;
+    args.push_back(std::move(arg));
+    left = std::make_unique<ast::CallExpression>(std::move(left), std::move(args));
+  }
 
   return left;
 }
@@ -3906,6 +3920,7 @@ Parser::parseBlockStatement(bool inputContext) {
   // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
   if (at().type == havel::TokenType::Colon) {
     // Colon block: consume ':' and parse indented statements
+    size_t colonColumn = at().column; // Track colon's column for dedent detection
     advance(); // consume ':'
     
     // Skip newline after colon
@@ -3917,9 +3932,14 @@ Parser::parseBlockStatement(bool inputContext) {
     bool savedInputContext = context.inInputContext;
     context.inInputContext = inputContext;
     
-    // Parse statements until we hit a dedent (line with same or less indentation)
-    // For now, we parse until we hit a line that starts at column 1 (no indent)
-    // or EOF, or a closing brace (if within braces)
+    // Track the first statement's column as base indentation for dedent detection
+    // Skip any leading newlines first
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    size_t baseIndentation = at().column;
+    
+    // Parse statements until we hit a dedent (token at lower column than base)
     while (notEOF()) {
       // Skip empty lines
       if (at().type == havel::TokenType::NewLine) {
@@ -3933,9 +3953,13 @@ Parser::parseBlockStatement(bool inputContext) {
         break;
       }
       
-      // Check if we're back at base indentation (column 1 and not a continuation)
-      // This is a simplified heuristic - we check if it's a statement-starting token
-      // at the beginning of a line
+      // Check if we're back at base indentation or lower (dedent)
+      // Note: we use < not <= because statements at same column as base are still in the block
+      // Only strictly lower column indicates dedent
+      if (at().column < baseIndentation) {
+        break;
+      }
+      
       auto stmt = parseStatement();
       if (stmt) {
         block->body.push_back(std::move(stmt));

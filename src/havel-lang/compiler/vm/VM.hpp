@@ -175,6 +175,88 @@ private:
   BytecodeValue callFunctionSync(const BytecodeValue &fn,
                                  const std::vector<BytecodeValue> &args);
   void executeInstruction(const Instruction &instruction);
+
+  // Inline stack helpers for opcode handlers
+  BytecodeValue popStack();
+  void pushStack(BytecodeValue value);
+  uint32_t toAbsoluteLocal(uint32_t local_index);
+  void ensureLocalIndex(uint32_t absolute_index);
+
+  // Opcode handlers - split to reduce stack frame size
+  void execLoadConst(const Instruction &instruction);
+  void execLoadGlobal(const Instruction &instruction);
+  void execStoreGlobal(const Instruction &instruction);
+  void execLoadVar(const Instruction &instruction);
+  void execStoreVar(const Instruction &instruction);
+  void execLoadUpvalue(const Instruction &instruction);
+  void execStoreUpvalue(const Instruction &instruction);
+  void execBinaryOp(OpCode opcode);
+  void execLogicalOp(OpCode opcode);
+  void execNegate();
+  void execJump(const Instruction &instruction);
+  void execJumpIfFalse(const Instruction &instruction);
+  void execJumpIfTrue(const Instruction &instruction);
+  void execCall(const Instruction &instruction);
+  void execTailCall(const Instruction &instruction);
+  void execCallHost(const Instruction &instruction);
+  void execCallSuper(const Instruction &instruction);
+  void execReturn();
+  void execTryEnter(const Instruction &instruction);
+  void execTryExit();
+  void execLoadException();
+  void execThrow();
+  void execClosure(const Instruction &instruction);
+  void execArrayNew();
+  void execSetNew();
+  void execArrayPush();
+  void execArrayLen();
+  void execRangeNew();
+  void execRangeStepNew();
+  void execStructNew(const Instruction &instruction);
+  void execStructGet();
+  void execStructSet();
+  void execEnumNew(const Instruction &instruction);
+  void execEnumTag();
+  void execEnumPayload();
+  void execEnumMatch();
+  void execIterNew();
+  void execIterNext();
+  void execArrayGet();
+  void execArraySet();
+  void execObjectNew(bool sorted);
+  void execObjectGet();
+  void execObjectSet();
+  void execObjectKeys();
+  void execObjectValues();
+  void execObjectEntries();
+  void execObjectHas();
+  void execObjectDelete();
+  void execArrayPop();
+  void execArrayHas();
+  void execArrayFind();
+  void execArrayMap();
+  void execArrayFilter();
+  void execArrayReduce();
+  void execArrayForeach();
+  void execStringLen();
+  void execStringUpper();
+  void execStringLower();
+  void execStringTrim();
+  void execStringHas();
+  void execStringStarts();
+  void execStringEnds();
+  void execSpread();
+  void execSpreadCall();
+  void execAsType(const Instruction &instruction);
+  void execToInt();
+  void execToFloat();
+  void execToString();
+  void execStringConcat();
+  void execToBool();
+  void execTypeOf();
+  void execPrint();
+  void execDebug();
+
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
               bool advance_caller_ip = true);
   void doTailCall(BytecodeValue callee_value,

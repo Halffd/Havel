@@ -78,8 +78,9 @@ enum class ExtendedTag : uint64_t {
 static constexpr uint64_t BOOL_FALSE = 0;
 static constexpr uint64_t BOOL_TRUE = 1;
 
-// Extended tag mask (bits 45-47)
-static constexpr uint64_t EXTENDED_TAG_MASK = 0x0000E00000000000ULL;
+// Extended tag mask (bits 45-48 when primary tag is EXTENDED)
+// Must be 4 bits (0xF << 45) to hold values 0x0-0xC
+static constexpr uint64_t EXTENDED_TAG_MASK = 0x0001E00000000000ULL;
 static constexpr int EXTENDED_TAG_SHIFT = 45;
 
 // ============================================================================

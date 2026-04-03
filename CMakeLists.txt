@@ -749,17 +749,14 @@ if(ENABLE_HAVEL_LANG)
         havel_lang
     )
 
-    # NOTE: bytecode-smoke is disabled due to R_X86_64_PC32 relocation overflow
-    # when linking havel_lang (built with -fvisibility=hidden -flto=auto) into PIE.
-    # The havel_lang static library with LTO generates too much code for 32-bit
-    # PC-relative relocations — the binary is >2GB of address space away from
-    # the test's code segment when loaded as PIE.
-    #
-    # To re-enable in Release builds, pick one:
-    #   Option 1: target_compile_options(havel-bytecode-smoke PRIVATE -mcmodel=large)
-    #   Option 3: Build havel_lang as SHARED instead of STATIC
-    #
-    # Debug builds have LTO disabled (see havel_lang above) so this should work.
+    # NOTE: bytecode-smoke test disabled in Release builds — havel_lang is built
+    # with LTO + hidden visibility, which generates code too large for 32-bit
+    # PC-relative relocations in a PIE binary (>2GB address space).
+    # Fixing this requires either:
+    #   - Building havel_lang as SHARED instead of STATIC, or
+    #   - Adding -mcmodel=large to havel_lang itself (not just the test), or
+    #   - Disabling LTO/hidden-visibility for Release builds
+    # Debug builds disable LTO on havel_lang, so the test works there.
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         enable_testing()
         add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)

@@ -28,6 +28,10 @@ std::string bindingKindName(ResolvedBindingKind kind) {
     return "Upvalue";
   case ResolvedBindingKind::Global:
     return "Global";
+  case ResolvedBindingKind::Function:
+    return "Function";
+  case ResolvedBindingKind::HostFunction:
+    return "HostFunction";
   }
   return "Unknown";
 }

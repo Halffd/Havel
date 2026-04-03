@@ -152,25 +152,29 @@ struct ConditionalAutoRegistrant {
 // REGISTRATION MACROS
 // ============================================================================
 
+// Helper macros for unique variable names using line number
+#define _HAVEL_CONCAT_DIRECT(a, b) a##b
+#define _HAVEL_MODULE_REGISTRANT(line) _HAVEL_CONCAT_DIRECT(_havel_module_registrant_, line)
+
 // Register a module (basic)
 #define REGISTER_MODULE(name, func) \
     static ::havel::modules::AutoRegistrant \
-        _havel_module_##name##_registrant(name, func, 0, "");
+        _HAVEL_MODULE_REGISTRANT(__LINE__)(name, func, 0, "");
 
 // Register a module with priority (higher = earlier registration)
 #define REGISTER_MODULE_PRIORITY(name, priority, func) \
     static ::havel::modules::AutoRegistrant \
-        _havel_module_##name##_registrant(name, func, priority, "");
+        _HAVEL_MODULE_REGISTRANT(__LINE__)(name, func, priority, "");
 
 // Register a module with description
 #define REGISTER_MODULE_DESC(name, desc, func) \
     static ::havel::modules::AutoRegistrant \
-        _havel_module_##name##_registrant(name, func, 0, desc);
+        _HAVEL_MODULE_REGISTRANT(__LINE__)(name, func, 0, desc);
 
 // Register module conditionally (compile-time or run-time condition)
 #define REGISTER_MODULE_IF(name, condition, func) \
     static ::havel::modules::ConditionalAutoRegistrant \
-        _havel_module_##name##_registrant(condition, name, func, 0);
+        _HAVEL_MODULE_REGISTRANT(__LINE__)(condition, name, func, 0);
 
 // Register all discovered modules with VMApi
 #define REGISTER_ALL_MODULES(api) \

@@ -1,0 +1,32 @@
+// Test new Havel grammar: : :: => {}
+
+// 1. Test : (colon) for indented blocks
+fn add(a, b):
+    print f"adding {a} and {b}"
+    a + b
+
+// 2. Test :: (coloncolon) for hotkey blocks
+F1::
+    print "F1 pressed"
+    print "hello from indented hotkey"
+
+// 3. Test => { } for inline hotkey blocks
+^Esc => {
+    print "Ctrl+Esc pressed"
+    print "inline brace block"
+}
+
+// 4. Test single statement (no block)
+if true print "single statement works"
+
+// 5. Test nested indentation
+fn process():
+    if true:
+        print "nested if in function"
+        let x = 10
+        x * 2
+
+// Main entry
+print "Testing new grammar..."
+let result = add(5, 3)
+print f"Result: {result}"

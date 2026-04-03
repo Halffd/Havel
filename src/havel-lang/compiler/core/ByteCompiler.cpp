@@ -1440,8 +1440,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
 
-    // Skip resolution for global scope identifiers (::x)
+    // Handle global scope identifiers (::x) - load from global scope
     if (id.isGlobalScope) {
+      emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{id.symbol});
       break;
     }
 

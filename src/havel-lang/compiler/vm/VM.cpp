@@ -2163,25 +2163,32 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Handle null comparisons explicitly
     if (isNull(left) || isNull(right)) {
-      bool result = false;
+      // Only comparison operations are valid with null
+      // Arithmetic operations with null should throw a type error
       switch (instruction.opcode) {
       case OpCode::EQ:
-        result = isNull(left) && isNull(right);
+        push(isNull(left) && isNull(right));
         break;
       case OpCode::NEQ:
-        result = !(isNull(left) && isNull(right));
+        push(!(isNull(left) && isNull(right)));
         break;
       case OpCode::LT:
       case OpCode::LTE:
       case OpCode::GT:
       case OpCode::GTE:
-        // Null cannot be ordered with anything
-        result = false;
+        // Null cannot be ordered with anything - result is false
+        push(false);
         break;
+      case OpCode::ADD:
+      case OpCode::SUB:
+      case OpCode::MUL:
+      case OpCode::DIV:
+      case OpCode::MOD:
+      case OpCode::POW:
+        throw std::runtime_error("Cannot perform arithmetic with null values");
       default:
-        throw std::runtime_error("Invalid comparison opcode with null");
+        throw std::runtime_error("Invalid operation with null values");
       }
-      push(result);
       break;
     }
 

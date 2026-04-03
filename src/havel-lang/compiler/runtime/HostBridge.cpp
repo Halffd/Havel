@@ -20,42 +20,26 @@ namespace havel::compiler {
 
 // Helper function to get type name from BytecodeValue
 static std::string getTypeName(const BytecodeValue &value) {
-  if (std::holds_alternative<std::nullptr_t>(value))
+  if (value.isNull())
     return "null";
-  if (std::holds_alternative<bool>(value))
+  if (value.isBool())
     return "bool";
-  if (std::holds_alternative<int64_t>(value))
+  if (value.isInt())
     return "int";
-  if (std::holds_alternative<double>(value))
+  if (value.isDouble())
     return "float";
-  if (std::holds_alternative<std::string>(value))
+  if (value.isStringValId())
     return "string";
-  if (std::holds_alternative<ArrayRef>(value))
+  if (value.isArrayId())
     return "array";
-  if (std::holds_alternative<ObjectRef>(value))
+  if (value.isObjectId())
     return "object";
   return "unknown";
 }
 
 // Helper function to compare two BytecodeValues for equality
 static bool valuesEqual(const BytecodeValue &a, const BytecodeValue &b) {
-  if (a.index() != b.index())
-    return false;
-  if (std::holds_alternative<std::nullptr_t>(a))
-    return true;
-  if (std::holds_alternative<bool>(a))
-    return std::get<bool>(a) == std::get<bool>(b);
-  if (std::holds_alternative<int64_t>(a))
-    return std::get<int64_t>(a) == std::get<int64_t>(b);
-  if (std::holds_alternative<double>(a))
-    return std::get<double>(a) == std::get<double>(b);
-  if (std::holds_alternative<std::string>(a))
-    return std::get<std::string>(a) == std::get<std::string>(b);
-  if (std::holds_alternative<ArrayRef>(a))
-    return std::get<ArrayRef>(a).id == std::get<ArrayRef>(b).id;
-  if (std::holds_alternative<ObjectRef>(a))
-    return std::get<ObjectRef>(a).id == std::get<ObjectRef>(b).id;
-  return false;
+  return a == b; // Value has operator==
 }
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
@@ -176,18 +160,18 @@ void HostBridge::install() {
   // usage)
   options_.host_functions["extension.load"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
-          return BytecodeValue(false);
+        if (args.empty() || !args[0].isStringValId()) {
+          return BytecodeValue::makeBool(false);
         }
-        std::string name = std::get<std::string>(args[0]);
+        std::string name = args[0].toString();
         return BytecodeValue(extensionLoader_->loadExtensionByName(name));
       };
   options_.host_functions["extension.isLoaded"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
-          return BytecodeValue(false);
+        if (args.empty() || !args[0].isStringValId()) {
+          return BytecodeValue::makeBool(false);
         }
-        std::string name = std::get<std::string>(args[0]);
+        std::string name = args[0].toString();
         return BytecodeValue(extensionLoader_->isLoaded(name));
       };
   options_.host_functions["extension.list"] =
@@ -196,22 +180,22 @@ void HostBridge::install() {
         auto names = extensionLoader_->getLoadedExtensions();
         auto *vm = static_cast<VM *>(ctx_->vm);
         if (!vm) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         auto arr = vm->createHostArray();
         for (const auto &name : names) {
           vm->pushHostArrayValue(arr, BytecodeValue(name));
         }
-        return BytecodeValue(arr);
+        return BytecodeValue::makeArrayId(arr.id);
       };
   options_.host_functions["extension.addSearchPath"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
-          return BytecodeValue(false);
+        if (args.empty() || !args[0].isStringValId()) {
+          return BytecodeValue::makeBool(false);
         }
-        std::string path = std::get<std::string>(args[0]);
+        std::string path = args[0].toString();
         extensionLoader_->addSearchPath(path);
-        return BytecodeValue(true);
+        return BytecodeValue::makeBool(true);
       };
 
   // Register any.* dispatch methods for runtime type-based method calls
@@ -220,7 +204,7 @@ void HostBridge::install() {
     options_.host_functions["any." + methodName] =
         [this, methodName](const std::vector<BytecodeValue> &args) {
           if (args.empty()) {
-            return BytecodeValue(nullptr);
+            return BytecodeValue::makeNull();
           }
 
           // Determine type and dispatch to appropriate module
@@ -235,7 +219,7 @@ void HostBridge::install() {
           else if (type == "struct")
             modulePrefix = "struct";
           else
-            return BytecodeValue(nullptr);
+            return BytecodeValue::makeNull();
 
           std::string fullName = modulePrefix + "." + methodName;
 
@@ -255,7 +239,7 @@ void HostBridge::install() {
             }
           }
 
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         };
   };
 
@@ -266,13 +250,13 @@ void HostBridge::install() {
   options_.host_functions["len"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         auto it = options_.host_functions.find("any.len");
         if (it != options_.host_functions.end()) {
           return it->second(args);
         }
-        return BytecodeValue(nullptr);
+        return BytecodeValue::makeNull();
       };
   registerAnyMethod("has");
   registerAnyMethod("find");
@@ -582,53 +566,53 @@ void HostBridge::install() {
   registerAnyMethod("merge");   // merging
   registerAnyMethod("join");    // joining
   auto truthy = [](const BytecodeValue &value) -> bool {
-    if (std::holds_alternative<std::nullptr_t>(value))
+    if (value.isNull())
       return false;
-    if (std::holds_alternative<bool>(value))
-      return std::get<bool>(value);
-    if (std::holds_alternative<int64_t>(value))
-      return std::get<int64_t>(value) != 0;
-    if (std::holds_alternative<double>(value))
-      return std::get<double>(value) != 0.0;
-    if (std::holds_alternative<std::string>(value))
-      return !std::get<std::string>(value).empty();
+    if (value.isBool())
+      return value.asBool();
+    if (value.isInt())
+      return value.asInt() != 0;
+    if (value.isDouble())
+      return value.asDouble() != 0.0;
+    if (value.isStringValId())
+      return !value.toString().empty();
     return true;
   };
 
   options_.host_functions["any.map"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2)
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         auto out = ctx_->vm->createHostArray();
         auto iter = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iter);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           auto value = ctx_->vm->getHostObjectField(stepObj, "value");
           auto mapped = ctx_->vm->callFunction(args[1], {value});
           ctx_->vm->pushHostArrayValue(out, mapped);
         }
-        return BytecodeValue(out);
+        return BytecodeValue::makeArrayId(out.id);
       };
 
   options_.host_functions["any.filter"] =
       [this, truthy](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2)
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         auto out = ctx_->vm->createHostArray();
         auto iter = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iter);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           auto value = ctx_->vm->getHostObjectField(stepObj, "value");
           auto keep = ctx_->vm->callFunction(args[1], {value});
@@ -636,22 +620,22 @@ void HostBridge::install() {
             ctx_->vm->pushHostArrayValue(out, value);
           }
         }
-        return BytecodeValue(out);
+        return BytecodeValue::makeArrayId(out.id);
       };
 
   options_.host_functions["any.reduce"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 3)
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         BytecodeValue acc = args[2];
         auto iter = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iter);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           auto value = ctx_->vm->getHostObjectField(stepObj, "value");
           acc = ctx_->vm->callFunction(args[1], {acc, value});
@@ -662,68 +646,68 @@ void HostBridge::install() {
   options_.host_functions["any.foreach"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2)
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         auto iter = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iter);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           auto value = ctx_->vm->getHostObjectField(stepObj, "value");
           (void)ctx_->vm->callFunction(args[1], {value});
         }
-        return BytecodeValue(nullptr);
+        return BytecodeValue::makeNull();
       };
 
   // Array methods (for any.* dispatch fallback)
   options_.host_functions["array.len"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        return BytecodeValue(
-            int64_t(ctx_->vm->getHostArrayLength(std::get<ArrayRef>(args[0]))));
+        if (args.empty() || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        return BytecodeValue::makeInt(
+            static_cast<int64_t>(ctx_->vm->getHostArrayLength(ArrayRef{args[0].asArrayId()})));
       };
   options_.host_functions["array.push"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        ctx_->vm->pushHostArrayValue(std::get<ArrayRef>(args[0]), args[1]);
+        if (args.size() < 2 || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        ctx_->vm->pushHostArrayValue(ArrayRef{args[0].asArrayId()}, args[1]);
         return args[0];
       };
   options_.host_functions["array.pop"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        return ctx_->vm->popHostArrayValue(std::get<ArrayRef>(args[0]));
+        if (args.empty() || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        return ctx_->vm->popHostArrayValue(ArrayRef{args[0].asArrayId()});
       };
   options_.host_functions["array.has"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(false);
+        if (args.size() < 2 || !args[0].isArrayId())
+          return BytecodeValue::makeBool(false);
         return BytecodeValue(
-            ctx_->vm->arrayContains(std::get<ArrayRef>(args[0]), args[1]));
+            ctx_->vm->arrayContains(ArrayRef{args[0].asArrayId()}, args[1]));
       };
   options_.host_functions["array.find"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(int64_t(-1));
-        auto arrRef = std::get<ArrayRef>(args[0]);
+        if (args.size() < 2 || !args[0].isArrayId())
+          return BytecodeValue::makeInt(static_cast<int64_t>(-1));
+        auto arrRef = ArrayRef{args[0].asArrayId()};
         size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           if (valuesEqual(ctx_->vm->getHostArrayValue(arrRef, i), args[1])) {
-            return BytecodeValue(int64_t(i));
+            return BytecodeValue::makeInt(static_cast<int64_t>(i));
           }
         }
-        return BytecodeValue(int64_t(-1));
+        return BytecodeValue::makeInt(static_cast<int64_t>(-1));
       };
   options_.host_functions["array.map"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        auto arrRef = std::get<ArrayRef>(args[0]);
+        if (args.size() < 2 || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        auto arrRef = ArrayRef{args[0].asArrayId()};
         auto resultRef = ctx_->vm->createHostArray();
         size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
@@ -735,15 +719,15 @@ void HostBridge::install() {
       };
   options_.host_functions["array.filter"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        auto arrRef = std::get<ArrayRef>(args[0]);
+        if (args.size() < 2 || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        auto arrRef = ArrayRef{args[0].asArrayId()};
         auto resultRef = ctx_->vm->createHostArray();
         size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
           auto keep = ctx_->vm->callFunction(args[1], {elem});
-          if (std::holds_alternative<bool>(keep) && std::get<bool>(keep)) {
+          if (keep.isBool() && keep.asBool()) {
             ctx_->vm->pushHostArrayValue(resultRef, elem);
           }
         }
@@ -751,9 +735,9 @@ void HostBridge::install() {
       };
   options_.host_functions["array.reduce"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 3 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        auto arrRef = std::get<ArrayRef>(args[0]);
+        if (args.size() < 3 || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        auto arrRef = ArrayRef{args[0].asArrayId()};
         BytecodeValue acc = args[2];
         size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
@@ -764,21 +748,21 @@ void HostBridge::install() {
       };
   options_.host_functions["array.foreach"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        auto arrRef = std::get<ArrayRef>(args[0]);
+        if (args.size() < 2 || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        auto arrRef = ArrayRef{args[0].asArrayId()};
         size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
           ctx_->vm->callFunction(args[1], {elem});
         }
-        return BytecodeValue(nullptr);
+        return BytecodeValue::makeNull();
       };
   options_.host_functions["array.sort"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<ArrayRef>(args[0]))
-          return BytecodeValue(nullptr);
-        auto arrRef = std::get<ArrayRef>(args[0]);
+        if (args.empty() || !args[0].isArrayId())
+          return BytecodeValue::makeNull();
+        auto arrRef = ArrayRef{args[0].asArrayId()};
         size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           for (size_t j = 0; j < len - i - 1; j++) {
@@ -787,13 +771,13 @@ void HostBridge::install() {
             bool swap = false;
             if (args.size() >= 2) {
               auto cmp = ctx_->vm->callFunction(args[1], {a, b});
-              if (std::holds_alternative<bool>(cmp)) {
-                swap = std::get<bool>(cmp);
+              if (cmp.isBool()) {
+                swap = cmp.asBool();
               }
             } else {
-              if (std::holds_alternative<int64_t>(a) &&
-                  std::holds_alternative<int64_t>(b)) {
-                swap = std::get<int64_t>(a) > std::get<int64_t>(b);
+              if (a.isInt() &&
+                  b.isInt()) {
+                swap = a.asInt() > b.asInt();
               }
             }
             if (swap) {
@@ -809,15 +793,15 @@ void HostBridge::install() {
   // any.in(value, container) - membership test
   options_.host_functions["string.len"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        return BytecodeValue(int64_t(std::get<std::string>(args[0]).length()));
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        return BytecodeValue(int64_t(args[0].toString().length()));
       };
   options_.host_functions["string.trim"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        std::string s = args[0].toString();
         size_t start = s.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
           return BytecodeValue(std::string(""));
@@ -826,46 +810,46 @@ void HostBridge::install() {
       };
   options_.host_functions["string.upper"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::toupper);
         return BytecodeValue(s);
       };
   options_.host_functions["string.lower"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
         return BytecodeValue(s);
       };
   options_.host_functions["string.includes"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<std::string>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(false);
-        const std::string &s = std::get<std::string>(args[0]);
-        const std::string &sub = std::get<std::string>(args[1]);
+        if (args.size() < 2 || !args[0].isStringValId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeBool(false);
+        const std::string &s = args[0].toString();
+        const std::string &sub = args[1].toString();
         return BytecodeValue(s.find(sub) != std::string::npos);
       };
   options_.host_functions["string.startswith"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<std::string>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(false);
-        const std::string &s = std::get<std::string>(args[0]);
-        const std::string &pre = std::get<std::string>(args[1]);
+        if (args.size() < 2 || !args[0].isStringValId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeBool(false);
+        const std::string &s = args[0].toString();
+        const std::string &pre = args[1].toString();
         return BytecodeValue(s.size() >= pre.size() &&
                              s.compare(0, pre.size(), pre) == 0);
       };
   options_.host_functions["string.endswith"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<std::string>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(false);
-        const std::string &s = std::get<std::string>(args[0]);
-        const std::string &suf = std::get<std::string>(args[1]);
+        if (args.size() < 2 || !args[0].isStringValId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeBool(false);
+        const std::string &s = args[0].toString();
+        const std::string &suf = args[1].toString();
         return BytecodeValue(
             s.size() >= suf.size() &&
             s.compare(s.size() - suf.size(), suf.size(), suf) == 0);
@@ -878,21 +862,21 @@ void HostBridge::install() {
   /*
   options_.host_functions["struct.get"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<StructRef>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(nullptr);
-        auto structRef = std::get<StructRef>(args[0]);
-        const std::string &fieldName = std::get<std::string>(args[1]);
+        if (args.size() < 2 || !args[0].isStructId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeNull();
+        auto structRef = StructRef{args[0].asStructId(), 0};
+        const std::string &fieldName = args[1].toString();
         // Need VM method to lookup field index by name
         return ctx_->vm->getStructField(structRef, 0); // placeholder
       };
   options_.host_functions["struct.set"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 3 || !std::holds_alternative<StructRef>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(nullptr);
-        auto structRef = std::get<StructRef>(args[0]);
-        const std::string &fieldName = std::get<std::string>(args[1]);
+        if (args.size() < 3 || !args[0].isStructId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeNull();
+        auto structRef = StructRef{args[0].asStructId(), 0};
+        const std::string &fieldName = args[1].toString();
         // Need VM method to lookup field index by name
         ctx_->vm->setStructField(structRef, 0, args[2]); // placeholder
         return args[2];
@@ -902,17 +886,17 @@ void HostBridge::install() {
   // Object methods (for any.* dispatch)
   options_.host_functions["object.len"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<ObjectRef>(args[0]))
-          return BytecodeValue(nullptr);
+        if (args.empty() || !args[0].isObjectId())
+          return BytecodeValue::makeNull();
         int64_t count = 0;
         auto iterRef = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           count++;
         }
@@ -920,80 +904,80 @@ void HostBridge::install() {
       };
   options_.host_functions["object.has"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ObjectRef>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(false);
+        if (args.size() < 2 || !args[0].isObjectId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeBool(false);
         return BytecodeValue(ctx_->vm->objectHasKey(
-            std::get<ObjectRef>(args[0]), std::get<std::string>(args[1])));
+            ObjectRef{args[0].asObjectId(), true}, args[1].toString()));
       };
   options_.host_functions["object.get"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 2 || !std::holds_alternative<ObjectRef>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(nullptr);
-        return ctx_->vm->getHostObjectField(std::get<ObjectRef>(args[0]),
-                                            std::get<std::string>(args[1]));
+        if (args.size() < 2 || !args[0].isObjectId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeNull();
+        return ctx_->vm->getHostObjectField(ObjectRef{args[0].asObjectId(), true},
+                                            args[1].toString());
       };
   options_.host_functions["object.set"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.size() < 3 || !std::holds_alternative<ObjectRef>(args[0]) ||
-            !std::holds_alternative<std::string>(args[1]))
-          return BytecodeValue(nullptr);
-        ctx_->vm->setHostObjectField(std::get<ObjectRef>(args[0]),
-                                     std::get<std::string>(args[1]), args[2]);
+        if (args.size() < 3 || !args[0].isObjectId() ||
+            !args[1].isStringValId())
+          return BytecodeValue::makeNull();
+        ctx_->vm->setHostObjectField(ObjectRef{args[0].asObjectId(), true},
+                                     args[1].toString(), args[2]);
         return args[2];
       };
   options_.host_functions["object.keys"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<ObjectRef>(args[0]))
-          return BytecodeValue(nullptr);
+        if (args.empty() || !args[0].isObjectId())
+          return BytecodeValue::makeNull();
         auto result = ctx_->vm->createHostArray();
         auto iterRef = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           auto key = ctx_->vm->getHostObjectField(stepObj, "key");
-          if (std::holds_alternative<std::string>(key)) {
+          if (key.isStringValId()) {
             ctx_->vm->pushHostArrayValue(result, key);
           }
         }
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
   options_.host_functions["object.values"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<ObjectRef>(args[0]))
-          return BytecodeValue(nullptr);
+        if (args.empty() || !args[0].isObjectId())
+          return BytecodeValue::makeNull();
         auto result = ctx_->vm->createHostArray();
         auto iterRef = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto step = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(step))
+          if (!step.isObjectId())
             break;
-          auto stepObj = std::get<ObjectRef>(step);
+          auto stepObj = ObjectRef{step.asObjectId(), true};
           auto done = ctx_->vm->getHostObjectField(stepObj, "done");
-          if (std::holds_alternative<bool>(done) && std::get<bool>(done))
+          if (done.isBool() && done.asBool())
             break;
           auto val = ctx_->vm->getHostObjectField(stepObj, "value");
           ctx_->vm->pushHostArrayValue(result, val);
         }
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // LINQ-style filter and map functions for query expressions
   options_.host_functions["filter"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2 ||
-            !std::holds_alternative<HostFunctionRef>(args[1])) {
-          return BytecodeValue(nullptr);
+            !args[1].isHostFuncId()) {
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
         const auto &predicate = args[1];
-        const std::string &fnName = std::get<HostFunctionRef>(predicate).name;
+        const std::string &fnName = HostFunctionRef{predicate.toString()}.name;
 
         ArrayRef result = ctx_->vm->createHostArray();
 
@@ -1002,16 +986,16 @@ void HostBridge::install() {
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (std::holds_alternative<std::nullptr_t>(valueVal))
+          if (valueVal.isNull())
             continue;
 
           // Call predicate
@@ -1019,22 +1003,22 @@ void HostBridge::install() {
           auto predResult = ctx_->vm->callFunction(
               BytecodeValue(HostFunctionRef{fnName}), predArgs);
 
-          if (std::holds_alternative<bool>(predResult) &&
-              std::get<bool>(predResult)) {
+          if (predResult.isBool() &&
+              predResult.asBool()) {
             ctx_->vm->pushHostArrayValue(result, valueVal);
           }
         }
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   options_.host_functions["map"] = [this](
                                        const std::vector<BytecodeValue> &args) {
-    if (args.size() < 2 || !std::holds_alternative<HostFunctionRef>(args[1])) {
-      return BytecodeValue(nullptr);
+    if (args.size() < 2 || !args[1].isHostFuncId()) {
+      return BytecodeValue::makeNull();
     }
     const auto &iterable = args[0];
     const auto &transform = args[1];
-    const std::string &fnName = std::get<HostFunctionRef>(transform).name;
+    const std::string &fnName = HostFunctionRef{transform.toString()}.name;
 
     ArrayRef result = ctx_->vm->createHostArray();
 
@@ -1043,16 +1027,16 @@ void HostBridge::install() {
 
     while (true) {
       auto iterResult = ctx_->vm->iteratorNext(iterRef);
-      if (!std::holds_alternative<ObjectRef>(iterResult))
+      if (!iterResult.isObjectId())
         break;
-      auto resultObjRef = std::get<ObjectRef>(iterResult);
+      auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
       auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+      if (doneVal.isBool() && doneVal.asBool())
         break;
 
       auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-      if (std::holds_alternative<std::nullptr_t>(valueVal))
+      if (valueVal.isNull())
         continue;
 
       // Call transform
@@ -1062,46 +1046,46 @@ void HostBridge::install() {
 
       ctx_->vm->pushHostArrayValue(result, transResult);
     }
-    return BytecodeValue(result);
+    return BytecodeValue::makeObjectId(result.id);
   };
 
   // Terminal operation - convert to set
   options_.host_functions["set"] = [this](
                                        const std::vector<BytecodeValue> &args) {
     if (args.empty()) {
-      return BytecodeValue(nullptr);
+      return BytecodeValue::makeNull();
     }
     const auto &iterable = args[0];
 
     // Create set and add unique elements
     ObjectRef result = ctx_->vm->createHostObject();
-    ctx_->vm->setHostObjectField(result, "__set_marker__", BytecodeValue(true));
+    ctx_->vm->setHostObjectField(result, "__set_marker__", BytecodeValue::makeBool(true));
     IteratorRef iterRef = ctx_->vm->createIterator(iterable);
 
     while (true) {
       auto iterResult = ctx_->vm->iteratorNext(iterRef);
-      if (!std::holds_alternative<ObjectRef>(iterResult))
+      if (!iterResult.isObjectId())
         break;
-      auto resultObjRef = std::get<ObjectRef>(iterResult);
+      auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
       auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+      if (doneVal.isBool() && doneVal.asBool())
         break;
 
       auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-      if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+      if (!valueVal.isNull()) {
         ctx_->vm->setHostObjectField(result, std::to_string(valueVal.index()),
                                      valueVal);
       }
     }
-    return BytecodeValue(result);
+    return BytecodeValue::makeObjectId(result.id);
   };
 
   // Terminal operation - convert to object with key-value pairs
   options_.host_functions["object"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
 
@@ -1110,34 +1094,34 @@ void HostBridge::install() {
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto pairVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
           // Expect pairs like [key, value] or {key: ..., value: ...}
-          if (std::holds_alternative<ArrayRef>(pairVal)) {
-            auto arr = std::get<ArrayRef>(pairVal);
+          if (pairVal.isArrayId()) {
+            auto arr = ArrayRef{pairVal.asArrayId()};
             auto key = ctx_->vm->getHostArrayValue(arr, 0);
             auto val = ctx_->vm->getHostArrayValue(arr, 1);
-            if (std::holds_alternative<std::string>(key)) {
-              ctx_->vm->setHostObjectField(result, std::get<std::string>(key),
+            if (key.isStringValId()) {
+              ctx_->vm->setHostObjectField(result, key.toString(),
                                            val);
             }
           }
         }
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // Aggregation - sum all values
   options_.host_functions["sum"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
 
@@ -1146,19 +1130,19 @@ void HostBridge::install() {
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (std::holds_alternative<int64_t>(valueVal)) {
-            total += std::get<int64_t>(valueVal);
-          } else if (std::holds_alternative<double>(valueVal)) {
-            total += std::get<double>(valueVal);
+          if (valueVal.isInt()) {
+            total += valueVal.asInt();
+          } else if (valueVal.isDouble()) {
+            total += valueVal.asDouble();
           }
         }
         return BytecodeValue(total);
@@ -1168,7 +1152,7 @@ void HostBridge::install() {
   options_.host_functions["max"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
 
@@ -1179,20 +1163,20 @@ void HostBridge::install() {
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
           double num = 0;
-          if (std::holds_alternative<int64_t>(valueVal)) {
-            num = std::get<int64_t>(valueVal);
-          } else if (std::holds_alternative<double>(valueVal)) {
-            num = std::get<double>(valueVal);
+          if (valueVal.isInt()) {
+            num = valueVal.asInt();
+          } else if (valueVal.isDouble()) {
+            num = valueVal.asDouble();
           } else {
             continue;
           }
@@ -1202,14 +1186,14 @@ void HostBridge::install() {
             hasValue = true;
           }
         }
-        return hasValue ? BytecodeValue(maxVal) : BytecodeValue(nullptr);
+        return hasValue ? BytecodeValue(maxVal) : BytecodeValue::makeNull();
       };
 
   // Aggregation - find min value
   options_.host_functions["min"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
 
@@ -1220,20 +1204,20 @@ void HostBridge::install() {
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
           double num = 0;
-          if (std::holds_alternative<int64_t>(valueVal)) {
-            num = std::get<int64_t>(valueVal);
-          } else if (std::holds_alternative<double>(valueVal)) {
-            num = std::get<double>(valueVal);
+          if (valueVal.isInt()) {
+            num = valueVal.asInt();
+          } else if (valueVal.isDouble()) {
+            num = valueVal.asDouble();
           } else {
             continue;
           }
@@ -1243,14 +1227,14 @@ void HostBridge::install() {
             hasValue = true;
           }
         }
-        return hasValue ? BytecodeValue(minVal) : BytecodeValue(nullptr);
+        return hasValue ? BytecodeValue(minVal) : BytecodeValue::makeNull();
       };
 
   // Advanced LINQ methods - orderby (sort with key selector)
   options_.host_functions["orderby"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.empty()) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
 
@@ -1260,16 +1244,16 @@ void HostBridge::install() {
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+          if (!valueVal.isNull()) {
             elements.push_back(valueVal);
           }
         }
@@ -1278,27 +1262,27 @@ void HostBridge::install() {
         std::sort(elements.begin(), elements.end(),
                   [](const BytecodeValue &a, const BytecodeValue &b) {
                     // Numeric comparison
-                    if (std::holds_alternative<int64_t>(a) &&
-                        std::holds_alternative<int64_t>(b)) {
-                      return std::get<int64_t>(a) < std::get<int64_t>(b);
+                    if (a.isInt() &&
+                        b.isInt()) {
+                      return a.asInt() < b.asInt();
                     }
-                    if (std::holds_alternative<double>(a) &&
-                        std::holds_alternative<double>(b)) {
-                      return std::get<double>(a) < std::get<double>(b);
+                    if (a.isDouble() &&
+                        b.isDouble()) {
+                      return a.asDouble() < b.asDouble();
                     }
-                    if (std::holds_alternative<int64_t>(a) &&
-                        std::holds_alternative<double>(b)) {
-                      return std::get<int64_t>(a) < std::get<double>(b);
+                    if (a.isInt() &&
+                        b.isDouble()) {
+                      return a.asInt() < b.asDouble();
                     }
-                    if (std::holds_alternative<double>(a) &&
-                        std::holds_alternative<int64_t>(b)) {
-                      return std::get<double>(a) < std::get<int64_t>(b);
+                    if (a.isDouble() &&
+                        b.isInt()) {
+                      return a.asDouble() < b.asInt();
                     }
                     // String comparison
-                    if (std::holds_alternative<std::string>(a) &&
-                        std::holds_alternative<std::string>(b)) {
-                      return std::get<std::string>(a) <
-                             std::get<std::string>(b);
+                    if (a.isStringValId() &&
+                        b.isStringValId()) {
+                      return a.toString() <
+                             b.toString();
                     }
                     return false;
                   });
@@ -1308,14 +1292,14 @@ void HostBridge::install() {
         for (const auto &elem : elements) {
           ctx_->vm->pushHostArrayValue(result, elem);
         }
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // groupby - group elements by key selector
   options_.host_functions["groupby"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         const auto &iterable = args[0];
         const auto &keySelector = args[1];
@@ -1326,16 +1310,16 @@ void HostBridge::install() {
         IteratorRef iterRef = ctx_->vm->createIterator(iterable);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (std::holds_alternative<std::nullptr_t>(valueVal))
+          if (valueVal.isNull())
             continue;
 
           // Get key from selector
@@ -1343,12 +1327,12 @@ void HostBridge::install() {
           auto keyVal = ctx_->vm->callFunction(keySelector, selectorArgs);
 
           std::string keyStr;
-          if (std::holds_alternative<std::string>(keyVal)) {
-            keyStr = std::get<std::string>(keyVal);
-          } else if (std::holds_alternative<int64_t>(keyVal)) {
-            keyStr = std::to_string(std::get<int64_t>(keyVal));
-          } else if (std::holds_alternative<double>(keyVal)) {
-            keyStr = std::to_string(std::get<double>(keyVal));
+          if (keyVal.isStringValId()) {
+            keyStr = keyVal.toString();
+          } else if (keyVal.isInt()) {
+            keyStr = std::to_string(keyVal.asInt());
+          } else if (keyVal.isDouble()) {
+            keyStr = std::to_string(keyVal.asDouble());
           } else {
             keyStr = "null";
           }
@@ -1366,14 +1350,14 @@ void HostBridge::install() {
           ctx_->vm->setHostObjectField(result, pair.first,
                                        BytecodeValue(groupArray));
         }
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // concat - concatenate two iterables
   options_.host_functions["concat"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
 
         ArrayRef result = ctx_->vm->createHostArray();
@@ -1382,16 +1366,16 @@ void HostBridge::install() {
         IteratorRef iterRef1 = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef1);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+          if (!valueVal.isNull()) {
             ctx_->vm->pushHostArrayValue(result, valueVal);
           }
         }
@@ -1400,28 +1384,28 @@ void HostBridge::install() {
         IteratorRef iterRef2 = ctx_->vm->createIterator(args[1]);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef2);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+          if (!valueVal.isNull()) {
             ctx_->vm->pushHostArrayValue(result, valueVal);
           }
         }
 
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // merge - merge two objects
   options_.host_functions["merge"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
 
         ObjectRef result = ctx_->vm->createHostObject();
@@ -1430,19 +1414,19 @@ void HostBridge::install() {
         IteratorRef iterRef1 = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef1);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto keyVal = ctx_->vm->getHostObjectField(resultObjRef, "key");
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (!std::holds_alternative<std::nullptr_t>(keyVal) &&
-              !std::holds_alternative<std::nullptr_t>(valueVal)) {
-            ctx_->vm->setHostObjectField(result, std::get<std::string>(keyVal),
+          if (!keyVal.isNull() &&
+              !valueVal.isNull()) {
+            ctx_->vm->setHostObjectField(result, keyVal.toString(),
                                          valueVal);
           }
         }
@@ -1451,31 +1435,31 @@ void HostBridge::install() {
         IteratorRef iterRef2 = ctx_->vm->createIterator(args[1]);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef2);
-          if (!std::holds_alternative<ObjectRef>(iterResult))
+          if (!iterResult.isObjectId())
             break;
-          auto resultObjRef = std::get<ObjectRef>(iterResult);
+          auto resultObjRef = ObjectRef{iterResult.asObjectId(), true};
 
           auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+          if (doneVal.isBool() && doneVal.asBool())
             break;
 
           auto keyVal = ctx_->vm->getHostObjectField(resultObjRef, "key");
           auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-          if (!std::holds_alternative<std::nullptr_t>(keyVal) &&
-              !std::holds_alternative<std::nullptr_t>(valueVal)) {
-            ctx_->vm->setHostObjectField(result, std::get<std::string>(keyVal),
+          if (!keyVal.isNull() &&
+              !valueVal.isNull()) {
+            ctx_->vm->setHostObjectField(result, keyVal.toString(),
                                          valueVal);
           }
         }
 
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // join - join two iterables on matching keys
   options_.host_functions["join"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 4) {
-          return BytecodeValue(nullptr);
+          return BytecodeValue::makeNull();
         }
         // args: inner, outerKeySelector, innerKeySelector, resultSelector
         const auto &inner = args[0];
@@ -1492,19 +1476,19 @@ void HostBridge::install() {
         IteratorRef innerIterRef = ctx_->vm->createIterator(inner);
         while (true) {
           auto innerIterResult = ctx_->vm->iteratorNext(innerIterRef);
-          if (!std::holds_alternative<ObjectRef>(innerIterResult))
+          if (!innerIterResult.isObjectId())
             break;
-          auto innerResultObjRef = std::get<ObjectRef>(innerIterResult);
+          auto innerResultObjRef = ObjectRef{innerIterResult.asObjectId(), true};
 
           auto innerDoneVal =
               ctx_->vm->getHostObjectField(innerResultObjRef, "done");
-          if (std::holds_alternative<bool>(innerDoneVal) &&
-              std::get<bool>(innerDoneVal))
+          if (innerDoneVal.isBool() &&
+              innerDoneVal.asBool())
             break;
 
           auto innerValueVal =
               ctx_->vm->getHostObjectField(innerResultObjRef, "value");
-          if (std::holds_alternative<std::nullptr_t>(innerValueVal))
+          if (innerValueVal.isNull())
             continue;
 
           // Get key from selector
@@ -1513,12 +1497,12 @@ void HostBridge::install() {
               ctx_->vm->callFunction(innerKeySelector, innerSelectorArgs);
 
           std::string innerKeyStr;
-          if (std::holds_alternative<std::string>(innerKeyVal)) {
-            innerKeyStr = std::get<std::string>(innerKeyVal);
-          } else if (std::holds_alternative<int64_t>(innerKeyVal)) {
-            innerKeyStr = std::to_string(std::get<int64_t>(innerKeyVal));
-          } else if (std::holds_alternative<double>(innerKeyVal)) {
-            innerKeyStr = std::to_string(std::get<double>(innerKeyVal));
+          if (innerKeyVal.isStringValId()) {
+            innerKeyStr = innerKeyVal.toString();
+          } else if (innerKeyVal.isInt()) {
+            innerKeyStr = std::to_string(innerKeyVal.asInt());
+          } else if (innerKeyVal.isDouble()) {
+            innerKeyStr = std::to_string(innerKeyVal.asDouble());
           } else {
             innerKeyStr = "null";
           }
@@ -1530,19 +1514,19 @@ void HostBridge::install() {
         IteratorRef outerIterRef = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto outerIterResult = ctx_->vm->iteratorNext(outerIterRef);
-          if (!std::holds_alternative<ObjectRef>(outerIterResult))
+          if (!outerIterResult.isObjectId())
             break;
-          auto outerResultObjRef = std::get<ObjectRef>(outerIterResult);
+          auto outerResultObjRef = ObjectRef{outerIterResult.asObjectId(), true};
 
           auto outerDoneVal =
               ctx_->vm->getHostObjectField(outerResultObjRef, "done");
-          if (std::holds_alternative<bool>(outerDoneVal) &&
-              std::get<bool>(outerDoneVal))
+          if (outerDoneVal.isBool() &&
+              outerDoneVal.asBool())
             break;
 
           auto outerValueVal =
               ctx_->vm->getHostObjectField(outerResultObjRef, "value");
-          if (std::holds_alternative<std::nullptr_t>(outerValueVal))
+          if (outerValueVal.isNull())
             continue;
 
           // Get key from selector
@@ -1551,12 +1535,12 @@ void HostBridge::install() {
               ctx_->vm->callFunction(outerKeySelector, outerSelectorArgs);
 
           std::string outerKeyStr;
-          if (std::holds_alternative<std::string>(outerKeyVal)) {
-            outerKeyStr = std::get<std::string>(outerKeyVal);
-          } else if (std::holds_alternative<int64_t>(outerKeyVal)) {
-            outerKeyStr = std::to_string(std::get<int64_t>(outerKeyVal));
-          } else if (std::holds_alternative<double>(outerKeyVal)) {
-            outerKeyStr = std::to_string(std::get<double>(outerKeyVal));
+          if (outerKeyVal.isStringValId()) {
+            outerKeyStr = outerKeyVal.toString();
+          } else if (outerKeyVal.isInt()) {
+            outerKeyStr = std::to_string(outerKeyVal.asInt());
+          } else if (outerKeyVal.isDouble()) {
+            outerKeyStr = std::to_string(outerKeyVal.asDouble());
           } else {
             outerKeyStr = "null";
           }
@@ -1573,32 +1557,32 @@ void HostBridge::install() {
           }
         }
 
-        return BytecodeValue(result);
+        return BytecodeValue::makeObjectId(result.id);
       };
 
   // Standalone aliases for pipeline support (e.g., clipboard.get | upper |
   // trim)
   options_.host_functions["upper"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::toupper);
         return BytecodeValue(s);
       };
   options_.host_functions["lower"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
         return BytecodeValue(s);
       };
   options_.host_functions["trim"] =
       [this](const std::vector<BytecodeValue> &args) {
-        if (args.empty() || !std::holds_alternative<std::string>(args[0]))
-          return BytecodeValue(nullptr);
-        std::string s = std::get<std::string>(args[0]);
+        if (args.empty() || !args[0].isStringValId())
+          return BytecodeValue::makeNull();
+        std::string s = args[0].toString();
         size_t start = s.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
           return BytecodeValue(std::string(""));
@@ -1611,66 +1595,66 @@ void HostBridge::install() {
   options_.host_functions["any.in"] =
       [this](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2) {
-          return BytecodeValue(false);
+          return BytecodeValue::makeBool(false);
         }
         const auto &value = args[0];
         const auto &container = args[1];
 
         // Check based on container type
-        if (std::holds_alternative<ArrayRef>(container)) {
+        if (container.isArrayId()) {
           return BytecodeValue(
-              ctx_->vm->arrayContains(std::get<ArrayRef>(container), value));
-        } else if (std::holds_alternative<std::string>(container)) {
-          const auto &str = std::get<std::string>(container);
-          if (std::holds_alternative<std::string>(value)) {
-            const auto &substr = std::get<std::string>(value);
+              ctx_->vm->arrayContains(ArrayRef{container.asArrayId()}, value));
+        } else if (container.isStringValId()) {
+          const auto &str = container.toString();
+          if (value.isStringValId()) {
+            const auto &substr = value.toString();
             return BytecodeValue(str.find(substr) != std::string::npos);
           }
-          return BytecodeValue(false);
-        } else if (std::holds_alternative<ObjectRef>(container)) {
-          if (std::holds_alternative<std::string>(value)) {
-            const auto &key = std::get<std::string>(value);
+          return BytecodeValue::makeBool(false);
+        } else if (container.isObjectId()) {
+          if (value.isStringValId()) {
+            const auto &key = value.toString();
             return BytecodeValue(
-                ctx_->vm->objectHasKey(std::get<ObjectRef>(container), key));
+                ctx_->vm->objectHasKey(ObjectRef{container.asObjectId(), true}, key));
           }
-          return BytecodeValue(false);
-        } else if (std::holds_alternative<RangeRef>(container)) {
-          if (!std::holds_alternative<int64_t>(value)) {
-            return BytecodeValue(false);
+          return BytecodeValue::makeBool(false);
+        } else if (container.isRangeId()) {
+          if (!value.isInt()) {
+            return BytecodeValue::makeBool(false);
           }
-          int64_t val = std::get<int64_t>(value);
+          int64_t val = value.asInt();
           return BytecodeValue(
-              ctx_->vm->isInRange(std::get<RangeRef>(container), val));
+              ctx_->vm->isInRange(RangeRef{container.asRangeId()}, val));
         }
-        return BytecodeValue(false);
+        return BytecodeValue::makeBool(false);
       };
 
   // any.not_in(value, container) - negated membership test
   options_.host_functions["any.not_in"] =
       [this](const std::vector<BytecodeValue> &args) {
         auto result = options_.host_functions["any.in"](args);
-        if (std::holds_alternative<bool>(result)) {
-          return BytecodeValue(!std::get<bool>(result));
+        if (result.isBool()) {
+          return BytecodeValue(!result.asBool());
         }
-        return BytecodeValue(true); // If in() failed, not_in is true
+        return BytecodeValue::makeBool(true); // If in() failed, not_in is true
       };
 
   // any(iterable, predicate) - check if any element satisfies predicate
   options_.host_functions["any"] = [this](
                                        const std::vector<BytecodeValue> &args) {
     if (args.size() < 2) {
-      return BytecodeValue(false);
+      return BytecodeValue::makeBool(false);
     }
 
     const auto &iterable = args[0];
     const auto &predicate = args[1];
 
     // Predicate should be a function
-    if (!std::holds_alternative<HostFunctionRef>(predicate)) {
-      return BytecodeValue(false);
+    if (!predicate.isHostFuncId()) {
+      return BytecodeValue::makeBool(false);
     }
 
-    const std::string &fnName = std::get<HostFunctionRef>(predicate).name;
+    const std::string &fnName = HostFunctionRef{predicate.toString()}.name;
 
     // Create iterator
     IteratorRef iterRef = ctx_->vm->createIterator(iterable);
@@ -1680,20 +1664,20 @@ void HostBridge::install() {
       auto result = ctx_->vm->iteratorNext(iterRef);
 
       // Check if done using helper
-      if (!std::holds_alternative<ObjectRef>(result)) {
-        return BytecodeValue(false);
+      if (!result.isObjectId()) {
+        return BytecodeValue::makeBool(false);
       }
-      auto resultObjRef = std::get<ObjectRef>(result);
+      auto resultObjRef = ObjectRef{result.asObjectId(), true};
 
       // Get done flag
       auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal)) {
-        return BytecodeValue(false); // Reached end, no match found
+      if (doneVal.isBool() && doneVal.asBool()) {
+        return BytecodeValue::makeBool(false); // Reached end, no match found
       }
 
       // Get value
       auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-      if (std::holds_alternative<std::nullptr_t>(valueVal)) {
+      if (valueVal.isNull()) {
         continue;
       }
 
@@ -1703,9 +1687,9 @@ void HostBridge::install() {
       auto predResult = ctx_->vm->callFunction(
           BytecodeValue(HostFunctionRef{fnName}), predArgs);
 
-      if (std::holds_alternative<bool>(predResult) &&
-          std::get<bool>(predResult)) {
-        return BytecodeValue(true); // Found a match
+      if (predResult.isBool() &&
+          predResult.asBool()) {
+        return BytecodeValue::makeBool(true); // Found a match
       }
     }
   };
@@ -1717,21 +1701,21 @@ void HostBridge::install() {
           return BytecodeValue(std::string("null"));
         }
         const auto &val = args[0];
-        if (std::holds_alternative<std::nullptr_t>(val))
+        if (val.isNull())
           return BytecodeValue(std::string("null"));
-        if (std::holds_alternative<bool>(val))
+        if (val.isBool())
           return BytecodeValue(std::string("bool"));
-        if (std::holds_alternative<int64_t>(val))
+        if (val.isInt())
           return BytecodeValue(std::string("int"));
-        if (std::holds_alternative<double>(val))
+        if (val.isDouble())
           return BytecodeValue(std::string("num"));
-        if (std::holds_alternative<std::string>(val))
+        if (val.isStringValId())
           return BytecodeValue(std::string("string"));
-        if (std::holds_alternative<ArrayRef>(val))
+        if (val.isArrayId())
           return BytecodeValue(std::string("array"));
-        if (std::holds_alternative<ObjectRef>(val))
+        if (val.isObjectId())
           return BytecodeValue(std::string("object"));
-        if (std::holds_alternative<RangeRef>(val))
+        if (val.isRangeId())
           return BytecodeValue(std::string("range"));
         return BytecodeValue(std::string("unknown"));
       };
@@ -1739,28 +1723,28 @@ void HostBridge::install() {
   options_.host_functions["type.is"] =
       [](const std::vector<BytecodeValue> &args) {
         if (args.size() < 2) {
-          return BytecodeValue(false);
+          return BytecodeValue::makeBool(false);
         }
         const auto &val = args[0];
-        if (!std::holds_alternative<std::string>(args[1])) {
-          return BytecodeValue(false);
+        if (!args[1].isStringValId()) {
+          return BytecodeValue::makeBool(false);
         }
-        std::string typeName = std::get<std::string>(args[1]);
+        std::string typeName = args[1].toString();
         if (typeName == "null")
-          return BytecodeValue(std::holds_alternative<std::nullptr_t>(val));
+          return BytecodeValue(val.isNull());
         if (typeName == "bool")
-          return BytecodeValue(std::holds_alternative<bool>(val));
+          return BytecodeValue(val.isBool());
         if (typeName == "int")
-          return BytecodeValue(std::holds_alternative<int64_t>(val));
+          return BytecodeValue(val.isInt());
         if (typeName == "num" || typeName == "float")
-          return BytecodeValue(std::holds_alternative<double>(val));
+          return BytecodeValue(val.isDouble());
         if (typeName == "string")
-          return BytecodeValue(std::holds_alternative<std::string>(val));
+          return BytecodeValue(val.isStringValId());
         if (typeName == "array")
-          return BytecodeValue(std::holds_alternative<ArrayRef>(val));
+          return BytecodeValue(val.isArrayId());
         if (typeName == "object")
-          return BytecodeValue(std::holds_alternative<ObjectRef>(val));
-        return BytecodeValue(false);
+          return BytecodeValue(val.isObjectId());
+        return BytecodeValue::makeBool(false);
       };
 
   options_.host_functions["implements"] =
@@ -1768,7 +1752,7 @@ void HostBridge::install() {
         // Placeholder - full trait system requires type metadata
         // For now, return false for all checks
         (void)args;
-        return BytecodeValue(false);
+        return BytecodeValue::makeBool(false);
       };
 
   // Run vm_setup callbacks

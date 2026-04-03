@@ -66,6 +66,7 @@ private:
   void emit(OpCode op, BytecodeValue operand);
   void emit(OpCode op, std::vector<BytecodeValue> operands);
   uint32_t addConstant(const BytecodeValue &value);
+  uint32_t addStringConstant(const std::string &str);
   uint32_t emitJump(OpCode op);
   void patchJump(uint32_t jump_instruction_index, uint32_t target);
 

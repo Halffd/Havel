@@ -91,6 +91,16 @@ uint32_t CodeEmitter::addConstant(const BytecodeValue& value) {
   return index;
 }
 
+uint32_t CodeEmitter::addStringConstant(const std::string& str) {
+  if (!currentContext_.function) {
+    throw std::runtime_error("Cannot add string constant: no active function");
+  }
+  uint32_t index = static_cast<uint32_t>(currentContext_.function->constants.size());
+  currentContext_.function->constants.push_back(BytecodeValue::makeStringValId(index));
+  (void)str; // TODO: Store actual string data; VM will need to resolve via index
+  return index;
+}
+
 const BytecodeValue& CodeEmitter::getConstant(uint32_t index) const {
   if (!currentContext_.function) {
     throw std::runtime_error("Cannot get constant: no active function");

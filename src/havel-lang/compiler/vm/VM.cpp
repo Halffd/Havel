@@ -498,7 +498,7 @@ size_t VM::getHostArrayLength(ArrayRef array_ref) {
 BytecodeValue VM::getHostArrayValue(ArrayRef array_ref, size_t index) {
   auto *array = heap_.array(array_ref.id);
   if (!array || index >= array->size())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   return (*array)[index];
 }
 
@@ -510,7 +510,7 @@ void VM::setHostArrayValue(ArrayRef array_ref, size_t index,
   if (index >= array->size()) {
     // Extend array if needed
     while (array->size() <= index) {
-      array->push_back(BytecodeValue(nullptr));
+      array->push_back(BytecodeValue::makeNull());
     }
   }
   (*array)[index] = std::move(value);
@@ -519,7 +519,7 @@ void VM::setHostArrayValue(ArrayRef array_ref, size_t index,
 BytecodeValue VM::popHostArrayValue(ArrayRef array_ref) {
   auto *array = heap_.array(array_ref.id);
   if (!array || array->empty())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   auto value = std::move(array->back());
   array->pop_back();
   return value;
@@ -538,7 +538,7 @@ void VM::insertHostArrayValue(ArrayRef array_ref, size_t index,
 BytecodeValue VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
   auto *array = heap_.array(array_ref.id);
   if (!array || index >= array->size())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   auto value = std::move((*array)[index]);
   array->erase(array->begin() + index);
   return value;
@@ -572,7 +572,7 @@ StructRef VM::createStruct(uint32_t typeId, size_t fieldCount) {
 BytecodeValue VM::getStructField(StructRef struct_ref, size_t index) {
   auto it = heap_.structs_.find(struct_ref.id);
   if (it == heap_.structs_.end() || index >= it->second.size()) {
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   }
   return it->second[index];
 }
@@ -617,7 +617,7 @@ VM::findClassMethod(uint32_t typeId, const std::string &methodName) const {
 BytecodeValue VM::getClassField(ClassRef class_ref, size_t index) {
   auto it = heap_.classes_.find(class_ref.id);
   if (it == heap_.classes_.end() || index >= it->second.size()) {
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   }
   return it->second[index];
 }
@@ -664,7 +664,7 @@ uint32_t VM::getEnumTag(EnumRef enum_ref) { return enum_ref.tag; }
 BytecodeValue VM::getEnumPayload(EnumRef enum_ref, size_t index) {
   auto it = heap_.enums_.find(enum_ref.id);
   if (it == heap_.enums_.end() || index >= it->second.second.size()) {
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   }
   return it->second.second[index];
 }
@@ -742,10 +742,10 @@ BytecodeValue VM::getHostObjectField(ObjectRef object_ref,
                                      const std::string &key) {
   auto *object = heap_.object(object_ref.id);
   if (!object)
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   auto it = object->find(key);
   if (it == object->end())
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   return it->second;
 }
 
@@ -771,9 +771,9 @@ BytecodeValue VM::callHostFunction(const BytecodeValue &fn,
     // TODO: host func name lookup
     // For now, return null since we can't resolve the name without a table
     (void)fn.asHostFuncId();
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   }
-  return BytecodeValue(nullptr);
+  return BytecodeValue::makeNull();
 }
 
 // General function call (handles both VM closures and host functions)
@@ -894,7 +894,7 @@ void VM::registerDefaultHostFunctions() {
       std::cout << toString(args[i], &heap_);
     }
     std::cout << end;
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   });
 
   // fmt(format_string, ...) - Python-style string formatting
@@ -950,7 +950,7 @@ void VM::registerDefaultHostFunctions() {
                          std::chrono::steady_clock::now())
                          .time_since_epoch()
                          .count();
-    return BytecodeValue(static_cast<int64_t>(now));
+    return BytecodeValue::makeInt(static_cast<int64_t>(now));
   });
 
   registerHostFunction(
@@ -966,7 +966,7 @@ void VM::registerDefaultHostFunctions() {
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
-        return BytecodeValue(nullptr);
+        return BytecodeValue::makeNull();
       });
 
   // Enhanced sleep() with duration string support
@@ -988,7 +988,7 @@ void VM::registerDefaultHostFunctions() {
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(*duration_ms));
-        return BytecodeValue(nullptr);
+        return BytecodeValue::makeNull();
       });
 
   // Type conversion builtins
@@ -1020,7 +1020,7 @@ void VM::registerDefaultHostFunctions() {
       }
       throw std::runtime_error(msg);
     }
-    return BytecodeValue(nullptr);
+    return BytecodeValue::makeNull();
   });
 
   // Performance: clock_ns() - high-resolution clock in nanoseconds
@@ -1029,7 +1029,7 @@ void VM::registerDefaultHostFunctions() {
                          std::chrono::steady_clock::now())
                          .time_since_epoch()
                          .count();
-    return BytecodeValue(static_cast<int64_t>(now));
+    return BytecodeValue::makeInt(static_cast<int64_t>(now));
   });
 
   // Performance: clock_us() - clock in microseconds
@@ -1038,7 +1038,7 @@ void VM::registerDefaultHostFunctions() {
                          std::chrono::steady_clock::now())
                          .time_since_epoch()
                          .count();
-    return BytecodeValue(static_cast<int64_t>(now));
+    return BytecodeValue::makeInt(static_cast<int64_t>(now));
   });
 
   registerHostFunction("str", 1, [](const std::vector<BytecodeValue> &args) {
@@ -1082,7 +1082,7 @@ void VM::registerDefaultHostFunctions() {
   auto registerSystemGc = [this](const std::string &name) {
     registerHostFunction(name, 0, [this](const std::vector<BytecodeValue> &) {
       runGarbageCollection();
-      return BytecodeValue(nullptr);
+      return BytecodeValue::makeNull();
     });
   };
   registerSystemGc("system.gc");
@@ -1141,7 +1141,7 @@ void VM::registerDefaultHostFunctions() {
         struct_type_ids_by_name_[name] = type_id;
         std::cerr << "[DEBUG] struct.define: returning type_id = " << type_id
                   << "\n";
-        return BytecodeValue(static_cast<int64_t>(type_id));
+        return BytecodeValue::makeInt(static_cast<int64_t>(type_id));
       });
 
   registerHostFunction(
@@ -1188,7 +1188,7 @@ void VM::registerDefaultHostFunctions() {
           auto idx = heap_.structFieldIndex(ref.typeId,
                                             "<string:" + std::to_string(args[1].asStringValId()) + ">");
           if (!idx.has_value()) {
-            return BytecodeValue(nullptr);
+            return BytecodeValue::makeNull();
           }
           index = *idx;
         } else {
@@ -1249,7 +1249,7 @@ void VM::registerDefaultHostFunctions() {
         }
         uint32_t type_id = registerClassType(name, fields);
         class_type_ids_by_name_[name] = type_id;
-        return BytecodeValue(static_cast<int64_t>(type_id));
+        return BytecodeValue::makeInt(static_cast<int64_t>(type_id));
       });
 
   registerHostFunction(
@@ -1296,7 +1296,7 @@ void VM::registerDefaultHostFunctions() {
           auto idx =
               heap_.classFieldIndex(ref.typeId, "<string:" + std::to_string(args[1].asStringValId()) + ">");
           if (!idx.has_value()) {
-            return BytecodeValue(nullptr);
+            return BytecodeValue::makeNull();
           }
           index = *idx;
         } else {
@@ -2018,21 +2018,21 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::LOAD_GLOBAL: {
     if (instruction.operands.empty() ||
-        !std::holds_alternative<std::string>(instruction.operands[0])) {
+        !instruction.operands[0].isStringValId()) {
       throw std::runtime_error("LOAD_GLOBAL expects string operand");
     }
-    const auto &name = std::get<std::string>(instruction.operands[0]);
+    const auto &name = instruction.operands[0].toString();
     auto it = globals.find(name);
-    push(it == globals.end() ? BytecodeValue(nullptr) : it->second);
+    push(it == globals.end() ? BytecodeValue::makeNull() : it->second);
     break;
   }
 
   case OpCode::STORE_GLOBAL: {
     if (instruction.operands.empty() ||
-        !std::holds_alternative<std::string>(instruction.operands[0])) {
+        !instruction.operands[0].isStringValId()) {
       throw std::runtime_error("STORE_GLOBAL expects string operand");
     }
-    const auto &name = std::get<std::string>(instruction.operands[0]);
+    const auto &name = instruction.operands[0].toString();
     BytecodeValue value = pop();
 
     // Value type semantics: copy structs on assignment
@@ -2448,14 +2448,14 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::CALL_HOST: {
     if (instruction.operands.size() != 2 ||
-        !std::holds_alternative<std::string>(instruction.operands[0]) ||
+        !instruction.operands[0].isStringValId() ||
         !std::holds_alternative<uint32_t>(instruction.operands[1])) {
       throw std::runtime_error("CALL_HOST expects operands: <string "
                                "function_name, uint32 arg_count>");
     }
 
     const std::string &function_name =
-        std::get<std::string>(instruction.operands[0]);
+        instruction.operands[0].toString();
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[1]);
     push(invokeHostFunction(function_name, arg_count));
     break;
@@ -2465,14 +2465,14 @@ void VM::executeInstruction(const Instruction &instruction) {
     // CALL_SUPER: operands are [method_name, arg_count]
     // Pops args from stack, looks up parent class method, calls it
     if (instruction.operands.size() != 2 ||
-        !std::holds_alternative<std::string>(instruction.operands[0]) ||
+        !instruction.operands[0].isStringValId() ||
         !std::holds_alternative<uint32_t>(instruction.operands[1])) {
       throw std::runtime_error("CALL_SUPER expects operands: <string "
                                "method_name, uint32 arg_count>");
     }
 
     const std::string &method_name =
-        std::get<std::string>(instruction.operands[0]);
+        instruction.operands[0].toString();
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[1]);
 
     if (stack.size() < static_cast<size_t>(arg_count)) {
@@ -3408,7 +3408,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("AS_TYPE requires type operand");
     }
     const std::string &typeName =
-        std::get<std::string>(instruction.operands[0]);
+        instruction.operands[0].toString();
     BytecodeValue value = pop();
 
     if (typeName == "int" || typeName == "Int") {
@@ -3935,7 +3935,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
   }
 
   case OpCode::LOAD_GLOBAL: {
-    const auto &name = std::get<std::string>(instruction.operands[0]);
+    const auto &name = instruction.operands[0].toString();
     // Thread-safe access to parent's globals
     auto value = parent_vm_->getGlobalThreadSafe(name);
     push(value.value_or(nullptr));
@@ -3943,7 +3943,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
   }
 
   case OpCode::STORE_GLOBAL: {
-    const auto &name = std::get<std::string>(instruction.operands[0]);
+    const auto &name = instruction.operands[0].toString();
     BytecodeValue value = pop();
     parent_vm_->setGlobalThreadSafe(name, std::move(value));
     break;
@@ -4266,7 +4266,7 @@ void VM::VMExecutionContext::executeInstructionInContext(
 
   case OpCode::CALL_HOST: {
     const std::string &function_name =
-        std::get<std::string>(instruction.operands[0]);
+        instruction.operands[0].toString();
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[1]);
 
     std::vector<BytecodeValue> args(arg_count);

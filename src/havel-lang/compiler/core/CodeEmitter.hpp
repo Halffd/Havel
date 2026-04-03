@@ -50,6 +50,7 @@ public:
   // Constant management
   // ============================================================================
   uint32_t addConstant(const BytecodeValue& value);
+  uint32_t addStringConstant(const std::string& str);
   const BytecodeValue& getConstant(uint32_t index) const;
 
   // ============================================================================

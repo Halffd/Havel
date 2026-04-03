@@ -751,10 +751,19 @@ if(ENABLE_HAVEL_LANG)
 
     # NOTE: bytecode-smoke is disabled due to R_X86_64_PC32 relocation overflow
     # when linking havel_lang (built with -fvisibility=hidden -flto=auto) into PIE.
-    # The test sources are kept for when this is resolved via large-model or
-    # non-hidden debug library builds.
-    # enable_testing()
-    # add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)
+    # The havel_lang static library with LTO generates too much code for 32-bit
+    # PC-relative relocations — the binary is >2GB of address space away from
+    # the test's code segment when loaded as PIE.
+    #
+    # To re-enable in Release builds, pick one:
+    #   Option 1: target_compile_options(havel-bytecode-smoke PRIVATE -mcmodel=large)
+    #   Option 3: Build havel_lang as SHARED instead of STATIC
+    #
+    # Debug builds have LTO disabled (see havel_lang above) so this should work.
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        enable_testing()
+        add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)
+    endif()
 endif()
 
 # Set target properties
@@ -862,11 +871,20 @@ if(ENABLE_HAVEL_LANG)
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
     )
     
-    target_link_libraries(havel_lang PRIVATE 
+    target_link_libraries(havel_lang PRIVATE
         ${COMMON_LIBS}
         spdlog::spdlog
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     )
+
+    # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow
+    # in PIE test binaries. Release builds keep LTO for performance.
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_target_properties(havel_lang PROPERTIES
+            INTERPROCEDURAL_OPTIMIZATION OFF
+        )
+        target_compile_options(havel_lang PRIVATE -fno-lto)
+    endif()
     
     target_compile_definitions(havel_lang PRIVATE
         $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>

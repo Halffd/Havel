@@ -175,6 +175,22 @@ private:
   Value callFunctionSync(const Value &fn,
                                  const std::vector<Value> &args);
   void executeInstruction(const Instruction &instruction);
+
+  // Inline stack helper declarations - extracted from executeInstruction lambdas
+  Value popStack();
+  void pushStack(Value value);
+  uint32_t toAbsoluteLocal(uint32_t local_index);
+  void ensureLocalIndex(uint32_t absolute_index);
+  void doReturn();
+
+  // Extracted opcode handlers to reduce stack frame size
+  void execBinaryOp(const Instruction &instruction);
+  void execLogicalOp(OpCode opcode);
+  void execNegate();
+  void execJump(const Instruction &instruction);
+  void execJumpIfFalse(const Instruction &instruction);
+  void execJumpIfTrue(const Instruction &instruction);
+
   void doCall(Value callee_value, std::vector<Value> args,
               bool advance_caller_ip = true);
   void doTailCall(Value callee_value,

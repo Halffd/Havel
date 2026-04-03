@@ -2043,56 +2043,221 @@ void VM::collectGarbage() {
                        });
 }
 
-void VM::executeInstruction(const Instruction &instruction) {
-  auto pop = [this]() -> Value {
-    if (stack.empty()) {
-      throw std::runtime_error("Stack underflow");
+// ============================================================================
+// Stack helpers - extracted from executeInstruction to reduce stack frame size
+// ============================================================================
+
+Value VM::popStack() {
+  if (stack.empty()) {
+    throw std::runtime_error("Stack underflow");
+  }
+  Value value = stack.top();
+  stack.pop();
+  return value;
+}
+
+void VM::pushStack(Value value) { stack.push(std::move(value)); }
+
+uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
+  return static_cast<uint32_t>(currentFrame().locals_base + local_index);
+}
+
+void VM::ensureLocalIndex(uint32_t absolute_index) {
+  if (absolute_index >= locals.size()) {
+    locals.resize(static_cast<size_t>(absolute_index) + 1, nullptr);
+  }
+}
+
+void VM::doReturn() {
+  if (frame_count_ == 0) {
+    return;
+  }
+
+  Value ret = nullptr;
+  if (!stack.empty()) {
+    ret = popStack();
+  }
+
+  auto finished = frame_arena_[frame_count_ - 1];
+  frame_count_--;
+
+  closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                     static_cast<uint32_t>(locals.size()));
+
+  if (locals.size() >= finished.locals_base) {
+    locals.resize(finished.locals_base);
+  }
+
+  pushStack(ret);
+}
+
+// ============================================================================
+// Extracted opcode handlers to reduce executeInstruction stack frame
+// ============================================================================
+
+void VM::execBinaryOp(const Instruction &instruction) {
+  Value right = popStack();
+  Value left = popStack();
+
+  // Handle null comparisons explicitly
+  if (isNull(left) || isNull(right)) {
+    bool result = false;
+    switch (instruction.opcode) {
+    case OpCode::EQ:
+      result = isNull(left) && isNull(right);
+      break;
+    case OpCode::NEQ:
+      result = !(isNull(left) && isNull(right));
+      break;
+    case OpCode::LT:
+    case OpCode::LTE:
+    case OpCode::GT:
+    case OpCode::GTE:
+      result = false;
+      break;
+    default:
+      throw std::runtime_error("Invalid comparison opcode with null");
     }
+    pushStack(result);
+    return;
+  }
 
-    Value value = stack.top();
-    stack.pop();
-    return value;
-  };
-
-  auto push = [this](Value value) { stack.push(std::move(value)); };
-
-  auto toAbsoluteLocal = [this](uint32_t local_index) -> uint32_t {
-    return static_cast<uint32_t>(currentFrame().locals_base + local_index);
-  };
-
-  auto ensureLocalIndex = [this](uint32_t absolute_index) {
-    if (absolute_index >= locals.size()) {
-      locals.resize(static_cast<size_t>(absolute_index) + 1, nullptr);
+  if (left.isInt() && right.isInt()) {
+    int64_t l = left.asInt();
+    int64_t r = right.asInt();
+    switch (instruction.opcode) {
+    case OpCode::ADD:  pushStack(l + r); break;
+    case OpCode::SUB:  pushStack(l - r); break;
+    case OpCode::MUL:  pushStack(l * r); break;
+    case OpCode::DIV:
+      if (r == 0) throw ScriptThrow{Value("Division by zero")};
+      pushStack(l / r);
+      break;
+    case OpCode::MOD:
+      if (r == 0) throw ScriptThrow{Value("Modulo by zero")};
+      pushStack(l % r);
+      break;
+    case OpCode::POW:
+      pushStack(static_cast<int64_t>(
+          std::pow(static_cast<double>(l), static_cast<double>(r))));
+      break;
+    case OpCode::EQ:   pushStack(l == r); break;
+    case OpCode::NEQ:  pushStack(l != r); break;
+    case OpCode::LT:   pushStack(l < r); break;
+    case OpCode::LTE:  pushStack(l <= r); break;
+    case OpCode::GT:   pushStack(l > r); break;
+    case OpCode::GTE:  pushStack(l >= r); break;
+    default: throw std::runtime_error("Unsupported integer operation");
     }
-  };
+    return;
+  }
 
-  auto doReturn = [this, &pop, &push]() {
-    if (frame_count_ == 0) {
+  if ((left.isInt() || left.isDouble()) &&
+      (right.isInt() || right.isDouble())) {
+    double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
+    double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
+    switch (instruction.opcode) {
+    case OpCode::ADD:  pushStack(l + r); break;
+    case OpCode::SUB:  pushStack(l - r); break;
+    case OpCode::MUL:  pushStack(l * r); break;
+    case OpCode::DIV:
+      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+      pushStack(l / r);
+      break;
+    case OpCode::MOD:
+      if (r == 0.0) throw std::runtime_error("Modulo by zero");
+      pushStack(std::fmod(l, r));
+      break;
+    case OpCode::POW:  pushStack(std::pow(l, r)); break;
+    case OpCode::EQ:   pushStack(l == r); break;
+    case OpCode::NEQ:  pushStack(l != r); break;
+    case OpCode::LT:   pushStack(l < r); break;
+    case OpCode::LTE:  pushStack(l <= r); break;
+    case OpCode::GT:   pushStack(l > r); break;
+    case OpCode::GTE:  pushStack(l >= r); break;
+    default: throw std::runtime_error("Unsupported floating point operation");
+    }
+    return;
+  }
+
+  if (left.isStringValId() && right.isStringValId()) {
+    const std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
+    const std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
+    switch (instruction.opcode) {
+    case OpCode::ADD:  pushStack(Value::makeNull()); break;
+    case OpCode::EQ:   pushStack(l == r); break;
+    case OpCode::NEQ:  pushStack(l != r); break;
+    default: throw std::runtime_error("Invalid string operation");
+    }
+    return;
+  }
+
+  if (instruction.opcode == OpCode::ADD) {
+    if (left.isStringValId()) {
+      pushStack(Value::makeNull());
       return;
     }
-
-    Value ret = nullptr;
-    if (!stack.empty()) {
-      ret = pop();
+    if (right.isStringValId()) {
+      pushStack(Value::makeNull());
+      return;
     }
+  }
 
-    auto finished = frame_arena_[frame_count_ - 1];
-    frame_count_--;
+  throw std::runtime_error("Type mismatch in binary operation");
+}
 
-    closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
-                       static_cast<uint32_t>(locals.size()));
+void VM::execLogicalOp(OpCode opcode) {
+  Value right = popStack();
+  Value left = popStack();
+  switch (opcode) {
+  case OpCode::AND: pushStack(isTruthy(left) && isTruthy(right)); break;
+  case OpCode::OR:  pushStack(isTruthy(left) || isTruthy(right)); break;
+  case OpCode::NOT: pushStack(!isTruthy(left)); break;
+  default: throw std::runtime_error("Unknown logical opcode");
+  }
+}
 
-    if (locals.size() >= finished.locals_base) {
-      locals.resize(finished.locals_base);
-    }
+void VM::execNegate() {
+  Value value = popStack();
+  if (value.isInt()) {
+    pushStack(-value.asInt());
+  } else if (value.isDouble()) {
+    pushStack(-value.asDouble());
+  } else {
+    throw std::runtime_error("Cannot negate non-numeric value");
+  }
+}
 
-    push(ret);
-  };
+void VM::execJump(const Instruction &instruction) {
+  uint32_t target = instruction.operands[0].asInt();
+  currentFrame().ip = target;
+}
 
+void VM::execJumpIfFalse(const Instruction &instruction) {
+  uint32_t target = instruction.operands[0].asInt();
+  Value condition = popStack();
+  if (!isTruthy(condition)) {
+    currentFrame().ip = target;
+  }
+}
+
+void VM::execJumpIfTrue(const Instruction &instruction) {
+  uint32_t target = instruction.operands[0].asInt();
+  Value condition = popStack();
+  if (isTruthy(condition)) {
+    currentFrame().ip = target;
+  }
+}
+
+// ============================================================================
+// Main executeInstruction dispatcher
+// ============================================================================
+
+void VM::executeInstruction(const Instruction &instruction) {
   switch (instruction.opcode) {
   case OpCode::LOAD_CONST: {
     uint32_t const_index = instruction.operands[0].asInt();
-    push(getConstant(const_index));
+    pushStack(getConstant(const_index));
     break;
   }
 
@@ -2103,7 +2268,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     const auto &name = instruction.operands[0].toString();
     auto it = globals.find(name);
-    push(it == globals.end() ? Value::makeNull() : it->second);
+    pushStack(it == globals.end() ? Value::makeNull() : it->second);
     break;
   }
 
@@ -2113,7 +2278,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("STORE_GLOBAL expects string operand");
     }
     const auto &name = instruction.operands[0].toString();
-    Value value = pop();
+    Value value = popStack();
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
@@ -2128,8 +2293,8 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::LOAD_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = toAbsoluteLocal(var_index);
-    ensureLocalIndex(abs);
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
     Value value = locals[abs];
 
     // Value type semantics: copy structs on load
@@ -2139,15 +2304,15 @@ void VM::executeInstruction(const Instruction &instruction) {
       value = Value::makeStructId(copy.id);
     }
 
-    push(value);
+    pushStack(value);
     break;
   }
 
   case OpCode::STORE_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = toAbsoluteLocal(var_index);
-    ensureLocalIndex(abs);
-    Value value = pop();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value value = popStack();
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
@@ -2177,7 +2342,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     const auto &cell = closure->upvalues[upvalue_index];
     Value value;
     if (cell->is_open) {
-      ensureLocalIndex(cell->open_index);
+      this->ensureLocalIndex(cell->open_index);
       value = locals[cell->open_index];
 
       // Value type semantics: copy structs on load
@@ -2189,7 +2354,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     } else {
       value = cell->closed_value;
     }
-    push(value);
+    pushStack(value);
     break;
   }
 
@@ -2208,7 +2373,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("STORE_UPVALUE index out of range");
     }
     auto &cell = closure->upvalues[upvalue_index];
-    Value value = pop();
+    Value value = popStack();
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
@@ -2218,7 +2383,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     if (cell->is_open) {
-      ensureLocalIndex(cell->open_index);
+      this->ensureLocalIndex(cell->open_index);
       locals[cell->open_index] = value;
     } else {
       cell->closed_value = value;
@@ -2227,27 +2392,27 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::POP: {
-    pop();
+    popStack();
     break;
   }
 
   case OpCode::DUP: {
-    Value value = pop();
-    push(value);
-    push(value);
+    Value value = popStack();
+    pushStack(value);
+    pushStack(value);
     break;
   }
 
   case OpCode::SWAP: {
-    Value top = pop();
-    Value next = pop();
-    push(top);
-    push(next);
+    Value top = popStack();
+    Value next = popStack();
+    pushStack(top);
+    pushStack(next);
     break;
   }
 
   case OpCode::PUSH_NULL: {
-    push(Value::makeNull());
+    pushStack(Value::makeNull());
     break;
   }
 
@@ -2262,259 +2427,42 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::LT:
   case OpCode::LTE:
   case OpCode::GT:
-  case OpCode::GTE: {
-    Value right = pop();
-    Value left = pop();
-
-    // Handle null comparisons explicitly
-    if (isNull(left) || isNull(right)) {
-      bool result = false;
-      switch (instruction.opcode) {
-      case OpCode::EQ:
-        result = isNull(left) && isNull(right);
-        break;
-      case OpCode::NEQ:
-        result = !(isNull(left) && isNull(right));
-        break;
-      case OpCode::LT:
-      case OpCode::LTE:
-      case OpCode::GT:
-      case OpCode::GTE:
-        // Null cannot be ordered with anything
-        result = false;
-        break;
-      default:
-        throw std::runtime_error("Invalid comparison opcode with null");
-      }
-      push(result);
-      break;
-    }
-
-    if (left.isInt() && right.isInt()) {
-      int64_t l = left.asInt();
-      int64_t r = right.asInt();
-      switch (instruction.opcode) {
-      case OpCode::ADD:
-        push(l + r);
-        break;
-      case OpCode::SUB:
-        push(l - r);
-        break;
-      case OpCode::MUL:
-        push(l * r);
-        break;
-      case OpCode::DIV:
-        if (r == 0) {
-          throw ScriptThrow{Value("Division by zero")};
-        }
-        push(l / r);
-        break;
-      case OpCode::MOD:
-        if (r == 0) {
-          throw ScriptThrow{Value("Modulo by zero")};
-        }
-        push(l % r);
-        break;
-      case OpCode::POW:
-        // Integer power: use std::pow and convert back
-        push(static_cast<int64_t>(
-            std::pow(static_cast<double>(l), static_cast<double>(r))));
-        break;
-      case OpCode::EQ:
-        push(l == r);
-        break;
-      case OpCode::NEQ:
-        push(l != r);
-        break;
-      case OpCode::LT:
-        push(l < r);
-        break;
-      case OpCode::LTE:
-        push(l <= r);
-        break;
-      case OpCode::GT:
-        push(l > r);
-        break;
-      case OpCode::GTE:
-        push(l >= r);
-        break;
-      default:
-        throw std::runtime_error("Unsupported integer operation");
-      }
-      break;
-    }
-
-    if ((left.isInt() || left.isDouble()) &&
-        (right.isInt() || right.isDouble())) {
-      double l = left.isInt()
-                     ? static_cast<double>(left.asInt())
-                     : left.asDouble();
-      double r = right.isInt()
-                     ? static_cast<double>(right.asInt())
-                     : right.asDouble();
-
-      switch (instruction.opcode) {
-      case OpCode::ADD:
-        push(l + r);
-        break;
-      case OpCode::SUB:
-        push(l - r);
-        break;
-      case OpCode::MUL:
-        push(l * r);
-        break;
-      case OpCode::DIV:
-        if (r == 0.0) {
-          throw ScriptThrow{Value("Division by zero")};
-        }
-        push(l / r);
-        break;
-      case OpCode::MOD:
-        if (r == 0.0) {
-          throw std::runtime_error("Modulo by zero");
-        }
-        push(std::fmod(l, r));
-        break;
-      case OpCode::POW:
-        push(std::pow(l, r));
-        break;
-      case OpCode::EQ:
-        push(l == r);
-        break;
-      case OpCode::NEQ:
-        push(l != r);
-        break;
-      case OpCode::LT:
-        push(l < r);
-        break;
-      case OpCode::LTE:
-        push(l <= r);
-        break;
-      case OpCode::GT:
-        push(l > r);
-        break;
-      case OpCode::GTE:
-        push(l >= r);
-        break;
-      default:
-        throw std::runtime_error("Unsupported floating point operation");
-      }
-      break;
-    }
-
-    if (left.isStringValId() && right.isStringValId()) {
-      // TODO: string pool lookup - for now use placeholder
-      const std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
-      const std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
-
-      switch (instruction.opcode) {
-      case OpCode::ADD:
-        // TODO: string pool integration for concatenation
-        push(Value::makeNull());
-        break;
-      case OpCode::EQ:
-        push(l == r);
-        break;
-      case OpCode::NEQ:
-        push(l != r);
-        break;
-      default:
-        throw std::runtime_error("Invalid string operation");
-      }
-      break;
-    }
-
-    // String coercion for ADD: string + any or any + string
-    if (instruction.opcode == OpCode::ADD) {
-      if (left.isStringValId()) {
-        // string + any - convert right to string
-        // TODO: string pool lookup
-        std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
-        (void)l;
-        // TODO: string pool integration for concatenation
-        push(Value::makeNull());
-        break;
-      }
-      if (right.isStringValId()) {
-        // any + string - convert left to string
-        // TODO: string pool lookup
-        std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
-        (void)r;
-        // TODO: string pool integration for concatenation
-        push(Value::makeNull());
-        break;
-      }
-    }
-
-    throw std::runtime_error("Type mismatch in binary operation");
-  }
-
-  case OpCode::AND: {
-    Value right = pop();
-    Value left = pop();
-    push(isTruthy(left) && isTruthy(right));
+  case OpCode::GTE:
+    execBinaryOp(instruction);
     break;
-  }
 
-  case OpCode::OR: {
-    Value right = pop();
-    Value left = pop();
-    push(isTruthy(left) || isTruthy(right));
+  case OpCode::AND:
+  case OpCode::OR:
+  case OpCode::NOT:
+    execLogicalOp(instruction.opcode);
     break;
-  }
 
-  case OpCode::NOT: {
-    Value value = pop();
-    push(!isTruthy(value));
+  case OpCode::NEGATE:
+    execNegate();
     break;
-  }
 
-  case OpCode::NEGATE: {
-    Value value = pop();
-    if (value.isInt()) {
-      push(-value.asInt());
-    } else if (value.isDouble()) {
-      push(-value.asDouble());
-    } else {
-      throw std::runtime_error("Cannot negate non-numeric value");
-    }
+  case OpCode::JUMP:
+    execJump(instruction);
     break;
-  }
 
-  case OpCode::JUMP: {
-    uint32_t target = instruction.operands[0].asInt();
-    currentFrame().ip = target;
+  case OpCode::JUMP_IF_FALSE:
+    execJumpIfFalse(instruction);
     break;
-  }
 
-  case OpCode::JUMP_IF_FALSE: {
-    uint32_t target = instruction.operands[0].asInt();
-    Value condition = pop();
-    if (!isTruthy(condition)) {
-      currentFrame().ip = target;
-    }
+  case OpCode::JUMP_IF_TRUE:
+    execJumpIfTrue(instruction);
     break;
-  }
-
-  case OpCode::JUMP_IF_TRUE: {
-    uint32_t target = instruction.operands[0].asInt();
-    Value condition = pop();
-    if (isTruthy(condition)) {
-      currentFrame().ip = target;
-    }
-    break;
-  }
 
   case OpCode::IS_NULL: {
-    Value value = pop();
+    Value value = popStack();
     bool isNullVal = value.isNull();
-    push(Value::makeBool(isNullVal));
+    pushStack(Value::makeBool(isNullVal));
     break;
   }
 
   case OpCode::JUMP_IF_NULL: {
     uint32_t target = instruction.operands[0].asInt();
-    Value value = pop();
+    Value value = popStack();
     // Only jump on null/undefined, not on all falsy values
     if (value.isNull()) {
       currentFrame().ip = target;
@@ -2530,9 +2478,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     std::vector<Value> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
+      args[arg_count - 1 - i] = popStack();
     }
-    Value callee_value = pop();
+    Value callee_value = popStack();
 
     doCall(callee_value, std::move(args));
     break;
@@ -2547,9 +2495,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     std::vector<Value> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
+      args[arg_count - 1 - i] = popStack();
     }
-    Value callee_value = pop();
+    Value callee_value = popStack();
 
     doTailCall(callee_value, std::move(args));
     break;
@@ -2566,7 +2514,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     const std::string &function_name =
         instruction.operands[0].toString();
     uint32_t arg_count = instruction.operands[1].asInt();
-    push(invokeHostFunction(function_name, arg_count));
+    pushStack(invokeHostFunction(function_name, arg_count));
     break;
   }
 
@@ -2591,7 +2539,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Pop arguments from stack
     std::vector<Value> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
+      args[arg_count - 1 - i] = popStack();
     }
 
     // Get current 'this' from local scope (slot 0 typically)
@@ -2607,13 +2555,13 @@ void VM::executeInstruction(const Instruction &instruction) {
     args.insert(args.begin(), this_value);
 
     // Call as host function - runtime will need to resolve via parent class
-    push(invokeHostFunction(super_method_name,
+    pushStack(invokeHostFunction(super_method_name,
                             static_cast<uint32_t>(args.size())));
     break;
   }
 
   case OpCode::RETURN: {
-    doReturn();
+    this->doReturn();
     break;
   }
 
@@ -2644,15 +2592,15 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::LOAD_EXCEPTION: {
     if (has_current_exception_) {
-      push(current_exception_);
+      pushStack(current_exception_);
     } else {
-      push(nullptr);
+      pushStack(nullptr);
     }
     break;
   }
 
   case OpCode::THROW: {
-    Value thrown = pop();
+    Value thrown = popStack();
     throw ScriptThrow{std::move(thrown)};
   }
 
@@ -2668,8 +2616,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
       if (descriptor.captures_local) {
-        uint32_t abs = toAbsoluteLocal(descriptor.index);
-        ensureLocalIndex(abs);
+        uint32_t abs = this->toAbsoluteLocal(descriptor.index);
+        this->ensureLocalIndex(abs);
         auto open_it = open_upvalues.find(abs);
         if (open_it == open_upvalues.end()) {
           auto cell = std::make_shared<GCHeap::UpvalueCell>();
@@ -2697,7 +2645,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
     }
 
-    push(Value::makeClosureId(heap_.allocateClosure(
+    pushStack(Value::makeClosureId(heap_.allocateClosure(
         GCHeap::RuntimeClosure{.function_index = closure.function_index,
                                .upvalues = std::move(closure.upvalues)}).id));
     maybeCollectGarbage();
@@ -2705,20 +2653,20 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::ARRAY_NEW: {
-    push(Value::makeArrayId(heap_.allocateArray().id));
+    pushStack(Value::makeArrayId(heap_.allocateArray().id));
     maybeCollectGarbage();
     break;
   }
 
   case OpCode::SET_NEW: {
-    push(Value::makeSetId(heap_.allocateSet().id));
+    pushStack(Value::makeSetId(heap_.allocateSet().id));
     maybeCollectGarbage();
     break;
   }
 
   case OpCode::ARRAY_PUSH: {
-    Value value = pop();
-    Value container = pop();
+    Value value = popStack();
+    Value container = popStack();
     if (!container.isArrayId()) {
       throw std::runtime_error("ARRAY_PUSH expects array container");
     }
@@ -2728,12 +2676,12 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("ARRAY_PUSH unknown array id");
     }
     array->push_back(value);
-    push(container);
+    pushStack(container);
     break;
   }
 
   case OpCode::ARRAY_LEN: {
-    Value container = pop();
+    Value container = popStack();
     if (!container.isArrayId()) {
       throw std::runtime_error("ARRAY_LEN expects array container");
     }
@@ -2742,25 +2690,25 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!array) {
       throw std::runtime_error("ARRAY_LEN unknown array id");
     }
-    push(Value::makeInt(static_cast<int64_t>(array->size())));
+    pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
     break;
   }
 
   // Range creation: start..end or start..step..end
   case OpCode::RANGE_NEW: {
-    int64_t end = pop().asInt();
-    int64_t start = pop().asInt();
+    int64_t end = popStack().asInt();
+    int64_t start = popStack().asInt();
     RangeRef rangeRef = heap_.allocateRange(start, end, 1);
-    push(Value::makeRangeId(rangeRef.id));
+    pushStack(Value::makeRangeId(rangeRef.id));
     break;
   }
 
   case OpCode::RANGE_STEP_NEW: {
-    int64_t step = pop().asInt();
-    int64_t end = pop().asInt();
-    int64_t start = pop().asInt();
+    int64_t step = popStack().asInt();
+    int64_t end = popStack().asInt();
+    int64_t start = popStack().asInt();
     RangeRef rangeRef = heap_.allocateRange(start, end, step);
-    push(Value::makeRangeId(rangeRef.id));
+    pushStack(Value::makeRangeId(rangeRef.id));
     break;
   }
 
@@ -2770,28 +2718,28 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t typeId = instruction.operands[0].asInt();
     uint32_t fieldCount = instruction.operands[1].asInt();
     StructRef structRef = heap_.allocateStruct(typeId, fieldCount);
-    push(Value::makeStructId(structRef.id));
+    pushStack(Value::makeStructId(structRef.id));
     break;
   }
 
   case OpCode::STRUCT_GET: {
     // Pop: struct ref, index
-    Value indexVal = pop();
-    Value structVal = pop();
+    Value indexVal = popStack();
+    Value structVal = popStack();
     if (!structVal.isStructId() || !indexVal.isInt()) {
       throw std::runtime_error("STRUCT_GET expects struct and int index");
     }
     auto structRef = StructRef{structVal.asStructId()};
     size_t index = static_cast<size_t>(indexVal.asInt());
-    push(heap_.structs_.at(structRef.id).at(index));
+    pushStack(heap_.structs_.at(structRef.id).at(index));
     break;
   }
 
   case OpCode::STRUCT_SET: {
     // Pop: struct ref, index, value
-    Value value = pop();
-    Value indexVal = pop();
-    Value structVal = pop();
+    Value value = popStack();
+    Value indexVal = popStack();
+    Value structVal = popStack();
     if (!structVal.isStructId() || !indexVal.isInt()) {
       throw std::runtime_error(
           "STRUCT_SET expects struct, int index, and value");
@@ -2809,59 +2757,59 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t tag = instruction.operands[1].asInt();
     uint32_t payloadCount = instruction.operands[2].asInt();
     EnumRef enumRef = heap_.allocateEnum(typeId, tag, payloadCount);
-    push(Value::makeEnumId(enumRef.id));
+    pushStack(Value::makeEnumId(enumRef.id));
     break;
   }
 
   case OpCode::ENUM_TAG: {
-    Value enumVal = pop();
+    Value enumVal = popStack();
     if (!enumVal.isEnumId()) {
       throw std::runtime_error("ENUM_TAG expects enum");
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
-    push(Value::makeInt(static_cast<int64_t>(enumRef.tag)));
+    pushStack(Value::makeInt(static_cast<int64_t>(enumRef.tag)));
     break;
   }
 
   case OpCode::ENUM_PAYLOAD: {
-    Value indexVal = pop();
-    Value enumVal = pop();
+    Value indexVal = popStack();
+    Value enumVal = popStack();
     if (!enumVal.isEnumId() || !indexVal.isInt()) {
       throw std::runtime_error("ENUM_PAYLOAD expects enum and int index");
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
     size_t index = static_cast<size_t>(indexVal.asInt());
-    push(heap_.enums_.at(enumRef.id).second.at(index));
+    pushStack(heap_.enums_.at(enumRef.id).second.at(index));
     break;
   }
 
   case OpCode::ENUM_MATCH: {
     // Pop: enum ref, expected tag
-    Value tagVal = pop();
-    Value enumVal = pop();
+    Value tagVal = popStack();
+    Value enumVal = popStack();
     if (!enumVal.isEnumId() || !tagVal.isInt()) {
       throw std::runtime_error("ENUM_MATCH expects enum and int tag");
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
     int64_t expectedTag = tagVal.asInt();
-    push(Value::makeBool(enumRef.tag == static_cast<uint32_t>(expectedTag)));
+    pushStack(Value::makeBool(enumRef.tag == static_cast<uint32_t>(expectedTag)));
     break;
   }
 
   // Iteration protocol: iter(obj) → iterator
   case OpCode::ITER_NEW: {
-    Value iterable = pop();
+    Value iterable = popStack();
 
     // Create iterator based on type
     IteratorRef iterRef;
     iterRef.id = heap_.createIterator(iterable);
-    push(Value::makeIteratorId(iterRef.id));
+    pushStack(Value::makeIteratorId(iterRef.id));
     break;
   }
 
   // Iteration protocol: iterator.next() → {value, done}
   case OpCode::ITER_NEXT: {
-    Value iterator_val = pop();
+    Value iterator_val = popStack();
     if (!iterator_val.isIteratorId()) {
       throw std::runtime_error("ITER_NEXT expects iterator");
     }
@@ -2870,13 +2818,13 @@ void VM::executeInstruction(const Instruction &instruction) {
     auto result = heap_.iteratorNext(id);
 
     // result is {value, done} object
-    push(result);
+    pushStack(result);
     break;
   }
 
   case OpCode::ARRAY_GET: {
-    Value index_or_key = pop();
-    Value container = pop();
+    Value index_or_key = popStack();
+    Value container = popStack();
 
     if (container.isArrayId()) {
       auto index = indexFromValue(index_or_key);
@@ -2893,9 +2841,9 @@ void VM::executeInstruction(const Instruction &instruction) {
         idx = static_cast<int64_t>(array->size()) + idx;
       }
       if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
-        push(Value::makeNull());
+        pushStack(Value::makeNull());
       } else {
-        push((*array)[static_cast<size_t>(idx)]);
+        pushStack((*array)[static_cast<size_t>(idx)]);
       }
       break;
     }
@@ -2910,7 +2858,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       if (!set) {
         throw std::runtime_error("ARRAY_GET unknown set id");
       }
-      push(set->find(*key) != set->end());
+      pushStack(set->find(*key) != set->end());
       break;
     }
 
@@ -2924,7 +2872,7 @@ void VM::executeInstruction(const Instruction &instruction) {
         throw std::runtime_error("ARRAY_GET unknown object id");
       }
       auto kv = object->find(*key);
-      push(kv == object->end() ? Value::makeNull() : kv->second);
+      pushStack(kv == object->end() ? Value::makeNull() : kv->second);
       break;
     }
 
@@ -2932,9 +2880,9 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::ARRAY_SET: {
-    Value value = pop();
-    Value index_or_key = pop();
-    Value container = pop();
+    Value value = popStack();
+    Value index_or_key = popStack();
+    Value container = popStack();
 
     if (container.isArrayId()) {
       auto index = indexFromValue(index_or_key);
@@ -3007,20 +2955,20 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::OBJECT_NEW: {
-    push(Value::makeObjectId(heap_.allocateObject(true).id)); // sorted = true
+    pushStack(Value::makeObjectId(heap_.allocateObject(true).id)); // sorted = true
     maybeCollectGarbage();
     break;
   }
 
   case OpCode::OBJECT_NEW_UNSORTED: {
-    push(Value::makeObjectId(heap_.allocateObject(false).id)); // sorted = false
+    pushStack(Value::makeObjectId(heap_.allocateObject(false).id)); // sorted = false
     maybeCollectGarbage();
     break;
   }
 
   case OpCode::OBJECT_GET: {
-    Value key_value = pop();
-    Value object = pop();
+    Value key_value = popStack();
+    Value object = popStack();
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_GET expects object container");
     }
@@ -3041,12 +2989,12 @@ void VM::executeInstruction(const Instruction &instruction) {
       if (index >= 0 && static_cast<size_t>(index) < keys.size()) {
         auto *val = obj->get(keys[static_cast<size_t>(index)]);
         if (val) {
-          push(*val);
+          pushStack(*val);
         } else {
-          push(Value::makeNull());
+          pushStack(Value::makeNull());
         }
       } else {
-        push(Value::makeNull());
+        pushStack(Value::makeNull());
       }
       break;
     }
@@ -3057,14 +3005,14 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     auto *val = obj->get(*key);
     if (val) {
-      push(*val);
+      pushStack(*val);
     } else {
       // Property not found - check prototype methods
       auto method = getPrototypeMethod(object, *key);
       if (method) {
-        push(Value::makeHostFuncId(0)); // TODO: proper host func id
+        pushStack(Value::makeHostFuncId(0)); // TODO: proper host func id
       } else {
-        push(Value::makeNull());
+        pushStack(Value::makeNull());
       }
     }
     break;
@@ -3073,9 +3021,9 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::OBJECT_SET: {
     // Stack: [..., obj, value, key] → pops all, pushes obj
     // This allows chaining: obj { DUP, val1, "k1", SET, val2, "k2", SET, ... }
-    Value key = pop();
-    Value value = pop();
-    Value object = pop();
+    Value key = popStack();
+    Value value = popStack();
+    Value object = popStack();
 
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_SET expects object container");
@@ -3096,13 +3044,13 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("OBJECT_SET unknown object id");
     }
     obj->set(*keyStr, std::move(value));
-    push(object); // Return the object for chaining
+    pushStack(object); // Return the object for chaining
     break;
   }
 
   // Object intrinsics (VM-level operations)
   case OpCode::OBJECT_KEYS: {
-    Value object = pop();
+    Value object = popStack();
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_KEYS expects object");
     }
@@ -3117,12 +3065,12 @@ void VM::executeInstruction(const Instruction &instruction) {
       // TODO: string pool registration
       arr->push_back(Value::makeNull());
     }
-    push(Value::makeArrayId(arrRef.id));
+    pushStack(Value::makeArrayId(arrRef.id));
     break;
   }
 
   case OpCode::OBJECT_VALUES: {
-    Value object = pop();
+    Value object = popStack();
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_VALUES expects object");
     }
@@ -3139,12 +3087,12 @@ void VM::executeInstruction(const Instruction &instruction) {
         arr->push_back(*val);
       }
     }
-    push(Value::makeArrayId(arrRef.id));
+    pushStack(Value::makeArrayId(arrRef.id));
     break;
   }
 
   case OpCode::OBJECT_ENTRIES: {
-    Value object = pop();
+    Value object = popStack();
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_ENTRIES expects object");
     }
@@ -3167,13 +3115,13 @@ void VM::executeInstruction(const Instruction &instruction) {
         arr->push_back(Value::makeArrayId(tupleRef.id));
       }
     }
-    push(Value::makeArrayId(arrRef.id));
+    pushStack(Value::makeArrayId(arrRef.id));
     break;
   }
 
   case OpCode::OBJECT_HAS: {
-    Value keyValue = pop();
-    Value object = pop();
+    Value keyValue = popStack();
+    Value object = popStack();
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_HAS expects object");
     }
@@ -3183,16 +3131,16 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      push(Value::makeBool(false));
+      pushStack(Value::makeBool(false));
     } else {
-      push(Value::makeBool(obj->get(*key) != nullptr));
+      pushStack(Value::makeBool(obj->get(*key) != nullptr));
     }
     break;
   }
 
   case OpCode::OBJECT_DELETE: {
-    Value keyValue = pop();
-    Value object = pop();
+    Value keyValue = popStack();
+    Value object = popStack();
     if (!object.isObjectId()) {
       throw std::runtime_error("OBJECT_DELETE expects object");
     }
@@ -3202,38 +3150,38 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
-      push(Value::makeBool(false));
+      pushStack(Value::makeBool(false));
     } else {
-      push(Value::makeBool(obj->data.erase(*key) > 0));
+      pushStack(Value::makeBool(obj->data.erase(*key) > 0));
     }
     break;
   }
 
   // Array intrinsics (VM-level operations)
   case OpCode::ARRAY_POP: {
-    Value array = pop();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_POP expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr || arr->empty()) {
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
     } else {
-      push(arr->back());
+      pushStack(arr->back());
       arr->pop_back();
     }
     break;
   }
 
   case OpCode::ARRAY_HAS: {
-    Value value = pop();
-    Value array = pop();
+    Value value = popStack();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_HAS expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
-      push(Value::makeBool(false));
+      pushStack(Value::makeBool(false));
     } else {
       bool found = false;
       for (const auto &elem : *arr) {
@@ -3242,20 +3190,20 @@ void VM::executeInstruction(const Instruction &instruction) {
           break;
         }
       }
-      push(Value::makeBool(found));
+      pushStack(Value::makeBool(found));
     }
     break;
   }
 
   case OpCode::ARRAY_FIND: {
-    Value value = pop();
-    Value array = pop();
+    Value value = popStack();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_FIND expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
-      push(Value::makeInt(-1));
+      pushStack(Value::makeInt(-1));
     } else {
       int64_t foundIdx = -1;
       for (size_t i = 0; i < arr->size(); i++) {
@@ -3264,21 +3212,21 @@ void VM::executeInstruction(const Instruction &instruction) {
           break;
         }
       }
-      push(Value::makeInt(foundIdx));
+      pushStack(Value::makeInt(foundIdx));
     }
     break;
   }
 
   // Array higher-order functions (VM intrinsics)
   case OpCode::ARRAY_MAP: {
-    Value fn = pop();
-    Value array = pop();
+    Value fn = popStack();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_MAP expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
       break;
     }
     if (!fn.isFunctionObjId() && !fn.isClosureId()) {
@@ -3295,19 +3243,19 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     unpinExternalRoot(resultRootId);
-    push(Value::makeArrayId(resultRef.id));
+    pushStack(Value::makeArrayId(resultRef.id));
     break;
   }
 
   case OpCode::ARRAY_FILTER: {
-    Value fn = pop();
-    Value array = pop();
+    Value fn = popStack();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_FILTER expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
       break;
     }
 
@@ -3323,20 +3271,20 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     unpinExternalRoot(resultRootId);
-    push(Value::makeArrayId(resultRef.id));
+    pushStack(Value::makeArrayId(resultRef.id));
     break;
   }
 
   case OpCode::ARRAY_REDUCE: {
-    Value initial = pop();
-    Value fn = pop();
-    Value array = pop();
+    Value initial = popStack();
+    Value fn = popStack();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_REDUCE expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
-      push(initial);
+      pushStack(initial);
       break;
     }
 
@@ -3345,19 +3293,19 @@ void VM::executeInstruction(const Instruction &instruction) {
       acc = callFunctionSync(fn, {acc, (*arr)[i]});
     }
 
-    push(acc);
+    pushStack(acc);
     break;
   }
 
   case OpCode::ARRAY_FOREACH: {
-    Value fn = pop();
-    Value array = pop();
+    Value fn = popStack();
+    Value array = popStack();
     if (!array.isArrayId()) {
       throw std::runtime_error("ARRAY_FOREACH expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
     if (!arr) {
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
       break;
     }
 
@@ -3365,24 +3313,24 @@ void VM::executeInstruction(const Instruction &instruction) {
       (void)callFunctionSync(fn, {(*arr)[i]});
     }
 
-    push(Value::makeNull());
+    pushStack(Value::makeNull());
     break;
   }
 
   // String intrinsics (VM-level operations)
   case OpCode::STRING_LEN: {
-    Value str = pop();
+    Value str = popStack();
     if (!str.isStringValId()) {
       throw std::runtime_error("STRING_LEN expects string");
     }
     // TODO: string pool lookup - return placeholder length
     std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
-    push(Value::makeInt(static_cast<int64_t>(s.length())));
+    pushStack(Value::makeInt(static_cast<int64_t>(s.length())));
     break;
   }
 
   case OpCode::STRING_UPPER: {
-    Value str = pop();
+    Value str = popStack();
     if (!str.isStringValId()) {
       throw std::runtime_error("STRING_UPPER expects string");
     }
@@ -3390,12 +3338,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
     std::transform(s.begin(), s.end(), s.begin(), ::toupper);
     // TODO: string pool registration
-    push(Value::makeNull());
+    pushStack(Value::makeNull());
     break;
   }
 
   case OpCode::STRING_LOWER: {
-    Value str = pop();
+    Value str = popStack();
     if (!str.isStringValId()) {
       throw std::runtime_error("STRING_LOWER expects string");
     }
@@ -3403,12 +3351,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
     // TODO: string pool registration
-    push(Value::makeNull());
+    pushStack(Value::makeNull());
     break;
   }
 
   case OpCode::STRING_TRIM: {
-    Value str = pop();
+    Value str = popStack();
     if (!str.isStringValId()) {
       throw std::runtime_error("STRING_TRIM expects string");
     }
@@ -3416,66 +3364,66 @@ void VM::executeInstruction(const Instruction &instruction) {
     std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
     size_t start = s.find_first_not_of(" \t\n\r");
     if (start == std::string::npos) {
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
     } else {
       size_t end = s.find_last_not_of(" \t\n\r");
       // TODO: string pool registration
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
     }
     break;
   }
 
   case OpCode::STRING_HAS: {
-    Value substr = pop();
-    Value str = pop();
+    Value substr = popStack();
+    Value str = popStack();
     if (!str.isStringValId() || !substr.isStringValId()) {
       throw std::runtime_error("STRING_HAS expects strings");
     }
     // TODO: string pool lookup
     const std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
     const std::string sub = "<string:" + std::to_string(substr.asStringValId()) + ">";
-    push(Value::makeBool(s.find(sub) != std::string::npos));
+    pushStack(Value::makeBool(s.find(sub) != std::string::npos));
     break;
   }
 
   case OpCode::STRING_STARTS: {
-    Value prefix = pop();
-    Value str = pop();
+    Value prefix = popStack();
+    Value str = popStack();
     if (!str.isStringValId() || !prefix.isStringValId()) {
       throw std::runtime_error("STRING_STARTS expects strings");
     }
     // TODO: string pool lookup
     const std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
     const std::string pre = "<string:" + std::to_string(prefix.asStringValId()) + ">";
-    push(Value::makeBool(s.size() >= pre.size() &&
+    pushStack(Value::makeBool(s.size() >= pre.size() &&
                        s.compare(0, pre.size(), pre) == 0));
     break;
   }
 
   case OpCode::STRING_ENDS: {
-    Value suffix = pop();
-    Value str = pop();
+    Value suffix = popStack();
+    Value str = popStack();
     if (!str.isStringValId() || !suffix.isStringValId()) {
       throw std::runtime_error("STRING_ENDS expects strings");
     }
     // TODO: string pool lookup
     const std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
     const std::string suf = "<string:" + std::to_string(suffix.asStringValId()) + ">";
-    push(Value::makeBool(s.size() >= suf.size() &&
+    pushStack(Value::makeBool(s.size() >= suf.size() &&
                        s.compare(s.size() - suf.size(), suf.size(), suf) == 0));
     break;
   }
 
   // Spread operator - spread array elements
   case OpCode::SPREAD: {
-    Value value = pop();
+    Value value = popStack();
     if (value.isArrayId()) {
       auto arrRef = ArrayRef{value.asArrayId()};
       auto *arr = heap_.array(arrRef.id);
       if (arr) {
         // Push each element individually
         for (auto &elem : *arr) {
-          push(elem);
+          pushStack(elem);
         }
       }
     } else if (value.isStringValId()) {
@@ -3489,7 +3437,7 @@ void VM::executeInstruction(const Instruction &instruction) {
           // TODO: string pool registration
           arr->push_back(Value::makeNull());
         }
-        push(Value::makeArrayId(arrRef.id));
+        pushStack(Value::makeArrayId(arrRef.id));
       }
     }
     break;
@@ -3498,13 +3446,13 @@ void VM::executeInstruction(const Instruction &instruction) {
   // Spread in function call
   case OpCode::SPREAD_CALL: {
     // Similar to SPREAD but marks arguments for spread in CALL
-    Value value = pop();
+    Value value = popStack();
     if (value.isArrayId()) {
       auto arrRef = ArrayRef{value.asArrayId()};
       auto *arr = heap_.array(arrRef.id);
       if (arr) {
         for (auto &elem : *arr) {
-          push(elem);
+          pushStack(elem);
         }
       }
     }
@@ -3518,84 +3466,84 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     const std::string &typeName =
         instruction.operands[0].toString();
-    Value value = pop();
+    Value value = popStack();
 
     if (typeName == "int" || typeName == "Int") {
-      push(toInt(value));
+      pushStack(toInt(value));
     } else if (typeName == "float" || typeName == "Float" ||
                typeName == "double" || typeName == "num" || typeName == "Num") {
-      push(toFloat(value));
+      pushStack(toFloat(value));
     } else if (typeName == "string" || typeName == "String") {
       // TODO: string pool integration - for now return null
-      push(Value::makeNull());
+      pushStack(Value::makeNull());
     } else if (typeName == "bool" || typeName == "Bool" ||
                typeName == "boolean") {
-      push(toBool(value));
+      pushStack(toBool(value));
     } else if (typeName == "array" || typeName == "Array") {
       // Convert to array if possible
       if (value.isArrayId()) {
-        push(value);
+        pushStack(value);
       } else {
         auto arrRef = heap_.allocateArray();
-        push(Value::makeArrayId(arrRef.id));
+        pushStack(Value::makeArrayId(arrRef.id));
       }
     } else {
-      push(value); // Unknown type, return as-is
+      pushStack(value); // Unknown type, return as-is
     }
     break;
   }
 
   // toInt() builtin
   case OpCode::TO_INT: {
-    Value value = pop();
-    push(toInt(value));
+    Value value = popStack();
+    pushStack(toInt(value));
     break;
   }
 
   // toFloat() builtin
   case OpCode::TO_FLOAT: {
-    Value value = pop();
-    push(toFloat(value));
+    Value value = popStack();
+    pushStack(toFloat(value));
     break;
   }
 
   // toString() builtin
   case OpCode::TO_STRING: {
-    Value value = pop();
+    Value value = popStack();
     // TODO: string pool integration - for now return null
-    push(Value::makeNull());
+    pushStack(Value::makeNull());
     break;
   }
 
   // String concatenation
   case OpCode::STRING_CONCAT: {
-    Value right = pop();
-    Value left = pop();
+    Value right = popStack();
+    Value left = popStack();
     // TODO: string pool integration - for now return null
     (void)left;
     (void)right;
-    push(Value::makeNull());
+    pushStack(Value::makeNull());
     break;
   }
 
   // toBool() builtin
   case OpCode::TO_BOOL: {
-    Value value = pop();
-    push(toBool(value));
+    Value value = popStack();
+    pushStack(toBool(value));
     break;
   }
 
   // typeof() builtin
   case OpCode::TYPE_OF: {
-    Value value = pop();
+    Value value = popStack();
     // TODO: string pool integration - return string ID instead of std::string
     // For now, return a placeholder integer
-    push(Value::makeInt(0));
+    pushStack(Value::makeInt(0));
     break;
   }
 
   case OpCode::PRINT: {
-    Value value = pop();
+    Value value = popStack();
     std::cout << toString(value, &heap_) << std::endl;
     break;
   }

@@ -48,7 +48,7 @@ void CodeEmitter::emit(OpCode op) {
   addInstruction(instruction);
 }
 
-void CodeEmitter::emit(OpCode op, BytecodeValue operand) {
+void CodeEmitter::emit(OpCode op, Value operand) {
   Instruction instruction;
   instruction.opcode = op;
   instruction.operands.push_back(operand);
@@ -58,7 +58,7 @@ void CodeEmitter::emit(OpCode op, BytecodeValue operand) {
   addInstruction(instruction);
 }
 
-void CodeEmitter::emit(OpCode op, std::vector<BytecodeValue> operands) {
+void CodeEmitter::emit(OpCode op, std::vector<Value> operands) {
   Instruction instruction;
   instruction.opcode = op;
   instruction.operands = std::move(operands);
@@ -82,7 +82,7 @@ void CodeEmitter::patchJump(uint32_t jumpInstructionIndex, uint32_t target) {
   instruction.operands[0] = target;
 }
 
-uint32_t CodeEmitter::addConstant(const BytecodeValue& value) {
+uint32_t CodeEmitter::addConstant(const Value& value) {
   if (!currentContext_.function) {
     throw std::runtime_error("Cannot add constant: no active function");
   }
@@ -96,12 +96,12 @@ uint32_t CodeEmitter::addStringConstant(const std::string& str) {
     throw std::runtime_error("Cannot add string constant: no active function");
   }
   uint32_t index = static_cast<uint32_t>(currentContext_.function->constants.size());
-  currentContext_.function->constants.push_back(BytecodeValue::makeStringValId(index));
+  currentContext_.function->constants.push_back(Value::makeStringValId(index));
   (void)str; // TODO: Store actual string data; VM will need to resolve via index
   return index;
 }
 
-const BytecodeValue& CodeEmitter::getConstant(uint32_t index) const {
+const Value& CodeEmitter::getConstant(uint32_t index) const {
   if (!currentContext_.function) {
     throw std::runtime_error("Cannot get constant: no active function");
   }
@@ -184,12 +184,12 @@ InstructionBuilder& InstructionBuilder::op(OpCode opcode) {
   return *this;
 }
 
-InstructionBuilder& InstructionBuilder::operand(const BytecodeValue& value) {
+InstructionBuilder& InstructionBuilder::operand(const Value& value) {
   operands_.push_back(value);
   return *this;
 }
 
-InstructionBuilder& InstructionBuilder::operands(const std::vector<BytecodeValue>& values) {
+InstructionBuilder& InstructionBuilder::operands(const std::vector<Value>& values) {
   operands_.insert(operands_.end(), values.begin(), values.end());
   return *this;
 }

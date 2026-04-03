@@ -310,7 +310,7 @@ void BytecodeOptimizer::jumpOptimization() {
 
       // Jump to next instruction (can be eliminated)
       if (instr.opcode == OpCode::JUMP && !instr.operands.empty()) {
-        uint32_t target = std::get<uint32_t>(instr.operands[0]);
+        uint32_t target = instr.operands[0].asInt();
         if (target == i + 1) {
           removeInstruction(funcIdx, i);
           stats_.instructionsRemoved++;
@@ -342,8 +342,8 @@ void BytecodeOptimizer::peepholeOptimization() {
 
       // LOAD_VAR followed by STORE_VAR on same slot (useless)
       if (instr.opcode == OpCode::LOAD_VAR && next.opcode == OpCode::STORE_VAR) {
-        uint32_t loadSlot = std::get<uint32_t>(instr.operands[0]);
-        uint32_t storeSlot = std::get<uint32_t>(next.operands[0]);
+        uint32_t loadSlot = instr.operands[0].asInt();
+        uint32_t storeSlot = next.operands[0].asInt();
         if (loadSlot == storeSlot) {
           // This pattern shouldn't normally happen, but if it does:
           removeInstruction(funcIdx, i);
@@ -385,7 +385,7 @@ void BytecodeOptimizer::registerAllocation() {
   // 4. Spill to locals when necessary
 }
 
-bool BytecodeOptimizer::isConstant(const BytecodeValue& value) const {
+bool BytecodeOptimizer::isConstant(const Value& value) const {
   // Check if value is a compile-time constant
   return value.isInt() ||
          value.isDouble() ||
@@ -394,10 +394,10 @@ bool BytecodeOptimizer::isConstant(const BytecodeValue& value) const {
          value.isNull();
 }
 
-std::optional<BytecodeValue> BytecodeOptimizer::evaluateBinaryOp(
+std::optional<Value> BytecodeOptimizer::evaluateBinaryOp(
     OpCode op,
-    const BytecodeValue& left,
-    const BytecodeValue& right) const {
+    const Value& left,
+    const Value& right) const {
 
   // Integer operations
   if (left.isInt() && right.isInt()) {
@@ -405,17 +405,17 @@ std::optional<BytecodeValue> BytecodeOptimizer::evaluateBinaryOp(
     int64_t r = right.asInt();
 
     switch (op) {
-      case OpCode::ADD: return BytecodeValue::makeInt(l + r);
-      case OpCode::SUB: return BytecodeValue::makeInt(l - r);
-      case OpCode::MUL: return BytecodeValue::makeInt(l * r);
-      case OpCode::DIV: return r != 0 ? BytecodeValue::makeInt(l / r) : BytecodeValue::makeInt(0);
-      case OpCode::MOD: return r != 0 ? BytecodeValue::makeInt(l % r) : BytecodeValue::makeInt(0);
-      case OpCode::EQ: return BytecodeValue::makeBool(l == r);
-      case OpCode::NEQ: return BytecodeValue::makeBool(l != r);
-      case OpCode::LT: return BytecodeValue::makeBool(l < r);
-      case OpCode::LTE: return BytecodeValue::makeBool(l <= r);
-      case OpCode::GT: return BytecodeValue::makeBool(l > r);
-      case OpCode::GTE: return BytecodeValue::makeBool(l >= r);
+      case OpCode::ADD: return Value::makeInt(l + r);
+      case OpCode::SUB: return Value::makeInt(l - r);
+      case OpCode::MUL: return Value::makeInt(l * r);
+      case OpCode::DIV: return r != 0 ? Value::makeInt(l / r) : Value::makeInt(0);
+      case OpCode::MOD: return r != 0 ? Value::makeInt(l % r) : Value::makeInt(0);
+      case OpCode::EQ: return Value::makeBool(l == r);
+      case OpCode::NEQ: return Value::makeBool(l != r);
+      case OpCode::LT: return Value::makeBool(l < r);
+      case OpCode::LTE: return Value::makeBool(l <= r);
+      case OpCode::GT: return Value::makeBool(l > r);
+      case OpCode::GTE: return Value::makeBool(l >= r);
       default: return std::nullopt;
     }
   }
@@ -426,16 +426,16 @@ std::optional<BytecodeValue> BytecodeOptimizer::evaluateBinaryOp(
     double r = right.asDouble();
 
     switch (op) {
-      case OpCode::ADD: return BytecodeValue::makeDouble(l + r);
-      case OpCode::SUB: return BytecodeValue::makeDouble(l - r);
-      case OpCode::MUL: return BytecodeValue::makeDouble(l * r);
-      case OpCode::DIV: return r != 0.0 ? BytecodeValue::makeDouble(l / r) : BytecodeValue::makeDouble(0.0);
-      case OpCode::EQ: return BytecodeValue::makeBool(l == r);
-      case OpCode::NEQ: return BytecodeValue::makeBool(l != r);
-      case OpCode::LT: return BytecodeValue::makeBool(l < r);
-      case OpCode::LTE: return BytecodeValue::makeBool(l <= r);
-      case OpCode::GT: return BytecodeValue::makeBool(l > r);
-      case OpCode::GTE: return BytecodeValue::makeBool(l >= r);
+      case OpCode::ADD: return Value::makeDouble(l + r);
+      case OpCode::SUB: return Value::makeDouble(l - r);
+      case OpCode::MUL: return Value::makeDouble(l * r);
+      case OpCode::DIV: return r != 0.0 ? Value::makeDouble(l / r) : Value::makeDouble(0.0);
+      case OpCode::EQ: return Value::makeBool(l == r);
+      case OpCode::NEQ: return Value::makeBool(l != r);
+      case OpCode::LT: return Value::makeBool(l < r);
+      case OpCode::LTE: return Value::makeBool(l <= r);
+      case OpCode::GT: return Value::makeBool(l > r);
+      case OpCode::GTE: return Value::makeBool(l >= r);
       default: return std::nullopt;
     }
   }

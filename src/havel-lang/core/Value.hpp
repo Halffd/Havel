@@ -186,6 +186,7 @@ public:
   Value(bool b) : bits_(makeBoolRaw(b)) {}
 
   Value(int i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
+  Value(int64_t i) : bits_(makeIntRaw(i)) {}
   Value(long long i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
   Value(unsigned int i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
   Value(unsigned long long i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}

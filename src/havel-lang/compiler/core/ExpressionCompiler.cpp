@@ -90,11 +90,11 @@ void ExpressionCompiler::compileIdentifier(const ast::Identifier& id) {
       break;
     case ResolvedBindingKind::Function:
       emitter_.emit(OpCode::LOAD_CONST,
-        BytecodeValue::makeFunctionObjId(topLevelFunctionIndices_[resolved.name]));
+        Value::makeFunctionObjId(topLevelFunctionIndices_[resolved.name]));
       break;
     case ResolvedBindingKind::HostFunction:
       // TODO: Register host function and use makeHostFuncId
-      emitter_.emit(OpCode::LOAD_CONST, BytecodeValue::makeNull());
+      emitter_.emit(OpCode::LOAD_CONST, Value::makeNull());
       break;
     case ResolvedBindingKind::Global:
       emitLoadGlobal(resolved.name);
@@ -200,7 +200,8 @@ void ExpressionCompiler::compileMemberExpression(const ast::MemberExpression& me
 
   if (member.property && member.property->kind == ast::NodeType::Identifier) {
     const auto& prop = static_cast<const ast::Identifier&>(*member.property);
-    emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(prop.symbol));
+    uint32_t strId = emitter_.addStringConstant(prop.symbol);
+    emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
     emitter_.emit(OpCode::OBJECT_GET);
   }
 }
@@ -236,8 +237,9 @@ void ExpressionCompiler::compileObjectLiteral(const ast::ObjectLiteral& object) 
   for (const auto& [key, value] : object.pairs) {
     if (value) {
       compile(*value);
-      emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(key));
-      emitter_.emit(OpCode::OBJECT_SET, key);
+      uint32_t strId = emitter_.addStringConstant(key);
+      emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+      emitter_.emit(OpCode::OBJECT_SET);
     }
   }
 }
@@ -312,10 +314,10 @@ void ExpressionCompiler::compileAwaitExpression(const ast::AwaitExpression& awai
   if (await.argument) {
     compile(*await.argument);
   }
-  uint32_t strId = emitter_.addConstant(std::string("async.await"));
-  emitter_.emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-    BytecodeValue::makeStringValId(strId),
-    BytecodeValue(static_cast<uint32_t>(1))
+  uint32_t strId = emitter_.addStringConstant(std::string("async.await"));
+  emitter_.emit(OpCode::CALL_HOST, std::vector<Value>{
+    Value::makeStringValId(strId),
+    Value::makeInt(static_cast<int64_t>(1))
   });
 }
 
@@ -369,11 +371,13 @@ void ExpressionCompiler::compilePipelineExpression(const ast::PipelineExpression
 void ExpressionCompiler::compileInterpolatedString(
     const ast::InterpolatedStringExpression& interp) {
   // Start with empty string
-  emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(std::string("")));
+  uint32_t emptyStrId = emitter_.addStringConstant(std::string(""));
+  emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(emptyStrId));
 
   for (const auto& segment : interp.segments) {
     if (segment.isString) {
-      emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(segment.stringValue));
+      uint32_t segStrId = emitter_.addStringConstant(segment.stringValue);
+      emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(segStrId));
     } else if (segment.expression) {
       compile(*segment.expression);
     }
@@ -399,16 +403,16 @@ void ExpressionCompiler::emitStoreUpvalue(uint32_t slot) {
 }
 
 void ExpressionCompiler::emitLoadGlobal(const std::string& name) {
-  uint32_t strId = emitter_.addConstant(name);
-  emitter_.emit(OpCode::LOAD_GLOBAL, BytecodeValue::makeStringValId(strId));
+  uint32_t strId = emitter_.addStringConstant(name);
+  emitter_.emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
 }
 
 void ExpressionCompiler::emitStoreGlobal(const std::string& name) {
-  uint32_t strId = emitter_.addConstant(name);
-  emitter_.emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+  uint32_t strId = emitter_.addStringConstant(name);
+  emitter_.emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
 }
 
-void ExpressionCompiler::emitLoadConst(const BytecodeValue& value) {
+void ExpressionCompiler::emitLoadConst(const Value& value) {
   emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(value));
 }
 
@@ -531,7 +535,7 @@ void StatementCompiler::compileLetDeclaration(const ast::LetDeclaration& let) {
   if (let.value) {
     exprCompiler_.compile(*let.value);
   } else {
-    emitter_.emit(OpCode::LOAD_CONST, BytecodeValue::makeNull()); // undefined
+    emitter_.emit(OpCode::LOAD_CONST, Value::makeNull()); // undefined
   }
 
   // Store to pattern
@@ -543,8 +547,8 @@ void StatementCompiler::compileLetDeclaration(const ast::LetDeclaration& let) {
         if (binding->kind == ResolvedBindingKind::Local) {
           emitter_.emit(OpCode::STORE_VAR, binding->slot);
         } else if (binding->kind == ResolvedBindingKind::Global) {
-          uint32_t strId = emitter_.addConstant(id.symbol);
-          emitter_.emit(OpCode::STORE_GLOBAL, BytecodeValue::makeStringValId(strId));
+          uint32_t strId = emitter_.addStringConstant(id.symbol);
+          emitter_.emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
       }
     }
@@ -633,15 +637,15 @@ void StatementCompiler::compileForStatement(const ast::ForStatement& forStmt) {
 
   // Get next value
   emitter_.emit(OpCode::LOAD_VAR, iteratorSlot);
-  uint32_t iterNextStrId = emitter_.addConstant(std::string("iterator.next"));
-  emitter_.emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
-    BytecodeValue::makeStringValId(iterNextStrId),
-    BytecodeValue(static_cast<uint32_t>(1))
+  uint32_t iterNextStrId = emitter_.addStringConstant(std::string("iterator.next"));
+  emitter_.emit(OpCode::CALL_HOST, std::vector<Value>{
+    Value::makeStringValId(iterNextStrId),
+    Value(static_cast<uint32_t>(1))
   });
 
   // Check if done
   emitter_.emit(OpCode::DUP);
-  emitter_.emit(OpCode::LOAD_CONST, BytecodeValue::makeNull());
+  emitter_.emit(OpCode::LOAD_CONST, Value::makeNull());
   emitter_.emit(OpCode::EQ);
   uint32_t exitJump = emitter_.emitJump(OpCode::JUMP_IF_TRUE);
   emitter_.emit(OpCode::POP); // Pop the null check result
@@ -725,7 +729,7 @@ void StatementCompiler::compileReturnStatement(const ast::ReturnStatement& ret) 
   if (ret.argument) {
     exprCompiler_.compile(*ret.argument);
   } else {
-    emitter_.emit(OpCode::LOAD_CONST, BytecodeValue::makeNull());
+    emitter_.emit(OpCode::LOAD_CONST, Value::makeNull());
   }
   emitter_.emit(OpCode::RETURN);
 }
@@ -775,7 +779,7 @@ void StatementCompiler::compileThrowStatement(const ast::ThrowStatement& throwSt
   if (throwStmt.value) {
     exprCompiler_.compile(*throwStmt.value);
   } else {
-    emitter_.emit(OpCode::LOAD_CONST, BytecodeValue::makeNull());
+    emitter_.emit(OpCode::LOAD_CONST, Value::makeNull());
   }
   emitter_.emit(OpCode::THROW);
 }
@@ -957,7 +961,8 @@ void PatternCompiler::compileObjectPattern(const ast::ObjectPattern& pattern, ui
 
   for (const auto& [key, value] : pattern.properties) {
     emitter_.emit(OpCode::DUP);
-    emitter_.emit(OpCode::LOAD_CONST, emitter_.addConstant(key));
+    uint32_t strId = emitter_.addStringConstant(key);
+    emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
     emitter_.emit(OpCode::OBJECT_GET);
 
     if (value) {
@@ -1075,7 +1080,7 @@ void FunctionCompiler::emitPrologue() {
 
 void FunctionCompiler::emitEpilogue() {
   // Ensure function returns something
-  emitter_.emit(OpCode::LOAD_CONST, BytecodeValue::makeNull());
+  emitter_.emit(OpCode::LOAD_CONST, Value::makeNull());
   emitter_.emit(OpCode::RETURN);
 }
 

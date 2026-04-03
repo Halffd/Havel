@@ -49,7 +49,7 @@ public:
   void emitStoreUpvalue(uint32_t slot);
   void emitLoadGlobal(const std::string& name);
   void emitStoreGlobal(const std::string& name);
-  void emitLoadConst(const BytecodeValue& value);
+  void emitLoadConst(const Value& value);
 
 private:
   CodeEmitter& emitter_;

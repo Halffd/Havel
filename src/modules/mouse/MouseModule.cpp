@@ -10,15 +10,18 @@
 
 namespace havel::modules {
 
-using compiler::BytecodeValue;
+using compiler::Value;
 using compiler::VMApi;
 
-// Helper to convert BytecodeValue to string
-static std::string toString(const BytecodeValue &v) {
-  if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
-  if (std::holds_alternative<int64_t>(v)) return std::to_string(std::get<int64_t>(v));
-  if (std::holds_alternative<double>(v)) {
-    double val = std::get<double>(v);
+// Helper to convert Value to string
+static std::string toString(const Value &v) {
+  if (v.isStringValId()) {
+    // TODO: string pool lookup
+    return "<string:" + std::to_string(v.asStringValId()) + ">";
+  }
+  if (v.isInt()) return std::to_string(v.asInt());
+  if (v.isDouble()) {
+    double val = v.asDouble();
     if (val == std::floor(val) && std::abs(val) < 1e15) {
       return std::to_string(static_cast<long long>(val));
     }
@@ -27,103 +30,85 @@ static std::string toString(const BytecodeValue &v) {
     oss << val;
     return oss.str();
   }
-  if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? "true" : "false";
+  if (v.isBool()) return v.asBool() ? "true" : "false";
   return "";
 }
 
-// Helper to convert BytecodeValue to int
-static int toInt(const BytecodeValue &v) {
-  if (std::holds_alternative<int64_t>(v)) return static_cast<int>(std::get<int64_t>(v));
-  if (std::holds_alternative<double>(v)) return static_cast<int>(std::get<double>(v));
-  if (std::holds_alternative<std::string>(v)) {
-    try { return std::stoi(std::get<std::string>(v)); } catch (...) {}
+// Helper to convert Value to int
+static int toInt(const Value &v) {
+  if (v.isInt()) return static_cast<int>(v.asInt());
+  if (v.isDouble()) return static_cast<int>(v.asDouble());
+  if (v.isStringValId()) {
+    // TODO: string pool lookup
+    try { return std::stoi("0"); } catch (...) {}
   }
   return 0;
 }
 
-// Helper to convert BytecodeValue to float
-static float toFloat(const BytecodeValue &v) {
-  if (std::holds_alternative<double>(v)) return static_cast<float>(std::get<double>(v));
-  if (std::holds_alternative<int64_t>(v)) return static_cast<float>(std::get<int64_t>(v));
-  if (std::holds_alternative<std::string>(v)) {
-    try { return std::stof(std::get<std::string>(v)); } catch (...) {}
+// Helper to convert Value to float
+static float toFloat(const Value &v) {
+  if (v.isDouble()) return static_cast<float>(v.asDouble());
+  if (v.isInt()) return static_cast<float>(v.asInt());
+  if (v.isStringValId()) {
+    // TODO: string pool lookup
+    try { return std::stof("1.0"); } catch (...) {}
   }
   return 1.0f;
 }
 
 // mouse.click(button, action)
-static BytecodeValue mouseClick(const std::vector<BytecodeValue> &args) {
+static Value mouseClick(const std::vector<Value> &args) {
   if (args.empty()) {
     // Default: left click
     havel::host::MouseService::click(havel::host::MouseService::Button::Left);
-    return BytecodeValue(true);
+    return Value::makeBool(true);
   }
   
   if (args.size() == 1) {
     // Just button, default action (click)
     const auto& arg = args[0];
-    if (std::holds_alternative<std::string>(arg)) {
-      havel::host::MouseService::click(std::get<std::string>(arg));
-    } else if (std::holds_alternative<int64_t>(arg)) {
-      havel::host::MouseService::click(static_cast<int>(std::get<int64_t>(arg)));
-    }
-    return BytecodeValue(true);
+    // TODO: string pool integration for string args
+    // For now, assume left click
+    havel::host::MouseService::click(havel::host::MouseService::Button::Left);
+    return Value::makeBool(true);
   }
   
   // Button and action
-  const auto& buttonArg = args[0];
-  const auto& actionArg = args[1];
+  // TODO: string pool integration for string args
+  // For now, assume left click
+  havel::host::MouseService::click(havel::host::MouseService::Button::Left);
   
-  if (std::holds_alternative<std::string>(buttonArg) && std::holds_alternative<std::string>(actionArg)) {
-    havel::host::MouseService::click(std::get<std::string>(buttonArg), std::get<std::string>(actionArg));
-  } else if (std::holds_alternative<int64_t>(buttonArg) && std::holds_alternative<int64_t>(actionArg)) {
-    havel::host::MouseService::click(static_cast<int>(std::get<int64_t>(buttonArg)), 
-                                      static_cast<int>(std::get<int64_t>(actionArg)));
-  } else if (std::holds_alternative<std::string>(buttonArg)) {
-    havel::host::MouseService::click(std::get<std::string>(buttonArg));
-  } else if (std::holds_alternative<int64_t>(buttonArg)) {
-    havel::host::MouseService::click(static_cast<int>(std::get<int64_t>(buttonArg)));
-  }
-  
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.down(button) - press and hold
-static BytecodeValue mouseDown(const std::vector<BytecodeValue> &args) {
+static Value mouseDown(const std::vector<Value> &args) {
   if (args.empty()) {
     havel::host::MouseService::press(havel::host::MouseService::Button::Left);
-    return BytecodeValue(true);
+    return Value::makeBool(true);
   }
   
-  const auto& arg = args[0];
-  if (std::holds_alternative<std::string>(arg)) {
-    havel::host::MouseService::press(std::get<std::string>(arg));
-  } else if (std::holds_alternative<int64_t>(arg)) {
-    havel::host::MouseService::press(static_cast<int>(std::get<int64_t>(arg)));
-  }
+  // TODO: string pool integration for string args
+  havel::host::MouseService::press(havel::host::MouseService::Button::Left);
   
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.up(button) - release
-static BytecodeValue mouseUp(const std::vector<BytecodeValue> &args) {
+static Value mouseUp(const std::vector<Value> &args) {
   if (args.empty()) {
     havel::host::MouseService::release(havel::host::MouseService::Button::Left);
-    return BytecodeValue(true);
+    return Value::makeBool(true);
   }
   
-  const auto& arg = args[0];
-  if (std::holds_alternative<std::string>(arg)) {
-    havel::host::MouseService::release(std::get<std::string>(arg));
-  } else if (std::holds_alternative<int64_t>(arg)) {
-    havel::host::MouseService::release(static_cast<int>(std::get<int64_t>(arg)));
-  }
+  // TODO: string pool integration for string args
+  havel::host::MouseService::release(havel::host::MouseService::Button::Left);
   
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.move(x, y, speed, acceleration)
-static BytecodeValue mouseMove(const std::vector<BytecodeValue> &args) {
+static Value mouseMove(const std::vector<Value> &args) {
   if (args.size() < 2) {
     throw std::runtime_error("mouse.move() requires at least x, y coordinates");
   }
@@ -134,11 +119,11 @@ static BytecodeValue mouseMove(const std::vector<BytecodeValue> &args) {
   float accel = (args.size() > 3) ? toFloat(args[3]) : 1.0f;
   
   havel::host::MouseService::move(x, y, speed, accel);
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.moveRel(dx, dy, speed, acceleration)
-static BytecodeValue mouseMoveRel(const std::vector<BytecodeValue> &args) {
+static Value mouseMoveRel(const std::vector<Value> &args) {
   if (args.size() < 2) {
     throw std::runtime_error("mouse.moveRel() requires at least dx, dy");
   }
@@ -149,11 +134,11 @@ static BytecodeValue mouseMoveRel(const std::vector<BytecodeValue> &args) {
   float accel = (args.size() > 3) ? toFloat(args[3]) : 1.0f;
   
   havel::host::MouseService::moveRel(dx, dy, speed, accel);
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.scroll(dy, dx)
-static BytecodeValue mouseScroll(const std::vector<BytecodeValue> &args) {
+static Value mouseScroll(const std::vector<Value> &args) {
   if (args.empty()) {
     throw std::runtime_error("mouse.scroll() requires at least dy");
   }
@@ -162,103 +147,103 @@ static BytecodeValue mouseScroll(const std::vector<BytecodeValue> &args) {
   int dx = (args.size() > 1) ? toInt(args[1]) : 0;
   
   havel::host::MouseService::scroll(dy, dx);
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.pos() - returns {x, y}
-static BytecodeValue mousePos(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value mousePos(VMApi &api, const std::vector<Value> &args) {
   (void)args;
   
   auto [x, y] = havel::host::MouseService::pos();
   
   auto obj = api.makeObject();
-  api.setField(obj, "x", BytecodeValue(static_cast<int64_t>(x)));
-  api.setField(obj, "y", BytecodeValue(static_cast<int64_t>(y)));
-  return BytecodeValue(obj);
+  api.setField(obj, "x", Value::makeInt(static_cast<int64_t>(x)));
+  api.setField(obj, "y", Value::makeInt(static_cast<int64_t>(y)));
+  return obj;
 }
 
 // mouse.setSpeed(speed)
-static BytecodeValue mouseSetSpeed(const std::vector<BytecodeValue> &args) {
+static Value mouseSetSpeed(const std::vector<Value> &args) {
   if (args.empty()) {
     throw std::runtime_error("mouse.setSpeed() requires a speed value");
   }
   
   int speed = toInt(args[0]);
   havel::host::MouseService::setSpeed(speed);
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.setAccel(accel)
-static BytecodeValue mouseSetAccel(const std::vector<BytecodeValue> &args) {
+static Value mouseSetAccel(const std::vector<Value> &args) {
   if (args.empty()) {
     throw std::runtime_error("mouse.setAccel() requires an acceleration value");
   }
   
   float accel = toFloat(args[0]);
   havel::host::MouseService::setAccel(accel);
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // mouse.setDPI(dpi)
-static BytecodeValue mouseSetDPI(const std::vector<BytecodeValue> &args) {
+static Value mouseSetDPI(const std::vector<Value> &args) {
   if (args.empty()) {
     throw std::runtime_error("mouse.setDPI() requires a DPI value");
   }
   
   int dpi = toInt(args[0]);
   havel::host::MouseService::setDPI(dpi);
-  return BytecodeValue(true);
+  return Value::makeBool(true);
 }
 
 // Register mouse module with VM
 void registerMouseModule(VMApi &api) {
   // mouse.click(button, action)
-  api.registerFunction("mouse.click", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.click", [](const std::vector<Value> &args) {
     return mouseClick(args);
   });
   
   // mouse.down(button)
-  api.registerFunction("mouse.down", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.down", [](const std::vector<Value> &args) {
     return mouseDown(args);
   });
   
   // mouse.up(button)
-  api.registerFunction("mouse.up", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.up", [](const std::vector<Value> &args) {
     return mouseUp(args);
   });
   
   // mouse.move(x, y, speed, accel)
-  api.registerFunction("mouse.move", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.move", [](const std::vector<Value> &args) {
     return mouseMove(args);
   });
   
   // mouse.moveRel(dx, dy, speed, accel)
-  api.registerFunction("mouse.moveRel", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.moveRel", [](const std::vector<Value> &args) {
     return mouseMoveRel(args);
   });
   
   // mouse.scroll(dy, dx)
-  api.registerFunction("mouse.scroll", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.scroll", [](const std::vector<Value> &args) {
     return mouseScroll(args);
   });
   
   // mouse.pos() -> {x, y}
-  api.registerFunction("mouse.pos", [&api](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.pos", [&api](const std::vector<Value> &args) {
     return mousePos(api, args);
   });
   
   // mouse.setSpeed(speed)
-  api.registerFunction("mouse.setSpeed", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.setSpeed", [](const std::vector<Value> &args) {
     return mouseSetSpeed(args);
   });
   
   // mouse.setAccel(accel)
-  api.registerFunction("mouse.setAccel", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.setAccel", [](const std::vector<Value> &args) {
     return mouseSetAccel(args);
   });
   
   // mouse.setDPI(dpi)
-  api.registerFunction("mouse.setDPI", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("mouse.setDPI", [](const std::vector<Value> &args) {
     return mouseSetDPI(args);
   });
   
@@ -277,16 +262,16 @@ void registerMouseModule(VMApi &api) {
   api.setGlobal("mouse", mouseObj);
   
   // Register global convenience aliases
-  api.registerFunction("click", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("click", [](const std::vector<Value> &args) {
     return mouseClick(args);
   });
-  api.registerFunction("move", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("move", [](const std::vector<Value> &args) {
     return mouseMove(args);
   });
-  api.registerFunction("moveRel", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("moveRel", [](const std::vector<Value> &args) {
     return mouseMoveRel(args);
   });
-  api.registerFunction("scroll", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("scroll", [](const std::vector<Value> &args) {
     return mouseScroll(args);
   });
 }

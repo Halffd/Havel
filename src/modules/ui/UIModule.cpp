@@ -12,7 +12,7 @@
 namespace havel::modules {
 
 using compiler::ArrayRef;
-using compiler::BytecodeValue;
+using compiler::Value;
 using compiler::ObjectRef;
 using compiler::VMApi;
 
@@ -21,8 +21,8 @@ static host::UIBackend *getUIBackend() {
   return host::UIManager::instance().backend();
 }
 
-// Helper to convert BytecodeValue to string
-static std::string toString(const BytecodeValue &v) {
+// Helper to convert Value to string
+static std::string toString(const Value &v) {
   if (v.isStringValId())
     return ""; // TODO: retrieve from string pool
   if (v.isInt())
@@ -42,8 +42,8 @@ static std::string toString(const BytecodeValue &v) {
   return "";
 }
 
-// Helper to convert BytecodeValue to int
-static int toInt(const BytecodeValue &v) {
+// Helper to convert Value to int
+static int toInt(const Value &v) {
   if (v.isInt())
     return static_cast<int>(v.asInt());
   if (v.isDouble())
@@ -58,7 +58,7 @@ static int toInt(const BytecodeValue &v) {
   return 0;
 }
 
-static bool toBool(const BytecodeValue &v) {
+static bool toBool(const Value &v) {
   if (v.isBool())
     return v.asBool();
   if (v.isInt())
@@ -74,7 +74,7 @@ static bool toBool(const BytecodeValue &v) {
 
 // Extract string from options object or args
 static std::string getStringArg(VMApi &api,
-                                const std::vector<BytecodeValue> &args,
+                                const std::vector<Value> &args,
                                 size_t index,
                                 const std::string &defaultVal = "") {
   if (args.size() <= index)
@@ -95,26 +95,26 @@ static std::string getStringArg(VMApi &api,
   return defaultVal;
 }
 
-static int getIntArg(const std::vector<BytecodeValue> &args, size_t index,
+static int getIntArg(const std::vector<Value> &args, size_t index,
                      int defaultVal = 0) {
   if (args.size() <= index)
     return defaultVal;
   return toInt(args[index]);
 }
 
-// Helper to store UIElement reference in BytecodeValue object
+// Helper to store UIElement reference in Value object
 // We use ObjectRef with special fields to track the element
-static void attachElementToObject(VMApi &api, BytecodeValue obj,
+static void attachElementToObject(VMApi &api, Value obj,
                                   std::shared_ptr<ui::UIElement> element) {
   // Store element ID as special field
   // TODO: String values need string pool registration
-  api.setField(obj, "__ui_type", BytecodeValue::makeNull());
+  api.setField(obj, "__ui_type", Value::makeNull());
   api.setField(obj, "__ui_id",
-               BytecodeValue::makeInt(static_cast<int64_t>(element->id)));
+               Value::makeInt(static_cast<int64_t>(element->id)));
 }
 
 static std::shared_ptr<ui::UIElement>
-getElementFromObject(VMApi &api, const BytecodeValue &obj) {
+getElementFromObject(VMApi &api, const Value &obj) {
   if (!obj.isObjectId())
     return nullptr;
 
@@ -137,8 +137,8 @@ getElementFromObject(VMApi &api, const BytecodeValue &obj) {
 // ============================================================================
 
 // ui.window(title, options...)
-static BytecodeValue uiWindow(VMApi &api,
-                              const std::vector<BytecodeValue> &args) {
+static Value uiWindow(VMApi &api,
+                              const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Window");
 
   auto elem = getUIBackend()->window(title);
@@ -182,13 +182,13 @@ static BytecodeValue uiWindow(VMApi &api,
   api.setField(obj, "status", api.makeFunctionRef("ui.window.status"));
   api.setField(obj, "panel", api.makeFunctionRef("ui.window.panel"));
   api.setField(obj, "menu", api.makeFunctionRef("ui.window.menu"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.btn(label, callback)
-static BytecodeValue uiBtn(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value uiBtn(VMApi &api, const std::vector<Value> &args) {
   std::string label = getStringArg(api, args, 0, "Button");
 
   auto elem = getUIBackend()->btn(label);
@@ -205,14 +205,14 @@ static BytecodeValue uiBtn(VMApi &api, const std::vector<BytecodeValue> &args) {
 
   api.setField(obj, "onClick", api.makeFunctionRef("ui.element.onClick"));
   api.setField(obj, "alignRight", api.makeFunctionRef("ui.element.alignRight"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.text(content)
-static BytecodeValue uiText(VMApi &api,
-                            const std::vector<BytecodeValue> &args) {
+static Value uiText(VMApi &api,
+                            const std::vector<Value> &args) {
   std::string content = getStringArg(api, args, 0, "");
 
   auto elem = getUIBackend()->text(content);
@@ -221,14 +221,14 @@ static BytecodeValue uiText(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "bold", api.makeFunctionRef("ui.element.bold"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.label(content)
-static BytecodeValue uiLabel(VMApi &api,
-                             const std::vector<BytecodeValue> &args) {
+static Value uiLabel(VMApi &api,
+                             const std::vector<Value> &args) {
   std::string content = getStringArg(api, args, 0, "");
 
   auto elem = getUIBackend()->label(content);
@@ -240,8 +240,8 @@ static BytecodeValue uiLabel(VMApi &api,
 }
 
 // ui.input(placeholder, options)
-static BytecodeValue uiInput(VMApi &api,
-                             const std::vector<BytecodeValue> &args) {
+static Value uiInput(VMApi &api,
+                             const std::vector<Value> &args) {
   std::string placeholder = getStringArg(api, args, 0, "");
 
   auto elem = getUIBackend()->input(placeholder);
@@ -251,14 +251,14 @@ static BytecodeValue uiInput(VMApi &api,
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
   api.setField(obj, "value", api.makeFunctionRef("ui.input.value"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.textarea(placeholder, options)
-static BytecodeValue uiTextarea(VMApi &api,
-                                const std::vector<BytecodeValue> &args) {
+static Value uiTextarea(VMApi &api,
+                                const std::vector<Value> &args) {
   std::string placeholder = getStringArg(api, args, 0, "");
 
   auto elem = getUIBackend()->textarea(placeholder);
@@ -268,14 +268,14 @@ static BytecodeValue uiTextarea(VMApi &api,
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
   api.setField(obj, "value", api.makeFunctionRef("ui.textarea.value"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.checkbox(label, checked)
-static BytecodeValue uiCheckbox(VMApi &api,
-                                const std::vector<BytecodeValue> &args) {
+static Value uiCheckbox(VMApi &api,
+                                const std::vector<Value> &args) {
   std::string label = getStringArg(api, args, 0, "");
   bool checked = false;
   if (args.size() > 1) {
@@ -288,14 +288,14 @@ static BytecodeValue uiCheckbox(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.slider(min, max, value)
-static BytecodeValue uiSlider(VMApi &api,
-                              const std::vector<BytecodeValue> &args) {
+static Value uiSlider(VMApi &api,
+                              const std::vector<Value> &args) {
   int min = getIntArg(args, 0, 0);
   int max = getIntArg(args, 1, 100);
   int value = getIntArg(args, 2, 0);
@@ -306,14 +306,14 @@ static BytecodeValue uiSlider(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.dropdown(options)
-static BytecodeValue uiDropdown(VMApi &api,
-                                const std::vector<BytecodeValue> &args) {
+static Value uiDropdown(VMApi &api,
+                                const std::vector<Value> &args) {
   std::vector<std::string> options;
 
   if (args.size() > 0 && args[0].isArrayId()) {
@@ -332,14 +332,14 @@ static BytecodeValue uiDropdown(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onChange", api.makeFunctionRef("ui.element.onChange"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.image(path)
-static BytecodeValue uiImage(VMApi &api,
-                             const std::vector<BytecodeValue> &args) {
+static Value uiImage(VMApi &api,
+                             const std::vector<Value> &args) {
   std::string path = getStringArg(api, args, 0, "");
 
   auto elem = getUIBackend()->image(path);
@@ -351,8 +351,8 @@ static BytecodeValue uiImage(VMApi &api,
 }
 
 // ui.divider()
-static BytecodeValue uiDivider(VMApi &api,
-                               const std::vector<BytecodeValue> &args) {
+static Value uiDivider(VMApi &api,
+                               const std::vector<Value> &args) {
   (void)args;
   auto elem = getUIBackend()->divider();
 
@@ -363,8 +363,8 @@ static BytecodeValue uiDivider(VMApi &api,
 }
 
 // ui.spacer(size)
-static BytecodeValue uiSpacer(VMApi &api,
-                              const std::vector<BytecodeValue> &args) {
+static Value uiSpacer(VMApi &api,
+                              const std::vector<Value> &args) {
   int size = getIntArg(args, 0, 10);
 
   auto elem = getUIBackend()->spacer(size);
@@ -376,8 +376,8 @@ static BytecodeValue uiSpacer(VMApi &api,
 }
 
 // ui.progress(value, max)
-static BytecodeValue uiProgress(VMApi &api,
-                                const std::vector<BytecodeValue> &args) {
+static Value uiProgress(VMApi &api,
+                                const std::vector<Value> &args) {
   int value = getIntArg(args, 0, 0);
   int max = getIntArg(args, 1, 100);
 
@@ -390,8 +390,8 @@ static BytecodeValue uiProgress(VMApi &api,
 }
 
 // ui.spinner()
-static BytecodeValue uiSpinner(VMApi &api,
-                               const std::vector<BytecodeValue> &args) {
+static Value uiSpinner(VMApi &api,
+                               const std::vector<Value> &args) {
   (void)args;
   auto elem = getUIBackend()->spinner();
 
@@ -406,8 +406,8 @@ static BytecodeValue uiSpinner(VMApi &api,
 // ============================================================================
 
 // ui.menu(title)
-static BytecodeValue uiMenu(VMApi &api,
-                            const std::vector<BytecodeValue> &args) {
+static Value uiMenu(VMApi &api,
+                            const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Menu");
 
   auto elem = getUIBackend()->menu(title);
@@ -415,14 +415,14 @@ static BytecodeValue uiMenu(VMApi &api,
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.menuItem(label, shortcut)
-static BytecodeValue uiMenuItem(VMApi &api,
-                                const std::vector<BytecodeValue> &args) {
+static Value uiMenuItem(VMApi &api,
+                                const std::vector<Value> &args) {
   std::string label = getStringArg(api, args, 0, "Item");
   std::string shortcut = getStringArg(api, args, 1, "");
 
@@ -432,21 +432,21 @@ static BytecodeValue uiMenuItem(VMApi &api,
   attachElementToObject(api, obj, elem);
 
   api.setField(obj, "onClick", api.makeFunctionRef("ui.element.onClick"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.menuSeparator()
-static BytecodeValue uiMenuSeparator(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
+static Value uiMenuSeparator(VMApi &api,
+                                     const std::vector<Value> &args) {
   (void)args;
   auto elem = getUIBackend()->menuSeparator();
 
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -456,7 +456,7 @@ static BytecodeValue uiMenuSeparator(VMApi &api,
 // ============================================================================
 
 // ui.row([...])
-static BytecodeValue uiRow(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value uiRow(VMApi &api, const std::vector<Value> &args) {
   auto elem = getUIBackend()->row();
 
   auto obj = api.makeObject();
@@ -468,13 +468,13 @@ static BytecodeValue uiRow(VMApi &api, const std::vector<BytecodeValue> &args) {
     api.setField(obj, "children", args[0]);
   }
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.col([...])
-static BytecodeValue uiCol(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value uiCol(VMApi &api, const std::vector<Value> &args) {
   auto elem = getUIBackend()->col();
 
   auto obj = api.makeObject();
@@ -484,14 +484,14 @@ static BytecodeValue uiCol(VMApi &api, const std::vector<BytecodeValue> &args) {
     api.setField(obj, "children", args[0]);
   }
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.grid(cols, [...])
-static BytecodeValue uiGrid(VMApi &api,
-                            const std::vector<BytecodeValue> &args) {
+static Value uiGrid(VMApi &api,
+                            const std::vector<Value> &args) {
   int cols = getIntArg(args, 0, 2);
 
   auto elem = getUIBackend()->grid(cols);
@@ -503,14 +503,14 @@ static BytecodeValue uiGrid(VMApi &api,
     api.setField(obj, "children", args[1]);
   }
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.table(rows, cols, data)
-static BytecodeValue uiTable(VMApi &api,
-                             const std::vector<BytecodeValue> &args) {
+static Value uiTable(VMApi &api,
+                             const std::vector<Value> &args) {
   int rows = getIntArg(args, 0, 3);
   int cols = getIntArg(args, 1, 2);
 
@@ -524,14 +524,14 @@ static BytecodeValue uiTable(VMApi &api,
     api.setField(obj, "data", args[2]);
   }
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.flex(direction, [...]) - direction: "row" or "col"
-static BytecodeValue uiFlex(VMApi &api,
-                            const std::vector<BytecodeValue> &args) {
+static Value uiFlex(VMApi &api,
+                            const std::vector<Value> &args) {
   std::string direction = "row";
   if (args.size() > 0 && args[0].isStringValId()) {
     // TODO: retrieve from string pool
@@ -552,14 +552,14 @@ static BytecodeValue uiFlex(VMApi &api,
     api.setField(obj, "children", args[childrenIdx]);
   }
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.scroll([...])
-static BytecodeValue uiScroll(VMApi &api,
-                              const std::vector<BytecodeValue> &args) {
+static Value uiScroll(VMApi &api,
+                              const std::vector<Value> &args) {
   auto elem = getUIBackend()->scroll();
 
   auto obj = api.makeObject();
@@ -569,14 +569,14 @@ static BytecodeValue uiScroll(VMApi &api,
     api.setField(obj, "children", args[0]);
   }
 
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
 
 // ui.canvas(width, height)
-static BytecodeValue uiCanvas(VMApi &api,
-                              const std::vector<BytecodeValue> &args) {
+static Value uiCanvas(VMApi &api,
+                              const std::vector<Value> &args) {
   int width = getIntArg(args, 0, 800);
   int height = getIntArg(args, 1, 600);
 
@@ -593,7 +593,7 @@ static BytecodeValue uiCanvas(VMApi &api,
   api.setField(obj, "drawRect", api.makeFunctionRef("ui.canvas.drawRect"));
   api.setField(obj, "drawCircle", api.makeFunctionRef("ui.canvas.drawCircle"));
   api.setField(obj, "drawImage", api.makeFunctionRef("ui.canvas.drawImage"));
-  api.setField(obj, "__element", BytecodeValue::makeInt(static_cast<int64_t>(elem->id)));
+  api.setField(obj, "__element", Value::makeInt(static_cast<int64_t>(elem->id)));
 
   return obj;
 }
@@ -603,19 +603,19 @@ static BytecodeValue uiCanvas(VMApi &api,
 // ============================================================================
 
 // canvas.clear()
-static BytecodeValue uiCanvasClear(VMApi &api,
-                                   const std::vector<BytecodeValue> &args) {
+static Value uiCanvasClear(VMApi &api,
+                                   const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   // Clear canvas to background color
   return args[0];
 }
 
 // canvas.fill(color)
-static BytecodeValue uiCanvasFill(VMApi &api,
-                                  const std::vector<BytecodeValue> &args) {
+static Value uiCanvasFill(VMApi &api,
+                                  const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   std::string color = toString(args[1]);
   (void)color;
   // Fill entire canvas with color
@@ -623,10 +623,10 @@ static BytecodeValue uiCanvasFill(VMApi &api,
 }
 
 // canvas.drawPoint(x, y, color, size)
-static BytecodeValue uiCanvasDrawPoint(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
+static Value uiCanvasDrawPoint(VMApi &api,
+                                       const std::vector<Value> &args) {
   if (args.size() < 4)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   int x = toInt(args[1]);
   int y = toInt(args[2]);
   std::string color = toString(args[3]);
@@ -636,10 +636,10 @@ static BytecodeValue uiCanvasDrawPoint(VMApi &api,
 }
 
 // canvas.drawLine(x1, y1, x2, y2, color, width)
-static BytecodeValue uiCanvasDrawLine(VMApi &api,
-                                      const std::vector<BytecodeValue> &args) {
+static Value uiCanvasDrawLine(VMApi &api,
+                                      const std::vector<Value> &args) {
   if (args.size() < 6)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   int x1 = toInt(args[1]);
   int y1 = toInt(args[2]);
   int x2 = toInt(args[3]);
@@ -651,10 +651,10 @@ static BytecodeValue uiCanvasDrawLine(VMApi &api,
 }
 
 // canvas.drawRect(x, y, w, h, color, fill)
-static BytecodeValue uiCanvasDrawRect(VMApi &api,
-                                      const std::vector<BytecodeValue> &args) {
+static Value uiCanvasDrawRect(VMApi &api,
+                                      const std::vector<Value> &args) {
   if (args.size() < 6)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   int x = toInt(args[1]);
   int y = toInt(args[2]);
   int w = toInt(args[3]);
@@ -666,10 +666,10 @@ static BytecodeValue uiCanvasDrawRect(VMApi &api,
 }
 
 // canvas.drawCircle(x, y, r, color, fill)
-static BytecodeValue uiCanvasDrawCircle(VMApi &api,
-                                        const std::vector<BytecodeValue> &args) {
+static Value uiCanvasDrawCircle(VMApi &api,
+                                        const std::vector<Value> &args) {
   if (args.size() < 5)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   int x = toInt(args[1]);
   int y = toInt(args[2]);
   int r = toInt(args[3]);
@@ -680,10 +680,10 @@ static BytecodeValue uiCanvasDrawCircle(VMApi &api,
 }
 
 // canvas.drawImage(path, x, y)
-static BytecodeValue uiCanvasDrawImage(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
+static Value uiCanvasDrawImage(VMApi &api,
+                                       const std::vector<Value> &args) {
   if (args.size() < 4)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   std::string path = toString(args[1]);
   int x = toInt(args[2]);
   int y = toInt(args[3]);
@@ -696,10 +696,10 @@ static BytecodeValue uiCanvasDrawImage(VMApi &api,
 // ============================================================================
 
 // element.style(key, value)
-static BytecodeValue uiElementStyle(VMApi &api,
-                                    const std::vector<BytecodeValue> &args) {
+static Value uiElementStyle(VMApi &api,
+                                    const std::vector<Value> &args) {
   if (args.size() < 3)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   std::string key = toString(args[1]);
   std::string value = toString(args[2]);
   (void)key; (void)value;
@@ -707,30 +707,30 @@ static BytecodeValue uiElementStyle(VMApi &api,
 }
 
 // element.width(w)
-static BytecodeValue uiElementWidth(VMApi &api,
-                                    const std::vector<BytecodeValue> &args) {
+static Value uiElementWidth(VMApi &api,
+                                    const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   int w = toInt(args[1]);
   (void)w;
   return args[0];
 }
 
 // element.height(h)
-static BytecodeValue uiElementHeight(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
+static Value uiElementHeight(VMApi &api,
+                                     const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   int h = toInt(args[1]);
   (void)h;
   return args[0];
 }
 
 // element.border(color, width)
-static BytecodeValue uiElementBorder(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
+static Value uiElementBorder(VMApi &api,
+                                     const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   std::string color = toString(args[1]);
   int width = args.size() > 2 ? toInt(args[2]) : 1;
   (void)color; (void)width;
@@ -742,27 +742,27 @@ static BytecodeValue uiElementBorder(VMApi &api,
 // ============================================================================
 
 // ui.alert(message)
-static BytecodeValue uiAlert(const std::vector<BytecodeValue> &args) {
+static Value uiAlert(const std::vector<Value> &args) {
   std::string message = "";
   if (args.size() > 0) {
     message = toString(args[0]);
   }
   getUIBackend()->alert(message);
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ui.confirm(message)
-static BytecodeValue uiConfirm(const std::vector<BytecodeValue> &args) {
+static Value uiConfirm(const std::vector<Value> &args) {
   std::string message = "";
   if (args.size() > 0) {
     message = toString(args[0]);
   }
   bool result = getUIBackend()->confirm(message);
-  return BytecodeValue::makeBool(result);
+  return Value::makeBool(result);
 }
 
 // ui.filePicker(title)
-static BytecodeValue uiFilePicker(const std::vector<BytecodeValue> &args) {
+static Value uiFilePicker(const std::vector<Value> &args) {
   std::string title = "Select file";
   if (args.size() > 0) {
     title = toString(args[0]);
@@ -770,11 +770,11 @@ static BytecodeValue uiFilePicker(const std::vector<BytecodeValue> &args) {
   // TODO: String values need string pool registration
   std::string result = getUIBackend()->filePicker(title);
   (void)result;
-  return BytecodeValue::makeNull();
+  return Value::makeNull();
 }
 
 // ui.dirPicker(title)
-static BytecodeValue uiDirPicker(const std::vector<BytecodeValue> &args) {
+static Value uiDirPicker(const std::vector<Value> &args) {
   std::string title = "Select directory";
   if (args.size() > 0) {
     title = toString(args[0]);
@@ -782,11 +782,11 @@ static BytecodeValue uiDirPicker(const std::vector<BytecodeValue> &args) {
   // TODO: String values need string pool registration
   std::string result = getUIBackend()->dirPicker(title);
   (void)result;
-  return BytecodeValue::makeNull();
+  return Value::makeNull();
 }
 
 // ui.notify(message, type)
-static BytecodeValue uiNotify(const std::vector<BytecodeValue> &args) {
+static Value uiNotify(const std::vector<Value> &args) {
   std::string message = "";
   std::string type = "info";
 
@@ -798,7 +798,7 @@ static BytecodeValue uiNotify(const std::vector<BytecodeValue> &args) {
   }
 
   getUIBackend()->notify(message, type);
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ============================================================================
@@ -806,7 +806,7 @@ static BytecodeValue uiNotify(const std::vector<BytecodeValue> &args) {
 // ============================================================================
 
 // ui.trayIcon(iconPath, tooltip)
-static BytecodeValue uiTrayIcon(const std::vector<BytecodeValue> &args) {
+static Value uiTrayIcon(const std::vector<Value> &args) {
   std::string iconPath = "";
   std::string tooltip = "";
 
@@ -818,36 +818,36 @@ static BytecodeValue uiTrayIcon(const std::vector<BytecodeValue> &args) {
   }
 
   getUIBackend()->trayIcon(iconPath, tooltip);
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ui.trayShow()
-static BytecodeValue uiTrayShow(const std::vector<BytecodeValue> &args) {
+static Value uiTrayShow(const std::vector<Value> &args) {
   (void)args;
   getUIBackend()->trayShow();
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ui.trayHide()
-static BytecodeValue uiTrayHide(const std::vector<BytecodeValue> &args) {
+static Value uiTrayHide(const std::vector<Value> &args) {
   (void)args;
   getUIBackend()->trayHide();
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ui.trayMenu(menuElement)
-static BytecodeValue uiTrayMenu(VMApi &api,
-                                const std::vector<BytecodeValue> &args) {
+static Value uiTrayMenu(VMApi &api,
+                                const std::vector<Value> &args) {
   // Menu element would need to be extracted from args
   // For now, just set up an empty tray menu
   (void)api;
   (void)args;
   getUIBackend()->trayMenu(nullptr);
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ui.trayNotify(title, message, iconType)
-static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
+static Value uiTrayNotify(const std::vector<Value> &args) {
   std::string title = "Notification";
   std::string message = "";
   std::string iconType = "info";
@@ -863,7 +863,7 @@ static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
   }
 
   getUIBackend()->trayNotify(title, message, iconType);
-  return BytecodeValue::makeBool(true);
+  return Value::makeBool(true);
 }
 
 // ============================================================================
@@ -871,10 +871,10 @@ static BytecodeValue uiTrayNotify(const std::vector<BytecodeValue> &args) {
 // ============================================================================
 
 // element.add(child)
-static BytecodeValue uiElementAdd(VMApi &api,
-                                  const std::vector<BytecodeValue> &args) {
+static Value uiElementAdd(VMApi &api,
+                                  const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // This would need proper element registry to implement correctly
   // For now, return the element for chaining
@@ -882,10 +882,10 @@ static BytecodeValue uiElementAdd(VMApi &api,
 }
 
 // element.show()
-static BytecodeValue uiElementShow(VMApi &api,
-                                   const std::vector<BytecodeValue> &args) {
+static Value uiElementShow(VMApi &api,
+                                   const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Get element from object
   auto idVal = api.getField(args[0], "__element");
@@ -900,30 +900,30 @@ static BytecodeValue uiElementShow(VMApi &api,
 }
 
 // element.hide()
-static BytecodeValue uiElementHide(VMApi &api,
-                                   const std::vector<BytecodeValue> &args) {
+static Value uiElementHide(VMApi &api,
+                                   const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Similar to show
   return args[0];
 }
 
 // element.close()
-static BytecodeValue uiElementClose(VMApi &api,
-                                    const std::vector<BytecodeValue> &args) {
+static Value uiElementClose(VMApi &api,
+                                    const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Similar to show but close
   return args[0];
 }
 
 // element.onClick(callback)
-static BytecodeValue uiElementOnClick(VMApi &api,
-                                      const std::vector<BytecodeValue> &args) {
+static Value uiElementOnClick(VMApi &api,
+                                      const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Store callback for element
   // TODO: Register callback with element
@@ -932,189 +932,189 @@ static BytecodeValue uiElementOnClick(VMApi &api,
 }
 
 // element.onChange(callback)
-static BytecodeValue uiElementOnChange(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
+static Value uiElementOnChange(VMApi &api,
+                                       const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Store callback
   return args[0];
 }
 
 // Mouse Events
-static BytecodeValue uiElementOnMouseDown(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnMouseDown(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnMouseUp(VMApi &api,
-                                        const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnMouseUp(VMApi &api,
+                                        const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDblClick(VMApi &api,
-                                         const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDblClick(VMApi &api,
+                                         const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnMouseMove(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnMouseMove(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnMouseOver(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnMouseOver(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnMouseOut(VMApi &api,
-                                         const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnMouseOut(VMApi &api,
+                                         const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDrag(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDrag(VMApi &api,
+                                     const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDragEnter(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDragEnter(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDragLeave(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDragLeave(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDropEnter(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDropEnter(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDropLeave(VMApi &api,
-                                          const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDropLeave(VMApi &api,
+                                          const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnDrop(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnDrop(VMApi &api,
+                                     const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnRightClick(VMApi &api,
-                                           const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnRightClick(VMApi &api,
+                                           const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
 // Keyboard Events
-static BytecodeValue uiElementOnKeyDown(VMApi &api,
-                                        const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnKeyDown(VMApi &api,
+                                        const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnKeyUp(VMApi &api,
-                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnKeyUp(VMApi &api,
+                                      const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnKeyPress(VMApi &api,
-                                         const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnKeyPress(VMApi &api,
+                                         const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
 // UI Events
-static BytecodeValue uiElementOnFocus(VMApi &api,
-                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnFocus(VMApi &api,
+                                      const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnBlur(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnBlur(VMApi &api,
+                                     const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnLoad(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnLoad(VMApi &api,
+                                     const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnUnload(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnUnload(VMApi &api,
+                                       const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnScroll(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnScroll(VMApi &api,
+                                       const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnCopy(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnCopy(VMApi &api,
+                                     const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnCut(VMApi &api,
-                                    const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnCut(VMApi &api,
+                                    const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnPaste(VMApi &api,
-                                      const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnPaste(VMApi &api,
+                                      const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnLoaded(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnLoaded(VMApi &api,
+                                       const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
-static BytecodeValue uiElementOnSubmit(VMApi &api,
-                                       const std::vector<BytecodeValue> &args) {
-  if (args.size() < 2) return BytecodeValue::makeNull();
+static Value uiElementOnSubmit(VMApi &api,
+                                       const std::vector<Value> &args) {
+  if (args.size() < 2) return Value::makeNull();
   return args[0];
 }
 
 // element.pad(n)
-static BytecodeValue uiElementPad(VMApi &api,
-                                  const std::vector<BytecodeValue> &args) {
+static Value uiElementPad(VMApi &api,
+                                  const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Set padding property
   return args[0];
 }
 
 // element.bg(color)
-static BytecodeValue uiElementBg(VMApi &api,
-                                 const std::vector<BytecodeValue> &args) {
+static Value uiElementBg(VMApi &api,
+                                 const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   std::string color = toString(args[1]);
   // Set background property
@@ -1124,10 +1124,10 @@ static BytecodeValue uiElementBg(VMApi &api,
 }
 
 // element.fg(color)
-static BytecodeValue uiElementFg(VMApi &api,
-                                 const std::vector<BytecodeValue> &args) {
+static Value uiElementFg(VMApi &api,
+                                 const std::vector<Value> &args) {
   if (args.size() < 2)
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   std::string color = toString(args[1]);
   (void)color;
@@ -1136,35 +1136,35 @@ static BytecodeValue uiElementFg(VMApi &api,
 }
 
 // element.alignRight()
-static BytecodeValue
-uiElementAlignRight(VMApi &api, const std::vector<BytecodeValue> &args) {
+static Value
+uiElementAlignRight(VMApi &api, const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Set align property
   return args[0];
 }
 
 // element.bold()
-static BytecodeValue uiElementBold(VMApi &api,
-                                   const std::vector<BytecodeValue> &args) {
+static Value uiElementBold(VMApi &api,
+                                   const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   // Set bold property
   return args[0];
 }
 
 // input.value() / input.value(newValue)
-static BytecodeValue uiInputValue(VMApi &api,
-                                  const std::vector<BytecodeValue> &args) {
+static Value uiInputValue(VMApi &api,
+                                  const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   if (args.size() == 1) {
     // Getter - return current value
     // TODO: String values need string pool registration
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   } else {
     // Setter - set value
     return args[0];
@@ -1172,14 +1172,14 @@ static BytecodeValue uiInputValue(VMApi &api,
 }
 
 // textarea.value() / textarea.value(newValue)
-static BytecodeValue uiTextareaValue(VMApi &api,
-                                     const std::vector<BytecodeValue> &args) {
+static Value uiTextareaValue(VMApi &api,
+                                     const std::vector<Value> &args) {
   if (args.empty())
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
 
   if (args.size() == 1) {
     // TODO: String values need string pool registration
-    return BytecodeValue::makeNull();
+    return Value::makeNull();
   } else {
     return args[0];
   }
@@ -1190,33 +1190,33 @@ static BytecodeValue uiTextareaValue(VMApi &api,
 // ============================================================================
 
 // ui.setApi(apiName) - switch between qt/gtk/imgui
-static BytecodeValue uiSetApi(const std::vector<BytecodeValue> &args) {
+static Value uiSetApi(const std::vector<Value> &args) {
   if (args.empty()) {
-    return BytecodeValue::makeBool(false);
+    return Value::makeBool(false);
   }
 
   std::string apiName = toString(args[0]);
   bool success = host::UIManager::instance().setBackend(apiName);
-  return BytecodeValue::makeBool(success);
+  return Value::makeBool(success);
 }
 
 // ui.getApi() -> current API name
-static BytecodeValue uiGetApi() {
+static Value uiGetApi() {
   // TODO: String values need string pool registration
   std::string apiName = host::UIManager::instance().currentApiName();
   (void)apiName;
-  return BytecodeValue::makeNull();
+  return Value::makeNull();
 }
 
 // ui.isAvailable(apiName) -> bool
-static BytecodeValue uiIsAvailable(const std::vector<BytecodeValue> &args) {
+static Value uiIsAvailable(const std::vector<Value> &args) {
   if (args.empty()) {
-    return BytecodeValue::makeBool(false);
+    return Value::makeBool(false);
   }
 
   std::string apiName = toString(args[0]);
   bool available = host::UIManager::instance().isBackendAvailable(apiName);
-  return BytecodeValue::makeBool(available);
+  return Value::makeBool(available);
 }
 
 // ============================================================================
@@ -1226,440 +1226,440 @@ static BytecodeValue uiIsAvailable(const std::vector<BytecodeValue> &args) {
 void registerUIModule(compiler::VMApi &api) {
   // Element creation
   api.registerFunction("ui.window",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiWindow(api, args);
                        });
 
   api.registerFunction("ui.btn",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiBtn(api, args);
                        });
 
   api.registerFunction("ui.text",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiText(api, args);
                        });
 
   api.registerFunction("ui.label",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiLabel(api, args);
                        });
 
   api.registerFunction("ui.input",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiInput(api, args);
                        });
 
   api.registerFunction("ui.textarea",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiTextarea(api, args);
                        });
 
   api.registerFunction("ui.checkbox",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCheckbox(api, args);
                        });
 
   api.registerFunction("ui.slider",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiSlider(api, args);
                        });
 
   api.registerFunction("ui.dropdown",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiDropdown(api, args);
                        });
 
   api.registerFunction("ui.image",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiImage(api, args);
                        });
 
   api.registerFunction("ui.divider",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiDivider(api, args);
                        });
 
   api.registerFunction("ui.spacer",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiSpacer(api, args);
                        });
 
   api.registerFunction("ui.progress",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiProgress(api, args);
                        });
 
   api.registerFunction("ui.spinner",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiSpinner(api, args);
                        });
 
   // Menu elements
   api.registerFunction("ui.menu",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiMenu(api, args);
                        });
 
   api.registerFunction("ui.menuItem",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiMenuItem(api, args);
                        });
 
   api.registerFunction("ui.menuSeparator",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiMenuSeparator(api, args);
                        });
 
   // Layout containers
   api.registerFunction("ui.row",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiRow(api, args);
                        });
 
   api.registerFunction("ui.col",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCol(api, args);
                        });
 
   api.registerFunction("ui.grid",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiGrid(api, args);
                        });
 
   api.registerFunction("ui.table",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiTable(api, args);
                        });
 
   api.registerFunction("ui.flex",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiFlex(api, args);
                        });
 
   api.registerFunction("ui.scroll",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiScroll(api, args);
                        });
 
   api.registerFunction("ui.canvas",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvas(api, args);
                        });
 
   // Canvas operations
   api.registerFunction("ui.canvas.clear",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasClear(api, args);
                        });
 
   api.registerFunction("ui.canvas.fill",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasFill(api, args);
                        });
 
   api.registerFunction("ui.canvas.drawPoint",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasDrawPoint(api, args);
                        });
 
   api.registerFunction("ui.canvas.drawLine",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasDrawLine(api, args);
                        });
 
   api.registerFunction("ui.canvas.drawRect",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasDrawRect(api, args);
                        });
 
   api.registerFunction("ui.canvas.drawCircle",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasDrawCircle(api, args);
                        });
 
   api.registerFunction("ui.canvas.drawImage",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiCanvasDrawImage(api, args);
                        });
 
   // Dialogs
-  api.registerFunction("ui.alert", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("ui.alert", [](const std::vector<Value> &args) {
     return uiAlert(args);
   });
 
   api.registerFunction(
       "ui.confirm",
-      [](const std::vector<BytecodeValue> &args) { return uiConfirm(args); });
+      [](const std::vector<Value> &args) { return uiConfirm(args); });
 
   api.registerFunction("ui.filePicker",
-                       [](const std::vector<BytecodeValue> &args) {
+                       [](const std::vector<Value> &args) {
                          return uiFilePicker(args);
                        });
 
   api.registerFunction(
       "ui.dirPicker",
-      [](const std::vector<BytecodeValue> &args) { return uiDirPicker(args); });
+      [](const std::vector<Value> &args) { return uiDirPicker(args); });
 
-  api.registerFunction("ui.notify", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("ui.notify", [](const std::vector<Value> &args) {
     return uiNotify(args);
   });
 
   // System Tray
   api.registerFunction(
       "ui.trayIcon",
-      [](const std::vector<BytecodeValue> &args) { return uiTrayIcon(args); });
+      [](const std::vector<Value> &args) { return uiTrayIcon(args); });
 
   api.registerFunction(
       "ui.trayShow",
-      [](const std::vector<BytecodeValue> &args) { return uiTrayShow(args); });
+      [](const std::vector<Value> &args) { return uiTrayShow(args); });
 
   api.registerFunction(
       "ui.trayHide",
-      [](const std::vector<BytecodeValue> &args) { return uiTrayHide(args); });
+      [](const std::vector<Value> &args) { return uiTrayHide(args); });
 
   api.registerFunction("ui.trayMenu",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiTrayMenu(api, args);
                        });
 
   api.registerFunction("ui.trayNotify",
-                       [](const std::vector<BytecodeValue> &args) {
+                       [](const std::vector<Value> &args) {
                          return uiTrayNotify(args);
                        });
 
   // Element methods
   api.registerFunction("ui.element.add",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementAdd(api, args);
                        });
 
   api.registerFunction("ui.element.show",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementShow(api, args);
                        });
 
   api.registerFunction("ui.element.hide",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementHide(api, args);
                        });
 
   api.registerFunction("ui.element.close",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementClose(api, args);
                        });
 
   api.registerFunction("ui.element.onClick",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnClick(api, args);
                        });
 
   api.registerFunction("ui.element.onChange",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnChange(api, args);
                        });
 
   // Mouse event handlers
   api.registerFunction("ui.element.onMouseDown",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnMouseDown(api, args);
                        });
 
   api.registerFunction("ui.element.onMouseUp",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnMouseUp(api, args);
                        });
 
   api.registerFunction("ui.element.onDblClick",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDblClick(api, args);
                        });
 
   api.registerFunction("ui.element.onMouseMove",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnMouseMove(api, args);
                        });
 
   api.registerFunction("ui.element.onMouseOver",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnMouseOver(api, args);
                        });
 
   api.registerFunction("ui.element.onMouseOut",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnMouseOut(api, args);
                        });
 
   api.registerFunction("ui.element.onDrag",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDrag(api, args);
                        });
 
   api.registerFunction("ui.element.onDragEnter",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDragEnter(api, args);
                        });
 
   api.registerFunction("ui.element.onDragLeave",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDragLeave(api, args);
                        });
 
   api.registerFunction("ui.element.onDropEnter",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDropEnter(api, args);
                        });
 
   api.registerFunction("ui.element.onDropLeave",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDropLeave(api, args);
                        });
 
   api.registerFunction("ui.element.onDrop",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnDrop(api, args);
                        });
 
   api.registerFunction("ui.element.onRightClick",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnRightClick(api, args);
                        });
 
   // Keyboard event handlers
   api.registerFunction("ui.element.onKeyDown",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnKeyDown(api, args);
                        });
 
   api.registerFunction("ui.element.onKeyUp",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnKeyUp(api, args);
                        });
 
   api.registerFunction("ui.element.onKeyPress",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnKeyPress(api, args);
                        });
 
   // UI event handlers
   api.registerFunction("ui.element.onFocus",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnFocus(api, args);
                        });
 
   api.registerFunction("ui.element.onBlur",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnBlur(api, args);
                        });
 
   api.registerFunction("ui.element.onLoad",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnLoad(api, args);
                        });
 
   api.registerFunction("ui.element.onUnload",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnUnload(api, args);
                        });
 
   api.registerFunction("ui.element.onScroll",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnScroll(api, args);
                        });
 
   api.registerFunction("ui.element.onCopy",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnCopy(api, args);
                        });
 
   api.registerFunction("ui.element.onCut",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnCut(api, args);
                        });
 
   api.registerFunction("ui.element.onPaste",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnPaste(api, args);
                        });
 
   api.registerFunction("ui.element.onLoaded",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnLoaded(api, args);
                        });
 
   api.registerFunction("ui.element.onSubmit",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementOnSubmit(api, args);
                        });
 
   api.registerFunction("ui.element.pad",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementPad(api, args);
                        });
 
   api.registerFunction("ui.element.bg",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementBg(api, args);
                        });
 
   api.registerFunction("ui.element.fg",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementFg(api, args);
                        });
 
   api.registerFunction("ui.element.alignRight",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementAlignRight(api, args);
                        });
 
   api.registerFunction("ui.element.bold",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementBold(api, args);
                        });
 
   api.registerFunction("ui.input.value",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiInputValue(api, args);
                        });
 
   api.registerFunction("ui.textarea.value",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiTextareaValue(api, args);
                        });
 
   // Styling functions
   api.registerFunction("ui.element.style",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementStyle(api, args);
                        });
 
   api.registerFunction("ui.element.width",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementWidth(api, args);
                        });
 
   api.registerFunction("ui.element.height",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementHeight(api, args);
                        });
 
   api.registerFunction("ui.element.border",
-                       [&api](const std::vector<BytecodeValue> &args) {
+                       [&api](const std::vector<Value> &args) {
                          return uiElementBorder(api, args);
                        });
 
   // API selection functions
-  api.registerFunction("ui.setApi", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("ui.setApi", [](const std::vector<Value> &args) {
     return uiSetApi(args);
   });
 
-  api.registerFunction("ui.getApi", [](const std::vector<BytecodeValue> &args) {
+  api.registerFunction("ui.getApi", [](const std::vector<Value> &args) {
     (void)args;
     return uiGetApi();
   });
 
   api.registerFunction("ui.isAvailable",
-                       [](const std::vector<BytecodeValue> &args) {
+                       [](const std::vector<Value> &args) {
                          return uiIsAvailable(args);
                        });
 

@@ -380,9 +380,9 @@ typedef void (*ImGuiImplOpenGL3RenderDrawDataFn)(void* draw_data);
 
 /* Dynamic loader for ImGui and dependencies */
 struct ImGuiLibs {
-    DynamicLoader glfwLoader;
-    DynamicLoader glLoader;
-    DynamicLoader imguiLoader;
+    havel::DynamicLoader glfwLoader;
+    havel::DynamicLoader glLoader;
+    havel::DynamicLoader imguiLoader;
     
     /* GLFW functions */
     GlfwInitFn glfwInit = nullptr;

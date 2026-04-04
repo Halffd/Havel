@@ -1,6 +1,7 @@
 #include "ClipboardManager.hpp"
 #include "qt.hpp"
 #include "core/ConfigManager.hpp"
+#include "core/IO.hpp"
 #include <QApplication>
 #include <QThread>
 #include <QJsonDocument>
@@ -37,7 +38,43 @@
 #include <QMenu>
 
 namespace havel {
+
+const char* ClipboardManager::UIConfig::FONT_FAMILY = "Sans Serif";
+
+const char* ClipboardManager::Colors::BACKGROUND = "#1e1e1e";
+const char* ClipboardManager::Colors::TEXT_PRIMARY = "#e0e0e0";
+const char* ClipboardManager::Colors::TEXT_SECONDARY = "#a0a0a0";
+const char* ClipboardManager::Colors::BORDER = "#3d3d3d";
+const char* ClipboardManager::Colors::SURFACE = "#252526";
+const char* ClipboardManager::Colors::SURFACE_LIGHT = "#2d2d30";
+const char* ClipboardManager::Colors::SURFACE_LIGHTER = "#3e3e42";
+const char* ClipboardManager::Colors::PRIMARY = "#0e639c";
+const char* ClipboardManager::Colors::PRIMARY_LIGHT = "#1177bb";
+
     QClipboard* ClipboardManager::clipboard = nullptr;
+
+QClipboard* ClipboardManager::getClipboard() const {
+    if (clipboard) {
+        return clipboard;
+    }
+    return QGuiApplication::clipboard();
+}
+
+void ClipboardManager::addToHistory(const std::string& content) {
+    addToHistory(QString::fromStdString(content));
+}
+
+int ClipboardManager::getMaxHistorySize() const { return maxHistorySize; }
+
+void ClipboardManager::hide() { hideWithFade(); }
+
+void ClipboardManager::enable() { enabled = true; }
+
+void ClipboardManager::disable() { enabled = false; }
+
+bool ClipboardManager::isEnabled() const { return enabled; }
+
+void ClipboardManager::clearHistory() { onClearAll(); }
 
 // File system operations
 QString ClipboardManager::getHistoryBasePath() const {

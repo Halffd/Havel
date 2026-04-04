@@ -1,5 +1,5 @@
 #include "ByteCompiler.hpp"
-#include "havel-lang/compiler/runtime/HostBridgeNew.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include <iostream>
 #include <stdexcept>
 

@@ -1567,7 +1567,7 @@ UIBridge::handleScreenshotFull(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  havel::host::ScreenshotService service;
+  auto& service = havel::host::ScreenshotService::getInstance();
   auto data = service.captureFullDesktop();
   (void)data;
   return Value::makeNull();
@@ -1582,7 +1582,7 @@ UIBridge::handleScreenshotMonitor(const std::vector<Value> &args,
     if (auto *v = (args[0].isInt() ? &args[0] : nullptr))
       monitor = static_cast<int>(v->asInt());
   }
-  havel::host::ScreenshotService service;
+  auto& service = havel::host::ScreenshotService::getInstance();
   auto data = service.captureMonitor(monitor);
   (void)data;
   return Value::makeNull();

@@ -1,0 +1,6 @@
+// Test without wildcards - only literals
+let result = match 0, 0 {
+    0, 0 => "matched"
+    1, 1 => "other"
+}
+print(result)

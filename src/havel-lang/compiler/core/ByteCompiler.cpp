@@ -1010,7 +1010,11 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
           Value::makeStringValId(strId),
           Value(static_cast<uint32_t>(2))});
     }
-    emit(OpCode::POP);
+    // Store the type_id in a global variable so constructor calls work
+    {
+      uint32_t strId = addStringConstant(structDecl.name);
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
     break;
   }
 

@@ -934,20 +934,19 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
     case TokenType::Arrow: {
       // Arrow function: identifier => body
-      // left should be an identifier (the parameter)
+      // Multi-param case (a, b, c) => body is handled in parseParenthesizedExpression
+      // which returns a LambdaExpression directly, so we only reach here for single-param.
       auto *ident = dynamic_cast<ast::Identifier*>(left.get());
       if (!ident) {
         errorAt(token, "Arrow function requires an identifier parameter");
         return nullptr;
       }
-      
-      // Create function parameter from the identifier
+
       std::vector<std::unique_ptr<ast::FunctionParameter>> params;
-      auto param = std::make_unique<ast::FunctionParameter>(
+      params.push_back(std::make_unique<ast::FunctionParameter>(
           std::make_unique<ast::Identifier>(ident->symbol),
-          std::nullopt, std::nullopt, false);
-      params.push_back(std::move(param));
-      
+          std::nullopt, std::nullopt, false));
+
       // Check if body is a block (starts with {)
       if (at().type == TokenType::OpenBrace) {
         // Block body: use parseBlockStatement for proper statement parsing
@@ -979,13 +978,58 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
 // Helper methods for Pratt parser
 std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
-  auto expr = parsePrattExpression(0);
+  // Check if this is a multi-parameter lambda: (a, b, c) => body
+  // Peek ahead: look for comma-separated identifiers followed by ) =>
+  size_t savedPos = position;
+  std::vector<std::unique_ptr<ast::FunctionParameter>> lambdaParams;
+  bool isMultiParamLambda = false;
   
+  if (at().type == TokenType::Identifier) {
+    // Collect comma-separated identifiers
+    while (true) {
+      if (at().type != TokenType::Identifier) break;
+      auto pattern = makeIdentifier(advance());
+      lambdaParams.push_back(std::make_unique<ast::FunctionParameter>(
+          std::move(pattern), std::nullopt, std::nullopt, false));
+      if (at().type == TokenType::Comma) {
+        advance();
+      } else {
+        break;
+      }
+    }
+    // Check for ) => 
+    if (lambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
+      advance(); // consume ')'
+      advance(); // consume '=>'
+      isMultiParamLambda = true;
+    }
+  }
+  
+  if (isMultiParamLambda) {
+    // Parse lambda body
+    std::unique_ptr<ast::Statement> body;
+    if (at().type == TokenType::OpenBrace) {
+      body = parseBlockStatement();
+    } else {
+      auto bodyExpr = parsePrattExpression(getRightBindingPower(TokenType::Arrow));
+      if (!bodyExpr) return nullptr;
+      auto block = std::make_unique<ast::BlockStatement>();
+      block->body.push_back(std::make_unique<ast::ExpressionStatement>(std::move(bodyExpr)));
+      body = std::move(block);
+    }
+    return std::make_unique<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
+  }
+  
+  // Not a multi-param lambda, restore position and parse normally
+  position = savedPos;
+  
+  auto expr = parsePrattExpression(0);
+
   if (at().type != TokenType::CloseParen) {
     failAt(at(), "Expected ')'");
   }
   advance(); // consume ')'
-  
+
   return expr;
 }
 

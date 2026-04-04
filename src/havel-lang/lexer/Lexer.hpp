@@ -1,4 +1,4 @@
-#pragma once
+            #pragma once
 
 #include <memory>
 #include <stdexcept>
@@ -16,11 +16,12 @@ struct CompilerError {
   ErrorSeverity severity;
   size_t line;
   size_t column;
+  size_t length;
   std::string message;
   std::string sourceLine; // The source line where error occurred
 
-  CompilerError(ErrorSeverity sev, size_t l, size_t c, const std::string &msg)
-      : severity(sev), line(l), column(c), message(msg) {}
+  CompilerError(ErrorSeverity sev, size_t l, size_t c, const std::string &msg, size_t len = 1)
+      : severity(sev), line(l), column(c), length(len), message(msg) {}
 };
 
 class LexError : public std::runtime_error {

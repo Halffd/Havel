@@ -1,0 +1,9 @@
+fn main() {
+  let status = "active"
+  let result = match status {
+    "active" => 1
+    "inactive" => 0
+    _ => -1
+  }
+  print(result)
+}

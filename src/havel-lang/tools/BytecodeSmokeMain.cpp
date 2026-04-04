@@ -370,11 +370,24 @@ int runAsyncCase(const std::string &name, const std::string &source,
           if (!vm_ptr) {
             throw std::runtime_error("async.run vm unavailable");
           }
-          if (args.empty()) {
+          if (args.size() < 2) {
             throw std::runtime_error("async.run requires callback");
           }
+          // Debug: check what type we received
+          std::string typeInfo = "unknown";
+          if (args[1].isNull()) typeInfo = "null";
+          else if (args[1].isInt()) typeInfo = "int";
+          else if (args[1].isClosureId()) typeInfo = "closure_id";
+          else if (args[1].isFunctionObjId()) typeInfo = "function_obj_id";
+          else if (args[1].isObjectId()) typeInfo = "object_id";
+          else if (args[1].isHostFuncId()) typeInfo = "host_func_id";
+          std::cerr << "[DEBUG] async.run received: " << typeInfo << std::endl;
           std::string task_id = "task-" + std::to_string(next_task_id++);
-          task_results[task_id] = vm_ptr->call(args[0], {});
+          std::cerr << "[DEBUG] about to call closure via vm_ptr->call" << std::endl;
+          auto result = vm_ptr->call(args[1], {});
+          std::cerr << "[DEBUG] vm_ptr->call returned, storing result" << std::endl;
+          task_results[task_id] = result;
+          std::cerr << "[DEBUG] result stored, returning" << std::endl;
           return Value::makeNull();
         };
     options.host_functions["async.await"] =
@@ -388,6 +401,7 @@ int runAsyncCase(const std::string &name, const std::string &source,
           }
           return it->second;
         };
+    options.host_functions["await"] = options.host_functions["async.await"];
     options.host_functions["async.channel"] =
         [&](const std::vector<Value> &args) {
           if (args.empty() || !args[0].isStringValId()) {
@@ -723,7 +737,7 @@ int runAsyncCase(const std::string &name, const std::string &source,
     };
 
     // Async stubs - member access on globals like async.run() gets routed to any.run
-    options.host_functions["async.run"] = options.host_functions["any.run"];
+    // NOTE: async.run is already defined above with proper task handling
     options.host_functions["async.channel"] = options.host_functions["any.channel"];
     options.host_functions["async.send"] = [&](const std::vector<Value> &args) {
       // async.send(name, value) - send to first channel

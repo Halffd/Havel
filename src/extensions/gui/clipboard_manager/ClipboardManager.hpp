@@ -1,196 +1,77 @@
 #pragma once
-#include "qt.hpp"
-
-// #include <QMainWindow>
-// #include <QClipboard>
-// #include <QSystemTrayIcon>
-// #include <QListWidget>
-// #include <QLineEdit>
-// #include <QTextEdit>
-// #include <QSplitter>
-// #include <QVBoxLayout>
-// #include <QShortcut>
-// #include <QIcon>
-// #include <QSettings>
-// #include <QAction>
-// #include <QSize>
-// #include <QMimeData>
-// #include <QDateTime>
-// #include <QImage>
-// #include <QFileInfo>
-// #include <QUrl>
-// #include <QJsonArray>
-// #include <QDir>
-// #include <QPropertyAnimation>
-// #include <QParallelAnimationGroup>
-// #include <QGraphicsOpacityEffect>
-// #include <QEasingCurve>
-#include "core/IO.hpp"
+#include <string>
+#include <vector>
+#include <QObject>
+#include <QMainWindow>
+#include <QClipboard>
+#include <QListWidget>
+#include <QLineEdit>
+#include <QSystemTrayIcon>
+#include <QShortcut>
+#include <QDateTime>
+#include <QJsonObject>
+#include <QVariant>
 
 namespace havel {
 
-// Global UI Configuration
-namespace UIConfig {
-    // Font settings
-    const int BASE_FONT_SIZE = 11;
-    const QString FONT_FAMILY = "Segoe UI";  // Will fall back to system font if not available
-    
-    // Colors
-    namespace Colors {
-        const QString BACKGROUND = "#1E1E1E";
-        const QString SURFACE = "#252526";
-        const QString SURFACE_LIGHT = "#2D2D30";
-        const QString SURFACE_LIGHTER = "#3E3E42";
-        const QString TEXT_PRIMARY = "#E0E0E0";
-        const QString TEXT_SECONDARY = "#A0A0A0";
-        const QString PRIMARY = "#007ACC";
-        const QString PRIMARY_LIGHT = "#1C97EA";
-        const QString BORDER = "#3F3F46";
-    }
-    
-    // Sizing
-    const int WINDOW_MIN_WIDTH = 800;
-    const int WINDOW_MIN_HEIGHT = 600;
-    const int SPLITTER_HANDLE_WIDTH = 8;
-    const int PREVIEW_MIN_HEIGHT = 200;
-    const int ITEM_HEIGHT = 48;
-}
+class IO;
 
-class ClipboardManager : public QMainWindow  {
+class ClipboardManager : public QMainWindow {
     Q_OBJECT
 public:
-    explicit ClipboardManager(IO* io, QWidget* parent = nullptr);
+    enum class ContentType { Unknown, Text, Markdown, Html, Image, FileList };
+    
+    struct ClipboardItem {
+        ContentType type = ContentType::Unknown;
+        QDateTime timestamp;
+        QString displayText;
+        QString preview;
+        QVariant data;
+    };
+
+    explicit ClipboardManager(IO* io = nullptr, QWidget* parent = nullptr);
     ~ClipboardManager();
-    static QClipboard* clipboard    ;
 
-    void initializeHotkeys();
-    Q_INVOKABLE void toggleVisibility();
-    Q_INVOKABLE void pasteHistoryItem(int index);
+    static ClipboardManager& getInstance() {
+        static ClipboardManager instance;
+        return instance;
+    }
 
-    // Non-copyable
-    ClipboardManager(const ClipboardManager&) = delete;
-    ClipboardManager& operator=(const ClipboardManager&) = delete;
+    void enable();
+    void disable();
+    bool isEnabled() const;
+    
+    void showAndFocus();
+    void hide();
+    
+    // Legacy support for scripts
+    void addToHistory(const std::string& content);
+    void clearHistory();
 
-    QClipboard* getClipboard() const { return clipboard; }
-
-    // Helper function for truncating text
-    QString truncateText(const QString &text, int maxLength);
-
-    // Exposed for language binding
-    void addToHistoryPublic(const QString& text);
-    void clearHistoryPublic();
-    QString getHistoryItem(int index) const;
-    int getHistoryCount() const;
+private slots:
+    void onClipboardChanged();
+    void onSearchTextChanged(const QString& text);
+    void onItemDoubleClicked(QListWidgetItem* item);
+    void onItemSelectionChanged();
+    void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
+    void onPasteRequested(int index);
+    void onItemClicked(QListWidgetItem* item);
+    void showContextMenu(const QPoint& pos);
+    void removeSelectedItem();
+    void copySelectedItems();
+    void onHotkeyPressed();
+    void onClearAll();
+    void onCustomContextMenuRequested(const QPoint &pos);
 
 signals:
     void pasteRequested(int index);
 
-private slots:
-    void onPasteRequested(int index);
-
-public slots:
-    void showAndFocus();
-
-protected:
-    void closeEvent(QCloseEvent* event) override;
-    void keyPressEvent(QKeyEvent* event) override;
-
-private slots:
-    void onClipboardChanged();
-    void onItemDoubleClicked(QListWidgetItem* item);
-    void onSearchTextChanged(const QString& text);
-    void onItemSelectionChanged();
-    void onItemClicked(QListWidgetItem *item);
-    void onCustomContextMenuRequested(const QPoint& pos);
-    void editSelectedItem();
-    void onItemChanged(QListWidgetItem* item);
-    void onClearAll();
-    void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
-    void showContextMenu(const QPoint &pos);
-    void copySelectedItem();
-    void copySelectedItems();  // Multi-item copy
-    void removeSelectedItem();
-    
-    // Animation methods
-    void showWithFade();
-    void hideWithFade();
-    void animateItemDelete(QListWidgetItem* item);
-
 private:
-    // RAII helper to manage the m_isSettingClipboard flag
-    class ClipboardSettingGuard {
-    public:
-        explicit ClipboardSettingGuard(ClipboardManager* manager) : m_manager(manager) {
-            m_manager->m_isSettingClipboard = true;
-        }
-        ~ClipboardSettingGuard() {
-            m_manager->m_isSettingClipboard = false;
-        }
-    private:
-        ClipboardManager* m_manager;
-    };
-
-    // Clipboard content types
-    enum class ContentType {
-        Text,
-        Markdown,
-        Html,
-        Image,
-        FileList,
-        Color,
-        Code,
-        Unknown
-    };
-
-
-    // File type filters
-    struct FileTypeFilter {
-        QString name;
-        QStringList extensions;
-    };
-
-    struct ClipboardItem {
-        ContentType type;
-        QVariant data;  // Stores the actual content (text, image, etc.)
-        QString displayText;
-        QDateTime timestamp;
-        QString preview;
-
-        // Default constructor
-        ClipboardItem() = default;
-
-        // Constructor with data
-        ClipboardItem(ContentType t, const QVariant& d, const QString& dt = "",
-                     const QDateTime& ts = QDateTime::currentDateTime(),
-                     const QString& p = "")
-            : type(t), data(d), displayText(dt), timestamp(ts), preview(p) {
-            if (displayText.isEmpty() && data.canConvert<QString>()) {
-                displayText = data.toString();
-            }
-        }
-    };
-
     void setupUI();
-    void setupShortcuts();
     void setupFonts();
-    void setupRenderingSafety();
-    void processClipboardContent();
-    void addToHistory(const ClipboardItem& item);
-    void addToHistory(const QString& text); // Overload for text
-    void filterHistory(const QString& filter);
-    void showTrayMessage(const QString& message);
-    
-    bool m_isSettingClipboard = false; // Flag to prevent notification loops
-    void onHotkeyPressed();
-    void updateHistoryOrder();
-    QListWidgetItem* createSafeListItem(const QString& text);
-    QString getClipboardText(ContentType type) const;
-    QString formatFileList(const QList<QUrl>& urls) const;
-    bool isFileTypeAllowed(const QString& fileName) const;
+    void setupShortcuts();
     void loadSettings();
-    static QString markdownToHtml(const QString& markdown);
-    
-    // Persistence methods
+    void saveSettings();
     void loadHistory();
     void saveHistory();
     QString getHistoryBasePath() const;
@@ -198,63 +79,80 @@ private:
     QString saveTextToFile(const QString& text, int index);
     QString saveImageToFile(const QImage& image, int index);
     QString saveFileListToFile(const QList<QUrl>& urls, int index);
-    ClipboardItem loadItemFromFile(const QJsonObject& json);
     void removeHistoryFiles(int index);
-    void saveSettings();
-    // Member variables
-    QList<FileTypeFilter> fileTypeFilters;
-    QList<ContentType> enabledContentTypes;
-    ClipboardItem lastClipboardItem;
-    bool m_isProcessingClipboardChange = false;
-    QList<ClipboardItem> historyItems;
-    QStringList fullHistory; // For backward compatibility
-    QJsonArray historyIndex;
-    
-    // UI Components
-    QWidget* centralWidget = nullptr;
+    ClipboardItem loadItemFromFile(const QJsonObject& json);
+    void filterHistory(const QString& text);
+    void initializeHotkeys();
+    int getMaxHistorySize() const;
+    QListWidgetItem* createSafeListItem(const QString& text);
+    void onItemChanged(QListWidgetItem* item);
+    void toggleVisibility();
+    void pasteHistoryItem(int index);
+    void updateHistoryOrder();
+    void processClipboardContent();
+    bool isFileTypeAllowed(const QString& fileName) const;
+    QString formatFileList(const QList<QUrl>& urls) const;
+    QString markdownToHtml(const QString& markdown);
+    QString truncateText(const QString &text, int maxLength);
+    void animateItemDelete(QListWidgetItem* item);
+    void showWithFade();
+    void hideWithFade();
+
+    IO* io = nullptr;
+    static QClipboard* clipboard;
     QLineEdit* searchBox = nullptr;
     QListWidget* historyList = nullptr;
-    QTextEdit* previewPane = nullptr;
-    QSplitter* splitter = nullptr;
     QSystemTrayIcon* trayIcon = nullptr;
-    
-    // Shortcuts
+    QList<ClipboardItem> historyItems;
+    QStringList fullHistory;
     QShortcut* showShortcut = nullptr;
     QShortcut* deleteShortcut = nullptr;
     QShortcut* escapeShortcut = nullptr;
-    
-    // Configuration
-    IO* io = nullptr;
-    bool shown = false;
-    int fontSize = 28;
-    int lastRow = 1;
-    QSize windowSize = QSize(700, 800);
-    
-    // State
-    QString lastClipboard;
-    
-    // Configuration values
+    QTextEdit* previewPane = nullptr;
+    QSize windowSize;
+    int fontSize = 10;
+    bool tray = true;
+    int lastRow = -1;
     int maxHistorySize = 1000;
     int previewMaxLength = 1000;
+    int displayedItemsLimit = 50;
+    bool enabled = true;
+    bool m_isSettingClipboard = false;
+    bool m_isProcessingClipboardChange = false;
+    QList<ClipboardItem> enabledContentTypes;
+    ClipboardItem lastClipboardItem;
+    QString lastClipboard;
+    QJsonArray historyIndex;
     
-    // Getters for configuration values
-    int getMaxHistorySize() const { return maxHistorySize; }
-    int getPreviewMaxLength() const { return previewMaxLength; }
+    struct FileTypeFilter {
+        QString name;
+        QStringList extensions;
+    };
+    std::vector<FileTypeFilter> fileTypeFilters;
 
-    // Settings for customization
-    int getFontSize() const { return fontSize; }
-    void setFontSize(int size) { fontSize = size; }
-    int getDisplayedItemsLimit() const { return displayedItemsLimit; }
-    void setDisplayedItemsLimit(int limit) { displayedItemsLimit = limit; }
-    bool isEnabled() const { return enabled; }
-    void setEnabled(bool value) { enabled = value; }
+    struct UIConfig {
+        static constexpr int WINDOW_MIN_WIDTH = 400;
+        static constexpr int WINDOW_MIN_HEIGHT = 500;
+        static constexpr int ITEM_HEIGHT = 40;
+        static constexpr int BASE_FONT_SIZE = 10;
+        static constexpr int SPLITTER_HANDLE_WIDTH = 1;
+        static const char* FONT_FAMILY;
+    };
 
-private:
-    // Add new member variables for settings
-    int displayedItemsLimit = 50;  // Limit of items to display
-    bool enabled = true;           // Whether the clipboard manager is enabled
-    bool showPreviewPane = false;  // Whether to show the preview pane (now single panel)
-    bool tray = false;
+    struct Colors {
+        static const char* BACKGROUND;
+        static const char* TEXT_PRIMARY;
+        static const char* TEXT_SECONDARY;
+        static const char* BORDER;
+        static const char* SURFACE;
+        static const char* SURFACE_LIGHT;
+        static const char* SURFACE_LIGHTER;
+        static const char* PRIMARY;
+        static const char* PRIMARY_LIGHT;
+    };
+
+    std::map<std::string, std::vector<std::string>> fileTypeFilters;
+    std::vector<ContentType> enabledContentTypes;
 };
 
 } // namespace havel

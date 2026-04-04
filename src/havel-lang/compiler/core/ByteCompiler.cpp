@@ -1,4 +1,5 @@
 #include "ByteCompiler.hpp"
+#include "havel-lang/compiler/runtime/HostBridgeNew.hpp"
 #include <iostream>
 #include <stdexcept>
 
@@ -1146,26 +1147,27 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program,
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
-  // First, try to load via HostBridge (lazy module loading for host services)
-  if (host_bridge_) {
-    // Extract module name from filePath (e.g., "clipboard" from "clipboard" or "./clipboard")
-    std::string moduleName = statement.filePath;
-    // Remove leading ./ or ../
-    if (moduleName.substr(0, 2) == "./") {
-      moduleName = moduleName.substr(2);
-    } else if (moduleName.substr(0, 3) == "../") {
-      moduleName = moduleName.substr(3);
-    }
-    
-    // Try to load as host module (triggers lazy loading)
-    if (host_bridge_->isModuleAvailable(moduleName)) {
-      if (!host_bridge_->loadModule(moduleName)) {
-        throw std::runtime_error("Failed to load host module: " + moduleName);
+  // Handle host modules first (lazy loading via HostBridge)
+  if (host_bridge_ && !statement.isFileImport) {
+    for (const auto &moduleName : statement.moduleNames) {
+      if (host_bridge_->isModuleAvailable(moduleName)) {
+        if (!host_bridge_->loadModule(moduleName)) {
+          throw std::runtime_error("Failed to load host module: " + moduleName);
+        }
+
+        // If wildcard 'use module.*', flatten exports into global scope
+        if (statement.isWildcard) {
+          // This requires VM support to copy exported names from module namespace
+          // to current scope. For now, we emit a marker.
+          emit(OpCode::LOAD_CONST, addStringConstant("Flattening host module: " + moduleName));
+          emit(OpCode::POP);
+        } else {
+          // Regular 'use module' makes the module object available by its name
+          emit(OpCode::LOAD_CONST, addStringConstant("Host module loaded: " + moduleName));
+          emit(OpCode::POP);
+        }
+        return;
       }
-      // Emit instruction to mark host module loaded
-      emit(OpCode::LOAD_CONST, addStringConstant("Host module loaded: " + moduleName));
-      emit(OpCode::POP);
-      return;
     }
   }
 
@@ -1174,16 +1176,18 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
     throw std::runtime_error("Module loader not available for use statement");
   }
 
-  // Load the module
-  LoadedModule *module =
-      module_loader_->loadModule(statement.filePath, base_path_);
-  if (!module) {
-    throw std::runtime_error("Failed to load module: " + statement.filePath);
-  }
+  // Load the module (script file)
+  if (statement.isFileImport) {
+    LoadedModule *module =
+        module_loader_->loadModule(statement.filePath, base_path_);
+    if (!module) {
+      throw std::runtime_error("Failed to load module file: " + statement.filePath);
+    }
 
-  // Emit a debug marker
-  emit(OpCode::LOAD_CONST, addStringConstant("Loaded module: " + statement.filePath));
-  emit(OpCode::POP);
+    // Emit debug marker
+    emit(OpCode::LOAD_CONST, addStringConstant("Loaded module file: " + statement.filePath));
+    emit(OpCode::POP);
+  }
 }
 
 void ByteCompiler::compileExportStatement(

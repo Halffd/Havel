@@ -2511,6 +2511,7 @@ struct UseStatement : public Statement {
       false; // True if importing file, false if importing module
   bool isNamedImport =
       false; // True if using named imports (use x, y from "file.hv")
+  bool isWildcard = false; // True if using wildcard import (use module.*)
 
   UseStatement(std::vector<std::string> modules = {})
       : moduleNames(std::move(modules)), isFileImport(false) {

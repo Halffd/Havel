@@ -4155,8 +4155,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
       if (at().type == havel::TokenType::Multiply) {
         advance(); // consume '*'
         // Wildcard import - flatten all functions into current scope
-        return std::make_unique<havel::ast::UseStatement>(
-            moduleName, std::vector<std::string>{"*"});
+        auto stmt = std::make_unique<havel::ast::UseStatement>(
+            std::vector<std::string>{moduleName});
+        stmt->isWildcard = true;
+        return stmt;
       } else {
         failAt(at(), "Expected '*' after '.' in use statement");
       }
@@ -4164,7 +4166,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
 
     // Simple module import - flatten into current scope
     return std::make_unique<havel::ast::UseStatement>(
-        moduleName, std::vector<std::string>{"*"});
+        std::vector<std::string>{moduleName});
   }
 
   failAt(at(), "Expected module name or file path after 'use'");

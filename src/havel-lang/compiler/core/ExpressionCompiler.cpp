@@ -227,13 +227,15 @@ void ExpressionCompiler::compileLambdaExpression(const ast::LambdaExpression& la
 }
 
 void ExpressionCompiler::compileArrayLiteral(const ast::ArrayLiteral& array) {
-  // Compile elements in reverse order (stack order)
+  // Create array first, then push elements
+  emitter_.emit(OpCode::ARRAY_NEW);
+  // Compile elements in reverse order (stack order for ARRAY_PUSH)
   for (auto it = array.elements.rbegin(); it != array.elements.rend(); ++it) {
     if (*it) {
       compile(**it);
+      emitter_.emit(OpCode::ARRAY_PUSH);
     }
   }
-  emitter_.emit(OpCode::ARRAY_NEW, static_cast<uint32_t>(array.elements.size()));
 }
 
 void ExpressionCompiler::compileObjectLiteral(const ast::ObjectLiteral& object) {

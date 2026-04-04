@@ -265,6 +265,7 @@ struct BytecodeFunction {
   std::vector<Instruction> instructions;
   std::vector<SourceLocation> instruction_locations;
   std::vector<Value> constants;
+  std::vector<std::string> string_constants; // String table indexed by StringValId
   std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;
   uint32_t local_count;

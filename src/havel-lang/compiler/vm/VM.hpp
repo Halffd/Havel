@@ -120,6 +120,8 @@ private:
   std::unordered_map<std::string, Value> globals;
   mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+  std::vector<std::string> host_function_names_; // Index -> name mapping
+  std::unordered_map<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
   std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
   std::unordered_map<std::string, uint32_t> class_type_ids_by_name_;
   bool has_current_exception_ = false;
@@ -233,6 +235,7 @@ public:
   void registerHostFunction(const std::string &name, size_t arity,
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
+  uint32_t getHostFunctionIndex(const std::string &name);
 
   // System object initializer - called after registerDefaultHostGlobals()
   void setSystemObjectInitializer(SystemObjectInitializer init) {

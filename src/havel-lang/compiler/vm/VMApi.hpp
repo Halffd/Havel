@@ -43,8 +43,7 @@ struct VMApi {
   Value makeObject() { return Value::makeObjectId(vm.createHostObject().id); }
   Value makeArray() { return Value::makeArrayId(vm.createHostArray().id); }
   Value makeFunctionRef(const std::string &name) {
-    return Value::makeHostFuncId(0); // TODO: register and get function ID
-    (void)name;
+    return Value::makeHostFuncId(vm.getHostFunctionIndex(name));
   }
 
   // Global scope

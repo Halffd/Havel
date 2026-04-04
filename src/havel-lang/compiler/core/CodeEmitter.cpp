@@ -97,7 +97,7 @@ uint32_t CodeEmitter::addConstant(const Value& value) {
 
 uint32_t CodeEmitter::addStringConstant(const std::string& str) {
   if (!currentContext_.function) {
-    throw std::runtime_error("Cannot add string constant: no active function");
+    COMPILER_THROW("Cannot add string constant: no active function");
   }
   uint32_t index = static_cast<uint32_t>(currentContext_.function->constants.size());
   currentContext_.function->constants.push_back(Value::makeStringValId(index));
@@ -205,7 +205,7 @@ InstructionBuilder& InstructionBuilder::atLocation(uint32_t line, uint32_t colum
 
 void InstructionBuilder::emit() {
   if (!opcode_) {
-    throw std::runtime_error("Cannot emit instruction: no opcode set");
+    COMPILER_THROW("Cannot emit instruction: no opcode set");
   }
 
   if (location_) {

@@ -40,6 +40,7 @@ public:
 
   struct RuntimeClosure {
     uint32_t function_index = 0;
+    uint32_t chunk_index = 0;  // NEW: track which chunk this closure belongs to
     std::vector<std::shared_ptr<UpvalueCell>> upvalues;
   };
 

@@ -1298,6 +1298,15 @@ Value VM::invokeHostFunction(const std::string &name,
     }
     args[arg_count - 1 - i] = stack.top();
     stack.pop();
+    // Debug: check what type the argument is
+    std::string typeInfo = "unknown";
+    if (args[arg_count - 1 - i].isNull()) typeInfo = "null";
+    else if (args[arg_count - 1 - i].isInt()) typeInfo = "int";
+    else if (args[arg_count - 1 - i].isClosureId()) typeInfo = "closure_id";
+    else if (args[arg_count - 1 - i].isFunctionObjId()) typeInfo = "function_obj_id";
+    else if (args[arg_count - 1 - i].isObjectId()) typeInfo = "object_id";
+    else if (args[arg_count - 1 - i].isHostFuncId()) typeInfo = "host_func_id";
+    std::cerr << "[DEBUG] invokeHostFunction arg[" << (arg_count - 1 - i) << "]: " << typeInfo << std::endl;
   }
 
   return it->second(args);
@@ -1581,6 +1590,16 @@ Value VM::call(const Value &callee_value,
         "VM::call requires an active bytecode chunk (run execute first)");
   }
 
+  // Debug: check what type we received
+  std::string typeInfo = "unknown";
+  if (callee_value.isNull()) typeInfo = "null";
+  else if (callee_value.isInt()) typeInfo = "int";
+  else if (callee_value.isClosureId()) typeInfo = "closure_id";
+  else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+  else if (callee_value.isObjectId()) typeInfo = "object_id";
+  else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+  std::cerr << "[DEBUG] VM::call received: " << typeInfo << std::endl;
+
   const size_t base_depth = frame_count_;
   doCall(callee_value, args, false);
   runDispatchLoop(base_depth);
@@ -1597,6 +1616,9 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args,
                 bool advance_caller_ip) {
+  // Debug: enter doCall
+  std::cerr << "[DEBUG] doCall: entered" << std::endl;
+  
   // Handle host function call directly
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
@@ -1628,6 +1650,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
+  uint32_t chunk_index = 0;  // NEW: track chunk index for closure calls
   if (callee_value.isFunctionObjId()) {
     function_index = callee_value.asFunctionObjId();
   } else if (callee_value.isClosureId()) {
@@ -1638,20 +1661,44 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
+    chunk_index = closure->chunk_index;  // NEW: get chunk index from closure
   } else {
-    COMPILER_THROW("CALL expects function or closure as callee");
+    // Debug: identify what type the value actually is
+    std::string typeInfo = "unknown";
+    if (callee_value.isNull()) typeInfo = "null";
+    else if (callee_value.isInt()) typeInfo = "int";
+    else if (callee_value.isDouble()) typeInfo = "double";
+    else if (callee_value.isBool()) typeInfo = "bool";
+    else if (callee_value.isStringValId()) typeInfo = "string_val_id";
+    else if (callee_value.isStringId()) typeInfo = "string_id";
+    else if (callee_value.isObjectId()) typeInfo = "object_id";
+    else if (callee_value.isArrayId()) typeInfo = "array_id";
+    else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+    else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+    else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
+    COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ")");
   }
 
-  const auto *callee = current_chunk->getFunction(function_index);
+  // NEW: Use closure's chunk index if current_chunk is null (e.g., when called from host function)
+  const Chunk *chunk_to_use = current_chunk;
+  if (!chunk_to_use && closure_id != 0) {
+    // Find the chunk from the closure's chunk_index
+    if (chunk_index < loaded_chunks_.size()) {
+      chunk_to_use = loaded_chunks_[chunk_index].get();
+    }
+  }
+  if (!chunk_to_use) {
+    COMPILER_THROW("No chunk available for function call");
+  }
+  
+  const auto *callee = chunk_to_use->getFunction(function_index);
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
                              std::to_string(function_index));
   }
 
   // Debug
-  if (callee_value.isFunctionObjId()) {
-    // Check if function is valid
-  }
+  (void)callee_value;
 
   // Allow fewer arguments than parameters (for default parameters)
   // For variadic functions, allow MORE arguments than parameters
@@ -1723,6 +1770,7 @@ void VM::doTailCall(Value callee_value,
 
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
+  uint32_t chunk_index = 0;  // NEW: track chunk index for closure calls
   if (callee_value.isFunctionObjId()) {
     function_index = callee_value.asFunctionObjId();
   } else if (callee_value.isClosureId()) {
@@ -1733,11 +1781,23 @@ void VM::doTailCall(Value callee_value,
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
+    chunk_index = closure->chunk_index;  // NEW: get chunk index from closure
   } else {
     COMPILER_THROW("TAIL_CALL expects function or closure as callee");
   }
 
-  const auto *callee = current_chunk->getFunction(function_index);
+  // NEW: Use closure's chunk index if current_chunk is null
+  const Chunk *chunk_to_use = current_chunk;
+  if (!chunk_to_use && closure_id != 0) {
+    if (chunk_index < loaded_chunks_.size()) {
+      chunk_to_use = loaded_chunks_[chunk_index].get();
+    }
+  }
+  if (!chunk_to_use) {
+    COMPILER_THROW("No chunk available for tail call");
+  }
+
+  const auto *callee = chunk_to_use->getFunction(function_index);
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
                              std::to_string(function_index));
@@ -1955,8 +2015,17 @@ void VM::execBinaryOp(const Instruction &instruction) {
     case OpCode::GTE:
       result = false;
       break;
+    case OpCode::ADD:
+    case OpCode::SUB:
+    case OpCode::MUL:
+    case OpCode::DIV:
+    case OpCode::MOD:
+    case OpCode::POW:
+      // Arithmetic with null results in null (not an error)
+      pushStack(Value::makeNull());
+      return;
     default:
-      COMPILER_THROW("Invalid comparison opcode with null");
+      COMPILER_THROW("Invalid operation opcode with null");
     }
     pushStack(result);
     return;
@@ -2353,7 +2422,27 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     Value callee_value = popStack();
 
+    // Debug: check what type the callee is
+    std::string typeInfo = "unknown";
+    if (callee_value.isNull()) typeInfo = "null";
+    else if (callee_value.isInt()) typeInfo = "int";
+    else if (callee_value.isClosureId()) typeInfo = "closure_id";
+    else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+    else if (callee_value.isObjectId()) typeInfo = "object_id";
+    else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+    std::cerr << "[DEBUG] CALL: callee is " << typeInfo << std::endl;
     
+    // Debug: check argument types
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      std::string argType = "unknown";
+      if (args[i].isNull()) argType = "null";
+      else if (args[i].isInt()) argType = "int";
+      else if (args[i].isClosureId()) argType = "closure_id";
+      else if (args[i].isFunctionObjId()) argType = "function_obj_id";
+      else if (args[i].isObjectId()) argType = "object_id";
+      else if (args[i].isHostFuncId()) argType = "host_func_id";
+      std::cerr << "[DEBUG] CALL: arg[" << i << "] is " << argType << std::endl;
+    }
 
     // Handle bound method objects (from array prototype lookup)
     if (callee_value.isObjectId()) {
@@ -2412,6 +2501,23 @@ void VM::executeInstruction(const Instruction &instruction) {
       function_name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     uint32_t arg_count = instruction.operands[1].asInt();
+    
+    // Debug: check what we're about to call
+    std::cerr << "[DEBUG] CALL_HOST: calling " << function_name << " with arg_count=" << arg_count << std::endl;
+    // Debug: check stack top types before call
+    std::vector<Value> stack_copy = stack;
+    for (uint32_t i = 0; i < arg_count && i < stack_copy.size(); ++i) {
+      Value v = stack_copy[stack_copy.size() - 1 - i];
+      std::string typeInfo = "unknown";
+      if (v.isNull()) typeInfo = "null";
+      else if (v.isInt()) typeInfo = "int";
+      else if (v.isClosureId()) typeInfo = "closure_id";
+      else if (v.isFunctionObjId()) typeInfo = "function_obj_id";
+      else if (v.isObjectId()) typeInfo = "object_id";
+      else if (v.isHostFuncId()) typeInfo = "host_func_id";
+      std::cerr << "[DEBUG] CALL_HOST: stack arg[" << i << "] is " << typeInfo << std::endl;
+    }
+    
     pushStack(invokeHostFunction(function_name, arg_count));
     break;
   }
@@ -2459,6 +2565,17 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::RETURN: {
+    // Debug: check what type is being returned
+    if (!stack.empty()) {
+      Value ret = stack.top();
+      std::string typeInfo = "unknown";
+      if (ret.isNull()) typeInfo = "null";
+      else if (ret.isInt()) typeInfo = "int";
+      else if (ret.isClosureId()) typeInfo = "closure_id";
+      else if (ret.isFunctionObjId()) typeInfo = "function_obj_id";
+      else if (ret.isObjectId()) typeInfo = "object_id";
+      std::cerr << "[DEBUG] RETURN: stack top is " << typeInfo << std::endl;
+    }
     this->doReturn();
     break;
   }
@@ -2511,6 +2628,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     RuntimeClosure closure;
     closure.function_index = function_index;
+    closure.chunk_index = current_chunk_index;  // NEW: capture chunk index
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
       if (descriptor.captures_local) {
@@ -2545,8 +2663,12 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     pushStack(Value::makeClosureId(heap_.allocateClosure(
         GCHeap::RuntimeClosure{.function_index = closure.function_index,
+                               .chunk_index = closure.chunk_index,  // NEW: pass chunk index
                                .upvalues = std::move(closure.upvalues)}).id));
-    maybeCollectGarbage();
+    std::cerr << "[DEBUG] CLOSURE created, stack top isClosureId: " 
+              << stack.top().isClosureId() << ", isObjectId: " << stack.top().isObjectId() << std::endl;
+    // Disable GC to test if it's causing corruption
+    // maybeCollectGarbage();
     break;
   }
 

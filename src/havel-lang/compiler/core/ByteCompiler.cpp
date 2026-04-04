@@ -1146,6 +1146,30 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program,
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
+  // First, try to load via HostBridge (lazy module loading for host services)
+  if (host_bridge_) {
+    // Extract module name from filePath (e.g., "clipboard" from "clipboard" or "./clipboard")
+    std::string moduleName = statement.filePath;
+    // Remove leading ./ or ../
+    if (moduleName.substr(0, 2) == "./") {
+      moduleName = moduleName.substr(2);
+    } else if (moduleName.substr(0, 3) == "../") {
+      moduleName = moduleName.substr(3);
+    }
+    
+    // Try to load as host module (triggers lazy loading)
+    if (host_bridge_->isModuleAvailable(moduleName)) {
+      if (!host_bridge_->loadModule(moduleName)) {
+        throw std::runtime_error("Failed to load host module: " + moduleName);
+      }
+      // Emit instruction to mark host module loaded
+      emit(OpCode::LOAD_CONST, addStringConstant("Host module loaded: " + moduleName));
+      emit(OpCode::POP);
+      return;
+    }
+  }
+
+  // Fall back to file-based module loading
   if (!module_loader_) {
     throw std::runtime_error("Module loader not available for use statement");
   }
@@ -1157,13 +1181,7 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
     throw std::runtime_error("Failed to load module: " + statement.filePath);
   }
 
-  // For now, emit a NOP - the module's functions/classes will be compiled
-  // and merged into the main bytecode. In a full implementation, we would:
-  // 1. Parse and compile the module's AST
-  // 2. Merge its functions into our function table
-  // 3. Make exported names available
-
-  // Emit a debug marker for now
+  // Emit a debug marker
   emit(OpCode::LOAD_CONST, addStringConstant("Loaded module: " + statement.filePath));
   emit(OpCode::POP);
 }

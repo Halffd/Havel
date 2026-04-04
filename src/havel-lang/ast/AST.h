@@ -174,6 +174,7 @@ struct ASTNode {
   NodeType kind;
   size_t line = 0;
   size_t column = 0;
+  size_t length = 0;
 
   virtual ~ASTNode() = default;
 

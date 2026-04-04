@@ -73,7 +73,7 @@ public:
   // ============================================================================
   // Source location tracking
   // ============================================================================
-  void setSourceLocation(uint32_t line, uint32_t column);
+  void setSourceLocation(uint32_t line, uint32_t column, uint32_t length = 0);
   void clearSourceLocation();
 
   // ============================================================================
@@ -117,7 +117,7 @@ public:
   InstructionBuilder& op(OpCode opcode);
   InstructionBuilder& operand(const Value& value);
   InstructionBuilder& operands(const std::vector<Value>& values);
-  InstructionBuilder& atLocation(uint32_t line, uint32_t column);
+  InstructionBuilder& atLocation(uint32_t line, uint32_t column, uint32_t length = 0);
 
   void emit();
   uint32_t emitWithIndex();

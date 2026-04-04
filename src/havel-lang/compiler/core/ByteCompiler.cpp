@@ -243,6 +243,12 @@ uint32_t ByteCompiler::addStringConstant(const std::string &str) {
     COMPILER_THROW(
         "Attempted to add string constant without active function");
   }
+  // Check if string already exists
+  for (uint32_t i = 0; i < current_function->string_constants.size(); i++) {
+    if (current_function->string_constants[i] == str) {
+      return i;
+    }
+  }
   uint32_t index = static_cast<uint32_t>(current_function->string_constants.size());
   current_function->string_constants.push_back(str);
   current_function->constants.push_back(Value::makeStringValId(index));
@@ -663,8 +669,6 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::LetDeclaration: {
     const auto &let = static_cast<const ast::LetDeclaration &>(statement);
-    if (let.value) {
-    }
     if (auto *identifier =
             dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
       if (let.value) {

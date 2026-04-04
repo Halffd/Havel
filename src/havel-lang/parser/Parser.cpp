@@ -520,6 +520,7 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   }
 
   // Get the first token (null denotation)
+  Token start_token = at();
   Token token = advance();
   auto left = nud(token);
 
@@ -527,12 +528,27 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
     return nullptr;
   }
 
+  // Assign source span to the base expression
+  if (left->line == 0 || left->line == start_token.line) {
+    left->line = start_token.line;
+    left->column = start_token.column;
+    left->length = start_token.length;
+  }
+
   // While the next token has higher binding power than our right binding power
   while (rbp < getBindingPower(at().type)) {
-    token = advance();
-    left = led(token, std::move(left));
+    Token op_token = advance();
+    left = led(op_token, std::move(left));
     if (!left) {
       return nullptr;
+    }
+    // Update span for the compound expression
+    if (left->line == start_token.line) {
+       // Single-line expression width
+       left->length = (op_token.column + op_token.length) - start_token.column;
+    } else {
+       // Just fallback to the operator's length if multiline is unsupported here
+       left->length = op_token.length;
     }
   }
   
@@ -544,10 +560,15 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
        at().type == TokenType::Number ||
        at().type == TokenType::Identifier ||
        at().type == TokenType::InterpolatedString)) {
+    Token arg_token = at();
     auto arg = nud(advance()); // Parse the argument using nud
     std::vector<std::unique_ptr<ast::Expression>> args;
     args.push_back(std::move(arg));
-    left = std::make_unique<ast::CallExpression>(std::move(left), std::move(args));
+    auto call_expr = std::make_unique<ast::CallExpression>(std::move(left), std::move(args));
+    call_expr->line = start_token.line;
+    call_expr->column = start_token.column;
+    call_expr->length = (arg_token.column + arg_token.length) - start_token.column;
+    left = std::move(call_expr);
   }
 
   return left;

@@ -138,8 +138,8 @@ void CodeEmitter::exitTailPosition() {
   inTailPosition_ = false;
 }
 
-void CodeEmitter::setSourceLocation(uint32_t line, uint32_t column) {
-  currentSourceLocation_ = SourceLocation{"", line, column};
+void CodeEmitter::setSourceLocation(uint32_t line, uint32_t column, uint32_t length) {
+  currentSourceLocation_ = SourceLocation{"", line, column, length};
 }
 
 void CodeEmitter::clearSourceLocation() {
@@ -198,8 +198,8 @@ InstructionBuilder& InstructionBuilder::operands(const std::vector<Value>& value
   return *this;
 }
 
-InstructionBuilder& InstructionBuilder::atLocation(uint32_t line, uint32_t column) {
-  location_ = SourceLocation{"", line, column};
+InstructionBuilder& InstructionBuilder::atLocation(uint32_t line, uint32_t column, uint32_t length) {
+  location_ = SourceLocation{"", line, column, length};
   return *this;
 }
 
@@ -209,7 +209,7 @@ void InstructionBuilder::emit() {
   }
 
   if (location_) {
-    emitter_.setSourceLocation(location_->line, location_->column);
+    emitter_.setSourceLocation(location_->line, location_->column, location_->length);
   }
 
   if (operands_.empty()) {

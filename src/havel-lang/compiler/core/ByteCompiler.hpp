@@ -53,7 +53,7 @@ private:
     SourceLocationScope(ByteCompiler *owner, const ast::ASTNode &node)
         : compiler(owner), previous(owner->current_source_location_) {
       owner->current_source_location_ = SourceLocation{
-          "", static_cast<uint32_t>(node.line), static_cast<uint32_t>(node.column)};
+          "", static_cast<uint32_t>(node.line), static_cast<uint32_t>(node.column), static_cast<uint32_t>(node.length)};
     }
     ~SourceLocationScope() { compiler->current_source_location_ = previous; }
   };

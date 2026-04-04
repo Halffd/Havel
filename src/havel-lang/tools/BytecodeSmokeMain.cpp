@@ -224,6 +224,91 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
 
+    // any.* dispatch functions for member access and array HOFs
+    havel::compiler::VM *vm_ptr = nullptr;
+    options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+    options.host_functions["any.get"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      const auto &obj = args[0];
+      const auto &key = args[1];
+      if (obj.isArrayId() && key.isInt()) {
+        auto arrRef = havel::compiler::ArrayRef{obj.asArrayId()};
+        auto idx = static_cast<size_t>(key.asInt());
+        if (idx < vm_ptr->getHostArrayLength(arrRef)) {
+          return vm_ptr->getHostArrayValue(arrRef, idx);
+        }
+        return Value::makeNull();
+      }
+      if (obj.isObjectId() && key.isStringValId()) {
+        auto objRef = havel::compiler::ObjectRef{obj.asObjectId(), true};
+        return vm_ptr->getHostObjectField(objRef, "<string:" + std::to_string(key.asStringValId()) + ">");
+      }
+      return Value::makeNull();
+    };
+    options.host_functions["any.len"] = [&](const std::vector<Value> &args) {
+      if (args.empty() || !vm_ptr) return Value::makeInt(0);
+      if (args[0].isArrayId()) return Value::makeInt(static_cast<int64_t>(vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()})));
+      return Value::makeInt(0);
+    };
+    options.host_functions["any.map"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(arrRef);
+      auto out = vm_ptr->createHostArray();
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        auto mapped = vm_ptr->callFunction(args[1], {val});
+        vm_ptr->pushHostArrayValue(out, mapped);
+      }
+      return Value::makeArrayId(out.id);
+    };
+    options.host_functions["any.filter"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(arrRef);
+      auto out = vm_ptr->createHostArray();
+      auto truthy = [](const Value &v) {
+        if (v.isNull()) return false;
+        if (v.isBool()) return v.asBool();
+        if (v.isInt()) return v.asInt() != 0;
+        if (v.isDouble()) return v.asDouble() != 0.0;
+        return true;
+      };
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        auto result = vm_ptr->callFunction(args[1], {val});
+        if (truthy(result)) vm_ptr->pushHostArrayValue(out, val);
+      }
+      return Value::makeArrayId(out.id);
+    };
+    options.host_functions["any.reduce"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 3 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(arrRef);
+      Value acc = args[2];
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        acc = vm_ptr->callFunction(args[1], {acc, val});
+      }
+      return acc;
+    };
+    options.host_functions["any.foreach"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(arrRef);
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        vm_ptr->callFunction(args[1], {val});
+      }
+      return Value::makeNull();
+    };
+    options.host_functions["any.set"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 3 || !vm_ptr || !args[0].isArrayId() || !args[1].isInt()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      vm_ptr->setHostArrayValue(arrRef, static_cast<size_t>(args[1].asInt()), args[2]);
+      return args[2];
+    };
+
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
     if (!equalsInt(result.return_value, expected)) {
@@ -511,6 +596,101 @@ int runAsyncCase(const std::string &name, const std::string &source,
     options.host_functions["any.stop"] = options.host_functions["object.stop"];
     options.host_functions["any.cancel"] = options.host_functions["object.cancel"];
     options.host_functions["any.running"] = options.host_functions["object.running"];
+
+    // any.* dispatch functions for member access and array HOFs
+    options.host_functions["any.get"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2) return Value::makeNull();
+      const auto &obj = args[0];
+      const auto &key = args[1];
+      if (obj.isArrayId() && key.isInt()) {
+        auto arrRef = havel::compiler::ArrayRef{obj.asArrayId()};
+        if (!vm_ptr) return Value::makeNull();
+        auto idx = static_cast<size_t>(key.asInt());
+        if (idx < vm_ptr->getHostArrayLength(arrRef)) {
+          return vm_ptr->getHostArrayValue(arrRef, idx);
+        }
+        return Value::makeNull();
+      }
+      if (obj.isObjectId() && key.isStringValId()) {
+        auto objRef = havel::compiler::ObjectRef{obj.asObjectId(), true};
+        if (!vm_ptr) return Value::makeNull();
+        return vm_ptr->getHostObjectField(objRef, "<string:" + std::to_string(key.asStringValId()) + ">");
+      }
+      return Value::makeNull();
+    };
+    options.host_functions["any.len"] = [&](const std::vector<Value> &args) {
+      if (args.empty()) return Value::makeInt(0);
+      if (!vm_ptr) return Value::makeInt(0);
+      if (args[0].isArrayId()) return Value::makeInt(static_cast<int64_t>(vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()})));
+      if (args[0].isStringValId()) return Value::makeInt(0); // TODO: string length
+      return Value::makeInt(0);
+    };
+    options.host_functions["any.map"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      if (!args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
+      auto out = vm_ptr->createHostArray();
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        auto mapped = vm_ptr->callFunction(args[1], {val});
+        vm_ptr->pushHostArrayValue(out, mapped);
+      }
+      return Value::makeArrayId(out.id);
+    };
+    options.host_functions["any.filter"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      if (!args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
+      auto out = vm_ptr->createHostArray();
+      auto truthy = [](const Value &v) {
+        if (v.isNull()) return false;
+        if (v.isBool()) return v.asBool();
+        if (v.isInt()) return v.asInt() != 0;
+        if (v.isDouble()) return v.asDouble() != 0.0;
+        return true;
+      };
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        auto result = vm_ptr->callFunction(args[1], {val});
+        if (truthy(result)) vm_ptr->pushHostArrayValue(out, val);
+      }
+      return Value::makeArrayId(out.id);
+    };
+    options.host_functions["any.reduce"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 3 || !vm_ptr) return Value::makeNull();
+      if (!args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
+      Value acc = args[2];
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        acc = vm_ptr->callFunction(args[1], {acc, val});
+      }
+      return acc;
+    };
+    options.host_functions["any.foreach"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      if (!args[0].isArrayId()) return Value::makeNull();
+      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
+      for (size_t i = 0; i < len; i++) {
+        auto val = vm_ptr->getHostArrayValue(arrRef, i);
+        vm_ptr->callFunction(args[1], {val});
+      }
+      return Value::makeNull();
+    };
+    options.host_functions["any.set"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 3 || !vm_ptr) return Value::makeNull();
+      if (args[0].isArrayId() && args[1].isInt()) {
+        auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
+        auto idx = static_cast<size_t>(args[1].asInt());
+        vm_ptr->setHostArrayValue(arrRef, idx, args[2]);
+        return args[2];
+      }
+      return Value::makeNull();
+    };
 
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);

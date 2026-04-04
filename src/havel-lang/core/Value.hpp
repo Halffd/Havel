@@ -247,16 +247,19 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::RANGE_ID), id));
   }
 
-  static Value makeStructId(uint32_t id) {
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRUCT_ID), id));
+  static Value makeStructId(uint32_t id, uint32_t typeId = 0) {
+    uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRUCT_ID), payload));
   }
 
-  static Value makeClassId(uint32_t id) {
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::CLASS_ID), id));
+  static Value makeClassId(uint32_t id, uint32_t typeId = 0) {
+    uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::CLASS_ID), payload));
   }
 
-  static Value makeEnumId(uint32_t id) {
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ENUM_ID), id));
+  static Value makeEnumId(uint32_t id, uint32_t typeId = 0) {
+    uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ENUM_ID), payload));
   }
 
   static Value makeIteratorId(uint32_t id) {
@@ -432,15 +435,27 @@ public:
   }
 
   uint32_t asStructId() const {
-    return static_cast<uint32_t>(extractPayload(bits_));
+    return static_cast<uint32_t>(extractPayload(bits_) & 0xFFFFFFFFULL);
+  }
+
+  uint32_t asStructTypeId() const {
+    return static_cast<uint32_t>((extractPayload(bits_) >> 32) & 0xFFFULL);
   }
 
   uint32_t asClassId() const {
-    return static_cast<uint32_t>(extractPayload(bits_));
+    return static_cast<uint32_t>(extractPayload(bits_) & 0xFFFFFFFFULL);
+  }
+
+  uint32_t asClassTypeId() const {
+    return static_cast<uint32_t>((extractPayload(bits_) >> 32) & 0xFFFULL);
   }
 
   uint32_t asEnumId() const {
-    return static_cast<uint32_t>(extractPayload(bits_));
+    return static_cast<uint32_t>(extractPayload(bits_) & 0xFFFFFFFFULL);
+  }
+
+  uint32_t asEnumTypeId() const {
+    return static_cast<uint32_t>((extractPayload(bits_) >> 32) & 0xFFFULL);
   }
 
   uint32_t asIteratorId() const {

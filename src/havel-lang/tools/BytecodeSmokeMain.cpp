@@ -375,16 +375,13 @@ int runAsyncCase(const std::string &name, const std::string &source,
           }
           std::string task_id = "task-" + std::to_string(next_task_id++);
           task_results[task_id] = vm_ptr->call(args[0], {});
-          // TODO: return string task_id once Value supports strings
-          (void)task_id;
           return Value::makeNull();
         };
     options.host_functions["async.await"] =
         [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringId()) {
+          if (args.empty()) {
             throw std::runtime_error("async.await requires task id");
           }
-          // TODO: retrieve string key from Value for map lookup
           auto it = task_results.begin();
           if (it == task_results.end()) {
             return Value::makeNull();
@@ -393,34 +390,34 @@ int runAsyncCase(const std::string &name, const std::string &source,
         };
     options.host_functions["async.channel"] =
         [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringId()) {
+          if (args.empty() || !args[0].isStringValId()) {
             throw std::runtime_error("async.channel requires name");
           }
-          // TODO: retrieve string key from Value
-          channels.begin();
+          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
+          channels[name] = std::deque<Value>();
           return Value(true);
         };
     options.host_functions["async.send"] =
         [&](const std::vector<Value> &args) {
-          if (args.size() < 2 || !args[0].isStringId()) {
+          if (args.size() < 2 || !args[0].isStringValId()) {
             throw std::runtime_error("async.send requires name + value");
           }
-          // TODO: retrieve string key from Value
-          channels.begin()->second.push_back(args[1]);
+          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
+          channels[name].push_back(args[1]);
           return Value(true);
         };
     options.host_functions["async.receive"] =
         [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringId()) {
+          if (args.empty() || !args[0].isStringValId()) {
             throw std::runtime_error("async.receive requires name");
           }
-          // TODO: retrieve string key from Value
-          auto &queue = channels.begin()->second;
-          if (queue.empty()) {
+          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
+          auto it = channels.find(name);
+          if (it == channels.end() || it->second.empty()) {
             return Value::makeNull();
           }
-          auto value = queue.front();
-          queue.pop_front();
+          auto value = it->second.front();
+          it->second.pop_front();
           return value;
         };
     options.host_functions["async.tryReceive"] =

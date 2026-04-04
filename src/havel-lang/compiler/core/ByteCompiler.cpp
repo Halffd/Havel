@@ -240,20 +240,10 @@ uint32_t ByteCompiler::addConstant(const Value &value) {
 }
 
 uint32_t ByteCompiler::addStringConstant(const std::string &str) {
-  if (!current_function) {
-    COMPILER_THROW(
-        "Attempted to add string constant without active function");
+  if (!chunk) {
+    COMPILER_THROW("Attempted to add string constant without active chunk");
   }
-  // Check if string already exists
-  for (uint32_t i = 0; i < current_function->string_constants.size(); i++) {
-    if (current_function->string_constants[i] == str) {
-      return i;
-    }
-  }
-  uint32_t index = static_cast<uint32_t>(current_function->string_constants.size());
-  current_function->string_constants.push_back(str);
-  current_function->constants.push_back(Value::makeStringValId(index));
-  return index;
+  return chunk->addString(str);
 }
 
 uint32_t ByteCompiler::emitJump(OpCode op) {

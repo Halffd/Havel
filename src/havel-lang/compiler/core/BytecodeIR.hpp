@@ -1,6 +1,6 @@
 #pragma once
 
-#include "havel-lang/core/Value.hpp"
+#include "../../core/Value.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -266,7 +266,6 @@ struct BytecodeFunction {
   std::vector<Instruction> instructions;
   std::vector<SourceLocation> instruction_locations;
   std::vector<Value> constants;
-  std::vector<std::string> string_constants; // String table indexed by StringValId
   std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;
   uint32_t local_count;
@@ -310,6 +309,25 @@ public:
   }
 
   size_t getFunctionCount() const { return functions.size(); }
+
+  uint32_t addString(std::string str) {
+    for (uint32_t i = 0; i < strings.size(); i++) {
+      if (strings[i] == str) return i;
+    }
+    strings.push_back(std::move(str));
+    return static_cast<uint32_t>(strings.size() - 1);
+  }
+
+  const std::string& getString(uint32_t index) const {
+    static const std::string empty;
+    if (index >= strings.size()) return empty;
+    return strings[index];
+  }
+
+  const std::vector<std::string>& getAllStrings() const { return strings; }
+
+private:
+  std::vector<std::string> strings;
 };
 
 // Bytecode compiler interface

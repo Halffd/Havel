@@ -114,7 +114,7 @@ private:
   /**
    * Print an error
    */
-  void printError(const std::string& error, int line = -1);
+  void printError(const std::string& error, int line = -1, int column = 1, int length = 1, const std::string& sourceLine = "");
   
   /**
    * Handle special commands (exit, help, etc.)

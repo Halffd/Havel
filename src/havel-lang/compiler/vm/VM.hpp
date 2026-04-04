@@ -148,6 +148,9 @@ private:
   SystemObjectInitializer system_object_initializer_;
 
   template <typename T> T getValue(const Value &value);
+  std::string toStringInternal(const Value &value,
+                               std::unordered_set<uint32_t> &visitedIds,
+                               int depth) const;
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
   Value getConstant(uint32_t index);
@@ -206,6 +209,10 @@ private:
   std::string currentSourceLocation() const;
 
   // Rust-style error formatting with source line and arrow
+  int64_t toInt(const Value &value) const;
+  double toFloat(const Value &value) const;
+  bool toBool(const Value &value) const;
+  std::string toString(const Value &value) const;
   std::string formatErrorWithContext(const std::string &message) const;
 
   std::vector<Value> stackValuesForRoots() const;

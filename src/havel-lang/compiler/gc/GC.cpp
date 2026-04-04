@@ -373,7 +373,17 @@ std::vector<Value> *GCHeap::array(uint32_t id) {
   return it == arrays_.end() ? nullptr : &it->second;
 }
 
+const std::vector<Value> *GCHeap::array(uint32_t id) const {
+  auto it = arrays_.find(id);
+  return it == arrays_.end() ? nullptr : &it->second;
+}
+
 GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
+  auto it = objects_.find(id);
+  return it == objects_.end() ? nullptr : &it->second;
+}
+
+const GCHeap::ObjectEntry *GCHeap::object(uint32_t id) const {
   auto it = objects_.find(id);
   return it == objects_.end() ? nullptr : &it->second;
 }

@@ -4,6 +4,7 @@
 #include "../vm/VM.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
+#include "../../utils/ErrorPrinter.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -102,15 +103,9 @@ std::string formatDiagnostic(const std::string &kind,
                              const std::string &source, size_t line,
                              size_t column, size_t length,
                              const std::string &annotation = "") {
-  std::ostringstream out;
-  out << kind << ": " << message << "\n";
-  out << "  --> " << displayNameForUnit(compile_unit_name) << ":" << line
-      << ":" << column << "\n";
-  out << "   |\n";
-  const std::string source_line = sourceLineAt(source, line);
-  out << line << " | " << source_line << "\n";
-  out << formatCaretLine(column, length, annotation);
-  return out.str();
+  std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
+  std::string source_line = sourceLineAt(source, line);
+  return havel::ErrorPrinter::formatError(kind, message + (annotation.empty() ? "" : " (" + annotation + ")"), file_path, line, column, length, source_line);
 }
 
 std::string enrichRuntimeError(const std::string &runtime_error,
@@ -479,9 +474,8 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
       out << "  constants:\n";
       for (size_t c = 0; c < function.constants.size(); ++c) {
         const auto &cv = function.constants[c];
-        if (cv.isStringValId() &&
-            cv.asStringValId() < function.string_constants.size()) {
-          out << "    [" << c << "] \"" << function.string_constants[cv.asStringValId()] << "\"\n";
+        if (cv.isStringValId()) {
+          out << "    [" << c << "] \"" << chunk.getString(cv.asStringValId()) << "\"\n";
         } else {
           out << "    [" << c << "] " << formatValue(cv) << "\n";
         }

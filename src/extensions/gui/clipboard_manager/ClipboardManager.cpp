@@ -1,6 +1,7 @@
 #include "ClipboardManager.hpp"
 #include "qt.hpp"
 #include "core/ConfigManager.hpp"
+#include "core/IO.hpp"
 #include <QApplication>
 #include <QThread>
 #include <QJsonDocument>
@@ -37,7 +38,43 @@
 #include <QMenu>
 
 namespace havel {
+
+const char* ClipboardManager::UIConfig::FONT_FAMILY = "Sans Serif";
+
+const char* ClipboardManager::Colors::BACKGROUND = "#1e1e1e";
+const char* ClipboardManager::Colors::TEXT_PRIMARY = "#e0e0e0";
+const char* ClipboardManager::Colors::TEXT_SECONDARY = "#a0a0a0";
+const char* ClipboardManager::Colors::BORDER = "#3d3d3d";
+const char* ClipboardManager::Colors::SURFACE = "#252526";
+const char* ClipboardManager::Colors::SURFACE_LIGHT = "#2d2d30";
+const char* ClipboardManager::Colors::SURFACE_LIGHTER = "#3e3e42";
+const char* ClipboardManager::Colors::PRIMARY = "#0e639c";
+const char* ClipboardManager::Colors::PRIMARY_LIGHT = "#1177bb";
+
     QClipboard* ClipboardManager::clipboard = nullptr;
+
+QClipboard* ClipboardManager::getClipboard() const {
+    if (clipboard) {
+        return clipboard;
+    }
+    return QGuiApplication::clipboard();
+}
+
+void ClipboardManager::addToHistory(const std::string& content) {
+    addToHistory(QString::fromStdString(content));
+}
+
+int ClipboardManager::getMaxHistorySize() const { return maxHistorySize; }
+
+void ClipboardManager::hide() { hideWithFade(); }
+
+void ClipboardManager::enable() { enabled = true; }
+
+void ClipboardManager::disable() { enabled = false; }
+
+bool ClipboardManager::isEnabled() const { return enabled; }
+
+void ClipboardManager::clearHistory() { onClearAll(); }
 
 // File system operations
 QString ClipboardManager::getHistoryBasePath() const {
@@ -547,33 +584,31 @@ QListWidgetItem* ClipboardManager::createSafeListItem(const QString& text) {
 }
 
 void ClipboardManager::setupUI() {
-    using namespace UIConfig;
-    
     // Set up fonts
     setupFonts();
     
     // Set window properties
     setWindowTitle("Clipboard Manager");
-    setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+    setMinimumSize(400, 500);
     
     // Set window flags for better behavior
     setWindowFlags(Qt::Tool | Qt::WindowStaysOnTopHint | Qt::CustomizeWindowHint);
     setAttribute(Qt::WA_TranslucentBackground, false);
     
     // Create central widget and main layout
-    centralWidget = new QWidget(this);
-    centralWidget->setAutoFillBackground(true);
-    setCentralWidget(centralWidget);
+    QWidget* centralWidgetPtr = new QWidget(this);
+    centralWidgetPtr->setObjectName("centralWidget");
+    setCentralWidget(centralWidgetPtr);
     
     // Set initial window size based on screen size
     QScreen* screen = QGuiApplication::primaryScreen();
     if (screen) {
         QRect screenGeometry = screen->availableGeometry();
-        int width = qMin(WINDOW_MIN_WIDTH, static_cast<int>(screenGeometry.width() * 0.8));
-        int height = qMin(WINDOW_MIN_HEIGHT, static_cast<int>(screenGeometry.height() * 0.7));
+        int width = qMin(400, static_cast<int>(screenGeometry.width() * 0.8));
+        int height = qMin(500, static_cast<int>(screenGeometry.height() * 0.7));
         resize(width, height);
     } else {
-        resize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+        resize(400, 500);
     }
     // Set window stylesheet using theme variables
     QString styleSheet = QString(R"(
@@ -631,7 +666,7 @@ void ClipboardManager::setupUI() {
         QLineEdit:focus {
             border: 1px solid %7;
             background-color: %6;
-        }
+            }
         
         QTextEdit {
             background-color: %4;
@@ -707,24 +742,22 @@ void ClipboardManager::setupUI() {
         Colors::SURFACE_LIGHT, // %5
         Colors::SURFACE_LIGHTER, // %6
         Colors::PRIMARY,       // %7
-        QString::number(BASE_FONT_SIZE + 2), // %8 (search font size)
-        QString::number(BASE_FONT_SIZE),     // %9 (base font size)
-        QString::number(ITEM_HEIGHT),        // %10 (item height)
-        QString::number(ITEM_HEIGHT + 8),    // %11 (search box height)
-        QString::number(SPLITTER_HANDLE_WIDTH) // %12 (splitter handle width)
+        QString::number(10 + 2), // %8 (search font size)
+        QString::number(10),     // %9 (base font size)
+        QString::number(40),        // %10 (item height)
+        QString::number(40 + 8),    // %11 (search box height)
+        QString::number(1) // %12 (splitter handle width)
     );
     
     setStyleSheet(styleSheet);
 
-    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
+    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidgetPtr);
     mainLayout->setContentsMargins(2, 2, 2, 2);  // Reduced margins
     mainLayout->setSpacing(2);                   // Reduced spacing
     mainLayout->setAlignment(Qt::AlignTop);
 
-    using namespace UIConfig;
-
     // Set up application font with configurable size
-    QFont appFont(FONT_FAMILY, fontSize);  // Use configurable font size instead of BASE_FONT_SIZE
+    QFont appFont("Arial", fontSize);  // Use configurable font size
     appFont.setStyleHint(QFont::SansSerif);
     qApp->setFont(appFont);
     setFont(appFont);
@@ -758,7 +791,7 @@ void ClipboardManager::setupUI() {
     searchFont.setPointSize(fontSize + 2);  // Slightly larger font for search
     searchBox->setFont(searchFont);
     searchBox->setClearButtonEnabled(true);
-    searchBox->setMinimumHeight(ITEM_HEIGHT + 12);  // Increased height
+    searchBox->setMinimumHeight(40 + 12);  // Increased height
     searchBox->setStyleSheet(QString(
         "QLineEdit { "
         "    padding: 12px 16px; "
@@ -784,7 +817,7 @@ void ClipboardManager::setupUI() {
         Colors::TEXT_PRIMARY,   // Text color
         Colors::BORDER,         // Border color
         QString::number(fontSize + 2),  // Use configurable font size
-        QString::number(ITEM_HEIGHT + 12),     // Increased min height
+        QString::number(40 + 12),     // Increased min height
         Colors::PRIMARY,         // Focus border
         Colors::SURFACE_LIGHTER, // Focus background
         Colors::TEXT_SECONDARY   // Placeholder color
@@ -795,7 +828,7 @@ void ClipboardManager::setupUI() {
     mainLayout->addWidget(searchBox);
 
     // Create history list with improved settings for single panel
-    historyList = new QListWidget();
+    historyList = new QListWidget(centralWidgetPtr);
     historyList->setObjectName("historyList");
     historyList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     historyList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -850,7 +883,7 @@ void ClipboardManager::setupUI() {
         QString::number(fontSize),  // Use configurable font size
         Colors::SURFACE_LIGHT,  // Item background
         Colors::TEXT_PRIMARY,   // Text color
-        QString::number(ITEM_HEIGHT + 8),  // Increased item height
+        QString::number(40 + 8),  // Increased item height
         Colors::PRIMARY,        // Selected background start
         Colors::PRIMARY_LIGHT,  // Selected border
         Colors::SURFACE_LIGHTER, // Hover background
@@ -897,12 +930,12 @@ void ClipboardManager::setupUI() {
     mainLayout->addWidget(historyList);
 
     // Status bar with smaller font
-    QStatusBar* statusBar = new QStatusBar(this);
+    QStatusBar* statusBarPtr = new QStatusBar(this);
+    setStatusBar(statusBarPtr);
     QFont statusFont = appFont;
     statusFont.setPointSize(fontSize * 0.7);
-    statusBar->setFont(statusFont);
-    setStatusBar(statusBar);
-    statusBar->showMessage("Alt+V to toggle | Double-click to copy | Del to remove");
+    statusBarPtr->setFont(statusFont);
+    statusBarPtr->showMessage("Alt+V to toggle | Double-click to copy | Del to remove");
 }
 
 void ClipboardManager::setupShortcuts() {

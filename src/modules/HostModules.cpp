@@ -128,8 +128,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
         registry.registerService<host::BrightnessService>(brightnessService);
     }
     
-    // Screenshot service doesn't need constructor args (uses Qt directly)
-    auto screenshotService = std::make_shared<host::ScreenshotService>();
+    // Screenshot service singleton (uses Qt directly)
+    auto screenshotService = std::shared_ptr<host::ScreenshotService>(
+        &host::ScreenshotService::getInstance(),
+        [](host::ScreenshotService*) {});
     registry.registerService<host::ScreenshotService>(screenshotService);
 
     // PixelAutomation service doesn't need constructor args (uses Qt/OpenCV directly)

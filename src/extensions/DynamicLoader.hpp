@@ -1,226 +1,115 @@
-/*
- * DynamicLoader.hpp - Helper for runtime dynamic library loading
- *
- * Usage:
- *   DynamicLoader loader;
- *   if (loader.load("libgtk-4.so")) {
- *       auto fn = loader.getSymbol<GtkInitFn>("gtk_init");
- *       if (fn) fn();
- *   }
- */
-
 #pragma once
 
 #include <string>
-#include <unordered_map>
-#include <functional>
-#include <memory>
-#include <cstdio>
 
-#ifdef HAVE_DLFCN_H
+#if defined(_WIN32)
+#include <windows.h>
+#define HAVEL_DYNLIB_WINDOWS 1
+#else
 #include <dlfcn.h>
+#define HAVEL_DYNLIB_DLFCN 1
 #endif
 
-/**
- * DynamicLoader - RAII wrapper for dlopen/dlsym
- * 
- * Allows extensions to load libraries at runtime only when needed.
- * Libraries are unloaded when the loader is destroyed.
- */
+namespace havel {
+
 class DynamicLoader {
+  void *handle_ = nullptr;
+
 public:
-    DynamicLoader() : handle_(nullptr) {}
-    
-    ~DynamicLoader() {
-        unload();
+  DynamicLoader() = default;
+
+  ~DynamicLoader() { unload(); }
+
+  DynamicLoader(const DynamicLoader &) = delete;
+  DynamicLoader &operator=(const DynamicLoader &) = delete;
+
+  DynamicLoader(DynamicLoader &&other) noexcept : handle_(other.handle_) {
+    other.handle_ = nullptr;
+  }
+
+  DynamicLoader &operator=(DynamicLoader &&other) noexcept {
+    if (this != &other) {
+      unload();
+      handle_ = other.handle_;
+      other.handle_ = nullptr;
     }
-    
-    /* Non-copyable */
-    DynamicLoader(const DynamicLoader&) = delete;
-    DynamicLoader& operator=(const DynamicLoader&) = delete;
-    
-    /* Movable */
-    DynamicLoader(DynamicLoader&& other) noexcept 
-        : handle_(other.handle_), path_(std::move(other.path_)) {
-        other.handle_ = nullptr;
+    return *this;
+  }
+
+  bool load(const char *path) {
+    if (!path) {
+      return false;
     }
-    
-    DynamicLoader& operator=(DynamicLoader&& other) noexcept {
-        if (this != &other) {
-            unload();
-            handle_ = other.handle_;
-            path_ = std::move(other.path_);
-            other.handle_ = nullptr;
-        }
-        return *this;
-    }
-    
-    /**
-     * Load a shared library
-     * 
-     * @param path Path to the .so file or library name
-     * @return true if loaded successfully
-     */
-    bool load(const std::string& path) {
-#ifdef HAVE_DLFCN_H
-        if (handle_) {
-            if (path_ == path) {
-                return true;  /* Already loaded */
-            }
-            unload();
-        }
-        
-        /* Try loading with RTLD_LAZY (resolve symbols on first use) */
-        handle_ = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
-        if (!handle_) {
-            const char* err = dlerror();
-            fprintf(stderr, "[DynamicLoader] Failed to load %s: %s\n",
-                    path.c_str(), err ? err : "unknown error");
-            return false;
-        }
-        
-        path_ = path;
-        return true;
+    unload();
+#if defined(HAVEL_DYNLIB_DLFCN)
+    handle_ = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    return handle_ != nullptr;
+#elif defined(HAVEL_DYNLIB_WINDOWS)
+    handle_ = static_cast<void *>(LoadLibraryA(path));
+    return handle_ != nullptr;
 #else
-        (void)path;
-        fprintf(stderr, "[DynamicLoader] dlopen not available\n");
-        return false;
+    (void)path;
+    return false;
 #endif
+  }
+
+  template <typename T>
+  T getSymbol(const char *name) const {
+    if (!handle_ || !name) {
+      return nullptr;
     }
-    
-    /**
-     * Get a symbol (function) from the loaded library
-     * 
-     * @param name Symbol name
-     * @return Function pointer or nullptr if not found
-     */
-    template<typename T>
-    T getSymbol(const char* name) {
-#ifdef HAVE_DLFCN_H
-        if (!handle_) {
-            return nullptr;
-        }
-        
-        dlerror();  /* Clear errors */
-        void* sym = dlsym(handle_, name);
-        const char* err = dlerror();
-        if (err) {
-            fprintf(stderr, "[DynamicLoader] Symbol %s not found: %s\n",
-                    name, err);
-            return nullptr;
-        }
-        
-        return reinterpret_cast<T>(sym);
+#if defined(HAVEL_DYNLIB_DLFCN)
+    void *sym = dlsym(handle_, name);
+#elif defined(HAVEL_DYNLIB_WINDOWS)
+    void *sym = reinterpret_cast<void *>(
+        GetProcAddress(static_cast<HMODULE>(handle_), name));
 #else
-        (void)name;
-        return nullptr;
+    void *sym = nullptr;
 #endif
+    return reinterpret_cast<T>(sym);
+  }
+
+  void unload() {
+    if (!handle_) {
+      return;
     }
-    
-    /**
-     * Check if library is loaded
-     */
-    bool isLoaded() const {
-        return handle_ != nullptr;
-    }
-    
-    /**
-     * Unload the library
-     */
-    void unload() {
-#ifdef HAVE_DLFCN_H
-        if (handle_) {
-            dlclose(handle_);
-            handle_ = nullptr;
-            path_.clear();
-        }
+#if defined(HAVEL_DYNLIB_DLFCN)
+    dlclose(handle_);
+#elif defined(HAVEL_DYNLIB_WINDOWS)
+    FreeLibrary(static_cast<HMODULE>(handle_));
 #endif
-    }
-    
-    /**
-     * Get the loaded library path
-     */
-    const std::string& getPath() const {
-        return path_;
-    }
-    
-private:
-    void* handle_;
-    std::string path_;
+    handle_ = nullptr;
+  }
+
+  bool isLoaded() const { return handle_ != nullptr; }
+
+  explicit operator bool() const { return handle_ != nullptr; }
+
+  static bool loadLibrary(const std::string &path) {
+    DynamicLoader tmp;
+    return tmp.load(path.c_str());
+  }
+
+  static void unloadAll() {}
 };
 
-/**
- * LibraryLoader - Singleton manager for shared library instances
- * 
- * Ensures libraries are only loaded once and shared across the extension.
- */
-template<typename Loader = DynamicLoader>
-class LibraryLoader {
-public:
-    static LibraryLoader& instance() {
-        static LibraryLoader inst;
-        return inst;
-    }
-    
-    /**
-     * Get or load a library
-     * 
-     * @param name Library name/key
-     * @param path Path to load from
-     * @return Loader pointer or nullptr if failed
-     */
-    Loader* get(const std::string& name, const std::string& path) {
-        auto it = loaders_.find(name);
-        if (it != loaders_.end()) {
-            return it->second.get();
-        }
-        
-        auto loader = std::make_unique<Loader>();
-        if (loader->load(path)) {
-            Loader* ptr = loader.get();
-            loaders_[name] = std::move(loader);
-            return ptr;
-        }
-        
-        return nullptr;
-    }
-    
-    /**
-     * Check if a library is loaded
-     */
-    bool isLoaded(const std::string& name) const {
-        return loaders_.find(name) != loaders_.end();
-    }
-    
-    /**
-     * Unload a specific library
-     */
-    void unload(const std::string& name) {
-        loaders_.erase(name);
-    }
-    
-    /**
-     * Unload all libraries
-     */
-    void unloadAll() {
-        loaders_.clear();
-    }
-    
-private:
-    LibraryLoader() = default;
-    ~LibraryLoader() = default;
-    
-    std::unordered_map<std::string, std::unique_ptr<Loader>> loaders_;
-};
+} // namespace havel
 
-/* Common library names for extensions */
-namespace LibNames {
-    constexpr const char* GTK4 = "libgtk-4.so";
-    constexpr const char* GDK4 = "libgdk-4.so";
-    constexpr const char* GLIB2 = "libglib-2.0.so";
-    constexpr const char* GOBJECT2 = "libgobject-2.0.so";
-    
-    constexpr const char* GLFW3 = "libglfw.so.3";
-    constexpr const char* GL = "libGL.so.1";
-    constexpr const char* GLU = "libGLU.so.1";
-}
+/** Standard shared-library names for dynamic UI extensions (GTK / ImGui). */
+struct LibNames {
+#if defined(__APPLE__)
+  static constexpr const char *GLIB2 = "libglib-2.0.0.dylib";
+  static constexpr const char *GOBJECT2 = "libgobject-2.0.0.dylib";
+  static constexpr const char *GDK4 = "libgdk-4.0.dylib";
+  static constexpr const char *GTK4 = "libgtk-4.0.dylib";
+  static constexpr const char *GLFW3 = "libglfw.3.dylib";
+  static constexpr const char *GL = "libGL.dylib";
+#else
+  static constexpr const char *GLIB2 = "libglib-2.0.so.0";
+  static constexpr const char *GOBJECT2 = "libgobject-2.0.so.0";
+  static constexpr const char *GDK4 = "libgdk-4.so.1";
+  static constexpr const char *GTK4 = "libgtk-4.so.1";
+  static constexpr const char *GLFW3 = "libglfw.so.3";
+  static constexpr const char *GL = "libGL.so.1";
+#endif
+};

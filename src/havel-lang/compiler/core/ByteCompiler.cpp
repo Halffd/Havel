@@ -1,4 +1,5 @@
 #include "ByteCompiler.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include <iostream>
 #include <stdexcept>
 
@@ -1150,26 +1151,46 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program,
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
+  // Handle host modules first (lazy loading via HostBridge)
+  if (host_bridge_ && !statement.isFileImport) {
+    for (const auto &moduleName : statement.moduleNames) {
+      if (host_bridge_->isModuleAvailable(moduleName)) {
+        if (!host_bridge_->loadModule(moduleName)) {
+          COMPILER_THROW("Failed to load host module: " + moduleName);
+        }
+
+        // If wildcard 'use module.*', flatten exports into global scope
+        if (statement.isWildcard) {
+          // This requires VM support to copy exported names from module namespace
+          // to current scope. For now, we emit a marker.
+          emit(OpCode::LOAD_CONST, addStringConstant("Flattening host module: " + moduleName));
+          emit(OpCode::POP);
+        } else {
+          // Regular 'use module' makes the module object available by its name
+          emit(OpCode::LOAD_CONST, addStringConstant("Host module loaded: " + moduleName));
+          emit(OpCode::POP);
+        }
+        return;
+      }
+    }
+  }
+
+  // Fall back to file-based module loading
   if (!module_loader_) {
     COMPILER_THROW("Module loader not available for use statement");
   }
+  // Load the module (script file)
+  if (statement.isFileImport) {
+    LoadedModule *module =
+        module_loader_->loadModule(statement.filePath, base_path_);
+    if (!module) {
+      COMPILER_THROW("Failed to load module file: " + statement.filePath);
+    }
 
-  // Load the module
-  LoadedModule *module =
-      module_loader_->loadModule(statement.filePath, base_path_);
-  if (!module) {
-    COMPILER_THROW("Failed to load module: " + statement.filePath);
+    // Emit debug marker
+    emit(OpCode::LOAD_CONST, addStringConstant("Loaded module file: " + statement.filePath));
+    emit(OpCode::POP);
   }
-
-  // For now, emit a NOP - the module's functions/classes will be compiled
-  // and merged into the main bytecode. In a full implementation, we would:
-  // 1. Parse and compile the module's AST
-  // 2. Merge its functions into our function table
-  // 3. Make exported names available
-
-  // Emit a debug marker for now
-  emit(OpCode::LOAD_CONST, addStringConstant("Loaded module: " + statement.filePath));
-  emit(OpCode::POP);
 }
 
 void ByteCompiler::compileExportStatement(
@@ -1400,38 +1421,68 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::MatchExpression: {
     const auto &match = static_cast<const ast::MatchExpression &>(expression);
 
-    // Compile the value to match on
-    if (!match.value) {
-      COMPILER_THROW("Match expression missing value");
+    // Compile all discriminants and store them in temp variables
+    std::vector<uint32_t> discriminantSlots;
+    for (const auto &discriminant : match.discriminants) {
+      if (!discriminant) {
+        COMPILER_THROW("Match expression has null discriminant");
+      }
+      compileExpression(*discriminant);
+      uint32_t slot = next_local_index++;
+      reserveLocalSlot(slot);
+      emit(OpCode::STORE_VAR, slot);
+      discriminantSlots.push_back(slot);
     }
-    compileExpression(*match.value);
-
-    // Store match value in temp variable
-    uint32_t matchSlot = next_local_index++;
-    reserveLocalSlot(matchSlot);
-    emit(OpCode::STORE_VAR, matchSlot);
 
     std::vector<uint32_t> caseJumps;
+    
+    // Allocate a temp slot to track whether all patterns match
+    uint32_t matchSlot = next_local_index++;
+    reserveLocalSlot(matchSlot);
 
     // Compile each case
     for (const auto &casePair : match.cases) {
-      const auto &pattern = casePair.first;
+      const auto &patterns = casePair.first;
       const auto &result = casePair.second;
 
-      // For enum matching, use ENUM_MATCH opcode
-      // For now, use simple equality comparison
+      // Initialize match slot to true (all patterns match so far)
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+      emit(OpCode::STORE_VAR, matchSlot);
+
+      // For multi-discriminant matching, we need all patterns to match
+      for (size_t i = 0; i < patterns.size() && i < discriminantSlots.size(); i++) {
+        if (patterns[i]) {
+          // Load current match status first
+          emit(OpCode::LOAD_VAR, matchSlot);
+          
+          // Then load discriminant and compile pattern for comparison
+          emit(OpCode::LOAD_VAR, discriminantSlots[i]);
+          compileExpression(*patterns[i]);
+          emit(OpCode::EQ);
+          
+          // AND the match status with the comparison result
+          // Stack: [match_status, eq_result] -> [result]
+          emit(OpCode::AND);
+          emit(OpCode::STORE_VAR, matchSlot);
+        }
+        // If pattern[i] is null (underscore wildcard), it always matches
+      }
+
+      // Check if all patterns matched
       emit(OpCode::LOAD_VAR, matchSlot);
-      compileExpression(*pattern);
-      emit(OpCode::EQ);
+      
+      // Jump to next case if not matched
+      uint32_t failJump = emitJump(OpCode::JUMP_IF_FALSE);
 
-      // Jump to result if not equal
-      caseJumps.push_back(emitJump(OpCode::JUMP_IF_FALSE));
-
-      // Compile result expression - TCO: inherit tail position
+      // All patterns matched, compile result expression
       compileExpression(*result);
 
-      // Jump to end
+      // Jump to end of match
       caseJumps.push_back(emitJump(OpCode::JUMP));
+
+      // Patch failure jump to here (next case)
+      uint32_t nextCaseTarget = static_cast<uint32_t>(current_function->instructions.size());
+      patchJump(failJump, nextCaseTarget);
     }
 
     // Compile default case - TCO: inherit tail position
@@ -1446,12 +1497,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     uint32_t endTarget =
         static_cast<uint32_t>(current_function->instructions.size());
 
-    // Patch all jumps
-    for (size_t i = 0; i < caseJumps.size(); i += 2) {
-      // Patch equality check jump to next case or default
-      patchJump(caseJumps[i], defaultTarget);
-      // Patch result jump to end
-      patchJump(caseJumps[i + 1], endTarget);
+    // Patch all result jumps to end
+    for (uint32_t resultJump : caseJumps) {
+      patchJump(resultJump, endTarget);
     }
 
     break;
@@ -3131,12 +3179,18 @@ void ByteCompiler::collectLambdaExpressions(
   case ast::NodeType::MatchExpression: {
     const auto &match_expr =
         static_cast<const ast::MatchExpression &>(expression);
-    if (match_expr.value) {
-      collectLambdaExpressions(*match_expr.value, out);
+    // Collect from all discriminants
+    for (const auto &discriminant : match_expr.discriminants) {
+      if (discriminant) {
+        collectLambdaExpressions(*discriminant, out);
+      }
     }
+    // Collect from all patterns in all cases
     for (const auto &casePair : match_expr.cases) {
-      if (casePair.first) {
-        collectLambdaExpressions(*casePair.first, out);
+      for (const auto &pattern : casePair.first) {
+        if (pattern) {
+          collectLambdaExpressions(*pattern, out);
+        }
       }
       if (casePair.second) {
         collectLambdaExpressions(*casePair.second, out);

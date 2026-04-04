@@ -1,19 +1,14 @@
-#include "havel-lang/runtime/HostAPI.hpp"
 /*
  * ScreenshotModule.hpp
  * 
- * Screenshot module for Havel language.
+ * Screenshot module for Havel language - bytecode VM implementation.
  */
 #pragma once
 
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
-namespace havel {
+namespace havel::modules {
 
-class Environment;
+void registerScreenshotModule(compiler::VMApi &api);
 
-namespace modules {
-
-void registerModuleStub();
-
-} // namespace modules
-} // namespace havel
+} // namespace havel::modules

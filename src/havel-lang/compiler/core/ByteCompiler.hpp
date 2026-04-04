@@ -19,6 +19,9 @@
 
 namespace havel::compiler {
 
+class HostBridge;
+class VM;
+
 class ByteCompiler : public BytecodeCompiler {
 public:
   std::unique_ptr<BytecodeChunk> compile(const ast::Program &program) override;
@@ -45,6 +48,9 @@ public:
     compiled_functions.clear();
     return std::move(chunk);
   }
+
+  // Set HostBridge for lazy module loading
+  void setHostBridge(HostBridge *bridge) { host_bridge_ = bridge; }
 
 private:
   struct SourceLocationScope {
@@ -151,6 +157,9 @@ private:
   // Tail call optimization state
   bool in_tail_position_ = false;
   bool emitted_tail_call_ = false;
+
+  // HostBridge for lazy module loading and permission checks
+  HostBridge *host_bridge_ = nullptr;
 };
 
 } // namespace havel::compiler

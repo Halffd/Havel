@@ -2,6 +2,9 @@
 #include <iostream>
 #include <stdexcept>
 
+// Macro for throwing errors with source location info
+#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+
 namespace havel::compiler {
 
 namespace {
@@ -48,7 +51,7 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::NOP; // Placeholder - actual implementation in
                         // compileExpression
   default:
-    throw std::runtime_error(
+    COMPILER_THROW(
         "Unsupported binary operator in bytecode compiler");
   }
 }
@@ -78,7 +81,7 @@ ByteCompiler::compile(const ast::Program &program) {
     for (const auto &err : resolver.errors()) {
       oss << "  - " << err << "\n";
     }
-    throw std::runtime_error(oss.str());
+    COMPILER_THROW(oss.str());
   }
 
   // Reserve function indices so forward references and recursion emit stable
@@ -103,7 +106,7 @@ ByteCompiler::compile(const ast::Program &program) {
     const auto &decl =
         static_cast<const ast::FunctionDeclaration &>(*statement);
     if (!decl.name) {
-      throw std::runtime_error("Function declaration missing name");
+      COMPILER_THROW("Function declaration missing name");
     }
     top_level_function_indices_by_name_[decl.name->symbol] =
         next_function_index;
@@ -203,7 +206,7 @@ ByteCompiler::compile(const ast::Program &program) {
 
   for (auto &function : compiled_functions) {
     if (!function) {
-      throw std::runtime_error("Missing compiled function for reserved slot");
+      COMPILER_THROW("Missing compiled function for reserved slot");
     }
     chunk->addFunction(std::move(*function));
   }
@@ -219,7 +222,7 @@ void ByteCompiler::emit(OpCode op, Value operand) {
 
 void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
   if (!current_function) {
-    throw std::runtime_error(
+    COMPILER_THROW(
         "Attempted to emit bytecode without active function");
   }
   current_function->instructions.emplace_back(op, std::move(operands));
@@ -229,7 +232,7 @@ void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
 
 uint32_t ByteCompiler::addConstant(const Value &value) {
   if (!current_function) {
-    throw std::runtime_error(
+    COMPILER_THROW(
         "Attempted to add constant without active function");
   }
 
@@ -239,7 +242,7 @@ uint32_t ByteCompiler::addConstant(const Value &value) {
 
 uint32_t ByteCompiler::addStringConstant(const std::string &str) {
   if (!current_function) {
-    throw std::runtime_error(
+    COMPILER_THROW(
         "Attempted to add string constant without active function");
   }
   uint32_t index = static_cast<uint32_t>(current_function->string_constants.size());
@@ -251,11 +254,11 @@ uint32_t ByteCompiler::addStringConstant(const std::string &str) {
 uint32_t ByteCompiler::emitJump(OpCode op) {
   if (op != OpCode::JUMP && op != OpCode::JUMP_IF_FALSE &&
       op != OpCode::JUMP_IF_TRUE && op != OpCode::JUMP_IF_NULL) {
-    throw std::runtime_error("Invalid jump opcode");
+    COMPILER_THROW("Invalid jump opcode");
   }
 
   if (!current_function) {
-    throw std::runtime_error("Attempted to emit jump without active function");
+    COMPILER_THROW("Attempted to emit jump without active function");
   }
 
   uint32_t index = static_cast<uint32_t>(current_function->instructions.size());
@@ -265,16 +268,16 @@ uint32_t ByteCompiler::emitJump(OpCode op) {
 
 void ByteCompiler::patchJump(uint32_t jump_instruction_index, uint32_t target) {
   if (!current_function) {
-    throw std::runtime_error("Attempted to patch jump without active function");
+    COMPILER_THROW("Attempted to patch jump without active function");
   }
 
   if (jump_instruction_index >= current_function->instructions.size()) {
-    throw std::runtime_error("Invalid jump patch index");
+    COMPILER_THROW("Invalid jump patch index");
   }
 
   auto &instruction = current_function->instructions[jump_instruction_index];
   if (instruction.operands.empty()) {
-    throw std::runtime_error("Jump instruction missing operand");
+    COMPILER_THROW("Jump instruction missing operand");
   }
 
   instruction.operands[0] = target;
@@ -282,12 +285,12 @@ void ByteCompiler::patchJump(uint32_t jump_instruction_index, uint32_t target) {
 
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
-    throw std::runtime_error("Function declaration missing name");
+    COMPILER_THROW("Function declaration missing name");
   }
 
   auto index_it = function_indices_by_node_.find(&function);
   if (index_it == function_indices_by_node_.end()) {
-    throw std::runtime_error("Missing function index for declaration: " +
+    COMPILER_THROW("Missing function index for declaration: " +
                              function.name->symbol);
   }
 
@@ -304,7 +307,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   for (size_t i = 0; i < function.parameters.size(); i++) {
     const auto &param = function.parameters[i];
     if (!param || !param->pattern) {
-      throw std::runtime_error("Function parameter missing pattern");
+      COMPILER_THROW("Function parameter missing pattern");
     }
     collectParameterPatternSlots(*param->pattern);
 
@@ -408,7 +411,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
 void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   auto index_it = lambda_indices_by_node_.find(&lambda);
   if (index_it == lambda_indices_by_node_.end()) {
-    throw std::runtime_error("Missing function index for lambda expression");
+    COMPILER_THROW("Missing function index for lambda expression");
   }
 
   enterFunction(
@@ -425,7 +428,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   for (size_t i = 0; i < lambda.parameters.size(); i++) {
     const auto &param = lambda.parameters[i];
     if (!param || !param->pattern) {
-      throw std::runtime_error("Lambda parameter missing pattern");
+      COMPILER_THROW("Lambda parameter missing pattern");
     }
     compileParameterPattern(*param->pattern, static_cast<uint32_t>(i));
 
@@ -557,7 +560,7 @@ void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
   }
 
   default:
-    throw std::runtime_error("Unsupported parameter pattern type");
+    COMPILER_THROW("Unsupported parameter pattern type");
   }
 }
 
@@ -609,7 +612,7 @@ void ByteCompiler::compileParameterPatternValue(
     break;
   }
   default:
-    throw std::runtime_error("Unsupported parameter pattern value type");
+    COMPILER_THROW("Unsupported parameter pattern value type");
   }
 }
 
@@ -690,7 +693,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       const auto &pattern =
           static_cast<const ast::ArrayPattern &>(*let.pattern);
       if (!let.value) {
-        throw std::runtime_error("Tuple/array destructuring requires a value");
+        COMPILER_THROW("Tuple/array destructuring requires a value");
       }
 
       bool optimized_tuple_literal =
@@ -713,7 +716,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
                                            pattern.elements[i].get())
                                      : nullptr;
         if (!element_id) {
-          throw std::runtime_error("Tuple destructuring currently supports "
+          COMPILER_THROW("Tuple destructuring currently supports "
                                    "identifier elements only");
         }
         const uint32_t slot = declarationSlot(*element_id);
@@ -735,7 +738,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       break;
     }
 
-    throw std::runtime_error(
+    COMPILER_THROW(
         "Bytecode compiler supports let patterns: identifier and tuple/array");
     break;
   }
@@ -799,12 +802,12 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       const auto &function =
           static_cast<const ast::FunctionDeclaration &>(statement);
       if (!function.name) {
-        throw std::runtime_error("Function declaration missing name");
+        COMPILER_THROW("Function declaration missing name");
       }
 
       auto index_it = function_indices_by_node_.find(&function);
       if (index_it == function_indices_by_node_.end()) {
-        throw std::runtime_error("Missing function index for declaration: " +
+        COMPILER_THROW("Missing function index for declaration: " +
                                  function.name->symbol);
       }
 
@@ -836,7 +839,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       const auto &valueExpr = pair.second;
 
       if (!valueExpr) {
-        throw std::runtime_error("Config block pair has null value for key: " +
+        COMPILER_THROW("Config block pair has null value for key: " +
                                  key);
       }
 
@@ -1052,14 +1055,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   }
 
   default:
-    throw std::runtime_error("Unsupported statement in bytecode compiler: " +
+    COMPILER_THROW("Unsupported statement in bytecode compiler: " +
                              statement.toString());
   }
 }
 
 void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
   if (!statement.tryBody) {
-    throw std::runtime_error("try statement missing body");
+    COMPILER_THROW("try statement missing body");
   }
 
   const uint32_t try_enter_index =
@@ -1095,7 +1098,7 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
 
   // Patch TRY_ENTER with catch_ip and finally_ip
   if (try_enter_index >= current_function->instructions.size()) {
-    throw std::runtime_error("Invalid TRY_ENTER patch index");
+    COMPILER_THROW("Invalid TRY_ENTER patch index");
   }
   current_function->instructions[try_enter_index].operands[0] = catch_ip;
   if (finally_ip != 0) {
@@ -1147,14 +1150,14 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program,
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
   if (!module_loader_) {
-    throw std::runtime_error("Module loader not available for use statement");
+    COMPILER_THROW("Module loader not available for use statement");
   }
 
   // Load the module
   LoadedModule *module =
       module_loader_->loadModule(statement.filePath, base_path_);
   if (!module) {
-    throw std::runtime_error("Failed to load module: " + statement.filePath);
+    COMPILER_THROW("Failed to load module: " + statement.filePath);
   }
 
   // For now, emit a NOP - the module's functions/classes will be compiled
@@ -1257,7 +1260,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::ARRAY_NEW);
       for (const auto &element : array.elements) {
         if (!element) {
-          throw std::runtime_error("Array literal contains null element");
+          COMPILER_THROW("Array literal contains null element");
         }
         emit(OpCode::DUP);
         compileExpression(*element);
@@ -1274,13 +1277,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
       for (const auto &element : array.elements) {
         if (!element) {
-          throw std::runtime_error("Array literal contains null element");
+          COMPILER_THROW("Array literal contains null element");
         }
         if (element->kind == ast::NodeType::SpreadExpression) {
           const auto &spread =
               static_cast<const ast::SpreadExpression &>(*element);
           if (!spread.target) {
-            throw std::runtime_error("Spread expression missing target");
+            COMPILER_THROW("Spread expression missing target");
           }
           // Compile spread target
           compileExpression(*spread.target);
@@ -1363,7 +1366,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     emit(OpCode::SET_NEW);
     for (const auto &element : set.elements) {
       if (!element) {
-        throw std::runtime_error("Set literal contains null element");
+        COMPILER_THROW("Set literal contains null element");
       }
       emit(OpCode::DUP);
       compileExpression(*element);
@@ -1383,7 +1386,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     }
     for (const auto &pair : object.pairs) {
       if (!pair.second) {
-        throw std::runtime_error("Object literal contains null value");
+        COMPILER_THROW("Object literal contains null value");
       }
       emit(OpCode::DUP);
       compileExpression(*pair.second);
@@ -1398,7 +1401,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     // Compile the value to match on
     if (!match.value) {
-      throw std::runtime_error("Match expression missing value");
+      COMPILER_THROW("Match expression missing value");
     }
     compileExpression(*match.value);
 
@@ -1457,7 +1460,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
     auto it = lambda_indices_by_node_.find(&lambda);
     if (it == lambda_indices_by_node_.end()) {
-      throw std::runtime_error("Missing function index for lambda expression");
+      COMPILER_THROW("Missing function index for lambda expression");
     }
     auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
     if (upvalues_it != lexical_resolution_.lambda_upvalues.end() &&
@@ -1480,7 +1483,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     const auto *binding = bindingFor(id);
     if (!binding) {
-      throw std::runtime_error("Missing lexical binding for identifier: " +
+      COMPILER_THROW("Missing lexical binding for identifier: " +
                                id.symbol);
     }
 
@@ -1524,11 +1527,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     // @field - compile as loading 'this' and getting the field
     const auto &atExpr = static_cast<const ast::AtExpression &>(expression);
     if (!atExpr.field) {
-      throw std::runtime_error("@ expression missing field");
+      COMPILER_THROW("@ expression missing field");
     }
     auto *fieldId = dynamic_cast<const ast::Identifier *>(atExpr.field.get());
     if (!fieldId) {
-      throw std::runtime_error("@ expression field must be an identifier");
+      COMPILER_THROW("@ expression field must be an identifier");
     }
     // Load 'this' (current object)
     {
@@ -1544,7 +1547,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::BinaryExpression: {
     const auto &binary = static_cast<const ast::BinaryExpression &>(expression);
     if (!binary.left || !binary.right) {
-      throw std::runtime_error("Malformed binary expression");
+      COMPILER_THROW("Malformed binary expression");
     }
 
     // Special handling for 'in' and 'not in' - compile as host function call
@@ -1603,7 +1606,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::RangeExpression: {
     const auto &range = static_cast<const ast::RangeExpression &>(expression);
     if (!range.start || !range.end) {
-      throw std::runtime_error("Malformed range expression");
+      COMPILER_THROW("Malformed range expression");
     }
     compileExpression(*range.start);
     compileExpression(*range.end);
@@ -1621,7 +1624,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     const auto &pipeline =
         static_cast<const ast::PipelineExpression &>(expression);
     if (pipeline.stages.empty()) {
-      throw std::runtime_error("Pipeline expression has no stages");
+      COMPILER_THROW("Pipeline expression has no stages");
     }
 
     // Compile first stage normally
@@ -1644,7 +1647,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     for (size_t i = 1; i < pipeline.stages.size(); ++i) {
       auto &stage = pipeline.stages[i];
       if (!stage) {
-        throw std::runtime_error("Pipeline stage is null");
+        COMPILER_THROW("Pipeline stage is null");
       }
 
       // Reserve temp slot for previous pipe value
@@ -1746,7 +1749,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);
     if (!assignment.value) {
-      throw std::runtime_error("Assignment expression missing value");
+      COMPILER_THROW("Assignment expression missing value");
     }
 
     const auto *target_id =
@@ -1772,7 +1775,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       if (binding.is_const) {
-        throw std::runtime_error("Cannot assign to const binding: " +
+        COMPILER_THROW("Cannot assign to const binding: " +
                                  binding.name);
       }
       emit(OpCode::DUP);
@@ -1786,13 +1789,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
-        throw std::runtime_error("Assignment target is not mutable");
+        COMPILER_THROW("Assignment target is not mutable");
       }
     };
 
     auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
       if (binding.is_const && assignment.operator_ != "=") {
-        throw std::runtime_error("Cannot mutate const binding: " +
+        COMPILER_THROW("Cannot mutate const binding: " +
                                  binding.name);
       }
       if (binding.kind == ResolvedBindingKind::Local) {
@@ -1805,7 +1808,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
-        throw std::runtime_error("Assignment target is not mutable");
+        COMPILER_THROW("Assignment target is not mutable");
       }
     };
 
@@ -1813,7 +1816,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       auto *property =
           dynamic_cast<const ast::Identifier *>(member.property.get());
       if (!member.object || !property) {
-        throw std::runtime_error(
+        COMPILER_THROW(
             "Member assignment expects identifier property target");
       }
       uint32_t temp_slot = next_local_index;
@@ -1829,7 +1832,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     auto emitStoreIndexWithResult =
         [&](const ast::IndexExpression &index_expr) {
           if (!index_expr.object || !index_expr.index) {
-            throw std::runtime_error(
+            COMPILER_THROW(
                 "Index assignment expects object and index");
           }
           uint32_t temp_slot = next_local_index;
@@ -1855,7 +1858,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
         const auto *binding = bindingFor(*target_id);
         if (!binding) {
-          throw std::runtime_error(
+          COMPILER_THROW(
               "Missing lexical binding for assignment target: " +
               target_id->symbol);
         }
@@ -1888,7 +1891,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             const auto &ident = static_cast<const ast::Identifier &>(*element);
             const auto *binding = bindingFor(ident);
             if (!binding) {
-              throw std::runtime_error(
+              COMPILER_THROW(
                   "Missing lexical binding for destructuring element: " +
                   ident.symbol);
             }
@@ -1905,7 +1908,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                 emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
               }
             } else {
-              throw std::runtime_error(
+              COMPILER_THROW(
                   "Unsupported binding kind for destructuring");
             }
           }
@@ -1930,7 +1933,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                 static_cast<const ast::Identifier &>(*pair.second);
             const auto *binding = bindingFor(ident);
             if (!binding) {
-              throw std::runtime_error(
+              COMPILER_THROW(
                   "Missing lexical binding for destructuring property: " +
                   ident.symbol);
             }
@@ -1947,21 +1950,21 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                 emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
               }
             } else {
-              throw std::runtime_error(
+              COMPILER_THROW(
                   "Unsupported binding kind for destructuring");
             }
           }
         }
         break;
       }
-      throw std::runtime_error("Unsupported assignment target");
+      COMPILER_THROW("Unsupported assignment target");
     }
 
     auto emitCompound = [&](OpCode math_op) {
       if (target_id) {
         const auto *binding = bindingFor(*target_id);
         if (!binding) {
-          throw std::runtime_error(
+          COMPILER_THROW(
               "Missing lexical binding for assignment target: " +
               target_id->symbol);
         }
@@ -1975,7 +1978,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         auto *property = dynamic_cast<const ast::Identifier *>(
             target_member->property.get());
         if (!target_member->object || !property) {
-          throw std::runtime_error(
+          COMPILER_THROW(
               "Member assignment expects identifier property target");
         }
         uint32_t temp_object = next_local_index;
@@ -2000,7 +2003,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       if (target_index) {
         if (!target_index->object || !target_index->index) {
-          throw std::runtime_error("Index assignment expects object and index");
+          COMPILER_THROW("Index assignment expects object and index");
         }
         uint32_t temp_object = next_local_index;
         reserveLocalSlot(temp_object);
@@ -2026,7 +2029,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
-      throw std::runtime_error("Unsupported compound assignment target");
+      COMPILER_THROW("Unsupported compound assignment target");
     };
 
     if (assignment.operator_ == "+=") {
@@ -2054,7 +2057,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       break;
     }
 
-    throw std::runtime_error("Unsupported assignment operator: " +
+    COMPILER_THROW("Unsupported assignment operator: " +
                              assignment.operator_);
   }
 
@@ -2067,7 +2070,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     auto *property =
         dynamic_cast<const ast::Identifier *>(member.property.get());
     if (!member.object || !property) {
-      throw std::runtime_error("Unsupported member expression");
+      COMPILER_THROW("Unsupported member expression");
     }
 
     // Check if object is an identifier (variable) - use runtime dispatch
@@ -2092,7 +2095,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::IndexExpression: {
     const auto &index = static_cast<const ast::IndexExpression &>(expression);
     if (!index.object || !index.index) {
-      throw std::runtime_error("Malformed index expression");
+      COMPILER_THROW("Malformed index expression");
     }
     compileExpression(*index.object);
     compileExpression(*index.index);
@@ -2103,7 +2106,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::SpreadExpression: {
     const auto &spread = static_cast<const ast::SpreadExpression &>(expression);
     if (!spread.target) {
-      throw std::runtime_error("Spread expression missing target");
+      COMPILER_THROW("Spread expression missing target");
     }
     compileExpression(*spread.target);
     emit(OpCode::SPREAD);
@@ -2114,7 +2117,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     const auto &await_expr =
         static_cast<const ast::AwaitExpression &>(expression);
     if (!await_expr.argument) {
-      throw std::runtime_error("Await expression missing argument");
+      COMPILER_THROW("Await expression missing argument");
     }
     compileExpression(*await_expr.argument);
     {
@@ -2130,20 +2133,20 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     const auto &update_expr =
         static_cast<const ast::UpdateExpression &>(expression);
     if (!update_expr.argument) {
-      throw std::runtime_error("Update expression missing argument");
+      COMPILER_THROW("Update expression missing argument");
     }
 
     // The argument must be an identifier
     const auto *target_id =
         dynamic_cast<const ast::Identifier *>(update_expr.argument.get());
     if (!target_id) {
-      throw std::runtime_error(
+      COMPILER_THROW(
           "Update expression argument must be an identifier");
     }
 
     const auto *binding = bindingFor(*target_id);
     if (!binding) {
-      throw std::runtime_error(
+      COMPILER_THROW(
           "Missing lexical binding for update expression: " +
           target_id->symbol);
     }
@@ -2164,7 +2167,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
-        throw std::runtime_error(
+        COMPILER_THROW(
             "Cannot update variable with binding kind: " +
             std::to_string(static_cast<int>(binding->kind)));
       }
@@ -2194,7 +2197,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
       } else {
-        throw std::runtime_error("Cannot update variable with binding kind: " +
+        COMPILER_THROW("Cannot update variable with binding kind: " +
                                  std::to_string(static_cast<int>(binding->kind)));
       }
       emit(OpCode::DUP); // Save old value
@@ -2218,7 +2221,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::UnaryExpression: {
     const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
     if (!unary.operand) {
-      throw std::runtime_error("Unary expression missing operand");
+      COMPILER_THROW("Unary expression missing operand");
     }
 
     // Compile operand first
@@ -2245,7 +2248,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       break;
     default:
-      throw std::runtime_error("Unsupported unary operator");
+      COMPILER_THROW("Unsupported unary operator");
     }
     break;
   }
@@ -2254,7 +2257,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     const auto &ternary =
         static_cast<const ast::TernaryExpression &>(expression);
     if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
-      throw std::runtime_error("Ternary expression missing components");
+      COMPILER_THROW("Ternary expression missing components");
     }
 
     // Compile condition
@@ -2279,7 +2282,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   }
 
   default:
-    throw std::runtime_error("Unsupported expression in bytecode compiler: " +
+    COMPILER_THROW("Unsupported expression in bytecode compiler: " +
                              expression.toString());
   }
 }
@@ -2287,7 +2290,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 void ByteCompiler::compileCallExpression(
     const ast::CallExpression &expression) {
   if (!expression.callee) {
-    throw std::runtime_error("Call expression missing callee");
+    COMPILER_THROW("Call expression missing callee");
   }
 
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
@@ -2298,7 +2301,7 @@ void ByteCompiler::compileCallExpression(
     // Compile arguments for the super call
     for (const auto &arg : expression.args) {
       if (!arg) {
-        throw std::runtime_error("Super call contains null argument");
+        COMPILER_THROW("Super call contains null argument");
       }
       compileExpression(*arg);
     }
@@ -2319,7 +2322,7 @@ void ByteCompiler::compileCallExpression(
       uint32_t totalArgs = 1; // type name
       for (const auto &arg : expression.args) {
         if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
+          COMPILER_THROW("Call expression contains null argument");
         }
         compileExpression(*arg);
         totalArgs++;
@@ -2336,7 +2339,7 @@ void ByteCompiler::compileCallExpression(
     if (binding && binding->kind == ResolvedBindingKind::HostFunction) {
       for (const auto &arg : expression.args) {
         if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
+          COMPILER_THROW("Call expression contains null argument");
         }
         compileExpression(*arg);
       }
@@ -2366,7 +2369,7 @@ void ByteCompiler::compileCallExpression(
       auto *property =
           dynamic_cast<const ast::Identifier *>(member.property.get());
       if (!member.object || !property) {
-        throw std::runtime_error("Unsupported member call expression");
+        COMPILER_THROW("Unsupported member call expression");
       }
 
       // Route ALL method calls through any.* dispatch for consistency
@@ -2375,7 +2378,7 @@ void ByteCompiler::compileCallExpression(
       compileExpression(*member.object);
       for (const auto &arg : expression.args) {
         if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
+          COMPILER_THROW("Call expression contains null argument");
         }
         compileExpression(*arg);
       }
@@ -2405,7 +2408,7 @@ void ByteCompiler::compileCallExpression(
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
     if (!binding) {
-      throw std::runtime_error("Missing lexical binding for callee: " +
+      COMPILER_THROW("Missing lexical binding for callee: " +
                                callee_id.symbol);
     }
 
@@ -2413,7 +2416,7 @@ void ByteCompiler::compileCallExpression(
       // Host function - call via CALL_HOST
       for (const auto &arg : expression.args) {
         if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
+          COMPILER_THROW("Call expression contains null argument");
         }
         compileExpression(*arg);
       }
@@ -2449,7 +2452,7 @@ void ByteCompiler::compileCallExpression(
 
       for (const auto &arg : expression.args) {
         if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
+          COMPILER_THROW("Call expression contains null argument");
         }
         compileExpression(*arg);
       }
@@ -2479,7 +2482,7 @@ void ByteCompiler::compileCallExpression(
   uint32_t actualArgCount = 0;
   for (const auto &arg : expression.args) {
     if (!arg) {
-      throw std::runtime_error("Call expression contains null argument");
+      COMPILER_THROW("Call expression contains null argument");
     }
     if (arg->kind == ast::NodeType::SpreadExpression) {
       const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
@@ -2496,7 +2499,7 @@ void ByteCompiler::compileCallExpression(
       } else {
         // Dynamic spread not yet supported - skip for now
         // TODO: Implement runtime spread expansion
-        throw std::runtime_error("Spread operator in function calls only "
+        COMPILER_THROW("Spread operator in function calls only "
                                  "supports array literals for now");
       }
     } else {
@@ -2538,7 +2541,7 @@ void ByteCompiler::compileCallExpression(
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
   if (!statement.condition || !statement.consequence) {
-    throw std::runtime_error("Malformed if statement");
+    COMPILER_THROW("Malformed if statement");
   }
 
   compileExpression(*statement.condition);
@@ -2602,7 +2605,7 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
 
 void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   if (!statement.condition || !statement.body) {
-    throw std::runtime_error("Malformed while statement");
+    COMPILER_THROW("Malformed while statement");
   }
 
   uint32_t loop_start =
@@ -2622,7 +2625,7 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
 void ByteCompiler::compileDoWhileStatement(
     const ast::DoWhileStatement &statement) {
   if (!statement.condition || !statement.body) {
-    throw std::runtime_error("Malformed do-while statement");
+    COMPILER_THROW("Malformed do-while statement");
   }
 
   uint32_t loop_start =
@@ -2646,7 +2649,7 @@ void ByteCompiler::compileDoWhileStatement(
 
 void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   if (statement.iterators.empty() || !statement.iterable || !statement.body) {
-    throw std::runtime_error("Malformed for statement");
+    COMPILER_THROW("Malformed for statement");
   }
 
   bool multiVar = statement.iterators.size() > 1;
@@ -2721,7 +2724,7 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
 
 void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
   if (!statement.body) {
-    throw std::runtime_error("Malformed loop statement: body is null");
+    COMPILER_THROW("Malformed loop statement: body is null");
   }
 
   // Check if this is a count-based loop: loop 5 { ... }
@@ -3181,7 +3184,7 @@ const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const
 uint32_t ByteCompiler::declarationSlot(const ast::Identifier &id) const {
   auto it = lexical_resolution_.declaration_slots.find(&id);
   if (it == lexical_resolution_.declaration_slots.end()) {
-    throw std::runtime_error("Missing declaration slot for: " + id.symbol);
+    COMPILER_THROW("Missing declaration slot for: " + id.symbol);
   }
   return it->second;
 }
@@ -3208,7 +3211,7 @@ void ByteCompiler::enterFunction(BytecodeFunction &&function,
 
 void ByteCompiler::leaveFunction() {
   if (!current_function) {
-    throw std::runtime_error("No active function to close");
+    COMPILER_THROW("No active function to close");
   }
 
   current_function->local_count = next_local_index;

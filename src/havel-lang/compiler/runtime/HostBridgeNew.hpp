@@ -21,15 +21,14 @@
 namespace havel {
 struct HostContext;
 class ExecutionPolicy;
+namespace core { class Value; }
 } // namespace havel
 
 namespace havel::compiler {
 
 class VM;
 class VMApi;
-class Value;
 
-// ============================================================================
 // Module Registry - Lazy Loading System
 // ============================================================================
 
@@ -139,7 +138,7 @@ private:
                                      CallbackId exitId);
   
   // Private: Callback invocation (internal use only)
-  bool invokeCallbackInternal(CallbackId id, const std::vector<Value> &args);
+  bool invokeCallbackInternal(CallbackId id, const std::vector<havel::core::Value> &args);
 
   // Private: Initialize bridge submodules
   void initBridges();
@@ -149,6 +148,9 @@ private:
 
   // Private: Lazy module installation (triggered by 'use')
   void installLazyModule(const std::string &moduleName);
+
+  // Private: Helper to register host modules in the registry
+  void registerHostModules();
 
   // Private: Check permission for specific operation
   bool checkPermissionInternal(ModuleCapability cap, const std::string &operation) const;

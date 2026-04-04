@@ -183,10 +183,14 @@ public:
 // ============================================================================
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
-    : pImpl(std::make_unique<Impl>(ctx, nullptr)) {}
+    : pImpl(std::make_unique<Impl>(ctx, nullptr)) {
+  registerHostModules();
+}
 
 HostBridge::HostBridge(const havel::HostContext &ctx, const ExecutionPolicy &policy)
-    : pImpl(std::make_unique<Impl>(ctx, &policy)) {}
+    : pImpl(std::make_unique<Impl>(ctx, &policy)) {
+  registerHostModules();
+}
 
 HostBridge::~HostBridge() = default;
 
@@ -335,17 +339,46 @@ void HostBridge::installCoreModules() {
   // which is separate from this clean HostBridge
 }
 
+void HostBridge::registerHostModules() {
+  // Register Clipboard Module
+  ModuleInfo clipboard;
+  clipboard.name = "clipboard";
+  clipboard.capabilities = {ModuleCapability::Clipboard, ModuleCapability::UI};
+  clipboard.enabled = true;
+  pImpl->registry_.registerModule(clipboard);
+
+  // Register Screenshot Module
+  ModuleInfo screenshot;
+  screenshot.name = "screenshot";
+  screenshot.capabilities = {ModuleCapability::Screenshot, ModuleCapability::FileSystem};
+  screenshot.enabled = true;
+  pImpl->registry_.registerModule(screenshot);
+
+  // Register Window/UI Module
+  ModuleInfo window;
+  window.name = "window";
+  window.capabilities = {ModuleCapability::UI};
+  window.enabled = true;
+  pImpl->registry_.registerModule(window);
+}
+
 void HostBridge::installLazyModule(const std::string &moduleName) {
   if (!pImpl->vm_) return;
 
   VMApi api(*pImpl->vm_);
 
-  // Install host service modules lazily
-  // These require permissions and are only loaded on 'use' statement
-  
-  // Map module names to service registrations
-  // This is where clipboard, window, fs, etc. get registered
+  if (moduleName == "clipboard") {
+    // Lazy load clipboard service and register its functions
+    // In a real implementation, we would register C++ functions here
+    // that call into the ClipboardService.
+    std::cout << "HostBridge: Installing lazy module 'clipboard'\n";
+  } else if (moduleName == "screenshot") {
+    std::cout << "HostBridge: Installing lazy module 'screenshot'\n";
+  } else if (moduleName == "window") {
+    std::cout << "HostBridge: Installing lazy module 'window'\n";
+  }
 }
+
 
 bool HostBridge::checkPermissionInternal(ModuleCapability cap, 
                                           const std::string &operation) const {

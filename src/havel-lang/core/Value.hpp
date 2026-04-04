@@ -78,10 +78,10 @@ enum class ExtendedTag : uint64_t {
 static constexpr uint64_t BOOL_FALSE = 0;
 static constexpr uint64_t BOOL_TRUE = 1;
 
-// Extended tag mask (bits 45-48 when primary tag is EXTENDED)
-// Must be 4 bits (0xF << 45) to hold values 0x0-0xC
-static constexpr uint64_t EXTENDED_TAG_MASK = 0x0001E00000000000ULL;
-static constexpr int EXTENDED_TAG_SHIFT = 45;
+// Extended tag mask (bits 44-47, 4 bits for values 0-15)
+// Positioned below the primary tag (bits 48-50) to avoid overlap
+static constexpr uint64_t EXTENDED_TAG_MASK = 0x0000F00000000000ULL;
+static constexpr int EXTENDED_TAG_SHIFT = 44;
 
 // ============================================================================
 // Forward declarations for GC object types
@@ -555,9 +555,12 @@ private:
   }
 
   static uint64_t makeExtendedRaw(uint64_t extendedTag, uint64_t payload) {
-    // Primary tag = EXTENDED (0b111), extended tag in bits 45-47
+    // Extended values: primary tag = 7 (EXTENDED) in bits 48-50,
+    // extended tag in bits 45-47, payload in bits 0-44.
+    // Use 4-bit extended tag at bits 44-47 to avoid overlap with primary tag.
+    // Full upper bits: (7 << 48) | (extendedTag << 44)
     return QNAN | (static_cast<uint64_t>(ValueTag::EXTENDED) << 48) |
-           (extendedTag << EXTENDED_TAG_SHIFT) | (payload & PAYLOAD_MASK);
+           (extendedTag << 44) | (payload & 0x00000FFFFFFFFFFFULL);
   }
 
   static uint64_t makeIntRaw(int64_t i) {

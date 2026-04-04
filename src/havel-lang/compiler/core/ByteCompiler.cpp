@@ -242,9 +242,9 @@ uint32_t ByteCompiler::addStringConstant(const std::string &str) {
     throw std::runtime_error(
         "Attempted to add string constant without active function");
   }
-  uint32_t index = static_cast<uint32_t>(current_function->constants.size());
+  uint32_t index = static_cast<uint32_t>(current_function->string_constants.size());
+  current_function->string_constants.push_back(str);
   current_function->constants.push_back(Value::makeStringValId(index));
-  (void)str; // TODO: Store actual string data for VM resolution
   return index;
 }
 

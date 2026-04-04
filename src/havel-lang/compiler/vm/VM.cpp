@@ -503,10 +503,12 @@ Value VM::callFunctionSync(const Value &fn,
 void VM::registerHostFunction(const std::string &name,
                               BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
-  // Also register as a global value so it can be loaded and called like a
-  // normal function This enables pipeline syntax: "hello" | upper
-  // TODO: HostFunctionRef not directly convertible to Value - need proper ID
-  (void)name;  // Suppress unused warning for now
+  // Track index for HostFuncId lookup
+  uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
+  host_function_names_.push_back(name);
+  // Register host function by name in globals (for LOAD_GLOBAL lookup)
+  // The bytecode will look up the string constant which points to this name
+  host_function_globals_[name] = Value::makeHostFuncId(idx);
 }
 
 void VM::registerHostFunction(const std::string &name, size_t arity,
@@ -526,6 +528,19 @@ void VM::registerHostFunction(const std::string &name, size_t arity,
 
 bool VM::hasHostFunction(const std::string &name) const {
   return host_functions.find(name) != host_functions.end();
+}
+
+uint32_t VM::getHostFunctionIndex(const std::string &name) {
+  // Find existing index
+  for (uint32_t i = 0; i < host_function_names_.size(); i++) {
+    if (host_function_names_[i] == name) {
+      return i;
+    }
+  }
+  // Register if not found (shouldn't happen for registered functions)
+  uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
+  host_function_names_.push_back(name);
+  return idx;
 }
 
 ObjectRef VM::createHostObject() {
@@ -1768,10 +1783,21 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args,
                 bool advance_caller_ip) {
+  // Handle host function call directly
   if (callee_value.isHostFuncId()) {
-    // TODO: host func name lookup
-    (void)callee_value.asHostFuncId();
-    throw std::runtime_error("Host function call via doCall not yet supported with NaN boxing");
+    uint32_t host_func_idx = callee_value.asHostFuncId();
+    if (host_func_idx >= host_function_names_.size()) {
+      throw std::runtime_error("Host function index out of range: " +
+                               std::to_string(host_func_idx));
+    }
+    const std::string &name = host_function_names_[host_func_idx];
+    auto it = host_functions.find(name);
+    if (it == host_functions.end()) {
+      throw std::runtime_error("Host function not found: " + name);
+    }
+    Value result = it->second(args); // Call and get result
+    pushStack(result); // Push result to stack
+    return;
   }
 
   if (frame_count_ >= max_call_depth_) {
@@ -2266,9 +2292,29 @@ void VM::executeInstruction(const Instruction &instruction) {
         !instruction.operands[0].isStringValId()) {
       throw std::runtime_error("LOAD_GLOBAL expects string operand");
     }
-    const auto &name = instruction.operands[0].toString();
+    // Get the string from the function's string table
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto* func = currentFrame().function;
+    std::string name;
+    if (func && strIndex < func->string_constants.size()) {
+      name = func->string_constants[strIndex];
+    } else {
+      name = "<unknown:" + std::to_string(strIndex) + ">";
+    }
+
+    // First check host function globals
+    auto hostIt = host_function_globals_.find(name);
+    if (hostIt != host_function_globals_.end()) {
+      
+      pushStack(hostIt->second);
+      break;
+    }
+
+    // Then check regular globals
     auto it = globals.find(name);
-    pushStack(it == globals.end() ? Value::makeNull() : it->second);
+    Value val = (it == globals.end()) ? Value::makeNull() : it->second;
+    
+    pushStack(val);
     break;
   }
 
@@ -2482,6 +2528,26 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     Value callee_value = popStack();
 
+    
+
+    // Handle bound method objects (from array prototype lookup)
+    if (callee_value.isObjectId()) {
+      auto *obj = heap_.object(callee_value.asObjectId());
+      if (obj) {
+        auto fnIt = obj->find("fn");
+        auto selfIt = obj->find("self");
+        if (fnIt != obj->end() && selfIt != obj->end() &&
+            fnIt->second.isHostFuncId() && selfIt->second.isArrayId()) {
+          // Prepend self (array) to args
+          std::vector<Value> boundArgs;
+          boundArgs.push_back(selfIt->second);
+          boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+          doCall(fnIt->second, std::move(boundArgs));
+          break;
+        }
+      }
+    }
+
     doCall(callee_value, std::move(args));
     break;
   }
@@ -2653,7 +2719,10 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::ARRAY_NEW: {
-    pushStack(Value::makeArrayId(heap_.allocateArray().id));
+    
+    Value arr = Value::makeArrayId(heap_.allocateArray().id);
+    
+    pushStack(arr);
     maybeCollectGarbage();
     break;
   }
@@ -2667,6 +2736,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::ARRAY_PUSH: {
     Value value = popStack();
     Value container = popStack();
+    
     if (!container.isArrayId()) {
       throw std::runtime_error("ARRAY_PUSH expects array container");
     }
@@ -2969,8 +3039,33 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::OBJECT_GET: {
     Value key_value = popStack();
     Value object = popStack();
+
+    
+
+    // Handle arrays - look up prototype methods
+    if (object.isArrayId()) {
+      auto key = keyFromValue(key_value);
+      if (key) {
+        auto method = getPrototypeMethod(object, *key);
+        if (method) {
+          // Create a bound method object: {fn: HostFuncId, self: ArrayId}
+          auto boundObj = heap_.allocateObject();
+          auto *obj = heap_.object(boundObj.id);
+          if (obj) {
+            (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(method->name));
+            (*obj)["self"] = Value::makeArrayId(object.asArrayId());
+          }
+          pushStack(Value::makeObjectId(boundObj.id));
+          break;
+        }
+      }
+      pushStack(Value::makeNull());
+      break;
+    }
+
     if (!object.isObjectId()) {
-      throw std::runtime_error("OBJECT_GET expects object container");
+      pushStack(Value::makeNull());
+      break;
     }
     auto objRef = ObjectRef{object.asObjectId(), true};
     auto *obj = heap_.object(objRef.id);

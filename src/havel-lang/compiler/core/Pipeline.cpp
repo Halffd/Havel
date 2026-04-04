@@ -255,7 +255,7 @@ std::string formatValue(const Value &value) {
     return std::to_string(value.asDouble());
   }
   if (value.isStringValId()) {
-    return "\"" + value.toString() + "\"";
+    return "str[" + std::to_string(value.asStringValId()) + "]";
   }
   if (value.isFunctionObjId()) {
     return "fn[" + std::to_string(value.asFunctionObjId()) + "]";
@@ -521,11 +521,11 @@ BytecodeSmokeResult runBytecodePipeline(
   try {
     program = parser.produceAST(source);
   } catch (const havel::LexError &e) {
-    throw std::runtime_error(formatDiagnostic(
+    COMPILER_THROW(formatDiagnostic(
         "LexerError", e.what(), options.compile_unit_name, source, e.line,
         e.column, e.length, "unexpected token"));
   } catch (const parser::ParseError &e) {
-    throw std::runtime_error(formatDiagnostic(
+    COMPILER_THROW(formatDiagnostic(
         "ParseError", e.what(), options.compile_unit_name, source, e.line,
         e.column, e.length, "here"));
   }

@@ -2577,8 +2577,15 @@ void VM::executeInstruction(const Instruction &instruction) {
                                "function_name, uint32 arg_count>");
     }
 
-    const std::string &function_name =
-        instruction.operands[0].toString();
+    // Get the function name from the function's string table
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto* func = currentFrame().function;
+    std::string function_name;
+    if (func && strIndex < func->string_constants.size()) {
+      function_name = func->string_constants[strIndex];
+    } else {
+      function_name = "<stringval:" + std::to_string(strIndex) + ">";
+    }
     uint32_t arg_count = instruction.operands[1].asInt();
     pushStack(invokeHostFunction(function_name, arg_count));
     break;

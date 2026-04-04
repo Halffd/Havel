@@ -10,17 +10,11 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QPixmap>
+#include <cstring>
 
 namespace havel::host {
 
-ScreenshotService::ScreenshotService() {
-    // Qt will be lazily initialized by QGuiApplication
-}
-
-ScreenshotService::~ScreenshotService() {
-}
-
-std::vector<uint8_t> ScreenshotService::captureFullDesktop() {
+std::vector<unsigned char> ScreenshotService::captureFullDesktop() {
     if (!QGuiApplication::instance()) {
         return {};
     }
@@ -46,7 +40,7 @@ std::vector<uint8_t> ScreenshotService::captureFullDesktop() {
     return imageToRGBA(image);
 }
 
-std::vector<uint8_t> ScreenshotService::captureMonitor(int monitorIndex) {
+std::vector<unsigned char> ScreenshotService::captureMonitor(int monitorIndex) {
     if (!QGuiApplication::instance()) {
         return {};
     }
@@ -59,7 +53,7 @@ std::vector<uint8_t> ScreenshotService::captureMonitor(int monitorIndex) {
     return captureFromScreen(screens[monitorIndex]);
 }
 
-std::vector<uint8_t> ScreenshotService::captureActiveWindow() {
+std::vector<unsigned char> ScreenshotService::captureActiveWindow() {
     if (!QGuiApplication::instance()) {
         return {};
     }
@@ -79,7 +73,7 @@ std::vector<uint8_t> ScreenshotService::captureActiveWindow() {
     return imageToRGBA(image);
 }
 
-std::vector<uint8_t> ScreenshotService::captureRegion(int x, int y, int width, int height) {
+std::vector<unsigned char> ScreenshotService::captureRegion(int x, int y, int width, int height) {
     if (!QGuiApplication::instance()) {
         return {};
     }
@@ -123,7 +117,7 @@ std::vector<int> ScreenshotService::getMonitorGeometry(int monitorIndex) const {
     };
 }
 
-std::vector<uint8_t> ScreenshotService::captureFromScreen(QScreen* screen) {
+std::vector<unsigned char> ScreenshotService::captureFromScreen(QScreen* screen) {
     if (!screen) {
         return {};
     }
@@ -133,7 +127,7 @@ std::vector<uint8_t> ScreenshotService::captureFromScreen(QScreen* screen) {
     return imageToRGBA(image);
 }
 
-std::vector<uint8_t> ScreenshotService::imageToRGBA(const QImage& image) {
+std::vector<unsigned char> ScreenshotService::imageToRGBA(const QImage& image) {
     if (image.isNull()) {
         return {};
     }
@@ -142,7 +136,7 @@ std::vector<uint8_t> ScreenshotService::imageToRGBA(const QImage& image) {
     QImage rgbaImage = image.convertToFormat(QImage::Format_RGBA8888);
     
     // Copy data to vector
-    std::vector<uint8_t> data(rgbaImage.sizeInBytes());
+    std::vector<unsigned char> data(rgbaImage.sizeInBytes());
     std::memcpy(data.data(), rgbaImage.bits(), data.size());
     
     return data;

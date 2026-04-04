@@ -341,6 +341,7 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridgeNew.cpp
         # Note: Disabled C API files (not implemented)
         # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
         # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
@@ -846,7 +847,15 @@ target_compile_definitions(havel PRIVATE
 # HAVEL LANGUAGE LIBRARY (CONDITIONAL)
 # ==============================================================================
 if(ENABLE_HAVEL_LANG)
-    add_library(havel_lang STATIC ${HAVEL_LANG_SOURCES})
+    set(HAVEL_LANG_LIB_SOURCES ${HAVEL_LANG_SOURCES})
+    list(REMOVE_ITEM HAVEL_LANG_LIB_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridge.cpp
+    )
+    # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
+    list(APPEND HAVEL_LANG_LIB_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
+    )
+    add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
     
     target_include_directories(havel_lang PRIVATE
         ${CMAKE_SOURCE_DIR}/src

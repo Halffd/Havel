@@ -10,6 +10,7 @@
 #include "DynamicLoader.hpp"
 
 #include <unordered_map>
+#include <vector>
 #include <memory>
 #include <cstdio>
 #include <cstring>
@@ -1038,10 +1039,10 @@ enum {
 
 /* Dynamic loader for GTK4 */
 struct Gtk4Libs {
-    DynamicLoader gtkLoader;
-    DynamicLoader glibLoader;
-    DynamicLoader gobjectLoader;
-    DynamicLoader gdkLoader;
+    havel::DynamicLoader gtkLoader;
+    havel::DynamicLoader glibLoader;
+    havel::DynamicLoader gobjectLoader;
+    havel::DynamicLoader gdkLoader;
     
     /* Function pointers - Core */
     GtkInitFn gtk_init = nullptr;

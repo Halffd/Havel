@@ -10,7 +10,11 @@
 #include <QShortcut>
 #include <QDateTime>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QTextEdit>
 #include <QVariant>
+#include <QCloseEvent>
+#include <QKeyEvent>
 
 namespace havel {
 
@@ -43,10 +47,20 @@ public:
     
     void showAndFocus();
     void hide();
-    
+
+    QClipboard* getClipboard() const;
+
     // Legacy support for scripts
     void addToHistory(const std::string& content);
     void clearHistory();
+
+    void addToHistoryPublic(const QString& text);
+    void clearHistoryPublic();
+    QString getHistoryItem(int index) const;
+    int getHistoryCount() const;
+
+    void toggleVisibility();
+    void pasteHistoryItem(int index);
 
 private slots:
     void onClipboardChanged();
@@ -58,13 +72,19 @@ private slots:
     void onItemClicked(QListWidgetItem* item);
     void showContextMenu(const QPoint& pos);
     void removeSelectedItem();
+    void copySelectedItem();
     void copySelectedItems();
+    void editSelectedItem();
     void onHotkeyPressed();
     void onClearAll();
     void onCustomContextMenuRequested(const QPoint &pos);
 
 signals:
     void pasteRequested(int index);
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void setupUI();
@@ -86,8 +106,6 @@ private:
     int getMaxHistorySize() const;
     QListWidgetItem* createSafeListItem(const QString& text);
     void onItemChanged(QListWidgetItem* item);
-    void toggleVisibility();
-    void pasteHistoryItem(int index);
     void updateHistoryOrder();
     void processClipboardContent();
     bool isFileTypeAllowed(const QString& fileName) const;
@@ -97,6 +115,26 @@ private:
     void animateItemDelete(QListWidgetItem* item);
     void showWithFade();
     void hideWithFade();
+    void showTrayMessage(const QString& message);
+
+    void addToHistory(const ClipboardItem& item);
+    void addToHistory(const QString& text);
+
+    struct ClipboardSettingGuard {
+        ClipboardManager* m = nullptr;
+        explicit ClipboardSettingGuard(ClipboardManager* cm) : m(cm) {
+            if (m) {
+                m->m_isSettingClipboard = true;
+            }
+        }
+        ~ClipboardSettingGuard() {
+            if (m) {
+                m->m_isSettingClipboard = false;
+            }
+        }
+        ClipboardSettingGuard(const ClipboardSettingGuard&) = delete;
+        ClipboardSettingGuard& operator=(const ClipboardSettingGuard&) = delete;
+    };
 
     IO* io = nullptr;
     static QClipboard* clipboard;
@@ -119,7 +157,7 @@ private:
     bool enabled = true;
     bool m_isSettingClipboard = false;
     bool m_isProcessingClipboardChange = false;
-    QList<ClipboardItem> enabledContentTypes;
+    QList<ContentType> enabledContentTypes;
     ClipboardItem lastClipboardItem;
     QString lastClipboard;
     QJsonArray historyIndex;
@@ -150,9 +188,6 @@ private:
         static const char* PRIMARY;
         static const char* PRIMARY_LIGHT;
     };
-
-    std::map<std::string, std::vector<std::string>> fileTypeFilters;
-    std::vector<ContentType> enabledContentTypes;
 };
 
 } // namespace havel

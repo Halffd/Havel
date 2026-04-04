@@ -4,8 +4,10 @@
  */
 #include "ClipboardMgrModule.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
-#include "src/extensions/gui/clipboard_manager/ClipboardManager.hpp"
-#include "src/extensions/gui/automation_suite/AutomationSuite.hpp"
+#include "havel-lang/runtime/HostContext.hpp"
+#include "core/IO.hpp"
+#include "gui/clipboard_manager/ClipboardManager.hpp"
+#include "gui/automation_suite/AutomationSuite.hpp"
 #include <QApplication>
 
 namespace havel::modules {
@@ -28,8 +30,10 @@ static ClipboardManager* getClipboardManager(VMApi &api) {
       return nullptr;
     }
     
-    // Get IO from host context if available
-    IO* io = api.getIO ? api.getIO() : nullptr;
+    IO* io = nullptr;
+    if (const auto* hc = api.vm.hostContext()) {
+      io = hc->io;
+    }
     if (!io) {
       return nullptr;
     }

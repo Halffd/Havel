@@ -438,6 +438,9 @@ public:
 
   // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
+
+  /** Injected embedder context; null if VM was default-constructed. */
+  const class havel::HostContext *hostContext() const { return context_; }
 };
 
 } // namespace havel::compiler

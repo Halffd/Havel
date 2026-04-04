@@ -3,8 +3,7 @@
  */
 #include "ScreenshotModule.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
-#include "src/host/screenshot/ScreenshotService.hpp"
-#include <memory>
+#include "host/screenshot/ScreenshotService.hpp"
 
 namespace havel::modules {
 
@@ -15,13 +14,8 @@ using compiler::VMApi;
 // Screenshot Module Implementation
 // ============================================================================
 
-static std::unique_ptr<host::ScreenshotService> screenshotService;
-
 static host::ScreenshotService* getService() {
-  if (!screenshotService) {
-    screenshotService = std::make_unique<host::ScreenshotService>();
-  }
-  return screenshotService.get();
+  return &host::ScreenshotService::getInstance();
 }
 
 // Helper: Convert RGBA vector to VM array of objects with r,g,b,a fields

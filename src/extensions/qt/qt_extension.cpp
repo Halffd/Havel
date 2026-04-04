@@ -470,9 +470,9 @@ enum {
 
 /* Dynamic loader for Qt6 */
 struct Qt6Libs {
-    DynamicLoader qtCore;
-    DynamicLoader qtGui;
-    DynamicLoader qtWidgets;
+    havel::DynamicLoader qtCore;
+    havel::DynamicLoader qtGui;
+    havel::DynamicLoader qtWidgets;
     
     /* Core functions */
     QAppInitFn qApp_init = nullptr;

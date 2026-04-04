@@ -8,6 +8,7 @@
 #include "../core/Pipeline.hpp"
 #include "../vm/VM.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
@@ -86,6 +87,19 @@ public:
 
   // Import system
   bool import(const std::string &importSpec);
+
+  /** Lazy host module loading for \c use statements (requires \c ctx_->vm). */
+  bool loadModule(const std::string &moduleName) {
+    if (!ctx_ || !ctx_->vm) {
+      return false;
+    }
+    return moduleLoader_.loadModule(moduleName, *ctx_->vm);
+  }
+
+  bool isModuleAvailable(const std::string &moduleName) const {
+    const auto names = moduleLoader_.getAvailableModules();
+    return std::find(names.begin(), names.end(), moduleName) != names.end();
+  }
 
   // Mode callback registration
   void registerModeCallbacks(const std::string &modeName,

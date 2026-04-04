@@ -478,8 +478,13 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
     if (!function.constants.empty()) {
       out << "  constants:\n";
       for (size_t c = 0; c < function.constants.size(); ++c) {
-        out << "    [" << c << "] " << formatValue(function.constants[c])
-            << "\n";
+        const auto &cv = function.constants[c];
+        if (cv.isStringValId() &&
+            cv.asStringValId() < function.string_constants.size()) {
+          out << "    [" << c << "] \"" << function.string_constants[cv.asStringValId()] << "\"\n";
+        } else {
+          out << "    [" << c << "] " << formatValue(cv) << "\n";
+        }
       }
     }
   }

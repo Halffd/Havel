@@ -2362,45 +2362,45 @@ void ByteCompiler::compileCallExpression(
       }
       return;
     }
-    // Check for method call on primitive (prototype method)
-    if (expression.callee->kind == ast::NodeType::MemberExpression) {
-      const auto &member =
-          static_cast<const ast::MemberExpression &>(*expression.callee);
-      auto *property =
-          dynamic_cast<const ast::Identifier *>(member.property.get());
-      if (!member.object || !property) {
-        COMPILER_THROW("Unsupported member call expression");
-      }
-
-      // Route ALL method calls through any.* dispatch for consistency
-      // s.upper() -> CALL_HOST "any.upper", N
-      // string.upper(s) -> CALL_HOST "any.upper", N
-      compileExpression(*member.object);
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          COMPILER_THROW("Call expression contains null argument");
-        }
-        compileExpression(*arg);
-      }
-      uint32_t totalArgs = arg_count + 1;
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
-          compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET);
-        }
-        totalArgs++;
-      }
-      {
-        uint32_t strId = addStringConstant("any." + property->symbol);
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(totalArgs)});
-      }
-      return;
+  }
+  // Check for method call on primitive (prototype method)
+  if (expression.callee->kind == ast::NodeType::MemberExpression) {
+    const auto &member =
+        static_cast<const ast::MemberExpression &>(*expression.callee);
+    auto *property =
+        dynamic_cast<const ast::Identifier *>(member.property.get());
+    if (!member.object || !property) {
+      COMPILER_THROW("Unsupported member call expression");
     }
+
+    // Route ALL method calls through any.* dispatch for consistency
+    // s.upper() -> CALL_HOST "any.upper", N
+    // string.upper(s) -> CALL_HOST "any.upper", N
+    compileExpression(*member.object);
+    for (const auto &arg : expression.args) {
+      if (!arg) {
+        COMPILER_THROW("Call expression contains null argument");
+      }
+      compileExpression(*arg);
+    }
+    uint32_t totalArgs = arg_count + 1;
+    if (hasKwargs) {
+      emit(OpCode::OBJECT_NEW);
+      for (const auto &kwarg : expression.kwargs) {
+        emit(OpCode::DUP);
+        emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
+        compileExpression(*kwarg.value);
+        emit(OpCode::OBJECT_SET);
+      }
+      totalArgs++;
+    }
+    {
+      uint32_t strId = addStringConstant("any." + property->symbol);
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(totalArgs)});
+    }
+    return;
   }
 
   if (expression.callee->kind == ast::NodeType::Identifier) {

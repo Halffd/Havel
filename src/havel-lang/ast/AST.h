@@ -2446,20 +2446,20 @@ struct CastExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Match Expression: match value { pattern => expr, ... }
+// Match Expression: match value1, value2, ... { pattern1, pattern2, ... => expr, ... }
 struct MatchExpression : public Expression {
-  std::unique_ptr<Expression> value;
+  std::vector<std::unique_ptr<Expression>> discriminants; // Values to match on
   std::vector<
-      std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>
-      cases;
-  std::unique_ptr<Expression> defaultCase; // _ => expr
+      std::pair<std::vector<std::unique_ptr<Expression>>, std::unique_ptr<Expression>>>
+      cases; // Each case has multiple patterns and a result
+  std::unique_ptr<Expression> defaultCase; // _ => expr (single underscore for any number of discriminants)
 
-  MatchExpression(std::unique_ptr<Expression> v) : value(std::move(v)) {
+  MatchExpression(std::vector<std::unique_ptr<Expression>> disc) : discriminants(std::move(disc)) {
     kind = NodeType::MatchExpression;
   }
 
   std::string toString() const override {
-    return "MatchExpression{" + std::to_string(cases.size()) + " cases}";
+    return "MatchExpression{" + std::to_string(discriminants.size()) + " discriminants, " + std::to_string(cases.size()) + " cases}";
   }
 
   void accept(ASTVisitor &visitor) const override;

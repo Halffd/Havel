@@ -202,7 +202,9 @@ public:
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
   std::vector<Value> *array(uint32_t id);
+  const std::vector<Value> *array(uint32_t id) const;
   ObjectEntry *object(uint32_t id);
+  const ObjectEntry *object(uint32_t id) const;
   std::unordered_map<std::string, Value> *set(uint32_t id);
   Range *range(uint32_t id);
   const Range *range(uint32_t id) const;

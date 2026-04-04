@@ -1,4 +1,5 @@
 #include "VM.hpp"
+#include "../../utils/ErrorPrinter.hpp"
 
 #include "../../../core/io/MouseController.hpp" // For ParseDuration
 #include <chrono>
@@ -55,34 +56,29 @@ struct ScriptThrow final {
 };
 
 // Internal toString with depth limit only (no cycle detection - confuses users)
-std::string toStringInternal(const Value &value, GCHeap *heap,
-                             std::unordered_set<uint32_t> &visitedIds,
-                             int depth);
+} // anonymous namespace
 
-std::string toStringInternal(const Value &value, GCHeap *heap,
-                             std::unordered_set<uint32_t> &visitedIds,
-                             int depth) {
-  // Depth limit to prevent stack overflow
-  if (depth > 8) {
-    return "...";
-  }
 
-  if (value.isNull()) {
-    return "null";
-  }
-  if (value.isBool()) {
-    return value.asBool() ? "true" : "false";
-  }
-  if (value.isInt()) {
-    return std::to_string(value.asInt());
-  }
+std::string VM::toString(const Value &value) const {
+  std::unordered_set<uint32_t> visited;
+  return toStringInternal(value, visited, 0);
+}
+
+std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds, int depth) const {
+  if (depth > 8) return "...";
+
+  if (value.isNull()) return "null";
+  if (value.isBool()) return value.asBool() ? "true" : "false";
+  if (value.isInt()) return std::to_string(value.asInt());
   if (value.isDouble()) {
     std::ostringstream out;
     out << value.asDouble();
     return out.str();
   }
   if (value.isStringValId()) {
-    // TODO: string pool lookup - for now return placeholder
+    if (current_chunk) {
+      return current_chunk->getString(value.asStringValId());
+    }
     return "<string:" + std::to_string(value.asStringValId()) + ">";
   }
   if (value.isFunctionObjId()) {
@@ -92,73 +88,34 @@ std::string toStringInternal(const Value &value, GCHeap *heap,
     return "closure[" + std::to_string(value.asClosureId()) + "]";
   }
   if (value.isArrayId()) {
-    if (!heap) {
-      return "array[" + std::to_string(value.asArrayId()) + "]";
-    }
-    auto *arr = heap->array(value.asArrayId());
-    if (!arr) {
-      return "array[]";
-    }
-
+    auto *arr = heap_.array(value.asArrayId());
+    if (!arr) return "[]";
     std::string result = "[";
     for (size_t i = 0; i < arr->size(); ++i) {
-      if (i > 0)
-        result += ", ";
-      result += toStringInternal((*arr)[i], heap, visitedIds, depth + 1);
+      if (i > 0) result += ", ";
+      result += toStringInternal((*arr)[i], visitedIds, depth + 1);
     }
     result += "]";
     return result;
   }
   if (value.isObjectId()) {
-    if (!heap) {
-      return "object[" + std::to_string(value.asObjectId()) + "]";
-    }
-    auto *obj = heap->object(value.asObjectId());
-    if (!obj) {
-      return "object{}";
-    }
-
+    auto *obj = heap_.object(value.asObjectId());
+    if (!obj) return "{}";
     std::string result = "{";
     bool first = true;
     for (const auto &[key, val] : *obj) {
-      if (!first)
-        result += ", ";
+      if (!first) result += ", ";
       first = false;
-      result += "\"" + key +
-                "\": " + toStringInternal(val, heap, visitedIds, depth + 1);
+      result += "\"" + key + "\": " + toStringInternal(val, visitedIds, depth + 1);
     }
     result += "}";
     return result;
   }
-  if (value.isSetId()) {
-    return "set[" + std::to_string(value.asSetId()) + "]";
-  }
-  if (value.isHostFuncId()) {
-    // TODO: host func name lookup - for now return placeholder
-    return "hostfn[" + std::to_string(value.asHostFuncId()) + "]";
-  }
   return "unknown";
 }
 
-// Wrapper without visited set (for backward compatibility)
-std::string toStringInternal(const Value &value, GCHeap *heap) {
-  std::unordered_set<uint32_t> visitedIds;
-  return toStringInternal(value, heap, visitedIds, 0);
-}
-} // anonymous namespace
-
-// Public toString without heap (for backward compatibility)
-std::string toString(const Value &value) {
-  return toStringInternal(value, nullptr);
-}
-
-// Public toString with heap (for formatted output)
-std::string toString(const Value &value, GCHeap *heap) {
-  return toStringInternal(value, heap);
-}
-
 // Type conversion helpers
-int64_t toInt(const Value &value) {
+int64_t VM::toInt(const Value &value) const {
   if (value.isInt()) {
     return value.asInt();
   }
@@ -169,17 +126,18 @@ int64_t toInt(const Value &value) {
     return value.asBool() ? 1 : 0;
   }
   if (value.isStringValId()) {
-    // TODO: string pool lookup
-    try {
-      return std::stoll("<string:" + std::to_string(value.asStringValId()) + ">");
-    } catch (...) {
-      return 0;
+    if (current_chunk) {
+      try {
+        return std::stoll(current_chunk->getString(value.asStringValId()));
+      } catch (...) {
+        return 0;
+      }
     }
   }
   return 0;
 }
 
-double toFloat(const Value &value) {
+double VM::toFloat(const Value &value) const {
   if (value.isDouble()) {
     return value.asDouble();
   }
@@ -190,17 +148,18 @@ double toFloat(const Value &value) {
     return value.asBool() ? 1.0 : 0.0;
   }
   if (value.isStringValId()) {
-    // TODO: string pool lookup
-    try {
-      return std::stod("<string:" + std::to_string(value.asStringValId()) + ">");
-    } catch (...) {
-      return 0.0;
+    if (current_chunk) {
+      try {
+        return std::stod(current_chunk->getString(value.asStringValId()));
+      } catch (...) {
+        return 0.0;
+      }
     }
   }
   return 0.0;
 }
 
-bool toBool(const Value &value) {
+bool VM::toBool(const Value &value) const {
   if (value.isBool()) {
     return value.asBool();
   }
@@ -211,21 +170,16 @@ bool toBool(const Value &value) {
     return value.asDouble() != 0.0;
   }
   if (value.isStringValId()) {
-    // TODO: string pool lookup - non-null string id is truthy
-    return true;
+    if (current_chunk) {
+      return !current_chunk->getString(value.asStringValId()).empty();
+    }
+    return true; // nonempty string is truthy
   }
   // Collections: JavaScript truthiness (all collections are truthy, even empty)
-  // This matches: if (arr) { ... } pattern
-  if (value.isArrayId()) {
+  if (value.isArrayId() || value.isObjectId() || value.isSetId()) {
     return true;
   }
-  if (value.isObjectId()) {
-    return true;
-  }
-  if (value.isSetId()) {
-    return true;
-  }
-  return false; // null, undefined, etc.
+  return !value.isNull();
 }
 
 std::optional<int64_t> indexFromValue(const Value &value) {
@@ -268,126 +222,24 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
   return std::to_string(location.line) + ":" + std::to_string(location.column);
 }
 
-// ANSI color codes for Rust-style error formatting
-namespace {
-  const char* RESET = "\033[0m";
-  const char* BOLD = "\033[1m";
-  const char* RED = "\033[31m";
-  const char* GREEN = "\033[32m";
-  const char* YELLOW = "\033[33m";
-  const char* BLUE = "\033[34m";
-  const char* MAGENTA = "\033[35m";
-  const char* CYAN = "\033[36m";
-  const char* GRAY = "\033[90m";
-  const char* BRIGHT_RED = "\033[91m";
-  const char* BRIGHT_GREEN = "\033[92m";
-  const char* BRIGHT_YELLOW = "\033[93m";
-  const char* BRIGHT_BLUE = "\033[94m";
-  const char* BRIGHT_CYAN = "\033[96m";
-
-  // Generate error code from message hash
-  std::string generateErrorCode(const std::string& msg) {
-    std::hash<std::string> hasher;
-    auto hash = hasher(msg);
-    return "E" + std::to_string(1000 + (hash % 9000));
-  }
-}
-
-// Rust-style error formatting with source line, colors, and enhanced visuals
 std::string VM::formatErrorWithContext(const std::string &message) const {
   if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
-    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
-           std::string(RESET) + ": " + message + "\n";
+    return "\033[1;31merror\033[0m: " + message + "\n";
   }
 
   const auto &frame = frame_arena_[frame_count_ - 1];
   const auto *function = frame.function;
 
   if (frame.ip >= function->instruction_locations.size()) {
-    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
-           std::string(RESET) + ": " + message + "\n";
+    return "\033[1;31merror\033[0m: " + message + "\n";
   }
 
   const auto &loc = function->instruction_locations[frame.ip];
   if (loc.line == 0) {
-    return std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
-           std::string(RESET) + ": " + message + "\n";
+    return "\033[1;31merror\033[0m: " + message + "\n";
   }
 
-  std::string error_code = generateErrorCode(message);
-  std::string result;
-  
-  // Error header with code
-  result += std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
-            std::string(RESET) + std::string(BOLD) + "[" + error_code + "]: " + 
-            message + std::string(RESET) + "\n";
-  
-  // Location line
-  result += "     " + std::string(BRIGHT_CYAN) + "--> " + 
-            std::string(RESET) + loc.filename + ":" + 
-            std::to_string(loc.line) + ":" + 
-            std::to_string(loc.column) + "\n";
-  result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
-
-  // Try to read the source line from file
-  if (!loc.filename.empty()) {
-    std::ifstream file(loc.filename);
-    if (file.is_open()) {
-      std::string line;
-      uint32_t current_line = 1;
-      // Read lines to find context (show up to 2 lines before)
-      std::vector<std::pair<uint32_t, std::string>> context_lines;
-      
-      while (std::getline(file, line)) {
-        if (current_line >= loc.line - 2 && current_line <= loc.line + 1) {
-          context_lines.push_back({current_line, line});
-        }
-        if (current_line > loc.line + 1) break;
-        current_line++;
-      }
-      
-      // Show context lines
-      for (const auto& [line_num, line_content] : context_lines) {
-        // Line number in gray
-        result += std::string(GRAY) + std::to_string(line_num) + 
-                  " | " + std::string(RESET);
-        
-        if (line_num == loc.line) {
-          // Highlight error line in bold
-          result += std::string(BOLD) + line_content + std::string(RESET) + "\n";
-          
-          // Arrow line with caret pointing to column
-          result += std::string(GRAY) + "  | " + std::string(RESET);
-          
-          // Calculate position: clamp column to line length
-          size_t arrow_pos = static_cast<size_t>(loc.column > 1 ? loc.column - 1 : 0);
-          if (arrow_pos > line_content.length()) {
-            arrow_pos = line_content.length();
-          }
-          
-          // Add spaces up to error position
-          for (size_t i = 0; i < arrow_pos; i++) {
-            result += " ";
-          }
-          
-          // Red caret under the error location
-          result += std::string(BOLD) + std::string(BRIGHT_RED) + "^" + 
-                    std::string(RESET);
-          
-          // Add underline squiggles for multi-character errors
-          if (message.find("expect") != std::string::npos || 
-              message.find("invalid") != std::string::npos) {
-            result += std::string(BRIGHT_RED) + "~~~~" + std::string(RESET);
-          }
-          result += "\n";
-        } else {
-          result += line_content + "\n";
-        }
-      }
-    }
-  }
-
-  return result;
+  return havel::ErrorPrinter::formatErrorFromFile("Runtime Error", message, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
 }
 
 VM::VM() { registerDefaultHostFunctions(); }
@@ -976,7 +828,7 @@ void VM::registerDefaultHostFunctions() {
         std::cout << delim;
       }
       // Use heap-aware toString for proper array/object formatting
-      std::cout << toString(args[i], &heap_);
+      std::cout << toString(args[i]);
     }
     std::cout << end;
     return Value::makeNull();
@@ -998,7 +850,7 @@ void VM::registerDefaultHostFunctions() {
     // Convert args to strings for formatting
     std::vector<std::string> argStrings;
     for (size_t i = 1; i < args.size(); ++i) {
-      argStrings.push_back(toString(args[i], &heap_));
+      argStrings.push_back(toString(args[i]));
     }
 
     // Simple format string processing: {} placeholders
@@ -1077,31 +929,27 @@ void VM::registerDefaultHostFunctions() {
       });
 
   // Type conversion builtins
-  registerHostFunction("int", 1, [](const std::vector<Value> &args) {
+  registerHostFunction("int", 1, [this](const std::vector<Value> &args) {
     return Value(toInt(args[0]));
   });
 
-  registerHostFunction("num", 1, [](const std::vector<Value> &args) {
+  registerHostFunction("num", 1, [this](const std::vector<Value> &args) {
     return Value(toFloat(args[0]));
   });
 
   // Instrumentation: assert(condition, message?)
-  registerHostFunction("assert", [](const std::vector<Value> &args) {
+  registerHostFunction("assert", [this](const std::vector<Value> &args) {
     if (args.empty()) {
       COMPILER_THROW(
           "assert() requires at least a condition argument");
     }
-    bool condition = false;
-    if (args[0].isBool()) {
-      condition = args[0].asBool();
-    } else if (args[0].isInt()) {
-      condition = args[0].asInt() != 0;
-    }
+    bool condition = toBool(args[0]);
     if (!condition) {
       std::string msg = "Assertion failed";
       if (args.size() > 1 && args[1].isStringValId()) {
-        // TODO: string pool lookup
-        msg = "<string:" + std::to_string(args[1].asStringValId()) + ">";
+        if (current_chunk) {
+          msg = current_chunk->getString(args[1].asStringValId());
+        }
       }
       COMPILER_THROW(msg);
     }
@@ -1126,48 +974,38 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeInt(static_cast<int64_t>(now));
   });
 
-  registerHostFunction("str", 1, [](const std::vector<Value> &args) {
-    // TODO: string pool integration - for now return null
-    (void)toString(args[0]);
+  // str() builtin returns string representation - TODO: implement proper string pool creation
+  registerHostFunction("str", 1, [this](const std::vector<Value> &args) {
+    (void)this->toString(args[0]);
     return Value::makeNull();
   });
 
-  // Additional type conversion (useful even if not in docs)
-  registerHostFunction("bool", 1, [](const std::vector<Value> &args) {
-    return Value(toBool(args[0]));
-  });
-
+  // type() builtin returns type name - TODO: implement proper string pool lookup
   registerHostFunction("type", 1, [](const std::vector<Value> &args) {
     const auto &value = args[0];
-    std::string typeName;
-    if (value.isNull()) {
-      typeName = "null";
-    } else if (value.isBool()) {
-      typeName = "bool";
-    } else if (value.isInt()) {
-      typeName = "int";
-    } else if (value.isDouble()) {
-      typeName = "float";
-    } else if (value.isStringValId()) {
-      typeName = "string";
-    } else if (value.isArrayId()) {
-      typeName = "array";
-    } else if (value.isObjectId()) {
-      typeName = "object";
-    } else if (value.isFunctionObjId()) {
-      typeName = "function";
-    } else if (value.isClosureId()) {
-      typeName = "closure";
-    } else if (value.isHostFuncId()) {
-      typeName = "function";
-    } else {
-      typeName = "unknown";
-    }
-  // TODO: string pool integration - for now return null
-    (void)typeName;
+    if (value.isNull()) return Value::makeNull(); // Should return "null"
     return Value::makeNull();
   });
 
+  // Async library functions
+  registerHostFunction("async.run", 1, [this](const std::vector<Value> &args) {
+    // For now, run synchronously until isolation is implemented
+    return this->call(args[0], {});
+  });
+
+  registerHostFunction("async.await", 1, [](const std::vector<Value> &) {
+    return Value::makeNull(); // TODO: implement with real task tracking
+  });
+
+  registerHostFunction("async.sleep", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isNumber()) {
+      COMPILER_THROW("async.sleep(ms) expects numeric argument");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(toInt(args[0])));
+    return Value::makeNull();
+  });
+
+  // GC control
   auto registerSystemGc = [this](const std::string &name) {
     registerHostFunction(name, 0, [this](const std::vector<Value> &) {
       runGarbageCollection();
@@ -1195,41 +1033,33 @@ void VM::registerDefaultHostFunctions() {
   registerSystemGcStats("system.gcStats");
   registerSystemGcStats("system_gcStats");
 
+  // Struct operations (value type)
   registerHostFunction(
-      "struct.define", [this](const std::vector<Value> &args) {
-        std::cerr << "[DEBUG] struct.define called with " << args.size()
-                  << " args\n";
+      "struct.define", 2, [this](const std::vector<Value> &args) {
         if (args.size() != 2 || !args[0].isStringValId() ||
             !args[1].isArrayId()) {
-          std::cerr << "[DEBUG] struct.define: argument type check failed\n";
           COMPILER_THROW(
               "struct.define(name, fields) expects (string, array)");
         }
-        // TODO: string pool lookup
-        const auto &name = "<string:" + std::to_string(args[0].asStringValId()) + ">";
+        if (!current_chunk) COMPILER_THROW("struct.define requires active chunk");
+
+        const auto &name = current_chunk->getString(args[0].asStringValId());
         auto *field_array = heap_.array(args[1].asArrayId());
         if (!field_array) {
-          std::cerr << "[DEBUG] struct.define: field_array is null\n";
-          COMPILER_THROW(
-              "struct.define received invalid fields array");
+          COMPILER_THROW("struct.define received invalid fields array");
         }
-        std::cerr << "[DEBUG] struct.define: field_array size = "
-                  << field_array->size() << "\n";
+
         std::vector<std::string> fields;
         fields.reserve(field_array->size());
         for (const auto &value : *field_array) {
           if (!value.isStringValId()) {
-            std::cerr << "[DEBUG] struct.define: field value is not a string\n";
-            COMPILER_THROW(
-                "struct.define fields must contain only strings");
+            COMPILER_THROW("struct.define fields must contain only strings");
           }
-          // TODO: string pool lookup
-          fields.push_back("<string:" + std::to_string(value.asStringValId()) + ">");
+          fields.push_back(current_chunk->getString(value.asStringValId()));
         }
+
         uint32_t type_id = registerStructType(name, fields);
         struct_type_ids_by_name_[name] = type_id;
-        std::cerr << "[DEBUG] struct.define: returning type_id = " << type_id
-                  << "\n";
         return Value::makeInt(static_cast<int64_t>(type_id));
       });
 
@@ -1243,8 +1073,8 @@ void VM::registerDefaultHostFunctions() {
         if (args[0].isInt()) {
           type_id = static_cast<uint32_t>(args[0].asInt());
         } else if (args[0].isStringValId()) {
-          // TODO: string pool lookup
-          const auto &name = "<string:" + std::to_string(args[0].asStringValId()) + ">";
+          if (!current_chunk) COMPILER_THROW("struct.new requires active chunk");
+          const auto &name = current_chunk->getString(args[0].asStringValId());
           auto it = struct_type_ids_by_name_.find(name);
           if (it == struct_type_ids_by_name_.end()) {
             COMPILER_THROW("Unknown struct type: " + name);
@@ -1268,14 +1098,13 @@ void VM::registerDefaultHostFunctions() {
         if (args.size() != 2 || !args[0].isStructId()) {
           COMPILER_THROW("struct.get(struct, field) expects struct");
         }
-        StructRef ref{args[0].asStructId()};
+        StructRef ref{args[0].asStructId(), args[0].asStructTypeId()};
         size_t index = 0;
         if (args[1].isInt()) {
           index = static_cast<size_t>(args[1].asInt());
         } else if (args[1].isStringValId()) {
-          // TODO: string pool lookup
-          auto idx = heap_.structFieldIndex(ref.typeId,
-                                            "<string:" + std::to_string(args[1].asStringValId()) + ">");
+          const std::string& fieldName = current_chunk->getString(args[1].asStringValId());
+          auto idx = heap_.structFieldIndex(ref.typeId, fieldName);
           if (!idx.has_value()) {
             return Value::makeNull();
           }
@@ -1292,16 +1121,15 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW(
               "struct.set(struct, field, value) expects struct");
         }
-        StructRef ref{args[0].asStructId()};
+        StructRef ref{args[0].asStructId(), args[0].asStructTypeId()};
         size_t index = 0;
         if (args[1].isInt()) {
           index = static_cast<size_t>(args[1].asInt());
         } else if (args[1].isStringValId()) {
-          // TODO: string pool lookup
-          auto idx = heap_.structFieldIndex(ref.typeId,
-                                            "<string:" + std::to_string(args[1].asStringValId()) + ">");
+          const std::string& fieldName = current_chunk->getString(args[1].asStringValId());
+          auto idx = heap_.structFieldIndex(ref.typeId, fieldName);
           if (!idx.has_value()) {
-            COMPILER_THROW("Unknown struct field name");
+            COMPILER_THROW("Unknown struct field name: " + fieldName);
           }
           index = *idx;
         } else {
@@ -1319,23 +1147,23 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW(
               "class.define(name, fields) expects (string, array)");
         }
-        // TODO: string pool lookup
-        const auto &name = "<string:" + std::to_string(args[0].asStringValId()) + ">";
+        if (!current_chunk) COMPILER_THROW("class.define requires active chunk");
+
+        const auto &name = current_chunk->getString(args[0].asStringValId());
         auto *field_array = heap_.array(args[1].asArrayId());
         if (!field_array) {
-          COMPILER_THROW(
-              "class.define received invalid fields array");
+          COMPILER_THROW("class.define received invalid fields array");
         }
+
         std::vector<std::string> fields;
         fields.reserve(field_array->size());
         for (const auto &value : *field_array) {
           if (!value.isStringValId()) {
-            COMPILER_THROW(
-                "class.define fields must contain only strings");
+            COMPILER_THROW("class.define fields must contain only strings");
           }
-          // TODO: string pool lookup
-          fields.push_back("<string:" + std::to_string(value.asStringValId()) + ">");
+          fields.push_back(current_chunk->getString(value.asStringValId()));
         }
+
         uint32_t type_id = registerClassType(name, fields);
         class_type_ids_by_name_[name] = type_id;
         return Value::makeInt(static_cast<int64_t>(type_id));
@@ -1351,8 +1179,8 @@ void VM::registerDefaultHostFunctions() {
         if (args[0].isInt()) {
           type_id = static_cast<uint32_t>(args[0].asInt());
         } else if (args[0].isStringValId()) {
-          // TODO: string pool lookup
-          const auto &name = "<string:" + std::to_string(args[0].asStringValId()) + ">";
+          if (!current_chunk) COMPILER_THROW("class.new requires active chunk");
+          const auto &name = current_chunk->getString(args[0].asStringValId());
           auto it = class_type_ids_by_name_.find(name);
           if (it == class_type_ids_by_name_.end()) {
             COMPILER_THROW("Unknown class type: " + name);
@@ -1381,9 +1209,9 @@ void VM::registerDefaultHostFunctions() {
         if (args[1].isInt()) {
           index = static_cast<size_t>(args[1].asInt());
         } else if (args[1].isStringValId()) {
-          // TODO: string pool lookup
-          auto idx =
-              heap_.classFieldIndex(ref.typeId, "<string:" + std::to_string(args[1].asStringValId()) + ">");
+          if (!current_chunk) COMPILER_THROW("class.get requires active chunk");
+          const std::string& fieldName = current_chunk->getString(args[1].asStringValId());
+          auto idx = heap_.classFieldIndex(ref.typeId, fieldName);
           if (!idx.has_value()) {
             return Value::makeNull();
           }
@@ -1405,11 +1233,11 @@ void VM::registerDefaultHostFunctions() {
         if (args[1].isInt()) {
           index = static_cast<size_t>(args[1].asInt());
         } else if (args[1].isStringValId()) {
-          // TODO: string pool lookup
-          auto idx =
-              heap_.classFieldIndex(ref.typeId, "<string:" + std::to_string(args[1].asStringValId()) + ">");
+          if (!current_chunk) COMPILER_THROW("class.set requires active chunk");
+          const std::string& fieldName = current_chunk->getString(args[1].asStringValId());
+          auto idx = heap_.classFieldIndex(ref.typeId, fieldName);
           if (!idx.has_value()) {
-            COMPILER_THROW("Unknown class field name");
+            COMPILER_THROW("Unknown class field name: " + fieldName);
           }
           index = *idx;
         } else {
@@ -1421,52 +1249,38 @@ void VM::registerDefaultHostFunctions() {
 }
 
 void VM::registerDefaultHostGlobals() {
-  std::cerr << "[DEBUG] registerDefaultHostGlobals called\n";
   auto system_obj = heap_.allocateObject();
-  // TODO: HostFunctionRef not directly convertible to Value
-  (void)system_obj;
-  // setHostObjectField(system_obj, "gc", HostFunctionRef{.name = "system.gc"});
-  // setHostObjectField(system_obj, "gcStats",
-  //                    HostFunctionRef{.name = "system.gcStats"});
-  // setGlobal("system", system_obj);
+  setHostObjectField(system_obj, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
+  setHostObjectField(system_obj, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
+  setGlobal("system", Value::makeObjectId(system_obj.id));
 
   auto struct_obj = heap_.allocateObject();
-  // TODO: HostFunctionRef not directly convertible to Value
-  (void)struct_obj;
-  // setHostObjectField(struct_obj, "define",
-  //                    HostFunctionRef{.name = "struct.define"});
-  // setHostObjectField(struct_obj, "new", HostFunctionRef{.name = "struct.new"});
-  // setHostObjectField(struct_obj, "get", HostFunctionRef{.name = "struct.get"});
-  // setHostObjectField(struct_obj, "set", HostFunctionRef{.name = "struct.set"});
-  std::cerr << "[DEBUG] struct object created, setting global\n";
-  // setGlobal("struct", struct_obj);
-  std::cerr << "[DEBUG] struct global set\n";
+  setHostObjectField(struct_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("struct.define")));
+  setHostObjectField(struct_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("struct.new")));
+  setHostObjectField(struct_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("struct.get")));
+  setHostObjectField(struct_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("struct.set")));
+  setGlobal("struct", Value::makeObjectId(struct_obj.id));
 
   auto class_obj = heap_.allocateObject();
-  // TODO: HostFunctionRef not directly convertible to Value
-  (void)class_obj;
-  // setHostObjectField(class_obj, "define",
-  //                    HostFunctionRef{.name = "class.define"});
-  // setHostObjectField(class_obj, "new", HostFunctionRef{.name = "class.new"});
-  // setHostObjectField(class_obj, "get", HostFunctionRef{.name = "class.get"});
-  // setHostObjectField(class_obj, "set", HostFunctionRef{.name = "class.set"});
-  std::cerr << "[DEBUG] class object created, setting global\n";
-  // setGlobal("class", class_obj);
-  std::cerr << "[DEBUG] class global set\n";
+  setHostObjectField(class_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("class.define")));
+  setHostObjectField(class_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
+  setHostObjectField(class_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("class.get")));
+  setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
+  setGlobal("class", Value::makeObjectId(class_obj.id));
 
-  // Register default window globals (will be updated by WindowMonitor)
-  // TODO: string pool registration for default strings
+  auto async_obj = heap_.allocateObject();
+  setHostObjectField(async_obj, "run", Value::makeHostFuncId(getHostFunctionIndex("async.run")));
+  setHostObjectField(async_obj, "await", Value::makeHostFuncId(getHostFunctionIndex("async.await")));
+  setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
+  setGlobal("async", Value::makeObjectId(async_obj.id));
+
+  // Register default window globals
   setGlobal("title", Value::makeNull());
   setGlobal("exe", Value::makeNull());
   setGlobal("pid", Value::makeInt(0));
 
-  // Call system object initializer if provided (adds module-specific fields)
-  std::cerr << "[DEBUG] system_object_initializer_ check: "
-            << (system_object_initializer_ ? "set" : "not set") << "\n";
   if (system_object_initializer_) {
-    std::cerr << "[DEBUG] Calling system_object_initializer_\n";
     system_object_initializer_(this);
-    std::cerr << "[DEBUG] system_object_initializer_ completed\n";
   }
 }
 
@@ -1658,7 +1472,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         }
 
         std::string errorMsg =
-            "Uncaught exception: " + toString(thrown.value, &heap_);
+            "Uncaught exception: " + toString(thrown.value);
         if (line > 0) {
           errorMsg += " at line " + std::to_string(line);
           if (column > 0) {
@@ -2296,8 +2110,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = currentFrame().function;
     std::string name;
-    if (func && strIndex < func->string_constants.size()) {
-      name = func->string_constants[strIndex];
+    if (current_chunk) {
+      name = current_chunk->getString(strIndex);
     } else {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
@@ -2312,7 +2126,10 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Then check regular globals
     auto it = globals.find(name);
-    Value val = (it == globals.end()) ? Value::makeNull() : it->second;
+    if (it == globals.end()) {
+      COMPILER_THROW("Undefined variable: '" + name + "'");
+    }
+    Value val = it->second;
     
     pushStack(val);
     break;
@@ -2327,8 +2144,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = currentFrame().function;
     std::string name;
-    if (func && strIndex < func->string_constants.size()) {
-      name = func->string_constants[strIndex];
+    if (current_chunk) {
+      name = current_chunk->getString(strIndex);
     } else {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
@@ -2589,10 +2406,10 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = currentFrame().function;
     std::string function_name;
-    if (func && strIndex < func->string_constants.size()) {
-      function_name = func->string_constants[strIndex];
+    if (current_chunk) {
+      function_name = current_chunk->getString(strIndex);
     } else {
-      function_name = "<stringval:" + std::to_string(strIndex) + ">";
+      function_name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     uint32_t arg_count = instruction.operands[1].asInt();
     pushStack(invokeHostFunction(function_name, arg_count));
@@ -2803,7 +2620,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t typeId = instruction.operands[0].asInt();
     uint32_t fieldCount = instruction.operands[1].asInt();
     StructRef structRef = heap_.allocateStruct(typeId, fieldCount);
-    pushStack(Value::makeStructId(structRef.id));
+    pushStack(Value::makeStructId(structRef.id, structRef.typeId));
     break;
   }
 
@@ -2814,9 +2631,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!structVal.isStructId() || !indexVal.isInt()) {
       COMPILER_THROW("STRUCT_GET expects struct and int index");
     }
-    auto structRef = StructRef{structVal.asStructId()};
     size_t index = static_cast<size_t>(indexVal.asInt());
-    pushStack(heap_.structs_.at(structRef.id).at(index));
+    pushStack(heap_.structs_.at(structVal.asStructId()).at(index));
     break;
   }
 
@@ -3654,7 +3470,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::PRINT: {
     Value value = popStack();
-    std::cout << toString(value, &heap_) << std::endl;
+    std::cout << toString(value) << std::endl;
     break;
   }
 
@@ -3987,7 +3803,7 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
 
       if (!handled) {
         COMPILER_THROW("Uncaught exception: " +
-                                 toString(thrown.value, &parent_vm_->heap_));
+                                 parent_vm_->toString(thrown.value));
       }
       continue;
     }
@@ -4087,10 +3903,10 @@ void VM::VMExecutionContext::executeInstructionInContext(
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
     std::string name;
-    if (func && strIndex < func->string_constants.size()) {
-      name = func->string_constants[strIndex];
+    if (current_chunk) {
+      name = current_chunk->getString(strIndex);
     } else {
-      name = "<stringval:" + std::to_string(strIndex) + ">";
+      name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     // Thread-safe access to parent's globals
     auto value = parent_vm_->getGlobalThreadSafe(name);
@@ -4103,10 +3919,10 @@ void VM::VMExecutionContext::executeInstructionInContext(
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
     std::string name;
-    if (func && strIndex < func->string_constants.size()) {
-      name = func->string_constants[strIndex];
+    if (current_chunk) {
+      name = current_chunk->getString(strIndex);
     } else {
-      name = "<stringval:" + std::to_string(strIndex) + ">";
+      name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     Value value = pop();
     parent_vm_->setGlobalThreadSafe(name, std::move(value));
@@ -4436,10 +4252,10 @@ void VM::VMExecutionContext::executeInstructionInContext(
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
     std::string function_name;
-    if (func && strIndex < func->string_constants.size()) {
-      function_name = func->string_constants[strIndex];
+    if (current_chunk) {
+      function_name = current_chunk->getString(strIndex);
     } else {
-      function_name = "<stringval:" + std::to_string(strIndex) + ">";
+      function_name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     uint32_t arg_count = static_cast<uint32_t>(instruction.operands[1].asInt());
 

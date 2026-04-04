@@ -10,6 +10,7 @@
 #include "../runtime/HostAPI.hpp"
 #include "../../utils/Logger.hpp"
 #include "../parser/Parser.h"
+#include "../utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include <iostream>
 #include <sstream>
@@ -159,41 +160,13 @@ void REPL::printValue(const std::string& value) {
   }
 }
 
-void REPL::printError(const std::string& error, int line) {
-  // ANSI color codes for Rust-style error formatting
-  const char* RESET = "\033[0m";
-  const char* BOLD = "\033[1m";
-  const char* BRIGHT_RED = "\033[91m";
-  const char* BRIGHT_CYAN = "\033[96m";
-  const char* BRIGHT_YELLOW = "\033[93m";
-  const char* GRAY = "\033[90m";
-
+void REPL::printError(const std::string& error, int line, int column, int length, const std::string& sourceLine) {
   std::string result;
-  
-  // Error header with code
-  result += std::string(BOLD) + std::string(BRIGHT_RED) + "error" + 
-            std::string(RESET);
-  
   if (line > 0) {
-    result += std::string(GRAY) + " [E0000]: " + std::string(RESET);
+    result = havel::ErrorPrinter::formatError("Error", error, "<repl>", (size_t)line, (size_t)column, (size_t)length, sourceLine);
   } else {
-    result += ": ";
-  }
-  
-  result += error + "\n";
-  
-  if (line > 0) {
-    result += "     " + std::string(BRIGHT_CYAN) + "--> " + 
-              std::string(RESET) + "<repl>:" + std::to_string(line) + ":1\n";
-    result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
-    result += std::string(GRAY) + std::to_string(line) + " | " + 
-              std::string(RESET) + std::string(BOLD) + "<input>" + 
-              std::string(RESET) + "\n";
-    result += std::string(GRAY) + "  | " + std::string(BRIGHT_RED) + "^" + 
-              std::string(RESET) + "\n";
-    result += "      " + std::string(GRAY) + "|\n" + std::string(RESET);
-    result += "      " + std::string(BRIGHT_YELLOW) + "= " + 
-              std::string(RESET) + "in REPL input\n";
+    // Fallsback for errors without line info
+    result = "\033[1;31mError\033[0m: " + error + "\n";
   }
   
   if (printHandler_) {
@@ -263,7 +236,19 @@ bool REPL::execute(const std::string& code) {
     auto program = parser.produceAST(code);
     if (!program || parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
-        printError(err.message, err.line);
+        // Find the line content in current input
+        std::string sourceLine;
+        std::istringstream stream(code);
+        std::string l;
+        size_t current = 1;
+        while (std::getline(stream, l)) {
+          if (current == err.line) {
+            sourceLine = l;
+            break;
+          }
+          current++;
+        }
+        printError(err.message, (int)err.line, (int)err.column, (int)err.length, sourceLine);
       }
       return false;
     }

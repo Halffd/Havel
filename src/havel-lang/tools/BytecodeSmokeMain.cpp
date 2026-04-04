@@ -227,6 +227,8 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     // any.* dispatch functions for member access and array HOFs
     havel::compiler::VM *vm_ptr = nullptr;
     options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+    std::unordered_map<std::string, std::deque<Value>> channels;
+    std::unordered_map<std::string, Value> thread_callbacks;
     options.host_functions["any.get"] = [&](const std::vector<Value> &args) {
       if (args.size() < 2 || !vm_ptr) return Value::makeNull();
       const auto &obj = args[0];
@@ -691,6 +693,115 @@ int runAsyncCase(const std::string &name, const std::string &source,
       }
       return Value::makeNull();
     };
+
+    // Async/concurrency stubs for smoke tests
+    options.host_functions["any.run"] = [&](const std::vector<Value> &args) {
+      // any.run(callback) - execute callback synchronously and return result
+      if (args.empty() || !vm_ptr) return Value::makeNull();
+      return vm_ptr->callFunction(args[0], {});
+    };
+    options.host_functions["any.channel"] = [&](const std::vector<Value> &args) {
+      // any.channel(name) - create a channel object
+      if (!vm_ptr) return Value::makeNull();
+      auto obj = vm_ptr->createHostObject();
+      if (!args.empty() && args[0].isStringValId()) {
+        vm_ptr->setHostObjectField(obj, "name", args[0]);
+      }
+      return Value::makeObjectId(obj.id);
+    };
+    options.host_functions["any.gc"] = [&](const std::vector<Value> &args) {
+      // any.gc() - trigger garbage collection (stub - GC runs automatically)
+      return Value::makeNull();
+    };
+    options.host_functions["any.gcStats"] = [&](const std::vector<Value> &args) {
+      // any.gcStats() - return GC stats object
+      if (!vm_ptr) return Value::makeNull();
+      auto obj = vm_ptr->createHostObject();
+      auto stats = vm_ptr->gcStats();
+      vm_ptr->setHostObjectField(obj, "collections", Value::makeInt(static_cast<int64_t>(stats.collections)));
+      vm_ptr->setHostObjectField(obj, "heapSize", Value::makeInt(static_cast<int64_t>(stats.heap_size)));
+      vm_ptr->setHostObjectField(obj, "objectCount", Value::makeInt(static_cast<int64_t>(stats.object_count)));
+      vm_ptr->setHostObjectField(obj, "lastPauseNs", Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
+      return Value::makeObjectId(obj.id);
+    };
+
+    // Async stubs - member access on globals like async.run() gets routed to any.run
+    options.host_functions["async.run"] = options.host_functions["any.run"];
+    options.host_functions["async.channel"] = options.host_functions["any.channel"];
+    options.host_functions["async.send"] = [&](const std::vector<Value> &args) {
+      // async.send(name, value) - send to first channel
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      channels.begin()->second.push_back(args[1]);
+      return Value(true);
+    };
+    options.host_functions["async.receive"] = [&](const std::vector<Value> &args) {
+      // async.receive(name) - receive from first channel
+      if (!vm_ptr) return Value::makeNull();
+      auto &queue = channels.begin()->second;
+      if (queue.empty()) return Value::makeNull();
+      auto value = queue.front();
+      queue.pop_front();
+      return value;
+    };
+    options.host_functions["async.receive"] = [&](const std::vector<Value> &args) {
+      // async.receive(name) - receive from first channel
+      if (!vm_ptr) return Value::makeNull();
+      auto &queue = channels.begin()->second;
+      if (queue.empty()) return Value::makeNull();
+      auto value = queue.front();
+      queue.pop_front();
+      return value;
+    };
+    options.host_functions["async.tryReceive"] = options.host_functions["async.receive"];
+    options.host_functions["any.receive"] = options.host_functions["async.receive"];
+    options.host_functions["any.tryReceive"] = options.host_functions["async.tryReceive"];
+
+    // Thread stubs - member access on thread objects
+    options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      auto cb = thread_callbacks.begin()->second;
+      return vm_ptr->callFunction(cb, {args[1]});
+    };
+    options.host_functions["thread.pause"] = [&](const std::vector<Value> &args) {
+      return Value::makeNull();
+    };
+    options.host_functions["thread.resume"] = [&](const std::vector<Value> &args) {
+      return Value::makeNull();
+    };
+    options.host_functions["thread.running"] = [&](const std::vector<Value> &args) {
+      return Value::makeBool(true);
+    };
+    options.host_functions["thread.stop"] = [&](const std::vector<Value> &args) {
+      return Value::makeNull();
+    };
+
+    // Interval/timeout stubs
+    options.host_functions["interval"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      auto obj = vm_ptr->createHostObject();
+      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
+      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(0));
+      return Value::makeObjectId(obj.id);
+    };
+    options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["interval.resume"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["interval.stop"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      auto obj = vm_ptr->createHostObject();
+      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
+      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(0));
+      return Value::makeObjectId(obj.id);
+    };
+    options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["object.send"] = [&](const std::vector<Value> &args) {
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      return options.host_functions["thread.send"](args);
+    };
+    options.host_functions["object.pause"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["object.resume"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["object.stop"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
+    options.host_functions["object.running"] = [&](const std::vector<Value> &args) { return Value::makeBool(true); };
 
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);

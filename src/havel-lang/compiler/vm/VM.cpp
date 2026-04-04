@@ -4083,7 +4083,15 @@ void VM::VMExecutionContext::executeInstructionInContext(
   }
 
   case OpCode::LOAD_GLOBAL: {
-    const auto &name = instruction.operands[0].toString();
+    // Get the string from the function's string table
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
+    std::string name;
+    if (func && strIndex < func->string_constants.size()) {
+      name = func->string_constants[strIndex];
+    } else {
+      name = "<stringval:" + std::to_string(strIndex) + ">";
+    }
     // Thread-safe access to parent's globals
     auto value = parent_vm_->getGlobalThreadSafe(name);
     push(value.value_or(nullptr));
@@ -4091,7 +4099,15 @@ void VM::VMExecutionContext::executeInstructionInContext(
   }
 
   case OpCode::STORE_GLOBAL: {
-    const auto &name = instruction.operands[0].toString();
+    // Get the string from the function's string table
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
+    std::string name;
+    if (func && strIndex < func->string_constants.size()) {
+      name = func->string_constants[strIndex];
+    } else {
+      name = "<stringval:" + std::to_string(strIndex) + ">";
+    }
     Value value = pop();
     parent_vm_->setGlobalThreadSafe(name, std::move(value));
     break;
@@ -4416,8 +4432,15 @@ void VM::VMExecutionContext::executeInstructionInContext(
   }
 
   case OpCode::CALL_HOST: {
-    const std::string &function_name =
-        instruction.operands[0].toString();
+    // Get the function name from the function's string table
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
+    std::string function_name;
+    if (func && strIndex < func->string_constants.size()) {
+      function_name = func->string_constants[strIndex];
+    } else {
+      function_name = "<stringval:" + std::to_string(strIndex) + ">";
+    }
     uint32_t arg_count = static_cast<uint32_t>(instruction.operands[1].asInt());
 
     std::vector<Value> args(arg_count);

@@ -2323,7 +2323,15 @@ void VM::executeInstruction(const Instruction &instruction) {
         !instruction.operands[0].isStringValId()) {
       throw std::runtime_error("STORE_GLOBAL expects string operand");
     }
-    const auto &name = instruction.operands[0].toString();
+    // Get the string from the function's string table
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto* func = currentFrame().function;
+    std::string name;
+    if (func && strIndex < func->string_constants.size()) {
+      name = func->string_constants[strIndex];
+    } else {
+      name = "<unknown:" + std::to_string(strIndex) + ">";
+    }
     Value value = popStack();
 
     // Value type semantics: copy structs on assignment

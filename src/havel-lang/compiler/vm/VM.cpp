@@ -81,6 +81,12 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     }
     return "<string:" + std::to_string(value.asStringValId()) + ">";
   }
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      return *s;
+    }
+    return "<string:" + std::to_string(value.asStringId()) + ">";
+  }
   if (value.isFunctionObjId()) {
     return "fn[" + std::to_string(value.asFunctionObjId()) + "]";
   }
@@ -839,8 +845,13 @@ void VM::registerDefaultHostFunctions() {
       if (i > 0) {
         std::cout << delim;
       }
-      // Resolve string values properly
-      std::cout << resolveStringKey(args[i]);
+      // For string values, resolve them; for other types use heap-aware toString
+      const auto &arg = args[i];
+      if (arg.isStringValId() || arg.isStringId()) {
+        std::cout << resolveStringKey(arg);
+      } else {
+        std::cout << toString(arg);
+      }
     }
     std::cout << end;
     return Value::makeNull();

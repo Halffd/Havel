@@ -273,8 +273,11 @@ void HostBridge::install() {
           return Value::makeNull();
         }
         for (const auto &arg : args) {
-          std::string s = ctx_->vm->resolveStringKey(arg);
-          std::cout << s;
+          if (arg.isStringValId() || arg.isStringId()) {
+            std::cout << ctx_->vm->resolveStringKey(arg);
+          } else {
+            std::cout << ctx_->vm->toString(arg);
+          }
         }
         std::cout << std::flush;
         return Value::makeNull();
@@ -283,9 +286,19 @@ void HostBridge::install() {
   // Global println() function - like print but adds newline
   options_.host_functions["println"] =
       [this](const std::vector<Value> &args) {
+        if (!ctx_ || !ctx_->vm) {
+          for (const auto &arg : args) {
+            std::cout << arg.toString();
+          }
+          std::cout << std::endl;
+          return Value::makeNull();
+        }
         for (const auto &arg : args) {
-          std::string s = ctx_->vm->resolveStringKey(arg);
-          std::cout << s;
+          if (arg.isStringValId() || arg.isStringId()) {
+            std::cout << ctx_->vm->resolveStringKey(arg);
+          } else {
+            std::cout << ctx_->vm->toString(arg);
+          }
         }
         std::cout << std::endl;
         return Value::makeNull();

@@ -215,7 +215,6 @@ private:
   int64_t toInt(const Value &value) const;
   double toFloat(const Value &value) const;
   bool toBool(const Value &value) const;
-  std::string toString(const Value &value) const;
   std::string formatErrorWithContext(const std::string &message) const;
 
   std::vector<Value> stackValuesForRoots() const;
@@ -239,6 +238,7 @@ public:
                           const std::vector<Value> &args = {});
   Value call(const Value &callee_value,
              const std::vector<Value> &args = {});
+  std::string toString(const Value &value) const;
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,
                             BytecodeHostFunction function) override;

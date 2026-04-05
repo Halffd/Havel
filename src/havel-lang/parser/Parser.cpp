@@ -316,6 +316,14 @@ int Parser::getBindingPower(TokenType type) const {
     case TokenType::NotEquals:
       return 50;
 
+    // Membership (in / not in)
+    case TokenType::In:
+      return 55;
+
+    // 'not' as infix for 'not in' - slightly lower than 'in' so 'not' binds to 'in'
+    case TokenType::Not:
+      return 52;
+
     // Comparison
     case TokenType::Less:
     case TokenType::Greater:
@@ -827,6 +835,12 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
     }
 
+    case TokenType::In: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::In, std::move(right));
+    }
+
     case TokenType::Less: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
@@ -861,6 +875,19 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::Or, std::move(right));
+    }
+
+    case TokenType::Not: {
+      // Handle 'not in' as a compound infix operator
+      if (at().type == TokenType::In) {
+        advance(); // consume 'in'
+        auto right = parsePrattExpression(getRightBindingPower(TokenType::In));
+        return std::make_unique<ast::BinaryExpression>(
+            std::move(left), ast::BinaryOperator::NotIn, std::move(right));
+      }
+      // Regular 'not' as unary - but this shouldn't happen in infix position
+      // Just return left as-is (the not prefix is handled in nud)
+      return std::move(left);
     }
 
     case TokenType::Nullish: {

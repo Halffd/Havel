@@ -132,6 +132,7 @@ private:
   
   // Bytecode VM
   std::unique_ptr<compiler::VM> vm_;
+  std::unique_ptr<HostContext> hostContext_;
   std::shared_ptr<compiler::HostBridge> hostBridge_;
   
   // Handlers

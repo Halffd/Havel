@@ -72,6 +72,9 @@ ByteCompiler::compile(const ast::Program &program) {
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
 
+  for (size_t i = 0; i < program.body.size(); i++) {
+  }
+
   LexicalResolver resolver;
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
@@ -525,7 +528,7 @@ void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
 
       // Emit: LOAD_VAR paramIndex, LOAD_CONST key, OBJECT_GET
       emit(OpCode::LOAD_VAR, paramIndex);
-      emit(OpCode::LOAD_CONST, addStringConstant(key));
+      { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_GET);
 
       // Recursively compile the value pattern - result is on stack
@@ -581,7 +584,7 @@ void ByteCompiler::compileParameterPatternValue(
 
       // Emit: LOAD_VAR tempSlot, LOAD_CONST key, OBJECT_GET
       emit(OpCode::LOAD_VAR, tempSlot);
-      emit(OpCode::LOAD_CONST, addStringConstant(key));
+      { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_GET);
 
       compileParameterPatternValue(*valuePattern);
@@ -730,8 +733,54 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       break;
     }
 
+    if (let.pattern && let.pattern->kind == ast::NodeType::ObjectPattern) {
+      const auto &pattern =
+          static_cast<const ast::ObjectPattern &>(*let.pattern);
+      if (!let.value) {
+        COMPILER_THROW("Object destructuring requires a value");
+      }
+
+      // Store the object in a temp slot
+      uint32_t temp_slot = next_local_index;
+      reserveLocalSlot(temp_slot);
+      compileExpression(*let.value);
+      emit(OpCode::STORE_VAR, temp_slot);
+
+      // Helper: create a constant that loads a string value
+      auto loadStringConst = [this](const std::string &str) {
+        uint32_t strId = addStringConstant(str);
+        return addConstant(Value::makeStringValId(strId));
+      };
+
+      // Extract each field: obj.key -> STORE_VAR/STORE_GLOBAL alias
+      for (const auto &prop : pattern.properties) {
+        const std::string &key = prop.first;
+        const auto *alias = dynamic_cast<const ast::Identifier *>(prop.second.get());
+        if (!alias) {
+          COMPILER_THROW("Object destructuring supports identifier aliases only");
+        }
+
+        // Check if this is a global variable (top-level let)
+        if (lexical_resolution_.global_variables.count(alias->symbol) > 0) {
+          emit(OpCode::LOAD_VAR, temp_slot);
+          emit(OpCode::LOAD_CONST, loadStringConst(key));
+          emit(OpCode::OBJECT_GET);
+          emit(OpCode::STORE_GLOBAL,
+               std::vector<Value>{Value::makeStringValId(addStringConstant(alias->symbol))});
+        } else {
+          const uint32_t slot = declarationSlot(*alias);
+          reserveLocalSlot(slot);
+          emit(OpCode::LOAD_VAR, temp_slot);
+          emit(OpCode::LOAD_CONST, loadStringConst(key));
+          emit(OpCode::OBJECT_GET);
+          emit(OpCode::STORE_VAR, slot);
+        }
+      }
+      break;
+    }
+
     COMPILER_THROW(
-        "Bytecode compiler supports let patterns: identifier and tuple/array");
+        "Bytecode compiler supports let patterns: identifier, tuple/array, and object");
     break;
   }
 
@@ -843,11 +892,11 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         uint32_t confStrId = addStringConstant("conf");
         emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(confStrId));
       }
-      emit(OpCode::LOAD_CONST, addStringConstant(key));
+      { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_SET);
 
       // Call config.set(key, value) to save to file
-      emit(OpCode::LOAD_CONST, addStringConstant(key));
+      { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       compileExpression(*valueExpr); // Re-compile value for config.set
       {
         uint32_t strId = addStringConstant("config.set");
@@ -871,7 +920,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
     // Compile condition: mode == "modeName"
     // Call mode() host function to get current mode
-    emit(OpCode::LOAD_CONST, addStringConstant("mode"));
+    { uint32_t _sid = addStringConstant("mode"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     {
       uint32_t modeStrId = addStringConstant("mode");
       emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -880,7 +929,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     }
 
     // Load the mode name to compare against
-    emit(OpCode::LOAD_CONST, addStringConstant(modeBlock.modeName));
+    { uint32_t _sid = addStringConstant(modeBlock.modeName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
 
     // Compare: mode() == "modeName"
     emit(OpCode::EQ);
@@ -917,7 +966,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       // onExitTo, ...)
 
       // Load mode name
-      emit(OpCode::LOAD_CONST, addStringConstant(modeDef.name));
+      { uint32_t _sid = addStringConstant(modeDef.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
 
       // Load priority
       emit(OpCode::LOAD_CONST,
@@ -953,14 +1002,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
       // Load onEnterFrom mode name (or null)
       if (!modeDef.onEnterFrom.empty()) {
-        emit(OpCode::LOAD_CONST, addStringConstant(modeDef.onEnterFrom));
+        { uint32_t _sid = addStringConstant(modeDef.onEnterFrom); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       } else {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
       // Load onExitTo mode name (or null)
       if (!modeDef.onExitTo.empty()) {
-        emit(OpCode::LOAD_CONST, addStringConstant(modeDef.onExitTo));
+        { uint32_t _sid = addStringConstant(modeDef.onExitTo); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       } else {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
@@ -998,10 +1047,10 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     const auto &structDecl =
         static_cast<const ast::StructDeclaration &>(statement);
     // Runtime registration: struct.define("Name", ["field1", ...])
-    emit(OpCode::LOAD_CONST, addStringConstant(structDecl.name));
+    { uint32_t _sid = addStringConstant(structDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::ARRAY_NEW);
     for (const auto &field : structDecl.definition.fields) {
-      emit(OpCode::LOAD_CONST, addStringConstant(field.name));
+      { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::ARRAY_PUSH);
     }
     {
@@ -1157,11 +1206,11 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
         if (statement.isWildcard) {
           // This requires VM support to copy exported names from module namespace
           // to current scope. For now, we emit a marker.
-          emit(OpCode::LOAD_CONST, addStringConstant("Flattening host module: " + moduleName));
+          { uint32_t _sid = addStringConstant("Flattening host module: " + moduleName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           emit(OpCode::POP);
         } else {
           // Regular 'use module' makes the module object available by its name
-          emit(OpCode::LOAD_CONST, addStringConstant("Host module loaded: " + moduleName));
+          { uint32_t _sid = addStringConstant("Host module loaded: " + moduleName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           emit(OpCode::POP);
         }
         return;
@@ -1182,7 +1231,7 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
     }
 
     // Emit debug marker
-    emit(OpCode::LOAD_CONST, addStringConstant("Loaded module file: " + statement.filePath));
+    { uint32_t _sid = addStringConstant("Loaded module file: " + statement.filePath); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::POP);
   }
 }
@@ -1215,13 +1264,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::StringLiteral: {
     const auto &str = static_cast<const ast::StringLiteral &>(expression);
-    emit(OpCode::LOAD_CONST, addStringConstant(str.value));
+    { uint32_t _sid = addStringConstant(str.value); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     break;
   }
 
   case ast::NodeType::HotkeyLiteral: {
     const auto &hotkey = static_cast<const ast::HotkeyLiteral &>(expression);
-    emit(OpCode::LOAD_CONST, addStringConstant(hotkey.combination));
+    { uint32_t _sid = addStringConstant(hotkey.combination); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     break;
   }
 
@@ -1231,12 +1280,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     // Build interpolated string by concatenating segments
     // Start with empty string
-    emit(OpCode::LOAD_CONST, addStringConstant(""));
+    { uint32_t _sid = addStringConstant(""); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
 
     for (const auto &segment : interp.segments) {
       if (segment.isString) {
         // Push string segment
-        emit(OpCode::LOAD_CONST, addStringConstant(segment.stringValue));
+        { uint32_t _sid = addStringConstant(segment.stringValue); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::STRING_CONCAT);
       } else {
         // Evaluate pre-parsed expression and convert to string
@@ -1406,7 +1455,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       emit(OpCode::DUP);
       compileExpression(*pair.second);
-      emit(OpCode::LOAD_CONST, addStringConstant(pair.first));
+      {
+        uint32_t strId = addStringConstant(pair.first);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId)));
+      }
       emit(OpCode::OBJECT_SET);
     }
     break;
@@ -1582,7 +1634,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
     // Get the field from this
-    emit(OpCode::LOAD_CONST, addStringConstant(fieldId->symbol));
+    { uint32_t _sid = addStringConstant(fieldId->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::OBJECT_GET);
     break;
   }
@@ -1866,7 +1918,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       reserveLocalSlot(temp_slot);
       emit(OpCode::STORE_VAR, temp_slot);
       compileExpression(*member.object);
-      emit(OpCode::LOAD_CONST, addStringConstant(property->symbol));
+      { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::LOAD_VAR, temp_slot);
       emit(OpCode::OBJECT_SET);
       emit(OpCode::LOAD_VAR, temp_slot);
@@ -1982,7 +2034,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             }
             // Load object, get property by key
             emit(OpCode::LOAD_VAR, temp_slot);
-            emit(OpCode::LOAD_CONST, addStringConstant(pair.first));
+            { uint32_t _sid = addStringConstant(pair.first); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
             emit(OpCode::OBJECT_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
@@ -2029,7 +2081,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         compileExpression(*target_member->object);
         emit(OpCode::STORE_VAR, temp_object);
         emit(OpCode::LOAD_VAR, temp_object);
-        emit(OpCode::LOAD_CONST, addStringConstant(property->symbol));
+        { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_GET);
         compileExpression(*assignment.value);
         emit(math_op);
@@ -2038,7 +2090,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::DUP);
         emit(OpCode::STORE_VAR, temp_result);
         emit(OpCode::LOAD_VAR, temp_object);
-        emit(OpCode::LOAD_CONST, addStringConstant(property->symbol));
+        { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::LOAD_VAR, temp_result);
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
@@ -2116,10 +2168,16 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       COMPILER_THROW("Unsupported member expression");
     }
 
+    // Helper: create a constant that loads a string value
+    auto loadStringConst = [this](const std::string &str) {
+      uint32_t strId = addStringConstant(str);
+      return addConstant(Value::makeStringValId(strId));
+    };
+
     // Check if object is an identifier (variable) - use runtime dispatch
     if (member.object->kind == ast::NodeType::Identifier) {
       compileExpression(*member.object);
-      emit(OpCode::LOAD_CONST, addStringConstant(property->symbol));
+      emit(OpCode::LOAD_CONST, loadStringConst(property->symbol));
       {
         uint32_t strId = addStringConstant("any.get");
         emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -2129,7 +2187,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     } else {
       // For literals, use OBJECT_GET directly
       compileExpression(*member.object);
-      emit(OpCode::LOAD_CONST, addStringConstant(property->symbol));
+      emit(OpCode::LOAD_CONST, loadStringConst(property->symbol));
       emit(OpCode::OBJECT_GET);
     }
     break;
@@ -2361,7 +2419,7 @@ void ByteCompiler::compileCallExpression(
     if (binding && binding->kind == ResolvedBindingKind::Global &&
         top_level_struct_names_.find(callee_id.symbol) !=
             top_level_struct_names_.end()) {
-      emit(OpCode::LOAD_CONST, addStringConstant(callee_id.symbol));
+      { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       uint32_t totalArgs = 1; // type name
       for (const auto &arg : expression.args) {
         if (!arg) {
@@ -2391,7 +2449,7 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
-          emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           compileExpression(*kwarg.value);
           emit(OpCode::OBJECT_SET);
         }
@@ -2431,7 +2489,7 @@ void ByteCompiler::compileCallExpression(
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {
         emit(OpCode::DUP);
-        emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
+        { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         compileExpression(*kwarg.value);
         emit(OpCode::OBJECT_SET);
       }
@@ -2470,7 +2528,7 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
-          emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           compileExpression(*kwarg.value);
           emit(OpCode::OBJECT_SET);
         }
@@ -2506,7 +2564,7 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
           emit(OpCode::DUP);
-          emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           compileExpression(*kwarg.value);
           emit(OpCode::OBJECT_SET);
         }
@@ -2556,7 +2614,7 @@ void ByteCompiler::compileCallExpression(
     emit(OpCode::OBJECT_NEW);
     for (const auto &kwarg : expression.kwargs) {
       emit(OpCode::DUP);
-      emit(OpCode::LOAD_CONST, addStringConstant(kwarg.name));
+      { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       compileExpression(*kwarg.value);
       emit(OpCode::OBJECT_SET);
     }
@@ -2728,13 +2786,13 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
 
   // Check result.done - if true, exit loop
   emit(OpCode::LOAD_VAR, resultSlot);
-  emit(OpCode::LOAD_CONST, addStringConstant("done"));
+  { uint32_t _sid = addStringConstant("done"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
   emit(OpCode::OBJECT_GET);
   uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
 
   // Get result.value
   emit(OpCode::LOAD_VAR, resultSlot);
-  emit(OpCode::LOAD_CONST, addStringConstant("value"));
+  { uint32_t _sid = addStringConstant("value"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
   emit(OpCode::OBJECT_GET);
 
   if (multiVar && iterSlots.size() >= 2) {
@@ -3427,7 +3485,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
     switch (cmd.type) {
     case ast::InputCommand::SendText:
       // io.send(cmd.text)
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.text));
+      { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       {
         uint32_t strId = addStringConstant("io.send");
         emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -3437,7 +3495,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       break;
     case ast::InputCommand::SendKey:
       // io.sendKey(cmd.key)
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.key));
+      { uint32_t _sid = addStringConstant(cmd.key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       {
         uint32_t strId = addStringConstant("io.sendKey");
         emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -3447,7 +3505,7 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       break;
     case ast::InputCommand::MouseClick:
       // io.mouseClick(cmd.text) - text contains button name
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.text));
+      { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       {
         uint32_t strId = addStringConstant("io.mouseClick");
         emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -3459,8 +3517,8 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       // io.mouseMove(x, y) - xExprStr and yExprStr contain coordinates
       // For now, treat as strings and evaluate them
       // TODO: Properly evaluate expressions
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.xExprStr));
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.yExprStr));
+      { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       {
         uint32_t strId = addStringConstant("io.mouseMove");
         emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -3470,8 +3528,8 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       break;
     case ast::InputCommand::MouseRelative:
       // Similar to MouseMove but relative
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.xExprStr));
-      emit(OpCode::LOAD_CONST, addStringConstant(cmd.yExprStr));
+      { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       {
         uint32_t strId = addStringConstant("io.mouseMoveRel");
         emit(OpCode::CALL_HOST, std::vector<Value>{

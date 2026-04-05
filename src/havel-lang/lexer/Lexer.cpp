@@ -1050,12 +1050,14 @@ std::vector<Token> Lexer::tokenize() {
             prevType == TokenType::Identifier ||
             prevType == TokenType::String ||
             prevType == TokenType::CloseParen ||
-            prevType == TokenType::CloseBracket || prevType == TokenType::Not ||
+            prevType == TokenType::OpenParen ||
+            prevType == TokenType::CloseBracket ||
+            prevType == TokenType::Not ||
             prevType == TokenType::Or || prevType == TokenType::And ||
             prevType == TokenType::Assign || prevType == TokenType::If ||
             prevType == TokenType::While || prevType == TokenType::For ||
             prevType == TokenType::In || prevType == TokenType::Matches ||
-            prevType == TokenType::Tilde) {
+            prevType == TokenType::Tilde || prevType == TokenType::Comma) {
           // Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
         } else {
           tokens.push_back(scanHotkey());

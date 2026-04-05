@@ -1317,6 +1317,16 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
   setGlobal("async", Value::makeObjectId(async_obj.id));
 
+  // Process object
+  auto process_obj = heap_.allocateObject();
+  setHostObjectField(process_obj, "find", Value::makeHostFuncId(getHostFunctionIndex("process.find")));
+  setHostObjectField(process_obj, "exists", Value::makeHostFuncId(getHostFunctionIndex("process.exists")));
+  setHostObjectField(process_obj, "kill", Value::makeHostFuncId(getHostFunctionIndex("process.kill")));
+  setHostObjectField(process_obj, "nice", Value::makeHostFuncId(getHostFunctionIndex("process.nice")));
+  setHostObjectField(process_obj, "run", Value::makeHostFuncId(getHostFunctionIndex("process.run")));
+  setHostObjectField(process_obj, "runDetached", Value::makeHostFuncId(getHostFunctionIndex("process.runDetached")));
+  setGlobal("process", Value::makeObjectId(process_obj.id));
+
   // Register default window globals
   setGlobal("title", Value::makeNull());
   setGlobal("exe", Value::makeNull());
@@ -2210,7 +2220,6 @@ void VM::execLogicalOp(OpCode opcode) {
   switch (opcode) {
   case OpCode::AND: pushStack(isTruthy(left) && isTruthy(right)); break;
   case OpCode::OR:  pushStack(isTruthy(left) || isTruthy(right)); break;
-  case OpCode::NOT: pushStack(!isTruthy(left)); break;
   default: COMPILER_THROW("Unknown logical opcode");
   }
 }
@@ -2461,9 +2470,14 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::AND:
   case OpCode::OR:
-  case OpCode::NOT:
     execLogicalOp(instruction.opcode);
     break;
+
+  case OpCode::NOT: {
+    Value v = popStack();
+    pushStack(!isTruthy(v));
+    break;
+  }
 
   case OpCode::NEGATE:
     execNegate();

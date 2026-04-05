@@ -186,6 +186,16 @@ public:
     out << getIndent() << node.toString() << std::endl;
   }
 
+  void visitCharLiteral(const CharLiteral &node) override {
+    out << getIndent() << node.toString() << std::endl;
+  }
+
+  void visitRangePattern(const RangePattern &node) override {
+    out << getIndent() << node.toString() << std::endl;
+    if (node.start) node.start->accept(*this);
+    if (node.end) node.end->accept(*this);
+  }
+
   void visitBooleanLiteral(const BooleanLiteral &node) override {
     out << getIndent() << node.toString() << std::endl;
   }

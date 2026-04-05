@@ -343,6 +343,12 @@ void LexicalResolver::collectPatternIdentifiers(
     }
     break;
   }
+  case ast::NodeType::RangePattern: {
+    const auto &rangePat = static_cast<const ast::RangePattern &>(pattern);
+    if (rangePat.start) collectPatternIdentifiers(*rangePat.start);
+    if (rangePat.end) collectPatternIdentifiers(*rangePat.end);
+    break;
+  }
   default:
     break;
   }
@@ -1108,6 +1114,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::SpreadPattern: {
     const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
     if (spreadPat.target) resolveExpression(*spreadPat.target);
+    break;
+  }
+  case ast::NodeType::RangePattern: {
+    const auto &rangePat = static_cast<const ast::RangePattern &>(expression);
+    if (rangePat.start) resolveExpression(*rangePat.start);
+    if (rangePat.end) resolveExpression(*rangePat.end);
     break;
   }
 

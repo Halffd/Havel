@@ -218,6 +218,42 @@ Token Lexer::scanNumber() {
   return makeToken(number, TokenType::Number);
 }
 
+Token Lexer::scanChar() {
+  std::string value;
+  // The opening ' has already been consumed by the main loop
+  
+  if (isAtEnd()) {
+    return makeToken("", TokenType::CharLiteral);
+  }
+  
+  char c = advance();
+  if (c == '\\') {
+    // Handle escape sequences
+    if (isAtEnd()) {
+      return makeToken("", TokenType::CharLiteral);
+    }
+    char escaped = advance();
+    switch (escaped) {
+      case 'n': c = '\n'; break;
+      case 't': c = '\t'; break;
+      case 'r': c = '\r'; break;
+      case '\\': c = '\\'; break;
+      case '\'': c = '\''; break;
+      case '"': c = '"'; break;
+      default: c = escaped; break;
+    }
+    value = std::string(1, c);
+  } else {
+    value = std::string(1, c);
+  }
+  
+  if (isAtEnd() || advance() != '\'') {
+    return makeToken(value, TokenType::CharLiteral);
+  }
+  
+  return makeToken(value, TokenType::CharLiteral);
+}
+
 Token Lexer::scanString(bool isFString) {
   std::string value;
   std::string raw;
@@ -693,8 +729,15 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle strings
     if (c == '"' || c == '\'') {
-      // Check for f-string prefix: f'...' or f"..." or F'...' or F"..."
-      // The 'f' would have been tokenized as an identifier already
+      // Single quotes are char literals: 'a'
+      if (c == '\'') {
+        tokens.push_back(scanChar());
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+      // Double quotes: check for f-string prefix: f"..." or F"..."
       bool isFString = false;
       if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
         if (tokens.back().value == "f" || tokens.back().value == "F") {
@@ -977,6 +1020,14 @@ std::vector<Token> Lexer::tokenize() {
       advance(); // consume second '.'
       advance(); // consume third '.'
       tokens.push_back(makeToken("...", TokenType::Spread));
+      continue;
+    }
+
+    // Handle ..= (inclusive range pattern) - check before ..
+    if (c == '.' && peek() == '.' && peek(1) == '=') {
+      advance(); // consume second '.'
+      advance(); // consume '='
+      tokens.push_back(makeToken("..=", TokenType::DotDotEquals));
       continue;
     }
 

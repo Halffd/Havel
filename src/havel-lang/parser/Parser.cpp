@@ -596,6 +596,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::MultilineString:
       return std::make_unique<ast::StringLiteral>(token.value);
 
+    case TokenType::CharLiteral:
+      return std::make_unique<ast::CharLiteral>(token.value[0]);
+
     case TokenType::InterpolatedString: {
       // Parse interpolated string into segments
       std::vector<ast::InterpolatedStringExpression::Segment> segments;
@@ -6258,6 +6261,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
 
 // Parse a single pattern atom (no | handling)
 std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
+  // First, try to parse a literal expression
+  std::unique_ptr<havel::ast::Expression> literal;
+  
   // Wildcard
   if (at().type == havel::TokenType::Underscore) {
     advance();
@@ -6277,49 +6283,65 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
   // Boolean literals
   if (at().type == havel::TokenType::True) {
     advance();
-    return std::make_unique<havel::ast::BooleanLiteral>(true);
-  }
-  if (at().type == havel::TokenType::False) {
+    literal = std::make_unique<havel::ast::BooleanLiteral>(true);
+  } else if (at().type == havel::TokenType::False) {
     advance();
-    return std::make_unique<havel::ast::BooleanLiteral>(false);
+    literal = std::make_unique<havel::ast::BooleanLiteral>(false);
   }
-  
   // Null literal
-  if (at().type == havel::TokenType::Null) {
+  else if (at().type == havel::TokenType::Null) {
     advance();
-    return std::make_unique<havel::ast::NullLiteral>();
+    literal = std::make_unique<havel::ast::NullLiteral>();
   }
-  
   // Number literal
-  if (at().type == havel::TokenType::Number) {
+  else if (at().type == havel::TokenType::Number) {
     auto tok = advance();
     try {
       if (tok.value.find('.') != std::string::npos || 
           tok.value.find('e') != std::string::npos ||
           tok.value.find('E') != std::string::npos) {
-        return std::make_unique<havel::ast::NumberLiteral>(std::stod(tok.value));
+        literal = std::make_unique<havel::ast::NumberLiteral>(std::stod(tok.value));
+      } else {
+        literal = std::make_unique<havel::ast::NumberLiteral>(
+            static_cast<double>(std::stoll(tok.value)));
       }
-      return std::make_unique<havel::ast::NumberLiteral>(
-          static_cast<double>(std::stoll(tok.value)));
     } catch (...) {
       failAt(tok, "Invalid number literal");
       return nullptr;
     }
   }
-  
   // String literal
-  if (at().type == havel::TokenType::String) {
+  else if (at().type == havel::TokenType::String) {
     auto tok = advance();
-    return std::make_unique<havel::ast::StringLiteral>(tok.value);
+    literal = std::make_unique<havel::ast::StringLiteral>(tok.value);
   }
-  
+  // Char literal
+  else if (at().type == havel::TokenType::CharLiteral) {
+    auto tok = advance();
+    literal = std::make_unique<havel::ast::CharLiteral>(tok.value[0]);
+  }
   // Identifier (variable binding or reference)
-  if (at().type == havel::TokenType::Identifier) {
-    return makeIdentifier(advance());
+  else if (at().type == havel::TokenType::Identifier) {
+    literal = makeIdentifier(advance());
   }
   
-  failAt(at(), "Expected pattern");
-  return nullptr;
+  if (!literal) {
+    failAt(at(), "Expected pattern");
+    return nullptr;
+  }
+  
+  // Check for range pattern: literal..=literal
+  if (at().type == havel::TokenType::DotDotEquals) {
+    advance(); // consume '..='
+    auto endLit = parsePatternAtom();
+    if (!endLit) {
+      failAt(at(), "Expected pattern after '..='");
+      return nullptr;
+    }
+    return std::make_unique<havel::ast::RangePattern>(std::move(literal), std::move(endLit));
+  }
+  
+  return literal;
 }
 
 // Parse array pattern for match (supports [x, y], [x, ..rest])

@@ -1914,31 +1914,12 @@ void HostBridge::install() {
     return Value::makeBool(found_any);
   };
 
-  // Type system functions
+  // Type system functions - the VM's registerDefaultHostFunctions() already
+  // registers a working "type" function, so we don't need to register it here.
+  // Register type.of as alias for type
   options_.host_functions["type.of"] =
-      [](const std::vector<Value> &args) {
-        // TODO: string pool integration - for now return null for type names
-        if (args.empty()) {
-          return Value::makeNull();
-        }
-        const auto &val = args[0];
-        if (val.isNull())
-          return Value::makeNull(); // was "null"
-        if (val.isBool())
-          return Value::makeNull(); // was "bool"
-        if (val.isInt())
-          return Value::makeNull(); // was "int"
-        if (val.isDouble())
-          return Value::makeNull(); // was "num"
-        if (val.isStringValId())
-          return Value::makeNull(); // was "string"
-        if (val.isArrayId())
-          return Value::makeNull(); // was "array"
-        if (val.isObjectId())
-          return Value::makeNull(); // was "object"
-        if (val.isRangeId())
-          return Value::makeNull(); // was "range"
-        return Value::makeNull(); // was "unknown"
+      [this](const std::vector<Value> &args) {
+        return ctx_->vm->callFunction(Value::makeHostFuncId(ctx_->vm->getHostFunctionIndex("type")), args);
       };
 
   options_.host_functions["type.is"] =

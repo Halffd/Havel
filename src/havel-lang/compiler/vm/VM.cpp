@@ -1028,11 +1028,28 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeNull();
   });
 
-  // type() builtin returns type name - TODO: implement proper string pool lookup
-  registerHostFunction("type", 1, [](const std::vector<Value> &args) {
+  // type() builtin returns type name
+  registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
     const auto &value = args[0];
-    if (value.isNull()) return Value::makeNull(); // Should return "null"
-    return Value::makeNull();
+    std::string typeName;
+    if (value.isNull()) typeName = "null";
+    else if (value.isBool()) typeName = "bool";
+    else if (value.isInt()) typeName = "int";
+    else if (value.isDouble()) typeName = "float";
+    else if (value.isStringValId() || value.isStringId()) typeName = "string";
+    else if (value.isArrayId()) typeName = "array";
+    else if (value.isObjectId()) typeName = "object";
+    else if (value.isRangeId()) typeName = "range";
+    else if (value.isHostFuncId()) typeName = "function";
+    else if (value.isClosureId()) typeName = "closure";
+    else if (value.isFunctionObjId()) typeName = "function";
+    else if (value.isEnumId()) typeName = "enum";
+    else if (value.isIteratorId()) typeName = "iterator";
+    else if (value.isStructId()) typeName = "struct";
+    else if (value.isClassId()) typeName = "class";
+    else typeName = "unknown";
+    auto strRef = heap_.allocateString(typeName);
+    return Value::makeStringId(strRef.id);
   });
 
   // Async library functions

@@ -111,63 +111,21 @@ std::string formatDiagnostic(const std::string &kind,
 std::string enrichRuntimeError(const std::string &runtime_error,
                                const std::string &compile_unit_name,
                                const std::string &source) {
+  // Try to match "msg at line:col" format from VM_THROW
+  static const std::regex at_re(R"((.*) at ([0-9]+):([0-9]+))");
   std::smatch match;
-  static const std::regex at_re(R"(\n\s*at\s+([0-9]+):([0-9]+))");
-  if (!std::regex_search(runtime_error, match, at_re) || match.size() < 3) {
+  if (!std::regex_match(runtime_error, match, at_re) || match.size() < 4) {
     return runtime_error;
   }
 
-  const size_t line = static_cast<size_t>(std::stoul(match[1].str()));
-  const size_t column = static_cast<size_t>(std::stoul(match[2].str()));
+  const std::string message = match[1].str();
+  const size_t line = static_cast<size_t>(std::stoul(match[2].str()));
+  const size_t column = static_cast<size_t>(std::stoul(match[3].str()));
 
-  std::string first_line = runtime_error;
-  std::string tail;
-  if (const auto nl = runtime_error.find('\n'); nl != std::string::npos) {
-    first_line = runtime_error.substr(0, nl);
-    tail = runtime_error.substr(nl);
-  }
+  std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
 
-  // Remove the first "at x:y" line from tail; we replace it with full source span.
-  tail = std::regex_replace(tail, at_re, "", std::regex_constants::format_first_only);
-  static const std::regex caller_line_re(
-      R"(\n\s*called from function '[^']+' at [0-9]+:[0-9]+)");
-  tail = std::regex_replace(tail, caller_line_re, "");
-  while (!tail.empty() && tail.front() == '\n') {
-    tail.erase(tail.begin());
-  }
-
-  std::ostringstream out;
-  out << first_line << "\n";
-  out << "  --> " << displayNameForUnit(compile_unit_name) << ":" << line
-      << ":" << column << "\n";
-  out << "   |\n";
-  const std::string source_line = sourceLineAt(source, line);
-  out << line << " | " << source_line << "\n";
-  out << formatCaretLine(column, 1, "runtime error");
-
-  // Expand each "called from ... at L:C" frame with source snippet.
-  static const std::regex caller_re(
-      R"(called from function '([^']+)' at ([0-9]+):([0-9]+))");
-  std::sregex_iterator it(runtime_error.begin(), runtime_error.end(), caller_re);
-  std::sregex_iterator end;
-  for (; it != end; ++it) {
-    const std::string fn = (*it)[1].str();
-    const size_t frame_line = static_cast<size_t>(std::stoul((*it)[2].str()));
-    const size_t frame_col = static_cast<size_t>(std::stoul((*it)[3].str()));
-    out << "\n";
-    out << "  called from function '" << fn << "'\n";
-    out << "  --> " << displayNameForUnit(compile_unit_name) << ":"
-        << frame_line << ":" << frame_col << "\n";
-    out << "   |\n";
-    const std::string frame_source = sourceLineAt(source, frame_line);
-    out << frame_line << " | " << frame_source << "\n";
-    out << formatCaretLine(frame_col, 1, "call site");
-  }
-
-  if (!tail.empty()) {
-    out << "\n" << tail;
-  }
-  return out.str();
+  return havel::ErrorPrinter::formatErrorFromFile(
+      "Runtime Error", message, file_path, line, column, 1);
 }
 
 std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
@@ -603,8 +561,7 @@ BytecodeSmokeResult runBytecodePipeline(
   try {
     result.return_value = vm->execute(*chunk, entry_function);
   } catch (const std::exception &e) {
-    COMPILER_THROW(
-        enrichRuntimeError(e.what(), options.compile_unit_name, source));
+    throw std::runtime_error(enrichRuntimeError(e.what(), options.compile_unit_name, source));
   }
   return result;
 }

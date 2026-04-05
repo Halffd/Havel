@@ -1306,7 +1306,6 @@ Value VM::invokeHostFunction(const std::string &name,
     else if (args[arg_count - 1 - i].isFunctionObjId()) typeInfo = "function_obj_id";
     else if (args[arg_count - 1 - i].isObjectId()) typeInfo = "object_id";
     else if (args[arg_count - 1 - i].isHostFuncId()) typeInfo = "host_func_id";
-    std::cerr << "[DEBUG] invokeHostFunction arg[" << (arg_count - 1 - i) << "]: " << typeInfo << std::endl;
   }
 
   return it->second(args);
@@ -1441,7 +1440,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     // Capture frame data by value - do NOT keep references!
     const auto *function = frame_arena_[active_frame_idx].function;
     uint32_t ip = frame_arena_[active_frame_idx].ip;
-    uint32_t previous_ip = ip;
+    size_t entry_frame_count = frame_count_;
 
     if (ip >= function->instructions.size()) {
       stack.push(nullptr);
@@ -1450,6 +1449,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     }
 
     const auto &instruction = function->instructions[ip];
+
 
     if (debug_mode) {
       std::cout << "IP: " << ip
@@ -1497,10 +1497,12 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     processPendingCalls();
 
     // CRITICAL: Re-fetch frame AFTER executeInstruction (vector may have
-    // reallocated)
+    // reallocated). Only increment IP if the frame count didn't change
+    // (no CALL/RETURN) and the instruction didn't modify IP itself.
     if (frame_count_ > stop_frame_depth) {
       active_frame_idx = frame_count_ - 1;
-      if (frame_arena_[active_frame_idx].ip == previous_ip) {
+      if (frame_count_ == entry_frame_count &&
+          frame_arena_[active_frame_idx].ip == ip) {
         frame_arena_[active_frame_idx].ip++;
       }
     }
@@ -1598,7 +1600,6 @@ Value VM::call(const Value &callee_value,
   else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
   else if (callee_value.isObjectId()) typeInfo = "object_id";
   else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-  std::cerr << "[DEBUG] VM::call received: " << typeInfo << std::endl;
 
   const size_t base_depth = frame_count_;
   doCall(callee_value, args, false);
@@ -1616,9 +1617,7 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args,
                 bool advance_caller_ip) {
-  // Debug: enter doCall
-  std::cerr << "[DEBUG] doCall: entered" << std::endl;
-  
+
   // Handle host function call directly
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
@@ -1650,7 +1649,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
-  uint32_t chunk_index = 0;  // NEW: track chunk index for closure calls
   if (callee_value.isFunctionObjId()) {
     function_index = callee_value.asFunctionObjId();
   } else if (callee_value.isClosureId()) {
@@ -1661,7 +1659,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
-    chunk_index = closure->chunk_index;  // NEW: get chunk index from closure
   } else {
     // Debug: identify what type the value actually is
     std::string typeInfo = "unknown";
@@ -1679,19 +1676,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ")");
   }
 
-  // NEW: Use closure's chunk index if current_chunk is null (e.g., when called from host function)
-  const Chunk *chunk_to_use = current_chunk;
-  if (!chunk_to_use && closure_id != 0) {
-    // Find the chunk from the closure's chunk_index
-    if (chunk_index < loaded_chunks_.size()) {
-      chunk_to_use = loaded_chunks_[chunk_index].get();
-    }
-  }
-  if (!chunk_to_use) {
+  if (!current_chunk) {
     COMPILER_THROW("No chunk available for function call");
   }
   
-  const auto *callee = chunk_to_use->getFunction(function_index);
+  const auto *callee = current_chunk->getFunction(function_index);
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
                              std::to_string(function_index));
@@ -1770,7 +1759,6 @@ void VM::doTailCall(Value callee_value,
 
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
-  uint32_t chunk_index = 0;  // NEW: track chunk index for closure calls
   if (callee_value.isFunctionObjId()) {
     function_index = callee_value.asFunctionObjId();
   } else if (callee_value.isClosureId()) {
@@ -1781,23 +1769,15 @@ void VM::doTailCall(Value callee_value,
                                std::to_string(closure_id));
     }
     function_index = closure->function_index;
-    chunk_index = closure->chunk_index;  // NEW: get chunk index from closure
   } else {
     COMPILER_THROW("TAIL_CALL expects function or closure as callee");
   }
 
-  // NEW: Use closure's chunk index if current_chunk is null
-  const Chunk *chunk_to_use = current_chunk;
-  if (!chunk_to_use && closure_id != 0) {
-    if (chunk_index < loaded_chunks_.size()) {
-      chunk_to_use = loaded_chunks_[chunk_index].get();
-    }
-  }
-  if (!chunk_to_use) {
+  if (!current_chunk) {
     COMPILER_THROW("No chunk available for tail call");
   }
 
-  const auto *callee = chunk_to_use->getFunction(function_index);
+  const auto *callee = current_chunk->getFunction(function_index);
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
                              std::to_string(function_index));
@@ -2185,6 +2165,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
 
+
     // First check host function globals
     auto hostIt = host_function_globals_.find(name);
     if (hostIt != host_function_globals_.end()) {
@@ -2211,7 +2192,6 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     // Get the string from the function's string table
     uint32_t strIndex = instruction.operands[0].asStringValId();
-    const auto* func = currentFrame().function;
     std::string name;
     if (current_chunk) {
       name = current_chunk->getString(strIndex);
@@ -2219,6 +2199,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     Value value = popStack();
+
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
@@ -2430,7 +2411,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
     else if (callee_value.isObjectId()) typeInfo = "object_id";
     else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-    std::cerr << "[DEBUG] CALL: callee is " << typeInfo << std::endl;
+    
     
     // Debug: check argument types
     for (uint32_t i = 0; i < arg_count; ++i) {
@@ -2441,7 +2422,6 @@ void VM::executeInstruction(const Instruction &instruction) {
       else if (args[i].isFunctionObjId()) argType = "function_obj_id";
       else if (args[i].isObjectId()) argType = "object_id";
       else if (args[i].isHostFuncId()) argType = "host_func_id";
-      std::cerr << "[DEBUG] CALL: arg[" << i << "] is " << argType << std::endl;
     }
 
     // Handle bound method objects (from array prototype lookup)
@@ -2502,22 +2482,6 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     uint32_t arg_count = instruction.operands[1].asInt();
     
-    // Debug: check what we're about to call
-    std::cerr << "[DEBUG] CALL_HOST: calling " << function_name << " with arg_count=" << arg_count << std::endl;
-    // Debug: check stack top types before call
-    std::vector<Value> stack_copy = stack;
-    for (uint32_t i = 0; i < arg_count && i < stack_copy.size(); ++i) {
-      Value v = stack_copy[stack_copy.size() - 1 - i];
-      std::string typeInfo = "unknown";
-      if (v.isNull()) typeInfo = "null";
-      else if (v.isInt()) typeInfo = "int";
-      else if (v.isClosureId()) typeInfo = "closure_id";
-      else if (v.isFunctionObjId()) typeInfo = "function_obj_id";
-      else if (v.isObjectId()) typeInfo = "object_id";
-      else if (v.isHostFuncId()) typeInfo = "host_func_id";
-      std::cerr << "[DEBUG] CALL_HOST: stack arg[" << i << "] is " << typeInfo << std::endl;
-    }
-    
     pushStack(invokeHostFunction(function_name, arg_count));
     break;
   }
@@ -2574,7 +2538,6 @@ void VM::executeInstruction(const Instruction &instruction) {
       else if (ret.isClosureId()) typeInfo = "closure_id";
       else if (ret.isFunctionObjId()) typeInfo = "function_obj_id";
       else if (ret.isObjectId()) typeInfo = "object_id";
-      std::cerr << "[DEBUG] RETURN: stack top is " << typeInfo << std::endl;
     }
     this->doReturn();
     break;
@@ -2628,7 +2591,6 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     RuntimeClosure closure;
     closure.function_index = function_index;
-    closure.chunk_index = current_chunk_index;  // NEW: capture chunk index
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
       if (descriptor.captures_local) {
@@ -2663,10 +2625,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     pushStack(Value::makeClosureId(heap_.allocateClosure(
         GCHeap::RuntimeClosure{.function_index = closure.function_index,
-                               .chunk_index = closure.chunk_index,  // NEW: pass chunk index
                                .upvalues = std::move(closure.upvalues)}).id));
-    std::cerr << "[DEBUG] CLOSURE created, stack top isClosureId: " 
-              << stack.top().isClosureId() << ", isObjectId: " << stack.top().isObjectId() << std::endl;
     // Disable GC to test if it's causing corruption
     // maybeCollectGarbage();
     break;
@@ -3879,6 +3838,7 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
     size_t active_frame_idx = frame_count_ - 1;
     const auto *function = frame_arena_[active_frame_idx].function;
     uint32_t ip = frame_arena_[active_frame_idx].ip;
+    size_t entry_frame_count = frame_count_;
 
     const auto &instruction = function->instructions[ip];
 
@@ -3932,7 +3892,8 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
 
     if (frame_count_ > stop_frame_depth) {
       active_frame_idx = frame_count_ - 1;
-      if (frame_arena_[active_frame_idx].ip == ip) {
+      if (frame_count_ == entry_frame_count &&
+          frame_arena_[active_frame_idx].ip == ip) {
         frame_arena_[active_frame_idx].ip++;
       }
     }

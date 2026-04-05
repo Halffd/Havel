@@ -1596,8 +1596,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                top_level_function_indices_by_name_[binding->name])));
       break;
     case ResolvedBindingKind::HostFunction:
-      // Host function - TODO: register and use makeHostFuncId
-      emit(OpCode::LOAD_CONST, Value::makeNull());
+      // Host function - load as global, runtime will dispatch
+      {
+        uint32_t strId = addStringConstant(binding->name);
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+      }
       break;
     case ResolvedBindingKind::Global:
       // Global variable - runtime will decide
@@ -2416,6 +2419,9 @@ void ByteCompiler::compileCallExpression(
     const auto &callee_id =
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
+    // Check if this is a known host function (even if resolver didn't mark it as such)
+    bool isHostFunc = (binding && binding->kind == ResolvedBindingKind::HostFunction) ||
+                      host_global_names_.count(callee_id.symbol) > 0;
     if (binding && binding->kind == ResolvedBindingKind::Global &&
         top_level_struct_names_.find(callee_id.symbol) !=
             top_level_struct_names_.end()) {
@@ -2437,7 +2443,7 @@ void ByteCompiler::compileCallExpression(
       return;
     }
     // Check if calling a host function
-    if (binding && binding->kind == ResolvedBindingKind::HostFunction) {
+    if (isHostFunc) {
       for (const auto &arg : expression.args) {
         if (!arg) {
           COMPILER_THROW("Call expression contains null argument");
@@ -2509,6 +2515,34 @@ void ByteCompiler::compileCallExpression(
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
     if (!binding) {
+      // Check if this is a known host global (e.g., print, sleep)
+      if (host_global_names_.count(callee_id.symbol) > 0) {
+        // Compile as host function call
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            COMPILER_THROW("Call expression contains null argument");
+          }
+          compileExpression(*arg);
+        }
+        uint32_t totalArgs = arg_count;
+        if (hasKwargs) {
+          emit(OpCode::OBJECT_NEW);
+          for (const auto &kwarg : expression.kwargs) {
+            emit(OpCode::DUP);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            compileExpression(*kwarg.value);
+            emit(OpCode::OBJECT_SET);
+          }
+          totalArgs++;
+        }
+        {
+          uint32_t strId = addStringConstant(callee_id.symbol);
+          emit(OpCode::CALL_HOST, std::vector<Value>{
+              Value::makeStringValId(strId),
+              Value(totalArgs)});
+        }
+        return;
+      }
       COMPILER_THROW("Missing lexical binding for callee: " +
                                callee_id.symbol);
     }

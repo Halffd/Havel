@@ -152,7 +152,7 @@ RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const Value& value) {
   if (value.isBool()) return Type::Boolean;
   if (value.isInt()) return Type::Integer;
   if (value.isDouble()) return Type::Float;
-  if (value.isStringValId()) return Type::String;
+  if (value.isStringValId() || value.isStringId()) return Type::String;
   if (value.isArrayId()) return Type::Array;
   if (value.isObjectId()) return Type::Object;
   if (value.isFunctionObjId()) return Type::Function;

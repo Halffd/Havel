@@ -241,9 +241,10 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
         }
         return Value::makeNull();
       }
-      if (obj.isObjectId() && key.isStringValId()) {
+      if (obj.isObjectId()) {
         auto objRef = havel::compiler::ObjectRef{obj.asObjectId(), true};
-        return vm_ptr->getHostObjectField(objRef, "<string:" + std::to_string(key.asStringValId()) + ">");
+        std::string keyStr = vm_ptr->resolveStringKey(key);
+        return vm_ptr->getHostObjectField(objRef, keyStr);
       }
       return Value::makeNull();
     };

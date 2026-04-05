@@ -8,6 +8,7 @@
  * - Default: FULL ACCESS (no friction for normal users)
  */
 #include "HostBridge.hpp"
+#include <iostream>
 #include "../../../host/module/ModularHostBridges.hpp"
 #include "../../../modules/window/WindowMonitorModule.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
@@ -28,7 +29,7 @@ static std::string getTypeName(const Value &value) {
     return "int";
   if (value.isDouble())
     return "float";
-  if (value.isStringValId())
+  if (value.isStringValId() || value.isStringId())
     return "string";
   if (value.isArrayId())
     return "array";
@@ -260,6 +261,36 @@ void HostBridge::install() {
         }
         return Value::makeNull();
       };
+
+  // Global print() function - resolves strings and outputs
+  options_.host_functions["print"] =
+      [this](const std::vector<Value> &args) {
+        if (!ctx_ || !ctx_->vm) {
+          for (const auto &arg : args) {
+            std::cout << arg.toString();
+          }
+          std::cout << std::flush;
+          return Value::makeNull();
+        }
+        for (const auto &arg : args) {
+          std::string s = ctx_->vm->resolveStringKey(arg);
+          std::cout << s;
+        }
+        std::cout << std::flush;
+        return Value::makeNull();
+      };
+
+  // Global println() function - like print but adds newline
+  options_.host_functions["println"] =
+      [this](const std::vector<Value> &args) {
+        for (const auto &arg : args) {
+          std::string s = ctx_->vm->resolveStringKey(arg);
+          std::cout << s;
+        }
+        std::cout << std::endl;
+        return Value::makeNull();
+      };
+
   registerAnyMethod("has");
   registerAnyMethod("find");
   registerAnyMethod("trim");
@@ -861,6 +892,23 @@ void HostBridge::install() {
             s.compare(s.size() - suf.size(), suf.size(), suf) == 0);
       };
 
+  // String print - just output the string value
+  options_.host_functions["string.print"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        std::string s = ctx_->vm->resolveStringKey(args[0]);
+        std::cout << s << std::flush;
+        return Value::makeNull();
+      };
+
+  // Object print - output object representation
+  options_.host_functions["object.print"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        std::cout << args[0].toString() << std::flush;
+        return Value::makeNull();
+      };
+
   // Struct field access
   // TODO: Implement field name to index lookup in VM
   // For now, these are disabled since getStructField/setStructField expect
@@ -920,18 +968,7 @@ void HostBridge::install() {
       [this](const std::vector<Value> &args) {
         if (args.size() < 2 || !args[0].isObjectId())
           return Value::makeNull();
-        // Resolve the key - could be StringValId or actual string
-        std::string key;
-        if (args[1].isStringValId()) {
-          auto *chunk = ctx_->vm->getCurrentChunk();
-          if (chunk) {
-            key = chunk->getString(args[1].asStringValId());
-          } else {
-            key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
-          }
-        } else {
-          key = args[1].toString();
-        }
+        std::string key = ctx_->vm->resolveStringKey(args[1]);
         auto result = ctx_->vm->getHostObjectField(ObjectRef{args[0].asObjectId(), true}, key);
         return result;
       };
@@ -939,18 +976,7 @@ void HostBridge::install() {
       [this](const std::vector<Value> &args) {
         if (args.size() < 3 || !args[0].isObjectId())
           return Value::makeNull();
-        // Resolve the key - could be StringValId or actual string
-        std::string key;
-        if (args[1].isStringValId()) {
-          auto *chunk = ctx_->vm->getCurrentChunk();
-          if (chunk) {
-            key = chunk->getString(args[1].asStringValId());
-          } else {
-            key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
-          }
-        } else {
-          key = args[1].toString();
-        }
+        std::string key = ctx_->vm->resolveStringKey(args[1]);
         ctx_->vm->setHostObjectField(ObjectRef{args[0].asObjectId(), true},
                                      key, args[2]);
         return args[2];

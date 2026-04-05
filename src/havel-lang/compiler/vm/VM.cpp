@@ -192,26 +192,15 @@ std::optional<int64_t> indexFromValue(const Value &value) {
   return std::nullopt;
 }
 
-std::optional<std::string> keyFromValue(const Value &value) {
-  if (value.isStringValId()) {
-    // TODO: string pool lookup - for now return placeholder
-    return "<string:" + std::to_string(value.asStringValId()) + ">";
+std::optional<std::string> keyFromValue(const Value &value, const GCHeap *heap = nullptr, const BytecodeChunk *chunk = nullptr) {
+  if (value.isStringId()) {
+    if (heap) {
+      if (auto *s = heap->string(value.asStringId())) {
+        return *s;
+      }
+    }
+    return "<string:" + std::to_string(value.asStringId()) + ">";
   }
-  if (value.isInt()) {
-    return std::to_string(value.asInt());
-  }
-  if (value.isDouble()) {
-    std::ostringstream out;
-    out << value.asDouble();
-    return out.str();
-  }
-  if (value.isBool()) {
-    return value.asBool() ? "true" : "false";
-  }
-  return std::nullopt;
-}
-
-std::optional<std::string> keyFromValueWithChunk(const Value &value, const BytecodeChunk *chunk) {
   if (value.isStringValId()) {
     if (chunk) {
       return chunk->getString(value.asStringValId());
@@ -424,6 +413,12 @@ ObjectRef VM::createHostObject() {
 
 ArrayRef VM::createHostArray() {
   ArrayRef ref = heap_.allocateArray();
+  maybeCollectGarbage();
+  return ref;
+}
+
+StringRef VM::createRuntimeString(std::string value) {
+  StringRef ref = heap_.allocateString(std::move(value));
   maybeCollectGarbage();
   return ref;
 }
@@ -828,16 +823,12 @@ void VM::registerDefaultHostFunctions() {
       auto *kwargsObj = heap_.object(args.back().asObjectId());
       if (kwargsObj) {
         auto itEnd = kwargsObj->find("end");
-        if (itEnd != kwargsObj->end() &&
-            itEnd->second.isStringValId()) {
-          // TODO: string pool lookup
-          end = "<string:" + std::to_string(itEnd->second.asStringValId()) + ">";
+        if (itEnd != kwargsObj->end()) {
+          end = resolveStringKey(itEnd->second);
         }
         auto itDelim = kwargsObj->find("delim");
-        if (itDelim != kwargsObj->end() &&
-            itDelim->second.isStringValId()) {
-          // TODO: string pool lookup
-          delim = "<string:" + std::to_string(itDelim->second.asStringValId()) + ">";
+        if (itDelim != kwargsObj->end()) {
+          delim = resolveStringKey(itDelim->second);
         }
         argCount--; // Don't count kwargs as a value to print
       }
@@ -848,8 +839,8 @@ void VM::registerDefaultHostFunctions() {
       if (i > 0) {
         std::cout << delim;
       }
-      // Use heap-aware toString for proper array/object formatting
-      std::cout << toString(args[i]);
+      // Resolve string values properly
+      std::cout << resolveStringKey(args[i]);
     }
     std::cout << end;
     return Value::makeNull();
@@ -1319,6 +1310,7 @@ Value VM::invokeHostFunction(const std::string &name,
   if (it == host_functions.end()) {
     COMPILER_THROW("Host function not found: " + name);
   }
+
 
   std::vector<Value> args(arg_count);
   for (uint32_t i = 0; i < arg_count; ++i) {
@@ -2112,27 +2104,69 @@ void VM::execBinaryOp(const Instruction &instruction) {
     return;
   }
 
-  if (left.isStringValId() && right.isStringValId()) {
-    const std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
-    const std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
+  // Handle string operations (StringValId = compile-time constant, StringId = runtime string)
+  if (left.isStringValId() || left.isStringId() || right.isStringValId() || right.isStringId()) {
+    // Resolve left operand to actual string
+    std::string l;
+    if (left.isStringValId()) {
+      // Try to resolve from current chunk's string table
+      if (current_chunk) {
+        l = current_chunk->getString(left.asStringValId());
+      } else {
+        l = "<string:" + std::to_string(left.asStringValId()) + ">";
+      }
+    } else if (left.isStringId()) {
+      if (auto *s = heap_.string(left.asStringId())) {
+        l = *s;
+      } else {
+        l = "<string:" + std::to_string(left.asStringId()) + ">";
+      }
+    } else if (left.isInt()) {
+      l = std::to_string(left.asInt());
+    } else if (left.isDouble()) {
+      l = std::to_string(left.asDouble());
+    } else if (left.isBool()) {
+      l = left.asBool() ? "true" : "false";
+    } else {
+      l = left.toString();
+    }
+
+    // Resolve right operand to actual string
+    std::string r;
+    if (right.isStringValId()) {
+      if (current_chunk) {
+        r = current_chunk->getString(right.asStringValId());
+      } else {
+        r = "<string:" + std::to_string(right.asStringValId()) + ">";
+      }
+    } else if (right.isStringId()) {
+      if (auto *s = heap_.string(right.asStringId())) {
+        r = *s;
+      } else {
+        r = "<string:" + std::to_string(right.asStringId()) + ">";
+      }
+    } else if (right.isInt()) {
+      r = std::to_string(right.asInt());
+    } else if (right.isDouble()) {
+      r = std::to_string(right.asDouble());
+    } else if (right.isBool()) {
+      r = right.asBool() ? "true" : "false";
+    } else {
+      r = right.toString();
+    }
+
     switch (instruction.opcode) {
-    case OpCode::ADD:  pushStack(Value::makeNull()); break;
+    case OpCode::ADD: {
+      std::string result = l + r;
+      auto strRef = heap_.allocateString(std::move(result));
+      pushStack(Value::makeStringId(strRef.id));
+      break;
+    }
     case OpCode::EQ:   pushStack(l == r); break;
     case OpCode::NEQ:  pushStack(l != r); break;
     default: COMPILER_THROW("Invalid string operation");
     }
     return;
-  }
-
-  if (instruction.opcode == OpCode::ADD) {
-    if (left.isStringValId()) {
-      pushStack(Value::makeNull());
-      return;
-    }
-    if (right.isStringValId()) {
-      pushStack(Value::makeNull());
-      return;
-    }
   }
 
   COMPILER_THROW("Type mismatch in binary operation");
@@ -2525,7 +2559,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     uint32_t arg_count = instruction.operands[1].asInt();
     
-    pushStack(invokeHostFunction(function_name, arg_count));
+    auto result = invokeHostFunction(function_name, arg_count);
+    pushStack(result);
     break;
   }
 
@@ -2874,7 +2909,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     if (container.isSetId()) {
-      auto key = keyFromValue(index_or_key);
+      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW(
             "SET membership expects string/number/bool key");
@@ -2888,7 +2923,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     if (container.isObjectId()) {
-      auto key = keyFromValue(index_or_key);
+      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW("OBJECT index expects string/number/bool key");
       }
@@ -2935,7 +2970,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     if (container.isSetId()) {
-      auto key = keyFromValue(index_or_key);
+      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW(
             "SET assignment expects string/number/bool key");
@@ -2964,7 +2999,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     if (container.isObjectId()) {
-      auto key = keyFromValue(index_or_key);
+      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW("OBJECT index assignment expects valid key");
       }
@@ -2999,7 +3034,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Handle arrays - look up prototype methods
     if (object.isArrayId()) {
-      auto key = keyFromValue(key_value);
+      auto key = keyFromValue(key_value, &heap_, current_chunk);
       if (key) {
         auto method = getPrototypeMethod(object, *key);
         if (method) {
@@ -3049,7 +3084,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     }
 
-    auto key = keyFromValue(key_value);
+    auto key = keyFromValue(key_value, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
@@ -3078,7 +3113,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_SET expects object container");
     }
-    auto keyStr = keyFromValue(key);
+    auto keyStr = keyFromValue(key, &heap_, current_chunk);
     if (!keyStr) {
       COMPILER_THROW("OBJECT_SET expects string/number/bool key");
     }
@@ -3175,7 +3210,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_HAS expects object");
     }
-    auto key = keyFromValue(keyValue);
+    auto key = keyFromValue(keyValue, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("OBJECT_HAS expects string/number/bool key");
     }
@@ -3194,7 +3229,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_DELETE expects object");
     }
-    auto key = keyFromValue(keyValue);
+    auto key = keyFromValue(keyValue, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("OBJECT_DELETE expects string/number/bool key");
     }
@@ -4420,6 +4455,29 @@ VM::getGlobalThreadSafe(const std::string &name) const {
     return std::nullopt;
   }
   return it->second;
+}
+
+std::string VM::resolveStringKey(const Value &value) const {
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      return *s;
+    }
+    return "<string:" + std::to_string(value.asStringId()) + ">";
+  }
+  if (value.isStringValId()) {
+    if (current_chunk) {
+      return current_chunk->getString(value.asStringValId());
+    }
+    return "<string:" + std::to_string(value.asStringValId()) + ">";
+  }
+  if (value.isInt()) return std::to_string(value.asInt());
+  if (value.isDouble()) {
+    std::ostringstream out;
+    out << value.asDouble();
+    return out.str();
+  }
+  if (value.isBool()) return value.asBool() ? "true" : "false";
+  return value.toString();
 }
 
 } // namespace havel::compiler

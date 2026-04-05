@@ -156,6 +156,11 @@ public:
 
   ClosureRef allocateClosure(RuntimeClosure closure);
 
+  // Runtime string
+  StringRef allocateString(std::string value);
+  std::string *string(uint32_t id);
+  const std::string *string(uint32_t id) const;
+
   // Upvalue operations
   std::shared_ptr<UpvalueCell> createUpvalue(uint32_t index);
 
@@ -254,6 +259,7 @@ private:
                      &open_local_reader) const;
 
   std::unordered_map<uint32_t, RuntimeClosure> closures_;
+  std::unordered_map<uint32_t, std::string> strings_; // Heap-allocated runtime strings
   std::unordered_map<uint32_t, std::vector<Value>> arrays_;
   std::unordered_map<uint32_t, ObjectEntry> objects_;
   std::unordered_map<uint32_t, std::unordered_map<std::string, Value>>
@@ -274,6 +280,7 @@ private:
   std::vector<EnumType> enumTypes_;
 
   uint32_t next_closure_id_ = 1;
+  uint32_t next_string_id_ = 1;
   uint32_t next_array_id_ = 1;
   uint32_t next_object_id_ = 1;
   uint32_t next_set_id_ = 1;

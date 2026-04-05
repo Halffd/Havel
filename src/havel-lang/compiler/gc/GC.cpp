@@ -30,6 +30,22 @@ ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
   return ClosureRef{.id = id};
 }
 
+StringRef GCHeap::allocateString(std::string value) {
+  const uint32_t id = next_string_id_++;
+  strings_.emplace(id, std::move(value));
+  return StringRef{.id = id};
+}
+
+std::string *GCHeap::string(uint32_t id) {
+  auto it = strings_.find(id);
+  return it == strings_.end() ? nullptr : &it->second;
+}
+
+const std::string *GCHeap::string(uint32_t id) const {
+  auto it = strings_.find(id);
+  return it == strings_.end() ? nullptr : &it->second;
+}
+
 ArrayRef GCHeap::allocateArray() {
   const uint32_t id = next_array_id_++;
   arrays_[id] = {};

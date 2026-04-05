@@ -226,6 +226,10 @@ private:
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:
+  // Direct invocation (bypasses stack, takes args as vector)
+  Value invokeHostFunctionDirect(const std::string &name,
+                                  const std::vector<Value> &args);
+
   VM();
   VM(const class havel::HostContext &ctx);
   ~VM() override;

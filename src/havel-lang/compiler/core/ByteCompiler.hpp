@@ -95,6 +95,7 @@ private:
   void compileUseStatement(const ast::UseStatement &statement);
   void compileExportStatement(const ast::ExportStatement &statement);
   void compileExpression(const ast::Expression &expression);
+  void compilePattern(const ast::Expression &pattern, uint32_t discSlot);
   void compileHotkeyBinding(const ast::HotkeyBinding &binding);
   void compileWhenBlock(const ast::WhenBlock &whenBlock);
   void compileInputStatement(const ast::InputStatement &statement);

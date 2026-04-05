@@ -1249,6 +1249,93 @@ void ByteCompiler::compileExportStatement(
   }
 }
 
+// Compile a match pattern, emitting code that leaves a boolean on the stack
+// indicating whether the pattern matches the value currently on top of stack.
+// For simple patterns, this uses EQ. For complex patterns, it emits specialized code.
+void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discSlot) {
+  switch (pattern.kind) {
+  case ast::NodeType::OrPattern: {
+    const auto &orPat = static_cast<const ast::OrPattern &>(pattern);
+    // OrPattern: disc == alt1 || disc == alt2 || ...
+    // Load first alternative
+    compileExpression(*orPat.alternatives[0]);
+    emit(OpCode::LOAD_VAR, discSlot);
+    emit(OpCode::EQ);
+    
+    for (size_t i = 1; i < orPat.alternatives.size(); i++) {
+      compileExpression(*orPat.alternatives[i]);
+      emit(OpCode::LOAD_VAR, discSlot);
+      emit(OpCode::EQ);
+      emit(OpCode::OR);
+    }
+    break;
+  }
+  
+  case ast::NodeType::ArrayPattern: {
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+    // ArrayPattern: check length, then check each element
+    // Load array length
+    emit(OpCode::LOAD_VAR, discSlot);
+    emit(OpCode::ARRAY_LEN);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(arrPat.elements.size())));
+    emit(OpCode::EQ);
+    
+    if (!arrPat.rest) {
+      // Exact match: length must be exactly right
+      // For now, just check length - element comparison TODO
+      // TODO: add element comparison
+    } else {
+      // Rest pattern: length must be >= element count
+      // Pop the EQ result and do >= comparison
+      emit(OpCode::POP); // pop the == result
+      emit(OpCode::LOAD_VAR, discSlot);
+      emit(OpCode::ARRAY_LEN);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(arrPat.elements.size())));
+      emit(OpCode::GTE);
+    }
+    break;
+  }
+  
+  case ast::NodeType::ObjectPattern: {
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+    // ObjectPattern: check each field matches
+    // Start with true
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+    
+    for (const auto &prop : objPat.properties) {
+      // Get field value
+      emit(OpCode::LOAD_VAR, discSlot);
+      { uint32_t strId = addStringConstant(prop.first); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId))); };
+      emit(OpCode::OBJECT_GET);
+      
+      // Compare with expected pattern
+      if (prop.second) {
+        if (prop.second->kind == ast::NodeType::Identifier) {
+          // Identifier pattern - always matches, just checks existence
+          emit(OpCode::IS_NULL);
+          emit(OpCode::NOT);
+          emit(OpCode::AND);
+        } else {
+          // Nested pattern - compare
+          compileExpression(*prop.second);
+          emit(OpCode::EQ);
+          emit(OpCode::AND);
+        }
+      }
+    }
+    break;
+  }
+  
+  default: {
+    // Simple pattern (literal, identifier): use EQ comparison
+    compileExpression(pattern);
+    emit(OpCode::LOAD_VAR, discSlot);
+    emit(OpCode::EQ);
+    break;
+  }
+  }
+}
+
 void ByteCompiler::compileExpression(const ast::Expression &expression) {
   auto source_scope = atNode(expression);
   switch (expression.kind) {
@@ -1501,13 +1588,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           // Load current match status first
           emit(OpCode::LOAD_VAR, matchSlot);
           
-          // Then load discriminant and compile pattern for comparison
-          emit(OpCode::LOAD_VAR, discriminantSlots[i]);
-          compileExpression(*patterns[i]);
-          emit(OpCode::EQ);
+          // Compile pattern match for this discriminant
+          compilePattern(*patterns[i], discriminantSlots[i]);
           
           // AND the match status with the comparison result
-          // Stack: [match_status, eq_result] -> [result]
+          // Stack: [match_status, match_result] -> [result]
           emit(OpCode::AND);
           emit(OpCode::STORE_VAR, matchSlot);
         }
@@ -2399,6 +2484,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
               static_cast<uint32_t>(current_function->instructions.size()));
     break;
   }
+
+  // Pattern types - should be compiled via compilePattern, not directly
+  case ast::NodeType::OrPattern:
+  case ast::NodeType::ArrayPattern:
+  case ast::NodeType::ObjectPattern:
+  case ast::NodeType::SpreadPattern:
+    COMPILER_THROW("Pattern type used outside of match context: " +
+                             expression.toString());
 
   default:
     COMPILER_THROW("Unsupported expression in bytecode compiler: " +
@@ -3310,6 +3403,36 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
+  
+  // Pattern types
+  case ast::NodeType::OrPattern: {
+    const auto &orPat = static_cast<const ast::OrPattern &>(expression);
+    for (const auto &alt : orPat.alternatives) {
+      if (alt) collectLambdaExpressions(*alt, out);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayPattern: {
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(expression);
+    for (const auto &elem : arrPat.elements) {
+      if (elem) collectLambdaExpressions(*elem, out);
+    }
+    if (arrPat.rest) collectLambdaExpressions(*arrPat.rest, out);
+    break;
+  }
+  case ast::NodeType::ObjectPattern: {
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(expression);
+    for (const auto &prop : objPat.properties) {
+      if (prop.second) collectLambdaExpressions(*prop.second, out);
+    }
+    break;
+  }
+  case ast::NodeType::SpreadPattern: {
+    const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
+    if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
+    break;
+  }
+  
   default:
     break;
   }

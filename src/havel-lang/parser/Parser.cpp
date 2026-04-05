@@ -4530,19 +4530,17 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
       break;
     }
 
-    // Parse comma-separated patterns
+    // Parse comma-separated patterns using the new pattern parser
     std::vector<std::unique_ptr<havel::ast::Expression>> patterns;
     std::unique_ptr<havel::ast::Expression> guard;
     bool isDefault = true;
 
     // Parse first pattern
-    if (at().type == havel::TokenType::Underscore) {
-      advance(); // consume '_'
-      patterns.push_back(nullptr); // wildcard placeholder
-    } else {
+    auto firstPat = parsePattern();
+    if (firstPat) {
       isDefault = false;
-      patterns.push_back(parseBinaryExpression());
     }
+    patterns.push_back(std::move(firstPat));
 
     // Parse additional patterns separated by commas
     while (at().type == havel::TokenType::Comma) {
@@ -4551,14 +4549,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
         break; // Guard follows, stop consuming patterns
       }
       advance(); // consume ','
-      // Check for underscore in multi-pattern (acts as wildcard for that position)
-      if (at().type == havel::TokenType::Underscore) {
-        advance(); // consume '_'
-        patterns.push_back(nullptr); // wildcard placeholder
-      } else {
+      auto pat = parsePattern();
+      if (pat) {
         isDefault = false;
-        patterns.push_back(parseBinaryExpression());
       }
+      patterns.push_back(std::move(pat));
     }
 
     // Check for optional guard condition: pattern if guard => result
@@ -6233,6 +6228,177 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
   }
   advance(); // consume '}'
 
+  return std::make_unique<havel::ast::ObjectPattern>(std::move(properties));
+}
+
+// Parse a match pattern: literal | identifier | _ | { ... } | [ ... ] | pat | pat
+std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
+  // Or patterns: try to parse first alternative, then check for |
+  std::vector<std::unique_ptr<havel::ast::Expression>> alternatives;
+  
+  auto first = parsePatternAtom();
+  if (!first) return nullptr;
+  alternatives.push_back(std::move(first));
+  
+  while (at().type == havel::TokenType::Pipe) {
+    advance(); // consume '|'
+    auto next = parsePatternAtom();
+    if (!next) {
+      failAt(at(), "Expected pattern after '|'");
+      return nullptr;
+    }
+    alternatives.push_back(std::move(next));
+  }
+  
+  if (alternatives.size() == 1) {
+    return std::move(alternatives[0]);
+  }
+  return std::make_unique<havel::ast::OrPattern>(std::move(alternatives));
+}
+
+// Parse a single pattern atom (no | handling)
+std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
+  // Wildcard
+  if (at().type == havel::TokenType::Underscore) {
+    advance();
+    return nullptr; // null represents wildcard
+  }
+  
+  // Array pattern
+  if (at().type == havel::TokenType::OpenBracket) {
+    return parseArrayPatternForMatch();
+  }
+  
+  // Object pattern
+  if (at().type == havel::TokenType::OpenBrace) {
+    return parseObjectPatternForMatch();
+  }
+  
+  // Boolean literals
+  if (at().type == havel::TokenType::True) {
+    advance();
+    return std::make_unique<havel::ast::BooleanLiteral>(true);
+  }
+  if (at().type == havel::TokenType::False) {
+    advance();
+    return std::make_unique<havel::ast::BooleanLiteral>(false);
+  }
+  
+  // Null literal
+  if (at().type == havel::TokenType::Null) {
+    advance();
+    return std::make_unique<havel::ast::NullLiteral>();
+  }
+  
+  // Number literal
+  if (at().type == havel::TokenType::Number) {
+    auto tok = advance();
+    try {
+      if (tok.value.find('.') != std::string::npos || 
+          tok.value.find('e') != std::string::npos ||
+          tok.value.find('E') != std::string::npos) {
+        return std::make_unique<havel::ast::NumberLiteral>(std::stod(tok.value));
+      }
+      return std::make_unique<havel::ast::NumberLiteral>(
+          static_cast<double>(std::stoll(tok.value)));
+    } catch (...) {
+      failAt(tok, "Invalid number literal");
+      return nullptr;
+    }
+  }
+  
+  // String literal
+  if (at().type == havel::TokenType::String) {
+    auto tok = advance();
+    return std::make_unique<havel::ast::StringLiteral>(tok.value);
+  }
+  
+  // Identifier (variable binding or reference)
+  if (at().type == havel::TokenType::Identifier) {
+    return makeIdentifier(advance());
+  }
+  
+  failAt(at(), "Expected pattern");
+  return nullptr;
+}
+
+// Parse array pattern for match (supports [x, y], [x, ..rest])
+std::unique_ptr<havel::ast::Expression> Parser::parseArrayPatternForMatch() {
+  std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+  std::unique_ptr<havel::ast::Expression> rest;
+  
+  advance(); // consume '['
+  
+  while (notEOF() && at().type != havel::TokenType::CloseBracket) {
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseBracket) break;
+    
+    // Check for spread/rest: ..rest
+    if (at().type == havel::TokenType::DotDot) {
+      advance(); // consume '..'
+      if (at().type == havel::TokenType::Identifier) {
+        rest = makeIdentifier(advance());
+      } else {
+        // Anonymous rest: ..
+        rest = std::make_unique<havel::ast::Identifier>("_");
+      }
+      break;
+    }
+    
+    elements.push_back(parsePattern());
+    
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+  }
+  
+  if (at().type != havel::TokenType::CloseBracket) {
+    failAt(at(), "Expected ']' to close array pattern");
+  }
+  advance(); // consume ']'
+  
+  return std::make_unique<havel::ast::ArrayPattern>(std::move(elements), std::move(rest));
+}
+
+// Parse object pattern for match (supports {x, y: pat})
+std::unique_ptr<havel::ast::Expression> Parser::parseObjectPatternForMatch() {
+  std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>> properties;
+  
+  advance(); // consume '{'
+  
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::CloseBrace) break;
+    
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected identifier in object pattern");
+      return nullptr;
+    }
+    std::string key = advance().value;
+    
+    std::unique_ptr<havel::ast::Expression> pattern;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      pattern = parsePattern();
+    } else {
+      // Shorthand: {x} binds x to x
+      pattern = std::make_unique<havel::ast::Identifier>(key);
+    }
+    
+    properties.push_back({key, std::move(pattern)});
+    
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::Comma) advance();
+  }
+  
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close object pattern");
+  }
+  advance(); // consume '}'
+  
   return std::make_unique<havel::ast::ObjectPattern>(std::move(properties));
 }
 

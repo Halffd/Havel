@@ -215,6 +215,31 @@ uint32_t LexicalResolver::declareLocal(const std::string &name,
   return slot;
 }
 
+// Declare local without duplicate checking (for match pattern bindings)
+uint32_t LexicalResolver::declareLocalUnchecked(const std::string &name,
+                                                const ast::Identifier *declaration,
+                                                bool is_const) {
+  auto &ctx = function_stack_.back();
+  if (ctx.scopes.empty()) {
+    beginScope();
+  }
+
+  auto &scope = ctx.scopes.back();
+  auto it = scope.find(name);
+  if (it != scope.end()) {
+    // Already declared - return existing slot
+    return it->second.slot;
+  }
+
+  uint32_t slot = ctx.next_slot++;
+  scope[name] =
+      FunctionContext::LocalSymbol{.slot = slot, .is_const = is_const};
+  if (declaration) {
+    result_.declaration_slots[declaration] = slot;
+  }
+  return slot;
+}
+
 void LexicalResolver::resolveFunctionDeclaration(
     const ast::FunctionDeclaration &function) {
   beginFunction(&function);
@@ -297,9 +322,72 @@ void LexicalResolver::collectPatternIdentifiers(
         collectPatternIdentifiers(*elem);
       }
     }
+    if (arrPat.rest) {
+      collectPatternIdentifiers(*arrPat.rest);
+    }
+    break;
+  }
+  case ast::NodeType::OrPattern: {
+    const auto &orPat = static_cast<const ast::OrPattern &>(pattern);
+    // For or patterns, collect from first alternative only
+    // (all alternatives should bind the same variables)
+    if (!orPat.alternatives.empty() && orPat.alternatives[0]) {
+      collectPatternIdentifiers(*orPat.alternatives[0]);
+    }
+    break;
+  }
+  case ast::NodeType::SpreadPattern: {
+    const auto &spreadPat = static_cast<const ast::SpreadPattern &>(pattern);
+    if (spreadPat.target) {
+      collectPatternIdentifiers(*spreadPat.target);
+    }
     break;
   }
   default:
+    break;
+  }
+}
+
+// Resolve a pattern in match context - declares identifiers as locals
+// without duplicate checking (each match arm gets its own scope logically)
+void LexicalResolver::resolvePatternWithBindings(const ast::Expression &pattern) {
+  switch (pattern.kind) {
+  case ast::NodeType::Identifier: {
+    const auto &ident = static_cast<const ast::Identifier &>(pattern);
+    // Declare as local without duplicate check for match patterns
+    declareLocalUnchecked(ident.symbol, &ident, false);
+    break;
+  }
+  case ast::NodeType::ObjectPattern: {
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+    for (const auto &prop : objPat.properties) {
+      if (prop.second) resolvePatternWithBindings(*prop.second);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayPattern: {
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+    for (const auto &elem : arrPat.elements) {
+      if (elem) resolvePatternWithBindings(*elem);
+    }
+    if (arrPat.rest) resolvePatternWithBindings(*arrPat.rest);
+    break;
+  }
+  case ast::NodeType::OrPattern: {
+    const auto &orPat = static_cast<const ast::OrPattern &>(pattern);
+    // Only resolve first alternative for binding purposes
+    if (!orPat.alternatives.empty() && orPat.alternatives[0]) {
+      resolvePatternWithBindings(*orPat.alternatives[0]);
+    }
+    break;
+  }
+  case ast::NodeType::SpreadPattern: {
+    const auto &spreadPat = static_cast<const ast::SpreadPattern &>(pattern);
+    if (spreadPat.target) resolvePatternWithBindings(*spreadPat.target);
+    break;
+  }
+  default:
+    // Literals and other non-binding patterns - nothing to resolve
     break;
   }
 }
@@ -924,9 +1012,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     }
     // Resolve each case's patterns, guard, and result expression
     for (const auto &arm : match.cases) {
+      // Resolve patterns (pattern identifiers are handled specially)
       for (const auto &pattern : arm.patterns) {
         if (pattern) {
-          resolveExpression(*pattern);
+          resolvePatternWithBindings(*pattern);
         }
       }
       if (arm.guard) {
@@ -976,6 +1065,35 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     if (unary_expr.operand) {
       resolveExpression(*unary_expr.operand);
     }
+    break;
+  }
+
+  // Pattern types - resolve nested patterns and collect bound identifiers
+  case ast::NodeType::OrPattern: {
+    const auto &orPat = static_cast<const ast::OrPattern &>(expression);
+    for (const auto &alt : orPat.alternatives) {
+      if (alt) resolveExpression(*alt);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayPattern: {
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(expression);
+    for (const auto &elem : arrPat.elements) {
+      if (elem) resolveExpression(*elem);
+    }
+    if (arrPat.rest) resolveExpression(*arrPat.rest);
+    break;
+  }
+  case ast::NodeType::ObjectPattern: {
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(expression);
+    for (const auto &prop : objPat.properties) {
+      if (prop.second) resolveExpression(*prop.second);
+    }
+    break;
+  }
+  case ast::NodeType::SpreadPattern: {
+    const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
+    if (spreadPat.target) resolveExpression(*spreadPat.target);
     break;
   }
 

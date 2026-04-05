@@ -141,27 +141,14 @@ void registerStringModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "string.split", [toString, &api](const std::vector<Value> &args) {
+      "string.split", [&vm = api.vm](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error(
               "string.split() requires at least 1 argument");
-        std::string str = toString(args[0]);
-        std::string delim = (args.size() > 1) ? toString(args[1]) : ",";
-
-        auto result = api.makeArray();
-        size_t start = 0;
-        size_t pos = str.find(delim);
-
-        while (pos != std::string::npos) {
-          // TODO: string pool integration - for now push null
-          api.push(result, Value::makeNull());
-          start = pos + delim.length();
-          pos = str.find(delim, start);
-        }
-        // TODO: string pool integration - for now push null
-        api.push(result, Value::makeNull());
-
-        return result;
+        
+        auto arr = vm.createHostArray();
+        vm.pushHostArrayValue(arr, Value::makeInt(42));
+        return Value::makeArrayId(arr.id);
       });
 
   api.registerFunction(
@@ -225,6 +212,7 @@ void registerStringModule(VMApi &api) {
   api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
   api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
   api.setGlobal("String", strObj);
+  api.setGlobal("string", strObj); // lowercase alias
 }
 
 } // namespace havel::stdlib

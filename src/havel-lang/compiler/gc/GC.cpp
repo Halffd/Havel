@@ -314,9 +314,21 @@ Value GCHeap::iteratorNext(uint32_t id) {
       done = true;
       value = Value::makeNull();
     } else {
-      // For objects, return the key as a string ID
-      // TODO: integrate with proper string pool
-      value = Value::makeNull(); // Placeholder - keys returned via OBJECT_GET
+      // For objects, return {key, value} object
+      auto key = iter->keys[iter->index];
+      auto *obj = object(iter->iterable.asObjectId());
+      Value val = Value::makeNull();
+      if (obj) {
+        auto it = obj->find(key);
+        if (it != obj->end()) {
+          val = it->second;
+        }
+      }
+      auto resultObj = allocateObject();
+      auto *result = object(resultObj.id);
+      (*result)["key"] = Value::makeNull(); // TODO: proper string storage
+      (*result)["value"] = val;
+      value = Value::makeObjectId(resultObj.id);
       iter->index++;
     }
   } else if (iter->iterable.isSetId()) {

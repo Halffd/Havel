@@ -162,7 +162,17 @@ ByteCompiler::compile(const ast::Program &program) {
     compileLambda(*lambda);
   }
 
-  enterFunction(BytecodeFunction("__main__", 0, 0), main_function_index);
+  // Compute max local slot from resolver's declaration_slots
+  uint32_t max_slot = 0;
+  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+    if (slot >= max_slot) {
+      max_slot = slot + 1;
+    }
+  }
+
+  enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
+  // Ensure next_local_index accounts for resolver-allocated slots
+  next_local_index = max_slot;
 
   for (const auto &statement : program.body) {
     if (!statement) {
@@ -1298,7 +1308,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
   
   case ast::NodeType::ObjectPattern: {
     const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
-    // ObjectPattern: check each field matches
+    // ObjectPattern: check each field matches AND bind variables
     // Start with true
     emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
     
@@ -1308,10 +1318,19 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
       { uint32_t strId = addStringConstant(prop.first); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId))); };
       emit(OpCode::OBJECT_GET);
       
-      // Compare with expected pattern
+      // Compare with expected pattern AND bind variables
       if (prop.second) {
         if (prop.second->kind == ast::NodeType::Identifier) {
-          // Identifier pattern - always matches, just checks existence
+          // Identifier pattern: check existence and bind
+          const auto &ident = static_cast<const ast::Identifier &>(*prop.second);
+          // Find slot by looking up in resolution results
+          auto binding = bindingFor(ident);
+          if (binding && binding->kind == ResolvedBindingKind::Local) {
+            // DUP the value, store to pattern slot, then check existence
+            emit(OpCode::DUP);
+            emit(OpCode::STORE_VAR, binding->slot);
+          }
+          // Check existence (non-null)
           emit(OpCode::IS_NULL);
           emit(OpCode::NOT);
           emit(OpCode::AND);
@@ -1321,6 +1340,11 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
           emit(OpCode::EQ);
           emit(OpCode::AND);
         }
+      } else {
+        // Null pattern - just check existence
+        emit(OpCode::IS_NULL);
+        emit(OpCode::NOT);
+        emit(OpCode::AND);
       }
     }
     break;

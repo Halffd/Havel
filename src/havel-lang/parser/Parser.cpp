@@ -897,7 +897,29 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     }
 
     case TokenType::DotDot: {
+      // Check if left is already a RangeExpression (e.g., 1..10..2)
+      // If so, parse the step and create a single range with step
+      if (left && left->kind == ast::NodeType::RangeExpression) {
+        auto &existingRange = static_cast<ast::RangeExpression &>(*left);
+        // If this range already has a step, it's an error or we just treat it as nested
+        // Parse the end value
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        // Treat as a new range: start..end (ignoring the previous range wrapper)
+        return std::make_unique<ast::RangeExpression>(
+            std::move(left), std::move(right));
+      }
+
+      // Check for step: a..b..step - look ahead after parsing end
       auto right = parsePrattExpression(getRightBindingPower(token.type));
+
+      // After parsing the right side, check if next token is another DotDot for step
+      if (at().type == TokenType::DotDot) {
+        advance(); // consume second ..
+        auto step = parsePrattExpression(getRightBindingPower(TokenType::DotDot));
+        return std::make_unique<ast::RangeExpression>(
+            std::move(left), std::move(right), std::move(step));
+      }
+
       return std::make_unique<ast::RangeExpression>(
           std::move(left), std::move(right));
     }

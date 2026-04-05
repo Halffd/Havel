@@ -224,14 +224,35 @@ void SystemBridge::install(PipelineOptions &options) {
   // This will be set globally by HostBridge after VM is available
   options.system_object_initializer = [](compiler::VM *vm) {
     auto systemObj = vm->createHostObject();
-    // TODO: Register host functions properly
     vm->setHostObjectField(
         systemObj, "detect",
-        Value::makeNull());
+        Value::makeHostFuncId(vm->getHostFunctionIndex("system.detect")));
     vm->setHostObjectField(
         systemObj, "hardware",
-        Value::makeNull());
+        Value::makeHostFuncId(vm->getHostFunctionIndex("system.hardware")));
     vm->setGlobal("system", Value::makeObjectId(systemObj.id));
+
+    // Create process object
+    auto processObj = vm->createHostObject();
+    vm->setHostObjectField(
+        processObj, "find",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
+    vm->setHostObjectField(
+        processObj, "exists",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
+    vm->setHostObjectField(
+        processObj, "kill",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
+    vm->setHostObjectField(
+        processObj, "nice",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
+    vm->setHostObjectField(
+        processObj, "run",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
+    vm->setHostObjectField(
+        processObj, "runDetached",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
+    vm->setGlobal("process", Value::makeObjectId(processObj.id));
   };
 
   options.host_functions["readFile"] = [ctx = ctx_](const auto &args) {
@@ -293,6 +314,42 @@ void SystemBridge::install(PipelineOptions &options) {
   };
   options.host_functions["system.hardware"] = [ctx = ctx_](const auto &args) {
     return handleSystemHardware(args, ctx);
+  };
+
+  // Create system and process objects via initializer
+  // This runs after all host functions are registered
+  options.system_object_initializer = [](compiler::VM *vm) {
+    // System object
+    auto systemObj = vm->createHostObject();
+    vm->setHostObjectField(
+        systemObj, "detect",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("system.detect")));
+    vm->setHostObjectField(
+        systemObj, "hardware",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("system.hardware")));
+    vm->setGlobal("system", Value::makeObjectId(systemObj.id));
+
+    // Process object
+    auto processObj = vm->createHostObject();
+    vm->setHostObjectField(
+        processObj, "find",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
+    vm->setHostObjectField(
+        processObj, "exists",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
+    vm->setHostObjectField(
+        processObj, "kill",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
+    vm->setHostObjectField(
+        processObj, "nice",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
+    vm->setHostObjectField(
+        processObj, "run",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
+    vm->setHostObjectField(
+        processObj, "runDetached",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
+    vm->setGlobal("process", Value::makeObjectId(processObj.id));
   };
 }
 
@@ -427,11 +484,14 @@ SystemBridge::handleProcessFind(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("process.find() requires a process name");
   }
-  const std::string *name = nullptr;
-  if (!name) {
+  std::string name;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    auto *vm = static_cast<VM *>(ctx->vm);
+    name = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+  } else {
     throw std::runtime_error("process.find() requires a string argument");
   }
-  auto pids = havel::host::ProcessService::findProcesses(*name);
+  auto pids = havel::host::ProcessService::findProcesses(name);
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm) {
     return Value::makeNull();
@@ -454,11 +514,14 @@ SystemBridge::handleProcessExists(const std::vector<Value> &args,
     int32_t pid = static_cast<int32_t>(args[0].asInt());
     return Value(havel::host::ProcessService::isProcessAlive(pid));
   }
-  const std::string *name = nullptr;
-  if (!name) {
+  std::string name;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    auto *vm = static_cast<VM *>(ctx->vm);
+    name = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+  } else {
     throw std::runtime_error("process.exists() requires a string or number");
   }
-  return Value(havel::host::ProcessService::processExists(*name));
+  return Value(havel::host::ProcessService::processExists(name));
 }
 
 Value
@@ -474,18 +537,21 @@ SystemBridge::handleProcessKill(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.kill() requires a number PID");
   }
-  const std::string *sig = nullptr;
-  if (!sig) {
+  std::string sig;
+  if (args[1].isStringValId() || args[1].isStringId()) {
+    auto *vm = static_cast<VM *>(ctx->vm);
+    sig = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+  } else {
     throw std::runtime_error("process.kill() requires a string signal");
   }
   int signal_num = 15; // Default SIGTERM
-  if (*sig == "SIGKILL" || *sig == "kill")
+  if (sig == "SIGKILL" || sig == "kill")
     signal_num = 9;
-  else if (*sig == "SIGTERM" || *sig == "term")
+  else if (sig == "SIGTERM" || sig == "term")
     signal_num = 15;
-  else if (*sig == "SIGHUP" || *sig == "hangup")
+  else if (sig == "SIGHUP" || sig == "hangup")
     signal_num = 1;
-  else if (*sig == "SIGINT" || *sig == "int")
+  else if (sig == "SIGINT" || sig == "int")
     signal_num = 2;
   return Value::makeBool(
       havel::host::ProcessService::sendSignal(pid, signal_num));

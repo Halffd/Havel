@@ -1,0 +1,16 @@
+fn classify(c) {
+    match c {
+        '0'..='9' => print("NUM")
+        'a'..='z' | 'A'..='Z' => print("IDENT")
+        '+' | '-' | '*' | '/' => print("OP")
+        _ => print("OTHER")
+    }
+}
+
+classify('h')
+classify('5')
+classify('+')
+classify('!')
+classify('A')
+classify('z')
+return 0

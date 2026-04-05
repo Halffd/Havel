@@ -318,12 +318,25 @@ Value GCHeap::iteratorNext(uint32_t id) {
       value = (*arr)[iter->index++];
     }
   } else if (iter->iterable.isStringValId()) {
-    // String iteration - return character codes as integers
-    if (iter->index >= 256) { // Placeholder: strings stored as IDs
+    // StringValId iteration - fall back to numeric range (legacy)
+    // New code should use STRING_PROMOTE to convert to StringId first
+    if (iter->index >= 256) {
       done = true;
       value = Value::makeNull();
     } else {
-      value = Value::makeInt(iter->index++); // TODO: real string iteration
+      value = Value::makeInt(iter->index++);
+    }
+  } else if (iter->iterable.isStringId()) {
+    // StringId iteration - return each character as a new StringId
+    auto *s = string(iter->iterable.asStringId());
+    if (!s || iter->index >= s->size()) {
+      done = true;
+      value = Value::makeNull();
+    } else {
+      // Allocate a new StringId for the single character
+      char c = (*s)[iter->index++];
+      auto charStrRef = allocateString(std::string(1, c));
+      value = Value::makeStringId(charStrRef.id);
     }
   } else if (iter->iterable.isObjectId()) {
     if (iter->index >= iter->keys.size()) {

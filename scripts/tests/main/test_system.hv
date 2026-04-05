@@ -3,8 +3,19 @@ print("system.detect: " + type(system.detect))
 sys = system.detect()
 print("system.detect: " + type(sys))
 print("sys: " + sys)
-[windows, mac, bsd, linux, unknownOS] = [sys.os == "Windows", sys.os == "MacOS", sys.os == "BSD", sys.os == "Linux", sys.os == "Unknown"]
-wl = false
+windows = mac = bsd = linux = unknownOS = false
+match sys.os {
+  "Windows" => windows = true,
+  "MacOS" => mac = true,
+  "BSD" => bsd = true,
+  "Linux" => linux = true,
+  "Unknown" => unknownOS = true,
+  _ => {}
+}
+wl = match sys.os {
+  "Linux" => sys.displayProtocol == "Wayland",
+  _ => false
+}
 displayName = ""
 shell = sys.shell
 user = sys.user
@@ -12,18 +23,58 @@ home = sys.home
 
 if linux {
   wl = sys.displayProtocol == "Wayland"
-  displayName = sys.display
-  print("wl: " + wl)
-  print("displayName: " + displayName)
+  displayName = sys.display ?? ":0"
+  print("wl: $wl")
+  print("displayName: $displayName")
 }
-wm = lower(sys.windowManager)
-print("wm: " + wm)
+wm = sys.windowManager.lower()
+print("wm: $wm")
 
 if wm == "unknown" {
   print("wm is unknown, checking for compiz")
-  if len(process.find("compiz")) > 0 {
+  if process.exists("compiz --replace") {
     wm = "compiz"
-    print("wm is now: " + wm)
+    print("wm is now: $wm")
   }
 }
-print("wm after check: " + wm)
+
+hypr = wm == "hyprland"
+kde = wm == "kde plasma"
+kdewl = kde && wl
+i3 = wm == "i3"
+compiz = wm == "compiz"
+cinnamon = wm == "cinnamon"
+gnome = wm == "gnome" || wm == "gnome on x11" || wm == "gnome on wayland"
+wf = wm == "wayfire"
+xfce = wm == "xfce"
+if !xfce {
+  if len(process.find("xfce4-session")) > 0 {
+    xfce = true
+  }
+}
+xfcewl = xfce && wl
+other = !any([hypr, kde, kdewl, i3, compiz, cinnamon, gnome, wf, xfce, xfcewl])
+
+hardware = system.hardware()
+print("hardware: " + hardware)
+[cpu, gpu, ram, motherboard, storage] = [hardware.cpu, hardware.gpu, hardware.ram, hardware.motherboard, hardware.storage]
+storageCount = #storage
+totalStorage = storage.reduce((acc, s) => acc + s.size, 0)
+print("storageCount: " + storageCount)
+print("totalStorage: " + totalStorage)
+print(f"OS: {sys.os} ({sys.arch})")
+print(f"Kernel: {sys.kernel}")
+print(f"Uptime: {sys.uptime} seconds")
+print(f"Shell: {shell}")
+print(f"User: {user} @ {home}")
+
+// hardware details
+print(f"CPU: {cpu.name} ({cpu.cores} cores @ {cpu.frequency} MHz)")
+print(f"RAM: {ram.total / 1024/1024/1024} GB")
+print(f"GPU: {gpu}")
+print(f"Motherboard: {motherboard}")
+
+
+print("monitors: type(window.getMonitors()): " + type(display.getMonitors))
+monitors = display.getMonitors()
+area = display.getMonitorsArea()

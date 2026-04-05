@@ -1,0 +1,85 @@
+struct Collection {
+    items, // dynamic values
+    iterator: fn
+}
+struct Point { 
+    x: int = 0, // integer
+    y : int = 0
+}
+class Deque {
+    front: int = 0
+    back: int = 0
+    data: int[]
+    fn init(data, front, back) {
+        @data = data // @ is implicit assignment to struct field
+        @front = front
+        @back = back
+    }
+    fn append(x) {
+        back = back + 1
+        data[back] = x
+    }
+    fn prepend(x) {
+        front = front - 1
+        data[front] = x
+    }
+    fn pop() {
+        let x = data[back]
+        back = back - 1
+        x
+    }
+}
+class MousePos {
+  x: num // decimal precision
+  y: num
+  device: str
+
+  fn init(x, y, device) {
+    @x = x
+    @y = y
+    @device = device
+  }
+
+  fn moveTo(x, y, speed) {
+    @x = x
+    @y = y
+    mouse.move(@x, @y, speed)
+  }
+
+  fn distance(other) {
+    let dx = x - other.x
+    let dy = y - other.y
+    math.sqrt(dx*dx + dy*dy)
+  }
+}
+// initializing
+let p = Point(10, 20)
+let m = MousePos(100.5, 200.7, "mouse1")
+let deq = Deque([1, 2, 3])
+col = Collection([1, 2, 3], fn(items){
+  print("collection iterator")
+  for item in items {
+    print("item: " + item)
+  }
+})
+it = col.items
+col.iterator(it)
+print("col length: " + #it)
+
+m.moveTo(500, 550, 1.5)
+let dist = m.distance(p)
+print("Distance: " + dist)
+print("m: " + m)
+print("m.x: " + m.x)
+print("m.y: " + m.y)
+print("p: " + p)
+print("p.x: " + p.x)
+print("p.y: " + p.y)
+print("deq.front: " + deq.front)
+deq.prepend(4)
+print("deq.front: " + deq.front)
+print("deq.back: " + deq.back)
+deq.append(5)
+print("deq.pop: " + deq.pop())
+print("deq.data: " + deq.data)
+print("deq length: " + #deq + " items: " + deq.data.len)

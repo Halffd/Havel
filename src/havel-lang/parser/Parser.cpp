@@ -4490,11 +4490,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
 
 // Parse match expression: match value { pattern => expr, _ => default }
 std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
-  if (at().type != havel::TokenType::Match) {
-    return parseBinaryExpression();
-  }
-
-  advance(); // consume 'match'
+  // Note: the 'match' token has already been consumed by nud() before calling this.
+  // Do NOT check for Match token or advance here.
 
   // Parse comma-separated discriminants
   std::vector<std::unique_ptr<havel::ast::Expression>> discriminants;

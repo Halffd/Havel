@@ -1305,6 +1305,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return nullptr;
   }
 
+
   // Keywords that should NOT be parsed as statements
   // (they belong to parent constructs like if/else/while)
   if (at().type == havel::TokenType::Else ||
@@ -3777,8 +3778,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 
   auto value = parseExpression();
 
-  return std::make_unique<havel::ast::LetDeclaration>(
+  auto result = std::make_unique<havel::ast::LetDeclaration>(
       std::move(pattern), std::move(value), std::move(typeAnnotation), isConst);
+  return result;
 }
 
 std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {

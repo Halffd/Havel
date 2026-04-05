@@ -194,7 +194,28 @@ std::optional<int64_t> indexFromValue(const Value &value) {
 
 std::optional<std::string> keyFromValue(const Value &value) {
   if (value.isStringValId()) {
-    // TODO: string pool lookup
+    // TODO: string pool lookup - for now return placeholder
+    return "<string:" + std::to_string(value.asStringValId()) + ">";
+  }
+  if (value.isInt()) {
+    return std::to_string(value.asInt());
+  }
+  if (value.isDouble()) {
+    std::ostringstream out;
+    out << value.asDouble();
+    return out.str();
+  }
+  if (value.isBool()) {
+    return value.asBool() ? "true" : "false";
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> keyFromValueWithChunk(const Value &value, const BytecodeChunk *chunk) {
+  if (value.isStringValId()) {
+    if (chunk) {
+      return chunk->getString(value.asStringValId());
+    }
     return "<string:" + std::to_string(value.asStringValId()) + ">";
   }
   if (value.isInt()) {

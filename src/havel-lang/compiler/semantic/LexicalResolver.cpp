@@ -1,4 +1,5 @@
 #include "LexicalResolver.hpp"
+#include <iostream>
 
 namespace havel::compiler {
 
@@ -55,6 +56,25 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
               dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
         declareLocal(identifier->symbol, identifier, let.isConst);
         global_variables_.insert(identifier->symbol);
+      } else if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
+                                 let.pattern->kind == ast::NodeType::ArrayPattern)) {
+        const auto &arrPat = static_cast<const ast::ArrayPattern &>(*let.pattern);
+        for (const auto &elem : arrPat.elements) {
+          auto *elem_id = elem ? dynamic_cast<const ast::Identifier *>(elem.get()) : nullptr;
+          if (elem_id) {
+            declareLocal(elem_id->symbol, elem_id, let.isConst);
+            global_variables_.insert(elem_id->symbol);
+          }
+        }
+      } else if (let.pattern && let.pattern->kind == ast::NodeType::ObjectPattern) {
+        const auto &objPat = static_cast<const ast::ObjectPattern &>(*let.pattern);
+        for (const auto &prop : objPat.properties) {
+          collectPatternIdentifiers(*prop.second);
+          // Also add to globals for top-level let
+          if (auto *id = dynamic_cast<const ast::Identifier *>(prop.second.get())) {
+            global_variables_.insert(id->symbol);
+          }
+        }
       }
     } else if (statement->kind == ast::NodeType::FunctionDeclaration) {
       // Just add to top_level_functions_ - don't declare as local
@@ -76,6 +96,7 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   }
 
   // Third pass: resolve top-level non-function, non-let statements
+  // LetDeclaration was already handled in the first pass
   for (const auto &statement : program.body) {
     if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
         statement->kind == ast::NodeType::LetDeclaration) {
@@ -86,6 +107,8 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
 
   // Copy to result for bytecode compiler
   result_.global_variables = global_variables_;
+  for (const auto &[ident, slot] : result_.declaration_slots) {
+  }
 
   endFunction();
   return result_;
@@ -290,15 +313,24 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
       // Always allocate a new slot for `let` declarations.
       // This preserves lexical shadowing across nested blocks.
       declareLocal(identifier->symbol, identifier, let.isConst);
-    } else if (let.pattern && let.pattern->kind == ast::NodeType::ListPattern) {
-      const auto &tuple_pattern =
-          static_cast<const ast::ArrayPattern &>(*let.pattern);
-      for (const auto &element : tuple_pattern.elements) {
-        auto *element_id =
-            element ? dynamic_cast<const ast::Identifier *>(element.get())
-                    : nullptr;
-        if (element_id) {
-          declareLocal(element_id->symbol, element_id, let.isConst);
+    } else if (let.pattern) {
+      if (let.pattern->kind == ast::NodeType::ListPattern ||
+          let.pattern->kind == ast::NodeType::ArrayPattern) {
+        const auto &tuple_pattern =
+            static_cast<const ast::ArrayPattern &>(*let.pattern);
+        for (const auto &element : tuple_pattern.elements) {
+          auto *element_id =
+              element ? dynamic_cast<const ast::Identifier *>(element.get())
+                      : nullptr;
+          if (element_id) {
+            declareLocal(element_id->symbol, element_id, let.isConst);
+          }
+        }
+      } else if (let.pattern->kind == ast::NodeType::ObjectPattern) {
+        const auto &objPat =
+            static_cast<const ast::ObjectPattern &>(*let.pattern);
+        for (const auto &prop : objPat.properties) {
+          collectPatternIdentifiers(*prop.second);
         }
       }
     }

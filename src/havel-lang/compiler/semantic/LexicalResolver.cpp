@@ -356,6 +356,11 @@ void LexicalResolver::resolvePatternWithBindings(const ast::Expression &pattern)
     const auto &ident = static_cast<const ast::Identifier &>(pattern);
     // Declare as local without duplicate check for match patterns
     declareLocalUnchecked(ident.symbol, &ident, false);
+    // Also note the binding so the bytecode compiler can find it
+    auto it = result_.declaration_slots.find(&ident);
+    uint32_t slot = (it != result_.declaration_slots.end()) ? it->second : 0;
+    noteIdentifierBinding(ident, ResolvedBinding{
+        ResolvedBindingKind::Local, slot, 0, ident.symbol, false});
     break;
   }
   case ast::NodeType::ObjectPattern: {

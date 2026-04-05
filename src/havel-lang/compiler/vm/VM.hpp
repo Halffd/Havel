@@ -272,6 +272,7 @@ public:
   }
   ObjectRef createHostObject();
   ArrayRef createHostArray();
+  StringRef createRuntimeString(std::string value);
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           Value value);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
@@ -448,6 +449,9 @@ public:
 
   // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
+
+  // Resolve a Value that might be a string to an actual string
+  std::string resolveStringKey(const Value &value) const;
 
   /** Injected embedder context; null if VM was default-constructed. */
   const class havel::HostContext *hostContext() const { return context_; }

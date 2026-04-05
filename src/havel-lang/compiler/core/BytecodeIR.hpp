@@ -188,6 +188,10 @@ struct ObjectRef {
   bool sorted = true; // Default to sorted keys
 };
 
+struct StringRef {
+  uint32_t id = 0;
+};
+
 struct SetRef {
   uint32_t id = 0;
 };

@@ -132,6 +132,7 @@ enum class OpCode : uint8_t {
   STRING_ENDS,    // Check if ends with
   STRING_SPLIT,   // Split by delimiter
   STRING_REPLACE, // Replace substring
+  STRING_PROMOTE, // Convert StringValId → StringId (for runtime string iteration)
 
   // Iteration protocol
   ITER_NEW,  // Create iterator from iterable

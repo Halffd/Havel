@@ -5,12 +5,26 @@ print("=== HTTP Module Tests ===\n")
 // Test 1: http.get
 print("1. Testing http.get:")
 let url = "https://httpbin.org/get"
-let response = http.get(url, 5000)
-if (response) {
-  print("  Success! Length: ")
-  print(len(response))
+let response = await http.get(url, {
+  timeout: 5000, 
+  headers: {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1"
+  }
+})
+if response.ok {
+    print(f"Success! Length: {response.body.len}")
+    try {
+      print(response.json())
+    } catch {
+      print "not json"
+    }
 } else {
-  print("  Failed")
+    print(f"Failed: {response.status}")
 }
 print("")
 
@@ -25,21 +39,325 @@ print("")
 print("3. Testing http.download:")
 let downloadUrl = "https://httpbin.org/bytes/100"
 let downloadPath = "/tmp/test_download.bin"
-let downloadSuccess = http.download(downloadUrl, downloadPath, 5000)
+let downloadSuccess = await http.download(downloadUrl, downloadPath, 5000)
 print("  Download success: ")
 print(downloadSuccess)
 
+
+// Test 4: http.post
+print("4. Testing http.post:")
+let postUrl = "https://httpbin.org/post"
+let postBody = json.stringify({ foo: "bar", count: 42 })
+let postResp = await http.post(postUrl, postBody, {
+  timeout: 5000,
+  headers: {
+    "Content-Type": "application/json",
+    "Custom-Header": "test"
+  },
+  follow_redirects: true,
+  verify_ssl: true
+})
+if postResp.ok {
+  print(f"POST Success! Status: {postResp.status}")
+  try {
+    print(postResp.json())
+  } catch {
+    print("POST not json")
+  }
+} else {
+  print(f"POST Failed: {postResp.status}")
+}
+print("")
+
+// Test 5: http.put
+print("5. Testing http.put:")
+let putUrl = "https://httpbin.org/put"
+let putBody = json.stringify({ update: "something", num: 7 })
+let putResp = await http.put(putUrl, putBody, {
+  headers: { "Content-Type": "application/json" },
+  timeout: 3000
+})
+if putResp.ok {
+  print(f"PUT Success! Status: {putResp.status}")
+  print(putResp.body)
+} else {
+  print(f"PUT Failed: {putResp.status}")
+}
+print("")
+
+// Test 6: http.patch
+print("6. Testing http.patch:")
+let patchUrl = "https://httpbin.org/patch"
+let patchBody = json.stringify({ patched: true })
+let patchResp = await http.patch(patchUrl, patchBody, {
+  headers: { "Content-Type": "application/json" }
+})
+if patchResp.ok {
+  print(f"PATCH Success! Status: {patchResp.status}")
+  print(patchResp.body)
+} else {
+  print(f"PATCH Failed: {patchResp.status}")
+}
+print("")
+
+// Test 7: http.delete
+print("7. Testing http.delete:")
+let deleteUrl = "https://httpbin.org/delete"
+let deleteResp = await http.delete(deleteUrl, {
+  timeout: 5000
+})
+if deleteResp.ok {
+  print(f"DELETE Success! Status: {deleteResp.status}")
+  print(deleteResp.body)
+} else {
+  print(f"DELETE Failed: {deleteResp.status}")
+}
+print("")
+
+// Test 8: http.head
+print("8. Testing http.head:")
+let headUrl = "https://httpbin.org/get"
+let headResp = http.head(headUrl, {
+  timeout: 2000
+})
+if headResp.ok {
+  print(f"HEAD Success! Status: {headResp.status}")
+  print("HEAD Headers:")
+  print(headResp.headers)
+} else {
+  print(f"HEAD Failed: {headResp.status}")
+}
+print("")
+
+// Test 9: http.upload
+print("9. Testing http.upload:")
+let uploadUrl = "https://httpbin.org/post"
+let testUploadPath = downloadPath // reuse the downloaded file if present
+if fs.exists(testUploadPath) {
+  let uploadResp = await http.upload(uploadUrl, testUploadPath, {
+    timeout: 7000
+  })
+  if uploadResp.ok {
+    print(f"UPLOAD Success! Status: {uploadResp.status}")
+    try {
+      print(uploadResp.json())
+    } catch {
+      print("UPLOAD not json")
+    }
+  } else {
+    print(f"UPLOAD Failed: {uploadResp.status}")
+  }
+} else {
+  print("Test upload file does not exist, skipping http.upload test.")
+}
+print("")
+
+// Test 10: network.ping
+print("10. Testing network.ping:")
+let pingResult = await network.ping("httpbin.org", 2500)
+if pingResult != null {
+  print(f"Ping httpbin.org: {pingResult} ms")
+} else {
+  print("Ping timed out or failed.")
+}
+print("")
+
+// Test 11: network.resolve
+print("11. Testing network.resolve:")
+let resolvedIp = await network.resolve("httpbin.org")
+print("  httpbin.org resolved to: ")
+print(resolvedIp)
+print("")
+
+
 // Check if file exists
-let fileExistsResult = fileExists(downloadPath)
+let fileExistsResult = fs.exists(downloadPath)
 print("  File exists: ")
 print(fileExistsResult)
 
 // Get file size
 if (fileExistsResult) {
-  let fSize = fileSize(downloadPath)
+  let fSize = fs.size(downloadPath)
   print("  File size: ")
   print(fSize)
 }
 print("")
+// Simple TCP server with routing logic
+tcpServer = net.tcp(port = 9090,
+  onConnect = fn(conn) {
+    print("TCP: New connection: " + conn.peerAddr())
+  },
+  onData = fn(conn, data) {
+    let msg = str(data).trim()
+    if msg == "hello" {
+      conn.send("Welcome to the TCP server!\n")
+    }
+    else if msg == "time" {
+      conn.send("Current time: " + time.now() + "\n")
+    }
+    else {
+      conn.send("Unknown command\n")
+    }
+  },
+  onClose = fn(conn) {
+    print("TCP: Connection closed: " + conn.peerAddr())
+  })
+tcpServer.route("/users", fn(conn, req) {
+  // Example handler: returns static user list as JSON
+  let users = [
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Bob" }
+  ]
+  let resJson = json.stringify(users)
+  conn.send("HTTP/1.1 200 K\r\nContent-Type: application/json\r\n\r\n" + resJson)
+})
+tcpServer.route("/:id", fn(conn, req) {
+  let dbUsers = db.query("SELECT id, data FROM config")
+  let dataList = []
+  for data in dbdatas {
+    dataList.append({ id: data.id, name: data.name })
+  }
+  let resJson = json.stringify(dataList)
+  conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
+})
+// Simple UDP server with routing logic
+udpServer = net.udp(9091,
+  onMessage = fn(data, peer) {
+    let msg = str(data).trim()
+    if msg == "ping" {
+      net.udpSend(peer, "pong\n")
+    }
+    else if msg.startsWith("echo ") {
+      let rest = msg.slice(5)
+      net.udpSend(peer, "echo: " + rest + "\n")
+    }
+    else {
+      net.udpSend(peer, "Unknown UDP command\n")
+    }
+  }
+)
+tcpServer.route("/mongo", fn(conn, req) {
+  // Example: query MongoDB's "test.users" collection and return results as JSON
+  let users = []
+  let cursor = mongo.collection("test.users").find({})
+  for doc in cursor {
+    users.append(doc)
+  }
+  let resJson = json.stringify(users)
+  conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
+})
+tcpServer.route("/sqlite-users", fn(conn, req) {
+  // Example: query SQLite "users" table and return results as JSON
+  let users = []
+  let rows = sqlite.query("SELECT id, name FROM users")
+  for row in rows {
+    users.append({ id: row.id, name: row.name })
+  }
+  let resJson = json.stringify(users)
+  conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
+})
+tcpServer.route("/graphql", fn(conn, req) {
+  // Parse incoming JSON body to get GraphQL query (very simple demo, no variables, no fragments)
+  let body = req.body || ""
+  let jsonPayload = {}
+  try {
+    jsonPayload = json.parse(body)
+  } catch (e) {
+    conn.send("HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid JSON")
+    return
+  }
+  let query = jsonPayload.query || ""
+  // Simple GraphQL query matcher for `{ users { id name } }`
+  if query.trim() == "{ users { id name } }" {
+    let users = []
+    let rows = sqlite.query("SELECT id, name FROM users")
+    for row in rows {
+      users.append({ id: row.id, name: row.name })
+    }
+    let resData = { data: { users: users } }
+    let resJson = json.stringify(resData)
+    conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
+    return
+  } else {
+    conn.send("HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nUnsupported GraphQL query")
+    return
+  }
+})
+tcpServer.route("/firebase-users", fn(conn, req) {
+  // Example: query Firebase Realtime Database "users" node and return results as JSON
+  let users = []
+  try {
+    let snapshot = firebase.db("users").get()
+    // Assuming snapshot is an array or an iterable structure
+    for user in snapshot {
+      users.append(user)
+    }
+    let resJson = json.stringify(users)
+    conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
+  } catch (e) {
+    conn.send("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFirebase fetch error")
+  }
+})
+tcpServer.route("/supabase-crypto", fn(conn, req) {
+  // Example: Query Supabase "crypto" table and return results as JSON
+  let cryptos = []
+  try {
+    // Assuming supabase.db returns an object with .select method
+    let rows = supabase.db("crypto").select("*") // Fetch all fields for demo
+    for row in rows {
+      cryptos.append(row)
+    }
+    let resJson = json.stringify(cryptos)
+    conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
+  } catch (e) {
+    conn.send("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nSupabase fetch error")
+  }
+})
+tcpServer.route("/redis-video-list", fn(conn, req) {
+  // Example: Store and retrieve a list of videos in a Redis "video_list" key
+  try {
+    if req.method == "POST" {
+      // Assume request body contains a JSON array of videos
+      let videos = json.parse(req.body)
+      if !(videos is Array) {
+        conn.send("HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nRequest body must be a JSON array")
+        return
+      }
+      // Store list in Redis DB
+      redis.module.set("video_list", json.stringify(videos))
+      conn.send("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nVideo list saved")
+    } else if req.method == "GET" {
+      let stored = redis.module.get("video_list")
+      if stored == null {
+        conn.send("HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nNo video list found")
+        return
+      }
+      conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + stored)
+    } else {
+      conn.send("HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nOnly GET and POST allowed")
+    }
+  } catch (e) {
+    conn.send("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nRedis video list error")
+  }
+})
+tcpServer.route("/close", fn(conn, req) {
+  // Gracefully close all servers and respond to client
+  conn.send("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nServer shutting down.")
+  conn.close()
+  // Attempt to shut down all known servers; add more as needed
+  tcpServer.close()
+  udpServer.close()
+  // Optionally exit the process if the runtime supports it:
+  if typeof(exit) == "function" {
+    exit(0)
+  }
+})
+
 
 print("=== HTTP Tests Complete ===")
+
+servers = [tcpServer, udpServer]
+for s in servers {
+  print("Listening on port: " + s.port)
+}
+

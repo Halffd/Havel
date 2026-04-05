@@ -2886,6 +2886,25 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  // String promotion: StringValId → StringId (for runtime string iteration)
+  case OpCode::STRING_PROMOTE: {
+    Value v = popStack();
+    if (v.isStringValId()) {
+      // Look up string from chunk's string table and allocate on heap
+      uint32_t strIdx = v.asStringValId();
+      std::string s;
+      if (current_chunk) {
+        s = current_chunk->getString(strIdx);
+      }
+      auto strRef = heap_.allocateString(s);
+      pushStack(Value::makeStringId(strRef.id));
+    } else {
+      // Already a StringId or other type, passthrough
+      pushStack(v);
+    }
+    break;
+  }
+
   // Iteration protocol: iter(obj) → iterator
   case OpCode::ITER_NEW: {
     Value iterable = popStack();

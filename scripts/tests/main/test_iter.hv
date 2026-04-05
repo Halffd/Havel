@@ -21,9 +21,9 @@ for c in str {
 // Test 3: Object iteration (key by key)
 print("\n3. Object iteration:")
 let obj = {"a": 1, "b": 2, "c": 3}
-for key in obj {
+for entry in obj {
   print("  key: ")
-  print(key)
+  print(entry.key)
 }
 
 print("\n=== All Tests Passed ===")

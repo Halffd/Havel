@@ -2799,6 +2799,11 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
 
   // Compile iterable and create iterator: iter(iterable)
   compileExpression(*statement.iterable);
+
+  // Promote StringValId → StringId so the runtime iterator can access
+  // the actual string content. This is a no-op if the value is not a StringValId.
+  emit(OpCode::STRING_PROMOTE);
+
   emit(OpCode::ITER_NEW);
 
   // Create temp variable for iterator

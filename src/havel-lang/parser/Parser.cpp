@@ -4495,6 +4495,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
 
   // Parse comma-separated discriminants
   std::vector<std::unique_ptr<havel::ast::Expression>> discriminants;
+  
+  // Temporarily disable brace sugar to prevent { from being consumed as a lambda
+  bool savedBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+  
   discriminants.push_back(parseBinaryExpression());
 
   // Parse additional discriminants separated by commas
@@ -4502,6 +4507,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     advance(); // consume ','
     discriminants.push_back(parseBinaryExpression());
   }
+  
+  // Restore brace sugar context
+  context.allowBraceSugar = savedBraceSugar;
 
   auto match = std::make_unique<havel::ast::MatchExpression>(std::move(discriminants));
 
@@ -4524,37 +4532,40 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
 
     // Parse comma-separated patterns
     std::vector<std::unique_ptr<havel::ast::Expression>> patterns;
-    bool isDefault = false;
+    std::unique_ptr<havel::ast::Expression> guard;
+    bool isDefault = true;
 
+    // Parse first pattern
     if (at().type == havel::TokenType::Underscore) {
-      // Default case: _ => expr or _, _ => expr, etc.
-      isDefault = true;
       advance(); // consume '_'
-      // Consume any additional underscores for multi-discriminant default
-      while (at().type == havel::TokenType::Comma) {
-        advance(); // consume ','
-        if (at().type == havel::TokenType::Underscore) {
-          advance(); // consume '_'
-        } else {
-          failAt(at(), "Expected '_' in default pattern");
-        }
-      }
+      patterns.push_back(nullptr); // wildcard placeholder
     } else {
-      // Parse first pattern
+      isDefault = false;
       patterns.push_back(parseBinaryExpression());
+    }
 
-      // Parse additional patterns separated by commas
-      while (at().type == havel::TokenType::Comma) {
-        advance(); // consume ','
-        // Check for underscore in multi-pattern (acts as wildcard for that position)
-        if (at().type == havel::TokenType::Underscore) {
-          advance(); // consume '_'
-          // For underscore patterns, we use a null placeholder
-          patterns.push_back(nullptr);
-        } else {
-          patterns.push_back(parseBinaryExpression());
-        }
+    // Parse additional patterns separated by commas
+    while (at().type == havel::TokenType::Comma) {
+      // Look ahead: if comma is followed by 'if', it's a guard, not another pattern
+      if (at(1).type == havel::TokenType::If) {
+        break; // Guard follows, stop consuming patterns
       }
+      advance(); // consume ','
+      // Check for underscore in multi-pattern (acts as wildcard for that position)
+      if (at().type == havel::TokenType::Underscore) {
+        advance(); // consume '_'
+        patterns.push_back(nullptr); // wildcard placeholder
+      } else {
+        isDefault = false;
+        patterns.push_back(parseBinaryExpression());
+      }
+    }
+
+    // Check for optional guard condition: pattern if guard => result
+    if (at().type == havel::TokenType::If) {
+      advance(); // consume 'if'
+      // Use rbp=11 to prevent Arrow (bp=10) from being parsed as lambda
+      guard = parsePrattExpression(11);
     }
 
     // Expect =>
@@ -4569,8 +4580,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     if (isDefault) {
       match->defaultCase = std::move(result);
     } else {
-      match->cases.push_back(
-          std::make_pair(std::move(patterns), std::move(result)));
+      ast::MatchExpression::MatchArm arm;
+      arm.patterns = std::move(patterns);
+      arm.guard = std::move(guard);
+      arm.result = std::move(result);
+      match->cases.push_back(std::move(arm));
     }
 
     // Skip optional comma

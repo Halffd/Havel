@@ -37,16 +37,20 @@ if wm == "unknown" {
     print("wm is now: $wm")
   }
 }
+hypr = kde = i3 = compiz = cinnamon = gnome = wf = xfce = false
+match wm {
+    "hyprland" => hypr = true,
+    "kde plasma" => kde = true,
+    "i3" => i3 = true,
+    "compiz" => compiz = true,
+    "cinnamon" => cinnamon = true,
+    "gnome" || "gnome on x11" || "gnome on wayland" => gnome = true,
+    "wayfire" => wf = true,
+    "xfce" => xfce = true,
+    _ => {}
+}
 
-hypr = wm == "hyprland"
-kde = wm == "kde plasma"
 kdewl = kde && wl
-i3 = wm == "i3"
-compiz = wm == "compiz"
-cinnamon = wm == "cinnamon"
-gnome = wm == "gnome" || wm == "gnome on x11" || wm == "gnome on wayland"
-wf = wm == "wayfire"
-xfce = wm == "xfce"
 if !xfce {
   if len(process.find("xfce4-session")) > 0 {
     xfce = true
@@ -54,7 +58,6 @@ if !xfce {
 }
 xfcewl = xfce && wl
 other = !any([hypr, kde, kdewl, i3, compiz, cinnamon, gnome, wf, xfce, xfcewl])
-
 hardware = system.hardware()
 print("hardware: " + hardware)
 [cpu, gpu, ram, motherboard, storage] = [hardware.cpu, hardware.gpu, hardware.ram, hardware.motherboard, hardware.storage]
@@ -73,7 +76,6 @@ print(f"CPU: {cpu.name} ({cpu.cores} cores @ {cpu.frequency} MHz)")
 print(f"RAM: {ram.total / 1024/1024/1024} GB")
 print(f"GPU: {gpu}")
 print(f"Motherboard: {motherboard}")
-
 
 print("monitors: type(window.getMonitors()): " + type(display.getMonitors))
 monitors = display.getMonitors()

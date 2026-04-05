@@ -941,6 +941,19 @@ void VM::registerDefaultHostFunctions() {
         return Value::makeNull();
       });
 
+  // Read a line from stdin
+  registerHostFunction("input", [this](const std::vector<Value> &args) {
+    // Optional prompt
+    if (!args.empty()) {
+      std::string prompt = resolveStringKey(args[0]);
+      std::cout << prompt << std::flush;
+    }
+    std::string line;
+    std::getline(std::cin, line);
+    auto strRef = heap_.allocateString(line);
+    return Value::makeStringId(strRef.id);
+  });
+
   // Enhanced sleep() with duration string support
   registerHostFunction(
       "sleep", 1, [this](const std::vector<Value> &args) {

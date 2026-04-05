@@ -370,36 +370,32 @@ int runAsyncCase(const std::string &name, const std::string &source,
           if (!vm_ptr) {
             throw std::runtime_error("async.run vm unavailable");
           }
+          // async.run(closure) compiles as any.run(async_obj, closure)
+          // so the closure is args[1]
           if (args.size() < 2) {
             throw std::runtime_error("async.run requires callback");
           }
-          // Debug: check what type we received
-          std::string typeInfo = "unknown";
-          if (args[1].isNull()) typeInfo = "null";
-          else if (args[1].isInt()) typeInfo = "int";
-          else if (args[1].isClosureId()) typeInfo = "closure_id";
-          else if (args[1].isFunctionObjId()) typeInfo = "function_obj_id";
-          else if (args[1].isObjectId()) typeInfo = "object_id";
-          else if (args[1].isHostFuncId()) typeInfo = "host_func_id";
-          std::cerr << "[DEBUG] async.run received: " << typeInfo << std::endl;
-          std::string task_id = "task-" + std::to_string(next_task_id++);
-          std::cerr << "[DEBUG] about to call closure via vm_ptr->call" << std::endl;
-          auto result = vm_ptr->call(args[1], {});
-          std::cerr << "[DEBUG] vm_ptr->call returned, storing result" << std::endl;
-          task_results[task_id] = result;
-          std::cerr << "[DEBUG] result stored, returning" << std::endl;
+          const auto &closure = args[1];
+
+          // Execute closure synchronously (smoke test is single-threaded)
+          if (closure.isClosureId() || closure.isFunctionObjId()) {
+            return vm_ptr->call(closure, {});
+          }
           return Value::makeNull();
         };
+    // any.run alias - async.run(x) compiles as any.run(x) via member dispatch
+    options.host_functions["any.run"] = options.host_functions["async.run"];
+    // any.await - just return the value (async.run already computed it)
+    options.host_functions["any.await"] = [&](const std::vector<Value> &args) {
+      if (args.empty() || !vm_ptr) return Value::makeNull();
+      return args[0];
+    };
     options.host_functions["async.await"] =
         [&](const std::vector<Value> &args) {
           if (args.empty()) {
             throw std::runtime_error("async.await requires task id");
           }
-          auto it = task_results.begin();
-          if (it == task_results.end()) {
-            return Value::makeNull();
-          }
-          return it->second;
+          return args[0];
         };
     options.host_functions["await"] = options.host_functions["async.await"];
     options.host_functions["async.channel"] =
@@ -707,9 +703,10 @@ int runAsyncCase(const std::string &name, const std::string &source,
 
     // Async/concurrency stubs for smoke tests
     options.host_functions["any.run"] = [&](const std::vector<Value> &args) {
-      // any.run(callback) - execute callback synchronously and return result
-      if (args.empty() || !vm_ptr) return Value::makeNull();
-      return vm_ptr->callFunction(args[0], {});
+      // any.run(obj, callback) - execute callback synchronously and return result
+      // Method calls pass the object as args[0], callback as args[1]
+      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
+      return vm_ptr->call(args[1], {});
     };
     options.host_functions["any.channel"] = [&](const std::vector<Value> &args) {
       // any.channel(name) - create a channel object
@@ -744,15 +741,6 @@ int runAsyncCase(const std::string &name, const std::string &source,
       if (args.size() < 2 || !vm_ptr) return Value::makeNull();
       channels.begin()->second.push_back(args[1]);
       return Value(true);
-    };
-    options.host_functions["async.receive"] = [&](const std::vector<Value> &args) {
-      // async.receive(name) - receive from first channel
-      if (!vm_ptr) return Value::makeNull();
-      auto &queue = channels.begin()->second;
-      if (queue.empty()) return Value::makeNull();
-      auto value = queue.front();
-      queue.pop_front();
-      return value;
     };
     options.host_functions["async.receive"] = [&](const std::vector<Value> &args) {
       // async.receive(name) - receive from first channel

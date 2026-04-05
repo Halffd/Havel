@@ -396,8 +396,11 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
 
     // Assume hotkeys might be present - let hotkeyManager handle it
-    havel_inst.getHotkeyManagerPtr()->printHotkeys();
-    havel_inst.getHotkeyManagerPtr()->updateAllConditionalHotkeys();
+    auto *hkManager = havel_inst.getHotkeyManagerPtr();
+    if (hkManager) {
+      hkManager->printHotkeys();
+      hkManager->updateAllConditionalHotkeys();
+    }
     info("Script loaded. Hotkeys registered. Press Ctrl+C to exit.");
     int exitCode = app.exec();
 
@@ -700,8 +703,11 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       }
 
       // Print registered hotkeys
-      havel_inst.getHotkeyManagerPtr()->printHotkeys();
-      havel_inst.getHotkeyManagerPtr()->updateAllConditionalHotkeys();
+      auto *hkManager = havel_inst.getHotkeyManagerPtr();
+      if (hkManager) {
+        hkManager->printHotkeys();
+        hkManager->updateAllConditionalHotkeys();
+      }
       info("Script loaded. Hotkeys registered. Enter REPL...");
       
       // Create REPL with full host API
@@ -719,7 +725,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
           havel_inst.getWindowManagerPtr(),
           nullptr, nullptr, nullptr, nullptr, nullptr,
           nullptr, nullptr, nullptr, nullptr, nullptr,
-          havel_inst.getHotkeyManagerPtr()->getModeManager().get(),
+          hkManager ? hkManager->getModeManager().get() : nullptr,
           std::vector<std::string>{}));
       
       havel::initializeServiceRegistry(hostAPI);
@@ -842,6 +848,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       havel::repl::REPL repl(replConfig);
       
       // Create host API with full features
+      auto *hkManager = havel_inst.getHotkeyManagerPtr();
       auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
           havel_inst.getIOPtr(),
           havel_inst.getHotkeyManagerPtr(),
@@ -849,7 +856,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
           havel_inst.getWindowManagerPtr(),
           nullptr, nullptr, nullptr, nullptr, nullptr,
           nullptr, nullptr, nullptr, nullptr, nullptr,
-          havel_inst.getHotkeyManagerPtr()->getModeManager().get(),
+          hkManager ? hkManager->getModeManager().get() : nullptr,
           std::vector<std::string>{}));
       
       havel::initializeServiceRegistry(hostAPI);

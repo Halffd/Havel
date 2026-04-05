@@ -326,6 +326,8 @@ void HostBridge::install() {
   registerAnyMethod("map");
   registerAnyMethod("reduce");
   registerAnyMethod("foreach");
+  registerAnyMethod("any");
+  registerAnyMethod("all");
   registerAnyMethod("send");
   registerAnyMethod("pause");
   registerAnyMethod("resume");
@@ -1673,19 +1675,25 @@ void HostBridge::install() {
 
         // Check based on container type
         if (container.isArrayId()) {
-          return Value(
+          return Value::makeBool(
               ctx_->vm->arrayContains(ArrayRef{container.asArrayId()}, value));
-        } else if (container.isStringValId()) {
-          const auto &str = container.toString();
-          if (value.isStringValId()) {
-            const auto &substr = value.toString();
-            return Value(str.find(substr) != std::string::npos);
+        } else if (container.isStringValId() || container.isStringId()) {
+          // String membership: check if value (substring) is in container string
+          std::string str = ctx_->vm->resolveStringKey(container);
+          if (value.isStringValId() || value.isStringId()) {
+            std::string substr = ctx_->vm->resolveStringKey(value);
+            return Value::makeBool(str.find(substr) != std::string::npos);
+          } else if (value.isInt()) {
+            // Check if character code exists in string
+            std::string ch(1, static_cast<char>(value.asInt()));
+            return Value::makeBool(str.find(ch) != std::string::npos);
           }
           return Value::makeBool(false);
         } else if (container.isObjectId()) {
-          if (value.isStringValId()) {
-            const auto &key = value.toString();
-            return Value(
+          // Object key membership: check if value (key) exists in object
+          if (value.isStringValId() || value.isStringId()) {
+            std::string key = ctx_->vm->resolveStringKey(value);
+            return Value::makeBool(
                 ctx_->vm->objectHasKey(ObjectRef{container.asObjectId(), true}, key));
           }
           return Value::makeBool(false);
@@ -1694,7 +1702,7 @@ void HostBridge::install() {
             return Value::makeBool(false);
           }
           int64_t val = value.asInt();
-          return Value(
+          return Value::makeBool(
               ctx_->vm->isInRange(RangeRef{container.asRangeId()}, val));
         }
         return Value::makeBool(false);
@@ -1710,23 +1718,20 @@ void HostBridge::install() {
         return Value::makeBool(true); // If in() failed, not_in is true
       };
 
+  // Helper: check if a value is callable (host func, closure, or function object)
+  auto isCallable = [](const Value &v) {
+    return v.isHostFuncId() || v.isClosureId() || v.isFunctionObjId();
+  };
+
   // any(iterable, predicate) - check if any element satisfies predicate
-  options_.host_functions["any"] = [this](
+  options_.host_functions["any"] = [this, isCallable](
                                        const std::vector<Value> &args) {
-    if (args.size() < 2) {
+    if (args.size() < 2 || !isCallable(args[1])) {
       return Value::makeBool(false);
     }
 
     const auto &iterable = args[0];
     const auto &predicate = args[1];
-
-    // Predicate should be a function
-    if (!predicate.isHostFuncId()) {
-      return Value::makeBool(false);
-    }
-
-    const std::string &fnName = HostFunctionRef{predicate.toString()}.name;
-    (void)fnName;
 
     // Create iterator
     IteratorRef iterRef = ctx_->vm->createIterator(iterable);
@@ -1735,7 +1740,7 @@ void HostBridge::install() {
     while (true) {
       auto result = ctx_->vm->iteratorNext(iterRef);
 
-      // Check if done using helper
+      // Check if done
       if (!result.isObjectId()) {
         return Value::makeBool(false);
       }
@@ -1749,20 +1754,77 @@ void HostBridge::install() {
 
       // Get value
       auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
-      if (valueVal.isNull()) {
-        continue;
-      }
 
       // Call predicate with value
       std::vector<Value> predArgs;
       predArgs.push_back(valueVal);
       auto predResult = ctx_->vm->callFunction(predicate, predArgs);
 
-      if (predResult.isBool() &&
-          predResult.asBool()) {
+      if (predResult.isBool() && predResult.asBool()) {
         return Value::makeBool(true); // Found a match
       }
+      // For truthiness check (non-bool values that are truthy)
+      if (!predResult.isNull() && !predResult.isBool()) {
+        if (predResult.isInt() && predResult.asInt() != 0) {
+          return Value::makeBool(true);
+        }
+      }
     }
+  };
+
+  // all(iterable, predicate) - check if all elements satisfy predicate
+  options_.host_functions["all"] = [this, isCallable](
+                                       const std::vector<Value> &args) {
+    if (args.size() < 2 || !isCallable(args[1])) {
+      return Value::makeBool(false);
+    }
+
+    const auto &iterable = args[0];
+    const auto &predicate = args[1];
+
+    // Create iterator
+    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+    // Iterate and check predicate - ALL must match
+    bool found_any = false;
+    while (true) {
+      auto result = ctx_->vm->iteratorNext(iterRef);
+
+      // Check if done
+      if (!result.isObjectId()) {
+        break;
+      }
+      auto resultObjRef = ObjectRef{result.asObjectId(), true};
+
+      // Get done flag
+      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+      if (doneVal.isBool() && doneVal.asBool()) {
+        break; // Reached end
+      }
+
+      // Get value
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      found_any = true;
+
+      // Call predicate with value
+      std::vector<Value> predArgs;
+      predArgs.push_back(valueVal);
+      auto predResult = ctx_->vm->callFunction(predicate, predArgs);
+
+      bool isTruthy = false;
+      if (predResult.isBool() && predResult.asBool()) {
+        isTruthy = true;
+      } else if (!predResult.isNull() && !predResult.isBool()) {
+        if (predResult.isInt() && predResult.asInt() != 0) {
+          isTruthy = true;
+        }
+      }
+
+      if (!isTruthy) {
+        return Value::makeBool(false); // Found element that doesn't match
+      }
+    }
+    return Value::makeBool(found_any);
   };
 
   // Type system functions

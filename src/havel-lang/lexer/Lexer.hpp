@@ -149,6 +149,8 @@ enum class TokenType {
   At,           // @ for field access (this.field)
   SuperArrow,   // @-> for super method calls
   Underscore,   // _ for default match case
+  CharLiteral,  // 'a' single character literal
+  DotDotEquals, // ..= inclusive range pattern
   Try,          // try
   Catch,        // catch
   Finally,      // finally
@@ -220,6 +222,7 @@ private:
                   const std::string &raw = "");
 
   Token scanNumber();
+  Token scanChar();
   Token scanString(bool isFString = false);
   Token scanMultilineString(bool isFString = false);
   Token scanBacktick();

@@ -114,6 +114,8 @@ enum class NodeType {
   SpreadPattern, // ..rest for array rest patterns
   // Literals
   StringLiteral,                // "Hello"
+  CharLiteral,                  // 'x' single char
+  RangePattern,                 // 'a'..='z' range pattern for match
   InterpolatedStringExpression, // "Hello ${name}"
   NumberLiteral,                // 42, 3.14
   BooleanLiteral,               // true, false
@@ -1060,6 +1062,41 @@ struct InterpolatedStringExpression : public Expression {
   std::string toString() const override {
     return "InterpolatedString{" + std::to_string(segments.size()) +
            " segments}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Char Literal - single character 'x'
+struct CharLiteral : public Expression {
+  char value;
+
+  CharLiteral(char c) : value(c) {
+    kind = NodeType::CharLiteral;
+  }
+
+  std::string toString() const override {
+    return "CharLiteral{'" + std::string(1, value) + "'}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Range Pattern - 'a'..='z' inclusive range
+struct RangePattern : public Expression {
+  std::unique_ptr<Expression> start;
+  std::unique_ptr<Expression> end;
+
+  RangePattern(std::unique_ptr<Expression> s, std::unique_ptr<Expression> e)
+      : start(std::move(s)), end(std::move(e)) {
+    kind = NodeType::RangePattern;
+  }
+
+  std::string toString() const override {
+    return "RangePattern{" +
+           (start ? start->toString() : "nullptr") +
+           "..=" +
+           (end ? end->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2662,6 +2699,8 @@ public:
   virtual void visitAwaitExpression(const AwaitExpression &node) = 0;
 
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
+  virtual void visitCharLiteral(const CharLiteral &node) = 0;
+  virtual void visitRangePattern(const RangePattern &node) = 0;
 
   virtual void visitInterpolatedStringExpression(
       const InterpolatedStringExpression &node) = 0;
@@ -2820,6 +2859,14 @@ inline void LambdaExpression::accept(ASTVisitor &visitor) const {
 
 inline void StringLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitStringLiteral(*this);
+}
+
+inline void CharLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitCharLiteral(*this);
+}
+
+inline void RangePattern::accept(ASTVisitor &visitor) const {
+  visitor.visitRangePattern(*this);
 }
 
 inline void InterpolatedStringExpression::accept(ASTVisitor &visitor) const {

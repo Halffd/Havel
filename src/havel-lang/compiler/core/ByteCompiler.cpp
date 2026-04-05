@@ -1276,16 +1276,12 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
   switch (pattern.kind) {
   case ast::NodeType::OrPattern: {
     const auto &orPat = static_cast<const ast::OrPattern &>(pattern);
-    // OrPattern: disc == alt1 || disc == alt2 || ...
-    // Load first alternative
-    compileExpression(*orPat.alternatives[0]);
-    emit(OpCode::LOAD_VAR, discSlot);
-    emit(OpCode::EQ);
+    // OrPattern: alt1.matches(disc) || alt2.matches(disc) || ...
+    // Compile first alternative
+    compilePattern(*orPat.alternatives[0], discSlot);
     
     for (size_t i = 1; i < orPat.alternatives.size(); i++) {
-      compileExpression(*orPat.alternatives[i]);
-      emit(OpCode::LOAD_VAR, discSlot);
-      emit(OpCode::EQ);
+      compilePattern(*orPat.alternatives[i], discSlot);
       emit(OpCode::OR);
     }
     break;
@@ -1391,6 +1387,25 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
     break;
   }
   
+  case ast::NodeType::RangePattern: {
+    const auto &rangePat = static_cast<const ast::RangePattern &>(pattern);
+    // Range pattern: check discSlot >= start && discSlot <= end
+    // Load discriminant
+    emit(OpCode::LOAD_VAR, discSlot);
+    // Compile start and check >=
+    compileExpression(*rangePat.start);
+    emit(OpCode::GTE);
+    
+    // Load discriminant again and check <= end
+    emit(OpCode::LOAD_VAR, discSlot);
+    compileExpression(*rangePat.end);
+    emit(OpCode::LTE);
+    
+    // Combine: (disc >= start) && (disc <= end)
+    emit(OpCode::AND);
+    break;
+  }
+  
   default: {
     // Simple pattern (literal, identifier): use EQ comparison
     compileExpression(pattern);
@@ -1417,6 +1432,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::StringLiteral: {
     const auto &str = static_cast<const ast::StringLiteral &>(expression);
     { uint32_t _sid = addStringConstant(str.value); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    break;
+  }
+
+  case ast::NodeType::CharLiteral: {
+    const auto &ch = static_cast<const ast::CharLiteral &>(expression);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(ch.value))));
     break;
   }
 

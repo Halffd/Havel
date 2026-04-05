@@ -827,19 +827,28 @@ void VM::registerDefaultHostFunctions() {
     size_t argCount = args.size();
 
     // Check for kwargs object as last argument
+    bool hasKwargs = false;
     if (!args.empty() && args.back().isObjectId()) {
       auto *kwargsObj = heap_.object(args.back().asObjectId());
       if (kwargsObj) {
         auto itEnd = kwargsObj->find("end");
-        if (itEnd != kwargsObj->end()) {
+        bool foundEnd = itEnd != kwargsObj->end();
+        auto itDelim = kwargsObj->find("delim");
+        bool foundDelim = itDelim != kwargsObj->end();
+        if (foundEnd) {
           end = resolveStringKey(itEnd->second);
         }
-        auto itDelim = kwargsObj->find("delim");
-        if (itDelim != kwargsObj->end()) {
+        if (foundDelim) {
           delim = resolveStringKey(itDelim->second);
         }
-        argCount--; // Don't count kwargs as a value to print
+        // Only treat as kwargs if it has at least one of end/delim
+        if (foundEnd || foundDelim) {
+          hasKwargs = true;
+        }
       }
+    }
+    if (hasKwargs) {
+      argCount--; // Don't count kwargs as a value to print
     }
 
     // Print values with delimiter

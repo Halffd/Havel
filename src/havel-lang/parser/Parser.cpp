@@ -1354,6 +1354,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return nullptr;
   }
 
+  if (debug.parser) {
+    havel::debug("PARSE: parseStatement at token type={} value={}", static_cast<int>(at().type), at().value);
+  }
+
 
   // Keywords that should NOT be parsed as statements
   // (they belong to parent constructs like if/else/while)

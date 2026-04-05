@@ -87,12 +87,19 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   }
 
   // Second pass: resolve function bodies (can now see globals)
+  int idx = 0;
   for (const auto &statement : program.body) {
     if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
+      if (statement) {
+        if (idx < 5) {
+        }
+      }
+      idx++;
       continue;
     }
     const auto &fn = static_cast<const ast::FunctionDeclaration &>(*statement);
     resolveFunctionDeclaration(fn);
+    idx++;
   }
 
   // Third pass: resolve top-level non-function, non-let statements
@@ -212,9 +219,15 @@ void LexicalResolver::resolveFunctionDeclaration(
     const ast::FunctionDeclaration &function) {
   beginFunction(&function);
 
+
   for (const auto &param : function.parameters) {
     if (param && param->pattern) {
       collectPatternIdentifiers(*param->pattern);
+    }
+  }
+
+  for (const auto &scope : function_stack_.back().scopes) {
+    for (const auto &[name, sym] : scope) {
     }
   }
 
@@ -898,6 +911,27 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::LambdaExpression: {
     const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
     resolveLambdaExpression(lambda);
+    break;
+  }
+
+  case ast::NodeType::MatchExpression: {
+    const auto &match = static_cast<const ast::MatchExpression &>(expression);
+    // Resolve discriminants
+    for (const auto &disc : match.discriminants) {
+      if (disc) {
+        resolveExpression(*disc);
+      }
+    }
+    // Resolve each case's result expression
+    for (const auto &matchCase : match.cases) {
+      if (matchCase.second) {
+        resolveExpression(*matchCase.second);
+      }
+    }
+    // Resolve default case
+    if (match.defaultCase) {
+      resolveExpression(*match.defaultCase);
+    }
     break;
   }
 

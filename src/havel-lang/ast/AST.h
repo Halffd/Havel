@@ -110,6 +110,8 @@ enum class NodeType {
   RecordPattern, // {name, age}
   ObjectPattern, // { x, y: alias } for destructuring
   ArrayPattern,  // [a, b] for destructuring
+  OrPattern,     // pat1 | pat2 for alternative patterns
+  SpreadPattern, // ..rest for array rest patterns
   // Literals
   StringLiteral,                // "Hello"
   InterpolatedStringExpression, // "Hello ${name}"
@@ -2039,17 +2041,52 @@ struct ObjectPattern : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Array Pattern for destructuring ([a, b])
+// Array Pattern for destructuring ([a, b] or [x, ..rest])
 struct ArrayPattern : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
+  std::unique_ptr<Expression> rest;  // for ..rest pattern
 
-  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {})
-      : elements(std::move(elems)) {
+  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {},
+               std::unique_ptr<Expression> restPat = nullptr)
+      : elements(std::move(elems)), rest(std::move(restPat)) {
     kind = NodeType::ArrayPattern;
   }
 
   std::string toString() const override {
-    return "ArrayPattern{" + std::to_string(elements.size()) + " elements}";
+    return "ArrayPattern{" + std::to_string(elements.size()) + " elements" +
+           (rest ? ", has rest" : "") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Or Pattern for alternatives (pat1 | pat2 | pat3)
+struct OrPattern : public Expression {
+  std::vector<std::unique_ptr<Expression>> alternatives;
+
+  OrPattern(std::vector<std::unique_ptr<Expression>> alts = {})
+      : alternatives(std::move(alts)) {
+    kind = NodeType::OrPattern;
+  }
+
+  std::string toString() const override {
+    return "OrPattern{" + std::to_string(alternatives.size()) + " alts}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Spread Pattern for rest elements (..rest)
+struct SpreadPattern : public Expression {
+  std::unique_ptr<Expression> target;  // identifier to bind rest to
+
+  SpreadPattern(std::unique_ptr<Expression> t = nullptr)
+      : target(std::move(t)) {
+    kind = NodeType::SpreadPattern;
+  }
+
+  std::string toString() const override {
+    return "SpreadPattern{}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2685,6 +2722,8 @@ public:
   virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
   virtual void visitObjectPattern(const ObjectPattern &node) = 0;
   virtual void visitArrayPattern(const ArrayPattern &node) = 0;
+  virtual void visitOrPattern(const OrPattern &node) = 0;
+  virtual void visitSpreadPattern(const SpreadPattern &node) = 0;
   virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
   virtual void visitSetExpression(const SetExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
@@ -2886,6 +2925,14 @@ inline void ObjectPattern::accept(ASTVisitor &visitor) const {
 
 inline void ArrayPattern::accept(ASTVisitor &visitor) const {
   visitor.visitArrayPattern(*this);
+}
+
+inline void OrPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitOrPattern(*this);
+}
+
+inline void SpreadPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitSpreadPattern(*this);
 }
 
 inline void SpreadExpression::accept(ASTVisitor &visitor) const {

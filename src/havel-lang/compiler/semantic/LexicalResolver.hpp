@@ -77,12 +77,16 @@ private:
   uint32_t declareLocal(const std::string &name,
                         const ast::Identifier *declaration = nullptr,
                         bool is_const = false);
+  uint32_t declareLocalUnchecked(const std::string &name,
+                                  const ast::Identifier *declaration = nullptr,
+                                  bool is_const = false);
 
   void resolveStatement(const ast::Statement &statement);
   void resolveExpression(const ast::Expression &expression);
   void resolveFunctionDeclaration(const ast::FunctionDeclaration &function);
   void resolveLambdaExpression(const ast::LambdaExpression &lambda);
   void collectPatternIdentifiers(const ast::Expression &pattern);
+  void resolvePatternWithBindings(const ast::Expression &pattern);
 
   std::optional<ResolvedBinding> resolveIdentifier(const std::string &name);
   std::optional<ResolvedBinding> resolveIdentifierInFunction(

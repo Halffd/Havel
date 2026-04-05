@@ -221,6 +221,13 @@ private:
   std::unique_ptr<ast::Expression> parseIfExpression();
   std::unique_ptr<ast::Expression> parseArrayPattern();
   std::unique_ptr<ast::Expression> parseObjectPattern();
+  
+  // Pattern parsing for match expressions
+  std::unique_ptr<ast::Expression> parsePattern();
+  std::unique_ptr<ast::Expression> parsePatternAtom();
+  std::unique_ptr<ast::Expression> parseArrayPatternForMatch();
+  std::unique_ptr<ast::Expression> parseObjectPatternForMatch();
+  
   std::unique_ptr<ast::Statement> parseTryStatement();
   std::unique_ptr<ast::Statement> parseThrowStatement();
   std::unique_ptr<ast::Statement> parseUIDeclaration();

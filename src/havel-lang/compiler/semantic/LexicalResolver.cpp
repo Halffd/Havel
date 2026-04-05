@@ -957,36 +957,33 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
     return std::nullopt;
   }
 
-  // FIRST: Check if this is a global variable (top-level let) - if so, return
-  // as Global
+  auto &ctx = function_stack_[function_index];
+
+  // FIRST: Check if this is a global variable (top-level let) - these shadow locals
   if (global_variables_.count(name) > 0) {
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
-  // SECOND: If at global scope (function_index == 0), check if it's a top-level
-  // function BEFORE searching local scopes. This ensures top-level functions
-  // are resolved as Function kind, not as Local/upvalue captures.
+  // SECOND: Search local scopes (for loop vars, nested let declarations, etc.)
+  for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
+    const auto &scope = ctx.scopes[sc - 1];
+    auto it = scope.find(name);
+    if (it != scope.end()) {
+      return ResolvedBinding{
+          ResolvedBindingKind::Local, it->second.slot,
+          static_cast<uint32_t>(function_stack_.size() - 1 - function_index),
+          name, it->second.is_const};
+    }
+  }
+
+  // THIRD: If at global scope (function_index == 0), check if it's a top-level
+  // function BEFORE falling back to dynamic globals.
   if (function_index == 0) {
     if (top_level_functions_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
     }
     // Dynamic language: treat all other identifiers as globals
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
-  }
-
-  // THIRD: Search local scopes (only for nested functions, not global)
-  auto &ctx = function_stack_[function_index];
-  for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
-    const auto &scope = ctx.scopes[sc - 1];
-    auto it = scope.find(name);
-    if (it == scope.end()) {
-      continue;
-    }
-
-    return ResolvedBinding{
-        ResolvedBindingKind::Local, it->second.slot,
-        static_cast<uint32_t>(function_stack_.size() - 1 - function_index),
-        name, it->second.is_const};
   }
 
   // FOURTH: In nested function - check enclosing scope recursively

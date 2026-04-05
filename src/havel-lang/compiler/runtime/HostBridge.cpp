@@ -246,6 +246,7 @@ void HostBridge::install() {
 
   // Register all any.* methods
   registerAnyMethod("len");
+  registerAnyMethod("get");
 
   // Global len() function - delegates to any.len dispatch
   options_.host_functions["len"] =
@@ -917,19 +918,41 @@ void HostBridge::install() {
       };
   options_.host_functions["object.get"] =
       [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isObjectId() ||
-            !args[1].isStringValId())
+        if (args.size() < 2 || !args[0].isObjectId())
           return Value::makeNull();
-        return ctx_->vm->getHostObjectField(ObjectRef{args[0].asObjectId(), true},
-                                            args[1].toString());
+        // Resolve the key - could be StringValId or actual string
+        std::string key;
+        if (args[1].isStringValId()) {
+          auto *chunk = ctx_->vm->getCurrentChunk();
+          if (chunk) {
+            key = chunk->getString(args[1].asStringValId());
+          } else {
+            key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
+          }
+        } else {
+          key = args[1].toString();
+        }
+        auto result = ctx_->vm->getHostObjectField(ObjectRef{args[0].asObjectId(), true}, key);
+        return result;
       };
   options_.host_functions["object.set"] =
       [this](const std::vector<Value> &args) {
-        if (args.size() < 3 || !args[0].isObjectId() ||
-            !args[1].isStringValId())
+        if (args.size() < 3 || !args[0].isObjectId())
           return Value::makeNull();
+        // Resolve the key - could be StringValId or actual string
+        std::string key;
+        if (args[1].isStringValId()) {
+          auto *chunk = ctx_->vm->getCurrentChunk();
+          if (chunk) {
+            key = chunk->getString(args[1].asStringValId());
+          } else {
+            key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
+          }
+        } else {
+          key = args[1].toString();
+        }
         ctx_->vm->setHostObjectField(ObjectRef{args[0].asObjectId(), true},
-                                     args[1].toString(), args[2]);
+                                     key, args[2]);
         return args[2];
       };
   options_.host_functions["object.keys"] =

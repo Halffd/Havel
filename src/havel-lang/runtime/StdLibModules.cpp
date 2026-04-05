@@ -31,6 +31,7 @@ void registerPhysicsModule(
 void registerTimeModule(
     compiler::VMApi &api); // TimeModule (timestamp ops only)
 void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
+void registerFsModule(compiler::VMApi &api);     // FsModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -53,6 +54,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
   stdlib::registerTimeModule(*api);    // TimeModule (timestamps)
   stdlib::registerHotkeyModule(*api);  // HotkeyModule
+  stdlib::registerFsModule(*api);      // FsModule
 
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
@@ -106,6 +108,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("Time");
   bridge.options().host_global_names.insert("time");
   bridge.options().host_global_names.insert("ui");
+  bridge.options().host_global_names.insert("fs");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

@@ -1355,6 +1355,15 @@ Value VM::invokeHostFunction(const std::string &name,
   return it->second(args);
 }
 
+Value VM::invokeHostFunctionDirect(const std::string &name,
+                                    const std::vector<Value> &args) {
+  auto it = host_functions.find(name);
+  if (it == host_functions.end()) {
+    return Value::makeNull();
+  }
+  return it->second(args);
+}
+
 Value VM::execute(const BytecodeChunk &chunk,
                           const std::string &function_name,
                           const std::vector<Value> &args) {

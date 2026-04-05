@@ -225,6 +225,19 @@ void HostBridge::install() {
 
           std::string fullName = modulePrefix + "." + methodName;
 
+          // Special case: array property access (like arr.len)
+          if (type == "array" && args.size() >= 2 &&
+              (args[1].isStringValId() || args[1].isStringId())) {
+            std::string prop = ctx_->vm->resolveStringKey(args[1]);
+            if (prop == "len" || prop == "length") {
+              if (args[0].isArrayId()) {
+                return Value::makeInt(static_cast<int64_t>(
+                    ctx_->vm->getHostArrayLength(
+                        ArrayRef{args[0].asArrayId()})));
+              }
+            }
+          }
+
           // Look up and call the appropriate function
           auto it = options_.host_functions.find(fullName);
           if (it != options_.host_functions.end()) {
@@ -232,12 +245,31 @@ void HostBridge::install() {
           }
 
           // Also check stdlib modules (http, io, json, fs, etc.)
+          // These are namespace-style modules like math.abs, fs.exists
+          // Strip the first arg (namespace object) when calling
           for (const auto &mod : {"http", "io", "json", "fs", "net", "time",
                                   "math", "os", "env"}) {
             std::string modFunc = std::string(mod) + "." + methodName;
             auto modIt = options_.host_functions.find(modFunc);
             if (modIt != options_.host_functions.end()) {
-              return modIt->second(args);
+              // Strip the namespace object (args[0]) and pass remaining args
+              std::vector<Value> modArgs(args.begin() + 1, args.end());
+              return modIt->second(modArgs);
+            }
+          }
+
+          // If not found in options_.host_functions, try calling via VM directly
+          // This catches functions registered via VMApi::registerFunction after
+          // the VM was created (e.g., FsModule, MathModule)
+          if (ctx_ && ctx_->vm) {
+            for (const auto &mod : {"http", "io", "json", "fs", "net", "time",
+                                    "math", "os", "env"}) {
+              std::string modFunc = std::string(mod) + "." + methodName;
+              if (ctx_->vm->hasHostFunction(modFunc)) {
+                // Push args to VM stack and invoke
+                std::vector<Value> modArgs(args.begin() + 1, args.end());
+                return ctx_->vm->invokeHostFunctionDirect(modFunc, modArgs);
+              }
             }
           }
 
@@ -328,6 +360,23 @@ void HostBridge::install() {
   registerAnyMethod("foreach");
   registerAnyMethod("any");
   registerAnyMethod("all");
+
+  // File system methods (dispatch to fs.* functions)
+  registerAnyMethod("exists");
+  registerAnyMethod("isDir");
+  registerAnyMethod("isFile");
+  registerAnyMethod("read");
+  registerAnyMethod("readDir");
+  registerAnyMethod("readLines");
+  registerAnyMethod("write");
+  registerAnyMethod("append");
+  registerAnyMethod("touch");
+  registerAnyMethod("mkdir");
+  registerAnyMethod("mkdirAll");
+  registerAnyMethod("delete");
+  registerAnyMethod("copy");
+  registerAnyMethod("move");
+
   registerAnyMethod("send");
   registerAnyMethod("pause");
   registerAnyMethod("resume");

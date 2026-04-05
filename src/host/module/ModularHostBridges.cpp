@@ -606,22 +606,14 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
   std::cerr << "[DEBUG] handleSystemDetect: all fields set, returning\n";
 
-  // Linux-specific fields
-  if (!sysInfo.displayProtocol.empty()) {
-    vm->setHostObjectField(obj, "displayProtocol",
-                           makeStr(sysInfo.displayProtocol));
-  }
-  if (!sysInfo.display.empty()) {
-    vm->setHostObjectField(obj, "display", makeStr(sysInfo.display));
-  }
-  if (!sysInfo.windowManager.empty()) {
-    vm->setHostObjectField(obj, "windowManager",
-                           makeStr(sysInfo.windowManager));
-  }
-  if (!sysInfo.desktopEnv.empty()) {
-    vm->setHostObjectField(obj, "desktopEnv",
-                           makeStr(sysInfo.desktopEnv));
-  }
+  // Linux-specific fields (always set, even if empty)
+  vm->setHostObjectField(obj, "displayProtocol",
+                         makeStr(sysInfo.displayProtocol));
+  vm->setHostObjectField(obj, "display", makeStr(sysInfo.display));
+  vm->setHostObjectField(obj, "windowManager",
+                         makeStr(sysInfo.windowManager));
+  vm->setHostObjectField(obj, "desktopEnv",
+                         makeStr(sysInfo.desktopEnv));
 
   return Value::makeObjectId(obj.id);
 }

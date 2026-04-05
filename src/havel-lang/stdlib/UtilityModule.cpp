@@ -87,29 +87,33 @@ void registerUtilityModule(VMApi &api) {
     return Value(result);
   });
 
-  // type(value) - Get type of value (alias for type.of)
-  api.registerFunction("type", [](const std::vector<Value> &args) {
+  // type(value) - Get type of value
+  api.registerFunction("type", [&api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("type() requires an argument");
 
     const auto &arg = args[0];
+    std::string typeName;
 
-    if (arg.isNull())
-      return Value::makeNull();
-    if (arg.isBool())
-      return Value::makeNull();
-    if (arg.isInt())
-      return Value::makeNull();
-    if (arg.isDouble())
-      return Value::makeNull();
-    if (arg.isStringValId())
-      return arg;
-    if (arg.isArrayId())
-      return Value::makeNull();
-    if (arg.isObjectId())
-      return Value::makeNull();
+    if (arg.isNull()) typeName = "null";
+    else if (arg.isBool()) typeName = "bool";
+    else if (arg.isInt()) typeName = "int";
+    else if (arg.isDouble()) typeName = "float";
+    else if (arg.isStringValId() || arg.isStringId()) typeName = "string";
+    else if (arg.isArrayId()) typeName = "array";
+    else if (arg.isObjectId()) typeName = "object";
+    else if (arg.isRangeId()) typeName = "range";
+    else if (arg.isHostFuncId()) typeName = "function";
+    else if (arg.isClosureId()) typeName = "closure";
+    else if (arg.isFunctionObjId()) typeName = "function";
+    else if (arg.isEnumId()) typeName = "enum";
+    else if (arg.isIteratorId()) typeName = "iterator";
+    else if (arg.isStructId()) typeName = "struct";
+    else if (arg.isClassId()) typeName = "class";
+    else typeName = "unknown";
 
-    return Value::makeNull();
+    auto strRef = api.vm.getHeap().allocateString(typeName);
+    return Value::makeStringId(strRef.id);
   });
 
   // len(value) - Get length of string or array

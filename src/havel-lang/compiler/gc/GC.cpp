@@ -342,7 +342,9 @@ Value GCHeap::iteratorNext(uint32_t id) {
       }
       auto resultObj = allocateObject();
       auto *result = object(resultObj.id);
-      (*result)["key"] = Value::makeNull(); // TODO: proper string storage
+      // Allocate a runtime StringId for the key
+      auto keyStrRef = allocateString(key);
+      (*result)["key"] = Value::makeStringId(keyStrRef.id);
       (*result)["value"] = val;
       value = Value::makeObjectId(resultObj.id);
       iter->index++;

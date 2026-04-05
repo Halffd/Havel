@@ -276,7 +276,8 @@ void HostBridge::install() {
           if (arg.isStringValId() || arg.isStringId()) {
             std::cout << ctx_->vm->resolveStringKey(arg);
           } else {
-            std::cout << ctx_->vm->toString(arg);
+            std::string s = ctx_->vm->toString(arg);
+            std::cout << s;
           }
         }
         std::cout << std::flush;

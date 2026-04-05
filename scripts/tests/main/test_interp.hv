@@ -1,0 +1,11 @@
+// Simple interpolation test
+let x = 42
+print("Value of x: ${x}")
+
+let str = "hello"
+print("String: ${str}")
+
+let arr = [1, 2, 3]
+print("Array length: ${len(arr)}")
+
+print("Test complete!")

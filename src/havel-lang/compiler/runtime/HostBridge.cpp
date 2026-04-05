@@ -771,6 +771,33 @@ void HostBridge::install() {
         return Value::makeNull();
       };
 
+  // String split: any.split(string, delimiter) or string.split(delimiter)
+  options_.host_functions["any.split"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty())
+          return Value::makeNull();
+        std::string str = ctx_->vm->resolveStringKey(args[0]);
+        std::string delim = (args.size() > 1) ? ctx_->vm->resolveStringKey(args[1]) : " ";
+
+        auto arr = ctx_->vm->createHostArray();
+        size_t start = 0;
+        size_t pos = str.find(delim);
+
+        while (pos != std::string::npos) {
+          std::string part = str.substr(start, pos - start);
+          auto strRef = ctx_->vm->getHeap().allocateString(part);
+          ctx_->vm->pushHostArrayValue(arr, Value::makeStringId(strRef.id));
+          start = pos + delim.length();
+          pos = str.find(delim, start);
+        }
+        // Push the last part
+        std::string lastPart = str.substr(start);
+        auto strRef = ctx_->vm->getHeap().allocateString(lastPart);
+        ctx_->vm->pushHostArrayValue(arr, Value::makeStringId(strRef.id));
+
+        return Value::makeArrayId(arr.id);
+      };
+
   // Array methods (for any.* dispatch fallback)
   options_.host_functions["array.len"] =
       [this](const std::vector<Value> &args) {

@@ -248,7 +248,7 @@ void HostBridge::install() {
           // These are namespace-style modules like math.abs, fs.exists
           // Strip the first arg (namespace object) when calling
           for (const auto &mod : {"http", "io", "json", "fs", "net", "time",
-                                  "math", "os", "env"}) {
+                                  "math", "os", "env", "system"}) {
             std::string modFunc = std::string(mod) + "." + methodName;
             auto modIt = options_.host_functions.find(modFunc);
             if (modIt != options_.host_functions.end()) {
@@ -263,7 +263,7 @@ void HostBridge::install() {
           // the VM was created (e.g., FsModule, MathModule)
           if (ctx_ && ctx_->vm) {
             for (const auto &mod : {"http", "io", "json", "fs", "net", "time",
-                                    "math", "os", "env"}) {
+                                    "math", "os", "env", "system"}) {
               std::string modFunc = std::string(mod) + "." + methodName;
               if (ctx_->vm->hasHostFunction(modFunc)) {
                 // Push args to VM stack and invoke
@@ -376,6 +376,9 @@ void HostBridge::install() {
   registerAnyMethod("delete");
   registerAnyMethod("copy");
   registerAnyMethod("move");
+
+  // System methods (dispatch to system.* functions)
+  registerAnyMethod("detect");
 
   registerAnyMethod("send");
   registerAnyMethod("pause");

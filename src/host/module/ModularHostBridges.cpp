@@ -591,29 +591,36 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   auto sysInfo = havel::HardwareDetector::detectSystem();
   std::cerr << "[DEBUG] handleSystemDetect: detected OS=" << sysInfo.os << "\n";
 
-  vm->setHostObjectField(obj, "os", Value::makeNull());
+  // Allocate strings on heap for non-empty values
+  auto makeStr = [vm](const std::string &s) -> Value {
+    if (s.empty()) return Value::makeNull();
+    auto ref = vm->getHeap().allocateString(s);
+    return Value::makeStringId(ref.id);
+  };
+
+  vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
   std::cerr << "[DEBUG] handleSystemDetect: set os field\n";
-  vm->setHostObjectField(obj, "shell", Value::makeNull());
-  vm->setHostObjectField(obj, "user", Value::makeNull());
-  vm->setHostObjectField(obj, "home", Value::makeNull());
-  vm->setHostObjectField(obj, "hostname", Value::makeNull());
+  vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
+  vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
+  vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
+  vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
   std::cerr << "[DEBUG] handleSystemDetect: all fields set, returning\n";
 
   // Linux-specific fields
   if (!sysInfo.displayProtocol.empty()) {
     vm->setHostObjectField(obj, "displayProtocol",
-                           Value::makeNull());
+                           makeStr(sysInfo.displayProtocol));
   }
   if (!sysInfo.display.empty()) {
-    vm->setHostObjectField(obj, "display", Value::makeNull());
+    vm->setHostObjectField(obj, "display", makeStr(sysInfo.display));
   }
   if (!sysInfo.windowManager.empty()) {
     vm->setHostObjectField(obj, "windowManager",
-                           Value::makeNull());
+                           makeStr(sysInfo.windowManager));
   }
   if (!sysInfo.desktopEnv.empty()) {
     vm->setHostObjectField(obj, "desktopEnv",
-                           Value::makeNull());
+                           makeStr(sysInfo.desktopEnv));
   }
 
   return Value::makeObjectId(obj.id);

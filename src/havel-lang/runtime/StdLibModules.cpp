@@ -204,6 +204,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // AltTab (window switcher)
   bridge.options().host_global_names.insert("alttab");
+  bridge.options().host_global_names.insert("input");
 }
 
 } // namespace havel

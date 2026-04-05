@@ -354,11 +354,20 @@ void LexicalResolver::resolvePatternWithBindings(const ast::Expression &pattern)
   switch (pattern.kind) {
   case ast::NodeType::Identifier: {
     const auto &ident = static_cast<const ast::Identifier &>(pattern);
-    // Declare as local without duplicate check for match patterns
-    declareLocalUnchecked(ident.symbol, &ident, false);
-    // Also note the binding so the bytecode compiler can find it
-    auto it = result_.declaration_slots.find(&ident);
-    uint32_t slot = (it != result_.declaration_slots.end()) ? it->second : 0;
+    // Check if already bound in current scope (e.g., from a previous match arm)
+    auto &ctx = function_stack_.back();
+    if (ctx.scopes.empty()) {
+      beginScope();
+    }
+    auto &scope = ctx.scopes.back();
+    auto it = scope.find(ident.symbol);
+    if (it == scope.end()) {
+      // New binding - allocate slot
+      declareLocalUnchecked(ident.symbol, &ident, false);
+      it = scope.find(ident.symbol);
+    }
+    // Note the binding with the existing or new slot
+    uint32_t slot = (it != scope.end()) ? it->second.slot : 0;
     noteIdentifierBinding(ident, ResolvedBinding{
         ResolvedBindingKind::Local, slot, 0, ident.symbol, false});
     break;

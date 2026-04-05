@@ -302,10 +302,20 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
                              function.name->symbol);
   }
 
+  // Compute max local slot from resolver's declaration_slots for this function
+  // We need to find all declarations that belong to this function
+  uint32_t max_slot = static_cast<uint32_t>(function.parameters.size());
+  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+    if (slot >= max_slot) {
+      max_slot = slot + 1;
+    }
+  }
+
   enterFunction(
       BytecodeFunction(function.name->symbol,
-                       static_cast<uint32_t>(function.parameters.size()), 0),
+                       static_cast<uint32_t>(function.parameters.size()), max_slot),
       index_it->second);
+  next_local_index = max_slot;
   auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
   if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
     current_function->upvalues = upvalues_it->second;
@@ -1283,25 +1293,56 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
   
   case ast::NodeType::ArrayPattern: {
     const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
-    // ArrayPattern: check length, then check each element
-    // Load array length
+    // ArrayPattern: check length AND bind element variables
+    // Start with true
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+    
+    // Check length first
+    size_t expectedLen = arrPat.elements.size();
     emit(OpCode::LOAD_VAR, discSlot);
     emit(OpCode::ARRAY_LEN);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(arrPat.elements.size())));
-    emit(OpCode::EQ);
-    
-    if (!arrPat.rest) {
-      // Exact match: length must be exactly right
-      // For now, just check length - element comparison TODO
-      // TODO: add element comparison
-    } else {
+    if (arrPat.rest) {
       // Rest pattern: length must be >= element count
-      // Pop the EQ result and do >= comparison
-      emit(OpCode::POP); // pop the == result
-      emit(OpCode::LOAD_VAR, discSlot);
-      emit(OpCode::ARRAY_LEN);
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(arrPat.elements.size())));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(expectedLen))));
       emit(OpCode::GTE);
+    } else {
+      // Exact match: length must equal
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(expectedLen))));
+      emit(OpCode::EQ);
+    }
+    emit(OpCode::AND);
+    
+    // Extract and bind elements
+    for (size_t i = 0; i < arrPat.elements.size(); i++) {
+      const auto &elem = arrPat.elements[i];
+      if (elem && elem->kind == ast::NodeType::Identifier) {
+        const auto &ident = static_cast<const ast::Identifier &>(*elem);
+        // Get array element
+        emit(OpCode::LOAD_VAR, discSlot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
+        emit(OpCode::ARRAY_GET);
+        // Bind to variable
+        auto binding = bindingFor(ident);
+        if (binding && binding->kind == ResolvedBindingKind::Local) {
+          emit(OpCode::STORE_VAR, binding->slot);
+        }
+      }
+    }
+    
+    // Handle rest pattern
+    if (arrPat.rest) {
+      const auto &rest = arrPat.rest;
+      if (rest->kind == ast::NodeType::Identifier) {
+        const auto &ident = static_cast<const ast::Identifier &>(*rest);
+        // Create array of remaining elements
+        // For simplicity, just bind to null for now
+        // TODO: create slice array
+        auto binding = bindingFor(ident);
+        if (binding && binding->kind == ResolvedBindingKind::Local) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          emit(OpCode::STORE_VAR, binding->slot);
+        }
+      }
     }
     break;
   }

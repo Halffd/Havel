@@ -989,12 +989,20 @@ void VM::registerDefaultHostFunctions() {
 
   // Async library functions
   registerHostFunction("async.run", 1, [this](const std::vector<Value> &args) {
-    // For now, run synchronously until isolation is implemented
+    if (args.empty()) {
+      COMPILER_THROW("async.run requires a closure argument");
+    }
+    // Execute closure synchronously - full async isolation requires
+    // additional infrastructure (closure serialization, thread pools)
     return this->call(args[0], {});
   });
 
-  registerHostFunction("async.await", 1, [](const std::vector<Value> &) {
-    return Value::makeNull(); // TODO: implement with real task tracking
+  registerHostFunction("async.await", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) {
+      return Value::makeNull();
+    }
+    // For synchronous async.run, just return the value directly
+    return args[0];
   });
 
   registerHostFunction("async.sleep", 1, [this](const std::vector<Value> &args) {

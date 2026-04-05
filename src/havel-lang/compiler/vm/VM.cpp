@@ -13,8 +13,8 @@
 #include <thread>
 #include <fstream>
 
-// Helper macro for throwing runtime errors with source location
-#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+// Helper macro for throwing runtime errors
+#define COMPILER_THROW(msg) throw std::runtime_error(msg)
 
 namespace havel::compiler {
 
@@ -1492,6 +1492,20 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         throw ScriptError(thrown.value, errorMsg, stackTrace, line, column);
       }
       continue;
+    } catch (const std::runtime_error &e) {
+      // Enrich runtime errors with source location
+      std::string msg = e.what();
+      if (frame_count_ > 0) {
+        auto &frame = frame_arena_[frame_count_ - 1];
+        if (frame.function &&
+            frame.ip < frame.function->instruction_locations.size()) {
+          const auto &loc = frame.function->instruction_locations[frame.ip];
+          if (loc.line > 0) {
+            msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+          }
+        }
+      }
+      throw std::runtime_error(msg);
     }
 
     processPendingCalls();

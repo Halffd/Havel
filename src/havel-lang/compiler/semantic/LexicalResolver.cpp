@@ -922,10 +922,18 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         resolveExpression(*disc);
       }
     }
-    // Resolve each case's result expression
-    for (const auto &matchCase : match.cases) {
-      if (matchCase.second) {
-        resolveExpression(*matchCase.second);
+    // Resolve each case's patterns, guard, and result expression
+    for (const auto &arm : match.cases) {
+      for (const auto &pattern : arm.patterns) {
+        if (pattern) {
+          resolveExpression(*pattern);
+        }
+      }
+      if (arm.guard) {
+        resolveExpression(*arm.guard);
+      }
+      if (arm.result) {
+        resolveExpression(*arm.result);
       }
     }
     // Resolve default case

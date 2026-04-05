@@ -1487,9 +1487,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     reserveLocalSlot(matchSlot);
 
     // Compile each case
-    for (const auto &casePair : match.cases) {
-      const auto &patterns = casePair.first;
-      const auto &result = casePair.second;
+    for (const auto &arm : match.cases) {
+      const auto &patterns = arm.patterns;
+      const auto &result = arm.result;
 
       // Initialize match slot to true (all patterns match so far)
       emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
@@ -1520,13 +1520,28 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Jump to next case if not matched
       uint32_t failJump = emitJump(OpCode::JUMP_IF_FALSE);
 
-      // All patterns matched, compile result expression
-      compileExpression(*result);
+      // If there's a guard condition, evaluate it
+      if (arm.guard) {
+        compileExpression(*arm.guard);
+        // Jump to next case if guard is false
+        uint32_t guardFailJump = emitJump(OpCode::JUMP_IF_FALSE);
+        
+        // Guard passed, compile result expression
+        compileExpression(*result);
+        caseJumps.push_back(emitJump(OpCode::JUMP));
+        
+        // Patch guard failure jump to next case
+        uint32_t nextCaseTarget = static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(guardFailJump, nextCaseTarget);
+      } else {
+        // All patterns matched, compile result expression
+        compileExpression(*result);
 
-      // Jump to end of match
-      caseJumps.push_back(emitJump(OpCode::JUMP));
+        // Jump to end of match
+        caseJumps.push_back(emitJump(OpCode::JUMP));
+      }
 
-      // Patch failure jump to here (next case)
+      // Patch pattern failure jump to here (next case)
       uint32_t nextCaseTarget = static_cast<uint32_t>(current_function->instructions.size());
       patchJump(failJump, nextCaseTarget);
     }
@@ -3277,14 +3292,17 @@ void ByteCompiler::collectLambdaExpressions(
       }
     }
     // Collect from all patterns in all cases
-    for (const auto &casePair : match_expr.cases) {
-      for (const auto &pattern : casePair.first) {
+    for (const auto &arm : match_expr.cases) {
+      for (const auto &pattern : arm.patterns) {
         if (pattern) {
           collectLambdaExpressions(*pattern, out);
         }
       }
-      if (casePair.second) {
-        collectLambdaExpressions(*casePair.second, out);
+      if (arm.guard) {
+        collectLambdaExpressions(*arm.guard, out);
+      }
+      if (arm.result) {
+        collectLambdaExpressions(*arm.result, out);
       }
     }
     if (match_expr.defaultCase) {

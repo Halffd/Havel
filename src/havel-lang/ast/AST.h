@@ -2447,12 +2447,16 @@ struct CastExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Match Expression: match value1, value2, ... { pattern1, pattern2, ... => expr, ... }
+// Match Expression: match value1, value2, ... { pattern1, pattern2, ... if guard => expr, ... }
 struct MatchExpression : public Expression {
+  struct MatchArm {
+    std::vector<std::unique_ptr<Expression>> patterns;
+    std::unique_ptr<Expression> guard;  // optional guard condition (if expr)
+    std::unique_ptr<Expression> result;
+  };
+
   std::vector<std::unique_ptr<Expression>> discriminants; // Values to match on
-  std::vector<
-      std::pair<std::vector<std::unique_ptr<Expression>>, std::unique_ptr<Expression>>>
-      cases; // Each case has multiple patterns and a result
+  std::vector<MatchArm> cases; // Each case has patterns, optional guard, and result
   std::unique_ptr<Expression> defaultCase; // _ => expr (single underscore for any number of discriminants)
 
   MatchExpression(std::vector<std::unique_ptr<Expression>> disc) : discriminants(std::move(disc)) {

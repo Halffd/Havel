@@ -1317,15 +1317,9 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
   setGlobal("async", Value::makeObjectId(async_obj.id));
 
-  // Process object
-  auto process_obj = heap_.allocateObject();
-  setHostObjectField(process_obj, "find", Value::makeHostFuncId(getHostFunctionIndex("process.find")));
-  setHostObjectField(process_obj, "exists", Value::makeHostFuncId(getHostFunctionIndex("process.exists")));
-  setHostObjectField(process_obj, "kill", Value::makeHostFuncId(getHostFunctionIndex("process.kill")));
-  setHostObjectField(process_obj, "nice", Value::makeHostFuncId(getHostFunctionIndex("process.nice")));
-  setHostObjectField(process_obj, "run", Value::makeHostFuncId(getHostFunctionIndex("process.run")));
-  setHostObjectField(process_obj, "runDetached", Value::makeHostFuncId(getHostFunctionIndex("process.runDetached")));
-  setGlobal("process", Value::makeObjectId(process_obj.id));
+  // Process object - registered via system_object_initializer since
+  // process.* functions are registered after default host globals
+  // Will be set up in system_object_initializer if available
 
   // Register default window globals
   setGlobal("title", Value::makeNull());

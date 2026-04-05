@@ -347,9 +347,11 @@ Value VM::callFunctionSync(const Value &fn,
   size_t savedStackSize = stack.size();
   size_t savedFrameCount = frame_count_;
 
+
   // Execute callback
   doCall(fn, args, false);
   runDispatchLoop(savedFrameCount);
+
 
   // Get result from stack top
   Value result;
@@ -850,7 +852,8 @@ void VM::registerDefaultHostFunctions() {
       if (arg.isStringValId() || arg.isStringId()) {
         std::cout << resolveStringKey(arg);
       } else {
-        std::cout << toString(arg);
+        std::string s = toString(arg);
+        std::cout << s;
       }
     }
     std::cout << end;
@@ -2253,23 +2256,21 @@ void VM::executeInstruction(const Instruction &instruction) {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
 
+    // First check regular globals (user variables shadow host functions)
+    auto it = globals.find(name);
+    if (it != globals.end()) {
+      pushStack(it->second);
+      break;
+    }
 
-    // First check host function globals
+    // Then check host function globals (fallback for built-in functions)
     auto hostIt = host_function_globals_.find(name);
     if (hostIt != host_function_globals_.end()) {
-      
       pushStack(hostIt->second);
       break;
     }
 
-    // Then check regular globals
-    auto it = globals.find(name);
-    if (it == globals.end()) {
-      COMPILER_THROW("Undefined variable: '" + name + "'");
-    }
-    Value val = it->second;
-    
-    pushStack(val);
+    COMPILER_THROW("Undefined variable: '" + name + "'");
     break;
   }
 

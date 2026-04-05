@@ -1,0 +1,7 @@
+// Test script to verify VMApi ObjectModule functionality
+print("Testing VMApi ObjectModule...");
+
+// Test object functions
+print("Object object exists:", Object != 0);
+
+print("VMApi ObjectModule test completed successfully!");

@@ -30,9 +30,9 @@ if linux {
 wm = sys.windowManager.lower()
 print("wm: $wm")
 
-if wm == "unknown" {
+if wm == "Unknown" || wm == "unknown" {
   print("wm is unknown, checking for compiz")
-  if process.exists("compiz --replace") {
+  if process.exists("compiz") {
     wm = "compiz"
     print("wm is now: $wm")
   }
@@ -76,7 +76,7 @@ print(f"CPU: {cpu.name} ({cpu.cores} cores @ {cpu.frequency} MHz)")
 print(f"RAM: {ram.total / 1024/1024/1024} GB")
 print(f"GPU: {gpu}")
 print(f"Motherboard: {motherboard}")
-
+:100
 print("monitors: type(display.getMonitors()): " + type(display.getMonitors()))
 monitors = display.getMonitors()
 area = display.getMonitorsArea()

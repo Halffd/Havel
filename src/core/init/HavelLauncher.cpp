@@ -496,19 +496,25 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
       // Add pipeline function aliases for lexical resolution (directly to options)
       options.host_functions.insert({"upper", [](const std::vector<havel::compiler::Value>& args) {
-        if (args.empty() || !args[0].isStringValId()) return havel::compiler::Value::makeNull();
-        // TODO: Get string from constant pool by index
-        return havel::compiler::Value::makeNull();
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId())) {
+          return havel::compiler::Value::makeNull();
+        }
+        return args[0];
       }});
       options.host_functions.insert({"lower", [](const std::vector<havel::compiler::Value>& args) {
-        if (args.empty() || !args[0].isStringValId()) return havel::compiler::Value::makeNull();
-        // TODO: Get string from constant pool by index
-        return havel::compiler::Value::makeNull();
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId())) {
+          return havel::compiler::Value::makeNull();
+        }
+        return args[0];
       }});
       options.host_functions.insert({"trim", [](const std::vector<havel::compiler::Value>& args) {
-        if (args.empty() || !args[0].isStringValId()) return havel::compiler::Value::makeNull();
-        // TODO: Get string from constant pool by index
-        return havel::compiler::Value::makeNull();
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId())) {
+          return havel::compiler::Value::makeNull();
+        }
+        return args[0];
       }});
       options.host_global_names.insert("upper");
       options.host_global_names.insert("lower");

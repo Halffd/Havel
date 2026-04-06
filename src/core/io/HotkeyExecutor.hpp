@@ -72,6 +72,10 @@ private:
     int timeoutMs = 5000;
     std::chrono::steady_clock::time_point createdTime;
     std::atomic<bool> timedOut{false};
+    
+    // Error tracking
+    std::string errorMessage;
+    std::function<void(const std::string&)> errorCallback;
 
     Task() = default;
     Task(Task &&) = delete;
@@ -142,11 +146,34 @@ private:
 
       try {
         t->fn();
+      } catch (const havel::compiler::ScriptError &e) {
+        // Capture error message
+        t->errorMessage = std::string("ScriptError: ") + e.what();
+        
+        // Call custom error callback if set
+        if (t->errorCallback) {
+          t->errorCallback(t->errorMessage);
+        } else {
+          // Default: print to stderr
+          std::cerr << "[HotkeyExecutor] " << t->errorMessage << std::endl;
+        }
       } catch (const std::exception &e) {
-        std::cerr << "[HotkeyExecutor] Task threw exception: " << e.what()
-                  << "\n";
+        // Capture error message
+        t->errorMessage = std::string("Exception: ") + e.what();
+        
+        if (t->errorCallback) {
+          t->errorCallback(t->errorMessage);
+        } else {
+          std::cerr << "[HotkeyExecutor] " << t->errorMessage << std::endl;
+        }
       } catch (...) {
-        std::cerr << "[HotkeyExecutor] Task threw unknown exception\n";
+        t->errorMessage = "Unknown exception in hotkey execution";
+        
+        if (t->errorCallback) {
+          t->errorCallback(t->errorMessage);
+        } else {
+          std::cerr << "[HotkeyExecutor] " << t->errorMessage << std::endl;
+        }
       }
 
       try {

@@ -711,6 +711,26 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Identifier:
       return makeIdentifier(token);
 
+    case TokenType::ColonColon: {
+      if (at().type != TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '::'");
+      }
+      auto ident = makeIdentifier(advance());
+      ident->isGlobalScope = true;
+      return ident;
+    }
+
+    case TokenType::Colon: {
+      // Fallback for lexers that emit '::' as two ':' tokens.
+      if (at().type == TokenType::Colon && at(1).type == TokenType::Identifier) {
+        advance(); // consume second ':'
+        auto ident = makeIdentifier(advance());
+        ident->isGlobalScope = true;
+        return ident;
+      }
+      failAt(token, "Unexpected ':' in expression");
+    }
+
     // Allow certain keywords to be used as identifiers in expression context
     // This enables expressions like: mode == "work" && class == "code"
     case TokenType::Class:
@@ -2867,11 +2887,36 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
 }
 
 std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
-  // Parse type reference (simple type name)
-  if (at().type != havel::TokenType::Identifier) {
+  std::string typeName;
+  switch (at().type) {
+  case havel::TokenType::Identifier:
+    typeName = advance().value;
+    break;
+  case havel::TokenType::Fn:
+    typeName = "fn";
+    advance();
+    break;
+  case havel::TokenType::Struct:
+    typeName = "struct";
+    advance();
+    break;
+  case havel::TokenType::Class:
+    typeName = "class";
+    advance();
+    break;
+  default:
     failAt(at(), "Expected type name");
   }
-  std::string typeName = advance().value;
+
+  // Parse zero or more array suffixes: T[], T[][], ...
+  while (at().type == havel::TokenType::OpenBracket) {
+    advance(); // consume '['
+    if (at().type != havel::TokenType::CloseBracket) {
+      failAt(at(), "Expected ']' in array type annotation");
+    }
+    advance(); // consume ']'
+    typeName += "[]";
+  }
 
   // For now, just create a type reference
   // Could be extended to parse generic types like List(Int)
@@ -5251,6 +5296,38 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   case havel::TokenType::Null: {
     advance();
     return std::make_unique<havel::ast::NullLiteral>();
+  }
+
+  case havel::TokenType::ColonColon: {
+    // Explicit global-scope identifier expression: ::name
+    advance(); // consume '::'
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected identifier after '::'");
+    }
+    auto identTk = advance();
+    auto ident = makeIdentifier(identTk);
+    ident->isGlobalScope = true;
+    ident->line = identTk.line;
+    ident->column = identTk.column;
+    std::unique_ptr<havel::ast::Expression> expr = std::move(ident);
+    return parsePostfixExpression(std::move(expr));
+  }
+
+  case havel::TokenType::Colon: {
+    // Fallback support for lexers that emit '::' as two ':' tokens.
+    if (at(1).type == havel::TokenType::Colon &&
+        at(2).type == havel::TokenType::Identifier) {
+      advance(); // first ':'
+      advance(); // second ':'
+      auto identTk = advance();
+      auto ident = makeIdentifier(identTk);
+      ident->isGlobalScope = true;
+      ident->line = identTk.line;
+      ident->column = identTk.column;
+      std::unique_ptr<havel::ast::Expression> expr = std::move(ident);
+      return parsePostfixExpression(std::move(expr));
+    }
+    failAt(at(), "Unexpected ':' in expression");
   }
 
   case havel::TokenType::Mode:

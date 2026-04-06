@@ -4,6 +4,8 @@ src/file
 .cache
 .idea
 .vscode
+.codex
+.claude
 cmake-build-debug
 file
 src/out

@@ -861,6 +861,22 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     emit(OpCode::JUMP, 0); // Will be patched later
     break;
 
+  case ast::NodeType::SleepStatement: {
+    const auto &sleep = static_cast<const ast::SleepStatement &>(statement);
+    // Push the duration string as a constant
+    uint32_t strId = addStringConstant(sleep.duration);
+    emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+    // Call sleep() with the duration string
+    {
+      uint32_t fnId = addStringConstant("sleep");
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(fnId),
+          Value(static_cast<uint32_t>(1))});
+    }
+    emit(OpCode::POP); // Discard result
+    break;
+  }
+
   case ast::NodeType::FunctionDeclaration:
     // Function declarations evaluate to function objects stored in local slots.
     // Top-level declarations are skipped in __main__ and do not hit this path.
@@ -3742,9 +3758,6 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     if (!hotkeyExpr)
       continue;
 
-    // Compile the hotkey string
-    compileExpression(*hotkeyExpr);
-
     // Create a function that wraps the action with @ context injection
     // The action will receive @ as its first parameter
     BytecodeFunction hotkeyActionFn("hotkey_action");
@@ -3774,12 +3787,34 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     }
 
     leaveFunction();
+    
+    // Store hotkey_action to globals so it can be loaded at runtime
+    {
+      uint32_t strId = addStringConstant("hotkey_action");
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeFunctionObjId(
+               static_cast<uint32_t>(compiled_functions.size() - 1))));
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
 
     // Create a wrapper that injects the @ context
     // This wrapper receives the hotkey context as first parameter and passes it
     // to the action
     BytecodeFunction hotkeyWrapperFn("hotkey_wrapper");
     enterFunction(std::move(hotkeyWrapperFn));
+
+    // If there's a condition expression, compile and check it first
+    uint32_t skipActionJump = 0;
+    if (binding.conditionExpr) {
+      // Compile the condition expression
+      compileExpression(*binding.conditionExpr);
+
+      // If condition is false, skip the action
+      skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
+
+      // Pop the condition result (we don't need it anymore)
+      emit(OpCode::POP);
+    }
 
     // Load the hotkey action function
     {
@@ -3796,19 +3831,39 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     }
 
     // Call the action with @ context as parameter
-    emit(OpCode::CALL,
-         static_cast<uint32_t>(-1)); // Call with 1 arg (@ context)
+    emit(OpCode::CALL, static_cast<uint32_t>(1)); // Call with 1 arg (@ context)
 
     // Pop the result (action result)
     emit(OpCode::POP);
 
+    // If we had a condition, patch the skip jump to here
+    if (binding.conditionExpr && skipActionJump > 0) {
+      patchJump(skipActionJump,
+                static_cast<uint32_t>(current_function->instructions.size()));
+    }
+
     leaveFunction();
+    
+    // Store hotkey_wrapper to globals so it can be loaded at runtime
+    {
+      uint32_t strId = addStringConstant("hotkey_wrapper");
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeFunctionObjId(
+               static_cast<uint32_t>(compiled_functions.size() - 1))));
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
 
     // Register the hotkey with the wrapper function
+    // First, compile the hotkey string
+    compileExpression(*hotkeyExpr);
+    
+    // Load the hotkey_wrapper function from globals
     {
       uint32_t strId = addStringConstant("hotkey_wrapper");
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
+
+    // Call hotkey.register with (hotkey_string, wrapper_function)
     {
       uint32_t strId = addStringConstant("hotkey.register");
       emit(OpCode::CALL_HOST, std::vector<Value>{

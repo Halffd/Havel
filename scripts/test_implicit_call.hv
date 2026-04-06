@@ -1,0 +1,18 @@
+// Test implicit call sugar with operators
+let a = 2
+let b = 3
+
+// This should print 32 (2^5)
+print a ** 5
+
+// This should print 5 (2+3)
+print a + b
+
+// This should print 6 (2*3)
+print a * b
+
+// Multi-arg test
+print a, b, a + b
+
+// String concatenation
+print "Result: " + (a ** b)

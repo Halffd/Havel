@@ -109,6 +109,11 @@ private:
   void compileLoopStatement(const ast::LoopStatement &statement);
   void compileBlockStatement(const ast::BlockStatement &block);
   std::optional<std::string> getCalleeName(const ast::Expression &callee) const;
+  std::optional<std::string>
+  normalizeTypeAnnotation(const ast::TypeAnnotation *annotation) const;
+  void emitTypeAssertionForLocal(const std::string &normalized_expected,
+                                 uint32_t slot,
+                                 const std::string &label);
   const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
@@ -139,6 +144,7 @@ private:
   std::optional<uint32_t> current_function_slot_;
   std::unordered_map<std::string, uint32_t> top_level_function_indices_by_name_;
   std::unordered_set<std::string> top_level_struct_names_;
+  std::unordered_set<std::string> top_level_class_names_;
   uint32_t next_local_index = 0;
   std::optional<SourceLocation> current_source_location_;
   LexicalResolutionResult lexical_resolution_;

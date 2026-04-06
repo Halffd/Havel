@@ -1,5 +1,6 @@
 #include "ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include <cctype>
 #include <iostream>
 #include <stdexcept>
 
@@ -71,6 +72,7 @@ ByteCompiler::compile(const ast::Program &program) {
   lambda_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
+  top_level_class_names_.clear();
 
   for (size_t i = 0; i < program.body.size(); i++) {
   }
@@ -106,7 +108,7 @@ ByteCompiler::compile(const ast::Program &program) {
       if (statement && statement->kind == ast::NodeType::ClassDeclaration) {
         const auto &decl =
             static_cast<const ast::ClassDeclaration &>(*statement);
-        top_level_struct_names_.insert(decl.name);
+        top_level_class_names_.insert(decl.name);
       }
       continue;
     }
@@ -339,6 +341,18 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
       current_function->variadic_param_index = static_cast<uint32_t>(i);
     }
 
+    if (param->typeAnnotation && param->pattern &&
+        param->pattern->kind == ast::NodeType::Identifier) {
+      const auto *identifier =
+          static_cast<const ast::Identifier *>(param->pattern.get());
+      if (auto normalized =
+              normalizeTypeAnnotation(param->typeAnnotation->get());
+          normalized.has_value()) {
+        emitTypeAssertionForLocal(*normalized, declarationSlot(*identifier),
+                                  identifier->symbol);
+      }
+    }
+
     // Store default value if present (only simple literals for now)
     if (param->defaultValue.has_value()) {
       const auto &defaultExpr = param->defaultValue.value();
@@ -458,6 +472,18 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     // Track variadic parameter
     if (param->isVariadic) {
       current_function->variadic_param_index = static_cast<uint32_t>(i);
+    }
+
+    if (param->typeAnnotation && param->pattern &&
+        param->pattern->kind == ast::NodeType::Identifier) {
+      const auto *identifier =
+          static_cast<const ast::Identifier *>(param->pattern.get());
+      if (auto normalized =
+              normalizeTypeAnnotation(param->typeAnnotation->get());
+          normalized.has_value()) {
+        emitTypeAssertionForLocal(*normalized, declarationSlot(*identifier),
+                                  identifier->symbol);
+      }
     }
 
     // Store default value if present
@@ -696,14 +722,35 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       }
 
-      // Check if this is a global variable (top-level let)
-      if (lexical_resolution_.global_variables.count(identifier->symbol) > 0) {
+      const auto *decl_binding = bindingFor(*identifier);
+      // Top-level `let` is emitted as global storage; nested `let` stays local.
+      if (decl_binding && decl_binding->kind == ResolvedBindingKind::Global) {
+        uint32_t slot = declarationSlot(*identifier);
+        reserveLocalSlot(slot);
+        // Keep both global and slot state in sync so root-block references
+        // resolved as locals still observe initialized values.
+        emit(OpCode::DUP);
         emit(OpCode::STORE_GLOBAL,
              std::vector<Value>{Value::makeStringValId(addStringConstant(identifier->symbol))});
+        emit(OpCode::STORE_VAR, slot);
+        if (let.typeAnnotation) {
+          if (auto normalized =
+                  normalizeTypeAnnotation(let.typeAnnotation->get());
+              normalized.has_value()) {
+            emitTypeAssertionForLocal(*normalized, slot, identifier->symbol);
+          }
+        }
       } else {
         uint32_t slot = declarationSlot(*identifier);
         reserveLocalSlot(slot);
         emit(OpCode::STORE_VAR, slot);
+        if (let.typeAnnotation) {
+          if (auto normalized =
+                  normalizeTypeAnnotation(let.typeAnnotation->get());
+              normalized.has_value()) {
+            emitTypeAssertionForLocal(*normalized, slot, identifier->symbol);
+          }
+        }
       }
       break;
     }
@@ -863,9 +910,37 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::SleepStatement: {
     const auto &sleep = static_cast<const ast::SleepStatement &>(statement);
-    // Push the duration string as a constant
-    uint32_t strId = addStringConstant(sleep.duration);
-    emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+    // Prefer numeric constants for raw-number sleeps (e.g. :500).
+    bool is_numeric = !sleep.duration.empty();
+    bool seen_dot = false;
+    for (char ch : sleep.duration) {
+      if (ch == '.') {
+        if (seen_dot) {
+          is_numeric = false;
+          break;
+        }
+        seen_dot = true;
+        continue;
+      }
+      if (ch < '0' || ch > '9') {
+        is_numeric = false;
+        break;
+      }
+    }
+
+    if (is_numeric) {
+      if (seen_dot) {
+        emit(OpCode::LOAD_CONST,
+             addConstant(Value::makeDouble(std::stod(sleep.duration))));
+      } else {
+        emit(OpCode::LOAD_CONST,
+             addConstant(Value::makeInt(std::stoll(sleep.duration))));
+      }
+    } else {
+      // Fallback: duration string (e.g. "500ms", "1s", "2.5m", "1h").
+      uint32_t strId = addStringConstant(sleep.duration);
+      emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+    }
     // Call sleep() with the duration string
     {
       uint32_t fnId = addStringConstant("sleep");
@@ -1802,8 +1877,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
 
-    // Skip resolution for global scope identifiers (::x)
+    // Explicit global-scope identifier (::x).
     if (id.isGlobalScope) {
+      uint32_t strId = addStringConstant(id.symbol);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       break;
     }
 
@@ -2675,6 +2752,26 @@ void ByteCompiler::compileCallExpression(
       }
       {
         uint32_t strId = addStringConstant("struct.new");
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(totalArgs)});
+      }
+      return;
+    }
+    if (binding && binding->kind == ResolvedBindingKind::Global &&
+        top_level_class_names_.find(callee_id.symbol) !=
+            top_level_class_names_.end()) {
+      { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      uint32_t totalArgs = 1; // type name
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          COMPILER_THROW("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+        totalArgs++;
+      }
+      {
+        uint32_t strId = addStringConstant("class.new");
         emit(OpCode::CALL_HOST, std::vector<Value>{
             Value::makeStringValId(strId),
             Value(totalArgs)});
@@ -3642,6 +3739,106 @@ ByteCompiler::getCalleeName(const ast::Expression &callee) const {
   }
 
   return std::nullopt;
+}
+
+std::optional<std::string> ByteCompiler::normalizeTypeAnnotation(
+    const ast::TypeAnnotation *annotation) const {
+  if (!annotation || !annotation->type) {
+    return std::nullopt;
+  }
+  const auto *reference =
+      dynamic_cast<const ast::TypeReference *>(annotation->type.get());
+  if (!reference) {
+    return std::nullopt;
+  }
+
+  std::string type_name = reference->name;
+  for (char &ch : type_name) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+
+  if (type_name.empty() || type_name == "any" || type_name == "auto" ||
+      type_name == "unknown") {
+    return std::nullopt;
+  }
+  if (type_name.size() >= 2 &&
+      type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
+    return std::string("array");
+  }
+  if (type_name == "int" || type_name == "integer") {
+    return std::string("int");
+  }
+  if (type_name == "num" || type_name == "number" || type_name == "float" ||
+      type_name == "double" || type_name == "decimal") {
+    return std::string("number");
+  }
+  if (type_name == "str" || type_name == "string") {
+    return std::string("string");
+  }
+  if (type_name == "bool" || type_name == "boolean") {
+    return std::string("bool");
+  }
+  if (type_name == "list" || type_name == "array" || type_name == "vector") {
+    return std::string("array");
+  }
+  if (type_name == "obj" || type_name == "object" || type_name == "map") {
+    return std::string("object");
+  }
+  if (type_name == "fn" || type_name == "function" || type_name == "closure") {
+    return std::string("function");
+  }
+  if (type_name == "class") {
+    return std::string("class");
+  }
+  if (type_name == "struct") {
+    return std::string("struct");
+  }
+
+  // Custom nominal types are not enforceable yet in bytecode VM.
+  return std::nullopt;
+}
+
+void ByteCompiler::emitTypeAssertionForLocal(
+    const std::string &normalized_expected, uint32_t slot,
+    const std::string &label) {
+  const auto emitTypeEq = [&](const char *runtime_type_name) {
+    emit(OpCode::LOAD_VAR, slot);
+    {
+      const uint32_t type_name = addStringConstant("type");
+      emit(OpCode::CALL_HOST,
+           std::vector<Value>{Value::makeStringValId(type_name), Value(1)});
+    }
+    {
+      const uint32_t expected_id = addStringConstant(runtime_type_name);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(expected_id)));
+    }
+    emit(OpCode::EQ);
+  };
+
+  if (normalized_expected == "number") {
+    emitTypeEq("int");
+    emitTypeEq("float");
+    emit(OpCode::OR);
+  } else if (normalized_expected == "function") {
+    emitTypeEq("function");
+    emitTypeEq("closure");
+    emit(OpCode::OR);
+  } else {
+    emitTypeEq(normalized_expected.c_str());
+  }
+
+  const std::string message = "Type annotation mismatch for '" + label +
+                              "': expected " + normalized_expected;
+  {
+    const uint32_t msg_id = addStringConstant(message);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(msg_id)));
+  }
+  {
+    const uint32_t assert_name = addStringConstant("assert");
+    emit(OpCode::CALL_HOST,
+         std::vector<Value>{Value::makeStringValId(assert_name), Value(2)});
+  }
+  emit(OpCode::POP);
 }
 
 const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const {

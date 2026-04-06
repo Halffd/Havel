@@ -218,6 +218,145 @@ bool VM::toBool(const Value &value) const {
   return !value.isNull();
 }
 
+std::optional<std::string> VM::valueAsString(const Value &value) const {
+  if (value.isStringValId()) {
+    if (!current_chunk) {
+      return std::nullopt;
+    }
+    return current_chunk->getString(value.asStringValId());
+  }
+  if (value.isStringId()) {
+    if (auto *s = heap_.string(value.asStringId())) {
+      return *s;
+    }
+    return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+bool VM::valuesEqualDeep(const Value &left, const Value &right) const {
+  std::unordered_set<uint64_t> visited_array_pairs;
+  std::unordered_set<uint64_t> visited_object_pairs;
+  return valuesEqualDeep(left, right, visited_array_pairs, visited_object_pairs);
+}
+
+bool VM::valuesEqualDeep(
+    const Value &left, const Value &right,
+    std::unordered_set<uint64_t> &visited_array_pairs,
+    std::unordered_set<uint64_t> &visited_object_pairs) const {
+  if (left.isNull() || right.isNull()) {
+    return left.isNull() && right.isNull();
+  }
+
+  if ((left.isInt() || left.isDouble()) && (right.isInt() || right.isDouble())) {
+    const double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
+    const double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
+    return l == r;
+  }
+
+  if (left.isBool() && right.isBool()) {
+    return left.asBool() == right.asBool();
+  }
+
+  if (auto l = valueAsString(left); l.has_value()) {
+    auto r = valueAsString(right);
+    return r.has_value() && (*l == *r);
+  }
+  if (left.isStringValId() || left.isStringId() || right.isStringValId() ||
+      right.isStringId()) {
+    return false;
+  }
+
+  if (left.isArrayId() && right.isArrayId()) {
+    const uint32_t l_id = left.asArrayId();
+    const uint32_t r_id = right.asArrayId();
+    if (l_id == r_id) {
+      return true;
+    }
+
+    const uint32_t lo = std::min(l_id, r_id);
+    const uint32_t hi = std::max(l_id, r_id);
+    const uint64_t pair = (static_cast<uint64_t>(lo) << 32) | hi;
+    if (!visited_array_pairs.insert(pair).second) {
+      return true;
+    }
+
+    const auto *l_arr = heap_.array(l_id);
+    const auto *r_arr = heap_.array(r_id);
+    if (!l_arr || !r_arr) {
+      return false;
+    }
+    if (l_arr->size() != r_arr->size()) {
+      return false;
+    }
+
+    for (size_t i = 0; i < l_arr->size(); i++) {
+      if (!valuesEqualDeep((*l_arr)[i], (*r_arr)[i], visited_array_pairs,
+                           visited_object_pairs)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (left.isObjectId() && right.isObjectId()) {
+    const uint32_t l_id = left.asObjectId();
+    const uint32_t r_id = right.asObjectId();
+    if (l_id == r_id) {
+      return true;
+    }
+
+    const uint32_t lo = std::min(l_id, r_id);
+    const uint32_t hi = std::max(l_id, r_id);
+    const uint64_t pair = (static_cast<uint64_t>(lo) << 32) | hi;
+    if (!visited_object_pairs.insert(pair).second) {
+      return true;
+    }
+
+    const auto *l_obj = heap_.object(l_id);
+    const auto *r_obj = heap_.object(r_id);
+    if (!l_obj || !r_obj) {
+      return false;
+    }
+    if (l_obj->size() != r_obj->size()) {
+      return false;
+    }
+
+    for (const auto &[key, l_value] : *l_obj) {
+      auto it = r_obj->find(key);
+      if (it == r_obj->end()) {
+        return false;
+      }
+      if (!valuesEqualDeep(l_value, it->second, visited_array_pairs,
+                           visited_object_pairs)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (left.isRangeId() && right.isRangeId()) {
+    return left.asRangeId() == right.asRangeId();
+  }
+  if (left.isStructId() && right.isStructId()) {
+    return left.asStructId() == right.asStructId();
+  }
+  if (left.isClassId() && right.isClassId()) {
+    return left.asClassId() == right.asClassId();
+  }
+  if (left.isClosureId() && right.isClosureId()) {
+    return left.asClosureId() == right.asClosureId();
+  }
+  if (left.isFunctionObjId() && right.isFunctionObjId()) {
+    return left.asFunctionObjId() == right.asFunctionObjId();
+  }
+  if (left.isHostFuncId() && right.isHostFuncId()) {
+    return left.asHostFuncId() == right.asHostFuncId();
+  }
+
+  return false;
+}
+
 std::optional<int64_t> indexFromValue(const Value &value) {
   if (value.isInt()) {
     return value.asInt();
@@ -266,6 +405,25 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
     return "<unknown>";
   }
   return std::to_string(location.line) + ":" + std::to_string(location.column);
+}
+
+SourceLocation nearestSourceLocation(const BytecodeFunction &function,
+                                     size_t ip) {
+  if (function.instruction_locations.empty()) {
+    return {};
+  }
+  size_t idx = std::min(ip, function.instruction_locations.size() - 1);
+  while (true) {
+    const auto &loc = function.instruction_locations[idx];
+    if (loc.line > 0) {
+      return loc;
+    }
+    if (idx == 0) {
+      break;
+    }
+    --idx;
+  }
+  return {};
 }
 
 std::string VM::formatErrorWithContext(const std::string &message) const {
@@ -1024,13 +1182,21 @@ void VM::registerDefaultHostFunctions() {
     bool condition = toBool(args[0]);
     if (!condition) {
       std::string msg = "Assertion failed";
-      if (args.size() > 1 && args[1].isStringValId()) {
-        if (current_chunk) {
-          msg = current_chunk->getString(args[1].asStringValId());
-        }
+      if (args.size() > 1 &&
+          (args[1].isStringValId() || args[1].isStringId())) {
+        msg = resolveStringKey(args[1]);
       }
       COMPILER_THROW(msg);
     }
+    return Value::makeNull();
+  });
+
+  registerHostFunction("panic", [this](const std::vector<Value> &args) {
+    std::string msg = "panic";
+    if (!args.empty()) {
+      msg = resolveStringKey(args[0]);
+    }
+    COMPILER_THROW(msg);
     return Value::makeNull();
   });
 
@@ -1832,7 +1998,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
           auto &frame = frame_arena_[frame_count_ - 1];
           if (frame.function &&
               frame.ip < frame.function->instruction_locations.size()) {
-            const auto &loc = frame.function->instruction_locations[frame.ip];
+            const auto loc = nearestSourceLocation(*frame.function, frame.ip);
             line = loc.line;
             column = loc.column;
           }
@@ -1857,7 +2023,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         auto &frame = frame_arena_[frame_count_ - 1];
         if (frame.function &&
             frame.ip < frame.function->instruction_locations.size()) {
-          const auto &loc = frame.function->instruction_locations[frame.ip];
+          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
           if (loc.line > 0) {
             msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
           }
@@ -2380,6 +2546,12 @@ void VM::execBinaryOp(const Instruction &instruction) {
       COMPILER_THROW("Invalid operation opcode with null");
     }
     pushStack(result);
+    return;
+  }
+
+  if (instruction.opcode == OpCode::EQ || instruction.opcode == OpCode::NEQ) {
+    const bool equal = valuesEqualDeep(left, right);
+    pushStack(instruction.opcode == OpCode::EQ ? equal : !equal);
     return;
   }
 
@@ -4149,9 +4321,14 @@ std::optional<int64_t> VM::parseDuration(const Value &value) const {
     return static_cast<int64_t>(value.asDouble());
   }
 
-  if (value.isStringValId()) {
-    // TODO: string pool lookup
-    const std::string duration_str = "<string:" + std::to_string(value.asStringValId()) + ">";
+  if (value.isStringValId() || value.isStringId()) {
+    const std::string duration_str = resolveStringKey(value);
+
+    // Plain numeric strings are milliseconds.
+    static const std::regex numeric_regex(R"(^\d+(?:\.\d+)?$)");
+    if (std::regex_match(duration_str, numeric_regex)) {
+      return static_cast<int64_t>(std::stod(duration_str));
+    }
 
     // Parse duration strings like "1s", "500ms", "2.5m", "1h"
     static const std::regex duration_regex(R"(^(\d+(?:\.\d+)?)(ms|s|m|h)$)");

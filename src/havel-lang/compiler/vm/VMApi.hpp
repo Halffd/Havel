@@ -35,15 +35,18 @@ struct VMApi {
   Value makeNumber(int64_t v) { return Value::makeInt(v); }
   Value makeNumber(double v) { return Value::makeDouble(v); }
   Value makeString(std::string v) {
-    // Strings are stored as string IDs - register in pool and return ID
-    // For now, use a placeholder - the VM's string pool handles this
-    (void)v;
-    return Value::makeNull(); // TODO: integrate with string pool
+    auto ref = vm.createRuntimeString(std::move(v));
+    return Value::makeStringId(ref.id);
   }
   Value makeObject() { return Value::makeObjectId(vm.createHostObject().id); }
   Value makeArray() { return Value::makeArrayId(vm.createHostArray().id); }
   Value makeFunctionRef(const std::string &name) {
     return Value::makeHostFuncId(vm.getHostFunctionIndex(name));
+  }
+
+  // String conversion
+  std::string toString(const Value &value) {
+    return vm.toString(value);
   }
 
   // Global scope

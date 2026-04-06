@@ -8,27 +8,6 @@ namespace havel::stdlib {
 
 // Register string module with VMApi (stable API layer)
 void registerStringModule(VMApi &api) {
-  // Helper: convert Value to string
-  auto toString = [](const Value &v) -> std::string {
-    if (v.isStringValId())
-      return "<string:" + std::to_string(v.asStringValId()) + ">";
-    if (v.isInt())
-      return std::to_string(v.asInt());
-    if (v.isDouble()) {
-      double val = v.asDouble();
-      if (val == std::floor(val) && std::abs(val) < 1e15) {
-        return std::to_string(static_cast<long long>(val));
-      }
-      std::ostringstream oss;
-      oss.precision(15);
-      oss << val;
-      return oss.str();
-    }
-    if (v.isBool())
-      return v.asBool() ? "true" : "false";
-    return "";
-  };
-
   // Helper: convert string to lowercase
   auto toLower = [](const std::string &s) -> std::string {
     std::string result = s;
@@ -56,44 +35,47 @@ void registerStringModule(VMApi &api) {
 
   // Register string functions via VMApi
   api.registerFunction(
-      "string.len", [toString](const std::vector<Value> &args) {
+      "string.len", [&api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("string.len() requires 1 argument");
-        return Value(static_cast<int64_t>(toString(args[0]).length()));
+        return Value(static_cast<int64_t>(api.toString(args[0]).length()));
       });
 
   api.registerFunction(
       "string.lower",
-      [toString, toLower](const std::vector<Value> &args) {
+      [&api, toLower](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("string.lower() requires 1 argument");
-        // TODO: string pool integration - for now return original
-        return args[0];
+        std::string s = api.toString(args[0]);
+        std::string result = toLower(s);
+        return api.makeString(result);
       });
 
   api.registerFunction(
       "string.upper",
-      [toString, toUpper](const std::vector<Value> &args) {
+      [&api, toUpper](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("string.upper() requires 1 argument");
-        // TODO: string pool integration - for now return original
-        return args[0];
+        std::string s = api.toString(args[0]);
+        std::string result = toUpper(s);
+        return api.makeString(result);
       });
 
   api.registerFunction(
-      "string.trim", [toString, trim](const std::vector<Value> &args) {
+      "string.trim", [&api, trim](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("string.trim() requires 1 argument");
-        // TODO: string pool integration - for now return original
-        return args[0];
+        std::string s = api.toString(args[0]);
+        std::string result = trim(s);
+        return api.makeString(result);
       });
 
   api.registerFunction(
-      "string.sub", [toString](const std::vector<Value> &args) {
+      "string.sub", [&api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error(
               "string.sub() requires at least 2 arguments");
-        std::string str = toString(args[0]);
+        std::string str = api.toString(args[0]);
         int64_t start = args[1].asInt();
         int64_t len = (args.size() > 2) ? args[2].asInt()
                                         : str.length() - start;
@@ -112,23 +94,23 @@ void registerStringModule(VMApi &api) {
       });
 
   api.registerFunction("string.find",
-                       [toString](const std::vector<Value> &args) {
+                       [&api](const std::vector<Value> &args) {
                          if (args.size() < 2)
                            throw std::runtime_error(
                                "string.find() requires at least 2 arguments");
-                         std::string str = toString(args[0]);
-                         std::string substr = toString(args[1]);
+                         std::string str = api.toString(args[0]);
+                         std::string substr = api.toString(args[1]);
                          size_t pos = str.find(substr);
                          return Value(static_cast<int64_t>(pos));
                        });
 
   api.registerFunction(
-      "string.replace", [toString](const std::vector<Value> &args) {
+      "string.replace", [&api](const std::vector<Value> &args) {
         if (args.size() < 3)
           throw std::runtime_error("string.replace() requires 3 arguments");
-        std::string str = toString(args[0]);
-        std::string from = toString(args[1]);
-        std::string to = toString(args[2]);
+        std::string str = api.toString(args[0]);
+        std::string from = api.toString(args[1]);
+        std::string to = api.toString(args[2]);
 
         size_t pos = 0;
         while ((pos = str.find(from, pos)) != std::string::npos) {
@@ -152,7 +134,7 @@ void registerStringModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "string.join", [toString](const std::vector<Value> &args) {
+      "string.join", [&api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error(
               "string.join() requires at least 1 argument");
@@ -161,27 +143,27 @@ void registerStringModule(VMApi &api) {
               "string.join() first argument must be array");
         }
 
-        std::string delim = (args.size() > 1) ? toString(args[1]) : "";
+        std::string delim = (args.size() > 1) ? api.toString(args[1]) : "";
         // Note: Would need VM access to get array values and join them
         // Simplified for now - just return null
         return Value::makeNull();
       });
 
   api.registerFunction(
-      "string.startswith", [toString](const std::vector<Value> &args) {
+      "string.startswith", [&api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("string.startswith() requires 2 arguments");
-        std::string str = toString(args[0]);
-        std::string prefix = toString(args[1]);
+        std::string str = api.toString(args[0]);
+        std::string prefix = api.toString(args[1]);
         return Value::makeBool(str.rfind(prefix, 0) == 0);
       });
 
   api.registerFunction(
-      "string.endswith", [toString](const std::vector<Value> &args) {
+      "string.endswith", [&api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("string.endswith() requires 2 arguments");
-        std::string str = toString(args[0]);
-        std::string suffix = toString(args[1]);
+        std::string str = api.toString(args[0]);
+        std::string suffix = api.toString(args[1]);
         if (suffix.length() > str.length())
           return Value::makeBool(false);
         return Value::makeBool(str.compare(str.length() - suffix.length(),
@@ -189,11 +171,11 @@ void registerStringModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "string.includes", [toString](const std::vector<Value> &args) {
+      "string.includes", [&api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("string.includes() requires 2 arguments");
-        std::string str = toString(args[0]);
-        std::string substr = toString(args[1]);
+        std::string str = api.toString(args[0]);
+        std::string substr = api.toString(args[1]);
         return Value::makeBool(str.find(substr) != std::string::npos);
       });
 

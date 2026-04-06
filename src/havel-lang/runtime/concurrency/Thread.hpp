@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -28,15 +29,15 @@ public:
   using MessageHandler = std::function<void(const Message &)>;
 
   Thread() = default;
-  ~Thread() = default;
+  ~Thread() { stop(); }
 
-  void start(MessageHandler) {}
-  void send(const Message &) {}
-  std::optional<Message> receive() { return std::nullopt; }
-  void pause() {}
-  void resume() {}
-  void stop() {}
-  bool isRunning() const { return false; }
+  void start(MessageHandler handler);
+  void send(const Message &msg);
+  std::optional<Message> receive();
+  void pause();
+  void resume();
+  void stop();
+  bool isRunning() const { return running.load(); }
   bool isPaused() const { return paused.load(); }
 
 private:
@@ -45,6 +46,7 @@ private:
   std::thread thread;
   std::queue<Message> messageQueue;
   std::mutex queueMutex;
+  std::condition_variable queueCV;
   std::atomic<bool> running{false};
   std::atomic<bool> paused{false};
   std::atomic<bool> stopped{false};

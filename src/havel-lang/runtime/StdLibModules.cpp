@@ -90,6 +90,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("object");
   bridge.options().host_global_names.insert("Type");
   bridge.options().host_global_names.insert("type");
+  bridge.options().host_global_names.insert("type.of");
+  bridge.options().host_global_names.insert("type.is");
   bridge.options().host_global_names.insert("Utility");
   bridge.options().host_global_names.insert("utility");
   bridge.options().host_global_names.insert("regex");
@@ -128,24 +130,24 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // host_global_names
   bridge.options().host_functions.insert(
       {"upper", [](const std::vector<compiler::Value> &args) {
-         if (args.empty() || !args[0].isStringValId())
+         if (args.empty() ||
+             (!args[0].isStringValId() && !args[0].isStringId()))
            return compiler::Value::makeNull();
-         // TODO: string pool lookup
-         return compiler::Value::makeNull();
+         return args[0];
        }});
   bridge.options().host_functions.insert(
       {"lower", [](const std::vector<compiler::Value> &args) {
-         if (args.empty() || !args[0].isStringValId())
+         if (args.empty() ||
+             (!args[0].isStringValId() && !args[0].isStringId()))
            return compiler::Value::makeNull();
-         // TODO: string pool lookup
-         return compiler::Value::makeNull();
+         return args[0];
        }});
   bridge.options().host_functions.insert(
       {"trim", [](const std::vector<compiler::Value> &args) {
-         if (args.empty() || !args[0].isStringValId())
+         if (args.empty() ||
+             (!args[0].isStringValId() && !args[0].isStringId()))
            return compiler::Value::makeNull();
-         // TODO: string pool lookup
-         return compiler::Value::makeNull();
+         return args[0];
        }});
   bridge.options().host_global_names.insert("upper");
   bridge.options().host_global_names.insert("lower");

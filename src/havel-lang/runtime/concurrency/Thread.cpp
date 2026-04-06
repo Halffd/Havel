@@ -1,6 +1,7 @@
 // Thread.cpp - Implementation of Thread, Interval, Timeout, and TimeRange
 #include "Thread.hpp"
 #include <chrono>
+#include <iostream>
 #include <thread>
 
 namespace havel {

@@ -56,6 +56,10 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
               dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
         declareLocal(identifier->symbol, identifier, let.isConst);
         global_variables_.insert(identifier->symbol);
+        noteIdentifierBinding(
+            *identifier,
+            ResolvedBinding{ResolvedBindingKind::Global, 0, 0, identifier->symbol,
+                            let.isConst});
       } else if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
                                  let.pattern->kind == ast::NodeType::ArrayPattern)) {
         const auto &arrPat = static_cast<const ast::ArrayPattern &>(*let.pattern);
@@ -64,6 +68,10 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
           if (elem_id) {
             declareLocal(elem_id->symbol, elem_id, let.isConst);
             global_variables_.insert(elem_id->symbol);
+            noteIdentifierBinding(
+                *elem_id,
+                ResolvedBinding{ResolvedBindingKind::Global, 0, 0,
+                                elem_id->symbol, let.isConst});
           }
         }
       } else if (let.pattern && let.pattern->kind == ast::NodeType::ObjectPattern) {
@@ -73,6 +81,10 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
           // Also add to globals for top-level let
           if (auto *id = dynamic_cast<const ast::Identifier *>(prop.second.get())) {
             global_variables_.insert(id->symbol);
+            noteIdentifierBinding(
+                *id,
+                ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id->symbol,
+                                let.isConst});
           }
         }
       }
@@ -136,11 +148,18 @@ void LexicalResolver::collectTopLevelFunctions(const ast::Program &program) {
 
 void LexicalResolver::collectTopLevelStructs(const ast::Program &program) {
   for (const auto &statement : program.body) {
-    if (!statement || statement->kind != ast::NodeType::StructDeclaration) {
+    if (!statement) {
       continue;
     }
-    const auto &decl = static_cast<const ast::StructDeclaration &>(*statement);
-    top_level_structs_.insert(decl.name);
+    if (statement->kind == ast::NodeType::StructDeclaration) {
+      const auto &decl = static_cast<const ast::StructDeclaration &>(*statement);
+      top_level_structs_.insert(decl.name);
+      continue;
+    }
+    if (statement->kind == ast::NodeType::ClassDeclaration) {
+      const auto &decl = static_cast<const ast::ClassDeclaration &>(*statement);
+      top_level_structs_.insert(decl.name);
+    }
   }
 }
 
@@ -433,7 +452,21 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     if (identifier) {
       // Always allocate a new slot for `let` declarations.
       // This preserves lexical shadowing across nested blocks.
-      declareLocal(identifier->symbol, identifier, let.isConst);
+      uint32_t slot = declareLocal(identifier->symbol, identifier, let.isConst);
+      const bool is_program_root =
+          (function_stack_.size() == 1 && function_stack_.back().scopes.size() == 1);
+      if (is_program_root) {
+        global_variables_.insert(identifier->symbol);
+        noteIdentifierBinding(
+            *identifier,
+            ResolvedBinding{ResolvedBindingKind::Global, 0, 0, identifier->symbol,
+                            let.isConst});
+      } else {
+        noteIdentifierBinding(
+            *identifier,
+            ResolvedBinding{ResolvedBindingKind::Local, slot, 0, identifier->symbol,
+                            let.isConst});
+      }
     } else if (let.pattern) {
       if (let.pattern->kind == ast::NodeType::ListPattern ||
           let.pattern->kind == ast::NodeType::ArrayPattern) {
@@ -444,7 +477,23 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
               element ? dynamic_cast<const ast::Identifier *>(element.get())
                       : nullptr;
           if (element_id) {
-            declareLocal(element_id->symbol, element_id, let.isConst);
+            uint32_t slot =
+                declareLocal(element_id->symbol, element_id, let.isConst);
+            const bool is_program_root =
+                (function_stack_.size() == 1 &&
+                 function_stack_.back().scopes.size() == 1);
+            if (is_program_root) {
+              global_variables_.insert(element_id->symbol);
+              noteIdentifierBinding(
+                  *element_id,
+                  ResolvedBinding{ResolvedBindingKind::Global, 0, 0,
+                                  element_id->symbol, let.isConst});
+            } else {
+              noteIdentifierBinding(
+                  *element_id,
+                  ResolvedBinding{ResolvedBindingKind::Local, slot, 0,
+                                  element_id->symbol, let.isConst});
+            }
           }
         }
       } else if (let.pattern->kind == ast::NodeType::ObjectPattern) {
@@ -737,8 +786,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
 
-    // Skip resolution for global scope identifiers (::x)
+    // Explicit global-scope reference (::x) bypasses lexical lookup.
     if (id.isGlobalScope) {
+      noteIdentifierBinding(
+          id, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id.symbol, false});
       break;
     }
 
@@ -790,13 +841,21 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           static_cast<const ast::Identifier &>(*assignment.target);
       auto binding = resolveIdentifier(ident.symbol);
 
+      // Explicit global override (::x = ...) must never create a local.
+      if (assignment.isGlobalScope || ident.isGlobalScope) {
+        global_variables_.insert(ident.symbol);
+        noteIdentifierBinding(
+            ident, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, ident.symbol, false});
+        if (assignment.value) {
+          resolveExpression(*assignment.value);
+        }
+        break;
+      }
+
       // Declare as local if:
-      // 1. No binding exists, OR
-      // 2. Binding is Global but we're inside a function (not at program top-level)
-      // 3. Binding is Upvalue (capture from outer scope, don't create new local)
+      // 1. No binding exists
       bool insideFunction = function_stack_.size() > 1;
-      bool shouldDeclareLocal = !binding ||
-          (binding->kind == ResolvedBindingKind::Global && insideFunction);
+      bool shouldDeclareLocal = !binding;
       // Note: If binding is Local or Upvalue, use existing (don't shadow)
       if (binding && (binding->kind == ResolvedBindingKind::Local ||
                      binding->kind == ResolvedBindingKind::Upvalue)) {
@@ -805,8 +864,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
 
       if (shouldDeclareLocal) {
         // Implicit declaration on first assignment
-        bool isGlobalScope = (function_stack_.size() == 1 &&
-                              function_stack_[0].scopes.size() == 1);
+        bool isGlobalScope = !insideFunction;
 
         if (isGlobalScope) {
           // At top-level program scope - declare as global variable
@@ -840,8 +898,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           const auto &ident = static_cast<const ast::Identifier &>(*element);
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
-            bool isGlobalScope = (function_stack_.size() == 1 &&
-                                  function_stack_[0].scopes.size() == 1);
+            bool isGlobalScope = (function_stack_.size() == 1);
             if (isGlobalScope) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
@@ -879,8 +936,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               static_cast<const ast::Identifier &>(*pair.second);
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
-            bool isGlobalScope = (function_stack_.size() == 1 &&
-                                  function_stack_[0].scopes.size() == 1);
+            bool isGlobalScope = (function_stack_.size() == 1);
             if (isGlobalScope) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
@@ -1145,12 +1201,14 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
 
   auto &ctx = function_stack_[function_index];
 
-  // FIRST: Check if this is a global variable (top-level let) - these shadow locals
-  if (global_variables_.count(name) > 0) {
+  // Program-root bindings that are tracked as globals should always resolve
+  // as globals in __main__, even though they also have declaration slots.
+  if (function_index == 0 && ctx.scopes.size() == 1 &&
+      global_variables_.count(name) > 0) {
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
-  // SECOND: Search local scopes (for loop vars, nested let declarations, etc.)
+  // FIRST: Search local scopes (for loop vars, nested let declarations, etc.)
   for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
     const auto &scope = ctx.scopes[sc - 1];
     auto it = scope.find(name);
@@ -1162,17 +1220,20 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
     }
   }
 
-  // THIRD: If at global scope (function_index == 0), check if it's a top-level
+  // SECOND: If at global scope (function_index == 0), check if it's a top-level
   // function BEFORE falling back to dynamic globals.
   if (function_index == 0) {
     if (top_level_functions_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
     }
+    if (global_variables_.count(name) > 0) {
+      return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    }
     // Dynamic language: treat all other identifiers as globals
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
-  // FOURTH: In nested function - check enclosing scope recursively
+  // THIRD: In nested function - check enclosing scope recursively
   auto enclosing = resolveIdentifierInFunction(name, function_index - 1);
   if (!enclosing) {
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};

@@ -1,0 +1,20 @@
+// Test conditional hotkeys
+let mode = "work"
+let class = "code"
+
+// Test if condition on hotkey
+f2 if mode == "work" && class == "code" => {
+  print("Conditional hotkey fired!")
+}
+
+// Test simpler condition
+f3 if mode == "work" => {
+  print("Work mode hotkey")
+}
+
+// Test without condition (should always fire)
+f4 => {
+  print("Unconditional hotkey")
+}
+
+print("Conditional hotkeys defined")

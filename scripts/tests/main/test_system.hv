@@ -77,6 +77,6 @@ print(f"RAM: {ram.total / 1024/1024/1024} GB")
 print(f"GPU: {gpu}")
 print(f"Motherboard: {motherboard}")
 
-print("monitors: type(window.getMonitors()): " + type(display.getMonitors))
+print("monitors: type(display.getMonitors()): " + type(display.getMonitors()))
 monitors = display.getMonitors()
 area = display.getMonitorsArea()

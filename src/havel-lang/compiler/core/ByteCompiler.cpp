@@ -103,6 +103,11 @@ ByteCompiler::compile(const ast::Program &program) {
             static_cast<const ast::StructDeclaration &>(*statement);
         top_level_struct_names_.insert(decl.name);
       }
+      if (statement && statement->kind == ast::NodeType::ClassDeclaration) {
+        const auto &decl =
+            static_cast<const ast::ClassDeclaration &>(*statement);
+        top_level_struct_names_.insert(decl.name);
+      }
       continue;
     }
     const auto &decl =
@@ -1082,6 +1087,30 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     // Store the type_id in a global variable so constructor calls work
     {
       uint32_t strId = addStringConstant(structDecl.name);
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
+    break;
+  }
+
+  case ast::NodeType::ClassDeclaration: {
+    const auto &classDecl =
+        static_cast<const ast::ClassDeclaration &>(statement);
+    // Runtime registration: class.define("Name", ["field1", ...])
+    { uint32_t _sid = addStringConstant(classDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::ARRAY_NEW);
+    for (const auto &field : classDecl.definition.fields) {
+      { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      emit(OpCode::ARRAY_PUSH);
+    }
+    {
+      uint32_t strId = addStringConstant("class.define");
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(2))});
+    }
+    // Store the type_id in a global variable so constructor calls work
+    {
+      uint32_t strId = addStringConstant(classDecl.name);
       emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
     }
     break;
@@ -2664,7 +2693,7 @@ void ByteCompiler::compileCallExpression(
       return;
     }
   }
-  // Check for method call on primitive (prototype method)
+  // Check for member call
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
     const auto &member =
         static_cast<const ast::MemberExpression &>(*expression.callee);
@@ -2674,9 +2703,39 @@ void ByteCompiler::compileCallExpression(
       COMPILER_THROW("Unsupported member call expression");
     }
 
-    // Route ALL method calls through any.* dispatch for consistency
-    // s.upper() -> CALL_HOST "any.upper", N
-    // string.upper(s) -> CALL_HOST "any.upper", N
+    // Namespace/module call: system.hardware(), display.getMonitors(), etc.
+    // Do not rewrite these to any.*; call the qualified host function directly.
+    if (auto *objIdent =
+            dynamic_cast<const ast::Identifier *>(member.object.get())) {
+      if (host_global_names_.count(objIdent->symbol) > 0) {
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            COMPILER_THROW("Call expression contains null argument");
+          }
+          compileExpression(*arg);
+        }
+        uint32_t totalArgs = arg_count;
+        if (hasKwargs) {
+          emit(OpCode::OBJECT_NEW);
+          for (const auto &kwarg : expression.kwargs) {
+            emit(OpCode::DUP);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            compileExpression(*kwarg.value);
+            emit(OpCode::OBJECT_SET);
+          }
+          totalArgs++;
+        }
+        uint32_t strId =
+            addStringConstant(objIdent->symbol + "." + property->symbol);
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+                                   Value::makeStringValId(strId),
+                                   Value(totalArgs)});
+        return;
+      }
+    }
+
+    // Instance-style method call on runtime value: route through any.* dispatch
+    // (e.g. s.lower()).
     compileExpression(*member.object);
     for (const auto &arg : expression.args) {
       if (!arg) {
@@ -2876,14 +2935,20 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
   compileExpression(*statement.condition);
   uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
-  // TCO: If we're in tail position, both branches are also in tail position
-  // But we need to track if EACH branch emits a tail call
   bool was_tail = in_tail_position_;
-  enterTailPosition();
-  clearTailCallFlag();
-  compileStatement(*statement.consequence);
-  bool consequence_was_tail = wasTailCall();
-  exitTailPosition();
+  bool consequence_was_tail = false;
+
+  // Only propagate tail position when this if-statement itself is in tail
+  // position.
+  if (was_tail) {
+    clearTailCallFlag();
+    enterTailPosition();
+    compileStatement(*statement.consequence);
+    consequence_was_tail = wasTailCall();
+    exitTailPosition();
+  } else {
+    compileStatement(*statement.consequence);
+  }
 
   // If consequence didn't emit tail call, emit RETURN
   if (was_tail && !consequence_was_tail) {
@@ -2896,11 +2961,16 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
         static_cast<uint32_t>(current_function->instructions.size());
     patchJump(else_jump, else_target);
 
-    enterTailPosition();
-    clearTailCallFlag();
-    compileStatement(*statement.alternative);
-    bool alternative_was_tail = wasTailCall();
-    exitTailPosition();
+    bool alternative_was_tail = false;
+    if (was_tail) {
+      clearTailCallFlag();
+      enterTailPosition();
+      compileStatement(*statement.alternative);
+      alternative_was_tail = wasTailCall();
+      exitTailPosition();
+    } else {
+      compileStatement(*statement.alternative);
+    }
 
     // If alternative didn't emit tail call, emit RETURN
     if (was_tail && !alternative_was_tail) {
@@ -2924,11 +2994,6 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
     if (was_tail) {
       emitted_tail_call_ = false;
     }
-  }
-
-  // Restore tail position state
-  if (was_tail) {
-    enterTailPosition();
   }
 }
 
@@ -3210,6 +3275,23 @@ void ByteCompiler::collectFunctionDeclarations(
     }
     if (try_expr.finallyBlock) {
       collectFunctionDeclarations(*try_expr.finallyBlock, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::ClassDeclaration: {
+    const auto &classDecl =
+        static_cast<const ast::ClassDeclaration &>(statement);
+    // Collect class methods - these need to be compiled as functions
+    // but registered with the class type at runtime
+    for (const auto &method : classDecl.definition.methods) {
+      if (method && method->body) {
+        for (const auto &nested : method->body->body) {
+          if (nested) {
+            collectFunctionDeclarations(*nested, out);
+          }
+        }
+      }
     }
     break;
   }

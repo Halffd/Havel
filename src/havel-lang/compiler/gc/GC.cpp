@@ -713,4 +713,56 @@ std::shared_ptr<GCHeap::UpvalueCell> GCHeap::createUpvalue(uint32_t index) {
   return cell;
 }
 
+// ============================================================================
+// Concurrency Object Management
+// ============================================================================
+
+ThreadRef GCHeap::allocateThreadObj(std::shared_ptr<::havel::Thread> thread) {
+  const uint32_t id = next_thread_id_++;
+  threads_.emplace(id, std::move(thread));
+  return ThreadRef{.id = id};
+}
+
+IntervalRef GCHeap::allocateIntervalObj(std::shared_ptr<::havel::Interval> interval) {
+  const uint32_t id = next_interval_id_++;
+  intervals_.emplace(id, std::move(interval));
+  return IntervalRef{.id = id};
+}
+
+TimeoutRef GCHeap::allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout) {
+  const uint32_t id = next_timeout_id_++;
+  timeouts_.emplace(id, std::move(timeout));
+  return TimeoutRef{.id = id};
+}
+
+::havel::Thread* GCHeap::thread(uint32_t id) {
+  auto it = threads_.find(id);
+  return it == threads_.end() ? nullptr : it->second.get();
+}
+
+const ::havel::Thread* GCHeap::thread(uint32_t id) const {
+  auto it = threads_.find(id);
+  return it == threads_.end() ? nullptr : it->second.get();
+}
+
+::havel::Interval* GCHeap::interval(uint32_t id) {
+  auto it = intervals_.find(id);
+  return it == intervals_.end() ? nullptr : it->second.get();
+}
+
+const ::havel::Interval* GCHeap::interval(uint32_t id) const {
+  auto it = intervals_.find(id);
+  return it == intervals_.end() ? nullptr : it->second.get();
+}
+
+::havel::Timeout* GCHeap::timeout(uint32_t id) {
+  auto it = timeouts_.find(id);
+  return it == timeouts_.end() ? nullptr : it->second.get();
+}
+
+const ::havel::Timeout* GCHeap::timeout(uint32_t id) const {
+  auto it = timeouts_.find(id);
+  return it == timeouts_.end() ? nullptr : it->second.get();
+}
+
 } // namespace havel::compiler

@@ -711,6 +711,14 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Identifier:
       return makeIdentifier(token);
 
+    // Allow certain keywords to be used as identifiers in expression context
+    // This enables expressions like: mode == "work" && class == "code"
+    case TokenType::Class:
+    case TokenType::Struct:
+    case TokenType::Enum:
+    case TokenType::Mode:
+      return makeIdentifier(token);
+
     case TokenType::True:
       return std::make_unique<ast::BooleanLiteral>(true);
 

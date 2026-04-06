@@ -795,6 +795,14 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
 
     auto binding = resolveIdentifier(id.symbol);
     if (!binding) {
+      if (top_level_structs_.count(id.symbol)) {
+        noteIdentifierBinding(
+            id, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id.symbol,
+                                false});
+        break;
+      }
+    }
+    if (!binding) {
       errors_.push_back("Unresolved identifier '" + id.symbol + "' at " +
                         std::to_string(id.line) + ":" +
                         std::to_string(id.column));

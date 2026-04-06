@@ -37,7 +37,7 @@ int SignalHandler::GetSignalFlag() {
 
 void SignalHandler::InstallAsyncHandlers() {
   struct sigaction sa;
-  sa.sa_flags = 0;
+  sa.sa_flags = SA_RESTART;
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = SignalCleanupHandler;
 
@@ -56,7 +56,6 @@ void SignalHandler::InstallAsyncHandlers() {
   sigaction(SIGUSR2, &sa, nullptr);   // User-defined 2
   sigaction(SIGCHLD, &sa, nullptr);   // Child stopped/terminated
   sigaction(SIGCONT, &sa, nullptr);   // Continue if stopped
-  sigaction(SIGSTOP, &sa, nullptr);   // Stop (cannot be caught, but try)
   sigaction(SIGTSTP, &sa, nullptr);   // Terminal stop
   sigaction(SIGTTIN, &sa, nullptr);   // Background read from terminal
   sigaction(SIGTTOU, &sa, nullptr);   // Background write to terminal

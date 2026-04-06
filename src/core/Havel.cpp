@@ -30,16 +30,6 @@ constexpr int PERIODIC_INTERVAL_MS = 100;
 constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
 constexpr int CONFIG_CHECK_INTERVAL_S = 5;
 
-// Block all signals in the calling thread
-void blockAllSignals() {
-  sigset_t set;
-  sigfillset(&set);
-  if (pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) {
-    throw std::system_error(errno, std::system_category(),
-                            "Failed to block signals");
-  }
-}
-
 Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
              const std::vector<std::string> &args)
     : lastCheck(std::chrono::steady_clock::now()),
@@ -257,8 +247,6 @@ void Havel::exit() {
 
 void Havel::setupSignalHandling() {
   try {
-    blockAllSignals();
-
     // Set up fallback signal handlers for REPL mode
     if (!guiMode) {
       struct sigaction sa;

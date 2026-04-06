@@ -78,6 +78,10 @@ private:
 
   void compileFunction(const ast::FunctionDeclaration &function);
   void compileLambda(const ast::LambdaExpression &lambda);
+  void compileClassMethod(const std::string &class_name,
+                          const ast::ClassMethodDef &method,
+                          const std::vector<ast::ClassFieldDef> &fields,
+                          const std::string &parent_class_name);
   void compileParameterPattern(const ast::Expression &pattern,
                                uint32_t paramIndex);
   void compileParameterPatternValue(const ast::Expression &pattern);
@@ -139,6 +143,8 @@ private:
       saved_functions_;
   std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
       function_indices_by_node_;
+  std::unordered_map<const ast::ClassMethodDef *, uint32_t>
+      class_method_indices_by_node_;
   std::unordered_map<const ast::LambdaExpression *, uint32_t>
       lambda_indices_by_node_;
   std::optional<uint32_t> current_function_slot_;
@@ -152,7 +158,7 @@ private:
       "print",   "sleep",    "sleep_ms", "clock_ms", "clock_ns", "clock_us",
       "assert",  "time.now", "window",   "io",       "system",   "hotkey",
       "mode",    "process",  "display",  "async",    "struct",   "thread",   "interval",
-      "timeout", "string",   "array",    "object",   "type",     "utility",
+      "timeout", "string",   "array",    "object",   "type",     "utility",  "inherits",
       "regex",   "physics",  "time",     "math"};
 
   // Module loading
@@ -160,6 +166,8 @@ private:
   std::filesystem::path base_path_;
   std::unordered_map<std::string, uint32_t> module_function_indices_by_name_;
   std::unordered_map<std::string, uint32_t> module_class_indices_by_name_;
+  std::string current_class_name_;
+  std::string current_parent_class_name_;
 
   // Tail call optimization state
   bool in_tail_position_ = false;

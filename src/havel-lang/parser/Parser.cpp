@@ -562,6 +562,7 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   
   // Implicit call sugar: expr "string" -> expr("string")
   // This handles function calls without parentheses like: print "hello"
+  // Also handles: print a ** 5 -> print(a ** 5)
   if (context.allowBraceSugar &&
       (at().type == TokenType::String ||
        at().type == TokenType::MultilineString ||
@@ -569,9 +570,31 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
        at().type == TokenType::Identifier ||
        at().type == TokenType::InterpolatedString)) {
     Token arg_token = at();
-    auto arg = nud(advance()); // Parse the argument using nud
+    // Parse argument as full expression (with operators), but disable nested implicit calls
+    // to prevent infinite recursion and ensure operators like ** bind tighter than the call
+    bool prevAllow = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    auto arg = parsePrattExpression(0);
+    context.allowBraceSugar = prevAllow;
+
+    if (!arg) {
+      return nullptr;
+    }
+
     std::vector<std::unique_ptr<ast::Expression>> args;
     args.push_back(std::move(arg));
+    
+    // Support comma-separated arguments: print a, b, c -> print(a, b, c)
+    while (at().type == TokenType::Comma) {
+      advance(); // consume comma
+      auto nextArg = parsePrattExpression(0);
+      if (!nextArg) {
+        errorAt(at(), "Expected expression after comma in function call");
+        return nullptr;
+      }
+      args.push_back(std::move(nextArg));
+    }
+    
     auto call_expr = std::make_unique<ast::CallExpression>(std::move(left), std::move(args));
     call_expr->line = start_token.line;
     call_expr->column = start_token.column;

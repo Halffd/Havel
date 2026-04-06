@@ -47,8 +47,8 @@ class ToolsBridge;
  */
 class HostBridge : public std::enable_shared_from_this<HostBridge> {
 public:
-  explicit HostBridge(const havel::HostContext &ctx);
-  explicit HostBridge(const havel::HostContext &ctx,
+  explicit HostBridge(const ::havel::HostContext &ctx);
+  explicit HostBridge(const ::havel::HostContext &ctx,
                       const ExecutionPolicy &policy);
   ~HostBridge();
 
@@ -115,7 +115,7 @@ public:
   };
 
 private:
-  const havel::HostContext *ctx_;
+  const ::havel::HostContext *ctx_;
   PipelineOptions options_;
   ExecutionPolicy policy_; // Optional - defaults to allow all
 
@@ -156,8 +156,8 @@ private:
   void initBridges();
 };
 
-std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx);
-std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx,
+std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx);
+std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx,
                                              const ExecutionPolicy &policy);
 
 } // namespace havel::compiler

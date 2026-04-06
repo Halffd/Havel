@@ -27,6 +27,11 @@ namespace havel::compiler {
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
+// Forward declare error system
+namespace havel::errors {
+  struct HavelError;
+}
+
 // Error handling with stack traces
 struct ScriptError final {
   Value value;
@@ -41,6 +46,8 @@ struct ScriptError final {
         column(col) {}
 
   const char *what() const noexcept { return message.c_str(); }
+  
+  // Note: toHavelError() implementation moved to .cpp to avoid Qt moc issues
 };
 
 class VM : public BytecodeInterpreter {
@@ -137,7 +144,7 @@ private:
       prototypes_;
 
   // Host context for service access (non-owning)
-  const class havel::HostContext *context_ = nullptr;
+  const ::havel::HostContext *context_ = nullptr;
 
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
@@ -231,7 +238,7 @@ public:
                                   const std::vector<Value> &args);
 
   VM();
-  VM(const class havel::HostContext &ctx);
+  VM(const ::havel::HostContext &ctx);
   ~VM() override;
   Value execute(const BytecodeChunk &chunk,
                 const std::string &function_name,
@@ -458,7 +465,7 @@ public:
   std::string resolveStringKey(const Value &value) const;
 
   /** Injected embedder context; null if VM was default-constructed. */
-  const class havel::HostContext *hostContext() const { return context_; }
+  const ::havel::HostContext *hostContext() const { return context_; }
 };
 
 } // namespace havel::compiler

@@ -600,6 +600,14 @@ BytecodeSmokeResult runBytecodePipeline(
   }
   try {
     result.return_value = vm->execute(*chunk, entry_function);
+  } catch (const ScriptError &e) {
+    if (e.line > 0) {
+      throw std::runtime_error(formatDiagnostic(
+          "RuntimeError", e.message, options.compile_unit_name, source,
+          static_cast<size_t>(e.line), std::max<size_t>(1, e.column),
+          1, "uncaught throw"));
+    }
+    throw std::runtime_error(e.message);
   } catch (const std::exception &e) {
     throw std::runtime_error(enrichRuntimeError(e.what(), options.compile_unit_name, source));
   }

@@ -80,6 +80,10 @@ private:
   uint32_t declareLocalUnchecked(const std::string &name,
                                   const ast::Identifier *declaration = nullptr,
                                   bool is_const = false);
+  uint32_t declareGlobalSymbol(const std::string &name,
+                               const ast::Identifier *declaration = nullptr,
+                               bool is_const = false);
+  FunctionContext &globalContext();
 
   void resolveStatement(const ast::Statement &statement);
   void resolveExpression(const ast::Expression &expression);

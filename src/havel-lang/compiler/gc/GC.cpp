@@ -11,12 +11,20 @@ void GCHeap::reset() {
   sets_.clear();
   ranges_.clear();
   iterators_.clear();
+  strings_.clear();
+  structs_.clear();
+  classes_.clear();
+  enums_.clear();
+  structTypes_.clear();
+  classTypes_.clear();
+  enumTypes_.clear();
   next_closure_id_ = 1;
   next_array_id_ = 1;
   next_object_id_ = 1;
   next_set_id_ = 1;
   next_range_id_ = 1;
   next_iterator_id_ = 1;
+  next_string_id_ = 1;
   allocations_since_last_ = 0;
   external_roots_.clear();
   next_external_root_id_ = 1;
@@ -230,7 +238,8 @@ size_t GCHeap::classFieldCount(uint32_t typeId) const {
   if (typeId == 0 || typeId > classTypes_.size()) {
     return 0;
   }
-  return classTypes_[typeId - 1].fieldNames.size();
+  const auto &ct = classTypes_[typeId - 1];
+  return classFieldCount(ct.parentTypeId) + ct.fieldNames.size();
 }
 
 std::optional<size_t> GCHeap::classFieldIndex(uint32_t typeId,
@@ -238,13 +247,15 @@ std::optional<size_t> GCHeap::classFieldIndex(uint32_t typeId,
   if (typeId == 0 || typeId > classTypes_.size()) {
     return std::nullopt;
   }
-  const auto &fields = classTypes_[typeId - 1].fieldNames;
+  const auto &ct = classTypes_[typeId - 1];
+  const size_t parent_count = classFieldCount(ct.parentTypeId);
+  const auto &fields = ct.fieldNames;
   for (size_t i = 0; i < fields.size(); ++i) {
     if (fields[i] == field) {
-      return i;
+      return parent_count + i;
     }
   }
-  return std::nullopt;
+  return classFieldIndex(ct.parentTypeId, field);
 }
 
 uint32_t GCHeap::getClassParentTypeId(uint32_t typeId) const {

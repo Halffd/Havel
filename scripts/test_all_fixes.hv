@@ -1,0 +1,27 @@
+// Test all 4 fixes
+
+print "=== Test 1: SleepStatement ==="
+print "Sleeping for 100ms..."
+sleep 100ms
+print "Slept successfully!"
+
+print "\n=== Test 2: string.lower() ==="
+let testStr = "HELLO WORLD"
+print "Original: " + testStr
+let lowerStr = string.lower(testStr)
+print "Lowered: " + lowerStr
+
+print "\n=== Test 3: string.upper() ==="
+let lower = "hello world"
+print "Original: " + lower
+let upper = string.upper(lower)
+print "Uppercase: " + upper
+
+print "\n=== Test 4: Hardware detection ==="
+let hw = system.hardware()
+print "CPU: " + hw.cpu
+print "CPU Cores: " + hw.cpuCores
+print "GPU: " + hw.gpu
+print "RAM Total: " + hw.ramTotal
+
+print "\n=== All tests completed! ==="

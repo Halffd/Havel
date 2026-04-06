@@ -1,0 +1,43 @@
+print("Testing deep equality + type annotations...")
+
+// Deep array equality
+let a = [1, [2, 3], 4]
+let b = [1, [2, 3], 4]
+let c = [1, [2, 99], 4]
+assert(a == b, "a should equal b")
+assert(a != c, "a should not equal c")
+
+// Deep object equality
+let o1 = {"a": 1, "b": {"c": [1, 2, 3]}}
+let o2 = {"a": 1, "b": {"c": [1, 2, 3]}}
+let o3 = {"a": 1, "b": {"c": [1, 2, 4]}}
+assert(o1 == o2, "o1 should equal o2")
+assert(o1 != o3, "o1 should not equal o3")
+
+// Mixed comparisons
+assert(1 != "1", "int 1 should not equal string '1'")
+assert(null == null, "null should equal null")
+
+// Type annotations - positive checks
+let i: int = 42
+let s: str = "ok"
+let n: num = 1.5
+let arr: int[] = [1, 2, 3]
+assert(i == 42, "typed int let failed")
+assert(s == "ok", "typed string let failed")
+assert(n == 1.5, "typed num let failed")
+assert(arr == [1, 2, 3], "typed int[] let failed")
+
+fn addOne(x: int) {
+    x + 1
+}
+
+fn echoNum(x: num) {
+    x
+}
+
+assert(addOne(5) == 6, "typed int parameter failed")
+assert(echoNum(5) == 5, "typed num should accept int")
+assert(echoNum(2.5) == 2.5, "typed num should accept float")
+
+print("test_equality_types.hv OK")

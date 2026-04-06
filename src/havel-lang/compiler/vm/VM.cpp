@@ -1596,11 +1596,12 @@ void VM::registerDefaultHostFunctions() {
 
         const size_t field_count = heap_.structFieldCount(type_id);
         StructRef ref = createStruct(type_id, field_count);
+        struct_instance_type_ids_[ref.id] = type_id;
         const size_t provided = args.size() - 1;
         for (size_t i = 0; i < provided && i < field_count; ++i) {
           setStructField(ref, i, args[i + 1]);
         }
-        return Value::makeStructId(ref.id);
+        return Value::makeStructId(ref.id, type_id);
       });
 
   registerHostFunction(
@@ -1646,16 +1647,16 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("struct.set field must be string or int");
         }
         setStructField(ref, index, args[2]);
-        return Value::makeStructId(ref.id);
+        return Value::makeStructId(ref.id, ref.typeId);
       });
 
   // Class operations (reference type)
   registerHostFunction(
       "class.define", [this](const std::vector<Value> &args) {
-        if (args.size() != 2 || !args[0].isStringValId() ||
+        if ((args.size() != 2 && args.size() != 3) || !args[0].isStringValId() ||
             !args[1].isArrayId()) {
           COMPILER_THROW(
-              "class.define(name, fields) expects (string, array)");
+              "class.define(name, fields, parent?) expects (string, array, optional class)");
         }
         if (!current_chunk) COMPILER_THROW("class.define requires active chunk");
 
@@ -1674,7 +1675,23 @@ void VM::registerDefaultHostFunctions() {
           fields.push_back(current_chunk->getString(value.asStringValId()));
         }
 
-        uint32_t type_id = registerClassType(name, fields);
+        uint32_t parent_type_id = 0;
+        if (args.size() == 3) {
+          if (args[2].isInt()) {
+            parent_type_id = static_cast<uint32_t>(args[2].asInt());
+          } else if (args[2].isStringValId()) {
+            const auto &parent_name = current_chunk->getString(args[2].asStringValId());
+            auto parent_it = class_type_ids_by_name_.find(parent_name);
+            if (parent_it == class_type_ids_by_name_.end()) {
+              COMPILER_THROW("Unknown parent class type: " + parent_name);
+            }
+            parent_type_id = parent_it->second;
+          } else {
+            COMPILER_THROW("class.define parent must be class type id or class name");
+          }
+        }
+
+        uint32_t type_id = registerClassType(name, fields, parent_type_id);
         class_type_ids_by_name_[name] = type_id;
         return Value::makeInt(static_cast<int64_t>(type_id));
       });
@@ -1702,11 +1719,36 @@ void VM::registerDefaultHostFunctions() {
 
         const size_t field_count = heap_.classFieldCount(type_id);
         ClassRef ref = createClass(type_id, field_count);
-        const size_t provided = args.size() - 1;
-        for (size_t i = 0; i < provided && i < field_count; ++i) {
-          setClassField(ref, i, args[i + 1]);
+        class_instance_type_ids_[ref.id] = type_id;
+        auto init_method = findClassMethod(type_id, "init");
+        if (init_method.has_value()) {
+          std::vector<Value> ctor_args;
+          ctor_args.reserve(args.size());
+          ctor_args.push_back(Value::makeClassId(ref.id, type_id));
+          for (size_t i = 1; i < args.size(); ++i) {
+            ctor_args.push_back(args[i]);
+          }
+          (void)call(Value::makeFunctionObjId(*init_method), ctor_args);
+        } else {
+          const size_t provided = args.size() - 1;
+          for (size_t i = 0; i < provided && i < field_count; ++i) {
+            setClassField(ref, i, args[i + 1]);
+          }
         }
-        return Value::makeClassId(ref.id);
+        return Value::makeClassId(ref.id, type_id);
+      });
+
+  registerHostFunction(
+      "class.method", [this](const std::vector<Value> &args) {
+        if (args.size() != 3 || !args[0].isInt() || !args[1].isStringValId() ||
+            !args[2].isFunctionObjId()) {
+          COMPILER_THROW("class.method(type_id, name, function) expects (int, string, function)");
+        }
+        if (!current_chunk) COMPILER_THROW("class.method requires active chunk");
+        const uint32_t type_id = static_cast<uint32_t>(args[0].asInt());
+        const std::string &method_name = current_chunk->getString(args[1].asStringValId());
+        registerClassMethod(type_id, method_name, args[2].asFunctionObjId());
+        return Value::makeNull();
       });
 
   registerHostFunction(
@@ -1714,7 +1756,14 @@ void VM::registerDefaultHostFunctions() {
         if (args.size() != 2 || !args[0].isClassId()) {
           COMPILER_THROW("class.get(class, field) expects class");
         }
-        ClassRef ref{args[0].asClassId()};
+        uint32_t ref_type_id = args[0].asClassTypeId();
+        if (ref_type_id == 0) {
+          auto it = class_instance_type_ids_.find(args[0].asClassId());
+          if (it != class_instance_type_ids_.end()) {
+            ref_type_id = it->second;
+          }
+        }
+        ClassRef ref{args[0].asClassId(), ref_type_id};
         size_t index = 0;
         if (args[1].isInt()) {
           index = static_cast<size_t>(args[1].asInt());
@@ -1738,7 +1787,14 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW(
               "class.set(class, field, value) expects class");
         }
-        ClassRef ref{args[0].asClassId()};
+        uint32_t ref_type_id = args[0].asClassTypeId();
+        if (ref_type_id == 0) {
+          auto it = class_instance_type_ids_.find(args[0].asClassId());
+          if (it != class_instance_type_ids_.end()) {
+            ref_type_id = it->second;
+          }
+        }
+        ClassRef ref{args[0].asClassId(), ref_type_id};
         size_t index = 0;
         if (args[1].isInt()) {
           index = static_cast<size_t>(args[1].asInt());
@@ -1754,7 +1810,37 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("class.set field must be string or int");
         }
         setClassField(ref, index, args[2]);
-        return Value::makeClassId(ref.id);
+        return Value::makeClassId(ref.id, ref.typeId);
+      });
+
+  registerHostFunction(
+      "inherits", [this](const std::vector<Value> &args) {
+        if (args.size() != 2) {
+          COMPILER_THROW("inherits(child, parent) expects two arguments");
+        }
+        auto read_type_id = [](const Value &v) -> uint32_t {
+          if (v.isInt()) {
+            return static_cast<uint32_t>(v.asInt());
+          }
+          if (v.isClassId()) {
+            return v.asClassTypeId();
+          }
+          return 0;
+        };
+
+        uint32_t child = read_type_id(args[0]);
+        uint32_t parent = read_type_id(args[1]);
+        if (child == 0 || parent == 0) {
+          return Value::makeBool(false);
+        }
+        uint32_t cursor = child;
+        while (cursor != 0) {
+          if (cursor == parent) {
+            return Value::makeBool(true);
+          }
+          cursor = getClassParentTypeId(cursor);
+        }
+        return Value::makeBool(false);
       });
 }
 
@@ -1774,6 +1860,7 @@ void VM::registerDefaultHostGlobals() {
   auto class_obj = heap_.allocateObject();
   setHostObjectField(class_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("class.define")));
   setHostObjectField(class_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
+  setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
   setHostObjectField(class_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("class.get")));
   setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
   setGlobal("class", Value::makeObjectId(class_obj.id));
@@ -1853,6 +1940,8 @@ Value VM::execute(const BytecodeChunk &chunk,
   heap_.reset();
   struct_type_ids_by_name_.clear();
   class_type_ids_by_name_.clear();
+  struct_instance_type_ids_.clear();
+  class_instance_type_ids_.clear();
   open_upvalues.clear();
   has_current_exception_ = false;
   current_exception_ = nullptr;
@@ -2786,9 +2875,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
-      StructRef ref{value.asStructId()};
+      StructRef ref{value.asStructId(), value.asStructTypeId()};
       StructRef copy = copyStruct(ref);
-      value = Value::makeStructId(copy.id);
+      value = Value::makeStructId(copy.id, copy.typeId);
     }
 
     globals[name] = value;
@@ -2803,9 +2892,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Value type semantics: copy structs on load
     if (value.isStructId()) {
-      StructRef ref{value.asStructId()};
+      StructRef ref{value.asStructId(), value.asStructTypeId()};
       StructRef copy = copyStruct(ref);
-      value = Value::makeStructId(copy.id);
+      value = Value::makeStructId(copy.id, copy.typeId);
     }
 
     pushStack(value);
@@ -2820,9 +2909,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
-      StructRef ref{value.asStructId()};
+      StructRef ref{value.asStructId(), value.asStructTypeId()};
       StructRef copy = copyStruct(ref);
-      value = Value::makeStructId(copy.id);
+      value = Value::makeStructId(copy.id, copy.typeId);
     }
 
     locals[abs] = value;
@@ -2851,9 +2940,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
       // Value type semantics: copy structs on load
       if (value.isStructId()) {
-        StructRef ref{value.asStructId()};
+        StructRef ref{value.asStructId(), value.asStructTypeId()};
         StructRef copy = copyStruct(ref);
-        value = Value::makeStructId(copy.id);
+        value = Value::makeStructId(copy.id, copy.typeId);
       }
     } else {
       value = cell->closed_value;
@@ -2881,9 +2970,9 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // Value type semantics: copy structs on assignment
     if (value.isStructId()) {
-      StructRef ref{value.asStructId()};
+      StructRef ref{value.asStructId(), value.asStructTypeId()};
       StructRef copy = copyStruct(ref);
-      value = Value::makeStructId(copy.id);
+      value = Value::makeStructId(copy.id, copy.typeId);
     }
 
     if (cell->is_open) {
@@ -3012,15 +3101,16 @@ void VM::executeInstruction(const Instruction &instruction) {
       else if (args[i].isHostFuncId()) argType = "host_func_id";
     }
 
-    // Handle bound method objects (from array prototype lookup)
+    // Handle bound method objects (from runtime member lookup)
     if (callee_value.isObjectId()) {
       auto *obj = heap_.object(callee_value.asObjectId());
       if (obj) {
         auto fnIt = obj->find("fn");
         auto selfIt = obj->find("self");
         if (fnIt != obj->end() && selfIt != obj->end() &&
-            fnIt->second.isHostFuncId() && selfIt->second.isArrayId()) {
-          // Prepend self (array) to args
+            (fnIt->second.isHostFuncId() || fnIt->second.isFunctionObjId() ||
+             fnIt->second.isClosureId())) {
+          // Prepend self to args
           std::vector<Value> boundArgs;
           boundArgs.push_back(selfIt->second);
           boundArgs.insert(boundArgs.end(), args.begin(), args.end());
@@ -3290,6 +3380,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     uint32_t typeId = instruction.operands[0].asInt();
     uint32_t fieldCount = instruction.operands[1].asInt();
     StructRef structRef = heap_.allocateStruct(typeId, fieldCount);
+    struct_instance_type_ids_[structRef.id] = typeId;
     pushStack(Value::makeStructId(structRef.id, structRef.typeId));
     break;
   }
@@ -3583,6 +3674,77 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     }
 
+    if (object.isStructId()) {
+      uint32_t type_id = object.asStructTypeId();
+      if (type_id == 0) {
+        auto it = struct_instance_type_ids_.find(object.asStructId());
+        if (it != struct_instance_type_ids_.end()) {
+          type_id = it->second;
+        }
+      }
+      size_t index = 0;
+      if (key_value.isInt()) {
+        index = static_cast<size_t>(key_value.asInt());
+        pushStack(getStructField(
+            StructRef{object.asStructId(), type_id}, index));
+        break;
+      }
+      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      if (!key) {
+        COMPILER_THROW("OBJECT_GET expects string/number/bool key");
+      }
+      auto idx = heap_.structFieldIndex(type_id, *key);
+      if (!idx.has_value()) {
+        pushStack(Value::makeNull());
+        break;
+      }
+      pushStack(getStructField(
+          StructRef{object.asStructId(), type_id}, *idx));
+      break;
+    }
+
+    if (object.isClassId()) {
+      uint32_t type_id = object.asClassTypeId();
+      if (type_id == 0) {
+        auto it = class_instance_type_ids_.find(object.asClassId());
+        if (it != class_instance_type_ids_.end()) {
+          type_id = it->second;
+        }
+      }
+      size_t index = 0;
+      if (key_value.isInt()) {
+        index = static_cast<size_t>(key_value.asInt());
+        pushStack(getClassField(
+            ClassRef{object.asClassId(), type_id}, index));
+        break;
+      }
+      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      if (!key) {
+        COMPILER_THROW("OBJECT_GET expects string/number/bool key");
+      }
+      auto idx = heap_.classFieldIndex(type_id, *key);
+      if (idx.has_value()) {
+        pushStack(getClassField(
+            ClassRef{object.asClassId(), type_id}, *idx));
+        break;
+      }
+
+      // Fallback to class method lookup (prototype chain aware).
+      auto method = findClassMethod(type_id, *key);
+      if (method.has_value()) {
+        auto boundObj = heap_.allocateObject();
+        auto *obj = heap_.object(boundObj.id);
+        if (obj) {
+          (*obj)["fn"] = Value::makeFunctionObjId(*method);
+          (*obj)["self"] = Value::makeClassId(object.asClassId(), type_id);
+        }
+        pushStack(Value::makeObjectId(boundObj.id));
+      } else {
+        pushStack(Value::makeNull());
+      }
+      break;
+    }
+
     if (!object.isObjectId()) {
       pushStack(Value::makeNull());
       break;
@@ -3640,9 +3802,6 @@ void VM::executeInstruction(const Instruction &instruction) {
     Value value = popStack();
     Value object = popStack();
 
-    if (!object.isObjectId()) {
-      COMPILER_THROW("OBJECT_SET expects object container");
-    }
     auto keyStr = keyFromValue(key, &heap_, current_chunk);
     if (!keyStr) {
       COMPILER_THROW("OBJECT_SET expects string/number/bool key");
@@ -3652,6 +3811,58 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_') {
       COMPILER_THROW(
           "OBJECT_SET: keys starting with '__' are reserved");
+    }
+
+    if (object.isStructId()) {
+      uint32_t type_id = object.asStructTypeId();
+      if (type_id == 0) {
+        auto it = struct_instance_type_ids_.find(object.asStructId());
+        if (it != struct_instance_type_ids_.end()) {
+          type_id = it->second;
+        }
+      }
+      size_t index = 0;
+      if (key.isInt()) {
+        index = static_cast<size_t>(key.asInt());
+      } else {
+        auto idx = heap_.structFieldIndex(type_id, *keyStr);
+        if (!idx.has_value()) {
+          COMPILER_THROW("Unknown struct field name: " + *keyStr);
+        }
+        index = *idx;
+      }
+      setStructField(StructRef{object.asStructId(), type_id},
+                     index, value);
+      pushStack(object);
+      break;
+    }
+
+    if (object.isClassId()) {
+      uint32_t type_id = object.asClassTypeId();
+      if (type_id == 0) {
+        auto it = class_instance_type_ids_.find(object.asClassId());
+        if (it != class_instance_type_ids_.end()) {
+          type_id = it->second;
+        }
+      }
+      size_t index = 0;
+      if (key.isInt()) {
+        index = static_cast<size_t>(key.asInt());
+      } else {
+        auto idx = heap_.classFieldIndex(type_id, *keyStr);
+        if (!idx.has_value()) {
+          COMPILER_THROW("Unknown class field name: " + *keyStr);
+        }
+        index = *idx;
+      }
+      setClassField(ClassRef{object.asClassId(), type_id}, index,
+                    value);
+      pushStack(object);
+      break;
+    }
+
+    if (!object.isObjectId()) {
+      COMPILER_THROW("OBJECT_SET expects object container");
     }
 
     auto *obj = heap_.object(object.asObjectId());

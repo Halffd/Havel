@@ -69,6 +69,7 @@ ByteCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
   function_indices_by_node_.clear();
+  class_method_indices_by_node_.clear();
   lambda_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
@@ -109,6 +110,12 @@ ByteCompiler::compile(const ast::Program &program) {
         const auto &decl =
             static_cast<const ast::ClassDeclaration &>(*statement);
         top_level_class_names_.insert(decl.name);
+        for (const auto &method : decl.definition.methods) {
+          if (!method) {
+            continue;
+          }
+          class_method_indices_by_node_[method.get()] = next_function_index++;
+        }
       }
       continue;
     }
@@ -160,6 +167,21 @@ ByteCompiler::compile(const ast::Program &program) {
       continue;
     }
     compileFunction(*decl);
+  }
+
+  for (const auto &statement : program.body) {
+    if (!statement || statement->kind != ast::NodeType::ClassDeclaration) {
+      continue;
+    }
+    const auto &class_decl =
+        static_cast<const ast::ClassDeclaration &>(*statement);
+    for (const auto &method : class_decl.definition.methods) {
+      if (!method) {
+        continue;
+      }
+      compileClassMethod(class_decl.name, *method, class_decl.definition.fields,
+                         class_decl.parentName);
+    }
   }
 
   for (const auto *lambda : declared_lambdas) {
@@ -549,6 +571,125 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     emit(OpCode::RETURN);
   }
 
+  leaveFunction();
+}
+
+void ByteCompiler::compileClassMethod(
+    const std::string &class_name, const ast::ClassMethodDef &method,
+    const std::vector<ast::ClassFieldDef> &fields,
+    const std::string &parent_class_name) {
+  auto index_it = class_method_indices_by_node_.find(&method);
+  if (index_it == class_method_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for class method: " + method.name);
+  }
+
+  const uint32_t param_count =
+      static_cast<uint32_t>(method.parameters.size() + 1); // self + args
+  uint32_t max_slot = param_count;
+  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+    (void)node;
+    if (slot >= max_slot) {
+      max_slot = slot + 1;
+    }
+  }
+
+  enterFunction(BytecodeFunction(class_name + "." + method.name, param_count,
+                                 max_slot),
+                index_it->second);
+  next_local_index = max_slot;
+
+  // Keep method calls compatible with existing @field compilation (LOAD_GLOBAL "this").
+  {
+    uint32_t this_id = addStringConstant("this");
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
+  }
+
+  // Mirror class fields into globals for method-local bare field references.
+  for (const auto &field : fields) {
+    uint32_t field_id = addStringConstant(field.name);
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(field_id)));
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(field_id));
+  }
+
+  // Shift explicit args (slots 1..N) down to the resolver's expected slots (0..N-1).
+  // Slot 0 originally carries self and has already been copied to global `this`.
+  for (size_t i = 0; i < method.parameters.size(); ++i) {
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(i + 1));
+    emit(OpCode::STORE_VAR, static_cast<uint32_t>(i));
+  }
+
+  // Bind explicit method parameters starting at slot 1 (slot 0 is self).
+  for (size_t i = 0; i < method.parameters.size(); ++i) {
+    const auto &param = method.parameters[i];
+    if (!param || !param->pattern) {
+      COMPILER_THROW("Class method parameter missing pattern");
+    }
+    const uint32_t method_param_slot = static_cast<uint32_t>(i + 1);
+    compileParameterPattern(*param->pattern, method_param_slot);
+    if (param->isVariadic) {
+      current_function->variadic_param_index = method_param_slot;
+    }
+  }
+
+  const std::string prev_class_name = current_class_name_;
+  const std::string prev_parent_name = current_parent_class_name_;
+  current_class_name_ = class_name;
+  current_parent_class_name_ = parent_class_name;
+
+  if (method.body) {
+    const auto &stmts = method.body->body;
+    if (!stmts.empty()) {
+      for (size_t i = 0; i < stmts.size() - 1; i++) {
+        if (stmts[i]) {
+          compileStatement(*stmts[i]);
+        }
+      }
+
+      const auto &lastStmt = stmts.back();
+      if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+        const auto &exprStmt =
+            static_cast<const ast::ExpressionStatement &>(*lastStmt);
+        if (exprStmt.expression) {
+          enterTailPosition();
+          clearTailCallFlag();
+          compileExpression(*exprStmt.expression);
+          exitTailPosition();
+          if (!wasTailCall()) {
+            emit(OpCode::RETURN);
+          }
+        } else {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          emit(OpCode::RETURN);
+        }
+      } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
+        enterTailPosition();
+        compileStatement(*lastStmt);
+        exitTailPosition();
+      } else if (lastStmt) {
+        enterTailPosition();
+        compileStatement(*lastStmt);
+        exitTailPosition();
+        if (!wasTailCall()) {
+          emit(OpCode::RETURN);
+        }
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::RETURN);
+      }
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      emit(OpCode::RETURN);
+    }
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+  }
+
+  current_class_name_ = prev_class_name;
+  current_parent_class_name_ = prev_parent_name;
   leaveFunction();
 }
 
@@ -1186,23 +1327,53 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
         static_cast<const ast::ClassDeclaration &>(statement);
-    // Runtime registration: class.define("Name", ["field1", ...])
+    // Runtime registration: class.define("Name", ["field1", ...], parent?)
     { uint32_t _sid = addStringConstant(classDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::ARRAY_NEW);
     for (const auto &field : classDecl.definition.fields) {
       { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::ARRAY_PUSH);
     }
+    uint32_t define_arity = 2;
+    if (!classDecl.parentName.empty()) {
+      uint32_t parent_sid = addStringConstant(classDecl.parentName);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(parent_sid));
+      define_arity = 3;
+    }
     {
       uint32_t strId = addStringConstant("class.define");
       emit(OpCode::CALL_HOST, std::vector<Value>{
           Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(2))});
+          Value(define_arity)});
     }
     // Store the type_id in a global variable so constructor calls work
     {
       uint32_t strId = addStringConstant(classDecl.name);
       emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
+
+    // Register compiled methods on the class type.
+    for (const auto &method : classDecl.definition.methods) {
+      if (!method) {
+        continue;
+      }
+      auto method_index_it = class_method_indices_by_node_.find(method.get());
+      if (method_index_it == class_method_indices_by_node_.end()) {
+        COMPILER_THROW("Missing class method index: " + classDecl.name + "." +
+                       method->name);
+      }
+      uint32_t class_name_sid = addStringConstant(classDecl.name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(class_name_sid));
+      uint32_t method_name_sid = addStringConstant(method->name);
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeStringValId(method_name_sid)));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
+                              method_index_it->second)));
+      uint32_t register_sid = addStringConstant("class.method");
+      emit(OpCode::CALL_HOST,
+           std::vector<Value>{Value::makeStringValId(register_sid),
+                              Value::makeInt(3)});
+      emit(OpCode::POP);
     }
     break;
   }
@@ -2154,9 +2325,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::AssignmentExpression: {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);
-    if (!assignment.value) {
-      COMPILER_THROW("Assignment expression missing value");
-    }
+    const ast::Expression *rhs_expr = assignment.value.get();
+    bool rhs_is_missing = (rhs_expr == nullptr);
 
     const auto *target_id =
         assignment.target
@@ -2252,7 +2422,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         };
 
     if (assignment.operator_ == "=") {
-      compileExpression(*assignment.value);
+      if (rhs_is_missing) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      } else {
+        compileExpression(*rhs_expr);
+      }
       if (target_id) {
         // Check for global scope assignment (::x = value)
         if (assignment.isGlobalScope) {
@@ -2285,7 +2459,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             static_cast<const ast::ArrayLiteral &>(*target_array);
 
         // Compile the value first
-        compileExpression(*assignment.value);
+      if (rhs_is_missing) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      } else {
+        compileExpression(*rhs_expr);
+      }
         uint32_t temp_slot = next_local_index;
         reserveLocalSlot(temp_slot);
         emit(OpCode::STORE_VAR, temp_slot);
@@ -2327,7 +2505,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             static_cast<const ast::ObjectLiteral &>(*target_object);
 
         // Compile the value first
-        compileExpression(*assignment.value);
+      if (rhs_is_missing) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      } else {
+        compileExpression(*rhs_expr);
+      }
         uint32_t temp_slot = next_local_index;
         reserveLocalSlot(temp_slot);
         emit(OpCode::STORE_VAR, temp_slot);
@@ -2375,7 +2557,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
               target_id->symbol);
         }
         emitLoadIdentifier(*binding);
-        compileExpression(*assignment.value);
+      if (rhs_is_missing) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      } else {
+        compileExpression(*rhs_expr);
+      }
         emit(math_op);
         emitStoreIdentifierWithResult(*binding);
         return;
@@ -2394,7 +2580,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, temp_object);
         { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_GET);
-        compileExpression(*assignment.value);
+      if (rhs_is_missing) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      } else {
+        compileExpression(*rhs_expr);
+      }
         emit(math_op);
         uint32_t temp_result = next_local_index;
         reserveLocalSlot(temp_result);
@@ -2422,7 +2612,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, temp_object);
         emit(OpCode::LOAD_VAR, temp_index);
         emit(OpCode::ARRAY_GET);
-        compileExpression(*assignment.value);
+      if (rhs_is_missing) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      } else {
+        compileExpression(*rhs_expr);
+      }
         emit(math_op);
         uint32_t temp_result = next_local_index;
         reserveLocalSlot(temp_result);
@@ -2718,16 +2912,28 @@ void ByteCompiler::compileCallExpression(
 
   // Handle super calls for prototype inheritance (@->method())
   if (expression.isSuperCall) {
-    // Compile arguments for the super call
+    if (current_parent_class_name_.empty()) {
+      COMPILER_THROW("Super call used outside a derived class method");
+    }
+
+    // Resolve and load parent method function object.
+    uint32_t method_symbol =
+        addStringConstant(current_parent_class_name_ + "." +
+                          expression.superMethodName);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(method_symbol));
+
+    // Pass self (`this`) as first argument.
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+
+    // Compile explicit super call arguments.
     for (const auto &arg : expression.args) {
       if (!arg) {
-        COMPILER_THROW("Super call contains null argument");
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        continue;
       }
       compileExpression(*arg);
     }
-    // Emit CALL_SUPER opcode with method name and arg count
-    emit(OpCode::CALL_SUPER,
-         std::vector<Value>{Value::makeStringValId(addStringConstant(expression.superMethodName)), Value::makeInt(static_cast<int64_t>(arg_count))});
+    emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
     return;
   }
 
@@ -2745,7 +2951,9 @@ void ByteCompiler::compileCallExpression(
       uint32_t totalArgs = 1; // type name
       for (const auto &arg : expression.args) {
         if (!arg) {
-          COMPILER_THROW("Call expression contains null argument");
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          totalArgs++;
+          continue;
         }
         compileExpression(*arg);
         totalArgs++;
@@ -2765,7 +2973,9 @@ void ByteCompiler::compileCallExpression(
       uint32_t totalArgs = 1; // type name
       for (const auto &arg : expression.args) {
         if (!arg) {
-          COMPILER_THROW("Call expression contains null argument");
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          totalArgs++;
+          continue;
         }
         compileExpression(*arg);
         totalArgs++;
@@ -2782,7 +2992,8 @@ void ByteCompiler::compileCallExpression(
     if (isHostFunc) {
       for (const auto &arg : expression.args) {
         if (!arg) {
-          COMPILER_THROW("Call expression contains null argument");
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          continue;
         }
         compileExpression(*arg);
       }
@@ -2823,7 +3034,8 @@ void ByteCompiler::compileCallExpression(
       if (host_global_names_.count(objIdent->symbol) > 0) {
         for (const auto &arg : expression.args) {
           if (!arg) {
-            COMPILER_THROW("Call expression contains null argument");
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            continue;
           }
           compileExpression(*arg);
         }
@@ -2847,16 +3059,17 @@ void ByteCompiler::compileCallExpression(
       }
     }
 
-    // Instance-style method call on runtime value: route through any.* dispatch
-    // (e.g. s.lower()).
-    compileExpression(*member.object);
+    // Instance-style call on runtime value.
+    // Compile as regular dynamic call: (obj.prop)(args...).
+    compileExpression(*expression.callee);
     for (const auto &arg : expression.args) {
       if (!arg) {
-        COMPILER_THROW("Call expression contains null argument");
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        continue;
       }
       compileExpression(*arg);
     }
-    uint32_t totalArgs = arg_count + 1;
+    uint32_t totalArgs = arg_count;
     if (hasKwargs) {
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {
@@ -2867,12 +3080,7 @@ void ByteCompiler::compileCallExpression(
       }
       totalArgs++;
     }
-    {
-      uint32_t strId = addStringConstant("any." + property->symbol);
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(totalArgs)});
-    }
+    emit(OpCode::CALL, totalArgs);
     return;
   }
 
@@ -2886,7 +3094,8 @@ void ByteCompiler::compileCallExpression(
         // Compile as host function call
         for (const auto &arg : expression.args) {
           if (!arg) {
-            COMPILER_THROW("Call expression contains null argument");
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            continue;
           }
           compileExpression(*arg);
         }
@@ -2917,7 +3126,8 @@ void ByteCompiler::compileCallExpression(
       // Host function - call via CALL_HOST
       for (const auto &arg : expression.args) {
         if (!arg) {
-          COMPILER_THROW("Call expression contains null argument");
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          continue;
         }
         compileExpression(*arg);
       }
@@ -2953,7 +3163,8 @@ void ByteCompiler::compileCallExpression(
 
       for (const auto &arg : expression.args) {
         if (!arg) {
-          COMPILER_THROW("Call expression contains null argument");
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          continue;
         }
         compileExpression(*arg);
       }
@@ -2983,7 +3194,9 @@ void ByteCompiler::compileCallExpression(
   uint32_t actualArgCount = 0;
   for (const auto &arg : expression.args) {
     if (!arg) {
-      COMPILER_THROW("Call expression contains null argument");
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      actualArgCount++;
+      continue;
     }
     if (arg->kind == ast::NodeType::SpreadExpression) {
       const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);

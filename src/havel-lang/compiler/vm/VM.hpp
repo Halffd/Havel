@@ -134,6 +134,8 @@ private:
   std::unordered_map<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
   std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
   std::unordered_map<std::string, uint32_t> class_type_ids_by_name_;
+  std::unordered_map<uint32_t, uint32_t> struct_instance_type_ids_;
+  std::unordered_map<uint32_t, uint32_t> class_instance_type_ids_;
   bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
 

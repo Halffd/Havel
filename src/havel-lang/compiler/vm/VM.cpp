@@ -1,5 +1,7 @@
 #include "VM.hpp"
 #include "../../utils/ErrorPrinter.hpp"
+#include "../../errors/ErrorSystem.h"
+#include "../../runtime/concurrency/Thread.hpp"
 
 #include "../../../core/io/MouseController.hpp" // For ParseDuration
 #include <chrono>
@@ -17,6 +19,34 @@
 #define COMPILER_THROW(msg) throw std::runtime_error(msg)
 
 namespace havel::compiler {
+
+// ============================================================================
+// ScriptError conversion to unified error system (TEMPORARILY DISABLED for Qt moc compatibility)
+// ============================================================================
+
+/*
+::havel::errors::HavelError ScriptError::toHavelError() const {
+  ::havel::errors::HavelError err(::havel::errors::ErrorSeverity::Error,
+                                 ::havel::errors::ErrorStage::VM,
+                                 message);
+  err.at(line, column);
+  
+  // Parse stack trace if available
+  if (!stackTrace.empty()) {
+    std::vector<::havel::errors::StackFrame> frames;
+    std::istringstream iss(stackTrace);
+    std::string lineStr;
+    while (std::getline(iss, lineStr)) {
+      ::havel::errors::StackFrame frame;
+      frame.functionName = lineStr; // Simplified - could parse better format
+      frames.push_back(std::move(frame));
+    }
+    err.withStackTrace(std::move(frames));
+  }
+  
+  return err;
+}
+*/
 
 namespace {
 // Helper function to compare two Values for equality
@@ -255,12 +285,12 @@ std::string VM::formatErrorWithContext(const std::string &message) const {
     return "\033[1;31merror\033[0m: " + message + "\n";
   }
 
-  return havel::ErrorPrinter::formatErrorFromFile("Runtime Error", message, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+  return ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", message, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
 }
 
 VM::VM() { registerDefaultHostFunctions(); }
 
-VM::VM(const havel::HostContext &ctx) {
+VM::VM(const ::havel::HostContext &ctx) {
   // Store context for service access
   context_ = &ctx;
   registerDefaultHostFunctions();
@@ -1075,6 +1105,247 @@ void VM::registerDefaultHostFunctions() {
       COMPILER_THROW("async.sleep(ms) expects numeric argument");
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(toInt(args[0])));
+    return Value::makeNull();
+  });
+
+  // ========================================================================
+  // Thread, Interval, and Timeout - Concurrency primitives
+  // ========================================================================
+
+  // thread { closure } - Create and start a message-passing thread
+  registerHostFunction("thread", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+      COMPILER_THROW("thread requires a closure argument");
+    }
+    
+    auto threadObj = std::make_shared<Thread>();
+    auto closure = args[0];
+    
+    // Create message handler that invokes the closure
+    auto handler = [this, closure](const Thread::Message &msg) {
+      try {
+        // Convert message to Value and call closure
+        Value arg;
+        if (std::holds_alternative<std::string>(msg)) {
+          auto strRef = heap_.allocateString(std::get<std::string>(msg));
+          arg = Value::makeStringId(strRef.id);
+        } else if (std::holds_alternative<int>(msg)) {
+          arg = Value::makeInt(std::get<int>(msg));
+        } else if (std::holds_alternative<double>(msg)) {
+          arg = Value::makeDouble(std::get<double>(msg));
+        }
+        
+        this->call(closure, {arg});
+      } catch (const std::exception &e) {
+        std::cerr << "[thread] Exception: " << e.what() << std::endl;
+      }
+    };
+    
+    threadObj->start(std::move(handler));
+    
+    // Store thread in GC heap and return wrapper object
+    auto threadRef = heap_.allocateThreadObj(threadObj);
+    return Value::makeThreadId(threadRef.id);
+  });
+
+  // thread.send(thread, message) - Send message to thread
+  registerHostFunction("thread.send", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[0].isThreadId()) {
+      COMPILER_THROW("thread.send requires a thread object and message");
+    }
+    
+    auto *threadObj = heap_.thread(args[0].asThreadId());
+    if (!threadObj) {
+      COMPILER_THROW("thread.send: invalid thread reference");
+    }
+    
+    // Convert message Value to Thread::Message
+    Thread::Message msg;
+    if (args[1].isStringValId()) {
+      auto *str = heap_.string(args[1].asStringValId());
+      if (str) {
+        msg = *str;
+      } else {
+        COMPILER_THROW("thread.send: invalid string reference");
+      }
+    } else if (args[1].isInt()) {
+      msg = static_cast<int>(args[1].asInt());
+    } else if (args[1].isDouble() || args[1].isNumber()) {
+      msg = args[1].isDouble() ? args[1].asDouble() : static_cast<double>(args[1].asInt());
+    } else {
+      COMPILER_THROW("thread.send: message must be string, int, or number");
+    }
+    
+    threadObj->send(msg);
+    return Value::makeNull();
+  });
+
+  // thread.pause(thread) - Pause thread
+  registerHostFunction("thread.pause", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isThreadId()) {
+      COMPILER_THROW("thread.pause requires a thread argument");
+    }
+    
+    auto *threadObj = heap_.thread(args[0].asThreadId());
+    if (!threadObj) {
+      COMPILER_THROW("thread.pause: invalid thread reference");
+    }
+    
+    threadObj->pause();
+    return Value::makeNull();
+  });
+
+  // thread.resume(thread) - Resume thread
+  registerHostFunction("thread.resume", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isThreadId()) {
+      COMPILER_THROW("thread.resume requires a thread argument");
+    }
+    
+    auto *threadObj = heap_.thread(args[0].asThreadId());
+    if (!threadObj) {
+      COMPILER_THROW("thread.resume: invalid thread reference");
+    }
+    
+    threadObj->resume();
+    return Value::makeNull();
+  });
+
+  // thread.stop(thread) - Stop thread
+  registerHostFunction("thread.stop", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isThreadId()) {
+      COMPILER_THROW("thread.stop requires a thread argument");
+    }
+    
+    auto *threadObj = heap_.thread(args[0].asThreadId());
+    if (!threadObj) {
+      COMPILER_THROW("thread.stop: invalid thread reference");
+    }
+    
+    threadObj->stop();
+    return Value::makeNull();
+  });
+
+  // thread.running(thread) -> bool - Check if thread is running
+  registerHostFunction("thread.running", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isThreadId()) {
+      COMPILER_THROW("thread.running requires a thread argument");
+    }
+    
+    auto *threadObj = heap_.thread(args[0].asThreadId());
+    if (!threadObj) {
+      return Value::makeBool(false);
+    }
+    
+    return Value::makeBool(threadObj->isRunning());
+  });
+
+  // interval(ms, closure) - Create repeating timer
+  registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[0].isNumber()) {
+      COMPILER_THROW("interval requires milliseconds and closure");
+    }
+    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+      COMPILER_THROW("interval requires a closure argument");
+    }
+    
+    int ms = toInt(args[0]);
+    auto closure = args[1];
+    
+    auto callback = [this, closure]() {
+      try {
+        this->call(closure, {});
+      } catch (const std::exception &e) {
+        std::cerr << "[interval] Exception: " << e.what() << std::endl;
+      }
+    };
+    
+    auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+    auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+    return Value::makeIntervalId(intervalRef.id);
+  });
+
+  // interval.pause(interval) - Pause interval
+  registerHostFunction("interval.pause", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isIntervalId()) {
+      COMPILER_THROW("interval.pause requires an interval argument");
+    }
+    
+    auto *intervalObj = heap_.interval(args[0].asIntervalId());
+    if (!intervalObj) {
+      COMPILER_THROW("interval.pause: invalid interval reference");
+    }
+    
+    intervalObj->pause();
+    return Value::makeNull();
+  });
+
+  // interval.resume(interval) - Resume interval
+  registerHostFunction("interval.resume", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isIntervalId()) {
+      COMPILER_THROW("interval.resume requires an interval argument");
+    }
+    
+    auto *intervalObj = heap_.interval(args[0].asIntervalId());
+    if (!intervalObj) {
+      COMPILER_THROW("interval.resume: invalid interval reference");
+    }
+    
+    intervalObj->resume();
+    return Value::makeNull();
+  });
+
+  // interval.stop(interval) - Stop interval
+  registerHostFunction("interval.stop", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isIntervalId()) {
+      COMPILER_THROW("interval.stop requires an interval argument");
+    }
+    
+    auto *intervalObj = heap_.interval(args[0].asIntervalId());
+    if (!intervalObj) {
+      COMPILER_THROW("interval.stop: invalid interval reference");
+    }
+    
+    intervalObj->stop();
+    return Value::makeNull();
+  });
+
+  // timeout(ms, closure) - Create one-shot delayed execution
+  registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[0].isNumber()) {
+      COMPILER_THROW("timeout requires milliseconds and closure");
+    }
+    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+      COMPILER_THROW("timeout requires a closure argument");
+    }
+    
+    int ms = toInt(args[0]);
+    auto closure = args[1];
+    
+    auto callback = [this, closure]() {
+      try {
+        this->call(closure, {});
+      } catch (const std::exception &e) {
+        std::cerr << "[timeout] Exception: " << e.what() << std::endl;
+      }
+    };
+    
+    auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+    auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+    return Value::makeTimeoutId(timeoutRef.id);
+  });
+
+  // timeout.cancel(timeout) - Cancel timeout
+  registerHostFunction("timeout.cancel", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isTimeoutId()) {
+      COMPILER_THROW("timeout.cancel requires a timeout argument");
+    }
+    
+    auto *timeoutObj = heap_.timeout(args[0].asTimeoutId());
+    if (!timeoutObj) {
+      COMPILER_THROW("timeout.cancel: invalid timeout reference");
+    }
+    
+    timeoutObj->cancel();
     return Value::makeNull();
   });
 
@@ -3492,55 +3763,39 @@ void VM::executeInstruction(const Instruction &instruction) {
   // String intrinsics (VM-level operations)
   case OpCode::STRING_LEN: {
     Value str = popStack();
-    if (!str.isStringValId()) {
-      COMPILER_THROW("STRING_LEN expects string");
-    }
-    // TODO: string pool lookup - return placeholder length
-    std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
-    pushStack(Value::makeInt(static_cast<int64_t>(s.length())));
+    pushStack(Value::makeInt(static_cast<int64_t>(toString(str).size())));
     break;
   }
 
   case OpCode::STRING_UPPER: {
     Value str = popStack();
-    if (!str.isStringValId()) {
-      COMPILER_THROW("STRING_UPPER expects string");
-    }
-    // TODO: string pool lookup
-    std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
+    std::string s = toString(str);
     std::transform(s.begin(), s.end(), s.begin(), ::toupper);
-    // TODO: string pool registration
-    pushStack(Value::makeNull());
+    auto ref = createRuntimeString(std::move(s));
+    pushStack(Value::makeStringId(ref.id));
     break;
   }
 
   case OpCode::STRING_LOWER: {
     Value str = popStack();
-    if (!str.isStringValId()) {
-      COMPILER_THROW("STRING_LOWER expects string");
-    }
-    // TODO: string pool lookup
-    std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
+    std::string s = toString(str);
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-    // TODO: string pool registration
-    pushStack(Value::makeNull());
+    auto ref = createRuntimeString(std::move(s));
+    pushStack(Value::makeStringId(ref.id));
     break;
   }
 
   case OpCode::STRING_TRIM: {
     Value str = popStack();
-    if (!str.isStringValId()) {
-      COMPILER_THROW("STRING_TRIM expects string");
-    }
-    // TODO: string pool lookup
-    std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
+    std::string s = toString(str);
     size_t start = s.find_first_not_of(" \t\n\r");
     if (start == std::string::npos) {
-      pushStack(Value::makeNull());
+      auto ref = createRuntimeString("");
+      pushStack(Value::makeStringId(ref.id));
     } else {
       size_t end = s.find_last_not_of(" \t\n\r");
-      // TODO: string pool registration
-      pushStack(Value::makeNull());
+      auto ref = createRuntimeString(s.substr(start, end - start + 1));
+      pushStack(Value::makeStringId(ref.id));
     }
     break;
   }
@@ -3682,8 +3937,8 @@ void VM::executeInstruction(const Instruction &instruction) {
   // toString() builtin
   case OpCode::TO_STRING: {
     Value value = popStack();
-    // TODO: string pool integration - for now return null
-    pushStack(Value::makeNull());
+    auto str_ref = createRuntimeString(toString(value));
+    pushStack(Value::makeStringId(str_ref.id));
     break;
   }
 
@@ -3691,10 +3946,8 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::STRING_CONCAT: {
     Value right = popStack();
     Value left = popStack();
-    // TODO: string pool integration - for now return null
-    (void)left;
-    (void)right;
-    pushStack(Value::makeNull());
+    auto str_ref = createRuntimeString(toString(left) + toString(right));
+    pushStack(Value::makeStringId(str_ref.id));
     break;
   }
 

@@ -43,14 +43,14 @@ static bool valuesEqual(const Value &a, const Value &b) {
   return a == b; // Value has operator==
 }
 
-HostBridge::HostBridge(const havel::HostContext &ctx)
+HostBridge::HostBridge(const ::havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()),
       moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<ExtensionLoader>();
   initBridges();
 }
 
-HostBridge::HostBridge(const havel::HostContext &ctx,
+HostBridge::HostBridge(const ::havel::HostContext &ctx,
                        const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<ExtensionLoader>();
@@ -153,7 +153,7 @@ void HostBridge::install() {
   if (ctx_->windowMonitor && ctx_->vm) {
     VM *vm = static_cast<VM *>(ctx_->vm);
     VMApi api(*vm);
-    havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
+    ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
   }
 
   // Install extension loading functions
@@ -929,13 +929,15 @@ void HostBridge::install() {
   // any.in(value, container) - membership test
   options_.host_functions["string.len"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         return Value(int64_t(args[0].toString().length()));
       };
   options_.host_functions["string.trim"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         std::string s = args[0].toString();
         size_t start = s.find_first_not_of(" \t\n\r");
@@ -948,7 +950,8 @@ void HostBridge::install() {
       };
   options_.host_functions["string.upper"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::toupper);
@@ -957,7 +960,8 @@ void HostBridge::install() {
       };
   options_.host_functions["string.lower"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
@@ -966,8 +970,9 @@ void HostBridge::install() {
       };
   options_.host_functions["string.includes"] =
       [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isStringValId() ||
-            !args[1].isStringValId())
+        if (args.size() < 2 ||
+            (!args[0].isStringValId() && !args[0].isStringId()) ||
+            (!args[1].isStringValId() && !args[1].isStringId()))
           return Value::makeBool(false);
         const std::string &s = args[0].toString();
         const std::string &sub = args[1].toString();
@@ -975,8 +980,9 @@ void HostBridge::install() {
       };
   options_.host_functions["string.startswith"] =
       [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isStringValId() ||
-            !args[1].isStringValId())
+        if (args.size() < 2 ||
+            (!args[0].isStringValId() && !args[0].isStringId()) ||
+            (!args[1].isStringValId() && !args[1].isStringId()))
           return Value::makeBool(false);
         const std::string &s = args[0].toString();
         const std::string &pre = args[1].toString();
@@ -985,8 +991,9 @@ void HostBridge::install() {
       };
   options_.host_functions["string.endswith"] =
       [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isStringValId() ||
-            !args[1].isStringValId())
+        if (args.size() < 2 ||
+            (!args[0].isStringValId() && !args[0].isStringId()) ||
+            (!args[1].isStringValId() && !args[1].isStringId()))
           return Value::makeBool(false);
         const std::string &s = args[0].toString();
         const std::string &suf = args[1].toString();
@@ -1720,7 +1727,8 @@ void HostBridge::install() {
   // trim)
   options_.host_functions["upper"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::toupper);
@@ -1729,7 +1737,8 @@ void HostBridge::install() {
       };
   options_.host_functions["lower"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         std::string s = args[0].toString();
         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
@@ -1738,7 +1747,8 @@ void HostBridge::install() {
       };
   options_.host_functions["trim"] =
       [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId())
+        if (args.empty() ||
+            (!args[0].isStringValId() && !args[0].isStringId()))
           return Value::makeNull();
         std::string s = args[0].toString();
         size_t start = s.find_first_not_of(" \t\n\r");
@@ -1976,11 +1986,11 @@ void HostBridge::registerExtensionFunction(const std::string &fullName,
   options_.host_functions[fullName] = std::move(fn);
 }
 
-std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {
+std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx) {
   return std::make_shared<HostBridge>(ctx);
 }
 
-std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx,
+std::shared_ptr<HostBridge> createHostBridge(const ::havel::HostContext &ctx,
                                              const ExecutionPolicy &policy) {
   return std::make_shared<HostBridge>(ctx, policy);
 }

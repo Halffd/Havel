@@ -72,6 +72,9 @@ enum class ExtendedTag : uint64_t {
   ERROR_ID = 0xA,
   FUNCTION_OBJ_ID = 0xB,  // FunctionObject (stores function_index)
   STRING_VAL_ID = 0xC,    // Inline string (stores index into string pool)
+  THREAD_ID = 0xD,        // Thread object (stores index into GC heap)
+  INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
+  TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
 };
 
 // Bool payload values
@@ -286,6 +289,19 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRING_VAL_ID), id));
   }
 
+  // Concurrency object value types
+  static Value makeThreadId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::THREAD_ID), id));
+  }
+
+  static Value makeIntervalId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::INTERVAL_ID), id));
+  }
+
+  static Value makeTimeoutId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::TIMEOUT_ID), id));
+  }
+
   // ========================================================================
   // Type Predicates
   // ========================================================================
@@ -379,6 +395,21 @@ public:
   bool isStringValId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::STRING_VAL_ID;
+  }
+
+  bool isThreadId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::THREAD_ID;
+  }
+
+  bool isIntervalId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::INTERVAL_ID;
+  }
+
+  bool isTimeoutId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::TIMEOUT_ID;
   }
 
   // Convenience: check if numeric
@@ -479,6 +510,18 @@ public:
   }
 
   uint32_t asStringValId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asThreadId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asIntervalId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asTimeoutId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
   }
 

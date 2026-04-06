@@ -105,7 +105,7 @@ std::string formatDiagnostic(const std::string &kind,
                              const std::string &annotation = "") {
   std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
   std::string source_line = sourceLineAt(source, line);
-  return havel::ErrorPrinter::formatError(kind, message + (annotation.empty() ? "" : " (" + annotation + ")"), file_path, line, column, length, source_line);
+  return ::havel::ErrorPrinter::formatError(kind, message + (annotation.empty() ? "" : " (" + annotation + ")"), file_path, line, column, length, source_line);
 }
 
 std::string enrichRuntimeError(const std::string &runtime_error,
@@ -124,7 +124,7 @@ std::string enrichRuntimeError(const std::string &runtime_error,
 
   std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
 
-  return havel::ErrorPrinter::formatErrorFromFile(
+  return ::havel::ErrorPrinter::formatErrorFromFile(
       "Runtime Error", message, file_path, line, column, 1);
 }
 
@@ -283,6 +283,8 @@ std::string opcodeName(OpCode opcode) {
     return "OR";
   case OpCode::NOT:
     return "NOT";
+  case OpCode::NEGATE:
+    return "NEGATE";
   case OpCode::IS_NULL:
     return "IS_NULL";
   case OpCode::JUMP:
@@ -377,26 +379,64 @@ std::string opcodeName(OpCode opcode) {
     return "STRING_LOWER";
   case OpCode::STRING_TRIM:
     return "STRING_TRIM";
+  case OpCode::STRING_SUB:
+    return "STRING_SUB";
+  case OpCode::STRING_FIND:
+    return "STRING_FIND";
   case OpCode::STRING_HAS:
     return "STRING_HAS";
   case OpCode::STRING_STARTS:
     return "STRING_STARTS";
   case OpCode::STRING_ENDS:
     return "STRING_ENDS";
+  case OpCode::STRING_SPLIT:
+    return "STRING_SPLIT";
+  case OpCode::STRING_REPLACE:
+    return "STRING_REPLACE";
+  case OpCode::STRING_PROMOTE:
+    return "STRING_PROMOTE";
   case OpCode::SET_NEW:
     return "SET_NEW";
   case OpCode::OBJECT_NEW:
     return "OBJECT_NEW";
+  case OpCode::OBJECT_NEW_UNSORTED:
+    return "OBJECT_NEW_UNSORTED";
   case OpCode::OBJECT_GET:
     return "OBJECT_GET";
   case OpCode::OBJECT_SET:
     return "OBJECT_SET";
   case OpCode::STRING_CONCAT:
     return "STRING_CONCAT";
+  case OpCode::SPREAD:
+    return "SPREAD";
+  case OpCode::SPREAD_CALL:
+    return "SPREAD_CALL";
+  case OpCode::AS_TYPE:
+    return "AS_TYPE";
+  case OpCode::TO_INT:
+    return "TO_INT";
+  case OpCode::TO_FLOAT:
+    return "TO_FLOAT";
+  case OpCode::TO_STRING:
+    return "TO_STRING";
+  case OpCode::TO_BOOL:
+    return "TO_BOOL";
+  case OpCode::TYPE_OF:
+    return "TYPE_OF";
   case OpCode::PRINT:
     return "PRINT";
   case OpCode::DEBUG:
     return "DEBUG";
+  case OpCode::CLASS_NEW:
+    return "CLASS_NEW";
+  case OpCode::CLASS_GET_FIELD:
+    return "CLASS_GET_FIELD";
+  case OpCode::CLASS_SET_FIELD:
+    return "CLASS_SET_FIELD";
+  case OpCode::LOAD_CLASS_PROTO:
+    return "LOAD_CLASS_PROTO";
+  case OpCode::CALL_SUPER:
+    return "CALL_SUPER";
   case OpCode::NOP:
     return "NOP";
   }
@@ -477,11 +517,11 @@ BytecodeSmokeResult runBytecodePipeline(
   std::unique_ptr<ast::Program> program;
   try {
     program = parser.produceAST(source);
-  } catch (const havel::LexError &e) {
+  } catch (const ::havel::LexError &e) {
     COMPILER_THROW(formatDiagnostic(
         "LexerError", e.what(), options.compile_unit_name, source, e.line,
         e.column, e.length, "unexpected token"));
-  } catch (const parser::ParseError &e) {
+  } catch (const ::havel::parser::ParseError &e) {
     COMPILER_THROW(formatDiagnostic(
         "ParseError", e.what(), options.compile_unit_name, source, e.line,
         e.column, e.length, "here"));

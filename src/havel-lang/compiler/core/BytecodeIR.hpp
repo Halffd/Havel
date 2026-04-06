@@ -238,6 +238,19 @@ struct ErrorRef {
   uint32_t id = 0; // GC object id for the error object
 };
 
+// Concurrency object references
+struct ThreadRef {
+  uint32_t id = 0; // GC object id for thread
+};
+
+struct IntervalRef {
+  uint32_t id = 0; // GC object id for interval
+};
+
+struct TimeoutRef {
+  uint32_t id = 0; // GC object id for timeout
+};
+
 using BytecodeHostFunction =
     std::function<Value(const std::vector<Value> &)>;
 

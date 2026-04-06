@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/BytecodeIR.hpp"
+#include "../../runtime/concurrency/Thread.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -205,6 +206,11 @@ public:
 
   IteratorRef allocateIterator(const Value &iterable);
 
+  // Concurrency objects
+  ThreadRef allocateThreadObj(std::shared_ptr<::havel::Thread> thread);
+  IntervalRef allocateIntervalObj(std::shared_ptr<::havel::Interval> interval);
+  TimeoutRef allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout);
+
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
   std::vector<Value> *array(uint32_t id);
@@ -216,6 +222,14 @@ public:
   const Range *range(uint32_t id) const;
   Iterator *iterator(uint32_t id);
   const Iterator *iterator(uint32_t id) const;
+
+  // Concurrency object accessors
+  ::havel::Thread* thread(uint32_t id);
+  const ::havel::Thread* thread(uint32_t id) const;
+  ::havel::Interval* interval(uint32_t id);
+  const ::havel::Interval* interval(uint32_t id) const;
+  ::havel::Timeout* timeout(uint32_t id);
+  const ::havel::Timeout* timeout(uint32_t id) const;
 
   // Error accessors
   ErrorObject *error(uint32_t id);
@@ -273,6 +287,11 @@ private:
   std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<Value>>>
       enums_; // tag + payload
   std::unordered_map<uint32_t, Iterator> iterators_;
+  
+  // Concurrency objects
+  std::unordered_map<uint32_t, std::shared_ptr<::havel::Thread>> threads_;
+  std::unordered_map<uint32_t, std::shared_ptr<::havel::Interval>> intervals_;
+  std::unordered_map<uint32_t, std::shared_ptr<::havel::Timeout>> timeouts_;
 
   // Type registries
   std::vector<StructType> structTypes_;
@@ -287,6 +306,9 @@ private:
   uint32_t next_range_id_ = 1;
   uint32_t next_error_id_ = 1;
   uint32_t next_iterator_id_ = 1;
+  uint32_t next_thread_id_ = 1;
+  uint32_t next_interval_id_ = 1;
+  uint32_t next_timeout_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;
   std::unordered_map<uint64_t, Value> external_roots_;

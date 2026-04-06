@@ -145,7 +145,7 @@ private:
   std::unordered_set<std::string> host_global_names_{
       "print",   "sleep",    "sleep_ms", "clock_ms", "clock_ns", "clock_us",
       "assert",  "time.now", "window",   "io",       "system",   "hotkey",
-      "mode",    "process",  "async",    "struct",   "thread",   "interval",
+      "mode",    "process",  "display",  "async",    "struct",   "thread",   "interval",
       "timeout", "string",   "array",    "object",   "type",     "utility",
       "regex",   "physics",  "time",     "math"};
 

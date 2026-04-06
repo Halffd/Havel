@@ -700,18 +700,25 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
   // Use HardwareDetector for hardware detection
   auto hwInfo = ::havel::HardwareDetector::detectHardware();
 
-  vm->setHostObjectField(obj, "cpu", Value::makeNull());
+  // Helper to create string or null
+  auto makeStr = [vm](const std::string &s) -> Value {
+    if (s.empty()) return Value::makeNull();
+    auto ref = vm->getHeap().allocateString(s);
+    return Value::makeStringId(ref.id);
+  };
+
+  vm->setHostObjectField(obj, "cpu", makeStr(hwInfo.cpu));
   vm->setHostObjectField(obj, "cpuCores",
                          Value::makeInt(static_cast<int64_t>(hwInfo.cpuCores)));
   vm->setHostObjectField(
       obj, "cpuThreads",
       Value::makeInt(static_cast<int64_t>(hwInfo.cpuThreads)));
   vm->setHostObjectField(obj, "cpuFrequency",
-                         Value::makeNull());
-  vm->setHostObjectField(obj, "cpuUsage", Value::makeNull());
-  vm->setHostObjectField(obj, "gpu", Value::makeNull());
+                         Value::makeDouble(hwInfo.cpuFrequency));
+  vm->setHostObjectField(obj, "cpuUsage", Value::makeDouble(hwInfo.cpuUsage));
+  vm->setHostObjectField(obj, "gpu", makeStr(hwInfo.gpu));
   vm->setHostObjectField(obj, "gpuTemperature",
-                         Value::makeNull());
+                         Value::makeDouble(hwInfo.gpuTemperature));
 
   // Memory info (all in bytes)
   vm->setHostObjectField(obj, "ramTotal",
@@ -729,28 +736,28 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
   vm->setHostObjectField(obj, "swapFree",
                          Value::makeInt(static_cast<int64_t>(hwInfo.swapFree)));
 
-  vm->setHostObjectField(obj, "motherboard", Value::makeNull());
-  vm->setHostObjectField(obj, "bios", Value::makeNull());
+  vm->setHostObjectField(obj, "motherboard", makeStr(hwInfo.motherboard));
+  vm->setHostObjectField(obj, "bios", makeStr(hwInfo.bios));
   vm->setHostObjectField(obj, "cpuTemperature",
-                         Value::makeNull());
+                         Value::makeDouble(hwInfo.cpuTemperature));
 
   // Storage array
   auto storageArr = vm->createHostArray();
   for (const auto &device : hwInfo.storage) {
     auto storageObj = vm->createHostObject();
-    vm->setHostObjectField(storageObj, "name", Value::makeNull());
-    vm->setHostObjectField(storageObj, "model", Value::makeNull());
+    vm->setHostObjectField(storageObj, "name", makeStr(device.name));
+    vm->setHostObjectField(storageObj, "model", makeStr(device.model));
     vm->setHostObjectField(storageObj, "size",
                            Value::makeInt(static_cast<int64_t>(device.size)));
     vm->setHostObjectField(storageObj, "used",
                            Value::makeInt(static_cast<int64_t>(device.used)));
     vm->setHostObjectField(storageObj, "free",
                            Value::makeInt(static_cast<int64_t>(device.free)));
-    vm->setHostObjectField(storageObj, "type", Value::makeNull());
+    vm->setHostObjectField(storageObj, "type", makeStr(device.type));
     vm->setHostObjectField(storageObj, "mountPoint",
-                           Value::makeNull());
+                           makeStr(device.mountPoint));
     vm->setHostObjectField(storageObj, "filesystem",
-                           Value::makeNull());
+                           makeStr(device.filesystem));
     vm->pushHostArrayValue(storageArr, Value::makeObjectId(storageObj.id));
   }
   vm->setHostObjectField(obj, "storage", Value::makeArrayId(storageArr.id));

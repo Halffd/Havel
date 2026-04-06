@@ -222,6 +222,11 @@ private:
   int64_t toInt(const Value &value) const;
   double toFloat(const Value &value) const;
   bool toBool(const Value &value) const;
+  std::optional<std::string> valueAsString(const Value &value) const;
+  bool valuesEqualDeep(const Value &left, const Value &right) const;
+  bool valuesEqualDeep(const Value &left, const Value &right,
+                       std::unordered_set<uint64_t> &visited_array_pairs,
+                       std::unordered_set<uint64_t> &visited_object_pairs) const;
   std::string formatErrorWithContext(const std::string &message) const;
 
   std::vector<Value> stackValuesForRoots() const;

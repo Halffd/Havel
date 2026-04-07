@@ -1,0 +1,7 @@
+let p = Point(10, 20)
+print("p = ", p)
+
+struct Point {
+    x
+    y
+}

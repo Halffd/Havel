@@ -1,0 +1,9 @@
+struct Point {
+    x
+    y
+}
+
+let p = Point(10, 20)
+print("p = ", p)
+print("type(p) = ", type(p))
+print("p.x = ", p.x)

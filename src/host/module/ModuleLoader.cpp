@@ -18,7 +18,7 @@
 namespace havel::compiler {
 
 HostModuleLoader::HostModuleLoader(const HostContext &ctx)
-    : ctx_(ctx), policy_(ExecutionPolicy::DefaultPolicy()) {
+    : policy_(ExecutionPolicy::DefaultPolicy()) {
   // Register built-in modules (metadata only - lazy loading)
   registerBuiltin("io", {"io", "1.0", true, false, ""});
   registerBuiltin("file", {"file", "1.0", true, false, ""});

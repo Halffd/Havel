@@ -327,6 +327,15 @@ void ByteCompiler::patchJump(uint32_t jump_instruction_index, uint32_t target) {
   instruction.operands[0] = target;
 }
 
+// Helper to extract parameter name from a FunctionParameter AST node
+static std::string extractParamName(const ast::FunctionParameter &param) {
+  if (param.pattern && param.pattern->kind == ast::NodeType::Identifier) {
+    const auto *id = static_cast<const ast::Identifier *>(param.pattern.get());
+    return id->symbol;
+  }
+  return "_";
+}
+
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     COMPILER_THROW("Function declaration missing name");
@@ -347,10 +356,25 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     }
   }
 
-  enterFunction(
-      BytecodeFunction(function.name->symbol,
-                       static_cast<uint32_t>(function.parameters.size()), max_slot),
-      index_it->second);
+  // Collect parameter names for metadata
+  std::vector<std::string> param_names;
+  param_names.reserve(function.parameters.size());
+  for (const auto &param : function.parameters) {
+    if (param) {
+      param_names.push_back(extractParamName(*param));
+    } else {
+      param_names.push_back("_");
+    }
+  }
+
+  // Create function with metadata
+  BytecodeFunction bf(function.name->symbol,
+                       static_cast<uint32_t>(function.parameters.size()), max_slot);
+  bf.param_names = std::move(param_names);
+  bf.source_line = function.line;
+  // source_file will be set by the pipeline/compiler context
+
+  enterFunction(std::move(bf), index_it->second);
   next_local_index = max_slot;
   auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
   if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
@@ -480,10 +504,23 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     COMPILER_THROW("Missing function index for lambda expression");
   }
 
-  enterFunction(
-      BytecodeFunction("<lambda>",
-                       static_cast<uint32_t>(lambda.parameters.size()), 0),
-      index_it->second);
+  // Collect parameter names for lambda
+  std::vector<std::string> param_names;
+  param_names.reserve(lambda.parameters.size());
+  for (const auto &param : lambda.parameters) {
+    if (param && param->pattern) {
+      param_names.push_back(extractParamName(*param));
+    } else {
+      param_names.push_back("_");
+    }
+  }
+
+  BytecodeFunction bf("<lambda>",
+                       static_cast<uint32_t>(lambda.parameters.size()), 0);
+  bf.param_names = std::move(param_names);
+  bf.source_line = lambda.line;
+
+  enterFunction(std::move(bf), index_it->second);
 
   auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
   if (upvalues_it != lexical_resolution_.lambda_upvalues.end()) {
@@ -600,9 +637,23 @@ void ByteCompiler::compileClassMethod(
     }
   }
 
-  enterFunction(BytecodeFunction(class_name + "." + method.name, param_count,
-                                 max_slot),
-                index_it->second);
+  // Collect parameter names (skip 'self' which is implicit)
+  std::vector<std::string> param_names;
+  param_names.reserve(method.parameters.size() + 1);
+  param_names.push_back("self"); // implicit first parameter
+  for (const auto &param : method.parameters) {
+    if (param && param->pattern) {
+      param_names.push_back(extractParamName(*param));
+    } else {
+      param_names.push_back("_");
+    }
+  }
+
+  BytecodeFunction bf(class_name + "." + method.name, param_count, max_slot);
+  bf.param_names = std::move(param_names);
+  bf.source_line = method.line;
+
+  enterFunction(std::move(bf), index_it->second);
   next_local_index = max_slot;
 
   // Keep method calls compatible with existing @field compilation (LOAD_GLOBAL "this").

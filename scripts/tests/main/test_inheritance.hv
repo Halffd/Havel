@@ -22,11 +22,11 @@ class MousePos {
   }
 }
 class Mouse : MousePos {
-  fn click(btn: str, down?: bool){
-    mouse.click(btn, down? ? 1 : 2)
+  fn click(btn: str, down: bool){
+    mouse.click(btn, down ? 1 : 2)
   }
   fn dbClick(){
-    loop 2 { click(); sleep(50)}
+    loop 2 { click("left"); sleep(50)}
   }
 }
 ms = Mouse()

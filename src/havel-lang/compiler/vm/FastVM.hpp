@@ -1,3 +1,4 @@
+#include "havel-lang/errors/ErrorSystem.h"
 #pragma once
 
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
@@ -16,7 +17,12 @@
 #include <stdexcept>
 
 // Macro for throwing errors with source location info
-#define COMPILER_THROW(msg) throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]")
+#define COMPILER_THROW(msg) \
+  do { \
+    ::havel::errors::ErrorReporter::instance().report( \
+        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg)); \
+    throw std::runtime_error(std::string(msg) + " [" __FILE__ ":" + std::to_string(__LINE__) + "]"); \
+  } while (0)
 
 namespace havel::compiler {
 

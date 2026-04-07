@@ -2509,7 +2509,7 @@ Parser::parseStructMembers() {
 
     // Optional default value
     std::optional<std::unique_ptr<ast::Expression>> defaultValue;
-    if (at().type == havel::TokenType::Equals) {
+    if (at().type == havel::TokenType::Assign) {
       advance(); // consume '='
       defaultValue = parsePrimaryExpression();
     }
@@ -2669,7 +2669,7 @@ Parser::parseClassMembers() {
 
     // Optional default value
     std::optional<std::unique_ptr<ast::Expression>> defaultValue;
-    if (at().type == havel::TokenType::Equals) {
+    if (at().type == havel::TokenType::Assign) {
       advance(); // consume '='
       defaultValue = parsePrimaryExpression();
     }

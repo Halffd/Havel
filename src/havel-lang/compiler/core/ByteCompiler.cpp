@@ -3865,6 +3865,20 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
+  case ast::NodeType::ClassDeclaration: {
+    const auto &class_decl =
+        static_cast<const ast::ClassDeclaration &>(statement);
+    for (const auto &method : class_decl.definition.methods) {
+      if (method && method->body) {
+        for (const auto &nested : method->body->body) {
+          if (nested) {
+            collectLambdaExpressions(*nested, out);
+          }
+        }
+      }
+    }
+    break;
+  }
   default:
     break;
   }

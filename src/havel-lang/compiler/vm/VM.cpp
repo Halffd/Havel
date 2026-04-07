@@ -892,11 +892,25 @@ Value VM::callFunction(const Value &fn,
 // Prototype system - methods on types
 void VM::registerPrototypeMethod(const std::string &typeName,
                                  const std::string &methodName,
-                                 HostFunctionRef method) {
-  prototypes_[typeName][methodName] = method;
+                                 uint32_t hostFuncIndex) {
+  prototypes_[typeName][methodName] = hostFuncIndex;
 }
 
-std::optional<HostFunctionRef>
+void VM::registerPrototypeMethodByName(const std::string &typeName,
+                                       const std::string &methodName,
+                                       const std::string &funcName) {
+  // Find the function index by name
+  for (size_t i = 0; i < host_function_names_.size(); ++i) {
+    if (host_function_names_[i] == funcName) {
+      prototypes_[typeName][methodName] = static_cast<uint32_t>(i);
+      return;
+    }
+  }
+  // Not found - register with 0 (will be null)
+  prototypes_[typeName][methodName] = 0;
+}
+
+std::optional<uint32_t>
 VM::getPrototypeMethod(const Value &value,
                        const std::string &methodName) {
   // Determine type name
@@ -1926,6 +1940,271 @@ void VM::registerDefaultHostGlobals() {
   if (system_object_initializer_) {
     system_object_initializer_(this);
   }
+
+  // ========================================================================
+  // Primitive method dispatch tables (no boxing)
+  // ========================================================================
+  auto regProto = [this](const std::string &type, const std::string &method, size_t arity, BytecodeHostFunction fn) {
+    host_functions[type + "." + method] = std::move(fn);
+    host_function_names_.push_back(type + "." + method);
+    uint32_t idx = static_cast<uint32_t>(host_function_names_.size() - 1);
+    prototypes_[type][method] = idx;
+  };
+
+  // String methods
+  regProto("string", "len", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeInt(0);
+    const auto &v = args[0];
+    if (v.isStringValId() && current_chunk) {
+      return Value::makeInt(static_cast<int64_t>(current_chunk->getString(v.asStringValId()).size()));
+    }
+    if (v.isStringId()) {
+      if (auto *s = heap_.string(v.asStringId())) return Value::makeInt(static_cast<int64_t>(s->size()));
+    }
+    return Value::makeInt(0);
+  });
+
+  regProto("string", "upper", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s;
+    if (args[0].isStringValId() && current_chunk) s = current_chunk->getString(args[0].asStringValId());
+    else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
+    else return Value::makeNull();
+    std::string result = s;
+    for (auto &c : result) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    auto ref = heap_.allocateString(std::move(result));
+    return Value::makeStringId(ref.id);
+  });
+
+  regProto("string", "lower", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s;
+    if (args[0].isStringValId() && current_chunk) s = current_chunk->getString(args[0].asStringValId());
+    else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
+    else return Value::makeNull();
+    std::string result = s;
+    for (auto &c : result) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    auto ref = heap_.allocateString(std::move(result));
+    return Value::makeStringId(ref.id);
+  });
+
+  regProto("string", "has", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    std::string s, sub;
+    if (args[0].isStringValId() && current_chunk) s = current_chunk->getString(args[0].asStringValId());
+    else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
+    if (args[1].isStringValId() && current_chunk) sub = current_chunk->getString(args[1].asStringValId());
+    else if (args[1].isStringId() && heap_.string(args[1].asStringId())) sub = *heap_.string(args[1].asStringId());
+    return Value::makeBool(s.find(sub) != std::string::npos);
+  });
+
+  regProto("string", "split", 2, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s;
+    if (args[0].isStringValId() && current_chunk) s = current_chunk->getString(args[0].asStringValId());
+    else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
+    else return Value::makeNull();
+    std::string delim = ",";
+    if (args.size() > 1 && args[1].isStringValId() && current_chunk) delim = current_chunk->getString(args[1].asStringValId());
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    size_t pos = 0, prev = 0;
+    while ((pos = s.find(delim, prev)) != std::string::npos) {
+      auto ref = heap_.allocateString(s.substr(prev, pos - prev));
+      arr->push_back(Value::makeStringId(ref.id));
+      prev = pos + delim.size();
+    }
+    auto ref = heap_.allocateString(s.substr(prev));
+    arr->push_back(Value::makeStringId(ref.id));
+    return Value::makeArrayId(arrRef.id);
+  });
+
+  regProto("string", "trim", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s;
+    if (args[0].isStringValId() && current_chunk) s = current_chunk->getString(args[0].asStringValId());
+    else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
+    else return Value::makeNull();
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) { auto ref = heap_.allocateString(""); return Value::makeStringId(ref.id); }
+    size_t end = s.find_last_not_of(" \t\n\r");
+    auto ref = heap_.allocateString(s.substr(start, end - start + 1));
+    return Value::makeStringId(ref.id);
+  });
+
+  regProto("string", "sub", 3, [this](const std::vector<Value> &args) {
+    if (args.size() < 3) return Value::makeNull();
+    std::string s;
+    if (args[0].isStringValId() && current_chunk) s = current_chunk->getString(args[0].asStringValId());
+    else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
+    else return Value::makeNull();
+    int64_t start = args[1].isInt() ? args[1].asInt() : 0;
+    int64_t len = args[2].isInt() ? args[2].asInt() : static_cast<int64_t>(s.size());
+    if (start < 0) start = std::max(static_cast<int64_t>(0), static_cast<int64_t>(s.size()) + start);
+    auto ref = heap_.allocateString(s.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
+    return Value::makeStringId(ref.id);
+  });
+
+  // Array methods
+  regProto("array", "len", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeInt(0);
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      return Value::makeInt(arr ? static_cast<int64_t>(arr->size()) : 0);
+    }
+    return Value::makeInt(0);
+  });
+
+  regProto("array", "push", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr) { arr->push_back(args[1]); return Value::makeInt(static_cast<int64_t>(arr->size())); }
+    }
+    return Value::makeNull();
+  });
+
+  regProto("array", "pop", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr && !arr->empty()) { auto val = arr->back(); arr->pop_back(); return val; }
+    }
+    return Value::makeNull();
+  });
+
+  regProto("array", "has", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr) {
+        for (const auto &v : *arr) {
+          if (valuesEqualDeep(v, args[1])) return Value::makeBool(true);
+        }
+      }
+    }
+    return Value::makeBool(false);
+  });
+
+  regProto("array", "map", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr) {
+        auto resultRef = heap_.allocateArray();
+        auto *result = heap_.array(resultRef.id);
+        for (const auto &v : *arr) {
+          result->push_back(call(args[1], {v}));
+        }
+        return Value::makeArrayId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  regProto("array", "filter", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr) {
+        auto resultRef = heap_.allocateArray();
+        auto *result = heap_.array(resultRef.id);
+        for (const auto &v : *arr) {
+          auto predResult = call(args[1], {v});
+          if (toBool(predResult)) result->push_back(v);
+        }
+        return Value::makeArrayId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  regProto("array", "reduce", 3, [this](const std::vector<Value> &args) {
+    if (args.size() < 3 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr && !arr->empty()) {
+        Value acc = args[2];
+        for (const auto &v : *arr) {
+          acc = call(args[1], {acc, v});
+        }
+        return acc;
+      }
+    }
+    return args.size() > 2 ? args[2] : Value::makeNull();
+  });
+
+  regProto("array", "join", 2, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string delim = ",";
+    if (args.size() > 1 && args[1].isStringValId() && current_chunk) delim = current_chunk->getString(args[1].asStringValId());
+    if (args[0].isArrayId()) {
+      auto *arr = heap_.array(args[0].asArrayId());
+      if (arr) {
+        std::string result;
+        for (size_t i = 0; i < arr->size(); ++i) {
+          if (i > 0) result += delim;
+          result += toString((*arr)[i]);
+        }
+        auto ref = heap_.allocateString(std::move(result));
+        return Value::makeStringId(ref.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // Integer/Float methods
+  regProto("int", "toHex", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    int64_t v = args[0].isInt() ? args[0].asInt() : (args[0].isDouble() ? static_cast<int64_t>(args[0].asDouble()) : 0);
+    std::ostringstream oss;
+    oss << std::hex << v;
+    auto ref = heap_.allocateString(oss.str());
+    return Value::makeStringId(ref.id);
+  });
+
+  regProto("int", "toBin", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    int64_t v = args[0].isInt() ? args[0].asInt() : (args[0].isDouble() ? static_cast<int64_t>(args[0].asDouble()) : 0);
+    std::string result;
+    for (int i = 63; i >= 0; --i) {
+      if (v & (1LL << i)) { result += '1'; } else if (!result.empty()) { result += '0'; }
+    }
+    if (result.empty()) result = "0";
+    auto ref = heap_.allocateString(std::move(result));
+    return Value::makeStringId(ref.id);
+  });
+
+  regProto("float", "round", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
+    return Value::makeInt(static_cast<int64_t>(std::round(v)));
+  });
+
+  regProto("float", "floor", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
+    return Value::makeInt(static_cast<int64_t>(std::floor(v)));
+  });
+
+  regProto("float", "ceil", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
+    return Value::makeInt(static_cast<int64_t>(std::ceil(v)));
+  });
+
+  // Bool methods
+  regProto("bool", "and", 2, [this](const std::vector<Value> &args) {
+    return Value::makeBool(args.size() >= 2 && toBool(args[0]) && toBool(args[1]));
+  });
+
+  regProto("bool", "or", 2, [this](const std::vector<Value> &args) {
+    return Value::makeBool(args.size() >= 2 && (toBool(args[0]) || toBool(args[1])));
+  });
+
+  regProto("bool", "not", 1, [this](const std::vector<Value> &args) {
+    return Value::makeBool(args.empty() || !toBool(args[0]));
+  });
 }
 
 Value VM::invokeHostFunction(const std::string &name,
@@ -3186,6 +3465,135 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::CALL_METHOD: {
+    // CALL_METHOD: operands are [method_name_string_index, arg_count]
+    // Dispatches based on receiver type without boxing.
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isStringValId() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
+    }
+
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    std::string method_name;
+    if (current_chunk) {
+      method_name = current_chunk->getString(strIndex);
+    }
+    uint32_t arg_count = instruction.operands[1].asInt();
+
+    // Receiver is at stack top - arg_count positions down
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      COMPILER_THROW("Stack underflow during CALL_METHOD");
+    }
+
+    // Peek at receiver (don't pop yet)
+    // std::stack doesn't have end(), so we use a temp vector approach
+    std::vector<Value> temp_args;
+    temp_args.reserve(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      temp_args.push_back(stack.top());
+      stack.pop();
+    }
+    Value receiver = stack.top();
+    // Push args back in reverse order
+    for (auto it = temp_args.rbegin(); it != temp_args.rend(); ++it) {
+      pushStack(*it);
+    }
+
+    // Determine type name for dispatch
+    std::string type_name;
+    if (receiver.isStringValId() || receiver.isStringId()) {
+      type_name = "string";
+    } else if (receiver.isInt()) {
+      type_name = "int";
+    } else if (receiver.isDouble()) {
+      type_name = "float";
+    } else if (receiver.isBool()) {
+      type_name = "bool";
+    } else if (receiver.isArrayId()) {
+      type_name = "array";
+    } else if (receiver.isObjectId()) {
+      // For objects, look up method in prototype chain
+      auto key = keyFromValue(Value::makeStringValId(strIndex), &heap_, current_chunk);
+      if (!key) { pushStack(Value::makeNull()); break; }
+
+      // Pop receiver and args
+      Value obj = popStack();
+      std::vector<Value> args(arg_count);
+      for (uint32_t i = 0; i < arg_count; ++i) {
+        args[arg_count - 1 - i] = popStack();
+      }
+
+      // Look up method in prototype chain
+      Value method_val = Value::makeNull();
+      GCHeap::ObjectEntry *current_obj = heap_.object(obj.asObjectId());
+      while (current_obj) {
+        auto *val = current_obj->get(*key);
+        if (val) { method_val = *val; break; }
+        auto* parent_val = current_obj->get("__class");
+        if (!parent_val) parent_val = current_obj->get("__parent");
+        if (parent_val && parent_val->isObjectId()) {
+          current_obj = heap_.object(parent_val->asObjectId());
+        } else {
+          current_obj = nullptr;
+        }
+      }
+
+      if (method_val.isFunctionObjId() || method_val.isClosureId() || method_val.isHostFuncId()) {
+        std::vector<Value> all_args;
+        all_args.reserve(arg_count + 1);
+        all_args.push_back(obj);
+        all_args.insert(all_args.end(), args.begin(), args.end());
+        doCall(method_val, std::move(all_args));
+      } else {
+        pushStack(Value::makeNull());
+      }
+      break;
+    } else {
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    // Look up method in prototype table (for primitives only)
+    auto typeIt = prototypes_.find(type_name);
+    if (typeIt == prototypes_.end()) {
+      pushStack(Value::makeNull());
+      break;
+    }
+    auto methodIt = typeIt->second.find(method_name);
+    if (methodIt == typeIt->second.end()) {
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    // Pop receiver and args
+    Value recv = popStack();
+    std::vector<Value> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = popStack();
+    }
+
+    // Prepend receiver to args and call host function
+    std::vector<Value> all_args;
+    all_args.reserve(arg_count + 1);
+    all_args.push_back(recv);
+    all_args.insert(all_args.end(), args.begin(), args.end());
+
+    // Call the host function
+    uint32_t func_idx = methodIt->second;
+    if (func_idx < host_function_names_.size()) {
+      auto fnIt = host_functions.find(host_function_names_[func_idx]);
+      if (fnIt != host_functions.end()) {
+        pushStack(fnIt->second(all_args));
+      } else {
+        pushStack(Value::makeNull());
+      }
+    } else {
+      pushStack(Value::makeNull());
+    }
+    break;
+  }
+
   case OpCode::CALL_SUPER: {
     // CALL_SUPER: operands are [method_name, arg_count]
     // Pops args from stack, looks up parent class method, calls it
@@ -3646,7 +4054,7 @@ void VM::executeInstruction(const Instruction &instruction) {
           auto boundObj = heap_.allocateObject();
           auto *obj = heap_.object(boundObj.id);
           if (obj) {
-            (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(method->name));
+            (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
             (*obj)["self"] = Value::makeArrayId(object.asArrayId());
           }
           pushStack(Value::makeObjectId(boundObj.id));
@@ -3731,7 +4139,7 @@ void VM::executeInstruction(const Instruction &instruction) {
        if (method) {
          auto boundObj = heap_.allocateObject();
          auto *bObj = heap_.object(boundObj.id);
-         (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(method->name));
+         (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
          (*bObj)["self"] = object;
          pushStack(Value::makeObjectId(boundObj.id));
        } else {
@@ -5058,6 +5466,58 @@ void VM::VMExecutionContext::executeInstructionInContext(
       COMPILER_THROW(parent_vm_->formatErrorWithContext(
           "Host function not found: " + function_name));
     }
+    break;
+  }
+
+  case OpCode::CALL_METHOD: {
+    // Delegate to parent VM's method dispatch
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isStringValId() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
+    }
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    uint32_t arg_count = static_cast<uint32_t>(instruction.operands[1].asInt());
+
+    std::string method_name;
+    if (current_chunk) {
+      method_name = current_chunk->getString(strIndex);
+    }
+
+    std::vector<Value> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = pop();
+    }
+    Value receiver = pop();
+
+    // Try prototype dispatch
+    std::string type_name;
+    if (receiver.isStringValId() || receiver.isStringId()) type_name = "string";
+    else if (receiver.isInt()) type_name = "int";
+    else if (receiver.isDouble()) type_name = "float";
+    else if (receiver.isBool()) type_name = "bool";
+    else if (receiver.isArrayId()) type_name = "array";
+    else { push(Value::makeNull()); break; }
+
+    auto typeIt = parent_vm_->prototypes_.find(type_name);
+    if (typeIt != parent_vm_->prototypes_.end()) {
+      auto methodIt = typeIt->second.find(method_name);
+      if (methodIt != typeIt->second.end()) {
+        std::vector<Value> all_args;
+        all_args.reserve(arg_count + 1);
+        all_args.push_back(receiver);
+        all_args.insert(all_args.end(), args.begin(), args.end());
+        uint32_t func_idx = methodIt->second;
+        if (func_idx < parent_vm_->host_function_names_.size()) {
+          auto fnIt = parent_vm_->host_functions.find(parent_vm_->host_function_names_[func_idx]);
+          if (fnIt != parent_vm_->host_functions.end()) {
+            push(fnIt->second(all_args));
+            break;
+          }
+        }
+      }
+    }
+    push(Value::makeNull());
     break;
   }
 

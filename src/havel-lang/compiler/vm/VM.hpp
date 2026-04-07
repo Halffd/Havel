@@ -134,9 +134,9 @@ private:
   Value current_exception_ = nullptr;
 
   // Prototype system - methods on types (String, Array, Object)
-  // Maps type name -> method name -> function
+  // Maps type name -> method name -> host function index
   std::unordered_map<std::string,
-                     std::unordered_map<std::string, HostFunctionRef>>
+                     std::unordered_map<std::string, uint32_t>>
       prototypes_;
 
   // Host context for service access (non-owning)
@@ -340,8 +340,11 @@ public:
   // Prototype system - methods on types
   void registerPrototypeMethod(const std::string &typeName,
                                const std::string &methodName,
-                               HostFunctionRef method);
-  std::optional<HostFunctionRef>
+                               uint32_t hostFuncIndex);
+  void registerPrototypeMethodByName(const std::string &typeName,
+                                     const std::string &methodName,
+                                     const std::string &funcName);
+  std::optional<uint32_t>
   getPrototypeMethod(const Value &value, const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
 

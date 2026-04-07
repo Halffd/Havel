@@ -11,11 +11,21 @@ namespace havel::parser {
 void Parser::reportError(const std::string &message) {
   CompilerError err(ErrorSeverity::Error, at().line, at().column, message);
   errors.push_back(err);
+
+  // Also report to unified ErrorReporter
+  errors::ErrorReporter::instance().errorAt(
+      ::havel::errors::ErrorStage::Parser, message,
+      at().line, at().column, at().length);
 }
 
 void Parser::reportErrorAt(const Token &token, const std::string &message) {
   CompilerError err(ErrorSeverity::Error, token.line, token.column, message);
   errors.push_back(err);
+
+  // Also report to unified ErrorReporter
+  errors::ErrorReporter::instance().errorAt(
+      ::havel::errors::ErrorStage::Parser, message,
+      token.line, token.column, token.length);
 }
 
 std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {

@@ -98,12 +98,20 @@ void Lexer::reportError(const std::string &message) {
   CompilerError err(ErrorSeverity::Error, line, column, message);
   err.sourceLine = getSourceLine(line);
   errors.push_back(err);
+
+  // Also report to unified ErrorReporter
+  errors::ErrorReporter::instance().errorAt(
+      ::havel::errors::ErrorStage::Lexer, message, line, column);
 }
 
 void Lexer::reportWarning(const std::string &message) {
   CompilerError err(ErrorSeverity::Warning, line, column, message);
   err.sourceLine = getSourceLine(line);
   errors.push_back(err);
+
+  // Also report to unified ErrorReporter
+  errors::ErrorReporter::instance().warning(
+      ::havel::errors::ErrorStage::Lexer, message);
 }
 
 char Lexer::peek(size_t offset) const {

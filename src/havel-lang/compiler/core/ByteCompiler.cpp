@@ -2397,8 +2397,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       reserveLocalSlot(temp_slot);
       emit(OpCode::STORE_VAR, temp_slot);
       compileExpression(*member.object);
-      { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::LOAD_VAR, temp_slot);
+      { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_SET);
       emit(OpCode::LOAD_VAR, temp_slot);
     };

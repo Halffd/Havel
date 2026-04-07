@@ -1818,12 +1818,7 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
     int requiredCount = requiredKeys.size();
 
     // Count how many modifier keys are active
-    int activeModifierKeys = 0;
-    for (const auto &[code, input] : activeInputs) {
-      if (KeyMap::IsModifier(code)) {
-        activeModifierKeys++;
-      }
-    }
+
 
     if (!hotkey.wildcard) {
       // Strict matching: ensure no unauthorized keys are pressed

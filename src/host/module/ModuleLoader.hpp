@@ -108,7 +108,6 @@ public:
   bool import(const std::string &importSpec, VM &vm);
 
 private:
-  const HostContext &ctx_;
   ExecutionPolicy policy_; // Optional - defaults to allow all
 
   // Module registry (metadata only - lazy loading)

@@ -122,24 +122,46 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     return "<string:" + std::to_string(value.asStringId()) + ">";
   }
   if (value.isFunctionObjId()) {
-    // Function object from bytecode - try to get name from chunk
+    // Function object from bytecode - use metadata for display
     if (current_chunk) {
-      const auto &funcs = current_chunk->functions;
       uint32_t idx = value.asFunctionObjId();
-      if (idx < funcs.size()) {
-        return "<fn " + funcs[idx].name + ">";
+      if (idx < current_chunk->getFunctionCount()) {
+        const auto *bf = current_chunk->getFunction(idx);
+        if (bf) {
+          std::string result = "<fn " + bf->name;
+          if (!bf->param_names.empty()) {
+            result += "(";
+            for (size_t i = 0; i < bf->param_names.size(); ++i) {
+              if (i > 0) result += ", ";
+              result += bf->param_names[i];
+            }
+            result += ")";
+          }
+          result += ">";
+          return result;
+        }
       }
     }
     return "<fn:" + std::to_string(value.asFunctionObjId()) + ">";
   }
   if (value.isClosureId()) {
-    // Closure - try to get function name from chunk
-    if (current_chunk && value.asClosureId() < heap_.closures().size()) {
-      const auto *closure = heap_.closure(value.asClosureId());
-      if (closure && current_chunk->index < heap_.chunks().size()) {
-        const auto *chunk = &heap_.chunks()[current_chunk->index];
-        if (closure->function_index < chunk->functions.size()) {
-          return "<fn " + chunk->functions[closure->function_index].name + ">";
+    // Closure - use metadata for display
+    auto *closure = heap_.closure(value.asClosureId());
+    if (closure && current_chunk) {
+      if (closure->function_index < current_chunk->getFunctionCount()) {
+        const auto *bf = current_chunk->getFunction(closure->function_index);
+        if (bf) {
+          std::string result = "<fn " + bf->name;
+          if (!bf->param_names.empty()) {
+            result += "(";
+            for (size_t i = 0; i < bf->param_names.size(); ++i) {
+              if (i > 0) result += ", ";
+              result += bf->param_names[i];
+            }
+            result += ")";
+          }
+          result += ">";
+          return result;
         }
       }
     }
@@ -1176,6 +1198,178 @@ void VM::registerDefaultHostFunctions() {
     auto strRef = heap_.allocateString(typeName);
     return Value::makeStringId(strRef.id);
   });
+
+  // ========================================================================
+  // Function introspection
+  // ========================================================================
+
+  // function.name(fn) - Get function name
+  registerHostFunction("function.name", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    Value fn = args[0];
+    
+    if (fn.isFunctionObjId()) {
+      uint32_t idx = fn.asFunctionObjId();
+      if (current_chunk && idx < current_chunk->getFunctionCount()) {
+        const auto *bf = current_chunk->getFunction(idx);
+        if (bf) {
+          auto strRef = heap_.allocateString(bf->name);
+          return Value::makeStringId(strRef.id);
+        }
+      }
+    } else if (fn.isClosureId()) {
+      auto *closure = heap_.closure(fn.asClosureId());
+      if (closure && current_chunk) {
+        if (closure->function_index < current_chunk->getFunctionCount()) {
+          const auto *bf = current_chunk->getFunction(closure->function_index);
+          if (bf) {
+            auto strRef = heap_.allocateString(bf->name);
+            return Value::makeStringId(strRef.id);
+          }
+        }
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // function.arity(fn) - Get function parameter count
+  registerHostFunction("function.arity", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeInt(0);
+    Value fn = args[0];
+    
+    if (fn.isFunctionObjId()) {
+      uint32_t idx = fn.asFunctionObjId();
+      if (current_chunk && idx < current_chunk->getFunctionCount()) {
+        const auto *bf = current_chunk->getFunction(idx);
+        if (bf) return Value::makeInt(bf->param_count);
+      }
+    } else if (fn.isClosureId()) {
+      auto *closure = heap_.closure(fn.asClosureId());
+      if (closure && current_chunk) {
+        if (closure->function_index < current_chunk->getFunctionCount()) {
+          const auto *bf = current_chunk->getFunction(closure->function_index);
+          if (bf) return Value::makeInt(bf->param_count);
+        }
+      }
+    }
+    return Value::makeInt(0);
+  });
+
+  // function.params(fn) - Get function parameter names as array
+  registerHostFunction("function.params", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    Value fn = args[0];
+    
+    ArrayRef arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    
+    if (fn.isFunctionObjId()) {
+      uint32_t idx = fn.asFunctionObjId();
+      if (current_chunk && idx < current_chunk->getFunctionCount()) {
+        const auto *bf = current_chunk->getFunction(idx);
+        if (bf) {
+          for (const auto &pname : bf->param_names) {
+            auto strRef = heap_.allocateString(pname);
+            arr->push_back(Value::makeStringId(strRef.id));
+          }
+          return Value::makeArrayId(arrRef.id);
+        }
+      }
+    } else if (fn.isClosureId()) {
+      auto *closure = heap_.closure(fn.asClosureId());
+      if (closure && current_chunk) {
+        if (closure->function_index < current_chunk->getFunctionCount()) {
+          const auto *bf = current_chunk->getFunction(closure->function_index);
+          if (bf) {
+            for (const auto &pname : bf->param_names) {
+              auto strRef = heap_.allocateString(pname);
+              arr->push_back(Value::makeStringId(strRef.id));
+            }
+            return Value::makeArrayId(arrRef.id);
+          }
+        }
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // function.source(fn) - Get source location as "file:line" string
+  registerHostFunction("function.source", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    Value fn = args[0];
+    
+    if (fn.isFunctionObjId()) {
+      uint32_t idx = fn.asFunctionObjId();
+      if (current_chunk && idx < current_chunk->getFunctionCount()) {
+        const auto *bf = current_chunk->getFunction(idx);
+        if (bf) {
+          std::string loc = bf->source_file.empty() ? "" : bf->source_file;
+          if (bf->source_line > 0) {
+            loc += (loc.empty() ? "" : ":") + std::to_string(bf->source_line);
+          }
+          if (!loc.empty()) {
+            auto strRef = heap_.allocateString(loc);
+            return Value::makeStringId(strRef.id);
+          }
+        }
+      }
+    } else if (fn.isClosureId()) {
+      auto *closure = heap_.closure(fn.asClosureId());
+      if (closure && current_chunk) {
+        if (closure->function_index < current_chunk->getFunctionCount()) {
+          const auto *bf = current_chunk->getFunction(closure->function_index);
+          if (bf) {
+            std::string loc = bf->source_file.empty() ? "" : bf->source_file;
+            if (bf->source_line > 0) {
+              loc += (loc.empty() ? "" : ":") + std::to_string(bf->source_line);
+            }
+            if (!loc.empty()) {
+              auto strRef = heap_.allocateString(loc);
+              return Value::makeStringId(strRef.id);
+            }
+          }
+        }
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // Create function prototype object for introspection
+  {
+    ObjectRef funcProto = heap_.allocateObject();
+    auto *funcObj = heap_.object(funcProto.id);
+    
+    // function.name(fn)
+    {
+      auto it = host_function_globals_.find("function.name");
+      if (it != host_function_globals_.end()) {
+        funcObj->set("name", it->second);
+      }
+    }
+    // function.arity(fn)
+    {
+      auto it = host_function_globals_.find("function.arity");
+      if (it != host_function_globals_.end()) {
+        funcObj->set("arity", it->second);
+      }
+    }
+    // function.params(fn)
+    {
+      auto it = host_function_globals_.find("function.params");
+      if (it != host_function_globals_.end()) {
+        funcObj->set("params", it->second);
+      }
+    }
+    // function.source(fn)
+    {
+      auto it = host_function_globals_.find("function.source");
+      if (it != host_function_globals_.end()) {
+        funcObj->set("source", it->second);
+      }
+    }
+    
+    globals["function"] = Value::makeObjectId(funcProto.id);
+  }
 
   // Async library functions
   registerHostFunction("async.run", 1, [this](const std::vector<Value> &args) {

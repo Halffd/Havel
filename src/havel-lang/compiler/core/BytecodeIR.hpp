@@ -288,6 +288,10 @@ struct BytecodeFunction {
   std::vector<std::optional<Value>> default_values;
   // Index of variadic parameter (UINT32_MAX if none)
   uint32_t variadic_param_index = UINT32_MAX;
+  // Function metadata for introspection
+  std::vector<std::string> param_names;  // Parameter names
+  std::string source_file;               // Source file path
+  uint32_t source_line = 0;              // Definition line number
 
   BytecodeFunction(std::string n, uint32_t params = 0, uint32_t locals = 0)
       : name(std::move(n)), param_count(params), local_count(locals) {}

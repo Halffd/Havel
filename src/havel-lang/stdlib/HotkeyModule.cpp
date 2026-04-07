@@ -314,18 +314,18 @@ void registerHotkeyModule(VMApi &api) {
   auto hotkeyPrototype = api.makeObject();
 
   // Register property getters - using "Hotkey" as the type name
-  api.registerPrototypeMethod("Hotkey", "id", "hotkey_getId");
-  api.registerPrototypeMethod("Hotkey", "alias", "hotkey_getAlias");
-  api.registerPrototypeMethod("Hotkey", "key", "hotkey_getKey");
-  api.registerPrototypeMethod("Hotkey", "condition", "hotkey_getCondition");
-  api.registerPrototypeMethod("Hotkey", "info", "hotkey_getInfo");
-  api.registerPrototypeMethod("Hotkey", "callback", "hotkey_getCallback");
+  api.registerPrototypeMethodByName("Hotkey", "id", "hotkey_getId");
+  api.registerPrototypeMethodByName("Hotkey", "alias", "hotkey_getAlias");
+  api.registerPrototypeMethodByName("Hotkey", "key", "hotkey_getKey");
+  api.registerPrototypeMethodByName("Hotkey", "condition", "hotkey_getCondition");
+  api.registerPrototypeMethodByName("Hotkey", "info", "hotkey_getInfo");
+  api.registerPrototypeMethodByName("Hotkey", "callback", "hotkey_getCallback");
 
   // Register methods
-  api.registerPrototypeMethod("Hotkey", "enable", "hotkey_enable");
-  api.registerPrototypeMethod("Hotkey", "disable", "hotkey_disable");
-  api.registerPrototypeMethod("Hotkey", "toggle", "hotkey_toggle");
-  api.registerPrototypeMethod("Hotkey", "remove", "hotkey_remove");
+  api.registerPrototypeMethodByName("Hotkey", "enable", "hotkey_enable");
+  api.registerPrototypeMethodByName("Hotkey", "disable", "hotkey_disable");
+  api.registerPrototypeMethodByName("Hotkey", "toggle", "hotkey_toggle");
+  api.registerPrototypeMethodByName("Hotkey", "remove", "hotkey_remove");
 
   // Set prototype object as global "Hotkey" constructor
   api.setGlobal("Hotkey", hotkeyPrototype);

@@ -75,6 +75,7 @@ private:
   uint32_t addStringConstant(const std::string &str);
   uint32_t emitJump(OpCode op);
   void patchJump(uint32_t jump_instruction_index, uint32_t target);
+  uint32_t effectiveSlot(uint32_t slot) const;
 
   void compileFunction(const ast::FunctionDeclaration &function);
   void compileLambda(const ast::LambdaExpression &lambda);
@@ -168,6 +169,7 @@ private:
   std::unordered_map<std::string, uint32_t> module_class_indices_by_name_;
   std::string current_class_name_;
   std::string current_parent_class_name_;
+  uint32_t local_slot_offset_ = 0; // Offset for local variable slots (used in class methods)
 
   // Tail call optimization state
   bool in_tail_position_ = false;

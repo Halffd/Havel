@@ -627,20 +627,24 @@ void ByteCompiler::compileClassMethod(
     COMPILER_THROW("Missing function index for class method: " + method.name);
   }
 
+  // param_count includes self (slot 0) + user params (slots 1..N)
   const uint32_t param_count =
-      static_cast<uint32_t>(method.parameters.size() + 1); // self + args
+      static_cast<uint32_t>(method.parameters.size() + 1);
+  
+  // Compute max slot. The VM places self at slot 0, user args at slots 1..N.
+  // The resolver assigns user params to slots 0..N-1, so we offset by 1.
   uint32_t max_slot = param_count;
   for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-    (void)node;
-    if (slot >= max_slot) {
-      max_slot = slot + 1;
+    uint32_t adjusted_slot = slot + 1;
+    if (adjusted_slot >= max_slot) {
+      max_slot = adjusted_slot + 1;
     }
   }
 
-  // Collect parameter names (skip 'self' which is implicit)
+  // Collect parameter names
   std::vector<std::string> param_names;
   param_names.reserve(method.parameters.size() + 1);
-  param_names.push_back("self"); // implicit first parameter
+  param_names.push_back("self");
   for (const auto &param : method.parameters) {
     if (param && param->pattern) {
       param_names.push_back(extractParamName(*param));
@@ -656,14 +660,14 @@ void ByteCompiler::compileClassMethod(
   enterFunction(std::move(bf), index_it->second);
   next_local_index = max_slot;
 
-  // Keep method calls compatible with existing @field compilation (LOAD_GLOBAL "this").
+  // Store self (slot 0) into global "this" for @field access.
   {
     uint32_t this_id = addStringConstant("this");
     emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
     emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
   }
 
-  // Mirror class fields into globals for method-local bare field references.
+  // Mirror class fields into globals for bare field references.
   for (const auto &field : fields) {
     uint32_t field_id = addStringConstant(field.name);
     emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
@@ -672,14 +676,7 @@ void ByteCompiler::compileClassMethod(
     emit(OpCode::STORE_GLOBAL, Value::makeStringValId(field_id));
   }
 
-  // Shift explicit args (slots 1..N) down to the resolver's expected slots (0..N-1).
-  // Slot 0 originally carries self and has already been copied to global `this`.
-  for (size_t i = 0; i < method.parameters.size(); ++i) {
-    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(i + 1));
-    emit(OpCode::STORE_VAR, static_cast<uint32_t>(i));
-  }
-
-  // Bind explicit method parameters starting at slot 1 (slot 0 is self).
+  // Bind user parameters to slots 1..N (slot 0 is self).
   for (size_t i = 0; i < method.parameters.size(); ++i) {
     const auto &param = method.parameters[i];
     if (!param || !param->pattern) {
@@ -691,6 +688,10 @@ void ByteCompiler::compileClassMethod(
       current_function->variadic_param_index = method_param_slot;
     }
   }
+
+  // Remap declaration slots: resolver assigned slots starting at 0, but at
+  // runtime slot 0 holds self. We offset all local variable accesses by 1.
+  local_slot_offset_ = 1;
 
   const std::string prev_class_name = current_class_name_;
   const std::string prev_parent_name = current_parent_class_name_;
@@ -748,6 +749,7 @@ void ByteCompiler::compileClassMethod(
 
   current_class_name_ = prev_class_name;
   current_parent_class_name_ = prev_parent_name;
+  local_slot_offset_ = 0;
   leaveFunction();
 }
 
@@ -1666,7 +1668,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
         // Bind to variable
         auto binding = bindingFor(ident);
         if (binding && binding->kind == ResolvedBindingKind::Local) {
-          emit(OpCode::STORE_VAR, binding->slot);
+          emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
         }
       }
     }
@@ -1682,7 +1684,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
         auto binding = bindingFor(ident);
         if (binding && binding->kind == ResolvedBindingKind::Local) {
           emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          emit(OpCode::STORE_VAR, binding->slot);
+          emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
         }
       }
     }
@@ -1711,7 +1713,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
           if (binding && binding->kind == ResolvedBindingKind::Local) {
             // DUP the value, store to pattern slot, then check existence
             emit(OpCode::DUP);
-            emit(OpCode::STORE_VAR, binding->slot);
+            emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
           }
           // Check existence (non-null)
           emit(OpCode::IS_NULL);
@@ -2118,7 +2120,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     switch (binding->kind) {
     case ResolvedBindingKind::Local:
-      emit(OpCode::LOAD_VAR, binding->slot);
+      emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
       break;
     case ResolvedBindingKind::Upvalue:
       emit(OpCode::LOAD_UPVALUE, binding->slot);
@@ -2545,7 +2547,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             emit(OpCode::ARRAY_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
-              emit(OpCode::STORE_VAR, binding->slot);
+              emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
             } else if (binding->kind == ResolvedBindingKind::Global) {
               {
                 uint32_t strId = addStringConstant(binding->name);
@@ -2591,7 +2593,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             emit(OpCode::OBJECT_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
-              emit(OpCode::STORE_VAR, binding->slot);
+              emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
             } else if (binding->kind == ResolvedBindingKind::Global) {
               {
                 uint32_t strId = addStringConstant(binding->name);
@@ -2888,7 +2890,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Prefix: ++x or --x
       // Load, modify, store, return new value
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, binding->slot);
+        emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -2905,7 +2907,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
       emit(OpCode::DUP); // Save result for return value
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::STORE_VAR, binding->slot);
+        emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -2918,7 +2920,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Postfix: x++ or x--
       // Load, dup, modify, store, pop new value, return old value
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, binding->slot);
+        emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -2934,7 +2936,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::STORE_VAR, binding->slot);
+        emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -3183,13 +3185,11 @@ void ByteCompiler::compileCallExpression(
       }
     }
 
-    // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...)).
-    // Compile as: [obj, "method", OBJECT_GET, args..., CALL]
-    // OBJECT_GET returns a bound method object {fn: closure, self: obj}
-    // which already contains self, so we don't pass it as an extra arg.
+    // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...), "hello".len(), arr.len()).
+    // Always emit CALL_METHOD - the VM will dispatch based on runtime type.
+    // For primitives: direct dispatch via prototype tables (no boxing).
+    // For objects/classes: prototype chain lookup via bound method objects.
     compileExpression(*member.object);
-    { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    emit(OpCode::OBJECT_GET);
     for (const auto &arg : expression.args) {
       if (!arg) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
@@ -3197,7 +3197,7 @@ void ByteCompiler::compileCallExpression(
       }
       compileExpression(*arg);
     }
-    uint32_t totalArgs = arg_count; // No extra arg for self - bound method has it
+    uint32_t totalArgs = arg_count;
     if (hasKwargs) {
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {
@@ -3208,7 +3208,10 @@ void ByteCompiler::compileCallExpression(
       }
       totalArgs++;
     }
-    emit(OpCode::CALL, totalArgs);
+    uint32_t method_sid = addStringConstant(property->symbol);
+    emit(OpCode::CALL_METHOD, std::vector<Value>{
+        Value::makeStringValId(method_sid),
+        Value(totalArgs)});
     return;
   }
 
@@ -4204,12 +4207,16 @@ const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const
   return &it->second;
 }
 
+uint32_t ByteCompiler::effectiveSlot(uint32_t slot) const {
+  return slot + local_slot_offset_;
+}
+
 uint32_t ByteCompiler::declarationSlot(const ast::Identifier &id) const {
   auto it = lexical_resolution_.declaration_slots.find(&id);
   if (it == lexical_resolution_.declaration_slots.end()) {
     COMPILER_THROW("Missing declaration slot for: " + id.symbol);
   }
-  return it->second;
+  return effectiveSlot(it->second);
 }
 
 void ByteCompiler::reserveLocalSlot(uint32_t slot) {

@@ -149,9 +149,15 @@ struct VMApi {
   // Prototype method registration
   void registerPrototypeMethod(const std::string &typeName,
                                const std::string &methodName,
-                               const std::string &functionName) {
-    vm.registerPrototypeMethod(typeName, methodName,
-                               HostFunctionRef{.name = functionName});
+                               uint32_t funcIndex) {
+    vm.registerPrototypeMethod(typeName, methodName, funcIndex);
+  }
+
+  // Register prototype method by function name (looks up index)
+  void registerPrototypeMethodByName(const std::string &typeName,
+                                     const std::string &methodName,
+                                     const std::string &funcName) {
+    vm.registerPrototypeMethodByName(typeName, methodName, funcName);
   }
 
   // Callback system

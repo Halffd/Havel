@@ -1437,12 +1437,9 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
 
   // Finally block location (executed after try body on normal exit)
   uint32_t finally_ip = 0;
-  uint32_t finally_end_ip = 0;
   if (statement.finallyBlock) {
     finally_ip = static_cast<uint32_t>(current_function->instructions.size());
     compileStatement(*statement.finallyBlock);
-    finally_end_ip =
-        static_cast<uint32_t>(current_function->instructions.size());
     // After finally on normal exit, jump to end
   }
 

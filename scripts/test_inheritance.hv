@@ -8,6 +8,6 @@ fn Rectangle.area() {
   return this.width * this.height
 }
 
-r := Rectangle.new(5, 3)
+r = Rectangle.new(5, 3)
 print("Area: " + r.area())
 print("Type: " + type.of(r))

@@ -191,7 +191,56 @@ void ExpressionCompiler::compileAssignmentExpression(
     }
   } else if (assignment.target) {
     // Complex target (member, index, etc.)
-    compile(*assignment.target); // This will handle the store
+    if (assignment.target->kind == ast::NodeType::MemberExpression) {
+      // obj.field = value
+      // Stack: [value]
+      emitter_.emit(OpCode::DUP); // Keep value on stack for result
+      const auto& member = static_cast<const ast::MemberExpression&>(*assignment.target);
+      // Load object
+      compile(*member.object);
+      // Load field name
+      if (member.property && member.property->kind == ast::NodeType::Identifier) {
+        const auto& prop = static_cast<const ast::Identifier&>(*member.property);
+        uint32_t strId = emitter_.addStringConstant(prop.symbol);
+        emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+        // Stack: [value, obj, key] -> OBJECT_SET will pop to store
+        emitter_.emit(OpCode::OBJECT_SET);
+      } else {
+        COMPILER_THROW("Member assignment requires identifier property");
+      }
+    } else if (assignment.target->kind == ast::NodeType::AtExpression) {
+      // @field = value (equivalent to this.field = value)
+      // Stack: [value]
+      emitter_.emit(OpCode::DUP); // Keep value on stack for result
+      // Load 'this'
+      uint32_t thisStrId = emitter_.addStringConstant("this");
+      emitter_.emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(thisStrId));
+      // Load field name
+      const auto& atExpr = static_cast<const ast::AtExpression&>(*assignment.target);
+      if (!atExpr.field) {
+        COMPILER_THROW("@ expression missing field");
+      }
+      auto* fieldId = dynamic_cast<const ast::Identifier*>(atExpr.field.get());
+      if (!fieldId) {
+        COMPILER_THROW("@ expression field must be an identifier");
+      }
+      uint32_t fieldStrId = emitter_.addStringConstant(fieldId->symbol);
+      emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(fieldStrId));
+      // Stack: [value, this, field] -> OBJECT_SET will store
+      emitter_.emit(OpCode::OBJECT_SET);
+    } else if (assignment.target->kind == ast::NodeType::IndexExpression) {
+      // obj[index] = value
+      // Stack: [value]
+      emitter_.emit(OpCode::DUP); // Keep value on stack for result
+      const auto& indexExpr = static_cast<const ast::IndexExpression&>(*assignment.target);
+      // Load object and index
+      compile(*indexExpr.object);
+      compile(*indexExpr.index);
+      // Stack: [value, obj, index] -> ARRAY_SET will pop to store
+      emitter_.emit(OpCode::ARRAY_SET);
+    } else {
+      compile(*assignment.target); // Fallback: compile as read (may throw at runtime)
+    }
   }
 }
 

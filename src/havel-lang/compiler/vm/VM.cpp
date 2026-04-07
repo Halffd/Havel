@@ -1710,7 +1710,25 @@ Value VM::invokeHostFunction(const std::string &name,
                                      uint32_t arg_count) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
-    COMPILER_THROW("Host function not found: " + name);
+  // Check if this is an "any.*" function - delegate to "any.get"
+  static const std::string kAnyPrefix = "any.";
+  if (name.compare(0, kAnyPrefix.length(), kAnyPrefix) == 0) {
+    const std::string& methodName = name.substr(kAnyPrefix.length());
+    auto anyGetIt = host_functions.find("any.get");
+    if (anyGetIt != host_functions.end()) {
+      // Pass args directly to any.get, which has fallback for object methods
+      std::vector<Value> args;
+      args.reserve(arg_count);
+      for (uint32_t i = 0; i < arg_count; ++i) {
+        if (stack.empty())
+          COMPILER_THROW("Stack underflow");
+        args.push_back(stack.top());
+        stack.pop();
+      }
+      return anyGetIt->second(args);
+    }
+  }
+  COMPILER_THROW("Host function not found: " + name);
   }
 
 

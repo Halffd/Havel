@@ -93,10 +93,6 @@ enum class OpCode : uint8_t {
   RANGE_NEW,      // Create range: start..end or start..step..end
   RANGE_STEP_NEW, // Create range with step
 
-  // Struct operations (compact storage, field access by index)
-  STRUCT_NEW, // Create struct with field count
-  STRUCT_GET, // Get field by index
-  STRUCT_SET, // Set field by index
 
   // Enum operations (tagged union)
   ENUM_NEW,     // Create enum variant (tag + payload count)

@@ -63,8 +63,6 @@ enum class ExtendedTag : uint64_t {
   ARRAY_ID = 0x1,
   SET_ID = 0x2,
   RANGE_ID = 0x3,
-  STRUCT_ID = 0x4,
-  CLASS_ID = 0x5,
   ENUM_ID = 0x6,
   ITERATOR_ID = 0x7,
   HOST_FUNC_ID = 0x8,  // Host function reference (stores index into table)
@@ -250,16 +248,6 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::RANGE_ID), id));
   }
 
-  static Value makeStructId(uint32_t id, uint32_t typeId = 0) {
-    uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRUCT_ID), payload));
-  }
-
-  static Value makeClassId(uint32_t id, uint32_t typeId = 0) {
-    uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::CLASS_ID), payload));
-  }
-
   static Value makeEnumId(uint32_t id, uint32_t typeId = 0) {
     uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ENUM_ID), payload));
@@ -350,16 +338,6 @@ public:
   bool isRangeId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::RANGE_ID;
-  }
-
-  bool isStructId() const {
-    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
-           extractExtendedTag(bits_) == ExtendedTag::STRUCT_ID;
-  }
-
-  bool isClassId() const {
-    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
-           extractExtendedTag(bits_) == ExtendedTag::CLASS_ID;
   }
 
   bool isEnumId() const {
@@ -463,22 +441,6 @@ public:
 
   uint32_t asRangeId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
-  }
-
-  uint32_t asStructId() const {
-    return static_cast<uint32_t>(extractPayload(bits_) & 0xFFFFFFFFULL);
-  }
-
-  uint32_t asStructTypeId() const {
-    return static_cast<uint32_t>((extractPayload(bits_) >> 32) & 0xFFFULL);
-  }
-
-  uint32_t asClassId() const {
-    return static_cast<uint32_t>(extractPayload(bits_) & 0xFFFFFFFFULL);
-  }
-
-  uint32_t asClassTypeId() const {
-    return static_cast<uint32_t>((extractPayload(bits_) >> 32) & 0xFFFULL);
   }
 
   uint32_t asEnumId() const {

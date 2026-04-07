@@ -8,12 +8,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <stack>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -132,10 +130,6 @@ private:
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::vector<std::string> host_function_names_; // Index -> name mapping
   std::unordered_map<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
-  std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
-  std::unordered_map<std::string, uint32_t> class_type_ids_by_name_;
-  std::unordered_map<uint32_t, uint32_t> struct_instance_type_ids_;
-  std::unordered_map<uint32_t, uint32_t> class_instance_type_ids_;
   bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
 
@@ -306,34 +300,6 @@ public:
 
   // Range helpers
   bool isInRange(RangeRef range_ref, int64_t value);
-
-  // Struct helpers
-  uint32_t registerStructType(const std::string &name,
-                              const std::vector<std::string> &fields);
-  StructRef createStruct(uint32_t typeId, size_t fieldCount);
-  Value getStructField(StructRef struct_ref, size_t index);
-  void setStructField(StructRef struct_ref, size_t index,
-                      const Value &value);
-  uint32_t getStructTypeId(StructRef struct_ref);
-
-  // Class helpers
-  uint32_t registerClassType(const std::string &name,
-                             const std::vector<std::string> &fields,
-                             uint32_t parentTypeId = 0);
-  ClassRef createClass(uint32_t typeId, size_t fieldCount,
-                       uint32_t parentInstanceId = 0);
-  uint32_t getClassParentTypeId(uint32_t typeId) const;
-  void registerClassMethod(uint32_t typeId, const std::string &methodName,
-                           uint32_t functionIndex);
-  std::optional<uint32_t> findClassMethod(uint32_t typeId,
-                                          const std::string &methodName) const;
-  Value getClassField(ClassRef class_ref, size_t index);
-  void setClassField(ClassRef class_ref, size_t index,
-                     const Value &value);
-  uint32_t getClassTypeId(ClassRef class_ref);
-
-  // Copy a struct (value type semantics)
-  StructRef copyStruct(StructRef struct_ref);
 
   // Enum helpers
   uint32_t registerEnumType(const std::string &name,

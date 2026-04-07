@@ -2096,7 +2096,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     // `this` keyword - load current object reference
     // For now, compile as LOAD_GLOBAL "this"
     // Full implementation needs proper `this` binding in object methods
-    emit(OpCode::LOAD_GLOBAL, "this");
+    uint32_t strId = addStringConstant("this");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     break;
   }
 

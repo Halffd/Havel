@@ -115,21 +115,6 @@ public:
     int64_t step = 1;
   };
 
-  // Struct type info (shared among instances)
-  struct StructType {
-    std::string name;
-    std::vector<std::string> fieldNames;
-  };
-
-  // Class type info (shared among instances)
-  struct ClassType {
-    std::string name;
-    std::vector<std::string> fieldNames;
-    uint32_t parentTypeId = 0; // Parent class type ID (0 for none)
-    std::unordered_map<std::string, uint32_t>
-        methodIndices; // Method name -> function index
-  };
-
   // Enum type info (shared among instances)
   struct EnumType {
     std::string name;
@@ -173,31 +158,6 @@ public:
                          const std::string &message,
                          const std::string &stackTrace = "", uint32_t line = 0,
                          uint32_t column = 0);
-
-  // Struct operations
-  uint32_t registerStructType(const std::string &name,
-                              const std::vector<std::string> &fields);
-  StructRef allocateStruct(uint32_t typeId, size_t fieldCount);
-  std::optional<uint32_t> findStructTypeId(const std::string &name) const;
-  size_t structFieldCount(uint32_t typeId) const;
-  std::optional<size_t> structFieldIndex(uint32_t typeId,
-                                         const std::string &field) const;
-
-  // Class operations
-  uint32_t registerClassType(const std::string &name,
-                             const std::vector<std::string> &fields,
-                             uint32_t parentTypeId = 0);
-  ClassRef allocateClass(uint32_t typeId, size_t fieldCount,
-                         uint32_t parentInstanceId = 0);
-  std::optional<uint32_t> findClassTypeId(const std::string &name) const;
-  size_t classFieldCount(uint32_t typeId) const;
-  std::optional<size_t> classFieldIndex(uint32_t typeId,
-                                        const std::string &field) const;
-  uint32_t getClassParentTypeId(uint32_t typeId) const;
-  void registerClassMethod(uint32_t typeId, const std::string &methodName,
-                           uint32_t functionIndex);
-  std::optional<uint32_t> findClassMethod(uint32_t typeId,
-                                          const std::string &methodName) const;
 
   // Enum operations
   uint32_t registerEnumType(const std::string &name,
@@ -280,10 +240,6 @@ private:
       sets_;
   std::unordered_map<uint32_t, Range> ranges_;
   std::unordered_map<uint32_t, ErrorObject> errors_;
-  std::unordered_map<uint32_t, std::vector<Value>>
-      structs_; // Field arrays (value type)
-  std::unordered_map<uint32_t, std::vector<Value>>
-      classes_; // Field arrays (reference type)
   std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<Value>>>
       enums_; // tag + payload
   std::unordered_map<uint32_t, Iterator> iterators_;
@@ -293,9 +249,6 @@ private:
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Interval>> intervals_;
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Timeout>> timeouts_;
 
-  // Type registries
-  std::vector<StructType> structTypes_;
-  std::vector<ClassType> classTypes_;
   std::vector<EnumType> enumTypes_;
 
   uint32_t next_closure_id_ = 1;

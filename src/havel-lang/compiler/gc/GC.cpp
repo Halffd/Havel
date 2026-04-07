@@ -12,11 +12,7 @@ void GCHeap::reset() {
   ranges_.clear();
   iterators_.clear();
   strings_.clear();
-  structs_.clear();
-  classes_.clear();
   enums_.clear();
-  structTypes_.clear();
-  classTypes_.clear();
   enumTypes_.clear();
   next_closure_id_ = 1;
   next_array_id_ = 1;
@@ -156,139 +152,7 @@ uint32_t GCHeap::createIterator(const Value &iterable) {
   return ref.id;
 }
 
-// Struct type registration
-uint32_t GCHeap::registerStructType(const std::string &name,
-                                    const std::vector<std::string> &fields) {
-  uint32_t id = static_cast<uint32_t>(structTypes_.size()) +
-                1; // Start at 1 to avoid 0=nullptr issue
-  structTypes_.push_back(StructType{name, fields});
-  return id;
-}
 
-// Struct allocation
-StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
-  const uint32_t id = next_array_id_++;
-  structs_[id] = std::vector<Value>(fieldCount, Value::makeNull());
-  return StructRef{.id = id, .typeId = typeId};
-}
-
-std::optional<uint32_t>
-GCHeap::findStructTypeId(const std::string &name) const {
-  for (uint32_t i = 0; i < structTypes_.size(); ++i) {
-    if (structTypes_[i].name == name) {
-      return i + 1; // Return ID with +1 offset
-    }
-  }
-  return std::nullopt;
-}
-
-size_t GCHeap::structFieldCount(uint32_t typeId) const {
-  if (typeId == 0 || typeId > structTypes_.size()) {
-    return 0;
-  }
-  return structTypes_[typeId - 1].fieldNames.size();
-}
-
-std::optional<size_t> GCHeap::structFieldIndex(uint32_t typeId,
-                                               const std::string &field) const {
-  if (typeId == 0 || typeId > structTypes_.size()) {
-    return std::nullopt;
-  }
-  const auto &fields = structTypes_[typeId - 1].fieldNames;
-  for (size_t i = 0; i < fields.size(); ++i) {
-    if (fields[i] == field) {
-      return i;
-    }
-  }
-  return std::nullopt;
-}
-
-// Class type registration with parent
-uint32_t GCHeap::registerClassType(const std::string &name,
-                                   const std::vector<std::string> &fields,
-                                   uint32_t parentTypeId) {
-  uint32_t id = static_cast<uint32_t>(classTypes_.size()) +
-                1; // Start at 1 to avoid 0=nullptr issue
-  ClassType ct;
-  ct.name = name;
-  ct.fieldNames = fields;
-  ct.parentTypeId = parentTypeId;
-  classTypes_.push_back(std::move(ct));
-  return id;
-}
-
-// Class allocation (reference type) with parent instance
-ClassRef GCHeap::allocateClass(uint32_t typeId, size_t fieldCount,
-                               uint32_t parentInstanceId) {
-  const uint32_t id = next_array_id_++;
-  classes_[id] = std::vector<Value>(fieldCount, Value::makeNull());
-  return ClassRef{.id = id, .typeId = typeId, .parentId = parentInstanceId};
-}
-
-std::optional<uint32_t> GCHeap::findClassTypeId(const std::string &name) const {
-  for (uint32_t i = 0; i < classTypes_.size(); ++i) {
-    if (classTypes_[i].name == name) {
-      return i + 1; // Return ID with +1 offset
-    }
-  }
-  return std::nullopt;
-}
-
-size_t GCHeap::classFieldCount(uint32_t typeId) const {
-  if (typeId == 0 || typeId > classTypes_.size()) {
-    return 0;
-  }
-  const auto &ct = classTypes_[typeId - 1];
-  return classFieldCount(ct.parentTypeId) + ct.fieldNames.size();
-}
-
-std::optional<size_t> GCHeap::classFieldIndex(uint32_t typeId,
-                                              const std::string &field) const {
-  if (typeId == 0 || typeId > classTypes_.size()) {
-    return std::nullopt;
-  }
-  const auto &ct = classTypes_[typeId - 1];
-  const size_t parent_count = classFieldCount(ct.parentTypeId);
-  const auto &fields = ct.fieldNames;
-  for (size_t i = 0; i < fields.size(); ++i) {
-    if (fields[i] == field) {
-      return parent_count + i;
-    }
-  }
-  return classFieldIndex(ct.parentTypeId, field);
-}
-
-uint32_t GCHeap::getClassParentTypeId(uint32_t typeId) const {
-  if (typeId == 0 || typeId > classTypes_.size()) {
-    return 0;
-  }
-  return classTypes_[typeId - 1].parentTypeId;
-}
-
-void GCHeap::registerClassMethod(uint32_t typeId, const std::string &methodName,
-                                 uint32_t functionIndex) {
-  if (typeId == 0 || typeId > classTypes_.size()) {
-    return;
-  }
-  classTypes_[typeId - 1].methodIndices[methodName] = functionIndex;
-}
-
-std::optional<uint32_t>
-GCHeap::findClassMethod(uint32_t typeId, const std::string &methodName) const {
-  if (typeId == 0 || typeId > classTypes_.size()) {
-    return std::nullopt;
-  }
-  const auto &ct = classTypes_[typeId - 1];
-  auto it = ct.methodIndices.find(methodName);
-  if (it != ct.methodIndices.end()) {
-    return it->second;
-  }
-  // Check parent class
-  if (ct.parentTypeId > 0) {
-    return findClassMethod(ct.parentTypeId, methodName);
-  }
-  return std::nullopt;
-}
 uint32_t GCHeap::registerEnumType(const std::string &name,
                                   const std::vector<std::string> &variants) {
   uint32_t id = static_cast<uint32_t>(enumTypes_.size());
@@ -568,37 +432,7 @@ void GCHeap::markValue(
     return;
   }
 
-  if (value.isStructId()) {
-    // Structs are value types, but we still need to mark their fields
-    uint32_t id = value.asStructId();
-    auto it = structs_.find(id);
-    if (it == structs_.end()) {
-      return;
-    }
-    for (const auto &entry : it->second) {
-      markValue(entry, marked_arrays, marked_objects, marked_sets,
-                marked_closures, open_local_reader);
-    }
-    return;
-  }
 
-  if (value.isClassId()) {
-    // Classes are reference types - need to mark as visited
-    uint32_t id = value.asClassId();
-    if (!marked_arrays.insert(id)
-             .second) { // Reuse marked_arrays for class tracking
-      return;
-    }
-    auto it = classes_.find(id);
-    if (it == classes_.end()) {
-      return;
-    }
-    for (const auto &entry : it->second) {
-      markValue(entry, marked_arrays, marked_objects, marked_sets,
-                marked_closures, open_local_reader);
-    }
-    return;
-  }
 
   if (value.isEnumId()) {
     // Enums have a payload array that needs marking

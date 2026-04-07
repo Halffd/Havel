@@ -333,12 +333,7 @@ std::string opcodeName(OpCode opcode) {
     return "RANGE_NEW";
   case OpCode::RANGE_STEP_NEW:
     return "RANGE_STEP_NEW";
-  case OpCode::STRUCT_NEW:
-    return "STRUCT_NEW";
-  case OpCode::STRUCT_GET:
-    return "STRUCT_GET";
-  case OpCode::STRUCT_SET:
-    return "STRUCT_SET";
+
   case OpCode::ENUM_NEW:
     return "ENUM_NEW";
   case OpCode::ENUM_TAG:

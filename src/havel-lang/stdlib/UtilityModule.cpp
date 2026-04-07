@@ -108,8 +108,7 @@ void registerUtilityModule(VMApi &api) {
     else if (arg.isFunctionObjId()) typeName = "function";
     else if (arg.isEnumId()) typeName = "enum";
     else if (arg.isIteratorId()) typeName = "iterator";
-    else if (arg.isStructId()) typeName = "struct";
-    else if (arg.isClassId()) typeName = "class";
+
     else typeName = "unknown";
 
     auto strRef = api.vm.getHeap().allocateString(typeName);

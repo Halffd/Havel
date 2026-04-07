@@ -711,6 +711,15 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Identifier:
       return makeIdentifier(token);
 
+    case TokenType::This: {
+      // `this` keyword in expression context
+      auto thisExpr = std::make_unique<ast::ThisExpression>();
+      thisExpr->line = token.line;
+      thisExpr->column = token.column;
+      // Allow this to have postfix operations like .field access
+      return parsePostfixExpression(std::move(thisExpr));
+    }
+
     case TokenType::ColonColon: {
       if (at().type != TokenType::Identifier) {
         failAt(at(), "Expected identifier after '::'");
@@ -5159,7 +5168,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
 
   case havel::TokenType::This: {
     advance();
-    return std::make_unique<havel::ast::ThisExpression>();
+    auto thisExpr = std::make_unique<havel::ast::ThisExpression>();
+    // Allow this to have postfix operations like .field access
+    return parsePostfixExpression(std::move(thisExpr));
   }
 
   case havel::TokenType::At: {

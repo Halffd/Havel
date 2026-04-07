@@ -183,6 +183,164 @@ void registerArrayModule(VMApi &api) {
         return result;
       });
 
+  api.registerFunction(
+      "array.reduce", [&api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+          throw std::runtime_error("array.reduce() requires array and function");
+        if (!args[0].isArrayId())
+          throw std::runtime_error("array.reduce() first argument must be array");
+
+        auto arrRef = ArrayRef{args[0].asArrayId()};
+        const auto &reducer = args[1];
+        size_t len = api.getArrayLength(Value::makeArrayId(arrRef.id));
+
+        Value accumulator;
+        size_t startIdx = 0;
+        if (args.size() > 2) {
+          accumulator = args[2];
+        } else if (len > 0) {
+          accumulator = api.getArrayValue(Value::makeArrayId(arrRef.id), 0);
+          startIdx = 1;
+        } else {
+          throw std::runtime_error("array.reduce() of empty array with no initial value");
+        }
+
+        for (size_t i = startIdx; i < len; ++i) {
+          auto val = api.getArrayValue(Value::makeArrayId(arrRef.id), i);
+          accumulator = api.callFunction(reducer, {accumulator, val});
+        }
+        return accumulator;
+      });
+
+  api.registerFunction(
+      "array.foreach", [&api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+          throw std::runtime_error("array.foreach() requires array and function");
+        if (!args[0].isArrayId())
+          throw std::runtime_error("array.foreach() first argument must be array");
+
+        auto arrRef = ArrayRef{args[0].asArrayId()};
+        const auto &callback = args[1];
+        size_t len = api.getArrayLength(Value::makeArrayId(arrRef.id));
+
+        for (size_t i = 0; i < len; ++i) {
+          auto val = api.getArrayValue(Value::makeArrayId(arrRef.id), i);
+          api.callFunction(callback, {val});
+        }
+        return Value::makeNull();
+      });
+
+  api.registerFunction(
+      "array.find", [&api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+          throw std::runtime_error("array.find() requires array and predicate");
+        if (!args[0].isArrayId())
+          throw std::runtime_error("array.find() first argument must be array");
+
+        auto arrRef = ArrayRef{args[0].asArrayId()};
+        const auto &predicate = args[1];
+        size_t len = api.getArrayLength(Value::makeArrayId(arrRef.id));
+
+        for (size_t i = 0; i < len; ++i) {
+          auto val = api.getArrayValue(Value::makeArrayId(arrRef.id), i);
+          auto match = api.callFunction(predicate, {val});
+          if (match.isBool() && match.asBool()) {
+            return val;
+          }
+        }
+        return Value::makeNull();
+      });
+
+  api.registerFunction(
+      "array.every", [&api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+          throw std::runtime_error("array.every() requires array and predicate");
+        if (!args[0].isArrayId())
+          throw std::runtime_error("array.every() first argument must be array");
+
+        auto arrRef = ArrayRef{args[0].asArrayId()};
+        const auto &predicate = args[1];
+        size_t len = api.getArrayLength(Value::makeArrayId(arrRef.id));
+
+        for (size_t i = 0; i < len; ++i) {
+          auto val = api.getArrayValue(Value::makeArrayId(arrRef.id), i);
+          auto match = api.callFunction(predicate, {val});
+          if (!match.isBool() || !match.asBool()) {
+            return Value::makeBool(false);
+          }
+        }
+        return Value::makeBool(true);
+      });
+
+  api.registerFunction(
+      "array.some", [&api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+          throw std::runtime_error("array.some() requires array and predicate");
+        if (!args[0].isArrayId())
+          throw std::runtime_error("array.some() first argument must be array");
+
+        auto arrRef = ArrayRef{args[0].asArrayId()};
+        const auto &predicate = args[1];
+        size_t len = api.getArrayLength(Value::makeArrayId(arrRef.id));
+
+        for (size_t i = 0; i < len; ++i) {
+          auto val = api.getArrayValue(Value::makeArrayId(arrRef.id), i);
+          auto match = api.callFunction(predicate, {val});
+          if (match.isBool() && match.asBool()) {
+            return Value::makeBool(true);
+          }
+        }
+        return Value::makeBool(false);
+      });
+
+  api.registerFunction(
+      "array.sort", [&api](const std::vector<Value> &args) {
+        if (args.empty())
+          throw std::runtime_error("array.sort() requires an array");
+        if (!args[0].isArrayId())
+          throw std::runtime_error("array.sort() first argument must be array");
+
+        auto arrRef = ArrayRef{args[0].asArrayId()};
+        size_t len = api.getArrayLength(Value::makeArrayId(arrRef.id));
+        
+        // Extract to C++ vector for sorting
+        std::vector<Value> elements;
+        for (size_t i = 0; i < len; ++i) {
+          elements.push_back(api.getArrayValue(Value::makeArrayId(arrRef.id), i));
+        }
+
+        // Use custom comparator if provided, otherwise default
+        if (args.size() > 1) {
+          const auto &comparator = args[1];
+          std::sort(elements.begin(), elements.end(), [&](const Value &a, const Value &b) {
+            auto result = api.callFunction(comparator, {a, b});
+            if (result.isInt()) return result.asInt() < 0;
+            if (result.isDouble()) return result.asDouble() < 0;
+            if (result.isBool()) return result.asBool();
+            return false;
+          });
+        } else {
+          std::sort(elements.begin(), elements.end(), [](const Value &a, const Value &b) {
+            if (a.isInt() && b.isInt()) return a.asInt() < b.asInt();
+            if (a.isNumber() && b.isNumber()) {
+              double ad = a.isInt() ? static_cast<double>(a.asInt()) : a.asDouble();
+              double bd = b.isInt() ? static_cast<double>(b.asInt()) : b.asDouble();
+              return ad < bd;
+            }
+            // Fallback: compare bits for stable sort
+            // return a.bits_ < b.bits_; 
+            return false; // TODO: properly compare other types
+          });
+        }
+
+        // Create new array with sorted elements
+        auto result = api.makeArray();
+        for (const auto &val : elements) {
+          api.push(result, val);
+        }
+        return result;
+      });
+
   api.registerFunction("array.filter",
                        [&api](const std::vector<Value> &args) {
                          if (args.size() < 2)
@@ -335,7 +493,13 @@ void registerArrayModule(VMApi &api) {
   api.setField(arrObj, "concat", api.makeFunctionRef("array.concat"));
   api.setField(arrObj, "reverse", api.makeFunctionRef("array.reverse"));
   api.setField(arrObj, "map", api.makeFunctionRef("array.map"));
+  api.setField(arrObj, "reduce", api.makeFunctionRef("array.reduce"));
+  api.setField(arrObj, "foreach", api.makeFunctionRef("array.foreach"));
   api.setField(arrObj, "filter", api.makeFunctionRef("array.filter"));
+  api.setField(arrObj, "find", api.makeFunctionRef("array.find"));
+  api.setField(arrObj, "every", api.makeFunctionRef("array.every"));
+  api.setField(arrObj, "some", api.makeFunctionRef("array.some"));
+  api.setField(arrObj, "sort", api.makeFunctionRef("array.sort"));
   api.setField(arrObj, "flat", api.makeFunctionRef("array.flat"));
   api.setField(arrObj, "smooth", api.makeFunctionRef("array.smooth"));
   api.setField(arrObj, "squeeze", api.makeFunctionRef("array.squeeze"));

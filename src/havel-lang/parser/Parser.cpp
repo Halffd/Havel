@@ -829,6 +829,16 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
           ast::UnaryExpression::UnaryOperator::Length, std::move(operand));
     }
 
+    case TokenType::At: {
+      // @field - field access within class methods
+      if (at().type != TokenType::Identifier) {
+        errorAt(at(), "Expected field name after '@'");
+        return nullptr;
+      }
+      auto fieldName = makeIdentifier(advance());
+      return std::make_unique<ast::AtExpression>(std::move(fieldName));
+    }
+
     case TokenType::Backtick:
       return parseBacktickExpression();
 

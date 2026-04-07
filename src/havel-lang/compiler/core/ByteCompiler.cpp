@@ -2404,6 +2404,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         assignment.target
             ? dynamic_cast<const ast::ObjectLiteral *>(assignment.target.get())
             : nullptr;
+    const auto *target_at =
+        assignment.target
+            ? dynamic_cast<const ast::AtExpression *>(assignment.target.get())
+            : nullptr;
 
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       if (binding.is_const) {
@@ -2601,6 +2605,38 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         }
         break;
       }
+      if (target_at) {
+        // @field assignment - store to self.field
+        // Get field name from AtExpression
+        std::string field_name;
+        if (target_at->field && target_at->field->kind == ast::NodeType::Identifier) {
+          const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
+          field_name = field_id->symbol;
+        } else {
+          COMPILER_THROW("@field assignment requires identifier");
+        }
+        // Compile value first
+        if (rhs_is_missing) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        } else {
+          compileExpression(*rhs_expr);
+        }
+        // Store to self.field: OBJECT_SET expects [obj, value, key]
+        // Use temp slots to arrange the stack correctly
+        uint32_t temp_val = next_local_index;
+        reserveLocalSlot(temp_val);
+        emit(OpCode::STORE_VAR, temp_val);  // pop value
+        // Stack is now empty
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        uint32_t temp_key = next_local_index;
+        reserveLocalSlot(temp_key);
+        emit(OpCode::STORE_VAR, temp_key);  // pop key
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0)); // [self]
+        emit(OpCode::LOAD_VAR, temp_val);  // [self, value]
+        emit(OpCode::LOAD_VAR, temp_key);  // [self, value, key]
+        emit(OpCode::OBJECT_SET);
+        break;
+      }
       COMPILER_THROW("Unsupported assignment target");
     }
 
@@ -2682,6 +2718,38 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, temp_index);
         emit(OpCode::LOAD_VAR, temp_result);
         emit(OpCode::ARRAY_SET);
+        emit(OpCode::LOAD_VAR, temp_result);
+        return;
+      }
+      if (target_at) {
+        // @field compound assignment
+        // Get field name
+        std::string field_name;
+        if (target_at->field && target_at->field->kind == ast::NodeType::Identifier) {
+          const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
+          field_name = field_id->symbol;
+        } else {
+          COMPILER_THROW("@field compound assignment requires identifier");
+        }
+        uint32_t temp_result = next_local_index;
+        reserveLocalSlot(temp_result);
+        // Load self.field
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_GET);
+        if (rhs_is_missing) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        } else {
+          compileExpression(*rhs_expr);
+        }
+        emit(math_op);
+        emit(OpCode::DUP);
+        emit(OpCode::STORE_VAR, temp_result);
+        // Store back to self.field
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::LOAD_VAR, temp_result);
+        emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
@@ -3116,14 +3184,12 @@ void ByteCompiler::compileCallExpression(
     }
 
     // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...)).
-    // Compile as: [obj, DUP, "method", OBJECT_GET, SWAP, args..., CALL]
-    // This looks up the method on the object (or its prototype chain) and calls it
-    // with the object as 'this'.
+    // Compile as: [obj, "method", OBJECT_GET, args..., CALL]
+    // OBJECT_GET returns a bound method object {fn: closure, self: obj}
+    // which already contains self, so we don't pass it as an extra arg.
     compileExpression(*member.object);
-    emit(OpCode::DUP);
     { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::OBJECT_GET);
-    emit(OpCode::SWAP);
     for (const auto &arg : expression.args) {
       if (!arg) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
@@ -3131,7 +3197,7 @@ void ByteCompiler::compileCallExpression(
       }
       compileExpression(*arg);
     }
-    uint32_t totalArgs = arg_count + 1; // +1 for the object itself ('this')
+    uint32_t totalArgs = arg_count; // No extra arg for self - bound method has it
     if (hasKwargs) {
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {

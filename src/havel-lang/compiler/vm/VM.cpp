@@ -1995,7 +1995,7 @@ void VM::registerDefaultHostGlobals() {
     else if (args[0].isStringId() && heap_.string(args[0].asStringId())) s = *heap_.string(args[0].asStringId());
     if (args[1].isStringValId() && current_chunk) sub = current_chunk->getString(args[1].asStringValId());
     else if (args[1].isStringId() && heap_.string(args[1].asStringId())) sub = *heap_.string(args[1].asStringId());
-    return Value::makeBool(s.find(sub) != std::string::npos);
+    return Value::makeBool(!s.empty() && !sub.empty() && s.find(sub) != std::string::npos);
   });
 
   regProto("string", "split", 2, [this](const std::vector<Value> &args) {
@@ -3517,12 +3517,12 @@ void VM::executeInstruction(const Instruction &instruction) {
       auto key = keyFromValue(Value::makeStringValId(strIndex), &heap_, current_chunk);
       if (!key) { pushStack(Value::makeNull()); break; }
 
-      // Pop receiver and args
-      Value obj = popStack();
+      // Pop args first (they're at the top), then receiver (at bottom)
       std::vector<Value> args(arg_count);
       for (uint32_t i = 0; i < arg_count; ++i) {
         args[arg_count - 1 - i] = popStack();
       }
+      Value obj = popStack();
 
       // Look up method in prototype chain
       Value method_val = Value::makeNull();
@@ -3566,12 +3566,12 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     }
 
-    // Pop receiver and args
-    Value recv = popStack();
+    // Pop args first (they're at the top), then receiver (at bottom)
     std::vector<Value> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
       args[arg_count - 1 - i] = popStack();
     }
+    Value recv = popStack();
 
     // Prepend receiver to args and call host function
     std::vector<Value> all_args;

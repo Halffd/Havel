@@ -1009,7 +1009,11 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
     // Member access
     case TokenType::Dot: {
-      if (at().type != TokenType::Identifier) {
+      // Property names can be identifiers or certain keywords (and, or, not)
+      if (at().type != TokenType::Identifier &&
+          at().type != TokenType::And &&
+          at().type != TokenType::Or &&
+          at().type != TokenType::Not) {
         failAt(at(), "Expected identifier after '.'");
       }
       auto property = makeIdentifier(advance());
@@ -5824,7 +5828,10 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
       at().type != havel::TokenType::Try &&
       at().type != havel::TokenType::Catch &&
       at().type != havel::TokenType::Finally &&
-      at().type != havel::TokenType::Throw) {
+      at().type != havel::TokenType::Throw &&
+      at().type != havel::TokenType::And &&
+      at().type != havel::TokenType::Or &&
+      at().type != havel::TokenType::Not) {
     failAt(at(), "Expected property name after '.'");
   }
 

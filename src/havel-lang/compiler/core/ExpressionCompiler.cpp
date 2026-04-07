@@ -147,17 +147,39 @@ void ExpressionCompiler::compileCallExpression(const ast::CallExpression& call) 
     COMPILER_THROW("Call expression missing callee");
   }
 
-  // Compile arguments first
-  for (const auto& arg : call.args) {
-    if (arg) {
-      compile(*arg);
+  // Handle member method calls: obj.method(args)
+  if (call.callee && call.callee->kind == ast::NodeType::MemberExpression) {
+    const auto& member = static_cast<const ast::MemberExpression&>(*call.callee);
+    // Load object
+    compile(*member.object);
+    // Keep object for 'this'
+    emitter_.emit(OpCode::DUP);
+    // Load method name
+    if (member.property && member.property->kind == ast::NodeType::Identifier) {
+      const auto& prop = static_cast<const ast::Identifier&>(*member.property);
+      uint32_t strId = emitter_.addStringConstant(prop.symbol);
+      emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+    } else {
+      COMPILER_THROW("Method call requires identifier method name");
     }
+    // Look up method on object
+    emitter_.emit(OpCode::OBJECT_GET);
+    // Reorder to put method before object
+    emitter_.emit(OpCode::SWAP);
+    // Compile arguments
+    for (const auto& arg : call.args) {
+      if (arg) compile(*arg);
+    }
+    // Call method with object as 'this'
+    emitter_.emit(OpCode::CALL, static_cast<uint32_t>(call.args.size() + 1));
+    return;
   }
 
-  // Compile callee
+  // Regular function calls: compile args then callee
+  for (const auto& arg : call.args) {
+    if (arg) compile(*arg);
+  }
   compile(*call.callee);
-
-  // Emit call
   emitter_.emit(OpCode::CALL, static_cast<uint32_t>(call.args.size()));
 }
 

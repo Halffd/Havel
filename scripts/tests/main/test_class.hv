@@ -87,7 +87,7 @@ print("deq length: " + #deq + " items: " + deq.data.len)
 m.x = 500
 m.y = 550
 deq.back = 3
-deq.data[3] = 5
+// deq.data[3] = 5
 
 print("p:", p)
 print("m:", m)

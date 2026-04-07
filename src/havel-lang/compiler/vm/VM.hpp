@@ -16,7 +16,7 @@
 #include <vector>
 
 namespace havel {
-class HostContext; // Forward declaration
+struct HostContext; // Forward declaration
 }
 
 namespace havel::compiler {

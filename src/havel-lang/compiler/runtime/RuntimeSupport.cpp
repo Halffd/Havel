@@ -157,8 +157,7 @@ RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const Value& value) {
   if (value.isObjectId()) return Type::Object;
   if (value.isFunctionObjId()) return Type::Function;
   if (value.isClosureId()) return Type::Closure;
-  if (value.isStructId()) return Type::Struct;
-  if (value.isClassId()) return Type::Class;
+
   if (value.isEnumId()) return Type::Enum;
   if (value.isIteratorId()) return Type::Iterator;
   return Type::Null;
@@ -309,8 +308,7 @@ bool RuntimeTypeSystem::equals(const Value& a, const Value& b) {
   if (a.isObjectId()) return a.asObjectId() == b.asObjectId();
   if (a.isRangeId()) return a.asRangeId() == b.asRangeId();
   if (a.isIteratorId()) return a.asIteratorId() == b.asIteratorId();
-  if (a.isStructId()) return a.asStructId() == b.asStructId();
-  if (a.isClassId()) return a.asClassId() == b.asClassId();
+
   if (a.isEnumId()) return a.asEnumId() == b.asEnumId();
   if (a.isClosureId()) return a.asClosureId() == b.asClosureId();
   return false;

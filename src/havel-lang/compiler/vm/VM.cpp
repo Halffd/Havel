@@ -14,7 +14,13 @@
 #include <thread>
 
 // Helper macro for throwing runtime errors
-#define COMPILER_THROW(msg) throw std::runtime_error(msg)
+// Reports to unified ErrorReporter before throwing
+#define COMPILER_THROW(msg) \
+  do { \
+    ::havel::errors::ErrorReporter::instance().report( \
+        HAVEL_ERROR(::havel::errors::ErrorStage::VM, msg)); \
+    throw std::runtime_error(msg); \
+  } while (0)
 
 namespace havel::compiler {
 

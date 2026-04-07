@@ -1,0 +1,11 @@
+class Point {
+    x
+    y
+    init(self, ax, ay) {
+        self.x = ax
+        self.y = ay
+    }
+}
+
+let p = Point(10, 20)
+print(p)

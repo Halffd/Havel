@@ -3064,12 +3064,15 @@ void ByteCompiler::compileCallExpression(
       }
     }
 
-    // Instance-style method call on runtime value (e.g., nums.map(double)).
-    // Compile as CALL_HOST "any.<method>"(obj, args...) which dispatches
-    // through the HostBridge's any.* dispatch system based on the runtime type.
-    // This correctly handles array methods (map, filter, reduce, etc.),
-    // object methods, struct methods, and string methods.
+    // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...)).
+    // Compile as: [obj, DUP, "method", OBJECT_GET, SWAP, args..., CALL]
+    // This looks up the method on the object (or its prototype chain) and calls it
+    // with the object as 'this'.
     compileExpression(*member.object);
+    emit(OpCode::DUP);
+    { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::SWAP);
     for (const auto &arg : expression.args) {
       if (!arg) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
@@ -3077,7 +3080,7 @@ void ByteCompiler::compileCallExpression(
       }
       compileExpression(*arg);
     }
-    uint32_t totalArgs = arg_count + 1; // +1 for the object itself
+    uint32_t totalArgs = arg_count + 1; // +1 for the object itself ('this')
     if (hasKwargs) {
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {
@@ -3088,12 +3091,7 @@ void ByteCompiler::compileCallExpression(
       }
       totalArgs++;
     }
-    {
-      uint32_t strId = addStringConstant("any." + property->symbol);
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(totalArgs)});
-    }
+    emit(OpCode::CALL, totalArgs);
     return;
   }
 

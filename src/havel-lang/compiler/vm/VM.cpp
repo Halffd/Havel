@@ -122,10 +122,28 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     return "<string:" + std::to_string(value.asStringId()) + ">";
   }
   if (value.isFunctionObjId()) {
-    return "fn[" + std::to_string(value.asFunctionObjId()) + "]";
+    // Function object from bytecode - try to get name from chunk
+    if (current_chunk) {
+      const auto &funcs = current_chunk->functions;
+      uint32_t idx = value.asFunctionObjId();
+      if (idx < funcs.size()) {
+        return "<fn " + funcs[idx].name + ">";
+      }
+    }
+    return "<fn:" + std::to_string(value.asFunctionObjId()) + ">";
   }
   if (value.isClosureId()) {
-    return "closure[" + std::to_string(value.asClosureId()) + "]";
+    // Closure - try to get function name from chunk
+    if (current_chunk && value.asClosureId() < heap_.closures().size()) {
+      const auto *closure = heap_.closure(value.asClosureId());
+      if (closure && current_chunk->index < heap_.chunks().size()) {
+        const auto *chunk = &heap_.chunks()[current_chunk->index];
+        if (closure->function_index < chunk->functions.size()) {
+          return "<fn " + chunk->functions[closure->function_index].name + ">";
+        }
+      }
+    }
+    return "<closure:" + std::to_string(value.asClosureId()) + ">";
   }
   if (value.isArrayId()) {
     auto *arr = heap_.array(value.asArrayId());
@@ -144,9 +162,13 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     std::string result = "{";
     bool first = true;
     for (const auto &[key, val] : *obj) {
+      // Skip internal fields (start with __)
+      if (key.size() >= 2 && key[0] == '_' && key[1] == '_') {
+        continue;
+      }
       if (!first) result += ", ";
       first = false;
-      result += "\"" + key + "\": " + toStringInternal(val, visitedIds, depth + 1);
+      result += key + ": " + toStringInternal(val, visitedIds, depth + 1);
     }
     result += "}";
     return result;
@@ -2561,14 +2583,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
       } else {
         l = "<string:" + std::to_string(left.asStringId()) + ">";
       }
-    } else if (left.isInt()) {
-      l = std::to_string(left.asInt());
-    } else if (left.isDouble()) {
-      l = std::to_string(left.asDouble());
-    } else if (left.isBool()) {
-      l = left.asBool() ? "true" : "false";
     } else {
-      l = left.toString();
+      l = toString(left);
     }
 
     // Resolve right operand to actual string
@@ -2585,14 +2601,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
       } else {
         r = "<string:" + std::to_string(right.asStringId()) + ">";
       }
-    } else if (right.isInt()) {
-      r = std::to_string(right.asInt());
-    } else if (right.isDouble()) {
-      r = std::to_string(right.asDouble());
-    } else if (right.isBool()) {
-      r = right.asBool() ? "true" : "false";
     } else {
-      r = right.toString();
+      r = toString(right);
     }
 
     switch (instruction.opcode) {

@@ -33,10 +33,7 @@ std::string Value::toString() const {
     return "<set:" + std::to_string(asSetId()) + ">";
   if (isRangeId())
     return "<range:" + std::to_string(asRangeId()) + ">";
-  if (isStructId())
-    return "<struct:" + std::to_string(asStructId()) + ">";
-  if (isClassId())
-    return "<class:" + std::to_string(asClassId()) + ">";
+
   if (isEnumId())
     return "<enum:" + std::to_string(asEnumId()) + ">";
   if (isIteratorId())

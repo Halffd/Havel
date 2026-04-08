@@ -5013,8 +5013,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
       advance();
     }
 
-    // Skip newlines
-    while (at().type == havel::TokenType::NewLine) {
+    // Skip newlines and semicolons (case separators)
+    while (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
       advance();
     }
   }

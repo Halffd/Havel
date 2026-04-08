@@ -254,4 +254,106 @@ void registerObjectPrototype(VM& vm) {
   });
 }
 
+void registerSetPrototype(VM& vm) {
+  auto regProto = [&vm](const std::string& method, size_t arity, BytecodeHostFunction fn) {
+    vm.registerHostFunction("set." + method, arity, std::move(fn));
+    vm.registerPrototypeMethodByName("set", method, "set." + method);
+  };
+
+  regProto("len", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeInt(0);
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      return Value::makeInt(set ? static_cast<int64_t>(set->size()) : 0);
+    }
+    return Value::makeInt(0);
+  });
+
+  regProto("has", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        std::string key;
+        if (args[1].isInt()) {
+          key = std::to_string(args[1].asInt());
+        } else if (args[1].isStringValId() && vm.getCurrentChunk()) {
+          key = vm.getCurrentChunk()->getString(args[1].asStringValId());
+        } else if (args[1].isStringId() && vm.getHeap().string(args[1].asStringId())) {
+          key = *vm.getHeap().string(args[1].asStringId());
+        } else {
+          return Value::makeBool(false);
+        }
+        return Value::makeBool(set->find(key) != set->end());
+      }
+    }
+    return Value::makeBool(false);
+  });
+
+  regProto("add", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        std::string key;
+        if (args[1].isInt()) {
+          key = std::to_string(args[1].asInt());
+        } else if (args[1].isStringValId() && vm.getCurrentChunk()) {
+          key = vm.getCurrentChunk()->getString(args[1].asStringValId());
+        } else if (args[1].isStringId() && vm.getHeap().string(args[1].asStringId())) {
+          key = *vm.getHeap().string(args[1].asStringId());
+        } else {
+          return Value::makeNull();
+        }
+        (*set)[key] = Value::makeBool(true);
+        return args[0];
+      }
+    }
+    return Value::makeNull();
+  });
+
+  regProto("delete", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        std::string key;
+        if (args[1].isInt()) {
+          key = std::to_string(args[1].asInt());
+        } else if (args[1].isStringValId() && vm.getCurrentChunk()) {
+          key = vm.getCurrentChunk()->getString(args[1].asStringValId());
+        } else if (args[1].isStringId() && vm.getHeap().string(args[1].asStringId())) {
+          key = *vm.getHeap().string(args[1].asStringId());
+        } else {
+          return Value::makeBool(false);
+        }
+        return Value::makeBool(set->erase(key) > 0);
+      }
+    }
+    return Value::makeBool(false);
+  });
+
+  regProto("list", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        auto arrRef = vm.getHeap().allocateArray();
+        auto* arr = vm.getHeap().array(arrRef.id);
+        for (const auto& [key, val] : *set) {
+          // Try to parse as int, otherwise use string
+          try {
+            arr->push_back(Value::makeInt(std::stoll(key)));
+          } catch (...) {
+            auto ref = vm.getHeap().allocateString(key);
+            arr->push_back(Value::makeStringId(ref.id));
+          }
+        }
+        return Value::makeArrayId(arrRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+}
+
 } // namespace havel::compiler::prototypes

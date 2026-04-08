@@ -1971,6 +1971,7 @@ void VM::registerDefaultHostGlobals() {
   prototypes::registerNumberPrototype(*this);
   prototypes::registerBoolPrototype(*this);
   prototypes::registerObjectPrototype(*this);
+  prototypes::registerSetPrototype(*this);
 }
 
 Value VM::invokeHostFunction(const std::string &name,
@@ -3280,6 +3281,8 @@ void VM::executeInstruction(const Instruction &instruction) {
       type_name = "array";
     } else if (receiver.isObjectId()) {
       type_name = "object";
+    } else if (receiver.isSetId()) {
+      type_name = "set";
     } else {
       pushStack(Value::makeNull());
       break;

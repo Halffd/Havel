@@ -196,6 +196,19 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     result += "}";
     return result;
   }
+  if (value.isSetId()) {
+    auto *set = heap_.set(value.asSetId());
+    if (!set) return "#[]";
+    std::string result = "#[";
+    bool first = true;
+    for (const auto &pair : *set) {
+      if (!first) result += ", ";
+      first = false;
+      result += pair.first;
+    }
+    result += "]";
+    return result;
+  }
   return "unknown";
 }
 
@@ -1202,13 +1215,13 @@ void VM::registerDefaultHostFunctions() {
     else if (value.isStringValId() || value.isStringId()) typeName = "string";
     else if (value.isArrayId()) typeName = "array";
     else if (value.isObjectId()) typeName = "object";
+    else if (value.isSetId()) typeName = "set";
     else if (value.isRangeId()) typeName = "range";
     else if (value.isHostFuncId()) typeName = "function";
     else if (value.isClosureId()) typeName = "closure";
     else if (value.isFunctionObjId()) typeName = "function";
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
-
     else typeName = "unknown";
     auto strRef = heap_.allocateString(typeName);
     return Value::makeStringId(strRef.id);
@@ -3469,6 +3482,42 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::SET_NEW: {
     pushStack(Value::makeSetId(heap_.allocateSet().id));
     maybeCollectGarbage();
+    break;
+  }
+
+  case OpCode::SET_SET: {
+    // Stack: [..., set, value, key] → pops all, does NOT push set back
+    // The caller is responsible for managing the set on the stack
+    Value key = popStack();
+    Value value = popStack();
+    Value set_val = popStack();
+
+    if (!set_val.isSetId()) {
+      COMPILER_THROW("SET_SET expects set container");
+    }
+    uint32_t id = set_val.asSetId();
+    auto *set = heap_.set(id);
+    if (!set) {
+      COMPILER_THROW("SET_SET unknown set id");
+    }
+
+    std::string keyStr;
+    if (key.isStringValId() && current_chunk) {
+      keyStr = current_chunk->getString(key.asStringValId());
+    } else if (key.isStringId()) {
+      if (auto *s = heap_.string(key.asStringId())) {
+        keyStr = *s;
+      } else {
+        COMPILER_THROW("SET_SET expects string key");
+      }
+    } else if (key.isInt()) {
+      keyStr = std::to_string(key.asInt());
+    } else {
+      COMPILER_THROW("SET_SET expects string/number key");
+    }
+
+    (*set)[keyStr] = value;
+    // Don't push set back - the caller manages it
     break;
   }
 

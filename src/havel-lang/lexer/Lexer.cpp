@@ -698,17 +698,8 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-    // Handle # as length operator, set literal, or hotkey modifier
+    // Handle # as length operator or hotkey modifier
     if (c == '#') {
-      // If the next char is '{', treat as set literal start
-      if (peek() == '{') {
-        tokens.push_back(makeToken("#", TokenType::Hash));
-        if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
-        }
-        continue;
-      }
-
       // If followed by identifier, '(', '[', string, or number - treat as length operator
       if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
         tokens.push_back(makeToken("#", TokenType::Length));

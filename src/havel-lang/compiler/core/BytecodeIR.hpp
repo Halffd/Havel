@@ -107,6 +107,7 @@ enum class OpCode : uint8_t {
   OBJECT_ENTRIES, // Get array of [key, value] pairs
   OBJECT_HAS,     // Check if key exists
   OBJECT_DELETE,  // Delete key from object
+  OBJECT_GET_RAW, // Get property without method binding (for super calls)
 
   // Array operations (additional VM intrinsics)
   ARRAY_POP,     // Pop element from array

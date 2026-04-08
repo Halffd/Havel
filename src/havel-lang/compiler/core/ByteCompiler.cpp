@@ -3254,16 +3254,18 @@ void ByteCompiler::compileCallExpression(
       COMPILER_THROW("Super call used outside a derived class method");
     }
 
-    // Resolve and load parent method function object.
-    uint32_t method_symbol =
-        addStringConstant(current_parent_class_name_ + "." +
-                          expression.superMethodName);
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(method_symbol));
-
-    // Pass self (`this`) as first argument.
-    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-
-    // Compile explicit super call arguments.
+    // Load parent class prototype from globals
+    uint32_t parent_class_sid = addStringConstant(current_parent_class_name_);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(parent_class_sid));
+    
+    // Get the method from parent prototype using OBJECT_GET_RAW (no binding)
+    uint32_t method_sid = addStringConstant(expression.superMethodName);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_sid)));
+    emit(OpCode::OBJECT_GET_RAW);
+    
+    // Stack: [raw_function]
+    // Now push self (current instance at slot 0) and explicit args
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));  // self
     for (const auto &arg : expression.args) {
       if (!arg) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
@@ -3271,6 +3273,7 @@ void ByteCompiler::compileCallExpression(
       }
       compileExpression(*arg);
     }
+    // CALL with self + explicit args
     emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
     return;
   }

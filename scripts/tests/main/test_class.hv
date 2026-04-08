@@ -10,22 +10,22 @@ class Deque {
     front: int = 0
     back: int = 0
     data: int[]
-    fn init(data, front, back) {
-        @data = data // @ is implicit assignment to struct field
-        @front = front
-        @back = back
+    fn init(data) {
+        @data = data
+        @front = 0
+        @back = #data - 1
     }
     fn append(x) {
-        back = back + 1
-        data[back] = x
+        @back = @back + 1
+        @data[@back] = x
     }
     fn prepend(x) {
-        front = front - 1
-        data[front] = x
+        @front = @front - 1
+        @data[@front] = x
     }
     fn pop() {
-        let x = data[back]
-        back = back - 1
+        let x = @data[@back]
+        @back = @back - 1
         x
     }
 }
@@ -47,8 +47,8 @@ class MousePos {
   }
 
   fn distance(other) {
-    let dx = x - other.x
-    let dy = y - other.y
+    let dx = @x - other.x
+    let dy = @y - other.y
     math.sqrt(dx*dx + dy*dy)
   }
 }

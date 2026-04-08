@@ -234,6 +234,10 @@ private:
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:
+  // Value utility functions (public for prototype method implementations)
+  bool toBoolPublic(const Value &value) const { return toBool(value); }
+  bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
+
   // Direct invocation (bypasses stack, takes args as vector)
   Value invokeHostFunctionDirect(const std::string &name,
                                   const std::vector<Value> &args);

@@ -3266,74 +3266,13 @@ void VM::executeInstruction(const Instruction &instruction) {
     } else if (receiver.isArrayId()) {
       type_name = "array";
     } else if (receiver.isObjectId()) {
-      // For objects, look up method in prototype chain
-      auto key = keyFromValue(Value::makeStringValId(strIndex), &heap_, current_chunk);
-      if (!key) { pushStack(Value::makeNull()); break; }
-
-      // Pop args first (they're at the top), then receiver (at bottom)
-      std::vector<Value> args(arg_count);
-      for (uint32_t i = 0; i < arg_count; ++i) {
-        args[arg_count - 1 - i] = popStack();
-      }
-      Value obj = popStack();
-
-      // Look up method in prototype chain
-      Value method_val = Value::makeNull();
-      GCHeap::ObjectEntry *current_obj = heap_.object(obj.asObjectId());
-      while (current_obj) {
-        auto *val = current_obj->get(*key);
-        if (val) { method_val = *val; break; }
-        auto* parent_val = current_obj->get("__class");
-        if (!parent_val) parent_val = current_obj->get("__parent");
-        if (parent_val && parent_val->isObjectId()) {
-          current_obj = heap_.object(parent_val->asObjectId());
-        } else {
-          current_obj = nullptr;
-        }
-      }
-
-      if (method_val.isFunctionObjId() || method_val.isClosureId() || method_val.isHostFuncId()) {
-        // Determine if this is a class method (no self param) by checking
-        // if the function's param_count matches arg_count exactly
-        uint32_t func_index = 0;
-        if (method_val.isFunctionObjId()) {
-          func_index = method_val.asFunctionObjId();
-        } else if (method_val.isClosureId()) {
-          auto *closure = heap_.closure(method_val.asClosureId());
-          if (closure) func_index = closure->function_index;
-        }
-        if (current_chunk && func_index < current_chunk->getFunctionCount()) {
-          const auto *func = current_chunk->getFunction(func_index);
-          if (func && func->param_count == arg_count) {
-            // Class method (no self) - call without passing obj
-            std::vector<Value> all_args = std::move(args);
-            doCall(method_val, std::move(all_args));
-          } else {
-            // Instance method - pass obj as self
-            std::vector<Value> all_args;
-            all_args.reserve(arg_count + 1);
-            all_args.push_back(obj);
-            all_args.insert(all_args.end(), args.begin(), args.end());
-            doCall(method_val, std::move(all_args));
-          }
-        } else {
-          // Fallback: assume instance method
-          std::vector<Value> all_args;
-          all_args.reserve(arg_count + 1);
-          all_args.push_back(obj);
-          all_args.insert(all_args.end(), args.begin(), args.end());
-          doCall(method_val, std::move(all_args));
-        }
-      } else {
-        pushStack(Value::makeNull());
-      }
-      break;
+      type_name = "object";
     } else {
       pushStack(Value::makeNull());
       break;
     }
 
-    // Look up method in prototype table (for primitives only)
+    // Look up method in prototype table (for primitives and objects)
     auto typeIt = prototypes_.find(type_name);
     if (typeIt == prototypes_.end()) {
       pushStack(Value::makeNull());

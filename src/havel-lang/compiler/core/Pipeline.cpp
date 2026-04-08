@@ -331,6 +331,8 @@ std::string opcodeName(OpCode opcode) {
   case OpCode::ARRAY_PUSH:
     return "ARRAY_PUSH";
   case OpCode::ARRAY_LEN:
+  case OpCode::ARRAY_FREEZE:
+    return "ARRAY_FREEZE";
     return "ARRAY_LEN";
   case OpCode::ITER_NEW:
     return "ITER_NEW";

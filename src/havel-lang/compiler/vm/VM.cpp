@@ -3555,6 +3555,21 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::ARRAY_FREEZE: {
+    Value container = popStack();
+    if (!container.isArrayId()) {
+      COMPILER_THROW("ARRAY_FREEZE expects array container");
+    }
+    uint32_t id = container.asArrayId();
+    auto *array = heap_.array(id);
+    if (!array) {
+      COMPILER_THROW("ARRAY_FREEZE unknown array id");
+    }
+    array->frozen = true;
+    pushStack(container);
+    break;
+  }
+
   // Range creation: start..end or start..step..end
   case OpCode::RANGE_NEW: {
     int64_t end = popStack().asInt();

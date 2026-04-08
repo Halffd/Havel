@@ -286,12 +286,12 @@ const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
   return it == closures_.end() ? nullptr : &it->second;
 }
 
-std::vector<Value> *GCHeap::array(uint32_t id) {
+GCHeap::ArrayEntry *GCHeap::array(uint32_t id) {
   auto it = arrays_.find(id);
   return it == arrays_.end() ? nullptr : &it->second;
 }
 
-const std::vector<Value> *GCHeap::array(uint32_t id) const {
+const GCHeap::ArrayEntry *GCHeap::array(uint32_t id) const {
   auto it = arrays_.find(id);
   return it == arrays_.end() ? nullptr : &it->second;
 }

@@ -4211,6 +4211,43 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::OBJECT_GET_RAW: {
+    // Like OBJECT_GET but without method binding - returns raw property value
+    Value key_value = popStack();
+    Value object = popStack();
+
+    if (!object.isObjectId()) {
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    auto key = keyFromValue(key_value, &heap_, current_chunk);
+    if (!key) {
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    GCHeap::ObjectEntry *current_obj = heap_.object(object.asObjectId());
+    while (current_obj) {
+      auto *val = current_obj->get(*key);
+      if (val) {
+        pushStack(*val);
+        break;
+      }
+      auto* parent_val = current_obj->get("__class");
+      if (!parent_val) parent_val = current_obj->get("__parent");
+      if (parent_val && parent_val->isObjectId()) {
+        current_obj = heap_.object(parent_val->asObjectId());
+      } else {
+        current_obj = nullptr;
+      }
+    }
+    if (!current_obj) {
+      pushStack(Value::makeNull());
+    }
+    break;
+  }
+
   // Object intrinsics (VM-level operations)
   case OpCode::OBJECT_KEYS: {
     Value object = popStack();

@@ -849,6 +849,44 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       return std::make_unique<ast::AtAtExpression>(std::move(fieldName));
     }
 
+    case TokenType::SuperArrow: {
+      // @->method() - super call for prototype inheritance
+      // Parse method name after @->
+      if (at().type != TokenType::Identifier) {
+        errorAt(at(), "Expected method name after '@->'");
+        return nullptr;
+      }
+      auto methodName = makeIdentifier(advance());
+      // Create a special SuperCallExpression (reuse CallExpression with isSuper
+      // flag)
+      auto call = std::make_unique<havel::ast::CallExpression>(
+          std::make_unique<havel::ast::Identifier>("__super__"));
+      call->isSuperCall = true;
+      call->superMethodName = methodName->symbol;
+
+      // Parse arguments if present
+      if (at().type == TokenType::OpenParen) {
+        advance(); // consume '('
+        while (at().type != TokenType::CloseParen && notEOF()) {
+          while (at().type == TokenType::NewLine) advance();
+          if (at().type == TokenType::CloseParen) break;
+          call->args.push_back(parsePrattExpression(0));
+          while (at().type == TokenType::NewLine) advance();
+          if (at().type == TokenType::Comma) advance();
+          else if (at().type != TokenType::CloseParen) {
+            errorAt(at(), "Expected ',' or ')' in super call arguments");
+            return nullptr;
+          }
+        }
+        if (at().type != TokenType::CloseParen) {
+          errorAt(at(), "Expected ')' after super call arguments");
+          return nullptr;
+        }
+        advance();
+      }
+      return std::move(call);
+    }
+
     case TokenType::Backtick:
       return parseBacktickExpression();
 

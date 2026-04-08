@@ -1747,25 +1747,30 @@ void VM::registerDefaultHostFunctions() {
 
         auto protoRef = heap_.allocateObject();
         auto* proto = heap_.object(protoRef.id);
-        
+
         proto->set("__name", Value::makeStringValId(args[0].asStringValId()));
         proto->set("__is_class", Value::makeBool(true));
         proto->set("__fields", args[1]);
-        
-        if (args.size() == 3) {
-            // Parent class is defined. 
-            if (args[2].isObjectId()) {
-                proto->set("__parent", args[2]);
-            } else if (args[2].isStringValId()) {
-                const auto &parentName = current_chunk->getString(args[2].asStringValId());
+
+        size_t arg_idx = 2;
+        // Check for parent class
+        if (args.size() > arg_idx && (args[arg_idx].isObjectId() || args[arg_idx].isStringValId() || args[arg_idx].isNull())) {
+            if (args[arg_idx].isObjectId()) {
+                proto->set("__parent", args[arg_idx]);
+            } else if (args[arg_idx].isStringValId()) {
+                const auto &parentName = current_chunk->getString(args[arg_idx].asStringValId());
                 auto parentIt = globals.find(parentName);
                 if (parentIt == globals.end() || !parentIt->second.isObjectId()) {
                     COMPILER_THROW("Unknown or invalid parent class: " + parentName);
                 }
                 proto->set("__parent", parentIt->second);
-            } else if (!args[2].isNull()) {
-                COMPILER_THROW("class.define parent must be an object or string name");
             }
+            arg_idx++;
+        }
+
+        // Check for class fields (@@fields)
+        if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
+            proto->set("__class_fields", args[arg_idx]);
         }
 
         return Value::makeObjectId(protoRef.id);
@@ -3540,11 +3545,37 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
 
       if (method_val.isFunctionObjId() || method_val.isClosureId() || method_val.isHostFuncId()) {
-        std::vector<Value> all_args;
-        all_args.reserve(arg_count + 1);
-        all_args.push_back(obj);
-        all_args.insert(all_args.end(), args.begin(), args.end());
-        doCall(method_val, std::move(all_args));
+        // Determine if this is a class method (no self param) by checking
+        // if the function's param_count matches arg_count exactly
+        uint32_t func_index = 0;
+        if (method_val.isFunctionObjId()) {
+          func_index = method_val.asFunctionObjId();
+        } else if (method_val.isClosureId()) {
+          auto *closure = heap_.closure(method_val.asClosureId());
+          if (closure) func_index = closure->function_index;
+        }
+        if (current_chunk && func_index < current_chunk->getFunctionCount()) {
+          const auto *func = current_chunk->getFunction(func_index);
+          if (func && func->param_count == arg_count) {
+            // Class method (no self) - call without passing obj
+            std::vector<Value> all_args = std::move(args);
+            doCall(method_val, std::move(all_args));
+          } else {
+            // Instance method - pass obj as self
+            std::vector<Value> all_args;
+            all_args.reserve(arg_count + 1);
+            all_args.push_back(obj);
+            all_args.insert(all_args.end(), args.begin(), args.end());
+            doCall(method_val, std::move(all_args));
+          }
+        } else {
+          // Fallback: assume instance method
+          std::vector<Value> all_args;
+          all_args.reserve(arg_count + 1);
+          all_args.push_back(obj);
+          all_args.insert(all_args.end(), args.begin(), args.end());
+          doCall(method_val, std::move(all_args));
+        }
       } else {
         pushStack(Value::makeNull());
       }
@@ -3567,9 +3598,9 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     // Pop args first (they're at the top), then receiver (at bottom)
-    std::vector<Value> args(arg_count);
+    std::vector<Value> args2(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = popStack();
+      args2[arg_count - 1 - i] = popStack();
     }
     Value recv = popStack();
 
@@ -3577,7 +3608,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     std::vector<Value> all_args;
     all_args.reserve(arg_count + 1);
     all_args.push_back(recv);
-    all_args.insert(all_args.end(), args.begin(), args.end());
+    all_args.insert(all_args.end(), args2.begin(), args2.end());
 
     // Call the host function
     uint32_t func_idx = methodIt->second;

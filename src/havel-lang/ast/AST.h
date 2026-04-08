@@ -99,6 +99,7 @@ enum class NodeType {
   ConfigSection,    // any_identifier { ... }
   IndexExpression,  // arr[0] or obj["key"]
   AtExpression,     // @field for self-assignment in methods
+  AtAtExpression,   // @@field for class field access in methods
   TupleExpression,  // (1, "hello", true)
   RecordExpression, // {name: "John", age: 30}
   MapExpression,    // #{key1: val1, key2: val2}
@@ -656,13 +657,15 @@ struct ClassFieldDef : public ASTNode {
   std::string name;
   std::optional<std::unique_ptr<TypeDefinition>> type;
   std::optional<std::unique_ptr<Expression>> defaultValue;
+  bool isClassField = false; // true if @@field (class/static field)
 
   ClassFieldDef(
       const std::string &fieldName,
       std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
-      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt)
+      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt,
+      bool isClass = false)
       : name(fieldName), type(std::move(fieldType)),
-        defaultValue(std::move(defaultVal)) {
+        defaultValue(std::move(defaultVal)), isClassField(isClass) {
     kind = NodeType::ClassFieldDef;
   }
 
@@ -687,13 +690,14 @@ struct ClassMethodDef : public ASTNode {
   std::unique_ptr<BlockStatement> body;
   bool isConstructor;
   bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+  bool isClassMethod = false; // true if @@fn (class/static method)
 
   ClassMethodDef(const std::string &methodName,
                  std::vector<std::unique_ptr<FunctionParameter>> params,
                  std::unique_ptr<BlockStatement> b, bool isCtor = false,
-                 bool isOp = false)
+                 bool isOp = false, bool isClass = false)
       : name(methodName), parameters(std::move(params)), body(std::move(b)),
-        isConstructor(isCtor), isOperator(isOp) {
+        isConstructor(isCtor), isOperator(isOp), isClassMethod(isClass) {
     kind = NodeType::ClassMethodDef;
   }
 
@@ -2430,6 +2434,21 @@ struct AtExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// AtAt Expression (@@field for class/static field access in methods)
+struct AtAtExpression : public Expression {
+  std::unique_ptr<Expression> field; // Field name (Identifier)
+
+  AtAtExpression(std::unique_ptr<Expression> f) : field(std::move(f)) {
+    kind = NodeType::AtAtExpression;
+  }
+
+  std::string toString() const override {
+    return "AtAtExpression{@@" + (field ? field->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Ternary Expression (condition ? trueValue : falseValue)
 struct TernaryExpression : public Expression {
   std::unique_ptr<Expression> condition;
@@ -2774,6 +2793,7 @@ public:
   virtual void visitConfigSection(const ConfigSection &node) = 0;
   virtual void visitIndexExpression(const IndexExpression &node) = 0;
   virtual void visitAtExpression(const AtExpression &node) = 0;
+  virtual void visitAtAtExpression(const AtAtExpression &node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
   virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;

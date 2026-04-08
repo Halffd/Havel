@@ -627,24 +627,33 @@ void ByteCompiler::compileClassMethod(
     COMPILER_THROW("Missing function index for class method: " + method.name);
   }
 
-  // param_count includes self (slot 0) + user params (slots 1..N)
+  bool is_class_method = method.isClassMethod;
+  // For class methods (@@fn), no self param. For instance methods (fn), self at slot 0.
   const uint32_t param_count =
-      static_cast<uint32_t>(method.parameters.size() + 1);
-  
-  // Compute max slot. The VM places self at slot 0, user args at slots 1..N.
-  // The resolver assigns user params to slots 0..N-1, so we offset by 1.
+      is_class_method ? static_cast<uint32_t>(method.parameters.size())
+                      : static_cast<uint32_t>(method.parameters.size() + 1);
+
+  // Compute max slot
   uint32_t max_slot = param_count;
-  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-    uint32_t adjusted_slot = slot + 1;
-    if (adjusted_slot >= max_slot) {
-      max_slot = adjusted_slot + 1;
+  if (!is_class_method) {
+    for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+      uint32_t adjusted_slot = slot + 1;
+      if (adjusted_slot >= max_slot) {
+        max_slot = adjusted_slot + 1;
+      }
+    }
+  } else {
+    for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+      if (slot >= max_slot) {
+        max_slot = slot + 1;
+      }
     }
   }
 
   // Collect parameter names
   std::vector<std::string> param_names;
-  param_names.reserve(method.parameters.size() + 1);
-  param_names.push_back("self");
+  param_names.reserve(method.parameters.size() + (is_class_method ? 0 : 1));
+  if (!is_class_method) param_names.push_back("self");
   for (const auto &param : method.parameters) {
     if (param && param->pattern) {
       param_names.push_back(extractParamName(*param));
@@ -660,38 +669,48 @@ void ByteCompiler::compileClassMethod(
   enterFunction(std::move(bf), index_it->second);
   next_local_index = max_slot;
 
-  // Store self (slot 0) into global "this" for @field access.
-  {
-    uint32_t this_id = addStringConstant("this");
-    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
+  if (!is_class_method) {
+    // Instance method: Store self (slot 0) into global "this" for @field access.
+    {
+      uint32_t this_id = addStringConstant("this");
+      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
+    }
   }
 
-  // Mirror class fields into globals for bare field references.
-  for (const auto &field : fields) {
-    uint32_t field_id = addStringConstant(field.name);
-    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(field_id)));
-    emit(OpCode::OBJECT_GET);
-    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(field_id));
+  // Mirror instance fields into globals for bare field references.
+  // For class methods, skip this since there's no self object.
+  if (!is_class_method) {
+    for (const auto &field : fields) {
+      uint32_t field_id = addStringConstant(field.name);
+      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(field_id)));
+      emit(OpCode::OBJECT_GET);
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(field_id));
+    }
   }
 
-  // Bind user parameters to slots 1..N (slot 0 is self).
+  // Bind user parameters to slots.
+  // For instance methods: slots 1..N (slot 0 is self)
+  // For class methods: slots 0..N-1 (no self)
   for (size_t i = 0; i < method.parameters.size(); ++i) {
     const auto &param = method.parameters[i];
     if (!param || !param->pattern) {
       COMPILER_THROW("Class method parameter missing pattern");
     }
-    const uint32_t method_param_slot = static_cast<uint32_t>(i + 1);
+    const uint32_t method_param_slot =
+        is_class_method ? static_cast<uint32_t>(i) : static_cast<uint32_t>(i + 1);
     compileParameterPattern(*param->pattern, method_param_slot);
     if (param->isVariadic) {
       current_function->variadic_param_index = method_param_slot;
     }
   }
 
-  // Remap declaration slots: resolver assigned slots starting at 0, but at
+  // Remap declaration slots for local variable access.
+  // For instance methods: resolver assigned slots starting at 0, but at
   // runtime slot 0 holds self. We offset all local variable accesses by 1.
-  local_slot_offset_ = 1;
+  // For class methods: no offset needed (no self).
+  local_slot_offset_ = is_class_method ? 0 : 1;
 
   const std::string prev_class_name = current_class_name_;
   const std::string prev_parent_name = current_parent_class_name_;
@@ -1387,19 +1406,33 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
         static_cast<const ast::ClassDeclaration &>(statement);
-    // Runtime registration: class.define("Name", ["field1", ...], parent?)
+    // Runtime registration: class.define("Name", ["field1", ...], parent, ["@@class_field1", ...])
     { uint32_t _sid = addStringConstant(classDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::ARRAY_NEW);
+    // Instance fields (@field)
     for (const auto &field : classDecl.definition.fields) {
-      { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::ARRAY_PUSH);
+      if (!field.isClassField) {
+        { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::ARRAY_PUSH);
+      }
     }
-    uint32_t define_arity = 2;
+    // Parent class (null if no parent)
     if (!classDecl.parentName.empty()) {
       uint32_t parent_sid = addStringConstant(classDecl.parentName);
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(parent_sid));
-      define_arity = 3;
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     }
+    // Class fields (@@field) as last argument
+    emit(OpCode::ARRAY_NEW);
+    for (const auto &field : classDecl.definition.fields) {
+      if (field.isClassField) {
+        { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::ARRAY_PUSH);
+      }
+    }
+    // Arity: name(1) + instance_fields(1) + parent(1) + class_fields(1) = 4
+    uint32_t define_arity = 4;
     {
       uint32_t strId = addStringConstant("class.define");
       emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -1410,6 +1443,20 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     {
       uint32_t strId = addStringConstant(classDecl.name);
       emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
+
+    // Initialize class fields (@@field = value) on the class prototype
+    for (const auto &field : classDecl.definition.fields) {
+      if (field.isClassField && field.defaultValue.has_value()) {
+        // Load class object
+        { uint32_t _sid = addStringConstant(classDecl.name); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
+        // Compile default value
+        compileExpression(*field.defaultValue.value());
+        // Store to class field: OBJECT_SET expects [obj, value, key]
+        { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);  // discard the returned object
+      }
     }
 
     // Register compiled methods on the class type.
@@ -2179,6 +2226,24 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::AtAtExpression: {
+    // @@field - compile as loading class object and getting the field
+    const auto &atExpr = static_cast<const ast::AtAtExpression &>(expression);
+    if (!atExpr.field) {
+      COMPILER_THROW("@@ expression missing field");
+    }
+    auto *fieldId = dynamic_cast<const ast::Identifier *>(atExpr.field.get());
+    if (!fieldId) {
+      COMPILER_THROW("@@ expression field must be an identifier");
+    }
+    // Load class object (stored as global with class name)
+    { uint32_t strId = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId)); };
+    // Get the field from class object
+    { uint32_t _sid = addStringConstant(fieldId->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    break;
+  }
+
   case ast::NodeType::BinaryExpression: {
     const auto &binary = static_cast<const ast::BinaryExpression &>(expression);
     if (!binary.left || !binary.right) {
@@ -2410,6 +2475,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         assignment.target
             ? dynamic_cast<const ast::AtExpression *>(assignment.target.get())
             : nullptr;
+    const auto *target_atat =
+        assignment.target
+            ? dynamic_cast<const ast::AtAtExpression *>(assignment.target.get())
+            : nullptr;
 
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       if (binding.is_const) {
@@ -2639,6 +2708,47 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::OBJECT_SET);
         break;
       }
+      if (target_atat) {
+        // @@field assignment - store to class.field
+        // Get field name from AtAtExpression
+        std::string field_name;
+        if (target_atat->field && target_atat->field->kind == ast::NodeType::Identifier) {
+          const auto *field_id = static_cast<const ast::Identifier *>(target_atat->field.get());
+          field_name = field_id->symbol;
+        } else {
+          COMPILER_THROW("@@field assignment requires identifier");
+        }
+        // Compile value first
+        if (rhs_is_missing) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        } else {
+          compileExpression(*rhs_expr);
+        }
+        // Store to class.field: OBJECT_SET expects [obj, value, key]
+        // Load class object (stored as global with class name)
+        { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
+        // Now stack has [class_obj], need [class_obj, value, key]
+        // Use temp slots to arrange the stack correctly
+        uint32_t temp_val = next_local_index;
+        reserveLocalSlot(temp_val);
+        emit(OpCode::STORE_VAR, temp_val);  // pop value
+        // Stack is now [class_obj]
+        // Save class obj to temp
+        uint32_t temp_obj = next_local_index;
+        reserveLocalSlot(temp_obj);
+        emit(OpCode::STORE_VAR, temp_obj);  // pop class_obj
+        // Stack is empty
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        uint32_t temp_key = next_local_index;
+        reserveLocalSlot(temp_key);
+        emit(OpCode::STORE_VAR, temp_key);  // pop key
+        // Stack is empty, rebuild: [class_obj, value, key]
+        emit(OpCode::LOAD_VAR, temp_obj);   // [class_obj]
+        emit(OpCode::LOAD_VAR, temp_val);   // [class_obj, value]
+        emit(OpCode::LOAD_VAR, temp_key);   // [class_obj, value, key]
+        emit(OpCode::OBJECT_SET);
+        break;
+      }
       COMPILER_THROW("Unsupported assignment target");
     }
 
@@ -2751,6 +2861,42 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::LOAD_VAR, temp_result);
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::LOAD_VAR, temp_result);
+        return;
+      }
+      if (target_atat) {
+        // @@field compound assignment
+        std::string field_name;
+        if (target_atat->field && target_atat->field->kind == ast::NodeType::Identifier) {
+          const auto *field_id = static_cast<const ast::Identifier *>(target_atat->field.get());
+          field_name = field_id->symbol;
+        } else {
+          COMPILER_THROW("@@field compound assignment requires identifier");
+        }
+        uint32_t temp_result = next_local_index;
+        reserveLocalSlot(temp_result);
+        // Load class.field
+        { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_GET);
+        if (rhs_is_missing) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        } else {
+          compileExpression(*rhs_expr);
+        }
+        emit(math_op);
+        emit(OpCode::DUP);
+        emit(OpCode::STORE_VAR, temp_result);
+        // Store back to class.field
+        // Stack: [result]
+        uint32_t temp_obj = next_local_index;
+        reserveLocalSlot(temp_obj);
+        emit(OpCode::STORE_VAR, temp_obj);
+        // Rebuild: [class_obj, result, field_key]
+        { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::LOAD_VAR, temp_obj);
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
@@ -2868,6 +3014,75 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       COMPILER_THROW("Update expression missing argument");
     }
 
+    bool isIncrement =
+        (update_expr.operator_ == ast::UpdateExpression::Operator::Increment);
+
+    // Check for @field++ or @@field++
+    const auto *target_at =
+        dynamic_cast<const ast::AtExpression *>(update_expr.argument.get());
+    const auto *target_atat =
+        dynamic_cast<const ast::AtAtExpression *>(update_expr.argument.get());
+
+    if (target_at) {
+      // @field++ or @field--
+      std::string field_name;
+      if (target_at->field && target_at->field->kind == ast::NodeType::Identifier) {
+        const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
+        field_name = field_id->symbol;
+      } else {
+        COMPILER_THROW("@field update requires identifier");
+      }
+      // Load self.field
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(addStringConstant(field_name))));
+      emit(OpCode::OBJECT_GET);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
+      emit(isIncrement ? OpCode::ADD : OpCode::SUB);
+      emit(OpCode::DUP);
+      // Store back to self.field: OBJECT_SET expects [obj, value, key]
+      // Stack currently has: [result]
+      uint32_t temp_val = next_local_index;
+      reserveLocalSlot(temp_val);
+      emit(OpCode::STORE_VAR, temp_val);  // pop result, stack: []
+      // Build [self, result, field_key]
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));   // [self]
+      emit(OpCode::LOAD_VAR, temp_val);   // [self, result]
+      { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };  // [self, result, key]
+      emit(OpCode::OBJECT_SET);
+      emit(OpCode::LOAD_VAR, temp_val);
+      break;
+    }
+
+    if (target_atat) {
+      // @@field++ or @@field--
+      std::string field_name;
+      if (target_atat->field && target_atat->field->kind == ast::NodeType::Identifier) {
+        const auto *field_id = static_cast<const ast::Identifier *>(target_atat->field.get());
+        field_name = field_id->symbol;
+      } else {
+        COMPILER_THROW("@@field update requires identifier");
+      }
+      // Load class.field
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant(current_class_name_)));
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(addStringConstant(field_name))));
+      emit(OpCode::OBJECT_GET);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
+      emit(isIncrement ? OpCode::ADD : OpCode::SUB);
+      emit(OpCode::DUP);
+      // Store back to class.field: OBJECT_SET expects [obj, value, key]
+      // Stack currently has: [result]
+      uint32_t temp_val = next_local_index;
+      reserveLocalSlot(temp_val);
+      emit(OpCode::STORE_VAR, temp_val);  // pop result, stack: []
+      // Build [class_obj, result, field_key]
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant(current_class_name_)));   // [class_obj]
+      emit(OpCode::LOAD_VAR, temp_val);   // [class_obj, result]
+      { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };  // [class_obj, result, key]
+      emit(OpCode::OBJECT_SET);
+      emit(OpCode::LOAD_VAR, temp_val);
+      break;
+    }
+
     // The argument must be an identifier
     const auto *target_id =
         dynamic_cast<const ast::Identifier *>(update_expr.argument.get());
@@ -2882,9 +3097,6 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           "Missing lexical binding for update expression: " +
           target_id->symbol);
     }
-
-    bool isIncrement =
-        (update_expr.operator_ == ast::UpdateExpression::Operator::Increment);
 
     if (update_expr.isPrefix) {
       // Prefix: ++x or --x

@@ -148,6 +148,7 @@ enum class TokenType {
   Spread,       // ... for spread operator
   Hash,         // # for set literals
   At,           // @ for field access (this.field)
+  AtAt,         // @@ for class field/method marker
   SuperArrow,   // @-> for super method calls
   Underscore,   // _ for default match case
   CharLiteral,  // 'a' single character literal

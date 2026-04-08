@@ -66,6 +66,8 @@ protected:
       VISIT_CASE(BlockStatement);
       VISIT_CASE(TryExpression);
       VISIT_CASE(ThrowStatement);
+      VISIT_CASE(AtExpression);
+      VISIT_CASE(AtAtExpression);
       // VISIT_CASE(WhenBlock);  // Not in AST.h NodeType enum
       VISIT_CASE(ModeBlock);
       VISIT_CASE(HotkeyBinding);
@@ -119,6 +121,8 @@ protected:
       VISIT_CASE(BlockStatement);
       VISIT_CASE(TryExpression);
       VISIT_CASE(ThrowStatement);
+      VISIT_CASE(AtExpression);
+      VISIT_CASE(AtAtExpression);
       // VISIT_CASE(WhenBlock);  // Not in AST.h NodeType enum
       VISIT_CASE(ModeBlock);
       VISIT_CASE(HotkeyBinding);
@@ -190,6 +194,8 @@ protected:
   DECLARE_VISIT(BlockStatement)
   DECLARE_VISIT(TryExpression)
   DECLARE_VISIT(ThrowStatement)
+  DECLARE_VISIT(AtExpression)
+  DECLARE_VISIT(AtAtExpression)
   DECLARE_VISIT(WhenBlock)
   DECLARE_VISIT(ModeBlock)
   DECLARE_VISIT(HotkeyBinding)

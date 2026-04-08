@@ -3727,11 +3727,24 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
       failAt(at(), "Expected ')' or 'in' after iterator variable(s)");
     }
   } else {
-    // Single iterator: for i in range
+    // Single or multiple iterators: for i, j in range (without parentheses)
     if (at().type != havel::TokenType::Identifier) {
       failAt(at(), "Expected iterator variable after 'for'");
     }
     iterators.push_back(makeIdentifier(advance()));
+
+    // Parse additional iterators separated by commas
+    while (at().type == havel::TokenType::Comma) {
+      advance(); // consume ","
+      // Skip newlines after comma
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected iterator variable after comma");
+      }
+      iterators.push_back(makeIdentifier(advance()));
+    }
   }
 
   if (at().type != havel::TokenType::In) {

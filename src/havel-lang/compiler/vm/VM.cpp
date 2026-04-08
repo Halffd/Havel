@@ -1228,6 +1228,77 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // ========================================================================
+  // Duck typing / Protocol functions
+  // ========================================================================
+
+  // iter(x) - Get an iterator for any iterable type
+  registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    const auto &value = args[0];
+    // Check if value is iterable
+    if (value.isArrayId() || value.isStringId() || value.isStringValId() ||
+        value.isObjectId() || value.isSetId() || value.isRangeId()) {
+      uint32_t iterId = heap_.createIterator(value);
+      return Value::makeIteratorId(iterId);
+    }
+    return Value::makeNull();
+  });
+
+  // next(iter) - Get next value from iterator
+  registerHostFunction("next", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isIteratorId()) return Value::makeNull();
+    return heap_.iteratorNext(args[0].asIteratorId());
+  });
+
+  // callable(x) - Check if value can be called
+  registerHostFunction("callable", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeBool(false);
+    const auto &value = args[0];
+    bool isCallable = value.isFunctionObjId() || value.isClosureId() ||
+                      value.isHostFuncId();
+    return Value::makeBool(isCallable);
+  });
+
+  // hasattr(obj, name) - Check if object has attribute/method
+  registerHostFunction("hasattr", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    std::string name;
+    if (args[1].isStringValId() && current_chunk) {
+      name = current_chunk->getString(args[1].asStringValId());
+    } else if (args[1].isStringId() && heap_.string(args[1].asStringId())) {
+      name = *heap_.string(args[1].asStringId());
+    } else {
+      return Value::makeBool(false);
+    }
+    if (args[0].isObjectId()) {
+      auto *obj = heap_.object(args[0].asObjectId());
+      return Value::makeBool(obj && obj->find(name) != obj->end());
+    }
+    return Value::makeBool(false);
+  });
+
+  // isIterable(x) - Check if value can be iterated
+  registerHostFunction("isIterable", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeBool(false);
+    const auto &value = args[0];
+    bool isIterable = value.isArrayId() || value.isStringId() ||
+                      value.isStringValId() || value.isObjectId() ||
+                      value.isSetId() || value.isRangeId() ||
+                      value.isIteratorId();
+    return Value::makeBool(isIterable);
+  });
+
+  // isIndexable(x) - Check if value supports indexing
+  registerHostFunction("isIndexable", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeBool(false);
+    const auto &value = args[0];
+    bool isIndexable = value.isArrayId() || value.isStringId() ||
+                       value.isStringValId() || value.isObjectId() ||
+                       value.isSetId();
+    return Value::makeBool(isIndexable);
+  });
+
+  // ========================================================================
   // Function introspection
   // ========================================================================
 

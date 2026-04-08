@@ -102,13 +102,13 @@ void registerUtilityModule(VMApi &api) {
     else if (arg.isStringValId() || arg.isStringId()) typeName = "string";
     else if (arg.isArrayId()) typeName = "array";
     else if (arg.isObjectId()) typeName = "object";
+    else if (arg.isSetId()) typeName = "set";
     else if (arg.isRangeId()) typeName = "range";
     else if (arg.isHostFuncId()) typeName = "function";
     else if (arg.isClosureId()) typeName = "closure";
     else if (arg.isFunctionObjId()) typeName = "function";
     else if (arg.isEnumId()) typeName = "enum";
     else if (arg.isIteratorId()) typeName = "iterator";
-
     else typeName = "unknown";
 
     auto strRef = api.vm.getHeap().allocateString(typeName);

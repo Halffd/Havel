@@ -1374,12 +1374,30 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
 // Helper methods for Pratt parser
 std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
+  // Check for empty lambda: () => body
+  if (at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
+    advance(); // consume ')'
+    advance(); // consume '=>'
+    std::vector<std::unique_ptr<ast::FunctionParameter>> params;
+    std::unique_ptr<ast::Statement> body;
+    if (at().type == TokenType::OpenBrace) {
+      body = parseBlockStatement();
+    } else {
+      auto bodyExpr = parsePrattExpression(getRightBindingPower(TokenType::Arrow));
+      if (!bodyExpr) return nullptr;
+      auto block = std::make_unique<ast::BlockStatement>();
+      block->body.push_back(std::make_unique<ast::ExpressionStatement>(std::move(bodyExpr)));
+      body = std::move(block);
+    }
+    return std::make_unique<ast::LambdaExpression>(std::move(params), std::move(body));
+  }
+
   // Check if this is a multi-parameter lambda: (a, b, c) => body
   // Peek ahead: look for comma-separated identifiers followed by ) =>
   size_t savedPos = position;
   std::vector<std::unique_ptr<ast::FunctionParameter>> lambdaParams;
   bool isMultiParamLambda = false;
-  
+
   if (at().type == TokenType::Identifier) {
     // Collect comma-separated identifiers
     while (true) {
@@ -1393,14 +1411,14 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
         break;
       }
     }
-    // Check for ) => 
+    // Check for ) =>
     if (lambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
       advance(); // consume ')'
       advance(); // consume '=>'
       isMultiParamLambda = true;
     }
   }
-  
+
   if (isMultiParamLambda) {
     // Parse lambda body
     std::unique_ptr<ast::Statement> body;
@@ -1415,12 +1433,37 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     }
     return std::make_unique<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
   }
-  
+
   // Not a multi-param lambda, restore position and parse normally
   position = savedPos;
-  
-  auto expr = parsePrattExpression(0);
 
+  // Parse first expression
+  auto expr = parsePrattExpression(0);
+  if (!expr) return nullptr;
+
+  // Check if this is a tuple (comma-separated expressions)
+  if (at().type == TokenType::Comma) {
+    // It's a tuple!
+    std::vector<std::unique_ptr<ast::Expression>> elements;
+    elements.push_back(std::move(expr));
+
+    while (at().type == TokenType::Comma) {
+      advance(); // consume ','
+      // Allow trailing comma
+      if (at().type == TokenType::CloseParen) break;
+      auto next = parsePrattExpression(0);
+      elements.push_back(std::move(next));
+    }
+
+    if (at().type != TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after tuple elements");
+    }
+    advance(); // consume ')'
+
+    return std::make_unique<ast::TupleExpression>(std::move(elements));
+  }
+
+  // Not a tuple, just a grouped expression
   if (at().type != TokenType::CloseParen) {
     failAt(at(), "Expected ')'");
   }
@@ -5733,160 +5776,12 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   }
 
   case havel::TokenType::OpenParen: {
-    // Save position to enable backtracking for lambda detection
-    size_t savePos = position;
-    advance(); // consume '('
-
-    // Check for lambda: () => or (params) =>
-    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-    bool mightBeLambda = false;
-
-    if (at().type == havel::TokenType::CloseParen) {
-      // Empty parens () - might be lambda () =>
-      mightBeLambda = true;
-    } else if (at().type == havel::TokenType::Identifier ||
-               at().type == havel::TokenType::OpenBrace ||
-               at().type == havel::TokenType::OpenBracket) {
-      // Might be (a) => or ({a, b}) => or ([a, b]) => lambda
-      // Try to parse as comma-separated patterns
-      // Save position before attempting to parse params so we can restore if it
-      // fails
-      size_t paramSavePos = position;
-      bool validParamList = true;
-
-      while (at().type == havel::TokenType::Identifier ||
-             at().type == havel::TokenType::OpenBrace ||
-             at().type == havel::TokenType::OpenBracket) {
-        // Parse parameter pattern
-        std::unique_ptr<havel::ast::Expression> pattern;
-        if (at().type == havel::TokenType::Identifier) {
-          pattern = makeIdentifier(advance());
-        } else if (at().type == havel::TokenType::OpenBrace) {
-          pattern = parseObjectPattern();
-        } else if (at().type == havel::TokenType::OpenBracket) {
-          pattern = parseArrayPattern();
-        }
-
-        params.push_back(std::make_unique<havel::ast::FunctionParameter>(
-            std::move(pattern)));
-
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-          if (at().type != havel::TokenType::Identifier &&
-              at().type != havel::TokenType::OpenBrace &&
-              at().type != havel::TokenType::OpenBracket) {
-            validParamList = false;
-            break;
-          }
-        } else if (at().type == havel::TokenType::CloseParen) {
-          break;
-        } else {
-          // Saw pattern start but not followed by , or ) - not a valid param
-          // list
-          validParamList = false;
-          break;
-        }
-      }
-
-      if (validParamList && at().type == havel::TokenType::CloseParen) {
-        mightBeLambda = true;
-      } else {
-        // Not a valid parameter list, restore position to re-parse as
-        // expression
-        position = paramSavePos;
-        params.clear();
-      }
-    }
-
-    if (mightBeLambda) {
-      // We have () or (params), consume ) and check for =>
-      advance(); // consume ')'
-      if (at().type == havel::TokenType::Arrow) {
-        advance(); // consume '=>'
-        return parseLambdaFromParams(std::move(params));
-      }
-      // Has ) but no =>, so it's a grouped expression
-      // Restore position and re-parse as grouped expression
-      position = savePos;
-    }
-
-    // Parse as grouped expression
-    // If mightBeLambda was true, position was restored, so we need to consume
-    // '(' If mightBeLambda was false, '(' was already consumed at the start
-    if (mightBeLambda) {
-      advance(); // consume '(' since position was restored
-    }
-    // else: '(' already consumed, don't consume again
-
-    // Check if this is a tuple (comma-separated expressions)
-    // First, peek ahead to see if there's a comma after the first expression
-    size_t checkPos = position;
-    bool mightBeTuple = false;
-
-    // Skip the first expression
-    while (at(checkPos).type == havel::TokenType::NewLine)
-      checkPos++;
-
-    // Try to parse expressions and look for commas
-    int exprCount = 0;
-    size_t tempPos = checkPos;
-    while (tempPos < tokens.size()) {
-      auto &tok = tokens[tempPos];
-      if (tok.type == havel::TokenType::Comma) {
-        mightBeTuple = true;
-        break;
-      } else if (tok.type == havel::TokenType::CloseParen) {
-        break;
-      } else if (tok.type != havel::TokenType::NewLine) {
-        exprCount++;
-      }
-      tempPos++;
-    }
-
-    if (mightBeTuple && exprCount >= 1) {
-      // Parse as tuple
-      std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-
-      while (notEOF() && at().type != havel::TokenType::CloseParen) {
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-        if (at().type == havel::TokenType::CloseParen) {
-          break;
-        }
-
-        elements.push_back(parseExpression());
-
-        while (at().type == havel::TokenType::NewLine) {
-          advance();
-        }
-
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-        } else if (at().type != havel::TokenType::CloseParen) {
-          failAt(at(), "Expected ',' or ')' in tuple");
-        }
-      }
-
-      if (at().type != havel::TokenType::CloseParen) {
-        failAt(at(), "Expected ')' after tuple elements");
-      }
-      advance(); // consume ')'
-
-      return std::make_unique<havel::ast::TupleExpression>(std::move(elements));
-    }
-
-    // Parse as grouped expression
-    auto expr = parseExpression();
-    if (at().type != havel::TokenType::CloseParen) {
-      auto errTok = at();
-      advance();
-      failAt(errTok, "Expected ')'");
-    }
-    advance(); // consume ')'
-
-    // Handle postfix operations for grouped expressions as well
-    return parsePostfixExpression(std::move(expr));
+    // Delegate to parseParenthesizedExpression which handles:
+    // - Multi-param lambdas: (a, b) => body
+    // - Empty lambdas: () => body
+    // - Tuples: (1, 2, 3)
+    // - Grouped expressions: (1 + 2)
+    return parseParenthesizedExpression();
   }
 
   case havel::TokenType::OpenBracket: {

@@ -107,7 +107,7 @@ public:
     std::vector<Value> data;
     bool frozen = false;
 
-    void push_back(const Value &v) { data.push_back(v); }
+    void push_back(const Value &v) { if (!frozen) data.push_back(v); }
     void pop_back() { if (!frozen) data.pop_back(); }
     Value &back() { return data.back(); }
     const Value &back() const { return data.back(); }

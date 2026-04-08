@@ -3527,7 +3527,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::ARRAY_PUSH: {
     Value value = popStack();
     Value container = popStack();
-    
+
     if (!container.isArrayId()) {
       COMPILER_THROW("ARRAY_PUSH expects array container");
     }
@@ -3535,6 +3535,9 @@ void VM::executeInstruction(const Instruction &instruction) {
     auto *array = heap_.array(id);
     if (!array) {
       COMPILER_THROW("ARRAY_PUSH unknown array id");
+    }
+    if (array->frozen) {
+      COMPILER_THROW("Cannot modify frozen array (tuple)");
     }
     array->push_back(value);
     pushStack(container);
@@ -3749,6 +3752,9 @@ void VM::executeInstruction(const Instruction &instruction) {
       auto *array = heap_.array(container.asArrayId());
       if (!array) {
         COMPILER_THROW("ARRAY_SET unknown array id");
+      }
+      if (array->frozen) {
+        COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
       // Handle negative indices: -1 = last element, etc.
       int64_t idx = *index;
@@ -4118,7 +4124,11 @@ void VM::executeInstruction(const Instruction &instruction) {
       COMPILER_THROW("ARRAY_POP expects array");
     }
     auto *arr = heap_.array(array.asArrayId());
-    if (!arr || arr->empty()) {
+    if (!arr) {
+      pushStack(Value::makeNull());
+    } else if (arr->frozen) {
+      COMPILER_THROW("Cannot modify frozen array (tuple)");
+    } else if (arr->empty()) {
       pushStack(Value::makeNull());
     } else {
       pushStack(arr->back());

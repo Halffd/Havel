@@ -893,6 +893,13 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       return parseIfExpression();
 
     case TokenType::Not: {
+      // Check if this is !{} for unsorted object
+      if (at().type == havel::TokenType::OpenBrace) {
+        // Don't consume '{' - parseObjectLiteral expects to consume it
+        auto obj = parseObjectLiteral(true); // true = unsorted
+        if (!obj) return nullptr;
+        return parsePostfixExpression(std::move(obj));
+      }
       auto operand = parsePrattExpression(bp(BindingPower::Prefix));
       return std::make_unique<ast::UnaryExpression>(
           ast::UnaryExpression::UnaryOperator::Not, std::move(operand));

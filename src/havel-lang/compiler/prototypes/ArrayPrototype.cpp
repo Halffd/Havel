@@ -29,7 +29,10 @@ void registerArrayPrototype(VM& vm) {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr) { arr->push_back(args[1]); return Value::makeInt(static_cast<int64_t>(arr->size())); }
+      if (arr && !arr->frozen) {
+        arr->push_back(args[1]);
+        return Value::makeInt(static_cast<int64_t>(arr->size()));
+      }
     }
     return Value::makeNull();
   });
@@ -38,7 +41,9 @@ void registerArrayPrototype(VM& vm) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr && !arr->empty()) { auto val = arr->back(); arr->pop_back(); return val; }
+      if (arr && !arr->frozen && !arr->empty()) {
+        auto val = arr->back(); arr->pop_back(); return val;
+      }
     }
     return Value::makeNull();
   });
@@ -47,7 +52,7 @@ void registerArrayPrototype(VM& vm) {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr) { arr->insert(arr->begin(), args[1]); return Value::makeInt(static_cast<int64_t>(arr->size())); }
+      if (arr && !arr->frozen) { arr->insert(arr->begin(), args[1]); return Value::makeInt(static_cast<int64_t>(arr->size())); }
     }
     return Value::makeNull();
   });
@@ -56,7 +61,7 @@ void registerArrayPrototype(VM& vm) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr && !arr->empty()) { auto val = arr->front(); arr->erase(arr->begin()); return val; }
+      if (arr && !arr->frozen && !arr->empty()) { auto val = arr->front(); arr->erase(arr->begin()); return val; }
     }
     return Value::makeNull();
   });
@@ -65,7 +70,7 @@ void registerArrayPrototype(VM& vm) {
     if (args.size() < 3) return Value::makeNull();
     if (args[0].isArrayId() && args[1].isInt()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr) {
+      if (arr && !arr->frozen) {
         int64_t idx = args[1].asInt();
         if (idx < 0) idx = std::max(static_cast<int64_t>(0), static_cast<int64_t>(arr->size()) + idx + 1);
         if (idx >= 0 && static_cast<size_t>(idx) <= arr->size()) {
@@ -310,7 +315,7 @@ void registerArrayPrototype(VM& vm) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr) {
+      if (arr && !arr->frozen) {
         std::reverse(arr->begin(), arr->end());
         return args[0];
       }

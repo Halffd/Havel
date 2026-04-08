@@ -776,11 +776,112 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       position--;
       return parseArrayLiteral();
 
-    case TokenType::OpenBrace:
+    case TokenType::OpenBrace: {
       // parsePrattExpression already consumed '{', but parseObjectLiteral
       // expects to consume it. Back up one position.
       position--;
+      // Now check if it's a set or object literal
+      // Look ahead to determine which
+      size_t lookahead = 1; // Skip the '{' token
+      while (at(lookahead).type == havel::TokenType::NewLine) {
+        lookahead++;
+      }
+      auto nextTok = at(lookahead);
+      
+      // Empty braces {} = empty object literal
+      if (nextTok.type == havel::TokenType::CloseBrace) {
+        return parseObjectLiteral();
+      }
+      
+      // Check if it's an object literal (identifier/string followed by ':')
+      bool isObject = false;
+      if (nextTok.type == havel::TokenType::Identifier ||
+          nextTok.type == havel::TokenType::String ||
+          nextTok.type == havel::TokenType::MultilineString ||
+          nextTok.type == havel::TokenType::Config ||
+          nextTok.type == havel::TokenType::Devices ||
+          nextTok.type == havel::TokenType::Modes ||
+          nextTok.type == havel::TokenType::Mode) {
+        size_t colonLookahead = lookahead + 1;
+        while (at(colonLookahead).type == havel::TokenType::NewLine) {
+          colonLookahead++;
+        }
+        if (at(colonLookahead).type == havel::TokenType::Colon) {
+          isObject = true;
+        }
+      }
+      
+      if (isObject) {
+        return parseObjectLiteral();
+      }
+      
+      // Check if it looks like a set literal
+      bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
+                    nextTok.type == havel::TokenType::String ||
+                    nextTok.type == havel::TokenType::MultilineString ||
+                    nextTok.type == havel::TokenType::Number ||
+                    nextTok.type == havel::TokenType::OpenBracket ||
+                    nextTok.type == havel::TokenType::OpenParen ||
+                    nextTok.type == havel::TokenType::OpenBrace ||
+                    nextTok.type == havel::TokenType::Minus ||
+                    nextTok.type == havel::TokenType::Not ||
+                    nextTok.type == havel::TokenType::Plus ||
+                    nextTok.type == havel::TokenType::Length ||
+                    nextTok.type == havel::TokenType::True ||
+                    nextTok.type == havel::TokenType::False ||
+                    nextTok.type == havel::TokenType::Null);
+      
+      if (couldBeSet) {
+        // Look ahead for comma
+        size_t setLookahead = lookahead + 1;
+        while (setLookahead < tokens.size() && 
+               at(setLookahead).type != havel::TokenType::Comma &&
+               at(setLookahead).type != havel::TokenType::Semicolon &&
+               at(setLookahead).type != havel::TokenType::CloseBrace &&
+               at(setLookahead).type != havel::TokenType::NewLine) {
+          setLookahead++;
+        }
+        
+        if (at(setLookahead).type == havel::TokenType::Comma) {
+          // Parse as set literal
+          advance(); // consume '{'
+          
+          std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+          
+          while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+            while (at().type == havel::TokenType::NewLine) {
+              advance();
+            }
+            if (at().type == havel::TokenType::CloseBrace) {
+              break;
+            }
+            
+            auto element = parseExpression();
+            elements.push_back(std::move(element));
+            
+            while (at().type == havel::TokenType::NewLine) {
+              advance();
+            }
+            
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+            } else if (at().type != havel::TokenType::CloseBrace) {
+              failAt(at(), "Expected ',' or '}' in set literal");
+            }
+          }
+          
+          if (at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected '}' after set literal");
+          }
+          advance(); // consume '}'
+          
+          return std::make_unique<havel::ast::SetExpression>(std::move(elements));
+        }
+      }
+      
+      // Default to object literal
       return parseObjectLiteral();
+    }
 
     case TokenType::Fn:
       return parseLambdaExpression();
@@ -5550,46 +5651,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     return std::make_unique<havel::ast::HotkeyLiteral>(tk.value);
   }
 
-  case havel::TokenType::Hash: {
-    advance(); // consume '#'
-
-    if (at().type != havel::TokenType::OpenBrace) {
-      failAt(at(), "Expected '{' after '#' for set literal");
-    }
-    advance(); // consume '{'
-
-    std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-
-    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-      if (at().type == havel::TokenType::CloseBrace) {
-        break;
-      }
-
-      auto element = parseExpression();
-      elements.push_back(std::move(element));
-
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-
-      if (at().type == havel::TokenType::Comma) {
-        advance();
-      } else if (at().type != havel::TokenType::CloseBrace) {
-        failAt(at(), "Expected ',' or '}' in set literal");
-      }
-    }
-
-    if (at().type != havel::TokenType::CloseBrace) {
-      failAt(at(), "Expected '}' after set literal");
-    }
-    advance(); // consume '}'
-
-    return std::make_unique<havel::ast::SetExpression>(std::move(elements));
-  }
-
   case havel::TokenType::Fn: {
     advance(); // consume 'fn'
 
@@ -5835,7 +5896,10 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   }
 
   case havel::TokenType::OpenBrace: {
-    // Could be object literal {key: value} or block expression {stmt; expr}
+    // Could be:
+    // 1. Object literal {key: value}
+    // 2. Set literal {1, 2, 3} (Python-style)
+    // 3. Block expression {stmt; expr}
     // Look ahead to determine which, skipping newlines
     // Note: We haven't consumed '{' yet, so lookahead starts at next token
     size_t savePos = position;
@@ -5853,22 +5917,102 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     }
 
     // Object keys can be identifiers, strings, or keywords (like 'config')
-    bool isObject = (nextTok.type == havel::TokenType::Identifier ||
-                     nextTok.type == havel::TokenType::String ||
-                     nextTok.type == havel::TokenType::MultilineString ||
-                     nextTok.type == havel::TokenType::Config ||
-                     nextTok.type == havel::TokenType::Devices ||
-                     nextTok.type == havel::TokenType::Modes ||
-                     nextTok.type == havel::TokenType::Mode) &&
-                    at(lookahead + 1).type == havel::TokenType::Colon;
-
+    // followed by ':'
+    bool isObject = false;
+    if (nextTok.type == havel::TokenType::Identifier ||
+        nextTok.type == havel::TokenType::String ||
+        nextTok.type == havel::TokenType::MultilineString ||
+        nextTok.type == havel::TokenType::Config ||
+        nextTok.type == havel::TokenType::Devices ||
+        nextTok.type == havel::TokenType::Modes ||
+        nextTok.type == havel::TokenType::Mode) {
+      // Look for colon, skipping newlines
+      size_t colonLookahead = lookahead + 1;
+      while (at(colonLookahead).type == havel::TokenType::NewLine) {
+        colonLookahead++;
+      }
+      if (at(colonLookahead).type == havel::TokenType::Colon) {
+        isObject = true;
+      }
+    }
+    
     if (isObject) {
       auto obj = parseObjectLiteral();
       return parsePostfixExpression(std::move(obj));
-    } else {
-      // Block expression: { stmt; stmt; expr }
-      return parseBlockExpression();
     }
+
+    // Not an object literal - could be set or block
+    // Check if this looks like a set literal: {expr, expr, ...}
+    // Sets contain expressions separated by commas
+    bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
+                  nextTok.type == havel::TokenType::String ||
+                  nextTok.type == havel::TokenType::MultilineString ||
+                  nextTok.type == havel::TokenType::Number ||
+                  nextTok.type == havel::TokenType::OpenBracket ||
+                  nextTok.type == havel::TokenType::OpenParen ||
+                  nextTok.type == havel::TokenType::OpenBrace ||
+                  nextTok.type == havel::TokenType::Minus ||
+                  nextTok.type == havel::TokenType::Not ||
+                  nextTok.type == havel::TokenType::Plus ||
+                  nextTok.type == havel::TokenType::Length ||
+                  nextTok.type == havel::TokenType::True ||
+                  nextTok.type == havel::TokenType::False ||
+                  nextTok.type == havel::TokenType::Null);
+    
+    if (couldBeSet) {
+      // Try to parse as set literal
+      // Look ahead to see if there's a comma (indicating set) or semicolon/newline (indicating block)
+      size_t setLookahead = lookahead + 1;
+      // Skip the first expression tokens to find separator
+      // For simplicity, just check if there's a comma before any semicolon or newline
+      while (setLookahead < tokens.size() && 
+             at(setLookahead).type != havel::TokenType::Comma &&
+             at(setLookahead).type != havel::TokenType::Semicolon &&
+             at(setLookahead).type != havel::TokenType::CloseBrace &&
+             at(setLookahead).type != havel::TokenType::NewLine) {
+        setLookahead++;
+      }
+      
+      // If we found a comma, it's likely a set
+      if (at(setLookahead).type == havel::TokenType::Comma) {
+        // Parse as set literal
+        advance(); // consume '{'
+        
+        std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+        
+        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+          while (at().type == havel::TokenType::NewLine) {
+            advance();
+          }
+          if (at().type == havel::TokenType::CloseBrace) {
+            break;
+          }
+          
+          auto element = parseExpression();
+          elements.push_back(std::move(element));
+          
+          while (at().type == havel::TokenType::NewLine) {
+            advance();
+          }
+          
+          if (at().type == havel::TokenType::Comma) {
+            advance();
+          } else if (at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected ',' or '}' in set literal");
+          }
+        }
+        
+        if (at().type != havel::TokenType::CloseBrace) {
+          failAt(at(), "Expected '}' after set literal");
+        }
+        advance(); // consume '}'
+        
+        return std::make_unique<havel::ast::SetExpression>(std::move(elements));
+      }
+    }
+    
+    // Block expression: { stmt; stmt; expr }
+    return parseBlockExpression();
   }
 
   case havel::TokenType::If: {

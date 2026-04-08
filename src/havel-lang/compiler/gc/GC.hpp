@@ -178,6 +178,7 @@ public:
   ObjectEntry *object(uint32_t id);
   const ObjectEntry *object(uint32_t id) const;
   std::unordered_map<std::string, Value> *set(uint32_t id);
+  const std::unordered_map<std::string, Value> *set(uint32_t id) const;
   Range *range(uint32_t id);
   const Range *range(uint32_t id) const;
   Iterator *iterator(uint32_t id);

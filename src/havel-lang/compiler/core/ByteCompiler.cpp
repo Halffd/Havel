@@ -2002,9 +2002,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         COMPILER_THROW("Set literal contains null element");
       }
       emit(OpCode::DUP);
-      compileExpression(*element);
       emit(OpCode::LOAD_CONST, Value::makeBool(true));
-      emit(OpCode::ARRAY_SET);
+      compileExpression(*element);
+      emit(OpCode::SET_SET);
     }
     break;
   }

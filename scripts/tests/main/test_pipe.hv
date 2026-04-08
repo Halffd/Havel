@@ -1,3 +1,3 @@
-s := " hello "
-result := s | trim
+s = " hello "
+result = s | upper | trim
 print(result)

@@ -90,6 +90,9 @@ enum class OpCode : uint8_t {
   ARRAY_PUSH,
   ARRAY_LEN,
 
+  // Set operations
+  SET_SET, // Set[key] = value (stack: value, key, set)
+
   // Range operations
   RANGE_NEW,      // Create range: start..end or start..step..end
   RANGE_STEP_NEW, // Create range with step

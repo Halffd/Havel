@@ -311,6 +311,11 @@ std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) {
   return it == sets_.end() ? nullptr : &it->second;
 }
 
+const std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) const {
+  auto it = sets_.find(id);
+  return it == sets_.end() ? nullptr : &it->second;
+}
+
 uint64_t GCHeap::pinExternalRoot(const Value &value) {
   const uint64_t id = next_external_root_id_++;
   external_roots_[id] = value;

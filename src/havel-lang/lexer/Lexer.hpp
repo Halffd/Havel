@@ -91,6 +91,7 @@ enum class TokenType {
   CloseParen,
   OpenBrace,
   CloseBrace,
+  BangOpenBrace, // !{ for unsorted object literals
   Dot,
   Comma,
   Semicolon,

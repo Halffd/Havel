@@ -1097,6 +1097,15 @@ std::vector<Token> Lexer::tokenize() {
     // @ ~ $ This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized
     // as Plus. EXCEPTION: + after expression context should be Plus operator
     if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
+      // Special case: !{ for unsorted object literals - emit ! then { separately
+      if (c == '!' && peek() == '{') {
+        tokens.push_back(makeToken("!", TokenType::Not));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        // Don't consume '{' - let it be handled normally
+        continue;
+      }
       // Special case for +, !, and ~: check context to distinguish operator
       // from hotkey Note: CloseBrace is NOT in expression context - after }
       // we're at statement level

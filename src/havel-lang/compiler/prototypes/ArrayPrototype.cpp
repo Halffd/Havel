@@ -237,21 +237,63 @@ void registerArrayPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("slice", 3, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 3) return Value::makeNull();
-    if (args[0].isArrayId() && args[1].isInt() && args[2].isInt()) {
+  regProto("slice", 4, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
       if (arr) {
-        int64_t start = args[1].asInt(), end = args[2].asInt();
         int64_t sz = static_cast<int64_t>(arr->size());
-        if (start < 0) start = std::max(static_cast<int64_t>(0), sz + start);
-        if (end < 0) end = sz + end;
-        if (start < 0) start = 0;
-        if (end > sz) end = sz;
-        if (start >= end) { auto resultRef = vm.getHeap().allocateArray(); return Value::makeArrayId(resultRef.id); }
+        
+        // Check which args are specified
+        bool start_specified = args.size() > 1 && !args[1].isNull();
+        bool end_specified = args.size() > 2 && !args[2].isNull();
+        bool step_specified = args.size() > 3 && !args[3].isNull();
+        
+        // Parse step first (affects defaults for start/end)
+        int64_t step = 1;
+        if (step_specified) {
+          step = args[3].isInt() ? args[3].asInt() : 1;
+          if (step == 0) step = 1; // Avoid infinite loop
+        }
+        
+        // Parse start with proper defaults
+        int64_t start;
+        if (start_specified) {
+          start = args[1].isInt() ? args[1].asInt() : 0;
+          if (start < 0) start = sz + start;
+          if (start < 0) start = 0;
+          if (start > sz) start = sz;
+        } else {
+          start = (step > 0) ? 0 : sz - 1;
+        }
+        
+        // Parse end with proper defaults
+        int64_t end;
+        if (end_specified) {
+          end = args[2].isInt() ? args[2].asInt() : sz;
+          if (end < 0) end = sz + end;
+          if (end < -1) end = -1;
+          if (end > sz) end = sz;
+        } else {
+          end = (step > 0) ? sz : -1;
+        }
+        
+        // Check bounds
+        if (step > 0 && start >= end) { auto resultRef = vm.getHeap().allocateArray(); return Value::makeArrayId(resultRef.id); }
+        if (step < 0 && start <= end) { auto resultRef = vm.getHeap().allocateArray(); return Value::makeArrayId(resultRef.id); }
+
         auto resultRef = vm.getHeap().allocateArray();
         auto* result = vm.getHeap().array(resultRef.id);
-        result->insert(result->end(), arr->begin() + start, arr->begin() + end);
+
+        if (step > 0) {
+          for (int64_t i = start; i < end; i += step) {
+            result->push_back((*arr)[static_cast<size_t>(i)]);
+          }
+        } else {
+          for (int64_t i = start; i > end; i += step) {
+            result->push_back((*arr)[static_cast<size_t>(i)]);
+          }
+        }
         return Value::makeArrayId(resultRef.id);
       }
     }

@@ -1105,15 +1105,97 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           std::move(left), std::move(args));
     }
 
-    // Array/Object index
+    // Array/Object index or slice
     case TokenType::OpenBracket: {
-      auto index = parsePrattExpression(0);
+      // Check if this is a slice expression: [start:end:step]
+      // At this point, '[' has been consumed. Check if current token is Colon or if next token is Colon
+      // Also handle ColonColon (::) which can be two colons for slices
+      if (at().type == TokenType::Colon || at().type == TokenType::ColonColon ||
+          at(1).type == TokenType::Colon || at(1).type == TokenType::ColonColon) {
+        // Slice expression - desugar to target.slice(start, end, step)
+        std::unique_ptr<ast::Expression> start, end, step;
+        
+        // Parse optional start (before first colon)
+        // Only parse if the current token is NOT a colon or ColonColon
+        if (at(0).type != TokenType::Colon && at(0).type != TokenType::ColonColon) {
+          start = parsePrattExpression(0);
+        }
+        
+        // Handle ColonColon (::) as two colons
+        if (at().type == TokenType::ColonColon) {
+          // :: is start::step with no end, or start:end with no step
+          // We need to look ahead to determine which
+          advance(); // consume ::
+          // After ::, if we see a number (possibly negative), it's step
+          // If we see ], there's no step or end
+          if (at().type != TokenType::CloseBracket) {
+            // It's a step value
+            step = parsePrattExpression(0);
+          }
+        } else {
+          // Consume first colon
+          if (at().type != TokenType::Colon) {
+            failAt(at(), "Expected ':' in slice expression, got " + std::to_string(static_cast<int>(at().type)));
+          }
+          advance();
+          
+          // Parse optional end (between colons)
+          if (at().type != TokenType::Colon && at().type != TokenType::CloseBracket) {
+            end = parsePrattExpression(0);
+          }
+          
+          // Parse optional step (after second colon)
+          if (at().type == TokenType::Colon) {
+            advance();
+            if (at().type != TokenType::CloseBracket) {
+              step = parsePrattExpression(0);
+            }
+          }
+        }
+        
+        // Consume closing bracket
+        if (at().type != TokenType::CloseBracket) {
+          failAt(at(), "Expected ']' after slice expression, got " + std::to_string(static_cast<int>(at().type)));
+        }
+        advance();
+        
+        // Build: target.slice(start, end, step)
+        auto sliceCall = std::make_unique<ast::CallExpression>(
+            std::make_unique<ast::MemberExpression>(
+                std::move(left), std::make_unique<ast::Identifier>("slice")),
+            std::vector<std::unique_ptr<ast::Expression>>{});
+        
+        // Add slice arguments (use null for omitted values)
+        if (start) {
+          sliceCall->args.push_back(std::move(start));
+        } else {
+          sliceCall->args.push_back(std::make_unique<ast::NullLiteral>());
+        }
+        
+        if (end) {
+          sliceCall->args.push_back(std::move(end));
+        } else {
+          sliceCall->args.push_back(std::make_unique<ast::NullLiteral>());
+        }
+        
+        if (step) {
+          sliceCall->args.push_back(std::move(step));
+        } else {
+          // Always add step as null if not present
+          sliceCall->args.push_back(std::make_unique<ast::NullLiteral>());
+        }
+        
+        return sliceCall;
+      }
       
+      // Regular index expression
+      auto index = parsePrattExpression(0);
+
       if (at().type != TokenType::CloseBracket) {
         failAt(at(), "Expected ']' after index");
       }
       advance(); // consume ']'
-      
+
       return std::make_unique<ast::IndexExpression>(
           std::move(left), std::move(index));
     }

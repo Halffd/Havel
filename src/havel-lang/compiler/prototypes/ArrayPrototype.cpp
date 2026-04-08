@@ -10,6 +10,12 @@ void registerArrayPrototype(VM& vm) {
     vm.registerPrototypeMethodByName("array", method, "array." + method);
   };
 
+  // Helper for variable-arity methods (no strict arity check)
+  auto regProtoVar = [&vm](const std::string& method, BytecodeHostFunction fn) {
+    vm.registerHostFunction("array." + method, std::move(fn));
+    vm.registerPrototypeMethodByName("array", method, "array." + method);
+  };
+
   regProto("len", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeInt(0);
     if (args[0].isArrayId()) {
@@ -327,7 +333,7 @@ void registerArrayPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("sort", 2, [&vm](const std::vector<Value>& args) {
+  regProtoVar("sort", [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
@@ -350,7 +356,7 @@ void registerArrayPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("sorted", 2, [&vm](const std::vector<Value>& args) {
+  regProtoVar("sorted", [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());

@@ -1057,16 +1057,24 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
     // Member access
     case TokenType::Dot: {
-      // Property names can be identifiers or certain keywords (and, or, not)
-      if (at().type != TokenType::Identifier &&
-          at().type != TokenType::And &&
-          at().type != TokenType::Or &&
-          at().type != TokenType::Not) {
-        failAt(at(), "Expected identifier after '.'");
+      // Property names can be identifiers or certain keywords
+      if (at().type == TokenType::Identifier ||
+          at().type == TokenType::And ||
+          at().type == TokenType::Or ||
+          at().type == TokenType::Not ||
+          at().type == TokenType::Repeat ||
+          at().type == TokenType::Loop ||
+          at().type == TokenType::If ||
+          at().type == TokenType::Else ||
+          at().type == TokenType::While ||
+          at().type == TokenType::For ||
+          at().type == TokenType::Match ||
+          at().type == TokenType::Fn) {
+        auto property = makeIdentifier(advance());
+        return std::make_unique<ast::MemberExpression>(
+            std::move(left), std::move(property));
       }
-      auto property = makeIdentifier(advance());
-      return std::make_unique<ast::MemberExpression>(
-          std::move(left), std::move(property));
+      failAt(at(), "Expected identifier after '.'");
     }
 
     // Function call

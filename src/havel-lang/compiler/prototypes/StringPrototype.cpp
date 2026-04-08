@@ -85,6 +85,15 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
+  regProto("capital", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s = extractString(vm, args[0]);
+    if (s.empty()) { auto ref = vm.getHeap().allocateString(""); return Value::makeStringId(ref.id); }
+    s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
+    auto ref = vm.getHeap().allocateString(std::move(s));
+    return Value::makeStringId(ref.id);
+  });
+
   regProto("sub", 3, [&vm](const std::vector<Value>& args) {
     if (args.size() < 3) return Value::makeNull();
     std::string s = extractString(vm, args[0]);

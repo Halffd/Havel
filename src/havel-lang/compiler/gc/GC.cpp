@@ -218,33 +218,26 @@ Value GCHeap::iteratorNext(uint32_t id) {
       done = true;
       value = Value::makeNull();
     } else {
-      // For objects, return {key, value} object
-      auto key = iter->keys[iter->index];
-      auto *obj = object(iter->iterable.asObjectId());
-      Value val = Value::makeNull();
-      if (obj) {
-        auto it = obj->find(key);
-        if (it != obj->end()) {
-          val = it->second;
-        }
-      }
-      auto resultObj = allocateObject();
-      auto *result = object(resultObj.id);
-      // Allocate a runtime StringId for the key
+      // For objects, return just the key by default
+      // Multi-variable for loops will look up the value separately
+      auto key = iter->keys[iter->index++];
       auto keyStrRef = allocateString(key);
-      (*result)["key"] = Value::makeStringId(keyStrRef.id);
-      (*result)["value"] = val;
-      value = Value::makeObjectId(resultObj.id);
-      iter->index++;
+      value = Value::makeStringId(keyStrRef.id);
     }
   } else if (iter->iterable.isSetId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
       value = Value::makeNull();
     } else {
-      // Return set element as string ID
-      value = Value::makeNull(); // Placeholder
-      iter->index++;
+      // Return set element as a string or int
+      auto key = iter->keys[iter->index++];
+      // Try to parse as int, otherwise return as string
+      try {
+        value = Value::makeInt(std::stoll(key));
+      } catch (...) {
+        auto strRef = allocateString(key);
+        value = Value::makeStringId(strRef.id);
+      }
     }
   } else if (iter->iterable.isRangeId()) {
     auto *r = range(iter->iterable.asRangeId());

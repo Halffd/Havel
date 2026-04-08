@@ -160,7 +160,10 @@ private:
       "assert",  "time.now", "window",   "io",       "system",   "hotkey",
       "mode",    "process",  "display",  "async",    "struct",   "thread",   "interval",
       "timeout", "string",   "array",    "object",   "type",     "utility",  "inherits",
-      "regex",   "physics",  "time",     "math"};
+      "regex",   "physics",  "time",     "math",
+      // Duck typing / protocol functions
+      "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
+      "items"};
 
   // Module loading
   ModuleLoader *module_loader_ = nullptr;

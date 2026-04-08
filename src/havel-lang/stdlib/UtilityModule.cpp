@@ -36,16 +36,15 @@ void registerUtilityModule(VMApi &api) {
     if (!args[0].isObjectId())
       throw std::runtime_error("items() requires an object argument");
 
-    auto objRef = ObjectRef{args[0].asObjectId(), true};
     auto keys = api.getObjectKeys(args[0]);
     auto result = api.makeArray();
 
     for (const auto &key : keys) {
       auto pair = api.makeArray();
-      // TODO: string pool registration
-      api.push(pair, Value::makeNull());
-      // Note: getObjectValue not available in VMApi, so we'll use hasField
-      // and return a placeholder for the value
+      // Create StringId for the key
+      havel::compiler::StringRef keyStrRef = api.vm.getHeap().allocateString(key);
+      api.push(pair, Value::makeStringId(keyStrRef.id));
+      // Get value
       if (api.hasField(args[0], key)) {
         api.push(pair, api.getField(args[0], key));
       } else {

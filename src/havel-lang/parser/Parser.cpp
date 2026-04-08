@@ -839,6 +839,16 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       return std::make_unique<ast::AtExpression>(std::move(fieldName));
     }
 
+    case TokenType::AtAt: {
+      // @@field - class field access within class methods
+      if (at().type != TokenType::Identifier) {
+        errorAt(at(), "Expected field name after '@@'");
+        return nullptr;
+      }
+      auto fieldName = makeIdentifier(advance());
+      return std::make_unique<ast::AtAtExpression>(std::move(fieldName));
+    }
+
     case TokenType::Backtick:
       return parseBacktickExpression();
 
@@ -2539,7 +2549,7 @@ Parser::parseStructMembers() {
     }
 
     fields.emplace_back(fieldName, std::move(fieldType),
-                        std::move(defaultValue));
+                        std::move(defaultValue)); // structs don't have class fields
 
     // Optional comma
     if (at().type == havel::TokenType::Comma) {
@@ -2563,6 +2573,15 @@ Parser::parseClassMembers() {
         at().type == havel::TokenType::Comment) {
       advance();
       continue;
+    }
+
+    // Check for class member marker (@@) or instance member marker (@)
+    bool isClassMember = false;
+    if (at().type == havel::TokenType::AtAt) {
+      advance(); // consume '@@'
+      isClassMember = true;
+    } else if (at().type == havel::TokenType::At) {
+      advance(); // consume '@' (optional for instance methods, required for methods with @fn)
     }
 
     // Check for method definition (fn keyword) or operator (op keyword)
@@ -2674,9 +2693,12 @@ Parser::parseClassMembers() {
 
       methods.push_back(std::make_unique<ast::ClassMethodDef>(
           methodName, std::move(params), std::move(body), isConstructor,
-          isOperator));
+          isOperator, isClassMember));
       continue;
     }
+
+    // Parse field definition
+    // Note: isClassMember is already set from @@ or @ above
 
     // Parse field name
     if (at().type != havel::TokenType::Identifier) {
@@ -2699,7 +2721,7 @@ Parser::parseClassMembers() {
     }
 
     fields.emplace_back(fieldName, std::move(fieldType),
-                        std::move(defaultValue));
+                        std::move(defaultValue), isClassMember);
 
     // Optional comma
     if (at().type == havel::TokenType::Comma) {

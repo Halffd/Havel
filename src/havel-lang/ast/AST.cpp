@@ -614,4 +614,9 @@ void AtExpression::accept(ASTVisitor &visitor) const {
   visitor.visitAtExpression(*this);
 }
 
+// AtAtExpression accept method
+void AtAtExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAtAtExpression(*this);
+}
+
 } // namespace havel::ast

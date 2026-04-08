@@ -1077,6 +1077,16 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    // Handle @@ (class member marker) - must be before single @ handling
+    if (c == '@' && peek() == '@') {
+      advance(); // consume second '@'
+      tokens.push_back(makeToken("@@", TokenType::AtAt));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+
     // Handle @ (at/this field access) - must be before hotkey handling
     // Only treat as At token if followed by identifier or ->
     // Otherwise it might be a hotkey modifier

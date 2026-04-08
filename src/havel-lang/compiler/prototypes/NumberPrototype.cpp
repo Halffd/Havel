@@ -1,8 +1,16 @@
 #include "PrototypeRegistry.hpp"
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 namespace havel::compiler::prototypes {
+
+// Helper: extract string from args[i] with fallback
+static std::string extractStringArg(VM& vm, const std::vector<Value>& args, size_t i, const std::string& fallback) {
+  if (i >= args.size()) return fallback;
+  if (args[i].isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
+  if (args[i].isStringId() && vm.getHeap().string(args[i].asStringId())) return *vm.getHeap().string(args[i].asStringId());
+  return fallback;
+}
 
 void registerNumberPrototype(VM& vm) {
   // Integer methods
@@ -82,13 +90,6 @@ void registerObjectPrototype(VM& vm) {
     vm.registerPrototypeMethodByName("object", method, "object." + method);
   };
 
-  auto getStringArg = [&vm](const std::vector<Value>& args, size_t i, const std::string& fallback) -> std::string {
-    if (i >= args.size()) return fallback;
-    if (args[i].isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
-    if (args[i].isStringId() && vm.getHeap().string(args[i].asStringId())) return *vm.getHeap().string(args[i].asStringId());
-    return fallback;
-  };
-
   regProto("keys", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isObjectId()) {
@@ -144,24 +145,24 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("has", 2, [&vm, &getStringArg](const std::vector<Value>& args) {
+  regProto("has", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     if (args[0].isObjectId()) {
       auto* obj = vm.getHeap().object(args[0].asObjectId());
       if (obj) {
-        std::string key = getStringArg(args, 1, "");
+        std::string key = extractStringArg(vm, args, 1, "");
         return Value::makeBool(obj->find(key) != obj->end());
       }
     }
     return Value::makeBool(false);
   });
 
-  regProto("get", 2, [&vm, &getStringArg](const std::vector<Value>& args) {
+  regProto("get", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isObjectId()) {
       auto* obj = vm.getHeap().object(args[0].asObjectId());
       if (obj) {
-        std::string key = getStringArg(args, 1, "");
+        std::string key = extractStringArg(vm, args, 1, "");
         auto it = obj->find(key);
         if (it != obj->end()) return it->second;
       }
@@ -169,12 +170,12 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("set", 3, [&vm, &getStringArg](const std::vector<Value>& args) {
+  regProto("set", 3, [&vm](const std::vector<Value>& args) {
     if (args.size() < 3) return Value::makeNull();
     if (args[0].isObjectId()) {
       auto* obj = vm.getHeap().object(args[0].asObjectId());
       if (obj) {
-        std::string key = getStringArg(args, 1, "");
+        std::string key = extractStringArg(vm, args, 1, "");
         obj->set(key, args[2]);
         return args[0];
       }
@@ -182,12 +183,12 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("delete", 2, [&vm, &getStringArg](const std::vector<Value>& args) {
+  regProto("delete", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     if (args[0].isObjectId()) {
       auto* obj = vm.getHeap().object(args[0].asObjectId());
       if (obj) {
-        std::string key = getStringArg(args, 1, "");
+        std::string key = extractStringArg(vm, args, 1, "");
         return Value::makeBool(obj->erase(key) > 0);
       }
     }

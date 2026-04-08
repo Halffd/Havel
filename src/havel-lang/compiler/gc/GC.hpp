@@ -101,6 +101,42 @@ public:
       return insertionOrder;
     }
   };
+
+  // Array entry with frozen flag (for tuples)
+  struct ArrayEntry {
+    std::vector<Value> data;
+    bool frozen = false;
+
+    void push_back(const Value &v) { data.push_back(v); }
+    void pop_back() { if (!frozen) data.pop_back(); }
+    Value &back() { return data.back(); }
+    const Value &back() const { return data.back(); }
+    Value &front() { return data.front(); }
+    const Value &front() const { return data.front(); }
+    size_t size() const { return data.size(); }
+    bool empty() const { return data.empty(); }
+    void clear() { if (!frozen) data.clear(); }
+    Value &operator[](size_t i) { return data[i]; }
+    const Value &operator[](size_t i) const { return data[i]; }
+    auto begin() { return data.begin(); }
+    auto end() { return data.end(); }
+    auto begin() const { return data.begin(); }
+    auto end() const { return data.end(); }
+    auto rbegin() { return data.rbegin(); }
+    auto rend() { return data.rend(); }
+    auto rbegin() const { return data.rbegin(); }
+    auto rend() const { return data.rend(); }
+    void reserve(size_t n) { data.reserve(n); }
+    void resize(size_t n) { if (!frozen) data.resize(n); }
+    void resize(size_t n, const Value &val) { if (!frozen) data.resize(n, val); }
+    void insert(typename std::vector<Value>::iterator pos, const Value &v) { if (!frozen) data.insert(pos, v); }
+    void insert(typename std::vector<Value>::iterator pos, typename std::vector<Value>::iterator first, typename std::vector<Value>::iterator last) { if (!frozen) data.insert(pos, first, last); }
+    template<typename Iter>
+    void insert(typename std::vector<Value>::iterator pos, Iter first, Iter last) { if (!frozen) data.insert(pos, first, last); }
+    void erase(typename std::vector<Value>::iterator pos) { if (!frozen) data.erase(pos); }
+    void assign(typename std::vector<Value>::iterator first, typename std::vector<Value>::iterator last) { if (!frozen) data.assign(first, last); }
+  };
+
   struct Iterator {
     Value
         iterable;     // The original iterable (array, string, object, range)
@@ -173,8 +209,8 @@ public:
 
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
-  std::vector<Value> *array(uint32_t id);
-  const std::vector<Value> *array(uint32_t id) const;
+  ArrayEntry *array(uint32_t id);
+  const ArrayEntry *array(uint32_t id) const;
   ObjectEntry *object(uint32_t id);
   const ObjectEntry *object(uint32_t id) const;
   std::unordered_map<std::string, Value> *set(uint32_t id);
@@ -235,7 +271,7 @@ private:
 
   std::unordered_map<uint32_t, RuntimeClosure> closures_;
   std::unordered_map<uint32_t, std::string> strings_; // Heap-allocated runtime strings
-  std::unordered_map<uint32_t, std::vector<Value>> arrays_;
+  std::unordered_map<uint32_t, ArrayEntry> arrays_;
   std::unordered_map<uint32_t, ObjectEntry> objects_;
   std::unordered_map<uint32_t, std::unordered_map<std::string, Value>>
       sets_;

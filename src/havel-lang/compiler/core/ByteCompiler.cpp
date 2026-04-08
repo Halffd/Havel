@@ -1991,6 +1991,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       emit(OpCode::ARRAY_PUSH);
     }
+    emit(OpCode::ARRAY_FREEZE);
     break;
   }
 

@@ -89,6 +89,7 @@ enum class OpCode : uint8_t {
   ARRAY_SET,
   ARRAY_PUSH,
   ARRAY_LEN,
+  ARRAY_FREEZE, // Mark top-of-stack array as frozen (for tuples)
 
   // Set operations
   SET_SET, // Set[key] = value (stack: value, key, set)

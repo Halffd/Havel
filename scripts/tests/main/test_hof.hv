@@ -15,7 +15,7 @@ let doubled = nums.map(double)
 print("  [1,2,3,4].map(double) ")
 print(doubled)
 let ob = {"a": 1, "b": 2}
-let obm = ob.map(i => { print(i); i })
+let obm = ob.map(v => { print(v); v })
 print(obm)
 print("")
 

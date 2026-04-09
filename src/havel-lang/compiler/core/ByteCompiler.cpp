@@ -1637,17 +1637,16 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
   if (!module_loader_) {
     COMPILER_THROW("Module loader not available for use statement");
   }
-  // Load the module (script file)
-  if (statement.isFileImport) {
-    LoadedModule *module =
-        module_loader_->loadModule(statement.filePath, base_path_);
-    if (!module) {
-      COMPILER_THROW("Failed to load module file: " + statement.filePath);
+    // Load the module (script file)
+    if (statement.isFileImport) {
+      // Emit the IMPORT opcode with the file path as a constant
+      uint32_t path_sid = addStringConstant(statement.filePath);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
+      emit(OpCode::IMPORT);
+      // Result is the module object (or null on error/direct run success)
+      emit(OpCode::POP);
+      return;
     }
-
-    // Emit debug marker
-    { uint32_t _sid = addStringConstant("Loaded module file: " + statement.filePath); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    emit(OpCode::POP);
   }
 }
 
@@ -2168,6 +2167,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     switch (binding->kind) {
     case ResolvedBindingKind::Local:
+      std::cerr << "EMITTING LOAD_VAR FOR " << id.symbol << " SLOT " << effectiveSlot(binding->slot) << "\n";
       emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
       break;
     case ResolvedBindingKind::Upvalue:
@@ -2187,6 +2187,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       break;
     case ResolvedBindingKind::Global:
+      std::cerr << "EMITTING LOAD_GLOBAL FOR " << id.symbol << "\n";
       // Global variable - runtime will decide
       {
         uint32_t strId = addStringConstant(binding->name);
@@ -3729,13 +3730,16 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     iterSlots.push_back(slot);
   }
 
-  // Compile iterable and create iterator: iter(iterable)
+  // Compile iterable and store in temp variable: [iterable]
   compileExpression(*statement.iterable);
-
-  // Promote StringValId → StringId so the runtime iterator can access
-  // the actual string content. This is a no-op if the value is not a StringValId.
   emit(OpCode::STRING_PROMOTE);
+  
+  uint32_t iterableSlot = next_local_index++;
+  reserveLocalSlot(iterableSlot);
+  emit(OpCode::STORE_VAR, iterableSlot);
 
+  // Create iterator: [iter(iterable)]
+  emit(OpCode::LOAD_VAR, iterableSlot);
   emit(OpCode::ITER_NEW);
 
   // Create temp variable for iterator
@@ -3769,11 +3773,11 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   if (multiVar && iterSlots.size() >= 2) {
     // For multi-variable iteration: first var gets key, second gets value
     // The iterator returns the key, we need to look up the value from the
-    // iterable
+    // stored iterable
     emit(OpCode::STORE_VAR, iterSlots[0]); // Store key in first var
 
-    // Look up value: iterable[key]
-    compileExpression(*statement.iterable); // Reload iterable
+    // Look up value: stored_iterable[key]
+    emit(OpCode::LOAD_VAR, iterableSlot);   // Load stored iterable
     emit(OpCode::LOAD_VAR, iterSlots[0]);   // Load key
     emit(OpCode::OBJECT_GET);               // Get value
     emit(OpCode::STORE_VAR, iterSlots[1]);  // Store value in second var

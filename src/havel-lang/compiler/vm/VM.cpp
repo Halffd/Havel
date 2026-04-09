@@ -4571,6 +4571,28 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::IMPORT: {
+    Value path_val = popStack();
+    std::string path;
+    if (path_val.isStringValId() && current_chunk) {
+      path = current_chunk->getString(path_val.asStringValId());
+    } else if (path_val.isStringId()) {
+      if (auto *s = heap_.string(path_val.asStringId())) path = *s;
+    }
+
+    if (path.empty()) {
+      COMPILER_THROW("IMPORT expects valid string path");
+    }
+
+    if (context_ && context_->hostBridge) {
+      if (!context_->hostBridge->import(path)) {
+        COMPILER_THROW("Failed to import module: " + path);
+      }
+    }
+    pushStack(Value::makeNull());
+    break;
+  }
+
   case OpCode::NOP:
   case OpCode::DEFINE_FUNC:
     break;

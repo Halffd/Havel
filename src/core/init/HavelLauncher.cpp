@@ -17,9 +17,16 @@
 #include <QProcess>
 #endif
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #ifdef HAVE_READLINE
 #include <readline/history.h>
@@ -48,6 +55,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runRepl(cfg);
     case Mode::SCRIPT_AND_REPL:
       return runScriptAndRepl(cfg, argc, argv);
+    case Mode::TEST:
+      return runTest(cfg);
     case Mode::CLI:
       return runCli(argc, argv);
     default:
@@ -111,6 +120,14 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       // Next argument should be the script file
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
+      }
+    } else if (arg == "--test" || arg == "-t") {
+      // Test mode - run all .hv files in a directory
+      cfg.mode = Mode::TEST;
+      cfg.minimalMode = true;
+      // Next argument should be the test directory
+      if (i + 1 < argc) {
+        cfg.testDir = argv[++i];
       }
     } else if (arg == "--lint") {
       cfg.lintOnly = true;
@@ -540,6 +557,8 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
   std::cout
       << "  --run               Run script in minimal mode (auto-enables -m)\n";
+  std::cout
+      << "  --test, -t          Run all .hv scripts in a directory\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
@@ -550,6 +569,7 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  havel --repl              - Start REPL with FULL features\n";
   std::cout << "  havel --full-repl         - Start REPL with ALL features\n";
   std::cout << "  havel --run script.hv     - Run script in MINIMAL mode\n";
+  std::cout << "  havel --test dir/         - Run all .hv files in directory\n";
   std::cout << "  havel --minimal script.hv - Run script in MINIMAL mode\n";
   std::cout << "  havel --repl --minimal    - Start REPL in MINIMAL mode\n";
   std::cout << "\nFull mode (default):\n";
@@ -657,6 +677,131 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
     error("REPL error: {}", e.what());
     return 1;
   }
+}
+
+int havel::init::HavelLauncher::runTest(const LaunchConfig &cfg) {
+  if (cfg.testDir.empty()) {
+    error("No test directory specified. Usage: havel --test <directory>");
+    return 1;
+  }
+
+  // Find all .hv files in the directory
+  std::vector<std::string> testFiles;
+  try {
+    for (const auto &entry : std::filesystem::directory_iterator(cfg.testDir)) {
+      if (entry.is_regular_file()) {
+        std::string path = entry.path().string();
+        if (path.size() >= 3 && path.substr(path.size() - 3) == ".hv") {
+          testFiles.push_back(path);
+        }
+      }
+    }
+  } catch (const std::exception &e) {
+    error("Failed to read test directory '{}': {}", cfg.testDir, e.what());
+    return 1;
+  }
+
+  if (testFiles.empty()) {
+    error("No .hv files found in '{}'", cfg.testDir);
+    return 1;
+  }
+
+  // Sort for consistent output
+  std::sort(testFiles.begin(), testFiles.end());
+
+  // Get path to self for running tests
+  std::string selfPath = "/proc/self/exe";
+  char selfBuf[PATH_MAX];
+  ssize_t len = readlink(selfPath.c_str(), selfBuf, sizeof(selfBuf) - 1);
+  if (len == -1) {
+    // Fallback: try argv[0]
+    selfPath = "havel";
+  } else {
+    selfBuf[len] = '\0';
+    selfPath = std::string(selfBuf);
+  }
+
+  // Run each test as a subprocess with timeout
+  int passed = 0;
+  int failed = 0;
+  int total = static_cast<int>(testFiles.size());
+
+  info("Running {} tests from '{}'", total, cfg.testDir);
+
+  for (const auto &testFile : testFiles) {
+    std::string testName = testFile.substr(testFile.find_last_of('/') + 1);
+
+    // Run test as subprocess with 10 second timeout
+    std::string cmd = "timeout 10 " + selfPath + " --run " + testFile + " 2>&1";
+    FILE *pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+      error("  FAIL {} - failed to run", testName);
+      failed++;
+      continue;
+    }
+
+    std::string output;
+    char buf[256];
+    while (fgets(buf, sizeof(buf), pipe)) {
+      output += buf;
+    }
+    int status = pclose(pipe);
+    int exitCode = WEXITSTATUS(status);
+
+    if (exitCode == 0) {
+      info("  PASS {}", testName);
+      passed++;
+    } else {
+      // Extract error message
+      std::string errLine;
+      std::istringstream iss(output);
+      std::string line;
+      while (std::getline(iss, line)) {
+        if (line.find("[ERROR]") != std::string::npos ||
+            line.find("Error:") != std::string::npos) {
+          errLine = line;
+          // Clean up ANSI/color codes
+          errLine.erase(std::remove(errLine.begin(), errLine.end(), '\r'), errLine.end());
+          break;
+        }
+      }
+      if (exitCode == 124) {
+        error("  FAIL {} - timeout (10s)", testName);
+      } else if (!errLine.empty()) {
+        // Extract just the error message after [ERROR] or Error:
+        size_t pos = errLine.find("[ERROR]");
+        if (pos != std::string::npos) {
+          errLine = errLine.substr(pos + 7);
+        } else {
+          pos = errLine.find("Error:");
+          if (pos != std::string::npos) {
+            errLine = errLine.substr(pos + 6);
+          }
+        }
+        // Trim leading space
+        while (!errLine.empty() && errLine[0] == ' ') errLine.erase(0, 1);
+        error("  FAIL {} - {}", testName, errLine);
+      } else {
+        error("  FAIL {} - exit code {}", testName, exitCode);
+      }
+      failed++;
+    }
+  }
+
+  // Print summary
+  std::cout << "\n";
+  info("Test Results:");
+  info("  Total:  {}", total);
+  info("  Passed: {}", passed);
+  info("  Failed: {}", failed);
+
+  if (failed > 0) {
+    error("{} test(s) failed", failed);
+    return 1;
+  }
+
+  info("All tests passed!");
+  return 0;
 }
 
 int havel::init::HavelLauncher::runCli(int, char *[]) {

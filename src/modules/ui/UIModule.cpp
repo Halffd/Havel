@@ -319,9 +319,9 @@ static Value uiDropdown(VMApi &api,
   if (args.size() > 0 && args[0].isArrayId()) {
     // Extract from array
     auto arr = ArrayRef{args[0].asArrayId()};
-    size_t len = api.getArrayLength(args[0]);
+    size_t len = api.length(args[0]);
     for (size_t i = 0; i < len; i++) {
-      auto val = api.getArrayValue(args[0], i);
+      auto val = api.getAt(args[0], i);
       options.push_back(toString(val));
     }
   }

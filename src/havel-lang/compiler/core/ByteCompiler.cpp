@@ -2166,7 +2166,6 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     switch (binding->kind) {
     case ResolvedBindingKind::Local:
-      std::cerr << "EMITTING LOAD_VAR FOR " << id.symbol << " SLOT " << effectiveSlot(binding->slot) << "\n";
       emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
       break;
     case ResolvedBindingKind::Upvalue:
@@ -2186,7 +2185,6 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       break;
     case ResolvedBindingKind::Global:
-      std::cerr << "EMITTING LOAD_GLOBAL FOR " << id.symbol << "\n";
       // Global variable - runtime will decide
       {
         uint32_t strId = addStringConstant(binding->name);

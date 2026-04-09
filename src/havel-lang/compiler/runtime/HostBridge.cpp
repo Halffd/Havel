@@ -35,6 +35,20 @@ static std::string getTypeName(const Value &value) {
     return "array";
   if (value.isObjectId())
     return "object";
+  if (value.isSetId())
+    return "set";
+  if (value.isEnumId())
+    return "enum";
+  if (value.isRangeId())
+    return "range";
+  if (value.isThreadId())
+    return "thread";
+  if (value.isIntervalId())
+    return "interval";
+  if (value.isTimeoutId())
+    return "timeout";
+  if (value.isErrorId())
+    return "error";
   return "unknown";
 }
 
@@ -216,10 +230,12 @@ void HostBridge::install() {
             modulePrefix = "string";
           else if (type == "array")
             modulePrefix = "array";
-          else if (type == "object")
-            modulePrefix = "object";
-          else if (type == "struct")
-            modulePrefix = "struct";
+          else if (type == "set")
+            modulePrefix = "set";
+          else if (type == "enum")
+            modulePrefix = "enum";
+          else if (type == "range")
+            modulePrefix = "range";
           else
             return Value::makeNull();
 

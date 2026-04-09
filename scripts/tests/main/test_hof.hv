@@ -26,7 +26,7 @@ print("  [1,2,3,4].filter(isEven): ")
 print(evens)
 print()
 let chars = {"a": 1, "p": 2, "p": 2, "l": 3, "e": 4}
-let charsf = chars.filter(c => c != "p")
+let charsf = chars.filter(c => c[0] != "p")
 print(charsf)
 //const ids = chars.map(({ id }) => id);
 //const unique = chars.filter(({ id }, index) => !ids.includes(id, index + 1));

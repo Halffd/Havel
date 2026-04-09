@@ -6,9 +6,9 @@ print("=== Match Expression Tests ===\n")
 print("1. Testing simple match:")
 let x = 2
 let result = match x {
-  1 => "one";
-  2 => "two";
-  3 => "three";
+  1 => "one"
+  2 => "two"
+  3 => "three"
   _ => "other"
 }
 print("  match 2 = ")
@@ -20,8 +20,8 @@ print("2. Testing match with enum:")
 let ok = newEnum("Result", "Ok", 42)
 let variant = getVariant(ok)
 let msg = match variant {
-  "Ok" => "Success";
-  "Err" => "Failed";
+  "Ok" => "Success"
+  "Err" => "Failed"
   _ => "Unknown"
 }
 print("  match Ok variant = ")
@@ -32,7 +32,7 @@ print("")
 print("3. Testing match without default:")
 let y = 1
 let r = match y {
-  1 => "yes";
+  1 => "yes"
   0 => "no"
 }
 print("  match 1 = ")

@@ -2124,6 +2124,53 @@ void VM::registerDefaultHostFunctions() {
         }
         return Value::makeBool(false);
       });
+
+  // class.get(instance, field_name)
+  registerHostFunction(
+      "class.get", [this](const std::vector<Value> &args) {
+        size_t offset = 0;
+        if (args.size() >= 3 && args[0].isObjectId()) {
+          offset = 1;
+        }
+        if (args.size() - offset < 2) COMPILER_THROW("class.get requires instance and field name");
+        if (!args[offset].isObjectId()) COMPILER_THROW("class.get first arg must be object");
+        if (!args[offset + 1].isStringValId()) COMPILER_THROW("class.get second arg must be string");
+        
+        auto* instance = heap_.object(args[offset].asObjectId());
+        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
+        
+        // Walk prototype chain
+        GCHeap::ObjectEntry* current = instance;
+        while (current) {
+          auto* val = current->get(fieldName);
+          if (val) return *val;
+          auto* parentVal = current->get("__parent");
+          if (!parentVal) parentVal = current->get("__class");
+          if (parentVal && parentVal->isObjectId()) {
+            current = heap_.object(parentVal->asObjectId());
+          } else {
+            break;
+          }
+        }
+        return Value::makeNull();
+      });
+
+  // class.set(instance, field_name, value)
+  registerHostFunction(
+      "class.set", [this](const std::vector<Value> &args) {
+        size_t offset = 0;
+        if (args.size() >= 4 && args[0].isObjectId()) {
+          offset = 1;
+        }
+        if (args.size() - offset < 3) COMPILER_THROW("class.set requires instance, field name, and value");
+        if (!args[offset].isObjectId()) COMPILER_THROW("class.set first arg must be object");
+        if (!args[offset + 1].isStringValId()) COMPILER_THROW("class.set second arg must be string");
+        
+        auto* instance = heap_.object(args[offset].asObjectId());
+        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
+        instance->set(fieldName, args[offset + 2]);
+        return Value::makeNull();
+      });
 }
 
 void VM::registerDefaultHostGlobals() {
@@ -3541,6 +3588,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     // 2. If not found in host prototype, and it's an object, check the object itself
+    bool isInstanceFunc = false;
     if (!found_host && receiver.isObjectId()) {
       Value val = getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
       if (!val.isNull()) {
@@ -3549,6 +3597,7 @@ void VM::executeInstruction(const Instruction &instruction) {
           found_host = true;
         } else if (val.isFunctionObjId() || val.isClosureId()) {
           vm_func = val;
+          isInstanceFunc = true; // User-defined function stored in object field
         }
       }
     }
@@ -3565,11 +3614,16 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
     Value recv = popStack();
 
-    // Prepare all args (prepend receiver)
+    // Prepare args: for user-defined instance functions, DON'T prepend receiver
+    // (they're stored as values, not methods). For host functions, DO prepend.
     std::vector<Value> all_args;
-    all_args.reserve(arg_count + 1);
-    all_args.push_back(recv);
-    all_args.insert(all_args.end(), args2.begin(), args2.end());
+    if (isInstanceFunc) {
+      all_args = args2;
+    } else {
+      all_args.reserve(arg_count + 1);
+      all_args.push_back(recv);
+      all_args.insert(all_args.end(), args2.begin(), args2.end());
+    }
 
     if (found_host) {
       if (host_func_idx < host_function_names_.size()) {

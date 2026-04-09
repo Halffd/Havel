@@ -3589,7 +3589,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     // 2. If not found in host prototype, and it's an object, check the object itself
     bool isInstanceFunc = false;
-    if (!found_host && receiver.isObjectId()) {
+    if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
       Value val = getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
       if (!val.isNull()) {
         if (val.isHostFuncId()) {
@@ -3598,6 +3598,39 @@ void VM::executeInstruction(const Instruction &instruction) {
         } else if (val.isFunctionObjId() || val.isClosureId()) {
           vm_func = val;
           isInstanceFunc = true; // User-defined function stored in object field
+        }
+      }
+    }
+
+    // 3. Check __class prototype for class methods
+    if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
+      auto* classProto = heap_.object(receiver.asObjectId());
+      // First try __class, then __parent chain
+      if (classProto) {
+        auto* classVal = classProto->get("__class");
+        if (classVal && classVal->isObjectId()) {
+          classProto = heap_.object(classVal->asObjectId());
+        }
+      }
+      
+      while (classProto) {
+        auto* methodVal = classProto->get(method_name);
+        if (methodVal) {
+          if (methodVal->isHostFuncId()) {
+            host_func_idx = methodVal->asHostFuncId();
+            found_host = true;
+            break;
+          } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
+            vm_func = *methodVal;
+            break;
+          }
+        }
+        // Check parent class
+        auto* parentVal = classProto->get("__parent");
+        if (parentVal && parentVal->isObjectId()) {
+          classProto = heap_.object(parentVal->asObjectId());
+        } else {
+          break;
         }
       }
     }

@@ -1,0 +1,132 @@
+class MousePos {
+  x: num // decimal precision
+  y: num
+  device: str
+
+  fn init(x, y, device) {
+    @x = x
+    @y = y
+    @device = device
+  }
+
+  fn moveTo(x, y, speed) {
+    @x = x
+    @y = y
+    mouse.move(@x, @y, speed)
+  }
+
+  fn distance(other) {
+    let dx = x - other.x
+    let dy = y - other.y
+    math.sqrt(dx*dx + dy*dy)
+  }
+}
+class Mouse : MousePos {
+  fn click(btn: str, down: bool){
+    mouse.click(btn, down ? 1 : 2)
+  }
+  fn dbClick(){
+    loop 2 { click("left"); sleep(50)}
+  }
+}
+ms = Mouse()
+print(ms.x, ms.y, delim=", ")
+class AutoBase {
+  running: bool
+  timer: interval
+  winId: int
+  delay: int = 100
+  
+  fn init() {
+    @running = false
+    @timer = null
+    @winId = null
+  }
+  
+  fn run?() {
+    // Override in subclass
+    return false
+  }
+  
+  fn start() {
+    if run?() { stop() }
+    @running = true
+    @winId = window.active().id
+    @timer = interval delay {
+      if !@run?() || window.active().id != @winId {
+        @stop()
+        return
+      }
+      @sendKey()  // Abstract method
+    }
+    @end()
+  }
+  
+  fn stop() {
+    if @timer { @timer.stop() }
+    @running = false
+    @timer = null
+    @winId = null
+  }
+  
+  fn sendKey() {
+    // Override in subclass
+  }
+
+  fn end(){
+    // Override in subclass
+  }
+}
+
+class AutoF : AutoBase {
+  fn run?() {
+    return io.getKey("lctrl") || @running
+  }
+  
+  fn sendKey() {
+    send("f")
+  }
+
+  fn end(){
+    timeout 10000 {
+      @stop()
+    }
+  }
+}
+
+class AutoSpace : AutoBase {
+  enabled: bool
+  hk: int
+  
+  fn init(hk) {
+    @->init() // super
+    @enabled = true
+    @hk = hk
+  }
+  
+  fn run?() {
+    return @enabled && @running && !io.getKey("space")
+  }
+  
+  fn sendKey() {
+    send("{space}")
+  }
+  fn onDown() {
+    if @run?() { return }
+    send("{space:up}")
+    sleep(100)
+    @enabled = false
+  }
+  fn onUp() {
+    @toggle()
+    send("{space:up}")
+    hotkey.enable(@hk)
+  }
+  
+  fn toggle() {
+    enabled = !enabled
+    if !enabled { stop() }
+  }
+}
+autof = AutoF()
+assert(inherits(Mouse, MousePos), "Mouse inherits")

@@ -1,21 +1,38 @@
-exists = fs.exists("/tmp")
-print("exists: ")
-print(exists)
+// Test file system operations available in pure mode
 
-files = fs.readDir("/tmp")
-print(f"files count: {files.len}")
-txt = f"Date: {time.date()}"
-fh = fs.open("/tmp/date.log", "w+")
-fh.write(txt)
-fh.seek(0)
-cont = fh.read()
-print cont
-fh.close()
-tl = fs.write("/tmp/test.log", """[INFO] starting
-[ERROR] Error  
-[INFO] Quitting""")
-print tl.path
-for f in fs.readDir("~"){
-     if f.isDir() { fs.touch(f"{f.path}/1.txt") }
-    print(f.extension)
+print("=== File System Tests ===\n")
+
+// Test 1: fs.exists
+print("1. Testing fs.exists:")
+let tmpExists = fs.exists("/tmp")
+print("  /tmp exists: " + tmpExists)
+
+if tmpExists {
+  print("  ✓ fs.exists works\n")
+} else {
+  print("  ✗ fs.exists FAILED\n")
 }
+
+// Test 2: fs.readDir
+print("2. Testing fs.readDir:")
+let files = fs.readDir("/tmp")
+print("  /tmp has " + files.len() + " entries")
+
+if files.len() > 0 {
+  print("  ✓ fs.readDir works\n")
+} else {
+  print("  ✗ fs.readDir returned empty\n")
+}
+
+// Test 3: time.date
+print("3. Testing time.date:")
+let dateStr = time.date()
+print("  Date: " + dateStr)
+
+if dateStr != null {
+  print("  ✓ time.date works\n")
+} else {
+  print("  ✗ time.date returned null\n")
+}
+
+print("=== File System Tests Complete ===")

@@ -540,7 +540,15 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   // Get the first token (null denotation)
   Token start_token = at();
   Token token = advance();
-  auto left = nud(token);
+
+  std::unique_ptr<ast::Expression> left;
+  try {
+    left = nud(token);
+  } catch (const ParseError &e) {
+    reportErrorAt(token, e.what());
+    synchronize();
+    return nullptr;
+  }
 
   if (!left) {
     return nullptr;
@@ -555,11 +563,20 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
 
   // While the next token has higher binding power than our right binding power
   while (rbp < getBindingPower(at().type)) {
-    Token op_token = advance();
-    left = led(op_token, std::move(left));
-    if (!left) {
-      return nullptr;
+    Token op_token = at();
+    try {
+      advance(); // consume the operator
+      auto next = led(op_token, std::move(left));
+      if (!next) {
+        return nullptr;
+      }
+      left = std::move(next);
+    } catch (const ParseError &e) {
+      reportErrorAt(op_token, e.what());
+      synchronize();
+      return left; // Return what we have so far
     }
+    
     // Update span for the compound expression
     if (left->line == start_token.line) {
        // Single-line expression width
@@ -3685,6 +3702,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
+  std::cerr << "DEBUG Parser: parseForStatement called at " << at().line << ":" << at().column << std::endl;
   advance(); // consume "for"
 
   std::vector<std::unique_ptr<havel::ast::Identifier>> iterators;
@@ -3773,8 +3791,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     body = parseInlineStatement();
   }
 
-  return std::make_unique<havel::ast::ForStatement>(
+  auto stmt = std::make_unique<havel::ast::ForStatement>(
       std::move(iterators), std::move(iterable), std::move(body));
+  std::cerr << "DEBUG Parser: parseForStatement returning successfully" << std::endl;
+  return stmt;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {

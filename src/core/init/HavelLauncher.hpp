@@ -5,6 +5,8 @@
 #endif
 
 #include <string>
+#include <vector>
+#include <memory>
 
 namespace havel::init {
 
@@ -27,7 +29,7 @@ private:
 #endif
   struct LaunchConfig {
     Mode mode = Mode::DAEMON;
-    std::string scriptFile;
+    std::vector<std::string> scriptFiles;
     bool isStartup = false;
     bool debugMode = false;
     bool debugParser = false;
@@ -38,6 +40,7 @@ private:
     bool stopOnError = false; // Stop on first error/warning
     bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
     bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
+    bool lintOnly = false; // Only lint the script and check for errors
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);

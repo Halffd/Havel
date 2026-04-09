@@ -975,28 +975,63 @@ void VM::registerPrototypeMethodByName(const std::string &typeName,
 std::optional<uint32_t>
 VM::getPrototypeMethod(const Value &value,
                        const std::string &methodName) {
-  // Determine type name
+  // Determine type name (try both lowercase and capitalized)
   std::string typeName;
+  std::string moduleName;
   if (value.isStringValId()) {
-    typeName = "String";
+    typeName = "string";
+    moduleName = "string";
   } else if (value.isArrayId()) {
-    typeName = "Array";
+    typeName = "array";
+    moduleName = "array";
   } else if (value.isObjectId()) {
-    typeName = "Object";
+    typeName = "object";
+    moduleName = "Object"; // Object module uses capital O
   } else {
     return std::nullopt;
   }
 
-  // Look up method in prototype
+  // Look up method in prototype table
   auto typeIt = prototypes_.find(typeName);
-  if (typeIt == prototypes_.end())
-    return std::nullopt;
+  if (typeIt != prototypes_.end()) {
+    auto methodIt = typeIt->second.find(methodName);
+    if (methodIt != typeIt->second.end())
+      return methodIt->second;
+  }
 
-  auto methodIt = typeIt->second.find(methodName);
-  if (methodIt == typeIt->second.end())
-    return std::nullopt;
+  // Check if module object has this method (monkey-patching support)
+  // Try both lowercase and capitalized module names
+  for (const auto &modName : {moduleName, typeName}) {
+    auto modIt = globals.find(modName);
+    if (modIt != globals.end() && modIt->second.isObjectId()) {
+      auto *modObj = heap_.object(modIt->second.asObjectId());
+      if (modObj) {
+        auto *val = modObj->get(methodName);
+        if (val) {
+          // If it's a host function, use it directly
+          if (val->isHostFuncId()) {
+            uint32_t idx = val->asHostFuncId();
+            // Cache it in prototypes_ for faster future lookups
+            if (typeIt == prototypes_.end()) {
+              prototypes_[typeName][methodName] = idx;
+            } else {
+              typeIt->second[methodName] = idx;
+            }
+            return idx;
+          }
+          // If it's a closure or function object, we need to handle it differently
+          // For now, store it as a special entry in prototypes_
+          if (val->isClosureId() || val->isFunctionObjId()) {
+            // Return a special index to indicate we need to call it differently
+            // For now, just return the existing prototype index (will be handled by CALL_METHOD)
+            return 0;
+          }
+        }
+      }
+    }
+  }
 
-  return methodIt->second;
+  return std::nullopt;
 }
 
 std::vector<std::string> VM::getPrototypeMethods(const Value &value) {
@@ -3473,6 +3508,35 @@ void VM::executeInstruction(const Instruction &instruction) {
       if (methodIt != typeIt->second.end()) {
         host_func_idx = methodIt->second;
         found_host = true;
+      }
+    }
+
+    // 1.5 Try module object for monkey-patched methods
+    if (!found_host && vm_func.isNull()) {
+      // Generate capitalized version (e.g., "string" -> "String")
+      std::string capName = type_name;
+      if (!capName.empty()) capName[0] = static_cast<char>(std::toupper(capName[0]));
+      
+      for (const auto &modName : {type_name, capName}) {
+        auto modIt = globals.find(modName);
+        if (modIt != globals.end() && modIt->second.isObjectId()) {
+          auto *modObj = heap_.object(modIt->second.asObjectId());
+          if (modObj) {
+            auto *val = modObj->get(method_name);
+            if (val) {
+              if (val->isHostFuncId()) {
+                host_func_idx = val->asHostFuncId();
+                found_host = true;
+                // Cache in prototypes_ for future lookups
+                prototypes_[type_name][method_name] = host_func_idx;
+                break;
+              } else if (val->isFunctionObjId() || val->isClosureId()) {
+                vm_func = *val;
+                break;
+              }
+            }
+          }
+        }
       }
     }
 

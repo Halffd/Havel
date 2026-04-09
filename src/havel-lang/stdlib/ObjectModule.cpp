@@ -1,5 +1,9 @@
-/* ObjectModule.cpp - VM-native stdlib module */
 #include "ObjectModule.hpp"
+#include "../compiler/vm/VMApi.hpp"
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <algorithm>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -7,104 +11,86 @@ using havel::compiler::ObjectRef;
 
 namespace havel::stdlib {
 
-// Register object module with VMApi (stable API layer)
-void registerObjectModule(VMApi& api) {
-    // Object.keys(obj) - Get array of keys (sorted)
+void registerObjectModule(VMApi &api) {
+    // Object.keys(obj) - Get all keys of an object
     api.registerFunction("object.keys", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.keys() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
         auto keys = api.getObjectKeys(args[0]);
-
-        // Sort keys alphabetically
-        std::sort(keys.begin(), keys.end());
-
-        auto arr = api.makeArray();
+        auto result = api.makeArray();
         for (const auto& key : keys) {
-            // TODO: string pool registration
-            api.push(arr, Value::makeNull());
+            if (key != "__set_marker__" && key != "__proto__") {
+                api.push(result, api.makeString(key));
+            }
         }
-        return arr;
+        return result;
     });
 
-    // Object.values(obj) - Get array of values
+    // Object.values(obj) - Get all values of an object
     api.registerFunction("object.values", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.values() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.values() arg must be object");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
         auto keys = api.getObjectKeys(args[0]);
-
-        auto arr = api.makeArray();
+        auto result = api.makeArray();
         for (const auto& key : keys) {
-            if (api.hasField(args[0], key)) {
-                api.push(arr, api.getField(args[0], key));
-            } else {
-                api.push(arr, Value::makeNull());
+            if (key != "__set_marker__" && key != "__proto__") {
+                api.push(result, api.getField(args[0], key));
             }
         }
-        return arr;
+        return result;
     });
 
-    // Object.entries(obj) - Get array of [key, value] pairs
+    // Object.entries(obj) - Get all entries of an object as [key, value] pairs
     api.registerFunction("object.entries", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.entries() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.entries() arg must be object");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
         auto keys = api.getObjectKeys(args[0]);
-
-        auto arr = api.makeArray();
+        auto result = api.makeArray();
         for (const auto& key : keys) {
-            auto pair = api.makeArray();
-            // TODO: string pool registration
-            api.push(pair, Value::makeNull());
-            if (api.hasField(args[0], key)) {
-                api.push(pair, api.getField(args[0], key));
-            } else {
-                api.push(pair, Value::makeNull());
+            if (key != "__set_marker__" && key != "__proto__") {
+                auto entry = api.makeArray();
+                api.push(entry, api.makeString(key));
+                api.push(entry, api.getField(args[0], key));
+                api.push(result, entry);
             }
-            api.push(arr, pair);
         }
-        return arr;
+        return result;
     });
 
-    // Object.has(obj, key) - Check if object has key
+    // Object.has(obj, key) - Check if object has a key
     api.registerFunction("object.has", [&api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.has() requires object and key");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.has() first arg must be object");
+        if (!args[1].isStringId()) throw std::runtime_error("Object.has() second arg must be key string");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
-        // TODO: string pool lookup
-        std::string key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
-
+        std::string key = api.toString(args[1]);
         return Value::makeBool(api.hasField(args[0], key));
     });
 
-    // Object.set(obj, key, value) - Set value by key
+    // Object.set(obj, key, value) - Set a value on an object
     api.registerFunction("object.set", [&api](const std::vector<Value>& args) {
         if (args.size() < 3) throw std::runtime_error("Object.set() requires object, key, and value");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.set() first arg must be object");
+        if (!args[1].isStringId()) throw std::runtime_error("Object.set() second arg must be key string");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
-        // TODO: string pool lookup
-        std::string key = "<string:" + std::to_string(args[1].asStringValId()) + ">";
-        Value value = args[2];
-
-        api.setField(args[0], key, value);
-        return Value::makeObjectId(args[0].asObjectId());
+        std::string key = api.toString(args[1]);
+        api.setField(args[0], key, args[2]);
+        return args[0];
     });
 
-    // Object.isEmpty(obj) - Check if object is empty
+    // Object.isEmpty(obj) - Check if object has no user keys
     api.registerFunction("object.isEmpty", [&api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.isEmpty() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.isEmpty() arg must be object");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
         auto keys = api.getObjectKeys(args[0]);
-
-        return Value::makeBool(keys.empty());
+        for (const auto& k : keys) {
+            if (k != "__set_marker__" && k != "__proto__") return Value::makeBool(false);
+        }
+        return Value::makeBool(true);
     });
 
     // Object.size(obj) - Get number of keys in object
@@ -112,31 +98,94 @@ void registerObjectModule(VMApi& api) {
         if (args.empty()) throw std::runtime_error("Object.size() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.size() arg must be object");
 
-        auto obj = ObjectRef{args[0].asObjectId(), true};
         auto keys = api.getObjectKeys(args[0]);
+        int64_t count = 0;
+        for (const auto& k : keys) {
+            if (k != "__set_marker__" && k != "__proto__") count++;
+        }
+        return Value::makeInt(count);
+    });
 
-        return Value::makeInt(static_cast<int64_t>(keys.size()));
+    // object.len(obj) - Alias for size
+    api.registerFunction("object.len", [&api](const std::vector<Value>& args) {
+        if (args.empty()) throw std::runtime_error("object.len() requires object");
+        if (!args[0].isObjectId()) return Value::makeInt(0);
+        auto keys = api.getObjectKeys(args[0]);
+        int64_t count = 0;
+        for (const auto& k : keys) {
+            if (k != "__set_marker__" && k != "__proto__") count++;
+        }
+        return Value::makeInt(count);
+    });
+
+    // object.map(obj, func) - Map object values
+    api.registerFunction("object.map", [&api](const std::vector<Value>& args) {
+        if (args.size() < 2) throw std::runtime_error("Object.map() requires object and function");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.map() first arg must be object");
+        
+        auto keys = api.getObjectKeys(args[0]);
+        auto result = api.makeObject();
+        for (const auto& key : keys) {
+            if (key == "__set_marker__" || key == "__proto__") continue;
+            Value val = api.getField(args[0], key);
+            api.setField(result, key, api.invoke(args[1], {val, api.makeString(key)}));
+        }
+        return result;
+    });
+
+    // object.filter(obj, func) - Filter object fields
+    api.registerFunction("object.filter", [&api](const std::vector<Value>& args) {
+        if (args.size() < 2) throw std::runtime_error("Object.filter() requires object and function");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.filter() first arg must be object");
+
+        auto keys = api.getObjectKeys(args[0]);
+        auto result = api.makeObject();
+        for (const auto& key : keys) {
+            if (key == "__set_marker__" || key == "__proto__") continue;
+            Value val = api.getField(args[0], key);
+            if (api.toBool(api.invoke(args[1], {val, api.makeString(key)}))) {
+                api.setField(result, key, val);
+            }
+        }
+        return result;
+    });
+
+    // object.each(obj, func) - Iterate over object fields
+    api.registerFunction("object.each", [&api](const std::vector<Value>& args) {
+        if (args.size() < 2) throw std::runtime_error("Object.each() requires object and function");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.each() first arg must be object");
+        
+        auto keys = api.getObjectKeys(args[0]);
+        for (const auto& key : keys) {
+            if (key == "__set_marker__" || key == "__proto__") continue;
+            api.invoke(args[1], {api.getField(args[0], key), api.makeString(key)});
+        }
+        return Value::makeNull();
     });
     
     // Register object object
-    auto obj = api.makeObject();
-    api.setField(obj, "keys", api.makeFunctionRef("object.keys"));
-    api.setField(obj, "values", api.makeFunctionRef("object.values"));
-    api.setField(obj, "entries", api.makeFunctionRef("object.entries"));
-    api.setField(obj, "has", api.makeFunctionRef("object.has"));
-    api.setField(obj, "set", api.makeFunctionRef("object.set"));
-    api.setField(obj, "isEmpty", api.makeFunctionRef("object.isEmpty"));
-    api.setField(obj, "size", api.makeFunctionRef("object.size"));
-    api.setGlobal("Object", obj);
+    auto objModule = api.makeObject();
+    api.setField(objModule, "keys", api.makeFunctionRef("object.keys"));
+    api.setField(objModule, "values", api.makeFunctionRef("object.values"));
+    api.setField(objModule, "entries", api.makeFunctionRef("object.entries"));
+    api.setField(objModule, "has", api.makeFunctionRef("object.has"));
+    api.setField(objModule, "set", api.makeFunctionRef("object.set"));
+    api.setField(objModule, "isEmpty", api.makeFunctionRef("object.isEmpty"));
+    api.setField(objModule, "size", api.makeFunctionRef("object.size"));
+    api.setGlobal("Object", objModule);
     
-    // Register prototype methods so obj.values() works
-    api.registerPrototypeMethodByName("Object", "keys", "object.keys");
-    api.registerPrototypeMethodByName("Object", "values", "object.values");
-    api.registerPrototypeMethodByName("Object", "entries", "object.entries");
-    api.registerPrototypeMethodByName("Object", "has", "object.has");
-    api.registerPrototypeMethodByName("Object", "set", "object.set");
-    api.registerPrototypeMethodByName("Object", "isEmpty", "object.isEmpty");
-    api.registerPrototypeMethodByName("Object", "size", "object.size");
+    // Register prototype methods
+    api.registerPrototypeMethodByName("object", "keys", "object.keys");
+    api.registerPrototypeMethodByName("object", "values", "object.values");
+    api.registerPrototypeMethodByName("object", "entries", "object.entries");
+    api.registerPrototypeMethodByName("object", "has", "object.has");
+    api.registerPrototypeMethodByName("object", "set", "object.set");
+    api.registerPrototypeMethodByName("object", "isEmpty", "object.isEmpty");
+    api.registerPrototypeMethodByName("object", "size", "object.size");
+    api.registerPrototypeMethodByName("object", "len", "object.len");
+    api.registerPrototypeMethodByName("object", "map", "object.map");
+    api.registerPrototypeMethodByName("object", "filter", "object.filter");
+    api.registerPrototypeMethodByName("object", "each", "object.each");
 }
 
 } // namespace havel::stdlib

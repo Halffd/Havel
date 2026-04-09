@@ -99,6 +99,10 @@ std::string VM::toString(const Value &value) const {
   return toStringInternal(value, visited, 0);
 }
 
+bool VM::toBoolPublic(const Value &value) {
+  return isTruthy(value);
+}
+
 std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds, int depth) const {
   if (depth > 8) return "...";
 
@@ -675,6 +679,11 @@ StringRef VM::createRuntimeString(std::string value) {
   return ref;
 }
 
+size_t VM::getRuntimeStringLength(StringRef string_ref) {
+  auto *str = heap_.string(string_ref.id);
+  return str ? str->length() : 0;
+}
+
 void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
                             Value value) {
   auto *object = heap_.object(object_ref.id);
@@ -793,6 +802,34 @@ void VM::setEnumPayload(EnumRef enum_ref, size_t index,
   it->second.second[index] = value;
 }
 
+uint32_t VM::getEnumPayloadCount(EnumRef enum_ref) {
+  auto it = heap_.enums_.find(enum_ref.id);
+  if (it == heap_.enums_.end())
+    return 0;
+  return static_cast<uint32_t>(it->second.second.size());
+}
+
+std::string VM::getEnumTypeName(uint32_t typeId) const {
+  if (typeId >= heap_.enumTypes_.size())
+    return "";
+  return heap_.enumTypes_[typeId].name;
+}
+
+std::string VM::getEnumVariantName(uint32_t typeId, uint32_t tag) const {
+  if (typeId >= heap_.enumTypes_.size())
+    return "";
+  const auto &variants = heap_.enumTypes_[typeId].variantNames;
+  if (tag >= variants.size())
+    return "";
+  return variants[tag];
+}
+
+uint32_t VM::getEnumTypeVariantCount(uint32_t typeId) const {
+  if (typeId >= heap_.enumTypes_.size())
+    return 0;
+  return static_cast<uint32_t>(heap_.enumTypes_[typeId].variantNames.size());
+}
+
 // Membership helpers
 bool VM::arrayContains(ArrayRef array_ref, const Value &value) {
   auto *array = heap_.array(array_ref.id);
@@ -858,10 +895,20 @@ Value VM::getHostObjectField(ObjectRef object_ref,
   auto *object = heap_.object(object_ref.id);
   if (!object)
     return Value::makeNull();
+    
   auto it = object->find(key);
-  if (it == object->end())
-    return Value::makeNull();
-  return it->second;
+  if (it != object->end())
+    return it->second;
+
+  // Check prototype chain
+  auto protoIt = object->find("__proto__");
+  if (protoIt != object->end() && protoIt->second.isObjectId()) {
+    // Avoid infinite recursion by checking if this is a host object
+    // (In a real system we'd use a visited set)
+    return getHostObjectField(ObjectRef{protoIt->second.asObjectId(), true}, key);
+  }
+
+  return Value::makeNull();
 }
 
 bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
@@ -3359,42 +3406,66 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     }
 
-    // Look up method in prototype table (for primitives and objects)
+    // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
+    uint32_t host_func_idx = 0;
+    bool found_host = false;
+    Value vm_func = Value::makeNull();
+
+    // 1. Try host prototype (for primitives and built-in object methods)
     auto typeIt = prototypes_.find(type_name);
-    if (typeIt == prototypes_.end()) {
-      pushStack(Value::makeNull());
-      break;
+    if (typeIt != prototypes_.end()) {
+      auto methodIt = typeIt->second.find(method_name);
+      if (methodIt != typeIt->second.end()) {
+        host_func_idx = methodIt->second;
+        found_host = true;
+      }
     }
-    auto methodIt = typeIt->second.find(method_name);
-    if (methodIt == typeIt->second.end()) {
+
+    // 2. If not found in host prototype, and it's an object, check the object itself
+    if (!found_host && receiver.isObjectId()) {
+      Value val = getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
+      if (!val.isNull()) {
+        if (val.isHostFuncId()) {
+          host_func_idx = val.asHostFuncId();
+          found_host = true;
+        } else if (val.isFunctionObjId() || val.isClosureId()) {
+          vm_func = val;
+        }
+      }
+    }
+
+    if (!found_host && vm_func.isNull()) {
       pushStack(Value::makeNull());
       break;
     }
 
-    // Pop args first (they're at the top), then receiver (at bottom)
+    // Pop args and receiver
     std::vector<Value> args2(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
       args2[arg_count - 1 - i] = popStack();
     }
     Value recv = popStack();
 
-    // Prepend receiver to args and call host function
+    // Prepare all args (prepend receiver)
     std::vector<Value> all_args;
     all_args.reserve(arg_count + 1);
     all_args.push_back(recv);
     all_args.insert(all_args.end(), args2.begin(), args2.end());
 
-    // Call the host function
-    uint32_t func_idx = methodIt->second;
-    if (func_idx < host_function_names_.size()) {
-      auto fnIt = host_functions.find(host_function_names_[func_idx]);
-      if (fnIt != host_functions.end()) {
-        pushStack(fnIt->second(all_args));
+    if (found_host) {
+      if (host_func_idx < host_function_names_.size()) {
+        auto fnIt = host_functions.find(host_function_names_[host_func_idx]);
+        if (fnIt != host_functions.end()) {
+          pushStack(fnIt->second(all_args));
+        } else {
+          pushStack(Value::makeNull());
+        }
       } else {
         pushStack(Value::makeNull());
       }
     } else {
-      pushStack(Value::makeNull());
+      // Call VM function
+      doCall(vm_func, all_args, true);
     }
     break;
   }

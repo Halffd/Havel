@@ -1,31 +1,18 @@
 #pragma once
 
-#include "havel-lang/compiler/core/BytecodeIR.hpp"
+#include "../core/BytecodeIR.hpp"
 #include "VM.hpp"
 
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
+#include <functional>
 
 namespace havel::compiler {
 
-/**
- * VMApi - Stable API layer for stdlib modules
- *
- * PURPOSE:
- * - Decouple stdlib modules from VM internals
- * - Provide stable interface that won't break when VM changes
- * - Allow VM rewrites without touching all modules
- *
- * USAGE:
- *   VMApi api{ *ctx.vm };
- *   registerMath(api);
- *
- * ARCHITECTURE:
- * - Modules depend on VMApi, NOT VM
- * - VMApi wraps VM operations
- * - One place (HostBridge) adapts VM → API
- */
+using Value = ::havel::core::Value;
+
 struct VMApi {
   VM &vm;
 
@@ -42,6 +29,13 @@ struct VMApi {
   Value makeArray() { return Value::makeArrayId(vm.createHostArray().id); }
   Value makeFunctionRef(const std::string &name) {
     return Value::makeHostFuncId(vm.getHostFunctionIndex(name));
+  }
+  Value makeEnum(uint32_t typeId, uint32_t tag, const std::vector<Value> &payload = {}) {
+    auto ref = vm.createEnum(typeId, tag, payload.size());
+    for (size_t i = 0; i < payload.size(); ++i) {
+      vm.setEnumPayload(ref, i, payload[i]);
+    }
+    return Value::makeEnumId(ref.id, typeId);
   }
 
   // String conversion
@@ -95,54 +89,53 @@ struct VMApi {
     vm.pushHostArrayValue(ArrayRef{arr.asArrayId()}, std::move(value));
   }
 
-  size_t getArrayLength(Value arr) {
-    if (!arr.isArrayId())
-      return 0;
-    return vm.getHostArrayLength(ArrayRef{arr.asArrayId()});
+  Value pop(Value arr) {
+    if (!arr.isArrayId()) {
+      throw std::runtime_error("VMApi::pop: expected array");
+    }
+    return vm.popHostArrayValue(ArrayRef{arr.asArrayId()});
   }
 
-  Value getArrayValue(Value arr, size_t index) {
+  uint32_t length(Value arr) {
+    if (arr.isArrayId()) {
+      return (uint32_t)vm.getHostArrayLength(ArrayRef{arr.asArrayId()});
+    } else if (arr.isStringId()) {
+      return (uint32_t)vm.getRuntimeStringLength(StringRef{arr.asStringId()});
+    }
+    return 0;
+  }
+
+  Value getAt(Value arr, uint32_t index) {
     if (!arr.isArrayId())
       return Value::makeNull();
     return vm.getHostArrayValue(ArrayRef{arr.asArrayId()}, index);
   }
 
-  void setArrayValue(Value arr, size_t index, Value value) {
+  void setAt(Value arr, uint32_t index, Value value) {
     if (!arr.isArrayId())
       return;
     vm.setHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
   }
 
-  Value popArrayValue(Value arr) {
-    if (!arr.isArrayId())
-      return Value::makeNull();
-    return vm.popHostArrayValue(ArrayRef{arr.asArrayId()});
-  }
-
-  void insertArrayValue(Value arr, size_t index, Value value) {
-    if (!arr.isArrayId())
-      return;
-    vm.insertHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
-  }
-
-  Value removeArrayValue(Value arr, size_t index) {
-    if (!arr.isArrayId())
-      return Value::makeNull();
-    return vm.removeHostArrayValue(ArrayRef{arr.asArrayId()}, index);
-  }
-
   // Function registration
-  void registerFunction(const std::string &name, BytecodeHostFunction fn) {
-    vm.registerHostFunction(name, std::move(fn));
+  void registerFunction(const std::string &name,
+                        std::function<Value(const std::vector<Value> &)> func) {
+    vm.registerHostFunction(name, std::move(func));
   }
 
-  void registerFunction(const std::string &name, size_t arity,
-                        BytecodeHostFunction fn) {
-    vm.registerHostFunction(name, arity, std::move(fn));
+  template <typename F>
+  void registerFunction(const std::string &name, uint32_t arity, F func) {
+    vm.registerHostFunction(name, arity, std::move(func));
   }
+
+  Value invoke(Value callee, const std::vector<Value> &args) {
+    return vm.callFunction(callee, args);
+  }
+
+  bool toBool(Value v) { return vm.toBoolPublic(v); }
 
   Value callFunction(const Value &fn,
-                             const std::vector<Value> &args = {}) {
+                                 const std::vector<Value> &args = {}) {
     return vm.callFunction(fn, args);
   }
 
@@ -153,7 +146,15 @@ struct VMApi {
     vm.registerPrototypeMethod(typeName, methodName, funcIndex);
   }
 
-  // Register prototype method by function name (looks up index)
+  template <typename F>
+  void registerPrototypeMethod(const std::string &typeName,
+                               const std::string &methodName,
+                               uint32_t arity, F func) {
+    std::string fullName = typeName + "." + methodName;
+    vm.registerHostFunction(fullName, arity, std::move(func));
+    vm.registerPrototypeMethodByName(typeName, methodName, fullName);
+  }
+
   void registerPrototypeMethodByName(const std::string &typeName,
                                      const std::string &methodName,
                                      const std::string &funcName) {
@@ -166,7 +167,7 @@ struct VMApi {
   }
 
   Value invokeCallback(CallbackId id,
-                               const std::vector<Value> &args = {}) {
+                                const std::vector<Value> &args = {}) {
     return vm.invokeCallback(id, args);
   }
 
@@ -183,6 +184,43 @@ struct VMApi {
   VMImage createImageFromRGBA(int width, int height,
                               const std::vector<uint8_t> &rgbaData) {
     return vm.createImageFromRGBA(width, height, rgbaData);
+  }
+
+  // Enum operations
+  uint32_t registerEnumType(const std::string &name, const std::vector<std::string> &variants) {
+    return vm.registerEnumType(name, variants);
+  }
+
+  uint32_t getEnumTag(Value val) {
+    if (!val.isEnumId()) return 0;
+    return vm.getEnumTag(EnumRef{val.asEnumId()});
+  }
+
+  Value getEnumPayload(Value val, size_t index) {
+    if (!val.isEnumId()) return Value::makeNull();
+    return vm.getEnumPayload(EnumRef{val.asEnumId()}, index);
+  }
+
+  uint32_t getEnumValueCount(Value val) {
+    if (!val.isEnumId()) return 0;
+    return vm.getEnumPayloadCount(EnumRef{val.asEnumId()});
+  }
+
+  uint32_t getEnumPayloadCount(Value val) {
+    if (!val.isEnumId()) return 0;
+    return vm.getEnumPayloadCount(EnumRef{val.asEnumId()});
+  }
+
+  std::string getEnumTypeName(uint32_t typeId) {
+    return vm.getEnumTypeName(typeId);
+  }
+
+  std::string getEnumVariantName(uint32_t typeId, uint32_t tag) {
+    return vm.getEnumVariantName(typeId, tag);
+  }
+
+  uint32_t getEnumTypeVariantCount(uint32_t typeId) {
+    return vm.getEnumTypeVariantCount(typeId);
   }
 };
 

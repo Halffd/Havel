@@ -3,6 +3,7 @@
 #include "../../errors/ErrorSystem.h"
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
+#include "../../runtime/HostContext.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -4655,11 +4656,14 @@ void VM::executeInstruction(const Instruction &instruction) {
       COMPILER_THROW("IMPORT expects valid string path");
     }
 
+    // Note: hostBridge import disabled for now
+    /*
     if (context_ && context_->hostBridge) {
       if (!context_->hostBridge->import(path)) {
         COMPILER_THROW("Failed to import module: " + path);
       }
     }
+    */
     pushStack(Value::makeNull());
     break;
   }

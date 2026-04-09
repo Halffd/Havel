@@ -40,7 +40,6 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
     }
   }
 
-  std::cerr << "DEBUG LexicalResolver: Starting PASS 1 (Declarations)" << std::endl;
   // First pass: declare ALL top-level bindings (let and fn names)
   // This ensures function bodies can see global variables
   for (const auto &statement : program.body) {
@@ -99,7 +98,6 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
     }
   }
 
-  std::cerr << "DEBUG LexicalResolver: Starting PASS 2 (Functions)" << std::endl;
   // Second pass: resolve function bodies (can now see globals)
   for (const auto &statement : program.body) {
     if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
@@ -109,7 +107,6 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
     resolveFunctionDeclaration(fn);
   }
 
-  std::cerr << "DEBUG LexicalResolver: Starting PASS 3 (Statements)" << std::endl;
   // Third pass: resolve top-level non-function, non-let statements
   // LetDeclaration was already handled in the first pass
   for (const auto &statement : program.body) {
@@ -442,7 +439,6 @@ void LexicalResolver::resolvePatternWithBindings(const ast::Expression &pattern)
 }
 
 void LexicalResolver::resolveStatement(const ast::Statement &statement) {
-  std::cerr << "DEBUG LexicalResolver: resolving " << statement.toString() << " at " << statement.line << ":" << statement.column << std::endl;
   switch (statement.kind) {
   case ast::NodeType::ExpressionStatement: {
     const auto &expr_stmt =
@@ -590,7 +586,6 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     // Create a new scope for the loop body
     beginScope();
     // Declare iterator variables in the loop scope
-    std::cerr << "DEBUG ForStatement: resolving loop with " << for_stmt.iterators.size() << " iterators" << std::endl;
     for (const auto &iter : for_stmt.iterators) {
       if (iter) {
         uint32_t slot = declareLocal(iter->symbol, iter.get(), false);
@@ -1231,10 +1226,8 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   // FIRST: Search local scopes (for loop vars, nested let declarations, etc.)
   for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
     const auto &scope = ctx.scopes[sc - 1];
-    std::cerr << "DEBUG resolveIdentifierInFunction: searching for '" << name << "' in scope " << (sc-1) << " (size=" << scope.size() << ")" << std::endl;
     auto it = scope.find(name);
     if (it != scope.end()) {
-      std::cerr << "resolveIdentifierInFunction FOUND '" << name << "' in scope " << (sc-1) << " as Local\n";
       return ResolvedBinding{
           ResolvedBindingKind::Local, it->second.slot,
           static_cast<uint32_t>(function_stack_.size() - 1 - function_index),

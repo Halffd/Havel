@@ -773,6 +773,8 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Struct:
     case TokenType::Enum:
     case TokenType::Mode:
+    case TokenType::Const:
+    case TokenType::Let:
       return makeIdentifier(token);
 
     case TokenType::True:
@@ -3702,7 +3704,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
-  std::cerr << "DEBUG Parser: parseForStatement called at " << at().line << ":" << at().column << std::endl;
   advance(); // consume "for"
 
   std::vector<std::unique_ptr<havel::ast::Identifier>> iterators;
@@ -3824,7 +3825,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
 
   auto stmt = std::make_unique<havel::ast::ForStatement>(
       std::move(iterators), std::move(iterable), std::move(body));
-  std::cerr << "DEBUG Parser: parseForStatement returning successfully" << std::endl;
   return stmt;
 }
 

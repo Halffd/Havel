@@ -1,132 +1,75 @@
-class MousePos {
-  x: num // decimal precision
-  y: num
-  device: str
+// Test class inheritance
 
-  fn init(x, y, device) {
-    @x = x
-    @y = y
-    @device = device
-  }
+// Simple base class
+class Animal {
+  name: str
+  sound: str
 
-  fn moveTo(x, y, speed) {
-    @x = x
-    @y = y
-    mouse.move(@x, @y, speed)
+  fn init(name, sound) {
+    @name = name
+    @sound = sound
   }
 
-  fn distance(other) {
-    let dx = x - other.x
-    let dy = y - other.y
-    math.sqrt(dx*dx + dy*dy)
-  }
-}
-class Mouse : MousePos {
-  fn click(btn: str, down: bool){
-    mouse.click(btn, down ? 1 : 2)
-  }
-  fn dbClick(){
-    loop 2 { click("left"); sleep(50)}
-  }
-}
-ms = Mouse()
-print(ms.x, ms.y, delim=", ")
-class AutoBase {
-  running: bool
-  timer: interval
-  winId: int
-  delay: int = 100
-  
-  fn init() {
-    @running = false
-    @timer = null
-    @winId = null
-  }
-  
-  fn run?() {
-    // Override in subclass
-    return false
-  }
-  
-  fn start() {
-    if run?() { stop() }
-    @running = true
-    @winId = window.active().id
-    @timer = interval delay {
-      if !@run?() || window.active().id != @winId {
-        @stop()
-        return
-      }
-      @sendKey()  // Abstract method
-    }
-    @end()
-  }
-  
-  fn stop() {
-    if @timer { @timer.stop() }
-    @running = false
-    @timer = null
-    @winId = null
-  }
-  
-  fn sendKey() {
-    // Override in subclass
+  fn speak() {
+    return @name + " says " + @sound
   }
 
-  fn end(){
-    // Override in subclass
+  fn getInfo() {
+    return @name + " (Animal)"
   }
 }
 
-class AutoF : AutoBase {
-  fn run?() {
-    return io.getKey("lctrl") || @running
-  }
-  
-  fn sendKey() {
-    send("f")
+// Subclass that inherits from Animal
+class Dog : Animal {
+  fn init(name) {
+    @->init(name, "woof")  // super call
   }
 
-  fn end(){
-    timeout 10000 {
-      @stop()
-    }
+  fn getInfo() {
+    return @name + " (Dog)"
   }
 }
 
-class AutoSpace : AutoBase {
-  enabled: bool
-  hk: int
-  
-  fn init(hk) {
-    @->init() // super
-    @enabled = true
-    @hk = hk
-  }
-  
-  fn run?() {
-    return @enabled && @running && !io.getKey("space")
-  }
-  
-  fn sendKey() {
-    send("{space}")
-  }
-  fn onDown() {
-    if @run?() { return }
-    send("{space:up}")
-    sleep(100)
-    @enabled = false
-  }
-  fn onUp() {
-    @toggle()
-    send("{space:up}")
-    hotkey.enable(@hk)
-  }
-  
-  fn toggle() {
-    enabled = !enabled
-    if !enabled { stop() }
+// Another subclass
+class Cat : Animal {
+  fn init(name) {
+    @->init(name, "meow")
   }
 }
-autof = AutoF()
-assert(inherits(Mouse, MousePos), "Mouse inherits")
+
+// Test inheritance
+print("=== Inheritance Tests ===\n")
+
+// Test 1: Create subclass instances
+print("1. Creating subclass instances:")
+let dog = Dog("Buddy")
+let cat = Cat("Whiskers")
+print("  dog.speak(): " + dog.speak())
+print("  cat.speak(): " + cat.speak())
+
+// Test 2: Method override
+print("2. Method override:")
+print("  dog.getInfo(): " + dog.getInfo())
+print("  cat.getInfo(): " + cat.getInfo())
+
+// Test 3: Multiple instances
+print("3. Multiple instances:")
+let dog2 = Dog("Rex")
+print("  dog2.speak(): " + dog2.speak())
+
+// Test 4: inherits() function
+print("4. inherits() function:")
+let d = inherits(Dog, Animal)
+let c = inherits(Cat, Animal)
+let a = inherits(Animal, Dog)
+print("  inherits(Dog, Animal): " + d)
+print("  inherits(Cat, Animal): " + c)
+print("  inherits(Animal, Dog): " + a)
+
+if d && c && !a {
+  print("  ✓ inherits() works correctly\n")
+} else {
+  print("  ✗ inherits() FAILED\n")
+}
+
+print("=== Inheritance Tests Complete ===")

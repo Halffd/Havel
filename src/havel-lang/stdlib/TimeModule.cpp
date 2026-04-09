@@ -76,14 +76,13 @@ void registerTimeModule(VMApi &api) {
 
   // Get current date as string
   api.registerFunction(
-      "time.date", [](const std::vector<Value> &args) {
+      "time.date", [&api](const std::vector<Value> &args) {
         auto now = std::chrono::system_clock::now();
         std::time_t time = std::chrono::system_clock::to_time_t(now);
         std::tm *tm = std::localtime(&time);
         char buf[32];
         std::strftime(buf, sizeof(buf), "%Y-%m-%d", tm);
-        // For now return a string via the vm
-        return Value::makeNull();
+        return api.makeString(buf);
       });
 
   // Register time object (no sleep - that's in host layer)

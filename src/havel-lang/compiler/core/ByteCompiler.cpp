@@ -2950,22 +2950,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       return addConstant(Value::makeStringValId(strId));
     };
 
-    // Check if object is an identifier (variable) - use runtime dispatch
-    if (member.object->kind == ast::NodeType::Identifier) {
-      compileExpression(*member.object);
-      emit(OpCode::LOAD_CONST, loadStringConst(property->symbol));
-      {
-        uint32_t strId = addStringConstant("any.get");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(2))});
-      }
-    } else {
-      // For literals, use OBJECT_GET directly
-      compileExpression(*member.object);
-      emit(OpCode::LOAD_CONST, loadStringConst(property->symbol));
-      emit(OpCode::OBJECT_GET);
-    }
+    // Check if object is an identifier (variable) - use OBJECT_GET directly
+    compileExpression(*member.object);
+    emit(OpCode::LOAD_CONST, loadStringConst(property->symbol));
+    emit(OpCode::OBJECT_GET);
     break;
   }
 

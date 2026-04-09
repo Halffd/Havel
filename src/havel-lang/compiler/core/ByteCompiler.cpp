@@ -1637,16 +1637,15 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
   if (!module_loader_) {
     COMPILER_THROW("Module loader not available for use statement");
   }
-    // Load the module (script file)
-    if (statement.isFileImport) {
-      // Emit the IMPORT opcode with the file path as a constant
-      uint32_t path_sid = addStringConstant(statement.filePath);
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
-      emit(OpCode::IMPORT);
-      // Result is the module object (or null on error/direct run success)
-      emit(OpCode::POP);
-      return;
-    }
+  // Load the module (script file)
+  if (statement.isFileImport) {
+    // Emit the IMPORT opcode with the file path as a constant
+    uint32_t path_sid = addStringConstant(statement.filePath);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
+    emit(OpCode::IMPORT);
+    // Result is the module object (or null on error/direct run success)
+    emit(OpCode::POP);
+    return;
   }
 }
 

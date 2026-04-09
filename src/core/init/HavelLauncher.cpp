@@ -1,4 +1,4 @@
-#include "core/Havel.hpp"
+#include "../Havel.hpp"
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
 #include "core/ConfigManager.hpp"
@@ -110,7 +110,12 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.minimalMode = true;
       // Next argument should be the script file
       if (i + 1 < argc) {
-        cfg.scriptFile = argv[++i];
+        cfg.scriptFiles.push_back(argv[++i]);
+      }
+    } else if (arg == "--lint") {
+      cfg.lintOnly = true;
+      if (i + 1 < argc) {
+        cfg.scriptFiles.push_back(argv[++i]);
       }
     } else if (arg == "--help" || arg == "-h") {
       showHelp();
@@ -119,22 +124,18 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.mode = Mode::CLI;
       return cfg;
     } else {
-      // Assume it's a script file
-      if (!cfg.scriptFile.empty()) {
-        error("Error: Only one script file can be provided. Got {} and {}",
-              cfg.scriptFile, arg);
-        exit(1);
-      }
-      if (!arg.ends_with(".hv")) {
+      if (arg.size() < 3 || arg.substr(arg.size() - 3) != ".hv") {
         warning("Script file {} does not end with .hv extension", arg);
       }
-      cfg.scriptFile = arg;
-      cfg.mode = Mode::SCRIPT;
+      cfg.scriptFiles.push_back(arg);
+      if (cfg.mode == Mode::DAEMON) {
+        cfg.mode = Mode::SCRIPT;
+      }
     }
   }
 
   // Determine mode based on flags and script file
-  if (repl && !cfg.scriptFile.empty()) {
+  if (repl && !cfg.scriptFiles.empty()) {
     // Script + REPL mode - full features by default
     cfg.mode = Mode::SCRIPT_AND_REPL;
   } else if (repl && cfg.fullRepl) {
@@ -146,7 +147,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   } else if (repl) {
     // REPL only mode - full features by default
     cfg.mode = Mode::SCRIPT_AND_REPL;
-  } else if (cfg.scriptFile.empty() && cfg.mode == Mode::DAEMON) {
+  } else if (cfg.scriptFiles.empty() && cfg.mode == Mode::DAEMON) {
     // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
   }
@@ -178,108 +179,56 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    // Load and execute startup script if specified (using bytecode VM by
-    // default)
-    if (!cfg.scriptFile.empty()) {
-      std::ifstream file(cfg.scriptFile);
-      if (file) {
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        std::string code = buffer.str();
+    // Load and execute startup script if specified
+    if (!cfg.scriptFiles.empty()) {
+      std::string combinedCode;
+      std::string combinedNames;
+      for (const auto& f : cfg.scriptFiles) {
+        std::ifstream file(f);
+        if (file) {
+          std::stringstream buffer;
+          buffer << file.rdbuf();
+          combinedCode += buffer.str() + "\n";
+          if (!combinedNames.empty()) combinedNames += " + ";
+          combinedNames += f;
+        } else {
+          error("Cannot open startup script: {}", f);
+        }
+      }
 
-        // Execute with bytecode VM (only execution engine)
+      if (!combinedCode.empty()) {
+        if (cfg.lintOnly) {
+          info("Linting scripts: {}", combinedNames);
+           havel::parser::Parser parser;
+           parser.produceAST(combinedCode);
+           if (parser.hasErrors()) {
+             error("Linting failed");
+             return 1;
+           }
+           info("Linting successful");
+           return 0;
+        }
+
+        // Execute with bytecode VM
         auto *bytecodeVM =
             reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
         auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
             havel_inst.getHostBridge());
 
         if (bytecodeVM && hostBridge) {
-          info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
+          info("Executing combined scripts with bytecode VM: {}", combinedNames);
 
           havel::compiler::PipelineOptions options = hostBridge->options();
-          options.compile_unit_name = cfg.scriptFile;
+          options.compile_unit_name = combinedNames;
           options.vm_override = bytecodeVM;
 
-          // Enable bytecode debug output if requested
-          if (cfg.debugBytecode) {
-            options.write_snapshot_artifact = true;
-            options.snapshot_dir = "/tmp/havel-bytecode";
-
-            // Compare with previous snapshot if --diff requested
-            if (cfg.diffBytecode) {
-              std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");
-              if (prevSnapshot) {
-                std::string prevContent(
-                    (std::istreambuf_iterator<char>(prevSnapshot)),
-                    std::istreambuf_iterator<char>());
-                // Will compare after execution
-              }
-            }
-          }
-
           try {
-            auto vmResult =
-                havel::compiler::runBytecodePipeline(code, "__main__", options);
-
-            // Print bytecode debug info if requested
-            if (cfg.debugBytecode && !vmResult.snapshot.bytecode.empty()) {
-              info("=== Bytecode Debug Output ===");
-              info("{}", vmResult.snapshot.bytecode);
-
-              // Save snapshot for diff comparison
-              std::ofstream snapshot("/tmp/havel-bytecode/current.txt");
-              if (snapshot) {
-                snapshot << vmResult.snapshot.bytecode;
-              }
-
-              // Compare with previous if --diff requested
-              if (cfg.diffBytecode) {
-                std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");
-                if (prevSnapshot) {
-                  std::string prevContent(
-                      (std::istreambuf_iterator<char>(prevSnapshot)),
-                      std::istreambuf_iterator<char>());
-                  if (prevContent != vmResult.snapshot.bytecode) {
-                    info("=== BYTECODE DIFF ===");
-                    info("Bytecode has changed from previous run");
-                  } else {
-                    info("Bytecode unchanged from previous run");
-                  }
-                }
-                // Save current as previous for next run
-                std::ofstream prevFile("/tmp/havel-bytecode/previous.txt");
-                if (prevFile) {
-                  prevFile << vmResult.snapshot.bytecode;
-                }
-              }
-            }
-
-            info("Bytecode execution completed successfully");
+            havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+            info("Execution completed successfully");
           } catch (const std::exception &e) {
-            // Print bytecode debug info even on error (if available)
-            if (cfg.debugBytecode) {
-              info("=== Bytecode Debug Output (error occurred) ===");
-              std::string sanitized;
-              for (char c : cfg.scriptFile) {
-                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                    (c >= '0' && c <= '9') || c == '-' || c == '_') {
-                  sanitized.push_back(c);
-                } else {
-                  sanitized.push_back('_');
-                }
-              }
-              std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
-              if (snapshot) {
-                std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
-                                     std::istreambuf_iterator<char>());
-                info("{}", bytecode);
-              }
-            }
-            error("Bytecode execution error: {}", e.what());
+            error("Execution error: {}", e.what());
           }
         }
-      } else {
-        error("Cannot open startup script: {}", cfg.scriptFile);
       }
     }
 
@@ -303,53 +252,56 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
 int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 #ifdef HAVE_QT_EXTENSION
-  // Restart loop
   while (true) {
-    info("Running Havel script: {}", cfg.scriptFile);
-
-    // Read script file
-    std::ifstream file(cfg.scriptFile);
-    if (!file) {
-      error("Cannot open script file: {}", cfg.scriptFile);
-      return 2;
+    std::string combinedCode;
+    std::string combinedNames;
+    for (const auto& f : cfg.scriptFiles) {
+      std::ifstream file(f);
+      if (file) {
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        combinedCode += buffer.str() + "\n";
+        if (!combinedNames.empty()) combinedNames += " + ";
+        combinedNames += f;
+      } else {
+        error("Cannot open script file: {}", f);
+        return 2;
+      }
     }
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string code = buffer.str();
+    if (combinedCode.empty()) {
+      error("No script code provided");
+      return 1;
+    }
 
-    // Initialize Qt for script execution (GUI available by default)
-    info("Hotkeys or GUI operations detected - initializing Qt");
-    
-    // Debug: Show mode information
-    std::cerr << "[DEBUG] Running in SCRIPT mode:" << std::endl;
-    std::cerr << "  - Script file: " << cfg.scriptFile << std::endl;
-    std::cerr << "  - GUI: enabled" << std::endl;
-    std::cerr << "  - REPL: disabled" << std::endl;
-    std::cerr << "  - Minimal mode: " << (cfg.minimalMode ? "yes" : "no") << std::endl;
+    if (cfg.lintOnly) {
+       havel::parser::Parser parser;
+       parser.produceAST(combinedCode);
+       if (parser.hasErrors()) {
+         error("Linting failed");
+         return 1;
+       }
+       info("Linting successful");
+       return 0;
+    }
+
+    info("Running combined scripts: {}", combinedNames);
 
     int dummy_argc = 1;
     char dummy_name[] = "havel-script";
     char *dummy_argv[] = {dummy_name, nullptr};
     QApplication app(dummy_argc, dummy_argv);
 
-    // Convert argc/argv to vector<string> for havel::Havel
     std::vector<std::string> args;
-    for (int i = 0; i < argc; ++i) {
-      args.emplace_back(argv[i]);
-    }
+    for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
 
-    havel::Havel havel_inst(false, cfg.scriptFile, false, true,
-                      args); // Enable GUI for full mode
+    havel::Havel havel_inst(false, combinedNames, false, true, args);
 
     if (!havel_inst.isInitialized()) {
       error("Failed to initialize havel::Havel");
       return 1;
     }
-    
-    std::cerr << "[DEBUG] havel::Havel initialized, checking VM..." << std::endl;
 
-    // Execute with bytecode VM through havel::Havel
     auto *bytecodeVM = havel_inst.getBytecodeVM();
     auto *hostBridge = havel_inst.getHostBridge();
 
@@ -357,60 +309,28 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       error("Bytecode VM not available");
       return 1;
     }
-    
-    std::cerr << "[DEBUG] VM and HostBridge available, executing script..." << std::endl;
-    std::cerr << "[DEBUG] Script code length: " << code.size() << " bytes" << std::endl;
 
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
-      options.compile_unit_name = cfg.scriptFile;
+      options.compile_unit_name = combinedNames;
       options.vm_override = bytecodeVM;
-
-      std::cerr << "[DEBUG] Running bytecode pipeline for: " << cfg.scriptFile << std::endl;
-      auto vmResult =
-          havel::compiler::runBytecodePipeline(code, "__main__", options);
-      std::cerr << "[DEBUG] Bytecode pipeline completed" << std::endl;
-      info("Startup script executed successfully with bytecode VM");
+      auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+      info("Execution successful");
     } catch (const std::exception &e) {
-      // Print bytecode debug info even on error (if available)
-      if (cfg.debugBytecode) {
-        info("=== Bytecode Debug Output (error occurred) ===");
-        std::string sanitized;
-        for (char c : cfg.scriptFile) {
-          if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '-' || c == '_') {
-            sanitized.push_back(c);
-          } else {
-            sanitized.push_back('_');
-          }
-        }
-        std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
-        if (snapshot) {
-          std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
-                               std::istreambuf_iterator<char>());
-          info("{}", bytecode);
-        }
-      }
-      error("Startup script error: {}", e.what());
+      error("Execution error: {}", e.what());
       return 1;
     }
 
-    // Assume hotkeys might be present - let hotkeyManager handle it
     auto *hkManager = havel_inst.getHotkeyManagerPtr();
     if (hkManager) {
       hkManager->printHotkeys();
       hkManager->updateAllConditionalHotkeys();
     }
-    info("Script loaded. Hotkeys registered. Press Ctrl+C to exit.");
+    info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
     int exitCode = app.exec();
 
-    // Handle restart
-    if (exitCode == 42) {
-      info("Restart requested - relaunching");
-      continue; // Loop back and restart
-    }
-
-    return exitCode; // Normal exit
+    if (exitCode == 42) continue;
+    return exitCode;
   }
 
   return 0; // No restart in headless mode
@@ -424,170 +344,65 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
                                               char *argv[]) {
   // Pure script execution without IO, hotkeys, display, or GUI
-  // Useful for testing scripts that auto-exit or don't need input
-
-  info("Running Havel script (pure mode): {}", cfg.scriptFile);
-  
-  // Debug: Show mode information
-  std::cerr << "[DEBUG] Running in MINIMAL mode (--run):" << std::endl;
-  std::cerr << "  - Script file: " << cfg.scriptFile << std::endl;
-  std::cerr << "  - GUI: disabled" << std::endl;
-  std::cerr << "  - REPL: disabled" << std::endl;
-  std::cerr << "  - IO/Hotkeys: disabled" << std::endl;
-
-  // Read script file
-  std::ifstream file(cfg.scriptFile);
-  if (!file) {
-    error("Cannot open script file: {}", cfg.scriptFile);
-    return 2;
+  std::string combinedCode;
+  std::string combinedNames;
+  for (const auto& f : cfg.scriptFiles) {
+    std::ifstream file(f);
+    if (file) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      combinedCode += buffer.str() + "\n";
+      if (!combinedNames.empty()) combinedNames += " + ";
+      combinedNames += f;
+    } else {
+      error("Cannot open script file: {}", f);
+      return 2;
+    }
   }
 
-  std::stringstream buffer;
-  buffer << file.rdbuf();
-  std::string code = buffer.str();
+  if (combinedCode.empty()) return 0;
 
-  // Set up signal handling for headless mode
+  if (cfg.lintOnly) {
+    havel::parser::Parser parser;
+    parser.produceAST(combinedCode);
+    if (parser.hasErrors()) return 1;
+    info("Linting successful");
+    return 0;
+  }
+
+  info("Running Havel scripts (pure mode): {}", combinedNames);
+
+  // Set up signal handling ...
   struct sigaction sa;
   sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
-  sa.sa_handler = [](int sig) {
-    switch (sig) {
-    case SIGINT:
-      info("Received SIGINT (Ctrl+C) - shutting down headless mode");
-      break;
-    case SIGTERM:
-      info("Received SIGTERM - shutting down headless mode");
-      break;
-    default:
-      info("Received signal {} - shutting down headless mode", sig);
-      break;
-    }
-    std::exit(0); // Graceful exit
-  };
-
+  sa.sa_handler = [](int sig) { std::exit(0); };
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
-  info("Signal handling initialized for headless mode");
 
-  // Execute with bytecode VM if enabled
-  if constexpr (USE_BYTECODE_VM) {
-    info("Executing with bytecode VM");
-    try {
-      // Create minimal context (no services needed for pure script execution)
-      havel::HostContext ctx;
+  try {
+    havel::HostContext ctx;
+    havel::compiler::VM tempVm;
+    ctx.vm = &tempVm;
+    auto bridge = havel::compiler::createHostBridge(ctx);
+    bridge->install();
+    havel::registerStdLibWithVM(*bridge);
+    
+    havel::compiler::PipelineOptions options = bridge->options();
+    options.compile_unit_name = combinedNames;
+    options.vm_override = &tempVm;
+    
+    // Add built-ins ...
+    options.host_global_names.insert("print");
+    options.host_global_names.insert("assert");
 
-      // Create VM
-      havel::compiler::VM tempVm;
-
-      // Assign VM to context so HostBridge can access it
-      ctx.vm = &tempVm;
-
-      // Create HostBridge with minimal context
-      auto bridge = havel::compiler::createHostBridge(ctx);
-      bridge->install();
-
-      // Register stdlib modules with VM (VM-native)
-      havel::registerStdLibWithVM(*bridge);
-
-      // Copy options from bridge
-      havel::compiler::PipelineOptions options = bridge->options();
-      options.compile_unit_name = cfg.scriptFile;
-      options.vm_override = &tempVm;
-
-      // Add pipeline function aliases for lexical resolution (directly to options)
-      options.host_functions.insert({"upper", [](const std::vector<havel::compiler::Value>& args) {
-        if (args.empty() ||
-            (!args[0].isStringValId() && !args[0].isStringId())) {
-          return havel::compiler::Value::makeNull();
-        }
-        return args[0];
-      }});
-      options.host_functions.insert({"lower", [](const std::vector<havel::compiler::Value>& args) {
-        if (args.empty() ||
-            (!args[0].isStringValId() && !args[0].isStringId())) {
-          return havel::compiler::Value::makeNull();
-        }
-        return args[0];
-      }});
-      options.host_functions.insert({"trim", [](const std::vector<havel::compiler::Value>& args) {
-        if (args.empty() ||
-            (!args[0].isStringValId() && !args[0].isStringId())) {
-          return havel::compiler::Value::makeNull();
-        }
-        return args[0];
-      }});
-      options.host_global_names.insert("upper");
-      options.host_global_names.insert("lower");
-      options.host_global_names.insert("trim");
-
-      // Copy VM's host functions to options for compiler and execution
-      // This makes built-in functions (toInt, toFloat, etc.) available
-      for (const auto &[name, fn] : tempVm.getHostFunctions()) {
-        options.host_functions[name] = fn;
-      }
-
-      // Add VM's function names to host_global_names so compiler knows about
-      // them
-
-      options.host_global_names.insert("int");
-      options.host_global_names.insert("num");
-      options.host_global_names.insert("str");
-      options.host_global_names.insert("print");
-      options.host_global_names.insert("clock_ms");
-      options.host_global_names.insert("sleep_ms");
-      options.host_global_names.insert("system.gc");
-      options.host_global_names.insert("system_gc");
-      options.host_global_names.insert("mode");
-      options.host_global_names.insert("print");
-      options.host_global_names.insert("assert");
-
-      // Use the same VM for execution (so it has all the registered functions)
-      options.vm_override = &tempVm;
-
-      // Enable bytecode debug output if requested
-      options.write_snapshot_artifact = cfg.debugBytecode;
-      if (cfg.debugBytecode) {
-        options.snapshot_dir = "/tmp/havel-bytecode";
-      }
-
-      auto vmResult =
-          havel::compiler::runBytecodePipeline(code, "__main__", options);
-
-      // Print bytecode debug info if requested
-      if (cfg.debugBytecode && vmResult.snapshot.bytecode.empty() == false) {
-        info("=== Bytecode Debug Output ===");
-        info("{}", vmResult.snapshot.bytecode);
-      }
-
-      info("Bytecode execution completed successfully");
-
-      // Explicit shutdown to clear containers before ASan leak check
-      bridge->shutdown();
-
-      return 0;
-    } catch (const std::exception &e) {
-      // Print bytecode debug info even on error (if available)
-      if (cfg.debugBytecode) {
-        info("=== Bytecode Debug Output (error occurred) ===");
-        std::string sanitized;
-        for (char c : cfg.scriptFile) {
-          if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '-' || c == '_') {
-            sanitized.push_back(c);
-          } else {
-            sanitized.push_back('_');
-          }
-        }
-        std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
-        if (snapshot) {
-          std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
-                               std::istreambuf_iterator<char>());
-          info("{}", bytecode);
-        }
-      }
-      error("Bytecode error: {}", e.what());
-      return 1;
-    }
+    auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+    info("Bytecode execution completed successfully");
+    bridge->shutdown();
+    return 0;
+  } catch (const std::exception &e) {
+    error("Bytecode error: {}", e.what());
+    return 1;
   }
 
   // Bytecode VM not available - error
@@ -599,111 +414,74 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
                                                  char *[]) {
   try {
     if (cfg.minimalMode) {
-      info("Running script and starting REPL in minimal mode...");
+      if (cfg.scriptFiles.empty()) {
+        error("No script file provided");
+        return 1;
+      }
+      info("Running scripts and starting REPL in minimal mode...");
 
-      // Read script file
-      std::ifstream file(cfg.scriptFile);
-      if (!file) {
-        error("Cannot open script file: {}", cfg.scriptFile);
-        return 2;
+      std::string combinedCode;
+      for (const auto& f : cfg.scriptFiles) {
+        std::ifstream file(f);
+        if (file) {
+          std::stringstream buffer;
+          buffer << file.rdbuf();
+          combinedCode += buffer.str() + "\n";
+        }
       }
 
-      std::stringstream buffer;
-      buffer << file.rdbuf();
-      std::string code = buffer.str();
-
-      // Create minimal host API
       auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
-      
-      // Initialize service registry
       havel::initializeServiceRegistry(hostAPI);
-      
-      // Create REPL
       havel::repl::REPLConfig replConfig;
       replConfig.debugMode = cfg.debugMode;
       replConfig.stopOnError = cfg.stopOnError;
-      
       havel::repl::REPL repl(replConfig);
       repl.initialize(hostAPI);
       
-      // Execute script first
-      info("Executing script: {}", cfg.scriptFile);
-      if (!repl.execute(code)) {
+      info("Executing script code...");
+      if (!repl.execute(combinedCode)) {
         error("Script execution failed");
         return 1;
       }
-      info("Script executed successfully");
-      
-      // Enter REPL
-      info("Entering REPL...");
       return repl.run();
     } else {
 #ifdef HAVE_QT_EXTENSION
-      info("Running script and starting REPL with full features...");
-
-      // Read script file
-      std::ifstream file(cfg.scriptFile);
-      if (!file) {
-        error("Cannot open script file: {}", cfg.scriptFile);
-        return 2;
+      info("Running scripts and starting REPL with full features...");
+      std::string combinedCode;
+      std::string combinedNames;
+      for (const auto& f : cfg.scriptFiles) {
+        std::ifstream file(f);
+        if (file) {
+          std::stringstream buffer;
+          buffer << file.rdbuf();
+          combinedCode += buffer.str() + "\n";
+          if (!combinedNames.empty()) combinedNames += " + ";
+          combinedNames += f;
+        }
       }
 
-      std::stringstream buffer;
-      buffer << file.rdbuf();
-      std::string code = buffer.str();
-
-      // Full mode - initialize Qt and havel::Havel
       int dummy_argc = 1;
       char dummy_name[] = "havel-script-repl";
       char *dummy_argv[] = {dummy_name, nullptr};
       QApplication app(dummy_argc, dummy_argv);
       app.setQuitOnLastWindowClosed(false);
       
-      // Create havel::Havel with full features
       std::vector<std::string> args;
-      havel::Havel havel_inst(false, cfg.scriptFile, false, true, args);
+      havel::Havel havel_inst(false, combinedNames, false, true, args);
       
-      if (!havel_inst.isInitialized()) {
-        error("Failed to initialize havel::Havel");
-        return 1;
-      }
+      if (!havel_inst.isInitialized()) return 1;
       
-      // Execute script with full features
       auto *bytecodeVM = havel_inst.getBytecodeVM();
       auto *hostBridge = havel_inst.getHostBridge();
       
-      if (!bytecodeVM || !hostBridge) {
-        error("Bytecode VM not available");
-        return 1;
-      }
+      if (!bytecodeVM || !hostBridge) return 1;
 
       try {
         havel::compiler::PipelineOptions options = hostBridge->options();
-        options.compile_unit_name = cfg.scriptFile;
+        options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
-
-        auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
-        info("Script executed successfully with bytecode VM");
+        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
       } catch (const std::exception &e) {
-        // Print bytecode debug info even on error (if available)
-        if (cfg.debugBytecode) {
-          info("=== Bytecode Debug Output (error occurred) ===");
-          std::string sanitized;
-          for (char c : cfg.scriptFile) {
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                (c >= '0' && c <= '9') || c == '-' || c == '_') {
-              sanitized.push_back(c);
-            } else {
-              sanitized.push_back('_');
-            }
-          }
-          std::ifstream snapshot("/tmp/havel-bytecode/" + sanitized + ".snapshot.txt");
-          if (snapshot) {
-            std::string bytecode((std::istreambuf_iterator<char>(snapshot)),
-                                 std::istreambuf_iterator<char>());
-            info("{}", bytecode);
-          }
-        }
         error("Script execution error: {}", e.what());
         return 1;
       }

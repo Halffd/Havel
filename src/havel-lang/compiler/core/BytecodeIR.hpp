@@ -171,6 +171,7 @@ enum class OpCode : uint8_t {
   CLASS_SET_FIELD, // Set field with prototype chain lookup
   LOAD_CLASS_PROTO, // Load parent class reference
   CALL_SUPER,       // Call method from parent class
+  IMPORT,           // Runtime module import (path -> module object)
   NOP
 };
 

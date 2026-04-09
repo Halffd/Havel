@@ -18,7 +18,8 @@ public:
     SCRIPT_ONLY,     // Execute .hv script without IO/hotkeys (pure testing)
     REPL,            // Interactive REPL
     SCRIPT_AND_REPL, // Execute script then enter REPL
-    CLI              // Command-line tools
+    CLI,             // Command-line tools
+    TEST             // Run all .hv scripts in a directory
   };
 
   int run(int argc, char *argv[]);
@@ -41,6 +42,7 @@ private:
     bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
     bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
     bool lintOnly = false; // Only lint the script and check for errors
+    std::string testDir;   // Directory containing test scripts
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);
@@ -52,6 +54,7 @@ private:
   int runScriptAndRepl(const LaunchConfig &cfg, int argc, char *argv[]);
   int runRepl(const LaunchConfig &cfg);
   int runCli(int argc, char *argv[]);
+  int runTest(const LaunchConfig &cfg);
   void showHelp();
 };
 

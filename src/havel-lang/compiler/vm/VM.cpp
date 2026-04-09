@@ -1815,15 +1815,18 @@ void VM::registerDefaultHostFunctions() {
 
   // Struct operations (prototype-based)
   registerHostFunction(
-      "struct.define", 2, [this](const std::vector<Value> &args) {
+      "struct.define", [this](const std::vector<Value> &args) {
+        // args: [self, name, fields] when called as method, or [name, fields] when direct
+        size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
+        if (args.size() - offset < 2) COMPILER_THROW("struct.define requires name and fields");
         if (!current_chunk) COMPILER_THROW("struct.define requires active chunk");
 
         auto protoRef = heap_.allocateObject();
         auto* proto = heap_.object(protoRef.id);
         
-        proto->set("__name", Value::makeStringValId(args[0].asStringValId()));
+        proto->set("__name", Value::makeStringValId(args[offset].asStringValId()));
         proto->set("__is_struct", Value::makeBool(true));
-        proto->set("__fields", args[1]);
+        proto->set("__fields", args[offset + 1]);
 
         return Value::makeObjectId(protoRef.id);
       });
@@ -1836,15 +1839,29 @@ void VM::registerDefaultHostFunctions() {
         
         if (!current_chunk) COMPILER_THROW("struct.new requires active chunk");
         
-        const auto &name = current_chunk->getString(args[0].asStringValId());
-        auto it = globals.find(name);
-        if (it == globals.end()) {
-            COMPILER_THROW("Unknown struct type: " + name);
+        // Determine offset for self argument (when called as method)
+        size_t offset = 0;
+        if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
+          offset = 1; // Skip self
         }
         
-        Value protoVal = it->second;
-        if (!protoVal.isObjectId()) {
-            COMPILER_THROW("Struct type is not an object prototype: " + name);
+        Value protoVal;
+        if (args[offset].isObjectId()) {
+          // First arg is the prototype object directly
+          protoVal = args[offset];
+        } else if (args[offset].isStringValId()) {
+          // First arg is the name string, look up prototype
+          const auto &name = current_chunk->getString(args[offset].asStringValId());
+          auto it = globals.find(name);
+          if (it == globals.end()) {
+              COMPILER_THROW("Unknown struct type: " + name);
+          }
+          protoVal = it->second;
+          if (!protoVal.isObjectId()) {
+              COMPILER_THROW("Struct type is not an object prototype: " + name);
+          }
+        } else {
+          COMPILER_THROW("struct.new requires prototype object or type name");
         }
 
         auto* proto = heap_.object(protoVal.asObjectId());
@@ -1860,17 +1877,52 @@ void VM::registerDefaultHostFunctions() {
         
         instance->set("__struct", protoVal); // set prototype
 
-        const size_t provided = args.size() - 1;
+        const size_t provided = args.size() - 1 - offset;
         for (size_t i = 0; i < fields->size(); ++i) {
             std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
             if (i < provided) {
-                instance->set(fieldName, args[i + 1]);
+                instance->set(fieldName, args[i + 1 + offset]);
             } else {
                 instance->set(fieldName, Value::makeNull());
             }
         }
         
         return Value::makeObjectId(instanceRef.id);
+      });
+
+  // struct.get(instance, field_name)
+  registerHostFunction(
+      "struct.get", [this](const std::vector<Value> &args) {
+        // Handle self offset for method calls
+        size_t offset = 0;
+        if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
+          offset = 1;
+        }
+        if (args.size() - offset < 2) COMPILER_THROW("struct.get requires instance and field name");
+        if (!args[offset].isObjectId()) COMPILER_THROW("struct.get first arg must be object");
+        if (!args[offset + 1].isStringValId()) COMPILER_THROW("struct.get second arg must be string");
+        
+        auto* instance = heap_.object(args[offset].asObjectId());
+        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
+        auto* val = instance->get(fieldName);
+        return val ? *val : Value::makeNull();
+      });
+
+  // struct.set(instance, field_name, value)
+  registerHostFunction(
+      "struct.set", [this](const std::vector<Value> &args) {
+        size_t offset = 0;
+        if (args.size() >= 4 && args[0].isObjectId()) {
+          offset = 1;
+        }
+        if (args.size() - offset < 3) COMPILER_THROW("struct.set requires instance, field name, and value");
+        if (!args[offset].isObjectId()) COMPILER_THROW("struct.set first arg must be object");
+        if (!args[offset + 1].isStringValId()) COMPILER_THROW("struct.set second arg must be string");
+        
+        auto* instance = heap_.object(args[offset].asObjectId());
+        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
+        instance->set(fieldName, args[offset + 2]);
+        return Value::makeNull();
       });
 
   // Class operations (prototype-based)
@@ -2051,6 +2103,8 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(struct_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("struct.get")));
   setHostObjectField(struct_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("struct.set")));
   setGlobal("struct", Value::makeObjectId(struct_obj.id));
+  // Also register Struct (capital S) as alias for compatibility
+  setGlobal("Struct", Value::makeObjectId(struct_obj.id));
 
   auto class_obj = heap_.allocateObject();
   setHostObjectField(class_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("class.define")));

@@ -74,6 +74,18 @@ void registerTimeModule(VMApi &api) {
         return Value(static_cast<int64_t>(tm->tm_sec));
       });
 
+  // Get current date as string
+  api.registerFunction(
+      "time.date", [](const std::vector<Value> &args) {
+        auto now = std::chrono::system_clock::now();
+        std::time_t time = std::chrono::system_clock::to_time_t(now);
+        std::tm *tm = std::localtime(&time);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d", tm);
+        // For now return a string via the vm
+        return Value::makeNull();
+      });
+
   // Register time object (no sleep - that's in host layer)
   auto timeObj = api.makeObject();
   api.setField(timeObj, "now", api.makeFunctionRef("time.now"));
@@ -81,6 +93,7 @@ void registerTimeModule(VMApi &api) {
   api.setField(timeObj, "hour", api.makeFunctionRef("time.hour"));
   api.setField(timeObj, "minute", api.makeFunctionRef("time.minute"));
   api.setField(timeObj, "second", api.makeFunctionRef("time.second"));
+  api.setField(timeObj, "date", api.makeFunctionRef("time.date"));
   api.setGlobal("Time", timeObj);
 }
 

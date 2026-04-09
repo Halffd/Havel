@@ -163,7 +163,7 @@ private:
       "regex",   "physics",  "time",     "math",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
-      "items"};
+      "items",   "capital"};
 
   // Module loading
   ModuleLoader *module_loader_ = nullptr;

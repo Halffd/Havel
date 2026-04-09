@@ -3711,8 +3711,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
   if (at().type == havel::TokenType::OpenParen) {
     advance(); // consume "("
 
-    // Parse first iterator
-    if (at().type != havel::TokenType::Identifier) {
+    // Parse first iterator - allow keywords as variable names
+    if (at().type != havel::TokenType::Identifier &&
+        at().type != havel::TokenType::Let &&
+        at().type != havel::TokenType::Const &&
+        at().type != havel::TokenType::Const &&
+        at().type != havel::TokenType::If &&
+        at().type != havel::TokenType::For &&
+        at().type != havel::TokenType::While &&
+        at().type != havel::TokenType::Match) {
       failAt(at(), "Expected first iterator variable in parentheses");
     }
     iterators.push_back(makeIdentifier(advance()));
@@ -3726,7 +3733,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
         advance();
       }
 
-      if (at().type != havel::TokenType::Identifier) {
+      // Allow keywords as iterator names
+      if (at().type != havel::TokenType::Identifier &&
+          at().type != havel::TokenType::Let &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::If &&
+          at().type != havel::TokenType::For &&
+          at().type != havel::TokenType::While &&
+          at().type != havel::TokenType::Match) {
         failAt(at(), "Expected iterator variable after comma");
       }
       iterators.push_back(makeIdentifier(advance()));
@@ -3746,7 +3761,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     }
   } else {
     // Single or multiple iterators: for i, j in range (without parentheses)
-    if (at().type != havel::TokenType::Identifier) {
+    // Allow keywords as iterator names
+    if (at().type != havel::TokenType::Identifier &&
+        at().type != havel::TokenType::Let &&
+        at().type != havel::TokenType::Const &&
+        at().type != havel::TokenType::Const &&
+        at().type != havel::TokenType::If &&
+        at().type != havel::TokenType::For &&
+        at().type != havel::TokenType::While &&
+        at().type != havel::TokenType::Match) {
       failAt(at(), "Expected iterator variable after 'for'");
     }
     iterators.push_back(makeIdentifier(advance()));
@@ -3758,7 +3781,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
-      if (at().type != havel::TokenType::Identifier) {
+      // Allow keywords as iterator names
+      if (at().type != havel::TokenType::Identifier &&
+          at().type != havel::TokenType::Let &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::Const &&
+          at().type != havel::TokenType::If &&
+          at().type != havel::TokenType::For &&
+          at().type != havel::TokenType::While &&
+          at().type != havel::TokenType::Match) {
         failAt(at(), "Expected iterator variable after comma");
       }
       iterators.push_back(makeIdentifier(advance()));

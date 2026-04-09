@@ -594,7 +594,6 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     for (const auto &iter : for_stmt.iterators) {
       if (iter) {
         uint32_t slot = declareLocal(iter->symbol, iter.get(), false);
-        std::cerr << "DEBUG ForStatement: declared iterator '" << iter->symbol << "' slot=" << slot << std::endl;
       }
     }
     // Resolve the body
@@ -807,7 +806,6 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     }
 
     auto binding = resolveIdentifier(id.symbol);
-    std::cerr << "DEBUG resolveExpression Identifier: '" << id.symbol << "' binding=" << (binding ? "found" : "NOT FOUND") << std::endl;
     if (!binding) {
       if (top_level_structs_.count(id.symbol)) {
         noteIdentifierBinding(

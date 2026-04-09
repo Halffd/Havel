@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <sstream>
+#include <fstream>
+#include "havel-lang/compiler/core/Pipeline.hpp"
 
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
@@ -176,6 +178,40 @@ bool HostModuleLoader::unloadExtension(const std::string &name) {
 }
 
 bool HostModuleLoader::import(const std::string &importSpec, VM &vm) {
+  // Check if it's a file import: use "./other.hv"
+  std::string specClean = importSpec;
+  if (specClean.rfind("use ", 0) == 0) specClean = specClean.substr(4);
+  
+  // Trim quotes if present
+  if (specClean.size() >= 2 && specClean.front() == '"' && specClean.back() == '"') {
+    specClean = specClean.substr(1, specClean.size() - 2);
+  }
+
+  if (specClean.size() >= 3 && specClean.substr(specClean.size() - 3) == ".hv") {
+    // It's a file!
+    std::ifstream file(specClean);
+    if (!file) return false;
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string code = buffer.str();
+
+    // Compile and run in the current VM
+    try {
+      PipelineOptions options;
+      options.vm_override = &vm;
+      options.compile_unit_name = specClean;
+      // Inherit host functions from VM
+      for (const auto& [name, fn] : vm.getHostFunctions()) {
+          options.host_functions[name] = fn;
+      }
+      
+      runBytecodePipeline(code, "__main__", options);
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+
   ImportSpec spec = parseImportSpec(importSpec);
 
   // Load the module (lazy loading triggered here)

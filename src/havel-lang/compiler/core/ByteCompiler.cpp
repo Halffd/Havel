@@ -4418,8 +4418,10 @@ void ByteCompiler::emitTypeAssertionForLocal(
 const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const {
   auto it = lexical_resolution_.identifier_bindings.find(&id);
   if (it == lexical_resolution_.identifier_bindings.end()) {
+    std::cerr << "DEBUG bindingFor: '" << id.symbol << "' NOT FOUND in identifier_bindings (size=" << lexical_resolution_.identifier_bindings.size() << ")" << std::endl;
     return nullptr;
   }
+  std::cerr << "DEBUG bindingFor: '" << id.symbol << "' found, kind=" << static_cast<int>(it->second.kind) << " slot=" << it->second.slot << std::endl;
   return &it->second;
 }
 

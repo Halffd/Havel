@@ -230,6 +230,13 @@ uint32_t LexicalResolver::declareLocal(const std::string &name,
       FunctionContext::LocalSymbol{.slot = slot, .is_const = is_const};
   if (declaration) {
     result_.declaration_slots[declaration] = slot;
+    // Also add to identifier_bindings so ByteCompiler::bindingFor() can find it
+    ResolvedBinding binding;
+    binding.kind = ResolvedBindingKind::Local;
+    binding.slot = slot;
+    binding.name = name;
+    binding.is_const = is_const;
+    result_.identifier_bindings[declaration] = binding;
   }
   return slot;
 }
@@ -255,6 +262,13 @@ uint32_t LexicalResolver::declareLocalUnchecked(const std::string &name,
       FunctionContext::LocalSymbol{.slot = slot, .is_const = is_const};
   if (declaration) {
     result_.declaration_slots[declaration] = slot;
+    // Also add to identifier_bindings so ByteCompiler::bindingFor() can find it
+    ResolvedBinding binding;
+    binding.kind = ResolvedBindingKind::Local;
+    binding.slot = slot;
+    binding.name = name;
+    binding.is_const = is_const;
+    result_.identifier_bindings[declaration] = binding;
   }
   return slot;
 }
@@ -581,7 +595,8 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     // Declare iterator variables in the loop scope
     for (const auto &iter : for_stmt.iterators) {
       if (iter) {
-        declareLocal(iter->symbol, iter.get(), false);
+        uint32_t slot = declareLocal(iter->symbol, iter.get(), false);
+        std::cerr << "DEBUG ForStatement: declared iterator '" << iter->symbol << "' slot=" << slot << std::endl;
       }
     }
     // Resolve the body
@@ -794,6 +809,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     }
 
     auto binding = resolveIdentifier(id.symbol);
+    std::cerr << "DEBUG resolveExpression Identifier: '" << id.symbol << "' binding=" << (binding ? "found" : "NOT FOUND") << std::endl;
     if (!binding) {
       if (top_level_structs_.count(id.symbol)) {
         noteIdentifierBinding(

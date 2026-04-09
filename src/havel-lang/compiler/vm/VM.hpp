@@ -255,6 +255,7 @@ public:
   Value call(const Value &callee_value,
              const std::vector<Value> &args = {});
   std::string toString(const Value &value) const;
+  bool toBoolPublic(const Value &value);
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,
                             BytecodeHostFunction function) override;
@@ -289,6 +290,7 @@ public:
   ObjectRef createHostObject();
   ArrayRef createHostArray();
   StringRef createRuntimeString(std::string value);
+  size_t getRuntimeStringLength(StringRef string_ref);
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           Value value);
   void pushHostArrayValue(ArrayRef array_ref, Value value);
@@ -313,6 +315,10 @@ public:
   Value getEnumPayload(EnumRef enum_ref, size_t index);
   void setEnumPayload(EnumRef enum_ref, size_t index,
                       const Value &value);
+  uint32_t getEnumPayloadCount(EnumRef enum_ref);
+  std::string getEnumTypeName(uint32_t typeId) const;
+  std::string getEnumVariantName(uint32_t typeId, uint32_t tag) const;
+  uint32_t getEnumTypeVariantCount(uint32_t typeId) const;
 
   // Membership helpers
   bool arrayContains(ArrayRef array_ref, const Value &value);

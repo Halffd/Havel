@@ -125,6 +125,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("isBoolean");
   bridge.options().host_global_names.insert("toString");
   bridge.options().host_global_names.insert("toNumber");
+  bridge.options().host_global_names.insert("newEnum");
+  bridge.options().host_global_names.insert("getVariant");
+  bridge.options().host_global_names.insert("getVariantPayload");
   bridge.options().host_global_names.insert("help");
   // Pipeline function aliases - add to both host_functions and
   // host_global_names

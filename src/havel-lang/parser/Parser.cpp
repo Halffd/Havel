@@ -2206,6 +2206,37 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   }
   case havel::TokenType::Greater:
     return parseInputStatement();
+  case havel::TokenType::Dsl:
+    advance(); // consume 'dsl'
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' after 'dsl'");
+    }
+    return parseBlockStatement(true); // Always input context
+  case havel::TokenType::Less:
+    if (context.inInputContext) {
+      auto expr = parseGetInputExpression();
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+    {
+      auto expr = parseExpression();
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+  case havel::TokenType::Question:
+    if (context.inInputContext) {
+      return parseIfStatement(); // Mapping ? to if in DSL
+    }
+    {
+      auto expr = parseExpression();
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+  case havel::TokenType::Multiply:
+    if (context.inInputContext) {
+      return parseRepeatStatement(); // Mapping * to repeat in DSL
+    }
+    {
+      auto expr = parseExpression();
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
   default:
     // Expression statement (function calls, assignments, etc.)
     // This handles: config.set(...), print("hello"), x = 5, etc.
@@ -2220,6 +2251,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
             (at().type == havel::TokenType::Identifier &&
              (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
               at().value == "r" || at().value == "w"))) {
+          
+          // Special case for 'w': check if it's wait (w expr) or wheel (w(args))
+          if (at().type == havel::TokenType::Identifier && at().value == "w") {
+            if (at(1).type != havel::TokenType::OpenParen) {
+              return parseWaitStatement();
+            }
+          }
           return parseImplicitInputStatement();
         }
       }
@@ -2492,6 +2530,45 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
   }
 
   return std::make_unique<havel::ast::InputStatement>(commands);
+}
+
+// Parse get input expression: < clipboard or < in("...")
+std::unique_ptr<havel::ast::Expression> Parser::parseGetInputExpression() {
+  advance(); // consume '<'
+
+  std::string source;
+  std::unique_ptr<havel::ast::Expression> prompt = nullptr;
+
+  if (at().type == havel::TokenType::Identifier) {
+    source = advance().value;
+
+    // Special case for in("...")
+    if (source == "in" && at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      if (at().type != havel::TokenType::CloseParen) {
+        prompt = parseExpression();
+      }
+      if (at().type == havel::TokenType::CloseParen) {
+        advance(); // consume ')'
+      }
+    }
+  } else {
+    failAt(at(), "Expected identifier after '<'");
+  }
+
+  return std::make_unique<havel::ast::GetInputExpression>(source, std::move(prompt));
+}
+
+// Parse wait statement: w window.title == "Chrome"
+std::unique_ptr<havel::ast::Statement> Parser::parseWaitStatement() {
+  if (at().value == "w") {
+    advance(); // consume 'w'
+  } else {
+    failAt(at(), "Expected 'w' for wait statement");
+  }
+
+  auto condition = parseExpression();
+  return std::make_unique<havel::ast::WaitStatement>(std::move(condition));
 }
 
 // Parse implicit input statement in hotkey blocks

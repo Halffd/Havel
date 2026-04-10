@@ -159,6 +159,8 @@ private:
   std::unique_ptr<ast::Statement> parseSleepStatement();
   std::unique_ptr<ast::Statement> parseInputStatement();
   std::unique_ptr<ast::Statement> parseImplicitInputStatement();
+  std::unique_ptr<ast::Expression> parseGetInputExpression();
+  std::unique_ptr<ast::Statement> parseWaitStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
   std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::Statement> parseOnKeyDownOrKeyUpStatement();

@@ -41,7 +41,9 @@ enum class NodeType {
   ApplicationExpression,  // Curried function application
   ThisExpression,         // this - current object reference
   InputStatement,         // > "text" or > {Enter} or > lmb
+  GetInputExpression,     // < source
   SleepStatement,         // :1500 or :1h30m
+  WaitStatement,          // w condition
   BacktickExpression,     // `command` for shell output
   ShellCommandExpression, // $ or $! command in expression context
   ShellCommandStatement,  // $ command for shell execution
@@ -1219,6 +1221,24 @@ struct InputStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Get Input Expression - shortcut: < clipboard or < mouse.pos
+struct GetInputExpression : public Expression {
+  std::string source; // "clipboard", "selection", "mouse.pos", etc.
+  std::unique_ptr<Expression> prompt; // Optional prompt for < in("...")
+
+  GetInputExpression() { kind = NodeType::GetInputExpression; }
+  GetInputExpression(const std::string &src, std::unique_ptr<Expression> p = nullptr)
+      : source(src), prompt(std::move(p)) {
+    kind = NodeType::GetInputExpression;
+  }
+
+  std::string toString() const override {
+    return "GetInputExpression{source: " + source + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Sleep Statement - shortcut: :1500 or :1h30m
 struct SleepStatement : public Statement {
   std::string duration; // Duration string like "1500", "1h30m", "3:10:25"
@@ -1230,6 +1250,22 @@ struct SleepStatement : public Statement {
 
   std::string toString() const override {
     return "SleepStatement{duration: " + duration + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Wait Statement - shortcut: w window.title == "Chrome"
+struct WaitStatement : public Statement {
+  std::unique_ptr<Expression> condition;
+
+  WaitStatement() { kind = NodeType::WaitStatement; }
+  WaitStatement(std::unique_ptr<Expression> cond) : condition(std::move(cond)) {
+    kind = NodeType::WaitStatement;
+  }
+
+  std::string toString() const override {
+    return "WaitStatement{condition: " + (condition ? condition->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2739,7 +2775,9 @@ public:
 
   virtual void visitExpressionStatement(const ExpressionStatement &node) = 0;
   virtual void visitInputStatement(const InputStatement &node) = 0;
+  virtual void visitGetInputExpression(const GetInputExpression &node) = 0;
   virtual void visitSleepStatement(const SleepStatement &node) = 0;
+  virtual void visitWaitStatement(const WaitStatement &node) = 0;
   virtual void visitBacktickExpression(const BacktickExpression &node) = 0;
   virtual void
   visitShellCommandExpression(const ShellCommandExpression &node) = 0;
@@ -2913,8 +2951,16 @@ inline void InputStatement::accept(ASTVisitor &visitor) const {
   visitor.visitInputStatement(*this);
 }
 
+inline void GetInputExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitGetInputExpression(*this);
+}
+
 inline void SleepStatement::accept(ASTVisitor &visitor) const {
   visitor.visitSleepStatement(*this);
+}
+
+inline void WaitStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWaitStatement(*this);
 }
 
 inline void BacktickExpression::accept(ASTVisitor &visitor) const {

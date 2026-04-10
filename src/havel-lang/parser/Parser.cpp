@@ -562,7 +562,13 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   }
 
   // While the next token has higher binding power than our right binding power
+  // Guard against infinite loops from malformed binding power tables
+  int infixIterations = 0;
   while (rbp < getBindingPower(at().type)) {
+    infixIterations++;
+    if (infixIterations > 10000) {
+      throw std::runtime_error("Pratt infix loop exceeded at token " + std::to_string(position) + ": " + at().toString() + " (rbp=" + std::to_string(rbp) + ", bp=" + std::to_string(getBindingPower(at().type)) + ")");
+    }
     Token op_token = at();
     try {
       advance(); // consume the operator
@@ -1628,13 +1634,13 @@ Parser::produceAST(const std::string &sourceCode) {
     }
 
     // Error throttle - stop after too many errors
-    if (errors.size() > 100) {
+    if (errors.size() > 15) {
       throw std::runtime_error("Too many parse errors, aborting");
     }
 
     iterations++;
     if (iterations > 50000) {
-      throw std::runtime_error("Parse stuck in loop at token " + std::to_string(position) + "/" + std::to_string(tokens.size()) + ": " + at().toString() + " (" + std::to_string(errors.size()) + " errors so far)");
+      throw std::runtime_error("Parse exceeded iteration limit at token " + std::to_string(position) + "/" + std::to_string(tokens.size()));
     }
 
     if (debug.parser) {
@@ -4572,23 +4578,29 @@ Parser::parseBlockStatement(bool inputContext) {
         advance();
         continue;
       }
-      
+
       // Check for end of block conditions
       if (at().type == havel::TokenType::CloseBrace ||
           at().type == havel::TokenType::EOF_TOKEN) {
         break;
       }
-      
+
       // Check if we're back at base indentation or lower (dedent)
       // Note: we use < not <= because statements at same column as base are still in the block
       // Only strictly lower column indicates dedent
       if (at().column < baseIndentation) {
         break;
       }
-      
+
+      size_t beforePos = position;
       auto stmt = parseStatement();
       if (stmt) {
         block->body.push_back(std::move(stmt));
+      }
+      if (position == beforePos && notEOF() && at().column >= baseIndentation &&
+          at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN &&
+          at().type != havel::TokenType::NewLine) {
+        advance();
       }
     }
     
@@ -4615,16 +4627,22 @@ Parser::parseBlockStatement(bool inputContext) {
         advance();
         continue;
       }
-      
+
       // Check for end of block
       if (at().type == havel::TokenType::CloseBrace ||
           at().type == havel::TokenType::EOF_TOKEN) {
         break;
       }
-      
+
+      size_t beforePos = position;
       auto stmt = parseStatement();
       if (stmt) {
         block->body.push_back(std::move(stmt));
+      }
+      // Forward progress guarantee
+      if (position == beforePos && notEOF() &&
+          at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN) {
+        advance();
       }
     }
     
@@ -4647,13 +4665,18 @@ Parser::parseBlockStatement(bool inputContext) {
         advance();
         continue;
       }
-      
+
+      size_t beforePos = position;
       auto stmt = parseStatement();
       if (stmt) {
         block->body.push_back(std::move(stmt));
       }
+      // Forward progress guarantee
+      if (position == beforePos && notEOF() && at().type != havel::TokenType::CloseBrace) {
+        advance();
+      }
     }
-    
+
     // Restore input context
     context.inInputContext = savedInputContext;
     

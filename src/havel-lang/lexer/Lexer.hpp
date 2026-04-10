@@ -157,9 +157,10 @@ enum class TokenType {
   Try,          // try
   Catch,        // catch
   Finally,      // finally
-  Throw,        // throw
+  Throw,          // throw
+  Dsl,            // dsl
   EOF_TOKEN
-};
+  };
 
 struct Token {
   std::string value;

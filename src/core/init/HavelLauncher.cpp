@@ -175,6 +175,42 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 
 int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 #ifdef HAVE_QT_EXTENSION
+  // Load scripts first
+  std::string combinedCode;
+  std::string combinedNames;
+  for (const auto& f : cfg.scriptFiles) {
+    std::ifstream file(f);
+    if (file) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      combinedCode += buffer.str() + "\n";
+      if (!combinedNames.empty()) combinedNames += " + ";
+      combinedNames += f;
+    } else {
+      error("Cannot open startup script: {}", f);
+    }
+  }
+
+  // LINT-ONLY MODE: Parse and type-check ONLY, skip ALL Qt/VM initialization
+  if (cfg.lintOnly && !combinedCode.empty()) {
+    info("Linting scripts: {}", combinedNames);
+    havel::parser::Parser parser;
+    try {
+      parser.produceAST(combinedCode);
+    } catch (const std::exception& e) {
+      // Parser aborted due to too many errors — still print what we collected
+    }
+    if (parser.hasErrors()) {
+      for (const auto& err : parser.getErrors()) {
+        error("  line {}:{}: {}", err.line, err.column, err.message);
+      }
+      error("Linting failed with {} error(s)", parser.getErrors().size());
+      return 1;
+    }
+    info("Linting successful");
+    return 0;
+  }
+
   // Restart loop - keeps restarting until exit code is not 42
   while (true) {
     QApplication app(argc, argv);
@@ -196,55 +232,25 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    // Load and execute startup script if specified
-    if (!cfg.scriptFiles.empty()) {
-      std::string combinedCode;
-      std::string combinedNames;
-      for (const auto& f : cfg.scriptFiles) {
-        std::ifstream file(f);
-        if (file) {
-          std::stringstream buffer;
-          buffer << file.rdbuf();
-          combinedCode += buffer.str() + "\n";
-          if (!combinedNames.empty()) combinedNames += " + ";
-          combinedNames += f;
-        } else {
-          error("Cannot open startup script: {}", f);
-        }
-      }
+    // Execute with bytecode VM
+    if (!combinedCode.empty()) {
+      auto *bytecodeVM =
+          reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
+      auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
+          havel_inst.getHostBridge());
 
-      if (!combinedCode.empty()) {
-        if (cfg.lintOnly) {
-          info("Linting scripts: {}", combinedNames);
-           havel::parser::Parser parser;
-           parser.produceAST(combinedCode);
-           if (parser.hasErrors()) {
-             error("Linting failed");
-             return 1;
-           }
-           info("Linting successful");
-           return 0;
-        }
+      if (bytecodeVM && hostBridge) {
+        info("Executing combined scripts with bytecode VM: {}", combinedNames);
 
-        // Execute with bytecode VM
-        auto *bytecodeVM =
-            reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
-        auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
-            havel_inst.getHostBridge());
+        havel::compiler::PipelineOptions options = hostBridge->options();
+        options.compile_unit_name = combinedNames;
+        options.vm_override = bytecodeVM;
 
-        if (bytecodeVM && hostBridge) {
-          info("Executing combined scripts with bytecode VM: {}", combinedNames);
-
-          havel::compiler::PipelineOptions options = hostBridge->options();
-          options.compile_unit_name = combinedNames;
-          options.vm_override = bytecodeVM;
-
-          try {
-            havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-            info("Execution completed successfully");
-          } catch (const std::exception &e) {
-            error("Execution error: {}", e.what());
-          }
+        try {
+          havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+          info("Execution completed successfully");
+        } catch (const std::exception &e) {
+          error("Execution error: {}", e.what());
         }
       }
     }
@@ -291,11 +297,19 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
+    // LINT-ONLY MODE: Parse and type-check ONLY, no execution
     if (cfg.lintOnly) {
        havel::parser::Parser parser;
-       parser.produceAST(combinedCode);
+       try {
+         parser.produceAST(combinedCode);
+       } catch (const std::exception& e) {
+         // Parser aborted — still print what we collected
+       }
        if (parser.hasErrors()) {
-         error("Linting failed");
+         for (const auto& err : parser.getErrors()) {
+           error("  line {}:{}: {}", err.line, err.column, err.message);
+         }
+         error("Linting failed with {} error(s)", parser.getErrors().size());
          return 1;
        }
        info("Linting successful");
@@ -379,10 +393,21 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
   if (combinedCode.empty()) return 0;
 
+  // LINT-ONLY MODE: Parse and type-check ONLY, no execution
   if (cfg.lintOnly) {
     havel::parser::Parser parser;
-    parser.produceAST(combinedCode);
-    if (parser.hasErrors()) return 1;
+    try {
+      parser.produceAST(combinedCode);
+    } catch (const std::exception& e) {
+      // Parser aborted — still print what we collected
+    }
+    if (parser.hasErrors()) {
+      for (const auto& err : parser.getErrors()) {
+        error("  line {}:{}: {}", err.line, err.column, err.message);
+      }
+      error("Linting failed with {} error(s)", parser.getErrors().size());
+      return 1;
+    }
     info("Linting successful");
     return 0;
   }

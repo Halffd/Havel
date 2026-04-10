@@ -140,6 +140,12 @@ void IOBridge::install(PipelineOptions &options) {
   options.host_functions["io.sendText"] = [ctx = ctx_](const auto &args) {
     return handleSendText(args, ctx);
   };
+  options.host_functions["io.wait"] = [ctx = ctx_](const auto &args) {
+    return handleWait(args, ctx);
+  };
+  options.host_functions["wait"] = [ctx = ctx_](const auto &args) {
+    return handleWait(args, ctx);
+  };
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -205,6 +211,17 @@ Value IOBridge::handleSendText(const std::vector<Value> &args,
   }
   return Value::makeBool(false);
 #endif
+}
+
+Value IOBridge::handleWait(const std::vector<Value> &args,
+                                   const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty() || !args[0].isInt()) {
+    return Value::makeBool(false);
+  }
+  int64_t ms = args[0].asInt();
+  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  return Value::makeBool(true);
 }
 
 // ============================================================================
@@ -891,6 +908,9 @@ void UIBridge::install(PipelineOptions &options) {
   };
   options.host_functions["clipboard.clear"] = [ctx = ctx_](const auto &args) {
     return handleClipboardClear(args, ctx);
+  };
+  options.host_functions["io.getClipboard"] = [ctx = ctx_](const auto &args) {
+    return handleClipboardGet(args, ctx);
   };
   options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotFull(args, ctx);

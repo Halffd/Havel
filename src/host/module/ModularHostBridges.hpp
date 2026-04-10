@@ -50,9 +50,10 @@ public:
   static Value handleSendKey(const std::vector<Value> &args,
                                      const HostContext *ctx);
   static Value handleSendText(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-};
-
+                                       const HostContext *ctx);
+  static Value handleWait(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+  };
 /**
  * SystemBridge - File system and process control
  */
@@ -221,6 +222,12 @@ private:
   static Value
   handleClipboardClear(const std::vector<Value> &args,
                        const HostContext *ctx);
+  static Value
+  handleSelectionGet(const std::vector<Value> &args,
+                     const HostContext *ctx);
+  static Value
+  handleMousePosGet(const std::vector<Value> &args,
+                    const HostContext *ctx);
   // Screenshot operations
   static Value
   handleScreenshotFull(const std::vector<Value> &args,

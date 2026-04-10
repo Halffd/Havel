@@ -736,6 +736,8 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     }
 
     case TokenType::Identifier:
+    case TokenType::Config:
+    case TokenType::Devices:
       return makeIdentifier(token);
 
     case TokenType::This: {
@@ -1507,29 +1509,42 @@ std::unique_ptr<ast::Expression> Parser::parseBacktickExpression() {
 std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
   // We already consumed 'fn', now parse parameters and body
   std::vector<std::unique_ptr<ast::FunctionParameter>> params;
-  
+
   if (at().type == TokenType::OpenParen) {
     advance(); // consume '('
-    
+
     while (at().type != TokenType::CloseParen) {
-      if (!params.empty()) {
-        if (at().type == TokenType::Comma) {
-          advance();
-        }
+      if (!params.empty() && at().type == TokenType::Comma) {
+        advance();
+        continue;
       }
-      
+
       if (at().type == TokenType::Identifier) {
         auto pattern = makeIdentifier(advance());
+
+        std::optional<std::unique_ptr<ast::TypeAnnotation>> typeAnn;
+        if (at().type == TokenType::Colon) {
+          typeAnn = parseTypeAnnotation();
+        }
+
+        std::optional<std::unique_ptr<ast::Expression>> defaultVal;
+        if (at().type == TokenType::Assign) {
+          advance(); // consume '='
+          defaultVal = parseExpression();
+        }
+
         params.push_back(std::make_unique<ast::FunctionParameter>(
-            std::move(pattern), std::nullopt, std::nullopt, false));
+            std::move(pattern), std::move(defaultVal), std::move(typeAnn), false));
       } else if (at().type == TokenType::Spread) {
         advance(); // consume '...'
         auto pattern = makeIdentifier(advance());
         params.push_back(std::make_unique<ast::FunctionParameter>(
             std::move(pattern), std::nullopt, std::nullopt, true));
+      } else if (at().type != TokenType::CloseParen) {
+        failAt(at(), "Expected parameter name in function definition");
       }
     }
-    
+
     advance(); // consume ')'
   }
   
@@ -1603,6 +1618,7 @@ Parser::produceAST(const std::string &sourceCode) {
   auto program = std::make_unique<havel::ast::Program>();
 
   // Parse all statements until EOF with error recovery
+  size_t iterations = 0;
   while (notEOF()) {
     // Skip empty lines or statement separators
     if (at().type == havel::TokenType::NewLine ||
@@ -1614,6 +1630,11 @@ Parser::produceAST(const std::string &sourceCode) {
     // Error throttle - stop after too many errors
     if (errors.size() > 100) {
       throw std::runtime_error("Too many parse errors, aborting");
+    }
+
+    iterations++;
+    if (iterations > 50000) {
+      throw std::runtime_error("Parse stuck in loop at token " + std::to_string(position) + "/" + std::to_string(tokens.size()) + ": " + at().toString() + " (" + std::to_string(errors.size()) + " errors so far)");
     }
 
     if (debug.parser) {

@@ -1,11 +1,13 @@
-// Basic pipe test
 result = "hi" | capital | print | concat " hello" | upper
-print(result)
-
-// Object test
-obj = {a: 1, b: 'b'}
+print(result)   
+obj = {a: 1, b: 'b'}          
 obj.c = 1
-print(obj)
-
-// String test  
-print("hello" | upper | lower)
+obj.d = obj.len
+o = obj | entries | map(x => x.push(1)) | each(x => obj.set(x[0], len(x[1]))) | has 'b' | print
+print(o,obj, delim="\n")
+v = {1,2,3,4,5}      
+v.add(0)  
+v.union({2,3,4,5,6,7}) 
+arr = v | list | push 3 | reversed | unique | print
+a = arr | sort | x => return x * 4 | print // should be inferred to mapmap
+print(arr, a, delim="\n")       

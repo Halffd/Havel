@@ -1120,6 +1120,10 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileInputStatement(static_cast<const ast::InputStatement &>(statement));
     break;
 
+  case ast::NodeType::WaitStatement:
+    compileWaitStatement(static_cast<const ast::WaitStatement &>(statement));
+    break;
+
   case ast::NodeType::BreakStatement:
     emit(OpCode::JUMP, 0); // Will be patched later
     break;
@@ -3212,6 +3216,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::GetInputExpression: {
+    const auto &getInput = static_cast<const ast::GetInputExpression &>(expression);
+    compileGetInputExpression(getInput);
+    break;
+  }
+
   // Pattern types - should be compiled via compilePattern, not directly
   case ast::NodeType::OrPattern:
   case ast::NodeType::ArrayPattern:
@@ -4719,6 +4729,58 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       break;
     }
   }
+}
+
+void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
+  if (statement.condition) {
+    // Wait statement: w condition
+    // Compiled as a loop that checks condition and sleeps a bit
+    uint32_t startLabel =
+        static_cast<uint32_t>(current_function->instructions.size());
+    compileExpression(*statement.condition);
+    uint32_t jumpToEnd = emitJump(OpCode::JUMP_IF_TRUE);
+
+    // Sleep a bit (10ms) to avoid high CPU usage
+    {
+      uint32_t _sid = addStringConstant("10ms");
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+    };
+    {
+      uint32_t strId = addStringConstant("sleep");
+      emit(OpCode::CALL_HOST, std::vector<Value>{Value::makeStringValId(strId),
+                                                 Value(static_cast<uint32_t>(1))});
+    }
+    emit(OpCode::POP); // discard sleep result
+
+    emit(OpCode::JUMP, startLabel);
+
+    patchJump(jumpToEnd,
+              static_cast<uint32_t>(current_function->instructions.size()));
+  }
+}
+
+void ByteCompiler::compileGetInputExpression(
+    const ast::GetInputExpression &expression) {
+  // < source (e.g., < clipboard)
+  // Compiled as call to io.getClipboard() or similar
+  std::string fnName = "io.get" + expression.source;
+  // Capitalize first letter of source if needed for camelCase
+  if (!expression.source.empty()) {
+    std::string source = expression.source;
+    source[0] = std::toupper(source[0]);
+    fnName = "io.get" + source;
+  }
+
+  // Special case for prompt
+  uint32_t argCount = 0;
+  if (expression.prompt) {
+    compileExpression(*expression.prompt);
+    argCount = 1;
+  }
+
+  uint32_t strId = addStringConstant(fnName);
+  emit(OpCode::CALL_HOST, std::vector<Value>{Value::makeStringValId(strId),
+                                             Value(argCount)});
 }
 
 } // namespace havel::compiler

@@ -104,6 +104,8 @@ private:
   void compileHotkeyBinding(const ast::HotkeyBinding &binding);
   void compileWhenBlock(const ast::WhenBlock &whenBlock);
   void compileInputStatement(const ast::InputStatement &statement);
+  void compileWaitStatement(const ast::WaitStatement &statement);
+  void compileGetInputExpression(const ast::GetInputExpression &expression);
   void compileTryStatement(const ast::TryExpression &statement);
   void compileCallExpression(const ast::CallExpression &expression);
   void compileCallExpressionTail(const ast::CallExpression &expression); // TCO

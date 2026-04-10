@@ -145,24 +145,18 @@ void Havel::initialize(bool isStartup) {
 
   info("Havel initialized successfully");
 
-  if (isStartup) {
-    TimerManager::SetTimer(
-        Configs::Get().Get<int>("Display.StartupDelayMs", 10000),
-        [this]() {
-          info("Setting startup brightness and gamma values");
-          brightnessManager->setBrightness(
-              Configs::Get().Get<double>("Display.StartupBrightness", 0.4));
-          brightnessManager->setTemperature(
-              Configs::Get().Get<int>("Display.StartupTemperature", 5500));
-        },
-        false);
-  }
-
   if (WindowManagerDetector::IsX11()) {
     Display *display = DisplayManager::GetDisplay();
     if (!display) {
       throw std::runtime_error("Failed to open X11 display");
     }
+  }
+  if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
+    std::thread([this]() {
+      std::this_thread::sleep_for(std::chrono::seconds(15));
+      info("AutoExit enabled - exiting after 5 seconds");
+      std::exit(0);
+    }).detach();
   }
 }
 

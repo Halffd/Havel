@@ -701,16 +701,44 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle # as length operator or hotkey modifier
     if (c == '#') {
-      // If followed by identifier, '(', '[', string, or number - treat as length operator
+      // Determine if we're in expression context or statement context
+      bool inExpressionContext = false;
+      if (!tokens.empty()) {
+        TokenType prevType = tokens.back().type;
+        inExpressionContext = (prevType == TokenType::Number ||
+          prevType == TokenType::Identifier ||
+          prevType == TokenType::String ||
+          prevType == TokenType::CloseParen ||
+          prevType == TokenType::CloseBracket ||
+          prevType == TokenType::Not ||
+          prevType == TokenType::Or || prevType == TokenType::And ||
+          prevType == TokenType::Assign || prevType == TokenType::If ||
+          prevType == TokenType::While || prevType == TokenType::For ||
+          prevType == TokenType::In || prevType == TokenType::Matches ||
+          prevType == TokenType::Tilde || prevType == TokenType::Comma ||
+          prevType == TokenType::Dot || prevType == TokenType::Arrow);
+      }
+
+      // If followed by identifier, '(', '[', string, or number
       if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
-        tokens.push_back(makeToken("#", TokenType::Length));
+        // In expression context, treat as length operator
+        // In statement context, treat as hotkey modifier
+        if (inExpressionContext) {
+          tokens.push_back(makeToken("#", TokenType::Length));
+          if (debug_lexer) {
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+          }
+          continue;
+        }
+        // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
+        tokens.push_back(scanHotkey());
         if (debug_lexer) {
           std::cout << "LEX: " << tokens.back().toString() << std::endl;
         }
         continue;
       }
 
-      // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
+      // If not followed by identifier-starting char, scan as hotkey
       tokens.push_back(scanHotkey());
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;
@@ -1080,16 +1108,39 @@ std::vector<Token> Lexer::tokenize() {
     }
 
     // Handle @ (at/this field access) - must be before hotkey handling
-    // Only treat as At token if followed by identifier or ->
-    // Otherwise it might be a hotkey modifier
+    // Only treat as At token if in expression context and followed by identifier
+    // Otherwise it might be a hotkey modifier (e.g. @numpadsub => {...})
     if (c == '@') {
       // Check if followed by identifier (field access like @field)
-      if (isAlpha(peek()) || peek() == '_') {
-        tokens.push_back(makeToken("@", TokenType::At));
-        if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      if ((isAlpha(peek()) || peek() == '_')) {
+        // Only emit At token if we're in expression context
+        bool inExpressionContext = false;
+        if (!tokens.empty()) {
+          TokenType prevType = tokens.back().type;
+          inExpressionContext = (prevType == TokenType::Number ||
+            prevType == TokenType::Identifier ||
+            prevType == TokenType::String ||
+            prevType == TokenType::CloseParen ||
+            prevType == TokenType::CloseBracket ||
+            prevType == TokenType::Not ||
+            prevType == TokenType::Or || prevType == TokenType::And ||
+            prevType == TokenType::Assign || prevType == TokenType::If ||
+            prevType == TokenType::While || prevType == TokenType::For ||
+            prevType == TokenType::In || prevType == TokenType::Matches ||
+            prevType == TokenType::Tilde || prevType == TokenType::Comma ||
+            prevType == TokenType::Dot || prevType == TokenType::Arrow);
+        } else {
+          // No tokens yet - could be expression context at file start
+          inExpressionContext = false;
         }
-        continue;
+        if (inExpressionContext) {
+          tokens.push_back(makeToken("@", TokenType::At));
+          if (debug_lexer) {
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+          }
+          continue;
+        }
+        // Otherwise fall through to hotkey handling
       }
       // Otherwise fall through to hotkey handling
     }

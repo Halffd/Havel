@@ -2308,9 +2308,19 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       // Require statement terminator for expression statements
       // Skip this check for match expressions since they're self-contained
       bool isMatchExpr = expr && expr->kind == ast::NodeType::MatchExpression;
-      if (!isMatchExpr &&
-          at().type != havel::TokenType::NewLine && 
-          at().type != havel::TokenType::Semicolon && 
+      bool isInputChainable = context.inInputContext &&
+          (at().type == havel::TokenType::Colon ||           // :100 sleep
+           at().type == havel::TokenType::Less ||            // ^- input
+           at().type == havel::TokenType::Multiply ||        // * repeat
+           at().type == havel::TokenType::Question ||        // ? if
+           (at().type == havel::TokenType::Identifier &&
+            (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
+             at().value == "r" || at().value == "w" || at().value == "type" ||
+             at().value == "click" || at().value == "move" || at().value == "scroll" ||
+             at().value == "key" || at().value == "keys")));
+      if (!isMatchExpr && !isInputChainable &&
+          at().type != havel::TokenType::NewLine &&
+          at().type != havel::TokenType::Semicolon &&
           at().type != havel::TokenType::CloseBrace &&
           at().type != havel::TokenType::EOF_TOKEN) {
         failAt(at(), "Expected ';' or newline after expression (Havel requires statement terminators)");

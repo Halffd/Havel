@@ -1366,38 +1366,36 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
       // Arrow function: identifier => body
       // Multi-param case (a, b, c) => body is handled in parseParenthesizedExpression
       // which returns a LambdaExpression directly, so we only reach here for single-param.
-      auto *ident = dynamic_cast<ast::Identifier*>(left.get());
-      if (!ident) {
+      // Skip arrow function parsing when inside match expression patterns
+      if (context.inMatchExpression) {
+        // Return nullptr to stop Pratt parsing and leave => for match parser
+        return nullptr;
+      }
+      if (left->kind != ast::NodeType::Identifier) {
         errorAt(token, "Arrow function requires an identifier parameter");
         return nullptr;
+      }
+      auto ident = std::unique_ptr<ast::Identifier>(static_cast<ast::Identifier*>(left.release()));
+      advance(); // consume '=>'
+
+      // Parse body
+      std::unique_ptr<ast::BlockStatement> body;
+      if (at().type == TokenType::OpenBrace) {
+        body = parseBlockStatement();
+      } else {
+        // Expression body: wrap in return
+        auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
+        if (!bodyExpr) return nullptr;
+        
+        body = std::make_unique<ast::BlockStatement>();
+        body->body.push_back(std::make_unique<ast::ExpressionStatement>(std::move(bodyExpr)));
       }
 
       std::vector<std::unique_ptr<ast::FunctionParameter>> params;
       params.push_back(std::make_unique<ast::FunctionParameter>(
-          std::make_unique<ast::Identifier>(ident->symbol),
-          std::nullopt, std::nullopt, false));
-
-      // Check if body is a block (starts with {)
-      if (at().type == TokenType::OpenBrace) {
-        // Block body: use parseBlockStatement for proper statement parsing
-        auto body = parseBlockStatement();
-        return std::make_unique<ast::LambdaExpression>(
-            std::move(params), std::move(body));
-      }
-      
-      // Expression body: parse with appropriate precedence
-      auto bodyExpr = parsePrattExpression(getRightBindingPower(token.type));
-      if (!bodyExpr) {
-        return nullptr;
-      }
-      
-      // Wrap body in a block statement
-      auto body = std::make_unique<ast::BlockStatement>();
-      auto exprStmt = std::make_unique<ast::ExpressionStatement>(std::move(bodyExpr));
-      body->body.push_back(std::move(exprStmt));
-      
-      return std::make_unique<ast::LambdaExpression>(
-          std::move(params), std::move(body));
+          std::move(ident), std::nullopt, std::nullopt, false));
+          
+      return std::make_unique<ast::LambdaExpression>(std::move(params), std::move(body));
     }
 
     default:
@@ -2066,7 +2064,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // Fall through to expression parsing for config.method() calls
     [[fallthrough]];
   case havel::TokenType::Match:
-    // match is an expression, not a statement
+    // match is an expression, not a statement - parse it directly
+    // Match expressions are self-contained and don't need terminators
     {
       auto expr = parseExpression();
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
@@ -2263,6 +2262,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       }
 
       auto expr = parseExpression();
+
+      // Require statement terminator for expression statements
+      // Skip this check for match expressions since they're self-contained
+      bool isMatchExpr = expr && expr->kind == ast::NodeType::MatchExpression;
+      if (!isMatchExpr &&
+          at().type != havel::TokenType::NewLine && 
+          at().type != havel::TokenType::Semicolon && 
+          at().type != havel::TokenType::CloseBrace &&
+          at().type != havel::TokenType::EOF_TOKEN) {
+        failAt(at(), "Expected ';' or newline after expression (Havel requires statement terminators)");
+      }
 
       // Consume optional semicolon
       if (at().type == havel::TokenType::Semicolon) {
@@ -5093,11 +5103,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
 
   // Parse comma-separated discriminants
   std::vector<std::unique_ptr<havel::ast::Expression>> discriminants;
-  
+
   // Temporarily disable brace sugar to prevent { from being consumed as a lambda
   bool savedBraceSugar = context.allowBraceSugar;
   context.allowBraceSugar = false;
-  
+
   discriminants.push_back(parseBinaryExpression());
 
   // Parse additional discriminants separated by commas
@@ -5105,9 +5115,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     advance(); // consume ','
     discriminants.push_back(parseBinaryExpression());
   }
-  
-  // Restore brace sugar context
-  context.allowBraceSugar = savedBraceSugar;
 
   auto match = std::make_unique<havel::ast::MatchExpression>(std::move(discriminants));
 
@@ -5133,11 +5140,12 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     std::unique_ptr<havel::ast::Expression> guard;
     bool isDefault = true;
 
+    // Set inMatchExpression flag when parsing patterns to prevent arrow functions
+    context.inMatchExpression = true;
+
     // Parse first pattern
     auto firstPat = parsePattern();
-    if (firstPat) {
-      isDefault = false;
-    }
+    isDefault = (firstPat && firstPat->kind == ast::NodeType::WildcardPattern);
     patterns.push_back(std::move(firstPat));
 
     // Parse additional patterns separated by commas
@@ -5148,7 +5156,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
       }
       advance(); // consume ','
       auto pat = parsePattern();
-      if (pat) {
+      if (pat && pat->kind != ast::NodeType::WildcardPattern) {
         isDefault = false;
       }
       patterns.push_back(std::move(pat));
@@ -5161,14 +5169,22 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
       guard = parsePrattExpression(11);
     }
 
-    // Expect =>
+    // Skip newlines before checking for =>
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    // Expect => (keep inMatchExpression flag set to prevent Pratt parser interference)
     if (at().type != havel::TokenType::Arrow) {
       failAt(at(), "Expected '=>' after pattern(s)");
     }
     advance(); // consume '=>'
 
-    // Parse result expression
-    auto result = parseBinaryExpression();
+    // Restore flag before parsing result expression (allow arrow functions in result)
+    context.inMatchExpression = false;
+
+    // Parse result expression (use parseAssignmentExpression to handle assignments like x = true)
+    auto result = parseAssignmentExpression();
 
     if (isDefault) {
       match->defaultCase = std::move(result);
@@ -5196,6 +5212,10 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     failAt(at(), "Expected '}' to close match expression");
   }
   advance(); // consume '}'
+
+  // Restore context
+  context.allowBraceSugar = savedBraceSugar;
+  // Note: inMatchExpression flag is reset per-case, no need to restore here
 
   return match;
 }
@@ -6770,11 +6790,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePattern() {
   if (!first) return nullptr;
   alternatives.push_back(std::move(first));
   
-  while (at().type == havel::TokenType::Pipe) {
-    advance(); // consume '|'
+  while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::Or) {
+    advance(); // consume '|' or '||'
     auto next = parsePatternAtom();
     if (!next) {
-      failAt(at(), "Expected pattern after '|'");
+      failAt(at(), "Expected pattern after '|' or '||'");
       return nullptr;
     }
     alternatives.push_back(std::move(next));
@@ -6794,7 +6814,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
   // Wildcard
   if (at().type == havel::TokenType::Underscore) {
     advance();
-    return nullptr; // null represents wildcard
+    return std::make_unique<havel::ast::WildcardPattern>();
   }
   
   // Array pattern
@@ -6851,12 +6871,17 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
   else if (at().type == havel::TokenType::Identifier) {
     literal = makeIdentifier(advance());
   }
-  
+  // Wildcard pattern _
+  else if (at().type == havel::TokenType::Underscore) {
+    advance(); // consume '_'
+    literal = std::make_unique<havel::ast::WildcardPattern>();
+  }
+
   if (!literal) {
     failAt(at(), "Expected pattern");
     return nullptr;
   }
-  
+
   // Check for range pattern: literal..=literal
   if (at().type == havel::TokenType::DotDotEquals) {
     advance(); // consume '..='

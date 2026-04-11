@@ -404,13 +404,33 @@ void registerRandomModule(VMApi &api) {
 
   // ─── Weighted random ───────────────────────────────────────────
   api.registerFunction(
-      "random.weighted", [](const std::vector<Value> &args) -> Value {
+      "random.weighted", [&api](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isArrayId())
           throw std::runtime_error(
               "random.weighted() requires weights array");
-        throw std::runtime_error(
-            "random.weighted() not yet fully implemented - use "
-            "random.weightedChoice");
+        size_t wlen = api.length(args[0]);
+        if (wlen == 0)
+          throw std::runtime_error(
+              "random.weighted() requires non-empty weights");
+        std::vector<double> weights;
+        weights.reserve(wlen);
+        double total = 0.0;
+        for (size_t i = 0; i < wlen; ++i) {
+          double wt = toNum(api.getAt(args[0], static_cast<uint32_t>(i)));
+          weights.push_back(wt);
+          total += wt;
+        }
+        if (total <= 0.0)
+          throw std::runtime_error(
+              "random.weighted() weights must sum to > 0");
+        double r = std::uniform_real_distribution<double>(0.0, total)(g_rng);
+        double cum = 0.0;
+        for (size_t i = 0; i < weights.size(); ++i) {
+          cum += weights[i];
+          if (r <= cum)
+            return Value(static_cast<double>(i));
+        }
+        return Value(static_cast<double>(weights.size() - 1));
       });
 
   api.registerFunction(
@@ -427,21 +447,17 @@ void registerRandomModule(VMApi &api) {
         if (alen != wlen)
           throw std::runtime_error(
               "random.weightedChoice() arrays must be same size");
-        std::vector<double> weights;
-        weights.reserve(wlen);
+        // Delegate to random.weighted() for index selection
         double total = 0.0;
-        for (size_t i = 0; i < wlen; ++i) {
-          double wt = toNum(api.getAt(args[1], static_cast<uint32_t>(i)));
-          weights.push_back(wt);
-          total += wt;
-        }
+        for (size_t i = 0; i < wlen; ++i)
+          total += toNum(api.getAt(args[1], static_cast<uint32_t>(i)));
         if (total <= 0.0)
           throw std::runtime_error(
               "random.weightedChoice() weights must sum to > 0");
         double r = std::uniform_real_distribution<double>(0.0, total)(g_rng);
         double cum = 0.0;
-        for (size_t i = 0; i < weights.size(); ++i) {
-          cum += weights[i];
+        for (size_t i = 0; i < wlen; ++i) {
+          cum += toNum(api.getAt(args[1], static_cast<uint32_t>(i)));
           if (r <= cum)
             return api.getAt(args[0], static_cast<uint32_t>(i));
         }

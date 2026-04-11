@@ -1826,12 +1826,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     if (at().type == havel::TokenType::When) {
       advance(); // consume 'when'
       // Parse legacy when syntax (e.g., "when mode gaming")
-      // This would need to be converted to a proper expression
-      // For now, let's parse a simple condition expression
-      prefixCondition = parseExpression();
+      // Stop at => so condition doesn't consume the arrow
+      prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
     } else if (at().type == havel::TokenType::If) {
       advance(); // consume 'if'
-      prefixCondition = parseExpression();
+      prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
     }
 
     if (at().type == havel::TokenType::Arrow) {
@@ -1938,10 +1937,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
       if (at().type == havel::TokenType::When) {
         advance(); // consume 'when'
-        prefixCondition = parseExpression();
+        // Stop at => (binding power 10) so condition doesn't consume the arrow
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
       } else if (at().type == havel::TokenType::If) {
         advance(); // consume 'if'
-        prefixCondition = parseExpression();
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
       }
 
       if (at().type == havel::TokenType::Arrow) {

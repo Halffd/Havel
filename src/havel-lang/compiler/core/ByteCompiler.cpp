@@ -3420,14 +3420,33 @@ void ByteCompiler::compileCallExpression(
     // For primitives: direct dispatch via prototype tables (no boxing).
     // For objects/classes: prototype chain lookup via bound method objects.
     compileExpression(*member.object);
+    // Compile args, expanding spread
+    uint32_t totalArgs = 0;
     for (const auto &arg : expression.args) {
       if (!arg) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        totalArgs++;
         continue;
       }
-      compileExpression(*arg);
+      if (arg->kind == ast::NodeType::SpreadExpression) {
+        const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+        if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+          const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+          for (const auto &elem : arrLit.elements) {
+            if (elem) {
+              compileExpression(*elem);
+              totalArgs++;
+            }
+          }
+        } else {
+          compileExpression(*arg);
+          totalArgs++;
+        }
+      } else {
+        compileExpression(*arg);
+        totalArgs++;
+      }
     }
-    uint32_t totalArgs = arg_count;
     if (hasKwargs) {
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {
@@ -3451,15 +3470,33 @@ void ByteCompiler::compileCallExpression(
     if (!binding) {
       // Check if this is a known host global (e.g., print, sleep)
       if (host_global_names_.count(callee_id.symbol) > 0) {
-        // Compile as host function call
+        // Compile as host function call, expanding spread args
+        uint32_t totalArgs = 0;
         for (const auto &arg : expression.args) {
           if (!arg) {
             emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            totalArgs++;
             continue;
           }
-          compileExpression(*arg);
+          if (arg->kind == ast::NodeType::SpreadExpression) {
+            const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+            if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+              const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+              for (const auto &elem : arrLit.elements) {
+                if (elem) {
+                  compileExpression(*elem);
+                  totalArgs++;
+                }
+              }
+            } else {
+              compileExpression(*arg);
+              totalArgs++;
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
         }
-        uint32_t totalArgs = arg_count;
         if (hasKwargs) {
           emit(OpCode::OBJECT_NEW);
           for (const auto &kwarg : expression.kwargs) {
@@ -3483,17 +3520,33 @@ void ByteCompiler::compileCallExpression(
     }
 
     if (binding->kind == ResolvedBindingKind::HostFunction) {
-      // Host function - call via CALL_HOST
+      // Host function - call via CALL_HOST, expanding spread args
+      uint32_t totalArgs = 0;
       for (const auto &arg : expression.args) {
         if (!arg) {
           emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          totalArgs++;
           continue;
         }
-        compileExpression(*arg);
+        if (arg->kind == ast::NodeType::SpreadExpression) {
+          const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+          if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+            const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+            for (const auto &elem : arrLit.elements) {
+              if (elem) {
+                compileExpression(*elem);
+                totalArgs++;
+              }
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        } else {
+          compileExpression(*arg);
+          totalArgs++;
+        }
       }
-
-      // Compile kwargs as object if present
-      uint32_t totalArgs = arg_count;
       if (hasKwargs) {
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
@@ -3519,16 +3572,33 @@ void ByteCompiler::compileCallExpression(
       uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));
       emit(OpCode::LOAD_CONST, const_idx);
 
+      // Compile args, expanding spread
+      uint32_t totalArgs = 0;
       for (const auto &arg : expression.args) {
         if (!arg) {
           emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          totalArgs++;
           continue;
         }
-        compileExpression(*arg);
+        if (arg->kind == ast::NodeType::SpreadExpression) {
+          const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+          if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+            const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+            for (const auto &elem : arrLit.elements) {
+              if (elem) {
+                compileExpression(*elem);
+                totalArgs++;
+              }
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        } else {
+          compileExpression(*arg);
+          totalArgs++;
+        }
       }
-
-      // Compile kwargs as object if present
-      uint32_t totalArgs = arg_count;
       if (hasKwargs) {
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
@@ -3550,16 +3620,33 @@ void ByteCompiler::compileCallExpression(
         emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       }
 
+      // Compile args, expanding spread
+      uint32_t totalArgs = 0;
       for (const auto &arg : expression.args) {
         if (!arg) {
           emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          totalArgs++;
           continue;
         }
-        compileExpression(*arg);
+        if (arg->kind == ast::NodeType::SpreadExpression) {
+          const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+          if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+            const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+            for (const auto &elem : arrLit.elements) {
+              if (elem) {
+                compileExpression(*elem);
+                totalArgs++;
+              }
+            }
+          } else {
+            compileExpression(*arg);
+            totalArgs++;
+          }
+        } else {
+          compileExpression(*arg);
+          totalArgs++;
+        }
       }
-
-      // Compile kwargs as object if present
-      uint32_t totalArgs = arg_count;
       if (hasKwargs) {
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {

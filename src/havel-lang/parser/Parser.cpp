@@ -1215,29 +1215,42 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     // Function call
     case TokenType::OpenParen: {
       std::vector<std::unique_ptr<ast::Expression>> args;
-      
+      std::vector<ast::KeywordArg> kwargs;
+
       // Parse arguments
       while (at().type != TokenType::CloseParen) {
-        if (!args.empty()) {
+        if (!args.empty() || !kwargs.empty()) {
           if (at().type == TokenType::Comma) {
             advance();
           }
         }
-        
+
         if (at().type == TokenType::CloseParen) {
           break;
         }
-        
-        args.push_back(parsePrattExpression(0));
+
+        // Check for keyword argument: name=value
+        // Must check BEFORE calling parsePrattExpression to avoid treating
+        // '=' as an assignment operator
+        if (at().type == TokenType::Identifier &&
+            at(1).type == TokenType::Assign) {
+          std::string name = advance().value; // consume identifier
+          advance();                          // consume '='
+          auto value = parsePrattExpression(0);
+          kwargs.emplace_back(std::move(name), std::move(value));
+        } else {
+          // Positional argument
+          args.push_back(parsePrattExpression(0));
+        }
       }
-      
+
       if (at().type != TokenType::CloseParen) {
         failAt(at(), "Expected ')' after arguments");
       }
       advance(); // consume ')'
-      
+
       return std::make_unique<ast::CallExpression>(
-          std::move(left), std::move(args));
+          std::move(left), std::move(args), std::move(kwargs));
     }
 
     // Array/Object index or slice

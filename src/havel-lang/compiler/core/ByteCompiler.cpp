@@ -427,6 +427,18 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
             static_cast<const ast::BooleanLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
             Value::makeBool(boolean.value));
+      } else if (defaultExpr->kind == ast::NodeType::ArrayLiteral) {
+        const auto &arr =
+            static_cast<const ast::ArrayLiteral &>(*defaultExpr);
+        if (arr.elements.empty()) {
+          // Empty array default: use boolean true as sentinel.
+          // The VM recognizes makeBool(true) as "allocate fresh empty array".
+          current_function->default_values.push_back(
+              Value::makeBool(true));
+        } else {
+          // Non-empty array defaults not yet supported as defaults
+          current_function->default_values.push_back(std::nullopt);
+        }
       } else {
         current_function->default_values.push_back(std::nullopt);
       }
@@ -3144,6 +3156,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::DUP); // Save old value
       emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
+      emit(OpCode::DUP); // Save new value for storage
       if (binding->kind == ResolvedBindingKind::Local) {
         emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
@@ -3154,7 +3167,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
           emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
       }
-      emit(OpCode::POP); // Remove new value, leave old value on stack
+      emit(OpCode::POP); // Remove new value, leave old value on stack as result
     }
     break;
   }
@@ -3708,7 +3721,11 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   compileExpression(*statement.condition);
   uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
+  // Disable tail position so body's last expression result gets POPped
+  bool saved_tail = in_tail_position_;
+  in_tail_position_ = false;
   compileStatement(*statement.body);
+  in_tail_position_ = saved_tail;
   emit(OpCode::JUMP, loop_start);
 
   uint32_t loop_end =
@@ -3726,7 +3743,11 @@ void ByteCompiler::compileDoWhileStatement(
       static_cast<uint32_t>(current_function->instructions.size());
 
   // Execute body first (do-while always executes at least once)
+  // Disable tail position so body's last expression result gets POPped
+  bool saved_tail = in_tail_position_;
+  in_tail_position_ = false;
   compileStatement(*statement.body);
+  in_tail_position_ = saved_tail;
 
   // Then check condition
   compileExpression(*statement.condition);
@@ -3813,7 +3834,13 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   }
 
   // Execute body
-  compileStatement(*statement.body);
+  // Disable tail position so body's last expression result gets POPped
+  {
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileStatement(*statement.body);
+    in_tail_position_ = saved_tail;
+  }
 
   // Jump back to loop start
   emit(OpCode::JUMP, loop_start);
@@ -3904,7 +3931,11 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
     return;
   }
 
-  // Compile all but last statement (not in tail position)
+  // Save and clear tail position for non-last statements
+  bool saved_tail = in_tail_position_;
+
+  // Compile all but last statement (never in tail position)
+  in_tail_position_ = false;
   for (size_t i = 0; i < stmts.size() - 1; i++) {
     if (!stmts[i]) {
       continue;
@@ -3912,10 +3943,12 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
     compileStatement(*stmts[i]);
   }
 
-  // Last statement: inherit tail position
+  // Last statement: inherit original tail position
+  in_tail_position_ = saved_tail;
   if (stmts.back()) {
     compileStatement(*stmts.back());
   }
+  in_tail_position_ = saved_tail;
 }
 
 void ByteCompiler::collectFunctionDeclarations(

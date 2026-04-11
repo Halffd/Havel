@@ -643,6 +643,7 @@ void StatementCompiler::compileLetDeclaration(const ast::LetDeclaration& let) {
           uint32_t strId = emitter_.addStringConstant(id.symbol);
           emitter_.emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
+        emitter_.emit(OpCode::POP); // Discard stored value (statement context)
       }
     }
     // TODO: Handle complex patterns

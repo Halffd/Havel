@@ -2764,13 +2764,25 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
         locals[base + i] = it->second;
       } else if (i < callee->default_values.size() &&
                  callee->default_values[i].has_value()) {
-        locals[base + i] = callee->default_values[i].value();
+        const auto &dv = callee->default_values[i].value();
+        // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
+        if (dv.isBool() && dv.asBool()) {
+          locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+        } else {
+          locals[base + i] = dv;
+        }
       } else {
         locals[base + i] = nullptr;
       }
     } else if (i < callee->default_values.size() &&
                callee->default_values[i].has_value()) {
-      locals[base + i] = callee->default_values[i].value();
+      const auto &dv = callee->default_values[i].value();
+      // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
+      if (dv.isBool() && dv.asBool()) {
+        locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+      } else {
+        locals[base + i] = dv;
+      }
     } else {
       locals[base + i] = nullptr; // No arg provided, no default
     }

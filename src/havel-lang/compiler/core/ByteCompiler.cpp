@@ -3346,9 +3346,8 @@ void ByteCompiler::compileCallExpression(
       if (hasKwargs) {
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           compileExpression(*kwarg.value);
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
@@ -3388,7 +3387,6 @@ void ByteCompiler::compileCallExpression(
         if (hasKwargs) {
           emit(OpCode::OBJECT_NEW);
           for (const auto &kwarg : expression.kwargs) {
-            emit(OpCode::DUP);
             { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
             compileExpression(*kwarg.value);
             emit(OpCode::OBJECT_SET);
@@ -3420,7 +3418,6 @@ void ByteCompiler::compileCallExpression(
     if (hasKwargs) {
       emit(OpCode::OBJECT_NEW);
       for (const auto &kwarg : expression.kwargs) {
-        emit(OpCode::DUP);
         { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         compileExpression(*kwarg.value);
         emit(OpCode::OBJECT_SET);
@@ -3487,9 +3484,8 @@ void ByteCompiler::compileCallExpression(
       if (hasKwargs) {
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           compileExpression(*kwarg.value);
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
@@ -3501,6 +3497,36 @@ void ByteCompiler::compileCallExpression(
             Value::makeStringValId(strId),
             Value(totalArgs)});
       }
+      return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::Function) {
+      // User-defined function - load as FunctionObject and call
+      uint32_t fn_index = top_level_function_indices_by_name_[binding->name];
+      uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));
+      emit(OpCode::LOAD_CONST, const_idx);
+
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          continue;
+        }
+        compileExpression(*arg);
+      }
+
+      // Compile kwargs as object if present
+      uint32_t totalArgs = arg_count;
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          compileExpression(*kwarg.value);
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+          emit(OpCode::OBJECT_SET);
+        }
+        totalArgs++;
+      }
+
+      emit(OpCode::CALL, totalArgs);
       return;
     }
 
@@ -3524,9 +3550,8 @@ void ByteCompiler::compileCallExpression(
       if (hasKwargs) {
         emit(OpCode::OBJECT_NEW);
         for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           compileExpression(*kwarg.value);
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
           emit(OpCode::OBJECT_SET);
         }
         totalArgs++;
@@ -3576,9 +3601,8 @@ void ByteCompiler::compileCallExpression(
   if (hasKwargs) {
     emit(OpCode::OBJECT_NEW);
     for (const auto &kwarg : expression.kwargs) {
-      emit(OpCode::DUP);
-      { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       compileExpression(*kwarg.value);
+      { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_SET);
     }
     actualArgCount++;

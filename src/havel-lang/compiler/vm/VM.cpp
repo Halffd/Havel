@@ -2713,6 +2713,39 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   // Initialize parameter slots: provided args first, then defaults
   // Handle variadic parameters: pack extra args into array
+  
+  // Check if last arg is a kwargs object
+  bool has_kwargs = false;
+  auto *kwargs_obj = heap_.object(0);
+  if (!args.empty() && args.back().isObjectId()) {
+    kwargs_obj = heap_.object(args.back().asObjectId());
+    if (kwargs_obj) {
+      auto itEnd = kwargs_obj->find("end");
+      if (itEnd != kwargs_obj->end()) {
+        has_kwargs = true;
+      } else {
+        auto itDelim = kwargs_obj->find("delim");
+        if (itDelim != kwargs_obj->end()) {
+          has_kwargs = true;
+        } else {
+          // Check if any key matches a param name
+          for (uint32_t pi = 0; pi < callee->param_count && pi < callee->param_names.size(); pi++) {
+            auto it = kwargs_obj->find(callee->param_names[pi]);
+            if (it != kwargs_obj->end()) {
+              has_kwargs = true;
+              break;
+            }
+          }
+        }
+      }
+      if (has_kwargs) {
+        args.pop_back();
+      } else {
+        kwargs_obj = heap_.object(0);
+      }
+    }
+  }
+  
   for (uint32_t i = 0; i < callee->param_count; i++) {
     if (callee->variadic_param_index != UINT32_MAX &&
         i == callee->variadic_param_index) {
@@ -2725,6 +2758,16 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       locals[base + i] = Value::makeArrayId(arrRef.id);
     } else if (i < args.size()) {
       locals[base + i] = std::move(args[i]);
+    } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
+      auto it = kwargs_obj->find(callee->param_names[i]);
+      if (it != kwargs_obj->end()) {
+        locals[base + i] = it->second;
+      } else if (i < callee->default_values.size() &&
+                 callee->default_values[i].has_value()) {
+        locals[base + i] = callee->default_values[i].value();
+      } else {
+        locals[base + i] = nullptr;
+      }
     } else if (i < callee->default_values.size() &&
                callee->default_values[i].has_value()) {
       locals[base + i] = callee->default_values[i].value();
@@ -3410,18 +3453,6 @@ void VM::executeInstruction(const Instruction &instruction) {
     else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
     else if (callee_value.isObjectId()) typeInfo = "object_id";
     else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-    
-    
-    // Debug: check argument types
-    for (uint32_t i = 0; i < arg_count; ++i) {
-      std::string argType = "unknown";
-      if (args[i].isNull()) argType = "null";
-      else if (args[i].isInt()) argType = "int";
-      else if (args[i].isClosureId()) argType = "closure_id";
-      else if (args[i].isFunctionObjId()) argType = "function_obj_id";
-      else if (args[i].isObjectId()) argType = "object_id";
-      else if (args[i].isHostFuncId()) argType = "host_func_id";
-    }
 
     // Handle bound method objects (from runtime member lookup)
     if (callee_value.isObjectId()) {

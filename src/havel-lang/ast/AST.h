@@ -114,6 +114,7 @@ enum class NodeType {
   ObjectPattern, // { x, y: alias } for destructuring
   ArrayPattern,  // [a, b] for destructuring
   OrPattern,     // pat1 | pat2 for alternative patterns
+  WildcardPattern, // _ for match statements
   SpreadPattern, // ..rest for array rest patterns
   // Literals
   StringLiteral,                // "Hello"
@@ -2153,6 +2154,15 @@ struct OrPattern : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Wildcard Pattern (_)
+struct WildcardPattern : public Expression {
+  WildcardPattern() { kind = NodeType::WildcardPattern; }
+
+  std::string toString() const override { return "WildcardPattern{_}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Spread Pattern for rest elements (..rest)
 struct SpreadPattern : public Expression {
   std::unique_ptr<Expression> target;  // identifier to bind rest to
@@ -2819,6 +2829,7 @@ public:
   virtual void visitObjectPattern(const ObjectPattern &node) = 0;
   virtual void visitArrayPattern(const ArrayPattern &node) = 0;
   virtual void visitOrPattern(const OrPattern &node) = 0;
+  virtual void visitWildcardPattern(const WildcardPattern &node) = 0;
   virtual void visitSpreadPattern(const SpreadPattern &node) = 0;
   virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
   virtual void visitSetExpression(const SetExpression &node) = 0;
@@ -3042,6 +3053,10 @@ inline void ArrayPattern::accept(ASTVisitor &visitor) const {
 
 inline void OrPattern::accept(ASTVisitor &visitor) const {
   visitor.visitOrPattern(*this);
+}
+
+inline void WildcardPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitWildcardPattern(*this);
 }
 
 inline void SpreadPattern::accept(ASTVisitor &visitor) const {

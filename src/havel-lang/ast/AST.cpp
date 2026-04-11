@@ -602,6 +602,10 @@ public:
     indentLevel--;
     out << getIndent() << "}" << std::endl;
   }
+
+  void visitWildcardPattern(const WildcardPattern &node) override {
+    out << getIndent() << node.toString() << std::endl;
+  }
 };
 
 // BooleanLiteral accept method

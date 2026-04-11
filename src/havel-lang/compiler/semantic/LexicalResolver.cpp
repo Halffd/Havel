@@ -830,6 +830,20 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::RangeExpression: {
+    const auto &range = static_cast<const ast::RangeExpression &>(expression);
+    if (range.start) {
+      resolveExpression(*range.start);
+    }
+    if (range.end) {
+      resolveExpression(*range.end);
+    }
+    if (range.step) {
+      resolveExpression(*range.step);
+    }
+    break;
+  }
+
   case ast::NodeType::CallExpression: {
     const auto &call = static_cast<const ast::CallExpression &>(expression);
     if (call.callee) {
@@ -838,6 +852,11 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     for (const auto &arg : call.args) {
       if (arg) {
         resolveExpression(*arg);
+      }
+    }
+    for (const auto &kwarg : call.kwargs) {
+      if (kwarg.value) {
+        resolveExpression(*kwarg.value);
       }
     }
     break;
@@ -875,6 +894,11 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
       if (binding && (binding->kind == ResolvedBindingKind::Local ||
                      binding->kind == ResolvedBindingKind::Upvalue)) {
         shouldDeclareLocal = false;
+      }
+      // If binding is a "fake" Global (not in global_variables_), still declare local
+      if (binding && binding->kind == ResolvedBindingKind::Global &&
+          global_variables_.count(binding->name) == 0) {
+        shouldDeclareLocal = true;
       }
 
       if (shouldDeclareLocal) {

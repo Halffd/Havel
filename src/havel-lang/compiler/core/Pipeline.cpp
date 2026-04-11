@@ -11,6 +11,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -517,7 +518,9 @@ BytecodeSmokeResult runBytecodePipeline(
     return artifact_path.string();
   };
 
-  parser::Parser parser;
+  parser::Parser parser{{.lexer = ::havel::debugging::debug_lexer,
+                         .parser = ::havel::debugging::debug_parser,
+                         .ast = ::havel::debugging::debug_ast}};
   std::unique_ptr<ast::Program> program;
   try {
     program = parser.produceAST(source);
@@ -534,6 +537,15 @@ BytecodeSmokeResult runBytecodePipeline(
     COMPILER_THROW(
         "Bytecode pipeline failed: parser returned null AST");
   }
+  if (parser.hasErrors()) {
+    std::string allErrors;
+    for (const auto &err : parser.getErrors()) {
+      allErrors += formatDiagnostic(
+          "ParseError", err.message, options.compile_unit_name, source,
+          err.line, err.column, 1, "");
+    }
+    COMPILER_THROW(allErrors);
+  }
 
   ByteCompiler compiler;
   for (const auto &name : options.host_global_names) {
@@ -549,6 +561,10 @@ BytecodeSmokeResult runBytecodePipeline(
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
+    if (options.debugBytecode) {
+      std::cout << "=== BYTECODE ===\n";
+      std::cout << result.snapshot.bytecode << "\n";
+    }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
     std::string formatted = e.what();
@@ -582,6 +598,10 @@ BytecodeSmokeResult runBytecodePipeline(
     chunk = compiler.takeCurrentChunk();
     if (chunk && !chunk->getAllFunctions().empty()) {
       result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
+      if (options.debugBytecode) {
+        std::cout << "=== BYTECODE ===\n";
+        std::cout << result.snapshot.bytecode << "\n";
+      }
     } else {
       result.snapshot.bytecode = "<no bytecode generated>";
     }

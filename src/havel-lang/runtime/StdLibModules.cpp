@@ -32,6 +32,7 @@ void registerTimeModule(
     compiler::VMApi &api); // TimeModule (timestamp ops only)
 void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
 void registerFsModule(compiler::VMApi &api);     // FsModule
+void registerRandomModule(compiler::VMApi &api); // RandomModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -55,6 +56,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerTimeModule(*api);    // TimeModule (timestamps)
   stdlib::registerHotkeyModule(*api);  // HotkeyModule
   stdlib::registerFsModule(*api);      // FsModule
+  stdlib::registerRandomModule(*api);  // RandomModule
 
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
@@ -111,6 +113,11 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("time");
   bridge.options().host_global_names.insert("ui");
   bridge.options().host_global_names.insert("fs");
+  bridge.options().host_global_names.insert("random");
+  bridge.options().host_global_names.insert("rand");
+  bridge.options().host_global_names.insert("randint");
+  bridge.options().host_global_names.insert("choice");
+  bridge.options().host_global_names.insert("RAND_MAX");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

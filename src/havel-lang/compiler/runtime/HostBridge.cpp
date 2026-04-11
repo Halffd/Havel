@@ -329,22 +329,54 @@ void HostBridge::install() {
   // Global print() function - resolves strings and outputs
   options_.host_functions["print"] =
       [this](const std::vector<Value> &args) {
-        if (!ctx_ || !ctx_->vm) {
-          for (const auto &arg : args) {
-            std::cout << arg.toString();
+        // Check if last arg is kwargs object (has end= or delim=)
+        std::string delim = " ";
+        std::string end = "\n";
+        size_t argCount = args.size();
+
+        // Check for kwargs object as last argument
+        bool hasKwargs = false;
+        if (!args.empty() && args.back().isObjectId()) {
+          auto *kwargsObj = ctx_->vm->getHeap().object(args.back().asObjectId());
+          if (kwargsObj) {
+            auto itEnd = kwargsObj->find("end");
+            bool foundEnd = itEnd != kwargsObj->end();
+            auto itDelim = kwargsObj->find("delim");
+            bool foundDelim = itDelim != kwargsObj->end();
+            if (foundEnd) {
+              end = ctx_->vm->resolveStringKey(itEnd->second);
+            }
+            if (foundDelim) {
+              delim = ctx_->vm->resolveStringKey(itDelim->second);
+            }
+            // Only treat as kwargs if it has at least one of end/delim
+            if (foundEnd || foundDelim) {
+              hasKwargs = true;
+            }
           }
-          std::cout << std::flush;
+        }
+        if (hasKwargs) {
+          argCount--; // Don't count kwargs as a value to print
+        }
+
+        if (!ctx_ || !ctx_->vm) {
+          for (size_t i = 0; i < argCount; ++i) {
+            if (i > 0) std::cout << delim;
+            std::cout << args[i].toString();
+          }
+          std::cout << end << std::flush;
           return Value::makeNull();
         }
-        for (const auto &arg : args) {
-          if (arg.isStringValId() || arg.isStringId()) {
-            std::cout << ctx_->vm->resolveStringKey(arg);
+        for (size_t i = 0; i < argCount; ++i) {
+          if (i > 0) std::cout << delim;
+          if (args[i].isStringValId() || args[i].isStringId()) {
+            std::cout << ctx_->vm->resolveStringKey(args[i]);
           } else {
-            std::string s = ctx_->vm->toString(arg);
+            std::string s = ctx_->vm->toString(args[i]);
             std::cout << s;
           }
         }
-        std::cout << std::flush;
+        std::cout << end << std::flush;
         return Value::makeNull();
       };
 

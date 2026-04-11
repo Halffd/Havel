@@ -93,6 +93,7 @@ private:
     bool inInputContext =
         false; // Inside hotkey block (bare expressions are input)
     bool allowBraceSugar = true; // Allow expr { ... } as call sugar
+    bool inMatchExpression = false; // Inside match expression (disable arrow functions)
   };
 
   ParserContext context;

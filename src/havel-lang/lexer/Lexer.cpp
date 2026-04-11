@@ -1122,13 +1122,20 @@ std::vector<Token> Lexer::tokenize() {
             prevType == TokenType::String ||
             prevType == TokenType::CloseParen ||
             prevType == TokenType::CloseBracket ||
+            prevType == TokenType::OpenBrace ||
+            prevType == TokenType::Semicolon ||
+            prevType == TokenType::Assign ||
             prevType == TokenType::Not ||
             prevType == TokenType::Or || prevType == TokenType::And ||
-            prevType == TokenType::Assign || prevType == TokenType::If ||
+            prevType == TokenType::If ||
             prevType == TokenType::While || prevType == TokenType::For ||
             prevType == TokenType::In || prevType == TokenType::Matches ||
             prevType == TokenType::Tilde || prevType == TokenType::Comma ||
-            prevType == TokenType::Dot || prevType == TokenType::Arrow);
+            prevType == TokenType::Dot || prevType == TokenType::Arrow ||
+            prevType == TokenType::OpenParen ||
+            prevType == TokenType::Plus || prevType == TokenType::Minus ||
+            prevType == TokenType::Multiply || prevType == TokenType::Divide ||
+            prevType == TokenType::Modulo);
         } else {
           // No tokens yet - could be expression context at file start
           inExpressionContext = false;

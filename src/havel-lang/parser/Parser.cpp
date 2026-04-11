@@ -1022,6 +1022,13 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       return std::move(call);
     }
 
+    case TokenType::Spread: {
+      // Spread expression: ...array
+      // Use same binding power as other prefix operators
+      auto operand = parsePrattExpression(bp(havel::parser::BindingPower::Prefix));
+      return std::make_unique<ast::SpreadExpression>(std::move(operand));
+    }
+
     case TokenType::Backtick:
       return parseBacktickExpression();
 
@@ -1239,8 +1246,16 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           auto value = parsePrattExpression(0);
           kwargs.emplace_back(std::move(name), std::move(value));
         } else {
-          // Positional argument
-          args.push_back(parsePrattExpression(0));
+          // Positional argument (possibly with spread)
+          std::unique_ptr<ast::Expression> arg;
+          if (at().type == TokenType::Spread) {
+            advance(); // consume '...'
+            auto target = parsePrattExpression(0);
+            arg = std::make_unique<ast::SpreadExpression>(std::move(target));
+          } else {
+            arg = parsePrattExpression(0);
+          }
+          args.push_back(std::move(arg));
         }
       }
 

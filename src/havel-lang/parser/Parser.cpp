@@ -1822,11 +1822,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     if (at().type == havel::TokenType::Arrow) {
       advance(); // consume '=>'
 
-      // New grammar: => MUST be followed by { } block
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected '{' after '=>' in hotkey definition");
+      std::unique_ptr<havel::ast::BlockStatement> action;
+
+      // => can be followed by { } block or a single expression
+      if (at().type == havel::TokenType::OpenBrace) {
+        action = parseBlockStatement(true); // true = input context
+      } else {
+        // Single expression wrapped in a block
+        auto expr = parseExpression();
+        action = std::make_unique<havel::ast::BlockStatement>();
+        action->body.push_back(
+            std::make_unique<havel::ast::ExpressionStatement>(std::move(expr)));
       }
-      auto action = parseBlockStatement(true); // true = input context
 
       // Check for suffix condition (after action)
       std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
@@ -1925,11 +1932,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       if (at().type == havel::TokenType::Arrow) {
         advance(); // consume '=>'
 
-        // New grammar: => MUST be followed by { } block
-        if (at().type != havel::TokenType::OpenBrace) {
-          failAt(at(), "Expected '{' after '=>' in hotkey definition");
+        std::unique_ptr<havel::ast::BlockStatement> action;
+
+        // => can be followed by { } block or a single expression
+        if (at().type == havel::TokenType::OpenBrace) {
+          action = parseBlockStatement(true); // true = input context
+        } else {
+          // Single expression wrapped in a block
+          auto expr = parseExpression();
+          action = std::make_unique<havel::ast::BlockStatement>();
+          action->body.push_back(
+              std::make_unique<havel::ast::ExpressionStatement>(std::move(expr)));
         }
-        auto action = parseBlockStatement(true); // true = input context
 
         // Check for suffix condition (after action)
         std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;

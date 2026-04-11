@@ -5,15 +5,15 @@ print("system.detect: " + type(sys))
 print("sys: " + sys)
 windows = mac = bsd = linux = unknownOS = false
 match sys.os {
-  "Windows" => windows = true,
-  "MacOS" => mac = true,
-  "BSD" => bsd = true,
-  "Linux" => linux = true,
-  "Unknown" => unknownOS = true,
+  "Windows" => windows = true
+  "MacOS" => mac = true
+  "BSD" => bsd = true
+  "Linux" => linux = true
+  "Unknown" => unknownOS = true
   _ => {}
 }
 wl = match sys.os {
-  "Linux" => sys.displayProtocol == "Wayland",
+  "Linux" => sys.displayProtocol == "Wayland"
   _ => false
 }
 displayName = ""
@@ -37,19 +37,20 @@ if wm == "Unknown" || wm == "unknown" {
     print("wm is now: $wm")
   }
 }
+
 hypr = kde = i3 = compiz = cinnamon = gnome = wf = xfce = false
+
 match wm {
-    "hyprland" => hypr = true,
-    "kde plasma" => kde = true,
-    "i3" => i3 = true,
-    "compiz" => compiz = true,
-    "cinnamon" => cinnamon = true,
-    "gnome" || "gnome on x11" || "gnome on wayland" => gnome = true,
-    "wayfire" => wf = true,
-    "xfce" => xfce = true,
+    "hyprland" => hypr = true
+    "kde plasma" => kde = true
+    "i3" => i3 = true
+    "compiz" => compiz = true
+    "cinnamon" => cinnamon = true
+    "gnome" || "gnome on x11" || "gnome on wayland" => gnome = true
+    "wayfire" => wf = true
+    "xfce" => xfce = true
     _ => {}
 }
-
 kdewl = kde && wl
 if !xfce {
   if len(process.find("xfce4-session")) > 0 {
@@ -72,8 +73,8 @@ print(f"Shell: {shell}")
 print(f"User: {user} @ {home}")
 
 // hardware details
-print(f"CPU: {cpu.name} ({cpu.cores} cores @ {cpu.frequency} MHz)")
-print(f"RAM: {ram.total / 1024/1024/1024} GB")
+print(f"CPU: {cpu}")
+print(f"RAM: {ram / 1024/1024/1024} GB")
 print(f"GPU: {gpu}")
 print(f"Motherboard: {motherboard}")
 :100

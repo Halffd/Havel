@@ -1,0 +1,17 @@
+fn arrRand(n, s=5, arr=[]):
+    arrlen = #arr
+    for i in arrlen..n:
+        rn = math.randint(0,s)
+        arr.push(rn)
+    arr
+
+print(arrRand(5))
+print(arrRand(30, 1000))
+print(arrRand(5, 10, [1,2,3]))
+test = [1,2,3,4,5]
+result = arrRand(15, arr=test)
+print(result)
+assert(result.len > 5, "Wrong length")
+print(arrRand(10, arr=[5]))
+print(arrRand(arr=test, s=3, n=9))
+print(arrRand(s=25, arr=[5], n=5))

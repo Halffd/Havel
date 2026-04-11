@@ -1802,7 +1802,13 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
     emit(OpCode::AND);
     break;
   }
-  
+
+  case ast::NodeType::WildcardPattern: {
+    // Wildcard pattern: always matches
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+    break;
+  }
+
   default: {
     // Simple pattern (literal, identifier): use EQ comparison
     compileExpression(pattern);
@@ -3227,6 +3233,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::ArrayPattern:
   case ast::NodeType::ObjectPattern:
   case ast::NodeType::SpreadPattern:
+  case ast::NodeType::WildcardPattern:
     COMPILER_THROW("Pattern type used outside of match context: " +
                              expression.toString());
 
@@ -4264,6 +4271,10 @@ void ByteCompiler::collectLambdaExpressions(
     for (const auto &alt : orPat.alternatives) {
       if (alt) collectLambdaExpressions(*alt, out);
     }
+    break;
+  }
+  case ast::NodeType::WildcardPattern: {
+    // Wildcard pattern has no sub-expressions
     break;
   }
   case ast::NodeType::ArrayPattern: {

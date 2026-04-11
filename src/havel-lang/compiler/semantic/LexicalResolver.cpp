@@ -916,13 +916,50 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-          // Inside a function - declare as local variable
-          uint32_t slot = declareLocal(ident.symbol, &ident, false);
-          ResolvedBinding newBinding;
-          newBinding.kind = ResolvedBindingKind::Local;
-          newBinding.slot = slot;
-          newBinding.name = ident.symbol;
-          noteIdentifierBinding(ident, newBinding);
+          // Inside a function - declare as local variable.
+          // If we're inside a closure, declare in the outermost
+          // enclosing non-closure function so the binding is visible
+          // both in the closure and in the surrounding scope.
+          size_t target_fn = function_stack_.size() - 1;
+          while (target_fn > 0) {
+            const auto &ctx = function_stack_[target_fn];
+            if (ctx.owner && ctx.owner->kind == ast::NodeType::LambdaExpression) {
+              // This is a closure — skip to enclosing function
+              if (target_fn == 0) break;
+              target_fn--;
+            } else {
+              break;
+            }
+          }
+          auto &target_ctx = function_stack_[target_fn];
+          if (target_ctx.scopes.empty()) {
+            beginScope();
+            // beginScope was called on the wrong context, we need to
+            // manually ensure the target has a scope
+          }
+          if (target_ctx.scopes.empty()) {
+            target_ctx.scopes.emplace_back();
+          }
+          auto &scope = target_ctx.scopes.back();
+          auto existing = scope.find(ident.symbol);
+          if (existing == scope.end()) {
+            uint32_t slot = target_ctx.next_slot++;
+            scope[ident.symbol] =
+                FunctionContext::LocalSymbol{.slot = slot, .is_const = false};
+            if (result_.declaration_slots.find(&ident) == result_.declaration_slots.end()) {
+              result_.declaration_slots[&ident] = slot;
+            }
+            ResolvedBinding newBinding;
+            newBinding.kind = ResolvedBindingKind::Local;
+            newBinding.slot = slot;
+            newBinding.name = ident.symbol;
+            newBinding.is_const = false;
+            noteIdentifierBinding(ident, newBinding);
+          } else {
+            noteIdentifierBinding(ident, ResolvedBinding{
+                ResolvedBindingKind::Local, existing->second.slot, 0,
+                ident.symbol, existing->second.is_const});
+          }
         }
       } else {
         noteIdentifierBinding(ident, *binding);
@@ -1242,8 +1279,7 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
 
   // Program-root bindings that are tracked as globals should always resolve
   // as globals in __main__, even though they also have declaration slots.
-  if (function_index == 0 && ctx.scopes.size() == 1 &&
-      global_variables_.count(name) > 0) {
+  if (function_index == 0 && global_variables_.count(name) > 0) {
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 

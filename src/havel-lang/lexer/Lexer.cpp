@@ -1123,6 +1123,7 @@ std::vector<Token> Lexer::tokenize() {
             prevType == TokenType::CloseParen ||
             prevType == TokenType::CloseBracket ||
             prevType == TokenType::OpenBrace ||
+            prevType == TokenType::NewLine ||
             prevType == TokenType::Semicolon ||
             prevType == TokenType::Assign ||
             prevType == TokenType::Not ||
@@ -1141,13 +1142,31 @@ std::vector<Token> Lexer::tokenize() {
           inExpressionContext = false;
         }
         if (inExpressionContext) {
-          tokens.push_back(makeToken("@", TokenType::At));
-          if (debug_lexer) {
-            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+          // Peek ahead: if @identifier is followed by '=>' it's a hotkey,
+          // if followed by '=' or '.' it's a field access
+          size_t look = position;
+          while (look < source.size() && (isAlphaNumeric(source[look]) || source[look] == '_')) {
+            look++;
           }
-          continue;
+          // Skip whitespace
+          while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) {
+            look++;
+          }
+          // Check what follows
+          if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
+            // @identifier => ... this is a hotkey
+          } else if (look < source.size() && (source[look] == '=' || source[look] == '(' || source[look] == '.')) {
+            // @identifier = or @identifier( or @identifier. — field access
+            tokens.push_back(makeToken("@", TokenType::At));
+            if (debug_lexer) {
+              std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            }
+            continue;
+          }
+          // Otherwise fall through to hotkey handling
+        } else {
+          // Fall through to hotkey handling
         }
-        // Otherwise fall through to hotkey handling
       }
       // Otherwise fall through to hotkey handling
     }

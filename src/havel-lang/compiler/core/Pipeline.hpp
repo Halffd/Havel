@@ -20,6 +20,7 @@ struct PipelineOptions {
   std::string compile_unit_name = "unit";
   std::string snapshot_dir;
   bool write_snapshot_artifact = false;
+  bool debugBytecode = false;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::unordered_set<std::string> host_global_names;  // For case-insensitive module access
   VM *vm_override = nullptr;

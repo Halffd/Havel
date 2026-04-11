@@ -245,6 +245,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
         havel::compiler::PipelineOptions options = hostBridge->options();
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
+        options.debugBytecode = cfg.debugBytecode;
 
         try {
           havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
@@ -345,6 +346,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       havel::compiler::PipelineOptions options = hostBridge->options();
       options.compile_unit_name = combinedNames;
       options.vm_override = bytecodeVM;
+      options.debugBytecode = cfg.debugBytecode;
       auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
       info("Execution successful");
     } catch (const std::exception &e) {
@@ -433,6 +435,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     havel::compiler::PipelineOptions options = bridge->options();
     options.compile_unit_name = combinedNames;
     options.vm_override = &tempVm;
+    options.debugBytecode = cfg.debugBytecode;
     
     // Add built-ins ...
     options.host_global_names.insert("print");
@@ -522,6 +525,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         havel::compiler::PipelineOptions options = hostBridge->options();
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
+        options.debugBytecode = cfg.debugBytecode;
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
       } catch (const std::exception &e) {
         error("Script execution error: {}", e.what());

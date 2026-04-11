@@ -1108,67 +1108,35 @@ std::vector<Token> Lexer::tokenize() {
     }
 
     // Handle @ (at/this field access) - must be before hotkey handling
-    // Only treat as At token if in expression context and followed by identifier
-    // Otherwise it might be a hotkey modifier (e.g. @numpadsub => {...})
-    if (c == '@') {
-      // Check if followed by identifier (field access like @field)
-      if ((isAlpha(peek()) || peek() == '_')) {
-        // Only emit At token if we're in expression context
-        bool inExpressionContext = false;
-        if (!tokens.empty()) {
-          TokenType prevType = tokens.back().type;
-          inExpressionContext = (prevType == TokenType::Number ||
-            prevType == TokenType::Identifier ||
-            prevType == TokenType::String ||
-            prevType == TokenType::CloseParen ||
-            prevType == TokenType::CloseBracket ||
-            prevType == TokenType::OpenBrace ||
-            prevType == TokenType::NewLine ||
-            prevType == TokenType::Semicolon ||
-            prevType == TokenType::Assign ||
-            prevType == TokenType::Not ||
-            prevType == TokenType::Or || prevType == TokenType::And ||
-            prevType == TokenType::If ||
-            prevType == TokenType::While || prevType == TokenType::For ||
-            prevType == TokenType::In || prevType == TokenType::Matches ||
-            prevType == TokenType::Tilde || prevType == TokenType::Comma ||
-            prevType == TokenType::Dot || prevType == TokenType::Arrow ||
-            prevType == TokenType::OpenParen ||
-            prevType == TokenType::Plus || prevType == TokenType::Minus ||
-            prevType == TokenType::Multiply || prevType == TokenType::Divide ||
-            prevType == TokenType::Modulo);
-        } else {
-          // No tokens yet - could be expression context at file start
-          inExpressionContext = false;
-        }
-        if (inExpressionContext) {
-          // Peek ahead: if @identifier is followed by '=>' it's a hotkey,
-          // if followed by '=' or '.' it's a field access
-          size_t look = position;
-          while (look < source.size() && (isAlphaNumeric(source[look]) || source[look] == '_')) {
-            look++;
-          }
-          // Skip whitespace
-          while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) {
-            look++;
-          }
-          // Check what follows
-          if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
-            // @identifier => ... this is a hotkey
-          } else if (look < source.size() && (source[look] == '=' || source[look] == '(' || source[look] == '.')) {
-            // @identifier = or @identifier( or @identifier. — field access
-            tokens.push_back(makeToken("@", TokenType::At));
-            if (debug_lexer) {
-              std::cout << "LEX: " << tokens.back().toString() << std::endl;
-            }
-            continue;
-          }
-          // Otherwise fall through to hotkey handling
-        } else {
-          // Fall through to hotkey handling
-        }
+    // Peek ahead to decide: @identifier => is hotkey, everything else is field access
+    if (c == '@' && (isAlpha(peek()) || peek() == '_')) {
+      // Look ahead past the identifier
+      size_t look = position;
+      while (look < source.size() && (isAlphaNumeric(source[look]) || source[look] == '_')) {
+        look++;
       }
-      // Otherwise fall through to hotkey handling
+      // Skip whitespace
+      while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) {
+        look++;
+      }
+      // Check what follows: only => means hotkey
+      if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
+        // @identifier => ... this is a hotkey - fall through to scanHotkey
+      } else {
+        // @identifier with anything else ( = / . / ( / \n / etc ) - field access
+        tokens.push_back(makeToken("@", TokenType::At));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+    }
+
+    // Handle modifier-based hotkeys starting with special characters like # and
+    // combo '&'
+    if (c == '#' || c == '&') {
+      tokens.push_back(scanHotkey());
+      continue;
     }
 
     // Handle modifier-based hotkeys starting with special characters like ^ + !

@@ -3,11 +3,17 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <random>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -27,11 +33,56 @@ static void seedFromEntropy() {
     std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
     g_rng.seed(seq);
   } else {
-    // Fallback: time-based
-    g_rng.seed(
-        static_cast<uint64_t>(std::chrono::steady_clock::now()
-                                  .time_since_epoch()
-                                  .count()));
+    // Mersenne Twister fallback: collect entropy from multiple sources
+    // to seed a high-quality random state even without /dev/urandom
+    auto hi_res = std::chrono::high_resolution_clock::now()
+                      .time_since_epoch()
+                      .count();
+    auto steady = std::chrono::steady_clock::now()
+                      .time_since_epoch()
+                      .count();
+    auto system = std::chrono::system_clock::now()
+                      .time_since_epoch()
+                      .count();
+
+    // Gather additional entropy from process state and addresses
+    uint64_t pid_val =
+#ifdef _WIN32
+        static_cast<uint64_t>(_getpid());
+#else
+        static_cast<uint64_t>(getpid());
+#endif
+    uint64_t addr_val = reinterpret_cast<uintptr_t>(&g_rng);
+    uint64_t stack_var = static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(&stack_var));
+
+    // Mix entropy sources using a simple hash combine
+    auto hash_mix = [](uint64_t a, uint64_t b) -> uint64_t {
+      // boost::hash_combine style
+      return a ^ (b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2));
+    };
+
+    uint64_t mixed = hi_res;
+    mixed = hash_mix(mixed, steady);
+    mixed = hash_mix(mixed, system);
+    mixed = hash_mix(mixed, pid_val);
+    mixed = hash_mix(mixed, addr_val);
+    mixed = hash_mix(mixed, stack_var);
+
+    // Use multiple clock readings to fill the full MT state
+    std::seed_seq::result_type seeds[std::mt19937::state_size];
+    for (size_t i = 0; i < std::mt19937::state_size; ++i) {
+      auto t = std::chrono::high_resolution_clock::now()
+                   .time_since_epoch()
+                   .count();
+      seeds[i] = static_cast<std::seed_seq::result_type>(
+          hash_mix(mixed, static_cast<uint64_t>(t)));
+      // Tiny delay to ensure different clock readings
+      for (volatile int j = 0; j < 10; ++j)
+        ;
+    }
+    std::seed_seq seq(std::begin(seeds), std::end(seeds));
+    g_rng.seed(seq);
   }
   g_seeded = true;
   g_last_seed_info = "entropy";

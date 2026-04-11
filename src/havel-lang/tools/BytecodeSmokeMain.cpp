@@ -1459,6 +1459,11 @@ if true {
 return x
 )havel", 1, dump_bytecode, snapshot_dir);
 
+  failures += runCase("kwargs-test", R"havel(
+print("a", "b", delim="-")
+return 42
+)havel", 42, dump_bytecode, snapshot_dir);
+
   failures += runClosureCase(dump_bytecode, snapshot_dir);
   failures += runHostRootLifetimeCase(dump_bytecode);
   failures += runExternalCallbackInvocationCase(dump_bytecode);

@@ -370,8 +370,9 @@ int Parser::getBindingPower(TokenType type) const {
     case TokenType::MinusMinus:
       return 150;
 
-    // Member access, calls, indexing
+    // Member access, optional chaining, calls, indexing
     case TokenType::Dot:
+    case TokenType::Question:  // ?. optional chaining
     case TokenType::OpenParen:
     case TokenType::OpenBracket:
       return 170;
@@ -406,8 +407,8 @@ int Parser::getRightBindingPower(TokenType type) const {
 
 // Optimized Pratt parser with lookup tables
 namespace {
-  // Token count - must match the TokenType enum
-  constexpr size_t TOKEN_TYPE_COUNT = 128;  // Power of 2 for cache efficiency
+  // Token count - must be >= max TokenType enum value
+  constexpr size_t TOKEN_TYPE_COUNT = 256;  // Power of 2 for cache efficiency
   
   // Binding power lookup table - initialized once at startup
   struct BindingPowerTables {
@@ -474,10 +475,12 @@ namespace {
       // Postfix operators (very high left binding power, 0 right)
       left_bp[static_cast<size_t>(PlusPlus)] = 100;
       left_bp[static_cast<size_t>(MinusMinus)] = 100;
-      
+
       // Member access (highest)
       left_bp[static_cast<size_t>(Dot)] = 110;
-      
+      // Optional chaining ?. (same priority as Dot)
+      left_bp[static_cast<size_t>(Question)] = 110;
+
       // Function call and index
       left_bp[static_cast<size_t>(OpenParen)] = 110;
       left_bp[static_cast<size_t>(OpenBracket)] = 110;
@@ -1228,6 +1231,34 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::Nullish, std::move(right));
+    }
+
+    // Optional chaining: obj?.field or obj?.method()
+    case TokenType::Question: {
+      if (at().type == TokenType::Dot) {
+        advance(); // consume '.'
+        // Property names can be identifiers or certain keywords
+        if (at().type == TokenType::Identifier ||
+            at().type == TokenType::And ||
+            at().type == TokenType::Or ||
+            at().type == TokenType::Not ||
+            at().type == TokenType::Repeat ||
+            at().type == TokenType::Loop ||
+            at().type == TokenType::If ||
+            at().type == TokenType::Else ||
+            at().type == TokenType::While ||
+            at().type == TokenType::For ||
+            at().type == TokenType::Match ||
+            at().type == TokenType::Fn) {
+          auto property = makeIdentifier(advance());
+          auto member = std::make_unique<ast::MemberExpression>(
+              std::move(left), std::move(property), true);
+          return member;
+        }
+        failAt(at(), "Expected identifier after '?.");
+      }
+      // Just ? alone - treat as ternary-like or passthrough
+      return std::move(left);
     }
 
     case TokenType::DotDot: {

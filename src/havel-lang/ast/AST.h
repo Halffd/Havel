@@ -1104,11 +1104,12 @@ struct CallExpression : public Expression {
 struct MemberExpression : public Expression {
   std::unique_ptr<Expression> object;
   std::unique_ptr<Expression> property; // e.g., an Identifier
+  bool isOptional = false;              // true for obj?.field (?. optional chaining)
 
   MemberExpression() { kind = NodeType::MemberExpression; }
   MemberExpression(std::unique_ptr<Expression> obj,
-                   std::unique_ptr<Expression> prop)
-      : object(std::move(obj)), property(std::move(prop)) {
+                   std::unique_ptr<Expression> prop, bool optional = false)
+      : object(std::move(obj)), property(std::move(prop)), isOptional(optional) {
     kind = NodeType::MemberExpression;
   }
 

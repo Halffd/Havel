@@ -1049,6 +1049,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Channel:
       return parseChannelExpression();
 
+    case TokenType::Go:
+      return parseGoExpression();
+
     default:
       errorAt(token, "Unexpected token in expression");
       return nullptr;
@@ -4328,11 +4331,31 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
     } else if (keyword == "keydown" || keyword == "keyup") {
       // on keyDown { ... } or on keyDown(keys...) { ... }
       return parseOnKeyDownOrKeyUpStatement();
+    } else {
+      // Generic message handler: on <identifier> { ... }
+      // This creates a message handler in the current scope
+      std::string msgVar = advance().value; // consume identifier
+      
+      // Expect block
+      if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after message variable");
+        return nullptr;
+      }
+      
+      auto body = parseBlockStatement();
+      
+      // Create a special OnMessageStatement
+      // For now, treat as a let declaration with a message binding
+      // This will create a variable available in the handler block
+      auto stmt = std::make_unique<havel::ast::OnMessageStatement>(msgVar, std::move(body));
+      stmt->line = at().line;
+      stmt->column = at().column;
+      return stmt;
     }
   }
 
   failAt(at(), "Expected 'mode', 'reload', 'start', 'tap', 'combo', 'keydown', "
-               "or 'keyup' after 'on'");
+               "'keyup', or message variable after 'on'");
   return nullptr;
 }
 
@@ -7976,6 +7999,50 @@ std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
   stmt->line = goToken.line;
   stmt->column = goToken.column;
   return stmt;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
+  auto goToken = at();
+  advance(); // consume 'go'
+  
+  // Parse the function call or block expression
+  std::unique_ptr<ast::Expression> call;
+  
+  if (at().type == havel::TokenType::OpenBrace) {
+    // go { ... } - treat as anonymous lambda function
+    advance(); // consume '{'
+    
+    auto blockStmt = std::make_unique<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      blockStmt->body.push_back(parseStatement());
+    }
+    
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after block");
+      return nullptr;
+    }
+    advance(); // consume '}'
+    
+    // Create lambda expression with no parameters and the block as body
+    call = std::make_unique<havel::ast::LambdaExpression>(
+        std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+        std::move(blockStmt)
+    );
+    
+  } else {
+    // go func() or go identifier - function call
+    call = parseExpression();
+  }
+  
+  // Wrap in GoExpression node
+  auto expr = std::make_unique<havel::ast::GoExpression>(std::move(call));
+  expr->line = goToken.line;
+  expr->column = goToken.column;
+  return expr;
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {

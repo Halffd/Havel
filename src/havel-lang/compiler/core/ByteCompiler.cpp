@@ -1401,6 +1401,18 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::OnMessageStatement: {
+    // on msg { ... }
+    // This is a message handler that binds the message to a variable
+    // The actual message is received at runtime when a thread receives a message
+    // For now, we compile the body as-is
+    const auto &onMsg = static_cast<const ast::OnMessageStatement &>(statement);
+    if (onMsg.body) {
+      compileStatement(*onMsg.body);
+    }
+    break;
+  }
+
   // Type system declarations - register types at compile time
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl =
@@ -3275,6 +3287,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     compileYieldExpression(static_cast<const ast::YieldExpression &>(expression));
     break;
 
+  case ast::NodeType::GoExpression:
+    compileGoExpression(static_cast<const ast::GoExpression &>(expression));
+    break;
+
   case ast::NodeType::ChannelExpression:
     compileChannelExpression(static_cast<const ast::ChannelExpression &>(expression));
     break;
@@ -5094,6 +5110,25 @@ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
   // The actual async execution is handled by the VM or runtime
   // For now, this is a placeholder - a full implementation would
   // require integration with the thread pool
+}
+
+void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
+  // go expr -> call thread_spawn(expr)
+  // Returns a thread object with .join(), .send() methods
+  
+  if (!expression.call) {
+    COMPILER_THROW("Go expression missing call expression");
+  }
+  
+  // Compile the expression/function being spawned
+  compileExpression(*expression.call);
+  
+  // Call the host function thread_spawn with the function as argument
+  uint32_t strId = addStringConstant("thread_spawn");
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(1))  // 1 argument
+  });
 }
 
 void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {

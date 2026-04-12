@@ -78,6 +78,7 @@ enum class NodeType {
   OffModeStatement,     // off mode gaming { ... }
   OnReloadStatement,    // on reload { ... }
   OnStartStatement,     // on start { ... }
+  OnMessageStatement,   // on msg { ... } - generic message handler
   OnKeyDownStatement,   // on keyDown { ... } or on keyDown(keys...) { ... }
   OnKeyUpStatement,     // on keyUp { ... } or on keyUp(keys...) { ... }
   OnTapStatement,       // on tap(key) => { ... }
@@ -177,6 +178,7 @@ enum class NodeType {
   // Coroutines
   YieldExpression,    // yield or yield(ms) or yield value
   GoStatement,        // go func()
+  GoExpression,       // go expr - as expression returning thread object
   ChannelExpression,  // channel()
 
   // Special
@@ -603,6 +605,15 @@ struct GoStatement : public Statement {
         kind = NodeType::GoStatement;
     }
     std::string toString() const override { return "go " + call->toString(); }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct GoExpression : public Expression {
+    std::unique_ptr<Expression> call; // Function call or block expression
+    GoExpression(std::unique_ptr<Expression> c) : call(std::move(c)) {
+        kind = NodeType::GoExpression;
+    }
+    std::string toString() const override { return "go(" + call->toString() + ")"; }
     void accept(ASTVisitor &visitor) const override;
 };
 
@@ -1771,6 +1782,24 @@ struct OnStartStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// On Message Statement (on msg { ... })
+struct OnMessageStatement : public Statement {
+  std::string messageVar; // Variable name for the message
+  std::unique_ptr<Statement> body;
+
+  OnMessageStatement(const std::string &var, std::unique_ptr<Statement> bd)
+      : messageVar(var), body(std::move(bd)) {
+    kind = NodeType::OnMessageStatement;
+  }
+
+  std::string toString() const override {
+    return "OnMessageStatement{var: " + messageVar + ", body: " +
+           (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // On KeyDown Statement (on keyDown { ... } or on keyDown(keys...) { ... })
 struct OnKeyDownStatement : public Statement {
   std::vector<std::string> keys; // Empty = all keys
@@ -2928,11 +2957,13 @@ public:
   virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
   virtual void visitYieldExpression(const YieldExpression &node) = 0;
   virtual void visitGoStatement(const GoStatement &node) = 0;
+  virtual void visitGoExpression(const GoExpression &node) = 0;
   virtual void visitChannelExpression(const ChannelExpression &node) = 0;
   virtual void visitOnModeStatement(const OnModeStatement &node) = 0;
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
   virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;
   virtual void visitOnStartStatement(const OnStartStatement &node) = 0;
+  virtual void visitOnMessageStatement(const OnMessageStatement &node) = 0;
   virtual void visitOnKeyDownStatement(const OnKeyDownStatement &node) = 0;
   virtual void visitOnKeyUpStatement(const OnKeyUpStatement &node) = 0;
   virtual void visitOnTapStatement(const OnTapStatement &node) = 0;
@@ -3229,6 +3260,10 @@ inline void OnReloadStatement::accept(ASTVisitor &visitor) const {
 
 inline void OnStartStatement::accept(ASTVisitor &visitor) const {
   visitor.visitOnStartStatement(*this);
+}
+
+inline void OnMessageStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnMessageStatement(*this);
 }
 
 inline void OnKeyDownStatement::accept(ASTVisitor &visitor) const {

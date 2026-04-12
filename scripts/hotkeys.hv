@@ -117,12 +117,16 @@ let b = "brave"
 let nt = "--new-tab"
 let nw = "--new-window"
 let newTab = (url) => {
+  dsl { 
   print("newTab called with url: " + url)
   $ [b, nt, url]
+  }
 }
 let newWindow = (url) => {
+  dsl {
   print("newWindow called with url: " + url)
   $ [b, nw, url]
+  }
 }
 let freezeGaming = true
 let freezeBrowser = fn(modeFrom = ""){
@@ -1159,7 +1163,7 @@ fn blazeClicker(firstChat, blazeN = 20) {
     loop 5 {
       > "^=" :15
     }
-    "^."
+    > "^."
     if n == 1 {
       :100
     } else {
@@ -1175,12 +1179,12 @@ fn blazeClicker(firstChat, blazeN = 20) {
       c(...coords[2], left, spd)
       return
     } else {
-      m(...coords[1], spd) :100 lmb
-      :400 m(...coords[3], spd) :150
+      > m(...coords[1], spd) :100 lmb :400
+      > m(...coords[3], spd) :150
       loop 5 {
-        w(-50,0) :250
+        > w(-50,0) :250
       }
-      :50 lmb
+      > :50 lmb
     }
     :450
   }
@@ -1579,7 +1583,9 @@ print("keytap")
     } else if kde {
       qdbus("org.kde.plasmashell /PlasmaShell \"org.kde.PlasmaShell.activateLauncherMenu\"")
     } else {
-      $ ["rofi", "-show", "drun"]
+      dsl { 
+          $ ["rofi", "-show", "drun"] 
+      }
     }
   },
   "mode == \"gaming\"",

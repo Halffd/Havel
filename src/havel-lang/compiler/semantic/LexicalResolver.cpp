@@ -1197,6 +1197,24 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  // Hotkey expression: ~space => { ... } — same scoping as statement form
+  case ast::NodeType::HotkeyExpression: {
+    const auto &hkExpr = static_cast<const ast::HotkeyExpression &>(expression);
+    if (hkExpr.binding) {
+      // Resolve condition if present (e.g., ~space if mode == "x" => { ... })
+      if (hkExpr.binding->conditionExpr) {
+        resolveExpression(*hkExpr.binding->conditionExpr);
+      }
+      // Resolve the action body
+      beginScope();
+      if (hkExpr.binding->action) {
+        resolveStatement(*hkExpr.binding->action);
+      }
+      endScope();
+    }
+    break;
+  }
+
   // Closure expressions — resolve duration and body against current scope
   case ast::NodeType::ThreadExpression: {
     const auto &threadExpr = static_cast<const ast::ThreadExpression &>(expression);

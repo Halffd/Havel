@@ -1411,14 +1411,14 @@ class AutoSpace : AutoBase {
   }
 }
 autof = AutoF()
-autosp = null
 h if mode == "genshin" => {
   autof.start()
 }
+let autosp = null
 spaceId = ~space if mode == "genshin" => {
-  autosp?.onDown()
+  autosp.onDown()
   @disable()
-  autosp?.start()
+  autosp.start()
 }
 autosp = AutoSpace(spaceId)
 

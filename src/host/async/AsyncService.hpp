@@ -1,102 +1,106 @@
 /*
- * AsyncService.hpp
+ * AsyncService.hpp - DEPRECATED
  *
- * Async/concurrency service.
- * Provides task spawning, channels, and await functionality.
+ * This service spawned OS threads and provided blocking operations.
+ * It has been superseded by Havel's unified concurrency model:
  * 
- * Pure C++ implementation with std::thread and std::async.
+ * - Scheduler: Cooperative, bytecode-aware, single-threaded
+ * - Fiber: Per-goroutine execution context
+ * - EventQueue: Non-blocking callback bridge for async operations
+ *
+ * Methods are stubbed to prevent compilation errors if referenced.
+ * New code should use the unified concurrency model instead.
+ *
+ * Phase 3+ (main loop) will provide:
+ * - thread.spawn() - Non-blocking spawning via EventQueue
+ * - thread.await() - Fiber suspension + EventQueue callback
+ * - channel.recv() - Fiber suspension + EventQueue callback
+ * - time.sleep() - EventQueue timer callback
+ * - All non-blocking, all cooperative via EventQueue
  */
 #pragma once
 
 #include <string>
 #include <vector>
 #include <cstdint>
-#include <memory>
 #include <functional>
 
 namespace havel::host {
 
 /**
- * AsyncService - Async task and channel management
- * 
- * Provides:
- * - spawn(fn): Run function in background
- * - await(taskId): Wait for task result
- * - Channel: Send/receive between tasks
- * - sleep(ms): Delay execution
+ * AsyncService - DEPRECATED (stubbed for compatibility)
+ *
+ * Do not use. Use unified concurrency model instead.
  */
 class AsyncService {
 public:
-    AsyncService();
-    ~AsyncService();
+    AsyncService() = default;
+    ~AsyncService() = default;
 
-    // =========================================================================
-    // Task management
-    // =========================================================================
+    // DEPRECATED: Use unified model
+    std::string spawn(std::function<void()> fn) {
+        // Stubbed - spawn via EventQueue instead
+        return "";
+    }
 
-    /// Spawn a function to run in background
-    /// @param fn Function to execute
-    /// @return Task ID
-    std::string spawn(std::function<void()> fn);
+    bool await(const std::string& taskId) {
+        // Stubbed - use fiber suspension + EventQueue
+        return false;
+    }
 
-    /// Wait for task to complete
-    /// @param taskId Task ID
-    /// @return true if completed
-    bool await(const std::string& taskId);
+    bool isRunning(const std::string& taskId) const {
+        // Stubbed
+        return false;
+    }
 
-    /// Check if task is running
-    bool isRunning(const std::string& taskId) const;
+    std::vector<std::string> getTaskIds() const {
+        // Stubbed
+        return {};
+    }
 
-    /// Get list of task IDs
-    std::vector<std::string> getTaskIds() const;
+    bool cancel(const std::string& taskId) {
+        // Stubbed
+        return false;
+    }
 
-    /// Cancel a task
-    bool cancel(const std::string& taskId);
+    bool createChannel(const std::string& name) {
+        // Stubbed
+        return false;
+    }
 
-    // =========================================================================
-    // Channels
-    // =========================================================================
+    bool send(const std::string& name, const std::string& value) {
+        // Stubbed
+        return false;
+    }
 
-    /// Create a new channel
-    /// @param name Channel name
-    /// @return true if created
-    bool createChannel(const std::string& name);
+    std::string receive(const std::string& name) {
+        // Stubbed - use fiber suspension instead
+        return "";
+    }
 
-    /// Send value to channel
-    /// @param name Channel name
-    /// @param value Value to send
-    /// @return true if sent
-    bool send(const std::string& name, const std::string& value);
+    std::string tryReceive(const std::string& name) {
+        // Stubbed
+        return "";
+    }
 
-    /// Receive value from channel (blocking)
-    /// @param name Channel name
-    /// @return Received value or empty if closed
-    std::string receive(const std::string& name);
+    bool closeChannel(const std::string& name) {
+        // Stubbed
+        return false;
+    }
 
-    /// Try to receive value (non-blocking)
-    /// @param name Channel name
-    /// @return Received value or empty if empty/closed
-    std::string tryReceive(const std::string& name);
+    bool isChannelClosed(const std::string& name) const {
+        // Stubbed
+        return false;
+    }
 
-    /// Close a channel
-    bool closeChannel(const std::string& name);
+    void sleep(int milliseconds) {
+        // Stubbed - use EventQueue timer instead
+    }
 
-    /// Check if channel is closed
-    bool isChannelClosed(const std::string& name) const;
-
-    // =========================================================================
-    // Timing
-    // =========================================================================
-
-    /// Sleep for specified milliseconds
-    void sleep(int milliseconds);
-
-    /// Get current timestamp in milliseconds
-    int64_t now() const;
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    int64_t now() const {
+        // Stubbed
+        return 0;
+    }
 };
 
-} // namespace havel::host
+}  // namespace havel::host

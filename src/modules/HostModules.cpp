@@ -60,7 +60,6 @@ namespace havel::modules {
     void registerConcurrencyModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerHTTPModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerTimerModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerAsyncModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerAppModule(Environment&, std::shared_ptr<IHostAPI>);
 }
 

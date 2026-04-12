@@ -184,65 +184,6 @@ enum class NodeType {
   UnknownNode
 };
 
-// --- Concurrency & Coroutines ---
-
-struct ThreadExpression : public Expression {
-    std::unique_ptr<BlockStatement> body;
-    ThreadExpression(std::unique_ptr<BlockStatement> b) : body(std::move(b)) {
-        kind = NodeType::ThreadExpression;
-    }
-    std::string toString() const override { return "thread { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
-};
-
-struct IntervalExpression : public Expression {
-    std::unique_ptr<Expression> intervalMs;
-    std::unique_ptr<BlockStatement> body;
-    IntervalExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
-        : intervalMs(std::move(ms)), body(std::move(b)) {
-        kind = NodeType::IntervalExpression;
-    }
-    std::string toString() const override { return "interval " + intervalMs->toString() + " { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
-};
-
-struct TimeoutExpression : public Expression {
-    std::unique_ptr<Expression> delayMs;
-    std::unique_ptr<BlockStatement> body;
-    TimeoutExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
-        : delayMs(std::move(ms)), body(std::move(b)) {
-        kind = NodeType::TimeoutExpression;
-    }
-    std::string toString() const override { return "timeout " + delayMs->toString() + " { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
-};
-
-struct YieldExpression : public Expression {
-    std::unique_ptr<Expression> value; // Optional: yield value or yield(ms)
-    YieldExpression(std::unique_ptr<Expression> val = nullptr) : value(std::move(val)) {
-        kind = NodeType::YieldExpression;
-    }
-    std::string toString() const override { return "yield" + (value ? "(" + value->toString() + ")" : ""); }
-    void accept(ASTVisitor &visitor) const override;
-};
-
-struct GoStatement : public Statement {
-    std::unique_ptr<Expression> call; // Must be a CallExpression
-    GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) {
-        kind = NodeType::GoStatement;
-    }
-    std::string toString() const override { return "go " + call->toString(); }
-    void accept(ASTVisitor &visitor) const override;
-};
-
-struct ChannelExpression : public Expression {
-    ChannelExpression() {
-        kind = NodeType::ChannelExpression;
-    }
-    std::string toString() const override { return "channel()"; }
-    void accept(ASTVisitor &visitor) const override;
-};
-
 // Base AST Node
 struct ASTNode {
   NodeType kind;
@@ -610,6 +551,67 @@ struct BlockStatement : public Statement {
   }
 
   void accept(ASTVisitor &visitor) const override;
+};
+
+// ============================================================================
+// CONCURRENCY & COROUTINES
+// ============================================================================
+
+struct ThreadExpression : public Expression {
+    std::unique_ptr<BlockStatement> body;
+    ThreadExpression(std::unique_ptr<BlockStatement> b) : body(std::move(b)) {
+        kind = NodeType::ThreadExpression;
+    }
+    std::string toString() const override { return "thread { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct IntervalExpression : public Expression {
+    std::unique_ptr<Expression> intervalMs;
+    std::unique_ptr<BlockStatement> body;
+    IntervalExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : intervalMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::IntervalExpression;
+    }
+    std::string toString() const override { return "interval " + intervalMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct TimeoutExpression : public Expression {
+    std::unique_ptr<Expression> delayMs;
+    std::unique_ptr<BlockStatement> body;
+    TimeoutExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : delayMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::TimeoutExpression;
+    }
+    std::string toString() const override { return "timeout " + delayMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct YieldExpression : public Expression {
+    std::unique_ptr<Expression> value; // Optional: yield value or yield(ms)
+    YieldExpression(std::unique_ptr<Expression> val = nullptr) : value(std::move(val)) {
+        kind = NodeType::YieldExpression;
+    }
+    std::string toString() const override { return "yield" + (value ? "(" + value->toString() + ")" : ""); }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct GoStatement : public Statement {
+    std::unique_ptr<Expression> call; // Must be a CallExpression
+    GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) {
+        kind = NodeType::GoStatement;
+    }
+    std::string toString() const override { return "go " + call->toString(); }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct ChannelExpression : public Expression {
+    ChannelExpression() {
+        kind = NodeType::ChannelExpression;
+    }
+    std::string toString() const override { return "channel()"; }
+    void accept(ASTVisitor &visitor) const override;
 };
 
 // Function parameter with optional default value and type annotation
@@ -2919,6 +2921,14 @@ public:
   virtual void visitLoopStatement(const LoopStatement &node) = 0;
   virtual void visitBreakStatement(const BreakStatement &node) = 0;
   virtual void visitContinueStatement(const ContinueStatement &node) = 0;
+
+  // Concurrency primitives
+  virtual void visitThreadExpression(const ThreadExpression &node) = 0;
+  virtual void visitIntervalExpression(const IntervalExpression &node) = 0;
+  virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
+  virtual void visitYieldExpression(const YieldExpression &node) = 0;
+  virtual void visitGoStatement(const GoStatement &node) = 0;
+  virtual void visitChannelExpression(const ChannelExpression &node) = 0;
   virtual void visitOnModeStatement(const OnModeStatement &node) = 0;
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
   virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;

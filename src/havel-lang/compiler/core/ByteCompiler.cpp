@@ -3483,7 +3483,7 @@ void ByteCompiler::compileCallExpression(
         totalArgs++;
       }
       {
-        uint32_t strId = addStringConstant(binding->name);
+        uint32_t strId = addStringConstant(binding ? binding->name : callee_id.symbol);
         emit(OpCode::CALL_HOST, std::vector<Value>{
             Value::makeStringValId(strId),
             Value(totalArgs)});
@@ -5182,22 +5182,28 @@ void ByteCompiler::compileGetInputExpression(
 
 void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expression) {
   // thread { ... } -> spawn a new thread with the body as a function
-  // Compile the body as a lambda and then call thread.spawn host function
-  
+  // Compile the body as an anonymous function and then call thread.spawn host function
+
   if (!expression.body) {
     COMPILER_THROW("Thread expression missing body");
   }
-  
-  // Create a lambda from the body
-  auto lambda = std::make_unique<ast::LambdaExpression>();
-  // Use the body directly since BlockStatement doesn't have clone()
-  lambda->body = std::unique_ptr<ast::BlockStatement>(
-    static_cast<ast::BlockStatement*>(expression.body.get())
-  );
-  
-  // Compile the lambda
-  compileLambda(*lambda);
-  
+
+  // Compile the body as an anonymous function
+  uint32_t funcIndex = compiled_functions.size();
+  BytecodeFunction bf("<thread>", 0, 0);
+  enterFunction(std::move(bf), funcIndex);
+
+  for (const auto &stmt : expression.body->body) {
+    if (stmt) {
+      compileStatement(*stmt);
+    }
+  }
+  emit(OpCode::RETURN);
+  leaveFunction();
+
+  // Load the function object and call thread.spawn
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+
   // Emit CALL_HOST to thread.spawn
   uint32_t strId = addStringConstant("thread.spawn");
   emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -5207,29 +5213,36 @@ void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expressi
 
 void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expression) {
   // interval <ms> { ... } -> start a repeating timer
-  // Compile interval duration, then compile body as lambda, then call interval.start host function
-  
+  // Compile interval duration, then compile body as anonymous function, then call interval.start host function
+
   if (!expression.intervalMs) {
     COMPILER_THROW("Interval expression missing duration");
   }
-  
+
   if (!expression.body) {
     COMPILER_THROW("Interval expression missing body");
   }
-  
+
   // Compile the interval duration
   compileExpression(*expression.intervalMs);
-  
-  // Create a lambda from the body
-  auto lambda = std::make_unique<ast::LambdaExpression>();
-  // Use the body directly since BlockStatement doesn't have clone()
-  lambda->body = std::unique_ptr<ast::BlockStatement>(
-    static_cast<ast::BlockStatement*>(expression.body.get())
-  );
-  
-  // Compile the lambda
-  compileLambda(*lambda);
-  
+
+  // Compile the body as an anonymous function
+  uint32_t funcIndex = compiled_functions.size();
+  BytecodeFunction bf("<interval>", 0, 0);
+  enterFunction(std::move(bf), funcIndex);
+
+  // Compile body statements
+  for (const auto &stmt : expression.body->body) {
+    if (stmt) {
+      compileStatement(*stmt);
+    }
+  }
+  emit(OpCode::RETURN);
+  leaveFunction();
+
+  // Load the function object and call interval.start
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+
   // Emit CALL_HOST to interval.start
   uint32_t strId = addStringConstant("interval.start");
   emit(OpCode::CALL_HOST, std::vector<Value>{
@@ -5239,29 +5252,35 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
 
 void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expression) {
   // timeout <ms> { ... } -> start a one-shot timer
-  // Compile delay duration, then compile body as lambda, then call timeout.start host function
-  
+  // Compile delay duration, then compile body as anonymous function, then call timeout.start host function
+
   if (!expression.delayMs) {
     COMPILER_THROW("Timeout expression missing duration");
   }
-  
+
   if (!expression.body) {
     COMPILER_THROW("Timeout expression missing body");
   }
-  
+
   // Compile the delay duration
   compileExpression(*expression.delayMs);
-  
-  // Create a lambda from the body
-  auto lambda = std::make_unique<ast::LambdaExpression>();
-  // Use the body directly since BlockStatement doesn't have clone()
-  lambda->body = std::unique_ptr<ast::BlockStatement>(
-    static_cast<ast::BlockStatement*>(expression.body.get())
-  );
-  
-  // Compile the lambda
-  compileLambda(*lambda);
-  
+
+  // Compile the body as an anonymous function
+  uint32_t funcIndex = compiled_functions.size();
+  BytecodeFunction bf("<timeout>", 0, 0);
+  enterFunction(std::move(bf), funcIndex);
+
+  for (const auto &stmt : expression.body->body) {
+    if (stmt) {
+      compileStatement(*stmt);
+    }
+  }
+  emit(OpCode::RETURN);
+  leaveFunction();
+
+  // Load the function object and call timeout.start
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+
   // Emit CALL_HOST to timeout.start
   uint32_t strId = addStringConstant("timeout.start");
   emit(OpCode::CALL_HOST, std::vector<Value>{

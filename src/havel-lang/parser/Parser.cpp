@@ -2183,8 +2183,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseSignalDefinition();
   case havel::TokenType::Group:
     return parseGroupDefinition();
-  case havel::TokenType::Colon:
+  case havel::TokenType::Colon: {
     return parseSleepStatement();
+  }
   case havel::TokenType::ShellCommand:
   case havel::TokenType::ShellCommandCapture: {
     bool captureOutput = (at().type == havel::TokenType::ShellCommandCapture);
@@ -2305,19 +2306,47 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
       auto expr = parseExpression();
 
+      // In DSL input context, if expression is followed by DSL command tokens,
+      // treat the expression as an implicit input command and continue chaining
+      if (expr && context.inInputContext) {
+        bool isDslNext =
+            at().type == havel::TokenType::Colon ||           // :100 sleep
+            at().type == havel::TokenType::Less ||            // < get
+            at().type == havel::TokenType::Greater ||         // > send
+            at().type == havel::TokenType::Multiply ||        // * repeat
+            at().type == havel::TokenType::Question ||        // ? condition
+            (at().type == havel::TokenType::Identifier &&
+             (at().value == "lmb" || at().value == "rmb" || at().value == "mmb" ||
+              at().value == "m" || at().value == "r" || at().value == "w" ||
+              at().value == "c" || at().value == "type" ||
+              at().value == "click" || at().value == "move" || at().value == "scroll" ||
+              at().value == "key" || at().value == "keys" || at().value == "send")) ||
+            at().type == havel::TokenType::String ||
+            at().type == havel::TokenType::MultilineString ||
+            at().type == havel::TokenType::OpenBrace;         // {Key}
+        
+        if (isDslNext) {
+          // Convert expression to implicit input statement
+          return buildImplicitInputStatement(std::move(expr));
+        }
+      }
+
       // Require statement terminator for expression statements
       // Skip this check for match expressions since they're self-contained
       bool isMatchExpr = expr && expr->kind == ast::NodeType::MatchExpression;
+      // In DSL input context, allow input commands to chain without separators
       bool isInputChainable = context.inInputContext &&
           (at().type == havel::TokenType::Colon ||           // :100 sleep
-           at().type == havel::TokenType::Less ||            // ^- input
+           at().type == havel::TokenType::Less ||            // < input get
+           at().type == havel::TokenType::Greater ||         // > send
            at().type == havel::TokenType::Multiply ||        // * repeat
            at().type == havel::TokenType::Question ||        // ? if
            (at().type == havel::TokenType::Identifier &&
-            (at().value == "lmb" || at().value == "rmb" || at().value == "m" ||
-             at().value == "r" || at().value == "w" || at().value == "type" ||
+            (at().value == "lmb" || at().value == "rmb" || at().value == "mmb" ||
+             at().value == "m" || at().value == "r" || at().value == "w" ||
+             at().value == "c" || at().value == "type" ||
              at().value == "click" || at().value == "move" || at().value == "scroll" ||
-             at().value == "key" || at().value == "keys")));
+             at().value == "key" || at().value == "keys" || at().value == "send")));
       if (!isMatchExpr && !isInputChainable &&
           at().type != havel::TokenType::NewLine &&
           at().type != havel::TokenType::Semicolon &&
@@ -2634,6 +2663,165 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWaitStatement() {
 }
 
 // Parse implicit input statement in hotkey blocks
+// Build an input statement starting from an already-parsed expression.
+// This handles cases like `m(0) :100` where the first command was parsed
+// as a regular expression before we realized we're in DSL context.
+std::unique_ptr<havel::ast::Statement> Parser::buildImplicitInputStatement(
+    std::unique_ptr<ast::Expression> leadingExpr) {
+  std::vector<havel::ast::InputCommand> commands;
+
+  // Convert the leading expression to an input command
+  if (leadingExpr->kind == ast::NodeType::CallExpression) {
+    const auto &call = static_cast<const ast::CallExpression &>(*leadingExpr);
+    if (call.callee && call.callee->kind == ast::NodeType::Identifier) {
+      const auto &ident = static_cast<const ast::Identifier &>(*call.callee);
+      havel::ast::InputCommand cmd;
+
+      if (ident.symbol == "m") {
+        cmd.type = havel::ast::InputCommand::MouseMove;
+      } else if (ident.symbol == "r") {
+        cmd.type = havel::ast::InputCommand::MouseRelative;
+      } else if (ident.symbol == "w") {
+        cmd.type = havel::ast::InputCommand::MouseWheel;
+      } else if (ident.symbol == "c") {
+        cmd.type = havel::ast::InputCommand::MouseClickAt;
+      } else {
+        // Unknown function call - treat as generic expression
+        cmd.type = havel::ast::InputCommand::SendText;
+        cmd.text = call.toString();
+        commands.push_back(cmd);
+        // Continue parsing more commands
+        return parseMoreInputCommands(std::move(commands));
+      }
+
+      // Extract arguments from call args
+      for (size_t i = 0; i < call.args.size(); i++) {
+        std::string val = call.args[i]->toString();
+        if (i == 0) cmd.xExprStr = val;
+        else if (i == 1) cmd.yExprStr = val;
+        else if (i == 2) cmd.speedExprStr = val;
+        else if (i == 3) cmd.accelExprStr = val;
+      }
+      commands.push_back(cmd);
+    } else {
+      // Non-identifier callee - treat as generic expression
+      havel::ast::InputCommand cmd;
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = leadingExpr->toString();
+      commands.push_back(cmd);
+      return parseMoreInputCommands(std::move(commands));
+    }
+  } else if (leadingExpr->kind == ast::NodeType::StringLiteral) {
+    havel::ast::InputCommand cmd;
+    cmd.type = havel::ast::InputCommand::SendText;
+    cmd.text = static_cast<const ast::StringLiteral &>(*leadingExpr).value;
+    commands.push_back(cmd);
+  } else {
+    // Generic expression - convert to text
+    havel::ast::InputCommand cmd;
+    cmd.type = havel::ast::InputCommand::SendText;
+    cmd.text = leadingExpr->toString();
+    commands.push_back(cmd);
+  }
+
+  return parseMoreInputCommands(std::move(commands));
+}
+
+// Continue parsing input commands after the first one has been added
+std::unique_ptr<havel::ast::Statement> Parser::parseMoreInputCommands(
+    std::vector<havel::ast::InputCommand> commands) {
+  while (notEOF() && at().type != havel::TokenType::NewLine &&
+         at().type != havel::TokenType::Semicolon &&
+         at().type != havel::TokenType::EOF_TOKEN &&
+         at().type != havel::TokenType::CloseBrace) {
+
+    havel::ast::InputCommand cmd;
+
+    // Check for sleep inline: :500
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      cmd.type = havel::ast::InputCommand::Sleep;
+      if (at().type == havel::TokenType::Number) {
+        cmd.duration = advance().value;
+      }
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for string: "text"
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString) {
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = advance().value;
+      commands.push_back(cmd);
+      continue;
+    }
+
+    // Check for key: {Enter}
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance(); // consume '{'
+      if (at().type == havel::TokenType::Identifier) {
+        cmd.type = havel::ast::InputCommand::SendKey;
+        cmd.key = advance().value;
+        commands.push_back(cmd);
+      }
+      if (at().type == havel::TokenType::CloseBrace) {
+        advance(); // consume '}'
+      }
+      continue;
+    }
+
+    // Check for identifier: lmb, rmb, m, r, w
+    if (at().type == havel::TokenType::Identifier) {
+      std::string ident = at().value;
+
+      if (ident == "lmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "left";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "rmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "right";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w") {
+        advance(); // consume identifier
+
+        if (at().type == havel::TokenType::OpenParen) {
+          advance(); // consume '('
+          if (at().type != havel::TokenType::CloseParen) {
+            cmd.xExprStr = at().value;
+            advance();
+          }
+          if (at().type == havel::TokenType::Comma) {
+            advance();
+            if (at().type != havel::TokenType::CloseParen) {
+              cmd.yExprStr = at().value;
+              advance();
+            }
+          }
+          if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ')'
+          }
+          if (ident == "m") cmd.type = havel::ast::InputCommand::MouseMove;
+          else if (ident == "r") cmd.type = havel::ast::InputCommand::MouseRelative;
+          else if (ident == "w") cmd.type = havel::ast::InputCommand::MouseWheel;
+          commands.push_back(cmd);
+        }
+        continue;
+      }
+    }
+
+    // Skip unknown token
+    advance();
+  }
+
+  return std::make_unique<havel::ast::InputStatement>(commands);
+}
+
 // Handles: "text", {Key}, lmb, rmb, mmb, side1, side2, btn4, btn5,
 // m(x,y,speed,accel), r(x,y,speed,accel), w(x,y,speed,accel),
 // c(x,y,btn,speed,accel), :500
@@ -3163,6 +3351,14 @@ Parser::parseClassMembers() {
 
     // Parse field definition
     // Note: isClassMember is already set from @@ or @ above
+
+    // Support optional val/const/let prefix for fields
+    bool isConst = false;
+    if (at().type == havel::TokenType::Const ||
+        at().type == havel::TokenType::Let) {
+      isConst = (at().type == havel::TokenType::Const);
+      advance(); // consume val/const/let
+    }
 
     // Parse field name
     if (at().type != havel::TokenType::Identifier) {

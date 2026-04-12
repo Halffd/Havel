@@ -160,6 +160,8 @@ private:
   std::unique_ptr<ast::Statement> parseSleepStatement();
   std::unique_ptr<ast::Statement> parseInputStatement();
   std::unique_ptr<ast::Statement> parseImplicitInputStatement();
+  std::unique_ptr<ast::Statement> buildImplicitInputStatement(std::unique_ptr<ast::Expression> leadingExpr);
+  std::unique_ptr<ast::Statement> parseMoreInputCommands(std::vector<ast::InputCommand> commands);
   std::unique_ptr<ast::Expression> parseGetInputExpression();
   std::unique_ptr<ast::Statement> parseWaitStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();

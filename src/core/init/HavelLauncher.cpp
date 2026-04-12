@@ -268,7 +268,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
           }
         }
         std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.message, primaryFile,
+            "error", err.what(), primaryFile,
             err.line, err.column, 1, sourceLine);
         std::cerr << formatted;
       }
@@ -420,7 +420,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
                }
              }
              std::string formatted = havel::ErrorPrinter::formatError(
-                 "error", err.message, primaryFile,
+                 "error", err.what(), primaryFile,
                  err.line, err.column, 1, sourceLine);
              std::cerr << formatted;
            }
@@ -562,7 +562,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
             }
           }
           std::string formatted = havel::ErrorPrinter::formatError(
-              "error", err.message, primaryFile,
+              "error", err.what(), primaryFile,
               err.line, err.column, 1, sourceLine);
           std::cerr << formatted;
         }
@@ -1087,7 +1087,7 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   if (compiler.hasErrors()) {
     for (const auto& err : compiler.errors()) {
       std::string formatted = havel::ErrorPrinter::formatError(
-          "error", err.message, primaryFile,
+          "error", err.what(), primaryFile,
           err.line, err.column, 1, "");
       std::cerr << formatted;
     }

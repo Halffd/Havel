@@ -5,6 +5,8 @@
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/StdLibModules.hpp"
@@ -44,6 +46,10 @@ static constexpr bool USE_BYTECODE_VM = true;
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
+
+    if (cfg.buildOnly) {
+      return runBuild(cfg);
+    }
 
     switch (cfg.mode) {
     case Mode::DAEMON:
@@ -135,6 +141,15 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
+    } else if (arg == "--build") {
+      cfg.buildOnly = true;
+      if (i + 1 < argc) {
+        cfg.scriptFiles.push_back(argv[++i]);
+      }
+    } else if (arg == "--output" || arg == "-o") {
+      if (i + 1 < argc) {
+        cfg.outputPath = argv[++i];
+      }
     } else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
@@ -201,8 +216,9 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       .ast = cfg.debugAst
     }};
     std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
+    std::unique_ptr<havel::ast::Program> program;
     try {
-      parser.produceAST(combinedCode);
+      program = parser.produceAST(combinedCode);
     } catch (const std::exception& e) {
       // Parser aborted due to too many errors — still print what we collected
     }
@@ -226,6 +242,40 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       error("Linting failed with {} error(s)", parser.getErrors().size());
       return 1;
     }
+    if (!program) {
+      error("Parser returned null AST");
+      return 1;
+    }
+
+    // Also run compiler in error-collection mode to catch compile errors
+    havel::compiler::ByteCompiler compiler;
+    compiler.setCollectErrors(true);
+    try {
+      auto chunk = compiler.compile(*program);
+      (void)chunk;
+    } catch (const std::exception& e) {
+      // Compiler aborted — still print what we collected
+    }
+    if (compiler.hasErrors()) {
+      for (const auto& err : compiler.errors()) {
+        std::string sourceLine;
+        if (err.line > 0) {
+          std::istringstream ss(combinedCode);
+          std::string line;
+          for (size_t i = 1; i <= err.line; ++i) {
+            if (!std::getline(ss, line)) break;
+            if (i == err.line) { sourceLine = line; break; }
+          }
+        }
+        std::string formatted = havel::ErrorPrinter::formatError(
+            "error", err.message, primaryFile,
+            err.line, err.column, 1, sourceLine);
+        std::cerr << formatted;
+      }
+      error("Compilation failed with {} error(s)", compiler.errors().size());
+      return 1;
+    }
+
     info("Linting successful");
     return 0;
   }
@@ -324,8 +374,10 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
          .parser = cfg.debugParser,
          .ast = cfg.debugAst
        }};
+       std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
+       std::unique_ptr<havel::ast::Program> program;
        try {
-         parser.produceAST(combinedCode);
+         program = parser.produceAST(combinedCode);
        } catch (const std::exception& e) {
          // Parser aborted — still print what we collected
        }
@@ -341,12 +393,40 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
              }
            }
            std::string formatted = havel::ErrorPrinter::formatError(
-               "error", err.message, combinedNames.empty() ? "input" : combinedNames,
+               "error", err.message, primaryFile,
                err.line, err.column, 1, sourceLine);
            std::cerr << formatted;
          }
          error("Linting failed with {} error(s)", parser.getErrors().size());
          return 1;
+       }
+       if (program) {
+         // Also check compiler errors
+         havel::compiler::ByteCompiler compiler;
+         compiler.setCollectErrors(true);
+         try {
+           auto chunk = compiler.compile(*program);
+           (void)chunk;
+         } catch (const std::exception& e) {}
+         if (compiler.hasErrors()) {
+           for (const auto& err : compiler.errors()) {
+             std::string sourceLine;
+             if (err.line > 0) {
+               std::istringstream ss(combinedCode);
+               std::string line;
+               for (size_t i = 1; i <= err.line; ++i) {
+                 if (!std::getline(ss, line)) break;
+                 if (i == err.line) { sourceLine = line; break; }
+               }
+             }
+             std::string formatted = havel::ErrorPrinter::formatError(
+                 "error", err.message, primaryFile,
+                 err.line, err.column, 1, sourceLine);
+             std::cerr << formatted;
+           }
+           error("Compilation failed with {} error(s)", compiler.errors().size());
+           return 1;
+         }
        }
        info("Linting successful");
        return 0;
@@ -438,8 +518,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       .ast = cfg.debugAst
     }};
     std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
+    std::unique_ptr<havel::ast::Program> program;
     try {
-      parser.produceAST(combinedCode);
+      program = parser.produceAST(combinedCode);
     } catch (const std::exception& e) {
       // Parser aborted — still print what we collected
     }
@@ -461,6 +542,33 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       }
       error("Linting failed with {} error(s)", parser.getErrors().size());
       return 1;
+    }
+    if (program) {
+      havel::compiler::ByteCompiler compiler;
+      compiler.setCollectErrors(true);
+      try {
+        auto chunk = compiler.compile(*program);
+        (void)chunk;
+      } catch (const std::exception& e) {}
+      if (compiler.hasErrors()) {
+        for (const auto& err : compiler.errors()) {
+          std::string sourceLine;
+          if (err.line > 0) {
+            std::istringstream ss(combinedCode);
+            std::string line;
+            for (size_t i = 1; i <= err.line; ++i) {
+              if (!std::getline(ss, line)) break;
+              if (i == err.line) { sourceLine = line; break; }
+            }
+          }
+          std::string formatted = havel::ErrorPrinter::formatError(
+              "error", err.message, primaryFile,
+              err.line, err.column, 1, sourceLine);
+          std::cerr << formatted;
+        }
+        error("Compilation failed with {} error(s)", compiler.errors().size());
+        return 1;
+      }
     }
     info("Linting successful");
     return 0;
@@ -640,6 +748,9 @@ void havel::init::HavelLauncher::showHelp() {
       << "  --run               Run script in minimal mode (auto-enables -m)\n";
   std::cout
       << "  --test, -t          Run all .hv scripts in a directory\n";
+  std::cout << "  --lint              Check syntax and compilation errors\n";
+  std::cout << "  --build             Compile to .hvc bytecode file\n";
+  std::cout << "  --output, -o PATH   Set output path for --build\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
@@ -651,6 +762,9 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  havel --full-repl         - Start REPL with ALL features\n";
   std::cout << "  havel --run script.hv     - Run script in MINIMAL mode\n";
   std::cout << "  havel --test dir/         - Run all .hv files in directory\n";
+  std::cout << "  havel --lint script.hv    - Check for errors without running\n";
+  std::cout << "  havel --build script.hv   - Compile to bytecode (.hvc)\n";
+  std::cout << "  havel --build script.hv -o out.hvc  - Compile to specific file\n";
   std::cout << "  havel --minimal script.hv - Run script in MINIMAL mode\n";
   std::cout << "  havel --repl --minimal    - Start REPL in MINIMAL mode\n";
   std::cout << "\nFull mode (default):\n";
@@ -888,6 +1002,120 @@ int havel::init::HavelLauncher::runTest(const LaunchConfig &cfg) {
 int havel::init::HavelLauncher::runCli(int, char *[]) {
   error("CLI not available - interpreter removed");
   return 1;
+}
+
+int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
+  // Build mode: compile .hv files to .hvc bytecode
+  std::string combinedCode;
+  std::string primaryFile;
+  for (const auto& f : cfg.scriptFiles) {
+    std::ifstream file(f);
+    if (file) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      combinedCode += buffer.str() + "\n";
+      if (primaryFile.empty()) primaryFile = f;
+    } else {
+      error("Cannot open script file: {}", f);
+      return 1;
+    }
+  }
+
+  if (combinedCode.empty()) {
+    error("No script files to build");
+    return 1;
+  }
+
+  // Determine output path
+  std::string outputPath = cfg.outputPath;
+  if (outputPath.empty()) {
+    // Default: replace .hv with .hvc
+    if (!primaryFile.empty()) {
+      outputPath = primaryFile;
+      size_t dotPos = outputPath.rfind('.');
+      if (dotPos != std::string::npos) {
+        outputPath.erase(dotPos);
+      }
+      outputPath += ".hvc";
+    } else {
+      outputPath = "output.hvc";
+    }
+  }
+
+  info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile, outputPath);
+
+  // Parse
+  havel::parser::Parser parser{{
+    .lexer = cfg.debugLexer,
+    .parser = cfg.debugParser,
+    .ast = cfg.debugAst
+  }};
+  std::unique_ptr<havel::ast::Program> program;
+  try {
+    program = parser.produceAST(combinedCode);
+  } catch (const std::exception& e) {
+    error("Parse error: {}", e.what());
+    return 1;
+  }
+  if (parser.hasErrors()) {
+    for (const auto& err : parser.getErrors()) {
+      std::string formatted = havel::ErrorPrinter::formatError(
+          "error", err.message, primaryFile,
+          err.line, err.column, 1, "");
+      std::cerr << formatted;
+    }
+    error("Build failed with {} parse error(s)", parser.getErrors().size());
+    return 1;
+  }
+  if (!program) {
+    error("Parser returned null AST");
+    return 1;
+  }
+
+  // Compile to bytecode
+  havel::compiler::ByteCompiler compiler;
+  if (cfg.debugBytecode) {
+    compiler.setCollectErrors(true);
+  }
+  std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
+  try {
+    chunk = compiler.compile(*program);
+  } catch (const std::exception& e) {
+    error("Compile error: {}", e.what());
+    return 1;
+  }
+  if (compiler.hasErrors()) {
+    for (const auto& err : compiler.errors()) {
+      std::string formatted = havel::ErrorPrinter::formatError(
+          "error", err.message, primaryFile,
+          err.line, err.column, 1, "");
+      std::cerr << formatted;
+    }
+    error("Build failed with {} compile error(s)", compiler.errors().size());
+    return 1;
+  }
+  if (!chunk) {
+    error("Compiler returned null chunk");
+    return 1;
+  }
+
+  // Serialize and write
+  havel::compiler::ValueSerializer serializer;
+  auto data = serializer.serializeChunk(*chunk);
+  std::ofstream outFile(outputPath, std::ios::binary);
+  if (!outFile.is_open()) {
+    error("Cannot open output file: {}", outputPath);
+    return 1;
+  }
+  outFile.write(reinterpret_cast<const char*>(data.data()), data.size());
+  if (!outFile.good()) {
+    error("Failed to write output file: {}", outputPath);
+    return 1;
+  }
+  outFile.close();
+
+  info("Build successful: {} ({} bytes)", outputPath, data.size());
+  return 0;
 }
 
 // DEBUG

@@ -6,7 +6,8 @@
 #include <stdexcept>
 
 // Macro for throwing errors with source location info
-// Reports to unified ErrorReporter before throwing
+// Reports to unified ErrorReporter before throwing.
+// In error-collection mode, compile() catches this and returns nullptr.
 #define COMPILER_THROW(msg) \
   do { \
     ::havel::errors::ErrorReporter::instance().report( \
@@ -73,6 +74,30 @@ bool isIntegerLiteral(double value) {
 
 std::unique_ptr<BytecodeChunk>
 ByteCompiler::compile(const ast::Program &program) {
+  // In error-collection mode, catch all exceptions and collect errors
+  if (collect_errors_) {
+    try {
+      return compileImpl(program);
+    } catch (const std::exception& e) {
+      // Extract error message from exception
+      std::string msg = e.what();
+      // Strip the file:line suffix
+      auto bracketPos = msg.rfind(" [");
+      if (bracketPos != std::string::npos) {
+        msg = msg.substr(0, bracketPos);
+      }
+      errors_.push_back({msg,
+                         current_source_location_ ? current_source_location_->line : 0,
+                         current_source_location_ ? current_source_location_->column : 0});
+      has_error_ = true;
+      return nullptr;
+    }
+  }
+  return compileImpl(program);
+}
+
+std::unique_ptr<BytecodeChunk>
+ByteCompiler::compileImpl(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
   function_indices_by_node_.clear();

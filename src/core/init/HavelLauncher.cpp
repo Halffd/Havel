@@ -10,6 +10,7 @@
 #include "havel-lang/runtime/StdLibModules.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/tools/REPL.hpp"
+#include "havel-lang/utils/ErrorPrinter.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
 #ifdef HAVE_QT_EXTENSION
@@ -194,7 +195,12 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
   // LINT-ONLY MODE: Parse and type-check ONLY, skip ALL Qt/VM initialization
   if (cfg.lintOnly && !combinedCode.empty()) {
     info("Linting scripts: {}", combinedNames);
-    havel::parser::Parser parser;
+    havel::parser::Parser parser{{
+      .lexer = cfg.debugLexer,
+      .parser = cfg.debugParser,
+      .ast = cfg.debugAst
+    }};
+    std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
     try {
       parser.produceAST(combinedCode);
     } catch (const std::exception& e) {
@@ -202,7 +208,20 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
     if (parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
-        error("  line {}:{}: {}", err.line, err.column, err.message);
+        // Get source line content for pretty formatting
+        std::string sourceLine;
+        if (err.line > 0) {
+          std::istringstream ss(combinedCode);
+          std::string line;
+          for (size_t i = 1; i <= err.line; ++i) {
+            if (!std::getline(ss, line)) break;
+            if (i == err.line) { sourceLine = line; break; }
+          }
+        }
+        std::string formatted = havel::ErrorPrinter::formatError(
+            "error", err.message, primaryFile,
+            err.line, err.column, 1, sourceLine);
+        std::cerr << formatted;
       }
       error("Linting failed with {} error(s)", parser.getErrors().size());
       return 1;
@@ -300,7 +319,11 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     // LINT-ONLY MODE: Parse and type-check ONLY, no execution
     if (cfg.lintOnly) {
-       havel::parser::Parser parser;
+       havel::parser::Parser parser{{
+         .lexer = cfg.debugLexer,
+         .parser = cfg.debugParser,
+         .ast = cfg.debugAst
+       }};
        try {
          parser.produceAST(combinedCode);
        } catch (const std::exception& e) {
@@ -308,7 +331,19 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
        }
        if (parser.hasErrors()) {
          for (const auto& err : parser.getErrors()) {
-           error("  line {}:{}: {}", err.line, err.column, err.message);
+           std::string sourceLine;
+           if (err.line > 0) {
+             std::istringstream ss(combinedCode);
+             std::string line;
+             for (size_t i = 1; i <= err.line; ++i) {
+               if (!std::getline(ss, line)) break;
+               if (i == err.line) { sourceLine = line; break; }
+             }
+           }
+           std::string formatted = havel::ErrorPrinter::formatError(
+               "error", err.message, combinedNames.empty() ? "input" : combinedNames,
+               err.line, err.column, 1, sourceLine);
+           std::cerr << formatted;
          }
          error("Linting failed with {} error(s)", parser.getErrors().size());
          return 1;
@@ -397,7 +432,12 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
   // LINT-ONLY MODE: Parse and type-check ONLY, no execution
   if (cfg.lintOnly) {
-    havel::parser::Parser parser;
+    havel::parser::Parser parser{{
+      .lexer = cfg.debugLexer,
+      .parser = cfg.debugParser,
+      .ast = cfg.debugAst
+    }};
+    std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
     try {
       parser.produceAST(combinedCode);
     } catch (const std::exception& e) {
@@ -405,7 +445,19 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     }
     if (parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
-        error("  line {}:{}: {}", err.line, err.column, err.message);
+        std::string sourceLine;
+        if (err.line > 0) {
+          std::istringstream ss(combinedCode);
+          std::string line;
+          for (size_t i = 1; i <= err.line; ++i) {
+            if (!std::getline(ss, line)) break;
+            if (i == err.line) { sourceLine = line; break; }
+          }
+        }
+        std::string formatted = havel::ErrorPrinter::formatError(
+            "error", err.message, primaryFile,
+            err.line, err.column, 1, sourceLine);
+        std::cerr << formatted;
       }
       error("Linting failed with {} error(s)", parser.getErrors().size());
       return 1;

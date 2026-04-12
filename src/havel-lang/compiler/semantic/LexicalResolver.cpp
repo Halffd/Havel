@@ -786,6 +786,46 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  // Shell command: $ cmd or $! cmd
+  case ast::NodeType::ShellCommandStatement: {
+    const auto &shellStmt = static_cast<const ast::ShellCommandStatement &>(statement);
+    if (shellStmt.commandExpr) {
+      resolveExpression(*shellStmt.commandExpr);
+    }
+    // Resolve pipe chain
+    const ast::ShellCommandStatement *next = shellStmt.next.get();
+    while (next) {
+      if (next->commandExpr) {
+        resolveExpression(*next->commandExpr);
+      }
+      next = next->next.get();
+    }
+    break;
+  }
+
+  // Input statement: > "text" or > {Key}
+  case ast::NodeType::InputStatement: {
+    const auto &inputStmt = static_cast<const ast::InputStatement &>(statement);
+    for (const auto &cmd : inputStmt.commands) {
+      if (!cmd.xExprStr.empty()) {
+        // TODO: resolve xExprStr if it's a parsed expression
+      }
+      if (!cmd.yExprStr.empty()) {
+        // TODO: resolve yExprStr if it's a parsed expression
+      }
+    }
+    break;
+  }
+
+  // Wait statement: w condition
+  case ast::NodeType::WaitStatement: {
+    const auto &waitStmt = static_cast<const ast::WaitStatement &>(statement);
+    if (waitStmt.condition) {
+      resolveExpression(*waitStmt.condition);
+    }
+    break;
+  }
+
   default:
     break;
   }

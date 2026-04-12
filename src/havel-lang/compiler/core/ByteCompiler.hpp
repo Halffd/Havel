@@ -127,6 +127,7 @@ private:
   void compileHotkeyBindingExpr(const ast::HotkeyBinding &binding);
   void compileWhenBlock(const ast::WhenBlock &whenBlock);
   void compileInputStatement(const ast::InputStatement &statement);
+  void compileShellCommandStatement(const ast::ShellCommandStatement &statement);
   void compileWaitStatement(const ast::WaitStatement &statement);
   void compileGetInputExpression(const ast::GetInputExpression &expression);
   void compileTryStatement(const ast::TryExpression &statement);

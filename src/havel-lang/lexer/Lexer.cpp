@@ -594,7 +594,8 @@ Token Lexer::scanIdentifier() {
 
   // Allow ? suffix for predicate functions (Ruby/Elixir style)
   // e.g., user.logged?, window.visible?, file.exists?
-  if (!isAtEnd() && peek() == '?') {
+  // But NOT for optional chaining: autosp?.onDown() — leave ? alone
+  if (!isAtEnd() && peek() == '?' && peek(1) != '.') {
     identifier += advance();
   }
 

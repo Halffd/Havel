@@ -1119,9 +1119,18 @@ std::vector<Token> Lexer::tokenize() {
       while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) {
         look++;
       }
-      // Check what follows: only => means hotkey
+      // Check what follows: => is hotkey, & is compound hotkey, : is hotkey with timing
+      // Everything else (=, ., (, \n, etc) is field access
+      bool isHotkey = false;
       if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
-        // @identifier => ... this is a hotkey - fall through to scanHotkey
+        isHotkey = true; // @identifier =>
+      } else if (look < source.size() && source[look] == '&') {
+        isHotkey = true; // @identifier & ... (compound hotkey)
+      } else if (look < source.size() && source[look] == ':') {
+        isHotkey = true; // @identifier:timing
+      }
+      if (isHotkey) {
+        // Fall through to scanHotkey
       } else {
         // @identifier with anything else ( = / . / ( / \n / etc ) - field access
         tokens.push_back(makeToken("@", TokenType::At));

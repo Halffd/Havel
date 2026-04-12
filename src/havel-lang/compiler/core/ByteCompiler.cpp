@@ -5,10 +5,24 @@
 #include <iostream>
 #include <stdexcept>
 
-// Macro for throwing errors with source location info
+// Macro for throwing errors with source location info (member functions only).
 // Reports to unified ErrorReporter before throwing.
 // In error-collection mode, compile() catches this and returns nullptr.
+// The message includes the current source location for extraction later.
 #define COMPILER_THROW(msg) \
+  do { \
+    std::string _full_msg = msg; \
+    if (current_source_location_) { \
+      _full_msg += " at line " + std::to_string(current_source_location_->line) + \
+                   ":" + std::to_string(current_source_location_->column); \
+    } \
+    ::havel::errors::ErrorReporter::instance().report( \
+        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, _full_msg)); \
+    throw std::runtime_error(_full_msg + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]"); \
+  } while (0)
+
+// Macro for non-member helper functions (no source location).
+#define COMPILER_THROW_SIMPLE(msg) \
   do { \
     ::havel::errors::ErrorReporter::instance().report( \
         HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg)); \
@@ -61,7 +75,7 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::NOP; // Placeholder - actual implementation in
                         // compileExpression
   default:
-    COMPILER_THROW(
+    COMPILER_THROW_SIMPLE(
         "Unsupported binary operator in bytecode compiler");
   }
 }
@@ -79,16 +93,29 @@ ByteCompiler::compile(const ast::Program &program) {
     try {
       return compileImpl(program);
     } catch (const std::exception& e) {
-      // Extract error message from exception
+      // Extract error message and source location from exception
       std::string msg = e.what();
-      // Strip the file:line suffix
+      // Strip the file:line suffix added by COMPILER_THROW
       auto bracketPos = msg.rfind(" [");
       if (bracketPos != std::string::npos) {
         msg = msg.substr(0, bracketPos);
       }
-      errors_.push_back({msg,
-                         current_source_location_ ? current_source_location_->line : 0,
-                         current_source_location_ ? current_source_location_->column : 0});
+      // Try to extract line:column from "at line X:Y" suffix
+      uint32_t errLine = 0, errCol = 0;
+      auto linePos = msg.find(" at line ");
+      if (linePos != std::string::npos) {
+        std::string locPart = msg.substr(linePos + 9);
+        auto colonPos = locPart.find(':');
+        if (colonPos != std::string::npos) {
+          try {
+            errLine = std::stoul(locPart.substr(0, colonPos));
+            errCol = std::stoul(locPart.substr(colonPos + 1));
+          } catch (...) {}
+        }
+        // Clean up the message
+        msg = msg.substr(0, linePos);
+      }
+      errors_.push_back({msg, errLine, errCol});
       has_error_ = true;
       return nullptr;
     }

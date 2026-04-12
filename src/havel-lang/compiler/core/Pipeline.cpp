@@ -572,8 +572,11 @@ BytecodeSmokeResult runBytecodePipeline(
         R"(Lexical resolution failed:\s*Unresolved identifier '([^']+)'\s*at\s*([0-9]+):([0-9]+))");
     static const std::regex duplicate_re(
         R"(Lexical resolution failed:\s*Duplicate declaration:\s*'([^']+)'\s*already defined.*?at\s*([0-9]+):([0-9]+))");
+    static const std::regex missing_binding_re(
+        R"(Missing lexical binding for identifier:\s*(\S+)\s+at line\s*([0-9]+):([0-9]+))");
     std::smatch unresolved_match;
     std::smatch duplicate_match;
+    std::smatch missing_binding_match;
     if (std::regex_search(formatted, unresolved_match, unresolved_re) &&
         unresolved_match.size() >= 4) {
       const std::string symbol = unresolved_match[1].str();
@@ -592,6 +595,15 @@ BytecodeSmokeResult runBytecodePipeline(
           "SemanticError", "duplicate declaration '" + symbol + "'",
           options.compile_unit_name, source, line, column,
           std::max<size_t>(1, symbol.size()), "already defined in this scope");
+    } else if (std::regex_search(formatted, missing_binding_match, missing_binding_re) &&
+               missing_binding_match.size() >= 4) {
+      const std::string symbol = missing_binding_match[1].str();
+      const size_t line = static_cast<size_t>(std::stoul(missing_binding_match[2].str()));
+      const size_t column = static_cast<size_t>(std::stoul(missing_binding_match[3].str()));
+      formatted = formatDiagnostic(
+          "SemanticError", "undefined variable '" + symbol + "'",
+          options.compile_unit_name, source, line, column,
+          std::max<size_t>(1, symbol.size()), "not found in this scope");
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     // Try to emit partial bytecode even if compilation failed

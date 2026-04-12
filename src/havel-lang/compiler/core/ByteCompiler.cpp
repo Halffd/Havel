@@ -1575,6 +1575,21 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::ShellCommandStatement: {
+    compileShellCommandStatement(
+        static_cast<const ast::ShellCommandStatement &>(statement));
+    break;
+  }
+
+  case ast::NodeType::ConditionalHotkey: {
+    // Conditional hotkey: hotkey if condition => { ... }
+    const auto &condHk = static_cast<const ast::ConditionalHotkey &>(statement);
+    if (condHk.binding) {
+      compileHotkeyBinding(*condHk.binding);
+    }
+    break;
+  }
+
   default:
     COMPILER_THROW("Unsupported statement in bytecode compiler: " +
                              statement.toString());
@@ -5092,6 +5107,38 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
       // Other commands not yet implemented
       break;
     }
+  }
+}
+
+// Compile shell command: $ cmd or $! cmd
+void ByteCompiler::compileShellCommandStatement(const ast::ShellCommandStatement &statement) {
+  if (!statement.commandExpr) {
+    COMPILER_THROW("Shell command missing expression");
+  }
+
+  // Compile the command expression
+  compileExpression(*statement.commandExpr);
+
+  // Call run() or runCapture() host function
+  const char *funcName = statement.captureOutput ? "runCapture" : "run";
+  uint32_t strId = addStringConstant(funcName);
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(1))});
+  emit(OpCode::POP);
+
+  // Handle pipe chain: $! cmd1 | cmd2 | cmd3
+  const ast::ShellCommandStatement *next = statement.next.get();
+  while (next) {
+    if (next->commandExpr) {
+      compileExpression(*next->commandExpr);
+      uint32_t strId2 = addStringConstant("run");
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId2),
+          Value(static_cast<uint32_t>(1))});
+      emit(OpCode::POP);
+    }
+    next = next->next.get();
   }
 }
 

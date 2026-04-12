@@ -1,17 +1,17 @@
 print("Testing function call...")
-let i = ["i"]
+i = ["i"]
 iImplicit = [1,2,3,4,5]
 o = {"a": 1}
 o2 = {"b": 1}
 assert(o != o2, "o should != o2")
 try {
-    let result = sleep
+    result = sleep
     throw "Error"
     print("Result: " + result)
 } catch {
     print("Error!")
 } finally {
-    let v = "top"
+    v = "top"
     vImplicit = "top2"
     fn test() {
         assert(v == "top", "v should be 'top'")

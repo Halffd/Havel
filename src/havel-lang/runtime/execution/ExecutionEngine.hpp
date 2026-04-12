@@ -2,36 +2,29 @@
 
 #include "../../compiler/vm/VM.hpp"
 #include "../concurrency/Scheduler.hpp"
-#include "../concurrency/Fiber.hpp"
 #include "../concurrency/EventQueue.hpp"
 
 #include <memory>
 #include <cstdint>
 
-namespace havel {
-
-// Forward declarations
-class VM;
-class Scheduler;
-class EventQueue;
-class Fiber;
+namespace havel::compiler {
 
 /**
  * ExecutionEngine - Phase 3 Main Loop
  * 
- * Central coordinator for single-threaded cooperative fiber execution.
+ * Central coordinator for single-threaded cooperative goroutine execution.
  * 
  * Responsibilities:
  * 1. Main loop: executeFrame() - called repeatedly by event loop
- * 2. Scheduler integration - picks next runnable fiber
+ * 2. Scheduler integration - picks next runnable goroutine
  * 3. Event queue handling - drains callbacks before each frame
  * 4. Single-step execution - VM::executeOneStep()
- * 5. Result handling - manages fiber state transitions
+ * 5. Result handling - manages goroutine state transitions
  * 
  * Non-blocking: All operations return immediately, no blocking waits.
  * 
  * CRITICAL INVARIANT: Single-threaded execution
- * - Only one fiber runs at a time
+ * - Only one goroutine runs at a time
  * - Main loop runs in application's event thread
  * - No locks needed in executeFrame()
  */
@@ -46,23 +39,23 @@ public:
    * executeFrame - Core Phase 3 main loop
    * 
    * Called repeatedly by application's event loop (e.g., 60x/second).
-   * Executes one instruction in the next runnable fiber, then returns.
+   * Executes one instruction in the next runnable goroutine, then returns.
    * 
    * Algorithm:
    * 1. Drain all pending callbacks (EventQueue::processAll)
-   * 2. Pick next runnable fiber (Scheduler::pickNext)
+   * 2. Pick next runnable goroutine (Scheduler::pickNext)
    * 3. If no work, return idle
    * 4. Execute one instruction (VM::executeOneStep)
    * 5. Handle result (YIELD/SUSPENDED/RETURNED/ERROR)
    * 
-   * @return true if work remains, false if all fibers suspended/done
+   * @return true if work remains, false if all goroutines suspended/done
    */
   bool executeFrame();
   
   /**
-   * isDone - Check if all fibers have completed
+   * isDone - Check if all goroutines have completed
    * 
-   * @return true if no runnable fibers and no suspended fibers
+   * @return true if no runnable goroutines and no suspended goroutines
    */
   bool isDone() const;
   
@@ -78,8 +71,8 @@ public:
    */
   struct Stats {
     uint64_t frames_executed = 0;
-    uint64_t fibers_spawned = 0;
-    uint64_t fibers_completed = 0;
+    uint64_t goroutines_spawned = 0;
+    uint64_t goroutines_completed = 0;
     uint64_t instructions_executed = 0;
   };
   Stats getStats() const { return stats_; }
@@ -91,7 +84,7 @@ public:
 private:
   // ========== CORE COMPONENTS ==========
   VM* vm_;                    // Bytecode virtual machine
-  Scheduler* scheduler_;      // Fiber scheduler
+  Scheduler* scheduler_;      // Goroutine scheduler
   EventQueue* event_queue_;   // Event callback queue
   
   // ========== STATE ==========
@@ -100,10 +93,11 @@ private:
   bool debug_mode_ = false;
   
   // ========== HELPER METHODS ==========
-  void handleYield(Fiber* fiber);
-  void handleSuspended(Fiber* fiber);
-  void handleReturned(Fiber* fiber);
-  void handleError(Fiber* fiber, const std::string& msg);
+  void handleYield(Scheduler::Goroutine* g);
+  void handleSuspended(Scheduler::Goroutine* g);
+  void handleReturned(Scheduler::Goroutine* g);
+  void handleError(Scheduler::Goroutine* g, const std::string& msg);
 };
 
-} // namespace havel
+} // namespace havel::compiler
+

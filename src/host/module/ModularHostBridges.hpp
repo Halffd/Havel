@@ -256,6 +256,9 @@ private:
   handleHotkeyTrigger(const std::vector<Value> &args,
                       const HostContext *ctx);
   static Value
+  handleHotkeyList(const std::vector<Value> &args,
+                   const HostContext *ctx);
+  static Value
   handleMapManagerMap(const std::vector<Value> &args,
                       const HostContext *ctx);
   static Value

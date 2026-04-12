@@ -237,9 +237,10 @@ void SystemBridge::install(PipelineOptions &options) {
     return handleSystemHardware(args, ctx);
   };
 
-  // Create system object with proper namespacing
-  // This will be set globally by HostBridge after VM is available
+  // Create system objects and extension object via initializer
+  // This runs after all host functions are registered
   options.system_object_initializer = [](compiler::VM *vm) {
+    // System object
     auto systemObj = vm->createHostObject();
     vm->setHostObjectField(
         systemObj, "detect",
@@ -249,7 +250,7 @@ void SystemBridge::install(PipelineOptions &options) {
         Value::makeHostFuncId(vm->getHostFunctionIndex("system.hardware")));
     vm->setGlobal("system", Value::makeObjectId(systemObj.id));
 
-    // Create process object
+    // Process object
     auto processObj = vm->createHostObject();
     vm->setHostObjectField(
         processObj, "find",
@@ -270,8 +271,25 @@ void SystemBridge::install(PipelineOptions &options) {
         processObj, "runDetached",
         Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
     vm->setGlobal("process", Value::makeObjectId(processObj.id));
+
+    // Extension object
+    auto extensionObj = vm->createHostObject();
+    vm->setHostObjectField(
+        extensionObj, "load",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.load")));
+    vm->setHostObjectField(
+        extensionObj, "isLoaded",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.isLoaded")));
+    vm->setHostObjectField(
+        extensionObj, "list",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.list")));
+    vm->setHostObjectField(
+        extensionObj, "addSearchPath",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("extension.addSearchPath")));
+    vm->setGlobal("extension", Value::makeObjectId(extensionObj.id));
   };
 
+  // File operations
   options.host_functions["readFile"] = [ctx = ctx_](const auto &args) {
     return handleFileRead(args, ctx);
   };
@@ -324,49 +342,6 @@ void SystemBridge::install(PipelineOptions &options) {
   };
   options.host_functions["play"] = [ctx = ctx_](const auto &args) {
     return handleMediaPlay(args, ctx);
-  };
-  // System detection
-  options.host_functions["system.detect"] = [ctx = ctx_](const auto &args) {
-    return handleSystemDetect(args, ctx);
-  };
-  options.host_functions["system.hardware"] = [ctx = ctx_](const auto &args) {
-    return handleSystemHardware(args, ctx);
-  };
-
-  // Create system and process objects via initializer
-  // This runs after all host functions are registered
-  options.system_object_initializer = [](compiler::VM *vm) {
-    // System object
-    auto systemObj = vm->createHostObject();
-    vm->setHostObjectField(
-        systemObj, "detect",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("system.detect")));
-    vm->setHostObjectField(
-        systemObj, "hardware",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("system.hardware")));
-    vm->setGlobal("system", Value::makeObjectId(systemObj.id));
-
-    // Process object
-    auto processObj = vm->createHostObject();
-    vm->setHostObjectField(
-        processObj, "find",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
-    vm->setHostObjectField(
-        processObj, "exists",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.exists")));
-    vm->setHostObjectField(
-        processObj, "kill",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.kill")));
-    vm->setHostObjectField(
-        processObj, "nice",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.nice")));
-    vm->setHostObjectField(
-        processObj, "run",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.run")));
-    vm->setHostObjectField(
-        processObj, "runDetached",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
-    vm->setGlobal("process", Value::makeObjectId(processObj.id));
   };
 }
 
@@ -1722,6 +1697,9 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.trigger"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyTrigger(args, ctx);
   };
+  options.host_functions["hotkey.list"] = [ctx = ctx_](const auto &args) {
+    return handleHotkeyList(args, ctx);
+  };
   options.host_functions["mapmanager.map"] = [ctx = ctx_](const auto &args) {
     return handleMapManagerMap(args, ctx);
   };
@@ -1820,6 +1798,39 @@ InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
   (void)args;
   (void)ctx;
   return Value::makeBool(false);
+}
+
+Value
+InputBridge::handleHotkeyList(const std::vector<Value> &args,
+                              const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->hotkeyManager || !ctx->vm) {
+    return Value::makeNull();
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto hotkeys = ctx->hotkeyManager->getHotkeyList();
+  auto conditionalHotkeys = ctx->hotkeyManager->getConditionalHotkeyList();
+
+  auto result = vm->createHostArray();
+
+  // Add simple hotkeys
+  for (const auto &hk : hotkeys) {
+    auto ctxObj = ::havel::stdlib::HotkeyModule::createHotkeyContext(
+        vm, "hotkey_" + std::to_string(hk.id), hk.alias, "", "",
+        hk.enabled ? "enabled" : "disabled", 0);
+    vm->pushHostArrayValue(result, ctxObj);
+  }
+
+  // Add conditional hotkeys
+  for (const auto &hk : conditionalHotkeys) {
+    auto ctxObj = ::havel::stdlib::HotkeyModule::createHotkeyContext(
+        vm, "hotkey_" + std::to_string(hk.id), hk.alias, hk.key, hk.condition,
+        hk.active ? "active" : (hk.enabled ? "enabled" : "disabled"), 0);
+    vm->pushHostArrayValue(result, ctxObj);
+  }
+
+  return Value::makeArrayId(result.id);
 }
 
 Value

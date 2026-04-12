@@ -959,7 +959,7 @@ if hypr == false {
 
 @RShift & WheelUp => zoom(1)
 @RShift & WheelDown => zoom(0)
-when mode == "default" {
+if mode == "default" {
   @LButton & RButton => zoomToggle()
   @RButton & LButton => zoom(1)
 }
@@ -1066,9 +1066,10 @@ print("screenshots")
   sleep ms
   send "{enter}"
 }
-extension.load("image")
-extension.load("ocr")
+let image = extension.load("image")
+let ocr = extension.load("ocr")
 let img = image.load("/home/all/Pictures/photo.jpg")
+print(img)
 let defaultLanguage = "ja"
 fn transcribe(
     w,
@@ -1311,10 +1312,10 @@ let genshinAutomationActive = false
 }
 
 Enter if title == "Chatterino" => print("Enter pressed in chatterino")
-when title == "Chatterino" {
-  print("Chatterino is active")
-  ^v => print("Ctrl+V pressed in chatterino")
-}
+//when title == "Chatterino" {
+//  print("Chatterino is active")
+//}
+^v if title == "Chatterino" => print("Ctrl+V pressed in chatterino")
 class AutoBase {
   running: bool = false
   timer = null

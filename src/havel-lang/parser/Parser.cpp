@@ -7906,8 +7906,8 @@ Parser::parseKeyValueBlock() {
 
 std::unique_ptr<havel::ast::Expression> Parser::parseThreadExpression() {
   auto threadToken = at();
-  advance(); // consume 'thread'
-  
+  // Note: parsePrattExpression already consumed 'thread' via advance()
+
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after 'thread'");
   }
@@ -7922,51 +7922,75 @@ std::unique_ptr<havel::ast::Expression> Parser::parseThreadExpression() {
   expr->column = threadToken.column;
   return expr;
 }
+std::unique_ptr<ast::Expression> Parser::parseIntervalExpression() {
+    // Note: parsePrattExpression already consumed 'interval' via advance()
+    // So at() is already the duration token
 
-std::unique_ptr<havel::ast::Expression> Parser::parseIntervalExpression() {
-  auto intervalToken = at();
-  advance(); // consume 'interval'
-  
-  // Parse interval duration (number or expression)
-  auto intervalMs = parseExpression();
-  
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after interval duration");
-  }
-  
-  auto body = parseBlockStatement();
-  auto expr = std::make_unique<havel::ast::IntervalExpression>(
-    std::move(intervalMs),
-    std::unique_ptr<havel::ast::BlockStatement>(
-      static_cast<havel::ast::BlockStatement*>(body.release())
-    )
-  );
-  expr->line = intervalToken.line;
-  expr->column = intervalToken.column;
-  return expr;
+    // Disable brace sugar so it doesn't consume the duration expression
+    auto savedBraceSugar = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+
+    std::unique_ptr<ast::Expression> intervalMs;
+
+    // Parse duration: can be number, parenthesized expression, or any expression
+    if (at().type == TokenType::OpenParen) {
+        advance(); // consume '('
+        intervalMs = parseExpression();
+        if (at().type != TokenType::CloseParen) {
+            failAt(at(), "Expected ')' after interval duration");
+        }
+        advance(); // consume ')'
+    } else if (at().type == TokenType::OpenBrace) {
+        failAt(at(), "Expected number or expression for interval duration");
+    } else {
+        intervalMs = parseExpression();
+    }
+
+    context.allowBraceSugar = savedBraceSugar;
+
+    if (at().type != TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after interval duration");
+    }
+
+    auto body = parseBlockStatement();
+
+    return std::make_unique<ast::IntervalExpression>(std::move(intervalMs), std::move(body));
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
-  auto timeoutToken = at();
-  advance(); // consume 'timeout'
-  
-  // Parse delay duration (number or expression)
-  auto delayMs = parseExpression();
-  
-  if (at().type != havel::TokenType::OpenBrace) {
+  // Note: parsePrattExpression already consumed 'timeout' via advance()
+  // So at() is already the duration token
+
+  // Disable brace sugar so it doesn't consume the duration expression
+  auto savedBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+
+  std::unique_ptr<ast::Expression> timeoutMs;
+
+  // Parse duration: can be number, parenthesized expression, or any expression
+  if (at().type == TokenType::OpenParen) {
+    advance(); // consume '('
+    timeoutMs = parseExpression();
+    if (at().type != TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after timeout duration");
+    }
+    advance(); // consume ')'
+  } else if (at().type == TokenType::OpenBrace) {
+    failAt(at(), "Expected number or expression for timeout duration");
+  } else {
+    // Parse any expression (number literal, variable, function call, etc.)
+    timeoutMs = parseExpression();
+  }
+
+  context.allowBraceSugar = savedBraceSugar;
+
+  if (at().type != TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after timeout duration");
   }
   
   auto body = parseBlockStatement();
-  auto expr = std::make_unique<havel::ast::TimeoutExpression>(
-    std::move(delayMs),
-    std::unique_ptr<havel::ast::BlockStatement>(
-      static_cast<havel::ast::BlockStatement*>(body.release())
-    )
-  );
-  expr->line = timeoutToken.line;
-  expr->column = timeoutToken.column;
-  return expr;
+  
+  return std::make_unique<ast::TimeoutExpression>(std::move(timeoutMs), std::move(body));
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseYieldExpression() {

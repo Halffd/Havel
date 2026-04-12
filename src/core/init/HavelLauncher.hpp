@@ -42,6 +42,8 @@ private:
     bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
     bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
     bool lintOnly = false; // Only lint the script and check for errors
+    bool buildOnly = false; // Compile to bytecode only
+    std::string outputPath; // Output path for --build (-o)
     std::string testDir;   // Directory containing test scripts
   };
 
@@ -55,6 +57,7 @@ private:
   int runRepl(const LaunchConfig &cfg);
   int runCli(int argc, char *argv[]);
   int runTest(const LaunchConfig &cfg);
+  int runBuild(const LaunchConfig &cfg);
   void showHelp();
 };
 

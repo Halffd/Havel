@@ -52,7 +52,18 @@ public:
   // Set HostBridge for lazy module loading
   void setHostBridge(HostBridge *bridge) { host_bridge_ = bridge; }
 
+  // Error collection for linting (instead of throwing)
+  struct CompilerError {
+    std::string message;
+    uint32_t line = 0;
+    uint32_t column = 0;
+  };
+  bool hasErrors() const { return has_error_; }
+  const std::vector<CompilerError> &errors() const { return errors_; }
+  void setCollectErrors(bool collect) { collect_errors_ = collect; }
+
 private:
+  std::unique_ptr<BytecodeChunk> compileImpl(const ast::Program &program);
   struct SourceLocationScope {
     ByteCompiler *compiler = nullptr;
     std::optional<SourceLocation> previous;
@@ -190,6 +201,11 @@ private:
 
   // HostBridge for lazy module loading and permission checks
   HostBridge *host_bridge_ = nullptr;
+
+  // Error collection for linting
+  bool collect_errors_ = false;
+  bool has_error_ = false;
+  std::vector<CompilerError> errors_;
 };
 
 } // namespace havel::compiler

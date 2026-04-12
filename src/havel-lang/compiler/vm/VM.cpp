@@ -5088,8 +5088,23 @@ void VM::executeInstruction(const Instruction &instruction) {
       }
     }
     
-    // If not in a coroutine, just push the value back
-    pushStack(yield_value);
+    // If not in a coroutine, treat yield like return
+    // Use the same pattern as doReturn()
+    if (frame_count_ > 0) {
+      auto finished = frame_arena_[frame_count_ - 1];
+      frame_count_--;
+      
+      closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                       static_cast<uint32_t>(locals.size()));
+      
+      if (locals.size() >= finished.locals_base) {
+        locals.resize(finished.locals_base);
+      }
+      
+      pushStack(yield_value);
+    } else {
+      pushStack(yield_value);
+    }
     break;
   }
 
@@ -5158,7 +5173,8 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::CHANNEL_NEW: {
     // Create new channel
-    uint32_t channel_id = heap_.allocateChannel();
+    ChannelRef channel_ref = heap_.allocateChannel();
+    uint32_t channel_id = channel_ref.id;
     pushStack(Value::makeChannelId(channel_id));
     break;
   }

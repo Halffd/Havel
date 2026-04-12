@@ -31,7 +31,7 @@ class ConfigBridge;
 class ModeBridge;
 class TimerBridge;
 class AppBridge;
-class AsyncBridge;
+class ConcurrencyBridge;
 class AutomationBridge;
 class BrowserBridge;
 class ToolsBridge;
@@ -74,6 +74,9 @@ public:
 
   // Module loading (lazy loading)
   HostModuleLoader &moduleLoader() { return moduleLoader_; }
+
+  // Timer checking (to be called from main event loop)
+  void checkTimers();
   const HostModuleLoader &moduleLoader() const { return moduleLoader_; }
 
   // Extension loading (native .so modules)
@@ -147,7 +150,7 @@ private:
   std::unique_ptr<ModeBridge> modeBridge_;
   std::unique_ptr<TimerBridge> timerBridge_;
   std::unique_ptr<AppBridge> appBridge_;
-  std::unique_ptr<AsyncBridge> asyncBridge_;
+  std::unique_ptr<ConcurrencyBridge> concurrencyBridge_;
   std::unique_ptr<AutomationBridge> automationBridge_;
   std::unique_ptr<BrowserBridge> browserBridge_;
   std::unique_ptr<ToolsBridge> toolsBridge_;

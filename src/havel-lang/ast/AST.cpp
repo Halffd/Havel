@@ -623,4 +623,34 @@ void AtAtExpression::accept(ASTVisitor &visitor) const {
   visitor.visitAtAtExpression(*this);
 }
 
+// ThreadExpression accept method
+void ThreadExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitThreadExpression(*this);
+}
+
+// IntervalExpression accept method
+void IntervalExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitIntervalExpression(*this);
+}
+
+// TimeoutExpression accept method
+void TimeoutExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitTimeoutExpression(*this);
+}
+
+// YieldExpression accept method
+void YieldExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitYieldExpression(*this);
+}
+
+// GoStatement accept method
+void GoStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitGoStatement(*this);
+}
+
+// ChannelExpression accept method
+void ChannelExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitChannelExpression(*this);
+}
+
 } // namespace havel::ast

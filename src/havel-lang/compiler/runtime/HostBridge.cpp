@@ -8,6 +8,7 @@
  * - Default: FULL ACCESS (no friction for normal users)
  */
 #include "HostBridge.hpp"
+#include "ConcurrencyBridge.hpp"
 #include <iostream> 
 #include "../../../host/module/ModularHostBridges.hpp"
 #include "../../../modules/window/WindowMonitorModule.hpp"
@@ -92,7 +93,7 @@ void HostBridge::shutdown() {
   modeBridge_.reset();
   timerBridge_.reset();
   appBridge_.reset();
-  asyncBridge_.reset();
+  concurrencyBridge_.reset();
   automationBridge_.reset();
   browserBridge_.reset();
   toolsBridge_.reset();
@@ -132,7 +133,7 @@ void HostBridge::initBridges() {
   modeBridge_ = std::make_unique<ModeBridge>(ctx_);
   timerBridge_ = std::make_unique<TimerBridge>(ctx_);
   appBridge_ = std::make_unique<AppBridge>(ctx_);
-  asyncBridge_ = std::make_unique<AsyncBridge>(ctx_);
+  concurrencyBridge_ = std::make_unique<ConcurrencyBridge>(*ctx_);
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
   browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
   toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);
@@ -156,7 +157,7 @@ void HostBridge::install() {
   modeBridge_->install(options_);
   timerBridge_->install(options_);
   appBridge_->install(options_);
-  asyncBridge_->install(options_);
+  concurrencyBridge_->install(options_);
   automationBridge_->install(options_);
   browserBridge_->install(options_);
   toolsBridge_->install(options_);
@@ -2069,6 +2070,12 @@ bool HostBridge::import(const std::string &importSpec) {
 void HostBridge::loadExtension(const std::string &name) {
   if (extensionLoader_) {
     extensionLoader_->loadExtensionByName(name);
+  }
+}
+
+void HostBridge::checkTimers() {
+  if (concurrencyBridge_) {
+    concurrencyBridge_->checkTimers();
   }
 }
 

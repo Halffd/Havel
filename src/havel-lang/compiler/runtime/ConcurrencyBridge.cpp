@@ -1,15 +1,16 @@
-#include "AsyncBridge.hpp"
+#include "ConcurrencyBridge.hpp"
 #include "../vm/VM.hpp"
 
 #include <chrono>
+#include <iostream>
 
 namespace havel::compiler {
 
-AsyncBridge::AsyncBridge(const ::havel::HostContext &ctx) : ctx_(&ctx) {
+ConcurrencyBridge::ConcurrencyBridge(const ::havel::HostContext &ctx) : ctx_(&ctx), vm_(ctx.vm) {
   initThreadPool();
 }
 
-AsyncBridge::~AsyncBridge() {
+ConcurrencyBridge::~ConcurrencyBridge() {
   shutdown_ = true;
   queue_cv_.notify_all();
   
@@ -29,30 +30,12 @@ AsyncBridge::~AsyncBridge() {
     }
   }
 
-  // Clean up intervals
-  {
-    std::lock_guard<std::mutex> lock(intervals_mutex_);
-    for (auto &[id, timer] : intervals_) {
-      timer->running = false;
-      if (timer->timer_thread.joinable()) {
-        timer->timer_thread.join();
-      }
-    }
-  }
-
-  // Clean up timeouts
-  {
-    std::lock_guard<std::mutex> lock(timeouts_mutex_);
-    for (auto &[id, timer] : timeouts_) {
-      timer->running = false;
-      if (timer->timer_thread.joinable()) {
-        timer->timer_thread.join();
-      }
-    }
-  }
+  // Clean up timers (timer queue is automatically cleaned up when vector is destroyed)
+  std::lock_guard<std::mutex> lock(timers_mutex_);
+  timers_.clear();
 }
 
-void AsyncBridge::initThreadPool(size_t pool_size) {
+void ConcurrencyBridge::initThreadPool(size_t pool_size) {
   for (size_t i = 0; i < pool_size; ++i) {
     thread_pool_.emplace_back([this] {
       while (true) {
@@ -81,53 +64,53 @@ void AsyncBridge::initThreadPool(size_t pool_size) {
   }
 }
 
-void AsyncBridge::install(PipelineOptions &options) {
+void ConcurrencyBridge::install(PipelineOptions &options) {
   // Thread operations
-  options.host_functions["thread.spawn"] = [this](const std::vector<Value> &args) {
+  options.host_functions["thread_spawn"] = [this](const std::vector<Value> &args) {
     return threadSpawn(args);
   };
-  options.host_functions["thread.join"] = [this](const std::vector<Value> &args) {
+  options.host_functions["thread_join"] = [this](const std::vector<Value> &args) {
     return threadJoin(args);
   };
-  options.host_functions["thread.send"] = [this](const std::vector<Value> &args) {
+  options.host_functions["thread_send"] = [this](const std::vector<Value> &args) {
     return threadSend(args);
   };
-  options.host_functions["thread.receive"] = [this](const std::vector<Value> &args) {
+  options.host_functions["thread_receive"] = [this](const std::vector<Value> &args) {
     return threadReceive(args);
   };
 
   // Interval operations
-  options.host_functions["interval.start"] = [this](const std::vector<Value> &args) {
+  options.host_functions["interval_start"] = [this](const std::vector<Value> &args) {
     return intervalStart(args);
   };
-  options.host_functions["interval.stop"] = [this](const std::vector<Value> &args) {
+  options.host_functions["interval_stop"] = [this](const std::vector<Value> &args) {
     return intervalStop(args);
   };
 
   // Timeout operations
-  options.host_functions["timeout.start"] = [this](const std::vector<Value> &args) {
+  options.host_functions["timeout_start"] = [this](const std::vector<Value> &args) {
     return timeoutStart(args);
   };
-  options.host_functions["timeout.cancel"] = [this](const std::vector<Value> &args) {
+  options.host_functions["timeout_cancel"] = [this](const std::vector<Value> &args) {
     return timeoutCancel(args);
   };
 
   // Channel operations
-  options.host_functions["channel.new"] = [this](const std::vector<Value> &args) {
+  options.host_functions["channel_new"] = [this](const std::vector<Value> &args) {
     return channelNew(args);
   };
-  options.host_functions["channel.send"] = [this](const std::vector<Value> &args) {
+  options.host_functions["channel_send"] = [this](const std::vector<Value> &args) {
     return channelSend(args);
   };
-  options.host_functions["channel.receive"] = [this](const std::vector<Value> &args) {
+  options.host_functions["channel_receive"] = [this](const std::vector<Value> &args) {
     return channelReceive(args);
   };
-  options.host_functions["channel.close"] = [this](const std::vector<Value> &args) {
+  options.host_functions["channel_close"] = [this](const std::vector<Value> &args) {
     return channelClose(args);
   };
 }
 
-Value AsyncBridge::threadSpawn(const std::vector<Value> &args) {
+Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isClosureId() && !args[0].isFunctionObjId()) {
     return Value::makeNull();
   }
@@ -143,7 +126,7 @@ Value AsyncBridge::threadSpawn(const std::vector<Value> &args) {
   return Value::makeThreadId(thread_id);
 }
 
-Value AsyncBridge::threadJoin(const std::vector<Value> &args) {
+Value ConcurrencyBridge::threadJoin(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isThreadId()) {
     return Value::makeNull();
   }
@@ -161,7 +144,7 @@ Value AsyncBridge::threadJoin(const std::vector<Value> &args) {
   return Value::makeNull();
 }
 
-Value AsyncBridge::threadSend(const std::vector<Value> &args) {
+Value ConcurrencyBridge::threadSend(const std::vector<Value> &args) {
   if (args.size() < 2 || !args[0].isThreadId()) {
     return Value::makeNull();
   }
@@ -175,7 +158,7 @@ Value AsyncBridge::threadSend(const std::vector<Value> &args) {
   return Value::makeNull();
 }
 
-Value AsyncBridge::threadReceive(const std::vector<Value> &args) {
+Value ConcurrencyBridge::threadReceive(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isThreadId()) {
     return Value::makeNull();
   }
@@ -195,124 +178,89 @@ Value AsyncBridge::threadReceive(const std::vector<Value> &args) {
   return message;
 }
 
-Value AsyncBridge::intervalStart(const std::vector<Value> &args) {
+Value ConcurrencyBridge::intervalStart(const std::vector<Value> &args) {
   if (args.size() < 2 || !args[0].isInt() || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
     return Value::makeNull();
   }
 
   int64_t interval_ms = args[0].asInt();
-  uint32_t interval_id;
+  Value callback = args[1];
   
-  {
-    std::lock_guard<std::mutex> lock(intervals_mutex_);
-    interval_id = next_interval_id_++;
-  }
-
-  // Create interval timer
-  auto timer = std::make_unique<IntervalTimer>();
-  timer->running = true;
+  std::lock_guard<std::mutex> lock(timers_mutex_);
+  uint32_t timer_id = next_timer_id_++;
   
-  timer->timer_thread = std::thread([this, interval_id, interval_ms] {
-    while (true) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-      
-      std::lock_guard<std::mutex> lock(intervals_mutex_);
-      auto it = intervals_.find(interval_id);
-      if (it == intervals_.end() || !it->second->running) {
-        break;
-      }
-      
-      // Execute the interval callback
-      // TODO: Execute the closure/function
-    }
-  });
+  Timer timer;
+  timer.id = timer_id;
+  timer.next_run = std::chrono::steady_clock::now() + std::chrono::milliseconds(interval_ms);
+  timer.interval_ms = interval_ms;
+  timer.callback = callback;
+  timer.active = true;
+  
+  timers_.push_back(timer);
 
-  {
-    std::lock_guard<std::mutex> lock(intervals_mutex_);
-    intervals_[interval_id] = std::move(timer);
-  }
-
-  return Value::makeIntervalId(interval_id);
+  return Value::makeIntervalId(timer_id);
 }
 
-Value AsyncBridge::intervalStop(const std::vector<Value> &args) {
+Value ConcurrencyBridge::intervalStop(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isIntervalId()) {
     return Value::makeNull();
   }
 
   uint32_t interval_id = args[0].asIntervalId();
 
-  std::lock_guard<std::mutex> lock(intervals_mutex_);
-  auto it = intervals_.find(interval_id);
-  if (it != intervals_.end()) {
-    it->second->running = false;
-    if (it->second->timer_thread.joinable()) {
-      it->second->timer_thread.join();
+  std::lock_guard<std::mutex> lock(timers_mutex_);
+  for (auto &timer : timers_) {
+    if (timer.id == interval_id && timer.active) {
+      timer.active = false;
+      break;
     }
-    intervals_.erase(it);
   }
 
   return Value::makeNull();
 }
 
-Value AsyncBridge::timeoutStart(const std::vector<Value> &args) {
+Value ConcurrencyBridge::timeoutStart(const std::vector<Value> &args) {
   if (args.size() < 2 || !args[0].isInt() || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
     return Value::makeNull();
   }
 
   int64_t delay_ms = args[0].asInt();
-  uint32_t timeout_id;
+  Value callback = args[1];
   
-  {
-    std::lock_guard<std::mutex> lock(timeouts_mutex_);
-    timeout_id = next_timeout_id_++;
-  }
-
-  // Create timeout timer
-  auto timer = std::make_unique<TimeoutTimer>();
-  timer->running = true;
+  std::lock_guard<std::mutex> lock(timers_mutex_);
+  uint32_t timer_id = next_timer_id_++;
   
-  timer->timer_thread = std::thread([this, timeout_id, delay_ms] {
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-    
-    std::lock_guard<std::mutex> lock(timeouts_mutex_);
-    auto it = timeouts_.find(timeout_id);
-    if (it != timeouts_.end() && it->second->running) {
-      // Execute the timeout callback
-      // TODO: Execute the closure/function
-      timeouts_.erase(it);
-    }
-  });
+  Timer timer;
+  timer.id = timer_id;
+  timer.next_run = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay_ms);
+  timer.interval_ms = 0;  // 0 means one-shot (timeout)
+  timer.callback = callback;
+  timer.active = true;
+  
+  timers_.push_back(timer);
 
-  {
-    std::lock_guard<std::mutex> lock(timeouts_mutex_);
-    timeouts_[timeout_id] = std::move(timer);
-  }
-
-  return Value::makeTimeoutId(timeout_id);
+  return Value::makeTimeoutId(timer_id);
 }
 
-Value AsyncBridge::timeoutCancel(const std::vector<Value> &args) {
+Value ConcurrencyBridge::timeoutCancel(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isTimeoutId()) {
     return Value::makeNull();
   }
 
   uint32_t timeout_id = args[0].asTimeoutId();
 
-  std::lock_guard<std::mutex> lock(timeouts_mutex_);
-  auto it = timeouts_.find(timeout_id);
-  if (it != timeouts_.end()) {
-    it->second->running = false;
-    if (it->second->timer_thread.joinable()) {
-      it->second->timer_thread.join();
+  std::lock_guard<std::mutex> lock(timers_mutex_);
+  for (auto &timer : timers_) {
+    if (timer.id == timeout_id && timer.active) {
+      timer.active = false;
+      break;
     }
-    timeouts_.erase(it);
   }
 
   return Value::makeNull();
 }
 
-Value AsyncBridge::channelNew(const std::vector<Value> &args) {
+Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
   (void)args; // No arguments needed
 
   uint32_t channel_id;
@@ -325,7 +273,7 @@ Value AsyncBridge::channelNew(const std::vector<Value> &args) {
   return Value::makeChannelId(channel_id);
 }
 
-Value AsyncBridge::channelSend(const std::vector<Value> &args) {
+Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
   if (args.size() < 2 || !args[0].isChannelId()) {
     return Value::makeNull();
   }
@@ -345,7 +293,7 @@ Value AsyncBridge::channelSend(const std::vector<Value> &args) {
   return Value::makeBool(true);
 }
 
-Value AsyncBridge::channelReceive(const std::vector<Value> &args) {
+Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isChannelId()) {
     return Value::makeNull();
   }
@@ -373,7 +321,7 @@ Value AsyncBridge::channelReceive(const std::vector<Value> &args) {
   return value;
 }
 
-Value AsyncBridge::channelClose(const std::vector<Value> &args) {
+Value ConcurrencyBridge::channelClose(const std::vector<Value> &args) {
   if (args.empty() || !args[0].isChannelId()) {
     return Value::makeNull();
   }
@@ -388,6 +336,33 @@ Value AsyncBridge::channelClose(const std::vector<Value> &args) {
   }
 
   return Value::makeNull();
+}
+
+void ConcurrencyBridge::checkTimers() {
+  std::lock_guard<std::mutex> lock(timers_mutex_);
+  auto now = std::chrono::steady_clock::now();
+  
+  for (auto &timer : timers_) {
+    if (timer.active && timer.next_run <= now) {
+      // Execute the callback
+      // TODO: Execute the callback via VM
+      // For now, print a debug message
+      std::cout << "Timer " << timer.id << " triggered" << std::endl;
+      
+      if (timer.interval_ms > 0) {
+        // Interval timer - schedule next run
+        timer.next_run = now + std::chrono::milliseconds(timer.interval_ms);
+      } else {
+        // One-shot timeout timer - deactivate
+        timer.active = false;
+      }
+    }
+  }
+  
+  // Remove inactive timers
+  timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
+                            [](const Timer &t) { return !t.active; }),
+               timers_.end());
 }
 
 } // namespace havel::compiler

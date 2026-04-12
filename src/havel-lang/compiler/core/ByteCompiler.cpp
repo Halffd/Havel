@@ -937,7 +937,9 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     if (expr_stmt.expression) {
       compileExpression(*expr_stmt.expression);
       // TCO: Don't POP if in tail position (value is return value)
-      if (!in_tail_position_) {
+      // Also don't POP after yield expression - yield value is returned to caller
+      bool is_yield = expr_stmt.expression->kind == ast::NodeType::YieldExpression;
+      if (!in_tail_position_ && !is_yield) {
         emit(OpCode::POP);
       }
     }
@@ -4979,9 +4981,9 @@ void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expressi
   
   // Create a lambda from the body
   auto lambda = std::make_unique<ast::LambdaExpression>();
-  lambda->params = std::vector<std::unique_ptr<ast::Parameter>>();
+  // Use the body directly since BlockStatement doesn't have clone()
   lambda->body = std::unique_ptr<ast::BlockStatement>(
-    static_cast<ast::BlockStatement*>(expression.body->clone())
+    static_cast<ast::BlockStatement*>(expression.body.get())
   );
   
   // Compile the lambda
@@ -5011,9 +5013,9 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
   
   // Create a lambda from the body
   auto lambda = std::make_unique<ast::LambdaExpression>();
-  lambda->params = std::vector<std::unique_ptr<ast::Parameter>>();
+  // Use the body directly since BlockStatement doesn't have clone()
   lambda->body = std::unique_ptr<ast::BlockStatement>(
-    static_cast<ast::BlockStatement*>(expression.body->clone())
+    static_cast<ast::BlockStatement*>(expression.body.get())
   );
   
   // Compile the lambda
@@ -5043,9 +5045,9 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
   
   // Create a lambda from the body
   auto lambda = std::make_unique<ast::LambdaExpression>();
-  lambda->params = std::vector<std::unique_ptr<ast::Parameter>>();
+  // Use the body directly since BlockStatement doesn't have clone()
   lambda->body = std::unique_ptr<ast::BlockStatement>(
-    static_cast<ast::BlockStatement*>(expression.body->clone())
+    static_cast<ast::BlockStatement*>(expression.body.get())
   );
   
   // Compile the lambda

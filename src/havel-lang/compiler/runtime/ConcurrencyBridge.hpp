@@ -2,6 +2,7 @@
 
 #include "../../runtime/HostContext.hpp"
 #include "../core/BytecodeIR.hpp"
+#include "../core/Pipeline.hpp"
 
 #include <functional>
 #include <memory>
@@ -15,7 +16,7 @@
 namespace havel::compiler {
 
 /**
- * AsyncBridge - Host functions for concurrency primitives
+ * ConcurrencyBridge - Host functions for concurrency primitives
  *
  * Implements thread pool management for:
  * - thread.spawn, thread.join, thread.send, thread.receive
@@ -23,15 +24,19 @@ namespace havel::compiler {
  * - timeout.start, timeout.cancel
  * - channel.new, channel.send, channel.receive, channel.close
  */
-class AsyncBridge {
+class ConcurrencyBridge {
 public:
-  explicit AsyncBridge(const ::havel::HostContext &ctx);
-  ~AsyncBridge();
+  explicit ConcurrencyBridge(const ::havel::HostContext &ctx);
+  ~ConcurrencyBridge();
 
   void install(PipelineOptions &options);
 
+  // Check for expired timers (to be called from main event loop)
+  void checkTimers();
+
 private:
   const ::havel::HostContext *ctx_;
+  class compiler::VM *vm_;
 
   // Thread pool management
   struct ThreadTask {
@@ -50,23 +55,17 @@ private:
   std::mutex threads_mutex_;
   uint32_t next_thread_id_ = 1;
 
-  // Interval timers
-  struct IntervalTimer {
-    std::thread timer_thread;
-    bool running;
+  // Timer queue for main event loop
+  struct Timer {
+    uint32_t id;
+    std::chrono::steady_clock::time_point next_run;
+    int64_t interval_ms;  // 0 for one-shot (timeout), >0 for repeating (interval)
+    Value callback;
+    bool active;
   };
-  std::unordered_map<uint32_t, std::unique_ptr<IntervalTimer>> intervals_;
-  std::mutex intervals_mutex_;
-  uint32_t next_interval_id_ = 1;
-
-  // Timeout timers
-  struct TimeoutTimer {
-    std::thread timer_thread;
-    bool running;
-  };
-  std::unordered_map<uint32_t, std::unique_ptr<TimeoutTimer>> timeouts_;
-  std::mutex timeouts_mutex_;
-  uint32_t next_timeout_id_ = 1;
+  std::vector<Timer> timers_;
+  std::mutex timers_mutex_;
+  uint32_t next_timer_id_ = 1;
 
   // Channels
   struct Channel {

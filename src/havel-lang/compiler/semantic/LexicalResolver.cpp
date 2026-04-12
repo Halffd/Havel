@@ -177,6 +177,9 @@ void LexicalResolver::endFunction() {
       result_.lambda_upvalues[static_cast<const ast::LambdaExpression *>(
           ctx.owner)] = ctx.upvalues;
     }
+    // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
+    // their bodies are resolved and stored in identifier_bindings, so
+    // ByteCompiler can find them via bindingFor().
   }
 
   function_stack_.pop_back();
@@ -1151,6 +1154,37 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::LambdaExpression: {
     const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
     resolveLambdaExpression(lambda);
+    break;
+  }
+
+  // Closure expressions — resolve duration and body against current scope
+  case ast::NodeType::ThreadExpression: {
+    const auto &threadExpr = static_cast<const ast::ThreadExpression &>(expression);
+    beginFunction(&threadExpr);
+    if (threadExpr.body) {
+      resolveStatement(*threadExpr.body);
+    }
+    endFunction();
+    break;
+  }
+  case ast::NodeType::IntervalExpression: {
+    const auto &intervalExpr = static_cast<const ast::IntervalExpression &>(expression);
+    if (intervalExpr.intervalMs) resolveExpression(*intervalExpr.intervalMs);
+    beginFunction(&intervalExpr);
+    if (intervalExpr.body) {
+      resolveStatement(*intervalExpr.body);
+    }
+    endFunction();
+    break;
+  }
+  case ast::NodeType::TimeoutExpression: {
+    const auto &timeoutExpr = static_cast<const ast::TimeoutExpression &>(expression);
+    if (timeoutExpr.delayMs) resolveExpression(*timeoutExpr.delayMs);
+    beginFunction(&timeoutExpr);
+    if (timeoutExpr.body) {
+      resolveStatement(*timeoutExpr.body);
+    }
+    endFunction();
     break;
   }
 

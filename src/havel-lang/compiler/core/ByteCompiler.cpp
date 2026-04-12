@@ -1,6 +1,7 @@
 #include "ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/errors/ErrorSystem.h"
+#include <algorithm>
 #include <cctype>
 #include <iostream>
 #include <stdexcept>
@@ -133,6 +134,8 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
   top_level_class_names_.clear();
+  errors_.clear();
+  has_error_ = false;
 
   for (size_t i = 0; i < program.body.size(); i++) {
   }
@@ -5182,27 +5185,12 @@ void ByteCompiler::compileGetInputExpression(
 
 void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expression) {
   // thread { ... } -> spawn a new thread with the body as a function
-  // Compile the body as an anonymous function and then call thread.spawn host function
 
   if (!expression.body) {
     COMPILER_THROW("Thread expression missing body");
   }
 
-  // Compile the body as an anonymous function
-  uint32_t funcIndex = compiled_functions.size();
-  BytecodeFunction bf("<thread>", 0, 0);
-  enterFunction(std::move(bf), funcIndex);
-
-  for (const auto &stmt : expression.body->body) {
-    if (stmt) {
-      compileStatement(*stmt);
-    }
-  }
-  emit(OpCode::RETURN);
-  leaveFunction();
-
-  // Load the function object and call thread.spawn
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  compileClosureBody(*expression.body, "<thread>");
 
   // Emit CALL_HOST to thread.spawn
   uint32_t strId = addStringConstant("thread.spawn");
@@ -5213,7 +5201,6 @@ void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expressi
 
 void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expression) {
   // interval <ms> { ... } -> start a repeating timer
-  // Compile interval duration, then compile body as anonymous function, then call interval.start host function
 
   if (!expression.intervalMs) {
     COMPILER_THROW("Interval expression missing duration");
@@ -5226,22 +5213,7 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
   // Compile the interval duration
   compileExpression(*expression.intervalMs);
 
-  // Compile the body as an anonymous function
-  uint32_t funcIndex = compiled_functions.size();
-  BytecodeFunction bf("<interval>", 0, 0);
-  enterFunction(std::move(bf), funcIndex);
-
-  // Compile body statements
-  for (const auto &stmt : expression.body->body) {
-    if (stmt) {
-      compileStatement(*stmt);
-    }
-  }
-  emit(OpCode::RETURN);
-  leaveFunction();
-
-  // Load the function object and call interval.start
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  compileClosureBody(*expression.body, "<interval>");
 
   // Emit CALL_HOST to interval.start
   uint32_t strId = addStringConstant("interval.start");
@@ -5252,7 +5224,6 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
 
 void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expression) {
   // timeout <ms> { ... } -> start a one-shot timer
-  // Compile delay duration, then compile body as anonymous function, then call timeout.start host function
 
   if (!expression.delayMs) {
     COMPILER_THROW("Timeout expression missing duration");
@@ -5265,27 +5236,143 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
   // Compile the delay duration
   compileExpression(*expression.delayMs);
 
-  // Compile the body as an anonymous function
-  uint32_t funcIndex = compiled_functions.size();
-  BytecodeFunction bf("<timeout>", 0, 0);
-  enterFunction(std::move(bf), funcIndex);
-
-  for (const auto &stmt : expression.body->body) {
-    if (stmt) {
-      compileStatement(*stmt);
-    }
-  }
-  emit(OpCode::RETURN);
-  leaveFunction();
-
-  // Load the function object and call timeout.start
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  compileClosureBody(*expression.body, "<timeout>");
 
   // Emit CALL_HOST to timeout.start
   uint32_t strId = addStringConstant("timeout.start");
   emit(OpCode::CALL_HOST, std::vector<Value>{
       Value::makeStringValId(strId),
       Value(static_cast<uint32_t>(2))});
+}
+
+// Compile a closure body, resolving identifiers against the enclosing function's scope
+void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::string &name) {
+  // Collect all identifiers in the body that reference enclosing scope variables
+  std::vector<UpvalueDescriptor> upvalues;
+  collectUpvaluesFromBody(body, upvalues);
+
+  uint32_t funcIndex = compiled_functions.size();
+  BytecodeFunction bf(name, 0, 0);
+  bf.upvalues = std::move(upvalues);
+
+  enterFunction(std::move(bf), funcIndex);
+
+  compileStatement(body);
+
+  emit(OpCode::RETURN);
+  leaveFunction();
+
+  // Load the function object
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+}
+
+void ByteCompiler::collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues) {
+  switch (stmt.kind) {
+  case ast::NodeType::ExpressionStatement: {
+    const auto &es = static_cast<const ast::ExpressionStatement &>(stmt);
+    if (es.expression) collectUpvaluesFromExpr(*es.expression, upvalues);
+    break;
+  }
+  case ast::NodeType::LetDeclaration: {
+    const auto &let = static_cast<const ast::LetDeclaration &>(stmt);
+    if (let.value) collectUpvaluesFromExpr(*let.value, upvalues);
+    break;
+  }
+  case ast::NodeType::IfStatement: {
+    const auto &ifStmt = static_cast<const ast::IfStatement &>(stmt);
+    if (ifStmt.condition) collectUpvaluesFromExpr(*ifStmt.condition, upvalues);
+    if (ifStmt.consequence) collectUpvaluesFromBody(*ifStmt.consequence, upvalues);
+    if (ifStmt.alternative) collectUpvaluesFromBody(*ifStmt.alternative, upvalues);
+    break;
+  }
+  case ast::NodeType::BlockStatement: {
+    const auto &block = static_cast<const ast::BlockStatement &>(stmt);
+    for (const auto &s : block.body) {
+      if (s) collectUpvaluesFromBody(*s, upvalues);
+    }
+    break;
+  }
+  case ast::NodeType::ReturnStatement: {
+    const auto &ret = static_cast<const ast::ReturnStatement &>(stmt);
+    if (ret.argument) collectUpvaluesFromExpr(*ret.argument, upvalues);
+    break;
+  }
+  default:
+    break;
+  }
+}
+
+void ByteCompiler::collectUpvaluesFromExpr(const ast::Expression &expr, std::vector<UpvalueDescriptor> &upvalues) {
+  if (expr.kind == ast::NodeType::Identifier) {
+    const auto &id = static_cast<const ast::Identifier &>(expr);
+    // First try direct binding lookup
+    const auto *binding = bindingFor(id);
+    if (binding && (binding->kind == ResolvedBindingKind::Local ||
+                     binding->kind == ResolvedBindingKind::Upvalue)) {
+      bool found = false;
+      for (const auto &uv : upvalues) {
+        if (uv.index == binding->slot && uv.captures_local == (binding->kind == ResolvedBindingKind::Local)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        upvalues.push_back({binding->slot, binding->kind == ResolvedBindingKind::Local});
+      }
+      return;
+    }
+    // No direct binding — search by name in enclosing scope
+    for (const auto &[idNode, bnd] : lexical_resolution_.identifier_bindings) {
+      if (idNode && idNode->symbol == id.symbol) {
+        if (bnd.kind == ResolvedBindingKind::Local || bnd.kind == ResolvedBindingKind::Upvalue) {
+          bool found = false;
+          for (const auto &uv : upvalues) {
+            if (uv.index == bnd.slot && uv.captures_local == (bnd.kind == ResolvedBindingKind::Local)) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            upvalues.push_back({bnd.slot, bnd.kind == ResolvedBindingKind::Local});
+          }
+          return;
+        }
+      }
+    }
+    return;
+  }
+  // Recurse into sub-expressions
+  switch (expr.kind) {
+  case ast::NodeType::BinaryExpression: {
+    const auto &be = static_cast<const ast::BinaryExpression &>(expr);
+    if (be.left) collectUpvaluesFromExpr(*be.left, upvalues);
+    if (be.right) collectUpvaluesFromExpr(*be.right, upvalues);
+    break;
+  }
+  case ast::NodeType::CallExpression: {
+    const auto &ce = static_cast<const ast::CallExpression &>(expr);
+    if (ce.callee) collectUpvaluesFromExpr(*ce.callee, upvalues);
+    for (const auto &arg : ce.args) {
+      if (arg) collectUpvaluesFromExpr(*arg, upvalues);
+    }
+    for (const auto &kw : ce.kwargs) {
+      if (kw.value) collectUpvaluesFromExpr(*kw.value, upvalues);
+    }
+    break;
+  }
+  case ast::NodeType::LambdaExpression: {
+    // Nested lambdas handle their own upvalues
+    break;
+  }
+  case ast::NodeType::ThreadExpression:
+  case ast::NodeType::IntervalExpression:
+  case ast::NodeType::TimeoutExpression: {
+    // These handle their own upvalues recursively
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 void ByteCompiler::compileYieldExpression(const ast::YieldExpression &expression) {

@@ -19,6 +19,14 @@
 
 namespace havel::compiler {
 
+// Exception that carries source location through stack unwind
+struct CompilerError : std::runtime_error {
+  uint32_t line = 0, column = 0;
+  CompilerError(const std::string& msg, uint32_t l = 0, uint32_t c = 0)
+      : std::runtime_error(msg), line(l), column(c) {}
+};
+
+class ByteCompiler;
 class HostBridge;
 class VM;
 
@@ -52,15 +60,18 @@ public:
   // Set HostBridge for lazy module loading
   void setHostBridge(HostBridge *bridge) { host_bridge_ = bridge; }
 
-  // Error collection for linting (instead of throwing)
-  struct CompilerError {
-    std::string message;
-    uint32_t line = 0;
-    uint32_t column = 0;
-  };
+  // Error collection for linting
   bool hasErrors() const { return has_error_; }
   const std::vector<CompilerError> &errors() const { return errors_; }
   void setCollectErrors(bool collect) { collect_errors_ = collect; }
+
+  // Shadow helpers so COMPILER_THROW macro picks up member location
+  uint32_t _compiler_err_line() const {
+    return current_source_location_ ? current_source_location_->line : 0;
+  }
+  uint32_t _compiler_err_col() const {
+    return current_source_location_ ? current_source_location_->column : 0;
+  }
 
 private:
   std::unique_ptr<BytecodeChunk> compileImpl(const ast::Program &program);

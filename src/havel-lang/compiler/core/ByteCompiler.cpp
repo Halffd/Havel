@@ -6,28 +6,15 @@
 #include <iostream>
 #include <stdexcept>
 
-// Macro for throwing errors with source location info (member functions only).
-// Reports to unified ErrorReporter before throwing.
-// In error-collection mode, compile() catches this and returns nullptr.
-// The message includes the current source location for extraction later.
-#define COMPILER_THROW(msg) \
-  do { \
-    std::string _full_msg = msg; \
-    if (current_source_location_) { \
-      _full_msg += " at line " + std::to_string(current_source_location_->line) + \
-                   ":" + std::to_string(current_source_location_->column); \
-    } \
-    ::havel::errors::ErrorReporter::instance().report( \
-        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, _full_msg)); \
-    throw std::runtime_error(_full_msg + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]"); \
-  } while (0)
+// Non-member fallbacks (0,0 for errors outside method scope)
+static uint32_t _compiler_err_line() { return 0; }
+static uint32_t _compiler_err_col() { return 0; }
 
-// Macro for non-member helper functions (no source location).
-#define COMPILER_THROW_SIMPLE(msg) \
+#define COMPILER_THROW(msg) \
   do { \
     ::havel::errors::ErrorReporter::instance().report( \
         HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg)); \
-    throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]"); \
+    throw CompilerError(msg, _compiler_err_line(), _compiler_err_col()); \
   } while (0)
 
 namespace havel::compiler {
@@ -76,7 +63,7 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::NOP; // Placeholder - actual implementation in
                         // compileExpression
   default:
-    COMPILER_THROW_SIMPLE(
+    COMPILER_THROW(
         "Unsupported binary operator in bytecode compiler");
   }
 }
@@ -89,34 +76,15 @@ bool isIntegerLiteral(double value) {
 
 std::unique_ptr<BytecodeChunk>
 ByteCompiler::compile(const ast::Program &program) {
-  // In error-collection mode, catch all exceptions and collect errors
   if (collect_errors_) {
     try {
       return compileImpl(program);
+    } catch (const CompilerError& e) {
+      errors_.push_back({e.what(), e.line, e.column});
+      has_error_ = true;
+      return nullptr;
     } catch (const std::exception& e) {
-      // Extract error message and source location from exception
-      std::string msg = e.what();
-      // Strip the file:line suffix added by COMPILER_THROW
-      auto bracketPos = msg.rfind(" [");
-      if (bracketPos != std::string::npos) {
-        msg = msg.substr(0, bracketPos);
-      }
-      // Try to extract line:column from "at line X:Y" suffix
-      uint32_t errLine = 0, errCol = 0;
-      auto linePos = msg.find(" at line ");
-      if (linePos != std::string::npos) {
-        std::string locPart = msg.substr(linePos + 9);
-        auto colonPos = locPart.find(':');
-        if (colonPos != std::string::npos) {
-          try {
-            errLine = std::stoul(locPart.substr(0, colonPos));
-            errCol = std::stoul(locPart.substr(colonPos + 1));
-          } catch (...) {}
-        }
-        // Clean up the message
-        msg = msg.substr(0, linePos);
-      }
-      errors_.push_back({msg, errLine, errCol});
+      errors_.push_back({e.what(), 0, 0});
       has_error_ = true;
       return nullptr;
     }

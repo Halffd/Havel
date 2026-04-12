@@ -1757,11 +1757,11 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                                   const HostContext *ctx) {
   // Args: [hotkey_string, callback_closure]
   if (args.size() < 2) {
-    return Value::makeBool(false);
+    return Value::makeNull();
   }
 
   if (!ctx || !ctx->hotkeyManager || !ctx->vm || !ctx->io) {
-    return Value::makeBool(false);
+    return Value::makeNull();
   }
 
   // Get hotkey string
@@ -1769,7 +1769,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   if (args[0].isStringValId()) {
     hotkeyStr = args[0].toString();
   } else {
-    return Value::makeBool(false);
+    return Value::makeNull();
   }
 
   // Generate unique hotkey ID
@@ -1789,8 +1789,6 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   auto *executor = ctx->io->GetHotkeyExecutor();
 
   // Register hotkey with execution context isolation
-  // This is the CORRECT way: each hotkey execution gets its own isolated
-  // stack/locals but shares globals/heap
   bool success = ctx->hotkeyManager->AddHotkey(
       hotkeyStr, [vm, callbackId, hotkeyContext, executor]() {
         if (executor) {
@@ -1808,7 +1806,12 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         }
       });
 
-  return Value::makeBool(success);
+  // Return hotkey context object on success, null on failure
+  // This allows: let hk = ^t => { ... }
+  if (success) {
+    return hotkeyContext;
+  }
+  return Value::makeNull();
 }
 
 Value

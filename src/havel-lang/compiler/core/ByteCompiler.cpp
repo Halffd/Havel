@@ -1881,6 +1881,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::HotkeyExpression: {
+    // Hotkey binding as expression (assignment RHS)
+    const auto &hkExpr = static_cast<const ast::HotkeyExpression &>(expression);
+    compileHotkeyBindingExpr(*hkExpr.binding);
+    break;
+  }
+
   case ast::NodeType::InterpolatedStringExpression: {
     const auto &interp =
         static_cast<const ast::InterpolatedStringExpression &>(expression);
@@ -2255,14 +2262,27 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     if (!fieldId) {
       COMPILER_THROW("@ expression field must be an identifier");
     }
+
+    // Check if this is a hotkey directive method (disable/enable/remove/toggle)
+    // These should be called as methods, not just accessed as fields
+    bool isDirective = (fieldId->symbol == "disable" ||
+                        fieldId->symbol == "enable" ||
+                        fieldId->symbol == "remove" ||
+                        fieldId->symbol == "toggle");
+
     // Load 'this' (current object)
     {
       uint32_t strId = addStringConstant("this");
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
-    // Get the field from this
+    // Get the field/method from this
     { uint32_t _sid = addStringConstant(fieldId->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::OBJECT_GET);
+
+    // If it's a directive method, call it
+    if (isDirective) {
+      emit(OpCode::CALL, static_cast<uint32_t>(0));
+    }
     break;
   }
 
@@ -4804,6 +4824,15 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
           Value(static_cast<uint32_t>(1))});
     }
 
+    // Store hotkey context as 'this' so @field/@directive works in hotkey blocks
+    {
+      uint32_t strId = addStringConstant("this");
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+      // Reload 'this' for the CALL (STORE_GLOBAL consumes the value)
+      uint32_t strId2 = addStringConstant("this");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
+    }
+
     // Call the action with @ context as parameter
     emit(OpCode::CALL, static_cast<uint32_t>(1)); // Call with 1 arg (@ context)
 
@@ -4852,6 +4881,118 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
       // For now, just register the hotkey and let the conditional manager
       // handle it
     }
+  }
+}
+
+// Compile hotkey binding as expression (returns context object on stack)
+// This is a variant of compileHotkeyBinding that leaves the result on the stack
+// instead of popping it, so it can be used as an assignment RHS.
+void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
+  // For each hotkey in the binding
+  for (const auto &hotkeyExpr : binding.hotkeys) {
+    if (!hotkeyExpr)
+      continue;
+
+    // Create a function that wraps the action with @ context injection
+    BytecodeFunction hotkeyActionFn("hotkey_action");
+    enterFunction(std::move(hotkeyActionFn));
+
+    if (binding.action) {
+      if (auto *blockStmt =
+              dynamic_cast<const ast::BlockStatement *>(binding.action.get())) {
+        for (const auto &stmt : blockStmt->body) {
+          compileStatement(*stmt);
+        }
+      } else if (auto *exprStmt =
+                     dynamic_cast<const ast::ExpressionStatement *>(
+                         binding.action.get())) {
+        compileExpression(*exprStmt->expression);
+        emit(OpCode::RETURN);
+      } else {
+        compileStatement(*binding.action);
+        emit(OpCode::RETURN);
+      }
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
+    }
+
+    leaveFunction();
+
+    // Store hotkey_action to globals
+    {
+      uint32_t strId = addStringConstant("hotkey_action");
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeFunctionObjId(
+               static_cast<uint32_t>(compiled_functions.size() - 1))));
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
+
+    // Create wrapper
+    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper");
+    enterFunction(std::move(hotkeyWrapperFn));
+
+    uint32_t skipActionJump = 0;
+    if (binding.conditionExpr) {
+      compileExpression(*binding.conditionExpr);
+      skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
+      emit(OpCode::POP);
+    }
+
+    // Load hotkey_action
+    {
+      uint32_t strId = addStringConstant("hotkey_action");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
+
+    // Create hotkey context object
+    {
+      uint32_t strId = addStringConstant("Hotkey");
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(1))});
+    }
+
+    // Store as 'this' for @field/@directive access
+    {
+      uint32_t strId = addStringConstant("this");
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+      uint32_t strId2 = addStringConstant("this");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
+    }
+
+    // Call action with @ context
+    emit(OpCode::CALL, static_cast<uint32_t>(1));
+    emit(OpCode::POP);
+
+    if (binding.conditionExpr && skipActionJump > 0) {
+      patchJump(skipActionJump,
+                static_cast<uint32_t>(current_function->instructions.size()));
+    }
+
+    leaveFunction();
+
+    // Store wrapper to globals
+    {
+      uint32_t strId = addStringConstant("hotkey_wrapper");
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeFunctionObjId(
+               static_cast<uint32_t>(compiled_functions.size() - 1))));
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
+
+    // Register the hotkey - result (context object) stays on stack
+    compileExpression(*hotkeyExpr);
+    {
+      uint32_t strId = addStringConstant("hotkey_wrapper");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
+    {
+      uint32_t strId = addStringConstant("hotkey.register");
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(2))});
+    }
+    // DON'T POP - leave context object on stack for assignment
   }
 }
 

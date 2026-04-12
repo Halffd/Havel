@@ -1052,6 +1052,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Go:
       return parseGoExpression();
 
+    case TokenType::Hotkey:
+      return parseHotkeyExpression(token);
+
     default:
       errorAt(token, "Unexpected token in expression");
       return nullptr;
@@ -4715,6 +4718,68 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
   auto result = std::make_unique<havel::ast::LetDeclaration>(
       std::move(pattern), std::move(value), std::move(typeAnnotation), isConst);
   return result;
+}
+
+// Parse hotkey as expression (for assignment: hk = ^t => { ... })
+// Returns HotkeyExpression (wraps HotkeyBinding as expression)
+std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Token &hotkeyToken) {
+  // hotkeyToken was already consumed by the Pratt parser's nud()
+
+  // Check for prefix condition (before =>)
+  std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
+  if (at().type == havel::TokenType::When) {
+    advance(); // consume 'when'
+    prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+  } else if (at().type == havel::TokenType::If) {
+    advance(); // consume 'if'
+    prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+  }
+
+  if (at().type != havel::TokenType::Arrow) {
+    failAt(hotkeyToken, "Expected '=>' after hotkey literal");
+    return nullptr;
+  }
+  advance(); // consume '=>'
+
+  std::unique_ptr<havel::ast::BlockStatement> action;
+
+  // => can be followed by { } block or a single expression
+  if (at().type == havel::TokenType::OpenBrace) {
+    action = parseBlockStatement(true); // true = input context
+  } else {
+    // Single expression wrapped in a block
+    auto expr = parseExpression();
+    action = std::make_unique<havel::ast::BlockStatement>();
+    action->body.push_back(
+        std::make_unique<havel::ast::ExpressionStatement>(std::move(expr)));
+  }
+
+  // Check for suffix condition (after action)
+  std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
+  if (at().type == havel::TokenType::If) {
+    advance(); // consume 'if'
+    suffixCondition = parseExpression();
+  }
+
+  // Create the base hotkey binding
+  auto binding = std::make_unique<havel::ast::HotkeyBinding>();
+  binding->hotkeys.push_back(
+      std::make_unique<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+  binding->action = std::move(action);
+
+  // Combine conditions if needed
+  if (prefixCondition || suffixCondition) {
+    auto finalCondition = combineConditions(std::move(prefixCondition),
+                                            std::move(suffixCondition));
+    // Set condition on the binding
+    binding->conditionExpr = std::move(finalCondition);
+  }
+
+  // Return HotkeyExpression (condition is on binding->conditionExpr)
+  auto hkExpr = std::make_unique<havel::ast::HotkeyExpression>(std::move(binding));
+  hkExpr->line = hotkeyToken.line;
+  hkExpr->column = hotkeyToken.column;
+  return hkExpr;
 }
 
 std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {

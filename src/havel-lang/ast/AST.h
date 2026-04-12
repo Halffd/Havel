@@ -31,6 +31,7 @@ enum class NodeType {
 
   // Core functional expressions
   HotkeyBinding,          // F1 => { ... }
+  HotkeyExpression,       // ^t => { ... } as expression (returns Hotkey context)
   PipelineExpression,     // data | map(f) | filter(g) | reduce(h)
   BinaryExpression,       // 10 + 5, a && b
   UnaryExpression,        // not flag, -number
@@ -981,6 +982,23 @@ struct ConditionalHotkey : public Statement {
     return "ConditionalHotkey{condition: " +
            (condition ? condition->toString() : "nullptr") +
            ", binding: " + (binding ? binding->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Hotkey Expression - HotkeyBinding used as expression (assignment RHS)
+struct HotkeyExpression : public Expression {
+  std::unique_ptr<HotkeyBinding> binding;
+
+  HotkeyExpression(std::unique_ptr<HotkeyBinding> b)
+      : binding(std::move(b)) {
+    kind = NodeType::HotkeyExpression;
+  }
+
+  std::string toString() const override {
+    return "HotkeyExpression{binding: " +
+           (binding ? binding->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2969,6 +2987,7 @@ public:
   virtual void visitOnTapStatement(const OnTapStatement &node) = 0;
   virtual void visitOnComboStatement(const OnComboStatement &node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
+  virtual void visitHotkeyExpression(const HotkeyExpression &node) = 0;
   virtual void visitWhenBlock(const WhenBlock &node) = 0;
   virtual void visitWhenStatement(const WhenStatement &node) = 0;
 
@@ -3011,6 +3030,10 @@ inline void BlockExpression::accept(ASTVisitor &visitor) const {
 
 inline void HotkeyBinding::accept(ASTVisitor &visitor) const {
   visitor.visitHotkeyBinding(*this);
+}
+
+inline void HotkeyExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitHotkeyExpression(*this);
 }
 
 inline void PipelineExpression::accept(ASTVisitor &visitor) const {

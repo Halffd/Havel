@@ -19,6 +19,10 @@ struct HotkeyContextData {
   std::string key;
   std::string condition;
   std::string info;
+  std::string combo;       // Full combo string like "^!t"
+  std::string modifiers;   // Comma-separated modifiers like "ctrl,alt"
+  std::string state;       // "enabled" or "disabled"
+  int64_t addedAt;         // Timestamp when added (epoch ms)
   CallbackId callback;
   bool enabled;
 
@@ -27,6 +31,9 @@ struct HotkeyContextData {
                     const std::string &info_, CallbackId callback_,
                     bool enabled_ = true)
       : id(id_), alias(alias_), key(key_), condition(condition_), info(info_),
+        combo(""), modifiers(""), state(enabled_ ? "enabled" : "disabled"),
+        addedAt(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count()),
         callback(callback_), enabled(enabled_) {}
 };
 
@@ -58,12 +65,18 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
         hotkeyId, alias, key, condition, info, callback, enabled);
   }
 
-  // Set properties on the object
-  vm->setHostObjectField(contextObj, "id", Value::makeStringValId(0)); // TODO: string pool
-  vm->setHostObjectField(contextObj, "alias", Value::makeStringValId(0)); // TODO: string pool
-  vm->setHostObjectField(contextObj, "key", Value::makeStringValId(0)); // TODO: string pool
-  vm->setHostObjectField(contextObj, "condition", Value::makeStringValId(0)); // TODO: string pool
-  vm->setHostObjectField(contextObj, "info", Value::makeStringValId(0)); // TODO: string pool
+  // Set properties on the object with actual string values
+  auto idStr = vm->createRuntimeString(hotkeyId);
+  auto aliasStr = vm->createRuntimeString(alias);
+  auto keyStr = vm->createRuntimeString(key);
+  auto condStr = vm->createRuntimeString(condition);
+  auto infoStr = vm->createRuntimeString(info);
+
+  vm->setHostObjectField(contextObj, "id", Value::makeStringId(idStr.id));
+  vm->setHostObjectField(contextObj, "alias", Value::makeStringId(aliasStr.id));
+  vm->setHostObjectField(contextObj, "key", Value::makeStringId(keyStr.id));
+  vm->setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
+  vm->setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
   vm->setHostObjectField(contextObj, "enabled", Value::makeBool(enabled));
 
   return Value::makeObjectId(contextObj.id);
@@ -165,6 +178,69 @@ static Value hotkey_getCallback(const std::vector<Value> &args,
   return Value::makeNull(); // Placeholder
 }
 
+static Value hotkey_getState(const std::vector<Value> &args,
+                                     const havel::HostContext *ctx) {
+  if (args.empty() || !args[0].isObjectId()) {
+    return Value::makeNull();
+  }
+  auto objRef = ObjectRef{args[0].asObjectId(), true};
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto idValue = vm->getHostObjectField(objRef, "id");
+  if (!idValue.isStringValId()) return Value::makeNull();
+  auto hotkeyId = "<string:" + std::to_string(idValue.asStringValId()) + ">";
+  auto *contextData = getHotkeyContextData(hotkeyId);
+  if (!contextData) return Value::makeNull();
+  auto strRef = vm->createRuntimeString(contextData->state);
+  return Value::makeStringId(strRef.id);
+}
+
+static Value hotkey_getModifiers(const std::vector<Value> &args,
+                                         const havel::HostContext *ctx) {
+  if (args.empty() || !args[0].isObjectId()) {
+    return Value::makeNull();
+  }
+  auto objRef = ObjectRef{args[0].asObjectId(), true};
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto idValue = vm->getHostObjectField(objRef, "id");
+  if (!idValue.isStringValId()) return Value::makeNull();
+  auto hotkeyId = "<string:" + std::to_string(idValue.asStringValId()) + ">";
+  auto *contextData = getHotkeyContextData(hotkeyId);
+  if (!contextData) return Value::makeNull();
+  auto strRef = vm->createRuntimeString(contextData->modifiers);
+  return Value::makeStringId(strRef.id);
+}
+
+static Value hotkey_getCombo(const std::vector<Value> &args,
+                                     const havel::HostContext *ctx) {
+  if (args.empty() || !args[0].isObjectId()) {
+    return Value::makeNull();
+  }
+  auto objRef = ObjectRef{args[0].asObjectId(), true};
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto idValue = vm->getHostObjectField(objRef, "id");
+  if (!idValue.isStringValId()) return Value::makeNull();
+  auto hotkeyId = "<string:" + std::to_string(idValue.asStringValId()) + ">";
+  auto *contextData = getHotkeyContextData(hotkeyId);
+  if (!contextData) return Value::makeNull();
+  auto strRef = vm->createRuntimeString(contextData->combo);
+  return Value::makeStringId(strRef.id);
+}
+
+static Value hotkey_getAddedAt(const std::vector<Value> &args,
+                                       const havel::HostContext *ctx) {
+  if (args.empty() || !args[0].isObjectId()) {
+    return Value::makeNull();
+  }
+  auto objRef = ObjectRef{args[0].asObjectId(), true};
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto idValue = vm->getHostObjectField(objRef, "id");
+  if (!idValue.isStringValId()) return Value::makeNull();
+  auto hotkeyId = "<string:" + std::to_string(idValue.asStringValId()) + ">";
+  auto *contextData = getHotkeyContextData(hotkeyId);
+  if (!contextData) return Value::makeNull();
+  return Value::makeInt(contextData->addedAt);
+}
+
 // Method functions
 static Value hotkey_enable(const std::vector<Value> &args,
                                    const havel::HostContext *ctx) {
@@ -194,7 +270,10 @@ static Value hotkey_enable(const std::vector<Value> &args,
   if (ctx->hotkeyManager) {
     ctx->hotkeyManager->EnableHotkey(hotkeyId);
     contextData->enabled = true;
+    contextData->state = "enabled";
     vm->setHostObjectField(objRef, "enabled", Value::makeBool(true));
+    auto strRef = vm->createRuntimeString("enabled");
+    vm->setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
     return Value::makeBool(true);
   }
 
@@ -229,7 +308,10 @@ static Value hotkey_disable(const std::vector<Value> &args,
   if (ctx->hotkeyManager) {
     ctx->hotkeyManager->DisableHotkey(hotkeyId);
     contextData->enabled = false;
+    contextData->state = "disabled";
     vm->setHostObjectField(objRef, "enabled", Value::makeBool(false));
+    auto strRef = vm->createRuntimeString("disabled");
+    vm->setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
     return Value::makeBool(true);
   }
 
@@ -269,7 +351,10 @@ static Value hotkey_toggle(const std::vector<Value> &args,
       ctx->hotkeyManager->DisableHotkey(hotkeyId);
     }
     contextData->enabled = newState;
+    contextData->state = newState ? "enabled" : "disabled";
     vm->setHostObjectField(objRef, "enabled", Value::makeBool(newState));
+    auto strRef = vm->createRuntimeString(contextData->state);
+    vm->setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
     return Value::makeBool(true);
   }
 
@@ -320,6 +405,10 @@ void registerHotkeyModule(VMApi &api) {
   api.registerPrototypeMethodByName("Hotkey", "condition", "hotkey_getCondition");
   api.registerPrototypeMethodByName("Hotkey", "info", "hotkey_getInfo");
   api.registerPrototypeMethodByName("Hotkey", "callback", "hotkey_getCallback");
+  api.registerPrototypeMethodByName("Hotkey", "state", "hotkey_getState");
+  api.registerPrototypeMethodByName("Hotkey", "modifiers", "hotkey_getModifiers");
+  api.registerPrototypeMethodByName("Hotkey", "combo", "hotkey_getCombo");
+  api.registerPrototypeMethodByName("Hotkey", "addedAt", "hotkey_getAddedAt");
 
   // Register methods
   api.registerPrototypeMethodByName("Hotkey", "enable", "hotkey_enable");

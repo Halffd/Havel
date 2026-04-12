@@ -57,6 +57,14 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 
+  void visitHotkeyExpression(const HotkeyExpression &node) override {
+    out << getIndent() << "HotkeyExpression {" << std::endl;
+    indentLevel++;
+    printChildNode("binding: ", node.binding);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
   void visitBlockStatement(const BlockStatement &node) override {
     out << getIndent() << "BlockStatement {" << std::endl;
     indentLevel++;

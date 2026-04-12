@@ -1099,9 +1099,13 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
     return 1;
   }
 
+  info("Compilation successful, {} functions", chunk->getFunctionCount());
+
   // Serialize and write
   havel::compiler::ValueSerializer serializer;
   auto data = serializer.serializeChunk(*chunk);
+
+  info("Serialization complete, {} bytes", data.size());
   std::ofstream outFile(outputPath, std::ios::binary);
   if (!outFile.is_open()) {
     error("Cannot open output file: {}", outputPath);

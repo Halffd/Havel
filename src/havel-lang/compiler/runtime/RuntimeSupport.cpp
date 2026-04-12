@@ -628,6 +628,7 @@ std::optional<Value> ValueSerializer::deserializeJSON(const std::string& json) {
 std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk) {
   std::vector<uint8_t> data;
   auto append = [&data](const void* ptr, size_t size) {
+    if (ptr == nullptr || size == 0) return;
     data.insert(data.end(), static_cast<const uint8_t*>(ptr),
                 static_cast<const uint8_t*>(ptr) + size);
   };
@@ -650,38 +651,30 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
   for (const auto& s : strings) {
     uint32_t len = static_cast<uint32_t>(s.size());
     append(&len, sizeof(len));
-    append(s.data(), s.size());
+    if (!s.empty()) append(s.data(), s.size());
   }
 
   // Serialize functions
   for (const auto& func : functions) {
-    // Function name (already in string table - store index)
-    // For simplicity, store name inline
     uint32_t nameLen = static_cast<uint32_t>(func.name.size());
     append(&nameLen, sizeof(nameLen));
-    append(func.name.data(), func.name.size());
+    if (!func.name.empty()) append(func.name.data(), func.name.size());
 
-    // param_count, local_count
     append(&func.param_count, sizeof(func.param_count));
     append(&func.local_count, sizeof(func.local_count));
 
-    // Instructions
     uint32_t numInstr = static_cast<uint32_t>(func.instructions.size());
     append(&numInstr, sizeof(numInstr));
     for (const auto& instr : func.instructions) {
-      // OpCode (uint8_t)
       uint8_t opcode = static_cast<uint8_t>(instr.opcode);
       append(&opcode, sizeof(opcode));
-      // Operands count
       uint32_t numOps = static_cast<uint32_t>(instr.operands.size());
       append(&numOps, sizeof(numOps));
-      // Each operand: raw bits (uint64_t)
       for (const auto& op : instr.operands) {
         uint64_t opVal = op.rawBits();
         append(&opVal, sizeof(opVal));
       }
 
-      // Constants
       uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
       append(&numConsts, sizeof(numConsts));
       for (const auto& c : func.constants) {
@@ -689,7 +682,6 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
         append(&raw, sizeof(raw));
       }
 
-      // Upvalues
       uint32_t numUp = static_cast<uint32_t>(func.upvalues.size());
       append(&numUp, sizeof(numUp));
       for (const auto& u : func.upvalues) {

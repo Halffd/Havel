@@ -172,6 +172,30 @@ enum class OpCode : uint8_t {
   LOAD_CLASS_PROTO, // Load parent class reference
   CALL_SUPER,       // Call method from parent class
   IMPORT,           // Runtime module import (path -> module object)
+  
+  // Concurrency Primitives
+  THREAD_SPAWN,     // Spawn new thread with function: thread { ... }
+  THREAD_JOIN,      // Join thread and wait for completion
+  THREAD_SEND,      // Send message to thread
+  THREAD_RECEIVE,   // Receive message from thread
+  
+  INTERVAL_START,   // Start interval timer: interval ms { ... }
+  INTERVAL_STOP,    // Stop interval timer
+  
+  TIMEOUT_START,    // Start one-shot timeout: timeout ms { ... }
+  TIMEOUT_CANCEL,   // Cancel pending timeout
+  
+  // Coroutines
+  YIELD,            // Yield from coroutine (optional value/delay)
+  YIELD_RESUME,     // Resume yielded coroutine
+  GO_ASYNC,         // Spawn async function call: go func()
+  
+  // Channels
+  CHANNEL_NEW,      // Create new channel: channel()
+  CHANNEL_SEND,     // Send value to channel
+  CHANNEL_RECEIVE,  // Receive value from channel (blocking)
+  CHANNEL_CLOSE,    // Close channel
+  
   NOP
 };
 
@@ -252,6 +276,10 @@ struct IntervalRef {
 
 struct TimeoutRef {
   uint32_t id = 0; // GC object id for timeout
+};
+
+struct ChannelRef {
+  uint32_t id = 0; // GC object id for channel
 };
 
 using BytecodeHostFunction =

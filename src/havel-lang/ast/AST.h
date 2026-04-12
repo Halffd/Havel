@@ -169,12 +169,78 @@ enum class NodeType {
   LazyExpression,  // lazy { expensive_computation() }
   ForceExpression, // force lazy_value
 
-  // Comprehensions
-  ListComprehension, // [x * 2 | x <- [1..10], x > 5]
+  // Concurrency Primitives
+  ThreadExpression,   // thread { ... }
+  IntervalExpression, // interval 1000 { ... }
+  TimeoutExpression,  // timeout 1000 { ... }
+  
+  // Coroutines
+  YieldExpression,    // yield or yield(ms) or yield value
+  GoStatement,        // go func()
+  ChannelExpression,  // channel()
 
   // Special
   ErrorNode,
   UnknownNode
+};
+
+// --- Concurrency & Coroutines ---
+
+struct ThreadExpression : public Expression {
+    std::unique_ptr<BlockStatement> body;
+    ThreadExpression(std::unique_ptr<BlockStatement> b) : body(std::move(b)) {
+        kind = NodeType::ThreadExpression;
+    }
+    std::string toString() const override { return "thread { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct IntervalExpression : public Expression {
+    std::unique_ptr<Expression> intervalMs;
+    std::unique_ptr<BlockStatement> body;
+    IntervalExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : intervalMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::IntervalExpression;
+    }
+    std::string toString() const override { return "interval " + intervalMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct TimeoutExpression : public Expression {
+    std::unique_ptr<Expression> delayMs;
+    std::unique_ptr<BlockStatement> body;
+    TimeoutExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : delayMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::TimeoutExpression;
+    }
+    std::string toString() const override { return "timeout " + delayMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct YieldExpression : public Expression {
+    std::unique_ptr<Expression> value; // Optional: yield value or yield(ms)
+    YieldExpression(std::unique_ptr<Expression> val = nullptr) : value(std::move(val)) {
+        kind = NodeType::YieldExpression;
+    }
+    std::string toString() const override { return "yield" + (value ? "(" + value->toString() + ")" : ""); }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct GoStatement : public Statement {
+    std::unique_ptr<Expression> call; // Must be a CallExpression
+    GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) {
+        kind = NodeType::GoStatement;
+    }
+    std::string toString() const override { return "go " + call->toString(); }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct ChannelExpression : public Expression {
+    ChannelExpression() {
+        kind = NodeType::ChannelExpression;
+    }
+    std::string toString() const override { return "channel()"; }
+    void accept(ASTVisitor &visitor) const override;
 };
 
 // Base AST Node

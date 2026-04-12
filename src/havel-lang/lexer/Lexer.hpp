@@ -158,6 +158,12 @@ enum class TokenType {
   Catch,        // catch
   Finally,      // finally
   Throw,          // throw
+  Thread,         // thread
+  Interval,       // interval
+  Timeout,        // timeout
+  Yield,          // yield
+  Go,             // go
+  Channel,        // channel
   Dsl,            // dsl
   EOF_TOKEN
   };

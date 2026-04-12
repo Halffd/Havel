@@ -138,6 +138,11 @@ void Havel::initialize(bool isStartup) {
   registerStdLibWithVM(*hostBridge);
   hostBridge->install();
 
+  // Set HostBridge pointer on EventListener for timer checking
+  if (io && io->GetEventListener()) {
+    io->GetEventListener()->setHostBridge(hostBridge.get());
+  }
+
   info("Bytecode VM and HostBridge initialized successfully");
 #else
   info("Havel language disabled");

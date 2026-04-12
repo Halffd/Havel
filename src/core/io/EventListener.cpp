@@ -6,6 +6,7 @@
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "utils/Logger.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
@@ -414,6 +415,11 @@ int EventListener::GetCurrentModifiersMask() const {
     mask |= Modifier::Meta;
   return mask;
 }
+
+void EventListener::setHostBridge(havel::compiler::HostBridge *hb) {
+  hostBridge = hb;
+}
+
 void EventListener::EventLoop() {
   // Signal handling is now set up in Start() before the thread spawns
   // No need to call SetupSignalHandling() here
@@ -425,6 +431,12 @@ void EventListener::EventLoop() {
       debug("Signal detected via atomic flag: {}", signalFlag);
       RequestShutdownFromSignal(signalFlag);
       break;
+    }
+
+    // Check for expired timers (single-threaded VM timer queue)
+    // This must be done in the main event loop thread to avoid VM reentrancy issues
+    if (hostBridge) {
+      hostBridge->checkTimers();
     }
 
     fd_set readfds;

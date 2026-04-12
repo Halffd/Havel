@@ -14,6 +14,11 @@ void GCHeap::reset() {
   strings_.clear();
   enums_.clear();
   enumTypes_.clear();
+  threads_.clear();
+  intervals_.clear();
+  timeouts_.clear();
+  channels_.clear();
+  coroutines_.clear();
   next_closure_id_ = 1;
   next_array_id_ = 1;
   next_object_id_ = 1;
@@ -21,6 +26,11 @@ void GCHeap::reset() {
   next_range_id_ = 1;
   next_iterator_id_ = 1;
   next_string_id_ = 1;
+  next_thread_id_ = 1;
+  next_interval_id_ = 1;
+  next_timeout_id_ = 1;
+  next_channel_id_ = 1;
+  next_coroutine_id_ = 1;
   allocations_since_last_ = 0;
   external_roots_.clear();
   next_external_root_id_ = 1;
@@ -578,6 +588,43 @@ TimeoutRef GCHeap::allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout)
   return TimeoutRef{.id = id};
 }
 
+ChannelRef GCHeap::allocateChannel() {
+  const uint32_t id = next_channel_id_++;
+  channels_[id] = {}; // Empty channel queue
+  return ChannelRef{.id = id};
+}
+
+// Simple allocation methods (placeholders for VM)
+uint32_t GCHeap::allocateThread() {
+  const uint32_t id = next_thread_id_++;
+  threads_[id] = nullptr; // Placeholder - actual thread would be created here
+  return id;
+}
+
+uint32_t GCHeap::allocateInterval() {
+  const uint32_t id = next_interval_id_++;
+  intervals_[id] = nullptr; // Placeholder - actual interval would be created here
+  return id;
+}
+
+uint32_t GCHeap::allocateTimeout() {
+  const uint32_t id = next_timeout_id_++;
+  timeouts_[id] = nullptr; // Placeholder - actual timeout would be created here
+  return id;
+}
+
+// Coroutine allocation (Lua-style coroutines)
+uint32_t GCHeap::allocateCoroutine(uint32_t function_index, uint32_t chunk_index) {
+  const uint32_t id = next_coroutine_id_++;
+  Coroutine co;
+  co.function_index = function_index;
+  co.chunk_index = chunk_index;
+  co.ip = 0;
+  co.state = Coroutine::Runnable;
+  coroutines_[id] = std::move(co);
+  return id;
+}
+
 ::havel::Thread* GCHeap::thread(uint32_t id) {
   auto it = threads_.find(id);
   return it == threads_.end() ? nullptr : it->second.get();
@@ -606,6 +653,17 @@ const ::havel::Interval* GCHeap::interval(uint32_t id) const {
 const ::havel::Timeout* GCHeap::timeout(uint32_t id) const {
   auto it = timeouts_.find(id);
   return it == timeouts_.end() ? nullptr : it->second.get();
+}
+
+// Coroutine accessor
+GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) {
+  auto it = coroutines_.find(id);
+  return it == coroutines_.end() ? nullptr : &it->second;
+}
+
+const GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) const {
+  auto it = coroutines_.find(id);
+  return it == coroutines_.end() ? nullptr : &it->second;
 }
 
 } // namespace havel::compiler

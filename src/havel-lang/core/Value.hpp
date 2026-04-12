@@ -73,6 +73,8 @@ enum class ExtendedTag : uint64_t {
   THREAD_ID = 0xD,        // Thread object (stores index into GC heap)
   INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
+  CHANNEL_ID = 0x10,      // Channel for coroutine communication (stores index into GC heap)
+  COROUTINE_ID = 0x11,    // Coroutine object (stores index into GC heap)
 };
 
 // Bool payload values
@@ -290,6 +292,14 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::TIMEOUT_ID), id));
   }
 
+  static Value makeChannelId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::CHANNEL_ID), id));
+  }
+
+  static Value makeCoroutineId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::COROUTINE_ID), id));
+  }
+
   // ========================================================================
   // Type Predicates
   // ========================================================================
@@ -390,6 +400,16 @@ public:
            extractExtendedTag(bits_) == ExtendedTag::TIMEOUT_ID;
   }
 
+  bool isChannelId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::CHANNEL_ID;
+  }
+
+  bool isCoroutineId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::COROUTINE_ID;
+  }
+
   // Convenience: check if numeric
   bool isNumber() const { return isDouble() || isInt(); }
 
@@ -484,6 +504,14 @@ public:
   }
 
   uint32_t asTimeoutId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asChannelId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asCoroutineId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
   }
 

@@ -174,6 +174,21 @@ public:
           column(col), cause(nullptr) {}
   };
 
+  // Coroutine for VM-level coroutine support (Lua-style)
+  struct Coroutine {
+    enum State { Runnable, Waiting, Done };
+
+    uint32_t function_index = 0;      // Which function to execute
+    uint32_t chunk_index = 0;        // Which chunk the function belongs to
+    uint32_t ip = 0;                 // Instruction pointer
+    std::vector<Value> stack;        // Coroutine's stack
+    std::vector<Value> locals;       // Local variables
+    State state = Runnable;
+    std::vector<Value> yield_values; // Values to return on yield
+
+    Coroutine() = default;
+  };
+
   void reset();
 
   ClosureRef allocateClosure(RuntimeClosure closure);
@@ -206,6 +221,15 @@ public:
   ThreadRef allocateThreadObj(std::shared_ptr<::havel::Thread> thread);
   IntervalRef allocateIntervalObj(std::shared_ptr<::havel::Interval> interval);
   TimeoutRef allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout);
+  ChannelRef allocateChannel();
+
+  // Simple allocation methods (placeholders for VM)
+  uint32_t allocateThread();
+  uint32_t allocateInterval();
+  uint32_t allocateTimeout();
+
+  // Coroutine allocation (Lua-style coroutines)
+  uint32_t allocateCoroutine(uint32_t function_index, uint32_t chunk_index);
 
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
@@ -227,6 +251,10 @@ public:
   const ::havel::Interval* interval(uint32_t id) const;
   ::havel::Timeout* timeout(uint32_t id);
   const ::havel::Timeout* timeout(uint32_t id) const;
+
+  // Coroutine accessor
+  Coroutine *coroutine(uint32_t id);
+  const Coroutine *coroutine(uint32_t id) const;
 
   // Error accessors
   ErrorObject *error(uint32_t id);
@@ -285,6 +313,10 @@ private:
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Thread>> threads_;
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Interval>> intervals_;
   std::unordered_map<uint32_t, std::shared_ptr<::havel::Timeout>> timeouts_;
+  std::unordered_map<uint32_t, std::vector<Value>> channels_; // Channel storage (queue of values)
+
+  // Coroutines (Lua-style)
+  std::unordered_map<uint32_t, Coroutine> coroutines_;
 
   std::vector<EnumType> enumTypes_;
 
@@ -299,6 +331,8 @@ private:
   uint32_t next_thread_id_ = 1;
   uint32_t next_interval_id_ = 1;
   uint32_t next_timeout_id_ = 1;
+  uint32_t next_channel_id_ = 1;
+  uint32_t next_coroutine_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;
   std::unordered_map<uint64_t, Value> external_roots_;

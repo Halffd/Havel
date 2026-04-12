@@ -1,11 +1,12 @@
 /*
- * AsyncModule.cpp - STUBBED (interpreter removed)
- * Module requires migration to bytecode VM
+ * AsyncModule.cpp - REMOVED
+ *
+ * This module is no longer used.
+ * Reason: Dead code from interpreter removal (bytecode VM doesn't use this)
+ *
+ * See AsyncModule.hpp for details.
+ * This file can be deleted.
  */
-#include "AsyncModule.hpp"
 
-namespace havel::modules {
+// Empty stub - module not used
 
-// STUBBED - Module requires migration to bytecode VM
-
-} // namespace havel::modules

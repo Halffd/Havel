@@ -309,6 +309,8 @@ std::string opcodeName(OpCode opcode) {
     return "TAIL_CALL";
   case OpCode::CALL_HOST:
     return "CALL_HOST";
+  case OpCode::CALL_METHOD:
+    return "CALL_METHOD";
   case OpCode::RETURN:
     return "RETURN";
   case OpCode::TRY_ENTER:

@@ -1,7 +1,7 @@
 #include "ExecutionEngine.hpp"
 #include <iostream>
 
-namespace havel {
+namespace havel::compiler {
 
 ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
     : vm_(vm), scheduler_(sched), event_queue_(eq), running_(false) {
@@ -30,47 +30,47 @@ bool ExecutionEngine::executeFrame() {
       event_queue_->processAll();
     }
     
-    // STEP 2: Pick next runnable fiber
-    // The scheduler maintains a queue of RUNNABLE fibers
-    Scheduler::Goroutine* goroutine = scheduler_->pickNext();
-    if (!goroutine) {
-      // No runnable fiber - idle
+    // STEP 2: Pick next runnable goroutine
+    // The scheduler maintains a queue of RUNNABLE goroutines
+    Scheduler::Goroutine* g = scheduler_->pickNext();
+    if (!g) {
+      // No runnable goroutine - idle
       if (debug_mode_) {
-        std::cout << "[ExecutionEngine] No runnable fibers, idle" << std::endl;
+        std::cout << "[ExecutionEngine] No runnable goroutines, idle" << std::endl;
       }
       return false;
     }
     
-    // STEP 3: Execute one instruction in this fiber
+    // STEP 3: Execute one instruction in this goroutine
     // This is non-blocking - always returns immediately
-    compiler::VMExecutionResult result = vm_->executeOneStep(nullptr);  // TODO: Pass actual Fiber*
+    VMExecutionResult result = vm_->executeOneStep(nullptr);  // TODO: Pass actual Fiber* or map g->id
     
     stats_.instructions_executed++;
     
     // STEP 4: Handle execution result
     switch (result.type) {
-      case compiler::VMExecutionResult::YIELD:
-        // Instruction completed normally, fiber yields
+      case VMExecutionResult::YIELD:
+        // Instruction completed normally, goroutine yields
         // Return it to scheduler's runnable queue
-        handleYield(nullptr);  // TODO: Pass actual Fiber*
+        handleYield(g);
         break;
         
-      case compiler::VMExecutionResult::SUSPENDED:
-        // Fiber blocked on external event (channel, timer, thread)
+      case VMExecutionResult::SUSPENDED:
+        // Goroutine blocked on external event (channel, timer, thread)
         // Scheduler already marked it SUSPENDED
         // EventQueue will unpark it when condition is met
-        handleSuspended(nullptr);  // TODO: Pass actual Fiber*
+        handleSuspended(g);
         break;
         
-      case compiler::VMExecutionResult::RETURNED:
-        // Function returned - mark fiber DONE
-        handleReturned(nullptr);  // TODO: Pass actual Fiber*
-        stats_.fibers_completed++;
+      case VMExecutionResult::RETURNED:
+        // Function returned - mark goroutine DONE
+        handleReturned(g);
+        stats_.goroutines_completed++;
         break;
         
-      case compiler::VMExecutionResult::ERROR:
+      case VMExecutionResult::ERROR:
         // Exception occurred
-        handleError(nullptr, result.error_message);  // TODO: Pass actual Fiber*
+        handleError(g, result.error_message);
         break;
     }
     
@@ -85,57 +85,55 @@ bool ExecutionEngine::executeFrame() {
 }
 
 bool ExecutionEngine::isDone() const {
-  // TODO: Check if scheduler has any runnable or suspended fibers
+  // TODO: Check if scheduler has any runnable or suspended goroutines
   return false;  // Not implemented yet
 }
 
 void ExecutionEngine::shutdown() {
   running_ = false;
-  // TODO: Clean up any remaining fibers
+  // TODO: Clean up any remaining goroutines
 }
 
 // ============================================================================
 // RESULT HANDLERS
 // ============================================================================
 
-void ExecutionEngine::handleYield(Fiber* fiber) {
+void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
   if (debug_mode_) {
-    std::cout << "[ExecutionEngine] Fiber yielded, returning to runnable queue" << std::endl;
+    std::cout << "[ExecutionEngine] Goroutine yielded, returning to runnable queue" << std::endl;
   }
-  // Return fiber to scheduler's runnable queue
-  if (fiber) {
-    scheduler_->unpark(fiber);
+  // Return goroutine to scheduler's runnable queue
+  if (g) {
+    scheduler_->unpark(g);
   }
 }
 
-void ExecutionEngine::handleSuspended(Fiber* fiber) {
+void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
   if (debug_mode_) {
-    std::cout << "[ExecutionEngine] Fiber suspended, waiting for external event" << std::endl;
+    std::cout << "[ExecutionEngine] Goroutine suspended, waiting for external event" << std::endl;
   }
-  // Fiber is already marked SUSPENDED by the suspension operation
+  // Goroutine is already marked SUSPENDED by the suspension operation
   // EventQueue will unpark it when the waiting condition is met
 }
 
-void ExecutionEngine::handleReturned(Fiber* fiber) {
+void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
   if (debug_mode_) {
-    std::cout << "[ExecutionEngine] Fiber completed execution" << std::endl;
+    std::cout << "[ExecutionEngine] Goroutine completed execution" << std::endl;
   }
-  // Mark fiber DONE
-  if (fiber) {
-    // fiber->state = FiberState::DONE;
+  // Mark goroutine DONE
+  if (g) {
+    g->state = Scheduler::GoroutineState::Done;
   }
 }
 
-void ExecutionEngine::handleError(Fiber* fiber, const std::string& msg) {
+void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
   if (debug_mode_) {
-    std::cout << "[ExecutionEngine] Fiber error: " << msg << std::endl;
+    std::cout << "[ExecutionEngine] Goroutine error: " << msg << std::endl;
   }
-  // Mark fiber DONE with error
-  if (fiber) {
-    // fiber->had_error = true;
-    // fiber->error_message = msg;
-    // fiber->state = FiberState::DONE;
+  // Mark goroutine DONE with error
+  if (g) {
+    g->state = Scheduler::GoroutineState::Done;
   }
 }
 
-} // namespace havel
+} // namespace havel::compiler

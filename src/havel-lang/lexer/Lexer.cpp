@@ -809,6 +809,66 @@ std::vector<Token> Lexer::tokenize() {
     // Only if not followed by '/' (which would be // comment) or '*' (/*
     // comment) and not preceded by something that would make it division
     if (c == '/' && peek() != '/' && peek() != '*' && peek() != '=') {
+      // Check if this is a hotkey: / followed by => (with optional whitespace)
+      // e.g. "/ => { }" for the slash key
+      size_t la = position + 1;
+      while (la < source.length() && source[la] == ' ') la++;
+      if (la + 1 < source.length() && source[la] == '=' && source[la + 1] == '>') {
+        tokens.push_back(makeToken("/", TokenType::Hotkey));
+        advance(); // consume '/'
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+
+      // Check if this is a conditional hotkey: / identifier ... =>
+      // e.g. "/ if mode == "genshin" => { }" for slash key with condition
+      // Peek ahead: skip whitespace, check if identifier starts, then look for =>
+      bool isSlashHotkey = false;
+      size_t hotkeyEnd = 0;
+      bool identifierIsKeyword = false;
+      if (la < source.length() && (isAlpha(source[la]) || source[la] == '_')) {
+        size_t la2 = la;
+        size_t idStart = la;
+        while (la2 < source.length() && (isAlphaNumeric(source[la2]) || source[la2] == '_')) la2++;
+        // Check if the identifier is a keyword that starts a condition (if/when)
+        std::string ident = source.substr(idStart, la2 - idStart);
+        if (ident == "if" || ident == "when") {
+          identifierIsKeyword = true;
+        }
+        // Search for => within a reasonable window
+        size_t searchEnd = std::min(la2 + 200, source.length());
+        bool foundArrow = false;
+        for (size_t s = la2; s + 1 < searchEnd; s++) {
+          if (source[s] == '=' && source[s + 1] == '>') { foundArrow = true; break; }
+          if (source[s] == '\n') break;
+        }
+        if (foundArrow) {
+          isSlashHotkey = true;
+          hotkeyEnd = la2;
+        }
+      }
+      if (isSlashHotkey) {
+        if (identifierIsKeyword) {
+          // / followed by condition keyword — only consume /
+          tokens.push_back(makeToken("/", TokenType::Hotkey));
+          advance(); // consume '/'
+        } else {
+          // /identifier — consume the whole thing as one token
+          std::string hotkeyValue = source.substr(position, hotkeyEnd - position);
+          advance(); // consume '/'
+          while (position < source.length() && position < hotkeyEnd) {
+            advance();
+          }
+          tokens.push_back(makeToken(hotkeyValue, TokenType::Hotkey));
+        }
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+
       // Check if this looks like a regex (not division)
       // Simple heuristic: if previous non-whitespace token suggests expression
       // context

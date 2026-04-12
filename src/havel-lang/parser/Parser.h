@@ -174,7 +174,6 @@ private:
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
   std::unique_ptr<ast::Expression> parseHotkeyExpression(const Token &hotkeyToken);
   std::unique_ptr<ast::Expression> parseTildeHotkeyExpression();
-  std::unique_ptr<ast::Expression> parseSlashHotkeyExpression();
   std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::Statement> parseOnKeyDownOrKeyUpStatement();
   std::unique_ptr<ast::BlockStatement>

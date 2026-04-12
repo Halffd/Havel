@@ -1394,6 +1394,11 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::GoStatement: {
+    compileGoStatement(static_cast<const ast::GoStatement &>(statement));
+    break;
+  }
+
   // Type system declarations - register types at compile time
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl =
@@ -3250,6 +3255,28 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     COMPILER_THROW("Pattern type used outside of match context: " +
                              expression.toString());
 
+  // Concurrency Primitives
+  case ast::NodeType::ThreadExpression:
+    compileThreadExpression(static_cast<const ast::ThreadExpression &>(expression));
+    break;
+
+  case ast::NodeType::IntervalExpression:
+    compileIntervalExpression(static_cast<const ast::IntervalExpression &>(expression));
+    break;
+
+  case ast::NodeType::TimeoutExpression:
+    compileTimeoutExpression(static_cast<const ast::TimeoutExpression &>(expression));
+    break;
+
+  // Coroutines
+  case ast::NodeType::YieldExpression:
+    compileYieldExpression(static_cast<const ast::YieldExpression &>(expression));
+    break;
+
+  case ast::NodeType::ChannelExpression:
+    compileChannelExpression(static_cast<const ast::ChannelExpression &>(expression));
+    break;
+
   default:
     COMPILER_THROW("Unsupported expression in bytecode compiler: " +
                              expression.toString());
@@ -4936,6 +4963,148 @@ void ByteCompiler::compileGetInputExpression(
   uint32_t strId = addStringConstant(fnName);
   emit(OpCode::CALL_HOST, std::vector<Value>{Value::makeStringValId(strId),
                                              Value(argCount)});
+}
+
+// ============================================================================
+// CONCURRENCY & COROUTINE COMPILATION
+// ============================================================================
+
+void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expression) {
+  // thread { ... } -> spawn a new thread with the body as a function
+  // Compile the body as a lambda and then call thread.spawn host function
+  
+  if (!expression.body) {
+    COMPILER_THROW("Thread expression missing body");
+  }
+  
+  // Create a lambda from the body
+  auto lambda = std::make_unique<ast::LambdaExpression>();
+  lambda->params = std::vector<std::unique_ptr<ast::Parameter>>();
+  lambda->body = std::unique_ptr<ast::BlockStatement>(
+    static_cast<ast::BlockStatement*>(expression.body->clone())
+  );
+  
+  // Compile the lambda
+  compileLambda(*lambda);
+  
+  // Emit CALL_HOST to thread.spawn
+  uint32_t strId = addStringConstant("thread.spawn");
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(1))});
+}
+
+void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expression) {
+  // interval <ms> { ... } -> start a repeating timer
+  // Compile interval duration, then compile body as lambda, then call interval.start host function
+  
+  if (!expression.intervalMs) {
+    COMPILER_THROW("Interval expression missing duration");
+  }
+  
+  if (!expression.body) {
+    COMPILER_THROW("Interval expression missing body");
+  }
+  
+  // Compile the interval duration
+  compileExpression(*expression.intervalMs);
+  
+  // Create a lambda from the body
+  auto lambda = std::make_unique<ast::LambdaExpression>();
+  lambda->params = std::vector<std::unique_ptr<ast::Parameter>>();
+  lambda->body = std::unique_ptr<ast::BlockStatement>(
+    static_cast<ast::BlockStatement*>(expression.body->clone())
+  );
+  
+  // Compile the lambda
+  compileLambda(*lambda);
+  
+  // Emit CALL_HOST to interval.start
+  uint32_t strId = addStringConstant("interval.start");
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(2))});
+}
+
+void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expression) {
+  // timeout <ms> { ... } -> start a one-shot timer
+  // Compile delay duration, then compile body as lambda, then call timeout.start host function
+  
+  if (!expression.delayMs) {
+    COMPILER_THROW("Timeout expression missing duration");
+  }
+  
+  if (!expression.body) {
+    COMPILER_THROW("Timeout expression missing body");
+  }
+  
+  // Compile the delay duration
+  compileExpression(*expression.delayMs);
+  
+  // Create a lambda from the body
+  auto lambda = std::make_unique<ast::LambdaExpression>();
+  lambda->params = std::vector<std::unique_ptr<ast::Parameter>>();
+  lambda->body = std::unique_ptr<ast::BlockStatement>(
+    static_cast<ast::BlockStatement*>(expression.body->clone())
+  );
+  
+  // Compile the lambda
+  compileLambda(*lambda);
+  
+  // Emit CALL_HOST to timeout.start
+  uint32_t strId = addStringConstant("timeout.start");
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(2))});
+}
+
+void ByteCompiler::compileYieldExpression(const ast::YieldExpression &expression) {
+  // yield or yield(value) or yield(ms)
+  // For now, just push the value (coroutine yield is a VM-level operation)
+  
+  if (expression.value) {
+    compileExpression(*expression.value);
+  } else {
+    // No value - push null
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+  }
+  
+  // Yield is a VM-level coroutine operation, not a host function
+  // Keep the YIELD opcode for now
+  emit(OpCode::YIELD);
+}
+
+void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
+  // go func() -> async function call
+  // For now, just compile the call expression (go is a statement modifier)
+  
+  if (!statement.call) {
+    COMPILER_THROW("Go statement missing call expression");
+  }
+  
+  // Compile the call expression
+  compileExpression(*statement.call);
+  
+  // Pop the result (go statements don't use the return value)
+  emit(OpCode::POP);
+  
+  // Note: go is a statement modifier that makes the call asynchronous
+  // The actual async execution is handled by the VM or runtime
+  // For now, this is a placeholder - a full implementation would
+  // require integration with the thread pool
+}
+
+void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {
+  // channel() -> create a new channel
+  // Emit CALL_HOST to channel.new
+  
+  (void)expression; // Unused parameter
+  
+  // Emit CALL_HOST to channel.new
+  uint32_t strId = addStringConstant("channel.new");
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(0))});
 }
 
 } // namespace havel::compiler

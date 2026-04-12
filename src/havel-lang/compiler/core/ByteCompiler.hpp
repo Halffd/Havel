@@ -109,6 +109,12 @@ private:
   void compileTryStatement(const ast::TryExpression &statement);
   void compileCallExpression(const ast::CallExpression &expression);
   void compileCallExpressionTail(const ast::CallExpression &expression); // TCO
+  void compileThreadExpression(const ast::ThreadExpression &expression);
+  void compileIntervalExpression(const ast::IntervalExpression &expression);
+  void compileTimeoutExpression(const ast::TimeoutExpression &expression);
+  void compileYieldExpression(const ast::YieldExpression &expression);
+  void compileGoStatement(const ast::GoStatement &statement);
+  void compileChannelExpression(const ast::ChannelExpression &expression);
   void compileIfStatement(const ast::IfStatement &statement);
   void compileWhileStatement(const ast::WhileStatement &statement);
   void compileDoWhileStatement(const ast::DoWhileStatement &statement);

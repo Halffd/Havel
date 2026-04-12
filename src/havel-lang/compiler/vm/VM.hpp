@@ -133,6 +133,10 @@ private:
   bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
 
+  // Coroutine support (Lua-style coroutines)
+  uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
+  std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
+
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> host function index
   std::unordered_map<std::string,

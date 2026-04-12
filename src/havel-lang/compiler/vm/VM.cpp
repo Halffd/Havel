@@ -4916,6 +4916,293 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  // ============================================================================
+  // CONCURRENCY PRIMITIVES
+  // ============================================================================
+
+  case OpCode::THREAD_SPAWN: {
+    // Spawn new thread with function from stack
+    Value func_val = popStack();
+    if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
+      COMPILER_THROW("THREAD_SPAWN expects a function");
+    }
+    
+    // Create thread object (placeholder - actual thread implementation needed)
+    uint32_t thread_id = heap_.allocateThread();
+    pushStack(Value::makeThreadId(thread_id));
+    
+    // TODO: Actually spawn the thread with the function
+    // This would require a thread pool and async execution system
+    break;
+  }
+
+  case OpCode::THREAD_JOIN: {
+    // Join thread and wait for completion
+    Value thread_val = popStack();
+    if (!thread_val.isThreadId()) {
+      COMPILER_THROW("THREAD_JOIN expects a thread");
+    }
+    
+    // TODO: Wait for thread to complete
+    // For now, just push null
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::THREAD_SEND: {
+    // Send message to thread
+    Value message = popStack();
+    Value thread_val = popStack();
+    
+    if (!thread_val.isThreadId()) {
+      COMPILER_THROW("THREAD_SEND expects a thread");
+    }
+    
+    // TODO: Implement message passing
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::THREAD_RECEIVE: {
+    // Receive message from thread
+    Value thread_val = popStack();
+    
+    if (!thread_val.isThreadId()) {
+      COMPILER_THROW("THREAD_RECEIVE expects a thread");
+    }
+    
+    // TODO: Implement message receiving
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::INTERVAL_START: {
+    // Start interval timer with function from stack and duration
+    Value func_val = popStack();
+    Value duration_val = popStack();
+    
+    if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
+      COMPILER_THROW("INTERVAL_START expects a function");
+    }
+    
+    if (!duration_val.isInt()) {
+      COMPILER_THROW("INTERVAL_START expects duration in milliseconds");
+    }
+    
+    // Create interval object (placeholder)
+    uint32_t interval_id = heap_.allocateInterval();
+    pushStack(Value::makeIntervalId(interval_id));
+    
+    // TODO: Actually start the interval timer
+    break;
+  }
+
+  case OpCode::INTERVAL_STOP: {
+    // Stop interval timer
+    Value interval_val = popStack();
+    
+    if (!interval_val.isIntervalId()) {
+      COMPILER_THROW("INTERVAL_STOP expects an interval");
+    }
+    
+    // TODO: Stop the interval timer
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::TIMEOUT_START: {
+    // Start one-shot timeout with function from stack and delay
+    Value func_val = popStack();
+    Value delay_val = popStack();
+    
+    if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
+      COMPILER_THROW("TIMEOUT_START expects a function");
+    }
+    
+    if (!delay_val.isInt()) {
+      COMPILER_THROW("TIMEOUT_START expects delay in milliseconds");
+    }
+    
+    // Create timeout object (placeholder)
+    uint32_t timeout_id = heap_.allocateTimeout();
+    pushStack(Value::makeTimeoutId(timeout_id));
+    
+    // TODO: Actually start the timeout
+    break;
+  }
+
+  case OpCode::TIMEOUT_CANCEL: {
+    // Cancel pending timeout
+    Value timeout_val = popStack();
+    
+    if (!timeout_val.isTimeoutId()) {
+      COMPILER_THROW("TIMEOUT_CANCEL expects a timeout");
+    }
+    
+    // TODO: Cancel the timeout
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  // ============================================================================
+  // COROUTINES
+  // ============================================================================
+
+  case OpCode::YIELD: {
+    // Yield from coroutine (with optional value)
+    Value yield_value = popStack();
+    
+    // Save current coroutine state if we're in a coroutine
+    if (current_coroutine_id_ != 0) {
+      auto *co = heap_.coroutine(current_coroutine_id_);
+      if (co) {
+        // Save instruction pointer
+        co->ip = currentFrame().ip;
+        
+        // Save stack
+        co->stack.clear();
+        std::stack<Value> temp_stack = stack;
+        while (!temp_stack.empty()) {
+          co->stack.push_back(temp_stack.top());
+          temp_stack.pop();
+        }
+        std::reverse(co->stack.begin(), co->stack.end());
+        
+        // Save locals
+        co->locals = locals;
+        
+        // Save yield value
+        co->yield_values = {yield_value};
+        
+        // Set state to Waiting
+        co->state = GCHeap::Coroutine::Waiting;
+        
+        // Return to caller with yield value
+        pushStack(yield_value);
+        
+        // Return from current frame
+        if (frame_count_ > 0) {
+          frame_count_--;
+        }
+        break;
+      }
+    }
+    
+    // If not in a coroutine, just push the value back
+    pushStack(yield_value);
+    break;
+  }
+
+  case OpCode::YIELD_RESUME: {
+    // Resume yielded coroutine
+    Value coroutine_val = popStack();
+    
+    if (!coroutine_val.isCoroutineId()) {
+      COMPILER_THROW("YIELD_RESUME expects a coroutine");
+    }
+    
+    uint32_t coroutine_id = coroutine_val.asCoroutineId();
+    auto *co = heap_.coroutine(coroutine_id);
+    
+    if (!co) {
+      COMPILER_THROW("YIELD_RESUME: coroutine not found");
+    }
+    
+    if (co->state == GCHeap::Coroutine::Done) {
+      COMPILER_THROW("YIELD_RESUME: coroutine already done");
+    }
+    
+    // Restore coroutine state
+    current_coroutine_id_ = coroutine_id;
+    
+    // Restore stack
+    stack = std::stack<Value>();
+    for (auto it = co->stack.rbegin(); it != co->stack.rend(); ++it) {
+      stack.push(*it);
+    }
+    
+    // Restore locals
+    locals = co->locals;
+    
+    // Restore instruction pointer
+    currentFrame().ip = co->ip;
+    
+    // Set state to Runnable
+    co->state = GCHeap::Coroutine::Runnable;
+    
+    // Push yield values from last yield
+    for (const auto &val : co->yield_values) {
+      pushStack(val);
+    }
+    
+    break;
+  }
+
+  case OpCode::GO_ASYNC: {
+    // Spawn async function call
+    Value call_val = popStack();
+    
+    if (!call_val.isClosureId() && !call_val.isFunctionObjId()) {
+      COMPILER_THROW("GO_ASYNC expects a function");
+    }
+    
+    // TODO: Implement async function execution
+    // For now, push null
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  // ============================================================================
+  // CHANNELS
+  // ============================================================================
+
+  case OpCode::CHANNEL_NEW: {
+    // Create new channel
+    uint32_t channel_id = heap_.allocateChannel();
+    pushStack(Value::makeChannelId(channel_id));
+    break;
+  }
+
+  case OpCode::CHANNEL_SEND: {
+    // Send value to channel
+    Value value = popStack();
+    Value channel_val = popStack();
+    
+    if (!channel_val.isChannelId()) {
+      COMPILER_THROW("CHANNEL_SEND expects a channel");
+    }
+    
+    // TODO: Implement channel send
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::CHANNEL_RECEIVE: {
+    // Receive value from channel (blocking)
+    Value channel_val = popStack();
+    
+    if (!channel_val.isChannelId()) {
+      COMPILER_THROW("CHANNEL_RECEIVE expects a channel");
+    }
+    
+    // TODO: Implement channel receive
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::CHANNEL_CLOSE: {
+    // Close channel
+    Value channel_val = popStack();
+    
+    if (!channel_val.isChannelId()) {
+      COMPILER_THROW("CHANNEL_CLOSE expects a channel");
+    }
+    
+    // TODO: Implement channel close
+    pushStack(Value::makeNull());
+    break;
+  }
+
   case OpCode::NOP:
   case OpCode::DEFINE_FUNC:
     break;

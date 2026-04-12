@@ -1316,41 +1316,39 @@ when title == "Chatterino" {
   ^v => print("Ctrl+V pressed in chatterino")
 }
 class AutoBase {
-  running: bool
-  timer: interval
-  winId: int
+  running: bool = false
+  timer = null
+  winId: int = null
   delay: int = 100
   
   fn init() {
     @running = false
-    @timer = null
-    @winId = null
   }
   
   fn run?() {
     // Override in subclass
-    return false
+    false
   }
   
   fn start() {
-    if @run?() @stop()
-    @running = true
-    @winId = window.active().id
-    @timer = interval delay {
-      if !@run?() || window.active().id != @winId {
-        @stop()
+    if run?() { stop() }
+    running = true
+    winId = window.active().id
+    timer = interval delay {
+      if !(run?()) || window.active().id != winId {
+        stop()
         return
       }
-      @sendKey()  // Abstract method
+      sendKey()  // Abstract method
     }
-    @end()
+    end()
   }
   
   fn stop() {
-    if @timer { @timer.stop() }
-    @running = false
-    @timer = null
-    @winId = null
+    if timer { timer.stop() }
+    running = false
+    timer = null
+    winId = null
   }
   
   fn sendKey() {
@@ -1364,7 +1362,7 @@ class AutoBase {
 
 class AutoF : AutoBase {
   fn run?() {
-    return io.getKey("lctrl") || @running
+    return io.getKey("lctrl") || running
   }
   
   fn sendKey() {
@@ -1373,14 +1371,14 @@ class AutoF : AutoBase {
 
   fn end(){
     timeout 10000 {
-      @stop()
+      stop()
     }
   }
 }
 
 class AutoSpace : AutoBase {
-  enabled: bool
-  hk: int
+  enabled: bool = false
+  hk: int = null
   
   fn init(hk) {
     @->init()
@@ -1389,27 +1387,27 @@ class AutoSpace : AutoBase {
   }
   
   fn run?() {
-    return @enabled && @running && !io.getKey("space")
+    return enabled && running && !io.getKey("space")
   }
   
   fn sendKey() {
     send("{space}")
   }
   fn onDown() {
-    if @run?() { return }
+    if run?() { return }
     send("{space:up}")
     sleep(100)
-    @enabled = false
+    enabled = false
   }
   fn onUp() {
-    @toggle()
+    toggle()
     send("{space:up}")
-    hotkey.enable(@hk)
+    hotkey.enable(hk)
   }
   
   fn toggle() {
-    @enabled = !@enabled
-    if !@enabled { @stop() }
+    enabled = !enabled
+    if !enabled { stop() }
   }
 }
 autof = AutoF()
@@ -1448,8 +1446,8 @@ class AutoClicker : AutoBase {
 
 // E + Q rotation for Slash
 class AutoRotation : AutoBase {
-  eTimer: interval
-  qTimer: interval
+  eTimer = null
+  qTimer = null
   val iE = 5000
   val iQ = 60000
   

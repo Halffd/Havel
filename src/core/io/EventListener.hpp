@@ -28,6 +28,11 @@
 namespace havel {
 
 // Forward declarations
+namespace compiler {
+  class HostBridge;
+}
+
+// Forward declarations
 struct HotKey;
 class SignalHandler;
 
@@ -48,6 +53,10 @@ public:
   // Start listening on specified devices
   bool Start(const std::vector<std::string> &devicePaths,
              bool grabDevices = false);
+  
+  // Set HostBridge for timer checking
+  void setHostBridge(havel::compiler::HostBridge *hostBridge);
+  
   std::map<int, bool> evdevKeyState;
 
   // Stop listening
@@ -223,6 +232,9 @@ private:
 
 private:
   std::unique_ptr<SignalHandler> signalHandler;
+  
+  // HostBridge for timer checking (single-threaded VM timer queue)
+  havel::compiler::HostBridge *hostBridge = nullptr;
 
   // Device info
   struct DeviceInfo {

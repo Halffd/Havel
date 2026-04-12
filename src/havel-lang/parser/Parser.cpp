@@ -1032,6 +1032,23 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Backtick:
       return parseBacktickExpression();
 
+    // Concurrency Primitives
+    case TokenType::Thread:
+      return parseThreadExpression();
+
+    case TokenType::Interval:
+      return parseIntervalExpression();
+
+    case TokenType::Timeout:
+      return parseTimeoutExpression();
+
+    // Coroutines
+    case TokenType::Yield:
+      return parseYieldExpression();
+
+    case TokenType::Channel:
+      return parseChannelExpression();
+
     default:
       errorAt(token, "Unexpected token in expression");
       return nullptr;
@@ -2050,6 +2067,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseReturnStatement();
   case havel::TokenType::Throw:
     return parseThrowStatement();
+  case havel::TokenType::Go:
+    return parseGoStatement();
   case havel::TokenType::Try:
     return parseTryStatement();
   case havel::TokenType::Catch:
@@ -7856,6 +7875,126 @@ Parser::parseKeyValueBlock() {
   advance(); // consume '}'
 
   return pairs;
+}
+
+// ============================================================================
+// CONCURRENCY & COROUTINE PARSING
+// ============================================================================
+
+std::unique_ptr<havel::ast::Expression> Parser::parseThreadExpression() {
+  auto threadToken = at();
+  advance(); // consume 'thread'
+  
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'thread'");
+  }
+  
+  auto body = parseBlockStatement();
+  auto expr = std::make_unique<havel::ast::ThreadExpression>(
+    std::unique_ptr<havel::ast::BlockStatement>(
+      static_cast<havel::ast::BlockStatement*>(body.release())
+    )
+  );
+  expr->line = threadToken.line;
+  expr->column = threadToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseIntervalExpression() {
+  auto intervalToken = at();
+  advance(); // consume 'interval'
+  
+  // Parse interval duration (number or expression)
+  auto intervalMs = parseExpression();
+  
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after interval duration");
+  }
+  
+  auto body = parseBlockStatement();
+  auto expr = std::make_unique<havel::ast::IntervalExpression>(
+    std::move(intervalMs),
+    std::unique_ptr<havel::ast::BlockStatement>(
+      static_cast<havel::ast::BlockStatement*>(body.release())
+    )
+  );
+  expr->line = intervalToken.line;
+  expr->column = intervalToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
+  auto timeoutToken = at();
+  advance(); // consume 'timeout'
+  
+  // Parse delay duration (number or expression)
+  auto delayMs = parseExpression();
+  
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after timeout duration");
+  }
+  
+  auto body = parseBlockStatement();
+  auto expr = std::make_unique<havel::ast::TimeoutExpression>(
+    std::move(delayMs),
+    std::unique_ptr<havel::ast::BlockStatement>(
+      static_cast<havel::ast::BlockStatement*>(body.release())
+    )
+  );
+  expr->line = timeoutToken.line;
+  expr->column = timeoutToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseYieldExpression() {
+  auto yieldToken = at();
+  advance(); // consume 'yield'
+  
+  // Check if yield has an argument (value or delay in ms)
+  std::unique_ptr<havel::ast::Expression> value;
+  if (at().type != havel::TokenType::Semicolon && 
+      at().type != havel::TokenType::NewLine &&
+      at().type != havel::TokenType::CloseBrace &&
+      at().type != havel::TokenType::CloseParen) {
+    value = parseExpression();
+  }
+  
+  auto expr = std::make_unique<havel::ast::YieldExpression>(std::move(value));
+  expr->line = yieldToken.line;
+  expr->column = yieldToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
+  auto goToken = at();
+  advance(); // consume 'go'
+  
+  // Parse the function call expression
+  auto call = parseExpression();
+  
+  auto stmt = std::make_unique<havel::ast::GoStatement>(std::move(call));
+  stmt->line = goToken.line;
+  stmt->column = goToken.column;
+  return stmt;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {
+  auto channelToken = at();
+  advance(); // consume 'channel'
+  
+  // Check for parentheses: channel()
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume '('
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected '()' after channel");
+    }
+    advance(); // consume ')'
+  }
+  
+  auto expr = std::make_unique<havel::ast::ChannelExpression>();
+  expr->line = channelToken.line;
+  expr->column = channelToken.column;
+  return expr;
 }
 
 void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {

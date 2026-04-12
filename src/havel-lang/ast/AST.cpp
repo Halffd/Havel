@@ -648,6 +648,11 @@ void GoStatement::accept(ASTVisitor &visitor) const {
   visitor.visitGoStatement(*this);
 }
 
+// GoExpression accept method
+void GoExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitGoExpression(*this);
+}
+
 // ChannelExpression accept method
 void ChannelExpression::accept(ASTVisitor &visitor) const {
   visitor.visitChannelExpression(*this);

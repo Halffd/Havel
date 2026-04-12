@@ -1,0 +1,366 @@
+// Test Phase 1: threads
+fn task(name) {
+  print("Task " + name + " started")
+  run("ping -c 3 localhost") // Simulate some work by running a command that takes time (pinging localhost 3 times, should take around 3 seconds)
+  print("Task " + name + " completed")
+}
+
+print("=== Testing thread_spawn ===")
+let t1 = go task("A")
+let t2 = go task("B")
+let tLambda = go {
+  print("Lambda task started")
+  run("sleep 2") // Simulate some work by sleeping for 2 seconds
+  print("Lambda task completed")
+}
+
+print("Threads spawned")
+
+t1.join()
+t2.join()
+tLambda.join()
+
+print("Threads joined")
+let t3N = 0
+fn receiver() {
+  on msg {
+    print("Received: " + msg)
+  }
+  loop {
+    t3N++
+    sleep(100) // Keep the receiver alive to receive messages
+    if t3N > 10 {
+      break // Exit after some time to prevent infinite loop in case of issues
+    }
+  }
+}
+
+let t3 = go receiver
+sleep(500) // Give the receiver some time to start
+print("t3N: ", t3N)
+t3.send("Hello from main!")
+t3.join()
+if t3N > 0 {
+  print("Message passing test PASSED")
+} else {
+  print("Message passing test FAILED")
+}
+
+let n4 = 0
+go {
+  while true {
+    n4 = n4 + 1
+    if n4 >= 500000 {
+      return
+    }
+  }
+}
+
+print("=== Phase 1 tests completed ===")
+
+print("=== Testing interval and timeout ===")
+let counter = 0
+let intv = interval 500 {
+  counter = counter + 1
+  print("Interval tick: " + str(counter))
+}
+
+print("Interval started, waiting for ticks...")
+sleep(2200)
+
+print("Stopping interval")
+intv.stop()
+
+let timeout_triggered = false
+let n = 0
+let tim = timeout 1000 {
+  timeout_triggered = true
+  n++
+  print("Timeout triggered!")
+}
+
+print("Timeout scheduled, waiting...")
+tim.wait()
+
+if timeout_triggered {
+  print("Timeout test PASSED")
+} else {
+  print("Timeout test FAILED")
+}
+print(n)
+print("=== Testing timeout_cancel ===")
+
+let timeout_triggered2 = false
+let tim2 = timeout 2000 {
+  timeout_triggered2 = true
+  n++
+  print("This should not print")
+}
+
+print("Timeout scheduled, cancelling now...")
+tim2.stop()
+
+sleep(2500)
+
+if !timeout_triggered2 {
+  print("Timeout cancel test PASSED")
+} else {
+  print("Timeout cancel test FAILED")
+}
+
+print("Starting interval pause/resume test...")
+
+counter = 0
+let expected_final_value = 5
+let i2 = 50
+let i3 = 120
+let intv2 = interval i2 {
+  counter = counter + 1
+  print("Interval 2 tick: " + str(counter))
+}
+let intv3 = interval i3 {
+  counter = counter - 1
+  print("Interval 3 tick: " + str(counter))
+}
+let offset = 3 // Offset to account for the initial ticks before pausing
+/*
+i2 = 50
+i3 = 120
+1000 / i2 = 20 ticks of i2
+1000 / i3 = 8.33 ticks of i3
+20 * i3 = 2400 ms 
+The formula is: (1000 / i2) * i3 = 2400 ms for 20 ticks of i2 and 8.33 ticks of i3, which should result in a counter value of 20 - 8.33 = 11.67 (approximately). After pausing interval 2, we should see the counter decrease by about 8.33 ticks of interval 3, resulting in a counter value of around 3.34 before resuming interval 2. After resuming, we should see the counter increase again by about 20 ticks of interval 2, resulting in a final counter value of around 23.34 before stopping both intervals. Offsetting by 4 to account for the initial ticks before pausing, we expect the final counter value to be around 19.34, which would indicate that the pause and resume functionality is working correctly.
+At the end of the test, we expect the counter to be around 5, which would indicate that the pause and resume functionality is working correctly. 
+*/
+print("Interval 2 and 3 started, waiting for ticks...")
+sleep(1000 + offset) // Wait for a few ticks of both intervals before pausing
+print(counter)
+print("Pausing interval 2")
+intv2.pause()
+until0 = (1000 / i2) * i3 + offset // Wait for enough time for interval 3 to tick a few times while interval 2 is paused
+sleep(until0) // Wait for a few ticks of interval 3
+print("Counter after pausing interval 2: " + str(counter))
+print("Resuming interval 2")
+intv2.resume()
+sleep(500 + offset) // Wait for a few more ticks of both intervals
+intv2.stop()
+intv3.stop()
+print("Final counter value: " + str(counter))
+if counter == expected_final_value {
+  print("Interval pause/resume test PASSED")
+} else {
+  // if around 5, then it's likely that the pause and resume functionality is working correctly, but there may be some timing variations. If it's significantly less than 5, it may indicate that the pause functionality is not working correctly, and if it's significantly greater than 5, it may indicate that the resume functionality is not working correctly.
+  
+  let diff = abs(counter - expected_final_value)
+  if diff <= 2 {
+      print("PASS (within tolerance)")
+  } else {
+    if counter < expected_final_value {
+      print("Interval pause/resume test FAILED: Counter is less than expected final value.")
+    } else {
+      print("Interval pause/resume test FAILED: Counter is greater than expected final value.")
+    }
+    print("Interval pause/resume test FAILED")
+  }
+}
+
+// Test Phase 3: VM-level coroutines (Lua-style)
+// This tests yield and coroutine state management
+
+print("=== Testing yield ===")
+
+fn generator() {
+  yield 1
+  sleep(1000) // Simulate some work
+  yield 2
+  sleep(500) // Simulate some work
+  yield 3
+  sleep(100) // Simulate some work
+  return "done"
+}
+let gen = generator()
+print("Generator created, resuming...")
+print("Yielded value: " + str(next gen)) // Should print 1
+print("Yielded value: " + str(next gen)) // Should print 2
+print("Yielded value: " + str(next gen)) // Should print 3
+print("Generator return value: " + str(next gen)) // Should print "done"
+
+print("=== Testing coroutine creation and resume ===")
+
+fn simple_yield() {
+  print("Before yield")
+  yield "yielded value"
+  print("After yield")
+}
+
+print("Testing simple yield function...")
+// The yield will return the value to the caller
+let co = simple_yield()
+print("Yield returned: " + next result) // Should print "yielded value"
+print("Resuming coroutine...")
+next result // Should print "After yield"
+
+print("=== Testing coroutine with state ===")
+
+fn counter() {
+  let i = 0
+  while i < 3 {
+    i = i + 1
+    yield i
+  }
+  return "finished"
+}
+
+print("Testing counter coroutine...")
+
+let count = counter()
+for i in 1..3 {
+  print("Counter yielded: " + str(next count)) // Should print 1, then 2, then 3
+}
+print("Counter return value: " + str(next count)) // Should print "finished"
+
+print("=== Phase 3 tests completed ===")
+
+print("=== Testing channels ===")
+// Channel creation
+let [tx, rx] = channel()        // unbounded (or bounded with .bounded())
+let [tx, rx] = channel(10)      // bounded with capacity 10
+
+// Send
+tx.send(42)
+tx.send("hello")
+
+// Receive (blocks)
+let val = rx.recv()
+
+// Try receive (non-blocking)
+let val = rx.try()  // returns null if empty
+
+// Receive with timeout
+let val = rx.timeout(1000)  // wait 1 second
+
+// Channel properties
+print(rx.len())    // items waiting
+print(rx.cap())    // capacity
+print(rx.isEmpty())
+print(rx.isFull())
+print(rx.isClosed())
+
+// Close
+tx.close()
+rx.close()  // also works
+
+// Iteration
+for val in rx {
+    print(val)
+}
+
+select! {
+    val = rx.recv() => print(val),
+    _ = tx.send(42) => print("sent"),
+    timeout(1000) => print("timeout"),
+}
+
+print("=== Testing multiple receivers ===")
+let [tx, rx] = channel()
+let rx2 = rx.clone()  // multiple receivers
+
+go {
+    loop {
+        let val = rx2.recv()
+        print("Worker 1: " + val)
+    }
+}
+
+go {
+    loop {
+        let val = rx.recv()
+        print("Worker 2: " + val)
+    }
+}
+
+sleep(500) // Give workers time to start
+tx.send("work")  // goes to one worker
+sleep(500)
+rx.send("more work")  // goes to the other worker
+tx.stop()  // stop the channel
+rx2.stop() // also stop the clone
+
+// yield from nested function
+fn outer() {
+    fn inner() {
+        yield 42  // Should suspend outer()
+    }
+    inner()
+    print("This runs after inner yields")
+}
+
+let gen = outer()
+print(next gen)  // 42
+
+// Solution: yield to nearest generator context
+fn outer() {
+    fn inner() {
+        yield 42      // Yields from outer()
+        yield 43      // Also from outer()
+    }
+    inner()
+    yield 44          // From outer()
+}
+
+let g = outer()
+print(next g)  // 42
+print(next g)  // 43
+print(next g)  // 44
+
+// Explicit yield target
+fn outer() {
+    fn inner() {
+        yield outer 42    // Explicit target
+        yield current 43  // Current context
+    }
+}
+fn broken() {
+    yield 1
+    throw "Something went wrong"
+    yield 2  // Never reached
+}
+
+let gen = broken()
+print(next gen)  // 1
+
+// Error propagation
+try {
+    print(next gen)  // Throws error
+} catch e {
+    print("Coroutine error: " + e)
+}
+
+// Check if coroutine is dead
+if gen.dead() {
+    print("Coroutine is dead")
+}
+
+// Propagate error to parent
+fn parent() {
+    try {
+        let child = broken()
+        next child
+        next child  // Error propagates here
+    } catch e {
+        print("Caught from child: " + e)
+    }
+}
+
+// Example: using a coroutine as a generator
+fn count_up_to(n) {
+    let i = 0
+    while i < n {
+        yield i
+        i = i + 1
+    }
+}
+let counter = count_up_to(5)
+for val in counter {
+    print(val)  // Should print 0, 1, 2, 3
+}

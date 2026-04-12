@@ -140,6 +140,7 @@ private:
   std::unique_ptr<ast::Expression> parseTimeoutExpression();
   std::unique_ptr<ast::Expression> parseYieldExpression();
   std::unique_ptr<ast::Statement> parseGoStatement();
+  std::unique_ptr<ast::Expression> parseGoExpression();
   std::unique_ptr<ast::Expression> parseChannelExpression();
   std::unique_ptr<ast::Expression> parseBinaryExpression();
   std::unique_ptr<ast::Expression> parsePrimaryExpression();

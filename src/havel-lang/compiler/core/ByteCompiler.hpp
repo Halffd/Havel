@@ -114,6 +114,7 @@ private:
   void compileTimeoutExpression(const ast::TimeoutExpression &expression);
   void compileYieldExpression(const ast::YieldExpression &expression);
   void compileGoStatement(const ast::GoStatement &statement);
+  void compileGoExpression(const ast::GoExpression &expression);
   void compileChannelExpression(const ast::ChannelExpression &expression);
   void compileIfStatement(const ast::IfStatement &statement);
   void compileWhileStatement(const ast::WhileStatement &statement);

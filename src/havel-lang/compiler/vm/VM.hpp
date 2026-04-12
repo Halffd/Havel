@@ -21,6 +21,9 @@ struct HostContext; // Forward declaration
 
 namespace havel::compiler {
 
+// Forward declarations
+class Fiber;  // For executeOneStep()
+
 // Opaque callback handle - systems can store this without knowing VM internals
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
@@ -46,6 +49,58 @@ struct ScriptError final {
   const char *what() const noexcept { return message.c_str(); }
   
   // Note: toHavelError() implementation moved to .cpp to avoid Qt moc issues
+};
+
+// ============================================================================
+// VM EXECUTION RESULT
+//
+// Result of executing a single bytecode instruction in a Fiber
+// Used by Phase 3 main loop (executeFrame) to determine fiber state
+// ============================================================================
+struct VMExecutionResult {
+  enum Type : uint8_t {
+    YIELD,       // Instruction completed normally, return value on stack
+    SUSPENDED,   // Fiber suspended (waiting for event), state frozen
+    RETURNED,    // Function returned, value in result_value
+    ERROR        // Exception thrown, message in error_message
+  };
+  
+  Type type;
+  Value result_value;           // For YIELD or RETURNED
+  std::string error_message;    // For ERROR
+  
+  // Default constructor
+  VMExecutionResult();
+  
+  // Convenience constructors
+  static VMExecutionResult Yield(const Value& value) {
+    VMExecutionResult r;
+    r.type = YIELD;
+    r.result_value = value;
+    return r;
+  }
+  
+  static VMExecutionResult Suspended() {
+    VMExecutionResult r;
+    r.type = SUSPENDED;
+    r.result_value = Value();
+    return r;
+  }
+  
+  static VMExecutionResult Returned(const Value& value) {
+    VMExecutionResult r;
+    r.type = RETURNED;
+    r.result_value = value;
+    return r;
+  }
+  
+  static VMExecutionResult Error(const std::string& msg) {
+    VMExecutionResult r;
+    r.type = ERROR;
+    r.error_message = msg;
+    r.result_value = Value();
+    return r;
+  }
 };
 
 class VM : public BytecodeInterpreter {
@@ -256,6 +311,18 @@ public:
   Value executePersistent(const BytecodeChunk &chunk,
                           const std::string &function_name,
                           const std::vector<Value> &args = {});
+  
+  // ========== PHASE 3: SINGLE-STEP EXECUTION ==========
+  // Execute exactly one bytecode instruction in the current fiber
+  // Returns immediately after one instruction (never blocks)
+  // Used by main event loop for cooperative fiber scheduling
+  // @param current_fiber The Fiber to execute in (must be RUNNABLE state)
+  // @return VMExecutionResult indicating what happened
+  VMExecutionResult executeOneStep(Fiber *current_fiber);
+  
+  // Check if there are any active frames (for detecting completion)
+  bool hasActiveFrames() const { return frame_count_ > 0; }
+  
   Value call(const Value &callee_value,
              const std::vector<Value> &args = {});
   std::string toString(const Value &value) const;

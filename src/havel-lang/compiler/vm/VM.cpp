@@ -2,6 +2,7 @@
 #include "../../utils/ErrorPrinter.hpp"
 #include "../../errors/ErrorSystem.h"
 #include "../../runtime/concurrency/Thread.hpp"
+#include "../../runtime/concurrency/Fiber.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "../../runtime/HostContext.hpp"
 
@@ -2400,6 +2401,138 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   Value result = stack.top();
   stack.pop();
   return result;
+}
+
+// ============================================================================
+// PHASE 3: VMExecutionResult implementation
+// ============================================================================
+
+VMExecutionResult::VMExecutionResult()
+    : type(YIELD), result_value(nullptr) {}
+
+// ============================================================================
+// PHASE 3: Single-step execution (executeOneStep)
+// ============================================================================
+//
+// This is the core of the Phase 3 main loop. It executes exactly one bytecode
+// instruction in the current fiber, then returns control to the main loop.
+//
+// Key guarantee: No blocking. Always returns immediately after one instruction.
+// 
+// Integration pattern in main loop:
+//   while (scheduler.hasRunnable()) {
+//     result = vm.executeOneStep(scheduler.current());
+//     // Handle result (YIELD/SUSPENDED/RETURNED/ERROR)
+//   }
+//
+
+VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
+  if (!current_fiber) {
+    return VMExecutionResult::Error("No current fiber");
+  }
+
+  // TODO: Phase 3 Enhancement - Load Fiber state into VM state
+  // For now, execute from current VM state
+  
+  // Check if we have frames to execute
+  if (frame_count_ == 0) {
+    return VMExecutionResult::Suspended();
+  }
+
+  try {
+    // Get current frame state
+    size_t active_frame_idx = frame_count_ - 1;
+    const auto *function = frame_arena_[active_frame_idx].function;
+    uint32_t ip = frame_arena_[active_frame_idx].ip;
+    size_t entry_frame_count = frame_count_;
+
+    // Boundary check - if IP past function end, return
+    if (ip >= function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      // After RETURN, check frame count to determine if function returned
+      if (frame_count_ < entry_frame_count) {
+        if (stack.empty()) {
+          return VMExecutionResult::Returned(nullptr);
+        }
+        Value ret_val = stack.top();
+        stack.pop();
+        return VMExecutionResult::Returned(ret_val);
+      }
+      return VMExecutionResult::Yield(nullptr);
+    }
+
+    // Get and execute instruction
+    const auto &instruction = function->instructions[ip];
+
+    if (debug_mode) {
+      std::cout << "IP: " << ip << " OP: " << static_cast<int>(instruction.opcode)
+                << std::endl;
+    }
+
+    // Track for profiling
+    if (profiling_enabled_) {
+      opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
+      executed_instructions_++;
+    }
+
+    // Execute the instruction
+    executeInstruction(instruction);
+
+    // Process any pending callbacks that resulted from instruction
+    processPendingCalls();
+
+    // Increment IP if the instruction didn't modify it (no CALL/RETURN)
+    if (frame_count_ > 0) {
+      active_frame_idx = frame_count_ - 1;
+      if (frame_count_ == entry_frame_count &&
+          frame_arena_[active_frame_idx].ip == ip) {
+        frame_arena_[active_frame_idx].ip++;
+      }
+    }
+
+    // Return normal yield (instruction completed successfully)
+    return VMExecutionResult::Yield(nullptr);
+
+  } catch (const ScriptThrow &thrown) {
+    // Handle script-thrown exceptions
+    if (!handleScriptThrow(thrown.value)) {
+      std::string stackTrace = buildStackTrace(frame_count_);
+      uint32_t line = 0, column = 0;
+      if (frame_count_ > 0) {
+        auto &frame = frame_arena_[frame_count_ - 1];
+        if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
+          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+          line = loc.line;
+          column = loc.column;
+        }
+      }
+      std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
+      if (line > 0) {
+        errorMsg += " at line " + std::to_string(line);
+      }
+      return VMExecutionResult::Error(errorMsg);
+    }
+    // Exception was caught and handled
+    return VMExecutionResult::Yield(nullptr);
+
+  } catch (const std::runtime_error &e) {
+    std::string msg = e.what();
+    if (frame_count_ > 0) {
+      auto &frame = frame_arena_[frame_count_ - 1];
+      if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
+        const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+        if (loc.line > 0) {
+          msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+        }
+      }
+    }
+    return VMExecutionResult::Error(msg);
+  } catch (const std::exception &e) {
+    return VMExecutionResult::Error(std::string("VM exception: ") + e.what());
+  }
+
+  return VMExecutionResult::Yield(nullptr);
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {

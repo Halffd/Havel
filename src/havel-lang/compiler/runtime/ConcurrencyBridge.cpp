@@ -7,6 +7,7 @@
 namespace havel::compiler {
 
 ConcurrencyBridge::ConcurrencyBridge(const ::havel::HostContext &ctx) : ctx_(&ctx), vm_(ctx.vm) {
+  event_queue_ = std::make_unique<EventQueue>();
   initThreadPool();
 }
 

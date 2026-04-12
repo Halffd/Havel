@@ -3,6 +3,7 @@
 #include "../../runtime/HostContext.hpp"
 #include "../core/BytecodeIR.hpp"
 #include "../core/Pipeline.hpp"
+#include "EventQueue.hpp"
 
 #include <functional>
 #include <memory>
@@ -33,6 +34,17 @@ public:
 
   // Check for expired timers (to be called from main event loop)
   void checkTimers();
+  
+  // Process all enqueued callbacks from timers, threads, channels
+  // Should be called from main event loop
+  void processEventQueue() {
+    if (event_queue_) {
+      event_queue_->processAll();
+    }
+  }
+  
+  // Get event queue for enqueuing callbacks from worker threads
+  EventQueue* eventQueue() { return event_queue_.get(); }
 
 private:
   const ::havel::HostContext *ctx_;
@@ -77,6 +89,9 @@ private:
   std::unordered_map<uint32_t, std::unique_ptr<Channel>> channels_;
   std::mutex channels_mutex_;
   uint32_t next_channel_id_ = 1;
+
+  // Event queue for non-blocking callback distribution
+  std::unique_ptr<EventQueue> event_queue_;
 
   // Thread pool initialization
   void initThreadPool(size_t pool_size = 4);

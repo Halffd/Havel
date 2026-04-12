@@ -1055,10 +1055,92 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Hotkey:
       return parseHotkeyExpression(token);
 
+    case TokenType::Tilde: {
+      // ~identifier at statement start or after = is a hotkey with "no grab" flag
+      // Check if followed by identifier, number, or another hotkey char
+      if (at().type == TokenType::Identifier ||
+          at().type == TokenType::Number ||
+          at().type == TokenType::Hotkey) {
+        return parseTildeHotkeyExpression();
+      }
+      // Otherwise treat as bitwise NOT operator
+      auto operand = parsePrattExpression(bp(BindingPower::Prefix));
+      return std::make_unique<ast::UnaryExpression>(
+          ast::UnaryExpression::UnaryOperator::Not, std::move(operand));
+    }
+
+    case TokenType::Divide: {
+      // /identifier or just / at statement start is a hotkey
+      // / => { } means just the slash key
+      // /identifier => { } means the slash key with identifier
+      if (at().type == TokenType::Identifier ||
+          at().type == TokenType::Hotkey) {
+        return parseSlashHotkeyExpression();
+      }
+      // / => means just the slash key - create synthetic token
+      if (at().type == TokenType::Arrow ||
+          at().type == TokenType::If ||
+          at().type == TokenType::When) {
+        Token syntheticHotkey("/", TokenType::Hotkey, "/", token.line, token.column);
+        return parseHotkeyExpression(syntheticHotkey);
+      }
+      // Otherwise error - division needs left operand (handled in led)
+      errorAt(token, "Unexpected token in expression");
+      return nullptr;
+    }
+
     default:
       errorAt(token, "Unexpected token in expression");
       return nullptr;
   }
+}
+
+// Parse ~identifier as hotkey with no-grab flag
+// Called when nud(Tilde) sees identifier following the tilde
+std::unique_ptr<havel::ast::Expression> Parser::parseTildeHotkeyExpression() {
+  // We've already consumed '~', now get the identifier/hotkey that follows
+  auto nextToken = at();
+  advance(); // consume the identifier
+
+  // Build the full hotkey string: ~identifier or ~identifier:timing etc
+  std::string combo = "~" + nextToken.value;
+
+  // Check for timing modifier (:100, :up, :down)
+  if (at().type == TokenType::Colon) {
+    advance(); // consume ':'
+    if (at().type == TokenType::Number || at().type == TokenType::Identifier) {
+      combo += ":" + at().value;
+      advance();
+    }
+  }
+
+  // Create a synthetic hotkey token and pass to parseHotkeyExpression
+  Token syntheticHotkey(combo, TokenType::Hotkey, combo, nextToken.line, nextToken.column);
+  return parseHotkeyExpression(syntheticHotkey);
+}
+
+// Parse /identifier as hotkey
+// Called when led(Divide) sees identifier following the slash
+std::unique_ptr<havel::ast::Expression> Parser::parseSlashHotkeyExpression() {
+  // We've already consumed '/', now get the identifier that follows
+  auto nextToken = at();
+  advance(); // consume the identifier
+
+  // Build the full hotkey string: /identifier
+  std::string combo = "/" + nextToken.value;
+
+  // Check for timing modifier (:100, :up, :down)
+  if (at().type == TokenType::Colon) {
+    advance();
+    if (at().type == TokenType::Number || at().type == TokenType::Identifier) {
+      combo += ":" + at().value;
+      advance();
+    }
+  }
+
+  // Create a synthetic hotkey token and pass to parseHotkeyExpression
+  Token syntheticHotkey(combo, TokenType::Hotkey, combo, nextToken.line, nextToken.column);
+  return parseHotkeyExpression(syntheticHotkey);
 }
 
 // Left denotation - parse infix/postfix operators

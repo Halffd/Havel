@@ -1,0 +1,34 @@
+// Test Phase 1: OS threads via host functions
+// This tests thread_spawn, thread_join, thread_send, thread_receive
+
+fn task(name) {
+  print("Task " + name + " started")
+  print("Task " + name + " completed")
+}
+
+// Test thread_spawn
+print("=== Testing thread_spawn ===")
+let t1 = thread_spawn(task, "A")
+let t2 = thread_spawn(task, "B")
+
+print("Threads spawned")
+
+// Test thread_join
+print("=== Testing thread_join ===")
+thread_join(t1)
+thread_join(t2)
+
+print("Threads joined")
+
+// Test thread_send and thread_receive
+print("=== Testing thread_send and thread_receive ===")
+fn receiver() {
+  let msg = thread_receive()
+  print("Received: " + msg)
+}
+
+let t3 = thread_spawn(receiver)
+thread_send(t3, "Hello from main!")
+thread_join(t3)
+
+print("=== Phase 1 tests completed ===")

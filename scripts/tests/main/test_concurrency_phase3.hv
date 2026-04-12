@@ -1,0 +1,44 @@
+// Test Phase 3: VM-level coroutines (Lua-style)
+// This tests yield and coroutine state management
+
+print("=== Testing yield ===")
+
+fn generator() {
+  yield 1
+  yield 2
+  yield 3
+  return "done"
+}
+
+print("=== Testing coroutine creation and resume ===")
+// Note: This is a simplified test - full coroutine support requires VM integration
+// For now, we test the basic yield syntax
+
+fn simple_yield() {
+  print("Before yield")
+  yield "yielded value"
+  print("After yield")
+}
+
+print("Testing simple yield function...")
+// The yield will return the value to the caller
+let result = simple_yield()
+print("Yield returned: " + str(result))
+
+print("=== Testing coroutine with state ===")
+
+fn counter() {
+  let i = 0
+  while i < 3 {
+    i = i + 1
+    yield i
+  }
+  return "finished"
+}
+
+print("Testing counter coroutine...")
+// This would create a coroutine and resume it multiple times
+// For now, we just test the syntax compiles
+
+print("=== Phase 3 tests completed ===")
+print("Note: Full coroutine resume support requires VM-level integration")

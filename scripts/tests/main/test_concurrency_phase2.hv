@@ -1,0 +1,54 @@
+// Test Phase 2: Timer callbacks via host functions
+// This tests interval_start, interval_stop, timeout_start, timeout_cancel
+
+print("=== Testing interval_start ===")
+
+let counter = 0
+let interval_id = interval_start(500, fn() {
+  counter = counter + 1
+  print("Interval tick: " + str(counter))
+})
+
+print("Interval started, waiting for ticks...")
+sleep(2000)
+
+print("Stopping interval")
+interval_stop(interval_id)
+
+print("=== Testing timeout_start ===")
+
+let timeout_triggered = false
+let timeout_id = timeout_start(1000, fn() {
+  timeout_triggered = true
+  print("Timeout triggered!")
+})
+
+print("Timeout scheduled, waiting...")
+sleep(1500)
+
+if timeout_triggered {
+  print("Timeout test PASSED")
+} else {
+  print("Timeout test FAILED")
+}
+
+print("=== Testing timeout_cancel ===")
+
+let timeout_triggered2 = false
+let timeout_id2 = timeout_start(2000, fn() {
+  timeout_triggered2 = true
+  print("This should not print")
+})
+
+print("Timeout scheduled, cancelling now...")
+timeout_cancel(timeout_id2)
+
+sleep(2500)
+
+if !timeout_triggered2 {
+  print("Timeout cancel test PASSED")
+} else {
+  print("Timeout cancel test FAILED")
+}
+
+print("=== Phase 2 tests completed ===")

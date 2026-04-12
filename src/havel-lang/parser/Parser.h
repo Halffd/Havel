@@ -135,6 +135,12 @@ private:
   std::unique_ptr<ast::Expression> parsePipelineExpression();
   std::unique_ptr<ast::Expression> parseQueryExpression();
   std::unique_ptr<ast::Expression> parseTernaryExpression();
+  std::unique_ptr<ast::Expression> parseThreadExpression();
+  std::unique_ptr<ast::Expression> parseIntervalExpression();
+  std::unique_ptr<ast::Expression> parseTimeoutExpression();
+  std::unique_ptr<ast::Expression> parseYieldExpression();
+  std::unique_ptr<ast::Statement> parseGoStatement();
+  std::unique_ptr<ast::Expression> parseChannelExpression();
   std::unique_ptr<ast::Expression> parseBinaryExpression();
   std::unique_ptr<ast::Expression> parsePrimaryExpression();
 

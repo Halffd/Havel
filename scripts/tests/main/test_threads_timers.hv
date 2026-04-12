@@ -56,6 +56,18 @@ go {
   }
 }
 
+{
+  let [tx, rx] = channel()
+
+  go {
+      print("waiting")
+      print(rx.recv())
+      print("resumed")
+  }
+
+  sleep(100)
+  tx.send(42)
+}
 print("=== Phase 1 tests completed ===")
 
 print("=== Testing interval and timeout ===")
@@ -163,7 +175,17 @@ if counter == expected_final_value {
     print("Interval pause/resume test FAILED")
   }
 }
+print("=== Phase 2 tests completed ===")
+{
+  print("=== Testing channels + timeout ===")
+  let [tx, rx] = channel()
 
+  timeout 500 {
+      tx.send("ok")
+  }
+
+  print(rx.recv())
+}
 // Test Phase 3: VM-level coroutines (Lua-style)
 // This tests yield and coroutine state management
 
@@ -255,7 +277,7 @@ for val in rx {
     print(val)
 }
 
-select! {
+select {
     val = rx.recv() => print(val),
     _ = tx.send(42) => print("sent"),
     timeout(1000) => print("timeout"),

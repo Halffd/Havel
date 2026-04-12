@@ -171,6 +171,17 @@ void HostBridge::install() {
     ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
   }
 
+  // Create hotkey global object with list method (after InputBridge installs hotkey.list)
+  addVmSetup([this](VM &vm) {
+    auto hotkeyObj = vm.createHostObject();
+    if (vm.getHostFunctionIndex("hotkey.list") >= 0) {
+      vm.setHostObjectField(
+          hotkeyObj, "list",
+          Value::makeHostFuncId(vm.getHostFunctionIndex("hotkey.list")));
+    }
+    vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
+  });
+
   // Install extension loading functions
   // Use raw 'this' pointer to avoid circular reference (HostBridge outlives VM
   // usage)

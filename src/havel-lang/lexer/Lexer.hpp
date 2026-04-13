@@ -246,6 +246,9 @@ private:
   void reportError(const std::string &message);
   void reportWarning(const std::string &message);
   std::string getSourceLine(size_t lineNum) const;
+
+  // Safety: report error and skip one char if loop made no progress
+  void assertProgress(size_t prevPos, const char* context = nullptr);
 };
 
 } // namespace havel

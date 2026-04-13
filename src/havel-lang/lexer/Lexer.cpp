@@ -175,6 +175,22 @@ Token Lexer::makeToken(const std::string &value, TokenType type,
   return Token(value, type, tokenRaw, line, tokenColumn, tokenLength);
 }
 
+// Progress guard: report error and skip one char if a lexer loop made no forward progress
+void Lexer::assertProgress(size_t prevPos, const char* context) {
+  if (position == prevPos && !isAtEnd()) {
+    std::string msg = "lexer made no progress";
+    if (context) msg += std::string(" at ") + context;
+    msg += " line " + std::to_string(line) + " col " + std::to_string(column);
+    if (position < source.size()) {
+      msg += " char '";
+      msg += source[position];
+      msg += "'";
+    }
+    reportError(msg);
+    advance(); // skip one char to prevent infinite loop
+  }
+}
+
 void Lexer::skipWhitespace() {
   while (!isAtEnd() && isSkippable(peek())) {
     advance();
@@ -615,6 +631,7 @@ Token Lexer::scanIdentifier() {
 
 Token Lexer::scanHotkey() {
   std::string hotkey;
+  size_t safetyPos = position;
 
   // Include the already consumed character
   hotkey += source[position - 1];
@@ -628,6 +645,7 @@ Token Lexer::scanHotkey() {
     if (c == ' ' || c == '\t') {
       if (hotkey.find('&') != std::string::npos) {
         hotkey += advance();
+        safetyPos = position;
         continue;
       }
       size_t look = position;
@@ -658,6 +676,7 @@ Token Lexer::scanHotkey() {
     if (!isHotkeyChar(c))
       break;
     hotkey += advance();
+    safetyPos = position;
   }
 
   // Special handling for plain F-keys (F1..F12)
@@ -697,12 +716,18 @@ Token Lexer::scanHotkey() {
 
 std::vector<Token> Lexer::tokenize() {
   std::vector<Token> tokens;
+  size_t tokenCount = 0;
 
   while (!isAtEnd()) {
     skipWhitespace();
 
     if (isAtEnd())
       break;
+
+    if (++tokenCount > 5'000'000) {
+      reportError("token limit exceeded (possible infinite loop)");
+      break;
+    }
 
     char c = advance();
 

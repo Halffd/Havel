@@ -2,7 +2,7 @@ struct Collection {
     items, // dynamic values
     iterator: fn
 }
-struct Point { 
+struct Point {
     x: int = 0, // integer
     y : int = 0
 }
@@ -43,7 +43,7 @@ class MousePos {
   fn moveTo(x, y, speed) {
     @x = x
     @y = y
-    mouse.move(@x, @y, speed)
+    print("mouse.move($@x, $@y, $speed)")
   }
 
   fn distance(other) {

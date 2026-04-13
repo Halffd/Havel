@@ -6918,14 +6918,14 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
 
 std::unique_ptr<havel::ast::Expression>
 Parser::parseObjectLiteral(bool unsorted) {
-  std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
-      pairs;
+  std::vector<havel::ast::ObjectLiteral::PairEntry> pairs;
 
   advance(); // consume '{'
 
-  // Parse object key-value pairs
+  // Parse entries: key:value, positional value, [expr]:value, or ...spread
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-    // Skip newlines/semicolons between pairs
+    size_t prevPos = position;
+    // Skip newlines/semicolons between entries
     while (notEOF() && (at().type == havel::TokenType::NewLine ||
                         at().type == havel::TokenType::Semicolon)) {
       advance();
@@ -6937,11 +6937,13 @@ Parser::parseObjectLiteral(bool unsorted) {
     // Check for spread operator
     if (at().type == havel::TokenType::Spread) {
       advance(); // consume '...'
-      // For object spread, we use a special key "__spread__" to mark it
       auto target = parseExpression();
       auto spreadExpr =
           std::make_unique<havel::ast::SpreadExpression>(std::move(target));
-      pairs.push_back({"__spread__", std::move(spreadExpr)});
+      havel::ast::ObjectLiteral::PairEntry entry;
+      entry.key = "__spread__";
+      entry.value = std::move(spreadExpr);
+      pairs.push_back(std::move(entry));
 
       // Allow comma, newline, or semicolon as separators
       if (at().type == havel::TokenType::Comma ||
@@ -6952,65 +6954,96 @@ Parser::parseObjectLiteral(bool unsorted) {
       continue;
     }
 
-    // Parse key - can be identifier, string, number, or certain keywords
+    // Check for computed key: [expr]:
+    if (at().type == havel::TokenType::OpenBracket) {
+      advance(); // consume '['
+      auto keyExpr = parseExpression();
+      if (at().type != havel::TokenType::CloseBracket) {
+        failAt(at(), "Expected ']' after computed key expression");
+      }
+      advance(); // consume ']'
+      if (at().type != havel::TokenType::Colon) {
+        failAt(at(), "Expected ':' after computed key");
+      }
+      advance(); // consume ':'
+      auto value = parseExpression();
+      havel::ast::ObjectLiteral::PairEntry entry;
+      entry.isComputedKey = true;
+      entry.keyExpr = std::move(keyExpr);
+      entry.value = std::move(value);
+      pairs.push_back(std::move(entry));
+
+      // Allow comma, newline, or semicolon as separators
+      if (at().type == havel::TokenType::Comma ||
+          at().type == havel::TokenType::NewLine ||
+          at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      continue;
+    }
+
+    // Try to parse as key:value pair
+    // Check if next token after potential key is a colon
+    size_t savedPos = position;
+    bool hasColon = false;
     std::string key;
-    if (at().type == havel::TokenType::Identifier ||
-        at().type == havel::TokenType::Config ||
-        at().type == havel::TokenType::Devices ||
-        at().type == havel::TokenType::Modes ||
-        at().type == havel::TokenType::Mode ||
-        at().type == havel::TokenType::Timeout ||
-        at().type == havel::TokenType::Thread ||
-        at().type == havel::TokenType::Interval ||
-        at().type == havel::TokenType::Channel ||
-        at().type == havel::TokenType::On ||
-        at().type == havel::TokenType::Off ||
-        at().type == havel::TokenType::Go ||
-        at().type == havel::TokenType::When ||
-        at().type == havel::TokenType::Class ||
-        at().type == havel::TokenType::Struct ||
-        at().type == havel::TokenType::Enum ||
-        at().type == havel::TokenType::Fn ||
-        at().type == havel::TokenType::If ||
-        at().type == havel::TokenType::For ||
-        at().type == havel::TokenType::Loop ||
-        at().type == havel::TokenType::While ||
-        at().type == havel::TokenType::Switch ||
-        at().type == havel::TokenType::Do ||
-        at().type == havel::TokenType::Return ||
-        at().type == havel::TokenType::Ret ||
-        at().type == havel::TokenType::Break ||
-        at().type == havel::TokenType::Continue ||
-        at().type == havel::TokenType::Let ||
-        at().type == havel::TokenType::Const ||
-        at().type == havel::TokenType::Try ||
-        at().type == havel::TokenType::Catch ||
-        at().type == havel::TokenType::Finally ||
-        at().type == havel::TokenType::Throw ||
-        at().type == havel::TokenType::True ||
-        at().type == havel::TokenType::False ||
-        at().type == havel::TokenType::Null ||
-        at().type == havel::TokenType::Repeat) {
+    bool validKey = false;
+
+    auto isKeyToken = [](havel::TokenType t) {
+      return t == havel::TokenType::Identifier ||
+             t == havel::TokenType::Config || t == havel::TokenType::Devices ||
+             t == havel::TokenType::Modes || t == havel::TokenType::Mode ||
+             t == havel::TokenType::Timeout || t == havel::TokenType::Thread ||
+             t == havel::TokenType::Interval || t == havel::TokenType::Channel ||
+             t == havel::TokenType::On || t == havel::TokenType::Off ||
+             t == havel::TokenType::Go || t == havel::TokenType::When ||
+             t == havel::TokenType::Class || t == havel::TokenType::Struct ||
+             t == havel::TokenType::Enum || t == havel::TokenType::Fn ||
+             t == havel::TokenType::If || t == havel::TokenType::For ||
+             t == havel::TokenType::Loop || t == havel::TokenType::While ||
+             t == havel::TokenType::Switch || t == havel::TokenType::Do ||
+             t == havel::TokenType::Return || t == havel::TokenType::Ret ||
+             t == havel::TokenType::Break || t == havel::TokenType::Continue ||
+             t == havel::TokenType::Let || t == havel::TokenType::Const ||
+             t == havel::TokenType::Try || t == havel::TokenType::Catch ||
+             t == havel::TokenType::Finally || t == havel::TokenType::Throw ||
+             t == havel::TokenType::True || t == havel::TokenType::False ||
+             t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
+             t == havel::TokenType::String || t == havel::TokenType::MultilineString ||
+             t == havel::TokenType::Number;
+    };
+
+    if (isKeyToken(at().type)) {
       key = advance().value;
-    } else if (at().type == havel::TokenType::String ||
-               at().type == havel::TokenType::MultilineString) {
-      key = advance().value;
-    } else if (at().type == havel::TokenType::Number) {
-      // Numeric keys like {0: value}
-      key = advance().value;
+      validKey = true;
+      // Skip newlines to find colon
+      size_t lookPos = position;
+      while (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::NewLine) {
+        lookPos++;
+      }
+      if (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::Colon) {
+        hasColon = true;
+      }
+    }
+
+    if (validKey && hasColon) {
+      // It's a key:value pair
+      advance(); // consume ':'
+      auto value = parseExpression();
+      havel::ast::ObjectLiteral::PairEntry entry;
+      entry.key = std::move(key);
+      entry.value = std::move(value);
+      pairs.push_back(std::move(entry));
     } else {
-      failAt(at(), "Expected identifier, string, number, or spread for object literal");
+      // Restore position - it's a positional element, not a key
+      position = savedPos;
+      // Parse as positional element
+      auto value = parseExpression();
+      havel::ast::ObjectLiteral::PairEntry entry;
+      // key is empty = positional element
+      entry.value = std::move(value);
+      pairs.push_back(std::move(entry));
     }
-
-    // Expect colon
-    if (at().type != havel::TokenType::Colon) {
-      failAt(at(), "Expected ':' after object key");
-    }
-    advance(); // consume ':'
-
-    // Parse value
-    auto value = parseExpression();
-    pairs.push_back({key, std::move(value)});
 
     // Allow comma, newline, or semicolon as separators
     if (at().type == havel::TokenType::Comma ||
@@ -7018,15 +7051,19 @@ Parser::parseObjectLiteral(bool unsorted) {
         at().type == havel::TokenType::Semicolon) {
       advance();
     } else if (at().type != havel::TokenType::CloseBrace) {
-      // Consume unexpected token to prevent infinite loops
       auto errTok = at();
       advance();
-      failAt(errTok, "Expected ',', newline, or '}' in object literal");
+      failAt(errTok, "Expected ',', newline, or '}' in collection literal");
+    }
+
+    // Progress guard
+    if (position == prevPos) {
+      failAt(at(), "Parser made no progress in collection literal");
     }
   }
 
   if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close object literal");
+    failAt(at(), "Expected '}' to close collection literal");
   }
   advance(); // consume '}'
 
@@ -8142,14 +8179,22 @@ Parser::parseKeyValueBlock() {
       // Nested block - parse recursively and wrap in an ObjectLiteral
       auto nestedPairs = parseKeyValueBlock();
 
-      // Create an object literal to hold nested pairs
+      // Convert old pair style to new PairEntry
+      std::vector<havel::ast::ObjectLiteral::PairEntry> convertedEntries;
+      convertedEntries.reserve(nestedPairs.size());
+      for (auto &p : nestedPairs) {
+        havel::ast::ObjectLiteral::PairEntry e;
+        e.key = std::move(p.first);
+        e.value = std::move(p.second);
+        convertedEntries.push_back(std::move(e));
+      }
       auto nestedObj =
-          std::make_unique<havel::ast::ObjectLiteral>(std::move(nestedPairs));
-      pairs.push_back({key, std::move(nestedObj)});
+          std::make_unique<havel::ast::ObjectLiteral>(std::move(convertedEntries));
+      pairs.push_back({std::move(key), std::move(nestedObj)});
     } else {
       // Parse value expression
       auto value = parseExpression();
-      pairs.push_back({key, std::move(value)});
+      pairs.push_back({std::move(key), std::move(value)});
     }
 
     // Handle comma or newline as separator

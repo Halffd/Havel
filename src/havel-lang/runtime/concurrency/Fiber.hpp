@@ -13,7 +13,7 @@
 
 namespace havel::compiler {
 
-using havel::core::Value;
+using ::havel::core::Value;
 
 // ============================================================================
 // CALL FRAME: Function invocation context
@@ -402,7 +402,7 @@ public:
         total += stack.data().capacity() * sizeof(Value);
         
         // Locals map
-        total += locals.bucket_count() * sizeof(void*);
+        total += locals.size() * sizeof(void*);
         for (const auto& [name, value] : locals) {
             total += name.capacity();  // String storage
         }

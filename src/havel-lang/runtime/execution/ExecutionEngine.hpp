@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../../compiler/vm/VM.hpp"
+#include "../../compiler/runtime/EventQueue.hpp"
 #include "../concurrency/Scheduler.hpp"
-#include "../concurrency/EventQueue.hpp"
 
 #include <memory>
 #include <cstdint>

@@ -1825,7 +1825,7 @@ InputBridge::handleHotkeyList(const std::vector<Value> &args,
   // Add conditional hotkeys
   for (const auto &hk : conditionalHotkeys) {
     auto ctxObj = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-        vm, "hotkey_" + std::to_string(hk.id), hk.alias, hk.key, hk.condition,
+        vm, "hotkey_" + std::to_string(hk.id), hk.key, hk.key, hk.condition,
         hk.active ? "active" : (hk.enabled ? "enabled" : "disabled"), 0);
     vm->pushHostArrayValue(result, ctxObj);
   }

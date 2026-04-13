@@ -12,7 +12,7 @@
 
 namespace havel::compiler {
 
-using havel::core::Value;
+using ::havel::core::Value;
 
 /**
  * Scheduler - Cooperative Goroutine Scheduler for Havel VM

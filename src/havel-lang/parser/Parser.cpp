@@ -2618,7 +2618,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
   if (at().type != havel::TokenType::Semicolon &&
       at().type != havel::TokenType::CloseBrace &&
       at().type != havel::TokenType::EOF_TOKEN) {
-    value = parseExpression();
+    // Special case: "return @" means "return this" (builder pattern)
+    if ((at().type == havel::TokenType::At ||
+         at().type == havel::TokenType::Hotkey) &&
+        at(1).type != havel::TokenType::Identifier &&
+        at(1).type != havel::TokenType::Arrow) {
+      advance(); // consume '@'
+      value = std::make_unique<havel::ast::ThisExpression>();
+    } else {
+      value = parseExpression();
+    }
   }
 
   // Optional semicolon

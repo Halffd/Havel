@@ -1,0 +1,244 @@
+// ============================================================================
+// Phase 3B: Coroutine/Fiber Tests
+// Testing yield, resume, state preservation, and scheduler
+// ============================================================================
+
+// Test 1: Simple yield and resume
+// A generator yields multiple values, resuming from where it suspended
+fn test_yield_and_resume() {
+  print("Test 1: Yield and resume")
+  
+  fn generator() {
+    yield 1
+    yield 2
+    yield 3
+    return 42
+  }
+  
+  let g = generator()
+  assert(g() == 1, "First yield should return 1")
+  assert(g() == 2, "Second yield should return 2")
+  assert(g() == 3, "Third yield should return 3")
+  assert(g() == 42, "Final call should return value")
+  assert(g() == null, "Dead fiber should return null")
+  
+  print("✓ Test 1 passed: Yield and resume")
+}
+
+test_yield_and_resume()
+
+// Test 2: State preservation across yields
+// Local variables must survive suspension and resumption
+fn test_state_preservation() {
+  print("Test 2: State preservation")
+  
+  fn counter() {
+    let i = 0
+    while i < 5 {
+      i = i + 1
+      yield i
+    }
+    return i
+  }
+  
+  let c = counter()
+  assert(c() == 1, "First call: i=1")
+  assert(c() == 2, "Second call: i=2")
+  assert(c() == 3, "Third call: i=3")
+  assert(c() == 4, "Fourth call: i=4")
+  assert(c() == 5, "Fifth call: i=5")
+  assert(c() == 5, "Return value preserved")
+  
+  print("✓ Test 2 passed: State preservation")
+}
+
+test_state_preservation()
+
+// Test 3: Yield in loop - Stack frame preservation
+// Loop state must be preserved across yields
+fn test_yield_in_loop() {
+  print("Test 3: Yield in loop")
+  
+  fn loop_gen() {
+    for i in 1..3 {
+      yield i
+    }
+    return "done"
+  }
+  
+  let l = loop_gen()
+  assert(l() == 1, "Loop iteration 1")
+  assert(l() == 2, "Loop iteration 2")
+  assert(l() == 3, "Loop iteration 3")
+  assert(l() == "done", "Loop completion")
+  assert(l() == null, "Dead fiber")
+  
+  print("✓ Test 3 passed: Yield in loop")
+}
+
+test_yield_in_loop()
+
+// Test 4: Nested yields - Call stack preservation
+// Inner generator yields, outer generator continues
+fn test_nested_yields() {
+  print("Test 4: Nested yields")
+  
+  fn inner() {
+    yield "inner1"
+    yield "inner2"
+    return "inner_done"
+  }
+  
+  fn outer() {
+    let x = inner()
+    yield x()  # First call to inner
+    yield x()  # Second call to inner
+    let result = x()  # Third call to inner
+    return result
+  }
+  
+  let o = outer()
+  assert(o() == "inner1", "Inner first yield")
+  assert(o() == "inner2", "Inner second yield")
+  assert(o() == "inner_done", "Inner return value")
+  assert(o() == null, "Outer fiber done")
+  
+  print("✓ Test 4 passed: Nested yields")
+}
+
+test_nested_yields()
+
+// Test 5: Multiple concurrent generators - Scheduler interleaving
+// Two generators must interleave execution fairly
+fn test_concurrent_generators() {
+  print("Test 5: Concurrent generators")
+  
+  let results = []
+  
+  fn gen1() {
+    for i in 1..3 {
+      results.push({"id": 1, "val": i})
+      yield i
+    }
+  }
+  
+  fn gen2() {
+    for i in 10..12 {
+      results.push({"id": 2, "val": i})
+      yield i
+    }
+  }
+  
+  let g1 = gen1()
+  let g2 = gen2()
+  
+  # Interleave execution
+  g1()  # Should record {"id": 1, "val": 1}
+  g2()  # Should record {"id": 2, "val": 10}
+  g1()  # Should record {"id": 1, "val": 2}
+  g2()  # Should record {"id": 2, "val": 11}
+  g1()  # Should record {"id": 1, "val": 3}
+  g2()  # Should record {"id": 2, "val": 12}
+  
+  # Results should show interleaved execution
+  assert(results.len() == 6, "Six pushes total")
+  assert(results[0]["id"] == 1, "First is gen1")
+  assert(results[1]["id"] == 2, "Second is gen2")
+  assert(results[2]["id"] == 1, "Pattern continues")
+  
+  print("✓ Test 5 passed: Concurrent generators")
+}
+
+test_concurrent_generators()
+
+// Test 6: Fiber death detection
+// Calling finished fiber multiple times returns null
+fn test_fiber_death() {
+  print("Test 6: Fiber death detection")
+  
+  fn short_gen() {
+    yield 1
+    return "done"
+  }
+  
+  let f = short_gen()
+  assert(f() == 1, "First call returns yield")
+  assert(f() == "done", "Second call returns final value")
+  assert(f() == null, "Third call returns null (dead)")
+  assert(f() == null, "Fourth call still returns null")
+  
+  print("✓ Test 6 passed: Fiber death detection")
+}
+
+test_fiber_death()
+
+// Test 7: Exception handling in generators
+// Exceptions in yielding code are properly caught
+fn test_error_in_generator() {
+  print("Test 7: Exception handling in generators")
+  
+  fn error_gen() {
+    yield 1
+    try {
+      x = 1 / 0  # Division by zero
+      yield x
+    } catch e {
+      yield "error caught"
+    }
+    return "recovered"
+  }
+  
+  let e = error_gen()
+  assert(e() == 1, "First yield succeeds")
+  assert(e() == "error caught", "Exception caught, yields recovery")
+  assert(e() == "recovered", "Generator continues after error")
+  
+  print("✓ Test 7 passed: Exception handling")
+}
+
+test_error_in_generator()
+
+// Test 8: Deep stack preservation
+// Multiple function calls, then yields, then resumes
+fn test_deep_stack() {
+  print("Test 8: Deep stack preservation")
+  
+  fn depth3() {
+    yield "d3-1"
+    yield "d3-2"
+  }
+  
+  fn depth2() {
+    let x = depth3()
+    yield x()  # d3-1
+    yield "d2"
+    yield x()  # d3-2
+    return "d2-end"
+  }
+  
+  fn depth1() {
+    let y = depth2()
+    yield y()  # d3-1
+    yield "d1"
+    yield y()  # d2
+    return y()  # d3-2, then d2-end
+  }
+  
+  let d = depth1()
+  r1 = d()  # d3-1
+  r2 = d()  # d1
+  r3 = d()  # d2
+  r4 = d()  # d3-2 then d2-end
+  
+  assert(r1 == "d3-1", "Deep yield 1")
+  assert(r2 == "d1", "Shallow yield")
+  assert(r3 == "d2", "Middle yield")
+  assert(r4 == "d2-end", "Final return")
+  
+  print("✓ Test 8 passed: Deep stack preservation")
+}
+
+test_deep_stack()
+
+print("\n✅ All Phase 3B coroutine tests passed!")
+print("✅ Validates: yield/resume, state preservation, scheduler, fiber lifecycle")

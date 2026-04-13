@@ -5,7 +5,7 @@ print("=== HTTP Module Tests ===\n")
 // Test 1: http.get
 print("1. Testing http.get:")
 let url = "https://httpbin.org/get"
-let response = await http.get(url, {
+let response = http.get(url, {
   timeout: 5000, 
   headers: {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
@@ -39,7 +39,7 @@ print("")
 print("3. Testing http.download:")
 let downloadUrl = "https://httpbin.org/bytes/100"
 let downloadPath = "/tmp/test_download.bin"
-let downloadSuccess = await http.download(downloadUrl, downloadPath, 5000)
+let downloadSuccess = http.download(downloadUrl, downloadPath, 5000)
 print("  Download success: ")
 print(downloadSuccess)
 
@@ -48,7 +48,7 @@ print(downloadSuccess)
 print("4. Testing http.post:")
 let postUrl = "https://httpbin.org/post"
 let postBody = json.stringify({ foo: "bar", count: 42 })
-let postResp = await http.post(postUrl, postBody, {
+let postResp = http.post(postUrl, postBody, {
   timeout: 5000,
   headers: {
     "Content-Type": "application/json",
@@ -73,7 +73,7 @@ print("")
 print("5. Testing http.put:")
 let putUrl = "https://httpbin.org/put"
 let putBody = json.stringify({ update: "something", num: 7 })
-let putResp = await http.put(putUrl, putBody, {
+let putResp = http.put(putUrl, putBody, {
   headers: { "Content-Type": "application/json" },
   timeout: 3000
 })
@@ -89,7 +89,7 @@ print("")
 print("6. Testing http.patch:")
 let patchUrl = "https://httpbin.org/patch"
 let patchBody = json.stringify({ patched: true })
-let patchResp = await http.patch(patchUrl, patchBody, {
+let patchResp = http.patch(patchUrl, patchBody, {
   headers: { "Content-Type": "application/json" }
 })
 if patchResp.ok {
@@ -103,7 +103,7 @@ print("")
 // Test 7: http.delete
 print("7. Testing http.delete:")
 let deleteUrl = "https://httpbin.org/delete"
-let deleteResp = await http.delete(deleteUrl, {
+let deleteResp = http.delete(deleteUrl, {
   timeout: 5000
 })
 if deleteResp.ok {
@@ -134,7 +134,7 @@ print("9. Testing http.upload:")
 let uploadUrl = "https://httpbin.org/post"
 let testUploadPath = downloadPath // reuse the downloaded file if present
 if fs.exists(testUploadPath) {
-  let uploadResp = await http.upload(uploadUrl, testUploadPath, {
+  let uploadResp = http.upload(uploadUrl, testUploadPath, {
     timeout: 7000
   })
   if uploadResp.ok {
@@ -154,7 +154,7 @@ print("")
 
 // Test 10: network.ping
 print("10. Testing network.ping:")
-let pingResult = await network.ping("httpbin.org", 2500)
+let pingResult = network.ping("httpbin.org", 2500)
 if pingResult != null {
   print(f"Ping httpbin.org: {pingResult} ms")
 } else {
@@ -164,7 +164,7 @@ print("")
 
 // Test 11: network.resolve
 print("11. Testing network.resolve:")
-let resolvedIp = await network.resolve("httpbin.org")
+let resolvedIp = network.resolve("httpbin.org")
 print("  httpbin.org resolved to: ")
 print(resolvedIp)
 print("")

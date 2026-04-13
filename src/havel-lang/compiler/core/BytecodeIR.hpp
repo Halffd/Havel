@@ -327,6 +327,7 @@ struct BytecodeFunction {
   std::vector<std::string> param_names;  // Parameter names
   std::string source_file;               // Source file path
   uint32_t source_line = 0;              // Definition line number
+  bool is_generator = false;             // Phase 3B-3: True if function contains yield
 
   BytecodeFunction(std::string n, uint32_t params = 0, uint32_t locals = 0)
       : name(std::move(n)), param_count(params), local_count(locals) {}

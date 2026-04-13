@@ -530,6 +530,12 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }
+  
+  // Phase 3B-3: Detect if this function contains yield expressions
+  if (function.body) {
+    current_function->is_generator = functionContainsYield(*function.body);
+  }
+  
   leaveFunction();
 }
 
@@ -648,6 +654,13 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   } else {
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
+  }
+
+  // Phase 3B-3: Detect if this lambda contains yield expressions
+  if (lambda.body) {
+    // For lambda expressions, we need to check if the body contains yield
+    // Note: lambda.body is a Statement, so we use statementContainsYield directly
+    current_function->is_generator = statementContainsYield(*lambda.body);
   }
 
   leaveFunction();
@@ -799,6 +812,11 @@ void ByteCompiler::compileClassMethod(
   } else {
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
+  }
+
+  // Phase 3B-3: Detect if this class method contains yield expressions
+  if (method.body) {
+    current_function->is_generator = functionContainsYield(*method.body);
   }
 
   current_class_name_ = prev_class_name;
@@ -5464,6 +5482,224 @@ void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expres
   emit(OpCode::CALL_HOST, std::vector<Value>{
       Value::makeStringValId(strId),
       Value(static_cast<uint32_t>(0))});
+}
+
+// Phase 3B-3: Generator Detection Implementation
+bool ByteCompiler::functionContainsYield(const ast::BlockStatement &body) const {
+  // BlockStatement stores statements in `body` field (vector of unique_ptr<Statement>)
+  for (const auto &stmt : body.body) {
+    if (stmt && statementContainsYield(*stmt)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
+  switch (stmt.kind) {
+    case ast::NodeType::ExpressionStatement: {
+      const auto &expr_stmt = static_cast<const ast::ExpressionStatement &>(stmt);
+      return expr_stmt.expression && expressionContainsYield(*expr_stmt.expression);
+    }
+    
+    case ast::NodeType::BlockStatement: {
+      const auto &block = static_cast<const ast::BlockStatement &>(stmt);
+      return functionContainsYield(block);
+    }
+    
+    case ast::NodeType::IfStatement: {
+      const auto &if_stmt = static_cast<const ast::IfStatement &>(stmt);
+      if (if_stmt.condition && expressionContainsYield(*if_stmt.condition)) {
+        return true;
+      }
+      if (if_stmt.consequence && statementContainsYield(*if_stmt.consequence)) {
+        return true;
+      }
+      if (if_stmt.alternative && statementContainsYield(*if_stmt.alternative)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::WhileStatement: {
+      const auto &while_stmt = static_cast<const ast::WhileStatement &>(stmt);
+      if (while_stmt.condition && expressionContainsYield(*while_stmt.condition)) {
+        return true;
+      }
+      if (while_stmt.body && statementContainsYield(*while_stmt.body)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::DoWhileStatement: {
+      const auto &do_while = static_cast<const ast::DoWhileStatement &>(stmt);
+      if (do_while.body && statementContainsYield(*do_while.body)) {
+        return true;
+      }
+      if (do_while.condition && expressionContainsYield(*do_while.condition)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::ForStatement: {
+      const auto &for_stmt = static_cast<const ast::ForStatement &>(stmt);
+      if (for_stmt.iterable && expressionContainsYield(*for_stmt.iterable)) {
+        return true;
+      }
+      if (for_stmt.body && statementContainsYield(*for_stmt.body)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::LoopStatement: {
+      const auto &loop = static_cast<const ast::LoopStatement &>(stmt);
+      if (loop.condition && expressionContainsYield(*loop.condition)) {
+        return true;
+      }
+      if (loop.countExpr && expressionContainsYield(*loop.countExpr)) {
+        return true;
+      }
+      if (loop.body && statementContainsYield(*loop.body)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::TryExpression: {
+      const auto &try_expr = static_cast<const ast::TryExpression &>(stmt);
+      if (try_expr.tryBody && statementContainsYield(*try_expr.tryBody)) {
+        return true;
+      }
+      if (try_expr.catchBody && statementContainsYield(*try_expr.catchBody)) {
+        return true;
+      }
+      if (try_expr.finallyBlock && statementContainsYield(*try_expr.finallyBlock)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::HotkeyBinding: {
+      const auto &hotkey = static_cast<const ast::HotkeyBinding &>(stmt);
+      if (hotkey.action && statementContainsYield(*hotkey.action)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::WaitStatement: {
+      const auto &wait = static_cast<const ast::WaitStatement &>(stmt);
+      return wait.condition && expressionContainsYield(*wait.condition);
+    }
+    
+    default:
+      return false;
+  }
+}
+
+bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
+  // First check if this is a yield expression directly
+  if (expr.kind == ast::NodeType::YieldExpression) {
+    return true;
+  }
+  
+  // Then check nested expressions recursively
+  switch (expr.kind) {
+    case ast::NodeType::BinaryExpression: {
+      const auto &binary = static_cast<const ast::BinaryExpression &>(expr);
+      return (binary.left && expressionContainsYield(*binary.left)) ||
+             (binary.right && expressionContainsYield(*binary.right));
+    }
+    
+    case ast::NodeType::UnaryExpression: {
+      const auto &unary = static_cast<const ast::UnaryExpression &>(expr);
+      return unary.operand && expressionContainsYield(*unary.operand);
+    }
+    
+    case ast::NodeType::CallExpression: {
+      const auto &call = static_cast<const ast::CallExpression &>(expr);
+      if (call.callee && expressionContainsYield(*call.callee)) {
+        return true;
+      }
+      // Check positional arguments
+      for (const auto &arg : call.args) {
+        if (arg && expressionContainsYield(*arg)) {
+          return true;
+        }
+      }
+      // Check keyword arguments
+      for (const auto &[key, kwarg] : call.kwargs) {
+        if (kwarg && expressionContainsYield(*kwarg)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    case ast::NodeType::IfExpression: {
+      const auto &if_expr = static_cast<const ast::IfExpression &>(expr);
+      if (if_expr.condition && expressionContainsYield(*if_expr.condition)) {
+        return true;
+      }
+      if (if_expr.thenBranch && expressionContainsYield(*if_expr.thenBranch)) {
+        return true;
+      }
+      if (if_expr.elseBranch && expressionContainsYield(*if_expr.elseBranch)) {
+        return true;
+      }
+      return false;
+    }
+    
+    case ast::NodeType::ArrayLiteral: {
+      const auto &array = static_cast<const ast::ArrayLiteral &>(expr);
+      for (const auto &elem : array.elements) {
+        if (elem && expressionContainsYield(*elem)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    case ast::NodeType::ObjectLiteral: {
+      const auto &obj = static_cast<const ast::ObjectLiteral &>(expr);
+      for (const auto &pair : obj.pairs) {
+        if (pair.second && expressionContainsYield(*pair.second)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    case ast::NodeType::MemberExpression: {
+      const auto &member = static_cast<const ast::MemberExpression &>(expr);
+      return member.object && expressionContainsYield(*member.object);
+    }
+    
+    case ast::NodeType::IndexExpression: {
+      const auto &index = static_cast<const ast::IndexExpression &>(expr);
+      return (index.object && expressionContainsYield(*index.object)) ||
+             (index.index && expressionContainsYield(*index.index));
+    }
+    
+    case ast::NodeType::LambdaExpression: {
+      // Lambdas are separate functions, don't inherit outer function's yield detection
+      return false;
+    }
+    
+    case ast::NodeType::TryExpression: {
+      // Note: TryExpression is an expression, not a statement
+      // It may contain statements, but we need to be careful with the structure
+      // For now, conservatively assume it might contain yield
+      // (the actual structure should be checked in AST.h)
+      return true; // TODO: Implement proper TryExpression yield detection
+    }
+    
+    default:
+      return false;
+  }
 }
 
 } // namespace havel::compiler

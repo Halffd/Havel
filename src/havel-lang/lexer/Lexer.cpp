@@ -719,17 +719,39 @@ std::vector<Token> Lexer::tokenize() {
       if (!tokens.empty()) {
         TokenType prevType = tokens.back().type;
         inExpressionContext = (prevType == TokenType::Number ||
+          prevType == TokenType::String || prevType == TokenType::RegexString ||
           prevType == TokenType::Identifier ||
-          prevType == TokenType::String ||
+          prevType == TokenType::True || prevType == TokenType::False ||
+          prevType == TokenType::Null ||
           prevType == TokenType::CloseParen ||
           prevType == TokenType::CloseBracket ||
+          prevType == TokenType::CloseBrace ||
           prevType == TokenType::Not ||
           prevType == TokenType::Or || prevType == TokenType::And ||
-          prevType == TokenType::Assign || prevType == TokenType::If ||
-          prevType == TokenType::While || prevType == TokenType::For ||
-          prevType == TokenType::In || prevType == TokenType::Matches ||
-          prevType == TokenType::Tilde || prevType == TokenType::Comma ||
-          prevType == TokenType::Dot || prevType == TokenType::Arrow);
+          prevType == TokenType::Assign ||
+          prevType == TokenType::If || prevType == TokenType::While ||
+          prevType == TokenType::For || prevType == TokenType::In ||
+          prevType == TokenType::Matches ||
+          prevType == TokenType::Tilde ||
+          prevType == TokenType::Comma ||
+          prevType == TokenType::Dot ||
+          prevType == TokenType::Arrow || prevType == TokenType::ReturnType ||
+          prevType == TokenType::Plus || prevType == TokenType::Minus ||
+          prevType == TokenType::Multiply || prevType == TokenType::Divide ||
+          prevType == TokenType::Modulo || prevType == TokenType::Power ||
+          prevType == TokenType::Backslash ||
+          prevType == TokenType::Equals || prevType == TokenType::NotEquals ||
+          prevType == TokenType::Less || prevType == TokenType::Greater ||
+          prevType == TokenType::LessEquals || prevType == TokenType::GreaterEquals ||
+          prevType == TokenType::PlusAssign || prevType == TokenType::MinusAssign ||
+          prevType == TokenType::MultiplyAssign || prevType == TokenType::DivideAssign ||
+          prevType == TokenType::Question || prevType == TokenType::Colon ||
+          prevType == TokenType::ColonColon ||
+          prevType == TokenType::PlusPlus || prevType == TokenType::MinusMinus ||
+          prevType == TokenType::Not ||
+          prevType == TokenType::Nullish || prevType == TokenType::Pipe ||
+          prevType == TokenType::Matches || prevType == TokenType::Tilde ||
+          prevType == TokenType::Return);
       }
 
       // If followed by identifier, '(', '[', string, or number

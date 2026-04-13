@@ -109,6 +109,7 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   }
 
   LexicalResolver resolver;
+  resolver.setKnownGlobals(known_globals_);
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
     // Collect all errors

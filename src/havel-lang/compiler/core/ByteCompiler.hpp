@@ -39,6 +39,10 @@ public:
   void addHostGlobal(std::string name) {
     host_global_names_.insert(std::move(name));
   }
+  // Pre-populate known global names (for REPL persistence across compiles)
+  void setKnownGlobals(const std::unordered_set<std::string> &names) {
+    known_globals_ = names;
+  }
   const LexicalResolutionResult &lexicalResolution() const {
     return lexical_resolution_;
   }
@@ -208,6 +212,9 @@ private:
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};
+
+  // Pre-known globals (from previous REPL sessions)
+  std::unordered_set<std::string> known_globals_;
 
   // Module loading
   ModuleLoader *module_loader_ = nullptr;

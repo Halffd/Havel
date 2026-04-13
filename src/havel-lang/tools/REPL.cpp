@@ -236,6 +236,10 @@ bool REPL::execute(const std::string& code) {
     compiler::ByteCompiler byteCompiler;
     parser::Parser parser;
 
+    // Tell compiler about globals from previous REPL lines
+    // so `let x = 5` on line 1 means `x` resolves as Global on line 2
+    byteCompiler.setKnownGlobals(known_globals_);
+
     auto program = parser.produceAST(code);
     if (!program || parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
@@ -257,6 +261,12 @@ bool REPL::execute(const std::string& code) {
     }
 
     auto chunk = byteCompiler.compile(*program);
+
+    // Collect new global names from the resolver and add to known_globals_
+    // so subsequent REPL lines know about variables declared here
+    for (const auto& name : byteCompiler.lexicalResolution().global_variables) {
+      known_globals_.insert(name);
+    }
 
     // Execute persistently (preserves globals between REPL lines)
     auto result = vm_->executePersistent(*chunk, "__main__");

@@ -42,6 +42,12 @@ public:
   LexicalResolver() = default;
 
   LexicalResolutionResult resolve(const ast::Program &program);
+
+  // Pre-populate known global names (for REPL persistence across compiles)
+  void setKnownGlobals(const std::unordered_set<std::string> &names) {
+    known_globals_ = names;
+  }
+
   const std::vector<std::string> &errors() const { return errors_; }
 
 private:
@@ -62,6 +68,7 @@ private:
   std::unordered_set<std::string> top_level_functions_;
   std::unordered_set<std::string> top_level_structs_;
   std::unordered_set<std::string> global_variables_;  // Top-level let declarations
+  std::unordered_set<std::string> known_globals_;  // Pre-known globals (from previous REPL lines)
   std::vector<FunctionContext> function_stack_;
 
   // Simple resolution: if not local/upvalue, it's a global

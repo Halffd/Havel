@@ -9,9 +9,10 @@
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
-#include <string>
-#include <memory>
 #include <functional>
+#include <memory>
+#include <string>
+#include <unordered_set>
 
 namespace havel { class IHostAPI; }
 
@@ -138,11 +139,14 @@ private:
   // Handlers
   std::function<void(const std::string&)> printHandler_;
   std::function<std::string(const std::string&)> inputHandler_;
-  
+
   // Execution context
   std::string accumulatedInput;
   std::string inputHistory;  // All previous input for recompilation
   int currentLine = 0;
+
+  // Known globals from previous executions (so compiler doesn't re-declare them)
+  std::unordered_set<std::string> known_globals_;
 };
 
 } // namespace havel::repl

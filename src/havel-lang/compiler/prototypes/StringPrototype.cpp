@@ -104,15 +104,6 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  regProto("capital", 1, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeNull();
-    std::string s = extractString(vm, args[0]);
-    if (s.empty()) { auto ref = vm.getHeap().allocateString(""); return Value::makeStringId(ref.id); }
-    s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    auto ref = vm.getHeap().allocateString(std::move(s));
-    return Value::makeStringId(ref.id);
-  });
-
   regProto("sub", 3, [&vm](const std::vector<Value>& args) {
     if (args.size() < 3) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
@@ -235,21 +226,21 @@ void registerStringPrototype(VM& vm) {
     if (args.empty()) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
     if (s.empty()) { auto ref = vm.getHeap().allocateString(""); return Value::makeStringId(ref.id); }
-    
+
     int64_t sz = static_cast<int64_t>(s.size());
-    
+
     // Check which args are specified
     bool start_specified = args.size() > 1 && !args[1].isNull();
     bool end_specified = args.size() > 2 && !args[2].isNull();
     bool step_specified = args.size() > 3 && !args[3].isNull();
-    
+
     // Parse step first (affects defaults for start/end)
     int64_t step = 1;
     if (step_specified) {
       step = args[3].isInt() ? args[3].asInt() : 1;
       if (step == 0) step = 1;
     }
-    
+
     // Parse start with proper defaults
     int64_t start;
     if (start_specified) {
@@ -260,7 +251,7 @@ void registerStringPrototype(VM& vm) {
     } else {
       start = (step > 0) ? 0 : sz - 1;
     }
-    
+
     // Parse end with proper defaults
     int64_t end;
     if (end_specified) {
@@ -271,7 +262,7 @@ void registerStringPrototype(VM& vm) {
     } else {
       end = (step > 0) ? sz : -1;
     }
-    
+
     // Check bounds
     if (step > 0 && start >= end) { auto ref = vm.getHeap().allocateString(""); return Value::makeStringId(ref.id); }
     if (step < 0 && start <= end) { auto ref = vm.getHeap().allocateString(""); return Value::makeStringId(ref.id); }
@@ -287,6 +278,35 @@ void registerStringPrototype(VM& vm) {
       }
     }
     auto ref = vm.getHeap().allocateString(std::move(result));
+    return Value::makeStringId(ref.id);
+  });
+
+  // substr alias for sub
+  regProto("substr", 3, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 3) return Value::makeNull();
+    std::string s = extractString(vm, args[0]);
+    int64_t start = args[1].isInt() ? args[1].asInt() : 0;
+    int64_t len = args[2].isInt() ? args[2].asInt() : static_cast<int64_t>(s.size());
+    if (start < 0) start = std::max(static_cast<int64_t>(0), static_cast<int64_t>(s.size()) + start);
+    auto ref = vm.getHeap().allocateString(s.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
+    return Value::makeStringId(ref.id);
+  });
+
+  // concat: "hello".concat(" world") -> "hello world"
+  regProto("concat", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    std::string s = extractString(vm, args[0]);
+    std::string other = extractStringArg(vm, args, 1, "");
+    auto ref = vm.getHeap().allocateString(s + other);
+    return Value::makeStringId(ref.id);
+  });
+
+  // reversed: "hello".reversed() -> "olleh"
+  regProto("reversed", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s = extractString(vm, args[0]);
+    std::reverse(s.begin(), s.end());
+    auto ref = vm.getHeap().allocateString(std::move(s));
     return Value::makeStringId(ref.id);
   });
 

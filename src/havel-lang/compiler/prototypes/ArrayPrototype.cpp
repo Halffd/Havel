@@ -408,6 +408,127 @@ void registerArrayPrototype(VM& vm) {
     }
     return Value::makeNull();
   });
+
+  // extend: [1,2,3].extend([4,5]) -> [1,2,3,4,5] (mutates)
+  regProto("extend", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isArrayId() && args[1].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      auto* other = vm.getHeap().array(args[1].asArrayId());
+      if (arr && !arr->frozen && other) {
+        arr->insert(arr->end(), other->begin(), other->end());
+        return args[0];
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // delete: [1,2,3].delete(2) -> [1,3] (removes first occurrence)
+  regProto("delete", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      if (arr && !arr->frozen) {
+        for (auto it = arr->begin(); it != arr->end(); ++it) {
+          if (vm.valuesEqualDeepPublic(*it, args[1])) {
+            arr->erase(it);
+            return args[0];
+          }
+        }
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // clear: [1,2,3].clear() -> []
+  regProto("clear", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      if (arr && !arr->frozen) {
+        arr->clear();
+      }
+    }
+    return args[0];
+  });
+
+  // clone: [1,2,3].clone() -> [1,2,3] (shallow copy)
+  regProto("clone", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      if (arr) {
+        auto resultRef = vm.getHeap().allocateArray();
+        auto* result = vm.getHeap().array(resultRef.id);
+        result->assign(arr->begin(), arr->end());
+        return Value::makeArrayId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // count: [1,2,2,3].count(2) -> 2
+  regProto("count", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeInt(0);
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      if (arr) {
+        int64_t count = 0;
+        for (const auto& v : *arr) {
+          if (vm.valuesEqualDeepPublic(v, args[1])) count++;
+        }
+        return Value::makeInt(count);
+      }
+    }
+    return Value::makeInt(0);
+  });
+
+  // groupBy: [1,2,3].groupBy(x => x % 2) -> {"odd":[1,3], "even":[2]}
+  regProto("groupBy", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      if (arr) {
+        auto resultRef = vm.getHeap().allocateObject();
+        auto* result = vm.getHeap().object(resultRef.id);
+        for (const auto& v : *arr) {
+          auto keyVal = vm.call(args[1], {v});
+          std::string key;
+          if (keyVal.isStringValId() && vm.getCurrentChunk()) {
+            key = vm.getCurrentChunk()->getString(keyVal.asStringValId());
+          } else if (keyVal.isStringId() && vm.getHeap().string(keyVal.asStringId())) {
+            key = *vm.getHeap().string(keyVal.asStringId());
+          } else if (keyVal.isInt()) {
+            key = std::to_string(keyVal.asInt());
+          } else {
+            key = vm.toString(keyVal);
+          }
+          auto* bucket = result->get(key);
+          if (!bucket || !bucket->isArrayId()) {
+            auto arrRef = vm.getHeap().allocateArray();
+            vm.getHeap().array(arrRef.id)->push_back(v);
+            result->set(key, Value::makeArrayId(arrRef.id));
+          } else {
+            auto* bucketArr = vm.getHeap().array(bucket->asArrayId());
+            if (bucketArr) bucketArr->push_back(v);
+          }
+        }
+        return Value::makeObjectId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // empty: [1,2,3].empty() -> false
+  regProto("empty", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeBool(true);
+    if (args[0].isArrayId()) {
+      auto* arr = vm.getHeap().array(args[0].asArrayId());
+      return Value::makeBool(!arr || arr->empty());
+    }
+    return Value::makeBool(true);
+  });
+
 }
 
 } // namespace havel::compiler::prototypes

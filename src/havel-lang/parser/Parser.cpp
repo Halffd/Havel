@@ -28,6 +28,17 @@ void Parser::reportErrorAt(const Token &token, const std::string &message) {
       token.line, token.column, token.length);
 }
 
+// ============================================================================
+// PARSER SAFETY CHECKS
+// ============================================================================
+
+void Parser::checkTokenLimit() {
+  if (tokens_consumed_ > MAX_PARSER_TOKENS) {
+    throw ParseError(at().line, at().column,
+      "parser timeout: exceeded " + std::to_string(MAX_PARSER_TOKENS) + " tokens (possible infinite loop)");
+  }
+}
+
 std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {
   return std::make_unique<ast::Identifier>(token.value, token.line,
                                            token.column);
@@ -115,6 +126,11 @@ const havel::Token &Parser::advance() {
                                      0, 0);
   if (position >= tokens.size()) {
     return eofToken;
+  }
+  tokens_consumed_++;
+  if (tokens_consumed_ > MAX_PARSER_TOKENS) {
+    throw ParseError(tokens[position].line, tokens[position].column,
+      "parser timeout: exceeded " + std::to_string(MAX_PARSER_TOKENS) + " tokens (possible infinite loop)");
   }
   return tokens[position++];
 }
@@ -536,6 +552,7 @@ bool Parser::isInfixOperator(TokenType type) const {
 // Note: getBindingPower and getRightBindingPower now use lookup tables (see inline definitions below)
 
 std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
+  DepthGuard depth_guard(recursion_depth_);
   if (debug.parser) {
     havel::debug("PRATT: parseExpression with rbp={} at {}", rbp, at().toString());
   }

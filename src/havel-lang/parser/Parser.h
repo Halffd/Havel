@@ -4,11 +4,39 @@
 #include "../ast/AST.h"
 #include "../common/Debug.hpp"
 #include "../lexer/Lexer.hpp"
+#include <cassert>
 #include <memory>
 #include <stdexcept>
 #include <vector>
 
 namespace havel::parser {
+
+// ============================================================================
+// PARSER SAFETY GUARDS
+// ============================================================================
+
+static constexpr size_t MAX_PARSER_TOKENS = 5'000'000; // Prevent infinite parsing
+static constexpr int MAX_PARSER_DEPTH = 512;           // Prevent stack overflow
+
+// ProgressGuard: RAII guard that asserts loop makes forward progress
+// Usage: at the top of a while loop body:
+//   size_t prev = position;
+//   while (condition) {
+//     ProgressGuard pg(prev, position);
+//     // ... parse stuff that should consume tokens ...
+//     prev = position;
+//   }
+class ProgressGuard {
+  const size_t start_pos;
+  size_t &pos_ref;
+public:
+  ProgressGuard(size_t start, size_t &pos) : start_pos(start), pos_ref(pos) {}
+  ~ProgressGuard() {
+    assert(pos_ref > start_pos && "parser while loop made no progress - potential infinite loop");
+  }
+  ProgressGuard(const ProgressGuard &) = delete;
+  ProgressGuard &operator=(const ProgressGuard &) = delete;
+};
 
 class ParseError : public std::runtime_error {
 public:
@@ -20,6 +48,20 @@ public:
   size_t line;
   size_t column;
   size_t length;
+};
+
+// DepthGuard: RAII guard for recursion depth
+// Throws ParseError if depth exceeds MAX_PARSER_DEPTH
+// Must be defined after ParseError since it throws it
+struct DepthGuard {
+  int &depth;
+  explicit DepthGuard(int &d) : depth(d) {
+    if (++depth > MAX_PARSER_DEPTH)
+      throw ParseError(0, 0, "max recursion depth exceeded (" + std::to_string(MAX_PARSER_DEPTH) + ")");
+  }
+  ~DepthGuard() { --depth; }
+  DepthGuard(const DepthGuard &) = delete;
+  DepthGuard &operator=(const DepthGuard &) = delete;
 };
 
 // Error recovery mode
@@ -77,6 +119,10 @@ private:
   std::vector<Token> tokens;
   size_t position = 0;
 
+  // Safety guards
+  size_t tokens_consumed_ = 0;
+  int recursion_depth_ = 0;
+
   // Prevent copying/moving - Parser must not be copied or moved
   // to avoid memory corruption and invalid state
   Parser(const Parser &) = delete;
@@ -117,6 +163,9 @@ private:
 
   // Error recovery
   void errorAt(const Token &token, const std::string &message);
+
+  // Safety checks
+  void checkTokenLimit();
 
   // Helper methods - return const references to avoid copies
   const Token &at(size_t offset = 0) const;

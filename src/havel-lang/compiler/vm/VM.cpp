@@ -2766,6 +2766,46 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     COMPILER_THROW("Host function call via doCall not yet supported with NaN boxing");
   }
 
+  // Handle coroutine resume
+  if (callee_value.isCoroutineId()) {
+    uint32_t coId = callee_value.asCoroutineId();
+    auto *co = heap_.coroutine(coId);
+    if (!co) {
+      COMPILER_THROW("Coroutine not found: " + std::to_string(coId));
+    }
+    if (co->state == GCHeap::Coroutine::Done) {
+      pushStack(Value::makeNull());
+      return;
+    }
+
+    // Set current coroutine context
+    current_coroutine_id_ = coId;
+
+    // Save caller's state so we can restore it when the coroutine yields/returns
+    co->saved_frame_count = frame_count_;
+    co->saved_locals = locals;
+
+    // Push a frame for coroutine execution on the existing stack
+    const auto *chunk = current_chunk;
+    const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
+    if (!func) {
+      COMPILER_THROW("Function not found for coroutine");
+    }
+
+    // Restore coroutine's locals for execution
+    locals = co->locals;
+
+    if (frame_arena_.size() <= frame_count_) {
+      frame_arena_.push_back(CallFrame{func, co->ip, 0, 0});
+    } else {
+      frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, 0};
+    }
+    frame_count_++;
+
+    co->state = GCHeap::Coroutine::Runnable;
+    return;
+  }
+
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
   if (callee_value.isFunctionObjId()) {
@@ -2803,6 +2843,40 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
                              std::to_string(function_index));
+  }
+
+  // Detect if function contains YIELD (generator function)
+  // If so, create a coroutine object and return it instead of executing
+  bool is_generator = false;
+  for (const auto &instr : callee->instructions) {
+    if (instr.opcode == OpCode::YIELD) {
+      is_generator = true;
+      break;
+    }
+  }
+
+  if (is_generator) {
+    // Create coroutine object for this generator function
+    uint32_t coId = heap_.allocateCoroutine(function_index, 0);
+    auto *co = heap_.coroutine(coId);
+    co->state = GCHeap::Coroutine::Runnable;
+
+    // Initialize locals with arguments
+    co->locals.resize(callee->local_count, nullptr);
+    co->ip = 0;
+
+    // Copy args into coroutine locals (same as normal call)
+    size_t base = 0;
+    for (uint32_t i = 0; i < callee->param_count; i++) {
+      if (i < args.size()) {
+        co->locals[base + i] = std::move(args[i]);
+      } else if (i < callee->default_values.size() && callee->default_values[i]) {
+        co->locals[base + i] = (*callee->default_values[i]);
+      }
+    }
+
+    pushStack(Value::makeCoroutineId(coId));
+    return;
   }
 
   // Debug
@@ -3140,6 +3214,20 @@ void VM::doReturn() {
 
   if (locals.size() >= finished.locals_base) {
     locals.resize(finished.locals_base);
+  }
+
+  // If returning from a coroutine, restore caller's state
+  if (current_coroutine_id_ != 0) {
+    auto *co = heap_.coroutine(current_coroutine_id_);
+    if (co) {
+      // Mark coroutine as done
+      co->state = GCHeap::Coroutine::Done;
+
+      // Restore caller's state
+      frame_count_ = co->saved_frame_count;
+      locals = co->saved_locals;
+      current_coroutine_id_ = 0;
+    }
   }
 
   pushStack(ret);
@@ -5184,39 +5272,37 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::YIELD: {
     // Yield from coroutine (with optional value)
     Value yield_value = popStack();
-    
+
     // Save current coroutine state if we're in a coroutine
     if (current_coroutine_id_ != 0) {
       auto *co = heap_.coroutine(current_coroutine_id_);
       if (co) {
-        // Save instruction pointer
-        co->ip = currentFrame().ip;
-        
-        // Save stack
-        co->stack.clear();
-        std::stack<Value> temp_stack = stack;
-        while (!temp_stack.empty()) {
-          co->stack.push_back(temp_stack.top());
-          temp_stack.pop();
-        }
-        std::reverse(co->stack.begin(), co->stack.end());
-        
-        // Save locals
+        // Save instruction pointer (advance past YIELD since dispatch loop won't increment for us)
+        co->ip = currentFrame().ip + 1;
+
+        // Save coroutine's locals
         co->locals = locals;
-        
+
         // Save yield value
         co->yield_values = {yield_value};
-        
+
+        // Advance caller's frame IP past the CALL instruction
+        if (co->saved_frame_count > 0 && co->saved_frame_count <= frame_count_) {
+          frame_arena_[co->saved_frame_count - 1].ip++;
+        }
+
+        // Restore caller's state
+        frame_count_ = co->saved_frame_count;
+        locals = co->saved_locals;
+
         // Set state to Waiting
         co->state = GCHeap::Coroutine::Waiting;
-        
-        // Return to caller with yield value
+
+        // Clear coroutine context
+        current_coroutine_id_ = 0;
+
+        // Push yield value for caller
         pushStack(yield_value);
-        
-        // Return from current frame
-        if (frame_count_ > 0) {
-          frame_count_--;
-        }
         break;
       }
     }

@@ -1285,6 +1285,15 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::YieldExpression: {
+    const auto &yield_expr =
+        static_cast<const ast::YieldExpression &>(expression);
+    if (yield_expr.value) {
+      resolveExpression(*yield_expr.value);
+    }
+    break;
+  }
+
   case ast::NodeType::AsyncExpression: {
     const auto &async_expr =
         static_cast<const ast::AsyncExpression &>(expression);

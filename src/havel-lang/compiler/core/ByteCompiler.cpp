@@ -2302,15 +2302,19 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::ThisExpression: {
     // `this` keyword - load current object reference
-    // For now, compile as LOAD_GLOBAL "this"
-    // Full implementation needs proper `this` binding in object methods
-    uint32_t strId = addStringConstant("this");
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    // In class instance methods, 'this' is in local slot 0
+    if (!current_class_name_.empty()) {
+      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    } else {
+      // Non-class context: fall back to global
+      uint32_t strId = addStringConstant("this");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
     break;
   }
 
   case ast::NodeType::AtExpression: {
-    // @field - compile as loading 'this' and getting the field
+    // @field - compile as loading 'this' (slot 0) and getting the field
     const auto &atExpr = static_cast<const ast::AtExpression &>(expression);
     if (!atExpr.field) {
       COMPILER_THROW("@ expression missing field");
@@ -2327,8 +2331,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                         fieldId->symbol == "remove" ||
                         fieldId->symbol == "toggle");
 
-    // Load 'this' (current object)
-    {
+    // Load 'this' (slot 0 for instance methods, or LOAD_GLOBAL for non-class methods)
+    if (!current_class_name_.empty()) {
+      // Class instance method: 'this' is in local slot 0
+      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    } else {
+      // Non-class context: fall back to global (for hotkey directives)
       uint32_t strId = addStringConstant("this");
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
@@ -3138,7 +3146,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         COMPILER_THROW("@field update requires identifier");
       }
       // Load self.field
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
+      if (!current_class_name_.empty()) {
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      } else {
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
+      }
       emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(addStringConstant(field_name))));
       emit(OpCode::OBJECT_GET);
       emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
@@ -3150,7 +3162,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       reserveLocalSlot(temp_val);
       emit(OpCode::STORE_VAR, temp_val);  // pop result, stack: []
       // Build [self, result, field_key]
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));   // [self]
+      if (!current_class_name_.empty()) {
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      } else {
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
+      }
       emit(OpCode::LOAD_VAR, temp_val);   // [self, result]
       { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };  // [self, result, key]
       emit(OpCode::OBJECT_SET);

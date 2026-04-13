@@ -4542,13 +4542,21 @@ void VM::executeInstruction(const Instruction &instruction) {
       if (array->frozen) {
         COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
-      // Handle negative indices: -1 = last element, etc.
+      // Handle negative indices for ARRAY_SET:
+      // Negative indices mean "insert before position 0", NOT Python-style wrapping.
+      // This allows Deque-style prepend via @data[-1] = x.
       int64_t idx = *index;
       if (idx < 0) {
-        idx = static_cast<int64_t>(array->size()) + idx;
-      }
-      if (idx < 0) {
-        COMPILER_THROW("ARRAY_SET index out of bounds");
+        int64_t shift = -idx; // how many positions before index 0
+        size_t old_size = array->size();
+        size_t new_size = old_size + static_cast<size_t>(shift);
+        array->resize(new_size, Value::makeNull());
+        // Shift existing elements right
+        for (int64_t i = static_cast<int64_t>(old_size) - 1; i >= 0; i--) {
+          (*array)[static_cast<size_t>(i + shift)] = (*array)[static_cast<size_t>(i)];
+        }
+        // Write at position 0
+        idx = 0;
       }
       const auto idx_size = static_cast<size_t>(idx);
       if (idx_size >= array->size()) {

@@ -248,6 +248,8 @@ void HostBridge::install() {
             modulePrefix = "string";
           else if (type == "array")
             modulePrefix = "array";
+          else if (type == "object")
+            modulePrefix = "object";
           else if (type == "set")
             modulePrefix = "set";
           else if (type == "enum")

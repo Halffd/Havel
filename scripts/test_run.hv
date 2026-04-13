@@ -1,0 +1,4 @@
+run("ls")
+sleep(1000)
+runDetached("tree")
+sleep("5s")

@@ -134,7 +134,7 @@ void HostBridge::initBridges() {
   timerBridge_ = std::make_unique<TimerBridge>(ctx_);
   appBridge_ = std::make_unique<AppBridge>(ctx_);
   concurrencyBridge_ = std::make_unique<ConcurrencyBridge>(*ctx_);
-  // Share event queue with HostContext for thread-safe hotkey dispatch
+  // Share event queue with HostContext for thread-safe dispatch
   const_cast<HostContext &>(*ctx_).eventQueue = concurrencyBridge_->eventQueue();
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
   browserBridge_ = std::make_unique<BrowserBridge>(ctx_);

@@ -24,8 +24,6 @@ namespace havel {
 namespace compiler {
 class VM;
 class EventQueue;
-}
-namespace compiler {
 class HostBridge;
 }
 
@@ -113,7 +111,7 @@ struct HostContext {
       nullptr; // Window monitoring for dynamic variables
   class MPVController *mpvController = nullptr; // MPV media player controller
 
-  // Event queue for thread-safe callback dispatch (from OS threads, timers, etc)
+  // Event queue for thread-safe callback dispatch (from OS threads, timers, mode changes, etc)
   class compiler::EventQueue *eventQueue = nullptr;
 
   // Capability-based extensions (embedder-provided)

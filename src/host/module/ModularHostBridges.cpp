@@ -588,16 +588,16 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   if (args[0].isStringValId() || args[0].isStringId()) {
-    cmd = args[0].toString();
+    cmd = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
   } else if (args[0].isArrayId()) {
     auto arr = ArrayRef{args[0].asArrayId()};
     size_t len = vm->getHostArrayLength(arr);
     if (len == 0) {
       throw std::runtime_error("process.run() requires a non-empty array");
     }
-    cmd = vm->getHostArrayValue(arr, 0).toString();
+    cmd = vm->resolveStringKey(vm->getHostArrayValue(arr, 0));
     for (size_t i = 1; i < len; ++i) {
-      cmd += " " + vm->getHostArrayValue(arr, i).toString();
+      cmd += " " + vm->resolveStringKey(vm->getHostArrayValue(arr, i));
     }
   } else {
     throw std::runtime_error("process.run() requires a string or array command");
@@ -623,16 +623,16 @@ SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
   std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   if (args[0].isStringValId() || args[0].isStringId()) {
-    cmd = args[0].toString();
+    cmd = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
   } else if (args[0].isArrayId()) {
     auto arr = ArrayRef{args[0].asArrayId()};
     size_t len = vm->getHostArrayLength(arr);
     if (len == 0) {
       throw std::runtime_error("process.runDetached() requires a non-empty array");
     }
-    cmd = vm->getHostArrayValue(arr, 0).toString();
+    cmd = vm->resolveStringKey(vm->getHostArrayValue(arr, 0));
     for (size_t i = 1; i < len; ++i) {
-      cmd += " " + vm->getHostArrayValue(arr, i).toString();
+      cmd += " " + vm->resolveStringKey(vm->getHostArrayValue(arr, i));
     }
   } else {
     throw std::runtime_error("process.runDetached() requires a string or array command");

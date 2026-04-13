@@ -39,6 +39,15 @@ void Parser::checkTokenLimit() {
   }
 }
 
+void Parser::checkParseLoop(int &counter, const char* context) {
+  if (++counter > 100000) {
+    size_t line = position < tokens.size() ? tokens[position].line : 0;
+    throw ParseError(line, position < tokens.size() ? tokens[position].column : 0,
+      std::string("parse loop exceeded 100000 iterations in ") + context +
+      " (possible infinite loop)");
+  }
+}
+
 std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {
   return std::make_unique<ast::Identifier>(token.value, token.line,
                                            token.column);
@@ -6869,7 +6878,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
   advance(); // consume '['
 
   // Parse array elements
+  int loopCounter = 0;
   while (notEOF() && at().type != havel::TokenType::CloseBracket) {
+    checkParseLoop(loopCounter, "parseArrayLiteral");
     // Skip newlines before element
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -6923,7 +6934,9 @@ Parser::parseObjectLiteral(bool unsorted) {
   advance(); // consume '{'
 
   // Parse entries: key:value, positional value, [expr]:value, or ...spread
+  int loopCounter = 0;
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    checkParseLoop(loopCounter, "parseObjectLiteral");
     size_t prevPos = position;
     // Skip newlines/semicolons between entries
     while (notEOF() && (at().type == havel::TokenType::NewLine ||
@@ -7080,7 +7093,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
 
   // Parse statements until we hit an expression (last one becomes value)
   // or closing brace
+  int loopCounter = 0;
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    checkParseLoop(loopCounter, "parseBlockExpression");
     // Skip newlines and semicolons
     if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Semicolon) {

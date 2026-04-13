@@ -8129,17 +8129,17 @@ std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
 
 std::unique_ptr<havel::ast::Expression> Parser::parseYieldExpression() {
   auto yieldToken = at();
-  advance(); // consume 'yield'
-  
+
   // Check if yield has an argument (value or delay in ms)
+  // Note: 'yield' token was already consumed by parsePrattExpression
   std::unique_ptr<havel::ast::Expression> value;
-  if (at().type != havel::TokenType::Semicolon && 
+  if (at().type != havel::TokenType::Semicolon &&
       at().type != havel::TokenType::NewLine &&
       at().type != havel::TokenType::CloseBrace &&
       at().type != havel::TokenType::CloseParen) {
-    value = parseExpression();
+    value = parsePrattExpression(0);
   }
-  
+
   auto expr = std::make_unique<havel::ast::YieldExpression>(std::move(value));
   expr->line = yieldToken.line;
   expr->column = yieldToken.column;
@@ -8161,11 +8161,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
 
 std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
   auto goToken = at();
-  advance(); // consume 'go'
-  
+  // Note: parsePrattExpression already consumed 'go' via advance()
+  // So at() is already the next token after 'go'
+
   // Parse the function call or block expression
   std::unique_ptr<ast::Expression> call;
-  
+
   if (at().type == havel::TokenType::OpenBrace) {
     // go { ... } - treat as anonymous lambda function
     advance(); // consume '{'
@@ -8205,8 +8206,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
 
 std::unique_ptr<havel::ast::Expression> Parser::parseChannelExpression() {
   auto channelToken = at();
-  advance(); // consume 'channel'
-  
+  // Note: parsePrattExpression already consumed 'channel' via advance()
+  // So at() is already the next token after 'channel'
+
   // Check for parentheses: channel()
   if (at().type == havel::TokenType::OpenParen) {
     advance(); // consume '('

@@ -585,11 +585,11 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("process.run() requires a command");
   }
-  const std::string *cmd = nullptr;
-  if (!cmd) {
+  if (!args[0].isStringValId() && !args[0].isStringId()) {
     throw std::runtime_error("process.run() requires a string command");
   }
-  auto result = ::havel::Launcher::run(*cmd, {}, {});
+  std::string cmd = args[0].toString();
+  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   auto obj = vm->createHostObject();
   vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
@@ -608,11 +608,11 @@ SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("process.runDetached() requires a command");
   }
-  const std::string *cmd = nullptr;
-  if (!cmd) {
+  if (!args[0].isStringValId() && !args[0].isStringId()) {
     throw std::runtime_error("process.runDetached() requires a string command");
   }
-  auto result = ::havel::Launcher::runDetached(*cmd);
+  std::string cmd = args[0].toString();
+  auto result = ::havel::Launcher::runDetached(cmd);
   return Value::makeInt(result.pid);
 }
 

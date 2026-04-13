@@ -1,0 +1,53 @@
+Esc => {
+    print("exiting")
+    exit(0)
+}
+let count = 0
+F1 => {
+    print("f1 pressed")
+    interval 1000 {
+        count += 1
+        print(f"count: {count}")
+    }
+}
+F2 => {
+    print("f2 pressed")
+    interval 1000 {
+        count += 5
+        print(f"count: {count}")
+    }
+}
+Backspace => {
+    print("backspace pressed")
+    count = 0
+}
+F3 => {
+    run("gnome-terminal")
+}
+F4 => {
+    run("google-chrome")
+}
+
+go fn() {
+    run("firefox")
+}
+go fn() {
+    run("python3 -m http.server 8000")
+}
+go fn() {
+    loop {
+       print(time.now())
+  }
+}
+fn recorder() {
+    let i = 0
+    loop {
+        screenshot.full(f"/tmp/screenshot{i}.png")
+        sleep(1000)
+    }
+}
+go recorder()
+let n = 0
+while true {
+   n += 1
+}

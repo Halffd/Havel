@@ -695,8 +695,108 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
 }
 
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
-  (void)data;
-  return std::nullopt;
+  BytecodeChunk chunk;
+  size_t pos = 0;
+
+  auto read = [&data, &pos](void* out, size_t size) -> bool {
+    if (pos + size > data.size()) return false;
+    std::memcpy(out, data.data() + pos, size);
+    pos += size;
+    return true;
+  };
+
+  // Check header: "HVC1" magic
+  if (data.size() < 4) return std::nullopt;
+  if (data[0] != 'H' || data[1] != 'V' || data[2] != 'C' || data[3] != '1') {
+    return std::nullopt;
+  }
+  pos = 4;
+
+  // Number of functions
+  uint32_t numFuncs = 0;
+  if (!read(&numFuncs, sizeof(numFuncs))) return std::nullopt;
+
+  // Number of strings
+  uint32_t numStrings = 0;
+  if (!read(&numStrings, sizeof(numStrings))) return std::nullopt;
+
+  // Deserialize string table
+  for (uint32_t s = 0; s < numStrings; ++s) {
+    uint32_t len = 0;
+    if (!read(&len, sizeof(len))) return std::nullopt;
+    std::string str(len, '\0');
+    if (len > 0) {
+      if (pos + len > data.size()) return std::nullopt;
+      std::memcpy(str.data(), data.data() + pos, len);
+      pos += len;
+    }
+    chunk.addString(std::move(str));
+  }
+
+  // Deserialize functions
+  for (uint32_t f = 0; f < numFuncs; ++f) {
+    // Function name
+    uint32_t nameLen = 0;
+    if (!read(&nameLen, sizeof(nameLen))) return std::nullopt;
+    std::string funcName(nameLen, '\0');
+    if (nameLen > 0) {
+      if (pos + nameLen > data.size()) return std::nullopt;
+      std::memcpy(funcName.data(), data.data() + pos, nameLen);
+      pos += nameLen;
+    }
+
+    // Read param_count and local_count first
+    uint32_t param_count = 0;
+    uint32_t local_count = 0;
+    if (!read(&param_count, sizeof(param_count))) return std::nullopt;
+    if (!read(&local_count, sizeof(local_count))) return std::nullopt;
+
+    BytecodeFunction func(funcName, param_count, local_count);
+
+    // Number of instructions
+    uint32_t numInstr = 0;
+    if (!read(&numInstr, sizeof(numInstr))) return std::nullopt;
+
+    for (uint32_t i = 0; i < numInstr; ++i) {
+      uint8_t opcode = 0;
+      if (!read(&opcode, sizeof(opcode))) return std::nullopt;
+
+      uint32_t numOps = 0;
+      if (!read(&numOps, sizeof(numOps))) return std::nullopt;
+
+      std::vector<Value> operands;
+      for (uint32_t o = 0; o < numOps; ++o) {
+        uint64_t opVal = 0;
+        if (!read(&opVal, sizeof(opVal))) return std::nullopt;
+        operands.push_back(Value::fromRawBits(opVal));
+      }
+
+      // Constants (per-instruction in serialization format)
+      uint32_t numConsts = 0;
+      if (!read(&numConsts, sizeof(numConsts))) return std::nullopt;
+      for (uint32_t c = 0; c < numConsts; ++c) {
+        uint64_t raw = 0;
+        if (!read(&raw, sizeof(raw))) return std::nullopt;
+        func.constants.push_back(Value::fromRawBits(raw));
+      }
+
+      // Upvalues (per-instruction in serialization format)
+      uint32_t numUp = 0;
+      if (!read(&numUp, sizeof(numUp))) return std::nullopt;
+      for (uint32_t u = 0; u < numUp; ++u) {
+        UpvalueDescriptor uv;
+        if (!read(&uv.index, sizeof(uv.index))) return std::nullopt;
+        if (!read(&uv.captures_local, sizeof(uv.captures_local))) return std::nullopt;
+        func.upvalues.push_back(uv);
+      }
+
+      func.instructions.push_back(Instruction(static_cast<OpCode>(opcode), std::move(operands)));
+    }
+
+    chunk.addFunction(std::move(func));
+  }
+
+  return chunk;
 }
 
 std::string ValueSerializer::valueToJson(const Value& value) {

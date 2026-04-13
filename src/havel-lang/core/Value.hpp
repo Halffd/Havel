@@ -300,6 +300,9 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::COROUTINE_ID), id));
   }
 
+  // Construct from raw bits (for deserialization)
+  static Value fromRawBits(uint64_t bits) { return Value(bits); }
+
   // ========================================================================
   // Type Predicates
   // ========================================================================

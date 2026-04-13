@@ -183,6 +183,8 @@ public:
     uint32_t ip = 0;                 // Instruction pointer
     std::vector<Value> stack;        // Coroutine's stack
     std::vector<Value> locals;       // Local variables
+    size_t saved_frame_count = 0;    // Caller's frame count (for restoring on yield)
+    std::vector<Value> saved_locals;  // Caller's locals (for restoring on yield)
     State state = Runnable;
     std::vector<Value> yield_values; // Values to return on yield
 

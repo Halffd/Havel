@@ -8149,10 +8149,38 @@ std::unique_ptr<havel::ast::Expression> Parser::parseYieldExpression() {
 std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
   auto goToken = at();
   advance(); // consume 'go'
-  
-  // Parse the function call expression
-  auto call = parseExpression();
-  
+
+  std::unique_ptr<ast::Expression> call;
+
+  // Check for block syntax: go { ... }
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+
+    auto blockStmt = std::make_unique<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      blockStmt->body.push_back(parseStatement());
+    }
+
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after go block");
+      return nullptr;
+    }
+    advance(); // consume '}'
+
+    // Create lambda expression with no parameters and the block as body
+    call = std::make_unique<havel::ast::LambdaExpression>(
+        std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+        std::move(blockStmt)
+    );
+  } else {
+    // Parse the function call expression: go fn()
+    call = parseExpression();
+  }
+
   auto stmt = std::make_unique<havel::ast::GoStatement>(std::move(call));
   stmt->line = goToken.line;
   stmt->column = goToken.column;

@@ -4337,6 +4337,14 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
+  case ast::NodeType::GoStatement: {
+    const auto &go_stmt =
+        static_cast<const ast::GoStatement &>(statement);
+    if (go_stmt.call) {
+      collectLambdaExpressions(*go_stmt.call, out);
+    }
+    break;
+  }
   case ast::NodeType::ClassDeclaration: {
     const auto &class_decl =
         static_cast<const ast::ClassDeclaration &>(statement);

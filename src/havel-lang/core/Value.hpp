@@ -63,6 +63,8 @@ enum class ExtendedTag : uint64_t {
   ARRAY_ID = 0x1,
   SET_ID = 0x2,
   RANGE_ID = 0x3,
+  CHANNEL_ID = 0x4,        // Channel for coroutine communication
+  COROUTINE_ID = 0x5,      // Coroutine object
   ENUM_ID = 0x6,
   ITERATOR_ID = 0x7,
   HOST_FUNC_ID = 0x8,  // Host function reference (stores index into table)
@@ -73,8 +75,6 @@ enum class ExtendedTag : uint64_t {
   THREAD_ID = 0xD,        // Thread object (stores index into GC heap)
   INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
-  CHANNEL_ID = 0x10,      // Channel for coroutine communication (stores index into GC heap)
-  COROUTINE_ID = 0x11,    // Coroutine object (stores index into GC heap)
 };
 
 // Bool payload values

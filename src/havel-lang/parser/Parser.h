@@ -8,6 +8,7 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
+#include <sstream>
 
 namespace havel::parser {
 
@@ -166,6 +167,7 @@ private:
 
   // Safety checks
   void checkTokenLimit();
+  void checkParseLoop(int &counter, const char* context);
 
   // Helper methods - return const references to avoid copies
   const Token &at(size_t offset = 0) const;

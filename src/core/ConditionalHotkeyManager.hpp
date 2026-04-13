@@ -2,11 +2,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -18,11 +20,9 @@ class IO;
 class EventListener;
 class WindowMonitor;
 
-namespace compiler { class EventQueue; }
-
 /**
  * ConditionalHotkey - A hotkey with a condition
- *
+ * 
  * Condition can be:
  * - String: evaluated via condition engine (e.g., "mode == 'gaming'")
  * - Function: direct C++ callback
@@ -47,12 +47,7 @@ struct ConditionalHotkeyState {
 /**
  * ConditionalHotkeyManager manages hotkeys that have conditions attached to them.
  * It handles grabbing/ungrabbing hotkeys based on condition evaluation.
- * 
- * ARCHITECTURE: Event-driven (no background thread)
- * - Mode changes, window focus changes, etc. push reevaluation to EventQueue
- * - EventQueue processes all pending callbacks in the main event loop
- * - This ensures conditions have access to shared globals/heap/stack
- * - The main loop calls UpdateAllConditionalHotkeys() each frame
+ * Works with IO and EventListener for unified input handling.
  */
 class ConditionalHotkeyManager {
 public:
@@ -80,20 +75,14 @@ public:
   // Get hotkey by ID
   ConditionalHotkey* FindHotkey(int id);
 
-  // Evaluate all conditional hotkeys (called from main event loop)
+  // Evaluate all conditional hotkeys
   void UpdateAllConditionalHotkeys();
 
-  // Force update all hotkeys (immediate, bypasses cache)
+  // Force update all hotkeys
   void ForceUpdateAllConditionalHotkeys();
 
-  // Reevaluate hotkeys based on current mode/state (called from EventQueue callback)
+  // Reevaluate hotkeys based on gaming mode
   void ReevaluateConditionalHotkeys();
-
-  // Schedule reevaluation via EventQueue (thread-safe, called from any thread)
-  void ScheduleReevaluation();
-
-  // Set the event queue for scheduling reevaluation
-  void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
 
   // Suspend all conditional hotkeys (save state and ungrab all)
   bool Suspend();
@@ -101,7 +90,7 @@ public:
   // Resume all conditional hotkeys (restore state)
   bool Resume();
 
-  // Cleanup
+  // Cleanup (stop update loop and release resources)
   void Cleanup();
 
   // Get/set enabled state
@@ -138,6 +127,8 @@ public:
   // Set window monitor for efficient window info caching
   void setWindowMonitor(std::shared_ptr<WindowMonitor> monitor) { windowMonitor = monitor; }
 
+  // Set interpreter for expression evaluation
+
   // Debug options
   bool verboseConditionLogging = false;
   bool verboseLogging = false;
@@ -153,9 +144,6 @@ private:
   std::atomic<bool> enabled{true};
   std::atomic<bool> wasSuspended{false};
 
-  // Event queue for scheduling reevaluation from any thread
-  compiler::EventQueue* eventQueue_ = nullptr;
-
   // Condition evaluation cache
   struct CachedCondition {
     bool result;
@@ -165,12 +153,16 @@ private:
   std::mutex conditionCacheMutex;
   static constexpr int CACHE_DURATION_MS = 50;
 
+  // Deferred update queue
+  std::queue<int> deferredUpdateQueue;
+  std::mutex deferredUpdateMutex;
+
   // Cleanup flag
   std::atomic<bool> inCleanupMode{false};
 
   // Condition evaluation function (can be overridden)
   std::function<bool(const std::string&)> conditionEvaluator;
-
+  
   // Gaming mode checker
   std::function<bool()> isGamingModeActive;
 
@@ -183,6 +175,14 @@ private:
   // Mode management
   static std::mutex modeMutex;
   static std::string currentMode;
+
+  // Update loop
+  std::thread updateLoopThread;
+  std::atomic<bool> updateLoopRunning{false};
+  std::condition_variable updateLoopCv;
+  std::mutex updateLoopMutex;
+
+  void UpdateLoop();
 
   // Internal methods
   void UpdateConditionalHotkey(ConditionalHotkey& hotkey);

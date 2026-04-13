@@ -4,13 +4,10 @@
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include "window/WindowMonitor.hpp"
-#include "../havel-lang/compiler/runtime/EventQueue.hpp"
 #include <algorithm>
 #include <chrono>
 
 namespace havel {
-
-using compiler::EventQueue;
 
 // Static member initialization
 std::mutex ConditionalHotkeyManager::modeMutex;
@@ -18,22 +15,15 @@ std::string ConditionalHotkeyManager::currentMode = "default";
 
 ConditionalHotkeyManager::ConditionalHotkeyManager(std::shared_ptr<IO> io)
     : io(io) {
-  info("Initializing ConditionalHotkeyManager (event-driven, no background thread)");
+  info("Initializing ConditionalHotkeyManager");
+  
+  // Start update loop thread
+  updateLoopRunning = true;
+  updateLoopThread = std::thread(&ConditionalHotkeyManager::UpdateLoop, this);
 }
 
 ConditionalHotkeyManager::~ConditionalHotkeyManager() {
   Cleanup();
-}
-
-void ConditionalHotkeyManager::ScheduleReevaluation() {
-  if (eventQueue_) {
-    eventQueue_->push([this]() {
-      BatchUpdateConditionalHotkeys();
-    });
-  } else {
-    // Fallback: update directly
-    BatchUpdateConditionalHotkeys();
-  }
 }
 
 int ConditionalHotkeyManager::AddConditionalHotkey(
@@ -179,7 +169,11 @@ ConditionalHotkey* ConditionalHotkeyManager::FindHotkey(int id) {
 }
 
 void ConditionalHotkeyManager::UpdateAllConditionalHotkeys() {
-  BatchUpdateConditionalHotkeys();
+  {
+    std::lock_guard<std::mutex> lock(deferredUpdateMutex);
+    deferredUpdateQueue.push(-1); // Signal to update all
+  }
+  updateLoopCv.notify_one();
 }
 
 void ConditionalHotkeyManager::ForceUpdateAllConditionalHotkeys() {
@@ -415,34 +409,82 @@ void ConditionalHotkeyManager::BatchUpdateConditionalHotkeys() {
 
   std::vector<int> toGrab;
   std::vector<int> toUngrab;
+  std::vector<ConditionalHotkey*> updatedHotkeys;
 
   {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
 
-    // Process all hotkeys - evaluate conditions and batch grab/ungrab
-    for (auto& ch : conditionalHotkeys) {
-      if (!ch.monitoringEnabled) continue;
+    // Process deferred updates
+    std::queue<int> localQueue;
+    {
+      std::lock_guard<std::mutex> queueLock(deferredUpdateMutex);
+      std::swap(localQueue, deferredUpdateQueue);
+    }
 
-      bool shouldGrab = false;
-      if (std::holds_alternative<std::string>(ch.condition)) {
-        shouldGrab = EvaluateCondition(std::get<std::string>(ch.condition));
-      } else if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
-        const auto& func = std::get<std::function<bool()>>(ch.condition);
-        if (func) shouldGrab = func();
+    while (!localQueue.empty()) {
+      int id = localQueue.front();
+      localQueue.pop();
+
+      if (id == -1) {
+        // Update all
+        for (auto& ch : conditionalHotkeys) {
+          if (ch.monitoringEnabled) {
+            updatedHotkeys.push_back(&ch);
+          }
+        }
+        break;
       }
 
-      if (shouldGrab && !ch.currentlyGrabbed) {
-        toGrab.push_back(ch.id);
-        ch.currentlyGrabbed = true;
-        ch.lastConditionResult = true;
-      } else if (!shouldGrab && ch.currentlyGrabbed) {
-        toUngrab.push_back(ch.id);
-        ch.currentlyGrabbed = false;
-        ch.lastConditionResult = false;
+      for (auto& ch : conditionalHotkeys) {
+        if (ch.id == id && ch.monitoringEnabled) {
+          updatedHotkeys.push_back(&ch);
+          break;
+        }
+      }
+    }
+
+    // Process all hotkeys
+    for (auto& ch : conditionalHotkeys) {
+      if (!ch.monitoringEnabled) continue;
+      
+      bool needsUpdate = false;
+      for (auto* hotkey : updatedHotkeys) {
+        if (hotkey->id == ch.id) {
+          needsUpdate = true;
+          break;
+        }
+      }
+
+      // Always update hotkeys with mode in condition
+      if (!needsUpdate && std::holds_alternative<std::string>(ch.condition)) {
+        const auto& condStr = std::get<std::string>(ch.condition);
+        if (condStr.find("mode") != std::string::npos) {
+          needsUpdate = true;
+          updatedHotkeys.push_back(&ch);
+        }
+      }
+
+      if (needsUpdate) {
+        bool shouldGrab = false;
+        if (std::holds_alternative<std::string>(ch.condition)) {
+          shouldGrab = EvaluateCondition(std::get<std::string>(ch.condition));
+        } else if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
+          const auto& func = std::get<std::function<bool()>>(ch.condition);
+          if (func) shouldGrab = func();
+        }
+
+        if (shouldGrab && !ch.currentlyGrabbed) {
+          toGrab.push_back(ch.id);
+          ch.currentlyGrabbed = true;
+          ch.lastConditionResult = true;
+        } else if (!shouldGrab && ch.currentlyGrabbed) {
+          toUngrab.push_back(ch.id);
+          ch.currentlyGrabbed = false;
+          ch.lastConditionResult = false;
+        }
       }
     }
   }
-
   // Apply grab/ungrab operations outside of lock
   for (int id : toGrab) {
     io->GrabHotkey(id);
@@ -457,8 +499,41 @@ void ConditionalHotkeyManager::InvalidateConditionalHotkeys() {
   conditionCache.clear();
 }
 
+void ConditionalHotkeyManager::UpdateLoop() {
+  info("ConditionalHotkeyManager: Starting update loop");
+
+  while (updateLoopRunning.load() && !inCleanupMode.load()) {
+    {
+      std::unique_lock<std::mutex> lock(updateLoopMutex);
+      // Check every 200ms to reduce CPU usage and prevent rapid grab/ungrab cycles
+      updateLoopCv.wait_for(lock, std::chrono::milliseconds(200));
+    }
+
+    if (!updateLoopRunning.load() || inCleanupMode.load()) break;
+
+    // Update modes first (may trigger enter/exit callbacks)
+    if (auto modeMgr = modeManager.lock()) {
+      // Stub evaluator - conditions not evaluated without interpreter
+      ModeManager::ExprEvaluator evaluator = [](const ast::Expression&) -> bool {
+        return false;  // Stub: conditions not evaluated
+      };
+      modeMgr->update(evaluator);
+    }
+
+    BatchUpdateConditionalHotkeys();
+  }
+
+  info("ConditionalHotkeyManager: Update loop stopped");
+}
+
 void ConditionalHotkeyManager::Cleanup() {
   inCleanupMode = true;
+  updateLoopRunning = false;
+  updateLoopCv.notify_one();
+
+  if (updateLoopThread.joinable()) {
+    updateLoopThread.join();
+  }
 
   // Ungrab all hotkeys
   {
@@ -482,10 +557,9 @@ void ConditionalHotkeyManager::SetMode(const std::string& newMode) {
     }
     currentMode = newMode;
   }
-
+  
   debug("Mode changed to: {}", newMode);
-  // Schedule reevaluation through EventQueue for thread-safe execution
-  ScheduleReevaluation();
+  BatchUpdateConditionalHotkeys();
 }
 
 std::string ConditionalHotkeyManager::GetMode() const {

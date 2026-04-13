@@ -585,12 +585,24 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("process.run() requires a command");
   }
-  if (!args[0].isStringValId() && !args[0].isStringId()) {
-    throw std::runtime_error("process.run() requires a string command");
-  }
-  std::string cmd = args[0].toString();
-  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
+  std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    cmd = args[0].toString();
+  } else if (args[0].isArrayId()) {
+    auto arr = ArrayRef{args[0].asArrayId()};
+    size_t len = vm->getHostArrayLength(arr);
+    if (len == 0) {
+      throw std::runtime_error("process.run() requires a non-empty array");
+    }
+    cmd = vm->getHostArrayValue(arr, 0).toString();
+    for (size_t i = 1; i < len; ++i) {
+      cmd += " " + vm->getHostArrayValue(arr, i).toString();
+    }
+  } else {
+    throw std::runtime_error("process.run() requires a string or array command");
+  }
+  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
   auto obj = vm->createHostObject();
   vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
   vm->setHostObjectField(obj, "exitCode", Value::makeInt(result.exitCode));
@@ -608,10 +620,23 @@ SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
   if (args.empty()) {
     throw std::runtime_error("process.runDetached() requires a command");
   }
-  if (!args[0].isStringValId() && !args[0].isStringId()) {
-    throw std::runtime_error("process.runDetached() requires a string command");
+  std::string cmd;
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    cmd = args[0].toString();
+  } else if (args[0].isArrayId()) {
+    auto arr = ArrayRef{args[0].asArrayId()};
+    size_t len = vm->getHostArrayLength(arr);
+    if (len == 0) {
+      throw std::runtime_error("process.runDetached() requires a non-empty array");
+    }
+    cmd = vm->getHostArrayValue(arr, 0).toString();
+    for (size_t i = 1; i < len; ++i) {
+      cmd += " " + vm->getHostArrayValue(arr, i).toString();
+    }
+  } else {
+    throw std::runtime_error("process.runDetached() requires a string or array command");
   }
-  std::string cmd = args[0].toString();
   auto result = ::havel::Launcher::runDetached(cmd);
   return Value::makeInt(result.pid);
 }

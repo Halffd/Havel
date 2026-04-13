@@ -1763,24 +1763,22 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
       vm, hotkeyId, hotkeyStr, hotkeyStr, "",
       "Hotkey registered via hotkey.register", callbackId);
 
-  // Get HotkeyExecutor for thread-safe execution
-  auto *executor = ctx->io->GetHotkeyExecutor();
+  // Get event queue for thread-safe dispatch to main event loop
+  auto *eventQueue = ctx->eventQueue;
 
-  // Register hotkey with execution context isolation
+  // Register hotkey with thread-safe EventQueue dispatch
+  // When the hotkey fires, the callback is pushed to the event queue
+  // and executed in the main event loop, giving access to shared globals/heap
   bool success = ctx->hotkeyManager->AddHotkey(
-      hotkeyStr, [vm, callbackId, hotkeyContext, executor]() {
-        if (executor) {
-          // Use execution context for thread-safe isolated execution
-          executor->submitExecutionContext(
-              *vm, [callbackId, hotkeyContext](
-                       VM::VMExecutionContext &ctx) {
-                // Execute in isolated context with @ context as first arg
-                ctx.invokeCallback(callbackId, {hotkeyContext});
-              });
+      hotkeyStr, [vm, callbackId, hotkeyContext, eventQueue]() {
+        if (eventQueue) {
+          // Thread-safe: push callback to event queue for main loop execution
+          eventQueue->push([vm, callbackId, hotkeyContext]() {
+            vm->invokeCallback(callbackId, {hotkeyContext});
+          });
         } else {
-          // Fallback: direct execution (not thread-safe, for testing only)
-          auto execCtx = vm->createExecutionContext();
-          execCtx.invokeCallback(callbackId, {hotkeyContext});
+          // Fallback: direct execution (no event queue configured)
+          vm->invokeCallback(callbackId, {hotkeyContext});
         }
       });
 

@@ -41,13 +41,27 @@ bool ExecutionEngine::executeFrame() {
       return false;
     }
     
-    // STEP 3: Execute one instruction in this goroutine
+    // STEP 3: Load fiber state into VM's global execution state
+    // This synchronizes the VM with the fiber's suspended state
+    // Required before executeOneStep() to restore the executing fiber
+    if (g->fiber) {
+      vm_->loadFiberState(g->fiber);
+    }
+    
+    // STEP 4: Execute one instruction in this goroutine
     // This is non-blocking - always returns immediately
-    VMExecutionResult result = vm_->executeOneStep(nullptr);  // TODO: Pass actual Fiber* or map g->id
+    VMExecutionResult result = vm_->executeOneStep(g->fiber);
+    
+    // STEP 5: Save VM state back to fiber
+    // This persists any progress made by the instruction
+    // Preserves IP for resumption on next iteration
+    if (g->fiber) {
+      vm_->saveFiberState(g->fiber);
+    }
     
     stats_.instructions_executed++;
     
-    // STEP 4: Handle execution result
+    // STEP 6: Handle execution result
     switch (result.type) {
       case VMExecutionResult::YIELD:
         // Instruction completed normally, goroutine yields

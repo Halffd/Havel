@@ -107,6 +107,10 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
   initializeInputCallbacks();
 }
 
+void HotkeyManager::setEventQueue(compiler::EventQueue* eq) {
+  conditionalManager.setEventQueue(eq);
+}
+
 HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
                              AudioManager &, ScreenshotManager *,
                              BrightnessManager &,

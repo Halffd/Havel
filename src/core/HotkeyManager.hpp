@@ -5,6 +5,7 @@
 #include "CallbackTypes.hpp"
 #include "MouseGestureTypes.hpp"
 #include "io/MouseGestureEngine.hpp"
+#include "../havel-lang/compiler/runtime/EventQueue.hpp"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -89,6 +90,7 @@ public:
   void setConditionalHotkeysEnabled(bool enabled);
   void setMode(const std::string& mode);  // Set current mode for conditional hotkeys
   std::string getMode() const;  // Get current mode
+  void setEventQueue(compiler::EventQueue* eq);
   std::mutex &getHotkeyMutex();
 
   // ModeManager access

@@ -825,13 +825,48 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       
       // Check if it's an object literal (identifier/string followed by ':')
       bool isObject = false;
-      if (nextTok.type == havel::TokenType::Identifier ||
-          nextTok.type == havel::TokenType::String ||
-          nextTok.type == havel::TokenType::MultilineString ||
-          nextTok.type == havel::TokenType::Config ||
-          nextTok.type == havel::TokenType::Devices ||
-          nextTok.type == havel::TokenType::Modes ||
-          nextTok.type == havel::TokenType::Mode) {
+      auto isObjKeyType = [](havel::TokenType t) {
+        return t == havel::TokenType::Identifier ||
+               t == havel::TokenType::String ||
+               t == havel::TokenType::MultilineString ||
+               t == havel::TokenType::Config ||
+               t == havel::TokenType::Devices ||
+               t == havel::TokenType::Modes ||
+               t == havel::TokenType::Mode ||
+               t == havel::TokenType::Timeout ||
+               t == havel::TokenType::Thread ||
+               t == havel::TokenType::Interval ||
+               t == havel::TokenType::Channel ||
+               t == havel::TokenType::On ||
+               t == havel::TokenType::Off ||
+               t == havel::TokenType::Go ||
+               t == havel::TokenType::When ||
+               t == havel::TokenType::Class ||
+               t == havel::TokenType::Struct ||
+               t == havel::TokenType::Enum ||
+               t == havel::TokenType::Fn ||
+               t == havel::TokenType::If ||
+               t == havel::TokenType::For ||
+               t == havel::TokenType::Loop ||
+               t == havel::TokenType::While ||
+               t == havel::TokenType::Switch ||
+               t == havel::TokenType::Do ||
+               t == havel::TokenType::Return ||
+               t == havel::TokenType::Ret ||
+               t == havel::TokenType::Break ||
+               t == havel::TokenType::Continue ||
+               t == havel::TokenType::Let ||
+               t == havel::TokenType::Const ||
+               t == havel::TokenType::Try ||
+               t == havel::TokenType::Catch ||
+               t == havel::TokenType::Finally ||
+               t == havel::TokenType::Throw ||
+               t == havel::TokenType::True ||
+               t == havel::TokenType::False ||
+               t == havel::TokenType::Null ||
+               t == havel::TokenType::Repeat;
+      };
+      if (isObjKeyType(nextTok.type)) {
         size_t colonLookahead = lookahead + 1;
         while (at(colonLookahead).type == havel::TokenType::NewLine) {
           colonLookahead++;
@@ -2128,8 +2163,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Fn:
     return parseFunctionDeclaration();
   case havel::TokenType::Struct:
+    // struct.define(...) is a method call, struct Name { } is a declaration
+    if (at(1).type == havel::TokenType::Dot) {
+      auto expr = parseExpression();
+      if (at().type == havel::TokenType::Semicolon) advance();
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
     return parseStructDeclaration();
   case havel::TokenType::Class:
+    // class.define(...) is a method call, class Name { } is a declaration
+    if (at(1).type == havel::TokenType::Dot) {
+      auto expr = parseExpression();
+      if (at().type == havel::TokenType::Semicolon) advance();
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
     return parseClassDeclaration();
   case havel::TokenType::Enum:
     return parseEnumDeclaration();
@@ -6450,13 +6497,48 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     // Object keys can be identifiers, strings, or keywords (like 'config')
     // followed by ':'
     bool isObject = false;
-    if (nextTok.type == havel::TokenType::Identifier ||
-        nextTok.type == havel::TokenType::String ||
-        nextTok.type == havel::TokenType::MultilineString ||
-        nextTok.type == havel::TokenType::Config ||
-        nextTok.type == havel::TokenType::Devices ||
-        nextTok.type == havel::TokenType::Modes ||
-        nextTok.type == havel::TokenType::Mode) {
+    auto isObjKeyType2 = [](havel::TokenType t) {
+      return t == havel::TokenType::Identifier ||
+             t == havel::TokenType::String ||
+             t == havel::TokenType::MultilineString ||
+             t == havel::TokenType::Config ||
+             t == havel::TokenType::Devices ||
+             t == havel::TokenType::Modes ||
+             t == havel::TokenType::Mode ||
+             t == havel::TokenType::Timeout ||
+             t == havel::TokenType::Thread ||
+             t == havel::TokenType::Interval ||
+             t == havel::TokenType::Channel ||
+             t == havel::TokenType::On ||
+             t == havel::TokenType::Off ||
+             t == havel::TokenType::Go ||
+             t == havel::TokenType::When ||
+             t == havel::TokenType::Class ||
+             t == havel::TokenType::Struct ||
+             t == havel::TokenType::Enum ||
+             t == havel::TokenType::Fn ||
+             t == havel::TokenType::If ||
+             t == havel::TokenType::For ||
+             t == havel::TokenType::Loop ||
+             t == havel::TokenType::While ||
+             t == havel::TokenType::Switch ||
+             t == havel::TokenType::Do ||
+             t == havel::TokenType::Return ||
+             t == havel::TokenType::Ret ||
+             t == havel::TokenType::Break ||
+             t == havel::TokenType::Continue ||
+             t == havel::TokenType::Let ||
+             t == havel::TokenType::Const ||
+             t == havel::TokenType::Try ||
+             t == havel::TokenType::Catch ||
+             t == havel::TokenType::Finally ||
+             t == havel::TokenType::Throw ||
+             t == havel::TokenType::True ||
+             t == havel::TokenType::False ||
+             t == havel::TokenType::Null ||
+             t == havel::TokenType::Repeat;
+    };
+    if (isObjKeyType2(nextTok.type)) {
       // Look for colon, skipping newlines
       size_t colonLookahead = lookahead + 1;
       while (at(colonLookahead).type == havel::TokenType::NewLine) {
@@ -6850,7 +6932,39 @@ Parser::parseObjectLiteral(bool unsorted) {
         at().type == havel::TokenType::Config ||
         at().type == havel::TokenType::Devices ||
         at().type == havel::TokenType::Modes ||
-        at().type == havel::TokenType::Mode) {
+        at().type == havel::TokenType::Mode ||
+        at().type == havel::TokenType::Timeout ||
+        at().type == havel::TokenType::Thread ||
+        at().type == havel::TokenType::Interval ||
+        at().type == havel::TokenType::Channel ||
+        at().type == havel::TokenType::On ||
+        at().type == havel::TokenType::Off ||
+        at().type == havel::TokenType::Go ||
+        at().type == havel::TokenType::When ||
+        at().type == havel::TokenType::Class ||
+        at().type == havel::TokenType::Struct ||
+        at().type == havel::TokenType::Enum ||
+        at().type == havel::TokenType::Fn ||
+        at().type == havel::TokenType::If ||
+        at().type == havel::TokenType::For ||
+        at().type == havel::TokenType::Loop ||
+        at().type == havel::TokenType::While ||
+        at().type == havel::TokenType::Switch ||
+        at().type == havel::TokenType::Do ||
+        at().type == havel::TokenType::Return ||
+        at().type == havel::TokenType::Ret ||
+        at().type == havel::TokenType::Break ||
+        at().type == havel::TokenType::Continue ||
+        at().type == havel::TokenType::Let ||
+        at().type == havel::TokenType::Const ||
+        at().type == havel::TokenType::Try ||
+        at().type == havel::TokenType::Catch ||
+        at().type == havel::TokenType::Finally ||
+        at().type == havel::TokenType::Throw ||
+        at().type == havel::TokenType::True ||
+        at().type == havel::TokenType::False ||
+        at().type == havel::TokenType::Null ||
+        at().type == havel::TokenType::Repeat) {
       key = advance().value;
     } else if (at().type == havel::TokenType::String ||
                at().type == havel::TokenType::MultilineString) {

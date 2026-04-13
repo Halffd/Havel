@@ -9,9 +9,10 @@
  */
 #include "HostBridge.hpp"
 #include "ConcurrencyBridge.hpp"
-#include <iostream> 
+#include <iostream>
 #include "../../../host/module/ModularHostBridges.hpp"
 #include "../../../modules/window/WindowMonitorModule.hpp"
+#include "../../../core/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
 #include "../../../host/app/AppService.hpp"
@@ -134,8 +135,11 @@ void HostBridge::initBridges() {
   timerBridge_ = std::make_unique<TimerBridge>(ctx_);
   appBridge_ = std::make_unique<AppBridge>(ctx_);
   concurrencyBridge_ = std::make_unique<ConcurrencyBridge>(*ctx_);
-  // Share event queue with HostContext for thread-safe dispatch
+  // Share event queue with HostContext and HotkeyManager for thread-safe dispatch
   const_cast<HostContext &>(*ctx_).eventQueue = concurrencyBridge_->eventQueue();
+  if (ctx_->hotkeyManager) {
+    ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
+  }
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
   browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
   toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);

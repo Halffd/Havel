@@ -203,6 +203,8 @@ private:
       "mode",    "process",  "display",  "async",    "struct",   "thread",   "interval",
       "timeout", "string",   "array",    "object",   "type",     "utility",  "inherits",
       "regex",   "physics",  "time",     "math",
+      // Bare process globals
+      "run", "runDetached",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};

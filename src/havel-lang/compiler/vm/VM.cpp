@@ -2535,6 +2535,188 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
   return VMExecutionResult::Yield(nullptr);
 }
 
+// ============================================================================
+// PHASE 3B-1: FIBER STATE SYNCHRONIZATION
+// ============================================================================
+
+/**
+ * loadFiberState - Copy fiber's suspended state into VM's global state
+ * 
+ * Called before executeOneStep() to restore a fiber that is resuming.
+ * @param fiber The Fiber being resumed (must have suspended state)
+ */
+void VM::loadFiberState(Fiber *fiber) {
+  if (!fiber) {
+    return;  // No-op for null fiber
+  }
+
+  // STEP 1: Clear VM's current execution state
+  // These will be repopulated from the fiber
+  while (!stack.empty()) {
+    stack.pop();
+  }
+  locals.clear();
+  frame_count_ = 0;
+
+  // STEP 2: Restore operand stack from fiber's stack
+  // FiberStack uses a data vector and size_t sp (stack pointer)
+  // We need to copy all pushed values onto the VM's stack
+  const auto &fiber_stack_data = fiber->stack.data();
+  const size_t fiber_sp = fiber->stack.size();
+  for (size_t i = 0; i < fiber_sp; ++i) {
+    stack.push(fiber_stack_data[i]);
+  }
+
+  // STEP 3: Restore locals from fiber's map into VM's vector
+  // VM locals is a vector indexed by absolute position
+  // We iterate fiber's map and build the locals vector
+  if (!fiber->locals.empty()) {
+    // Find the maximum local index to know how big to make locals vector
+    size_t max_local = 0;
+    for (const auto &[name, value] : fiber->locals) {
+      // For now, we just copy all values into a sequential vector
+      // TODO: If fiber->locals uses string keys, we may need a mapping
+      max_local++;
+    }
+    
+    locals.reserve(max_local);
+    for (const auto &[name, value] : fiber->locals) {
+      locals.push_back(value);
+    }
+  }
+
+  // STEP 4: Restore call stack from fiber's call_stack
+  // Copy each CallFrame from Fiber to VM's frame arena
+  for (const auto &fiber_frame : fiber->call_stack) {
+    // Allocate a CallFrame in VM's frame arena
+    if (frame_arena_.size() <= frame_count_) {
+      frame_arena_.push_back(CallFrame());
+    }
+    
+    auto &vm_frame = frame_arena_[frame_count_];
+    
+    // For now, we don't have a direct mapping from function_id to BytecodeFunction*
+    // This will be handled in Phase 3B-4 when we implement generator spawning
+    // TODO: Store BytecodeChunk* in Fiber to resolve function pointer
+    vm_frame.function = nullptr;  // Will be set when we implement generator detection
+    vm_frame.ip = fiber_frame.ip;
+    vm_frame.locals_base = fiber_frame.locals_base;
+    vm_frame.closure_id = fiber_frame.closure_id;
+    
+    // Convert try_stack: both have same structure but different types
+    vm_frame.try_stack.clear();
+    for (const auto& handler : fiber_frame.try_stack) {
+      vm_frame.try_stack.push_back(VM::TryHandler{
+          handler.catch_ip,
+          handler.finally_ip,
+          handler.finally_return_ip,
+          handler.stack_depth
+      });
+    }
+    
+    frame_count_++;
+  }
+
+  // STEP 5: Update current frame's IP to point to the saved instruction
+  // This is critical for resumption - we need to continue from where we left off
+  if (frame_count_ > 0) {
+    // The fiber->ip tells us where to resume in the current chunk
+    // This was saved during the previous suspension
+    frame_arena_[frame_count_ - 1].ip = fiber->ip;
+  }
+
+  if (debug_mode) {
+    std::cerr << "[VM] Loaded fiber " << fiber->id << " state: "
+              << frame_count_ << " frames, " << stack.size() << " stack items"
+              << std::endl;
+  }
+}
+
+/**
+ * saveFiberState - Copy VM's current execution state back to fiber
+ * 
+ * Called after executeOneStep() to persist the fiber's progress.
+ * Preserves all state so the fiber can be resumed later.
+ * @param fiber The Fiber being suspended (receives current VM state)
+ */
+void VM::saveFiberState(Fiber *fiber) {
+  if (!fiber) {
+    return;  // No-op for null fiber
+  }
+
+  // STEP 1: Save operand stack from VM back to fiber's stack
+  fiber->stack.clear();
+  
+  // Convert VM's std::stack<Value> to fiber's FiberStack
+  // std::stack is LIFO, so we need to extract in reverse order
+  std::vector<Value> temp_values;
+  auto temp_stack = stack;  // Copy the stack
+  while (!temp_stack.empty()) {
+    temp_values.push_back(temp_stack.top());
+    temp_stack.pop();
+  }
+  // Now push in correct order (reverse of extraction)
+  for (auto it = temp_values.rbegin(); it != temp_values.rend(); ++it) {
+    fiber->stack.push(*it);
+  }
+
+  // STEP 2: Save locals from VM's vector back to fiber's map
+  fiber->locals.clear();
+  for (size_t i = 0; i < locals.size(); ++i) {
+    // Use index as key for now (may be refined in Phase 3B-2)
+    std::string key = "_local_" + std::to_string(i);
+    fiber->locals[key] = locals[i];
+  }
+
+  // STEP 3: Save call stack from VM back to fiber's call_stack  
+  fiber->call_stack.clear();
+  for (size_t i = 0; i < frame_count_; ++i) {
+    const auto &vm_frame = frame_arena_[i];
+    
+    // We need to create instances of the Fiber CallFrame type
+    // The type in fiber->call_stack is havel::compiler::CallFrame (from Fiber.hpp)
+    // We're currently inside VM class scope, so we need to explicitly qualify
+    
+    // Get the correct CallFrame type from what fiber expects
+    // by using a typedef based on fiber's vector
+    using FiberCallFrameType = typename decltype(fiber->call_stack)::value_type;
+    using TryHandlerType = typename FiberCallFrameType::TryHandler;
+    
+    FiberCallFrameType fiber_cf;
+    fiber_cf.ip = vm_frame.ip;
+    fiber_cf.locals_base = vm_frame.locals_base;
+    fiber_cf.closure_id = vm_frame.closure_id;
+    
+    // Convert try_stack: both have same structure but different types
+    fiber_cf.try_stack.clear();
+    for (const auto& vm_handler : vm_frame.try_stack) {
+      fiber_cf.try_stack.push_back(TryHandlerType{
+          vm_handler.catch_ip,
+          vm_handler.finally_ip,
+          vm_handler.finally_return_ip,
+          vm_handler.stack_depth
+      });
+    }
+    
+    fiber->call_stack.push_back(fiber_cf);
+  }
+
+  // STEP 4: Save current instruction pointer
+  if (frame_count_ > 0) {
+    fiber->ip = frame_arena_[frame_count_ - 1].ip;
+  }
+
+  // STEP 5: Update fiber state if needed
+  // Don't change the suspended_reason - that was set when suspension occurred
+  // Just ensure the fiber's state reflects current execution point
+
+  if (debug_mode) {
+    std::cerr << "[VM] Saved fiber " << fiber->id << " state: "
+              << frame_count_ << " frames, " << stack.size() << " stack items"
+              << std::endl;
+  }
+}
+
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   while (frame_count_ > stop_frame_depth) {
     // CRITICAL: Capture ALL frame data by value BEFORE any mutation!
@@ -5270,60 +5452,27 @@ void VM::executeInstruction(const Instruction &instruction) {
   // ============================================================================
 
   case OpCode::YIELD: {
-    // Yield from coroutine (with optional value)
-    Value yield_value = popStack();
-
-    // Save current coroutine state if we're in a coroutine
-    if (current_coroutine_id_ != 0) {
-      auto *co = heap_.coroutine(current_coroutine_id_);
-      if (co) {
-        // Save instruction pointer (advance past YIELD since dispatch loop won't increment for us)
-        co->ip = currentFrame().ip + 1;
-
-        // Save coroutine's locals
-        co->locals = locals;
-
-        // Save yield value
-        co->yield_values = {yield_value};
-
-        // Advance caller's frame IP past the CALL instruction
-        if (co->saved_frame_count > 0 && co->saved_frame_count <= frame_count_) {
-          frame_arena_[co->saved_frame_count - 1].ip++;
-        }
-
-        // Restore caller's state
-        frame_count_ = co->saved_frame_count;
-        locals = co->saved_locals;
-
-        // Set state to Waiting
-        co->state = GCHeap::Coroutine::Waiting;
-
-        // Clear coroutine context
-        current_coroutine_id_ = 0;
-
-        // Push yield value for caller
-        pushStack(yield_value);
-        break;
-      }
-    }
+    // Phase 3B-2: Yield from fiber (with optional value)
+    //
+    // In the Phase 3 fiber-based execution model:
+    // - YIELD is a checkpoint, not a return
+    // - The yielded value stays on the stack for the next resumption
+    // - Execution continues in the same frame on next goroutine iteration
+    // - ExecutionEngine will detect this as a normal yield and reschedule
+    //
+    // Execution flow:
+    // 1. Pop yielded value (consumed by caller via next instruction)
+    // 2. Value remains accessible (not part of frame state)
+    // 3. ExecutionEngine calls saveFiberState() to persist state
+    // 4. Goroutine returned to runnable queue via handleYield()
+    // 5. When resumed, execution continues at next instruction
     
-    // If not in a coroutine, treat yield like return
-    // Use the same pattern as doReturn()
-    if (frame_count_ > 0) {
-      auto finished = frame_arena_[frame_count_ - 1];
-      frame_count_--;
-      
-      closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
-                       static_cast<uint32_t>(locals.size()));
-      
-      if (locals.size() >= finished.locals_base) {
-        locals.resize(finished.locals_base);
-      }
-      
-      pushStack(yield_value);
-    } else {
-      pushStack(yield_value);
-    }
+    Value yield_value = popStack();
+    // Push value back so caller can receive the yielded value via next instruction
+    pushStack(yield_value);
+    
+    // No special return needed - executeOneStep() will return Yield(nullptr) by default
+    // The instruction completed normally, execution will continue on next iteration
     break;
   }
 

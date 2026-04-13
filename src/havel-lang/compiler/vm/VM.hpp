@@ -320,6 +320,17 @@ public:
   // @return VMExecutionResult indicating what happened
   VMExecutionResult executeOneStep(Fiber *current_fiber);
   
+  // ========== PHASE 3B-1: FIBER STATE SYNCHRONIZATION ==========
+  // Load fiber's state into VM's global execution state
+  // Must be called before executeOneStep() to restore suspended fiber
+  // @param fiber The Fiber to load (must have SUSPENDED or pending state)
+  void loadFiberState(Fiber *fiber);
+  
+  // Save VM's current execution state back to fiber
+  // Must be called after executeOneStep() to persist execution progress
+  // @param fiber The Fiber to save to (preserves IP for resumption)
+  void saveFiberState(Fiber *fiber);
+  
   // Check if there are any active frames (for detecting completion)
   bool hasActiveFrames() const { return frame_count_ > 0; }
   

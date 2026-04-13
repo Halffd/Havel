@@ -2,6 +2,7 @@
  * ModularHostBridges.cpp - Modular bridge component implementations
  */
 #include "ModularHostBridges.hpp"
+#include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/stdlib/HotkeyModule.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
@@ -1763,8 +1764,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
       vm, hotkeyId, hotkeyStr, hotkeyStr, "",
       "Hotkey registered via hotkey.register", callbackId);
 
-  // Get event queue for thread-safe dispatch to main event loop
+  // Get event queue and mode manager for thread-safe dispatch
   auto *eventQueue = ctx->eventQueue;
+  auto *modeMgr = ctx->modeManager;
+  auto *hotkeyMgr = ctx->hotkeyManager;
 
   // Register hotkey with thread-safe EventQueue dispatch
   // When the hotkey fires, the callback is pushed to the event queue
@@ -1781,6 +1784,28 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
           vm->invokeCallback(callbackId, {hotkeyContext});
         }
       });
+
+  // Register conditional hotkey (when/if mode conditions)
+  // This uses the Scheduler's event loop to evaluate conditions and trigger actions
+  if (eventQueue && modeMgr && hotkeyMgr) {
+    ctx->hotkeyManager->AddContextualHotkey(
+        hotkeyStr,
+        // Condition: evaluated by checking current mode
+        [modeMgr]() {
+          std::string mode = modeMgr->getCurrentMode();
+          return !mode.empty() && mode != "default";
+        },
+        // True action: dispatch through EventQueue to main loop
+        [vm, callbackId, hotkeyContext, eventQueue]() {
+          if (eventQueue) {
+            eventQueue->push([vm, callbackId, hotkeyContext]() {
+              vm->invokeCallback(callbackId, {hotkeyContext});
+            });
+          } else {
+            vm->invokeCallback(callbackId, {hotkeyContext});
+          }
+        });
+  }
 
   // Return hotkey context object on success, null on failure
   // This allows: let hk = ^t => { ... }

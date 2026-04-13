@@ -17,7 +17,6 @@
 
 #include "ExecutionPolicy.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
-#include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
 
@@ -245,14 +244,11 @@ private:
  */
 class InputBridge : public BridgeModule {
 public:
-  explicit InputBridge(const HostContext *ctx,
-                       compiler::EventQueue *eventQueue = nullptr)
-      : ctx_(ctx), eventQueue_(eventQueue) {}
+  explicit InputBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
 
 private:
   const HostContext *ctx_;
-  compiler::EventQueue *eventQueue_;  // Thread-safe event queue for hotkey dispatch
   static Value
   handleHotkeyRegister(const std::vector<Value> &args,
                        const HostContext *ctx);

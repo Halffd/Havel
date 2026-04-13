@@ -628,6 +628,7 @@ bool ParserUtils::isLiteral(const Token& token) {
   switch (token.type) {
     case TokenType::Number:
     case TokenType::String:
+    case TokenType::RegexString:
     case TokenType::True:
     case TokenType::False:
     case TokenType::Null:

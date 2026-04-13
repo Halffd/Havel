@@ -6,172 +6,142 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
+// Helper: extract string from Value using VMApi
+static std::string getString(VMApi &api, const Value &v) {
+  return api.toString(v);
+}
+
 // Register regex module with VMApi (stable API layer)
 void registerRegexModule(VMApi &api) {
-  // Helper to get string from Value (TODO: string pool lookup)
-  auto getString = [](const Value &v) -> std::string {
-    if (v.isStringValId()) {
-      return "<string:" + std::to_string(v.asStringValId()) + ">";
+
+  // regex_match(pattern, text) - Test if entire text matches pattern
+  api.registerFunction("regex_match", [&api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("regex_match() requires pattern and text");
+
+    std::string pattern = getString(api, args[0]);
+    std::string text = getString(api, args[1]);
+
+    try {
+      std::regex re(pattern);
+      return api.makeBool(std::regex_match(text, re));
+    } catch (const std::regex_error &e) {
+      throw std::runtime_error("Invalid regex pattern: " + std::string(e.what()));
     }
-    return "";
-  };
+  });
 
-  // regex_match(pattern, text) - Test if text matches pattern
-  api.registerFunction(
-      "regex_match", [&api, getString](const std::vector<Value> &args) {
-        if (args.size() < 2)
-          throw std::runtime_error("regex_match() requires pattern and text");
+  // regex_search(pattern, text) - Search for pattern anywhere in text
+  api.registerFunction("regex_search", [&api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("regex_search() requires pattern and text");
 
-        if (!args[0].isStringValId() || !args[1].isStringValId())
-          throw std::runtime_error("regex_match() requires string arguments");
+    std::string text = getString(api, args[0]);
+    std::string pattern = getString(api, args[1]);
 
-        const auto &pattern = getString(args[0]);
-        const auto &text = getString(args[1]);
+    try {
+      std::regex re(pattern);
+      return api.makeBool(std::regex_search(text, re));
+    } catch (const std::regex_error &e) {
+      throw std::runtime_error("Invalid regex pattern: " + std::string(e.what()));
+    }
+  });
 
-        try {
-          std::regex re(pattern);
-          bool matches = std::regex_match(text, re);
-          return Value(matches);
-        } catch (const std::regex_error &e) {
-          throw std::runtime_error("Invalid regex pattern: " +
-                                   std::string(e.what()));
-        }
-      });
+  // regex_replace(pattern, text, replacement) - Replace all pattern matches
+  api.registerFunction("regex_replace", [&api](const std::vector<Value> &args) {
+    if (args.size() < 3)
+      throw std::runtime_error("regex_replace() requires pattern, text, and replacement");
 
-  // regex_search(pattern, text) - Search for substring pattern in text
-  api.registerFunction(
-      "regex_search", [&api, getString](const std::vector<Value> &args) {
-        if (args.size() < 2)
-          throw std::runtime_error("regex_search() requires pattern and text");
+    std::string pattern = getString(api, args[0]);
+    std::string text = getString(api, args[1]);
+    std::string replacement = getString(api, args[2]);
 
-        if (!args[0].isStringValId() || !args[1].isStringValId())
-          throw std::runtime_error("regex_search() requires string arguments");
+    try {
+      std::regex re(pattern);
+      std::string result = std::regex_replace(text, re, replacement);
+      return api.makeString(std::move(result));
+    } catch (const std::regex_error &e) {
+      throw std::runtime_error("Invalid regex pattern: " + std::string(e.what()));
+    }
+  });
 
-        // ByteCompiler pushes: left (text), then right (pattern)
-        // So args[0] = text (string to search in), args[1] = pattern (substring)
-        const auto &text = getString(args[0]);
-        const auto &pattern = getString(args[1]);
+  // regex_extract(pattern, text) - Extract all matches as array of strings
+  api.registerFunction("regex_extract", [&api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("regex_extract() requires pattern and text");
 
-        // Simple substring search (not regex)
-        bool found = text.find(pattern) != std::string::npos;
-        return Value(found);
-      });
+    std::string pattern = getString(api, args[0]);
+    std::string text = getString(api, args[1]);
 
-  // regex_replace(pattern, text, replacement) - Replace pattern matches
-  api.registerFunction(
-      "regex_replace", [&api, getString](const std::vector<Value> &args) {
-        if (args.size() < 3)
-          throw std::runtime_error(
-              "regex_replace() requires pattern, text, and replacement");
+    try {
+      std::regex re(pattern);
+      auto result = api.makeArray();
+      auto it = std::sregex_iterator(text.begin(), text.end(), re);
+      auto end = std::sregex_iterator();
 
-        if (!args[0].isStringValId() || !args[1].isStringValId() || !args[2].isStringValId())
-          throw std::runtime_error("regex_replace() requires string arguments");
-
-        const auto &pattern = getString(args[0]);
-        const auto &text = getString(args[1]);
-        const auto &replacement = getString(args[2]);
-
-        try {
-          std::regex re(pattern);
-          std::string result = std::regex_replace(text, re, replacement);
-          // TODO: string pool registration
-          return Value::makeNull();
-        } catch (const std::regex_error &e) {
-          throw std::runtime_error("Invalid regex pattern: " +
-                                   std::string(e.what()));
-        }
-      });
-
-  // regex_extract(pattern, text) - Extract all matches as array
-  api.registerFunction(
-      "regex_extract", [&api, getString](const std::vector<Value> &args) {
-        if (args.size() < 2)
-          throw std::runtime_error("regex_extract() requires pattern and text");
-
-        if (!args[0].isStringValId() || !args[1].isStringValId())
-          throw std::runtime_error("regex_extract() requires string arguments");
-
-        const auto &pattern = getString(args[0]);
-        const auto &text = getString(args[1]);
-
-        try {
-          std::regex re(pattern);
-          auto result = api.makeArray();
-
-          auto words_begin = std::sregex_iterator(text.begin(), text.end(), re);
-          auto words_end = std::sregex_iterator();
-
-          for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
-            std::smatch match = *i;
-            // TODO: string pool registration
-            api.push(result, Value::makeNull());
+      for (; it != end; ++it) {
+        std::smatch match = *it;
+        // If there are capture groups, return array of groups; else return full match
+        if (match.size() > 1) {
+          auto groups = api.makeArray();
+          for (size_t i = 1; i < match.size(); ++i) {
+            api.push(groups, api.makeString(match[i].str()));
           }
-
-          return Value(result);
-        } catch (const std::regex_error &e) {
-          throw std::runtime_error("Invalid regex pattern: " +
-                                   std::string(e.what()));
+          api.push(result, groups);
+        } else {
+          api.push(result, api.makeString(match[0].str()));
         }
-      });
+      }
 
-  // regex_split(pattern, text) - Split text by pattern
-  api.registerFunction(
-      "regex_split", [&api, getString](const std::vector<Value> &args) {
-        if (args.size() < 2)
-          throw std::runtime_error("regex_split() requires pattern and text");
+      return result;
+    } catch (const std::regex_error &e) {
+      throw std::runtime_error("Invalid regex pattern: " + std::string(e.what()));
+    }
+  });
 
-        if (!args[0].isStringValId() || !args[1].isStringValId())
-          throw std::runtime_error("regex_split() requires string arguments");
+  // regex_split(pattern, text) - Split text by pattern into array
+  api.registerFunction("regex_split", [&api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("regex_split() requires pattern and text");
 
-        const auto &pattern = getString(args[0]);
-        const auto &text = getString(args[1]);
+    std::string pattern = getString(api, args[0]);
+    std::string text = getString(api, args[1]);
 
-        try {
-          std::regex re(pattern);
-          auto result = api.makeArray();
+    try {
+      std::regex re(pattern);
+      auto result = api.makeArray();
+      auto it = std::sregex_token_iterator(text.begin(), text.end(), re, -1);
+      auto end = std::sregex_token_iterator();
 
-          std::sregex_token_iterator iter(text.begin(), text.end(), re, -1);
-          std::sregex_token_iterator end;
+      for (; it != end; ++it) {
+        api.push(result, api.makeString(*it));
+      }
 
-          for (; iter != end; ++iter) {
-            // TODO: string pool registration
-            api.push(result, Value::makeNull());
-          }
-
-          return Value(result);
-        } catch (const std::regex_error &e) {
-          throw std::runtime_error("Invalid regex pattern: " +
-                                   std::string(e.what()));
-        }
-      });
+      return result;
+    } catch (const std::regex_error &e) {
+      throw std::runtime_error("Invalid regex pattern: " + std::string(e.what()));
+    }
+  });
 
   // escape_regex(text) - Escape regex special characters
-  api.registerFunction(
-      "escape_regex", [&api, getString](const std::vector<Value> &args) {
-        if (args.empty())
-          throw std::runtime_error("escape_regex() requires text");
+  api.registerFunction("escape_regex", [&api](const std::vector<Value> &args) {
+    if (args.empty())
+      throw std::runtime_error("escape_regex() requires text");
 
-        if (!args[0].isStringValId())
-          throw std::runtime_error("escape_regex() requires a string");
+    std::string text = getString(api, args[0]);
+    std::string result;
 
-        const auto &text = getString(args[0]);
-        std::string result;
+    static const std::string specialChars = R"(.^$|()\[]{}*+?/\)";
+    for (char c : text) {
+      if (specialChars.find(c) != std::string::npos) {
+        result += '\\';
+      }
+      result += c;
+    }
 
-        // Escape regex special characters
-        for (char c : text) {
-          if (c == '.' || c == '^' || c == '$' || c == '*' || c == '+' ||
-              c == '?' || c == '(' || c == ')' || c == '[' || c == ']' ||
-              c == '{' || c == '}' || c == '|' || c == '\\' || c == '/') {
-            result += '\\';
-          }
-          result += c;
-        }
+    return api.makeString(std::move(result));
+  });
 
-        // TODO: string pool registration
-        return Value::makeNull();
-      });
-
-  // Register regex object
+  // Register regex object for Regex.match(), Regex.search(), etc.
   auto regexObj = api.makeObject();
   api.setField(regexObj, "match", api.makeFunctionRef("regex_match"));
   api.setField(regexObj, "search", api.makeFunctionRef("regex_search"));

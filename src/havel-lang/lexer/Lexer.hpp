@@ -76,6 +76,7 @@ enum class TokenType {
   Identifier,
   Number,
   String,
+  RegexString,         // r"pattern" regex string literal
   MultilineString, // """...""" multiline strings
   InterpolatedString,
   Backtick,            // `command` for shell output
@@ -233,7 +234,7 @@ private:
 
   Token scanNumber();
   Token scanChar();
-  Token scanString(bool isFString = false);
+  Token scanString(bool isFString = false, bool isRegexString = false);
   Token scanMultilineString(bool isFString = false);
   Token scanBacktick();
   Token scanRegexLiteral();

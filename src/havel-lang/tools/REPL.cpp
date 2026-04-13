@@ -53,6 +53,9 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   // Create HostContext with injected dependencies (stored as member to persist beyond this function)
   hostContext_ = std::make_unique<HostContext>(havel::createHostContext(hostAPI));
 
+  // Wire VM into HostContext (required before HostBridge::install() fires vm_setup_callbacks_)
+  hostContext_->vm = vm_.get();
+
   // Create HostBridge with injected context
   hostBridge_ = compiler::createHostBridge(*hostContext_);
   hostBridge_->install();

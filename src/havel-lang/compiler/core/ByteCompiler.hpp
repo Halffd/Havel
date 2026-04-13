@@ -160,6 +160,11 @@ private:
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
 
+  // Phase 3B-3: Generator detection
+  bool functionContainsYield(const ast::BlockStatement &body) const;
+  bool statementContainsYield(const ast::Statement &stmt) const;
+  bool expressionContainsYield(const ast::Expression &expr) const;
+
   void enterFunction(BytecodeFunction &&function,
                      std::optional<uint32_t> slot = std::nullopt);
   void leaveFunction();

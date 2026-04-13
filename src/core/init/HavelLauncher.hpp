@@ -53,6 +53,8 @@ private:
   int runScript(const LaunchConfig &cfg, int argc, char *argv[]);
   int runScriptOnly(const LaunchConfig &cfg, int argc,
                     char *argv[]); // Pure script execution without IO
+  int runBytecodeFiles(const LaunchConfig &cfg,
+                       const std::vector<std::string> &hvcFiles);
   int runScriptAndRepl(const LaunchConfig &cfg, int argc, char *argv[]);
   int runRepl(const LaunchConfig &cfg);
   int runCli(int argc, char *argv[]);

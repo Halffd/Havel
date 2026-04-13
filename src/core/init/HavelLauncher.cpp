@@ -489,8 +489,107 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 #endif
 } // End of restart loop
 
+int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
+                                                  const std::vector<std::string> &hvcFiles) {
+  // Load and execute .hvc bytecode files directly
+  std::string combinedNames;
+  havel::compiler::BytecodeChunk combinedChunk;
+
+  for (const auto& f : hvcFiles) {
+    std::ifstream file(f, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      error("Cannot open bytecode file: {}", f);
+      return 2;
+    }
+
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> buffer(size);
+    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+      error("Failed to read bytecode file: {}", f);
+      return 2;
+    }
+
+    havel::compiler::ValueSerializer serializer;
+    auto chunk = serializer.deserializeChunk(buffer);
+    if (!chunk) {
+      error("Failed to deserialize bytecode: {}", f);
+      return 2;
+    }
+
+    if (!combinedNames.empty()) combinedNames += " + ";
+    combinedNames += f;
+
+    // Merge functions from this chunk into combined chunk
+    for (const auto& func : chunk->getAllFunctions()) {
+      havel::compiler::BytecodeFunction copy(func.name, func.param_count, func.local_count);
+      copy.instructions = func.instructions;
+      copy.constants = func.constants;
+      copy.upvalues = func.upvalues;
+      copy.default_values = func.default_values;
+      copy.variadic_param_index = func.variadic_param_index;
+      copy.param_names = func.param_names;
+      copy.is_generator = func.is_generator;
+      combinedChunk.addFunction(std::move(copy));
+    }
+  }
+
+  if (combinedChunk.getFunctionCount() == 0) {
+    error("No functions found in bytecode files");
+    return 2;
+  }
+
+  info("Loaded {} functions from {} bytecode file(s)", combinedChunk.getFunctionCount(), hvcFiles.size());
+  if (cfg.debugBytecode) {
+    info("Bytecode loaded successfully");
+  }
+
+  // Set up VM and execute
+  try {
+    havel::HostContext ctx;
+    havel::compiler::VM tempVm;
+    ctx.vm = &tempVm;
+    auto bridge = havel::compiler::createHostBridge(ctx);
+    bridge->install();
+    havel::registerStdLibWithVM(*bridge);
+
+    // Register host functions with VM
+    auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
+    for (const auto& [name, fn] : bridge->options().host_functions) {
+      vm->registerHostFunction(name, fn);
+    }
+
+    // Execute __main__ function
+    auto result = vm->execute(combinedChunk, "__main__");
+    info("Bytecode execution completed successfully");
+
+    bridge->shutdown();
+    return 0;
+  } catch (const std::exception &e) {
+    error("Bytecode error: {}", e.what());
+    return 1;
+  }
+}
+
 int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
                                               char *argv[]) {
+  // Check if we have .hvc bytecode files
+  std::vector<std::string> hvcFiles;
+  std::vector<std::string> hvFiles;
+  for (const auto& f : cfg.scriptFiles) {
+    if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc") {
+      hvcFiles.push_back(f);
+    } else {
+      hvFiles.push_back(f);
+    }
+  }
+
+  // Pure bytecode execution: load and run .hvc files directly
+  if (!hvcFiles.empty() && hvFiles.empty()) {
+    return runBytecodeFiles(cfg, hvcFiles);
+  }
+
   // Pure script execution without IO, hotkeys, display, or GUI
   std::string combinedCode;
   std::string combinedNames;

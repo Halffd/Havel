@@ -23,6 +23,7 @@ namespace havel {
 
 namespace compiler {
 class VM;
+class EventQueue;
 }
 namespace compiler {
 class HostBridge;
@@ -111,6 +112,9 @@ struct HostContext {
   class WindowMonitor *windowMonitor =
       nullptr; // Window monitoring for dynamic variables
   class MPVController *mpvController = nullptr; // MPV media player controller
+
+  // Event queue for thread-safe callback dispatch (from OS threads, timers, etc)
+  class compiler::EventQueue *eventQueue = nullptr;
 
   // Capability-based extensions (embedder-provided)
   std::unordered_map<std::string, std::shared_ptr<Capability>> caps;

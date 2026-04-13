@@ -2121,17 +2121,39 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     } else {
       emit(OpCode::OBJECT_NEW);
     }
-    for (const auto &pair : object.pairs) {
-      if (!pair.second) {
-        COMPILER_THROW("Object literal contains null value");
+    uint32_t positionalIndex = 0;
+    for (const auto &entry : object.pairs) {
+      if (!entry.value) {
+        COMPILER_THROW("Collection literal contains null value");
       }
       emit(OpCode::DUP);
-      compileExpression(*pair.second);
-      {
-        uint32_t strId = addStringConstant(pair.first);
+
+      // Check for spread
+      if (entry.key == "__spread__") {
+        compileExpression(*entry.value);
+        // Call any.extend(obj, source) to spread
+        uint32_t strId = addStringConstant("any.extend");
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId),
+            Value(static_cast<uint32_t>(2))});
+      } else if (entry.isComputedKey) {
+        // Computed key: {[expr]: value}
+        compileExpression(*entry.value);
+        compileExpression(*entry.keyExpr);
+        emit(OpCode::OBJECT_SET);
+      } else if (entry.key.empty()) {
+        // Positional element: store at numeric index
+        compileExpression(*entry.value);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(positionalIndex))));
+        positionalIndex++;
+        emit(OpCode::OBJECT_SET);
+      } else {
+        // Regular key:value pair
+        compileExpression(*entry.value);
+        uint32_t strId = addStringConstant(entry.key);
         emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId)));
+        emit(OpCode::OBJECT_SET);
       }
-      emit(OpCode::OBJECT_SET);
     }
     break;
   }
@@ -2771,10 +2793,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::STORE_VAR, temp_slot);
 
         // Extract each property
-        for (const auto &pair : objLit.pairs) {
-          if (pair.second && pair.second->kind == ast::NodeType::Identifier) {
+        for (const auto &entry : objLit.pairs) {
+          if (entry.value && entry.value->kind == ast::NodeType::Identifier) {
             const auto &ident =
-                static_cast<const ast::Identifier &>(*pair.second);
+                static_cast<const ast::Identifier &>(*entry.value);
             const auto *binding = bindingFor(ident);
             if (!binding) {
               COMPILER_THROW(
@@ -2783,7 +2805,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             }
             // Load object, get property by key
             emit(OpCode::LOAD_VAR, temp_slot);
-            { uint32_t _sid = addStringConstant(pair.first); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            { uint32_t _sid = addStringConstant(entry.key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
             emit(OpCode::OBJECT_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
@@ -4486,9 +4508,12 @@ void ByteCompiler::collectLambdaExpressions(
   }
   case ast::NodeType::ObjectLiteral: {
     const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
-    for (const auto &pair : object.pairs) {
-      if (pair.second) {
-        collectLambdaExpressions(*pair.second, out);
+    for (const auto &entry : object.pairs) {
+      if (entry.value) {
+        collectLambdaExpressions(*entry.value, out);
+      }
+      if (entry.isComputedKey && entry.keyExpr) {
+        collectLambdaExpressions(*entry.keyExpr, out);
       }
     }
     break;
@@ -5682,8 +5707,11 @@ bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
     
     case ast::NodeType::ObjectLiteral: {
       const auto &obj = static_cast<const ast::ObjectLiteral &>(expr);
-      for (const auto &pair : obj.pairs) {
-        if (pair.second && expressionContainsYield(*pair.second)) {
+      for (const auto &entry : obj.pairs) {
+        if (entry.value && expressionContainsYield(*entry.value)) {
+          return true;
+        }
+        if (entry.isComputedKey && entry.keyExpr && expressionContainsYield(*entry.keyExpr)) {
           return true;
         }
       }

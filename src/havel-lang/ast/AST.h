@@ -108,6 +108,7 @@ enum class NodeType {
   RecordExpression, // {name: "John", age: 30}
   MapExpression,    // #{key1: val1, key2: val2}
   SetExpression,    // #{1, 2, 3}
+  CollectionExpression, // {"a", "b", x: 10} mixed positional and keyed
 
   // Destructuring patterns
   ListPattern,   // [head|tail], [a, b, c]
@@ -2197,13 +2198,20 @@ struct TupleExpression : public Expression {
 };
 
 // Object Literal ({key: value, ...} or !{key: value, ...} for unsorted)
+// Also supports mixed syntax: {val1, val2, key: val, [expr]: val, ...spread}
 struct ObjectLiteral : public Expression {
-  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+  // Pair entry: key may be empty for positional elements (no colon)
+  struct PairEntry {
+    std::string key;                    // empty for positional elements
+    bool isComputedKey = false;          // true if key is [expr]
+    std::unique_ptr<Expression> keyExpr; // expression for computed key
+    std::unique_ptr<Expression> value;   // the value
+  };
+
+  std::vector<PairEntry> pairs;
   bool unsorted = false; // true for !{} syntax (unsorted keys)
 
-  ObjectLiteral(
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {},
-      bool unsortedFlag = false)
+  ObjectLiteral(std::vector<PairEntry> p = {}, bool unsortedFlag = false)
       : pairs(std::move(p)), unsorted(unsortedFlag) {
     kind = NodeType::ObjectLiteral;
   }
@@ -2310,7 +2318,8 @@ struct SpreadExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Set Expression (#{1, 2, 3})
+// Set Expression (#{1, 2, 3} or {1, 2, 3} when parsed as set)
+// Also supports spread: {1, 2, ...other, 5}
 struct SetExpression : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
 
@@ -2321,6 +2330,30 @@ struct SetExpression : public Expression {
 
   std::string toString() const override {
     return "SetExpression{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Mixed collection expression: supports both positional and keyed entries
+// e.g. {"a", "b", x: 10, y: 20} or {["key"]: val, ...spread}
+struct CollectionExpression : public Expression {
+  // Uses the same PairEntry structure as ObjectLiteral
+  struct PairEntry {
+    std::string key;
+    bool isComputedKey = false;
+    std::unique_ptr<Expression> keyExpr;
+    std::unique_ptr<Expression> value;
+  };
+  std::vector<PairEntry> entries;
+
+  CollectionExpression(std::vector<PairEntry> e = {})
+      : entries(std::move(e)) {
+    kind = NodeType::CollectionExpression;
+  }
+
+  std::string toString() const override {
+    return "CollectionExpression{" + std::to_string(entries.size()) + " entries}";
   }
 
   void accept(ASTVisitor &visitor) const override;

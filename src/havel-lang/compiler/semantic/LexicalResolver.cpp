@@ -1052,10 +1052,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
       // Pre-declare object destructuring targets
       const auto &objLit =
           static_cast<const ast::ObjectLiteral &>(*assignment.target);
-      for (const auto &pair : objLit.pairs) {
-        if (pair.second && pair.second->kind == ast::NodeType::Identifier) {
+      for (const auto &entry : objLit.pairs) {
+        if (entry.value && entry.value->kind == ast::NodeType::Identifier) {
           const auto &ident =
-              static_cast<const ast::Identifier &>(*pair.second);
+              static_cast<const ast::Identifier &>(*entry.value);
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
             bool isGlobalScope = (function_stack_.size() == 1);
@@ -1166,9 +1166,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
 
   case ast::NodeType::ObjectLiteral: {
     const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
-    for (const auto &pair : object.pairs) {
-      if (pair.second) {
-        resolveExpression(*pair.second);
+    for (const auto &entry : object.pairs) {
+      if (entry.value) {
+        resolveExpression(*entry.value);
+      }
+      if (entry.isComputedKey && entry.keyExpr) {
+        resolveExpression(*entry.keyExpr);
       }
     }
     break;

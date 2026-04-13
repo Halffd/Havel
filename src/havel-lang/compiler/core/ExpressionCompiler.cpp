@@ -326,11 +326,31 @@ void ExpressionCompiler::compileArrayLiteral(const ast::ArrayLiteral& array) {
 }
 
 void ExpressionCompiler::compileObjectLiteral(const ast::ObjectLiteral& object) {
-  emitter_.emit(OpCode::OBJECT_NEW);
-  for (const auto& [key, value] : object.pairs) {
-    if (value) {
-      compile(*value);
-      uint32_t strId = emitter_.addStringConstant(key);
+  emitter_.emit(object.unsorted ? OpCode::OBJECT_NEW_UNSORTED : OpCode::OBJECT_NEW);
+  uint32_t positionalIndex = 0;
+  for (const auto& entry : object.pairs) {
+    if (!entry.value) continue;
+
+    // Check for spread
+    if (entry.key == "__spread__") {
+      compile(*entry.value);
+      uint32_t strId = emitter_.addStringConstant("any.extend");
+      emitter_.emit(OpCode::CALL_HOST, std::vector<Value>{
+          Value::makeStringValId(strId),
+          Value(static_cast<uint32_t>(2))});
+    } else if (entry.isComputedKey) {
+      compile(*entry.value);
+      compile(*entry.keyExpr);
+      emitter_.emit(OpCode::OBJECT_SET);
+    } else if (entry.key.empty()) {
+      // Positional element
+      compile(*entry.value);
+      emitter_.emit(OpCode::LOAD_CONST, Value::makeInt(static_cast<int64_t>(positionalIndex)));
+      positionalIndex++;
+      emitter_.emit(OpCode::OBJECT_SET);
+    } else {
+      compile(*entry.value);
+      uint32_t strId = emitter_.addStringConstant(entry.key);
       emitter_.emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
       emitter_.emit(OpCode::OBJECT_SET);
     }

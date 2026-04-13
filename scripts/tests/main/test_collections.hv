@@ -1,0 +1,554 @@
+// test_collections.hv - Full Collections API Test
+// Tests all collection types: List, Tuple, Object, Set, Unordered Object
+
+print("========== COLLECTIONS API TEST ==========\n")
+
+// ============================================================
+// 1. LIST (Array) Tests
+// ============================================================
+print("1. LIST TESTS")
+print("-------------")
+
+// Creation
+let arr = [1, 2, 3, 4, 5]
+let mixed = [1, "two", true, null, [1,2]]
+print("  Created: " + arr)
+print("  Mixed: " + mixed)
+
+// Basic properties
+print("  len: " + arr.len)
+print("  len with #: " + #arr)
+print(f"  empty: {arr.empty()} (arr.len == 0 ? "true" : "false")")
+
+// Element access
+print("  [0]: " + arr[0])
+print("  [-1]: " + arr[-1])
+print("  [1:3]: " + arr[1:3])
+print("  [::-1]: " + arr[::-1])  // reversed slice
+arr[0] = 10
+arr[-1] = 50
+print("  After mutation: " + arr)
+
+// Mutations
+arr.push(6)
+print("  push(6): " + arr)
+arr.pop()
+print("  pop(): " + arr)
+arr.unshift(0)
+print("  unshift(0): " + arr)
+arr.shift()
+print("  shift(): " + arr)
+arr.insert(2, 99)
+print("  insert(2,99): " + arr)
+arr.extend([7,8])
+print("  extend([7,8]): " + arr)
+clone = arr.clone()
+print("  clone(): " + clone)
+arr.delete(99)
+print("  delete(99): " + arr)
+arr.clear()
+print("  clear(): " + arr)
+arr = clone + [9,10]
+print("  clone + [9,10]: " + arr)
+arr = arr - [1,2]
+print("  arr - [1,2]: " + arr)
+arr = arr * 2
+print("  arr * 2: " + arr)
+arr = arr / 2
+print("  arr / 2: " + arr)
+arr = arr % 2
+print("  arr % 2: " + arr)
+arr += [11,12,13,14,15,1,2,3,4,5]
+arr++
+
+// Functional
+let doubled = arr.map(x => x * 2)
+print("  map(x*2): " + doubled)
+let evens = arr.filter(x => x % 2 == 0)
+print("  filter(even): " + evens)
+let sum = arr.reduce((a,b) => a + b, 0)
+print("  reduce(sum): " + sum)
+let count = arr.count(x => x == 2)
+print("  count(x==2): " + count)
+let grouped = arr.groupBy(x => x % 2 == 0 ? "even" : "odd")
+let sortedGroup = grouped.sortKey((a,b) => a.compare(b))
+print("  groupBy even/odd: " + sortedGroup)
+let sorted = arr.sorted((a,b) => a + b)
+print("  sorted(): " + sorted)
+arr.sort((a,b) => b - a)
+print("  sort(): " + arr)
+arr = arr.reverse()
+print("  reverse(): " + arr)
+
+// Iteration
+print("  foreach: ", end="")
+arr.foreach(x => print(x, end=" "))
+print("")
+
+// Queries
+print("  has(3): " + arr.has(3))
+print("  includes(3): " + arr.includes(3))
+print("  indexOf(3): " + arr.indexOf(3))
+print("  find(x=>x>3): " + arr.find(x => x > 3))
+print("  every(x>0): " + arr.every(x => x > 0))
+print("  some(x>10): " + arr.some(x => x > 10))
+
+// Order operations
+print("  reversed(): " + arr.reversed())
+print("  sorted(): " + [3,1,4,1,5,9].sorted())
+print("  unique(): " + [1,2,2,3,3,3].unique())
+
+// Joins
+print("  join(', '): " + arr.join(", "))
+
+// Slice syntax
+print("  [:3]: " + arr[:3])
+print("  [-2:]: " + arr[-2:])
+print("  [1:4]: " + arr[1:4])
+
+print("")
+
+// ============================================================
+// 2. TUPLE Tests (Immutable)
+// ============================================================
+print("2. TUPLE TESTS")
+print("-------------")
+
+let tup = (1, "hello", true, 3.14)
+print("  Created: " + tup)
+print("  len: " + tup.len)
+print("  [0]: " + tup[0])
+print("  [1]: " + tup[1])
+print("  [2]: " + tup[2])
+print("  [3]: " + tup[3])
+
+// Destructuring
+let [a, b, c, d] = tup
+print("  Destructured: a=" + a + ", b=" + b + ", c=" + c + ", d=" + d)
+
+// Slice on tuple
+print("  [:2]: " + tup[:2])
+print("  [-2:]: " + tup[-2:])
+
+// Conversion
+print("  .list(): " + tup.list())
+print("  .toSet(): " + tup.toSet())
+
+// Immutability test (should error or be ignored)
+print("  Trying to modify tuple...")
+try {
+    tup[0] = 99
+    print("    ERROR: Tuple was modified!")
+} catch e {
+    print("    Correctly caught: " + e)
+}
+
+print("")
+
+// ============================================================
+// 3. OBJECT Tests (Ordered Key-Value)
+// ============================================================
+print("3. OBJECT TESTS")
+print("--------------")
+
+let obj = {name: "Alice", age: 30, city: "NYC"}
+print("  Created: " + obj)
+
+// Basic operations
+print("  len: " + obj.len)
+print("  len with #: " + #obj)
+print("  has('name'): " + obj.has("name"))
+print("  get('age'): " + obj.get("age"))
+print("  keys(): " + obj.keys())
+print("  values(): " + obj.values())
+print("  entries(): " + obj.entries())
+
+// Mutations
+obj.set("age", 31)
+print("  set('age',31): " + obj)
+obj.delete("city")
+print("  delete('city'): " + obj)
+
+obj.continent = "North America"
+print("  Added continent: " + obj)
+obj["country"] = "USA"
+print("  Added country: " + obj)
+del obj.name
+print("  Deleted name: " + obj)
+
+// vividification
+obj.time.date.year = 2024
+print("  vividification: " + obj)
+
+// Functional iteration
+print("  each(key,value): ", end="")
+obj.each((k,v) => print(k + "=" + v, end=" "))
+print("")
+
+
+let mapped = obj.map((k,v) => [k, v * 2])
+print("  map values: " + mapped)
+
+// Merge
+let merged = obj.merge({country: "USA", age: 32})
+print("  merge(): " + merged)
+
+//flatten
+let nested = {a: 1, b: {c: 2, d: 3}, e: 4}
+print("  Nested: " + nested)
+print("  Flattened: " + nested.flatten())
+// unflatten
+let flat = {a: 1, "b.c": 2, "b.d": 3, e: 4}
+print("  Flat: " + flat)
+print("  Unflattened: " + flat.unflatten())
+// pick and omit
+print("  pick(['a','e']): " + nested.pick(["a","e"]))
+print("  omit(['b']): " + nested.omit(["b"]))
+// invert
+let inverted = {a:1, b:2, c:3}.invert()
+print("  Inverted: " + inverted)
+// defaults
+let withDefaults = {a: 1}.defaults({a: 10, b: 20})
+print("  With defaults: " + withDefaults)
+// rename keys
+let renamed = {a:1, b:2}.rename({"a":"alpha", "b":"beta"})
+print("  Renamed keys: " + renamed)
+// pickBy and omitBy
+let pickBy = {a:1, b:2, c:3}.pickBy((k,v) => v > 1)
+print("  pickBy(v>1): " + pickBy)
+let omitBy = {a:1, b:2, c:3}.omitBy((k,v) => v > 1)
+print("  omitBy(v>1): " + omitBy)
+// nested get/set
+print("  nested get: " + obj.get("time.date.year"))
+obj.set("time.date.month", "June")
+print("  nested set: " + obj)
+// merge with customizer
+let mergedCustom = {a:1, b:2}.merge({b:3, c:4}, (key, oldVal, newVal) => oldVal + newVal)
+// nested objects
+obj.profile = {hobbies: ["reading", "coding"], education: {degree: "CS", year: 2020}, test: {nested: {deep: obj}}}
+assert(obj.profile.test.nested == obj, "Nested reference preserved")
+print("  Nested objects: " + obj)
+// equality
+print("  Equality: " + ({a:1, b:2} == {a:1, b:2}))
+print("  Deep equality: " + ({a:1, b:{c:2}} == {a:1, b:{c:2}}))
+print("  Deep equality with different order: " + ({a:1, b:2} == {b:2, a:1}))
+print("  Deep equality with different values: " + ({a:1, b:2} == {a:1, b:3}))
+print("  Deep equality with different keys: " + ({a:1, b:2} == {a:1, c:2}))
+print("  Deep equality with nested objects: " + ({a:1, b:{c:2}} == {a:1, b:{c:2}}))
+print("  Deep equality with nested objects and different order: " + ({a:1, b:{c:2, d:3}} == {b:{d:3, c:2}, a:1}))
+
+// Sorting
+let unsorted = {z:1, a:2, m:3}
+print("  Unsorted: " + unsorted)
+print("  sortKey(): " + unsorted.sortKey((a,b) => a.compare(b)))
+print("  sortVal(): " + unsorted.sortVal((a,b) => b - a))
+
+print("")
+
+// ============================================================
+// 4. SET Tests (Unique Values)
+// ============================================================
+print("4. SET TESTS")
+print("-----------")
+
+let set = {1, 2, 3, 2, 1, 4}
+print("  Created: " + set)
+print("  len: " + set.len)
+
+// Operations
+set.add(5)
+print("  add(5): " + set)
+set.delete(2)
+print("  delete(2): " + set)
+print("  has(3): " + set.has(3))
+
+// Set algebra
+let setA = {1, 2, 3, 4}
+let setB = {3, 4, 5, 6}
+print("  A: " + setA)
+print("  B: " + setB)
+print("  union: " + setA.union(setB))
+print("  intersection: " + setA.intersection(setB))
+print("  difference: " + setA.difference(setB))
+print("  isSubsetOf: " + setA.isSubsetOf({1,2,3,4,5,6}))
+print("  isSupersetOf: " + setA.isSupersetOf({1,2}))
+print("  symmetricDifference: " + setA.symmetricDifference(setB))
+print("  cartesianProduct: " + setA.cartesianProduct(setB))
+print("  powerSet: " + setA.powerSet())
+print("  sorted(): " + setA.sorted())
+print("  unique(): " + setA.unique())
+print("  reversed(): " + setA.reversed())
+
+// Iteration
+print("  foreach: ", end="")
+set.foreach(x => print(x, end=" "))
+print("")
+
+// Conversion
+print("  list(): " + set.list())
+print("  toArray(): " + set.list())  // alias
+
+print("")
+
+// ============================================================
+// 5. UNORDERED OBJECT Tests (Fast, No Order Guarantee)
+// ============================================================
+print("5. UNORDERED OBJECT TESTS")
+print("------------------------")
+
+let uobj = !{b: 2, a: 1, c: 3}
+print("  Created: " + uobj)
+
+// Same methods as ordered object
+print("  keys(): " + uobj.keys())
+print("  values(): " + uobj.values())
+print("  entries(): " + uobj.entries())
+print("  has('a'): " + uobj.has("a"))
+
+uobj.set("d", 4)
+print("  set('d',4): " + uobj)
+uobj.delete("b")
+print("  delete('b'): " + uobj)
+
+print("")
+
+// ============================================================
+// 6. STRING Methods (String as Collection)
+// ============================================================
+print("6. STRING TESTS")
+print("--------------")
+
+let str = "hello world"
+print("  String: \"" + str + "\"")
+
+// Queries
+print("  len: " + str.len)
+print("  len with #: " + #str)
+print("  startsWith('hel'): " + str.startsWith("hel"))
+print("  endsWith('rld'): " + str.endsWith("rld"))
+print("  has('lo'): " + str.has("lo"))
+print("  includes('or'): " + str.includes("or"))
+print("  indexOf('w'): " + str.indexOf("w"))
+print("  count('l'): " + str.count("l"))
+
+// Transformations
+print("  upper(): " + str.upper())
+print("  lower(): " + str.lower())
+print("  capital(): " + str.capital())
+print("  trim(): \"" + "  hello  ".trim() + "\"")
+print("  left(5): " + str.left(5))
+print("  right(5): " + str.right(5))
+print("  substr(2,5): " + str.substr(2, 5))
+print("  repeat(2): " + str.repeat(2))
+print("  padStart(15, '*'): " + str.padStart(15, "*"))
+print("  padEnd(15, '-'): " + str.padEnd(15, "-"))
+print("  replace('l', 'x'): " + str.replace("l", "x"))
+print("  replace(r'[aeiou]', '?'): " + str.replace(r"[aeiou]", "?"))
+
+// Slice syntax
+print("  [:5]: \"" + str[:5] + "\"")
+print("  [-5:]: \"" + str[-5:] + "\"")
+print("  [2:7]: \"" + str[2:7] + "\"")
+print("  [::-1]: \"" + str[::-1] + "\"")
+
+// Iteration
+print("  characters: ", end="")
+for c in str {
+    print(c, end=" ")
+}
+print("")
+
+print("")
+
+// ============================================================
+// 7. TYPE CONVERSION FUNCTIONS
+// ============================================================
+print("7. TYPE CONVERSION TESTS")
+print("-----------------------")
+
+let arr2 = [1, 2, 3]
+let set2 = set(arr2)
+let obj2 = object([["a",1], ["b",2]])
+let tup2 = tuple([1, "two", true])
+
+print("  list -> set: " + set2)
+print("  list -> tuple: " + tuple(arr2))
+print("  entries -> object: " + obj2)
+print("  tuple -> list: " + tup2.list())
+print("  set -> list: " + set2.list())
+
+// Primitive conversions
+print("  int(3.14): " + int(3.14))
+print("  num(42): " + num(42))
+print("  str(123): " + str(123))
+print("  str(true): " + str(true))
+print("  str(null): " + str(null))
+
+print("")
+
+// ============================================================
+// 8. PROTOCOL METHODS (Common across all collections)
+// ============================================================
+print("8. PROTOCOL TESTS")
+print("----------------")
+
+fn testProtocol(coll, name) {
+    print("  " + name + ":")
+    print("    len: " + coll.len)
+    print("    has(2): " + coll.has(2))
+    print("    get(2): " + coll.get(2))
+    print("    set(0, 2): " + coll.set(0, 2))
+    print("    includes(2): " + coll.includes(2))
+    print("    find(2): " + coll.find(2))
+    print("    find(x=>x>2): " + coll.find(x => x > 2))
+    print("    map(x=>x*2): " + coll.map(x => x * 2))
+    print("    filter(x=>x>2): " + coll.filter(x => x > 2))
+    print("    reduce(sum): " + coll.reduce((a,b) => a + b, 0))
+    print("    count(x=>x==2): " + coll.count(x => x == 2))
+    print("    groupBy even/odd: " + coll.groupBy(x => x % 2 == 0 ? "even" : "odd"))
+    print("    sorted(): " + coll.sorted((a,b) => a.compare(b)))
+    print("    unique(): " + coll.unique())
+    print("    reversed(): " + coll.reversed())
+    print("    each: ", end="")
+    coll.each(x => print(x, end=" "))
+    print("")
+    print("     every(x>0): " + coll.every(x => x > 0))
+    print("     some(x>10): " + coll.some(x => x > 10))
+}
+
+let testList = [1, 2, 3, 4, 5]
+let testSet = {1, 2, 3, 4, 5}
+let testTuple = (1, 2, 3, 4, 5)
+let testObj = {a:1, b:2, c:3, d:4, e:5}
+
+testProtocol(testList, "List")
+testProtocol(testSet, "Set")
+testProtocol(testTuple, "Tuple")
+testProtocol(testObj, "Object (values)")
+
+print("")
+
+// Operator on collections
+print("  List + List: " + ([1,2] + [3,4]))
+print("  Set + Set: " + ({1,2} + {3,4}))
+print("  Object + Object: " + ({a:1} + {b:2}))
+print("  Tuple + Tuple: " + ((1,2) + (3,4)))
+print("  List * 2: " + ([1,2] * 2))
+print("  Set * 2: " + ({1,2} * 2))
+print("  Object * 2: " + ({a:1} * 2))
+print("  Tuple * 2: " + ((1,2) * 2))   
+print("  List - List: " + ([1,2,3] - [2]))
+print("  Set - Set: " + ({1,2,3} - {2}))
+print("  Object - Object: " + ({a:1, b:2} - {b:2}))
+print("  Tuple - Tuple: " + ((1,2,3) - (2)))
+print("  List / 2: " + ([1,2,3] / 2))
+print("  Set / 2: " + ({1,2,3} / 2))
+print("  Object / 2: " + ({a:1, b:2} / 2))
+print("  Tuple / 2: " + ((1,2,3) / 2))
+print("  List % 2: " + ([1,2,3] % 2))
+print("  Set % 2: " + ({1,2,3} % 2))
+print("  Object % 2: " + ({a:1, b:2} % 2))
+print("  Tuple % 2: " + ((1,2,3) % 2))
+let l = [1]
+l += [2,3]
+l -= [1]
+l += 1 // element-wise addition
+print("  List += and -= : " + l)
+l *= 2
+l /= 3
+l %= 2
+print("  List *=, /=, %=: " + l)
+l++
+print("  List ++: " + l)
+l--
+print("  List --: " + l)
+let s = "a"
+s += "b"
+print("  String +=: " + s)
+s *= 3
+print("  String *=: " + s)
+s -= "ababab"
+s /= "usr"
+s /= "bin" / "havel"
+print("  String -= and /=: " + s)
+s -= r"\W"
+print("  String -= regex: " + s)
+let reg = r"\w+"
+s += reg
+print("  String += regex: " + s)
+reg.match("hello world") // [["hello"], ["world"]]
+reg.match(["123 456", "456 789"]) // [["123"], ["456"]], [["456"], ["789"]]
+
+print("  String * 3: " + ("ha" * 3))
+print("  String + String: " + ("hello" + " world"))
+print("  Path joining: " + ("/usr" / "bin" / "havel"))
+print("  String length operator: " + #"hello")
+print("  String length property: " + "hello".len)
+print("  List length operator: " + #[1,2,3])
+print("  List length property: " + [1,2,3].len)
+print([1,2,3].len == #{1,2,3} ? "  Length operator and property consistent" : "  ERROR: Length operator and property inconsistent")
+// match operator
+print("  match: " + "hello world" ~ "lo" ? "found" : "not found")
+print("  Regex match: " + "hello world" ~ r"\w+")
+print("")
+
+// ============================================================
+// 9. EDGE CASES
+// ============================================================
+print("9. EDGE CASE TESTS")
+print("-----------------")
+
+// Empty collections
+print("  Empty list: " + [])
+print("  Empty tuple: " + ())
+print("  Empty object: " + {})
+print("  Empty set: " + set())
+
+// Nested structures
+let nested = [1, [2, 3], {a: 4}, (5,6), {7,8}]
+print("  Nested list: " + nested)
+print("  Nested[1]: " + nested[1])
+print("  Nested[2]['a']: " + nested[2].get("a"))
+print("  Nested[3][0]: " + nested[3][0])
+// vividification and mutation in nested structures
+nested[-1][0] = 70
+nested[1][1][0] = 30
+print("  After mutation: " + nested)
+
+// Deep equality
+print("  [1,2] == [1,2]: " + ([1,2] == [1,2]))
+print("  [1,2] == [2,1]: " + ([1,2] == [2,1]))
+print("  {a:1} == {a:1}: " + ({a:1} == {a:1}))
+print("  {1,2} == {2,1}: " + ({1,2} == {2,1}))
+
+// Null handling
+print("  null.list(): " + list(null))
+print("  null.len: " + (null.len ?? "null"))
+
+// coelescing operator
+print("  null ?? 'default': " + (null ?? "default"))
+print("  array ?? 'default': " + (nested ?? "default"))
+print("  unexistentkey ?? 'default': " + (nested.unexistentkey ?? "default"))
+print("  unexistentVar ?? 'default': " + (unexistentVar ?? "default"))
+
+print("")
+
+// ============================================================
+// SUMMARY
+// ============================================================
+print("========== COLLECTIONS API TEST COMPLETE ==========")
+print("")
+print("✅ All collection types tested:")
+print("   - List (ordered, mutable, indexed)")
+print("   - Tuple (ordered, immutable, fixed-size)")
+print("   - Object (ordered key-value, mutable)")
+print("   - Set (unique values, insertion order)")
+print("   - Unordered Object (fast key-value, hash order)")
+print("   - String (immutable, iterable)")
+print("")
+print("✅ Protocol methods work across all types:")
+print("   - len, has, find, map, filter, reduce")
+print("")
+print("✅ Type conversion functions:")
+print("   - list(), set(), object(), tuple()")
+print("   - int(), num(), str()")

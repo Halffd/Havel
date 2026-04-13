@@ -107,9 +107,8 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
   initializeInputCallbacks();
 }
 
-void HotkeyManager::setEventQueue(compiler::EventQueue* eq) {
-  conditionalManager.setEventQueue(eq);
-}
+// NOTE: setEventQueue() removed - was never declared in header and caused compile errors
+// TODO: Re-integrate EventQueue properly if needed for Phase 3
 
 HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
                              AudioManager &, ScreenshotManager *,

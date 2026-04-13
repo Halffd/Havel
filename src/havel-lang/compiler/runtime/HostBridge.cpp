@@ -137,9 +137,10 @@ void HostBridge::initBridges() {
   concurrencyBridge_ = std::make_unique<ConcurrencyBridge>(*ctx_);
   // Share event queue with HostContext and HotkeyManager for thread-safe dispatch
   const_cast<HostContext &>(*ctx_).eventQueue = concurrencyBridge_->eventQueue();
-  if (ctx_->hotkeyManager) {
-    ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
-  }
+  // TODO: Re-enable setEventQueue when it's properly defined in HotkeyManager
+  // if (ctx_->hotkeyManager) {
+  //   ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
+  // }
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
   browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
   toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);

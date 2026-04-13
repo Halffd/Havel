@@ -14,6 +14,9 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   collectTopLevelFunctions(program);
   collectTopLevelStructs(program);
 
+  // Seed known globals from previous REPL sessions
+  global_variables_.insert(known_globals_.begin(), known_globals_.end());
+
   // Enter global scope
   beginFunction(nullptr);
 

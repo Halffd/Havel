@@ -252,6 +252,26 @@ void registerObjectPrototype(VM& vm) {
     }
     return Value::makeNull();
   });
+
+  // len: {a:1, b:2}.len() -> 2
+  regProto("len", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeInt(0);
+    if (args[0].isObjectId()) {
+      auto* obj = vm.getHeap().object(args[0].asObjectId());
+      return Value::makeInt(obj ? static_cast<int64_t>(obj->size()) : 0);
+    }
+    return Value::makeInt(0);
+  });
+
+  // empty: {a:1, b:2}.empty() -> false
+  regProto("empty", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeBool(true);
+    if (args[0].isObjectId()) {
+      auto* obj = vm.getHeap().object(args[0].asObjectId());
+      return Value::makeBool(!obj || obj->size() == 0);
+    }
+    return Value::makeBool(true);
+  });
 }
 
 void registerSetPrototype(VM& vm) {
@@ -353,6 +373,85 @@ void registerSetPrototype(VM& vm) {
       }
     }
     return Value::makeNull();
+  });
+
+  // empty: {1,2,3}.empty() -> false
+  regProto("empty", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeBool(true);
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      return Value::makeBool(!set || set->empty());
+    }
+    return Value::makeBool(true);
+  });
+
+  // union: {1,2,3}.union({3,4,5}) -> {1,2,3,4,5}
+  regProto("union", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isSetId() && args[1].isSetId()) {
+      auto* s1 = vm.getHeap().set(args[0].asSetId());
+      auto* s2 = vm.getHeap().set(args[1].asSetId());
+      if (s1 && s2) {
+        auto resultRef = vm.getHeap().allocateSet();
+        auto* result = vm.getHeap().set(resultRef.id);
+        for (const auto& [k, v] : *s1) (*result)[k] = v;
+        for (const auto& [k, v] : *s2) (*result)[k] = v;
+        return Value::makeSetId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // intersection: {1,2,3}.intersection({2,3,4}) -> {2,3}
+  regProto("intersection", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isSetId() && args[1].isSetId()) {
+      auto* s1 = vm.getHeap().set(args[0].asSetId());
+      auto* s2 = vm.getHeap().set(args[1].asSetId());
+      if (s1 && s2) {
+        auto resultRef = vm.getHeap().allocateSet();
+        auto* result = vm.getHeap().set(resultRef.id);
+        for (const auto& [k, v] : *s1) {
+          if (s2->find(k) != s2->end()) (*result)[k] = v;
+        }
+        return Value::makeSetId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // difference: {1,2,3}.difference({2,3}) -> {1}
+  regProto("difference", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isSetId() && args[1].isSetId()) {
+      auto* s1 = vm.getHeap().set(args[0].asSetId());
+      auto* s2 = vm.getHeap().set(args[1].asSetId());
+      if (s1 && s2) {
+        auto resultRef = vm.getHeap().allocateSet();
+        auto* result = vm.getHeap().set(resultRef.id);
+        for (const auto& [k, v] : *s1) {
+          if (s2->find(k) == s2->end()) (*result)[k] = v;
+        }
+        return Value::makeSetId(resultRef.id);
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // isSubsetOf: {1,2,3}.isSubsetOf({1,2,3,4}) -> true
+  regProto("isSubsetOf", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    if (args[0].isSetId() && args[1].isSetId()) {
+      auto* s1 = vm.getHeap().set(args[0].asSetId());
+      auto* s2 = vm.getHeap().set(args[1].asSetId());
+      if (s1 && s2) {
+        for (const auto& [k, v] : *s1) {
+          if (s2->find(k) == s2->end()) return Value::makeBool(false);
+        }
+        return Value::makeBool(true);
+      }
+    }
+    return Value::makeBool(false);
   });
 }
 

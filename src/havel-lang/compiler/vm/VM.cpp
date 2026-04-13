@@ -3027,17 +3027,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                              std::to_string(function_index));
   }
 
-  // Detect if function contains YIELD (generator function)
+  // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
-  bool is_generator = false;
-  for (const auto &instr : callee->instructions) {
-    if (instr.opcode == OpCode::YIELD) {
-      is_generator = true;
-      break;
-    }
-  }
-
-  if (is_generator) {
+  if (callee->is_generator) {
     // Create coroutine object for this generator function
     uint32_t coId = heap_.allocateCoroutine(function_index, 0);
     auto *co = heap_.coroutine(coId);

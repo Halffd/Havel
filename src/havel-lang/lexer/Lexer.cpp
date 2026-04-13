@@ -269,7 +269,7 @@ Token Lexer::scanChar() {
   return makeToken(value, TokenType::CharLiteral);
 }
 
-Token Lexer::scanString(bool isFString) {
+Token Lexer::scanString(bool isFString, bool isRegexString) {
   std::string value;
   std::string raw;
   bool hasInterpolation = isFString;  // f-strings always have interpolation enabled
@@ -399,8 +399,14 @@ Token Lexer::scanString(bool isFString) {
   // Consume closing quote
   advance();
 
-  TokenType type =
-      hasInterpolation ? TokenType::InterpolatedString : TokenType::String;
+  TokenType type;
+  if (isRegexString) {
+    type = TokenType::RegexString;
+  } else if (hasInterpolation) {
+    type = TokenType::InterpolatedString;
+  } else {
+    type = TokenType::String;
+  }
   return makeToken(value, type, raw);
 }
 
@@ -772,24 +778,27 @@ std::vector<Token> Lexer::tokenize() {
         }
         continue;
       }
-      // Double quotes: check for f-string prefix: f"..." or F"..."
+      // Double quotes: check for f-string or regex prefix: f"..." or r"..."
       bool isFString = false;
+      bool isRegexString = false;
       if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
         if (tokens.back().value == "f" || tokens.back().value == "F") {
           isFString = true;
-          // Remove the 'f' identifier token - it was just a prefix
+          tokens.pop_back();
+        } else if (tokens.back().value == "r" || tokens.back().value == "R") {
+          isRegexString = true;
           tokens.pop_back();
         }
       }
-      
+
       // Check for multiline string """
       if (c == '"' && position + 2 < source.length() &&
           source[position] == '"' && source[position + 1] == '"') {
-        advance(); // consume first " (second one)
-        advance(); // consume second " (third one)
+        advance();
+        advance();
         tokens.push_back(scanMultilineString(isFString));
       } else {
-        tokens.push_back(scanString(isFString));
+        tokens.push_back(scanString(isFString, isRegexString));
       }
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;

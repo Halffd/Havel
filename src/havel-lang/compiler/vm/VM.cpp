@@ -3966,6 +3966,39 @@ void VM::executeInstruction(const Instruction &instruction) {
     else if (callee_value.isObjectId()) typeInfo = "object_id";
     else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
 
+    // Handle callable objects (Lua-style __call metamethod)
+    if (callee_value.isObjectId()) {
+      auto *obj = heap_.object(callee_value.asObjectId());
+      if (obj) {
+        // Look up __call in the object and its prototype chain
+        GCHeap::ObjectEntry* search = obj;
+        Value callFn = Value::makeNull();
+        while (search) {
+          auto* val = search->get("__call");
+          if (val) {
+            callFn = *val;
+            break;
+          }
+          auto* parentVal = search->get("__proto");
+          if (!parentVal) parentVal = search->get("__class");
+          if (!parentVal) parentVal = search->get("__parent");
+          if (parentVal && parentVal->isObjectId()) {
+            search = heap_.object(parentVal->asObjectId());
+          } else {
+            break;
+          }
+        }
+        if (!callFn.isNull() && (callFn.isFunctionObjId() || callFn.isClosureId() || callFn.isHostFuncId())) {
+          // Call __call with self as first arg
+          std::vector<Value> callArgs;
+          callArgs.push_back(callee_value);
+          callArgs.insert(callArgs.end(), args.begin(), args.end());
+          doCall(callFn, std::move(callArgs));
+          break;
+        }
+      }
+    }
+
     // Handle bound method objects (from runtime member lookup)
     if (callee_value.isObjectId()) {
       auto *obj = heap_.object(callee_value.asObjectId());
@@ -4882,11 +4915,12 @@ void VM::executeInstruction(const Instruction &instruction) {
         found_val = *val;
         break;
       }
-      // Check prototypes
-      auto* parent_val = current_obj->get("__class");
+      // Check prototypes: __proto first (Lua-style), then __class, __struct, __parent
+      auto* parent_val = current_obj->get("__proto");
+      if (!parent_val) parent_val = current_obj->get("__class");
       if (!parent_val) parent_val = current_obj->get("__struct");
       if (!parent_val) parent_val = current_obj->get("__parent");
-      
+
       if (parent_val && parent_val->isObjectId()) {
         current_obj = heap_.object(parent_val->asObjectId());
       } else {

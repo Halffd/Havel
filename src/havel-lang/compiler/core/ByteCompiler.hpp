@@ -212,6 +212,8 @@ private:
       // Reflection and runtime evaluation
       "eval", "caller", "describe", "bytecode", "tokenize",
       "inspect", "prototypes", "defun",
+      // Prototype OOP primitives
+      "proto", "getproto", "setproto",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};

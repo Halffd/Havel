@@ -516,6 +516,7 @@ void HostBridge::install() {
       };
 
   // Global prototypes() function - get prototype chain of an object
+  // Follows: __proto → __class → __parent → __struct
   options_.host_functions["prototypes"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
@@ -538,19 +539,61 @@ void HostBridge::install() {
             arr->push_back(Value::makeStringId(ctx_->vm->getHeap().allocateString("<anonymous>").id));
           }
 
-          // Follow prototype chain
-          auto* parentVal = obj->get("__class");
-          if (!parentVal) parentVal = obj->get("__parent");
-          if (!parentVal) parentVal = obj->get("__struct");
-
-          if (parentVal && parentVal->isObjectId()) {
-            obj = ctx_->vm->getHeap().object(parentVal->asObjectId());
-          } else {
-            break;
+          // Follow prototype chain: __proto first, then __class, __parent, __struct
+          GCHeap::ObjectEntry* next = nullptr;
+          auto* protoVal = obj->get("__proto");
+          if (protoVal && protoVal->isObjectId()) {
+            next = ctx_->vm->getHeap().object(protoVal->asObjectId());
           }
+          if (!next) {
+            auto* parentVal = obj->get("__class");
+            if (!parentVal) parentVal = obj->get("__parent");
+            if (!parentVal) parentVal = obj->get("__struct");
+            if (parentVal && parentVal->isObjectId()) {
+              next = ctx_->vm->getHeap().object(parentVal->asObjectId());
+            }
+          }
+          obj = next;
         }
 
         return Value::makeArrayId(arrRef.id);
+      };
+
+  // ========================================================================
+  // PROTOTYPE OOP PRIMITIVES (Lua-style)
+  // ========================================================================
+
+  // proto(obj, parent) - Set obj's prototype to parent, return obj
+  // Usage: proto(obj, prototype)  -- chains obj → prototype
+  options_.host_functions["proto"] =
+      [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeNull();
+        if (!args[0].isObjectId()) return args[0];
+        // Set __proto field to parent (can be null to remove)
+        ctx_->vm->getHeap().object(args[0].asObjectId())->set("__proto", args[1]);
+        return args[0];
+      };
+
+  // getproto(obj) - Get obj's prototype
+  // Usage: getproto(obj)  -- returns prototype object or null
+  options_.host_functions["getproto"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+        if (!args[0].isObjectId()) return Value::makeNull();
+        auto* obj = ctx_->vm->getHeap().object(args[0].asObjectId());
+        if (!obj) return Value::makeNull();
+        auto* protoVal = obj->get("__proto");
+        return protoVal ? *protoVal : Value::makeNull();
+      };
+
+  // setproto(obj, parent) - Change obj's prototype, return obj
+  // Usage: setproto(obj, newParent)  -- like proto() but returns obj for chaining
+  options_.host_functions["setproto"] =
+      [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeNull();
+        if (!args[0].isObjectId()) return args[0];
+        ctx_->vm->getHeap().object(args[0].asObjectId())->set("__proto", args[1]);
+        return args[0];
       };
 
   // Global caller() function - returns caller info object

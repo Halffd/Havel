@@ -5132,6 +5132,60 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::ARRAY_DEL: {
+    Value keyValue = popStack();
+    Value container = popStack();
+    if (container.isArrayId()) {
+      auto index = indexFromValue(keyValue);
+      if (!index) {
+        COMPILER_THROW("ARRAY_DEL expects integer index");
+      }
+      auto *array = heap_.array(container.asArrayId());
+      if (!array) {
+        COMPILER_THROW("ARRAY_DEL unknown array id");
+      }
+      int64_t idx = *index;
+      if (idx < 0) idx = static_cast<int64_t>(array->size()) + idx;
+      if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
+        pushStack(Value::makeBool(false));
+      } else {
+        array->erase(array->begin() + static_cast<size_t>(idx));
+        pushStack(Value::makeBool(true));
+      }
+    } else if (container.isSetId()) {
+      auto *set = heap_.set(container.asSetId());
+      if (!set) {
+        COMPILER_THROW("ARRAY_DEL unknown set id");
+      }
+      auto key = keyFromValue(keyValue, &heap_, current_chunk);
+      if (!key) {
+        COMPILER_THROW("ARRAY_DEL expects string/number key for set");
+      }
+      pushStack(Value::makeBool(set->erase(*key) > 0));
+    } else {
+      COMPILER_THROW("ARRAY_DEL expects array/set container");
+    }
+    break;
+  }
+
+  case OpCode::SET_DEL: {
+    Value keyValue = popStack();
+    Value setVal = popStack();
+    if (!setVal.isSetId()) {
+      COMPILER_THROW("SET_DEL expects set container");
+    }
+    auto *set = heap_.set(setVal.asSetId());
+    if (!set) {
+      COMPILER_THROW("SET_DEL unknown set id");
+    }
+    auto key = keyFromValue(keyValue, &heap_, current_chunk);
+    if (!key) {
+      COMPILER_THROW("SET_DEL expects string/number key");
+    }
+    pushStack(Value::makeBool(set->erase(*key) > 0));
+    break;
+  }
+
   // Array intrinsics (VM-level operations)
   case OpCode::ARRAY_POP: {
     Value array = popStack();

@@ -1438,6 +1438,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::DelStatement: {
+    const auto &del_stmt =
+        static_cast<const ast::DelStatement &>(statement);
+    if (!del_stmt.target) break;
+    compileDelTarget(*del_stmt.target);
+    break;
+  }
+
   case ast::NodeType::GoStatement: {
     compileGoStatement(static_cast<const ast::GoStatement &>(statement));
     break;
@@ -5511,6 +5519,52 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
       Value::makeStringValId(strId),
       Value(static_cast<uint32_t>(1))  // 1 argument
   });
+}
+
+// Compile del target: del variable, del obj.field, del arr[index], del set[key]
+void ByteCompiler::compileDelTarget(const ast::Expression &target) {
+  switch (target.kind) {
+    case ast::NodeType::Identifier: {
+      const auto &id = static_cast<const ast::Identifier &>(target);
+      const auto *binding = bindingFor(id);
+      if (!binding) {
+        COMPILER_THROW("Missing lexical binding for del: " + id.symbol);
+      }
+      if (binding->kind == ResolvedBindingKind::Global) {
+        // Delete from globals by setting to null
+        uint32_t strId = addStringConstant(binding->name);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+      } else if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+      } else {
+        COMPILER_THROW("Cannot del local/upvalue binding");
+      }
+      break;
+    }
+    case ast::NodeType::MemberExpression: {
+      const auto &member = static_cast<const ast::MemberExpression &>(target);
+      compileExpression(*member.object);
+      if (member.property && member.property->kind == ast::NodeType::Identifier) {
+        const auto &prop = static_cast<const ast::Identifier &>(*member.property);
+        uint32_t strId = addStringConstant(prop.symbol);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId)));
+        emit(OpCode::OBJECT_DELETE);
+      }
+      break;
+    }
+    case ast::NodeType::IndexExpression: {
+      const auto &idx = static_cast<const ast::IndexExpression &>(target);
+      compileExpression(*idx.object);
+      compileExpression(*idx.index);
+      // Dispatch to ARRAY_DEL or SET_DEL at runtime based on container type
+      emit(OpCode::ARRAY_DEL);
+      break;
+    }
+    default:
+      COMPILER_THROW("del target must be identifier, member, or index expression");
+  }
 }
 
 void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {

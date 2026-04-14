@@ -87,12 +87,14 @@ enum class OpCode : uint8_t {
   ARRAY_NEW,
   ARRAY_GET,
   ARRAY_SET,
+  ARRAY_DEL,    // Delete array element at index
   ARRAY_PUSH,
   ARRAY_LEN,
   ARRAY_FREEZE, // Mark top-of-stack array as frozen (for tuples)
 
   // Set operations
   SET_SET, // Set[key] = value (stack: value, key, set)
+  SET_DEL, // Set.del(key) or del set[key] (stack: key, set)
 
   // Range operations
   RANGE_NEW,      // Create range: start..end or start..step..end

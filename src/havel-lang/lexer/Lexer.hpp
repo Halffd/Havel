@@ -166,6 +166,7 @@ enum class TokenType {
   Go,             // go
   Channel,        // channel
   Dsl,            // dsl
+  Del,            // del - delete variable/element
   EOF_TOKEN
   };
 

@@ -37,6 +37,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"yield", TokenType::Yield},
     {"go", TokenType::Go},
     {"channel", TokenType::Channel},
+    {"del", TokenType::Del},
     {"config", TokenType::Config},
     {"devices", TokenType::Devices},
     {"modes", TokenType::Modes},

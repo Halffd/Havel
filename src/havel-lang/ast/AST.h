@@ -167,6 +167,7 @@ enum class NodeType {
   // Error handling (functional style)
   TryExpression,  // try expr catch pattern -> handler
   ThrowStatement, // throw value
+  DelStatement,   // del variable/property/element
 
   // Lazy evaluation
   LazyExpression,  // lazy { expensive_computation() }
@@ -1995,6 +1996,23 @@ struct ThrowStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Del statement - delete variable, object property, or array element
+// del variable
+// del obj.field
+// del arr[index]
+struct DelStatement : public Statement {
+  std::unique_ptr<Expression> target;
+
+  DelStatement() { kind = NodeType::DelStatement; }
+  DelStatement(std::unique_ptr<Expression> t) : target(std::move(t)) {
+    kind = NodeType::DelStatement;
+  }
+
+  std::string toString() const override { return "DelStatement{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Union type (e.g., Result = Ok(a) | Error(String))
 struct UnionType : public TypeDefinition {
   std::vector<std::unique_ptr<TypeDefinition>> variants;
@@ -2998,6 +3016,7 @@ public:
   virtual void visitCastExpression(const CastExpression &node) = 0;
   virtual void visitMatchExpression(const MatchExpression &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
+  virtual void visitDelStatement(const DelStatement &node) = 0;
   virtual void visitForStatement(const ForStatement &node) = 0;
   virtual void visitLoopStatement(const LoopStatement &node) = 0;
   virtual void visitBreakStatement(const BreakStatement &node) = 0;
@@ -3369,6 +3388,10 @@ inline void TryExpression::accept(ASTVisitor &visitor) const {
 
 inline void ThrowStatement::accept(ASTVisitor &visitor) const {
   visitor.visitThrowStatement(*this);
+}
+
+inline void DelStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDelStatement(*this);
 }
 
 inline void UnaryExpression::accept(ASTVisitor &visitor) const {

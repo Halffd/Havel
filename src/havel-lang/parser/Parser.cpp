@@ -887,6 +887,7 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
                t == havel::TokenType::Catch ||
                t == havel::TokenType::Finally ||
                t == havel::TokenType::Throw ||
+               t == havel::TokenType::Del ||
                t == havel::TokenType::True ||
                t == havel::TokenType::False ||
                t == havel::TokenType::Null ||
@@ -1936,6 +1937,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
     failAt(at(), "'finally' can only appear within a 'try' statement");
   case havel::TokenType::Throw:
     return parseThrowStatement();
+  case havel::TokenType::Del:
+    return parseDelStatement();
   default:
     // Expression statement (including assignments, function calls, etc.)
     auto expr = parseExpression();
@@ -3829,6 +3832,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
   advance(); // consume 'throw'
   auto value = parseExpression();
   return std::make_unique<havel::ast::ThrowStatement>(std::move(value));
+}
+
+// Parse del statement: del expression
+// Supports: del variable, del obj.field, del arr[index]
+std::unique_ptr<havel::ast::Statement> Parser::parseDelStatement() {
+  advance(); // consume 'del'
+  auto target = parseExpression();
+  return std::make_unique<havel::ast::DelStatement>(std::move(target));
 }
 
 // Parse UI declarative block: ui { window "Title" { ... } }
@@ -6568,6 +6579,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
              t == havel::TokenType::Catch ||
              t == havel::TokenType::Finally ||
              t == havel::TokenType::Throw ||
+             t == havel::TokenType::Del ||
              t == havel::TokenType::True ||
              t == havel::TokenType::False ||
              t == havel::TokenType::Null ||
@@ -7020,6 +7032,7 @@ Parser::parseObjectLiteral(bool unsorted) {
              t == havel::TokenType::Let || t == havel::TokenType::Const ||
              t == havel::TokenType::Try || t == havel::TokenType::Catch ||
              t == havel::TokenType::Finally || t == havel::TokenType::Throw ||
+             t == havel::TokenType::Del ||
              t == havel::TokenType::True || t == havel::TokenType::False ||
              t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
              t == havel::TokenType::String || t == havel::TokenType::MultilineString ||
@@ -7116,6 +7129,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
                               at().type == havel::TokenType::Continue ||
                               at().type == havel::TokenType::Switch ||
                               at().type == havel::TokenType::Try ||
+                              at().type == havel::TokenType::Del ||
                               at().type == havel::TokenType::Throw;
 
     if (isStatementStarter) {
@@ -8154,6 +8168,7 @@ Parser::parseKeyValueBlock() {
         at().type == havel::TokenType::Catch ||
         at().type == havel::TokenType::Finally ||
         at().type == havel::TokenType::Throw ||
+        at().type == havel::TokenType::Del ||
         at().type == havel::TokenType::Return ||
         at().type == havel::TokenType::Ret ||
         at().type == havel::TokenType::Break ||

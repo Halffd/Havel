@@ -47,4 +47,28 @@ prec = "%.2f".format(3.14159)
 print("precision: " + prec)
 
 print("")
+print("=== INSPECT() ===")
+print(inspect(42))
+print(inspect([1, 2, 3]))
+obj = {name: "test", values: [1, 2, 3]}
+print(inspect(obj))
+
+print("")
+print("=== PROTOTYPES() ===")
+print(prototypes(obj))
+
+print("")
+print("=== DEFUN() ===")
+fn double(x) { return x * 2 }
+result = defun("int", "double", double)
+print("defun result: " + result)
+
+print("")
+print("=== DEL() ===")
+testObj = {a: 1, b: 2, c: 3}
+print("before del: " + inspect(testObj))
+del(testObj, "b")
+print("after del b: " + inspect(testObj))
+
+print("")
 print("=== ALL TESTS PASSED ===")

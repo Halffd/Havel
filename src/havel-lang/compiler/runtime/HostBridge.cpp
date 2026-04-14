@@ -10,6 +10,7 @@
 #include "HostBridge.hpp"
 #include "ConcurrencyBridge.hpp"
 #include <iostream>
+#include <functional>
 #include "../../../host/module/ModularHostBridges.hpp"
 #include "../../../modules/window/WindowMonitorModule.hpp"
 #include "../../../core/HotkeyManager.hpp"
@@ -438,6 +439,185 @@ void HostBridge::install() {
           auto ref = ctx_->vm->getHeap().allocateString(std::move(errMsg));
           return Value::makeStringId(ref.id);
         }
+      };
+
+  // Global inspect() function - detailed string representation of any value
+  options_.host_functions["inspect"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+        const Value& val = args[0];
+        std::string result;
+
+        // Helper lambda to format a value recursively
+        std::function<std::string(const Value&, int)> format;
+        format = [this, &format](const Value& v, int depth) -> std::string {
+          std::string indent(depth * 2, ' ');
+          std::string childIndent = std::string((depth + 1) * 2, ' ');
+
+          if (v.isNull()) return "null";
+          if (v.isBool()) return v.asBool() ? "true" : "false";
+          if (v.isInt()) return std::to_string(v.asInt());
+          if (v.isDouble()) return std::to_string(v.asDouble());
+
+          if (v.isStringValId() || v.isStringId()) {
+            std::string s;
+            if (v.isStringValId() && ctx_->vm->getCurrentChunk()) {
+              s = ctx_->vm->getCurrentChunk()->getString(v.asStringValId());
+            } else if (v.isStringId() && ctx_->vm->getHeap().string(v.asStringId())) {
+              s = *ctx_->vm->getHeap().string(v.asStringId());
+            }
+            return "\"" + s + "\"";
+          }
+
+          if (v.isArrayId()) {
+            auto* arr = ctx_->vm->getHeap().array(v.asArrayId());
+            if (!arr) return "[]";
+            std::string out = "[\n";
+            for (size_t i = 0; i < arr->size(); ++i) {
+              out += childIndent + std::to_string(i) + ": " + format((*arr)[i], depth + 1) + "\n";
+            }
+            out += indent + "]";
+            return out;
+          }
+
+          if (v.isObjectId()) {
+            auto* obj = ctx_->vm->getHeap().object(v.asObjectId());
+            if (!obj) return "{}";
+            std::string out = "{\n";
+            auto keys = obj->getKeys();
+            for (const auto& key : keys) {
+              if (key == "__class" || key == "__parent" || key == "__struct" ||
+                  key == "__is_class" || key == "__is_struct" || key == "__name" || key == "__fields") {
+                continue; // Skip internal markers
+              }
+              auto* val = obj->get(key);
+              if (val) {
+                out += childIndent + key + ": " + format(*val, depth + 1) + "\n";
+              }
+            }
+            out += indent + "}";
+            return out;
+          }
+
+          if (v.isFunctionObjId()) {
+            if (ctx_->vm->getCurrentChunk()) {
+              const auto* func = ctx_->vm->getCurrentChunk()->getFunction(v.asFunctionObjId());
+              if (func) return "fn " + func->name + "(" + std::to_string(func->param_count) + " params)";
+            }
+            return "fn(...)";
+          }
+
+          return getTypeName(v);
+        };
+
+        result = format(val, 0);
+        auto ref = ctx_->vm->getHeap().allocateString(std::move(result));
+        return Value::makeStringId(ref.id);
+      };
+
+  // Global prototypes() function - get prototype chain of an object
+  options_.host_functions["prototypes"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+        const Value& val = args[0];
+
+        auto arrRef = ctx_->vm->getHeap().allocateArray();
+        auto* arr = ctx_->vm->getHeap().array(arrRef.id);
+
+        if (!val.isObjectId()) {
+          return Value::makeArrayId(arrRef.id);
+        }
+
+        auto* obj = ctx_->vm->getHeap().object(val.asObjectId());
+        while (obj) {
+          // Check if this object has a name
+          auto* nameVal = obj->get("__name");
+          if (nameVal && nameVal->isStringId()) {
+            arr->push_back(*nameVal);
+          } else {
+            arr->push_back(Value::makeStringId(ctx_->vm->getHeap().allocateString("<anonymous>").id));
+          }
+
+          // Follow prototype chain
+          auto* parentVal = obj->get("__class");
+          if (!parentVal) parentVal = obj->get("__parent");
+          if (!parentVal) parentVal = obj->get("__struct");
+
+          if (parentVal && parentVal->isObjectId()) {
+            obj = ctx_->vm->getHeap().object(parentVal->asObjectId());
+          } else {
+            break;
+          }
+        }
+
+        return Value::makeArrayId(arrRef.id);
+      };
+
+  // Global defun() function - define a method on a prototype at runtime
+  // Usage: defun("string", "reverse", fn() { ... })
+  // or: defun(string, "reverse", fn() { ... })
+  options_.host_functions["defun"] =
+      [this](const std::vector<Value> &args) {
+        if (args.size() < 3 || !ctx_ || !ctx_->vm) return Value::makeNull();
+
+        std::string typeName;
+        // First arg: either a string type name or a prototype object
+        if (args[0].isStringValId() || args[0].isStringId()) {
+          if (args[0].isStringValId() && ctx_->vm->getCurrentChunk()) {
+            typeName = ctx_->vm->getCurrentChunk()->getString(args[0].asStringValId());
+          } else if (args[0].isStringId() && ctx_->vm->getHeap().string(args[0].asStringId())) {
+            typeName = *ctx_->vm->getHeap().string(args[0].asStringId());
+          }
+        }
+
+        std::string methodName;
+        if (args[1].isStringValId() && ctx_->vm->getCurrentChunk()) {
+          methodName = ctx_->vm->getCurrentChunk()->getString(args[1].asStringValId());
+        } else if (args[1].isStringId() && ctx_->vm->getHeap().string(args[1].asStringId())) {
+          methodName = *ctx_->vm->getHeap().string(args[1].asStringId());
+        }
+
+        if (typeName.empty() || methodName.empty()) return Value::makeNull();
+
+        // Register the method as a host function on the prototype
+        // Format: typeName.methodName
+        std::string fullName = typeName + "." + methodName;
+        uint32_t funcIdx = ctx_->vm->getHostFunctionIndex(fullName);
+        options_.host_functions[fullName] =
+            [this, fn = args[2]](const std::vector<Value> &callArgs) {
+              if (!ctx_ || !ctx_->vm) return Value::makeNull();
+              // Call the function with the provided arguments
+              try {
+                return ctx_->vm->call(fn, callArgs);
+              } catch (...) {
+                return Value::makeNull();
+              }
+            };
+
+        // Also register it in the VM's prototype method table for CALL_METHOD dispatch
+        ctx_->vm->registerPrototypeMethod(typeName, methodName, funcIdx);
+
+        return Value::makeBool(true);
+      };
+
+  // Global del() function - delete a field from an object
+  // Usage: del obj.field or del(obj, "field")
+  options_.host_functions["del"] =
+      [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeNull();
+
+        if (args[0].isObjectId() && args[1].isStringValId()) {
+          auto* obj = ctx_->vm->getHeap().object(args[0].asObjectId());
+          if (obj) {
+            std::string key = ctx_->vm->getCurrentChunk() ?
+                ctx_->vm->getCurrentChunk()->getString(args[1].asStringValId()) : "";
+            if (!key.empty()) {
+              obj->erase(key);
+              return Value::makeBool(true);
+            }
+          }
+        }
+        return Value::makeBool(false);
       };
 
   // Global caller object - returns info about the calling function

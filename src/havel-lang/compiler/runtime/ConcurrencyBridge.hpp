@@ -56,9 +56,6 @@ public:
   
   // Phase 3B-7: Consume completion notification (clears the flag)
   void clearThreadCompletion(uint32_t thread_id);
-
-  // Phase 3B-7: Get thread state (CREATED/RUNNING/COMPLETED/JOINED)
-  ThreadState getThreadState(uint32_t thread_id);
   
   // Phase 3B-7: Get all completed thread IDs (for ExecutionEngine iteration)
   std::vector<uint32_t> getCompletedThreadIds();

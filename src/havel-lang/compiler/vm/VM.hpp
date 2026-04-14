@@ -196,7 +196,7 @@ private:
   // When an operation needs to wait (thread.join, channel.recv, etc)
   // it sets these flags to signal the VM to suspend the current fiber
   bool suspension_requested_ = false;          // True if suspension needed
-  havel::SuspensionReason suspension_reason_;  // Why is it suspending?
+  uint8_t suspension_reason_ = 0;              // Why is it suspending? (SuspensionReason enum value)
   void* suspension_context_ = nullptr;         // Context pointer (thread_id, channel*, etc)
 
   // Phase 3B-7: Thread wait tracking
@@ -205,6 +205,12 @@ private:
   std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
   mutable std::shared_mutex thread_wait_mutex_;
 
+  // Phase 2A: Event queue reference for variable change notifications
+  class EventQueue* event_queue_ = nullptr;
+  
+  // Phase 2A: Helper to emit VAR_CHANGED events
+  void emitVariableChanged(const std::string& var_name);
+  
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> host function index
   std::unordered_map<std::string,
@@ -406,8 +412,14 @@ public:
   GCHeap::Stats gcStats() const { return heap_.stats(); }
   GCHeap& getHeap() { return heap_; }
   const GCHeap& getHeap() const { return heap_; }
+  
+  // Phase 2A: Event queue for variable change notifications
+  void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
+  
   void setGlobal(std::string name, Value value) {
     globals[std::move(name)] = std::move(value);
+    // Phase 2A: Emit VAR_CHANGED event when global is modified
+    emitVariableChanged(name);
   }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);

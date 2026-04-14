@@ -104,8 +104,11 @@ private:
   void handleReturned(Scheduler::Goroutine* g);
   void handleError(Scheduler::Goroutine* g, const std::string& msg);
   
-  // Phase 3B-7: Check for thread completions and unpark waiting fibers
-  void checkThreadCompletions();
+  // Phase 1: Event handler for thread completion (unified event system)
+  void onThreadComplete(const Event& event);
+  
+  // Phase 2A: Event handler for variable changes
+  void onVariableChanged(const Event& event);
 };
 
 } // namespace havel::compiler

@@ -60,6 +60,18 @@ public:
    * Must be called before run() or execute()
    */
   void initialize(std::shared_ptr<IHostAPI> hostAPI);
+
+  /**
+   * Attach REPL to an existing VM and HostBridge
+   * Use this when the REPL should share state with a previously executed script.
+   * Skips creating a new VM — reuses the provided one.
+   * @param existingVM  The VM that already executed the script (non-owning)
+   * @param bridge      The HostBridge installed on that VM (non-owning)
+   * @param globals     Global variable names already defined in the VM
+   */
+  void attach(compiler::VM* existingVM,
+              compiler::HostBridge* bridge,
+              std::unordered_set<std::string> globals);
   
   /**
    * Run interactive REPL loop
@@ -132,7 +144,7 @@ private:
   bool initialized = false;
   
   // Bytecode VM
-  std::unique_ptr<compiler::VM> vm_;
+  std::shared_ptr<compiler::VM> vm_;
   std::unique_ptr<HostContext> hostContext_;
   std::shared_ptr<compiler::HostBridge> hostBridge_;
   

@@ -753,17 +753,43 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
       auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
       havel::initializeServiceRegistry(hostAPI);
+
+      // Create VM and HostBridge so script execution and REPL share the same state
+      auto vm = std::make_shared<havel::compiler::VM>();
+      auto hostCtx = std::make_unique<havel::HostContext>(havel::createHostContext(hostAPI));
+      hostCtx->vm = vm.get();
+      auto hostBridge = havel::compiler::createHostBridge(*hostCtx);
+      hostBridge->install();
+      for (const auto& [name, fn] : hostBridge->options().host_functions) {
+        vm->registerHostFunction(name, fn);
+      }
+
+      // Execute the script using the shared VM
+      info("Executing script code...");
+      try {
+        havel::compiler::PipelineOptions options = hostBridge->options();
+        options.compile_unit_name = "script";
+        options.vm_override = vm.get();
+        options.debugBytecode = cfg.debugBytecode;
+        auto result = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+        // Collect globals that were defined so the REPL compiler knows about them
+        std::unordered_set<std::string> globals;
+        // The compiler's known globals are in its lexical resolution result.
+        // We can't easily access them after pipeline completion, but the REPL
+        // will discover them from the VM's globals map at runtime.
+        (void)result;
+      } catch (const std::exception &e) {
+        error("Script execution failed: {}", e.what());
+        return 1;
+      }
+
+      // Create REPL and attach to the existing VM
       havel::repl::REPLConfig replConfig;
       replConfig.debugMode = cfg.debugMode;
       replConfig.stopOnError = cfg.stopOnError;
       havel::repl::REPL repl(replConfig);
-      repl.initialize(hostAPI);
-      
-      info("Executing script code...");
-      if (!repl.execute(combinedCode)) {
-        error("Script execution failed");
-        return 1;
-      }
+      repl.attach(vm.get(), hostBridge.get(), {});
+
       return repl.run();
     } else {
 #ifdef HAVE_QT_EXTENSION
@@ -831,9 +857,12 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
           nullptr, nullptr, nullptr, nullptr, nullptr,
           hkManager ? hkManager->getModeManager().get() : nullptr,
           std::vector<std::string>{}));
-      
+
       havel::initializeServiceRegistry(hostAPI);
-      repl.initialize(hostAPI);
+
+      // Attach REPL to the existing VM from the Havel instance
+      // (instead of initialize() which creates a new VM)
+      repl.attach(bytecodeVM, havel_inst.getHostBridge(), {});
 
       // Enter REPL
       return repl.run();

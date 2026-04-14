@@ -1,4 +1,5 @@
 #include "ExecutionEngine.hpp"
+#include "../concurrency/Fiber.hpp"
 #include <iostream>
 
 namespace havel::compiler {
@@ -29,6 +30,9 @@ bool ExecutionEngine::executeFrame() {
     if (event_queue_) {
       event_queue_->processAll();
     }
+    
+    // Phase 3B-7: Check for thread completions and unpark waiting fibers
+    checkThreadCompletions();
     
     // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
@@ -147,6 +151,55 @@ void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& ms
   // Mark goroutine DONE with error
   if (g) {
     g->state = Scheduler::GoroutineState::Done;
+  }
+}
+
+// ============================================================================
+// PHASE 3B-7: Thread Completion Handling
+// ============================================================================
+
+void ExecutionEngine::checkThreadCompletions() {
+  if (!vm_ || !scheduler_ || !concurrency_bridge_) {
+    return;
+  }
+
+  // Get all thread IDs with waiting fibers
+  auto waiting_thread_ids = vm_->getWaitingThreadIds();
+  
+  if (debug_mode_) {
+    std::cout << "[ExecutionEngine] Checking " << waiting_thread_ids.size() 
+              << " waiting threads..." << std::endl;
+  }
+
+  // Check each waiting thread for completion
+  for (uint32_t thread_id : waiting_thread_ids) {
+    // Check if thread is now complete
+    if (concurrency_bridge_->isThreadCompleted(thread_id)) {
+      // Get the fiber that was waiting
+      Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
+      
+      if (waiting_fiber) {
+        if (debug_mode_) {
+          std::cout << "[ExecutionEngine] Thread " << thread_id 
+                    << " completed, unparking fiber " << waiting_fiber->id << std::endl;
+        }
+        
+        // Mark fiber as RUNNABLE so scheduler will pick it up
+        waiting_fiber->state = FiberState::RUNNABLE;
+        
+        // Unpark the fiber (return it to runnable queue)
+        scheduler_->unpark(waiting_fiber);
+      }
+      
+      // Unregister the wait tracking
+      vm_->unregisterThreadWait(thread_id);
+    }
+  }
+  
+  // Cleanup any completed threads (join and remove from active tracking)
+  int cleaned = concurrency_bridge_->cleanupCompletedThreads();
+  if (debug_mode_ && cleaned > 0) {
+    std::cout << "[ExecutionEngine] Cleaned up " << cleaned << " completed threads" << std::endl;
   }
 }
 

@@ -2,6 +2,7 @@
 
 #include "../../compiler/vm/VM.hpp"
 #include "../../compiler/runtime/EventQueue.hpp"
+#include "../../compiler/runtime/ConcurrencyBridge.hpp"
 #include "../concurrency/Scheduler.hpp"
 
 #include <memory>
@@ -80,12 +81,17 @@ public:
   // ========== DEBUG ==========
   void setDebugMode(bool enabled) { debug_mode_ = enabled; }
   bool getDebugMode() const { return debug_mode_; }
+  
+  // ========== PHASE 3B-7: THREAD MANAGEMENT ==========
+  void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
+  ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
 
 private:
   // ========== CORE COMPONENTS ==========
   VM* vm_;                    // Bytecode virtual machine
   Scheduler* scheduler_;      // Goroutine scheduler
   EventQueue* event_queue_;   // Event callback queue
+  ConcurrencyBridge* concurrency_bridge_ = nullptr;  // Thread management (Phase 3B-7)
   
   // ========== STATE ==========
   bool running_ = false;
@@ -97,6 +103,9 @@ private:
   void handleSuspended(Scheduler::Goroutine* g);
   void handleReturned(Scheduler::Goroutine* g);
   void handleError(Scheduler::Goroutine* g, const std::string& msg);
+  
+  // Phase 3B-7: Check for thread completions and unpark waiting fibers
+  void checkThreadCompletions();
 };
 
 } // namespace havel::compiler

@@ -116,12 +116,37 @@ Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
     return Value::makeNull();
   }
 
-  // For now, return a thread ID placeholder
-  // In a full implementation, this would spawn a thread to execute the closure
   uint32_t thread_id;
   {
     std::lock_guard<std::mutex> lock(threads_mutex_);
     thread_id = next_thread_id_++;
+  }
+
+  // Phase 3B-7: Actually spawn thread and mark completion when done
+  // The thread executes a simple callback and then marks itself complete
+  std::thread t([this, thread_id]() {
+    // Thread is now running
+    // TODO: Execute the Havel closure in a safe execution context
+    // For now, just sleep briefly and mark done
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    
+    // Mark thread as completed
+    markThreadCompleted(thread_id);
+  });
+
+  // Store thread in active map and initialize thread_info
+  {
+    std::lock_guard<std::mutex> lock(threads_mutex_);
+    active_threads_[thread_id] = std::move(t);
+    
+    // Initialize thread_info with RUNNING state
+    thread_info_[thread_id] = ManagedThread{
+        thread_id,
+        ThreadState::RUNNING,
+        &active_threads_[thread_id],
+        std::chrono::steady_clock::now(),
+        std::chrono::steady_clock::time_point()
+    };
   }
 
   return Value::makeThreadId(thread_id);
@@ -134,14 +159,32 @@ Value ConcurrencyBridge::threadJoin(const std::vector<Value> &args) {
 
   uint32_t thread_id = args[0].asThreadId();
 
-  // Wait for thread to complete
-  std::lock_guard<std::mutex> lock(threads_mutex_);
-  auto it = active_threads_.find(thread_id);
-  if (it != active_threads_.end() && it->second.joinable()) {
-    it->second.join();
-    active_threads_.erase(it);
+  // Phase 3B-7: NON-BLOCKING join
+  // Instead of blocking on thread.join(), check if thread is complete
+  // If complete, clean up and return
+  // If not complete, the VM will suspend the calling fiber and ExecutionEngine
+  // will periodically check for completion
+
+  if (isThreadCompleted(thread_id)) {
+    // Thread is done - clean up and return result
+    {
+      std::lock_guard<std::mutex> lock(threads_mutex_);
+      auto it = active_threads_.find(thread_id);
+      if (it != active_threads_.end()) {
+        if (it->second.joinable()) {
+          it->second.join();
+        }
+        active_threads_.erase(it);
+      }
+    }
+    
+    clearThreadCompletion(thread_id);
+    return Value::makeNull();
   }
 
+  // Thread not done yet
+  // The calling fiber will be suspended via THREAD_JOIN opcode
+  // ExecutionEngine will periodically check isThreadCompleted and unpark
   return Value::makeNull();
 }
 
@@ -364,6 +407,135 @@ void ConcurrencyBridge::checkTimers() {
   timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
                             [](const Timer &t) { return !t.active; }),
                timers_.end());
+}
+
+// ============================================================================
+// PHASE 3B-7: THREAD COMPLETION TRACKING
+// ============================================================================
+
+bool ConcurrencyBridge::isThreadCompleted(uint32_t thread_id) {
+  std::lock_guard<std::mutex> lock(completed_threads_mutex_);
+  return completed_threads_.count(thread_id) > 0;
+}
+
+void ConcurrencyBridge::markThreadCompleted(uint32_t thread_id) {
+  std::lock_guard<std::mutex> lock(completed_threads_mutex_);
+  completed_threads_.insert(thread_id);
+  
+  // Also update thread_info if exists
+  {
+    std::lock_guard<std::mutex> info_lock(threads_mutex_);
+    auto it = thread_info_.find(thread_id);
+    if (it != thread_info_.end()) {
+      it->second.state = ThreadState::COMPLETED;
+      it->second.completed_at = std::chrono::steady_clock::now();
+    }
+  }
+}
+
+void ConcurrencyBridge::clearThreadCompletion(uint32_t thread_id) {
+  std::lock_guard<std::mutex> lock(completed_threads_mutex_);
+  completed_threads_.erase(thread_id);
+}
+
+ConcurrencyBridge::ThreadState ConcurrencyBridge::getThreadState(uint32_t thread_id) {
+  std::lock_guard<std::mutex> lock(threads_mutex_);
+  auto it = thread_info_.find(thread_id);
+  if (it != thread_info_.end()) {
+    return it->second.state;
+  }
+  return ThreadState::CREATED;  // Default if not found
+}
+
+std::vector<uint32_t> ConcurrencyBridge::getCompletedThreadIds() {
+  std::lock_guard<std::mutex> lock(completed_threads_mutex_);
+  std::vector<uint32_t> result(completed_threads_.begin(), completed_threads_.end());
+  return result;
+}
+
+bool ConcurrencyBridge::cleanupThread(uint32_t thread_id) {
+  std::lock_guard<std::mutex> lock(threads_mutex_);
+  
+  auto it = active_threads_.find(thread_id);
+  if (it == active_threads_.end()) {
+    return false;  // Thread not found
+  }
+
+  // Verify it's completed
+  {
+    std::lock_guard<std::mutex> completed_lock(completed_threads_mutex_);
+    if (completed_threads_.count(thread_id) == 0) {
+      return false;  // Thread not completed yet
+    }
+  }
+
+  // Join and remove the thread
+  if (it->second.joinable()) {
+    it->second.join();
+  }
+  active_threads_.erase(it);
+
+  // Update thread_info
+  auto info_it = thread_info_.find(thread_id);
+  if (info_it != thread_info_.end()) {
+    info_it->second.state = ThreadState::JOINED;
+  }
+
+  // Remove mailbox
+  thread_mailboxes_.erase(thread_id);
+
+  // Clear completion tracking
+  {
+    std::lock_guard<std::mutex> completed_lock(completed_threads_mutex_);
+    completed_threads_.erase(thread_id);
+  }
+
+  return true;
+}
+
+int ConcurrencyBridge::cleanupCompletedThreads() {
+  std::lock_guard<std::mutex> lock(threads_mutex_);
+  
+  int cleaned = 0;
+  std::vector<uint32_t> to_cleanup;
+
+  // Get list of completed threads to clean
+  {
+    std::lock_guard<std::mutex> completed_lock(completed_threads_mutex_);
+    for (uint32_t thread_id : completed_threads_) {
+      auto it = active_threads_.find(thread_id);
+      if (it != active_threads_.end()) {
+        to_cleanup.push_back(thread_id);
+      }
+    }
+  }
+
+  // Clean up each thread
+  for (uint32_t thread_id : to_cleanup) {
+    auto it = active_threads_.find(thread_id);
+    if (it != active_threads_.end() && it->second.joinable()) {
+      it->second.join();
+      active_threads_.erase(it);
+      cleaned++;
+
+      // Update thread_info
+      auto info_it = thread_info_.find(thread_id);
+      if (info_it != thread_info_.end()) {
+        info_it->second.state = ThreadState::JOINED;
+      }
+
+      // Remove mailbox
+      thread_mailboxes_.erase(thread_id);
+    }
+  }
+
+  // Clear all from completed set
+  {
+    std::lock_guard<std::mutex> completed_lock(completed_threads_mutex_);
+    completed_threads_.clear();
+  }
+
+  return cleaned;
 }
 
 } // namespace havel::compiler

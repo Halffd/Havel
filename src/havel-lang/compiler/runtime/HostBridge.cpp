@@ -14,6 +14,8 @@
 #include "../../../modules/window/WindowMonitorModule.hpp"
 #include "../../../core/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
+#include "havel-lang/parser/Parser.h"
+#include "havel-lang/compiler/core/ByteCompiler.hpp"
 
 #include "../../../host/app/AppService.hpp"
 #include "../../../host/media/MediaService.hpp"
@@ -345,6 +347,73 @@ void HostBridge::install() {
         }
         return Value::makeNull();
       };
+
+  // Global type() function - returns type name string for any value
+  options_.host_functions["type"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        std::string typeName = getTypeName(args[0]);
+        auto ref = ctx_->vm->getHeap().allocateString(std::move(typeName));
+        return Value::makeStringId(ref.id);
+      };
+
+  // Global eval() function - compile and execute code at runtime
+  options_.host_functions["eval"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+
+        std::string code;
+        if (args[0].isStringValId() && ctx_->vm->getCurrentChunk()) {
+          code = ctx_->vm->getCurrentChunk()->getString(args[0].asStringValId());
+        } else if (args[0].isStringId() && ctx_->vm->getHeap().string(args[0].asStringId())) {
+          code = *ctx_->vm->getHeap().string(args[0].asStringId());
+        } else {
+          code = args[0].toString();
+        }
+
+        if (code.empty()) return Value::makeNull();
+
+        // Compile and execute the code using the existing VM
+        try {
+          parser::Parser parser;
+          auto program = parser.produceAST(code);
+          if (!program || parser.hasErrors()) {
+            std::string errMsg = "eval: parse error";
+            if (!parser.getErrors().empty()) {
+              errMsg += ": " + parser.getErrors()[0].message;
+            }
+            auto ref = ctx_->vm->getHeap().allocateString(std::move(errMsg));
+            return Value::makeStringId(ref.id);
+          }
+
+          ByteCompiler byteCompiler;
+          auto chunk = byteCompiler.compile(*program);
+          if (!chunk) {
+            auto ref = ctx_->vm->getHeap().allocateString("eval: compilation failed");
+            return Value::makeStringId(ref.id);
+          }
+
+          // Execute in the current VM context
+          auto result = ctx_->vm->execute(*chunk, "__main__");
+          return result;
+        } catch (const std::exception &e) {
+          std::string errMsg = "eval: " + std::string(e.what());
+          auto ref = ctx_->vm->getHeap().allocateString(std::move(errMsg));
+          return Value::makeStringId(ref.id);
+        }
+      };
+
+  // Global caller object - returns info about the calling function
+  // Usage: caller.function, caller.line, caller.file
+  {
+    auto callerObj = ctx_->vm->createHostObject();
+    // Store as object that gets properties dynamically
+    // For now, return a placeholder object - full implementation needs VM call stack access
+    ctx_->vm->setHostObjectField(callerObj, "function", Value::makeNull());
+    ctx_->vm->setHostObjectField(callerObj, "line", Value::makeNull());
+    ctx_->vm->setHostObjectField(callerObj, "file", Value::makeNull());
+    ctx_->vm->setGlobal("caller", Value::makeObjectId(callerObj.id));
+  }
 
   // Global print() function - resolves strings and outputs
   options_.host_functions["print"] =

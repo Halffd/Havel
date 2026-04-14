@@ -4704,7 +4704,89 @@ void VM::executeInstruction(const Instruction &instruction) {
     Value key_value = popStack();
     Value object = popStack();
 
-    
+    // Handle function objects - support fn.name, fn.arity, fn.params
+    if (object.isFunctionObjId()) {
+      uint32_t funcIdx = object.asFunctionObjId();
+      if (current_chunk) {
+        const auto* func = current_chunk->getFunction(funcIdx);
+        auto key = keyFromValue(key_value, &heap_, current_chunk);
+        if (key && func) {
+          if (*key == "name") {
+            pushStack(Value::makeStringId(heap_.allocateString(func->name).id));
+            break;
+          } else if (*key == "arity") {
+            pushStack(Value::makeInt(static_cast<int64_t>(func->param_count)));
+            break;
+          } else if (*key == "params") {
+            auto arrRef = heap_.allocateArray();
+            auto* arr = heap_.array(arrRef.id);
+            for (const auto& p : func->param_names) {
+              arr->push_back(Value::makeStringId(heap_.allocateString(p).id));
+            }
+            pushStack(Value::makeArrayId(arrRef.id));
+            break;
+          }
+        }
+      }
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    // Handle class/struct prototype objects - support Class.name, Class.methods, Class.fields
+    if (object.isObjectId()) {
+      auto* obj = heap_.object(object.asObjectId());
+      if (obj) {
+        // Check if this is a class/struct prototype (has __is_class or __is_struct marker)
+        bool isClass = false;
+        if (obj->get("__is_class") || obj->get("__is_struct")) {
+          isClass = true;
+        }
+        if (isClass) {
+          auto key = keyFromValue(key_value, &heap_, current_chunk);
+          if (key) {
+            if (*key == "name") {
+              auto* nameVal = obj->get("__name");
+              if (nameVal) { pushStack(*nameVal); break; }
+              pushStack(Value::makeNull());
+              break;
+            } else if (*key == "methods") {
+              // Collect method names from the prototype
+              auto arrRef = heap_.allocateArray();
+              auto* arr = heap_.array(arrRef.id);
+              auto keys = obj->getKeys();
+              for (const auto& k : keys) {
+                auto* val = obj->get(k);
+                if (val && (val->isFunctionObjId() || val->isHostFuncId())) {
+                  arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
+                }
+              }
+              pushStack(Value::makeArrayId(arrRef.id));
+              break;
+            } else if (*key == "fields") {
+              auto* fieldsVal = obj->get("__fields");
+              if (fieldsVal && fieldsVal->isArrayId()) {
+                pushStack(*fieldsVal);
+              } else {
+                // Collect from default null fields
+                auto arrRef = heap_.allocateArray();
+                auto* arr = heap_.array(arrRef.id);
+                auto keys = obj->getKeys();
+                for (const auto& k : keys) {
+                  auto* val = obj->get(k);
+                  if (val && val->isNull()) {
+                    arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
+                  }
+                }
+                pushStack(Value::makeArrayId(arrRef.id));
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
+
 
     // Handle arrays - look up prototype methods
     if (object.isArrayId()) {

@@ -1,0 +1,50 @@
+// Reflection and introspection tests
+
+print("=== TYPE() ===")
+print(type(42))
+print(type("hello"))
+print(type([1, 2, 3]))
+print(type({a: 1}))
+print(type(null))
+print(type(true))
+print(type(3.14))
+
+print("")
+print("=== DESCRIBE() ===")
+print(describe(42))
+print(describe("hello"))
+print(describe([1, 2, 3]))
+print(describe({a: 1, b: 2}))
+print(describe(null))
+print(describe(true))
+
+print("")
+print("=== FUNCTION INTROSPECTION ===")
+fn add(a, b, c) { return a + b + c }
+print("fn name: " + add.name)
+print("fn arity: " + add.arity)
+print("fn params: " + add.params)
+
+print("")
+print("=== BYTECODE() ===")
+bc = bytecode("2 * 3")
+print(bc)
+
+print("")
+print("=== TOKENIZE() ===")
+tokens = tokenize("1.02 - 0.1 ** 4;")
+for t in tokens {
+    print("  '" + t.value + "' line:" + t.line + " col:" + t.column)
+}
+
+print("")
+print("=== FORMAT STRING ===")
+greeting = "%s is %d years old".format("Alice", 30)
+print(greeting)
+padded = "%05d".format(42)
+print("padded: " + padded)
+prec = "%.2f".format(3.14159)
+print("precision: " + prec)
+
+print("")
+print("=== ALL TESTS PASSED ===")

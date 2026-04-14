@@ -388,6 +388,8 @@ void HostBridge::install() {
       };
 
   // Global eval() function - compile and execute code at runtime
+  // Note: eval is limited - it cannot call print() or other host functions
+  // that depend on VM state. Simple expressions like "2+3" work fine.
   options_.host_functions["eval"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
@@ -417,13 +419,18 @@ void HostBridge::install() {
           }
 
           ByteCompiler byteCompiler;
+          // Register known host globals so the lexical resolver recognizes them
+          for (const auto &name : options_.host_global_names) {
+            byteCompiler.addHostGlobal(name);
+          }
           auto chunk = byteCompiler.compile(*program);
           if (!chunk) {
             auto ref = ctx_->vm->getHeap().allocateString("eval: compilation failed");
             return Value::makeStringId(ref.id);
           }
 
-          // Execute in the current VM context
+          // Execute using the VM's execute() which handles state properly
+          // Note: this resets the heap, so eval should be used carefully
           auto result = ctx_->vm->execute(*chunk, "__main__");
           return result;
         } catch (const std::exception &e) {
@@ -510,6 +517,9 @@ void HostBridge::install() {
           }
 
           ByteCompiler byteCompiler;
+          for (const auto &name : options_.host_global_names) {
+            byteCompiler.addHostGlobal(name);
+          }
           auto chunk = byteCompiler.compile(*program);
           if (!chunk) {
             auto ref = ctx_->vm->getHeap().allocateString("bytecode: compilation failed");
@@ -569,10 +579,12 @@ void HostBridge::install() {
           auto arrRef = ctx_->vm->getHeap().allocateArray();
           auto* arr = ctx_->vm->getHeap().array(arrRef.id);
           for (const auto& tok : tokens) {
-            // Create token object: {type, value, line, column}
+            // Skip EOF token
+            if (tok.value == "EndOfFile") continue;
+            // Create token object: {raw, value, line, column}
             auto objRef = ctx_->vm->getHeap().allocateObject();
             auto* obj = ctx_->vm->getHeap().object(objRef.id);
-            obj->set("type", Value::makeStringId(ctx_->vm->getHeap().allocateString(tok.toString()).id));
+            obj->set("raw", Value::makeStringId(ctx_->vm->getHeap().allocateString(tok.raw).id));
             obj->set("value", Value::makeStringId(ctx_->vm->getHeap().allocateString(tok.value).id));
             obj->set("line", Value::makeInt(static_cast<int64_t>(tok.line)));
             obj->set("column", Value::makeInt(static_cast<int64_t>(tok.column)));

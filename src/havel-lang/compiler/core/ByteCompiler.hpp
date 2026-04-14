@@ -210,7 +210,7 @@ private:
       // Bare process globals
       "run", "runDetached",
       // Reflection and runtime evaluation
-      "eval", "caller",
+      "eval", "caller", "describe", "bytecode", "tokenize",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};

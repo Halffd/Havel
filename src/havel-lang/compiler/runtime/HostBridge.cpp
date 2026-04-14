@@ -16,12 +16,42 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 
 #include "../../../host/app/AppService.hpp"
 #include "../../../host/media/MediaService.hpp"
 #include "../../../host/network/NetworkService.hpp"
 
 namespace havel::compiler {
+
+// Helper: convert OpCode to string name (simplified subset for bytecode() display)
+static std::string opcodeNameStr(OpCode opcode) {
+  switch (opcode) {
+    case OpCode::LOAD_CONST: return "LOAD_CONST";
+    case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
+    case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
+    case OpCode::LOAD_VAR: return "LOAD_VAR";
+    case OpCode::STORE_VAR: return "STORE_VAR";
+    case OpCode::POP: return "POP";
+    case OpCode::DUP: return "DUP";
+    case OpCode::ADD: return "ADD";
+    case OpCode::SUB: return "SUB";
+    case OpCode::MUL: return "MUL";
+    case OpCode::DIV: return "DIV";
+    case OpCode::RETURN: return "RETURN";
+    case OpCode::CALL: return "CALL";
+    case OpCode::CALL_HOST: return "CALL_HOST";
+    case OpCode::JUMP: return "JUMP";
+    case OpCode::JUMP_IF_FALSE: return "JUMP_IF_FALSE";
+    case OpCode::OBJECT_NEW: return "OBJECT_NEW";
+    case OpCode::OBJECT_SET: return "OBJECT_SET";
+    case OpCode::OBJECT_GET: return "OBJECT_GET";
+    case OpCode::ARRAY_NEW: return "ARRAY_NEW";
+    case OpCode::ARRAY_SET: return "ARRAY_SET";
+    case OpCode::ARRAY_GET: return "ARRAY_GET";
+    default: return std::to_string(static_cast<int>(opcode));
+  }
+}
 
 // Helper function to get type name from Value
 static std::string getTypeName(const Value &value) {
@@ -414,6 +444,147 @@ void HostBridge::install() {
     ctx_->vm->setHostObjectField(callerObj, "file", Value::makeNull());
     ctx_->vm->setGlobal("caller", Value::makeObjectId(callerObj.id));
   }
+
+  // Global describe() function - structural introspection
+  options_.host_functions["describe"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+        const Value& val = args[0];
+
+        std::string desc;
+        std::string typeName = getTypeName(val);
+        desc += "type: " + typeName;
+
+        if (val.isInt()) {
+          desc += ", value: " + std::to_string(val.asInt());
+        } else if (val.isDouble()) {
+          desc += ", value: " + std::to_string(val.asDouble());
+        } else if (val.isBool()) {
+          desc += ", value: " + std::string(val.asBool() ? "true" : "false");
+        } else if (val.isNull()) {
+          // nothing more
+        } else if (val.isStringValId() || val.isStringId()) {
+          std::string s;
+          if (val.isStringValId() && ctx_->vm->getCurrentChunk()) {
+            s = ctx_->vm->getCurrentChunk()->getString(val.asStringValId());
+          } else if (val.isStringId() && ctx_->vm->getHeap().string(val.asStringId())) {
+            s = *ctx_->vm->getHeap().string(val.asStringId());
+          }
+          desc += ", length: " + std::to_string(s.size());
+        } else if (val.isArrayId()) {
+          auto* arr = ctx_->vm->getHeap().array(val.asArrayId());
+          desc += ", length: " + std::to_string(arr ? arr->size() : 0);
+        } else if (val.isObjectId()) {
+          auto* obj = ctx_->vm->getHeap().object(val.asObjectId());
+          desc += ", keys: " + std::to_string(obj ? obj->size() : 0);
+        }
+
+        auto ref = ctx_->vm->getHeap().allocateString(std::move(desc));
+        return Value::makeStringId(ref.id);
+      };
+
+  // Global bytecode() function - compile source to bytecode representation
+  options_.host_functions["bytecode"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+
+        std::string source;
+        if (args[0].isStringValId() && ctx_->vm->getCurrentChunk()) {
+          source = ctx_->vm->getCurrentChunk()->getString(args[0].asStringValId());
+        } else if (args[0].isStringId() && ctx_->vm->getHeap().string(args[0].asStringId())) {
+          source = *ctx_->vm->getHeap().string(args[0].asStringId());
+        } else {
+          source = args[0].toString();
+        }
+
+        if (source.empty()) return Value::makeNull();
+
+        try {
+          parser::Parser parser;
+          auto program = parser.produceAST(source);
+          if (!program || parser.hasErrors()) {
+            std::string errMsg = "bytecode: parse error";
+            if (!parser.getErrors().empty()) errMsg += ": " + parser.getErrors()[0].message;
+            auto ref = ctx_->vm->getHeap().allocateString(std::move(errMsg));
+            return Value::makeStringId(ref.id);
+          }
+
+          ByteCompiler byteCompiler;
+          auto chunk = byteCompiler.compile(*program);
+          if (!chunk) {
+            auto ref = ctx_->vm->getHeap().allocateString("bytecode: compilation failed");
+            return Value::makeStringId(ref.id);
+          }
+
+          // Format bytecode to string
+          std::string result;
+          for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+            const auto* func = chunk->getFunction(i);
+            if (!func) continue;
+            result += "fn " + func->name + "(";
+            for (size_t p = 0; p < func->param_names.size(); ++p) {
+              if (p > 0) result += ", ";
+              result += func->param_names[p];
+            }
+            result += ")\n";
+            for (size_t j = 0; j < func->instructions.size(); ++j) {
+              const auto& instr = func->instructions[j];
+              result += "  " + std::to_string(j) + ": " + opcodeNameStr(instr.opcode);
+              for (const auto& op : instr.operands) {
+                result += " " + op.toString();
+              }
+              result += "\n";
+            }
+          }
+
+          auto ref = ctx_->vm->getHeap().allocateString(std::move(result));
+          return Value::makeStringId(ref.id);
+        } catch (const std::exception &e) {
+          std::string errMsg = "bytecode: " + std::string(e.what());
+          auto ref = ctx_->vm->getHeap().allocateString(std::move(errMsg));
+          return Value::makeStringId(ref.id);
+        }
+      };
+
+  // Global tokenize() function - lex source code and return token info
+  options_.host_functions["tokenize"] =
+      [this](const std::vector<Value> &args) {
+        if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
+
+        std::string source;
+        if (args[0].isStringValId() && ctx_->vm->getCurrentChunk()) {
+          source = ctx_->vm->getCurrentChunk()->getString(args[0].asStringValId());
+        } else if (args[0].isStringId() && ctx_->vm->getHeap().string(args[0].asStringId())) {
+          source = *ctx_->vm->getHeap().string(args[0].asStringId());
+        } else {
+          source = args[0].toString();
+        }
+
+        if (source.empty()) return Value::makeNull();
+
+        try {
+          Lexer lexer(source);
+          auto tokens = lexer.tokenize();
+
+          auto arrRef = ctx_->vm->getHeap().allocateArray();
+          auto* arr = ctx_->vm->getHeap().array(arrRef.id);
+          for (const auto& tok : tokens) {
+            // Create token object: {type, value, line, column}
+            auto objRef = ctx_->vm->getHeap().allocateObject();
+            auto* obj = ctx_->vm->getHeap().object(objRef.id);
+            obj->set("type", Value::makeStringId(ctx_->vm->getHeap().allocateString(tok.toString()).id));
+            obj->set("value", Value::makeStringId(ctx_->vm->getHeap().allocateString(tok.value).id));
+            obj->set("line", Value::makeInt(static_cast<int64_t>(tok.line)));
+            obj->set("column", Value::makeInt(static_cast<int64_t>(tok.column)));
+            arr->push_back(Value::makeObjectId(objRef.id));
+          }
+          return Value::makeArrayId(arrRef.id);
+        } catch (const std::exception &e) {
+          std::string errMsg = "tokenize: " + std::string(e.what());
+          auto ref = ctx_->vm->getHeap().allocateString(std::move(errMsg));
+          return Value::makeStringId(ref.id);
+        }
+      };
 
   // Global print() function - resolves strings and outputs
   options_.host_functions["print"] =

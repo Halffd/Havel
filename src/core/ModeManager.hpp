@@ -86,6 +86,9 @@ public:
     std::chrono::steady_clock::time_point enterTime;
     std::chrono::milliseconds totalTime{0}; // Total time spent in this mode
     int transitionCount = 0;                // Number of times entered this mode
+    
+    // Phase 2F: Reactive watcher integration
+    uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
   };
 
   // Mode group for batch operations
@@ -128,10 +131,17 @@ public:
 
   // Check if signal is active
   bool isSignalActive(const std::string &signalName) const;
+  
+  // Phase 2F: Set the execution engine for reactive watcher integration
+  // Allows mode conditions to be registered as watchers
+  void setExecutionEngine(class ExecutionEngine* ee) { executionEngine_ = ee; }
 
 private:
   std::vector<Signal> signalList;
-  std::vector<ModeDefinition> modes;
+  std::vector<ModeDefinition> m
+  
+  // Phase 2F: Execution engine for reactive watcher integration
+  class ExecutionEngine* executionEngine_ = nullptr;odes;
   std::vector<ModeGroup> groups;
   std::string currentMode;
   std::string previousMode;

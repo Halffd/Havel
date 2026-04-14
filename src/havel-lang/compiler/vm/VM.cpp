@@ -3,6 +3,7 @@
 #include "../../errors/ErrorSystem.h"
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
+#include "../../runtime/concurrency/DependencyTracker.hpp"  // Phase 2D: Track global accesses
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "../runtime/EventQueue.hpp"  // Phase 2A: For variable change events
 #include "../../runtime/HostContext.hpp"
@@ -2403,6 +2404,64 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   Value result = stack.top();
   stack.pop();
   return result;
+}
+
+// ============================================================================
+// PHASE 2E: CONDITION BYTECODE EVALUATION
+// ============================================================================
+
+bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
+  // Phase 2E: Evaluate a condition in the current execution context
+  // 
+  // Used by WatcherRegistry::onVariableChanged() to re-evaluate
+  // reactive conditions when watched variables change.
+  //
+  // Approach:
+  // 1. Create lightweight execution context (DependencyTrackerScope)
+  // 2. Execute condition bytecode function
+  // 3. Return top of stack as boolean
+  //
+  // Important: This runs in the current thread, not creating new fiber
+  
+  if (!current_chunk) {
+    // No bytecode loaded - can't evaluate
+    return false;
+  }
+  
+  // Get function by index from current chunk
+  if (func_index >= current_chunk->functions.size()) {
+    return false;
+  }
+  
+  const BytecodeChunk::Function* func_entry = current_chunk->functions[func_index].entry;
+  if (!func_entry) {
+    return false;
+  }
+  
+  // Phase 2D: Dependency tracking is already automatic via trackGlobalAccess()
+  // in VM::getGlobalThreadSafe(), so we don't need extra setup here
+  
+  // Save current stack state (conditions shouldn't consume/modify main stack)
+  std::stack<Value> saved_stack = stack;
+  
+  try {
+    // Execute function and get result
+    // We call the function through the normal call mechanism
+    Value func_value = func_entry;  // BytecodeChunk::Function* is a Value
+    Value result = call(func_value, {});
+    
+    // Convert result to boolean
+    bool condition_result = toBool(result);
+    
+    // Restore stack
+    stack = saved_stack;
+    
+    return condition_result;
+  } catch (...) {
+    // Restore stack on error
+    stack = saved_stack;
+    return false;
+  }
 }
 
 // ============================================================================
@@ -6739,6 +6798,9 @@ void VM::setGlobalThreadSafe(const std::string &name, Value value) {
 
 std::optional<Value>
 VM::getGlobalThreadSafe(const std::string &name) const {
+  // Phase 2D: Track global accesses for dependency tracking
+  trackGlobalAccess(name);
+  
   std::shared_lock<std::shared_mutex> lock(globals_mutex_);
   auto it = globals.find(name);
   if (it == globals.end()) {

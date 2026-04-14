@@ -26,6 +26,10 @@ namespace compiler { class EventQueue; }
  * Condition can be:
  * - String: evaluated via condition engine (e.g., "mode == 'gaming'")
  * - Function: direct C++ callback
+ * 
+ * Phase 2F: Integrated with reactive watcher system
+ * - watcher_id: ID in WatcherRegistry (0 if not using reactive system)
+ * - Condition changes trigger edge-detect watchers (false→true)
  */
 struct ConditionalHotkey {
   int id;
@@ -36,6 +40,9 @@ struct ConditionalHotkey {
   bool currentlyGrabbed = false;
   bool lastConditionResult = false;
   bool monitoringEnabled = true;
+  
+  // Phase 2F: Reactive watcher integration
+  uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
 };
 
 // Stores the state of conditional hotkeys before suspension
@@ -94,6 +101,10 @@ public:
 
   // Set the event queue for scheduling reevaluation
   void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
+  
+  // Phase 2F: Set the execution engine for reactive watcher integration
+  // Allows hotkey conditions to be registered as watchers
+  void setExecutionEngine(class ExecutionEngine* ee) { executionEngine_ = ee; }
 
   // Suspend all conditional hotkeys (save state and ungrab all)
   bool Suspend();
@@ -155,6 +166,9 @@ private:
 
   // Event queue for scheduling reevaluation from any thread
   compiler::EventQueue* eventQueue_ = nullptr;
+  
+  // Phase 2F: Execution engine for reactive watcher integration
+  class ExecutionEngine* executionEngine_ = nullptr;
 
   // Condition evaluation cache
   struct CachedCondition {

@@ -43,6 +43,31 @@ namespace havel::init {
 // Global flag to enable/disable bytecode VM
 static constexpr bool USE_BYTECODE_VM = true;
 
+// Read a script file and strip the shebang line if present
+static std::string readScriptFile(const std::string &path) {
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    return ""; // Signal failure
+  }
+
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string content = buffer.str();
+
+  // Skip shebang line if present (#!/... or #!havel)
+  if (content.size() >= 2 && content[0] == '#' && content[1] == '!') {
+    size_t newline = content.find('\n');
+    if (newline != std::string::npos) {
+      content = content.substr(newline + 1);
+    } else {
+      // Entire file is just a shebang with no newline
+      content.clear();
+    }
+  }
+
+  return content;
+}
+
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
@@ -195,11 +220,9 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
   std::string combinedCode;
   std::string combinedNames;
   for (const auto& f : cfg.scriptFiles) {
-    std::ifstream file(f);
-    if (file) {
-      std::stringstream buffer;
-      buffer << file.rdbuf();
-      combinedCode += buffer.str() + "\n";
+    std::string content = readScriptFile(f);
+    if (!content.empty()) {
+      combinedCode += content + "\n";
       if (!combinedNames.empty()) combinedNames += " + ";
       combinedNames += f;
     } else {
@@ -349,11 +372,9 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     std::string combinedCode;
     std::string combinedNames;
     for (const auto& f : cfg.scriptFiles) {
-      std::ifstream file(f);
-      if (file) {
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        combinedCode += buffer.str() + "\n";
+      std::string content = readScriptFile(f);
+      if (!content.empty()) {
+        combinedCode += content + "\n";
         if (!combinedNames.empty()) combinedNames += " + ";
         combinedNames += f;
       } else {
@@ -594,11 +615,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   std::string combinedCode;
   std::string combinedNames;
   for (const auto& f : cfg.scriptFiles) {
-    std::ifstream file(f);
-    if (file) {
-      std::stringstream buffer;
-      buffer << file.rdbuf();
-      combinedCode += buffer.str() + "\n";
+    std::string content = readScriptFile(f);
+    if (!content.empty()) {
+      combinedCode += content + "\n";
       if (!combinedNames.empty()) combinedNames += " + ";
       combinedNames += f;
     } else {
@@ -726,11 +745,9 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
       std::string combinedCode;
       for (const auto& f : cfg.scriptFiles) {
-        std::ifstream file(f);
-        if (file) {
-          std::stringstream buffer;
-          buffer << file.rdbuf();
-          combinedCode += buffer.str() + "\n";
+        std::string content = readScriptFile(f);
+        if (!content.empty()) {
+          combinedCode += content + "\n";
         }
       }
 
@@ -754,11 +771,9 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       std::string combinedCode;
       std::string combinedNames;
       for (const auto& f : cfg.scriptFiles) {
-        std::ifstream file(f);
-        if (file) {
-          std::stringstream buffer;
-          buffer << file.rdbuf();
-          combinedCode += buffer.str() + "\n";
+        std::string content = readScriptFile(f);
+        if (!content.empty()) {
+          combinedCode += content + "\n";
           if (!combinedNames.empty()) combinedNames += " + ";
           combinedNames += f;
         }
@@ -1108,11 +1123,9 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   std::string combinedCode;
   std::string primaryFile;
   for (const auto& f : cfg.scriptFiles) {
-    std::ifstream file(f);
-    if (file) {
-      std::stringstream buffer;
-      buffer << file.rdbuf();
-      combinedCode += buffer.str() + "\n";
+    std::string content = readScriptFile(f);
+    if (!content.empty()) {
+      combinedCode += content + "\n";
       if (primaryFile.empty()) primaryFile = f;
     } else {
       error("Cannot open script file: {}", f);

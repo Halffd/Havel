@@ -135,17 +135,26 @@ public:
   // Phase 2F: Set the execution engine for reactive watcher integration
   // Allows mode conditions to be registered as watchers
   void setExecutionEngine(class ExecutionEngine* ee) { executionEngine_ = ee; }
+  
+  // Phase 2G: Set the event queue for reactive mode updates
+  void setEventQueue(class compiler::EventQueue* eq) { eventQueue_ = eq; }
+  
+  // Phase 2G: Register for VAR_CHANGED events to trigger reactive mode reevaluation
+  void registerVarChangedHandler();
 
 private:
   std::vector<Signal> signalList;
-  std::vector<ModeDefinition> m
-  
-  // Phase 2F: Execution engine for reactive watcher integration
-  class ExecutionEngine* executionEngine_ = nullptr;odes;
+  std::vector<ModeDefinition> modes;
   std::vector<ModeGroup> groups;
   std::string currentMode;
   std::string previousMode;
   mutable std::mutex modeMutex;
+  
+  // Phase 2F: Execution engine for reactive watcher integration
+  class ExecutionEngine* executionEngine_ = nullptr;
+  
+  // Phase 2G: Event queue for reactive updates
+  class compiler::EventQueue* eventQueue_ = nullptr;
 
   void triggerEnter(ModeDefinition &mode);
   void triggerExit(ModeDefinition &mode);

@@ -36,6 +36,23 @@ void ConditionalHotkeyManager::ScheduleReevaluation() {
   }
 }
 
+void ConditionalHotkeyManager::registerVarChangedHandler() {
+  // Phase 2G: Register to react to variable changes
+  // When a global variable changes, reevaluate all hotkey conditions
+  // This enables event-driven hotkey condition checking
+  if (eventQueue_) {
+    // Register handler for VAR_CHANGED events
+    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED, 
+        [this](const compiler::Event& event) {
+          // Reevaluate hotkey conditions when variables change
+          // This allows "mode == 'gaming'" or similar conditions to react immediately
+          debug("VAR_CHANGED event - reevaluating hotkey conditions");
+          ScheduleReevaluation();
+        });
+    info("ConditionalHotkeyManager: Registered VAR_CHANGED handler for reactive hotkey updates");
+  }
+}
+
 int ConditionalHotkeyManager::AddConditionalHotkey(
     const std::string& key, const std::string& condition,
     std::function<void()> trueAction,

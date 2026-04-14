@@ -114,6 +114,8 @@ private:
   // Havel language VM
   std::unique_ptr<compiler::VM> bytecodeVM;
   std::shared_ptr<compiler::HostBridge> hostBridge;
+  std::unique_ptr<compiler::Scheduler> scheduler;
+  std::unique_ptr<compiler::ExecutionEngine> executionEngine;
 
   // Host context (persistent for VM lifetime)
   std::unique_ptr<HostContext> hostContext;

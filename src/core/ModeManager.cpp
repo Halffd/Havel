@@ -253,4 +253,26 @@ void ModeManager::update(ExprEvaluator evaluator) {
   }
 }
 
+void ModeManager::registerVarChangedHandler() {
+  // Phase 2G: Register to react to variable changes
+  // When a global variable changes, reevaluate all mode conditions
+  // This enables event-driven mode condition checking
+  if (eventQueue_) {
+    // Register handler for VAR_CHANGED events
+    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
+        [this](const compiler::Event& event) {
+          // Reevaluate mode conditions when variables change
+          // This allows conditions like "window.any(exe == 'steam.exe')" to react immediately
+          debug("VAR_CHANGED event - reevaluating mode conditions");
+          // Schedule reevaluation via a callback to avoid blocking
+          eventQueue_->push([this]() {
+            // Use cached evaluator if available, otherwise skip
+            // Full evaluation would need ExprEvaluator which may not be available
+            update();
+          });
+        });
+    info("ModeManager: Registered VAR_CHANGED handler for reactive mode updates");
+  }
+}
+
 } // namespace havel

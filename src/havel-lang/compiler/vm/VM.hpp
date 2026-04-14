@@ -192,6 +192,19 @@ private:
   uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
 
+  // Phase 3B-7: Suspension state for non-blocking fiber suspension
+  // When an operation needs to wait (thread.join, channel.recv, etc)
+  // it sets these flags to signal the VM to suspend the current fiber
+  bool suspension_requested_ = false;          // True if suspension needed
+  havel::SuspensionReason suspension_reason_;  // Why is it suspending?
+  void* suspension_context_ = nullptr;         // Context pointer (thread_id, channel*, etc)
+
+  // Phase 3B-7: Thread wait tracking
+  // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
+  // Used to unpark fibers when threads complete
+  std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
+  mutable std::shared_mutex thread_wait_mutex_;
+
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> host function index
   std::unordered_map<std::string,
@@ -330,6 +343,36 @@ public:
   // Must be called after executeOneStep() to persist execution progress
   // @param fiber The Fiber to save to (preserves IP for resumption)
   void saveFiberState(Fiber *fiber);
+
+  // ========== PHASE 3B-7: SUSPENSION CALLBACKS ==========
+  // Track which fiber is waiting on a specific thread
+  // Called when a fiber is suspended waiting for THREAD_JOIN completion
+  // @param thread_id The thread being waited on
+  // @param fiber The fiber waiting (will be unparked when thread completes)
+  void registerThreadWait(uint32_t thread_id, Fiber *fiber);
+  
+  // Get the fiber waiting on a specific thread (if any)
+  Fiber* getThreadWaitingFiber(uint32_t thread_id) const;
+  
+  // Unregister a thread from tracking once the fiber is resumed
+  void unregisterThreadWait(uint32_t thread_id);
+  
+  // Get all thread IDs that have waiting fibers (for iteration in main loop)
+  // Thread-safe copy of all threads with suspended fibers
+  std::vector<uint32_t> getWaitingThreadIds() const;
+  
+  // Check and clear all threads, calling callback for each waiting fiber
+  // Callback signature: void(uint32_t thread_id, Fiber* waiting_fiber)
+  // Used by ExecutionEngine to unpark fibers when threads complete
+  template<typename Callback>
+  void checkWaitingThreads(const Callback& on_fiber_ready) {
+    std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
+    for (auto& [thread_id, fiber] : thread_wait_map_) {
+      if (fiber) {
+        on_fiber_ready(thread_id, fiber);
+      }
+    }
+  }
   
   // Check if there are any active frames (for detecting completion)
   bool hasActiveFrames() const { return frame_count_ > 0; }

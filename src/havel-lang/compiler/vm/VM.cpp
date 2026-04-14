@@ -2482,6 +2482,36 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     // Process any pending callbacks that resulted from instruction
     processPendingCalls();
 
+    // Phase 3B-7: Check if suspension was requested (e.g., by THREAD_JOIN)
+    if (suspension_requested_) {
+      suspension_requested_ = false;
+      
+      // Suspend the current fiber with the stored reason and context
+      // The context pointer contains thread_id or other relevant data
+      void* context = suspension_context_;
+      SuspensionReason reason = suspension_reason_;
+      suspension_context_ = nullptr;
+      
+      if (current_fiber) {
+        current_fiber->suspend(reason, context);
+        
+        // Phase 3B-7: Register fiber as waiting on thread
+        if (reason == SuspensionReason::THREAD_JOIN) {
+          uint32_t thread_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context));
+          registerThreadWait(thread_id, current_fiber);
+          
+          // TODO: Phase 3B-7 Part 2
+          // Enqueue callback to check thread completion periodically
+          // The callback should:
+          // 1. Check if the thread with thread_id has completed
+          // 2. If completed, unpark the fiber and unregisterThreadWait
+          // 3. Reschedule the callback if thread not done yet
+        }
+      }
+      
+      return VMExecutionResult::Suspended();
+    }
+
     // Increment IP if the instruction didn't modify it (no CALL/RETURN)
     if (frame_count_ > 0) {
       active_frame_idx = frame_count_ - 1;
@@ -2715,6 +2745,51 @@ void VM::saveFiberState(Fiber *fiber) {
               << frame_count_ << " frames, " << stack.size() << " stack items"
               << std::endl;
   }
+}
+
+// ============================================================================
+// PHASE 3B-7: THREAD WAIT TRACKING
+// ============================================================================
+
+void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
+  if (!fiber) {
+    return;
+  }
+  
+  std::unique_lock<std::shared_mutex> lock(thread_wait_mutex_);
+  thread_wait_map_[thread_id] = fiber;
+  
+  if (debug_mode) {
+    std::cerr << "[VM] Registered fiber " << fiber->id 
+              << " waiting on thread " << thread_id << std::endl;
+  }
+}
+
+Fiber* VM::getThreadWaitingFiber(uint32_t thread_id) const {
+  std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
+  auto it = thread_wait_map_.find(thread_id);
+  return it != thread_wait_map_.end() ? it->second : nullptr;
+}
+
+void VM::unregisterThreadWait(uint32_t thread_id) {
+  std::unique_lock<std::shared_mutex> lock(thread_wait_mutex_);
+  thread_wait_map_.erase(thread_id);
+  
+  if (debug_mode) {
+    std::cerr << "[VM] Unregistered thread wait for thread " << thread_id << std::endl;
+  }
+}
+
+std::vector<uint32_t> VM::getWaitingThreadIds() const {
+  std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
+  std::vector<uint32_t> result;
+  result.reserve(thread_wait_map_.size());
+  for (const auto& [thread_id, fiber] : thread_wait_map_) {
+    if (fiber) {
+      result.push_back(thread_id);
+    }
+  }
+  return result;
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
@@ -5340,14 +5415,24 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::THREAD_JOIN: {
-    // Join thread and wait for completion
+    // Join thread and wait for completion (non-blocking via fiber suspension)
+    // Phase 3B-7: Instead of blocking thread.join(), suspend the fiber
+    // and enqueue a callback to unpark when thread completes
     Value thread_val = popStack();
     if (!thread_val.isThreadId()) {
       COMPILER_THROW("THREAD_JOIN expects a thread");
     }
     
-    // TODO: Wait for thread to complete
-    // For now, just push null
+    uint32_t thread_id = thread_val.asThreadId();
+    
+    // Set suspension request - signals executeOneStep to suspend the fiber
+    // Context pointer carries the thread_id for the callback to use
+    suspension_requested_ = true;
+    suspension_reason_ = SuspensionReason::THREAD_JOIN;
+    suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
+    
+    // The actual suspension will happen in executeOneStep after this instruction
+    // For now, push null as the return value (will be used if thread already done)
     pushStack(Value::makeNull());
     break;
   }

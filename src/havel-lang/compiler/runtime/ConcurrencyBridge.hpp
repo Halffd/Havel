@@ -46,6 +46,32 @@ public:
   // Get event queue for enqueuing callbacks from worker threads
   EventQueue* eventQueue() { return event_queue_.get(); }
 
+  // Phase 3B-7: Check if a thread has completed
+  // Used by ExecutionEngine to detect thread completion and unpark waiting fibers
+  bool isThreadCompleted(uint32_t thread_id);
+  
+  // Phase 3B-7: Mark a thread as completed
+  // Called when a thread finishes execution (or when removed from active_threads)
+  void markThreadCompleted(uint32_t thread_id);
+  
+  // Phase 3B-7: Consume completion notification (clears the flag)
+  void clearThreadCompletion(uint32_t thread_id);
+
+  // Phase 3B-7: Get thread state (CREATED/RUNNING/COMPLETED/JOINED)
+  ThreadState getThreadState(uint32_t thread_id);
+  
+  // Phase 3B-7: Get all completed thread IDs (for ExecutionEngine iteration)
+  std::vector<uint32_t> getCompletedThreadIds();
+  
+  // Phase 3B-7: Cleanup and join a completed thread
+  // Safely joins the OS thread and removes it from tracking
+  // Returns true if thread was cleaned up, false if not found or still running
+  bool cleanupThread(uint32_t thread_id);
+  
+  // Phase 3B-7: Cleanup all completed threads (called from main loop)
+  // Returns count of threads cleaned up
+  int cleanupCompletedThreads();
+
 private:
   const ::havel::HostContext *ctx_;
   class compiler::VM *vm_;
@@ -61,12 +87,36 @@ private:
   std::condition_variable queue_cv_;
   bool shutdown_ = false;
 
+  // Phase 3B-7: Enhanced thread state tracking
+  enum class ThreadState : uint8_t {
+    CREATED,      // Thread spawned but not started
+    RUNNING,      // Thread is executing
+    COMPLETED,    // Thread finished execution
+    JOINED        // Thread has been joined/cleaned up
+  };
+
+  struct ManagedThread {
+    uint32_t id;
+    ThreadState state;
+    std::thread* thread_ptr;  // Owned by active_threads_, just reference here
+    std::chrono::steady_clock::time_point created_at;
+    std::chrono::steady_clock::time_point completed_at;
+  };
+
   // Thread management
   std::unordered_map<uint32_t, std::thread> active_threads_;
   std::unordered_map<uint32_t, std::vector<Value>> thread_mailboxes_;
   std::mutex threads_mutex_;
   uint32_t next_thread_id_ = 1;
 
+  // Phase 3B-7: Thread completion tracking
+  // Tracks which threads have completed (for unparking waiting fibers)
+  std::unordered_set<uint32_t> completed_threads_;
+  std::mutex completed_threads_mutex_;
+
+  // Phase 3B-7: Enhanced thread info tracking
+  std::unordered_map<uint32_t, ManagedThread> thread_info_;
+  
   // Timer queue for main event loop
   struct Timer {
     uint32_t id;

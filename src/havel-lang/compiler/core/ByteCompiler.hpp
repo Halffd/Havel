@@ -211,6 +211,7 @@ private:
       "run", "runDetached",
       // Reflection and runtime evaluation
       "eval", "caller", "describe", "bytecode", "tokenize",
+      "inspect", "prototypes", "defun",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};

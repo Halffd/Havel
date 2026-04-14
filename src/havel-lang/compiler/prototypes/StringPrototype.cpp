@@ -408,5 +408,206 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
+  // format: printf-style string formatting
+  // Positional: "%s is %d".format("Alice", 30)
+  // Named: "%(name)s".format({name: "Alice"})
+  // Supports: %s %d %f %x %X %o %e %E %g %G %c %%
+  // Width: %5d, %-5d, %05d
+  // Precision: %.2f
+  regProtoVar("format", [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    std::string fmt = extractString(vm, args[0]);
+    std::string result;
+    result.reserve(fmt.size() * 2);
+
+    // Check if last arg is a named args object
+    bool hasNamedArgs = false;
+    GCHeap::ObjectEntry* namedArgs = nullptr;
+    if (args.size() > 1 && args.back().isObjectId()) {
+      namedArgs = vm.getHeap().object(args.back().asObjectId());
+      if (namedArgs && namedArgs->size() > 0) {
+        hasNamedArgs = true;
+      }
+    }
+
+    size_t posIdx = 1; // Positional arg index (starts at 1, 0 is format string)
+    size_t i = 0;
+    while (i < fmt.size()) {
+      if (fmt[i] == '%' && i + 1 < fmt.size()) {
+        i++; // skip '%'
+
+        // Check for %% (literal %)
+        if (fmt[i] == '%') {
+          result += '%';
+          i++;
+          continue;
+        }
+
+        // Parse format specifier
+        bool leftAlign = false;
+        bool zeroPad = false;
+        int width = -1;
+        int precision = -1;
+        std::string namedKey;
+
+        // Check for named key: %(name)s
+        if (fmt[i] == '(') {
+          size_t closeParen = fmt.find(')', i);
+          if (closeParen != std::string::npos) {
+            namedKey = fmt.substr(i + 1, closeParen - i - 1);
+            i = closeParen + 1;
+          }
+        }
+
+        // Flags
+        while (i < fmt.size()) {
+          if (fmt[i] == '-') { leftAlign = true; i++; }
+          else if (fmt[i] == '0') { zeroPad = true; i++; }
+          else if (fmt[i] == '+') { i++; } // skip sign flag for now
+          else if (fmt[i] == ' ') { i++; } // skip space flag
+          else break;
+        }
+
+        // Width
+        if (i < fmt.size() && fmt[i] == '.') {
+          i++; // skip '.', no width specified
+        } else if (i < fmt.size() && std::isdigit(fmt[i])) {
+          width = 0;
+          while (i < fmt.size() && std::isdigit(fmt[i])) {
+            width = width * 10 + (fmt[i] - '0');
+            i++;
+          }
+          // Precision
+          if (i < fmt.size() && fmt[i] == '.') {
+            i++;
+            precision = 0;
+            while (i < fmt.size() && std::isdigit(fmt[i])) {
+              precision = precision * 10 + (fmt[i] - '0');
+              i++;
+            }
+          }
+        }
+
+        // Type specifier
+        if (i >= fmt.size()) {
+          result += '%';
+          break;
+        }
+        char type = fmt[i];
+        i++;
+
+        // Get the value
+        Value val;
+        if (!namedKey.empty() && namedArgs) {
+          auto* v = namedArgs->get(namedKey);
+          val = v ? *v : Value::makeNull();
+        } else if (posIdx < args.size()) {
+          val = args[posIdx++];
+        } else {
+          val = Value::makeNull();
+        }
+
+        // Format the value
+        std::string formatted;
+        switch (type) {
+          case 's': {
+            formatted = vm.toString(val);
+            break;
+          }
+          case 'd':
+          case 'i': {
+            int64_t num = val.isInt() ? val.asInt() : (val.isDouble() ? static_cast<int64_t>(val.asDouble()) : 0);
+            formatted = std::to_string(num);
+            break;
+          }
+          case 'u': {
+            int64_t num = val.isInt() ? val.asInt() : (val.isDouble() ? static_cast<int64_t>(val.asDouble()) : 0);
+            formatted = std::to_string(static_cast<uint64_t>(num));
+            break;
+          }
+          case 'f':
+          case 'F': {
+            double num = val.isDouble() ? val.asDouble() : (val.isInt() ? static_cast<double>(val.asInt()) : 0.0);
+            if (precision < 0) precision = 6;
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%.*f", precision, num);
+            formatted = buf;
+            break;
+          }
+          case 'e':
+          case 'E': {
+            double num = val.isDouble() ? val.asDouble() : (val.isInt() ? static_cast<double>(val.asInt()) : 0.0);
+            if (precision < 0) precision = 6;
+            char buf[64];
+            snprintf(buf, sizeof(buf), type == 'e' ? "%.*e" : "%.*E", precision, num);
+            formatted = buf;
+            break;
+          }
+          case 'g':
+          case 'G': {
+            double num = val.isDouble() ? val.asDouble() : (val.isInt() ? static_cast<double>(val.asInt()) : 0.0);
+            if (precision < 0) precision = 6;
+            char buf[64];
+            snprintf(buf, sizeof(buf), type == 'g' ? "%.*g" : "%.*G", precision, num);
+            formatted = buf;
+            break;
+          }
+          case 'x':
+          case 'X': {
+            uint64_t num = val.isInt() ? static_cast<uint64_t>(val.asInt()) : (val.isDouble() ? static_cast<uint64_t>(val.asDouble()) : 0);
+            char buf[32];
+            snprintf(buf, sizeof(buf), type == 'x' ? "%lx" : "%lX", (unsigned long)num);
+            formatted = buf;
+            break;
+          }
+          case 'o': {
+            uint64_t num = val.isInt() ? static_cast<uint64_t>(val.asInt()) : (val.isDouble() ? static_cast<uint64_t>(val.asDouble()) : 0);
+            if (num == 0) formatted = "0";
+            else {
+              std::string oct;
+              while (num > 0) {
+                oct = std::to_string(num % 8) + oct;
+                num /= 8;
+              }
+              formatted = oct;
+            }
+            break;
+          }
+          case 'c': {
+            int ch = val.isInt() ? static_cast<int>(val.asInt()) : 0;
+            formatted = std::string(1, static_cast<char>(ch));
+            break;
+          }
+          default:
+            // Unknown specifier, output literally
+            result += '%';
+            if (!namedKey.empty()) {
+              result += "(" + namedKey + ")";
+            }
+            result += std::string(1, type);
+            continue;
+        }
+
+        // Apply width and padding
+        if (width >= 0 && static_cast<int>(formatted.size()) < width) {
+          size_t padLen = width - formatted.size();
+          if (leftAlign) {
+            formatted.append(padLen, ' ');
+          } else {
+            char padChar = zeroPad ? '0' : ' ';
+            formatted.insert(formatted.begin(), padLen, padChar);
+          }
+        }
+
+        result += formatted;
+      } else {
+        result += fmt[i];
+        i++;
+      }
+    }
+
+    return makeString(vm, std::move(result));
+  });
+
 }
 } // namespace havel::compiler::prototypes

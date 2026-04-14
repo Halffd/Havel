@@ -48,7 +48,7 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   }
 
   // Create VM
-  vm_ = std::make_unique<compiler::VM>();
+  vm_ = std::make_shared<compiler::VM>();
 
   // Create HostContext with injected dependencies (stored as member to persist beyond this function)
   hostContext_ = std::make_unique<HostContext>(havel::createHostContext(hostAPI));
@@ -67,6 +67,26 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
 
   initialized = true;
   info("REPL initialized successfully");
+}
+
+void REPL::attach(compiler::VM* existingVM,
+                  compiler::HostBridge* bridge,
+                  std::unordered_set<std::string> globals) {
+  if (!existingVM) {
+    throw std::runtime_error("REPL::attach requires a non-null VM");
+  }
+  if (!bridge) {
+    throw std::runtime_error("REPL::attach requires a non-null HostBridge");
+  }
+
+  info("Attaching REPL to existing VM...");
+
+  // Reuse the existing VM — non-owning reference via no-op deleter
+  vm_ = std::shared_ptr<compiler::VM>(existingVM, [](compiler::VM*){});
+  hostBridge_ = std::shared_ptr<compiler::HostBridge>(bridge, [](compiler::HostBridge*){});
+  known_globals_ = std::move(globals);
+  initialized = true;
+  info("REPL attached successfully");
 }
 
 void REPL::setPrintHandler(std::function<void(const std::string&)> handler) {

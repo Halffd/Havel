@@ -243,6 +243,45 @@ print("  sortKey(): " + unsorted.sortKey((a,b) => a.compare(b)))
 print("  sortVal(): " + unsorted.sortVal((a,b) => b - a))
 
 print("")
+// del operator on object
+print("  del operator on object...")
+del unsorted
+print("    Deleted unsorted: " + unsorted)
+a = [1,2,3]
+del a[1]
+print("    Deleted a[1]: " + a)
+del a[-1]
+print("    Deleted a[-1]: " + a)
+del a
+print("    Deleted a: " + a)
+s = set([1,2,3])
+del s[2]
+print("    Deleted s[2]: " + s)
+st = "hello"
+del st[1]
+print("    Deleted st[1]: " + st)
+let obj2 = {x: 10, y: 20}
+del obj2.x
+let func = () => print("Deleted x from obj2: " + obj2)
+del func
+print("    Deleted func: " + (type func))
+struct point {
+    x = 0,
+    y = 0,
+    description = ":point"
+}
+let p = point(1,2)
+del p.x
+del p.description[0]
+print("    Deleted p.x and first character of description: " + p)
+del p
+print("    Deleted p: " + p)
+try {
+    del obj.age
+    print("    Deleted age: " + obj)
+} catch e {
+    print("    ERROR: " + e)
+}
 
 // ============================================================
 // 4. SET Tests (Unique Values)

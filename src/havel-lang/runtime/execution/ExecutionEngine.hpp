@@ -3,6 +3,7 @@
 #include "../../compiler/vm/VM.hpp"
 #include "../../compiler/runtime/EventQueue.hpp"
 #include "../../compiler/runtime/ConcurrencyBridge.hpp"
+#include "../../compiler/runtime/concurrency/WatcherRegistry.hpp"
 #include "../concurrency/Scheduler.hpp"
 
 #include <memory>
@@ -82,9 +83,14 @@ public:
   void setDebugMode(bool enabled) { debug_mode_ = enabled; }
   bool getDebugMode() const { return debug_mode_; }
   
+  // ========== PHASE 2C: WATCHER REGISTRY ==========
+  WatcherRegistry* getWatcherRegistry() { return watcher_registry_.get(); }
+  const WatcherRegistry* getWatcherRegistry() const { return watcher_registry_.get(); }
+  
   // ========== PHASE 3B-7: THREAD MANAGEMENT ==========
   void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
   ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
+
 
 private:
   // ========== CORE COMPONENTS ==========
@@ -92,6 +98,9 @@ private:
   Scheduler* scheduler_;      // Goroutine scheduler
   EventQueue* event_queue_;   // Event callback queue
   ConcurrencyBridge* concurrency_bridge_ = nullptr;  // Thread management (Phase 3B-7)
+  
+  // Phase 2C: Watcher registry for reactive when statements
+  std::unique_ptr<WatcherRegistry> watcher_registry_;
   
   // ========== STATE ==========
   bool running_ = false;
@@ -109,6 +118,11 @@ private:
   
   // Phase 2A: Event handler for variable changes
   void onVariableChanged(const Event& event);
+  
+  // Phase 2D: Condition evaluation for watchers
+  // Evaluates a condition bytecode for a specific watcher
+  // Returns: condition result (true/false) on success, false if evaluation fails
+  bool evaluateCondition(uint32_t watcher_id);
 };
 
 } // namespace havel::compiler

@@ -1,5 +1,6 @@
 #include "ExecutionEngine.hpp"
 #include "../concurrency/Fiber.hpp"
+#include "../concurrency/DependencyTracker.hpp"  // Phase 2E: For tracking dependencies
 #include <iostream>
 
 namespace havel::compiler {
@@ -12,6 +13,9 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
   
   // Phase 2A: Give VM reference to event queue for variable change notifications
   vm_->setEventQueue(eq);
+  
+  // Phase 2C: Initialize watcher registry
+  watcher_registry_ = std::make_unique<WatcherRegistry>();
   
   // Phase 1: Register event handlers for unified event system
   if (event_queue_) {
@@ -211,20 +215,75 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
   //   data1: hash of variable name
   //   ptr: unsafe pointer to variable name string (must be copied)
   
-  if (debug_mode_) {
-    // Safely access variable name if ptr is valid
-    if (event.ptr) {
-      const char* var_name = static_cast<const char*>(event.ptr);
-      std::cout << "[ExecutionEngine] Variable '" << var_name << "' changed" << std::endl;
-    } else {
-      std::cout << "[ExecutionEngine] Variable changed (var_hash=" << event.data1 << ")" << std::endl;
-    }
+  if (!event.ptr || !watcher_registry_) {
+    return;
   }
   
-  // Phase 2B: This is where watchers will be triggered
-  // TODO: Notify watcher registry of variable change
-  // TODO: Re-evaluate conditions that depend on this variable
-  // TODO: Fire watchers with edge-triggered logic (false→true only)
+  const std::string var_name = static_cast<const char*>(event.ptr);
+  
+  if (debug_mode_) {
+    std::cout << "[ExecutionEngine] Variable '" << var_name << "' changed, "
+              << "checking " << watcher_registry_->getWatcherCount() << " watchers" << std::endl;
+  }
+  
+  // Phase 2C: Notify watcher registry and evaluate watchers that depend on this variable
+  // Returns list of fibers whose watchers fired (false→true edge)
+  std::vector<Fiber*> fired_fibers = watcher_registry_->onVariableChanged(
+      var_name,
+      [this](uint32_t watcher_id) -> bool {
+        // Phase 2D: Re-evaluate condition for this watcher
+        return evaluateCondition(watcher_id);
+      }
+  );
+  
+  // Resume all fibers whose watchers fired
+  for (Fiber* fiber : fired_fibers) {
+    if (fiber && scheduler_) {
+      if (debug_mode_) {
+        std::cout << "[ExecutionEngine] Resuming fiber for fired watcher" << std::endl;
+      }
+      scheduler_->unpark(fiber);
+    }
+  }
+}
+
+bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
+  // Phase 2E: Evaluate a condition bytecode for a watcher
+  // 
+  // Called when a watched variable changes to check if condition now fires
+  // 
+  // Process:
+  // 1. Get watcher's condition bytecode reference
+  // 2. Create DependencyTrackerScope to track accessed variables
+  // 3. Execute condition bytecode
+  // 4. Return result
+  
+  if (!vm_ || !watcher_registry_) {
+    return false;
+  }
+  
+  // Phase 2E: Get watcher's condition bytecode info
+  const auto* watcher = watcher_registry_->getWatcher(watcher_id);
+  if (!watcher) {
+    return false;
+  }
+  
+  // Create scope to track global variable accesses
+  // This will record which variables the condition depends on
+  DependencyTrackerScope scope;
+  
+  // Evaluate the condition bytecode
+  bool result = vm_->evaluateConditionBytecode(
+      watcher->condition_func_id,
+      watcher->condition_ip
+  );
+  
+  if (debug_mode_) {
+    std::cout << "[ExecutionEngine::evaluateCondition] Watcher " << watcher_id 
+              << " condition evaluated to: " << (result ? "true" : "false") << std::endl;
+  }
+  
+  return result;
 }
 
 } // namespace havel::compiler

@@ -9,6 +9,22 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
   if (!vm || !sched || !eq) {
     throw std::invalid_argument("ExecutionEngine requires non-null VM, Scheduler, and EventQueue");
   }
+  
+  // Phase 2A: Give VM reference to event queue for variable change notifications
+  vm_->setEventQueue(eq);
+  
+  // Phase 1: Register event handlers for unified event system
+  if (event_queue_) {
+    event_queue_->onEvent(EventType::THREAD_COMPLETE, 
+        [this](const Event& event) { onThreadComplete(event); });
+    
+    // Phase 2A: Register handler for variable changes
+    event_queue_->onEvent(EventType::VAR_CHANGED,
+        [this](const Event& event) { onVariableChanged(event); });
+    
+    // TODO: Register handlers for other event types
+    // TIMER_FIRE, CHANNEL_SEND, etc.
+  }
 }
 
 ExecutionEngine::~ExecutionEngine() {
@@ -25,14 +41,12 @@ bool ExecutionEngine::executeFrame() {
   }
 
   try {
-    // STEP 1: Drain event queue
-    // Process all pending callbacks (channel sends, timer completions, etc)
+    // STEP 1: Process all pending events
+    // Events include: thread completions, timer fires, variable changes, etc.
+    // Event handlers (registered in constructor) process each event
     if (event_queue_) {
       event_queue_->processAll();
     }
-    
-    // Phase 3B-7: Check for thread completions and unpark waiting fibers
-    checkThreadCompletions();
     
     // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
@@ -155,52 +169,62 @@ void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& ms
 }
 
 // ============================================================================
-// PHASE 3B-7: Thread Completion Handling
+// PHASE 1: Event Handler for Thread Completion
 // ============================================================================
 
-void ExecutionEngine::checkThreadCompletions() {
-  if (!vm_ || !scheduler_ || !concurrency_bridge_) {
+void ExecutionEngine::onThreadComplete(const Event& event) {
+  // Event payload: data1 = thread_id that completed
+  uint32_t thread_id = event.data1;
+  
+  if (!vm_) {
     return;
   }
 
-  // Get all thread IDs with waiting fibers
-  auto waiting_thread_ids = vm_->getWaitingThreadIds();
-  
   if (debug_mode_) {
-    std::cout << "[ExecutionEngine] Checking " << waiting_thread_ids.size() 
-              << " waiting threads..." << std::endl;
+    std::cout << "[ExecutionEngine] Thread " << thread_id << " completed (event-driven)" << std::endl;
   }
 
-  // Check each waiting thread for completion
-  for (uint32_t thread_id : waiting_thread_ids) {
-    // Check if thread is now complete
-    if (concurrency_bridge_->isThreadCompleted(thread_id)) {
-      // Get the fiber that was waiting
-      Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
-      
-      if (waiting_fiber) {
-        if (debug_mode_) {
-          std::cout << "[ExecutionEngine] Thread " << thread_id 
-                    << " completed, unparking fiber " << waiting_fiber->id << std::endl;
-        }
-        
-        // Mark fiber as RUNNABLE so scheduler will pick it up
-        waiting_fiber->state = FiberState::RUNNABLE;
-        
-        // Unpark the fiber (return it to runnable queue)
-        scheduler_->unpark(waiting_fiber);
-      }
-      
-      // Unregister the wait tracking
-      vm_->unregisterThreadWait(thread_id);
+  // Get the fiber that was waiting on this thread
+  Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
+  
+  if (waiting_fiber) {
+    if (debug_mode_) {
+      std::cout << "[ExecutionEngine] Unparking fiber waiting on thread " << thread_id << std::endl;
+    }
+    
+    // Mark fiber as runnable (no longer suspended on thread.join())
+    // Note: In Phase 3B, the scheduler integration is still being developed
+    // For now, we directly manipulate fiber state
+    waiting_fiber->state = FiberState::RUNNABLE;
+  }
+  
+  // Unregister the wait tracking
+  vm_->unregisterThreadWait(thread_id);
+}
+
+// ============================================================================
+// PHASE 2A: Variable Change Event Handler
+// ============================================================================
+
+void ExecutionEngine::onVariableChanged(const Event& event) {
+  // Event payload:
+  //   data1: hash of variable name
+  //   ptr: unsafe pointer to variable name string (must be copied)
+  
+  if (debug_mode_) {
+    // Safely access variable name if ptr is valid
+    if (event.ptr) {
+      const char* var_name = static_cast<const char*>(event.ptr);
+      std::cout << "[ExecutionEngine] Variable '" << var_name << "' changed" << std::endl;
+    } else {
+      std::cout << "[ExecutionEngine] Variable changed (var_hash=" << event.data1 << ")" << std::endl;
     }
   }
   
-  // Cleanup any completed threads (join and remove from active tracking)
-  int cleaned = concurrency_bridge_->cleanupCompletedThreads();
-  if (debug_mode_ && cleaned > 0) {
-    std::cout << "[ExecutionEngine] Cleaned up " << cleaned << " completed threads" << std::endl;
-  }
+  // Phase 2B: This is where watchers will be triggered
+  // TODO: Notify watcher registry of variable change
+  // TODO: Re-evaluate conditions that depend on this variable
+  // TODO: Fire watchers with edge-triggered logic (false→true only)
 }
 
 } // namespace havel::compiler

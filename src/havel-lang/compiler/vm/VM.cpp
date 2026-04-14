@@ -4,10 +4,12 @@
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
+#include "../runtime/EventQueue.hpp"  // Phase 2A: For variable change events
 #include "../../runtime/HostContext.hpp"
 
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -2489,7 +2491,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       // Suspend the current fiber with the stored reason and context
       // The context pointer contains thread_id or other relevant data
       void* context = suspension_context_;
-      SuspensionReason reason = suspension_reason_;
+      SuspensionReason reason = static_cast<SuspensionReason>(suspension_reason_);
       suspension_context_ = nullptr;
       
       if (current_fiber) {
@@ -5428,7 +5430,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Set suspension request - signals executeOneStep to suspend the fiber
     // Context pointer carries the thread_id for the callback to use
     suspension_requested_ = true;
-    suspension_reason_ = SuspensionReason::THREAD_JOIN;
+    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
     suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
     
     // The actual suspension will happen in executeOneStep after this instruction
@@ -6568,6 +6570,32 @@ std::string VM::resolveStringKey(const Value &value) const {
   }
   if (value.isBool()) return value.asBool() ? "true" : "false";
   return value.toString();
+}
+
+// ============================================================================
+// PHASE 2A: Variable Change Event Emission
+// ============================================================================
+
+void VM::emitVariableChanged(const std::string& var_name) {
+  // Only emit if event queue is connected
+  if (!event_queue_) {
+    return;
+  }
+  
+  // For now, use var_name hash as data1 identifier
+  // TODO: Could use string pool for more efficient storage
+  uint32_t var_hash = std::hash<std::string>{}(var_name);
+  
+  // Push VAR_CHANGED event with variable identifier
+  // Event payload:
+  //   type: VAR_CHANGED
+  //   data1: hash of variable name
+  //   data2: unused (could be old value, new value, etc.)
+  //   ptr: unsafe pointer to var_name (ephemeral, handler must copy)
+  Event change_event(EventType::VAR_CHANGED, var_hash);
+  change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
+  
+  event_queue_->push(change_event);
 }
 
 } // namespace havel::compiler

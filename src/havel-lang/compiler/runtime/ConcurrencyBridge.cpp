@@ -122,16 +122,18 @@ Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
     thread_id = next_thread_id_++;
   }
 
-  // Phase 3B-7: Actually spawn thread and mark completion when done
-  // The thread executes a simple callback and then marks itself complete
+  // Phase 3B-7: Spawn thread that pushes event when complete (not polling)
   std::thread t([this, thread_id]() {
     // Thread is now running
     // TODO: Execute the Havel closure in a safe execution context
-    // For now, just sleep briefly and mark done
+    // For now, just sleep briefly
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     
-    // Mark thread as completed
-    markThreadCompleted(thread_id);
+    // CRITICAL: Push event instead of setting flag
+    // This wakes up the scheduler without polling
+    if (event_queue_) {
+      event_queue_->push(Event(EventType::THREAD_COMPLETE, thread_id));
+    }
   });
 
   // Store thread in active map and initialize thread_info
@@ -159,32 +161,21 @@ Value ConcurrencyBridge::threadJoin(const std::vector<Value> &args) {
 
   uint32_t thread_id = args[0].asThreadId();
 
-  // Phase 3B-7: NON-BLOCKING join
-  // Instead of blocking on thread.join(), check if thread is complete
-  // If complete, clean up and return
-  // If not complete, the VM will suspend the calling fiber and ExecutionEngine
-  // will periodically check for completion
+  // Phase 3B-7: Non-blocking join via event system
+  // If thread already completed, clean up and return
+  // Otherwise, caller's fiber will be suspended via THREAD_JOIN opcode
+  // and unparked when THREAD_COMPLETE event fires
 
-  if (isThreadCompleted(thread_id)) {
-    // Thread is done - clean up and return result
-    {
-      std::lock_guard<std::mutex> lock(threads_mutex_);
-      auto it = active_threads_.find(thread_id);
-      if (it != active_threads_.end()) {
-        if (it->second.joinable()) {
-          it->second.join();
-        }
-        active_threads_.erase(it);
-      }
-    }
-    
-    clearThreadCompletion(thread_id);
-    return Value::makeNull();
+  std::lock_guard<std::mutex> lock(threads_mutex_);
+  
+  auto it = active_threads_.find(thread_id);
+  if (it == active_threads_.end()) {
+    return Value::makeNull();  // Thread not found or already cleaned up
   }
 
-  // Thread not done yet
-  // The calling fiber will be suspended via THREAD_JOIN opcode
-  // ExecutionEngine will periodically check isThreadCompleted and unpark
+  // If thread is joinable and we're here, it means it hasn't finished yet
+  // The caller's fiber will suspend and wait for event-driven wakeup
+  // Just return null for now - ExecutionEngine event handler will do the actual cleanup
   return Value::makeNull();
 }
 
@@ -436,15 +427,6 @@ void ConcurrencyBridge::markThreadCompleted(uint32_t thread_id) {
 void ConcurrencyBridge::clearThreadCompletion(uint32_t thread_id) {
   std::lock_guard<std::mutex> lock(completed_threads_mutex_);
   completed_threads_.erase(thread_id);
-}
-
-ConcurrencyBridge::ThreadState ConcurrencyBridge::getThreadState(uint32_t thread_id) {
-  std::lock_guard<std::mutex> lock(threads_mutex_);
-  auto it = thread_info_.find(thread_id);
-  if (it != thread_info_.end()) {
-    return it->second.state;
-  }
-  return ThreadState::CREATED;  // Default if not found
 }
 
 std::vector<uint32_t> ConcurrencyBridge::getCompletedThreadIds() {

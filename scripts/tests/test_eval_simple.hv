@@ -1,0 +1,3 @@
+print("before")
+x = eval("let s = 'hello'; print(s)")
+print("after")

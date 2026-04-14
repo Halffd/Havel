@@ -469,9 +469,7 @@ void registerStringPrototype(VM& vm) {
         }
 
         // Width
-        if (i < fmt.size() && fmt[i] == '.') {
-          i++; // skip '.', no width specified
-        } else if (i < fmt.size() && std::isdigit(fmt[i])) {
+        if (i < fmt.size() && std::isdigit(fmt[i])) {
           width = 0;
           while (i < fmt.size() && std::isdigit(fmt[i])) {
             width = width * 10 + (fmt[i] - '0');
@@ -485,6 +483,14 @@ void registerStringPrototype(VM& vm) {
               precision = precision * 10 + (fmt[i] - '0');
               i++;
             }
+          }
+        } else if (i < fmt.size() && fmt[i] == '.') {
+          // Precision without width: %.2f
+          i++;
+          precision = 0;
+          while (i < fmt.size() && std::isdigit(fmt[i])) {
+            precision = precision * 10 + (fmt[i] - '0');
+            i++;
           }
         }
 

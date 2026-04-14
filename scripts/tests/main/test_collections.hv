@@ -1,6 +1,5 @@
 // test_collections.hv - Full Collections API Test
 // Tests all collection types: List, Tuple, Object, Set, Unordered Object
-
 print("========== COLLECTIONS API TEST ==========\n")
 
 // ============================================================
@@ -10,8 +9,8 @@ print("1. LIST TESTS")
 print("-------------")
 
 // Creation
-let arr = [1, 2, 3, 4, 5]
-let mixed = [1, "two", true, null, [1,2]]
+arr = [1, 2, 3, 4, 5]
+mixed = [1, "two", true, null, [1,2]]
 print("  Created: " + arr)
 print("  Mixed: " + mixed)
 
@@ -62,18 +61,18 @@ arr += [11,12,13,14,15,1,2,3,4,5]
 arr++
 
 // Functional
-let doubled = arr.map(x => x * 2)
+doubled = arr.map(x => x * 2)
 print("  map(x*2): " + doubled)
-let evens = arr.filter(x => x % 2 == 0)
+evens = arr.filter(x => x % 2 == 0)
 print("  filter(even): " + evens)
-let sum = arr.reduce((a,b) => a + b, 0)
+sum = arr.reduce((a,b) => a + b, 0)
 print("  reduce(sum): " + sum)
-let count = arr.count(x => x == 2)
+count = arr.count(x => x == 2)
 print("  count(x==2): " + count)
-let grouped = arr.groupBy(x => x % 2 == 0 ? "even" : "odd")
-let sortedGroup = grouped.sortKey((a,b) => a.compare(b))
+grouped = arr.groupBy(x => x % 2 == 0 ? "even" : "odd")
+sortedGroup = grouped.sortKey((a,b) => a.compare(b))
 print("  groupBy even/odd: " + sortedGroup)
-let sorted = arr.sorted((a,b) => a + b)
+sorted = arr.sorted((a,b) => a + b)
 print("  sorted(): " + sorted)
 arr.sort((a,b) => b - a)
 print("  sort(): " + arr)
@@ -114,7 +113,7 @@ print("")
 print("2. TUPLE TESTS")
 print("-------------")
 
-let tup = (1, "hello", true, 3.14)
+tup = (1, "hello", true, 3.14)
 print("  Created: " + tup)
 print("  len: " + tup.len)
 print("  [0]: " + tup[0])
@@ -123,7 +122,7 @@ print("  [2]: " + tup[2])
 print("  [3]: " + tup[3])
 
 // Destructuring
-let [a, b, c, d] = tup
+[a, b, c, d] = tup
 print("  Destructured: a=" + a + ", b=" + b + ", c=" + c + ", d=" + d)
 
 // Slice on tuple
@@ -151,7 +150,7 @@ print("")
 print("3. OBJECT TESTS")
 print("--------------")
 
-let obj = {name: "Alice", age: 30, city: "NYC"}
+obj = {name: "Alice", age: 30, city: "NYC"}
 print("  Created: " + obj)
 
 // Basic operations
@@ -186,44 +185,44 @@ obj.each((k,v) => print(k + "=" + v, end=" "))
 print("")
 
 
-let mapped = obj.map((k,v) => [k, v * 2])
+mapped = obj.map((k,v) => [k, v * 2])
 print("  map values: " + mapped)
 
 // Merge
-let merged = obj.merge({country: "USA", age: 32})
+merged = obj.merge({country: "USA", age: 32})
 print("  merge(): " + merged)
 
 //flatten
-let nested = {a: 1, b: {c: 2, d: 3}, e: 4}
+nested = {a: 1, b: {c: 2, d: 3}, e: 4}
 print("  Nested: " + nested)
 print("  Flattened: " + nested.flatten())
 // unflatten
-let flat = {a: 1, "b.c": 2, "b.d": 3, e: 4}
+flat = {a: 1, "b.c": 2, "b.d": 3, e: 4}
 print("  Flat: " + flat)
 print("  Unflattened: " + flat.unflatten())
 // pick and omit
 print("  pick(['a','e']): " + nested.pick(["a","e"]))
 print("  omit(['b']): " + nested.omit(["b"]))
 // invert
-let inverted = {a:1, b:2, c:3}.invert()
+inverted = {a:1, b:2, c:3}.invert()
 print("  Inverted: " + inverted)
 // defaults
-let withDefaults = {a: 1}.defaults({a: 10, b: 20})
+withDefaults = {a: 1}.defaults({a: 10, b: 20})
 print("  With defaults: " + withDefaults)
 // rename keys
-let renamed = {a:1, b:2}.rename({"a":"alpha", "b":"beta"})
+renamed = {a:1, b:2}.rename({"a":"alpha", "b":"beta"})
 print("  Renamed keys: " + renamed)
 // pickBy and omitBy
-let pickBy = {a:1, b:2, c:3}.pickBy((k,v) => v > 1)
+pickBy = {a:1, b:2, c:3}.pickBy((k,v) => v > 1)
 print("  pickBy(v>1): " + pickBy)
-let omitBy = {a:1, b:2, c:3}.omitBy((k,v) => v > 1)
+omitBy = {a:1, b:2, c:3}.omitBy((k,v) => v > 1)
 print("  omitBy(v>1): " + omitBy)
 // nested get/set
 print("  nested get: " + obj.get("time.date.year"))
 obj.set("time.date.month", "June")
 print("  nested set: " + obj)
 // merge with customizer
-let mergedCustom = {a:1, b:2}.merge({b:3, c:4}, (key, oldVal, newVal) => oldVal + newVal)
+mergedCustom = {a:1, b:2}.merge({b:3, c:4}, (key, oldVal, newVal) => oldVal + newVal)
 // nested objects
 obj.profile = {hobbies: ["reading", "coding"], education: {degree: "CS", year: 2020}, test: {nested: {deep: obj}}}
 assert(obj.profile.test.nested == obj, "Nested reference preserved")
@@ -238,7 +237,7 @@ print("  Deep equality with nested objects: " + ({a:1, b:{c:2}} == {a:1, b:{c:2}
 print("  Deep equality with nested objects and different order: " + ({a:1, b:{c:2, d:3}} == {b:{d:3, c:2}, a:1}))
 
 // Sorting
-let unsorted = {z:1, a:2, m:3}
+unsorted = {z:1, a:2, m:3}
 print("  Unsorted: " + unsorted)
 print("  sortKey(): " + unsorted.sortKey((a,b) => a.compare(b)))
 print("  sortVal(): " + unsorted.sortVal((a,b) => b - a))
@@ -251,7 +250,7 @@ print("")
 print("4. SET TESTS")
 print("-----------")
 
-let set = {1, 2, 3, 2, 1, 4}
+set = {1, 2, 3, 2, 1, 4}
 print("  Created: " + set)
 print("  len: " + set.len)
 
@@ -263,8 +262,8 @@ print("  delete(2): " + set)
 print("  has(3): " + set.has(3))
 
 // Set algebra
-let setA = {1, 2, 3, 4}
-let setB = {3, 4, 5, 6}
+setA = {1, 2, 3, 4}
+setB = {3, 4, 5, 6}
 print("  A: " + setA)
 print("  B: " + setB)
 print("  union: " + setA.union(setB))
@@ -296,7 +295,7 @@ print("")
 print("5. UNORDERED OBJECT TESTS")
 print("------------------------")
 
-let uobj = !{b: 2, a: 1, c: 3}
+uobj = !{b: 2, a: 1, c: 3}
 print("  Created: " + uobj)
 
 // Same methods as ordered object
@@ -318,7 +317,7 @@ print("")
 print("6. STRING TESTS")
 print("--------------")
 
-let str = "hello world"
+str = "hello world"
 print("  String: \"" + str + "\"")
 
 // Queries
@@ -366,10 +365,10 @@ print("")
 print("7. TYPE CONVERSION TESTS")
 print("-----------------------")
 
-let arr2 = [1, 2, 3]
-let set2 = set(arr2)
-let obj2 = object([["a",1], ["b",2]])
-let tup2 = tuple([1, "two", true])
+arr2 = [1, 2, 3]
+set2 = set(arr2)
+obj2 = object([["a",1], ["b",2]])
+tup2 = tuple([1, "two", true])
 
 print("  list -> set: " + set2)
 print("  list -> tuple: " + tuple(arr2))
@@ -416,10 +415,10 @@ fn testProtocol(coll, name) {
     print("     some(x>10): " + coll.some(x => x > 10))
 }
 
-let testList = [1, 2, 3, 4, 5]
-let testSet = {1, 2, 3, 4, 5}
-let testTuple = (1, 2, 3, 4, 5)
-let testObj = {a:1, b:2, c:3, d:4, e:5}
+testList = [1, 2, 3, 4, 5]
+testSet = {1, 2, 3, 4, 5}
+testTuple = (1, 2, 3, 4, 5)
+testObj = {a:1, b:2, c:3, d:4, e:5}
 
 testProtocol(testList, "List")
 testProtocol(testSet, "Set")
@@ -449,7 +448,7 @@ print("  List % 2: " + ([1,2,3] % 2))
 print("  Set % 2: " + ({1,2,3} % 2))
 print("  Object % 2: " + ({a:1, b:2} % 2))
 print("  Tuple % 2: " + ((1,2,3) % 2))
-let l = [1]
+l = [1]
 l += [2,3]
 l -= [1]
 l += 1 // element-wise addition
@@ -462,7 +461,7 @@ l++
 print("  List ++: " + l)
 l--
 print("  List --: " + l)
-let s = "a"
+s = "a"
 s += "b"
 print("  String +=: " + s)
 s *= 3
@@ -473,7 +472,7 @@ s /= "bin" / "havel"
 print("  String -= and /=: " + s)
 s -= r"\W"
 print("  String -= regex: " + s)
-let reg = r"\w+"
+reg = r"\w+"
 s += reg
 print("  String += regex: " + s)
 reg.match("hello world") // [["hello"], ["world"]]
@@ -492,6 +491,20 @@ print("  match: " + "hello world" ~ "lo" ? "found" : "not found")
 print("  Regex match: " + "hello world" ~ r"\w+")
 print("")
 
+t = {"a", "b", x: 10, y: 20}
+// Means: t[0]="a", t[1]="b", t.x=10, t.y=20
+print t
+
+key = "dynamic"
+t = {["static"]: 1, [key]: 2, [1+2]: 3}
+print t
+
+base = {a: 1, b: 2}
+extended = {base, c: 3}  // {a:1, b:2, c:3}
+print extended
+arr = {1, 2, ...arr, 5}
+print arr
+
 // ============================================================
 // 9. EDGE CASES
 // ============================================================
@@ -505,7 +518,7 @@ print("  Empty object: " + {})
 print("  Empty set: " + set())
 
 // Nested structures
-let nested = [1, [2, 3], {a: 4}, (5,6), {7,8}]
+nested = [1, [2, 3], {a: 4}, (5,6), {7,8}]
 print("  Nested list: " + nested)
 print("  Nested[1]: " + nested[1])
 print("  Nested[2]['a']: " + nested[2].get("a"))

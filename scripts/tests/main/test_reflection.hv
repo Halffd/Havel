@@ -54,6 +54,20 @@ obj = {name: "test", values: [1, 2, 3]}
 print(inspect(obj))
 
 print("")
+print("=== CALLER() ===")
+fn outer() {
+    inner()
+}
+fn inner() {
+    let c = caller()
+    print("caller fn: " + c.function)
+    print("caller line: " + c.line)
+    let c2 = caller(1)
+    print("grandcaller fn: " + c2.function)
+}
+outer()
+
+print("")
 print("=== PROTOTYPES() ===")
 print(prototypes(obj))
 

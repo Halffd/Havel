@@ -2767,6 +2767,34 @@ void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
   }
 }
 
+// ============================================================================
+// CALLER INFO - Access call stack for reflection
+// ============================================================================
+
+VM::CallerInfo VM::getCallerInfo(int depth) const {
+  CallerInfo info;
+  // Frame 0 is current function, so caller is at frame_count_ - 2 - depth
+  if (frame_count_ < 2) return info;
+
+  int targetFrame = static_cast<int>(frame_count_) - 2 - depth;
+  if (targetFrame < 0 || static_cast<size_t>(targetFrame) >= frame_count_) {
+    return info;
+  }
+
+  const auto& frame = frame_arena_[static_cast<size_t>(targetFrame)];
+  if (frame.function) {
+    info.function = frame.function->name;
+    uint32_t ip = frame.ip;
+    if (ip < frame.function->instruction_locations.size()) {
+      const auto& loc = frame.function->instruction_locations[ip];
+      info.line = loc.line;
+      info.column = loc.column;
+    }
+    info.file = frame.function->source_file;
+  }
+  return info;
+}
+
 Fiber* VM::getThreadWaitingFiber(uint32_t thread_id) const {
   std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
   auto it = thread_wait_map_.find(thread_id);

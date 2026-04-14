@@ -379,6 +379,17 @@ public:
       }
     }
   }
+
+  // ========== CALLER INFO ==========
+  // Returns caller info at given depth (0 = immediate caller, 1 = caller's caller, etc.)
+  // Returns {function_name, line, file} as strings, or empty strings if unavailable
+  struct CallerInfo {
+    std::string function;
+    uint32_t line = 0;
+    uint32_t column = 0;
+    std::string file;
+  };
+  CallerInfo getCallerInfo(int depth = 0) const;
   
   // Check if there are any active frames (for detecting completion)
   bool hasActiveFrames() const { return frame_count_ > 0; }
@@ -583,6 +594,7 @@ public:
 
   // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
+  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
 
   // Resolve a Value that might be a string to an actual string
   std::string resolveStringKey(const Value &value) const;

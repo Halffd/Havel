@@ -209,6 +209,8 @@ private:
       "regex",   "physics",  "time",     "math",
       // Bare process globals
       "run", "runDetached",
+      // Reflection and runtime evaluation
+      "eval", "caller",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};

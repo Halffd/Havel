@@ -331,6 +331,15 @@ public:
                           const std::string &function_name,
                           const std::vector<Value> &args = {});
   
+  // ========== PHASE 2E: CONDITION EVALUATION ==========
+  // Evaluate a condition bytecode (for reactive watchers)
+  // Executes condition code and returns result as boolean
+  // Used by WatcherRegistry to re-evaluate conditions on variable changes
+  // @param func_index The function index in bytecode (condition function)
+  // @param ip Optional instruction pointer within function (default: 0)
+  // @return Boolean result of condition evaluation
+  bool evaluateConditionBytecode(uint32_t func_index, uint32_t ip = 0);
+  
   // ========== PHASE 3: SINGLE-STEP EXECUTION ==========
   // Execute exactly one bytecode instruction in the current fiber
   // Returns immediately after one instruction (never blocks)

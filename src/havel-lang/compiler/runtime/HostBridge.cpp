@@ -553,6 +553,25 @@ void HostBridge::install() {
         return Value::makeArrayId(arrRef.id);
       };
 
+  // Global caller() function - returns caller info object
+  // Usage: caller().function, caller().line, caller().file
+  // Also supports depth: caller(1) for grandparent caller
+  options_.host_functions["caller"] =
+      [this](const std::vector<Value> &args) {
+        if (!ctx_ || !ctx_->vm) return Value::makeNull();
+        int depth = 0;
+        if (!args.empty() && args[0].isInt()) depth = static_cast<int>(args[0].asInt());
+        // Add 0 because caller() is a host function - no extra bytecode frame is pushed
+        auto info = ctx_->vm->getCallerInfo(depth);
+        auto objRef = ctx_->vm->getHeap().allocateObject();
+        auto* obj = ctx_->vm->getHeap().object(objRef.id);
+        obj->set("function", Value::makeStringId(ctx_->vm->getHeap().allocateString(info.function).id));
+        obj->set("line", Value::makeInt(static_cast<int64_t>(info.line)));
+        obj->set("column", Value::makeInt(static_cast<int64_t>(info.column)));
+        obj->set("file", Value::makeStringId(ctx_->vm->getHeap().allocateString(info.file).id));
+        return Value::makeObjectId(objRef.id);
+      };
+
   // Global defun() function - define a method on a prototype at runtime
   // Usage: defun("string", "reverse", fn() { ... })
   // or: defun(string, "reverse", fn() { ... })
@@ -579,16 +598,25 @@ void HostBridge::install() {
 
         if (typeName.empty() || methodName.empty()) return Value::makeNull();
 
+        // Store the function value and the chunk it came from so we can call it later
+        Value fn = args[2];
+        const BytecodeChunk* fnChunk = ctx_->vm->getCurrentChunk();
+
         // Register the method as a host function on the prototype
         // Format: typeName.methodName
         std::string fullName = typeName + "." + methodName;
         uint32_t funcIdx = ctx_->vm->getHostFunctionIndex(fullName);
         options_.host_functions[fullName] =
-            [this, fn = args[2]](const std::vector<Value> &callArgs) {
+            [this, fn, fnChunk](const std::vector<Value> &callArgs) {
               if (!ctx_ || !ctx_->vm) return Value::makeNull();
               // Call the function with the provided arguments
               try {
-                return ctx_->vm->call(fn, callArgs);
+                // Save and restore the current chunk so function lookup works
+                const auto* savedChunk = ctx_->vm->getCurrentChunk();
+                ctx_->vm->setCurrentChunk(fnChunk);
+                auto result = ctx_->vm->call(fn, callArgs);
+                ctx_->vm->setCurrentChunk(savedChunk);
+                return result;
               } catch (...) {
                 return Value::makeNull();
               }
@@ -619,18 +647,6 @@ void HostBridge::install() {
         }
         return Value::makeBool(false);
       };
-
-  // Global caller object - returns info about the calling function
-  // Usage: caller.function, caller.line, caller.file
-  {
-    auto callerObj = ctx_->vm->createHostObject();
-    // Store as object that gets properties dynamically
-    // For now, return a placeholder object - full implementation needs VM call stack access
-    ctx_->vm->setHostObjectField(callerObj, "function", Value::makeNull());
-    ctx_->vm->setHostObjectField(callerObj, "line", Value::makeNull());
-    ctx_->vm->setHostObjectField(callerObj, "file", Value::makeNull());
-    ctx_->vm->setGlobal("caller", Value::makeObjectId(callerObj.id));
-  }
 
   // Global describe() function - structural introspection
   options_.host_functions["describe"] =

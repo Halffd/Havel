@@ -102,6 +102,9 @@ public:
   // Set the event queue for scheduling reevaluation
   void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
   
+  // Phase 2G: Register for VAR_CHANGED events to trigger reactive hotkey reevaluation
+  void registerVarChangedHandler();
+  
   // Phase 2F: Set the execution engine for reactive watcher integration
   // Allows hotkey conditions to be registered as watchers
   void setExecutionEngine(class ExecutionEngine* ee) { executionEngine_ = ee; }

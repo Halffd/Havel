@@ -1,5 +1,7 @@
 #include "Havel.hpp"
 #include "havel-lang/runtime/StdLibModules.hpp"
+#include "havel-lang/runtime/concurrency/Scheduler.hpp"
+#include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "BrightnessManager.hpp"
 #include "ConfigManager.hpp"
@@ -76,6 +78,12 @@ void Havel::initialize(bool isStartup) {
     throw std::runtime_error("Failed to create IO manager");
   }
 
+  // Create HotkeyManager (depends on IO)
+  hotkeyManager = std::make_shared<HotkeyManager>(io);
+  if (!hotkeyManager) {
+    throw std::runtime_error("Failed to create HotkeyManager");
+  }
+
   windowManager = std::make_shared<WindowManager>();
   if (!windowManager) {
     throw std::runtime_error("Failed to create WindowManager");
@@ -137,6 +145,41 @@ void Havel::initialize(bool isStartup) {
   // Register stdlib modules
   registerStdLibWithVM(*hostBridge);
   hostBridge->install();
+
+  // Phase 2G: Create Scheduler and ExecutionEngine for reactive watcher system
+  scheduler = std::make_unique<compiler::Scheduler>();
+  if (!scheduler) {
+    throw std::runtime_error("Failed to create Scheduler");
+  }
+
+  // EventQueue is created by ConcurrencyBridge during hostBridge->install()
+  compiler::EventQueue* eventQueue = hostContext->eventQueue;
+  if (!eventQueue) {
+    throw std::runtime_error("Failed to get EventQueue from HostBridge");
+  }
+
+  // Create ExecutionEngine for main loop integration
+  executionEngine = std::make_unique<compiler::ExecutionEngine>(
+      bytecodeVM.get(), scheduler.get(), eventQueue);
+  if (!executionEngine) {
+    throw std::runtime_error("Failed to create ExecutionEngine");
+  }
+
+  // Phase 2G: Inject ExecutionEngine into HotkeyManager's managers
+  if (hotkeyManager) {
+    hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
+    hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
+    hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
+    
+    auto modeManager = hotkeyManager->getModeManager();
+    if (modeManager) {
+      modeManager->setExecutionEngine(executionEngine.get());
+      modeManager->setEventQueue(eventQueue);
+      modeManager->registerVarChangedHandler();
+    }
+  }
+
+  info("Scheduler and ExecutionEngine initialized successfully");
 
   // Set HostBridge pointer on EventListener for timer checking
   if (io && io->GetEventListener()) {

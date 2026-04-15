@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <cstdint>
+#include <atomic>
 
 namespace havel {
 

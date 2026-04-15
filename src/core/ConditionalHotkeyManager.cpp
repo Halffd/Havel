@@ -89,7 +89,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
     if (EvaluateCondition(condition)) {
       if (trueAction) {
         // Phase 2I/2J: Set context and execute hotkey action
-        // The context is available to the action via HotkeyActionContext
+        // CRITICAL FIX: Handle exceptions to prevent crashes from blocking hotkey detection
         HotkeyActionContext::setContext({
           true,  // condition_result
           "hotkey_fired",  // changed_variable
@@ -98,8 +98,16 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
           condition  // condition_source
         });
         
-        // Execute the action (will be wrapped in Fiber if scheduler available in future)
-        trueAction();
+        try {
+          // Execute the action with exception safety
+          // TODO: Phase 2I Extended - wrap in Fiber and submit to Scheduler for true async
+          // Currently: execute synchronously with context available via thread-local
+          trueAction();
+        } catch (const std::exception& e) {
+          error("ConditionalHotkeyManager: Exception in hotkey true action: {}", e.what());
+        } catch (...) {
+          error("ConditionalHotkeyManager: Unknown exception in hotkey true action");
+        }
         
         // Clear context after execution
         HotkeyActionContext::clearContext();
@@ -115,7 +123,14 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
           condition
         });
         
-        falseAction();
+        try {
+          falseAction();
+        } catch (const std::exception& e) {
+          error("ConditionalHotkeyManager: Exception in hotkey false action: {}", e.what());
+        } catch (...) {
+          error("ConditionalHotkeyManager: Unknown exception in hotkey false action");
+        }
+        
         HotkeyActionContext::clearContext();
       }
     }
@@ -141,6 +156,91 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
 
   // Initial evaluation
   UpdateConditionalHotkey(conditionalHotkeys.back());
+
+  return id;
+}
+
+// Overload for function-based condition (std::function<bool()>)
+int ConditionalHotkeyManager::AddConditionalHotkey(
+    const std::string& key, std::function<bool()> condition,
+    std::function<void()> trueAction,
+    std::function<void()> falseAction, int id) {
+  debug("Registering function-based conditional hotkey - Key: '{}', ID: {}", key, id);
+
+  if (id == 0) {
+    static int nextId = 2000;  // Use different range for function-based hotkeys
+    id = nextId++;
+  }
+
+  // Create an action that evaluates the condition function
+  auto action = [this, condition, trueAction, falseAction]() {
+    try {
+      if (condition()) {  // Call the condition function directly
+        if (trueAction) {
+          // Phase 2I/2J: Set context and execute hotkey action
+          HotkeyActionContext::setContext({
+            true,  // condition_result
+            "hotkey_fired",  // changed_variable
+            static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count()),  // timestamp_ns
+            "hotkey_action",  // hotkey_name
+            "function_condition"  // condition_source
+          });
+          
+          try {
+            trueAction();
+          } catch (const std::exception& e) {
+            error("ConditionalHotkeyManager: Exception in hotkey true action: {}", e.what());
+          } catch (...) {
+            error("ConditionalHotkeyManager: Unknown exception in hotkey true action");
+          }
+          
+          HotkeyActionContext::clearContext();
+        }
+      } else {
+        if (falseAction) {
+          HotkeyActionContext::setContext({
+            false,  // condition_result
+            "hotkey_fired_false",
+            static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count()),
+            "hotkey_action_false",
+            "function_condition"
+          });
+          
+          try {
+            falseAction();
+          } catch (const std::exception& e) {
+            error("ConditionalHotkeyManager: Exception in hotkey false action: {}", e.what());
+          } catch (...) {
+            error("ConditionalHotkeyManager: Unknown exception in hotkey false action");
+          }
+          
+          HotkeyActionContext::clearContext();
+        }
+      }
+    } catch (const std::exception& e) {
+      error("ConditionalHotkeyManager: Exception evaluating condition function: {}", e.what());
+    } catch (...) {
+      error("ConditionalHotkeyManager: Unknown exception evaluating condition function");
+    }
+  };
+
+  ConditionalHotkey ch;
+  ch.id = id;
+  ch.key = key;
+  ch.condition = condition;  // Store the function in the variant directly
+  ch.trueAction = trueAction;
+  ch.falseAction = falseAction;
+  ch.currentlyGrabbed = true;
+  ch.monitoringEnabled = true;
+
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    conditionalHotkeys.push_back(ch);
+    conditionalHotkeyIds.push_back(id);
+  }
+
+  // Register with IO
+  io->Hotkey(key, action, "", id);
 
   return id;
 }

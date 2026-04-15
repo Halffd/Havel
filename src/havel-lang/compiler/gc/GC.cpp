@@ -741,27 +741,56 @@ void GCHeap::markStep(size_t &work_budget) {
 
   if (mark_worklist_.empty()) {
     gc_state_ = IncrementalState::SweepArrays;
-    sweep_arrays_it_ = arrays_.begin();
-    sweep_objects_it_ = objects_.begin();
-    sweep_sets_it_ = sets_.begin();
-    sweep_closures_it_ = closures_.begin();
+    
+    // CRITICAL FIX: Snapshot keys instead of storing iterators
+    // If mutator allocates/deallocates during sweep, iterators are invalidated
+    // Instead we iterate through snapshot keys with lookups (safe from reallocation)
+    sweep_array_keys_.clear();
+    sweep_object_keys_.clear();
+    sweep_set_keys_.clear();
+    sweep_closure_keys_.clear();
+    
+    for (const auto& kv : arrays_) {
+      sweep_array_keys_.push_back(kv.first);
+    }
+    for (const auto& kv : objects_) {
+      sweep_object_keys_.push_back(kv.first);
+    }
+    for (const auto& kv : sets_) {
+      sweep_set_keys_.push_back(kv.first);
+    }
+    for (const auto& kv : closures_) {
+      sweep_closure_keys_.push_back(kv.first);
+    }
+    
+    sweep_array_index_ = 0;
+    sweep_object_index_ = 0;
+    sweep_set_index_ = 0;
+    sweep_closure_index_ = 0;
   }
 }
 
 void GCHeap::sweepStep(size_t &work_budget) {
   while (work_budget > 0 && gc_state_ != IncrementalState::Idle) {
     if (gc_state_ == IncrementalState::SweepArrays) {
-      if (sweep_arrays_it_ == arrays_.end()) {
+      // CRITICAL FIX: Use key snapshots instead of iterators
+      if (sweep_array_index_ >= sweep_array_keys_.size()) {
         gc_state_ = IncrementalState::SweepObjects;
         continue;
       }
-      auto current = sweep_arrays_it_++;
+      uint32_t id = sweep_array_keys_[sweep_array_index_++];
+      auto it = arrays_.find(id);
+      if (it == arrays_.end()) {
+        // Object was already deleted, skip
+        work_budget--;
+        continue;
+      }
       work_budget--;
-      const uint32_t id = current->first;
+      
       const bool is_old = old_arrays_.find(id) != old_arrays_.end();
       const bool can_collect = current_collection_full_ || !is_old;
       if (can_collect && marked_arrays_.find(id) == marked_arrays_.end()) {
-        arrays_.erase(current);
+        arrays_.erase(it);
         array_ages_.erase(id);
         old_arrays_.erase(id);
         recovered_in_cycle_++;
@@ -772,17 +801,24 @@ void GCHeap::sweepStep(size_t &work_budget) {
     }
 
     if (gc_state_ == IncrementalState::SweepObjects) {
-      if (sweep_objects_it_ == objects_.end()) {
+      // CRITICAL FIX: Use key snapshots instead of iterators
+      if (sweep_object_index_ >= sweep_object_keys_.size()) {
         gc_state_ = IncrementalState::SweepSets;
         continue;
       }
-      auto current = sweep_objects_it_++;
+      uint32_t id = sweep_object_keys_[sweep_object_index_++];
+      auto it = objects_.find(id);
+      if (it == objects_.end()) {
+        // Object was already deleted, skip
+        work_budget--;
+        continue;
+      }
       work_budget--;
-      const uint32_t id = current->first;
+      
       const bool is_old = old_objects_.find(id) != old_objects_.end();
       const bool can_collect = current_collection_full_ || !is_old;
       if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
-        objects_.erase(current);
+        objects_.erase(it);
         object_ages_.erase(id);
         old_objects_.erase(id);
         recovered_in_cycle_++;
@@ -793,17 +829,24 @@ void GCHeap::sweepStep(size_t &work_budget) {
     }
 
     if (gc_state_ == IncrementalState::SweepSets) {
-      if (sweep_sets_it_ == sets_.end()) {
+      // CRITICAL FIX: Use key snapshots instead of iterators
+      if (sweep_set_index_ >= sweep_set_keys_.size()) {
         gc_state_ = IncrementalState::SweepClosures;
         continue;
       }
-      auto current = sweep_sets_it_++;
+      uint32_t id = sweep_set_keys_[sweep_set_index_++];
+      auto it = sets_.find(id);
+      if (it == sets_.end()) {
+        // Set was already deleted, skip
+        work_budget--;
+        continue;
+      }
       work_budget--;
-      const uint32_t id = current->first;
+      
       const bool is_old = old_sets_.find(id) != old_sets_.end();
       const bool can_collect = current_collection_full_ || !is_old;
       if (can_collect && marked_sets_.find(id) == marked_sets_.end()) {
-        sets_.erase(current);
+        sets_.erase(it);
         set_ages_.erase(id);
         old_sets_.erase(id);
         recovered_in_cycle_++;
@@ -814,17 +857,24 @@ void GCHeap::sweepStep(size_t &work_budget) {
     }
 
     if (gc_state_ == IncrementalState::SweepClosures) {
-      if (sweep_closures_it_ == closures_.end()) {
+      // CRITICAL FIX: Use key snapshots instead of iterators
+      if (sweep_closure_index_ >= sweep_closure_keys_.size()) {
         gc_state_ = IncrementalState::Idle;
         continue;
       }
-      auto current = sweep_closures_it_++;
+      uint32_t id = sweep_closure_keys_[sweep_closure_index_++];
+      auto it = closures_.find(id);
+      if (it == closures_.end()) {
+        // Closure was already deleted, skip
+        work_budget--;
+        continue;
+      }
       work_budget--;
-      const uint32_t id = current->first;
+      
       const bool is_old = old_closures_.find(id) != old_closures_.end();
       const bool can_collect = current_collection_full_ || !is_old;
       if (can_collect && marked_closures_.find(id) == marked_closures_.end()) {
-        closures_.erase(current);
+        closures_.erase(it);
         closure_ages_.erase(id);
         old_closures_.erase(id);
         recovered_in_cycle_++;

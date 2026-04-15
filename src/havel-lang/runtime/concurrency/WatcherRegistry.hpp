@@ -115,6 +115,24 @@ public:
      * Get count of registered watchers
      */
     size_t getWatcherCount() const { return watchers_.size(); }
+
+    // Phase 2E: Internal watcher structure
+    struct Watcher {
+        WatcherId id;
+        Fiber* fiber;
+        std::unordered_set<std::string> dependencies;
+        bool last_result;  // Last evaluated result (for edge detection)
+        
+        // Phase 2E: Condition bytecode reference
+        uint32_t condition_func_id;  // Function ID in VM bytecode
+        uint32_t condition_ip;       // Instruction pointer for condition
+        
+        Watcher(WatcherId id_, Fiber* f,
+                const std::unordered_set<std::string>& deps, bool result,
+                uint32_t func_id, uint32_t ip)
+            : id(id_), fiber(f), dependencies(deps), last_result(result),
+              condition_func_id(func_id), condition_ip(ip) {}
+    };
     
     /**
      * Phase 2E: Get watcher by ID (for condition evaluation)
@@ -124,6 +142,7 @@ public:
         return (it != watchers_.end()) ? &it->second : nullptr;
     }
 
+private:
     // All registered watchers (id → watcher)
     std::unordered_map<uint32_t, Watcher> watchers_;
     
@@ -133,26 +152,6 @@ public:
     
     // Next watcher ID (incremented for each new watcher)
     uint32_t next_watcher_id_ = 1;
-    
-    // Phase 2E: Internal watcher structure (moved here for struct visibility before template instantiation)
-    struct Watcher {
-        WatcherId id;
-        Fiber* fiber;
-        std::unordered_set<std::string> dependencies;
-        bool last_result;  // Last evaluated result (for edge detection)
-        
-        // Phase 2E: Condition bytecode reference
-        uint32_t condition_func_id;  // Function ID in VM bytecode
-        uint32_t condition_ip;        // Instruction pointer for condition
-        
-        Watcher(WatcherId id_, Fiber* f, 
-                const std::unordered_set<std::string>& deps, bool result,
-                uint32_t func_id, uint32_t ip)
-            : id(id_), fiber(f), dependencies(deps), last_result(result),
-              condition_func_id(func_id), condition_ip(ip) {}
-    };
-
-private:
 };
 
 }  // namespace havel::compiler

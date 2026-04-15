@@ -1802,11 +1802,25 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         if (eventQueue) {
           // Thread-safe: push callback to event queue for main loop execution
           eventQueue->push([vm, callbackId, hotkeyContext]() {
-            vm->invokeCallback(callbackId, {hotkeyContext});
+            vm->beginHotkeyExecution();
+            try {
+              vm->invokeCallback(callbackId, {hotkeyContext});
+            } catch (...) {
+              vm->endHotkeyExecution();
+              throw;
+            }
+            vm->endHotkeyExecution();
           });
         } else {
           // Fallback: direct execution (no event queue configured)
-          vm->invokeCallback(callbackId, {hotkeyContext});
+          vm->beginHotkeyExecution();
+          try {
+            vm->invokeCallback(callbackId, {hotkeyContext});
+          } catch (...) {
+            vm->endHotkeyExecution();
+            throw;
+          }
+          vm->endHotkeyExecution();
         }
       });
 
@@ -1824,10 +1838,24 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         [vm, callbackId, hotkeyContext, eventQueue]() {
           if (eventQueue) {
             eventQueue->push([vm, callbackId, hotkeyContext]() {
-              vm->invokeCallback(callbackId, {hotkeyContext});
+              vm->beginHotkeyExecution();
+              try {
+                vm->invokeCallback(callbackId, {hotkeyContext});
+              } catch (...) {
+                vm->endHotkeyExecution();
+                throw;
+              }
+              vm->endHotkeyExecution();
             });
           } else {
-            vm->invokeCallback(callbackId, {hotkeyContext});
+            vm->beginHotkeyExecution();
+            try {
+              vm->invokeCallback(callbackId, {hotkeyContext});
+            } catch (...) {
+              vm->endHotkeyExecution();
+              throw;
+            }
+            vm->endHotkeyExecution();
           }
         });
   }

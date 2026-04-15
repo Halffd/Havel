@@ -3,8 +3,8 @@
 #include "../../compiler/vm/VM.hpp"
 #include "../../compiler/runtime/EventQueue.hpp"
 #include "../../compiler/runtime/ConcurrencyBridge.hpp"
-#include "../../compiler/runtime/concurrency/WatcherRegistry.hpp"
 #include "../concurrency/Scheduler.hpp"
+#include "../concurrency/WatcherRegistry.hpp"
 
 #include <memory>
 #include <cstdint>
@@ -126,4 +126,3 @@ private:
 };
 
 } // namespace havel::compiler
-

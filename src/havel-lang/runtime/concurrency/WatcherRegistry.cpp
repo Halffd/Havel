@@ -1,4 +1,5 @@
 #include "WatcherRegistry.hpp"
+#include <algorithm>
 
 namespace havel::compiler {
 
@@ -27,8 +28,9 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
     }
     
     // Phase 2E: Create and store watcher with condition bytecode reference
-    Watcher w(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip);
-    watchers_[watcher_id] = w;
+    watchers_.emplace(
+        watcher_id,
+        Watcher(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip));
     
     // Register in reverse index: variable → watcher
     for (const auto& var_name : dependencies) {

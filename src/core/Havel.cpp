@@ -147,7 +147,7 @@ void Havel::initialize(bool isStartup) {
   hostBridge->install();
 
   // Phase 2G: Create Scheduler and ExecutionEngine for reactive watcher system
-  scheduler = std::make_unique<compiler::Scheduler>();
+  scheduler = &compiler::Scheduler::instance();
   if (!scheduler) {
     throw std::runtime_error("Failed to create Scheduler");
   }
@@ -160,7 +160,7 @@ void Havel::initialize(bool isStartup) {
 
   // Create ExecutionEngine for main loop integration
   executionEngine = std::make_unique<compiler::ExecutionEngine>(
-      bytecodeVM.get(), scheduler.get(), eventQueue);
+      bytecodeVM.get(), scheduler, eventQueue);
   if (!executionEngine) {
     throw std::runtime_error("Failed to create ExecutionEngine");
   }

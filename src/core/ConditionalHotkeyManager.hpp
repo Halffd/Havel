@@ -17,10 +17,14 @@ namespace havel {
 class IO;
 class EventListener;
 class WindowMonitor;
+class HotkeyConditionCompiler;
+class HotkeyActionWrapper;
+class HotkeyActionContext;
 
 namespace compiler {
 class EventQueue;
 class ExecutionEngine;
+class VM;
 }
 
 /**
@@ -110,8 +114,11 @@ public:
   
   // Phase 2F: Set the execution engine for reactive watcher integration
   // Allows hotkey conditions to be registered as watchers
-  void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }
-
+  void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }  
+  // Phase 2H: Set condition compiler for bytecode-based conditions
+  void setConditionCompiler(class HotkeyConditionCompiler* compiler) { 
+    conditionCompiler_ = compiler;
+  }
   // Suspend all conditional hotkeys (save state and ungrab all)
   bool Suspend();
 
@@ -144,6 +151,9 @@ public:
     conditionEvaluator = evaluator;
   }
 
+  // Set bytecode VM for condition compilation (Phase 2H)
+  void setBytecodeVM(compiler::VM* vm) { bytecodeVM_ = vm; }
+
   // Set gaming mode checker
   void SetGamingModeChecker(std::function<bool()> checker) {
     isGamingModeActive = checker;
@@ -175,6 +185,12 @@ private:
   
   // Phase 2F: Execution engine for reactive watcher integration
   compiler::ExecutionEngine* executionEngine_ = nullptr;
+  
+  // Phase 2H: Condition compiler for bytecode-based conditions
+  class HotkeyConditionCompiler* conditionCompiler_ = nullptr;
+  
+  // Phase 2H: VM pointer for compiler access (avoid calling through forward-declared ExecutionEngine)
+  class compiler::VM* bytecodeVM_ = nullptr;
 
   // Condition evaluation cache
   struct CachedCondition {

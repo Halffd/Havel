@@ -5,6 +5,9 @@
 #include "utils/Logger.hpp"
 #include "window/WindowMonitor.hpp"
 #include "../havel-lang/compiler/runtime/EventQueue.hpp"
+#include "HotkeyConditionCompiler.hpp"
+#include "HotkeyActionWrapper.hpp"
+#include "HotkeyActionContext.hpp"
 #include <algorithm>
 #include <chrono>
 
@@ -53,7 +56,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
   }
 }
 
-int ConditionalHotkeyManager::AddConditionalHotkey(
+  int ConditionalHotkeyManager::AddConditionalHotkey(
     const std::string& key, const std::string& condition,
     std::function<void()> trueAction,
     std::function<void()> falseAction, int id) {
@@ -63,6 +66,23 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   if (id == 0) {
     static int nextId = 1000;
     id = nextId++;
+  }
+
+  // Phase 2H: Try to compile condition if compiler is available
+  bool hasCompiledCondition = false;
+  if (conditionCompiler_ && bytecodeVM_) {
+    try {
+      // Try to compile the condition to bytecode using the compiler
+      // This caches the bytecode for fast repeated evaluation
+      conditionCompiler_->compileCondition(bytecodeVM_, condition);
+      hasCompiledCondition = true;
+      debug("Compiled hotkey condition to bytecode: '{}'", condition);
+    } catch (const std::exception& e) {
+      // Fall back to string-based evaluation if compilation fails
+      debug("Failed to compile condition '{}': {}, falling back to string evaluation",
+            condition, e.what());
+      hasCompiledCondition = false;
+    }
   }
 
   auto action = [this, condition, trueAction, falseAction]() {

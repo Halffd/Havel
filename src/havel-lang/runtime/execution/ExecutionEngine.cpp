@@ -51,6 +51,7 @@ bool ExecutionEngine::executeFrame() {
     if (event_queue_) {
       event_queue_->processAll();
     }
+    vm_->garbageCollectionSafePoint();
     
     // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
@@ -111,6 +112,7 @@ bool ExecutionEngine::executeFrame() {
     }
     
     stats_.frames_executed++;
+    vm_->garbageCollectionSafePoint();
     return true;  // Work remains
     
   } catch (const std::exception& e) {
@@ -242,7 +244,7 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
       if (debug_mode_) {
         std::cout << "[ExecutionEngine] Resuming fiber for fired watcher" << std::endl;
       }
-      scheduler_->unpark(fiber);
+      fiber->state = FiberState::RUNNABLE;
     }
   }
 }
@@ -270,7 +272,8 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
   
   // Create scope to track global variable accesses
   // This will record which variables the condition depends on
-  DependencyTrackerScope scope;
+  auto tracker = std::make_shared<DependencyTracker>();
+  DependencyTrackerScope scope(tracker);
   
   // Evaluate the condition bytecode
   bool result = vm_->evaluateConditionBytecode(

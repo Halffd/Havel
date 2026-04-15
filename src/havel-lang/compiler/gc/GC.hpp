@@ -409,11 +409,17 @@ private:
   std::unordered_map<std::string, Value> root_globals_snapshot_;
   std::vector<uint32_t> root_closures_snapshot_;
   std::function<std::optional<Value>(uint32_t)> open_local_reader_snapshot_;
-  std::unordered_map<uint32_t, ArrayEntry>::iterator sweep_arrays_it_;
-  std::unordered_map<uint32_t, ObjectEntry>::iterator sweep_objects_it_;
-  std::unordered_map<uint32_t, std::unordered_map<std::string, Value>>::iterator
-      sweep_sets_it_;
-  std::unordered_map<uint32_t, RuntimeClosure>::iterator sweep_closures_it_;
+  // CRITICAL FIX: Don't store iterators across incremental steps
+  // If mutator allocates/deallocates during sweep, iterators are invalidated (UB)
+  // Instead: snapshot keys at startIncrementalCollection, iterate by lookup
+  std::vector<uint32_t> sweep_array_keys_;     // Keys to sweep (snapshot at start)
+  std::vector<uint32_t> sweep_object_keys_;    // Keys to sweep (snapshot at start)
+  std::vector<uint32_t> sweep_set_keys_;       // Keys to sweep (snapshot at start)
+  std::vector<uint32_t> sweep_closure_keys_;   // Keys to sweep (snapshot at start)
+  size_t sweep_array_index_ = 0;               // Current position in sweep_array_keys_
+  size_t sweep_object_index_ = 0;              // Current position in sweep_object_keys_
+  size_t sweep_set_index_ = 0;                 // Current position in sweep_set_keys_
+  size_t sweep_closure_index_ = 0;             // Current position in sweep_closure_keys_
 };
 
 } // namespace havel::compiler

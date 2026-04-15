@@ -20,8 +20,9 @@ compiler::Fiber* HotkeyActionWrapper::createActionFiber(
   
   // Phase 2I: Create a Fiber with special marker function ID
   // The Fiber will be executed by ExecutionEngine which will call the callback
-  static uint32_t next_fiber_id = 1000;  // Non-overlapping with regular fiber IDs
-  uint32_t fiber_id = next_fiber_id++;
+  // CRITICAL FIX: Use std::atomic to prevent race condition if hotkeys fire concurrently
+  static std::atomic<uint32_t> next_fiber_id(1000);  // Non-overlapping with regular fiber IDs
+  uint32_t fiber_id = next_fiber_id.fetch_add(1, std::memory_order_relaxed);
   
   // Create Fiber with special function ID
   // When ExecutionEngine sees this, it will call the callback instead of executing bytecode

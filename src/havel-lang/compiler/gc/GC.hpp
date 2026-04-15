@@ -4,6 +4,7 @@
 #include "../../runtime/concurrency/Thread.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -266,7 +267,9 @@ public:
   uint32_t createIterator(const Value &iterable);
   Value iteratorNext(uint32_t id);
 
-  void setAllocationBudget(size_t value) { allocation_budget_ = value; }
+  void setAllocationBudget(size_t value);
+  size_t allocationBudget() const { return allocation_budget_; }
+  bool isCollectionInProgress() const;
 
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);
@@ -290,7 +293,30 @@ public:
                  const std::function<std::optional<Value>(uint32_t)>
                      &open_local_reader);
 
+  void
+  stepGarbageCollection(const std::vector<Value> &stack_values,
+                        const std::vector<Value> &locals,
+                        const std::unordered_map<std::string, Value> &globals,
+                        const std::vector<uint32_t> &active_closure_ids,
+                        const std::function<std::optional<Value>(uint32_t)>
+                            &open_local_reader,
+                        size_t work_budget = 128);
+
 private:
+  enum class Generation : uint8_t {
+    Young,
+    Old,
+  };
+
+  enum class IncrementalState : uint8_t {
+    Idle,
+    Mark,
+    SweepArrays,
+    SweepObjects,
+    SweepSets,
+    SweepClosures,
+  };
+
   void markValue(const Value &value,
                  std::unordered_set<uint32_t> &marked_arrays,
                  std::unordered_set<uint32_t> &marked_objects,
@@ -298,6 +324,22 @@ private:
                  std::unordered_set<uint32_t> &marked_closures,
                  const std::function<std::optional<Value>(uint32_t)>
                      &open_local_reader) const;
+  void startIncrementalCollection(
+      const std::vector<Value> &stack_values,
+      const std::vector<Value> &locals,
+      const std::unordered_map<std::string, Value> &globals,
+      const std::vector<uint32_t> &active_closure_ids,
+      const std::function<std::optional<Value>(uint32_t)>
+          &open_local_reader);
+  void markReference(const Value &value);
+  void markRoots();
+  void markStep(size_t &work_budget);
+  void sweepStep(size_t &work_budget);
+  void completeCollection();
+  void ageOrPromoteArray(uint32_t id);
+  void ageOrPromoteObject(uint32_t id);
+  void ageOrPromoteSet(uint32_t id);
+  void ageOrPromoteClosure(uint32_t id);
 
   std::unordered_map<uint32_t, RuntimeClosure> closures_;
   std::unordered_map<uint32_t, std::string> strings_; // Heap-allocated runtime strings
@@ -337,10 +379,41 @@ private:
   uint32_t next_coroutine_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;
+  size_t recovered_in_cycle_ = 0;
   std::unordered_map<uint64_t, Value> external_roots_;
   uint64_t next_external_root_id_ = 1;
   uint64_t collections_ = 0;
   uint64_t last_pause_ns_ = 0;
+
+  IncrementalState gc_state_ = IncrementalState::Idle;
+  bool collection_requested_ = false;
+  bool current_collection_full_ = false;
+  size_t minor_collections_since_full_ = 0;
+  size_t full_collection_interval_ = 8;
+  uint8_t promotion_age_threshold_ = 2;
+  std::vector<Value> mark_worklist_;
+  std::unordered_set<uint32_t> marked_arrays_;
+  std::unordered_set<uint32_t> marked_objects_;
+  std::unordered_set<uint32_t> marked_sets_;
+  std::unordered_set<uint32_t> marked_closures_;
+  std::unordered_map<uint32_t, uint8_t> array_ages_;
+  std::unordered_map<uint32_t, uint8_t> object_ages_;
+  std::unordered_map<uint32_t, uint8_t> set_ages_;
+  std::unordered_map<uint32_t, uint8_t> closure_ages_;
+  std::unordered_set<uint32_t> old_arrays_;
+  std::unordered_set<uint32_t> old_objects_;
+  std::unordered_set<uint32_t> old_sets_;
+  std::unordered_set<uint32_t> old_closures_;
+  std::vector<Value> root_stack_snapshot_;
+  std::vector<Value> root_locals_snapshot_;
+  std::unordered_map<std::string, Value> root_globals_snapshot_;
+  std::vector<uint32_t> root_closures_snapshot_;
+  std::function<std::optional<Value>(uint32_t)> open_local_reader_snapshot_;
+  std::unordered_map<uint32_t, ArrayEntry>::iterator sweep_arrays_it_;
+  std::unordered_map<uint32_t, ObjectEntry>::iterator sweep_objects_it_;
+  std::unordered_map<uint32_t, std::unordered_map<std::string, Value>>::iterator
+      sweep_sets_it_;
+  std::unordered_map<uint32_t, RuntimeClosure>::iterator sweep_closures_it_;
 };
 
 } // namespace havel::compiler

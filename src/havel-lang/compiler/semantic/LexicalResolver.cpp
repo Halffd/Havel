@@ -702,6 +702,15 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::DelStatement: {
+    const auto &del_stmt =
+        static_cast<const ast::DelStatement &>(statement);
+    if (del_stmt.target) {
+      resolveExpression(*del_stmt.target);
+    }
+    break;
+  }
+
   case ast::NodeType::HotkeyBinding: {
     const auto &hotkey = static_cast<const ast::HotkeyBinding &>(statement);
     // Create isolated scope for hotkey action

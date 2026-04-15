@@ -341,22 +341,31 @@ void HostBridge::install() {
               }
             }
           }
- // If dispatch failed, check if the receiver object has a method field
- // This handles custom class methods like MousePos.moveTo(), Deque.append(), etc.
- if (!args.empty() && args[0].isObjectId() && ctx_ && ctx_->vm) {
-   auto obj = ctx_->vm->getHeap().object(args[0].asObjectId());
-   if (obj) {
-     // Look up this method on the object
-     Value methodVal = obj->get(methodName);
-     if (methodVal.isFunctionObjId()) {
-       // Call the object's method with remaining args
-       // Prepend 'this' (the object) as first arg for method calls
-       std::vector<Value> methodArgs(args.begin() + 1, args.end());
-       methodArgs.insert(methodArgs.begin(), args[0]);
-       return ctx_->vm->callFunction(methodVal, methodArgs);
-     }
-   }
- };
+          // If dispatch failed, check if the receiver object has a method field
+          // This handles custom class methods like MousePos.moveTo(), Deque.append(), etc.
+          if (!args.empty() && args[0].isObjectId() && ctx_ && ctx_->vm) {
+            auto obj = ctx_->vm->getHeap().object(args[0].asObjectId());
+            if (obj) {
+              // For 'len' method on class instances, check for len field first
+              if (methodName == "len") {
+                Value lenVal = obj->get("len");
+                if (!lenVal.isNull()) {
+                  return lenVal;
+                }
+                // Fall back to object key count
+                return Value::makeInt(static_cast<int64_t>(obj->size()));
+              }
+              // Look up this method on the object
+              Value methodVal = obj->get(methodName);
+              if (methodVal.isFunctionObjId()) {
+                // Call the object's method with remaining args
+                // Prepend 'this' (the object) as first arg for method calls
+                std::vector<Value> methodArgs(args.begin() + 1, args.end());
+                methodArgs.insert(methodArgs.begin(), args[0]);
+                return ctx_->vm->callFunction(methodVal, methodArgs);
+              }
+            }
+          }
 
           return Value::makeNull();
         };

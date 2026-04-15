@@ -5527,19 +5527,16 @@ void ByteCompiler::compileDelTarget(const ast::Expression &target) {
     case ast::NodeType::Identifier: {
       const auto &id = static_cast<const ast::Identifier &>(target);
       const auto *binding = bindingFor(id);
-      if (!binding) {
-        COMPILER_THROW("Missing lexical binding for del: " + id.symbol);
-      }
-      if (binding->kind == ResolvedBindingKind::Global) {
-        // Delete from globals by setting to null
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-      } else if (binding->kind == ResolvedBindingKind::Local) {
+      if (binding && binding->kind == ResolvedBindingKind::Local) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+      } else if (binding && binding->kind == ResolvedBindingKind::Upvalue) {
+        COMPILER_THROW("Cannot del upvalue binding");
       } else {
-        COMPILER_THROW("Cannot del local/upvalue binding");
+        // No binding or global - delete from globals by setting to null
+        uint32_t strId = addStringConstant(id.symbol);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
       }
       break;
     }

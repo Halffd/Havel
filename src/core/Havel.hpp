@@ -118,6 +118,10 @@ private:
   std::shared_ptr<compiler::HostBridge> hostBridge;
   compiler::Scheduler *scheduler = nullptr; // Singleton-owned
   std::unique_ptr<compiler::ExecutionEngine> executionEngine;
+  
+  // Phase 2H-2J: Reactive hotkey system components
+  class HotkeyConditionCompiler *conditionCompiler = nullptr;    // Phase 2H
+  // Phase 2I: HotkeyActionWrapper is managed via static methods, not stored
 
   // Host context (persistent for VM lifetime)
   std::unique_ptr<HostContext> hostContext;

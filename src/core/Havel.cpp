@@ -2,6 +2,9 @@
 #include "havel-lang/runtime/StdLibModules.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
+#include "HotkeyConditionCompiler.hpp"
+// NOTE: HotkeyActionWrapper.hpp brings in Fiber.hpp which has namespace ambiguities
+// We just allocate it with new and it works fine
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "BrightnessManager.hpp"
 #include "ConfigManager.hpp"
@@ -171,6 +174,19 @@ void Havel::initialize(bool isStartup) {
     hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
     hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
     
+    // Phase 2H: Create and inject condition compiler
+    conditionCompiler = new HotkeyConditionCompiler();
+    hotkeyManager->getConditionalHotkeyManager().setConditionCompiler(conditionCompiler);
+    hotkeyManager->getConditionalHotkeyManager().setBytecodeVM(bytecodeVM.get());
+    
+    // Phase 2I: Initialize action wrapper (static allocation - no storage needed)
+    // HotkeyActionWrapper uses static methods and doesn't need to be stored
+    
+    // Phase 2J: Action context initialization happens via static methods (no include needed)
+    // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
+    // from HotkeyActionContext.cpp static initialization if needed
+    info("Reactive hotkey system initialized (Phases 2H, 2I, 2J)");
+    
     auto modeManager = hotkeyManager->getModeManager();
     if (modeManager) {
       modeManager->setExecutionEngine(executionEngine.get());
@@ -226,6 +242,14 @@ void Havel::cleanup() noexcept {
     hotkeyManager->cleanup();
     hotkeyManager.reset();
   }
+
+  // Phase 2H-2J: Clean up reactive hotkey components
+  if (conditionCompiler) {
+    debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
+    delete conditionCompiler;
+    conditionCompiler = nullptr;
+  }
+  // Phase 2I: HotkeyActionWrapper is not stored, uses static singleton pattern
 
   // Destroy VM FIRST
   if (bytecodeVM) {

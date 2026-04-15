@@ -1,5 +1,6 @@
 #include "ModeManager.hpp"
 #include "havel-lang/ast/AST.h"
+#include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
 #include <chrono>

@@ -18,7 +18,10 @@ class IO;
 class EventListener;
 class WindowMonitor;
 
-namespace compiler { class EventQueue; }
+namespace compiler {
+class EventQueue;
+class ExecutionEngine;
+}
 
 /**
  * ConditionalHotkey - A hotkey with a condition
@@ -107,7 +110,7 @@ public:
   
   // Phase 2F: Set the execution engine for reactive watcher integration
   // Allows hotkey conditions to be registered as watchers
-  void setExecutionEngine(class ExecutionEngine* ee) { executionEngine_ = ee; }
+  void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }
 
   // Suspend all conditional hotkeys (save state and ungrab all)
   bool Suspend();
@@ -171,7 +174,7 @@ private:
   compiler::EventQueue* eventQueue_ = nullptr;
   
   // Phase 2F: Execution engine for reactive watcher integration
-  class ExecutionEngine* executionEngine_ = nullptr;
+  compiler::ExecutionEngine* executionEngine_ = nullptr;
 
   // Condition evaluation cache
   struct CachedCondition {

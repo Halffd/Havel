@@ -29,6 +29,8 @@ class GUIManager;
 namespace havel::compiler {
 class HostBridge;
 class VM;
+class Scheduler;
+class ExecutionEngine;
 }
 
 namespace havel {
@@ -114,7 +116,7 @@ private:
   // Havel language VM
   std::unique_ptr<compiler::VM> bytecodeVM;
   std::shared_ptr<compiler::HostBridge> hostBridge;
-  std::unique_ptr<compiler::Scheduler> scheduler;
+  compiler::Scheduler *scheduler = nullptr; // Singleton-owned
   std::unique_ptr<compiler::ExecutionEngine> executionEngine;
 
   // Host context (persistent for VM lifetime)

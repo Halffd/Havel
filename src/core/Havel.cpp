@@ -3,6 +3,8 @@
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "HotkeyConditionCompiler.hpp"
+#include "HotkeyActionWrapper.hpp"  // Phase 2I: For registering hotkey action callbacks
+#include "HotkeyActionContext.hpp"  // Phase 2J: For setting context before execution
 // NOTE: HotkeyActionWrapper.hpp brings in Fiber.hpp which has namespace ambiguities
 // We just allocate it with new and it works fine
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
@@ -168,11 +170,34 @@ void Havel::initialize(bool isStartup) {
     throw std::runtime_error("Failed to create ExecutionEngine");
   }
 
+  // Phase 2I: Register hotkey action callback with ExecutionEngine
+  // When a hotkey action Fiber is executed (function_id == 0xFFFFFFFF),
+  // ExecutionEngine will call this callback to invoke the C++ hotkey action
+  executionEngine->setHotkeyActionCallback([](uint32_t fiber_id) {
+    // Phase 2I: Get and execute the registered hotkey action callback
+    auto* callback = HotkeyActionWrapper::getCallback(fiber_id);
+    if (callback && *callback) {
+      try {
+        // Phase 2J: Context is already set by ConditionalHotkeyManager
+        // when scheduling the action Fiber. Just execute the callback.
+        (*callback)();  // Execute the C++ hotkey action function
+      } catch (const std::exception& e) {
+        error("Exception in hotkey action (Fiber " + std::to_string(fiber_id) + "): " + e.what());
+      }
+    } else {
+      warn("No callback registered for hotkey action Fiber " + std::to_string(fiber_id));
+    }
+    // Note: Callback unregistration happens when Fiber is cleaned up
+  });
+
   // Phase 2G: Inject ExecutionEngine into HotkeyManager's managers
   if (hotkeyManager) {
     hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
     hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
     hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
+    
+    // Phase 2I: Inject Scheduler for Fiber-based hotkey actions
+    hotkeyManager->getConditionalHotkeyManager().setScheduler(scheduler);
     
     // Phase 2H: Create and inject condition compiler
     conditionCompiler = new HotkeyConditionCompiler();
@@ -185,7 +210,7 @@ void Havel::initialize(bool isStartup) {
     // Phase 2J: Action context initialization happens via static methods (no include needed)
     // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
     // from HotkeyActionContext.cpp static initialization if needed
-    info("Reactive hotkey system initialized (Phases 2H, 2I, 2J)");
+    info("Reactive hotkey system initialized (Phases 2H, 2I, 2J with Scheduler integration)");
     
     auto modeManager = hotkeyManager->getModeManager();
     if (modeManager) {

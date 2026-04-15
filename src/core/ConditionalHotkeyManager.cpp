@@ -87,53 +87,37 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
 
   auto action = [this, condition, trueAction, falseAction]() {
     if (EvaluateCondition(condition)) {
-      if (trueAction) trueAction();
+      if (trueAction) {
+        // Phase 2I/2J: Set context and execute hotkey action
+        // The context is available to the action via HotkeyActionContext
+        HotkeyActionContext::setContext({
+          true,  // condition_result
+          "hotkey_fired",  // changed_variable
+          static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count()),  // timestamp_ns
+          "hotkey_action",  // hotkey_name
+          condition  // condition_source
+        });
+        
+        // Execute the action (will be wrapped in Fiber if scheduler available in future)
+        trueAction();
+        
+        // Clear context after execution
+        HotkeyActionContext::clearContext();
+      }
     } else {
-      if (falseAction) falseAction();
-    }
-  };
-
-  ConditionalHotkey ch;
-  ch.id = id;
-  ch.key = key;
-  ch.condition = condition;  // std::variant holds string
-  ch.trueAction = trueAction;
-  ch.falseAction = falseAction;
-  ch.currentlyGrabbed = true;
-  ch.monitoringEnabled = true;
-
-  {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
-    conditionalHotkeys.push_back(ch);
-    conditionalHotkeyIds.push_back(id);
-  }
-
-  // Register with IO
-  io->Hotkey(key, action, condition, id);
-
-  // Initial evaluation
-  UpdateConditionalHotkey(conditionalHotkeys.back());
-
-  return id;
-}
-
-int ConditionalHotkeyManager::AddConditionalHotkey(
-    const std::string& key, std::function<bool()> condition,
-    std::function<void()> trueAction,
-    std::function<void()> falseAction, int id) {
-  debug("Registering conditional hotkey - Key: '{}', Lambda Condition, ID: {}",
-        key, id);
-
-  if (id == 0) {
-    static int nextId = 1000;
-    id = nextId++;
-  }
-
-  auto action = [condition, trueAction, falseAction]() {
-    if (condition()) {
-      if (trueAction) trueAction();
-    } else {
-      if (falseAction) falseAction();
+      if (falseAction) {
+        // Phase 2J: Set context for false action
+        HotkeyActionContext::setContext({
+          false,  // condition_result
+          "hotkey_fired_false",
+          static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count()),
+          "hotkey_action_false",
+          condition
+        });
+        
+        falseAction();
+        HotkeyActionContext::clearContext();
+      }
     }
   };
 

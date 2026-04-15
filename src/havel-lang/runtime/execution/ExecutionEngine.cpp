@@ -71,9 +71,41 @@ bool ExecutionEngine::executeFrame() {
       vm_->loadFiberState(g->fiber);
     }
     
-    // STEP 4: Execute one instruction in this goroutine
-    // This is non-blocking - always returns immediately
-    VMExecutionResult result = vm_->executeOneStep(g->fiber);
+    // STEP 3B: Phase 2I Integration - Handle hotkey action Fibers
+    // If this Fiber is a hotkey action (special marker function_id), execute the callback
+    // instead of bytecode
+    VMExecutionResult result;
+    if (g->fiber && g->fiber->current_function_id == 0xFFFFFFFF) {  // HOTKEY_ACTION_FUNCTION_ID
+      // Phase 2I: This is a hotkey action Fiber
+      // Get the registered callback and execute it
+      if (debug_mode_) {
+        std::cout << "[ExecutionEngine] Executing hotkey action Fiber " << g->fiber->id << std::endl;
+      }
+      
+      // Call the registered hotkey action callback if available
+      if (hotkey_action_callback_) {
+        try {
+          hotkey_action_callback_(g->fiber->id);  // Execute the hotkey action
+        } catch (const std::exception& e) {
+          // Handle exceptions from hotkey actions
+          if (debug_mode_) {
+            std::cout << "[ExecutionEngine] Exception in hotkey action: " << e.what() << std::endl;
+          }
+          g->fiber->had_error = true;
+          g->fiber->error_message = std::string("Hotkey action error: ") + e.what();
+          result.type = VMExecutionResult::ERROR;
+          result.error_message = g->fiber->error_message;
+        }
+      }
+      
+      // Mark hotkey action Fiber as completed
+      result.type = VMExecutionResult::RETURNED;
+      g->fiber->state = FiberState::DONE;
+    } else {
+      // STEP 4: Execute one instruction in this goroutine
+      // This is non-blocking - always returns immediately
+      result = vm_->executeOneStep(g->fiber);
+    }
     
     // STEP 5: Save VM state back to fiber
     // This persists any progress made by the instruction

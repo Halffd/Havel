@@ -12,7 +12,6 @@ namespace havel::compiler {
 
 // Forward declarations
 class Fiber;
-struct Value;
 
 /**
  * WatcherRegistry - Reactive watcher management with edge-triggered firing

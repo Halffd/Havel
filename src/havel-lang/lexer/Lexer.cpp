@@ -211,6 +211,7 @@ void Lexer::skipComment() {
   else if (peek() == '*') {
     advance(); // consume '*'
 
+    size_t commentStartPos = position;
     while (!isAtEnd()) {
       if (peek() == '*' && peek(1) == '/') {
         advance(); // *
@@ -218,6 +219,8 @@ void Lexer::skipComment() {
         break;
       }
       advance();
+      // Progress guard: prevent infinite loop on unterminated comments
+      assertProgress(commentStartPos, "multiline comment");
     }
   }
 }
@@ -300,6 +303,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
   // f-strings use {...} without $
   bool allowInterpolation = (quote == '"') || isFString;
 
+  size_t stringStartPos = position;
   while (!isAtEnd()) {
     char c = peek();
 
@@ -345,7 +349,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
       hasInterpolation = true;
       value += advance(); // $
 
-      // Check if it's ${expr} or $var
+      // Check if it's ${expr} or $var or $@field
       if (peek() == '{') {
         value += advance(); // {
         braceDepth++;       // Enter interpolation context
@@ -362,8 +366,17 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
         }
         value += '}';
         // No change to braceDepth since we synthetically closed it immediately
+      } else if (peek() == '@') {
+        // $@field syntax for field access in class methods
+        // Add implicit { } around the @field expression
+        value += '{';
+        value += advance(); // @
+        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+          value += advance();
+        }
+        value += '}';
       } else {
-        // Just a $ not followed by { or identifier, treat as literal '$'
+        // Just a $ not followed by { or identifier or @, treat as literal '$'
         // Do not mark as interpolation in this case
       }
     } else if (c == '{' && isFString && braceDepth == 0) {
@@ -404,6 +417,8 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
         }
       }
     }
+    // Progress guard: ensure we always make forward progress in string scanning
+    assertProgress(stringStartPos, "string literal");
   }
 
   if (isAtEnd()) {
@@ -720,6 +735,7 @@ std::vector<Token> Lexer::tokenize() {
   size_t tokenCount = 0;
 
   while (!isAtEnd()) {
+    size_t loopStartPos = position;
     skipWhitespace();
 
     if (isAtEnd())
@@ -1364,6 +1380,9 @@ std::vector<Token> Lexer::tokenize() {
       tokens.push_back(scanHotkey());
       continue;
     }
+
+    // Progress guard: ensure we always make forward progress
+    assertProgress(loopStartPos, "tokenize");
 
     // Handle unrecognized characters
     const size_t error_col = column > 0 ? column - 1 : 1;

@@ -1751,6 +1751,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
 
 // Replace the old parseExpression with a wrapper that calls Pratt parser
 std::unique_ptr<ast::Expression> Parser::parseExpression() {
+  DepthGuard dg(recursion_depth_);
   return parsePrattExpression(0);
 }
 
@@ -1947,6 +1948,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
+  DepthGuard dg(recursion_depth_);
   // Skip leading newlines within statement context
   // This allows multiple newlines between statements
   while (at().type == havel::TokenType::NewLine) {
@@ -2218,6 +2220,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseReturnStatement();
   case havel::TokenType::Throw:
     return parseThrowStatement();
+  case havel::TokenType::Del:
+    return parseDelStatement();
   case havel::TokenType::Go:
     return parseGoStatement();
   case havel::TokenType::Try:

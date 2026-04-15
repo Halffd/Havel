@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <functional>
 
 namespace havel::compiler {
 
@@ -90,7 +91,17 @@ public:
   // ========== PHASE 3B-7: THREAD MANAGEMENT ==========
   void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
   ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
-
+  
+  // ========== PHASE 2I: HOTKEY ACTION SUPPORT ==========
+  /**
+   * Set callback for executing hotkey actions (Phase 2I integration)
+   * Called when a Fiber with function_id 0xFFFFFFFF is executed
+   * @param callback Function to execute hotkey action by Fiber ID
+   */
+  using HotkeyActionCallback = std::function<void(uint32_t fiber_id)>;
+  void setHotkeyActionCallback(HotkeyActionCallback callback) {
+    hotkey_action_callback_ = callback;
+  }
 
 private:
   // ========== CORE COMPONENTS ==========
@@ -101,6 +112,9 @@ private:
   
   // Phase 2C: Watcher registry for reactive when statements
   std::unique_ptr<WatcherRegistry> watcher_registry_;
+  
+  // Phase 2I: Callback for executing hotkey actions
+  HotkeyActionCallback hotkey_action_callback_ = nullptr;
   
   // ========== STATE ==========
   bool running_ = false;

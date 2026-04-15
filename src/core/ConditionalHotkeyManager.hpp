@@ -25,6 +25,7 @@ namespace compiler {
 class EventQueue;
 class ExecutionEngine;
 class VM;
+class Scheduler;  // Phase 2I: Forward declaration for scheduler_ member
 }
 
 /**
@@ -165,6 +166,9 @@ public:
   // Set window monitor for efficient window info caching
   void setWindowMonitor(std::shared_ptr<WindowMonitor> monitor) { windowMonitor = monitor; }
 
+  // Phase 2I: Set scheduler for wrapping hotkey actions in Fibers
+  void setScheduler(class compiler::Scheduler* sched) { scheduler_ = sched; }
+
   // Debug options
   bool verboseConditionLogging = false;
   bool verboseLogging = false;
@@ -185,6 +189,9 @@ private:
   
   // Phase 2F: Execution engine for reactive watcher integration
   compiler::ExecutionEngine* executionEngine_ = nullptr;
+  
+  // Phase 2I: Scheduler for wrapping hotkey actions in Fibers
+  class compiler::Scheduler* scheduler_ = nullptr;
   
   // Phase 2H: Condition compiler for bytecode-based conditions
   class HotkeyConditionCompiler* conditionCompiler_ = nullptr;

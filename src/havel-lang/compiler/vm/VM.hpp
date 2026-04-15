@@ -5,6 +5,7 @@
 #include "VMImage.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -307,6 +308,7 @@ private:
   std::vector<uint32_t> activeClosureIdsForRoots() const;
   void maybeCollectGarbage();
   void collectGarbage();
+  void stepGarbageCollection(size_t work_budget = 128);
   void registerDefaultHostFunctions();
   void registerDefaultHostGlobals();
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
@@ -535,6 +537,9 @@ public:
                                const std::vector<Value> &args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
+  void beginHotkeyExecution();
+  void endHotkeyExecution();
+  void garbageCollectionSafePoint(size_t work_budget = 128);
 
   // Value utility functions
   bool isNull(const Value &value) const;
@@ -610,6 +615,9 @@ public:
 
   /** Injected embedder context; null if VM was default-constructed. */
   const ::havel::HostContext *hostContext() const { return context_; }
+
+private:
+  std::atomic<uint32_t> active_hotkey_executions_{0};
 };
 
 } // namespace havel::compiler

@@ -2429,11 +2429,11 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   }
   
   // Get function by index from current chunk
-  if (func_index >= current_chunk->functions.size()) {
+  if (func_index >= current_chunk->getFunctionCount()) {
     return false;
   }
   
-  const BytecodeChunk::Function* func_entry = current_chunk->functions[func_index].entry;
+  const auto *func_entry = current_chunk->getFunction(func_index);
   if (!func_entry) {
     return false;
   }
@@ -2447,7 +2447,8 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   try {
     // Execute function and get result
     // We call the function through the normal call mechanism
-    Value func_value = func_entry;  // BytecodeChunk::Function* is a Value
+    (void)ip;
+    Value func_value = Value::makeFunctionObjId(func_index);
     Value result = call(func_value, {});
     
     // Convert result to boolean
@@ -3507,6 +3508,38 @@ void VM::collectGarbage() {
                          }
                          return locals[index];
                        });
+}
+
+void VM::stepGarbageCollection(size_t work_budget) {
+  heap_.stepGarbageCollection(
+      stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+      [this](uint32_t index) -> std::optional<Value> {
+        if (index >= locals.size()) {
+          return std::nullopt;
+        }
+        return locals[index];
+      },
+      work_budget);
+}
+
+void VM::beginHotkeyExecution() {
+  active_hotkey_executions_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void VM::endHotkeyExecution() {
+  const uint32_t previous =
+      active_hotkey_executions_.fetch_sub(1, std::memory_order_acq_rel);
+  if (previous <= 1) {
+    active_hotkey_executions_.store(0, std::memory_order_release);
+    garbageCollectionSafePoint();
+  }
+}
+
+void VM::garbageCollectionSafePoint(size_t work_budget) {
+  if (active_hotkey_executions_.load(std::memory_order_acquire) != 0) {
+    return;
+  }
+  stepGarbageCollection(work_budget);
 }
 
 // ============================================================================

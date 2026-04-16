@@ -360,7 +360,7 @@ list(APPEND HOST_MODULES_SOURCES "src/modules/ui/UIModule.cpp")
 # Test sources (conditional)
 set(TEST_SOURCES "")
 if(ENABLE_TESTS)
-    file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp")
+    file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp" "tests/*_test.cpp" "tests/phase2_integration_test.cpp")
 endif()
 
 

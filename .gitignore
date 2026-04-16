@@ -54,3 +54,4 @@ havel.cfgvscode-extension/node_modules/
 vscode-extension/out/
 *.vsix
 .crush
+Testing/Temporary/CTestCostData.txt

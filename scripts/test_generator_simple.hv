@@ -1,0 +1,15 @@
+// Test to see if generators are even recognized
+fn gen() {
+    yield 1;
+    return 2;
+}
+
+fn main() {
+    print("Generator test");
+    let g = gen();
+    print("Created generator");
+    let v = g();
+    print("Value: " + v);
+}
+
+main();

@@ -3179,6 +3179,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
     else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
     else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
+    else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
     COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ")");
   }
 
@@ -3194,6 +3195,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
+  // DEBUG: Log function and is_generator flag
+  spdlog::info("DEBUG: doCall function_index={}, name={}, is_generator={}", 
+               function_index, callee->name, callee->is_generator);
+  
   if (callee->is_generator) {
     // Create coroutine object for this generator function
     uint32_t coId = heap_.allocateCoroutine(function_index, 0);

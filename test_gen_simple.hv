@@ -1,0 +1,18 @@
+#!/usr/bin/env havel
+
+fn gen() {
+    print("gen function called");
+    yield 1;
+    return 42;
+}
+
+print("Creating generator...");
+let g = gen();
+print("Generator created");
+print("Type of g:");
+print(type(g));
+
+print("Calling generator...");
+let v = g();
+print("Got value: ");
+print(v);

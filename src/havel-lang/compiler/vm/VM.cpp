@@ -3754,9 +3754,354 @@ void VM::execBinaryOp(const Instruction &instruction) {
       pushStack(Value::makeStringId(strRef.id));
       break;
     }
+    case OpCode::MUL: {
+      // string * int → repeat
+      if (right.isInt()) {
+        int count = static_cast<int>(right.asInt());
+        if (count < 0) count = 0;
+        std::string result;
+        for (int i = 0; i < count; i++) result += l;
+        auto strRef = heap_.allocateString(std::move(result));
+        pushStack(Value::makeStringId(strRef.id));
+      } else {
+        COMPILER_THROW("Invalid string operation");
+      }
+      break;
+    }
     case OpCode::EQ:   pushStack(l == r); break;
     case OpCode::NEQ:  pushStack(l != r); break;
     default: COMPILER_THROW("Invalid string operation");
+    }
+    return;
+  }
+
+  // Handle array operations
+  if (left.isArrayId() || right.isArrayId()) {
+    switch (instruction.opcode) {
+    case OpCode::ADD: {
+      if (left.isArrayId() && right.isArrayId()) {
+        auto *larr = heap_.array(left.asArrayId());
+        auto *rarr = heap_.array(right.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        if (larr) arr->insert(arr->end(), larr->begin(), larr->end());
+        if (rarr) arr->insert(arr->end(), rarr->begin(), rarr->end());
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else if (left.isArrayId() && right.isInt()) {
+        // array + int → element-wise add
+        auto *larr = heap_.array(left.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        int64_t delta = right.asInt();
+        if (larr) {
+          for (auto& v : *larr) {
+            if (v.isInt()) arr->push_back(Value::makeInt(v.asInt() + delta));
+            else arr->push_back(v);
+          }
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else if (left.isInt() && right.isArrayId()) {
+        // int + array → element-wise add
+        auto *rarr = heap_.array(right.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        int64_t delta = left.asInt();
+        if (rarr) {
+          for (auto& v : *rarr) {
+            if (v.isInt()) arr->push_back(Value::makeInt(delta + v.asInt()));
+            else arr->push_back(v);
+          }
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in ADD for arrays");
+      }
+      break;
+    }
+    case OpCode::SUB: {
+      if (left.isArrayId() && right.isArrayId()) {
+        // array - array → remove elements present in right
+        auto *larr = heap_.array(left.asArrayId());
+        auto *rarr = heap_.array(right.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        if (larr) {
+          for (auto& v : *larr) {
+            bool found = false;
+            if (rarr) {
+              for (auto& rv : *rarr) {
+                if (valuesEqualDeep(v, rv)) { found = true; break; }
+              }
+            }
+            if (!found) arr->push_back(v);
+          }
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else if (left.isArrayId() && right.isInt()) {
+        // array - int → remove elements equal to value
+        auto *larr = heap_.array(left.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        if (larr) {
+          for (auto& v : *larr) {
+            if (!(v.isInt() && v.asInt() == right.asInt())) arr->push_back(v);
+          }
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in SUB for arrays");
+      }
+      break;
+    }
+    case OpCode::MUL: {
+      if (left.isArrayId() && right.isInt()) {
+        // array * int → repeat
+        auto *larr = heap_.array(left.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        int count = static_cast<int>(right.asInt());
+        if (count < 0) count = 0;
+        if (larr) {
+          for (int i = 0; i < count; i++)
+            arr->insert(arr->end(), larr->begin(), larr->end());
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else if (left.isInt() && right.isArrayId()) {
+        // int * array → repeat
+        auto *rarr = heap_.array(right.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        int count = static_cast<int>(left.asInt());
+        if (count < 0) count = 0;
+        if (rarr) {
+          for (int i = 0; i < count; i++)
+            arr->insert(arr->end(), rarr->begin(), rarr->end());
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in MUL for arrays");
+      }
+      break;
+    }
+    case OpCode::DIV: {
+      if (left.isArrayId() && right.isInt()) {
+        // array / int → chunk into groups of N
+        auto *larr = heap_.array(left.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        int chunkSize = static_cast<int>(right.asInt());
+        if (chunkSize <= 0) chunkSize = 1;
+        if (larr) {
+          auto chunkRef = heap_.allocateArray();
+          auto *chunk = heap_.array(chunkRef.id);
+          for (size_t i = 0; i < larr->size(); i++) {
+            chunk->push_back((*larr)[i]);
+            if (static_cast<int>(chunk->size()) >= chunkSize) {
+              arr->push_back(Value::makeArrayId(chunkRef.id));
+              chunkRef = heap_.allocateArray();
+              chunk = heap_.array(chunkRef.id);
+            }
+          }
+          if (!chunk->empty()) arr->push_back(Value::makeArrayId(chunkRef.id));
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in DIV for arrays");
+      }
+      break;
+    }
+    case OpCode::MOD: {
+      if (left.isArrayId() && right.isInt()) {
+        // array % int → split into N roughly equal parts
+        auto *larr = heap_.array(left.asArrayId());
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        int parts = static_cast<int>(right.asInt());
+        if (parts <= 0) parts = 1;
+        if (larr) {
+          size_t total = larr->size();
+          size_t partSize = total / parts;
+          size_t remainder = total % parts;
+          size_t idx = 0;
+          for (int p = 0; p < parts; p++) {
+            auto chunkRef = heap_.allocateArray();
+            auto *chunk = heap_.array(chunkRef.id);
+            size_t sz = partSize + (p < static_cast<int>(remainder) ? 1 : 0);
+            for (size_t j = 0; j < sz && idx < total; j++, idx++) {
+              chunk->push_back((*larr)[idx]);
+            }
+            arr->push_back(Value::makeArrayId(chunkRef.id));
+          }
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in MOD for arrays");
+      }
+      break;
+    }
+    case OpCode::EQ:
+    case OpCode::NEQ: {
+      bool eq = valuesEqualDeep(left, right);
+      pushStack(instruction.opcode == OpCode::EQ ? eq : !eq);
+      break;
+    }
+    default: COMPILER_THROW("Invalid array operation");
+    }
+    return;
+  }
+
+  // Handle set operations
+  if (left.isSetId() || right.isSetId()) {
+    switch (instruction.opcode) {
+    case OpCode::ADD: {
+      // set + set → union
+      if (left.isSetId() && right.isSetId()) {
+        auto *lset = heap_.set(left.asSetId());
+        auto *rset = heap_.set(right.asSetId());
+        auto setRef = heap_.allocateSet();
+        auto *set = heap_.set(setRef.id);
+        if (lset) set->insert(lset->begin(), lset->end());
+        if (rset) set->insert(rset->begin(), rset->end());
+        pushStack(Value::makeSetId(setRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in ADD for sets");
+      }
+      break;
+    }
+    case OpCode::SUB: {
+      // set - set → difference
+      if (left.isSetId() && right.isSetId()) {
+        auto *lset = heap_.set(left.asSetId());
+        auto *rset = heap_.set(right.asSetId());
+        auto setRef = heap_.allocateSet();
+        auto *set = heap_.set(setRef.id);
+        if (lset) set->insert(lset->begin(), lset->end());
+        if (rset) {
+          for (const auto& [k, v] : *rset) set->erase(k);
+        }
+        pushStack(Value::makeSetId(setRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in SUB for sets");
+      }
+      break;
+    }
+    case OpCode::EQ:
+    case OpCode::NEQ: {
+      bool eq = valuesEqualDeep(left, right);
+      pushStack(instruction.opcode == OpCode::EQ ? eq : !eq);
+      break;
+    }
+    default: COMPILER_THROW("Invalid set operation");
+    }
+    return;
+  }
+
+  // Handle object operations
+  if (left.isObjectId() || right.isObjectId()) {
+    switch (instruction.opcode) {
+    case OpCode::ADD: {
+      // object + object → merge (right overwrites left)
+      if (left.isObjectId() && right.isObjectId()) {
+        auto *lobj = heap_.object(left.asObjectId());
+        auto *robj = heap_.object(right.asObjectId());
+        auto objRef = heap_.allocateObject();
+        auto *obj = heap_.object(objRef.id);
+        if (lobj) { for (const auto& [k, v] : *lobj) obj->set(k, v); }
+        if (robj) { for (const auto& [k, v] : *robj) obj->set(k, v); }
+        pushStack(Value::makeObjectId(objRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in ADD for objects");
+      }
+      break;
+    }
+    case OpCode::SUB: {
+      // object - object → remove keys present in right
+      if (left.isObjectId() && right.isObjectId()) {
+        auto *lobj = heap_.object(left.asObjectId());
+        auto *robj = heap_.object(right.asObjectId());
+        auto objRef = heap_.allocateObject();
+        auto *obj = heap_.object(objRef.id);
+        if (lobj) {
+          for (const auto& [k, v] : *lobj) {
+            if (!robj || robj->find(k) == robj->end()) {
+              obj->set(k, v);
+            }
+          }
+        }
+        pushStack(Value::makeObjectId(objRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in SUB for objects");
+      }
+      break;
+    }
+    case OpCode::MUL: {
+      // object * int → multiply all numeric values
+      if (left.isObjectId() && right.isInt()) {
+        auto *lobj = heap_.object(left.asObjectId());
+        auto objRef = heap_.allocateObject();
+        auto *obj = heap_.object(objRef.id);
+        int64_t mult = right.asInt();
+        if (lobj) {
+          for (const auto& [k, v] : *lobj) {
+            if (v.isInt()) obj->set(k, Value::makeInt(v.asInt() * mult));
+            else if (v.isDouble()) obj->set(k, Value::makeDouble(v.asDouble() * mult));
+            else obj->set(k, v);
+          }
+        }
+        pushStack(Value::makeObjectId(objRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in MUL for objects");
+      }
+      break;
+    }
+    case OpCode::DIV: {
+      // object / int → divide all numeric values
+      if (left.isObjectId() && right.isInt()) {
+        auto *lobj = heap_.object(left.asObjectId());
+        auto objRef = heap_.allocateObject();
+        auto *obj = heap_.object(objRef.id);
+        double div = static_cast<double>(right.asInt());
+        if (div == 0) COMPILER_THROW("Division by zero");
+        if (lobj) {
+          for (const auto& [k, v] : *lobj) {
+            if (v.isInt()) obj->set(k, Value::makeInt(static_cast<int64_t>(v.asInt() / div)));
+            else if (v.isDouble()) obj->set(k, Value::makeDouble(v.asDouble() / div));
+            else obj->set(k, v);
+          }
+        }
+        pushStack(Value::makeObjectId(objRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in DIV for objects");
+      }
+      break;
+    }
+    case OpCode::MOD: {
+      // object % int → mod all numeric values
+      if (left.isObjectId() && right.isInt()) {
+        auto *lobj = heap_.object(left.asObjectId());
+        auto objRef = heap_.allocateObject();
+        auto *obj = heap_.object(objRef.id);
+        int64_t mod = right.asInt();
+        if (mod == 0) COMPILER_THROW("Modulo by zero");
+        if (lobj) {
+          for (const auto& [k, v] : *lobj) {
+            if (v.isInt()) obj->set(k, Value::makeInt(v.asInt() % mod));
+            else obj->set(k, v);
+          }
+        }
+        pushStack(Value::makeObjectId(objRef.id));
+      } else {
+        COMPILER_THROW("Type mismatch in MOD for objects");
+      }
+      break;
+    }
+    case OpCode::EQ:
+    case OpCode::NEQ: {
+      bool eq = valuesEqualDeep(left, right);
+      pushStack(instruction.opcode == OpCode::EQ ? eq : !eq);
+      break;
+    }
+    default: COMPILER_THROW("Invalid object operation");
     }
     return;
   }

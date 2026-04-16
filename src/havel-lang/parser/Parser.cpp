@@ -3840,7 +3840,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
 
 // Parse del statement: del expression
 // Supports: del variable, del obj.field, del arr[index]
+// Also handles del(...) as a function call if followed by (
 std::unique_ptr<havel::ast::Statement> Parser::parseDelStatement() {
+  // If followed by '(', treat as function call: del(args)
+  if (at(1).type == havel::TokenType::OpenParen) {
+    // Parse as function call expression: del(args)
+    auto call = std::make_unique<havel::ast::CallExpression>(
+        std::make_unique<havel::ast::Identifier>("del"));
+    advance(); // consume 'del'
+    advance(); // consume '('
+    while (at().type != havel::TokenType::CloseParen && notEOF()) {
+      call->args.push_back(parseExpression());
+      if (at().type == havel::TokenType::Comma) advance();
+    }
+    if (at().type == havel::TokenType::CloseParen) advance();
+    return std::make_unique<havel::ast::ExpressionStatement>(std::move(call));
+  }
   advance(); // consume 'del'
   auto target = parseExpression();
   return std::make_unique<havel::ast::DelStatement>(std::move(target));

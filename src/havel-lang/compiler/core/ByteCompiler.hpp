@@ -214,7 +214,7 @@ private:
       "eval", "caller", "describe", "bytecode", "tokenize",
       "inspect", "prototypes", "defun",
       // Prototype OOP primitives
-      "proto", "getproto", "setproto",
+      "proto", "getproto", "setproto", "del",
       // Duck typing / protocol functions
       "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
       "items",   "capital"};

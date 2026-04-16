@@ -30,6 +30,7 @@ namespace havel {
 // Forward declarations
 namespace compiler {
   class HostBridge;
+  class ExecutionEngine;
 }
 
 // Forward declarations
@@ -56,6 +57,9 @@ public:
   
   // Set HostBridge for timer checking
   void setHostBridge(havel::compiler::HostBridge *hostBridge);
+  
+  // Set ExecutionEngine for Phase 3 main loop integration
+  void setExecutionEngine(havel::compiler::ExecutionEngine *executionEngine);
   
   std::map<int, bool> evdevKeyState;
 
@@ -235,6 +239,9 @@ private:
   
   // HostBridge for timer checking (single-threaded VM timer queue)
   havel::compiler::HostBridge *hostBridge = nullptr;
+  
+  // ExecutionEngine for Phase 3 main loop (goroutine scheduling)
+  havel::compiler::ExecutionEngine *executionEngine = nullptr;
 
   // Device info
   struct DeviceInfo {

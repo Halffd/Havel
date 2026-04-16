@@ -7,6 +7,7 @@
 #include "core/IO.hpp"
 #include "utils/Logger.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
@@ -420,6 +421,10 @@ void EventListener::setHostBridge(havel::compiler::HostBridge *hb) {
   hostBridge = hb;
 }
 
+void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
+  executionEngine = ee;
+}
+
 void EventListener::EventLoop() {
   // Signal handling is now set up in Start() before the thread spawns
   // No need to call SetupSignalHandling() here
@@ -437,6 +442,13 @@ void EventListener::EventLoop() {
     // This must be done in the main event loop thread to avoid VM reentrancy issues
     if (hostBridge) {
       hostBridge->checkTimers();
+    }
+
+    // Phase 3: Execute one bytecode instruction in next runnable goroutine
+    // This is the core of the concurrent execution model
+    // The ExecutionEngine coordinates with Scheduler and EventQueue
+    if (executionEngine) {
+      executionEngine->executeFrame();
     }
 
     fd_set readfds;

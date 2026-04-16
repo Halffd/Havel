@@ -155,13 +155,32 @@ bool ExecutionEngine::executeFrame() {
 }
 
 bool ExecutionEngine::isDone() const {
-  // TODO: Check if scheduler has any runnable or suspended goroutines
-  return false;  // Not implemented yet
+  // Phase 3: ExecutionEngine is done when no goroutines are runnable or suspended.
+  // This means all spawned goroutines have completed (are in Done state).
+  if (!scheduler_) {
+    return true;  // No scheduler = no goroutines = done
+  }
+  
+  size_t runnable = scheduler_->runnableCount();
+  size_t suspended = scheduler_->suspendedCount();
+  
+  // Done when there are no waiting or ready goroutines
+  return (runnable == 0 && suspended == 0);
 }
 
 void ExecutionEngine::shutdown() {
+  // Phase 3: Graceful shutdown of ExecutionEngine
   running_ = false;
-  // TODO: Clean up any remaining goroutines
+  
+  // Stop the scheduler which will clean up goroutines
+  if (scheduler_) {
+    scheduler_->stop();
+  }
+  
+  // Clear watcher registry to prevent further condition checks
+  if (watcher_registry_) {
+    watcher_registry_.reset();
+  }
 }
 
 // ============================================================================

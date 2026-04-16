@@ -225,6 +225,16 @@ void Havel::initialize(bool isStartup) {
   // Set HostBridge pointer on EventListener for timer checking
   if (io && io->GetEventListener()) {
     io->GetEventListener()->setHostBridge(hostBridge.get());
+    // Phase 3: Set ExecutionEngine for goroutine scheduling in main loop
+    if (executionEngine) {
+      io->GetEventListener()->setExecutionEngine(executionEngine.get());
+      info("ExecutionEngine integrated into EventListener main loop");
+    }
+    // Phase 3: Set ExecutionEngine for goroutine scheduling in main loop
+    if (executionEngine) {
+      io->GetEventListener()->setExecutionEngine(executionEngine.get());
+      info("ExecutionEngine integrated into EventListener main loop");
+    }
   }
 
   info("Bytecode VM and HostBridge initialized successfully");

@@ -29,5 +29,16 @@ for c in "abc" {
   print("'")
 }
 print("")
+// Arrays: iterate over values (sequential, no holes)
+for x in [1,2,3] { print(x) }        // 1,2,3
+
+// Arrays with index: use two variables
+for i, x in [1,2,3] { print(i, x) }  // 0,1; 1,2; 2,3
+
+// Objects: iterate over key-value pairs
+for k, v in {a:1, b:2} { print(k, v) }  // a,1; b,2
+
+// Objects with only keys: use one variable
+for k in {a:1, b:2} { print(k) }         // a, b
 
 print("=== Tests Complete ===")

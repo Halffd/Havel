@@ -22,6 +22,7 @@ enum class EventType : uint8_t {
     TIMER_FIRE = 2,         // Timer/timeout fired
     CHANNEL_SEND = 3,       // Channel message ready
     CHANNEL_RECV = 4,       // Channel receiver ready
+    HOTKEY_TRIGGER = 5,     // Hotkey triggered (data1 = hotkey_id)
     LEGACY_CALLBACK = 255,  // Backward compat: callback in ptr field
     // Future: FILE_READY, NETWORK_RECV, etc.
 };

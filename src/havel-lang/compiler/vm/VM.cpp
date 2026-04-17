@@ -1267,6 +1267,16 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeNull();
   });
 
+  // exit(code) - terminate the program with the given exit code
+  registerHostFunction("exit", 1, [](const std::vector<Value> &args) {
+    int exit_code = 0;
+    if (!args.empty() && args[0].isInt()) {
+      exit_code = static_cast<int>(args[0].asInt());
+    }
+    std::exit(exit_code);
+    return Value::makeNull();  // Never reached
+  });
+
   // Performance: clock_ns() - high-resolution clock in nanoseconds
   registerHostFunction("clock_ns", 0, [](const std::vector<Value> &) {
     const auto now = std::chrono::time_point_cast<std::chrono::nanoseconds>(
@@ -1580,6 +1590,14 @@ void VM::registerDefaultHostFunctions() {
       COMPILER_THROW("async.sleep(ms) expects numeric argument");
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(toInt(args[0])));
+    return Value::makeNull();
+  });
+
+  // app.restart() - restart the application
+  registerHostFunction("app.restart", 0, [this](const std::vector<Value> &) {
+    if (restart_callback_) {
+      restart_callback_();
+    }
     return Value::makeNull();
   });
 
@@ -2206,9 +2224,11 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
   setGlobal("async", Value::makeObjectId(async_obj.id));
 
-  // Process object - registered via system_object_initializer since
-  // process.* functions are registered after default host globals
-  // Will be set up in system_object_initializer if available
+  // app global object with args and restart
+  auto app_obj = heap_.allocateObject();
+  setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+  setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+  setGlobal("app", Value::makeObjectId(app_obj.id));
 
   // Register default window globals
   setGlobal("title", Value::makeNull());
@@ -3195,6 +3215,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
+  // DEBUG: Uncomment to see if is_generator is set
+  std::cerr << "DEBUG: doCall func=" << callee->name << ", is_gen=" << callee->is_generator << std::endl;
   
   if (callee->is_generator) {
     // Create coroutine object for this generator function

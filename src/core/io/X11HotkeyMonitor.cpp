@@ -2,6 +2,7 @@
 
 #include "X11HotkeyMonitor.hpp"
 #include "../IO.hpp"
+#include "../../havel-lang/compiler/runtime/EventQueue.hpp"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <chrono>
@@ -24,27 +25,27 @@ bool X11HotkeyMonitor::Start(Display* disp) {
         warn("X11HotkeyMonitor already running");
         return false;
     }
-    
+
     if (!disp) {
         error("Display is null, cannot start X11 hotkey monitoring");
         return false;
     }
-    
+
     display = disp;
-    
+
     if (!XInitThreads()) {
         error("Failed to initialize X11 threading support");
         return false;
     }
-    
+
     rootWindow = DefaultRootWindow(display);
     XSelectInput(display, rootWindow, KeyPressMask | KeyReleaseMask);
-    
+
     running = true;
     shutdown = false;
-    
+
     monitorThread = std::thread(&X11HotkeyMonitor::MonitorLoop, this);
-    
+
     info("X11HotkeyMonitor started");
     return true;
 }
@@ -53,15 +54,15 @@ void X11HotkeyMonitor::Stop() {
     if (!running.load()) {
         return;
     }
-    
+
     info("Stopping X11HotkeyMonitor...");
     running = false;
     shutdown = true;
-    
+
     if (monitorThread.joinable()) {
         monitorThread.join();
     }
-    
+
     info("X11HotkeyMonitor stopped");
 }
 
@@ -92,9 +93,9 @@ void X11HotkeyMonitor::MonitorLoop() {
     info("X11 hotkey monitoring loop started");
 
     XEvent event;
-    std::vector<std::function<void()>> callbacks;
-    callbacks.reserve(16);
-    
+    std::vector<int> triggeredHotkeyIds;
+    triggeredHotkeyIds.reserve(16);
+
     // Adaptive sleep: start with longer sleep, reduce on activity
     constexpr auto MAX_SLEEP = std::chrono::milliseconds(100);
     constexpr auto MIN_SLEEP = std::chrono::milliseconds(5);
@@ -121,7 +122,7 @@ void X11HotkeyMonitor::MonitorLoop() {
                 } else if (idleTime > std::chrono::seconds(1)) {
                     currentSleep = std::chrono::milliseconds(50);
                 }
-                
+
                 std::this_thread::sleep_for(currentSleep);
                 continue;
             }
@@ -140,16 +141,16 @@ void X11HotkeyMonitor::MonitorLoop() {
 
                 try {
                     // Only process key events
-                    if (event.type != x11::XKeyPress && event.type != x11::XKeyRelease) {
+                    if (event.type != KeyPress && event.type != KeyRelease) {
                         continue;
                     }
 
-                    const bool isDown = (event.type == x11::XKeyPress);
+                    const bool isDown = (event.type == KeyPress);
                     const XKeyEvent* keyEvent = &event.xkey;
 
                     // Clean modifier state
                     const unsigned int cleanedState = CleanMask(keyEvent->state);
-                    callbacks.clear();
+                    triggeredHotkeyIds.clear();
 
                     // Find matching hotkeys
                     {
@@ -175,23 +176,24 @@ void X11HotkeyMonitor::MonitorLoop() {
                                     }
                                 }
 
-                                if (hotkey.callback) {
+                                // Push hotkey event to EventQueue
+                                if (eventQueue_) {
                                     info("X11 hotkey triggered: {} key: {} modifiers: {}",
                                          hotkey.alias, hotkey.key, hotkey.modifiers);
-                                    callbacks.emplace_back(hotkey.callback);
+                                    triggeredHotkeyIds.push_back(id);
                                 }
                             }
                         }
                     }
 
-                    // Execute callbacks outside lock
-                    for (const auto& callback : callbacks) {
-                        try {
-                            callback();
-                        } catch (const std::exception& e) {
-                            error("Error in X11 hotkey callback: {}", e.what());
-                        } catch (...) {
-                            error("Unknown error in X11 hotkey callback");
+                    // Push hotkey events to EventQueue
+                    if (eventQueue_) {
+                        for (int hotkeyId : triggeredHotkeyIds) {
+                            try {
+                                eventQueue_->push(compiler::Event(compiler::EventType::HOTKEY_TRIGGER, hotkeyId));
+                            } catch (const std::exception& e) {
+                                error("Error pushing hotkey event to queue: {}", e.what());
+                            }
                         }
                     }
 
@@ -214,13 +216,13 @@ void X11HotkeyMonitor::MonitorLoop() {
 }
 
 bool X11HotkeyMonitor::IsModifierKeySym(KeySym ks) {
-    return ks == XK_Shift_L || ks == XK_Shift_R || 
-           ks == XK_Control_L || ks == XK_Control_R || 
+    return ks == XK_Shift_L || ks == XK_Shift_R ||
+           ks == XK_Control_L || ks == XK_Control_R ||
            ks == XK_Alt_L || ks == XK_Alt_R ||
-           ks == XK_Meta_L || ks == XK_Meta_R || 
-           ks == XK_Super_L || ks == XK_Super_R || 
+           ks == XK_Meta_L || ks == XK_Meta_R ||
+           ks == XK_Super_L || ks == XK_Super_R ||
            ks == XK_Hyper_L || ks == XK_Hyper_R ||
-           ks == XK_Caps_Lock || ks == XK_Shift_Lock || 
+           ks == XK_Caps_Lock || ks == XK_Shift_Lock ||
            ks == XK_Num_Lock || ks == XK_Scroll_Lock;
 }
 

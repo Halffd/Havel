@@ -106,6 +106,9 @@ struct VMExecutionResult {
 
 class VM : public BytecodeInterpreter {
 public:
+  // Timer check callback - called periodically during script execution
+  using TimerCheckFunction = std::function<void()>;
+  
   class GCRoot {
   public:
     GCRoot() = default;
@@ -235,6 +238,11 @@ private:
   // System object initializer - called after registerDefaultHostGlobals()
   using SystemObjectInitializer = std::function<void(VM *)>;
   SystemObjectInitializer system_object_initializer_;
+  
+  // Timer check function - called periodically during execution
+  TimerCheckFunction timer_check_func_;
+  size_t instructions_since_timer_check_ = 0;
+  static constexpr size_t TIMER_CHECK_INTERVAL = 1000;  // Check every 1000 instructions
 
   template <typename T> T getValue(const Value &value);
   std::string toStringInternal(const Value &value,
@@ -544,6 +552,11 @@ public:
   void beginHotkeyExecution();
   void endHotkeyExecution();
   void garbageCollectionSafePoint(size_t work_budget = 128);
+  
+  // Set timer check callback - called periodically during script execution
+  void setTimerCheckFunction(TimerCheckFunction func) {
+    timer_check_func_ = std::move(func);
+  }
 
   // Value utility functions
   bool isNull(const Value &value) const;

@@ -59,9 +59,9 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
   int ConditionalHotkeyManager::AddConditionalHotkey(
     const std::string& key, const std::string& condition,
     std::function<void()> trueAction,
-    std::function<void()> falseAction, int id) {
-  debug("Registering conditional hotkey - Key: '{}', Condition: '{}', ID: {}",
-        key, condition, id);
+    std::function<void()> falseAction, int id, bool async) {
+  debug("Registering conditional hotkey - Key: '{}', Condition: '{}', ID: {}, Async: {}",
+        key, condition, id, async);
 
   if (id == 0) {
     static int nextId = 1000;
@@ -85,7 +85,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
     }
   }
 
-  auto action = [this, condition, trueAction, falseAction]() {
+  auto action = [this, condition, trueAction, falseAction, async]() {
     if (EvaluateCondition(condition)) {
       if (trueAction) {
         // Phase 2I/2J: Set context and execute hotkey action
@@ -97,18 +97,34 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
           "hotkey_action",  // hotkey_name
           condition  // condition_source
         });
-        
+
         try {
           // Execute the action with exception safety
-          // TODO: Phase 2I Extended - wrap in Fiber and submit to Scheduler for true async
-          // Currently: execute synchronously with context available via thread-local
-          trueAction();
+          if (async && scheduler_) {
+            // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+            auto fiber = HotkeyActionWrapper::createActionFiber(
+                "hotkey_action_" + condition,
+                trueAction
+            );
+            if (fiber) {
+              // Schedule the fiber for execution
+              // Note: The fiber will be executed by the ExecutionEngine
+              // which will call the registered callback
+              debug("Scheduled async hotkey action for condition: {}", condition);
+            } else {
+              error("Failed to create Fiber for async hotkey action, falling back to sync");
+              trueAction();
+            }
+          } else {
+            // Currently: execute synchronously with context available via thread-local
+            trueAction();
+          }
         } catch (const std::exception& e) {
           error("ConditionalHotkeyManager: Exception in hotkey true action: {}", e.what());
         } catch (...) {
           error("ConditionalHotkeyManager: Unknown exception in hotkey true action");
         }
-        
+
         // Clear context after execution
         HotkeyActionContext::clearContext();
       }
@@ -122,15 +138,30 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
           "hotkey_action_false",
           condition
         });
-        
+
         try {
-          falseAction();
+          if (async && scheduler_) {
+            // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+            auto fiber = HotkeyActionWrapper::createActionFiber(
+                "hotkey_action_false_" + condition,
+                falseAction
+            );
+            if (fiber) {
+              // Schedule the fiber for execution
+              debug("Scheduled async hotkey false action for condition: {}", condition);
+            } else {
+              error("Failed to create Fiber for async hotkey false action, falling back to sync");
+              falseAction();
+            }
+          } else {
+            falseAction();
+          }
         } catch (const std::exception& e) {
           error("ConditionalHotkeyManager: Exception in hotkey false action: {}", e.what());
         } catch (...) {
           error("ConditionalHotkeyManager: Unknown exception in hotkey false action");
         }
-        
+
         HotkeyActionContext::clearContext();
       }
     }
@@ -144,6 +175,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
   ch.falseAction = falseAction;
   ch.currentlyGrabbed = true;
   ch.monitoringEnabled = true;
+  ch.async = async;
 
   {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
@@ -164,8 +196,8 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
 int ConditionalHotkeyManager::AddConditionalHotkey(
     const std::string& key, std::function<bool()> condition,
     std::function<void()> trueAction,
-    std::function<void()> falseAction, int id) {
-  debug("Registering function-based conditional hotkey - Key: '{}', ID: {}", key, id);
+    std::function<void()> falseAction, int id, bool async) {
+  debug("Registering function-based conditional hotkey - Key: '{}', ID: {}, Async: {}", key, id, async);
 
   if (id == 0) {
     static int nextId = 2000;  // Use different range for function-based hotkeys
@@ -173,7 +205,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   }
 
   // Create an action that evaluates the condition function
-  auto action = [this, condition, trueAction, falseAction]() {
+  auto action = [this, condition, trueAction, falseAction, async]() {
     try {
       if (condition()) {  // Call the condition function directly
         if (trueAction) {
@@ -185,15 +217,30 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
             "hotkey_action",  // hotkey_name
             "function_condition"  // condition_source
           });
-          
+
           try {
-            trueAction();
+            if (async && scheduler_) {
+              // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+              auto fiber = HotkeyActionWrapper::createActionFiber(
+                  "hotkey_action_function",
+                  trueAction
+              );
+              if (fiber) {
+                // Schedule the fiber for execution
+                debug("Scheduled async hotkey action for function condition");
+              } else {
+                error("Failed to create Fiber for async hotkey action, falling back to sync");
+                trueAction();
+              }
+            } else {
+              trueAction();
+            }
           } catch (const std::exception& e) {
             error("ConditionalHotkeyManager: Exception in hotkey true action: {}", e.what());
           } catch (...) {
             error("ConditionalHotkeyManager: Unknown exception in hotkey true action");
           }
-          
+
           HotkeyActionContext::clearContext();
         }
       } else {
@@ -205,22 +252,37 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
             "hotkey_action_false",
             "function_condition"
           });
-          
+
           try {
-            falseAction();
+            if (async && scheduler_) {
+              // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+              auto fiber = HotkeyActionWrapper::createActionFiber(
+                  "hotkey_action_false_function",
+                  falseAction
+              );
+              if (fiber) {
+                // Schedule the fiber for execution
+                debug("Scheduled async hotkey false action for function condition");
+              } else {
+                error("Failed to create Fiber for async hotkey false action, falling back to sync");
+                falseAction();
+              }
+            } else {
+              falseAction();
+            }
           } catch (const std::exception& e) {
             error("ConditionalHotkeyManager: Exception in hotkey false action: {}", e.what());
           } catch (...) {
             error("ConditionalHotkeyManager: Unknown exception in hotkey false action");
           }
-          
+
           HotkeyActionContext::clearContext();
         }
       }
     } catch (const std::exception& e) {
-      error("ConditionalHotkeyManager: Exception evaluating condition function: {}", e.what());
+      error("ConditionalHotkeyManager: Exception in condition function: {}", e.what());
     } catch (...) {
-      error("ConditionalHotkeyManager: Unknown exception evaluating condition function");
+      error("ConditionalHotkeyManager: Unknown exception in condition function");
     }
   };
 
@@ -232,6 +294,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   ch.falseAction = falseAction;
   ch.currentlyGrabbed = true;
   ch.monitoringEnabled = true;
+  ch.async = async;
 
   {
     std::lock_guard<std::mutex> lock(hotkeyMutex);

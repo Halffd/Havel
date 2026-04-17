@@ -48,7 +48,8 @@ struct ConditionalHotkey {
   bool currentlyGrabbed = false;
   bool lastConditionResult = false;
   bool monitoringEnabled = true;
-  
+  bool async = false;  // Execute action asynchronously via Scheduler/Fiber
+
   // Phase 2F: Reactive watcher integration
   uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
 };
@@ -78,13 +79,15 @@ public:
   int AddConditionalHotkey(const std::string& key, const std::string& condition,
                            std::function<void()> trueAction,
                            std::function<void()> falseAction = nullptr,
-                           int id = 0);
+                           int id = 0,
+                           bool async = false);
 
   // Register a conditional hotkey with function condition
   int AddConditionalHotkey(const std::string& key, std::function<bool()> condition,
                            std::function<void()> trueAction,
                            std::function<void()> falseAction = nullptr,
-                           int id = 0);
+                           int id = 0,
+                           bool async = false);
 
   // Remove a conditional hotkey
   bool RemoveConditionalHotkey(int id);

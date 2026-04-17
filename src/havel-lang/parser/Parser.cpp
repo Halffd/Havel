@@ -349,6 +349,7 @@ int Parser::getBindingPower(TokenType type) const {
     // Equality
     case TokenType::Equals:
     case TokenType::NotEquals:
+    case TokenType::Is:
       return 50;
 
     // Membership (in / not in)
@@ -471,6 +472,7 @@ namespace {
       // Equality
       setBoth(Equals, 50, 50);
       setBoth(NotEquals, 50, 50);
+      setBoth(Is, 50, 50);  // Identity comparison
       
       // Relational
       setBoth(Less, 60, 60);
@@ -1232,6 +1234,12 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
+    }
+
+    case TokenType::Is: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::Is, std::move(right));
     }
 
     case TokenType::In: {
@@ -6122,6 +6130,8 @@ havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
     return TokenType::Equals;
   case ast::BinaryOperator::NotEqual:
     return TokenType::NotEquals;
+  case ast::BinaryOperator::Is:
+    return TokenType::Is;
   case ast::BinaryOperator::Less:
     return TokenType::Less;
   case ast::BinaryOperator::Greater:
@@ -6155,6 +6165,8 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
     return havel::ast::BinaryOperator::Equal;
   case TokenType::NotEquals:
     return havel::ast::BinaryOperator::NotEqual;
+  case TokenType::Is:
+    return havel::ast::BinaryOperator::Is;
   case TokenType::Less:
     return havel::ast::BinaryOperator::Less;
   case TokenType::Greater:

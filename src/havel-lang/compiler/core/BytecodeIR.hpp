@@ -52,6 +52,7 @@ enum class OpCode : uint8_t {
   // Comparison operations
   EQ,
   NEQ,
+  IS,     // Identity comparison (same object reference)
   LT,
   LTE,
   GT,

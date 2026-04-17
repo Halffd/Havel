@@ -277,6 +277,8 @@ std::string opcodeName(OpCode opcode) {
     return "EQ";
   case OpCode::NEQ:
     return "NEQ";
+  case OpCode::IS:
+    return "IS";
   case OpCode::LT:
     return "LT";
   case OpCode::LTE:

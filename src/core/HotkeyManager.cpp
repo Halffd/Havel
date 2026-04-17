@@ -109,6 +109,13 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
 
 void HotkeyManager::setEventQueue(compiler::EventQueue* eq) {
   conditionalManager.setEventQueue(eq);
+
+  // Register handler for hotkey trigger events
+  if (eq) {
+    eq->onEvent(compiler::EventType::HOTKEY_TRIGGER, [this](const compiler::Event& event) {
+      handleHotkeyTrigger(event.data1);
+    });
+  }
 }
 
 HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
@@ -723,6 +730,15 @@ void HotkeyManager::executeHotkey(const HotKey &hotkey) const {
       error("Hotkey '{}' threw unknown exception", hotkeyAlias);
     }
   }).detach();
+}
+
+void HotkeyManager::handleHotkeyTrigger(int hotkeyId) {
+  // Find the hotkey by ID and execute it
+  std::lock_guard<std::mutex> lock(g_registeredHotkeysMutex);
+  auto it = g_registeredHotkeys.find(hotkeyId);
+  if (it != g_registeredHotkeys.end()) {
+    executeHotkey(it->second);
+  }
 }
 
 bool HotkeyManager::HandleInputEvent(const InputEvent &event) {

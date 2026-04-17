@@ -160,6 +160,7 @@ private:
   bool evaluateCombo(const HotKey &hotkey) const;
   bool evaluateWheelCombo(const HotKey &hotkey, int wheelDirection) const;
   void executeHotkey(const HotKey &hotkey) const;
+  void handleHotkeyTrigger(int hotkeyId);
 
   mutable std::shared_mutex stateMutex;
   std::unordered_map<int, ActiveInput> activeInputs;

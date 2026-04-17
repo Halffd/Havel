@@ -4067,25 +4067,95 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   emit(OpCode::OBJECT_GET);
   uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
 
-  // Get result.value
-  emit(OpCode::LOAD_VAR, resultSlot);
-  { uint32_t _sid = addStringConstant("value"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-  emit(OpCode::OBJECT_GET);
-
+  // Iterator returns {first, second, done}:
+  // - Arrays: first=index, second=value
+  // - Objects: first=key, second=value
+  // - Strings: first=index, second=char
+  
   if (multiVar && iterSlots.size() >= 2) {
-    // For multi-variable iteration: first var gets key, second gets value
-    // The iterator returns the key, we need to look up the value from the
-    // stored iterable
-    emit(OpCode::STORE_VAR, iterSlots[0]); // Store key in first var
-
-    // Look up value: stored_iterable[key]
-    emit(OpCode::LOAD_VAR, iterableSlot);   // Load stored iterable
-    emit(OpCode::LOAD_VAR, iterSlots[0]);   // Load key
-    emit(OpCode::OBJECT_GET);               // Get value
-    emit(OpCode::STORE_VAR, iterSlots[1]);  // Store value in second var
-  } else {
-    // Single variable - just store the value (key for objects)
+    // Multi-variable: store first and second directly
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
     emit(OpCode::STORE_VAR, iterSlots[0]);
+    
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_VAR, iterSlots[1]);
+  } else {
+    // Single variable: 
+    // - Arrays/strings/ranges: store second (value/char/element)
+    // - Objects/sets: store first (key/element)
+    // Detection order:
+    // 1. Check "push" (arrays have it) -> use second
+    // 2. Check "upper" (strings have it) -> use second
+    // 3. Check "step" (ranges have it) -> use second
+    // 4. Otherwise (object/set) -> use first
+    
+    // First check if it's an array (has "push")
+    emit(OpCode::LOAD_VAR, iterableSlot);
+    { uint32_t _sid = addStringConstant("push"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    
+    // If push is not null, it's an array - use second
+    uint32_t isArrayJump = emitJump(OpCode::JUMP_IF_NULL);
+    
+    // Has push (array) - get second (value)
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_VAR, iterSlots[0]);
+    
+    // Jump to end
+    uint32_t endJump = emitJump(OpCode::JUMP);
+    
+    // Check if it's a string (has "upper")
+    patchJump(isArrayJump, static_cast<uint32_t>(current_function->instructions.size()));
+    emit(OpCode::LOAD_VAR, iterableSlot);
+    { uint32_t _sid = addStringConstant("upper"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    
+    // If upper is not null, it's a string - use second
+    uint32_t isStringJump = emitJump(OpCode::JUMP_IF_NULL);
+    
+    // Has upper (string) - get second (character)
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_VAR, iterSlots[0]);
+    
+    // Jump to end
+    uint32_t stringEndJump = emitJump(OpCode::JUMP);
+    
+    // Check if it's a range (has "step")
+    patchJump(isStringJump, static_cast<uint32_t>(current_function->instructions.size()));
+    emit(OpCode::LOAD_VAR, iterableSlot);
+    { uint32_t _sid = addStringConstant("step"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    
+    // If step is not null, it's a range - use second
+    uint32_t isRangeJump = emitJump(OpCode::JUMP_IF_NULL);
+    
+    // Has step (range) - get second (value)
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_VAR, iterSlots[0]);
+    
+    // Jump to end
+    uint32_t rangeEndJump = emitJump(OpCode::JUMP);
+    
+    // Otherwise (object/set) - use first (key/element)
+    patchJump(isRangeJump, static_cast<uint32_t>(current_function->instructions.size()));
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_VAR, iterSlots[0]);
+    
+    patchJump(endJump, static_cast<uint32_t>(current_function->instructions.size()));
+    patchJump(stringEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+    patchJump(rangeEndJump, static_cast<uint32_t>(current_function->instructions.size()));
   }
 
   // Execute body

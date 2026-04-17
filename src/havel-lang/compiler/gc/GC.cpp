@@ -220,99 +220,121 @@ EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag,
 Value GCHeap::iteratorNext(uint32_t id) {
   auto *iter = iterator(id);
   if (!iter) {
-    // Return {value: null, done: true}
+    // Return {first: null, second: null, done: true}
     auto resultObj = allocateObject();
     auto *obj = object(resultObj.id);
-    (*obj)["value"] = Value::makeNull();
+    (*obj)["first"] = Value::makeNull();
+    (*obj)["second"] = Value::makeNull();
     (*obj)["done"] = Value::makeBool(true);
     return Value::makeObjectId(resultObj.id);
   }
 
   bool done = false;
-  Value value;
+  Value first;
+  Value second;
 
   // Dispatch based on iterable type
+  // Iterator returns {first, second, done} for consistent multi-variable iteration
   if (iter->iterable.isArrayId()) {
     auto *arr = array(iter->iterable.asArrayId());
     if (!arr || iter->index >= arr->size()) {
       done = true;
-      value = Value::makeNull();
+      first = Value::makeNull();
+      second = Value::makeNull();
     } else {
-      value = (*arr)[iter->index++];
+      first = Value::makeInt(iter->index);
+      second = (*arr)[iter->index++];
     }
   } else if (iter->iterable.isStringValId()) {
     // StringValId iteration - fall back to numeric range (legacy)
-    // New code should use STRING_PROMOTE to convert to StringId first
     if (iter->index >= 256) {
       done = true;
-      value = Value::makeNull();
+      first = Value::makeNull();
+      second = Value::makeNull();
     } else {
-      value = Value::makeInt(iter->index++);
+      first = Value::makeInt(iter->index);
+      second = Value::makeInt(iter->index++);
     }
   } else if (iter->iterable.isStringId()) {
     // StringId iteration - return each character as a new StringId
     auto *s = string(iter->iterable.asStringId());
     if (!s || iter->index >= s->size()) {
       done = true;
-      value = Value::makeNull();
+      first = Value::makeNull();
+      second = Value::makeNull();
     } else {
-      // Allocate a new StringId for the single character
+      first = Value::makeInt(iter->index);
       char c = (*s)[iter->index++];
       auto charStrRef = allocateString(std::string(1, c));
-      value = Value::makeStringId(charStrRef.id);
+      second = Value::makeStringId(charStrRef.id);
     }
   } else if (iter->iterable.isObjectId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
-      value = Value::makeNull();
+      first = Value::makeNull();
+      second = Value::makeNull();
     } else {
-      // For objects, return just the key by default
-      // Multi-variable for loops will look up the value separately
-      auto key = iter->keys[iter->index++];
+      auto key = iter->keys[iter->index];
       auto keyStrRef = allocateString(key);
-      value = Value::makeStringId(keyStrRef.id);
+      first = Value::makeStringId(keyStrRef.id);
+      auto *obj = object(iter->iterable.asObjectId());
+      if (obj) {
+        auto *val = obj->get(key);
+        second = val ? *val : Value::makeNull();
+      } else {
+        second = Value::makeNull();
+      }
+      iter->index++;
     }
   } else if (iter->iterable.isSetId()) {
     if (iter->index >= iter->keys.size()) {
       done = true;
-      value = Value::makeNull();
+      first = Value::makeNull();
+      second = Value::makeNull();
     } else {
-      // Return set element as a string or int
+      // Return set element as first=element, second=element
       auto key = iter->keys[iter->index++];
-      // Try to parse as int, otherwise return as string
       try {
-        value = Value::makeInt(std::stoll(key));
+        first = Value::makeInt(std::stoll(key));
+        second = first;
       } catch (...) {
         auto strRef = allocateString(key);
-        value = Value::makeStringId(strRef.id);
+        first = Value::makeStringId(strRef.id);
+        second = first;
       }
     }
   } else if (iter->iterable.isRangeId()) {
     auto *r = range(iter->iterable.asRangeId());
     if (!r) {
       done = true;
-      value = Value::makeNull();
+      first = Value::makeNull();
+      second = Value::makeNull();
     } else {
       int64_t current = r->start + (iter->index * r->step);
-      if ((r->step > 0 && current >= r->end) ||
-          (r->step < 0 && current <= r->end)) {
+      // Exclusive end: stop when current would exceed end
+      if ((r->step > 0 && current > r->end) ||
+          (r->step < 0 && current < r->end)) {
         done = true;
-        value = Value::makeNull();
+        first = Value::makeNull();
+        second = Value::makeNull();
       } else {
-        value = Value::makeInt(current);
+        first = Value::makeInt(iter->index);
+        second = Value::makeInt(current);
         iter->index++;
       }
     }
   } else {
     // Unknown type, just return done
     done = true;
-    value = Value::makeNull();
+    first = Value::makeNull();
+    second = Value::makeNull();
   }
 
-  // Return {value, done}
+  // Return {first, second, done}
   auto resultObj = allocateObject();
   auto *obj = object(resultObj.id);
-  (*obj)["value"] = value;
+  (*obj)["first"] = first;
+  (*obj)["second"] = second;
   (*obj)["done"] = Value::makeBool(done);
   return Value::makeObjectId(resultObj.id);
 }

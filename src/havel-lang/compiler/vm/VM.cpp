@@ -982,7 +982,7 @@ VM::getPrototypeMethod(const Value &value,
   // Determine type name (try both lowercase and capitalized)
   std::string typeName;
   std::string moduleName;
-  if (value.isStringValId()) {
+  if (value.isStringValId() || value.isStringId()) {
     typeName = "string";
     moduleName = "string";
   } else if (value.isArrayId()) {
@@ -5307,8 +5307,25 @@ void VM::executeInstruction(const Instruction &instruction) {
 
 
 
-    // Handle arrays - look up prototype methods
+    // Handle arrays - look up prototype methods OR numeric indices
     if (object.isArrayId()) {
+      auto *array = heap_.array(object.asArrayId());
+      
+      // Check for numeric index first
+      if (key_value.isInt() && array) {
+        int64_t index = key_value.asInt();
+        if (index < 0) {
+          index = static_cast<int64_t>(array->size()) + index;
+        }
+        if (index >= 0 && static_cast<size_t>(index) < array->size()) {
+          pushStack((*array)[static_cast<size_t>(index)]);
+        } else {
+          pushStack(Value::makeNull());
+        }
+        break;
+      }
+      
+      // Then check for prototype methods
       auto key = keyFromValue(key_value, &heap_, current_chunk);
       if (key) {
         auto method = getPrototypeMethod(object, *key);
@@ -5322,6 +5339,55 @@ void VM::executeInstruction(const Instruction &instruction) {
           }
           pushStack(Value::makeObjectId(boundObj.id));
           break;
+        }
+      }
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    // Handle strings - look up prototype methods
+    if (object.isStringId() || object.isStringValId()) {
+      // Promote StringValId to StringId if needed
+      Value stringVal = object;
+      if (object.isStringValId() && current_chunk) {
+        std::string s = current_chunk->getString(object.asStringValId());
+        auto strRef = heap_.allocateString(s);
+        stringVal = Value::makeStringId(strRef.id);
+      }
+      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      if (key) {
+        auto method = getPrototypeMethod(stringVal, *key);
+        if (method) {
+          auto boundObj = heap_.allocateObject();
+          auto *obj = heap_.object(boundObj.id);
+          if (obj) {
+            (*obj)["fn"] = Value::makeHostFuncId(*method);
+            (*obj)["self"] = stringVal;
+          }
+          pushStack(Value::makeObjectId(boundObj.id));
+          break;
+        }
+      }
+      pushStack(Value::makeNull());
+      break;
+    }
+
+    // Handle ranges - expose "step" property for type detection
+    if (object.isRangeId()) {
+      auto *r = heap_.range(object.asRangeId());
+      if (r) {
+        auto key = keyFromValue(key_value, &heap_, current_chunk);
+        if (key) {
+          if (*key == "step") {
+            pushStack(Value::makeInt(r->step));
+            break;
+          } else if (*key == "start") {
+            pushStack(Value::makeInt(r->start));
+            break;
+          } else if (*key == "end") {
+            pushStack(Value::makeInt(r->end));
+            break;
+          }
         }
       }
       pushStack(Value::makeNull());

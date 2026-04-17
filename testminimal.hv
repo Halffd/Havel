@@ -1,0 +1,4 @@
+fn gen() { yield 1 }
+let g = gen()
+let v = g()
+print(v)

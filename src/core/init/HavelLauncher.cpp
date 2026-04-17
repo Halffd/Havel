@@ -724,6 +724,11 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     bridge->install();
     havel::registerStdLibWithVM(*bridge);
     
+    // Set up timer checks during script execution
+    tempVm.setTimerCheckFunction([bridge]() {
+      bridge->checkTimers();
+    });
+    
     havel::compiler::PipelineOptions options = bridge->options();
     options.compile_unit_name = combinedNames;
     options.vm_override = &tempVm;

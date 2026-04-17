@@ -420,6 +420,9 @@ int Parser::getRightBindingPower(TokenType type) const {
     case TokenType::PowerAssign:
       return 5;  // Right-associative: 10 - 1 = 9, but use lower for safety
 
+    case TokenType::Arrow:
+      return 5;  // Low right binding power for arrow body expressions
+
     case TokenType::Power:
       return 130;  // Right-associative: 135 - 5 = 130
 
@@ -776,6 +779,11 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::Config:
     case TokenType::Devices:
       return makeIdentifier(token);
+
+    case TokenType::Is: {
+      errorAt(token, "'is' cannot start an expression - it must be used as infix operator (e.g., x is y)");
+      return nullptr;
+    }
 
     case TokenType::This: {
       // `this` keyword in expression context
@@ -1557,13 +1565,10 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           std::move(right), std::move(args));
     }
 
-    case TokenType::Arrow: {
+case TokenType::Arrow: {
       // Arrow function: identifier => body
-      // Multi-param case (a, b, c) => body is handled in parseParenthesizedExpression
-      // which returns a LambdaExpression directly, so we only reach here for single-param.
-      // Skip arrow function parsing when inside match expression patterns
+      std::cerr << "DEBUG Arrow: left=" << left->toString() << ", at=" << at().toString() << ", Arrow.type=" << static_cast<int>(TokenType::Arrow) << std::endl;
       if (context.inMatchExpression) {
-        // Return nullptr to stop Pratt parsing and leave => for match parser
         return nullptr;
       }
       if (left->kind != ast::NodeType::Identifier) {
@@ -1571,9 +1576,8 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
         return nullptr;
       }
       auto ident = std::unique_ptr<ast::Identifier>(static_cast<ast::Identifier*>(left.release()));
-      advance(); // consume '=>'
 
-      // Parse body
+      // Parse body - use high rbp to prevent any infix ops after arrow body
       std::unique_ptr<ast::BlockStatement> body;
       if (at().type == TokenType::OpenBrace) {
         body = parseBlockStatement();

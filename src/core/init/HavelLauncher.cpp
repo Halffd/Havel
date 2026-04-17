@@ -161,6 +161,15 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.testDir = argv[++i];
       }
+      // If number on next arg use as timeout for each test
+      if (i + 1 < argc) {
+        try {
+          cfg.testTimeout = std::stoi(argv[i + 1]);
+          i++;        
+        } catch (const std::exception&) {
+          // Not a number, ignore
+        }   
+      }
     } else if (arg == "--lint") {
       cfg.lintOnly = true;
       if (i + 1 < argc) {
@@ -208,6 +217,11 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   } else if (cfg.scriptFiles.empty() && cfg.mode == Mode::DAEMON) {
     // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
+  }
+  // Check for debug flags
+  if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
+    cfg.minimalMode = true;
+    info("Debug.ForceMinimal is set - forcing minimal mode");
   }
   // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
@@ -1069,8 +1083,8 @@ int havel::init::HavelLauncher::runTest(const LaunchConfig &cfg) {
   for (const auto &testFile : testFiles) {
     std::string testName = testFile.substr(testFile.find_last_of('/') + 1);
 
-    // Run test as subprocess with 10 second timeout
-    std::string cmd = "timeout 10 " + selfPath + " --run " + testFile + " 2>&1";
+    // Run test as subprocess 
+    std::string cmd = std::format("timeout {} {} --run {}", cfg.testTimeout, selfPath, testFile);
     FILE *pipe = popen(cmd.c_str(), "r");
     if (!pipe) {
       error("  FAIL {} - failed to run", testName);

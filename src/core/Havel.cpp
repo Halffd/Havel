@@ -252,8 +252,9 @@ void Havel::initialize(bool isStartup) {
   }
   if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
     std::thread([this]() {
-      std::this_thread::sleep_for(std::chrono::seconds(15));
-      info("AutoExit enabled - exiting after 5 seconds");
+      auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+      std::this_thread::sleep_for(std::chrono::seconds(s));
+      debug("AutoExit enabled - exiting after {} seconds", s);
       std::exit(0);
     }).detach();
   }

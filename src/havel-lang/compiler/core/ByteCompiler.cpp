@@ -537,8 +537,6 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   // Phase 3B-3: Detect if this function contains yield expressions
   if (function.body) {
     current_function->is_generator = functionContainsYield(*function.body);
-    std::cerr << "DEBUG: Compiled function " << function.name << ", is_generator=" 
-              << current_function->is_generator << std::endl;
   }
   
   leaveFunction();

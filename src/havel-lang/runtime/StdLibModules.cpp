@@ -19,20 +19,21 @@
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
-void registerMathModule(compiler::VMApi &api);    // MathModule
-void registerStringModule(compiler::VMApi &api);  // StringModule
-void registerArrayModule(compiler::VMApi &api);   // ArrayModule
-void registerObjectModule(compiler::VMApi &api);  // ObjectModule
-void registerTypeModule(compiler::VMApi &api);    // TypeModule
+void registerMathModule(compiler::VMApi &api); // MathModule
+void registerStringModule(compiler::VMApi &api); // StringModule
+void registerArrayModule(compiler::VMApi &api); // ArrayModule
+void registerObjectModule(compiler::VMApi &api); // ObjectModule
+void registerTypeModule(compiler::VMApi &api); // TypeModule
 void registerUtilityModule(compiler::VMApi &api); // UtilityModule
-void registerRegexModule(compiler::VMApi &api);   // RegexModule
+void registerRegexModule(compiler::VMApi &api); // RegexModule
 void registerPhysicsModule(
     compiler::VMApi &api); // PhysicsModule (constants only)
 void registerTimeModule(
     compiler::VMApi &api); // TimeModule (timestamp ops only)
 void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
-void registerFsModule(compiler::VMApi &api);     // FsModule
+void registerFsModule(compiler::VMApi &api); // FsModule
 void registerRandomModule(compiler::VMApi &api); // RandomModule
+void registerLogModule(compiler::VMApi &api);  // LogModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -56,7 +57,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerTimeModule(*api);    // TimeModule (timestamps)
   stdlib::registerHotkeyModule(*api);  // HotkeyModule
   stdlib::registerFsModule(*api);      // FsModule
-  stdlib::registerRandomModule(*api);  // RandomModule
+  stdlib::registerRandomModule(*api); // RandomModule
+  stdlib::registerLogModule(*api);    // LogModule
 
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
@@ -118,6 +120,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("randint");
   bridge.options().host_global_names.insert("choice");
   bridge.options().host_global_names.insert("RAND_MAX");
+  bridge.options().host_global_names.insert("log");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

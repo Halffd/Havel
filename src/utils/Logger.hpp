@@ -37,11 +37,18 @@ public:
     void setLogLevel(Level level);
     void setColoredOutput(bool enabled); // Set if console output should be colored
 
-    void debug(const std::string& message);
-    void info(const std::string& message);
-    void warning(const std::string& message);
-    void error(const std::string& message);
-    void fatal(const std::string& message);
+    // Get current log file path
+    std::string getLogFilePath() const;
+
+    // Get log history (last N entries from current log file)
+    std::vector<std::string> getHistory(size_t maxLines = 100) const;
+
+  void debug(const std::string& message);
+  void info(const std::string& message);
+  void warning(const std::string& message);
+  void error(const std::string& message);
+  void fatal(const std::string& message);
+  void critical(const std::string& message) { fatal(message); }
 
     /**
      * Debug logging with printf-style formatting
@@ -225,5 +232,12 @@ inline void warn(const std::string& format, Args&&... args) {
 }
 inline void warn(const std::string& message) {
     Logger::getInstance().warning(message);
+}
+template<typename... Args>
+inline void critical(const std::string& format, Args&&... args) {
+    Logger::getInstance().fatal(format, std::forward<Args>(args)...);
+}
+inline void critical(const std::string& message) {
+    Logger::getInstance().fatal(message);
 }
 } // namespace havel

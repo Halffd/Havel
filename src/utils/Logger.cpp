@@ -7,6 +7,7 @@
 #include <sstream>
 #include <algorithm>
 #include <atomic>
+#include <deque>
 
 namespace havel {
 
@@ -257,11 +258,42 @@ void Logger::cleanupOldLogs() {
                     }
                 }
             }
-        }
-    } catch (const std::exception& e) {
-        // Fail silently to avoid causing issues if we can't clean up logs
-        // In a real implementation, you might want to log this to a different stream
-    }
 }
+} catch (const std::exception& e) {
+  // Fail silently to avoid causing issues if we can't clean up logs
+  // In a real implementation, you might want to log this to a different stream
+}
+}
+
+std::vector<std::string> Logger::getHistory(size_t maxLines) const {
+std::vector<std::string> history;
+if (pImpl->currentFilename.empty()) {
+  return history;
+}
+
+std::ifstream file(pImpl->currentFilename);
+if (!file) {
+  return history;
+}
+
+// Read all lines into a deque for efficient front removal
+std::deque<std::string> lines;
+std::string line;
+while (std::getline(file, line)) {
+  lines.push_back(line);
+  if (lines.size() > maxLines) {
+    lines.pop_front();
+  }
+}
+
+  // Copy to output vector
+  for (const auto& l : lines) {
+    history.push_back(l);
+  }
+
+  return history;
+}
+
+std::string Logger::getLogFilePath() const { return pImpl->currentFilename; }
 
 } // namespace havel

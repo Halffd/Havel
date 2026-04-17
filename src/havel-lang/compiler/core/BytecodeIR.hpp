@@ -201,10 +201,6 @@ enum class OpCode : uint8_t {
   NOP
 };
 
-struct FunctionObject {
-  uint32_t function_index = 0;
-};
-
 struct ClosureRef {
   uint32_t id = 0;
 };
@@ -216,6 +212,13 @@ struct ArrayRef {
 struct ObjectRef {
   uint32_t id = 0;
   bool sorted = true; // Default to sorted keys
+};
+
+// FunctionObject: represents a function with optional properties
+// Supports fn.prop = value for static state, memoization, etc.
+struct FunctionObject {
+  uint32_t function_index = 0;
+  ObjectRef properties; // User-defined properties attached to the function
 };
 
 struct StringRef {

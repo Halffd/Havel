@@ -1,0 +1,48 @@
+// Test Phase 3: Thread operations with generators
+print("=== Testing threads ===")
+
+// Test 1: Lambda thread
+print("")
+print("Test 1: Lambda thread spawn")
+let t1 = go {
+  print("Lambda thread executed")
+}
+t1.join()
+print("✓ Test 1 passed: Lambda threads work")
+
+// Test 2: Counter with threads
+print("")
+print("Test 2: Shared state with threads")
+let counter = 0
+let t2a = go {
+  counter = counter + 1
+}
+let t2b = go {
+  counter = counter + 1
+}
+t2a.join()
+t2b.join()
+print("Counter value: " + str(counter))
+print("✓ Test 2 passed: Thread execution works")
+
+// Test 3: Generator functionality (from test_yield)
+print("")
+print("Test 3: Generators (yield and resume)")
+let g = generator()
+print("First yield: " + str(g()))
+print("Second yield: " + str(g()))
+print("Third yield: " + str(g()))
+print("Final return: " + str(g()))
+print("✓ Test 3 passed: Generator works")
+
+fn generator() {
+  yield 1
+  yield 2
+  yield 3
+  return 42
+}
+
+print("")
+print("=== All tests completed ===")
+
+

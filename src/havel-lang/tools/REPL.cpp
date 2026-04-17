@@ -9,6 +9,7 @@
 #include "../runtime/StdLibModules.hpp"
 #include "../runtime/HostAPI.hpp"
 #include "../../utils/Logger.hpp"
+#include "../../utils/CrashHandler.hpp"
 #include "../parser/Parser.h"
 #include "../utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
@@ -16,6 +17,8 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
+#include <csignal>
+#include <atomic>
 
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
@@ -23,6 +26,20 @@
 #endif
 
 namespace havel::repl {
+
+// Static member initialization
+std::atomic<bool> REPL::interrupted_{false};
+
+// Signal handler for REPL (not static - declared as friend in header)
+void replSignalHandler(int sig) {
+    if (sig == SIGINT) {
+        REPL::interrupted_.store(true);
+        requestStopAll();
+        std::cout << "\n^C" << std::endl;
+    } else if (sig == SIGQUIT) {
+        panic("SIGQUIT received (Ctrl-\\)", true);
+    }
+}
 
 REPL::REPL(const REPLConfig& config)
   : config_(config) {
@@ -352,33 +369,63 @@ int REPL::run() {
     std::cerr << "Error: REPL not initialized. Call initialize() first." << std::endl;
     return 1;
   }
-  
+
+  setupSignalHandlers();
+
   std::cout << "Havel REPL (Bytecode VM)\n";
-  std::cout << "Type 'help' for commands, 'exit' to quit.\n\n";
-  
+  std::cout << "Type 'help' for commands, 'exit' to quit.\n";
+  std::cout << "Ctrl-C: stop threads/loops, clear input | Ctrl-D: exit | Ctrl-\\: panic\n\n";
+
   accumulatedInput.clear();
   currentLine = 0;
-  
+
   while (true) {
     currentLine++;
-    
-    // Determine prompt
-    std::string prompt = accumulatedInput.empty() 
-      ? config_.prompt 
-      : config_.continuePrompt;
-    
-    // Read input
-    std::string line = readLine(prompt);
-    
-    // Check for EOF
-    if (line.empty() && std::cin.eof()) {
-      std::cout << "\nExiting..." << std::endl;
-      break;
+
+    // Check for interrupt
+    if (interrupted_.load()) {
+      interrupted_.store(false);
+      if (!accumulatedInput.empty()) {
+        std::cout << "^C\nInput cleared. Press Ctrl-D to exit.\n";
+        accumulatedInput.clear();
+        continue;
+      }
+      std::cout << "^C\n";
+      continue;
     }
+
+    // Determine prompt
+    std::string prompt = accumulatedInput.empty()
+        ? config_.prompt
+        : config_.continuePrompt;
     
-    // Trim whitespace
-    line.erase(0, line.find_first_not_of(" \t\n\r"));
-    line.erase(line.find_last_not_of(" \t\n\r") + 1);
+  // Read input
+  std::string line = readLine(prompt);
+
+  // Check for interrupt after read
+  if (interrupted_.load()) {
+    interrupted_.store(false);
+    std::cout << "^C\n";
+    accumulatedInput.clear();
+    continue;
+  }
+
+  // Check for EOF (Ctrl-D)
+  if (line.empty() && std::cin.eof()) {
+    if (accumulatedInput.empty()) {
+      std::cout << "^D\nExiting...\n";
+      break;
+    } else {
+      std::cout << "^D\nInput cleared (press Ctrl-D again to exit).\n";
+      accumulatedInput.clear();
+      std::cin.clear();
+      continue;
+    }
+  }
+
+  // Trim whitespace
+  line.erase(0, line.find_first_not_of(" \t\n\r"));
+  line.erase(line.find_last_not_of(" \t\n\r") + 1);
     
     // Skip empty lines (unless accumulating)
     if (line.empty() && accumulatedInput.empty()) {
@@ -417,12 +464,24 @@ int REPL::run() {
     // Reset for next input
     accumulatedInput.clear();
     
-    if (!success && config_.stopOnError) {
-      break;  // Stop on error
-    }
+  if (!success && config_.stopOnError) {
+    break;  // Stop on error
   }
-  
-  return 0;
+}
+
+return 0;
+}
+
+void REPL::setupSignalHandlers() {
+struct sigaction sa;
+sa.sa_handler = replSignalHandler;
+sigemptyset(&sa.sa_mask);
+sa.sa_flags = 0;
+
+sigaction(SIGINT, &sa, nullptr);
+sigaction(SIGQUIT, &sa, nullptr);
+
+initCrashHandler();
 }
 
 } // namespace havel::repl

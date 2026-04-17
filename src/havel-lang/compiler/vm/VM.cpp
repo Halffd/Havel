@@ -3190,14 +3190,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   const auto *callee = current_chunk->getFunction(function_index);
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
-                             std::to_string(function_index));
+                              std::to_string(function_index));
   }
 
   // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
-  // DEBUG: Log function and is_generator flag
-  spdlog::info("DEBUG: doCall function_index={}, name={}, is_generator={}", 
-               function_index, callee->name, callee->is_generator);
   
   if (callee->is_generator) {
     // Create coroutine object for this generator function
@@ -5122,26 +5119,23 @@ void VM::executeInstruction(const Instruction &instruction) {
       if (array->frozen) {
         COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
-      // Handle negative indices for ARRAY_SET:
-      // Use Python-style wrapping consistent with ARRAY_GET
+      // Handle negative indices for ARRAY_SET
       int64_t idx = *index;
-      if (idx < 0) {
-        idx = static_cast<int64_t>(array->size()) + idx;
-      }
-      // If index is still negative, extend array at the front
       if (idx < 0) {
         size_t shift = static_cast<size_t>(-idx);
         size_t old_size = array->size();
+        // Create a copy of the old data before resize
+        std::vector<Value> old_data(old_size);
+        for (size_t i = 0; i < old_size; i++) {
+          old_data[i] = (*array)[i];
+        }
         array->resize(old_size + shift, Value::makeNull());
-        // Shift existing elements right
-        for (int64_t i = static_cast<int64_t>(old_size) - 1; i >= 0; i--) {
-          (*array)[static_cast<size_t>(i + shift)] = (*array)[static_cast<size_t>(i)];
+        // Shift old data to the right by 'shift' positions
+        for (size_t i = 0; i < old_size; i++) {
+          (*array)[i + shift] = old_data[i];
         }
-        // Fill the new front positions with null
-        for (size_t i = 0; i < shift - 1; i++) {
-          (*array)[i] = Value::makeNull();
-        }
-        idx = 0;
+        (*array)[0] = value;
+        break;
       }
       const auto idx_size = static_cast<size_t>(idx);
       if (idx_size >= array->size()) {
@@ -5212,12 +5206,29 @@ void VM::executeInstruction(const Instruction &instruction) {
     Value key_value = popStack();
     Value object = popStack();
 
-    // Handle function objects - support fn.name, fn.arity, fn.params
+    // Handle function objects - support fn.name, fn.arity, fn.params, fn.prop
     if (object.isFunctionObjId()) {
       uint32_t funcIdx = object.asFunctionObjId();
+      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      
+      // First check for user-defined properties
+      if (key) {
+        auto propIt = function_properties_.find(funcIdx);
+        if (propIt != function_properties_.end()) {
+          auto* props = heap_.object(propIt->second.id);
+          if (props) {
+            auto* val = props->get(*key);
+            if (val) {
+              pushStack(*val);
+              break;
+            }
+          }
+        }
+      }
+      
+      // Then check built-in properties
       if (current_chunk) {
         const auto* func = current_chunk->getFunction(funcIdx);
-        auto key = keyFromValue(key_value, &heap_, current_chunk);
         if (key && func) {
           if (*key == "name") {
             pushStack(Value::makeStringId(heap_.allocateString(func->name).id));
@@ -5418,6 +5429,25 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_') {
       COMPILER_THROW(
           "OBJECT_SET: keys starting with '__' are reserved");
+    }
+
+    // Handle function objects - support fn.prop = value
+    if (object.isFunctionObjId()) {
+      uint32_t funcIdx = object.asFunctionObjId();
+      
+      // Get or create properties object for this function
+      auto& propRef = function_properties_[funcIdx];
+      if (propRef.id == 0) {
+        propRef = heap_.allocateObject(true); // Create sorted object for properties
+      }
+      
+      auto* props = heap_.object(propRef.id);
+      if (!props) {
+        COMPILER_THROW("OBJECT_SET: failed to get function properties object");
+      }
+      props->set(*keyStr, std::move(value));
+      pushStack(object); // Return the function object for chaining
+      break;
     }
 
     if (!object.isObjectId()) {

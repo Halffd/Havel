@@ -1353,6 +1353,11 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
     // Member access
     case TokenType::Dot: {
+      // Special case: if next token is ??, this is not a member access
+      // Let the nullish coalescing handler deal with it
+      if (at(1).type == TokenType::Nullish) {
+        return std::move(left);
+      }
       // Property names can be identifiers or certain keywords
       if (at().type == TokenType::Identifier ||
           at().type == TokenType::And ||
@@ -5836,7 +5841,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseNullishCoalescing() {
-  auto left = parseLogicalOr();
+  // Use postfix parsing for left side so member access, indexing, calls work
+  // E.g., obj.field ?? default, arr[0] ?? default, fn() ?? default
+  auto left = parsePostfixExpression(parsePrimaryExpression());
 
   while (at().type == havel::TokenType::Nullish) {
     auto opTok = at(); // Save operator token location
@@ -6768,8 +6775,20 @@ Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
 std::unique_ptr<havel::ast::Expression>
 Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
 
+  // Special case: if current token is '.' but next is '??', this is not a member access
+  // Let the nullish coalescing handler deal with it
+  if (at().type == havel::TokenType::Dot && at(1).type == havel::TokenType::Nullish) {
+    return std::move(object);
+  }
+
   auto dotTok = at(); // Save token location before consuming
   advance();          // consume '.'
+
+  // Special case: if next token is ??, this is not a member access
+  // Let the nullish coalescing handler deal with it
+  if (at().type == havel::TokenType::Nullish) {
+    return std::move(object);
+  }
 
   // Property names can be identifiers or certain keywords
   // Many keywords should be allowed as property names (e.g., clipboard.in,
@@ -7675,7 +7694,40 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         }
       }
     } else if (at().type == havel::TokenType::Dot) {
-      expr = parseMemberExpression(std::move(expr));
+      // Look ahead: if next token after '.' is an operator, don't parse as member access
+      // This handles cases like expr ?? default where we want ?? to bind properly
+      auto nextAfterDot = at(1).type;
+      bool isOperatorAfterDot = (nextAfterDot == havel::TokenType::Nullish ||
+                                  nextAfterDot == havel::TokenType::Question ||
+                                  nextAfterDot == havel::TokenType::Or ||
+                                  nextAfterDot == havel::TokenType::And ||
+                                  nextAfterDot == havel::TokenType::Equals ||
+                                  nextAfterDot == havel::TokenType::NotEquals ||
+                                  nextAfterDot == havel::TokenType::Less ||
+                                  nextAfterDot == havel::TokenType::Greater ||
+                                  nextAfterDot == havel::TokenType::LessEquals ||
+                                  nextAfterDot == havel::TokenType::GreaterEquals ||
+                                  nextAfterDot == havel::TokenType::Plus ||
+                                  nextAfterDot == havel::TokenType::Minus ||
+                                  nextAfterDot == havel::TokenType::Multiply ||
+                                  nextAfterDot == havel::TokenType::Divide ||
+                                  nextAfterDot == havel::TokenType::OpenParen ||
+                                  nextAfterDot == havel::TokenType::OpenBracket ||
+                                  nextAfterDot == havel::TokenType::Assign ||
+                                  nextAfterDot == havel::TokenType::Semicolon ||
+                                  nextAfterDot == havel::TokenType::NewLine ||
+                                  nextAfterDot == havel::TokenType::Comma ||
+                                  nextAfterDot == havel::TokenType::Colon ||
+                                  nextAfterDot == havel::TokenType::CloseBrace ||
+                                  nextAfterDot == havel::TokenType::CloseParen ||
+                                  nextAfterDot == havel::TokenType::CloseBracket ||
+                                  nextAfterDot == havel::TokenType::Return ||
+                                  nextAfterDot == havel::TokenType::Ret);
+      if (!isOperatorAfterDot) {
+        expr = parseMemberExpression(std::move(expr));
+      } else {
+        break; // Stop parsing postfix, let parent handle the operator
+      }
     } else if (at().type == havel::TokenType::OpenBracket) {
       expr = parseIndexExpression(std::move(expr));
     } else if (at().type == havel::TokenType::OpenBrace) {

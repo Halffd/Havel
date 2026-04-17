@@ -2904,6 +2904,15 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   while (frame_count_ > stop_frame_depth) {
+    // Periodically check for expired timers
+    if (timer_check_func_) {
+      instructions_since_timer_check_++;
+      if (instructions_since_timer_check_ >= TIMER_CHECK_INTERVAL) {
+        timer_check_func_();
+        instructions_since_timer_check_ = 0;
+      }
+    }
+    
     // CRITICAL: Capture ALL frame data by value BEFORE any mutation!
     // doCall() may cause vector reallocation, invalidating all
     // references/indices.

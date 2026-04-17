@@ -379,10 +379,17 @@ void ConcurrencyBridge::checkTimers() {
   
   for (auto &timer : timers_) {
     if (timer.active && timer.next_run <= now) {
-      // Execute the callback
-      // TODO: Execute the callback via VM
-      // For now, print a debug message
-      std::cout << "Timer " << timer.id << " triggered" << std::endl;
+      // Execute the callback via VM if available
+      if (vm_) {
+        try {
+          // Register callback and invoke it
+          CallbackId cbId = vm_->registerCallback(timer.callback);
+          vm_->invokeCallback(cbId, {});
+          vm_->releaseCallback(cbId);
+        } catch (const std::exception &e) {
+          std::cerr << "Error executing timer callback: " << e.what() << std::endl;
+        }
+      }
       
       if (timer.interval_ms > 0) {
         // Interval timer - schedule next run

@@ -45,6 +45,7 @@ private:
     bool buildOnly = false; // Compile to bytecode only
     std::string outputPath; // Output path for --build (-o)
     std::string testDir;   // Directory containing test scripts
+    int testTimeout = 30; // Timeout for each test in seconds
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);

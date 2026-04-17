@@ -1,0 +1,7 @@
+fn test() {
+    return test.val ?? 5
+}
+
+print(test())
+test.val = 10
+print(test())

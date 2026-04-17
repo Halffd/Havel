@@ -1,0 +1,20 @@
+fn test() {
+    print("hello")
+}
+
+fn counter() {
+    if !counter.count {
+        counter.count = 0
+    }
+    counter.count = counter.count + 1
+    print("called " + counter.count + " times")
+}
+
+test.counter = 0
+print(test.counter)
+
+counter()
+counter()
+counter()
+
+print(test.counter)

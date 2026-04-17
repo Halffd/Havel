@@ -58,6 +58,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"false", TokenType::False},
     {"null", TokenType::Null},
     {"nil", TokenType::Null}, // nil as alias for null
+    {"is", TokenType::Is}, // identity comparison
     {"send", TokenType::Identifier},
     {"clipboard", TokenType::Identifier}, // Built-in module
     {"text", TokenType::Identifier},      // Built-in module

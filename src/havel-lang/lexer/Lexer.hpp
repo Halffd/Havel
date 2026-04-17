@@ -108,6 +108,7 @@ enum class TokenType {
   MinusMinus, // Increment/Decrement
   Equals,
   NotEquals,
+  Is,         // is - identity comparison
   Less,
   Greater,
   LessEquals,

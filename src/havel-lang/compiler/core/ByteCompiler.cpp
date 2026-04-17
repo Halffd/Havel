@@ -40,6 +40,8 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::EQ;
   case ast::BinaryOperator::NotEqual:
     return OpCode::NEQ;
+  case ast::BinaryOperator::Is:
+    return OpCode::IS;
   case ast::BinaryOperator::Less:
     return OpCode::LT;
   case ast::BinaryOperator::LessEqual:
@@ -535,6 +537,8 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   // Phase 3B-3: Detect if this function contains yield expressions
   if (function.body) {
     current_function->is_generator = functionContainsYield(*function.body);
+    std::cerr << "DEBUG: Compiled function " << function.name << ", is_generator=" 
+              << current_function->is_generator << std::endl;
   }
   
   leaveFunction();
@@ -5757,6 +5761,15 @@ bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
       const auto &wait = static_cast<const ast::WaitStatement &>(stmt);
       return wait.condition && expressionContainsYield(*wait.condition);
     }
+    
+    // Phase 3B-3: FunctionDeclaration inside generators should recursively check if nested function contains yield
+    // Note: We check if the IMMEDIATE parent function contains yield, not nested ones
+    // Nested functions are compiled separately and get their own is_generator flag
+    case ast::NodeType::FunctionDeclaration:
+    case ast::NodeType::ClassDeclaration:
+    case ast::NodeType::EnumDeclaration:
+      // These don't make the parent a generator - each function/class has its own compilation
+      return false;
     
     default:
       return false;

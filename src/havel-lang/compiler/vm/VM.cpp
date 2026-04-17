@@ -3104,6 +3104,17 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 void VM::doCall(Value callee_value, std::vector<Value> args,
                 bool advance_caller_ip) {
 
+  // LOG FUNCTION ENTRY
+  std::cerr << "DEBUG: doCall ENTRY: ";
+  if (callee_value.isNull()) std::cerr << "null";
+  else if (callee_value.isInt()) std::cerr << "int(" << callee_value.asInt() << ")";
+  else if (callee_value.isFunctionObjId()) std::cerr << "FunctionObjId()";
+  else if (callee_value.isClosureId()) std::cerr << "ClosureId()";
+  else if (callee_value.isCoroutineId()) std::cerr << "CoroutineId(" << callee_value.asCoroutineId() << ")";
+  else if (callee_value.isHostFuncId()) std::cerr << "HostFuncId()";
+  else std::cerr << "???";
+  std::cerr << ", arg_count=" << args.size() << std::endl;
+
   // Handle host function call directly
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
@@ -3134,7 +3145,20 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   }
 
   // Handle coroutine resume
+  std::cerr << "DEBUG: Checking callee_value for coroutine: isCoroutineId=" << callee_value.isCoroutineId() 
+            << ", isFunctionObjId=" << callee_value.isFunctionObjId() 
+            << ", isClosureId=" << callee_value.isClosureId()
+            << ", isInt=" << callee_value.isInt();
+  if (callee_value.isInt()) {
+    std::cerr << ", int_value=" << callee_value.asInt();
+  }
   if (callee_value.isCoroutineId()) {
+    std::cerr << ", coroutine_id=" << callee_value.asCoroutineId();
+  }
+  std::cerr << ", frame_count=" << frame_count_ << std::endl;
+  
+  if (callee_value.isCoroutineId()) {
+    std::cerr << "DEBUG: RESUMING COROUTINE" << std::endl;
     uint32_t coId = callee_value.asCoroutineId();
     auto *co = heap_.coroutine(coId);
     if (!co) {
@@ -3219,6 +3243,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   std::cerr << "DEBUG: doCall func=" << callee->name << ", is_gen=" << callee->is_generator << std::endl;
   
   if (callee->is_generator) {
+    std::cerr << "DEBUG: GENERATOR DETECTED! Creating coroutine..." << std::endl;
     // Create coroutine object for this generator function
     uint32_t coId = heap_.allocateCoroutine(function_index, 0);
     auto *co = heap_.coroutine(coId);
@@ -3238,7 +3263,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       }
     }
 
-    pushStack(Value::makeCoroutineId(coId));
+    Value coroutineValue = Value::makeCoroutineId(coId);
+    std::cerr << "DEBUG: Created coroutineId=" << coId << ", isCoroutineId=" << coroutineValue.isCoroutineId() << std::endl;
+    pushStack(coroutineValue);
+    std::cerr << "DEBUG: Pushed coroutineId to stack, returning from doCall" << std::endl;
     return;
   }
 
@@ -3646,6 +3674,9 @@ void VM::execBinaryOp(const Instruction &instruction) {
     case OpCode::NEQ:
       result = !(isNull(left) && isNull(right));
       break;
+    case OpCode::IS:
+      result = isNull(left) && isNull(right);
+      break;
     case OpCode::LT:
     case OpCode::LTE:
     case OpCode::GT:
@@ -3671,6 +3702,38 @@ void VM::execBinaryOp(const Instruction &instruction) {
   if (instruction.opcode == OpCode::EQ || instruction.opcode == OpCode::NEQ) {
     const bool equal = valuesEqualDeep(left, right);
     pushStack(instruction.opcode == OpCode::EQ ? equal : !equal);
+    return;
+  }
+
+  // Identity comparison - check if same object reference
+  if (instruction.opcode == OpCode::IS) {
+    bool identical = false;
+    if (left.isInt() && right.isInt()) {
+      identical = left.asInt() == right.asInt();
+    } else if (left.isDouble() && right.isDouble()) {
+      identical = left.asDouble() == right.asDouble();
+    } else if (left.isBool() && right.isBool()) {
+      identical = left.asBool() == right.asBool();
+    } else if (left.isNull() && right.isNull()) {
+      identical = true;
+    } else if (left.isStringValId() && right.isStringValId()) {
+      identical = left.asStringValId() == right.asStringValId();
+    } else if (left.isStringId() && right.isStringId()) {
+      identical = left.asStringId() == right.asStringId();
+    } else if (left.isArrayId() && right.isArrayId()) {
+      identical = left.asArrayId() == right.asArrayId();
+    } else if (left.isObjectId() && right.isObjectId()) {
+      identical = left.asObjectId() == right.asObjectId();
+    } else if (left.isRangeId() && right.isRangeId()) {
+      identical = left.asRangeId() == right.asRangeId();
+    } else if (left.isClosureId() && right.isClosureId()) {
+      identical = left.asClosureId() == right.asClosureId();
+    } else if (left.isFunctionObjId() && right.isFunctionObjId()) {
+      identical = left.asFunctionObjId() == right.asFunctionObjId();
+    } else if (left.isHostFuncId() && right.isHostFuncId()) {
+      identical = left.asHostFuncId() == right.asHostFuncId();
+    }
+    pushStack(Value::makeBool(identical));
     return;
   }
 
@@ -4355,6 +4418,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::POW:
   case OpCode::EQ:
   case OpCode::NEQ:
+  case OpCode::IS:
   case OpCode::LT:
   case OpCode::LTE:
   case OpCode::GT:
@@ -6302,27 +6366,47 @@ void VM::executeInstruction(const Instruction &instruction) {
   // ============================================================================
 
   case OpCode::YIELD: {
-    // Phase 3B-2: Yield from fiber (with optional value)
-    //
-    // In the Phase 3 fiber-based execution model:
-    // - YIELD is a checkpoint, not a return
-    // - The yielded value stays on the stack for the next resumption
-    // - Execution continues in the same frame on next goroutine iteration
-    // - ExecutionEngine will detect this as a normal yield and reschedule
-    //
-    // Execution flow:
-    // 1. Pop yielded value (consumed by caller via next instruction)
-    // 2. Value remains accessible (not part of frame state)
-    // 3. ExecutionEngine calls saveFiberState() to persist state
-    // 4. Goroutine returned to runnable queue via handleYield()
-    // 5. When resumed, execution continues at next instruction
+    // Phase 3B-2: Suspend a coroutine on yield
+    Value yield_value = Value::makeNull();
+    if (!stack.empty()) {
+      yield_value = popStack();
+    }
     
-    Value yield_value = popStack();
-    // Push value back so caller can receive the yielded value via next instruction
+    std::cerr << "DEBUG: YIELD opcode, value=" << (yield_value.isInt() ? std::to_string(yield_value.asInt()) : "(non-int)") << std::endl;
+    
+    if (current_coroutine_id_ != UINT32_MAX) {
+      auto *co = heap_.coroutine(current_coroutine_id_);
+      if (co && frame_count_ > 0) {
+        // Save coroutine state
+        co->ip = currentFrame().ip + 1;  // Next instruction
+        co->locals = locals;
+        co->state = GCHeap::Coroutine::Waiting;
+        
+        std::cerr << "DEBUG: YIELD suspended coroutine=" << current_coroutine_id_ << std::endl;
+        
+        // Pop the coroutine's frame
+        auto finished = frame_arena_[frame_count_ - 1];
+        frame_count_--;
+        
+        closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                           static_cast<uint32_t>(locals.size()));
+        if (locals.size() >= finished.locals_base) {
+          locals.resize(finished.locals_base);
+        }
+        
+        // Restore caller's state
+        frame_count_ = co->saved_frame_count;
+        locals = co->saved_locals;
+        current_coroutine_id_ = UINT32_MAX;
+        
+        // Push yielded value to caller's stack
+        pushStack(yield_value);
+        return;
+      }
+    }
+    
+    // Non-coroutine yield
     pushStack(yield_value);
-    
-    // No special return needed - executeOneStep() will return Yield(nullptr) by default
-    // The instruction completed normally, execution will continue on next iteration
     break;
   }
 

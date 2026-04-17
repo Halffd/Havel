@@ -3104,17 +3104,6 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 void VM::doCall(Value callee_value, std::vector<Value> args,
                 bool advance_caller_ip) {
 
-  // LOG FUNCTION ENTRY
-  std::cerr << "DEBUG: doCall ENTRY: ";
-  if (callee_value.isNull()) std::cerr << "null";
-  else if (callee_value.isInt()) std::cerr << "int(" << callee_value.asInt() << ")";
-  else if (callee_value.isFunctionObjId()) std::cerr << "FunctionObjId()";
-  else if (callee_value.isClosureId()) std::cerr << "ClosureId()";
-  else if (callee_value.isCoroutineId()) std::cerr << "CoroutineId(" << callee_value.asCoroutineId() << ")";
-  else if (callee_value.isHostFuncId()) std::cerr << "HostFuncId()";
-  else std::cerr << "???";
-  std::cerr << ", arg_count=" << args.size() << std::endl;
-
   // Handle host function call directly
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
@@ -3145,20 +3134,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   }
 
   // Handle coroutine resume
-  std::cerr << "DEBUG: Checking callee_value for coroutine: isCoroutineId=" << callee_value.isCoroutineId() 
-            << ", isFunctionObjId=" << callee_value.isFunctionObjId() 
-            << ", isClosureId=" << callee_value.isClosureId()
-            << ", isInt=" << callee_value.isInt();
-  if (callee_value.isInt()) {
-    std::cerr << ", int_value=" << callee_value.asInt();
-  }
   if (callee_value.isCoroutineId()) {
-    std::cerr << ", coroutine_id=" << callee_value.asCoroutineId();
-  }
-  std::cerr << ", frame_count=" << frame_count_ << std::endl;
-  
-  if (callee_value.isCoroutineId()) {
-    std::cerr << "DEBUG: RESUMING COROUTINE" << std::endl;
     uint32_t coId = callee_value.asCoroutineId();
     auto *co = heap_.coroutine(coId);
     if (!co) {
@@ -3239,11 +3215,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
-  // DEBUG: Uncomment to see if is_generator is set
-  std::cerr << "DEBUG: doCall func=" << callee->name << ", is_gen=" << callee->is_generator << std::endl;
-  
   if (callee->is_generator) {
-    std::cerr << "DEBUG: GENERATOR DETECTED! Creating coroutine..." << std::endl;
     // Create coroutine object for this generator function
     uint32_t coId = heap_.allocateCoroutine(function_index, 0);
     auto *co = heap_.coroutine(coId);
@@ -3264,9 +3236,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     }
 
     Value coroutineValue = Value::makeCoroutineId(coId);
-    std::cerr << "DEBUG: Created coroutineId=" << coId << ", isCoroutineId=" << coroutineValue.isCoroutineId() << std::endl;
     pushStack(coroutineValue);
-    std::cerr << "DEBUG: Pushed coroutineId to stack, returning from doCall" << std::endl;
     return;
   }
 
@@ -4830,7 +4800,16 @@ void VM::executeInstruction(const Instruction &instruction) {
       else if (ret.isFunctionObjId()) typeInfo = "function_obj_id";
       else if (ret.isObjectId()) typeInfo = "object_id";
     }
+    
+    // If returning from a coroutine, we need special handling for IP
+    uint32_t co_id_before_return = current_coroutine_id_;
     this->doReturn();
+    
+    // If doReturn() just exited a coroutine, increment the caller's IP
+    // because frame_count changed and won't auto-increment
+    if (co_id_before_return != 0 && frame_count_ > 0) {
+      frame_arena_[frame_count_ - 1].ip++;
+    }
     break;
   }
 
@@ -6372,8 +6351,6 @@ void VM::executeInstruction(const Instruction &instruction) {
       yield_value = popStack();
     }
     
-    std::cerr << "DEBUG: YIELD opcode, value=" << (yield_value.isInt() ? std::to_string(yield_value.asInt()) : "(non-int)") << std::endl;
-    
     if (current_coroutine_id_ != UINT32_MAX) {
       auto *co = heap_.coroutine(current_coroutine_id_);
       if (co && frame_count_ > 0) {
@@ -6381,8 +6358,6 @@ void VM::executeInstruction(const Instruction &instruction) {
         co->ip = currentFrame().ip + 1;  // Next instruction
         co->locals = locals;
         co->state = GCHeap::Coroutine::Waiting;
-        
-        std::cerr << "DEBUG: YIELD suspended coroutine=" << current_coroutine_id_ << std::endl;
         
         // Pop the coroutine's frame
         auto finished = frame_arena_[frame_count_ - 1];
@@ -6397,10 +6372,18 @@ void VM::executeInstruction(const Instruction &instruction) {
         // Restore caller's state
         frame_count_ = co->saved_frame_count;
         locals = co->saved_locals;
+        uint32_t coId = current_coroutine_id_;
         current_coroutine_id_ = UINT32_MAX;
         
         // Push yielded value to caller's stack
         pushStack(yield_value);
+        
+        // Increment the caller's IP since we popped the coroutine frame
+        // The normal IP increment doesn't happen when frame_count changes
+        if (frame_count_ > 0) {
+          frame_arena_[frame_count_ - 1].ip++;
+        }
+        
         return;
       }
     }

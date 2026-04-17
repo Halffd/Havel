@@ -2165,10 +2165,43 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::OBJECT_SET);
       }
     }
-    break;
-  }
+      break;
+    }
 
-  case ast::NodeType::MatchExpression: {
+    case ast::NodeType::IfExpression: {
+      const auto &ifExpr = static_cast<const ast::IfExpression &>(expression);
+
+      // Compile condition
+      compileExpression(*ifExpr.condition);
+
+      // Jump to else branch if false
+      uint32_t elseJump = emitJump(OpCode::JUMP_IF_FALSE);
+
+      // Compile then branch
+      compileExpression(*ifExpr.thenBranch);
+
+      // Jump over else branch
+      uint32_t endJump = emitJump(OpCode::JUMP);
+
+      // Patch else jump
+      uint32_t elseTarget = static_cast<uint32_t>(current_function->instructions.size());
+      patchJump(elseJump, elseTarget);
+
+      // Compile else branch (or push null if no else)
+      if (ifExpr.elseBranch) {
+        compileExpression(*ifExpr.elseBranch);
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      }
+
+      // Patch end jump
+      uint32_t endTarget = static_cast<uint32_t>(current_function->instructions.size());
+      patchJump(endJump, endTarget);
+
+      break;
+    }
+
+    case ast::NodeType::MatchExpression: {
     const auto &match = static_cast<const ast::MatchExpression &>(expression);
 
     // Compile all discriminants and store them in temp variables

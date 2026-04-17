@@ -141,11 +141,11 @@ void X11HotkeyMonitor::MonitorLoop() {
 
                 try {
                     // Only process key events
-                    if (event.type != KeyPress && event.type != KeyRelease) {
+                    if (event.type != x11::XKeyPress && event.type != x11::XKeyRelease) {
                         continue;
                     }
 
-                    const bool isDown = (event.type == KeyPress);
+                    const bool isDown = (event.type == x11::XKeyPress);
                     const XKeyEvent* keyEvent = &event.xkey;
 
                     // Clean modifier state

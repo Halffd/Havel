@@ -36,69 +36,71 @@ protected:
         case ast::NodeType::NodeT: \
           return visit##NodeT(static_cast<ast::NodeT&>(node))
 
-      VISIT_CASE(Program);
-      VISIT_CASE(Identifier);
-      VISIT_CASE(BinaryExpression);
-      VISIT_CASE(UnaryExpression);
-      VISIT_CASE(CallExpression);
-      VISIT_CASE(AssignmentExpression);
-      VISIT_CASE(MemberExpression);
-      VISIT_CASE(IndexExpression);
-      VISIT_CASE(LambdaExpression);
-      VISIT_CASE(ArrayLiteral);
-      VISIT_CASE(ObjectLiteral);
-      VISIT_CASE(TernaryExpression);
-      VISIT_CASE(UpdateExpression);
-      VISIT_CASE(AwaitExpression);
-      VISIT_CASE(SpreadExpression);
-      VISIT_CASE(RangeExpression);
-      VISIT_CASE(PipelineExpression);
-      VISIT_CASE(InterpolatedStringExpression);
-      VISIT_CASE(FunctionDeclaration);
-      VISIT_CASE(ExpressionStatement);
-      VISIT_CASE(LetDeclaration);
-      VISIT_CASE(IfStatement);
-      VISIT_CASE(WhileStatement);
-      VISIT_CASE(DoWhileStatement);
-      VISIT_CASE(ForStatement);
-      VISIT_CASE(LoopStatement);
-      VISIT_CASE(ReturnStatement);
-      VISIT_CASE(BlockStatement);
-      VISIT_CASE(TryExpression);
-      VISIT_CASE(ThrowStatement);
-      VISIT_CASE(AtExpression);
-      VISIT_CASE(AtAtExpression);
-      // VISIT_CASE(WhenBlock);  // Not in AST.h NodeType enum
-      VISIT_CASE(ModeBlock);
-      VISIT_CASE(HotkeyBinding);
-      VISIT_CASE(HotkeyExpression);
-      VISIT_CASE(ConditionalHotkey);
-      VISIT_CASE(InputStatement);
-      VISIT_CASE(UseStatement);
-      VISIT_CASE(ExportStatement);
-      VISIT_CASE(ArrayPattern);
-      VISIT_CASE(ObjectPattern);
+VISIT_CASE(Program);
+    VISIT_CASE(Identifier);
+    VISIT_CASE(BinaryExpression);
+    VISIT_CASE(UnaryExpression);
+    VISIT_CASE(CallExpression);
+    VISIT_CASE(AssignmentExpression);
+    VISIT_CASE(MultipleAssignment);
+    VISIT_CASE(MemberExpression);
+    VISIT_CASE(IndexExpression);
+    VISIT_CASE(LambdaExpression);
+    VISIT_CASE(ArrayLiteral);
+    VISIT_CASE(ObjectLiteral);
+    VISIT_CASE(TernaryExpression);
+    VISIT_CASE(UpdateExpression);
+    VISIT_CASE(AwaitExpression);
+    VISIT_CASE(SpreadExpression);
+    VISIT_CASE(RangeExpression);
+    VISIT_CASE(PipelineExpression);
+    VISIT_CASE(InterpolatedStringExpression);
+    VISIT_CASE(FunctionDeclaration);
+    VISIT_CASE(ExpressionStatement);
+    VISIT_CASE(LetDeclaration);
+    VISIT_CASE(IfStatement);
+    VISIT_CASE(WhileStatement);
+    VISIT_CASE(DoWhileStatement);
+    VISIT_CASE(ForStatement);
+    VISIT_CASE(LoopStatement);
+    VISIT_CASE(ReturnStatement);
+    VISIT_CASE(BlockStatement);
+    VISIT_CASE(TryExpression);
+    VISIT_CASE(ThrowStatement);
+    VISIT_CASE(AtExpression);
+    VISIT_CASE(AtAtExpression);
+    // VISIT_CASE(WhenBlock); // Not in AST.h NodeType enum
+    VISIT_CASE(ModeBlock);
+    VISIT_CASE(HotkeyBinding);
+    VISIT_CASE(HotkeyExpression);
+    VISIT_CASE(ConditionalHotkey);
+    VISIT_CASE(InputStatement);
+    VISIT_CASE(UseStatement);
+    VISIT_CASE(ExportStatement);
+    VISIT_CASE(ArrayPattern);
+    VISIT_CASE(ObjectPattern);
 
-      #undef VISIT_CASE
+#undef VISIT_CASE
 
-      default:
-        return visitDefault(node);
-    }
-  }
+default:
+    return visitDefault(node);
+}
+}
 
-  ReturnType dispatch(const ast::ASTNode& node) {
-    switch (node.kind) {
-      #define VISIT_CASE(NodeT) \
-        case ast::NodeType::NodeT: \
-          return visit##NodeT(static_cast<const ast::NodeT&>(node))
+ReturnType dispatch(const ast::ASTNode& node) {
+switch (node.kind) {
+#define VISIT_CASE(NodeT) \
+case ast::NodeType::NodeT: \
+return visit##NodeT(static_cast<const ast::NodeT&>(node))
 
-      VISIT_CASE(Program);
-      VISIT_CASE(Identifier);
-      VISIT_CASE(BinaryExpression);
-      VISIT_CASE(UnaryExpression);
-      VISIT_CASE(CallExpression);
-      VISIT_CASE(AssignmentExpression);
-      VISIT_CASE(MemberExpression);
+VISIT_CASE(Program);
+VISIT_CASE(Identifier);
+VISIT_CASE(BinaryExpression);
+VISIT_CASE(UnaryExpression);
+VISIT_CASE(CallExpression);
+VISIT_CASE(AssignmentExpression);
+VISIT_CASE(MultipleAssignment);
+VISIT_CASE(MemberExpression);
       VISIT_CASE(IndexExpression);
       VISIT_CASE(LambdaExpression);
       VISIT_CASE(ArrayLiteral);
@@ -171,8 +173,9 @@ protected:
   DECLARE_VISIT(BinaryExpression)
   DECLARE_VISIT(UnaryExpression)
   DECLARE_VISIT(CallExpression)
-  DECLARE_VISIT(AssignmentExpression)
-  DECLARE_VISIT(MemberExpression)
+DECLARE_VISIT(AssignmentExpression)
+DECLARE_VISIT(MultipleAssignment)
+DECLARE_VISIT(MemberExpression)
   DECLARE_VISIT(IndexExpression)
   DECLARE_VISIT(LambdaExpression)
   DECLARE_VISIT(ArrayLiteral)

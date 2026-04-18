@@ -63,9 +63,10 @@ enum class NodeType {
   IfStatement,          // if condition { ... } else { ... }
   IfExpression,         // if condition { expr } else { expr } - returns value
   TernaryExpression,    // condition ? trueValue : falseValue
-  RangeExpression,      // 0..10
-  AssignmentExpression, // identifier = value
-  CastExpression,       // expr as Type
+    RangeExpression, // 0..10
+    AssignmentExpression, // identifier = value
+    MultipleAssignment, // a, b = value (comma-separated targets)
+    CastExpression, // expr as Type
   ReturnStatement,      // return value;
   WhileStatement,       // while condition { ... }
   ForStatement,         // for i in range { ... }
@@ -2737,7 +2738,32 @@ struct AssignmentExpression : public Expression {
            (value ? value->toString() : "nullptr") + "}";
   }
 
-  void accept(ASTVisitor &visitor) const override;
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Multiple Assignment: a, b, c = expr
+// Each target gets the same value (or tuple-unpacking if value is tuple)
+struct MultipleAssignment : public Expression {
+    std::vector<std::unique_ptr<Expression>> targets;
+    std::unique_ptr<Expression> value;
+
+    MultipleAssignment(std::vector<std::unique_ptr<Expression>> t,
+                       std::unique_ptr<Expression> v)
+        : targets(std::move(t)), value(std::move(v)) {
+        kind = NodeType::MultipleAssignment;
+    }
+
+    std::string toString() const override {
+        std::string result = "MultipleAssignment{";
+        for (size_t i = 0; i < targets.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += targets[i] ? targets[i]->toString() : "nullptr";
+        }
+        result += " = " + (value ? value->toString() : "nullptr") + "}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
 };
 
 // Cast Expression: expr as Type
@@ -3016,9 +3042,10 @@ public:
   virtual void visitAtExpression(const AtExpression &node) = 0;
   virtual void visitAtAtExpression(const AtAtExpression &node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
-  virtual void visitRangeExpression(const RangeExpression &node) = 0;
-  virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
-  virtual void visitCastExpression(const CastExpression &node) = 0;
+virtual void visitRangeExpression(const RangeExpression &node) = 0;
+    virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
+    virtual void visitMultipleAssignment(const MultipleAssignment &node) = 0;
+    virtual void visitCastExpression(const CastExpression &node) = 0;
   virtual void visitMatchExpression(const MatchExpression &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
   virtual void visitDelStatement(const DelStatement &node) = 0;
@@ -3300,7 +3327,11 @@ inline void RangeExpression::accept(ASTVisitor &visitor) const {
 }
 
 inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
-  visitor.visitAssignmentExpression(*this);
+visitor.visitAssignmentExpression(*this);
+}
+
+inline void MultipleAssignment::accept(ASTVisitor &visitor) const {
+visitor.visitMultipleAssignment(*this);
 }
 
 inline void CastExpression::accept(ASTVisitor &visitor) const {

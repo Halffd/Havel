@@ -1,7 +1,6 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
-#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/Support/TargetSelect.h>
@@ -14,8 +13,7 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Transforms/Utils/Cloning.h>
-#include <llvm/Transforms/Scalar.h>
-#include <llvm/Transforms/IPO.h>
+#include <llvm/Passes/PassBuilder.h>
 
 #include "BytecodeOrcJIT.h"
 #include <cstring>
@@ -82,6 +80,11 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
     frame->root_count = 0;
 }
 
+void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
+    std::cerr << "[JIT] Deoptimizing in " << func << " for types: 0x" 
+              << std::hex << l << " op 0x" << r << std::dec << std::endl;
+}
+
 } // extern "C"
 
 // ============================================================================
@@ -99,6 +102,7 @@ void BytecodeOrcJIT::InitializeLLVM() {
 
 BytecodeOrcJIT::BytecodeOrcJIT() {
     InitializeLLVM();
+    initTargetMachine();
 
     auto jit_or_err = LLJITBuilder().create();
     if (!jit_or_err) {
@@ -122,6 +126,7 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
     addSym("havel_gc_write_barrier",   reinterpret_cast<void*>(&havel_gc_write_barrier));
     addSym("havel_gc_register_roots",  reinterpret_cast<void*>(&havel_gc_register_roots));
     addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_roots));
+    addSym("havel_deoptimize",         reinterpret_cast<void*>(&havel_deoptimize));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         llvm::consumeError(std::move(err));
@@ -130,9 +135,25 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
 
 BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 
+void BytecodeOrcJIT::initTargetMachine() {
+    auto target_triple = llvm::sys::getDefaultTargetTriple();
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
+    if (target) {
+        llvm::TargetOptions opt;
+        target_machine_.reset(target->createTargetMachine(
+            target_triple, "generic", "", opt, llvm::Reloc::PIC_));
+    }
+}
+
 void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     auto context = std::make_unique<llvm::LLVMContext>();
     auto module  = std::make_unique<llvm::Module>(func.name, *context);
+
+    if (target_machine_) {
+        module->setDataLayout(target_machine_->createDataLayout());
+        module->setTargetTriple(target_machine_->getTargetTriple().getTriple());
+    }
 
     translate(func, *module);
     runOptimizations(*module);
@@ -142,35 +163,28 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
         module->print(llvm::errs(), nullptr);
     }
 
-    if (debug_jit_ || dump_asm_to_file_) {
+    if ((debug_jit_ || dump_asm_to_file_) && target_machine_) {
         std::string asm_str;
         llvm::raw_string_ostream ros(asm_str);
-        std::string error;
-        auto triple = llvm::sys::getDefaultTargetTriple();
-        auto target = llvm::TargetRegistry::lookupTarget(triple, error);
-        if (target) {
-            llvm::TargetOptions opt;
-            auto rm = std::optional<llvm::Reloc::Model>();
-            auto tm = std::unique_ptr<llvm::TargetMachine>(
-                target->createTargetMachine(triple, "generic", "", opt, rm));
-            llvm::legacy::PassManager pm;
-            if (!tm->addPassesToEmitFile(pm, ros, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
-                pm.run(*module);
-                ros.flush();
-                last_asm_ = asm_str;
-                
-                if (debug_jit_) {
-                     std::cerr << "--- Assembly for " << func.name << " ---" << std::endl;
-                     std::cerr << last_asm_ << std::endl;
-                }
-                
-                if (dump_asm_to_file_) {
-                     dumpAssembly(func.name + ".s");
-                     // Also dump IR to file
-                     std::error_code ec;
-                     llvm::raw_fd_ostream ir_os(func.name + ".ll", ec, llvm::sys::fs::OF_None);
-                     if (!ec) module->print(ir_os, nullptr);
-                }
+        
+        // Use a local pass manager for file emission (legacy but necessary for this)
+        #include <llvm/IR/LegacyPassManager.h>
+        llvm::legacy::PassManager pm;
+        if (!target_machine_->addPassesToEmitFile(pm, ros, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
+            pm.run(*module);
+            ros.flush();
+            last_asm_ = asm_str;
+            
+            if (debug_jit_) {
+                 std::cerr << "--- Assembly for " << func.name << " ---" << std::endl;
+                 std::cerr << last_asm_ << std::endl;
+            }
+            
+            if (dump_asm_to_file_) {
+                 dumpAssembly(func.name + ".s");
+                 std::error_code ec;
+                 llvm::raw_fd_ostream ir_os(func.name + ".ll", ec, llvm::sys::fs::OF_None);
+                 if (!ec) module->print(ir_os, nullptr);
             }
         }
     }
@@ -187,7 +201,7 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     fptrs_[func.name] = reinterpret_cast<void*>((*sym).getValue());
-    func.jit_compiled = true; // mutable in struct
+    func.jit_compiled = true;
 }
 
 Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
@@ -215,13 +229,20 @@ void BytecodeOrcJIT::dumpAssembly(const std::string &filename) {
 }
 
 void BytecodeOrcJIT::runOptimizations(llvm::Module &module) {
-    llvm::legacy::PassManager pm;
-    pm.add(llvm::createPromoteMemoryToRegisterPass());
-    pm.add(llvm::createInstructionCombiningPass());
-    pm.add(llvm::createReassociatePass());
-    pm.add(llvm::createGVNPass());
-    pm.add(llvm::createCFGSimplificationPass());
-    pm.run(module);
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
+    
+    llvm::PassBuilder pb;
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+    
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(module, mam);
 }
 
 static bool opcodeProducesHeapRef(OpCode op) {
@@ -312,7 +333,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
         llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx+"chk_dbl", f);
         llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx+"dbl", f);
-        llvm::BasicBlock *fallBB = llvm::BasicBlock::Create(ctx, pfx+"fall", f);
+        llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx+"deopt", f);
         llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
 
         llvm::Value* bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
@@ -332,7 +353,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
 
         B.SetInsertPoint(chkDblBB);
         llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
-        B.CreateCondBr(bothDbl, dblBB, fallBB);
+        B.CreateCondBr(bothDbl, dblBB, deoptBB);
 
         B.SetInsertPoint(dblBB);
         llvm::Value *lDv = B.CreateBitCast(left, f64);
@@ -346,13 +367,18 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         auto* dExitBB = B.GetInsertBlock();
         B.CreateBr(mergeBB);
 
-        B.SetInsertPoint(fallBB); B.CreateBr(mergeBB);
+        B.SetInsertPoint(deoptBB); 
+        llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
+        if (!fn_deopt) fn_deopt = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false), llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
+        llvm::Value* funcNameConst = B.CreateGlobalStringPtr(func.name);
+        B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
+        B.CreateBr(mergeBB);
 
         B.SetInsertPoint(mergeBB);
         llvm::PHINode *phi = B.CreatePHI(i64, 3);
         phi->addIncoming(iBoxed, iExitBB);
         phi->addIncoming(dBoxed, dExitBB);
-        phi->addIncoming(makeNull(), fallBB);
+        phi->addIncoming(makeNull(), deoptBB);
         return phi;
     };
 

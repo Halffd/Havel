@@ -16,7 +16,7 @@
 
 // Forward-declare the LLVM types we store so the header stays LLVM-free
 namespace llvm::orc { class LLJIT; }
-namespace llvm       { class Module; }
+namespace llvm       { class Module; class TargetMachine; }
 
 namespace havel::compiler {
 
@@ -67,15 +67,18 @@ public:
 private:
     std::unique_ptr<llvm::orc::LLJIT> lljit_;
     std::unordered_map<std::string, void*> fptrs_;
+    std::unique_ptr<llvm::TargetMachine> target_machine_;
     bool debug_jit_ = false;
     bool dump_ir_ = false;
     bool dump_asm_to_file_ = false;
     std::string last_asm_;
 
+    void initTargetMachine();
     void translate(const BytecodeFunction &func, llvm::Module &module);
     void runOptimizations(llvm::Module &module);
 
     static void InitializeLLVM();
 };
+
 
 } // namespace havel::compiler

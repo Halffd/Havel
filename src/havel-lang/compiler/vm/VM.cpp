@@ -58,12 +58,10 @@ namespace havel::compiler {
 }
 */
 
-static uint8_t getFeedbackType(const Value& v) {
-  if (v.isInt()) return 1;
-  if (v.isDouble()) return 2;
-  if (v.isStringValId() || v.isStringId()) return 3;
-  if (v.isObjectId() || v.isArrayId() || v.isSetId()) return 4;
-  if (v.isBool()) return 5;
+static uint64_t getFeedbackMask(const Value& v) {
+  uint64_t tag = v.getTagBits(); // Bits 48-50
+  return 1ULL << (tag >> 48);
+}
   if (v.isNull()) return 6;
   return 7;
 }
@@ -3664,12 +3662,12 @@ void VM::execBinaryOp(const Instruction &instruction) {
   auto &frame = currentFrame();
   if (frame.ip < frame.function->type_feedback.size()) {
     auto &fb = frame.function->type_feedback[frame.ip];
-    fb.hit_count++;
-    fb.left_type = getFeedbackType(left);
-    fb.right_type = getFeedbackType(right);
+    fb.execution_count++;
+    fb.left_type_mask |= getFeedbackMask(left);
+    fb.right_type_mask |= getFeedbackMask(right);
 
     // Phase 4 JIT: Trigger JIT if instruction is very hot
-    if (fb.hit_count == 1000 && hot_func_cb_) {
+    if (fb.execution_count == 1000 && hot_func_cb_) {
       hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
     }
   }

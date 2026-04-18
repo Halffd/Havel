@@ -15,11 +15,12 @@ namespace havel::compiler {
 
 // Type feedback for JIT specialization
 struct TypeFeedback {
-  uint32_t hit_count = 0;
-  uint8_t left_type = 0;   // 0=unknown, 1=int, 2=double, 3=string, 4=object
-  uint8_t right_type = 0;
-  uint8_t result_type = 0;
+  uint64_t left_type_mask = 0;
+  uint64_t right_type_mask = 0;
+  uint64_t result_type_mask = 0;
+  uint32_t execution_count = 0;
 };
+
 
 } // namespace havel::compiler
 

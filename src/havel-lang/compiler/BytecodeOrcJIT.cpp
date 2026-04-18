@@ -125,6 +125,239 @@ uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
     return havel_vm_call(vm_ptr, args, count);
 }
 
+// Global variable access
+uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return vm->getGlobalByIndex(name_id).bits;
+}
+
+void havel_vm_global_set(void* vm_ptr, uint32_t name_id, uint64_t value) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value v;
+    std::memcpy(&v, &value, sizeof(uint64_t));
+    vm->setGlobalByIndex(name_id, v);
+}
+
+// Upvalue access for closures
+uint64_t havel_vm_upvalue_get(void* vm_ptr, uint32_t slot) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return vm->getUpvalue(slot).bits;
+}
+
+void havel_vm_upvalue_set(void* vm_ptr, uint32_t slot, uint64_t value) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value v;
+    std::memcpy(&v, &value, sizeof(uint64_t));
+    vm->setUpvalue(slot, v);
+}
+
+// Power function
+uint64_t havel_vm_pow(uint64_t base_bits, uint64_t exp_bits) {
+    Value base, exp;
+    std::memcpy(&base, &base_bits, sizeof(uint64_t));
+    std::memcpy(&exp, &exp_bits, sizeof(uint64_t));
+    
+    // Handle integer power
+    if (base.isInt() && exp.isInt()) {
+        int64_t b = base.asInt();
+        int64_t e = exp.asInt();
+        if (e < 0) return Value(0.0).bits; // Negative exponent -> 0 for integers
+        int64_t result = 1;
+        while (e > 0) {
+            if (e & 1) result *= b;
+            b *= b;
+            e >>= 1;
+        }
+        return Value(result).bits;
+    }
+    // Float power
+    double b = base.asDouble();
+    double e = exp.asDouble();
+    return Value(std::pow(b, e)).bits;
+}
+
+// Array operations
+uint64_t havel_vm_array_new(void* vm_ptr) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return vm->arrayNew().bits;
+}
+
+uint64_t havel_vm_array_get(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value arr, idx;
+    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
+    return vm->arrayGet(arr, idx).bits;
+}
+
+uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value arr, idx, val;
+    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    vm->arraySet(arr, idx, val);
+    return val_bits;
+}
+
+uint64_t havel_vm_array_len(void* vm_ptr, uint64_t arr_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value arr;
+    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+    return Value(static_cast<int64_t>(vm->arrayLen(arr))).bits;
+}
+
+void havel_vm_array_push(void* vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value arr, val;
+    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    vm->arrayPush(arr, val);
+}
+
+// Object operations
+uint64_t havel_vm_object_new(void* vm_ptr) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return vm->objectNew().bits;
+}
+
+uint64_t havel_vm_object_get(void* vm_ptr, uint64_t obj_bits, uint32_t key_id) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    return vm->objectGet(obj, key_id).bits;
+}
+
+uint64_t havel_vm_object_set(void* vm_ptr, uint64_t obj_bits, uint32_t key_id, uint64_t val_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj, val;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    vm->objectSet(obj, key_id, val);
+    return val_bits;
+}
+
+// Range and iterator operations
+uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value start, end;
+    std::memcpy(&start, &start_bits, sizeof(uint64_t));
+    std::memcpy(&end, &end_bits, sizeof(uint64_t));
+    return vm->rangeNew(start, end).bits;
+}
+
+uint64_t havel_vm_iter_new(void* vm_ptr, uint64_t coll_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value coll;
+    std::memcpy(&coll, &coll_bits, sizeof(uint64_t));
+    return vm->iterNew(coll).bits;
+}
+
+uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value iter;
+    std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
+    return vm->iterNext(iter).bits;
+}
+
+// Concurrency primitives
+uint64_t havel_vm_thread_new(void* vm_ptr, uint32_t func_id) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return vm->threadNew(func_id).bits;
+}
+
+uint64_t havel_vm_channel_new(void* vm_ptr, uint64_t cap_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    int64_t cap = 0;
+    Value capVal;
+    std::memcpy(&capVal, &cap_bits, sizeof(uint64_t));
+    if (capVal.isInt()) cap = capVal.asInt();
+    return vm->channelNew(cap).bits;
+}
+
+void havel_vm_channel_send(void* vm_ptr, uint64_t chan_bits, uint64_t val_bits) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value chan, val;
+    std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    vm->channelSend(chan, val);
+}
+
+uint64_t havel_vm_channel_recv(void* vm_ptr, uint64_t chan_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value chan;
+    std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
+    return vm->channelRecv(chan).bits;
+}
+
+uint64_t havel_vm_yield(void* vm_ptr, uint64_t val_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value val;
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    return vm->yieldValue(val).bits;
+}
+
+uint64_t havel_vm_await(void* vm_ptr, uint64_t val_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value val;
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    return vm->awaitValue(val).bits;
+}
+
+// String operations
+uint64_t havel_vm_string_len(void* vm_ptr, uint64_t str_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value str;
+    std::memcpy(&str, &str_bits, sizeof(uint64_t));
+    return Value(static_cast<int64_t>(vm->stringLen(str))).bits;
+}
+
+uint64_t havel_vm_string_concat(void* vm_ptr, uint64_t l_bits, uint64_t r_bits) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value l, r;
+    std::memcpy(&l, &l_bits, sizeof(uint64_t));
+    std::memcpy(&r, &r_bits, sizeof(uint64_t));
+    return vm->stringConcat(l, r).bits;
+}
+
+// Host function call
+uint64_t havel_vm_call_host(void* vm_ptr, uint32_t host_idx, uint64_t* args, uint32_t count) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    
+    std::vector<Value> valArgs;
+    for (uint32_t i = 0; i < count; ++i) {
+        Value v;
+        std::memcpy(&v, &args[i], sizeof(uint64_t));
+        valArgs.push_back(v);
+    }
+    
+    return vm->callHostFunction(host_idx, valArgs).bits;
+}
+
 } // extern "C"
 
 // ============================================================================
@@ -169,6 +402,31 @@ addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_
 addSym("havel_deoptimize", reinterpret_cast<void*>(&havel_deoptimize));
 addSym("havel_vm_call", reinterpret_cast<void*>(&havel_vm_call));
 addSym("havel_vm_tail_call", reinterpret_cast<void*>(&havel_vm_tail_call));
+addSym("havel_vm_global_get", reinterpret_cast<void*>(&havel_vm_global_get));
+addSym("havel_vm_global_set", reinterpret_cast<void*>(&havel_vm_global_set));
+addSym("havel_vm_upvalue_get", reinterpret_cast<void*>(&havel_vm_upvalue_get));
+addSym("havel_vm_upvalue_set", reinterpret_cast<void*>(&havel_vm_upvalue_set));
+addSym("havel_vm_pow", reinterpret_cast<void*>(&havel_vm_pow));
+addSym("havel_vm_array_new", reinterpret_cast<void*>(&havel_vm_array_new));
+addSym("havel_vm_array_get", reinterpret_cast<void*>(&havel_vm_array_get));
+addSym("havel_vm_array_set", reinterpret_cast<void*>(&havel_vm_array_set));
+addSym("havel_vm_array_len", reinterpret_cast<void*>(&havel_vm_array_len));
+addSym("havel_vm_array_push", reinterpret_cast<void*>(&havel_vm_array_push));
+addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
+addSym("havel_vm_object_get", reinterpret_cast<void*>(&havel_vm_object_get));
+addSym("havel_vm_object_set", reinterpret_cast<void*>(&havel_vm_object_set));
+addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
+addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
+addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
+addSym("havel_vm_thread_new", reinterpret_cast<void*>(&havel_vm_thread_new));
+addSym("havel_vm_channel_new", reinterpret_cast<void*>(&havel_vm_channel_new));
+addSym("havel_vm_channel_send", reinterpret_cast<void*>(&havel_vm_channel_send));
+addSym("havel_vm_channel_recv", reinterpret_cast<void*>(&havel_vm_channel_recv));
+addSym("havel_vm_yield", reinterpret_cast<void*>(&havel_vm_yield));
+addSym("havel_vm_await", reinterpret_cast<void*>(&havel_vm_await));
+addSym("havel_vm_string_len", reinterpret_cast<void*>(&havel_vm_string_len));
+addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat));
+addSym("havel_vm_call_host", reinterpret_cast<void*>(&havel_vm_call_host));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         llvm::consumeError(std::move(err));
@@ -392,7 +650,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
 
         llvm::Value* bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
-        B.CreateCondBr(bothInt, intBB, chkDblBB);
+B.CreateCondBr(bothInt, intBB, chkDblBB);
 
         B.SetInsertPoint(intBB);
         llvm::Value *lIv = unboxInt(left);
@@ -402,8 +660,27 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         else if (op == OpCode::SUB) iRes = B.CreateSub(lIv, rIv);
         else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
         else if (op == OpCode::DIV) iRes = B.CreateSDiv(lIv, rIv);
+        else if (op == OpCode::MOD) iRes = B.CreateSRem(lIv, rIv);
+        else iRes = B.CreateAdd(lIv, rIv); // Fallback
         llvm::Value *iBoxed = boxInt(iRes);
         auto* iExitBB = B.GetInsertBlock();
+        B.CreateBr(mergeBB);
+
+        B.SetInsertPoint(chkDblBB);
+        llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
+        B.CreateCondBr(bothDbl, dblBB, deoptBB);
+
+        B.SetInsertPoint(dblBB);
+        llvm::Value *lDv = B.CreateBitCast(left, f64);
+        llvm::Value *rDv = B.CreateBitCast(right, f64);
+        llvm::Value *dRes = nullptr;
+        if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
+        else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
+        else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
+        else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
+        else dRes = B.CreateFDiv(lDv, rDv);
+        llvm::Value *dBoxed = B.CreateBitCast(dRes, i64);
+        auto* dExitBB = B.GetInsertBlock();
         B.CreateBr(mergeBB);
 
         B.SetInsertPoint(chkDblBB);
@@ -688,6 +965,378 @@ phi->addIncoming(makeNull(), deoptBB);
             B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
             break;
         }
+
+        // Global and upvalue access - critical for closures
+        case OpCode::LOAD_GLOBAL: {
+            uint32_t nameId = instr.operands[0].asInt();
+            llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
+            if (!fnGet) {
+                fnGet = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_global_get", &module);
+            }
+            vstack.push_back(B.CreateCall(fnGet, {vmArg, llvm::ConstantInt::get(i32, nameId)}));
+            break;
+        }
+        case OpCode::STORE_GLOBAL: {
+            uint32_t nameId = instr.operands[0].asInt();
+            llvm::Value* v = vstack.back(); vstack.pop_back();
+            llvm::Function* fnSet = module.getFunction("havel_vm_global_set");
+            if (!fnSet) {
+                fnSet = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i32, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_global_set", &module);
+            }
+            B.CreateCall(fnSet, {vmArg, llvm::ConstantInt::get(i32, nameId), v});
+            vstack.push_back(v); // Store returns the value
+            break;
+        }
+        case OpCode::LOAD_UPVALUE: {
+            uint32_t slot = instr.operands[0].asInt();
+            llvm::Function* fnUp = module.getFunction("havel_vm_upvalue_get");
+            if (!fnUp) {
+                fnUp = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_upvalue_get", &module);
+            }
+            vstack.push_back(B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot)}));
+            break;
+        }
+        case OpCode::STORE_UPVALUE: {
+            uint32_t slot = instr.operands[0].asInt();
+            llvm::Value* v = vstack.back(); vstack.pop_back();
+            llvm::Function* fnUp = module.getFunction("havel_vm_upvalue_set");
+            if (!fnUp) {
+                fnUp = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i32, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_upvalue_set", &module);
+            }
+            B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot), v});
+            vstack.push_back(v);
+            break;
+        }
+
+        // Arithmetic - MOD and POW for loops
+        case OpCode::MOD: {
+            llvm::Value* r = vstack.back(); vstack.pop_back();
+            llvm::Value* l = vstack.back(); vstack.pop_back();
+            // Use specialized path for MOD
+            vstack.push_back(emitSpecializedBinop(OpCode::MOD, fb, ip, l, r));
+            break;
+        }
+        case OpCode::POW: {
+            // Power requires runtime call (no LLVM pow intrinsic for integers)
+            llvm::Value* exp = vstack.back(); vstack.pop_back();
+            llvm::Value* base = vstack.back(); vstack.pop_back();
+            llvm::Function* fnPow = module.getFunction("havel_vm_pow");
+            if (!fnPow) {
+                fnPow = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_pow", &module);
+            }
+            vstack.push_back(B.CreateCall(fnPow, {base, exp}));
+            break;
+        }
+
+        // Logical operations
+        case OpCode::AND: {
+            // Short-circuit AND - handled by JUMP_IF_FALSE, but also as binary op
+            llvm::Value* r = vstack.back(); vstack.pop_back();
+            llvm::Value* l = vstack.back(); vstack.pop_back();
+            // AND: result is l if l is falsy, else r
+            llvm::Value* lFalsy = B.CreateOr(
+                B.CreateICmpEQ(l, makeNull()),
+                B.CreateICmpEQ(l, boxInt(llvm::ConstantInt::get(i64, 0)))
+            );
+            vstack.push_back(B.CreateSelect(lFalsy, l, r));
+            break;
+        }
+        case OpCode::OR: {
+            // Short-circuit OR
+            llvm::Value* r = vstack.back(); vstack.pop_back();
+            llvm::Value* l = vstack.back(); vstack.pop_back();
+            // OR: result is l if l is truthy, else r
+            llvm::Value* lTruthy = B.CreateAnd(
+                B.CreateICmpNE(l, makeNull()),
+                B.CreateICmpNE(l, boxInt(llvm::ConstantInt::get(i64, 0)))
+            );
+            vstack.push_back(B.CreateSelect(lTruthy, l, r));
+            break;
+        }
+
+        // Array operations - critical for loops
+        case OpCode::ARRAY_NEW: {
+            llvm::Function* fnNew = module.getFunction("havel_vm_array_new");
+            if (!fnNew) {
+                fnNew = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_array_new", &module);
+            }
+            vstack.push_back(B.CreateCall(fnNew, {vmArg}));
+            break;
+        }
+        case OpCode::ARRAY_GET: {
+            llvm::Value* idx = vstack.back(); vstack.pop_back();
+            llvm::Value* arr = vstack.back(); vstack.pop_back();
+            llvm::Function* fnGet = module.getFunction("havel_vm_array_get");
+            if (!fnGet) {
+                fnGet = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_array_get", &module);
+            }
+            vstack.push_back(B.CreateCall(fnGet, {vmArg, arr, idx}));
+            break;
+        }
+        case OpCode::ARRAY_SET: {
+            llvm::Value* val = vstack.back(); vstack.pop_back();
+            llvm::Value* idx = vstack.back(); vstack.pop_back();
+            llvm::Value* arr = vstack.back(); vstack.pop_back();
+            llvm::Function* fnSet = module.getFunction("havel_vm_array_set");
+            if (!fnSet) {
+                fnSet = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_array_set", &module);
+            }
+            vstack.push_back(B.CreateCall(fnSet, {vmArg, arr, idx, val}));
+            break;
+        }
+        case OpCode::ARRAY_LEN: {
+            llvm::Value* arr = vstack.back(); vstack.pop_back();
+            llvm::Function* fnLen = module.getFunction("havel_vm_array_len");
+            if (!fnLen) {
+                fnLen = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_array_len", &module);
+            }
+            vstack.push_back(B.CreateCall(fnLen, {vmArg, arr}));
+            break;
+        }
+        case OpCode::ARRAY_PUSH: {
+            llvm::Value* val = vstack.back(); vstack.pop_back();
+            llvm::Value* arr = vstack.back(); vstack.pop_back();
+            llvm::Function* fnPush = module.getFunction("havel_vm_array_push");
+            if (!fnPush) {
+                fnPush = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_array_push", &module);
+            }
+            B.CreateCall(fnPush, {vmArg, arr, val});
+            vstack.push_back(arr); // Push array back
+            break;
+        }
+
+        // Object operations
+        case OpCode::OBJECT_NEW: {
+            llvm::Function* fnNew = module.getFunction("havel_vm_object_new");
+            if (!fnNew) {
+                fnNew = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_object_new", &module);
+            }
+            vstack.push_back(B.CreateCall(fnNew, {vmArg}));
+            break;
+        }
+        case OpCode::OBJECT_GET: {
+            uint32_t keyId = instr.operands[0].asInt();
+            llvm::Value* obj = vstack.back(); vstack.pop_back();
+            llvm::Function* fnGet = module.getFunction("havel_vm_object_get");
+            if (!fnGet) {
+                fnGet = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_object_get", &module);
+            }
+            vstack.push_back(B.CreateCall(fnGet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
+            break;
+        }
+        case OpCode::OBJECT_SET: {
+            uint32_t keyId = instr.operands[0].asInt();
+            llvm::Value* val = vstack.back(); vstack.pop_back();
+            llvm::Value* obj = vstack.back(); vstack.pop_back();
+            llvm::Function* fnSet = module.getFunction("havel_vm_object_set");
+            if (!fnSet) {
+                fnSet = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i32, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_object_set", &module);
+            }
+            vstack.push_back(B.CreateCall(fnSet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId), val}));
+            break;
+        }
+
+        // Range and iterators - critical for for loops
+        case OpCode::RANGE_NEW: {
+            llvm::Value* end = vstack.back(); vstack.pop_back();
+            llvm::Value* start = vstack.back(); vstack.pop_back();
+            llvm::Function* fnRange = module.getFunction("havel_vm_range_new");
+            if (!fnRange) {
+                fnRange = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_range_new", &module);
+            }
+            vstack.push_back(B.CreateCall(fnRange, {vmArg, start, end}));
+            break;
+        }
+        case OpCode::ITER_NEW: {
+            llvm::Value* coll = vstack.back(); vstack.pop_back();
+            llvm::Function* fnIter = module.getFunction("havel_vm_iter_new");
+            if (!fnIter) {
+                fnIter = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_iter_new", &module);
+            }
+            vstack.push_back(B.CreateCall(fnIter, {vmArg, coll}));
+            break;
+        }
+        case OpCode::ITER_NEXT: {
+            llvm::Value* iter = vstack.back();
+            llvm::Function* fnNext = module.getFunction("havel_vm_iter_next");
+            if (!fnNext) {
+                fnNext = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_iter_next", &module);
+            }
+            // Returns value or null if exhausted; stack has [iter], result pushed
+            llvm::Value* result = B.CreateCall(fnNext, {vmArg, iter});
+            // Don't pop iter - it's kept for next iteration
+            vstack.push_back(result);
+            break;
+        }
+
+        // Concurrency primitives - threads, coroutines, channels
+        case OpCode::THREAD_NEW: {
+            uint32_t funcId = instr.operands[0].asInt();
+            llvm::Function* fnThread = module.getFunction("havel_vm_thread_new");
+            if (!fnThread) {
+                fnThread = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_thread_new", &module);
+            }
+            vstack.push_back(B.CreateCall(fnThread, {vmArg, llvm::ConstantInt::get(i32, funcId)}));
+            break;
+        }
+        case OpCode::CHANNEL_NEW: {
+            llvm::Value* cap = vstack.empty() ? llvm::ConstantInt::get(i64, 0) : vstack.back();
+            if (!vstack.empty()) vstack.pop_back();
+            llvm::Function* fnChan = module.getFunction("havel_vm_channel_new");
+            if (!fnChan) {
+                fnChan = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_channel_new", &module);
+            }
+            vstack.push_back(B.CreateCall(fnChan, {vmArg, cap}));
+            break;
+        }
+        case OpCode::CHANNEL_SEND: {
+            llvm::Value* val = vstack.back(); vstack.pop_back();
+            llvm::Value* chan = vstack.back(); vstack.pop_back();
+            llvm::Function* fnSend = module.getFunction("havel_vm_channel_send");
+            if (!fnSend) {
+                fnSend = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_channel_send", &module);
+            }
+            B.CreateCall(fnSend, {vmArg, chan, val});
+            vstack.push_back(makeNull());
+            break;
+        }
+        case OpCode::CHANNEL_RECV: {
+            llvm::Value* chan = vstack.back(); vstack.pop_back();
+            llvm::Function* fnRecv = module.getFunction("havel_vm_channel_recv");
+            if (!fnRecv) {
+                fnRecv = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_channel_recv", &module);
+            }
+            vstack.push_back(B.CreateCall(fnRecv, {vmArg, chan}));
+            break;
+        }
+        case OpCode::YIELD: {
+            llvm::Value* val = vstack.empty() ? makeNull() : vstack.back();
+            if (!vstack.empty()) vstack.pop_back();
+            llvm::Function* fnYield = module.getFunction("havel_vm_yield");
+            if (!fnYield) {
+                fnYield = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_yield", &module);
+            }
+            vstack.push_back(B.CreateCall(fnYield, {vmArg, val}));
+            break;
+        }
+        case OpCode::AWAIT: {
+            llvm::Value* val = vstack.back(); vstack.pop_back();
+            llvm::Function* fnAwait = module.getFunction("havel_vm_await");
+            if (!fnAwait) {
+                fnAwait = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_await", &module);
+            }
+            vstack.push_back(B.CreateCall(fnAwait, {vmArg, val}));
+            break;
+        }
+
+        // String operations
+        case OpCode::STRING_LEN: {
+            llvm::Value* str = vstack.back(); vstack.pop_back();
+            llvm::Function* fnLen = module.getFunction("havel_vm_string_len");
+            if (!fnLen) {
+                fnLen = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_string_len", &module);
+            }
+            vstack.push_back(B.CreateCall(fnLen, {vmArg, str}));
+            break;
+        }
+        case OpCode::STRING_CONCAT: {
+            llvm::Value* r = vstack.back(); vstack.pop_back();
+            llvm::Value* l = vstack.back(); vstack.pop_back();
+            llvm::Function* fnCat = module.getFunction("havel_vm_string_concat");
+            if (!fnCat) {
+                fnCat = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_string_concat", &module);
+            }
+            vstack.push_back(B.CreateCall(fnCat, {vmArg, l, r}));
+            break;
+        }
+
+        // Stack manipulation
+        case OpCode::PUSH_NULL:
+            vstack.push_back(makeNull());
+            break;
+        case OpCode::SWAP: {
+            llvm::Value* b = vstack.back(); vstack.pop_back();
+            llvm::Value* a = vstack.back(); vstack.pop_back();
+            vstack.push_back(b);
+            vstack.push_back(a);
+            break;
+        }
+
+        // Host function calls
+        case OpCode::CALL_HOST: {
+            uint32_t hostIdx = instr.operands[0].asInt();
+            uint32_t argCount = instr.operands[1].asInt();
+            // Collect args
+            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "host_args");
+            for (uint32_t i = 0; i < argCount; ++i) {
+                llvm::Value* arg = vstack.back(); vstack.pop_back();
+                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+            }
+            llvm::Function* fnHost = module.getFunction("havel_vm_call_host");
+            if (!fnHost) {
+                fnHost = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i32, i64p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_call_host", &module);
+            }
+            vstack.push_back(B.CreateCall(fnHost, {
+                vmArg,
+                llvm::ConstantInt::get(i32, hostIdx),
+                B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}),
+                llvm::ConstantInt::get(i32, argCount)
+            }));
+            break;
+        }
+
         default: break;
         }
     }

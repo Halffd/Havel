@@ -46,6 +46,11 @@ private:
     std::string outputPath; // Output path for --build (-o)
     std::string testDir;   // Directory containing test scripts
     int testTimeout = 30; // Timeout for each test in seconds
+    bool useJIT = true;
+    bool debugJIT = false;
+    bool dumpIR = false;
+    bool outputAsmToFile = false;
+
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);

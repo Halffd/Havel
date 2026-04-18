@@ -11,6 +11,16 @@
 #include <variant>
 #include <vector>
 
+namespace havel::compiler {
+
+// Type feedback for JIT specialization
+struct TypeFeedback {
+  uint32_t hit_count = 0;
+  uint8_t left_type = 0;   // 0=unknown, 1=int, 2=double, 3=string, 4=object
+  uint8_t right_type = 0;
+  uint8_t result_type = 0;
+};
+
 // Forward declarations
 namespace havel::ast {
 struct Program;
@@ -334,6 +344,11 @@ struct BytecodeFunction {
   std::string source_file;               // Source file path
   uint32_t source_line = 0;              // Definition line number
   bool is_generator = false;             // Phase 3B-3: True if function contains yield
+  
+  // Phase 4: JIT Type Feedback & State
+  std::vector<TypeFeedback> type_feedback;
+  uint32_t execution_count = 0;
+  bool jit_compiled = false;
 
   BytecodeFunction(std::string n, uint32_t params = 0, uint32_t locals = 0)
       : name(std::move(n)), param_count(params), local_count(locals) {}
@@ -417,11 +432,12 @@ public:
 };
 
 // JIT compiler interface
+class VM; // Forward declaration
 class JITCompiler {
 public:
   virtual ~JITCompiler() = default;
   virtual void compileFunction(const BytecodeFunction &func) = 0;
-  virtual Value executeCompiled(const std::string &func_name,
+  virtual Value executeCompiled(VM* vm, const std::string &func_name,
                                 const std::vector<Value> &args) = 0;
   virtual bool isCompiled(const std::string &func_name) const = 0;
 };

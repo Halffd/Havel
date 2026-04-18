@@ -1,10 +1,8 @@
 #include "InputBackend.hpp"
 #include "KeyMap.hpp"
 #include "UinputDevice.hpp"
-#include "core/CallbackTypes.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
-#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -14,13 +12,11 @@
 #include <linux/uinput.h>
 #include <mutex>
 #include <poll.h>
-#include <queue>
 #include <shared_mutex>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <thread>
-#include <unordered_set>
 #include <unistd.h>
 
 namespace havel {
@@ -60,102 +56,71 @@ public:
     bool SendMouseEvent(const MouseEvent &event) override;
 
     // Sensitivity settings
-    void SetMouseSensitivity(double sens);
-    double GetMouseSensitivity() const { return mouseSensitivity_; }
-    void SetScrollSpeed(double speed);
-    double GetScrollSpeed() const { return scrollSpeed_; }
+    void SetMouseSensitivity(double sens) override;
+    double GetMouseSensitivity() const override { return mouseSensitivity_; }
+    void SetScrollSpeed(double speed) override;
+    double GetScrollSpeed() const override { return scrollSpeed_; }
 
-    // Key remapping
-    void SetKeyRemap(uint32_t from, uint32_t to);
-    void RemoveKeyRemap(uint32_t from);
+    // Key remapping (passes through to EventListener)
+    void SetKeyRemap(uint32_t from, uint32_t to) override;
+    void RemoveKeyRemap(uint32_t from) override;
 
     // Event batching for reduced syscall overhead
-    void BeginBatch();
-    void QueueEvent(int type, int code, int value);
-    void EndBatch();
+    void BeginBatch() override;
+    void QueueEvent(int type, int code, int value) override;
+    void EndBatch() override;
 
     // Key management
-    void ReleaseAllKeys();
-    void ReleaseAllVirtualKeys();
-    void EmergencyReleaseAllKeys();
+    void ReleaseAllKeys() override;
+    void ReleaseAllVirtualKeys() override;
+    void EmergencyReleaseAllKeys() override;
 
     // Input blocking
-    void SetBlockInput(bool block);
-    bool IsInputBlocked() const { return blockInput_.load(); }
+    void SetBlockInput(bool block) override;
+    bool IsInputBlocked() const override { return blockInput_.load(); }
 
     // Emergency shutdown
-    void SetEmergencyShutdownKey(uint32_t code);
-    uint32_t GetEmergencyShutdownKey() const { return emergencyShutdownKey_; }
+    void SetEmergencyShutdownKey(uint32_t code) override;
+    uint32_t GetEmergencyShutdownKey() const override { return emergencyShutdownKey_; }
 
-    // Active input tracking (for combo hotkeys)
-    struct ActiveInput {
-        std::chrono::steady_clock::time_point timestamp;
-        uint32_t modifiers = 0;
-        ActiveInput() = default;
-        explicit ActiveInput(uint32_t mods)
-            : timestamp(std::chrono::steady_clock::now()), modifiers(mods) {}
-        ActiveInput(uint32_t mods, std::chrono::steady_clock::time_point time)
-            : timestamp(time), modifiers(mods) {}
-    };
+    // Active input tracking
+    const std::unordered_map<uint32_t, ActiveInput>& GetActiveInputs() const override { return activeInputs_; }
+    std::string GetActiveInputsString() const override;
 
-    const std::unordered_map<uint32_t, ActiveInput>& GetActiveInputs() const { return activeInputs_; }
-    std::string GetActiveInputsString() const;
-
-    // Modifier state details
-    struct ModifierState {
-        bool leftCtrl = false;
-        bool rightCtrl = false;
-        bool leftShift = false;
-        bool rightShift = false;
-        bool leftAlt = false;
-        bool rightAlt = false;
-        bool leftMeta = false;
-        bool rightMeta = false;
-
-        bool IsCtrlPressed() const { return leftCtrl || rightCtrl; }
-        bool IsShiftPressed() const { return leftShift || rightShift; }
-        bool IsAltPressed() const { return leftAlt || rightAlt; }
-        bool IsMetaPressed() const { return leftMeta || rightMeta; }
-    };
-
-    ModifierState GetModifierState() const;
-    int GetCurrentModifiersMask() const;
+    // Modifier state
+    havel::ModifierState GetModifierState() const override;
+    int GetCurrentModifiersMask() const override;
 
     // Physical key state checking
-    bool ArePhysicalKeysPressed(const std::vector<uint32_t> &keys) const;
+    bool ArePhysicalKeysPressed(const std::vector<uint32_t> &keys) const override;
 
     // Mouse button state
-    bool GetMouseButtonState(uint32_t button) const;
+    bool GetMouseButtonState(uint32_t button) const override;
 
     // Key down time tracking
-    std::chrono::steady_clock::time_point GetKeyDownTime(uint32_t code) const;
+    std::chrono::steady_clock::time_point GetKeyDownTime(uint32_t code) const override;
 
-    // Callbacks
-    using KeyCallback = std::function<void(uint32_t)>;
-    using MouseMovementCallback = std::function<void(int dx, int dy)>;
-    using AnyKeyPressCallback = std::function<void(const std::string &key)>;
+    // Callbacks - these feed into EventListener
+    void SetKeyDownCallback(KeyCallback cb) override { keyDownCallback_ = std::move(cb); }
+    void SetKeyUpCallback(KeyCallback cb) override { keyUpCallback_ = std::move(cb); }
+    void SetAnyKeyPressCallback(AnyKeyPressCallback cb) override { anyKeyPressCallback_ = std::move(cb); }
+    void SetMouseMovementCallback(MouseMovementCallback cb) override { mouseMovementCallback_ = std::move(cb); }
+    void SetInputNotificationCallback(std::function<void()> cb) override { inputNotificationCallback_ = std::move(cb); }
 
-    void SetKeyDownCallback(KeyCallback cb) { keyDownCallback_ = std::move(cb); }
-    void SetKeyUpCallback(KeyCallback cb) { keyUpCallback_ = std::move(cb); }
-    void SetAnyKeyPressCallback(AnyKeyPressCallback cb) { anyKeyPressCallback_ = std::move(cb); }
-    void SetMouseMovementCallback(MouseMovementCallback cb) { mouseMovementCallback_ = std::move(cb); }
-    void SetInputNotificationCallback(std::function<void()> cb) { inputNotificationCallback_ = std::move(cb); }
-
-    // Input event callbacks (for external hotkey handling)
-    void SetInputEventCallback(std::function<void(const InputEvent &)> cb) { inputEventCallback_ = std::move(cb); }
-    void SetInputBlockCallback(std::function<bool(const InputEvent &)> cb) { inputBlockCallback_ = std::move(cb); }
+    void SetInputEventCallback(std::function<void(const InputEvent &)> cb) override { inputEventCallback_ = std::move(cb); }
+    void SetInputBlockCallback(std::function<bool(const InputEvent &)> cb) override { inputBlockCallback_ = std::move(cb); }
 
     // Combo hotkey time window
-    void SetComboTimeWindow(int ms) { comboTimeWindow_ = ms; }
-    int GetComboTimeWindow() const { return comboTimeWindow_; }
+    void SetComboTimeWindow(int ms) override { comboTimeWindow_ = ms; }
+    int GetComboTimeWindow() const override { return comboTimeWindow_; }
 
-    // Wheel event tracking (for combo hotkeys with wheel)
-    std::chrono::steady_clock::time_point GetLastWheelUpTime() const { return lastWheelUpTime_; }
-    std::chrono::steady_clock::time_point GetLastWheelDownTime() const { return lastWheelDownTime_; }
+    // Wheel event tracking
+    std::chrono::steady_clock::time_point GetLastWheelUpTime() const override { return lastWheelUpTime_; }
+    std::chrono::steady_clock::time_point GetLastWheelDownTime() const override { return lastWheelDownTime_; }
 
     // Stats
-    size_t GetDeviceCount() const { return devices_.size(); }
-    size_t GetGrabbedDeviceCount() const { return grabbedFds_.size(); }
+    size_t GetDeviceCount() const override { return devices_.size(); }
+    size_t GetGrabbedDeviceCount() const override { return grabbedFds_.size(); }
 
 private:
     struct Device {
@@ -184,9 +149,6 @@ private:
     void UpdateModifierState(uint32_t code, bool down);
     uint32_t RemapKey(uint32_t code, bool down);
 
-    bool CheckModifierMatch(uint32_t required, bool wildcard) const;
-    bool CheckModifierMatchExcluding(uint32_t required, bool wildcard, uint32_t exclude) const;
-
     void QueryDeviceCapabilities(Device &dev);
     void ReleasePressedKeys(Device &dev);
     void DrainDeviceEvents(Device &dev);
@@ -197,29 +159,26 @@ private:
     bool SetupUinput();
     void DestroyUinput();
 
-    bool ShouldBlockEvent(const InputEvent &event) const;
-    void NotifyInputReceived();
-
     bool initialized_ = false;
     std::vector<Device> devices_;
     std::unordered_set<int> grabbedFds_;
     mutable std::mutex devicesMutex_;
     mutable std::shared_mutex stateMutex_;
 
-    // Key state tracking
+    // Key state tracking (raw state, no hotkey logic)
     std::unordered_map<uint32_t, bool> keyStates_;
     std::unordered_map<uint32_t, bool> buttonStates_;
     std::unordered_map<uint32_t, bool> physicalKeyStates_;
     std::unordered_map<uint32_t, ActiveInput> activeInputs_;
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> keyDownTime_;
-    ModifierState modifierState_;
+    havel::ModifierState modifierState_;
     uint32_t modifiers_ = 0;
 
     // Mouse position
     int32_t mouseX_ = 0;
     int32_t mouseY_ = 0;
 
-    // Key remapping
+    // Key remapping (for event synthesis)
     std::unordered_map<uint32_t, uint32_t> keyRemaps_;
     std::unordered_map<uint32_t, uint32_t> activeRemaps_;
     mutable std::mutex remapMutex_;
@@ -243,20 +202,18 @@ private:
     // Track pressed virtual keys
     std::unordered_set<uint32_t> pressedVirtualKeys_;
 
-    // Wheel tracking for combo hotkeys
+    // Wheel tracking
     std::chrono::steady_clock::time_point lastWheelUpTime_{};
     std::chrono::steady_clock::time_point lastWheelDownTime_{};
-    bool isProcessingWheelEvent_ = false;
-    int currentWheelDirection_ = 0;
 
-    // Combo hotkey time window
-    int comboTimeWindow_ = 0; // 0 = infinite
+    // Combo time window (passed through)
+    int comboTimeWindow_ = 0;
 
     // Shutdown coordination
     int shutdownFd_ = -1;
     std::atomic<bool> running_{false};
 
-    // Callbacks
+    // Callbacks - feed to EventListener
     KeyCallback keyDownCallback_;
     KeyCallback keyUpCallback_;
     AnyKeyPressCallback anyKeyPressCallback_;
@@ -329,29 +286,6 @@ std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
 
         char name[256] = "Unknown";
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-
-        uint32_t caps = 0;
-        unsigned long evBits[(EV_MAX + 31) / 32] = {};
-        if (ioctl(fd, EVIOCGBIT(0, sizeof(evBits)), evBits) >= 0) {
-            if (evBits[EV_KEY / 32] & (1 << (EV_KEY % 32))) {
-                unsigned long keyBits[(KEY_MAX + 31) / 32] = {};
-                if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keyBits)), keyBits) >= 0) {
-                    if (keyBits[KEY_A / 32] || keyBits[KEY_SPACE / 32]) {
-                        caps |= CAP_KEYBOARD;
-                    }
-                    if (keyBits[BTN_LEFT / 32] & (1 << (BTN_LEFT % 32))) {
-                        caps |= CAP_MOUSE;
-                    }
-                }
-            }
-            if (evBits[EV_REL / 32] & (1 << (EV_REL % 32))) {
-                caps |= CAP_MOUSE;
-            }
-            if (evBits[EV_ABS / 32] & (1 << (EV_ABS % 32))) {
-                caps |= CAP_JOYSTICK | CAP_TOUCHPAD;
-            }
-        }
-
         close(fd);
 
         DeviceInfo info;
@@ -380,7 +314,6 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
     dev.name = name;
     dev.fd = fd;
     QueryDeviceCapabilities(dev);
-
     DrainDeviceEvents(dev);
 
     {
@@ -655,7 +588,7 @@ std::string EvdevAdapter::GetActiveInputsString() const {
     return result;
 }
 
-EvdevAdapter::ModifierState EvdevAdapter::GetModifierState() const {
+havel::ModifierState EvdevAdapter::GetModifierState() const {
     std::shared_lock<std::shared_mutex> lock(stateMutex_);
     return modifierState_;
 }
@@ -694,8 +627,6 @@ std::chrono::steady_clock::time_point EvdevAdapter::GetKeyDownTime(uint32_t code
 }
 
 void EvdevAdapter::ProcessEvent(Device &dev, const input_event &ev) {
-    NotifyInputReceived();
-
     switch (ev.type) {
         case EV_KEY:
             if (dev.capabilities & CAP_MOUSE && ev.code >= BTN_MOUSE && ev.code < BTN_JOYSTICK) {
@@ -720,9 +651,9 @@ void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
     uint32_t originalCode = ev.code;
     uint32_t mappedCode = RemapKey(originalCode, down);
 
-    // Check emergency shutdown key
+    // Emergency shutdown check
     if (down && emergencyShutdownKey_ != 0 && originalCode == emergencyShutdownKey_) {
-        error("🚨 EMERGENCY SHUTDOWN KEY TRIGGERED!");
+        error("EMERGENCY SHUTDOWN KEY TRIGGERED!");
         running_ = false;
         if (shutdownFd_ >= 0) {
             uint64_t val = 1;
@@ -732,6 +663,7 @@ void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
         return;
     }
 
+    // Update state
     {
         std::unique_lock<std::shared_mutex> lock(stateMutex_);
         keyStates_[originalCode] = down;
@@ -748,14 +680,30 @@ void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
         }
     }
 
-    // Call raw key callbacks
-    if (down && keyDownCallback_) {
+    // Fire callbacks - EventListener will handle hotkey logic
+    if (keyDownCallback_ && down) {
         keyDownCallback_(originalCode);
-    } else if (!down && keyUpCallback_) {
+    } else if (keyUpCallback_ && !down) {
         keyUpCallback_(originalCode);
     }
 
-    // Build and emit input event
+    if (anyKeyPressCallback_ && down && !repeat) {
+        anyKeyPressCallback_(KeyMap::EvdevToString(originalCode));
+    }
+
+    // Build and emit input event for EventListener
+    if (keyCallback_) {
+        KeyEvent event;
+        event.code = originalCode;
+        event.down = down;
+        event.repeat = repeat;
+        event.modifiers = modifiers_;
+        event.keyName = KeyMap::EvdevToString(originalCode);
+        event.timestamp = now;
+        keyCallback_(event);
+    }
+
+    // Build InputEvent for block checking
     InputEvent inputEvent;
     inputEvent.kind = InputEventKind::Key;
     inputEvent.code = originalCode;
@@ -767,21 +715,15 @@ void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
     inputEvent.keyName = KeyMap::EvdevToString(originalCode);
     inputEvent.modifiers = modifiers_;
 
-    // Any key press callback
-    if (down && anyKeyPressCallback_) {
-        anyKeyPressCallback_(inputEvent.keyName);
-    }
-
-    // Input event callback
     if (inputEventCallback_) {
         inputEventCallback_(inputEvent);
     }
 
-    // Check if we should block
-    bool shouldBlock = ShouldBlockEvent(inputEvent);
+    // Forward to uinput unless blocked
+    bool shouldBlock = blockInput_.load() || 
+        (inputBlockCallback_ && inputBlockCallback_(inputEvent));
 
-    // Forward event unless blocked
-    if (!shouldBlock && !blockInput_.load()) {
+    if (!shouldBlock) {
         SendUinputEvent(EV_KEY, mappedCode, ev.value);
         SendSync();
     }
@@ -799,23 +741,24 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
             else mouseY_ += scaled;
         }
 
-        InputEvent inputEvent;
-        inputEvent.kind = InputEventKind::MouseMove;
-        inputEvent.code = ev.code;
-        inputEvent.value = scaled;
-        inputEvent.dx = (ev.code == REL_X) ? scaled : 0;
-        inputEvent.dy = (ev.code == REL_Y) ? scaled : 0;
-        inputEvent.modifiers = modifiers_;
-
-        if (inputEventCallback_) {
-            inputEventCallback_(inputEvent);
-        }
-
         if (mouseMovementCallback_) {
-            mouseMovementCallback_(inputEvent.dx, inputEvent.dy);
+            mouseMovementCallback_(
+                ev.code == REL_X ? scaled : 0,
+                ev.code == REL_Y ? scaled : 0
+            );
         }
 
-        if (!ShouldBlockEvent(inputEvent) && !blockInput_.load()) {
+        if (mouseCallback_) {
+            MouseEvent event;
+            event.type = MouseEvent::Type::Move;
+            event.modifiers = modifiers_;
+            event.timestamp = now;
+            if (ev.code == REL_X) event.dx = scaled;
+            else event.dy = scaled;
+            mouseCallback_(event);
+        }
+
+        if (!blockInput_.load()) {
             SendUinputEvent(EV_REL, ev.code, scaled);
             SendSync();
         }
@@ -824,36 +767,22 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
         int32_t scaled = static_cast<int32_t>(ev.value * scrollSpeed_);
         if (scaled == 0 && ev.value != 0) scaled = (ev.value > 0) ? 1 : -1;
 
-        int wheelDirection = (ev.value > 0) ? 1 : -1;
         {
             std::unique_lock<std::shared_mutex> lock(stateMutex_);
-            if (wheelDirection > 0) lastWheelUpTime_ = now;
+            if (ev.value > 0) lastWheelUpTime_ = now;
             else lastWheelDownTime_ = now;
-            isProcessingWheelEvent_ = true;
-            currentWheelDirection_ = wheelDirection;
         }
 
-        InputEvent inputEvent;
-        inputEvent.kind = InputEventKind::MouseWheel;
-        inputEvent.code = ev.code;
-        inputEvent.value = scaled;
-        inputEvent.dy = (ev.code == REL_WHEEL) ? wheelDirection : 0;
-        inputEvent.dx = (ev.code == REL_HWHEEL) ? wheelDirection : 0;
-        inputEvent.modifiers = modifiers_;
-
-        if (inputEventCallback_) {
-            inputEventCallback_(inputEvent);
+        if (mouseCallback_) {
+            MouseEvent event;
+            event.type = MouseEvent::Type::Wheel;
+            event.wheel = scaled;
+            event.modifiers = modifiers_;
+            event.timestamp = now;
+            mouseCallback_(event);
         }
 
-        bool shouldBlock = ShouldBlockEvent(inputEvent);
-
-        {
-            std::unique_lock<std::shared_mutex> lock(stateMutex_);
-            isProcessingWheelEvent_ = false;
-            currentWheelDirection_ = 0;
-        }
-
-        if (!shouldBlock && !blockInput_.load()) {
+        if (!blockInput_.load()) {
             SendUinputEvent(EV_REL, ev.code, scaled);
             SendSync();
         }
@@ -875,14 +804,14 @@ void EvdevAdapter::ProcessAbsoluteEvent(Device &dev, const input_event &ev) {
             else mouseY_ = ev.value;
         }
 
-        InputEvent inputEvent;
-        inputEvent.kind = InputEventKind::Absolute;
-        inputEvent.code = ev.code;
-        inputEvent.value = ev.value;
-        inputEvent.modifiers = modifiers_;
-
-        if (inputEventCallback_) {
-            inputEventCallback_(inputEvent);
+        if (mouseCallback_) {
+            MouseEvent event;
+            event.type = MouseEvent::Type::Absolute;
+            event.modifiers = modifiers_;
+            event.timestamp = now;
+            if (ev.code == ABS_X) event.absoluteX = ev.value;
+            else event.absoluteY = ev.value;
+            mouseCallback_(event);
         }
 
         if (!blockInput_.load()) {
@@ -908,21 +837,17 @@ void EvdevAdapter::ProcessMouseButtonEvent(Device &dev, const input_event &ev) {
         }
     }
 
-    InputEvent inputEvent;
-    inputEvent.kind = InputEventKind::MouseButton;
-    inputEvent.code = ev.code;
-    inputEvent.value = ev.value;
-    inputEvent.down = down;
-    inputEvent.repeat = (ev.value == 2);
-    inputEvent.modifiers = modifiers_;
-
-    if (inputEventCallback_) {
-        inputEventCallback_(inputEvent);
+    if (mouseCallback_) {
+        MouseEvent event;
+        event.type = MouseEvent::Type::Button;
+        event.button = ev.code;
+        event.down = down;
+        event.modifiers = modifiers_;
+        event.timestamp = now;
+        mouseCallback_(event);
     }
 
-    bool shouldBlock = ShouldBlockEvent(inputEvent);
-
-    if (!shouldBlock && !blockInput_.load()) {
+    if (!blockInput_.load()) {
         SendUinputEvent(EV_KEY, ev.code, ev.value);
         SendSync();
     } else if (!down) {
@@ -983,60 +908,6 @@ uint32_t EvdevAdapter::RemapKey(uint32_t code, bool down) {
     return code;
 }
 
-bool EvdevAdapter::CheckModifierMatch(uint32_t required, bool wildcard) const {
-    bool ctrlReq = (required & 1) != 0;
-    bool shiftReq = (required & 2) != 0;
-    bool altReq = (required & 4) != 0;
-    bool metaReq = (required & 8) != 0;
-
-    bool ctrlPressed = modifierState_.IsCtrlPressed();
-    bool shiftPressed = modifierState_.IsShiftPressed();
-    bool altPressed = modifierState_.IsAltPressed();
-    bool metaPressed = modifierState_.IsMetaPressed();
-
-    if (wildcard) {
-        return (!ctrlReq || ctrlPressed) &&
-               (!shiftReq || shiftPressed) &&
-               (!altReq || altPressed) &&
-               (!metaReq || metaPressed);
-    }
-
-    return ctrlReq == ctrlPressed &&
-           shiftReq == shiftPressed &&
-           altReq == altPressed &&
-           metaReq == metaPressed;
-}
-
-bool EvdevAdapter::CheckModifierMatchExcluding(uint32_t required, bool wildcard, uint32_t exclude) const {
-    bool ctrlPressed = modifierState_.IsCtrlPressed();
-    bool shiftPressed = modifierState_.IsShiftPressed();
-    bool altPressed = modifierState_.IsAltPressed();
-    bool metaPressed = modifierState_.IsMetaPressed();
-
-    // Exclude the modifier we're remapping to
-    if (exclude == KEY_LEFTCTRL || exclude == KEY_RIGHTCTRL) ctrlPressed = false;
-    else if (exclude == KEY_LEFTSHIFT || exclude == KEY_RIGHTSHIFT) shiftPressed = false;
-    else if (exclude == KEY_LEFTALT || exclude == KEY_RIGHTALT) altPressed = false;
-    else if (exclude == KEY_LEFTMETA || exclude == KEY_RIGHTMETA) metaPressed = false;
-
-    bool ctrlReq = (required & 1) != 0;
-    bool shiftReq = (required & 2) != 0;
-    bool altReq = (required & 4) != 0;
-    bool metaReq = (required & 8) != 0;
-
-    if (wildcard) {
-        return (!ctrlReq || ctrlPressed) &&
-               (!shiftReq || shiftPressed) &&
-               (!altReq || altPressed) &&
-               (!metaReq || metaPressed);
-    }
-
-    return ctrlReq == ctrlPressed &&
-           shiftReq == shiftPressed &&
-           altReq == altPressed &&
-           metaReq == metaPressed;
-}
-
 void EvdevAdapter::QueryDeviceCapabilities(Device &dev) {
     unsigned long evBits[(EV_MAX + 31) / 32] = {};
     if (ioctl(dev.fd, EVIOCGBIT(0, sizeof(evBits)), evBits) < 0) return;
@@ -1068,7 +939,6 @@ void EvdevAdapter::ReleasePressedKeys(Device &dev) {
     uint8_t keyBits[(KEY_MAX + 7) / 8] = {};
     if (ioctl(dev.fd, EVIOCGKEY(sizeof(keyBits)), keyBits) < 0) return;
 
-    int released = 0;
     for (int key = 0; key < KEY_MAX; ++key) {
         if (keyBits[key / 8] & (1 << (key % 8))) {
             input_event ev = {};
@@ -1076,23 +946,18 @@ void EvdevAdapter::ReleasePressedKeys(Device &dev) {
             ev.code = key;
             ev.value = 0;
             write(dev.fd, &ev, sizeof(ev));
-            ++released;
         }
     }
 
-    if (released > 0) {
-        input_event sync = {};
-        sync.type = EV_SYN;
-        sync.code = SYN_REPORT;
-        write(dev.fd, &sync, sizeof(sync));
-        debug("EvdevAdapter: Released {} pressed keys on {}", released, dev.name);
-    }
+    input_event sync = {};
+    sync.type = EV_SYN;
+    sync.code = SYN_REPORT;
+    write(dev.fd, &sync, sizeof(sync));
 }
 
 void EvdevAdapter::DrainDeviceEvents(Device &dev) {
     input_event ev;
-    while (read(dev.fd, &ev, sizeof(ev)) == sizeof(ev)) {
-    }
+    while (read(dev.fd, &ev, sizeof(ev)) == sizeof(ev)) {}
 }
 
 bool EvdevAdapter::SetupUinput() {
@@ -1123,17 +988,8 @@ void EvdevAdapter::SendSync() {
     }
 }
 
-bool EvdevAdapter::ShouldBlockEvent(const InputEvent &event) const {
-    if (inputBlockCallback_) {
-        return inputBlockCallback_(event);
-    }
-    return false;
-}
-
-void EvdevAdapter::NotifyInputReceived() {
-    if (inputNotificationCallback_) {
-        inputNotificationCallback_();
-    }
+std::unique_ptr<InputBackend> havel::CreateEvdevAdapter() {
+    return std::make_unique<EvdevAdapter>();
 }
 
 }

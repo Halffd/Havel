@@ -14,11 +14,25 @@
 namespace havel::compiler {
 
 // Type feedback for JIT specialization
+// Type tags for AOT type hints (must match Value::Tag)
+constexpr uint64_t TYPE_HINT_INT = 1ULL << 0;      // int48
+constexpr uint64_t TYPE_HINT_NUMBER = 1ULL << 1;  // f64 (double)
+constexpr uint64_t TYPE_HINT_STRING = 1ULL << 2;  // string
+constexpr uint64_t TYPE_HINT_ARRAY = 1ULL << 3;   // array
+constexpr uint64_t TYPE_HINT_OBJECT = 1ULL << 4;  // object
+constexpr uint64_t TYPE_HINT_BOOL = 1ULL << 5;    // boolean
+constexpr uint64_t TYPE_HINT_NULL = 1ULL << 6;    // null
+constexpr uint64_t TYPE_HINT_FUNCTION = 1ULL << 7; // function/closure
+
 struct TypeFeedback {
-  uint64_t left_type_mask = 0;
-  uint64_t right_type_mask = 0;
-  uint64_t result_type_mask = 0;
-  uint32_t execution_count = 0;
+    uint64_t left_type_mask = 0;
+    uint64_t right_type_mask = 0;
+    uint64_t result_type_mask = 0;
+    uint32_t execution_count = 0;
+
+    // AOT type hints from annotations (set at compile time)
+    uint64_t aot_type_hint = 0;  // Type hint for result (e.g., TYPE_HINT_INT for "x: int")
+    bool has_aot_hint = false;   // Whether we have a compile-time type hint
 };
 
 

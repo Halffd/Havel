@@ -237,31 +237,36 @@ if(ENABLE_LLVM AND ENABLE_HAVEL_LANG)
     if(LLVM_FOUND)
         message(STATUS "✓ LLVM ${LLVM_PACKAGE_VERSION} found")
         
-        # Get LLVM libraries using llvm-config
+        # Use llvm-config directly for library information - it handles all dependencies
         execute_process(
-            COMMAND llvm-config --libs core support mcjit native
-            OUTPUT_VARIABLE LLVM_LIBS_OUTPUT
+            COMMAND llvm-config --libdir
+            OUTPUT_VARIABLE LLVM_LIBDIR
             OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
+        )
+        
+        execute_process(
+            COMMAND llvm-config --libs all
+            OUTPUT_VARIABLE LLVM_LINKFLAGS
+            OUTPUT_STRIP_TRAILING_WHITESPACE
         )
         
         execute_process(
             COMMAND llvm-config --system-libs
-            OUTPUT_VARIABLE LLVM_SYSTEM_LIBS_OUTPUT
+            OUTPUT_VARIABLE LLVM_SYSTEM_LIBS
             OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
         )
         
-        # Clean and convert to lists
-        string(STRIP "${LLVM_LIBS_OUTPUT}" LLVM_LIBS_CLEAN)
-        string(STRIP "${LLVM_SYSTEM_LIBS_OUTPUT}" LLVM_SYSTEM_LIBS_CLEAN)
-        separate_arguments(LLVM_LIBS_LIST UNIX_COMMAND "${LLVM_LIBS_CLEAN}")
-        separate_arguments(LLVM_SYSTEM_LIBS_LIST UNIX_COMMAND "${LLVM_SYSTEM_LIBS_CLEAN}")
+        # Combine all libraries - this returns raw flags like "-lLLVMCore -lLLVMSupport ..."
+        set(LLVM_LIBS "${LLVM_LINKFLAGS} ${LLVM_SYSTEM_LIBS}")
         
-        set(LLVM_LIBS ${LLVM_LIBS_LIST} ${LLVM_SYSTEM_LIBS_LIST})
+        # Add LLVM library search directory to linker search path
+        if(LLVM_LIBDIR)
+            link_directories(${LLVM_LIBDIR})
+            message(STATUS "  LLVM lib directory: ${LLVM_LIBDIR}")
+        endif()
         
-        message(STATUS "  LLVM libraries: ${LLVM_LIBS_LIST}")
-        message(STATUS "  System libraries: ${LLVM_SYSTEM_LIBS_LIST}")
+        message(STATUS "  LLVM link flags: ${LLVM_LINKFLAGS}")
+        
         
     else()
         message(FATAL_ERROR 
@@ -341,6 +346,28 @@ if(ENABLE_HAVEL_LANG)
         # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
         # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
     )
+    
+    # Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
+    if(NOT ENABLE_LLVM)
+        list(REMOVE_ITEM HAVEL_LANG_SOURCES
+            ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
+        )
+    endif()
+    
+    # -----------------------------------------------------------------------
+    # Apply LLVM include fixes to BytecodeOrcJIT.cpp globally
+    # This prevents LLVM 23's bare `namespace __detail` from polluting std::__detail
+    # The fix applies to all targets that include HAVEL_LANG_SOURCES
+    # -----------------------------------------------------------------------
+    if(ENABLE_LLVM)
+        set(JIT_SRC "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp")
+        # Convert list of include dirs to properly formatted -I flags
+        # LLVM_INCLUDE_DIRS is a semicolon-separated list, so we need to prefix each with -I
+        string(REGEX REPLACE ";" " -I" LLVM_INCLUDE_FLAGS "-I${LLVM_INCLUDE_DIRS}")
+        set_source_files_properties(${JIT_SRC} PROPERTIES
+            COMPILE_FLAGS "${LLVM_INCLUDE_FLAGS}"
+        )
+    endif()
 endif()
 
 # Host modules (language bindings to system managers)
@@ -830,9 +857,9 @@ target_link_libraries(havel PRIVATE
     $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
     $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
     spdlog::spdlog
-    $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     ${OPENCV_FFMPEG_WORKAROUND}
     havel_extension_runtime
+    $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 )
 
 # Compile definitions
@@ -905,16 +932,12 @@ if(ENABLE_HAVEL_LANG)
     )
 
     # -----------------------------------------------------------------------
-    # Scope LLVM includes to BytecodeOrcJIT.cpp ONLY.
+    # Note: LLVM_INCLUDE_DIRS handling is applied globally at source assembly
+    # stage to all targets that use HAVEL_LANG_SOURCES (including tests).
     # This prevents LLVM 23's bare `namespace __detail` from polluting
     # std::__detail across every translation unit in havel_lang.
     # -----------------------------------------------------------------------
-    if(ENABLE_LLVM)
-        set(JIT_SRC "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp")
-        set_source_files_properties(${JIT_SRC} PROPERTIES
-            COMPILE_FLAGS "-I${LLVM_INCLUDE_DIRS}"
-        )
-    endif()
+
 endif()
 
 # ==============================================================================
@@ -960,8 +983,8 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             Qt6::Test
             $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
             $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
-            $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
             havel_extension_runtime
+            $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
         )
         
         target_compile_definitions(${test_name} PRIVATE

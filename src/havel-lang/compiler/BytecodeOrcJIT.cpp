@@ -8,10 +8,14 @@
 #include <llvm/Support/FileSystem.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/TargetParser/TargetParser.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/CodeGen.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/MC/TargetRegistry.h>
+
+#include <fstream>
+#include <sstream>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Passes/PassBuilder.h>
 
@@ -136,7 +140,8 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
 BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 
 void BytecodeOrcJIT::initTargetMachine() {
-    auto target_triple = llvm::sys::getDefaultTargetTriple();
+    auto target_triple_str = llvm::sys::getDefaultTargetTriple();
+    llvm::Triple target_triple(target_triple_str);
     std::string error;
     auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
     if (target) {
@@ -152,7 +157,7 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
 
     if (target_machine_) {
         module->setDataLayout(target_machine_->createDataLayout());
-        module->setTargetTriple(target_machine_->getTargetTriple().getTriple());
+        module->setTargetTriple(target_machine_->getTargetTriple());
     }
 
     translate(func, *module);
@@ -164,27 +169,39 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     if ((debug_jit_ || dump_asm_to_file_) && target_machine_) {
-        std::string asm_str;
-        llvm::raw_string_ostream ros(asm_str);
+        // Use raw_fd_ostream which is compatible with addPassesToEmitFile
+        std::error_code ec;
+        std::string asm_file = "/tmp/havel_asm_" + func.name + ".s";
+        llvm::raw_fd_ostream ros(asm_file, ec, llvm::sys::fs::OF_None);
         
-        // Use a local pass manager for file emission (legacy but necessary for this)
-        #include <llvm/IR/LegacyPassManager.h>
-        llvm::legacy::PassManager pm;
-        if (!target_machine_->addPassesToEmitFile(pm, ros, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
-            pm.run(*module);
-            ros.flush();
-            last_asm_ = asm_str;
-            
-            if (debug_jit_) {
-                 std::cerr << "--- Assembly for " << func.name << " ---" << std::endl;
-                 std::cerr << last_asm_ << std::endl;
+        if (!ec) {
+            // Use a local pass manager for file emission (legacy but necessary for this)
+            llvm::legacy::PassManager pm;
+            if (!target_machine_->addPassesToEmitFile(pm, ros, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
+                pm.run(*module);
+                ros.flush();
+                ros.close();
+                
+                // Read the assembly into memory for debug output
+                std::ifstream asm_input(asm_file);
+                if (asm_input.is_open()) {
+                    std::stringstream buffer;
+                    buffer << asm_input.rdbuf();
+                    last_asm_ = buffer.str();
+                    asm_input.close();
+                    
+                    if (debug_jit_) {
+                        std::cerr << "--- Assembly for " << func.name << " ---" << std::endl;
+                        std::cerr << last_asm_ << std::endl;
+                    }
+                }
             }
             
             if (dump_asm_to_file_) {
-                 dumpAssembly(func.name + ".s");
-                 std::error_code ec;
-                 llvm::raw_fd_ostream ir_os(func.name + ".ll", ec, llvm::sys::fs::OF_None);
-                 if (!ec) module->print(ir_os, nullptr);
+                dumpAssembly(func.name + ".s");
+                std::error_code ec2;
+                llvm::raw_fd_ostream ir_os(func.name + ".ll", ec2, llvm::sys::fs::OF_None);
+                if (!ec2) module->print(ir_os, nullptr);
             }
         }
     }
@@ -370,7 +387,14 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         B.SetInsertPoint(deoptBB); 
         llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
         if (!fn_deopt) fn_deopt = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false), llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
-        llvm::Value* funcNameConst = B.CreateGlobalStringPtr(func.name);
+        
+        // Create global string constant for function name
+        llvm::Constant *funcNameStr = llvm::ConstantDataArray::getString(module.getContext(), func.name);
+        llvm::GlobalVariable *gv = new llvm::GlobalVariable(
+            module, funcNameStr->getType(), true,
+            llvm::GlobalValue::PrivateLinkage, funcNameStr);
+        llvm::Value* funcNameConst = B.CreatePointerCast(gv, i8p);
+        
         B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
         B.CreateBr(mergeBB);
 

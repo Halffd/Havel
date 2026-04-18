@@ -16,6 +16,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Passes/PassBuilder.h>
 
@@ -85,8 +86,43 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
 }
 
 void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
-    std::cerr << "[JIT] Deoptimizing in " << func << " for types: 0x" 
+    std::cerr << "[JIT] Deoptimizing in " << func << " for types: 0x"
               << std::hex << l << " op 0x" << r << std::dec << std::endl;
+}
+
+// JIT helper for function calls - delegates to VM
+uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) {
+    if (!vm_ptr) return 0x7FF8000000000003ULL; // null
+    auto* vm = static_cast<VM*>(vm_ptr);
+    
+    // Convert args array to vector
+    std::vector<Value> valArgs;
+    for (uint32_t i = 0; i < count; ++i) {
+        Value v;
+        std::memcpy(&v, &args[i], sizeof(uint64_t));
+        valArgs.push_back(v);
+    }
+    
+    // The callee is the first argument (args[0])
+    if (valArgs.empty()) {
+        return 0x7FF8000000000003ULL; // null
+    }
+    
+    Value callee = valArgs[0];
+    valArgs.erase(valArgs.begin()); // Remove callee from args
+    
+    // Call the function through VM
+    Value result = vm->callFunction(callee, valArgs);
+    
+    uint64_t bits;
+    std::memcpy(&bits, &result, sizeof(uint64_t));
+    return bits;
+}
+
+// JIT helper for tail calls - reuses current frame
+uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
+    // Tail call: same as regular call but caller handles frame reuse
+    return havel_vm_call(vm_ptr, args, count);
 }
 
 } // extern "C"
@@ -126,11 +162,13 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
         };
     };
 
-    addSym("havel_vm_throw_error",     reinterpret_cast<void*>(&havel_vm_throw_error));
-    addSym("havel_gc_write_barrier",   reinterpret_cast<void*>(&havel_gc_write_barrier));
-    addSym("havel_gc_register_roots",  reinterpret_cast<void*>(&havel_gc_register_roots));
-    addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_roots));
-    addSym("havel_deoptimize",         reinterpret_cast<void*>(&havel_deoptimize));
+addSym("havel_vm_throw_error", reinterpret_cast<void*>(&havel_vm_throw_error));
+addSym("havel_gc_write_barrier", reinterpret_cast<void*>(&havel_gc_write_barrier));
+addSym("havel_gc_register_roots", reinterpret_cast<void*>(&havel_gc_register_roots));
+addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_roots));
+addSym("havel_deoptimize", reinterpret_cast<void*>(&havel_deoptimize));
+addSym("havel_vm_call", reinterpret_cast<void*>(&havel_vm_call));
+addSym("havel_vm_tail_call", reinterpret_cast<void*>(&havel_vm_tail_call));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         llvm::consumeError(std::move(err));
@@ -402,44 +440,255 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         llvm::PHINode *phi = B.CreatePHI(i64, 3);
         phi->addIncoming(iBoxed, iExitBB);
         phi->addIncoming(dBoxed, dExitBB);
-        phi->addIncoming(makeNull(), deoptBB);
+phi->addIncoming(makeNull(), deoptBB);
         return phi;
     };
 
+    // First pass: identify jump targets and create basic blocks
+    std::vector<llvm::BasicBlock*> basicBlocks(func.instructions.size(), nullptr);
+    std::unordered_set<size_t> jumpTargets;
+
+    // Find all jump targets
     for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
+        const auto &instr = func.instructions[ip];
+        if (instr.opcode == OpCode::JUMP) {
+            jumpTargets.insert(instr.operands[0].asInt());
+        } else if (instr.opcode == OpCode::JUMP_IF_FALSE ||
+                   instr.opcode == OpCode::JUMP_IF_TRUE ||
+                   instr.opcode == OpCode::JUMP_IF_NULL) {
+            jumpTargets.insert(instr.operands[1].asInt());
+        }
+    }
+    // Entry point is always a jump target
+    jumpTargets.insert(0);
+
+    // Create basic blocks for jump targets
+    for (size_t ip : jumpTargets) {
+        if (ip < func.instructions.size()) {
+            basicBlocks[ip] = llvm::BasicBlock::Create(ctx, "ip" + std::to_string(ip), f);
+        }
+    }
+
+    // Second pass: emit instructions with control flow
+    for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
+        // If this is a jump target, switch to its basic block
+        if (basicBlocks[ip] != nullptr) {
+            // Terminate previous block if needed
+            if (B.GetInsertBlock()->getTerminator() == nullptr) {
+                B.CreateBr(basicBlocks[ip]);
+            }
+            B.SetInsertPoint(basicBlocks[ip]);
+        }
+
+        // Skip if current block is already terminated
+        if (B.GetInsertBlock()->getTerminator() != nullptr) {
+            continue;
+        }
+
         const auto &instr = func.instructions[ip];
         const TypeFeedback* fb = (ip < func.type_feedback.size()) ? &func.type_feedback[ip] : nullptr;
 
         switch (instr.opcode) {
-            case OpCode::LOAD_CONST: {
-                uint64_t bits; std::memcpy(&bits, &func.constants[instr.operands[0].asInt()], 8);
-                vstack.push_back(llvm::ConstantInt::get(i64, bits));
-                break;
+        case OpCode::LOAD_CONST: {
+            uint64_t bits; std::memcpy(&bits, &func.constants[instr.operands[0].asInt()], 8);
+            vstack.push_back(llvm::ConstantInt::get(i64, bits));
+            break;
+        }
+        case OpCode::LOAD_VAR: vstack.push_back(B.CreateLoad(i64, vlocals[instr.operands[0].asInt()])); break;
+        case OpCode::STORE_VAR: {
+            llvm::Value* v = vstack.back(); vstack.pop_back();
+            B.CreateStore(v, vlocals[instr.operands[0].asInt()]);
+            if (opcodeProducesHeapRef(instr.opcode)) emitWriteBarrier(v);
+            break;
+        }
+        case OpCode::POP: vstack.pop_back(); break;
+        case OpCode::DUP: vstack.push_back(vstack.back()); break;
+
+        case OpCode::ADD:
+        case OpCode::SUB:
+        case OpCode::MUL:
+        case OpCode::DIV: {
+            llvm::Value* r = vstack.back(); vstack.pop_back();
+            llvm::Value* l = vstack.back(); vstack.pop_back();
+            vstack.push_back(emitSpecializedBinop(instr.opcode, fb, ip, l, r));
+            break;
+        }
+        case OpCode::NEGATE: {
+            llvm::Value* v = vstack.back(); vstack.pop_back();
+            // Negate: for int48, unbox, negate, rebox; for double, just fneg
+            llvm::Value* isInt = isInt48Loc(v);
+            llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, "neg_int", f);
+            llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, "neg_dbl", f);
+            llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, "neg_merge", f);
+            B.CreateCondBr(isInt, intBB, dblBB);
+            B.SetInsertPoint(intBB);
+            llvm::Value* intNeg = boxInt(B.CreateNeg(unboxInt(v)));
+            B.CreateBr(mergeBB);
+            B.SetInsertPoint(dblBB);
+            llvm::Value* dblNeg = B.CreateBitCast(B.CreateFNeg(B.CreateBitCast(v, f64)), i64);
+            B.CreateBr(mergeBB);
+            B.SetInsertPoint(mergeBB);
+            llvm::PHINode* phi = B.CreatePHI(i64, 2);
+            phi->addIncoming(intNeg, intBB);
+            phi->addIncoming(dblNeg, dblBB);
+            vstack.push_back(phi);
+            break;
+        }
+
+        // Comparisons
+        case OpCode::EQ:
+        case OpCode::NEQ:
+        case OpCode::LT:
+        case OpCode::LTE:
+        case OpCode::GT:
+        case OpCode::GTE: {
+            llvm::Value* r = vstack.back(); vstack.pop_back();
+            llvm::Value* l = vstack.back(); vstack.pop_back();
+            // Compare as integers (boxed values)
+            llvm::Value* cmp = nullptr;
+            switch (instr.opcode) {
+                case OpCode::EQ: cmp = B.CreateICmpEQ(l, r); break;
+                case OpCode::NEQ: cmp = B.CreateICmpNE(l, r); break;
+                case OpCode::LT: cmp = B.CreateICmpSLT(l, r); break;
+                case OpCode::LTE: cmp = B.CreateICmpSLE(l, r); break;
+                case OpCode::GT: cmp = B.CreateICmpSGT(l, r); break;
+                case OpCode::GTE: cmp = B.CreateICmpSGE(l, r); break;
+                default: break;
             }
-            case OpCode::LOAD_VAR: vstack.push_back(B.CreateLoad(i64, vlocals[instr.operands[0].asInt()])); break;
-            case OpCode::STORE_VAR: {
-                llvm::Value* v = vstack.back(); vstack.pop_back();
-                B.CreateStore(v, vlocals[instr.operands[0].asInt()]);
-                if (opcodeProducesHeapRef(instr.opcode)) emitWriteBarrier(v);
-                break;
+            // Box boolean result as int48: true = 1, false = 0
+            vstack.push_back(boxInt(B.CreateZExt(cmp, i64)));
+            break;
+        }
+        case OpCode::IS_NULL: {
+            llvm::Value* v = vstack.back(); vstack.pop_back();
+            llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
+            vstack.push_back(boxInt(B.CreateZExt(isNull, i64)));
+            break;
+        }
+        case OpCode::NOT: {
+            llvm::Value* v = vstack.back(); vstack.pop_back();
+            // Truthy check: null, 0, false are falsy
+            llvm::Value* isFalsy = B.CreateOr(
+                B.CreateICmpEQ(v, makeNull()),
+                B.CreateICmpEQ(v, boxInt(llvm::ConstantInt::get(i64, 0)))
+            );
+            vstack.push_back(boxInt(B.CreateZExt(isFalsy, i64)));
+            break;
+        }
+
+        // Control flow
+        case OpCode::JUMP: {
+            size_t target = instr.operands[0].asInt();
+            if (basicBlocks[target]) {
+                B.CreateBr(basicBlocks[target]);
             }
-            case OpCode::ADD:
-            case OpCode::SUB:
-            case OpCode::MUL:
-            case OpCode::DIV: {
-                llvm::Value* r = vstack.back(); vstack.pop_back();
-                llvm::Value* l = vstack.back(); vstack.pop_back();
-                vstack.push_back(emitSpecializedBinop(instr.opcode, fb, ip, l, r));
-                break;
+            break;
+        }
+        case OpCode::JUMP_IF_FALSE: {
+            size_t target = instr.operands[1].asInt();
+            llvm::Value* cond = vstack.back(); vstack.pop_back();
+            // Falsy: null, 0, false
+            llvm::Value* isFalsy = B.CreateOr(
+                B.CreateICmpEQ(cond, makeNull()),
+                B.CreateICmpEQ(cond, boxInt(llvm::ConstantInt::get(i64, 0)))
+            );
+            if (basicBlocks[target]) {
+                B.CreateCondBr(isFalsy, basicBlocks[target], B.GetInsertBlock());
             }
-            case OpCode::RETURN: {
-                llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-                if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
-                B.CreateCall(fn_unreg, {frame});
-                B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
-                break;
+            break;
+        }
+        case OpCode::JUMP_IF_TRUE: {
+            size_t target = instr.operands[1].asInt();
+            llvm::Value* cond = vstack.back(); vstack.pop_back();
+            llvm::Value* isTruthy = B.CreateAnd(
+                B.CreateICmpNE(cond, makeNull()),
+                B.CreateICmpNE(cond, boxInt(llvm::ConstantInt::get(i64, 0)))
+            );
+            if (basicBlocks[target]) {
+                B.CreateCondBr(isTruthy, basicBlocks[target], B.GetInsertBlock());
             }
-            default: break;
+            break;
+        }
+        case OpCode::JUMP_IF_NULL: {
+            size_t target = instr.operands[1].asInt();
+            llvm::Value* v = vstack.back();
+            llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
+            vstack.pop_back(); // Coalesce consumes the value
+            if (basicBlocks[target]) {
+                B.CreateCondBr(isNull, basicBlocks[target], B.GetInsertBlock());
+            }
+            break;
+        }
+
+        // Function calls
+        case OpCode::CALL: {
+            uint32_t argCount = instr.operands[0].asInt();
+            // Collect args from stack (in reverse order for calling convention)
+            std::vector<llvm::Value*> args;
+            args.push_back(vmArg);
+            // Create args array on stack
+            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "call_args");
+            for (uint32_t i = 0; i < argCount; ++i) {
+                llvm::Value* arg = vstack.back(); vstack.pop_back();
+                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+            }
+            args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+            args.push_back(llvm::ConstantInt::get(i32, argCount));
+
+            // Call havel_vm_call(vm, args, count)
+            llvm::Function* fnCall = module.getFunction("havel_vm_call");
+            if (!fnCall) {
+                fnCall = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_call", &module);
+            }
+            vstack.push_back(B.CreateCall(fnCall, args));
+            break;
+        }
+        case OpCode::TAIL_CALL: {
+            uint32_t argCount = instr.operands[0].asInt();
+            // Collect args from stack
+            std::vector<llvm::Value*> args;
+            args.push_back(vmArg);
+            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "tail_args");
+            for (uint32_t i = 0; i < argCount; ++i) {
+                llvm::Value* arg = vstack.back(); vstack.pop_back();
+                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+            }
+            args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+            args.push_back(llvm::ConstantInt::get(i32, argCount));
+
+            // Unregister GC roots before tail call
+            llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+            if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+            B.CreateCall(fn_unreg, {frame});
+
+            // Call havel_vm_tail_call which handles frame reuse
+            llvm::Function* fnTailCall = module.getFunction("havel_vm_tail_call");
+            if (!fnTailCall) {
+                fnTailCall = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_tail_call", &module);
+            }
+            // Musttail call for proper tail call optimization
+            llvm::CallInst* call = B.CreateCall(fnTailCall, args);
+            call->setTailCallKind(llvm::CallInst::TCK_MustTail);
+            B.CreateRet(call);
+            break;
+        }
+
+        case OpCode::RETURN: {
+            llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+            if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+            B.CreateCall(fn_unreg, {frame});
+            B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
+            break;
+        }
+        default: break;
         }
     }
 }

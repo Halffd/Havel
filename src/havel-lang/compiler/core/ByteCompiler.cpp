@@ -417,19 +417,25 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
 
     // Track variadic parameter
     if (param->isVariadic) {
-      current_function->variadic_param_index = static_cast<uint32_t>(i);
+current_function->variadic_param_index = static_cast<uint32_t>(i);
     }
 
     if (param->typeAnnotation && param->pattern &&
         param->pattern->kind == ast::NodeType::Identifier) {
-      const auto *identifier =
-          static_cast<const ast::Identifier *>(param->pattern.get());
-      if (auto normalized =
-              normalizeTypeAnnotation(param->typeAnnotation->get());
-          normalized.has_value()) {
-        emitTypeAssertionForLocal(*normalized, declarationSlot(*identifier),
-                                  identifier->symbol);
-      }
+        const auto *identifier =
+            static_cast<const ast::Identifier *>(param->pattern.get());
+        if (auto normalized =
+            normalizeTypeAnnotation(param->typeAnnotation->get());
+            normalized.has_value()) {
+            uint32_t assertStartIp = current_function->instructions.size();
+            emitTypeAssertionForLocal(*normalized, declarationSlot(*identifier),
+                                       identifier->symbol);
+            // Set AOT type hint for the parameter
+            uint64_t hint = typeHintFromAnnotation(param->typeAnnotation->get());
+            if (hint) {
+                setTypeFeedbackHint(assertStartIp, hint);
+            }
+        }
     }
 
     // Store default value if present (only simple literals for now)
@@ -990,47 +996,59 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
-  case ast::NodeType::LetDeclaration: {
+case ast::NodeType::LetDeclaration: {
     const auto &let = static_cast<const ast::LetDeclaration &>(statement);
     if (auto *identifier =
-            dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
-      if (let.value) {
-        compileExpression(*let.value);
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      }
+        dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
+        if (let.value) {
+            compileExpression(*let.value);
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        }
 
-      const auto *decl_binding = bindingFor(*identifier);
-      // Top-level `let` is emitted as global storage; nested `let` stays local.
-      if (decl_binding && decl_binding->kind == ResolvedBindingKind::Global) {
-        uint32_t slot = declarationSlot(*identifier);
-        reserveLocalSlot(slot);
-        // Keep both global and slot state in sync so root-block references
-        // resolved as locals still observe initialized values.
-        emit(OpCode::DUP);
-        emit(OpCode::STORE_GLOBAL,
-             std::vector<Value>{Value::makeStringValId(addStringConstant(identifier->symbol))});
-        emit(OpCode::STORE_VAR, slot);
-        if (let.typeAnnotation) {
-          if (auto normalized =
-                  normalizeTypeAnnotation(let.typeAnnotation->get());
-              normalized.has_value()) {
-            emitTypeAssertionForLocal(*normalized, slot, identifier->symbol);
-          }
+        const auto *decl_binding = bindingFor(*identifier);
+        // Top-level `let` is emitted as global storage; nested `let` stays local.
+        if (decl_binding && decl_binding->kind == ResolvedBindingKind::Global) {
+            uint32_t slot = declarationSlot(*identifier);
+            reserveLocalSlot(slot);
+            // Keep both global and slot state in sync so root-block references
+            // resolved as locals still observe initialized values.
+            emit(OpCode::DUP);
+            emit(OpCode::STORE_GLOBAL,
+                 std::vector<Value>{Value::makeStringValId(addStringConstant(identifier->symbol))});
+            uint32_t storeIp = current_function->instructions.size();
+            emit(OpCode::STORE_VAR, slot);
+            if (let.typeAnnotation) {
+                if (auto normalized =
+                    normalizeTypeAnnotation(let.typeAnnotation->get());
+                    normalized.has_value()) {
+                    emitTypeAssertionForLocal(*normalized, slot, identifier->symbol);
+                }
+                // Set AOT type hint for LLVM specialization
+                uint64_t hint = typeHintFromAnnotation(let.typeAnnotation->get());
+                if (hint) {
+                    setTypeFeedbackHint(storeIp, hint);
+                }
+            }
+        } else {
+            uint32_t slot = declarationSlot(*identifier);
+            reserveLocalSlot(slot);
+            uint32_t storeIp = current_function->instructions.size();
+            emit(OpCode::STORE_VAR, slot);
+            if (let.typeAnnotation) {
+                if (auto normalized =
+                    normalizeTypeAnnotation(let.typeAnnotation->get());
+                    normalized.has_value()) {
+                    emitTypeAssertionForLocal(*normalized, slot, identifier->symbol);
+                }
+                // Set AOT type hint for LLVM specialization
+                uint64_t hint = typeHintFromAnnotation(let.typeAnnotation->get());
+                if (hint) {
+                    setTypeFeedbackHint(storeIp, hint);
+                }
+            }
         }
-      } else {
-        uint32_t slot = declarationSlot(*identifier);
-        reserveLocalSlot(slot);
-        emit(OpCode::STORE_VAR, slot);
-        if (let.typeAnnotation) {
-          if (auto normalized =
-                  normalizeTypeAnnotation(let.typeAnnotation->get());
-              normalized.has_value()) {
-            emitTypeAssertionForLocal(*normalized, slot, identifier->symbol);
-          }
-        }
-      }
-      break;
+        break;
     }
 
 if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||

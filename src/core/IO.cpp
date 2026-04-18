@@ -527,13 +527,175 @@ IO::IO() {
       error("No input devices found for EventListener");
     }
 
-    // Debug output - show what we detected
-    if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
-      listInputDevices();
+        // Debug output - show what we detected
+        if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
+            listInputDevices();
+        }
     }
-  }
 #endif
 }
+
+void IO::SetInputBackend(const std::string &backendName) {
+    InputBackendType type = InputBackendType::Unknown;
+
+    if (backendName.empty() || backendName == "auto") {
+        type = InputBackend::DetectBestBackend();
+        info("Auto-detected input backend: {}", 
+            type == InputBackendType::Evdev ? "evdev" :
+            type == InputBackendType::X11 ? "x11" :
+            type == InputBackendType::Wayland ? "wayland" : "unknown");
+    } else if (backendName == "evdev") {
+        type = InputBackendType::Evdev;
+    } else if (backendName == "x11") {
+        type = InputBackendType::X11;
+    } else if (backendName == "wayland") {
+        type = InputBackendType::Wayland;
+    } else {
+        warn("Unknown input backend '{}', using auto-detection", backendName);
+        type = InputBackend::DetectBestBackend();
+    }
+
+    inputBackend = InputBackend::Create(type);
+    if (inputBackend) {
+        inputBackendType = type;
+        info("Input backend set to: {}", inputBackend->GetName());
+    } else {
+        error("Failed to create input backend type {}", static_cast<int>(type));
+    }
+}
+
+// Backend device management
+std::vector<std::string> IO::ListDevices() {
+    std::vector<std::string> result;
+    if (inputBackend) {
+        for (const auto &dev : inputBackend->EnumerateDevices()) {
+            result.push_back(dev.path);
+        }
+    }
+    return result;
+}
+
+bool IO::AddDevice(const std::string &path) {
+    if (inputBackend) {
+        return inputBackend->OpenDevice(path);
+    }
+    return false;
+}
+
+bool IO::RemoveDevice(const std::string &path) {
+    if (inputBackend) {
+        inputBackend->CloseDevice(path);
+        return true;
+    }
+    return false;
+}
+
+void IO::ClearDevices() {
+    if (inputBackend) {
+        auto devices = inputBackend->EnumerateDevices();
+        for (const auto &dev : devices) {
+            inputBackend->CloseDevice(dev.path);
+        }
+    }
+}
+
+DeviceInfo IO::GetDevice(const std::string &path) {
+    if (inputBackend) {
+        auto devices = inputBackend->EnumerateDevices();
+        for (const auto &dev : devices) {
+            if (dev.path == path) return dev;
+        }
+    }
+    return DeviceInfo{};
+}
+
+std::vector<DeviceInfo> IO::GetDevices() {
+    if (inputBackend) {
+        return inputBackend->EnumerateDevices();
+    }
+    return {};
+}
+
+// Evdev grab control
+bool IO::SetEvdevGrab(bool grab) {
+    if (inputBackend) {
+        if (grab) {
+            auto devices = inputBackend->EnumerateDevices();
+            for (const auto &dev : devices) {
+                inputBackend->GrabDevice(dev.path);
+            }
+            return true;
+        } else {
+            inputBackend->UngrabAllDevices();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IO::GetEvdevGrab() const {
+    if (inputBackend) {
+        return inputBackend->GetGrabbedDeviceCount() > 0;
+    }
+    return false;
+}
+
+bool IO::ToggleEvdevGrab() {
+    bool current = GetEvdevGrab();
+    return SetEvdevGrab(!current);
+}
+
+// Key repeat settings
+void IO::SetRepeatInterval(int ms) {
+    // Stored in config, used by EventListener
+    Configs::Get().Set<int>("Input.RepeatInterval", ms);
+}
+
+int IO::GetRepeatInterval() const {
+    return Configs::Get().Get<int>("Input.RepeatInterval", 50);
+}
+
+void IO::SetAutoRepeat(bool enabled) {
+    Configs::Get().Set<bool>("Input.AutoRepeat", enabled);
+}
+
+bool IO::GetAutoRepeat() const {
+    return Configs::Get().Get<bool>("Input.AutoRepeat", true);
+}
+
+// Mouse gesture methods
+void IO::AddGesture(int id, const std::string &pattern) {
+    if (eventListener) {
+        auto directions = eventListener->ParseGesturePattern(pattern);
+        eventListener->RegisterGestureHotkey(id, directions);
+    }
+}
+
+void IO::AddGesture(int id, const std::vector<MouseGestureDirection> &directions) {
+    if (eventListener) {
+        eventListener->RegisterGestureHotkey(id, directions);
+    }
+}
+
+void IO::RemoveGesture(int id) {
+    // Gesture removal would need to be implemented in EventListener
+    (void)id;
+}
+
+std::vector<int> IO::GetGestures() const {
+    return {};
+}
+
+bool IO::HasGestures() const {
+    return false;
+}
+
+void IO::ClearGestures() {
+    if (eventListener) {
+        eventListener->ResetMouseGesture();
+    }
+}
+
 IO::~IO() { cleanup(); }
 
 void IO::cleanup() {

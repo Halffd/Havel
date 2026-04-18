@@ -35,10 +35,13 @@ void ExpressionCompiler::compile(const ast::Expression& expression) {
     case ast::NodeType::CallExpression:
       compileCallExpression(static_cast<const ast::CallExpression&>(expression));
       break;
-    case ast::NodeType::AssignmentExpression:
-      compileAssignmentExpression(static_cast<const ast::AssignmentExpression&>(expression));
-      break;
-    case ast::NodeType::MemberExpression:
+case ast::NodeType::AssignmentExpression:
+    compileAssignmentExpression(static_cast<const ast::AssignmentExpression&>(expression));
+    break;
+case ast::NodeType::MultipleAssignment:
+    compileMultipleAssignment(static_cast<const ast::MultipleAssignment&>(expression));
+    break;
+case ast::NodeType::MemberExpression:
       compileMemberExpression(static_cast<const ast::MemberExpression&>(expression));
       break;
     case ast::NodeType::IndexExpression:
@@ -274,12 +277,103 @@ void ExpressionCompiler::compileAssignmentExpression(
       // Load object and index
       compile(*indexExpr.object);
       compile(*indexExpr.index);
-      // Stack: [value, obj, index] -> ARRAY_SET will pop to store
-      emitter_.emit(OpCode::ARRAY_SET);
+// Stack: [value, obj, index] -> ARRAY_SET will pop to store
+        emitter_.emit(OpCode::ARRAY_SET);
     } else {
-      compile(*assignment.target); // Fallback: compile as read (may throw at runtime)
+        compile(*assignment.target); // Fallback: compile as read (may throw at runtime)
     }
-  }
+    }
+}
+
+void ExpressionCompiler::compileMultipleAssignment(
+    const ast::MultipleAssignment& multiAssign) {
+    if (!multiAssign.value) {
+        COMPILER_THROW("MultipleAssignment missing value");
+    }
+    if (multiAssign.targets.empty()) {
+        COMPILER_THROW("MultipleAssignment has no targets");
+    }
+
+    // Compile value once
+    compile(*multiAssign.value);
+
+    // For each target, duplicate value and store
+    for (size_t i = 0; i < multiAssign.targets.size(); ++i) {
+        bool isLast = (i == multiAssign.targets.size() - 1);
+
+        if (!isLast) {
+            // Duplicate value for this assignment
+            emitter_.emit(OpCode::DUP);
+        }
+
+        auto& target = multiAssign.targets[i];
+        if (!target) {
+            COMPILER_THROW("MultipleAssignment target is null");
+        }
+
+        if (target->kind == ast::NodeType::Identifier) {
+            const auto& id = static_cast<const ast::Identifier&>(*target);
+            auto binding = lexicalResult_.identifier_bindings.find(&id);
+            if (binding == lexicalResult_.identifier_bindings.end()) {
+                COMPILER_THROW("Missing binding for assignment target: " + id.symbol);
+            }
+
+            const auto& resolved = binding->second;
+            switch (resolved.kind) {
+            case ResolvedBindingKind::Local:
+                emitStoreVar(resolved.slot);
+                break;
+            case ResolvedBindingKind::Upvalue:
+                emitStoreUpvalue(resolved.slot);
+                break;
+            case ResolvedBindingKind::Global:
+                emitStoreGlobal(resolved.name);
+                break;
+            default:
+                COMPILER_THROW("Cannot assign to this binding type");
+            }
+        } else if (target->kind == ast::NodeType::ArrayPattern) {
+            // Handle destructuring pattern: [a, b, c] = value
+            const auto& pattern = static_cast<const ast::ArrayPattern&>(*target);
+            for (size_t j = 0; j < pattern.elements.size(); ++j) {
+                bool isLastElem = (j == pattern.elements.size() - 1) && isLast;
+
+                if (!isLastElem) {
+                    emitter_.emit(OpCode::DUP);
+                }
+
+                // Push index
+                emitter_.emit(OpCode::LOAD_CONST, Value(static_cast<double>(j)));
+                // Get element: obj[index]
+                emitter_.emit(OpCode::ARRAY_GET);
+
+                auto& elem = pattern.elements[j];
+                if (elem && elem->kind == ast::NodeType::Identifier) {
+                    const auto& elemId = static_cast<const ast::Identifier&>(*elem);
+                    auto binding = lexicalResult_.identifier_bindings.find(&elemId);
+                    if (binding == lexicalResult_.identifier_bindings.end()) {
+                        COMPILER_THROW("Missing binding for destructuring target: " + elemId.symbol);
+                    }
+                    const auto& resolved = binding->second;
+                    switch (resolved.kind) {
+                    case ResolvedBindingKind::Local:
+                        emitStoreVar(resolved.slot);
+                        break;
+                    case ResolvedBindingKind::Upvalue:
+                        emitStoreUpvalue(resolved.slot);
+                        break;
+                    case ResolvedBindingKind::Global:
+                        emitStoreGlobal(resolved.name);
+                        break;
+                    default:
+                        COMPILER_THROW("Cannot assign to this binding type");
+                    }
+                }
+            }
+        } else {
+            COMPILER_THROW("Unsupported target type in multiple assignment");
+        }
+    }
 }
 
 void ExpressionCompiler::compileMemberExpression(const ast::MemberExpression& member) {
@@ -645,29 +739,55 @@ void StatementCompiler::compileExpressionStatement(const ast::ExpressionStatemen
 }
 
 void StatementCompiler::compileLetDeclaration(const ast::LetDeclaration& let) {
-  if (let.value) {
-    exprCompiler_.compile(*let.value);
-  } else {
-    emitter_.emit(OpCode::LOAD_CONST, Value::makeNull()); // undefined
-  }
-
-  // Store to pattern
-  if (let.pattern) {
-    if (let.pattern->kind == ast::NodeType::Identifier) {
-      const auto& id = static_cast<const ast::Identifier&>(*let.pattern);
-      auto binding = bindingResolver_.resolveIdentifier(id.symbol);
-      if (binding) {
-        if (binding->kind == ResolvedBindingKind::Local) {
-          emitter_.emit(OpCode::STORE_VAR, binding->slot);
-        } else if (binding->kind == ResolvedBindingKind::Global) {
-          uint32_t strId = emitter_.addStringConstant(id.symbol);
-          emitter_.emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-        }
-        emitter_.emit(OpCode::POP); // Discard stored value (statement context)
-      }
+    if (let.value) {
+        exprCompiler_.compile(*let.value);
+    } else {
+        emitter_.emit(OpCode::LOAD_CONST, Value::makeNull()); // undefined
     }
-    // TODO: Handle complex patterns
-  }
+
+    // Store to pattern
+    if (let.pattern) {
+        if (let.pattern->kind == ast::NodeType::Identifier) {
+            const auto& id = static_cast<const ast::Identifier&>(*let.pattern);
+            auto binding = bindingResolver_.resolveIdentifier(id.symbol);
+            if (binding) {
+                if (binding->kind == ResolvedBindingKind::Local) {
+                    emitter_.emit(OpCode::STORE_VAR, binding->slot);
+                } else if (binding->kind == ResolvedBindingKind::Global) {
+                    uint32_t strId = emitter_.addStringConstant(id.symbol);
+                    emitter_.emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+                }
+                emitter_.emit(OpCode::POP); // Discard stored value (statement context)
+            }
+} else if (let.pattern->kind == ast::NodeType::ArrayPattern) {
+            // Handle comma-separated identifiers: let a, b, c = value
+            // Each variable gets the SAME value (not destructured from array)
+            const auto& pattern = static_cast<const ast::ArrayPattern&>(*let.pattern);
+            for (size_t i = 0; i < pattern.elements.size(); ++i) {
+                bool isLast = (i == pattern.elements.size() - 1);
+
+                if (!isLast) {
+                    emitter_.emit(OpCode::DUP);
+                }
+
+                auto& elem = pattern.elements[i];
+                if (elem && elem->kind == ast::NodeType::Identifier) {
+                    const auto& elemId = static_cast<const ast::Identifier&>(*elem);
+                    auto binding = bindingResolver_.resolveIdentifier(elemId.symbol);
+                    if (binding) {
+                        if (binding->kind == ResolvedBindingKind::Local) {
+                            emitter_.emit(OpCode::STORE_VAR, binding->slot);
+                        } else if (binding->kind == ResolvedBindingKind::Global) {
+                            uint32_t strId = emitter_.addStringConstant(elemId.symbol);
+                            emitter_.emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+                        }
+                    }
+                }
+            }
+            // The last store consumed the value, no POP needed for the last one
+        }
+        // TODO: Handle other complex patterns (ObjectPattern, etc.)
+    }
 }
 
 void StatementCompiler::compileIfStatement(const ast::IfStatement& ifStmt) {

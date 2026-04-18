@@ -35,13 +35,13 @@ void Compiler::Initialize() {
 
   // Create execution engine with error handling
   std::string error;
-  auto engineBuilder =
-      llvm::EngineBuilder(std::move(modulePtr)); // Move ownership
+  llvm::EngineBuilder engineBuilder(std::move(modulePtr)); 
   engineBuilder.setErrorStr(&error);
+  engineBuilder.setEngineKind(llvm::EngineKind::JIT);
+  engineBuilder.setVerifyModules(true);
 
-  // Configure the engine
-  executionEngine.reset(
-      engineBuilder.setEngineKind(llvm::EngineKind::JIT).create());
+  // Use MCJIT (modern JIT)
+  executionEngine.reset(engineBuilder.create());
 
   if (!executionEngine) {
     COMPILER_THROW("Failed to create execution engine: " + error);
@@ -827,14 +827,53 @@ bool Compiler::VerifyModule() const {
 void Compiler::DumpModule() const { module->print(llvm::outs(), nullptr); }
 
 llvm::Function *Compiler::CompileHotkeyAction(const ast::Expression &expr) {
-  // This is a stub implementation - will be filled in later
-  return nullptr; // Return null for now
+  // Create a void() function for the hotkey action
+  llvm::FunctionType *funcType = llvm::FunctionType::get(
+      llvm::Type::getVoidTy(context), false
+  );
+  
+  // Use a unique name for each action to avoid conflicts in the module
+  static int actionCounter = 0;
+  std::string funcName = "hotkey_action_" + std::to_string(actionCounter++);
+  
+  llvm::Function *func = llvm::Function::Create(
+      funcType, llvm::Function::ExternalLinkage, funcName, module
+  );
+
+  // Create basic block and set insert point
+  llvm::BasicBlock *entry = llvm::BasicBlock::Create(context, "entry", func);
+  builder.SetInsertPoint(entry);
+
+  // Generate IR for the expression
+  GenerateExpression(expr);
+
+  // Return void
+  builder.CreateRetVoid();
+
+  // Verify function
+  if (llvm::verifyFunction(*func, &llvm::errs())) {
+    COMPILER_THROW("Failed to verify hotkey action function: " + funcName);
+  }
+
+  return func;
 }
 
 Compiler::HotkeyActionFunc
 Compiler::GetCompiledFunction(const std::string &name) {
-  // This is a stub implementation - will be filled in later
-  return nullptr; // Return null function pointer for now
+  // Ensure the module is finalized and compiled
+  if (!executionEngine) {
+    COMPILER_THROW("Execution engine not initialized");
+  }
+
+  // MCJIT requires finalizing the object to ensure symbols are available
+  executionEngine->finalizeObject();
+
+  uint64_t addr = executionEngine->getFunctionAddress(name);
+  if (addr == 0) {
+    COMPILER_THROW("Function not found in execution engine: " + name);
+  }
+
+  return reinterpret_cast<HotkeyActionFunc>(addr);
 }
 } // namespace havel::compiler
 #endif // HAVEL_ENABLE_LLVM

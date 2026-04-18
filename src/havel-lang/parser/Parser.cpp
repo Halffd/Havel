@@ -319,19 +319,19 @@ bool Parser::isObjectLiteral() const {
 // ============================================================================
 
 int Parser::getBindingPower(TokenType type) const {
-  switch (type) {
-    // Assignment (right-associative, low precedence)
-    case TokenType::Assign:
-    case TokenType::PlusAssign:
-    case TokenType::MinusAssign:
-    case TokenType::MultiplyAssign:
-    case TokenType::DivideAssign:
-    case TokenType::ModuloAssign:
-    case TokenType::PowerAssign:
-      return 10;
+switch (type) {
+// Assignment (right-associative, low precedence)
+case TokenType::Assign:
+case TokenType::PlusAssign:
+case TokenType::MinusAssign:
+case TokenType::MultiplyAssign:
+case TokenType::DivideAssign:
+case TokenType::ModuloAssign:
+case TokenType::PowerAssign:
+return 10;
 
-    // Nullish coalescing
-    case TokenType::Nullish:
+// Nullish coalescing
+case TokenType::Nullish:
       return 20;
 
     // Arrow (lambda) - low precedence like assignment
@@ -447,20 +447,20 @@ namespace {
     
     BindingPowerTables() {
       // Initialize all to zero/false
-      left_bp.fill(0);
-      right_bp.fill(0);
-      can_start.fill(false);
-      
-      // Assignment operators (right-associative, lowest precedence)
-      setBoth(Assign, 10, 10);
-      setBoth(PlusAssign, 10, 10);
-      setBoth(MinusAssign, 10, 10);
-      setBoth(MultiplyAssign, 10, 10);
-      setBoth(DivideAssign, 10, 10);
-      setBoth(ModuloAssign, 10, 10);
-      setBoth(PowerAssign, 10, 10);
-      
-      // Nullish coalescing
+left_bp.fill(0);
+right_bp.fill(0);
+can_start.fill(false);
+
+// Assignment operators (right-associative, lowest precedence)
+setBoth(Assign, 10, 10);
+setBoth(PlusAssign, 10, 10);
+setBoth(MinusAssign, 10, 10);
+setBoth(MultiplyAssign, 10, 10);
+setBoth(DivideAssign, 10, 10);
+setBoth(ModuloAssign, 10, 10);
+setBoth(PowerAssign, 10, 10);
+
+// Nullish coalescing
       setBoth(Nullish, 20, 20);
       
       // Arrow (lambda) - low precedence like assignment
@@ -1181,7 +1181,7 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     havel::debug("PRATT: led for {} with left operand", token.toString());
   }
 
-  switch (token.type) {
+switch (token.type) {
     // Assignment operators (right-associative)
     case TokenType::Assign:
     case TokenType::PlusAssign:
@@ -1189,14 +1189,18 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     case TokenType::MultiplyAssign:
     case TokenType::DivideAssign:
     case TokenType::ModuloAssign:
-    case TokenType::PowerAssign: {
-      auto right = parsePrattExpression(getRightBindingPower(token.type));
-      std::string op = token.value;
-      return std::make_unique<ast::AssignmentExpression>(
-          std::move(left), std::move(right), op, false);
+case TokenType::PowerAssign: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        std::string op = token.value;
+        
+        // Check if left is an identifier and there might be more targets (comma-separated)
+        // This handles: a, b, c = value
+        // The comma case will collect targets and then hit '='
+        return std::make_unique<ast::AssignmentExpression>(
+            std::move(left), std::move(right), op, false);
     }
 
-    case TokenType::Plus: {
+case TokenType::Plus: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::Add, std::move(right));
@@ -2052,12 +2056,49 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       failAt(hotkeyToken, "Expected '=>' after hotkey literal");
     }
   }
-  case havel::TokenType::Identifier: {
+case havel::TokenType::Identifier: {
+    // Check for multiple assignment: a, b, c = value
+    // Look ahead: identifier comma identifier ... = 
+    if (at(1).type == havel::TokenType::Comma) {
+        std::vector<std::unique_ptr<havel::ast::Expression>> targets;
+        targets.push_back(makeIdentifier(advance()));
+        
+        while (at().type == havel::TokenType::Comma) {
+            advance(); // consume comma
+            if (at().type != havel::TokenType::Identifier) {
+                failAt(at(), "Expected identifier after comma in multiple assignment");
+            }
+            targets.push_back(makeIdentifier(advance()));
+        }
+        
+        if (at().type != havel::TokenType::Assign) {
+            failAt(at(), "Expected '=' after comma-separated identifiers");
+        }
+        advance(); // consume '='
+        
+        auto value = parseExpression();
+        
+        // Require statement terminator
+        if (at().type != havel::TokenType::Semicolon &&
+            at().type != havel::TokenType::NewLine &&
+            at().type != havel::TokenType::EOF_TOKEN &&
+            at().type != havel::TokenType::CloseBrace) {
+            failAt(at(), "Expected ';' or newline after expression");
+        }
+        if (at().type == havel::TokenType::Semicolon) {
+            advance();
+        }
+        
+        auto multiAssign = std::make_unique<havel::ast::MultipleAssignment>(
+            std::move(targets), std::move(value));
+        return std::make_unique<havel::ast::ExpressionStatement>(std::move(multiAssign));
+    }
+
     // Sugar forms:
-    //   thread { ... }            -> thread(fn() { ... })
-    //   interval <ms> { ... }     -> interval(<ms>, fn() { ... })
-    //   timeout <ms> { ... }      -> timeout(<ms>, fn() { ... })
-    //   ui { ... }                -> desugared ui.create calls
+    // thread { ... } -> thread(fn() { ... })
+    // interval <ms> { ... } -> interval(<ms>, fn() { ... })
+    // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })
+    // ui { ... } -> desugared ui.create calls
     if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
       advance(); // consume "thread"
       auto body = parseBlockStatement();
@@ -4840,82 +4881,100 @@ Parser::parseOnKeyDownOrKeyUpStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
-  bool isConst = false;
+    bool isConst = false;
 
-  // Check if this is 'const' or 'let'
-  if (at().type == havel::TokenType::Const) {
-    isConst = true;
-  }
-  advance(); // consume "let" or "const"
-
-  std::unique_ptr<havel::ast::Expression> pattern;
-
-  // Check if we have a destructuring pattern
-  if (at().type == havel::TokenType::OpenBracket) {
-    // Array destructuring: let [a, b] = arr
-    pattern = parseArrayPattern();
-  } else if (at().type == havel::TokenType::OpenParen) {
-    // Tuple destructuring: let (a, b) = tuple
-    advance(); // consume '('
-    std::vector<std::unique_ptr<havel::ast::Expression>> elements;
-    while (notEOF() && at().type != havel::TokenType::CloseParen) {
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-      if (at().type == havel::TokenType::CloseParen) {
-        break;
-      }
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Tuple destructuring expects identifiers");
-      }
-      elements.push_back(makeIdentifier(advance()));
-      while (at().type == havel::TokenType::NewLine) {
-        advance();
-      }
-      if (at().type == havel::TokenType::Comma) {
-        advance();
-      } else if (at().type != havel::TokenType::CloseParen) {
-        failAt(at(), "Expected ',' or ')' in tuple destructuring");
-      }
+    // Check if this is 'const' or 'let'
+    if (at().type == havel::TokenType::Const) {
+        isConst = true;
     }
-    if (at().type != havel::TokenType::CloseParen) {
-      failAt(at(), "Expected ')' to close tuple destructuring");
-    }
-    advance(); // consume ')'
-    pattern = std::make_unique<havel::ast::ArrayPattern>(std::move(elements));
-  } else if (at().type == havel::TokenType::OpenBrace) {
-    // Object destructuring: let {x, y} = obj
-    pattern = parseObjectPattern();
-  } else if (at().type == havel::TokenType::Identifier) {
-    // Regular variable: let x = value
-    pattern = makeIdentifier(advance());
-  } else {
-    failAt(at(), "Expected identifier, '[' or '{' after '" +
-                     std::string(isConst ? "const" : "let") + "'");
-  }
+    advance(); // consume "let" or "const"
 
-  // Check for type annotation (let x: int = 5)
-  std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
-  if (at().type == havel::TokenType::Colon) {
-    typeAnnotation = parseTypeAnnotation();
-  }
+    std::unique_ptr<havel::ast::Expression> pattern;
 
-  if (at().type != havel::TokenType::Assign) {
-    // Allow declarations without assignment, e.g., `let x;`
-    if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
-      return std::make_unique<havel::ast::LetDeclaration>(
-          std::move(pattern), nullptr, std::move(typeAnnotation), isConst);
+    // Check if we have a destructuring pattern
+    if (at().type == havel::TokenType::OpenBracket) {
+        // Array destructuring: let [a, b] = arr
+        pattern = parseArrayPattern();
+    } else if (at().type == havel::TokenType::OpenParen) {
+        // Tuple destructuring: let (a, b) = tuple
+        advance(); // consume '('
+        std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+        while (notEOF() && at().type != havel::TokenType::CloseParen) {
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            if (at().type == havel::TokenType::CloseParen) {
+                break;
+            }
+            if (at().type != havel::TokenType::Identifier) {
+                failAt(at(), "Tuple destructuring expects identifiers");
+            }
+            elements.push_back(makeIdentifier(advance()));
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            if (at().type == havel::TokenType::Comma) {
+                advance();
+            } else if (at().type != havel::TokenType::CloseParen) {
+                failAt(at(), "Expected ',' or ')' in tuple destructuring");
+            }
+        }
+        if (at().type != havel::TokenType::CloseParen) {
+            failAt(at(), "Expected ')' to close tuple destructuring");
+        }
+        advance(); // consume ')'
+        pattern = std::make_unique<havel::ast::ArrayPattern>(std::move(elements));
+    } else if (at().type == havel::TokenType::OpenBrace) {
+        // Object destructuring: let {x, y} = obj
+        pattern = parseObjectPattern();
+    } else if (at().type == havel::TokenType::Identifier) {
+        // Regular variable: let x = value
+        // Or comma-separated: let a, b, c = value
+        pattern = makeIdentifier(advance());
+        
+        // Check for comma-separated identifiers: let a, b, c = value
+        if (at().type == havel::TokenType::Comma) {
+            std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+            elements.push_back(std::move(pattern));
+            
+            while (at().type == havel::TokenType::Comma) {
+                advance(); // consume comma
+                if (at().type != havel::TokenType::Identifier) {
+                    failAt(at(), "Expected identifier in comma-separated declaration");
+                }
+                elements.push_back(makeIdentifier(advance()));
+            }
+            
+            // Create an ArrayPattern to hold the multiple identifiers
+            pattern = std::make_unique<havel::ast::ArrayPattern>(std::move(elements));
+        }
     } else {
-      failAt(at(), "Destructuring patterns require initialization");
+        failAt(at(), "Expected identifier, '[' or '{' after '" +
+        std::string(isConst ? "const" : "let") + "'");
     }
-  }
-  advance(); // consume "="
 
-  auto value = parseExpression();
+    // Check for type annotation (let x: int = 5)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+    if (at().type == havel::TokenType::Colon) {
+        typeAnnotation = parseTypeAnnotation();
+    }
 
-  auto result = std::make_unique<havel::ast::LetDeclaration>(
-      std::move(pattern), std::move(value), std::move(typeAnnotation), isConst);
-  return result;
+    if (at().type != havel::TokenType::Assign) {
+        // Allow declarations without assignment, e.g., `let x;`
+        if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
+            return std::make_unique<havel::ast::LetDeclaration>(
+                std::move(pattern), nullptr, std::move(typeAnnotation), isConst);
+        } else {
+            failAt(at(), "Destructuring patterns require initialization");
+        }
+    }
+    advance(); // consume "="
+
+    auto value = parseExpression();
+
+    auto result = std::make_unique<havel::ast::LetDeclaration>(
+        std::move(pattern), std::move(value), std::move(typeAnnotation), isConst);
+    return result;
 }
 
 // Parse hotkey as expression (for assignment: hk = ^t => { ... })
@@ -5597,36 +5656,67 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
-  auto left = parseTernaryExpression();
+    auto left = parseTernaryExpression();
 
-  // Check for assignment operators
-  if (at().type == havel::TokenType::Assign ||
-      at().type == havel::TokenType::PlusAssign ||
-      at().type == havel::TokenType::MinusAssign ||
-      at().type == havel::TokenType::MultiplyAssign ||
-      at().type == havel::TokenType::DivideAssign ||
-      at().type == havel::TokenType::ModuloAssign ||
-      at().type == havel::TokenType::PowerAssign) {
-    auto opTok = advance(); // consume the operator
-
-    // Right-associative: a = b = c means a = (b = c)
-    auto value = parseAssignmentExpression();
-
-    // Check if target is global scope (::identifier)
-    bool isGlobalScope = false;
-    if (left && left->kind == havel::ast::NodeType::Identifier) {
-      auto &ident = static_cast<havel::ast::Identifier &>(*left);
-      isGlobalScope = ident.isGlobalScope;
+    // Check for comma-separated targets: a, b, c = value
+    std::vector<std::unique_ptr<havel::ast::Expression>> targets;
+    bool hasComma = false;
+    
+    if (at().type == havel::TokenType::Comma) {
+        hasComma = true;
+        targets.push_back(std::move(left));
+        
+        while (at().type == havel::TokenType::Comma) {
+            advance(); // consume comma
+            targets.push_back(parseTernaryExpression());
+        }
     }
 
-    auto assign = std::make_unique<havel::ast::AssignmentExpression>(
-        std::move(left), std::move(value), opTok.value, isGlobalScope);
-    assign->line = opTok.line;
-    assign->column = opTok.column;
-    return assign;
-  }
+    // Check for assignment operators
+    if (at().type == havel::TokenType::Assign ||
+        at().type == havel::TokenType::PlusAssign ||
+        at().type == havel::TokenType::MinusAssign ||
+        at().type == havel::TokenType::MultiplyAssign ||
+        at().type == havel::TokenType::DivideAssign ||
+        at().type == havel::TokenType::ModuloAssign ||
+        at().type == havel::TokenType::PowerAssign) {
+        auto opTok = advance(); // consume the operator
 
-  return left;
+        // Right-associative: a = b = c means a = (b = c)
+        auto value = parseAssignmentExpression();
+
+        if (hasComma) {
+            // Multiple assignment: a, b, c = value
+            if (opTok.value != "=") {
+                failAt(opTok, "Compound assignment operators not supported for multiple targets");
+            }
+            auto multiAssign = std::make_unique<havel::ast::MultipleAssignment>(
+                std::move(targets), std::move(value));
+            multiAssign->line = opTok.line;
+            multiAssign->column = opTok.column;
+            return multiAssign;
+        }
+
+        // Check if target is global scope (::identifier)
+        bool isGlobalScope = false;
+        if (left && left->kind == havel::ast::NodeType::Identifier) {
+            auto &ident = static_cast<havel::ast::Identifier &>(*left);
+            isGlobalScope = ident.isGlobalScope;
+        }
+
+        auto assign = std::make_unique<havel::ast::AssignmentExpression>(
+            std::move(left), std::move(value), opTok.value, isGlobalScope);
+        assign->line = opTok.line;
+        assign->column = opTok.column;
+        return assign;
+    }
+
+    // If we had comma but no assignment, that's an error
+    if (hasComma) {
+        failAt(at(), "Expected '=' after comma-separated targets");
+    }
+
+    return left;
 }
 
 // Parse cast expression: expr as Type

@@ -58,6 +58,16 @@ namespace havel::compiler {
 }
 */
 
+static uint8_t getFeedbackType(const Value& v) {
+  if (v.isInt()) return 1;
+  if (v.isDouble()) return 2;
+  if (v.isStringValId() || v.isStringId()) return 3;
+  if (v.isObjectId() || v.isArrayId() || v.isSetId()) return 4;
+  if (v.isBool()) return 5;
+  if (v.isNull()) return 6;
+  return 7;
+}
+
 namespace {
 // Helper function to compare two Values for equality
 static bool valuesEqual(const Value &a, const Value &b) {
@@ -3222,6 +3232,15 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                               std::to_string(function_index));
   }
 
+  // Phase 4 JIT: Track execution count and trigger JIT if hot
+  {
+    auto* mutable_callee = const_cast<BytecodeFunction*>(callee);
+    mutable_callee->execution_count++;
+    if (mutable_callee->execution_count == 1000 && hot_func_cb_) {
+      hot_func_cb_(*mutable_callee);
+    }
+  }
+
   // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
   if (callee->is_generator) {
@@ -3642,6 +3661,20 @@ void VM::doReturn() {
 void VM::execBinaryOp(const Instruction &instruction) {
   Value right = popStack();
   Value left = popStack();
+
+  // Record type feedback for JIT specialization
+  auto &frame = currentFrame();
+  if (frame.ip < frame.function->type_feedback.size()) {
+    auto &fb = frame.function->type_feedback[frame.ip];
+    fb.hit_count++;
+    fb.left_type = getFeedbackType(left);
+    fb.right_type = getFeedbackType(right);
+
+    // Phase 4 JIT: Trigger JIT if instruction is very hot
+    if (fb.hit_count == 1000 && hot_func_cb_) {
+      hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+    }
+  }
 
   // Handle null comparisons explicitly
   if (isNull(left) || isNull(right)) {
@@ -4178,6 +4211,15 @@ void VM::execBinaryOp(const Instruction &instruction) {
 void VM::execLogicalOp(OpCode opcode) {
   Value right = popStack();
   Value left = popStack();
+
+  // Record feedback
+  auto &frame = currentFrame();
+  if (frame.ip < frame.function->type_feedback.size()) {
+    auto &fb = frame.function->type_feedback[frame.ip];
+    fb.hit_count++;
+    fb.left_type = getFeedbackType(left);
+    fb.right_type = getFeedbackType(right);
+  }
   switch (opcode) {
   case OpCode::AND: pushStack(isTruthy(left) && isTruthy(right)); break;
   case OpCode::OR:  pushStack(isTruthy(left) || isTruthy(right)); break;
@@ -4187,6 +4229,14 @@ void VM::execLogicalOp(OpCode opcode) {
 
 void VM::execNegate() {
   Value value = popStack();
+
+  // Record feedback
+  auto &frame = currentFrame();
+  if (frame.ip < frame.function->type_feedback.size()) {
+    auto &fb = frame.function->type_feedback[frame.ip];
+    fb.hit_count++;
+    fb.left_type = getFeedbackType(value);
+  }
   if (value.isInt()) {
     pushStack(-value.asInt());
   } else if (value.isDouble()) {
@@ -7438,6 +7488,10 @@ void VM::emitVariableChanged(const std::string& var_name) {
   change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
   
   event_queue_->push(change_event);
+}
+
+void VM::throwError(const std::string &msg) {
+  COMPILER_THROW(msg);
 }
 
 } // namespace havel::compiler

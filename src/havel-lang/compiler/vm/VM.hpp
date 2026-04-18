@@ -428,6 +428,11 @@ public:
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
   uint32_t getHostFunctionIndex(const std::string &name);
+  void throwError(const std::string &msg);
+  
+  // Phase 4 JIT: Hot function notification
+  using HotFunctionCallback = std::function<void(BytecodeFunction&)>;
+  void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
   // System object initializer - called after registerDefaultHostGlobals()
   void setSystemObjectInitializer(SystemObjectInitializer init) {
@@ -638,6 +643,7 @@ private:
 
   uint32_t app_args_array_id_ = 0;
   std::function<void()> restart_callback_;
+  HotFunctionCallback hot_func_cb_;
 
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }

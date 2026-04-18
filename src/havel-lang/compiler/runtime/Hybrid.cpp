@@ -41,7 +41,18 @@ Hybrid::Hybrid(std::unique_ptr<BytecodeCompiler> comp,
                            std::unique_ptr<BytecodeInterpreter> interp,
                            std::unique_ptr<JITCompiler> jcomp)
     : compiler(std::move(comp)), interpreter(std::move(interp)),
-      jit(std::move(jcomp)) {}
+      jit(std::move(jcomp)) {
+  
+  // Connect JIT trigger
+  auto* vm = dynamic_cast<VM*>(this->interpreter.get());
+  if (vm) {
+    vm->setHotFunctionCallback([this](BytecodeFunction& func) {
+      if (!this->jit->isCompiled(func.name)) {
+        this->jit->compileFunction(func);
+      }
+    });
+  }
+}
 
 bool Hybrid::compile(const ast::Program &program) {
   try {
@@ -58,6 +69,13 @@ Value Hybrid::execute(const std::string &function_name,
   if (!this->current_chunk) {
     COMPILER_THROW("No compiled program available");
   }
+
+  // Phase 4 JIT: Divert to native execution if compiled
+  if (this->jit->isCompiled(function_name)) {
+    auto* vm = dynamic_cast<VM*>(this->interpreter.get());
+    return this->jit->executeCompiled(vm, function_name, args);
+  }
+
   return this->interpreter->execute(*this->current_chunk, function_name, args);
 }
 
@@ -67,12 +85,22 @@ struct HybridDebugOptions {
   bool jit = false;
 };
 
+#ifdef HAVEL_ENABLE_LLVM
+#include "../BytecodeOrcJIT.h"
+#endif
+
 // Factory function (placeholder)
 std::unique_ptr<Hybrid> createHybrid() {
   std::unique_ptr<BytecodeCompiler> compiler;
   compiler.reset(new ByteCompiler());
   auto interpreter = std::make_unique<VM>();
+  
+#ifdef HAVEL_ENABLE_LLVM
+  auto jit = std::make_unique<BytecodeOrcJIT>();
+#else
   auto jit = std::make_unique<SimpleJitCompiler>();
+#endif
+
   return std::make_unique<Hybrid>(std::move(compiler),
                                         std::move(interpreter), std::move(jit));
 }

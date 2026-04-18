@@ -46,12 +46,18 @@ private:
     std::string outputPath; // Output path for --build (-o)
     std::string testDir;   // Directory containing test scripts
     int testTimeout = 30; // Timeout for each test in seconds
-    bool useJIT = true;
+bool useJIT = true;
     bool debugJIT = false;
     bool dumpIR = false;
     bool outputAsmToFile = false;
 
-  };
+    // AOT compilation options
+    bool emitLLVM = false;      // --emit-llvm: output .ll file
+    bool emitAsm = false;       // --emit-asm: output .s assembly file
+    bool emitObj = false;       // --emit-obj: output .o object file
+    std::string aotOutput;      // -o for AOT output path
+
+};
 
   LaunchConfig parseArgs(int argc, char *argv[]);
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);

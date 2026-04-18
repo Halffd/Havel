@@ -7,6 +7,7 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
+#include "havel-lang/compiler/BytecodeOrcJIT.h"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/StdLibModules.hpp"
@@ -15,6 +16,22 @@
 #include "havel-lang/utils/ErrorPrinter.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+
+#ifdef HAVEL_ENABLE_LLVM
+// LLVM headers for AOT
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/IR/LegacyPassManager.h>
+#endif
+
 #ifdef HAVE_QT_EXTENSION
 #include <QApplication>
 #include <QProcess>
@@ -197,11 +214,29 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
-    } else if (arg == "--output" || arg == "-o") {
-      if (i + 1 < argc) {
+} else if (arg == "--output" || arg == "-o") {
+    if (i + 1 < argc) {
         cfg.outputPath = argv[++i];
-      }
-    } else if (arg == "--help" || arg == "-h") {
+    }
+} else if (arg == "--emit-llvm") {
+    cfg.emitLLVM = true;
+    cfg.buildOnly = true;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+    }
+} else if (arg == "--emit-asm") {
+    cfg.emitAsm = true;
+    cfg.buildOnly = true;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+    }
+} else if (arg == "--emit-obj") {
+    cfg.emitObj = true;
+    cfg.buildOnly = true;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+    }
+} else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
     } else if (arg == "lexer") {
@@ -928,9 +963,12 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout
       << "  --test, -t          Run all .hv scripts in a directory\n";
   std::cout << "  --lint              Check syntax and compilation errors\n";
-  std::cout << "  --build             Compile to .hvc bytecode file\n";
-  std::cout << "  --output, -o PATH   Set output path for --build\n";
-  std::cout << "  --no-jit            Disable JIT compilation\n";
+std::cout << " --build Compile to .hvc bytecode file\n";
+std::cout << " --output, -o PATH Set output path for --build\n";
+std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
+std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
+std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
+std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
   std::cout << "  -S                  Output compiled IR and Assembly to files\n";
   std::cout << "  --help, -h          Show this help\n";
@@ -1280,9 +1318,118 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
     return 1;
   }
 
-  info("Compilation successful, {} functions", chunk->getFunctionCount());
+info("Compilation successful, {} functions", chunk->getFunctionCount());
 
-  // Serialize and write
+#ifdef HAVEL_ENABLE_LLVM
+// Handle AOT LLVM output
+if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
+    // Import LLVM JIT for translation
+    havel::compiler::BytecodeOrcJIT jit;
+    jit.setDumpIR(true);
+
+    // Generate LLVM IR for each function
+    llvm::LLVMContext ctx;
+    auto module = std::make_unique<llvm::Module>(primaryFile + "_module", ctx);
+
+    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+        const auto* func = chunk->getFunction(i);
+        if (func) {
+            jit.translate(*func, *module);
+        }
+    }
+
+    // Verify module
+    std::string verifyErr;
+    if (llvm::verifyModule(*module, &llvm::errs())) {
+        error("LLVM IR verification failed");
+        return 1;
+    }
+
+    // Determine output path
+    std::string aotOutput = cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
+    if (aotOutput.rfind(".hv") == aotOutput.size() - 3) {
+        aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+    }
+
+    if (cfg.emitLLVM) {
+        std::string llPath = aotOutput + ".ll";
+        std::error_code ec;
+        llvm::raw_fd_ostream out(llPath, ec, llvm::sys::fs::OF_None);
+        if (ec) {
+            error("Cannot open output file: {}", llPath);
+            return 1;
+        }
+        module->print(out, nullptr);
+        out.close();
+        info("LLVM IR written to: {}", llPath);
+    }
+
+    if (cfg.emitAsm || cfg.emitObj) {
+        // Initialize target for native code gen
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::InitializeNativeTargetAsmParser();
+
+        std::string targetTripleStr = llvm::sys::getDefaultTargetTriple();
+        llvm::Triple targetTriple(targetTripleStr);
+        module->setTargetTriple(targetTriple);
+
+        std::string err;
+        auto target = llvm::TargetRegistry::lookupTarget(targetTriple, err);
+        if (!target) {
+            error("Cannot find target: {}", err);
+            return 1;
+        }
+
+        llvm::TargetOptions opt;
+        auto targetMachine = target->createTargetMachine(
+            targetTriple, "native", "", opt, llvm::Reloc::PIC_);
+
+        module->setDataLayout(targetMachine->createDataLayout());
+
+        if (cfg.emitAsm) {
+            std::string asmPath = aotOutput + ".s";
+            std::error_code ec;
+            llvm::raw_fd_ostream out(asmPath, ec, llvm::sys::fs::OF_None);
+            if (ec) {
+                error("Cannot open output file: {}", asmPath);
+                return 1;
+            }
+            llvm::legacy::PassManager pm;
+            targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                llvm::CodeGenFileType::AssemblyFile);
+            pm.run(*module);
+            out.close();
+            info("Assembly written to: {}", asmPath);
+        }
+
+        if (cfg.emitObj) {
+            std::string objPath = aotOutput + ".o";
+            std::error_code ec;
+            llvm::raw_fd_ostream out(objPath, ec, llvm::sys::fs::OF_None);
+            if (ec) {
+                error("Cannot open output file: {}", objPath);
+                return 1;
+            }
+            llvm::legacy::PassManager pm;
+            targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                llvm::CodeGenFileType::ObjectFile);
+            pm.run(*module);
+            out.close();
+            info("Object file written to: {}", objPath);
+        }
+    }
+
+    return 0;
+}
+#else
+if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
+    error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
+    return 1;
+}
+#endif
+
+// Serialize and write bytecode
   havel::compiler::ValueSerializer serializer;
   auto data = serializer.serializeChunk(*chunk);
 

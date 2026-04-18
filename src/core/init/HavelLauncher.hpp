@@ -28,25 +28,26 @@ private:
 #ifdef HAVE_QT_EXTENSION
   std::unique_ptr<QApplication> app_;
 #endif
-  struct LaunchConfig {
-    Mode mode = Mode::DAEMON;
-    std::vector<std::string> scriptFiles;
-    bool isStartup = false;
-    bool debugMode = false;
-    bool debugParser = false;
-    bool debugAst = false;
-    bool debugLexer = false;
-    bool debugBytecode = false;
-    bool diffBytecode = false;  // Compare bytecode with previous run
-    bool stopOnError = false; // Stop on first error/warning
-    bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
-    bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
-    bool lintOnly = false; // Only lint the script and check for errors
-    bool buildOnly = false; // Compile to bytecode only
-    std::string outputPath; // Output path for --build (-o)
-    std::string testDir;   // Directory containing test scripts
-    int testTimeout = 30; // Timeout for each test in seconds
-  };
+    struct LaunchConfig {
+        Mode mode = Mode::DAEMON;
+        std::vector<std::string> scriptFiles;
+        bool isStartup = false;
+        bool debugMode = false;
+        bool debugParser = false;
+        bool debugAst = false;
+        bool debugLexer = false;
+        bool debugBytecode = false;
+        bool diffBytecode = false; // Compare bytecode with previous run
+        bool stopOnError = false; // Stop on first error/warning
+        bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
+        bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
+        bool lintOnly = false; // Only lint the script and check for errors
+        bool buildOnly = false; // Compile to bytecode only
+        std::string outputPath; // Output path for --build (-o)
+        std::string testDir; // Directory containing test scripts
+        int testTimeout = 30; // Timeout for each test in seconds
+        std::string inputBackend; // Input backend: "evdev", "x11", "wayland", "auto"
+    };
 
   LaunchConfig parseArgs(int argc, char *argv[]);
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);

@@ -180,11 +180,15 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
-    } else if (arg == "--output" || arg == "-o") {
-      if (i + 1 < argc) {
-        cfg.outputPath = argv[++i];
-      }
-    } else if (arg == "--help" || arg == "-h") {
+        } else if (arg == "--output" || arg == "-o") {
+            if (i + 1 < argc) {
+                cfg.outputPath = argv[++i];
+            }
+        } else if (arg == "--input" || arg == "-i") {
+            if (i + 1 < argc) {
+                cfg.inputBackend = argv[++i];
+            }
+        } else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
     } else if (arg == "lexer") {
@@ -218,12 +222,21 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
   }
-  // Check for debug flags
-  if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
-    cfg.minimalMode = true;
-    info("Debug.ForceMinimal is set - forcing minimal mode");
-  }
-  // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
+        // Check for debug flags
+        if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
+            cfg.minimalMode = true;
+            info("Debug.ForceMinimal is set - forcing minimal mode");
+        }
+
+        // Resolve input backend: CLI arg > config > auto-detect
+        if (cfg.inputBackend.empty()) {
+            cfg.inputBackend = Configs::Get().Get<std::string>("Input.Backend", "auto");
+        }
+        if (cfg.inputBackend == "auto") {
+            cfg.inputBackend = ""; // Will be resolved by auto-detection
+        }
+
+        // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
   return cfg;
 }
@@ -912,8 +925,9 @@ void havel::init::HavelLauncher::showHelp() {
       << "  --test, -t          Run all .hv scripts in a directory\n";
   std::cout << "  --lint              Check syntax and compilation errors\n";
   std::cout << "  --build             Compile to .hvc bytecode file\n";
-  std::cout << "  --output, -o PATH   Set output path for --build\n";
-  std::cout << "  --help, -h          Show this help\n";
+    std::cout << " --output, -o PATH Set output path for --build\n";
+    std::cout << " --input, -i TYPE Set input backend (evdev, x11, wayland, auto)\n";
+    std::cout << " --help, -h Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
   std::cout << "\nModes:\n";

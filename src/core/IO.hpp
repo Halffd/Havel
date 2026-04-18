@@ -1,10 +1,11 @@
 #pragma once
-#include "CallbackTypes.hpp"     // Include callback types
+#include "CallbackTypes.hpp" // Include callback types
 #include "MouseGestureTypes.hpp" // Include the mouse gesture types
 #include "io/Device.hpp"
 #include "io/HotkeyExecutor.hpp"
 #include "io/KeyMap.hpp"
 #include "io/MouseController.hpp"
+#include "io/InputBackend.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/runtime/ImportManager.hpp"
 #include "types.hpp"
@@ -216,33 +217,67 @@ class IO {
   // Track active callback threads for proper cleanup
   std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
 
-  // New unified event listener
-  std::unique_ptr<EventListener> eventListener;
-  std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
-  std::shared_ptr<ImportManager> importManager = nullptr;
+    // New unified event listener
+    std::unique_ptr<EventListener> eventListener;
+    std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
+    std::shared_ptr<ImportManager> importManager = nullptr;
 
-  // Mouse controller for mouse operations
-  std::unique_ptr<MouseController> mouseController;
+    // Mouse controller for mouse operations
+    std::unique_ptr<MouseController> mouseController;
+
+    // Optional InputBackend (new adapter pattern)
+    std::unique_ptr<InputBackend> inputBackend;
+    InputBackendType inputBackendType = InputBackendType::Unknown;
 
 public:
-  bool isSuspended = false;
-  static bool globalEvdev;
-  std::vector<HotKey> failedHotkeys;
-  std::set<int> x11Hotkeys;
-  std::set<int> evdevHotkeys;
-  IO();
-  ~IO();
+    bool isSuspended = false;
+    static bool globalEvdev;
+    std::vector<HotKey> failedHotkeys;
+    std::set<int> x11Hotkeys;
+    std::set<int> evdevHotkeys;
+    IO();
+    ~IO();
 
-  // Public access methods for EventListener
-  EventListener *GetEventListener() { return eventListener.get(); }
-  ImportManager *GetImportManager() { return importManager.get(); }
-  std::shared_ptr<ImportManager> getImportManagerShared() {
-    return importManager;
-  }
-  std::vector<std::string> GetInputDevices(); // We'll implement this method
-  void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
-    this->hotkeyManager = hotkeyManager;
-  }
+    // Public access methods for EventListener
+    EventListener *GetEventListener() { return eventListener.get(); }
+    ImportManager *GetImportManager() { return importManager.get(); }
+    std::shared_ptr<ImportManager> getImportManagerShared() {
+        return importManager;
+    }
+
+    // InputBackend access (new adapter pattern)
+    InputBackend *GetInputBackend() { return inputBackend.get(); }
+    InputBackendType GetInputBackendType() const { return inputBackendType; }
+    void SetInputBackend(const std::string &backendName);
+
+    // InputBackend access (new adapter pattern)
+    InputBackend *GetInputBackend() { return inputBackend.get(); }
+    InputBackendType GetInputBackendType() const { return inputBackendType; }
+    void SetInputBackend(const std::string &backendName);
+
+    // Backend device management
+    std::vector<std::string> ListDevices();
+    bool AddDevice(const std::string &path);
+    bool RemoveDevice(const std::string &path);
+    void ClearDevices();
+    DeviceInfo GetDevice(const std::string &path);
+    std::vector<DeviceInfo> GetDevices();
+
+    // Evdev grab control
+    bool SetEvdevGrab(bool grab);
+    bool GetEvdevGrab() const;
+    bool ToggleEvdevGrab();
+
+    // Key repeat settings
+    void SetRepeatInterval(int ms);
+    int GetRepeatInterval() const;
+    void SetAutoRepeat(bool enabled);
+    bool GetAutoRepeat() const;
+
+    std::vector<std::string> GetInputDevices(); // We'll implement this method
+    void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
+        this->hotkeyManager = hotkeyManager;
+    }
 
   // Window information methods
   std::string GetActiveWindowTitle();
@@ -300,12 +335,20 @@ public:
   // Static method for application exit
   static void ExitApp();
 
-  // Mouse methods
-  bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
-  bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
-  void Scroll(int dy, int dx);
-  bool ClickAt(int x, int y, int button = 1, int speed = 1, float accel = 1.0f);
-  std::pair<int, int> GetMousePosition();
+    // Mouse methods
+    bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
+    bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
+    void Scroll(int dy, int dx);
+    bool ClickAt(int x, int y, int button = 1, int speed = 1, float accel = 1.0f);
+    std::pair<int, int> GetMousePosition();
+
+    // Mouse gesture methods
+    void AddGesture(int id, const std::string &pattern);
+    void AddGesture(int id, const std::vector<MouseGestureDirection> &directions);
+    void RemoveGesture(int id);
+    std::vector<int> GetGestures() const;
+    bool HasGestures() const;
+    void ClearGestures();
 
   // XInput2 hardware mouse control
   bool InitializeXInput2();

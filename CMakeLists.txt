@@ -43,8 +43,8 @@ endif()
 # Compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto=thin -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=thin -fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto=auto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
@@ -56,11 +56,6 @@ include(CheckIPOSupported)
 check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_OUTPUT)
 if(LTO_SUPPORTED AND CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-    # Use thin LTO for faster builds (Clang) or auto (GCC)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto=thin")
-        set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto=thin")
-    endif()
 endif()
 find_program(CCACHE ccache)
 if(CCACHE)
@@ -571,13 +566,10 @@ target_link_libraries(image_extension PRIVATE
     ${OPENCV_ESSENTIAL_LIBS}
 )
 set_target_properties(image_extension PROPERTIES
-    PREFIX ""
-    C_STANDARD 11
-    CXX_STANDARD 23
-    C_VISIBILITY_PRESET default
-    CXX_VISIBILITY_PRESET default
-    VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
 )
+target_compile_options(image_extension PRIVATE -fno-lto)
+target_link_options(image_extension PRIVATE -fno-lto)
 
 # OCR extension (Tesseract-based)
 add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)
@@ -600,7 +592,10 @@ set_target_properties(ocr_extension PROPERTIES
     C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
 )
+target_compile_options(ocr_extension PRIVATE -fno-lto)
+target_link_options(ocr_extension PRIVATE -fno-lto)
 
 # GTK4 extension (GTK4-based UI)
 # Uses dynamic loading - no compile-time dependency on GTK4
@@ -627,7 +622,10 @@ set_target_properties(gtk_extension PROPERTIES
     C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
 )
+target_compile_options(gtk_extension PRIVATE -fno-lto)
+target_link_options(gtk_extension PRIVATE -fno-lto)
 
 # ImGui extension (Dear ImGui with GLFW/OpenGL)
 # Uses dynamic loading - no compile-time dependency on ImGui/GLFW/OpenGL
@@ -652,6 +650,7 @@ set_target_properties(imgui_extension PROPERTIES
     C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
 )
 
 # Qt6 extension (Qt6 Widgets) - for additional dynamic UI capabilities
@@ -677,7 +676,10 @@ set_target_properties(qt_extension PROPERTIES
     C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
 )
+target_compile_options(qt_extension PRIVATE -fno-lto)
+target_link_options(qt_extension PRIVATE -fno-lto)
 
 # ==============================================================================
 # MAIN EXECUTABLE
@@ -818,7 +820,8 @@ target_include_directories(havel PRIVATE
     ${OpenCV_INCLUDE_DIRS}
     ${UI_BACKEND_INCLUDES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-    $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
+    # Note: LLVM_INCLUDE_DIRS intentionally omitted here - scoped to BytecodeOrcJIT.cpp only
+    # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
 )
 
 # Link libraries
@@ -870,7 +873,7 @@ if(ENABLE_HAVEL_LANG)
         ${WAYLAND_INCLUDE_DIRS}
         ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
+        # Note: LLVM_INCLUDE_DIRS scoped to BytecodeOrcJIT.cpp only (see below)
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtCore>
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtWidgets>
@@ -900,6 +903,18 @@ if(ENABLE_HAVEL_LANG)
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
     )
+
+    # -----------------------------------------------------------------------
+    # Scope LLVM includes to BytecodeOrcJIT.cpp ONLY.
+    # This prevents LLVM 23's bare `namespace __detail` from polluting
+    # std::__detail across every translation unit in havel_lang.
+    # -----------------------------------------------------------------------
+    if(ENABLE_LLVM)
+        set(JIT_SRC "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp")
+        set_source_files_properties(${JIT_SRC} PROPERTIES
+            COMPILE_FLAGS "-I${LLVM_INCLUDE_DIRS}"
+        )
+    endif()
 endif()
 
 # ==============================================================================

@@ -3233,13 +3233,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   }
 
   // Phase 4 JIT: Track execution count and trigger JIT if hot
-  {
-    auto* mutable_callee = const_cast<BytecodeFunction*>(callee);
-    mutable_callee->execution_count++;
-    if (mutable_callee->execution_count == 1000 && hot_func_cb_) {
-      hot_func_cb_(*mutable_callee);
-    }
+  callee->execution_count++;
+  if (callee->execution_count == 1000 && hot_func_cb_) {
+    hot_func_cb_(*callee);
   }
+
 
   // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing

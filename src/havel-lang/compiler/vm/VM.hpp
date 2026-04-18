@@ -431,7 +431,8 @@ public:
   void throwError(const std::string &msg);
   
   // Phase 4 JIT: Hot function notification
-  using HotFunctionCallback = std::function<void(BytecodeFunction&)>;
+  using HotFunctionCallback = std::function<void(const BytecodeFunction&)>;
+
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
   // System object initializer - called after registerDefaultHostGlobals()

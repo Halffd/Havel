@@ -52,6 +52,13 @@ struct CompileOptions {
   // Validation
   bool verifyBytecode = true;
   bool checkTypes = true;
+
+  // JIT options
+  bool useJIT = true;
+  bool debugJIT = false;
+  bool dumpIR = false;
+  bool outputAsm = false;
+
 };
 
 // ============================================================================

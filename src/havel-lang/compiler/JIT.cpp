@@ -49,8 +49,26 @@ void JIT::ExecuteHotkey(const std::string &combination) {
 }
 
 void JIT::CompileScript(const ast::Program &program) {
-  // TODO: Implement script compilation
-  std::cout << "Script compilation not yet implemented" << std::endl;
+  std::cout << "🚀 JIT compiling full script..." << std::endl;
+  
+  // Compile the entire program AST to LLVM IR
+  llvm::Function *mainFunc = compiler.CompileProgram(program);
+  if (!mainFunc) {
+      std::cerr << "Failed to compile main program script" << std::endl;
+      return;
+  }
+
+  // JIT compile to native machine code
+  auto compiledMain = compiler.GetCompiledFunction("main");
+  if (!compiledMain) {
+      std::cerr << "Failed to JIT compile script main entry point" << std::endl;
+      return;
+  }
+
+  std::cout << "🔥 Script compiled successfully! Ready for blazing fast execution! ⚡" << std::endl;
+  
+  // Execute it!
+  compiledMain();
 }
 
 } // namespace havel::compiler

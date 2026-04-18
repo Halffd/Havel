@@ -4865,6 +4865,9 @@ void ByteCompiler::leaveFunction() {
     COMPILER_THROW("No active function to close");
   }
 
+  // Phase 4 JIT: Initialize type feedback for all instructions
+  current_function->type_feedback.resize(current_function->instructions.size());
+
   current_function->local_count = next_local_index;
   if (current_function_slot_.has_value()) {
     const uint32_t slot = *current_function_slot_;

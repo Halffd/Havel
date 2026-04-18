@@ -28,8 +28,9 @@ public:
   void compileBinaryExpression(const ast::BinaryExpression& binary);
   void compileUnaryExpression(const ast::UnaryExpression& unary);
   void compileCallExpression(const ast::CallExpression& call);
-  void compileAssignmentExpression(const ast::AssignmentExpression& assignment);
-  void compileMemberExpression(const ast::MemberExpression& member);
+void compileAssignmentExpression(const ast::AssignmentExpression& assignment);
+void compileMultipleAssignment(const ast::MultipleAssignment& multiAssign);
+void compileMemberExpression(const ast::MemberExpression& member);
   void compileIndexExpression(const ast::IndexExpression& index);
   void compileLambdaExpression(const ast::LambdaExpression& lambda);
   void compileArrayLiteral(const ast::ArrayLiteral& array);

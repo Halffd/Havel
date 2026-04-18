@@ -641,18 +641,13 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         return B.CreateICmpNE(B.CreateAnd(v, llvm::ConstantInt::get(i64, QNAN)), llvm::ConstantInt::get(i64, QNAN));
     };
 
-    auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, llvm::Value* left, llvm::Value* right) -> llvm::Value* {
-        std::string pfx = "op" + std::to_string(ip) + "_";
-        llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
-        llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx+"chk_dbl", f);
-        llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx+"dbl", f);
-        llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx+"deopt", f);
-        llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
-
-        llvm::Value* bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
-B.CreateCondBr(bothInt, intBB, chkDblBB);
-
-        B.SetInsertPoint(intBB);
+auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, llvm::Value* left, llvm::Value* right) -> llvm::Value* {
+    // Check for AOT type hint - if we know the type at compile time, use direct path
+    uint64_t type_hint = (fb && fb->has_aot_hint) ? fb->aot_type_hint : 0;
+    
+    // If AOT hint says both operands are int, use direct integer path
+    if ((type_hint & TYPE_HINT_INT) && !(type_hint & TYPE_HINT_NUMBER)) {
+        // Pure integer operation - no runtime check needed
         llvm::Value *lIv = unboxInt(left);
         llvm::Value *rIv = unboxInt(right);
         llvm::Value *iRes = nullptr;
@@ -661,65 +656,87 @@ B.CreateCondBr(bothInt, intBB, chkDblBB);
         else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
         else if (op == OpCode::DIV) iRes = B.CreateSDiv(lIv, rIv);
         else if (op == OpCode::MOD) iRes = B.CreateSRem(lIv, rIv);
-        else iRes = B.CreateAdd(lIv, rIv); // Fallback
-        llvm::Value *iBoxed = boxInt(iRes);
-        auto* iExitBB = B.GetInsertBlock();
-        B.CreateBr(mergeBB);
-
-        B.SetInsertPoint(chkDblBB);
-        llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
-        B.CreateCondBr(bothDbl, dblBB, deoptBB);
-
-        B.SetInsertPoint(dblBB);
+        else iRes = B.CreateAdd(lIv, rIv);
+        return boxInt(iRes);
+    }
+    
+    // If AOT hint says number (float), use direct float path
+    if (type_hint & TYPE_HINT_NUMBER) {
         llvm::Value *lDv = B.CreateBitCast(left, f64);
         llvm::Value *rDv = B.CreateBitCast(right, f64);
         llvm::Value *dRes = nullptr;
         if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
         else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
         else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
+        else if (op == OpCode::DIV) dRes = B.CreateFDiv(lDv, rDv);
         else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
-        else dRes = B.CreateFDiv(lDv, rDv);
-        llvm::Value *dBoxed = B.CreateBitCast(dRes, i64);
-        auto* dExitBB = B.GetInsertBlock();
-        B.CreateBr(mergeBB);
+        else dRes = B.CreateFAdd(lDv, rDv);
+        return B.CreateBitCast(dRes, i64);
+    }
 
-        B.SetInsertPoint(chkDblBB);
-        llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
-        B.CreateCondBr(bothDbl, dblBB, deoptBB);
+    // No AOT hint - use speculative optimization with runtime type checks
+    std::string pfx = "op" + std::to_string(ip) + "_";
+    llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
+    llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx+"chk_dbl", f);
+    llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx+"dbl", f);
+    llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx+"deopt", f);
+    llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
 
-        B.SetInsertPoint(dblBB);
-        llvm::Value *lDv = B.CreateBitCast(left, f64);
-        llvm::Value *rDv = B.CreateBitCast(right, f64);
-        llvm::Value *dRes = nullptr;
-        if      (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
-        else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
-        else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
-        else                        dRes = B.CreateFDiv(lDv, rDv);
-        llvm::Value *dBoxed = B.CreateBitCast(dRes, i64);
-        auto* dExitBB = B.GetInsertBlock();
-        B.CreateBr(mergeBB);
+    llvm::Value* bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
+    B.CreateCondBr(bothInt, intBB, chkDblBB);
 
-        B.SetInsertPoint(deoptBB); 
-        llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
-        if (!fn_deopt) fn_deopt = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false), llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
-        
-        // Create global string constant for function name
-        llvm::Constant *funcNameStr = llvm::ConstantDataArray::getString(module.getContext(), func.name);
-        llvm::GlobalVariable *gv = new llvm::GlobalVariable(
-            module, funcNameStr->getType(), true,
-            llvm::GlobalValue::PrivateLinkage, funcNameStr);
-        llvm::Value* funcNameConst = B.CreatePointerCast(gv, i8p);
-        
-        B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
-        B.CreateBr(mergeBB);
+    B.SetInsertPoint(intBB);
+    llvm::Value *lIv = unboxInt(left);
+    llvm::Value *rIv = unboxInt(right);
+    llvm::Value *iRes = nullptr;
+    if (op == OpCode::ADD) iRes = B.CreateAdd(lIv, rIv);
+    else if (op == OpCode::SUB) iRes = B.CreateSub(lIv, rIv);
+    else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
+    else if (op == OpCode::DIV) iRes = B.CreateSDiv(lIv, rIv);
+    else if (op == OpCode::MOD) iRes = B.CreateSRem(lIv, rIv);
+    else iRes = B.CreateAdd(lIv, rIv); // Fallback
+    llvm::Value *iBoxed = boxInt(iRes);
+    auto* iExitBB = B.GetInsertBlock();
+    B.CreateBr(mergeBB);
 
-        B.SetInsertPoint(mergeBB);
-        llvm::PHINode *phi = B.CreatePHI(i64, 3);
-        phi->addIncoming(iBoxed, iExitBB);
-        phi->addIncoming(dBoxed, dExitBB);
-phi->addIncoming(makeNull(), deoptBB);
-        return phi;
-    };
+    B.SetInsertPoint(chkDblBB);
+    llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
+    B.CreateCondBr(bothDbl, dblBB, deoptBB);
+
+    B.SetInsertPoint(dblBB);
+    llvm::Value *lDv = B.CreateBitCast(left, f64);
+    llvm::Value *rDv = B.CreateBitCast(right, f64);
+    llvm::Value *dRes = nullptr;
+    if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
+    else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
+    else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
+    else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
+    else dRes = B.CreateFDiv(lDv, rDv);
+    llvm::Value *dBoxed = B.CreateBitCast(dRes, i64);
+    auto* dExitBB = B.GetInsertBlock();
+    B.CreateBr(mergeBB);
+
+    B.SetInsertPoint(deoptBB);
+    llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
+    if (!fn_deopt) fn_deopt = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false), llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
+
+    // Create global string constant for function name
+    llvm::Constant *funcNameStr = llvm::ConstantDataArray::getString(module.getContext(), func.name);
+    llvm::GlobalVariable *gv = new llvm::GlobalVariable(
+        module, funcNameStr->getType(), true,
+        llvm::GlobalValue::PrivateLinkage, funcNameStr);
+    llvm::Value* funcNameConst = B.CreatePointerCast(gv, i8p);
+
+    B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
+    B.CreateBr(mergeBB);
+
+    B.SetInsertPoint(mergeBB);
+    llvm::PHINode *phi = B.CreatePHI(i64, 3);
+    phi->addIncoming(iBoxed, iExitBB);
+    phi->addIncoming(dBoxed, dExitBB);
+    phi->addIncoming(makeNull(), deoptBB);
+    return phi;
+};
 
     // First pass: identify jump targets and create basic blocks
     std::vector<llvm::BasicBlock*> basicBlocks(func.instructions.size(), nullptr);

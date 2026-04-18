@@ -62,9 +62,6 @@ static uint64_t getFeedbackMask(const Value& v) {
   uint64_t tag = v.getTagBits(); // Bits 48-50
   return 1ULL << (tag >> 48);
 }
-  if (v.isNull()) return 6;
-  return 7;
-}
 
 namespace {
 // Helper function to compare two Values for equality
@@ -4212,9 +4209,9 @@ void VM::execLogicalOp(OpCode opcode) {
   auto &frame = currentFrame();
   if (frame.ip < frame.function->type_feedback.size()) {
     auto &fb = frame.function->type_feedback[frame.ip];
-    fb.hit_count++;
-    fb.left_type = getFeedbackType(left);
-    fb.right_type = getFeedbackType(right);
+    fb.execution_count++;
+    fb.left_type_mask |= getFeedbackMask(left);
+    fb.right_type_mask |= getFeedbackMask(right);
   }
   switch (opcode) {
   case OpCode::AND: pushStack(isTruthy(left) && isTruthy(right)); break;
@@ -4230,8 +4227,8 @@ void VM::execNegate() {
   auto &frame = currentFrame();
   if (frame.ip < frame.function->type_feedback.size()) {
     auto &fb = frame.function->type_feedback[frame.ip];
-    fb.hit_count++;
-    fb.left_type = getFeedbackType(value);
+    fb.execution_count++;
+    fb.left_type_mask |= getFeedbackMask(value);
   }
   if (value.isInt()) {
     pushStack(-value.asInt());

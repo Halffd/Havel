@@ -6,6 +6,7 @@
 #include <sstream>
 #include <chrono>
 #include <iomanip>
+#include <iostream>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;

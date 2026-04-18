@@ -53,16 +53,19 @@ public:
     ~BytecodeOrcJIT() override;
 
     // JITCompiler interface
-    void  compileFunction(const BytecodeFunction &func) override;
+    void compileFunction(const BytecodeFunction &func) override;
     Value executeCompiled(VM* vm, const std::string &func_name,
                           const std::vector<Value> &args) override;
-    bool  isCompiled(const std::string &func_name) const override;
+    bool isCompiled(const std::string &func_name) const override;
 
     void setDebugMode(bool enabled) { debug_jit_ = enabled; }
     void setDumpIR(bool enabled) { dump_ir_ = enabled; }
     void setDumpAsmToFile(bool enabled) { dump_asm_to_file_ = enabled; }
-    
+
     void dumpAssembly(const std::string &filename);
+
+    // AOT: Translate function to LLVM IR (public for AOT compilation)
+    void translate(const BytecodeFunction &func, llvm::Module &module);
 
 private:
     std::unique_ptr<llvm::orc::LLJIT> lljit_;
@@ -74,7 +77,6 @@ private:
     std::string last_asm_;
 
     void initTargetMachine();
-    void translate(const BytecodeFunction &func, llvm::Module &module);
     void runOptimizations(llvm::Module &module);
 
     static void InitializeLLVM();

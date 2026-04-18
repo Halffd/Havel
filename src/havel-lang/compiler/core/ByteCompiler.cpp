@@ -4844,8 +4844,38 @@ std::optional<std::string> ByteCompiler::normalizeTypeAnnotation(
     return std::string("struct");
   }
 
-  // Custom nominal types are not enforceable yet in bytecode VM.
-  return std::nullopt;
+// Custom nominal types are not enforceable yet in bytecode VM.
+return std::nullopt;
+}
+
+uint64_t ByteCompiler::typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const {
+auto normalized = normalizeTypeAnnotation(annotation);
+if (!normalized) return 0;
+
+if (*normalized == "int") {
+return TYPE_HINT_INT;
+} else if (*normalized == "number") {
+return TYPE_HINT_NUMBER | TYPE_HINT_INT;  // number includes int
+} else if (*normalized == "string") {
+return TYPE_HINT_STRING;
+} else if (*normalized == "array") {
+return TYPE_HINT_ARRAY;
+} else if (*normalized == "object") {
+return TYPE_HINT_OBJECT;
+} else if (*normalized == "bool") {
+return TYPE_HINT_BOOL;
+} else if (*normalized == "function") {
+return TYPE_HINT_FUNCTION;
+}
+
+return 0;
+}
+
+void ByteCompiler::setTypeFeedbackHint(uint32_t ip, uint64_t type_mask) {
+if (current_function && ip < current_function->type_feedback.size()) {
+current_function->type_feedback[ip].aot_type_hint = type_mask;
+current_function->type_feedback[ip].has_aot_hint = true;
+}
 }
 
 void ByteCompiler::emitTypeAssertionForLocal(

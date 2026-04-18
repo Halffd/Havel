@@ -153,15 +153,17 @@ private:
   void compileBlockStatement(const ast::BlockStatement &block);
   // Closure body compilation helpers
   void compileClosureBody(const ast::Statement &body, const std::string &name);
-  void collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues);
-  void collectUpvaluesFromExpr(const ast::Expression &expr, std::vector<UpvalueDescriptor> &upvalues);
-  std::optional<std::string> getCalleeName(const ast::Expression &callee) const;
-  std::optional<std::string>
-  normalizeTypeAnnotation(const ast::TypeAnnotation *annotation) const;
-  void emitTypeAssertionForLocal(const std::string &normalized_expected,
-                                 uint32_t slot,
-                                 const std::string &label);
-  const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
+void collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues);
+void collectUpvaluesFromExpr(const ast::Expression &expr, std::vector<UpvalueDescriptor> &upvalues);
+std::optional<std::string> getCalleeName(const ast::Expression &callee) const;
+std::optional<std::string>
+normalizeTypeAnnotation(const ast::TypeAnnotation *annotation) const;
+uint64_t typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const;
+void setTypeFeedbackHint(uint32_t ip, uint64_t type_mask);
+void emitTypeAssertionForLocal(const std::string &normalized_expected,
+                                uint32_t slot,
+                                const std::string &label);
+const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
 

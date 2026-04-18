@@ -14,6 +14,10 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef HAVEL_ENABLE_LLVM
+#include "havel-lang/compiler/BytecodeOrcJIT.h"
+#endif
+
 
 // Forward declarations
 #include "automation/AutomationManager.hpp"
@@ -118,6 +122,10 @@ private:
   std::shared_ptr<compiler::HostBridge> hostBridge;
   compiler::Scheduler *scheduler = nullptr; // Singleton-owned
   std::unique_ptr<compiler::ExecutionEngine> executionEngine;
+#ifdef HAVEL_ENABLE_LLVM
+  std::unique_ptr<compiler::JITCompiler> jitCompiler;
+#endif
+
   
   // Phase 2H-2J: Reactive hotkey system components
   class HotkeyConditionCompiler *conditionCompiler = nullptr;    // Phase 2H

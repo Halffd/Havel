@@ -144,6 +144,42 @@ void Havel::initialize(bool isStartup) {
   bytecodeVM = std::make_unique<compiler::VM>(*hostContext);
   hostContext->vm = bytecodeVM.get();
 
+#ifdef HAVEL_ENABLE_LLVM
+  // Initialize JIT if enabled
+  bool useJIT = Configs::Get().Get<bool>("Compiler.JIT", true);
+  // Override with CLI config if present (assuming this->commandLineArgs or similar)
+  // For now we check the instance-level config if we had it, but Havre uses LaunchConfig in Launcher.
+  // We'll trust the ConfigManager which should be updated by Launcher.
+  
+  if (useJIT) {
+    info("JIT compilation enabled");
+    auto jit = std::make_unique<compiler::BytecodeOrcJIT>();
+    
+    // Check for debug JIT
+    if (Configs::Get().Get<bool>("Compiler.DebugJIT", false)) {
+      jit->setDebugMode(true);
+    }
+    
+    // Check for assembly dumping
+    if (Configs::Get().Get<bool>("Compiler.OutputAsm", false)) {
+      jit->setDumpAsmToFile(true);
+    }
+
+    
+    // Hook up to VM
+    bytecodeVM->setHotFunctionCallback([jit_ptr = jit.get()](compiler::BytecodeFunction& func) {
+        if (!jit_ptr->isCompiled(func.name)) {
+            jit_ptr->compileFunction(func);
+        }
+    });
+    
+    // Store JIT in some way? Or just keep it alive?
+    // We'll need a member in Havel to keep the JIT instance alive.
+    this->jitCompiler = std::move(jit);
+  }
+#endif
+
+
   // Create HostBridge
   hostBridge = compiler::createHostBridge(*hostContext);
 

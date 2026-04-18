@@ -280,6 +280,8 @@ void havel::Configs::EnsureConfigFile(const std::string &filename) {
       file << "VerboseKeyLogging=false" << std::endl;
       file << "VerboseWindowLogging=false" << std::endl;
       file << "VerboseConditionLogging=false" << std::endl;
+      file << "[Compiler]" << std::endl;
+      file << "JIT=true" << std::endl;
       file << "[General]" << std::endl;
       file << "GamingApps=";
       for (size_t i = 0; i < Configs::DEFAULT_GAMING_APPS.size(); ++i) {

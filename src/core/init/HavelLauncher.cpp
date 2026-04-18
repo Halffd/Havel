@@ -72,7 +72,13 @@ int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
 
+    // Apply JIT settings to global config
+    Configs::Get().Set("Compiler.JIT", cfg.useJIT ? "true" : "false");
+    Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
+    Configs::Get().Set("Compiler.OutputAsm", cfg.outputAsmToFile ? "true" : "false");
+
     if (cfg.buildOnly) {
+
       return runBuild(cfg);
     }
 
@@ -140,6 +146,15 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       // Full REPL with all features (hotkeys, GUI, etc.)
       cfg.fullRepl = true;
       repl = true;
+    } else if (arg == "--no-jit") {
+      cfg.useJIT = false;
+    } else if (arg == "--debug-jit" || arg == "-djt") {
+      cfg.debugJIT = true;
+      cfg.dumpIR = true;
+    } else if (arg == "-S") {
+      cfg.outputAsmToFile = true;
+      cfg.dumpIR = true;
+
     } else if (arg == "--config" || arg == "-c") {
       // Config file path
       if (i + 1 < argc) {

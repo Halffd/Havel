@@ -1,4 +1,8 @@
 #include "InputBackend.hpp"
+#include "EvdevAdapter.hpp"
+#include "X11Adapter.hpp"
+#include "WaylandAdapter.hpp"
+#include "WindowsAdapter.hpp"
 #include "utils/Logger.hpp"
 
 #ifdef __linux__
@@ -39,7 +43,7 @@ std::unique_ptr<InputBackend> InputBackend::Create(InputBackendType type) {
     switch (type) {
         case InputBackendType::Evdev:
 #ifdef __linux__
-            return std::make_unique<EvdevAdapter>();
+            return CreateEvdevAdapter();
 #else
             warn("EvdevAdapter not available on this platform");
             return nullptr;
@@ -47,7 +51,7 @@ std::unique_ptr<InputBackend> InputBackend::Create(InputBackendType type) {
 
         case InputBackendType::X11:
 #ifdef __linux__
-            return std::make_unique<X11Adapter>();
+            return CreateX11Adapter();
 #else
             warn("X11Adapter not available on this platform");
             return nullptr;
@@ -55,7 +59,7 @@ std::unique_ptr<InputBackend> InputBackend::Create(InputBackendType type) {
 
         case InputBackendType::Wayland:
 #ifdef __linux__
-            return std::make_unique<WaylandAdapter>();
+            return CreateWaylandAdapter();
 #else
             warn("WaylandAdapter not available on this platform");
             return nullptr;
@@ -63,7 +67,7 @@ std::unique_ptr<InputBackend> InputBackend::Create(InputBackendType type) {
 
         case InputBackendType::Windows:
 #ifdef _WIN32
-            return std::make_unique<WindowsAdapter>();
+            return CreateWindowsAdapter();
 #else
             warn("WindowsAdapter not available on this platform");
             return nullptr;

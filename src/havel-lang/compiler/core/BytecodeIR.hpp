@@ -21,6 +21,8 @@ struct TypeFeedback {
   uint8_t result_type = 0;
 };
 
+} // namespace havel::compiler
+
 // Forward declarations
 namespace havel::ast {
 struct Program;
@@ -346,9 +348,10 @@ struct BytecodeFunction {
   bool is_generator = false;             // Phase 3B-3: True if function contains yield
   
   // Phase 4: JIT Type Feedback & State
-  std::vector<TypeFeedback> type_feedback;
-  uint32_t execution_count = 0;
-  bool jit_compiled = false;
+  mutable std::vector<TypeFeedback> type_feedback;
+  mutable uint32_t execution_count = 0;
+  mutable bool jit_compiled = false;
+
 
   BytecodeFunction(std::string n, uint32_t params = 0, uint32_t locals = 0)
       : name(std::move(n)), param_count(params), local_count(locals) {}
@@ -458,7 +461,8 @@ protected:
 public:
   Hybrid(std::unique_ptr<BytecodeCompiler> comp,
          std::unique_ptr<BytecodeInterpreter> interp,
-         std::unique_ptr<JITCompiler> jcomp = nullptr);
+         std::unique_ptr<JITCompiler> jcomp = nullptr,
+         bool use_jit = true);
 
   virtual ~Hybrid() = default;
 

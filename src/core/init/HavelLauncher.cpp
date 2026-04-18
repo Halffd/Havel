@@ -75,7 +75,9 @@ int HavelLauncher::run(int argc, char *argv[]) {
     // Apply JIT settings to global config
     Configs::Get().Set("Compiler.JIT", cfg.useJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
+    Configs::Get().Set("Compiler.DumpIR", cfg.dumpIR ? "true" : "false");
     Configs::Get().Set("Compiler.OutputAsm", cfg.outputAsmToFile ? "true" : "false");
+
 
     if (cfg.buildOnly) {
 

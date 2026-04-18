@@ -1101,18 +1101,63 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
       resolveExpression(*assignment.value);
     }
 
-    // STEP 3: Resolve any complex targets (member/index expressions)
+// STEP 3: Resolve any complex targets (member/index expressions)
     if (assignment.target &&
         assignment.target->kind != ast::NodeType::Identifier &&
         assignment.target->kind != ast::NodeType::ArrayLiteral &&
         assignment.target->kind != ast::NodeType::ObjectLiteral) {
-      resolveExpression(*assignment.target);
+        resolveExpression(*assignment.target);
     }
 
     break;
-  }
+}
 
-  case ast::NodeType::MemberExpression: {
+case ast::NodeType::MultipleAssignment: {
+    const auto &multiAssign =
+        static_cast<const ast::MultipleAssignment &>(expression);
+
+    // STEP 1: Pre-declare all targets before resolving value
+    for (const auto &target : multiAssign.targets) {
+        if (target && target->kind == ast::NodeType::Identifier) {
+            const auto &ident = static_cast<const ast::Identifier &>(*target);
+            auto binding = resolveIdentifier(ident.symbol);
+
+            if (!binding) {
+                // Implicit declaration at top level
+                bool isGlobalScope = (function_stack_.size() == 1);
+                if (isGlobalScope) {
+                    uint32_t slot = declareLocal(ident.symbol, &ident, false);
+                    global_variables_.insert(ident.symbol);
+                    ResolvedBinding newBinding;
+                    newBinding.kind = ResolvedBindingKind::Global;
+                    newBinding.slot = 0;
+                    newBinding.name = ident.symbol;
+                    newBinding.is_const = false;
+                    noteIdentifierBinding(ident, newBinding);
+                } else {
+                    uint32_t slot = declareLocal(ident.symbol, &ident, false);
+                    ResolvedBinding newBinding;
+                    newBinding.kind = ResolvedBindingKind::Local;
+                    newBinding.slot = slot;
+                    newBinding.name = ident.symbol;
+                    newBinding.is_const = false;
+                    noteIdentifierBinding(ident, newBinding);
+                }
+            } else {
+                noteIdentifierBinding(ident, *binding);
+            }
+        }
+    }
+
+    // STEP 2: Resolve the value
+    if (multiAssign.value) {
+        resolveExpression(*multiAssign.value);
+    }
+
+    break;
+}
+
+case ast::NodeType::MemberExpression: {
     const auto &member = static_cast<const ast::MemberExpression &>(expression);
     if (member.object) {
       resolveExpression(*member.object);

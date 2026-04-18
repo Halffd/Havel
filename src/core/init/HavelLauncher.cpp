@@ -930,7 +930,11 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --lint              Check syntax and compilation errors\n";
   std::cout << "  --build             Compile to .hvc bytecode file\n";
   std::cout << "  --output, -o PATH   Set output path for --build\n";
+  std::cout << "  --no-jit            Disable JIT compilation\n";
+  std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
+  std::cout << "  -S                  Output compiled IR and Assembly to files\n";
   std::cout << "  --help, -h          Show this help\n";
+
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
   std::cout << "\nModes:\n";

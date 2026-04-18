@@ -164,10 +164,14 @@ void Havel::initialize(bool isStartup) {
     if (Configs::Get().Get<bool>("Compiler.OutputAsm", false)) {
       jit->setDumpAsmToFile(true);
     }
-
     
+    // Check for IR dumping
+    if (Configs::Get().Get<bool>("Compiler.DumpIR", false)) {
+      jit->setDumpIR(true);
+    }
+
     // Hook up to VM
-    bytecodeVM->setHotFunctionCallback([jit_ptr = jit.get()](compiler::BytecodeFunction& func) {
+    bytecodeVM->setHotFunctionCallback([jit_ptr = jit.get()](const compiler::BytecodeFunction& func) {
         if (!jit_ptr->isCompiled(func.name)) {
             jit_ptr->compileFunction(func);
         }
@@ -176,6 +180,7 @@ void Havel::initialize(bool isStartup) {
     // Store JIT in some way? Or just keep it alive?
     // We'll need a member in Havel to keep the JIT instance alive.
     this->jitCompiler = std::move(jit);
+
   }
 #endif
 

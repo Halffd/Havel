@@ -663,7 +663,7 @@ void GoExpression::accept(ASTVisitor &visitor) const {
 
 // ChannelExpression accept method
 void ChannelExpression::accept(ASTVisitor &visitor) const {
-  visitor.visitChannelExpression(*this);
+visitor.visitChannelExpression(*this);
 }
 
 } // namespace havel::ast

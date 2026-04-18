@@ -1033,55 +1033,49 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       break;
     }
 
-    if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
-                        let.pattern->kind == ast::NodeType::ArrayPattern)) {
-      const auto &pattern =
-          static_cast<const ast::ArrayPattern &>(*let.pattern);
-      if (!let.value) {
+if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
+        let.pattern->kind == ast::NodeType::ArrayPattern)) {
+    const auto &pattern =
+        static_cast<const ast::ArrayPattern &>(*let.pattern);
+    if (!let.value) {
         COMPILER_THROW("Tuple/array destructuring requires a value");
-      }
+    }
 
-      bool optimized_tuple_literal =
-          let.value->kind == ast::NodeType::TupleExpression;
-      const ast::TupleExpression *tuple_value =
-          optimized_tuple_literal
-              ? static_cast<const ast::TupleExpression *>(let.value.get())
-              : nullptr;
+    // Compile value once
+    compileExpression(*let.value);
 
-      uint32_t temp_slot = next_local_index;
-      if (!optimized_tuple_literal) {
-        reserveLocalSlot(temp_slot);
-        compileExpression(*let.value);
-        emit(OpCode::STORE_VAR, temp_slot);
-      }
-
-      for (size_t i = 0; i < pattern.elements.size(); ++i) {
+    // For comma-separated identifiers (let a, b = value), each variable
+    // gets the SAME value, not destructured from array
+    for (size_t i = 0; i < pattern.elements.size(); ++i) {
         const auto *element_id = pattern.elements[i]
-                                     ? dynamic_cast<const ast::Identifier *>(
-                                           pattern.elements[i].get())
-                                     : nullptr;
+            ? dynamic_cast<const ast::Identifier *>(
+                pattern.elements[i].get())
+            : nullptr;
         if (!element_id) {
-          COMPILER_THROW("Tuple destructuring currently supports "
-                                   "identifier elements only");
+            COMPILER_THROW("Tuple destructuring currently supports "
+                          "identifier elements only");
         }
+
+        bool isLast = (i == pattern.elements.size() - 1);
+
+        // Duplicate value for all but last assignment
+        if (!isLast) {
+            emit(OpCode::DUP);
+        }
+
         const uint32_t slot = declarationSlot(*element_id);
         reserveLocalSlot(slot);
-        if (optimized_tuple_literal) {
-          if (tuple_value && i < tuple_value->elements.size() &&
-              tuple_value->elements[i]) {
-            compileExpression(*tuple_value->elements[i]);
-          } else {
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          }
+
+        // Check if this is a global variable (top-level let)
+        if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
+            emit(OpCode::STORE_GLOBAL,
+                 std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
         } else {
-          emit(OpCode::LOAD_VAR, temp_slot);
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
-          emit(OpCode::ARRAY_GET);
+            emit(OpCode::STORE_VAR, slot);
         }
-        emit(OpCode::STORE_VAR, slot);
-      }
-      break;
     }
+    break;
+}
 
     if (let.pattern && let.pattern->kind == ast::NodeType::ObjectPattern) {
       const auto &pattern =
@@ -3119,11 +3113,55 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       break;
     }
 
-    COMPILER_THROW("Unsupported assignment operator: " +
-                             assignment.operator_);
-  }
+COMPILER_THROW("Unsupported assignment operator: " +
+    assignment.operator_);
+}
 
-  case ast::NodeType::CallExpression:
+case ast::NodeType::MultipleAssignment: {
+    const auto &multiAssign =
+        static_cast<const ast::MultipleAssignment &>(expression);
+
+    // Compile value once
+    compileExpression(*multiAssign.value);
+
+    // For each target, duplicate value and store
+    for (size_t i = 0; i < multiAssign.targets.size(); ++i) {
+        auto &target = multiAssign.targets[i];
+        if (!target) {
+            COMPILER_THROW("MultipleAssignment target is null");
+        }
+
+        if (target->kind == ast::NodeType::Identifier) {
+            const auto *id = static_cast<const ast::Identifier *>(target.get());
+            const auto *binding = bindingFor(*id);
+            if (!binding) {
+                COMPILER_THROW("Missing binding for assignment target: " + id->symbol);
+            }
+            if (binding->is_const) {
+                COMPILER_THROW("Cannot assign to const binding: " + binding->name);
+            }
+
+            // Always DUP so we leave value on stack for result
+            emit(OpCode::DUP);
+
+            if (binding->kind == ResolvedBindingKind::Local) {
+                emit(OpCode::STORE_VAR, binding->slot);
+            } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+                emit(OpCode::STORE_UPVALUE, binding->slot);
+            } else if (binding->kind == ResolvedBindingKind::Global) {
+                uint32_t strId = addStringConstant(binding->name);
+                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+            } else {
+                COMPILER_THROW("Cannot assign to this binding type");
+            }
+        } else {
+            COMPILER_THROW("Unsupported target type in multiple assignment");
+        }
+    }
+    break;
+}
+
+case ast::NodeType::CallExpression:
     compileCallExpression(static_cast<const ast::CallExpression &>(expression));
     break;
 

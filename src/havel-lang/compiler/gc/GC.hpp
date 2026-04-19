@@ -26,19 +26,20 @@ public:
         uint64_t total_recovered = 0;
     };
 
-    struct UpvalueCell {
-        bool is_open = false;
-        uint32_t open_index = 0;
-        Value closed_value = nullptr;
+struct UpvalueCell {
+bool is_open = false;
+uint32_t open_index = 0;
+uint32_t locals_base = 0;
+Value closed_value = nullptr;
 
-        Value get() const { return is_open ? nullptr : closed_value; }
-        void set(Value value) { closed_value = value; }
-        void close(Value value = nullptr) {
-            closed_value = value;
-            is_open = false;
-        }
-        bool isClosed() const { return !is_open; }
-    };
+Value get() const { return is_open ? nullptr : closed_value; }
+void set(Value value) { closed_value = value; }
+void close(Value value = nullptr) {
+closed_value = value;
+is_open = false;
+}
+bool isClosed() const { return !is_open; }
+};
 
     struct RuntimeClosure {
         uint32_t function_index = 0;
@@ -166,22 +167,24 @@ public:
               column(col), cause(nullptr) {}
     };
 
-    struct Coroutine {
-        enum State { Runnable, Waiting, Done };
+struct Coroutine {
+enum State { Runnable, Waiting, Done };
 
-        uint32_t function_index = 0;
-        uint32_t chunk_index = 0;
-        uint32_t ip = 0;
-        uint32_t closure_id = 0;  // Preserve closure context across yields
-        std::vector<Value> stack;
-        std::vector<Value> locals;
-        size_t saved_frame_count = 0;
-        std::vector<Value> saved_locals;
-        State state = Runnable;
-        std::vector<Value> yield_values;
+uint32_t function_index = 0;
+uint32_t chunk_index = 0;
+uint32_t ip = 0;
+uint32_t closure_id = 0;
+std::vector<Value> stack;
+std::vector<Value> locals;
+size_t saved_frame_count = 0;
+std::vector<Value> saved_locals;
+uint32_t saved_coroutine_id = UINT32_MAX;
+State state = Runnable;
+std::vector<Value> yield_values;
+size_t parent_locals_size = 0;
 
-        Coroutine() = default;
-    };
+Coroutine() = default;
+};
 
     void reset();
 

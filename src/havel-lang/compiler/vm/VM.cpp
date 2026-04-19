@@ -4370,11 +4370,78 @@ void VM::executeInstruction(const Instruction &instruction) {
 
 
 
-    locals[abs] = value;
-    break;
-  }
+        locals[abs] = value;
+        break;
+    }
 
-  case OpCode::LOAD_UPVALUE: {
+    // Increment/Decrement local variable optimization
+    case OpCode::INCLOCAL: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = this->toAbsoluteLocal(var_index);
+        this->ensureLocalIndex(abs);
+        Value& val = locals[abs];
+        if (val.isInt()) {
+            val = Value::makeInt(val.asInt() + 1);
+            pushStack(val);
+        } else if (val.isDouble()) {
+            val = Value::makeDouble(val.asDouble() + 1.0);
+            pushStack(val);
+        } else {
+            COMPILER_THROW("Cannot increment non-numeric value");
+        }
+        break;
+    }
+
+    case OpCode::DECLOCAL: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = this->toAbsoluteLocal(var_index);
+        this->ensureLocalIndex(abs);
+        Value& val = locals[abs];
+        if (val.isInt()) {
+            val = Value::makeInt(val.asInt() - 1);
+            pushStack(val);
+        } else if (val.isDouble()) {
+            val = Value::makeDouble(val.asDouble() - 1.0);
+            pushStack(val);
+        } else {
+            COMPILER_THROW("Cannot decrement non-numeric value");
+        }
+        break;
+    }
+
+    case OpCode::INCLOCAL_POST: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = this->toAbsoluteLocal(var_index);
+        this->ensureLocalIndex(abs);
+        Value old = locals[abs];
+        pushStack(old);  // Push old value first
+        if (old.isInt()) {
+            locals[abs] = Value::makeInt(old.asInt() + 1);
+        } else if (old.isDouble()) {
+            locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+        } else {
+            COMPILER_THROW("Cannot increment non-numeric value");
+        }
+        break;
+    }
+
+    case OpCode::DECLOCAL_POST: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = this->toAbsoluteLocal(var_index);
+        this->ensureLocalIndex(abs);
+        Value old = locals[abs];
+        pushStack(old);  // Push old value first
+        if (old.isInt()) {
+            locals[abs] = Value::makeInt(old.asInt() - 1);
+        } else if (old.isDouble()) {
+            locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+        } else {
+            COMPILER_THROW("Cannot decrement non-numeric value");
+        }
+        break;
+    }
+
+    case OpCode::LOAD_UPVALUE: {
     uint32_t upvalue_index = instruction.operands[0].asInt();
     uint32_t closure_id = currentFrame().closure_id;
     std::cerr << "[DEBUG LOAD_UPVALUE] closure_id=" << closure_id << " upvalue_index=" << upvalue_index << "\n";

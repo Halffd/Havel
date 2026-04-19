@@ -1,0 +1,9 @@
+a, b = null
+fn main ()
+{
+	  a = 7 
+      b = 6 
+	  b = a+b
+	  return b
+}
+exit(main())

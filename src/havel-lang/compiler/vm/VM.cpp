@@ -1232,7 +1232,26 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep(): duration cannot be negative");
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(*duration_ms));
+        // Sleep in small increments and check timers periodically
+        const int SLEEP_CHUNK_MS = 10;  // Check timers every 10ms
+        auto end_time = std::chrono::steady_clock::now() + 
+                       std::chrono::milliseconds(*duration_ms);
+        
+        while (std::chrono::steady_clock::now() < end_time) {
+          auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+              end_time - std::chrono::steady_clock::now());
+          auto chunk = std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
+          
+          if (chunk > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+          }
+          
+          // Check timers during sleep
+          if (timer_check_func_) {
+            timer_check_func_();
+          }
+        }
+        
         return Value::makeNull();
       });
 

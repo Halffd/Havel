@@ -14,6 +14,7 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/MC/TargetRegistry.h>
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
@@ -125,222 +126,242 @@ uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
     return havel_vm_call(vm_ptr, args, count);
 }
 
-// Global variable access
+// Global variable access - use public API
 uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return vm->getGlobalByIndex(name_id).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return Value::makeNull().rawBits();
+  
+  const auto& name = chunk->getString(name_id);
+  if (name.empty()) return Value::makeNull().rawBits();
+  
+  auto opt = vm->getGlobalThreadSafe(name);
+  return opt.has_value() ? opt.value().rawBits() : Value::makeNull().rawBits();
 }
 
 void havel_vm_global_set(void* vm_ptr, uint32_t name_id, uint64_t value) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &value, sizeof(uint64_t));
-    vm->setGlobalByIndex(name_id, v);
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return;
+  
+  const auto& name = chunk->getString(name_id);
+  if (name.empty()) return;
+  
+  Value v;
+  std::memcpy(&v, &value, sizeof(uint64_t));
+  vm->setGlobalThreadSafe(name, v);
 }
 
-// Upvalue access for closures
+// Upvalue access - stub (JIT doesn't use closures yet in hot paths)
 uint64_t havel_vm_upvalue_get(void* vm_ptr, uint32_t slot) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return vm->getUpvalue(slot).bits;
+  return Value::makeNull().rawBits();
 }
 
 void havel_vm_upvalue_set(void* vm_ptr, uint32_t slot, uint64_t value) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value v;
-    std::memcpy(&v, &value, sizeof(uint64_t));
-    vm->setUpvalue(slot, v);
+  // No-op stub
 }
 
 // Power function
 uint64_t havel_vm_pow(uint64_t base_bits, uint64_t exp_bits) {
-    Value base, exp;
-    std::memcpy(&base, &base_bits, sizeof(uint64_t));
-    std::memcpy(&exp, &exp_bits, sizeof(uint64_t));
-    
-    // Handle integer power
-    if (base.isInt() && exp.isInt()) {
-        int64_t b = base.asInt();
-        int64_t e = exp.asInt();
-        if (e < 0) return Value(0.0).bits; // Negative exponent -> 0 for integers
-        int64_t result = 1;
-        while (e > 0) {
-            if (e & 1) result *= b;
-            b *= b;
-            e >>= 1;
-        }
-        return Value(result).bits;
+  Value base, exp;
+  std::memcpy(&base, &base_bits, sizeof(uint64_t));
+  std::memcpy(&exp, &exp_bits, sizeof(uint64_t));
+
+  if (base.isInt() && exp.isInt()) {
+    int64_t b = base.asInt();
+    int64_t e = exp.asInt();
+    if (e < 0) return Value(0.0).rawBits();
+    int64_t result = 1;
+    while (e > 0) {
+      if (e & 1) result *= b;
+      b *= b;
+      e >>= 1;
     }
-    // Float power
-    double b = base.asDouble();
-    double e = exp.asDouble();
-    return Value(std::pow(b, e)).bits;
+    return Value(result).rawBits();
+  }
+  return Value(std::pow(base.asDouble(), exp.asDouble())).rawBits();
 }
 
-// Array operations
+// Array operations - use public heap API
 uint64_t havel_vm_array_new(void* vm_ptr) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return vm->arrayNew().bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto ref = vm->createHostArray();
+  return Value::makeArrayId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_array_get(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value arr, idx;
-    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-    return vm->arrayGet(arr, idx).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value arr, idx;
+  std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+  std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
+  if (!arr.isArrayId() || !idx.isInt()) return Value::makeNull().rawBits();
+  return vm->getHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt())).rawBits();
 }
 
 uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value arr, idx, val;
-    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    vm->arraySet(arr, idx, val);
-    return val_bits;
+  if (!vm_ptr) return val_bits;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value arr, idx, val;
+  std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+  std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+  if (!arr.isArrayId() || !idx.isInt()) return val_bits;
+  vm->setHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt()), val);
+  return val_bits;
 }
 
 uint64_t havel_vm_array_len(void* vm_ptr, uint64_t arr_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value arr;
-    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-    return Value(static_cast<int64_t>(vm->arrayLen(arr))).bits;
+  if (!vm_ptr) return Value(static_cast<int64_t>(0)).rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value arr;
+  std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+  if (!arr.isArrayId()) return Value(static_cast<int64_t>(0)).rawBits();
+  return Value(static_cast<int64_t>(vm->getHostArrayLength(ArrayRef{arr.asArrayId()}))).rawBits();
 }
 
 void havel_vm_array_push(void* vm_ptr, uint64_t arr_bits, uint64_t val_bits) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value arr, val;
-    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    vm->arrayPush(arr, val);
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value arr, val;
+  std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+  if (!arr.isArrayId()) return;
+  vm->pushHostArrayValue(ArrayRef{arr.asArrayId()}, val);
 }
 
-// Object operations
+// Object operations - use public API
 uint64_t havel_vm_object_new(void* vm_ptr) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return vm->objectNew().bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto ref = vm->createHostObject();
+  return Value::makeObjectId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_object_get(void* vm_ptr, uint64_t obj_bits, uint32_t key_id) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    return vm->objectGet(obj, key_id).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return Value::makeNull().rawBits();
+  
+  Value obj;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  if (!obj.isObjectId()) return Value::makeNull().rawBits();
+  
+  const auto& key = chunk->getString(key_id);
+  if (key.empty()) return Value::makeNull().rawBits();
+  
+  return vm->getHostObjectField(ObjectRef{obj.asObjectId()}, key).rawBits();
 }
 
 uint64_t havel_vm_object_set(void* vm_ptr, uint64_t obj_bits, uint32_t key_id, uint64_t val_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value obj, val;
-    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    vm->objectSet(obj, key_id, val);
-    return val_bits;
+  if (!vm_ptr) return val_bits;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return val_bits;
+  
+  Value obj, val;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+  if (!obj.isObjectId()) return val_bits;
+  
+  const auto& key = chunk->getString(key_id);
+  if (key.empty()) return val_bits;
+  
+  vm->setHostObjectField(ObjectRef{obj.asObjectId()}, key, val);
+  return val_bits;
 }
 
-// Range and iterator operations
+// Range and iterator operations - use public heap API
 uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value start, end;
-    std::memcpy(&start, &start_bits, sizeof(uint64_t));
-    std::memcpy(&end, &end_bits, sizeof(uint64_t));
-    return vm->rangeNew(start, end).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value start, end;
+  std::memcpy(&start, &start_bits, sizeof(uint64_t));
+  std::memcpy(&end, &end_bits, sizeof(uint64_t));
+  if (!start.isInt() || !end.isInt()) return Value::makeNull().rawBits();
+  auto ref = vm->getHeap().allocateRange(start.asInt(), end.asInt(), 1);
+  return Value::makeRangeId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_iter_new(void* vm_ptr, uint64_t coll_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value coll;
-    std::memcpy(&coll, &coll_bits, sizeof(uint64_t));
-    return vm->iterNew(coll).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value coll;
+  std::memcpy(&coll, &coll_bits, sizeof(uint64_t));
+  auto ref = vm->createIterator(coll);
+  return Value::makeIteratorId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value iter;
-    std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
-    return vm->iterNext(iter).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value iter;
+  std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
+  if (!iter.isIteratorId()) return Value::makeNull().rawBits();
+  return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
 }
 
-// Concurrency primitives
+// Concurrency primitives - stubs (premature for JIT, use interpreter)
 uint64_t havel_vm_thread_new(void* vm_ptr, uint32_t func_id) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    return vm->threadNew(func_id).bits;
+  // TODO: Wire to ConcurrencyBridge when JIT is mature enough
+  return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_channel_new(void* vm_ptr, uint64_t cap_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    int64_t cap = 0;
-    Value capVal;
-    std::memcpy(&capVal, &cap_bits, sizeof(uint64_t));
-    if (capVal.isInt()) cap = capVal.asInt();
-    return vm->channelNew(cap).bits;
+  return Value::makeNull().rawBits();
 }
 
 void havel_vm_channel_send(void* vm_ptr, uint64_t chan_bits, uint64_t val_bits) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value chan, val;
-    std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    vm->channelSend(chan, val);
+  // No-op stub
 }
 
 uint64_t havel_vm_channel_recv(void* vm_ptr, uint64_t chan_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value chan;
-    std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
-    return vm->channelRecv(chan).bits;
+  return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_yield(void* vm_ptr, uint64_t val_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value val;
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    return vm->yieldValue(val).bits;
+  // Yield in JIT context - just return the value
+  return val_bits;
 }
 
 uint64_t havel_vm_await(void* vm_ptr, uint64_t val_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value val;
-    std::memcpy(&val, &val_bits, sizeof(uint64_t));
-    return vm->awaitValue(val).bits;
+  // Await in JIT context - just return the value
+  return val_bits;
 }
 
 // String operations
 uint64_t havel_vm_string_len(void* vm_ptr, uint64_t str_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value str;
-    std::memcpy(&str, &str_bits, sizeof(uint64_t));
-    return Value(static_cast<int64_t>(vm->stringLen(str))).bits;
+  if (!vm_ptr) return Value(static_cast<int64_t>(0)).rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value str;
+  std::memcpy(&str, &str_bits, sizeof(uint64_t));
+  if (!str.isStringId()) return Value(static_cast<int64_t>(0)).rawBits();
+  return Value(static_cast<int64_t>(vm->getRuntimeStringLength(StringRef{str.asStringId()}))).rawBits();
 }
 
 uint64_t havel_vm_string_concat(void* vm_ptr, uint64_t l_bits, uint64_t r_bits) {
-    if (!vm_ptr) return 0x7FF8000000000003ULL;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    Value l, r;
-    std::memcpy(&l, &l_bits, sizeof(uint64_t));
-    std::memcpy(&r, &r_bits, sizeof(uint64_t));
-    return vm->stringConcat(l, r).bits;
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return Value::makeNull().rawBits();
+  
+  Value l, r;
+  std::memcpy(&l, &l_bits, sizeof(uint64_t));
+  std::memcpy(&r, &r_bits, sizeof(uint64_t));
+  
+  if (!l.isStringId() || !r.isStringId()) {
+    return Value::makeNull().rawBits();
+  }
+  
+  const auto& lStr = chunk->getString(l.asStringId());
+  const auto& rStr = chunk->getString(r.asStringId());
+  std::string result = lStr + rStr;
+  auto ref = vm->createRuntimeString(std::move(result));
+  return Value::makeStringId(ref.id).rawBits();
 }
 
 // Host function call
@@ -355,7 +376,7 @@ uint64_t havel_vm_call_host(void* vm_ptr, uint32_t host_idx, uint64_t* args, uin
         valArgs.push_back(v);
     }
     
-    return vm->callHostFunction(host_idx, valArgs).bits;
+    return vm->callHostFunction(host_idx, valArgs).rawBits();
 }
 
 } // extern "C"
@@ -1219,7 +1240,7 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         }
 
         // Concurrency primitives - threads, coroutines, channels
-        case OpCode::THREAD_NEW: {
+        case OpCode::THREAD_SPAWN: {
             uint32_t funcId = instr.operands[0].asInt();
             llvm::Function* fnThread = module.getFunction("havel_vm_thread_new");
             if (!fnThread) {
@@ -1255,7 +1276,7 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             vstack.push_back(makeNull());
             break;
         }
-        case OpCode::CHANNEL_RECV: {
+        case OpCode::CHANNEL_RECEIVE: {
             llvm::Value* chan = vstack.back(); vstack.pop_back();
             llvm::Function* fnRecv = module.getFunction("havel_vm_channel_recv");
             if (!fnRecv) {
@@ -1276,21 +1297,11 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
                     llvm::Function::ExternalLinkage, "havel_vm_yield", &module);
             }
             vstack.push_back(B.CreateCall(fnYield, {vmArg, val}));
-            break;
-        }
-        case OpCode::AWAIT: {
-            llvm::Value* val = vstack.back(); vstack.pop_back();
-            llvm::Function* fnAwait = module.getFunction("havel_vm_await");
-            if (!fnAwait) {
-                fnAwait = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_await", &module);
-            }
-            vstack.push_back(B.CreateCall(fnAwait, {vmArg, val}));
-            break;
-        }
+  break;
+}
+// AWAIT opcode doesn't exist - awaiting is handled by interpreter
 
-        // String operations
+// String operations
         case OpCode::STRING_LEN: {
             llvm::Value* str = vstack.back(); vstack.pop_back();
             llvm::Function* fnLen = module.getFunction("havel_vm_string_len");

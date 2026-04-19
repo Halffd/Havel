@@ -1,0 +1,20 @@
+// Test: function calling a generator function
+fn gen_inner() {
+  print("[gen_inner] Called")
+  yield 1
+  yield 2
+  return 3
+}
+
+fn outer() {
+  print("[outer] Start")
+  let g = gen_inner()
+  print("[outer] Got generator")
+  let r = g()
+  print("[outer] Called generator, got " + str(r))
+  return r
+}
+
+print("[main] Calling outer...")
+let result = outer()
+print("[main] Done")

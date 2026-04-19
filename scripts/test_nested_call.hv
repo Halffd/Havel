@@ -1,0 +1,16 @@
+// Simplest test: function that calls another function
+fn inner() {
+  print("[inner] Called")
+  return 42
+}
+
+fn outer() {
+  print("[outer] Start")
+  let x = inner()
+  print("[outer] Got " + str(x))
+  return x
+}
+
+print("[main] Calling outer...")
+let result = outer()
+print("[main] Got " + str(result))

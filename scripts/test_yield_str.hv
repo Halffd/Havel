@@ -1,0 +1,11 @@
+fn simple_gen() {
+  yield 1
+  yield 2
+  return 3
+}
+
+let g = simple_gen()
+print("Result 1: " + str(g()))
+print("Result 2: " + str(g()))
+print("Result 3: " + str(g()))
+print("Result 4: " + str(g()))

@@ -186,6 +186,14 @@ build() {
     cmake_cmd+=" -DCMAKE_CXX_COMPILER=clang++"
     cmake_cmd+=" -DUSE_CLANG=ON"
     cmake_cmd+=" -DENABLE_LLVM=${ENABLE_LLVM}"
+    if [[ "$ENABLE_LLVM" == "ON" ]]; then
+        llvm_bin_dir="$(llvm-config --bindir 2>/dev/null || echo "/usr/bin")"
+        llvm_base_dir="$(llvm-config --prefix 2>/dev/null || echo "/usr")"
+        cmake_cmd+=" -DLLVM_DIR=$llvm_base_dir/lib/cmake/llvm \
+        -DCMAKE_C_COMPILER=$llvm_base_dir/bin/clang \
+        -DCMAKE_CXX_COMPILER=$llvm_base_dir/bin/clang++ \
+        -DCMAKE_LINKER=$llvm_base_dir/bin/ld.lld"
+    fi
     cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
     cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
     cmake_cmd+=" ${SCRIPT_DIR}"

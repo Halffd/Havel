@@ -3409,29 +3409,32 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 }
 
 void VM::doTailCall(Value callee_value,
-                    std::vector<Value> args) {
-  // Tail call optimization: reuse current frame instead of pushing new one
-  if (callee_value.isHostFuncId()) {
-    // TODO: host func name lookup
-    (void)callee_value.asHostFuncId();
-    COMPILER_THROW("Host function tail call not yet supported with NaN boxing");
-  }
+std::vector<Value> args) {
+if (callee_value.isCoroutineId()) {
+doCall(callee_value, std::move(args), false);
+return;
+}
 
-  uint32_t function_index = 0;
-  uint32_t closure_id = 0;
-  if (callee_value.isFunctionObjId()) {
-    function_index = callee_value.asFunctionObjId();
-  } else if (callee_value.isClosureId()) {
-    closure_id = callee_value.asClosureId();
-    auto *closure = heap_.closure(closure_id);
-    if (!closure) {
-      COMPILER_THROW("Closure not found: " +
-                               std::to_string(closure_id));
-    }
-    function_index = closure->function_index;
-  } else {
-    COMPILER_THROW("TAIL_CALL expects function or closure as callee");
-  }
+if (callee_value.isHostFuncId()) {
+(void)callee_value.asHostFuncId();
+COMPILER_THROW("Host function tail call not yet supported with NaN boxing");
+}
+
+uint32_t function_index = 0;
+uint32_t closure_id = 0;
+if (callee_value.isFunctionObjId()) {
+function_index = callee_value.asFunctionObjId();
+} else if (callee_value.isClosureId()) {
+closure_id = callee_value.asClosureId();
+auto *closure = heap_.closure(closure_id);
+if (!closure) {
+COMPILER_THROW("Closure not found: " +
+std::to_string(closure_id));
+}
+function_index = closure->function_index;
+} else {
+COMPILER_THROW("TAIL_CALL expects function or closure as callee");
+}
 
   if (!current_chunk) {
     COMPILER_THROW("No chunk available for tail call");
@@ -4448,59 +4451,59 @@ void VM::executeInstruction(const Instruction &instruction) {
         break;
     }
 
-    case OpCode::LOAD_UPVALUE: {
-    uint32_t upvalue_index = instruction.operands[0].asInt();
-    uint32_t closure_id = currentFrame().closure_id;
-    if (closure_id == 0) {
-      COMPILER_THROW("LOAD_UPVALUE used without active closure");
-    }
-    auto *closure = heap_.closure(closure_id);
-    if (!closure) {
-      COMPILER_THROW("Closure not found for LOAD_UPVALUE");
-    }
-    if (upvalue_index >= closure->upvalues.size() ||
-        !closure->upvalues[upvalue_index]) {
-      COMPILER_THROW("LOAD_UPVALUE index out of range");
-    }
-    const auto &cell = closure->upvalues[upvalue_index];
-    Value value;
-    if (cell->is_open) {
-      this->ensureLocalIndex(cell->open_index);
-      value = locals[cell->open_index];
-    } else {
-      value = cell->closed_value;
-    }
-    pushStack(value);
-    break;
-  }
+case OpCode::LOAD_UPVALUE: {
+uint32_t upvalue_index = instruction.operands[0].asInt();
+uint32_t closure_id = currentFrame().closure_id;
+if (closure_id == 0) {
+COMPILER_THROW("LOAD_UPVALUE used without active closure");
+}
+auto *closure = heap_.closure(closure_id);
+if (!closure) {
+COMPILER_THROW("Closure not found for LOAD_UPVALUE");
+}
+if (upvalue_index >= closure->upvalues.size() ||
+!closure->upvalues[upvalue_index]) {
+COMPILER_THROW("LOAD_UPVALUE index out of range");
+}
+const auto &cell = closure->upvalues[upvalue_index];
+Value value;
+if (cell->is_open) {
+uint32_t abs_index = cell->locals_base + cell->open_index;
+this->ensureLocalIndex(abs_index);
+value = locals[abs_index];
+} else {
+value = cell->closed_value;
+}
+pushStack(value);
+break;
+}
 
-  case OpCode::STORE_UPVALUE: {
-    uint32_t upvalue_index = instruction.operands[0].asInt();
-    uint32_t closure_id = currentFrame().closure_id;
-    if (closure_id == 0) {
-      COMPILER_THROW("STORE_UPVALUE used without active closure");
-    }
-    auto *closure = heap_.closure(closure_id);
-    if (!closure) {
-      COMPILER_THROW("Closure not found for STORE_UPVALUE");
-    }
-    if (upvalue_index >= closure->upvalues.size() ||
-        !closure->upvalues[upvalue_index]) {
-      COMPILER_THROW("STORE_UPVALUE index out of range");
-    }
-    auto &cell = closure->upvalues[upvalue_index];
-    Value value = popStack();
+case OpCode::STORE_UPVALUE: {
+uint32_t upvalue_index = instruction.operands[0].asInt();
+uint32_t closure_id = currentFrame().closure_id;
+if (closure_id == 0) {
+COMPILER_THROW("STORE_UPVALUE used without active closure");
+}
+auto *closure = heap_.closure(closure_id);
+if (!closure) {
+COMPILER_THROW("Closure not found for STORE_UPVALUE");
+}
+if (upvalue_index >= closure->upvalues.size() ||
+!closure->upvalues[upvalue_index]) {
+COMPILER_THROW("STORE_UPVALUE index out of range");
+}
+auto &cell = closure->upvalues[upvalue_index];
+Value value = popStack();
 
-
-
-    if (cell->is_open) {
-      this->ensureLocalIndex(cell->open_index);
-      locals[cell->open_index] = value;
-    } else {
-      cell->closed_value = value;
-    }
-    break;
-  }
+if (cell->is_open) {
+uint32_t abs_index = cell->locals_base + cell->open_index;
+this->ensureLocalIndex(abs_index);
+locals[abs_index] = value;
+} else {
+cell->closed_value = value;
+}
+break;
+}
 
   case OpCode::POP: {
     popStack();
@@ -5010,26 +5013,27 @@ void VM::executeInstruction(const Instruction &instruction) {
     closure.function_index = function_index;
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
-      if (descriptor.captures_local) {
-        uint32_t abs = this->toAbsoluteLocal(descriptor.index);
-        this->ensureLocalIndex(abs);
-        auto open_it = open_upvalues.find(abs);
-        if (open_it == open_upvalues.end()) {
-          auto cell = std::make_shared<GCHeap::UpvalueCell>();
-          cell->is_open = true;
-          cell->open_index = abs;
-          open_upvalues.emplace(abs, cell);
-          closure.upvalues.push_back(std::move(cell));
-        } else {
-          closure.upvalues.push_back(open_it->second);
-        }
-      } else {
-        uint32_t parent_closure_id = currentFrame().closure_id;
-        if (parent_closure_id == 0) {
-          COMPILER_THROW(
-              "CLOSURE tried to capture upvalue without parent closure");
-        }
-        auto *parent_closure = heap_.closure(parent_closure_id);
+if (descriptor.captures_local) {
+uint32_t abs = this->toAbsoluteLocal(descriptor.index);
+this->ensureLocalIndex(abs);
+auto open_it = open_upvalues.find(abs);
+if (open_it == open_upvalues.end()) {
+auto cell = std::make_shared<GCHeap::UpvalueCell>();
+cell->is_open = true;
+cell->open_index = descriptor.index;
+cell->locals_base = currentFrame().locals_base;
+open_upvalues.emplace(abs, cell);
+closure.upvalues.push_back(std::move(cell));
+} else {
+closure.upvalues.push_back(open_it->second);
+}
+} else {
+uint32_t parent_closure_id = currentFrame().closure_id;
+if (parent_closure_id == 0) {
+COMPILER_THROW(
+"CLOSURE tried to capture upvalue without parent closure");
+}
+auto *parent_closure = heap_.closure(parent_closure_id);
         if (!parent_closure) {
           COMPILER_THROW("Parent closure not found for CLOSURE");
         }
@@ -7131,10 +7135,11 @@ void VM::VMExecutionContext::executeInstructionInContext(
         !closure->upvalues[upvalue_index]) {
       COMPILER_THROW("LOAD_UPVALUE error");
     }
-    const auto &cell = closure->upvalues[upvalue_index];
-    if (cell->is_open) {
-      ensureLocalIndex(cell->open_index);
-      push(locals[cell->open_index]);
+const auto &cell = closure->upvalues[upvalue_index];
+        if (cell->is_open) {
+          uint32_t abs_index = cell->locals_base + cell->open_index;
+          ensureLocalIndex(abs_index);
+          push(locals[abs_index]);
     } else {
       push(cell->closed_value);
     }
@@ -7152,8 +7157,9 @@ void VM::VMExecutionContext::executeInstructionInContext(
     auto &cell = closure->upvalues[upvalue_index];
     Value value = pop();
     if (cell->is_open) {
-      ensureLocalIndex(cell->open_index);
-      locals[cell->open_index] = value;
+      uint32_t abs_index = cell->locals_base + cell->open_index;
+      ensureLocalIndex(abs_index);
+      locals[abs_index] = value;
     } else {
       cell->closed_value = value;
     }
@@ -7396,13 +7402,15 @@ void VM::VMExecutionContext::executeInstructionInContext(
     upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
       if (descriptor.captures_local) {
-        uint32_t abs = toAbsoluteLocal(descriptor.index);
+        uint32_t rel_index = descriptor.index;
+        uint32_t abs = toAbsoluteLocal(rel_index);
         ensureLocalIndex(abs);
         auto open_it = open_upvalues.find(abs);
         if (open_it == open_upvalues.end()) {
           auto cell = std::make_shared<GCHeap::UpvalueCell>();
           cell->is_open = true;
-          cell->open_index = abs;
+          cell->open_index = rel_index;
+          cell->locals_base = currentFrame().locals_base;
           open_upvalues.emplace(abs, cell);
           upvalues.push_back(std::move(cell));
         } else {

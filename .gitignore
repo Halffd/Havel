@@ -55,3 +55,4 @@ vscode-extension/out/
 *.vsix
 .crush
 Testing/Temporary/CTestCostData.txt
+.aider*

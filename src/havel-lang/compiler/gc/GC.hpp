@@ -172,6 +172,7 @@ public:
         uint32_t function_index = 0;
         uint32_t chunk_index = 0;
         uint32_t ip = 0;
+        uint32_t closure_id = 0;  // Preserve closure context across yields
         std::vector<Value> stack;
         std::vector<Value> locals;
         size_t saved_frame_count = 0;

@@ -1,0 +1,11 @@
+// Test str() function
+print("Testing str function...")
+print(str(42))
+print(str(true))
+print(str(false))
+print(str(3.14))
+
+// Test concatenation
+print("Testing + operator...")
+print("hello")
+print("world")

@@ -544,6 +544,11 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
+    // Set up timer checks during script execution
+    bytecodeVM->setTimerCheckFunction([hostBridge]() {
+      hostBridge->checkTimers();
+    });
+
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
       options.compile_unit_name = combinedNames;

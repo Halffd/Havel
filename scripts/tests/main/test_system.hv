@@ -6,10 +6,10 @@ print("sys: " + sys)
 windows = mac = bsd = linux = unknownOS = false
 match sys.os {
   "Windows" => windows = true
-  "MacOS" => mac = true
-  "BSD" => bsd = true
-  "Linux" => linux = true
-  "Unknown" => unknownOS = true
+"MacOS" => mac = true
+"BSD" => bsd = true
+"Linux" => linux = true
+"Unknown" => unknownOS = true
   _ => {}
 }
 wl = match sys.os {
@@ -25,30 +25,27 @@ if linux {
   wl = sys.displayProtocol == "Wayland"
   displayName = sys.display ?? ":0"
   print("wl: $wl")
-  print("displayName: $displayName")
+print("displayName: $displayName")
 }
 wm = sys.windowManager.lower()
 print("wm: $wm")
-
 if wm == "Unknown" || wm == "unknown" {
   print("wm is unknown, checking for compiz")
-  if process.exists("compiz") {
+if process.exists("compiz") {
     wm = "compiz"
     print("wm is now: $wm")
   }
 }
-
 hypr = kde = i3 = compiz = cinnamon = gnome = wf = xfce = false
-
 match wm {
     "hyprland" => hypr = true
-    "kde plasma" => kde = true
-    "i3" => i3 = true
-    "compiz" => compiz = true
-    "cinnamon" => cinnamon = true
-    "gnome" || "gnome on x11" || "gnome on wayland" => gnome = true
-    "wayfire" => wf = true
-    "xfce" => xfce = true
+"kde plasma" => kde = true
+"i3" => i3 = true
+"compiz" => compiz = true
+"cinnamon" => cinnamon = true
+"gnome" || "gnome on x11" || "gnome on wayland" => gnome = true
+"wayfire" => wf = true
+"xfce" => xfce = true
     _ => {}
 }
 kdewl = kde && wl

@@ -1,0 +1,20 @@
+// Test generator calling another generator
+fn inner_gen() {
+  yield "a"
+  yield "b"
+  return "c"
+}
+
+fn outer_gen() {
+  let ig = inner_gen()
+  yield ig()
+  yield ig()
+  return ig()
+}
+
+print("Test: Generator calling generator")
+let g = outer_gen()
+print("First: " + str(g()))
+print("Second: " + str(g()))
+print("Third: " + str(g()))
+print("Fourth: " + str(g()))

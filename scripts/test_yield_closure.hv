@@ -1,0 +1,24 @@
+// Simple nested yield test - isolate the issue
+fn outer_gen_closure() {
+  fn get_value() {
+    return 42
+  }
+  
+  fn gen() {
+    // This references get_value from enclosing scope
+    let v = get_value()
+    yield v
+    yield v + 1
+    return v + 2
+  }
+  
+  return gen()
+}
+
+print("Creating generator...")
+let g = outer_gen_closure()
+print("Calling generator...")
+print("Result 1: " + str(g()))
+print("Result 2: " + str(g()))
+print("Result 3: " + str(g()))
+print("All done")

@@ -1,0 +1,19 @@
+c = 0
+when c > 1 {
+    print 'started'
+}
+when c % 2 == 0 {
+    print 'even'
+}
+when c == 5 {
+    print 'midway'
+}
+when c >= 10 {
+    print 'ending'
+    exit(0)
+}
+loop {
+    print c
+    c++
+    sleep(200)
+}

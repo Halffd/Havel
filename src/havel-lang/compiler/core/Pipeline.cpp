@@ -273,6 +273,14 @@ std::string opcodeName(OpCode opcode) {
     return "MOD";
   case OpCode::POW:
     return "POW";
+  case OpCode::INCLOCAL:
+    return "INCLOCAL";
+  case OpCode::DECLOCAL:
+    return "DECLOCAL";
+  case OpCode::INCLOCAL_POST:
+    return "INCLOCAL_POST";
+  case OpCode::DECLOCAL_POST:
+    return "DECLOCAL_POST";
   case OpCode::EQ:
     return "EQ";
   case OpCode::NEQ:

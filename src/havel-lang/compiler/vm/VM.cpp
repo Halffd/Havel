@@ -1319,10 +1319,11 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeInt(static_cast<int64_t>(now));
   });
 
-  // str() builtin returns string representation - TODO: implement proper string pool creation
+  // str() builtin returns string representation
   registerHostFunction("str", 1, [this](const std::vector<Value> &args) {
-    (void)this->toString(args[0]);
-    return Value::makeNull();
+    std::string str = this->toString(args[0]);
+    auto strRef = heap_.allocateString(str);
+    return Value::makeStringId(strRef.id);
   });
 
   // type() builtin returns type name

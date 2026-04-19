@@ -1371,14 +1371,9 @@ case TokenType::Plus: {
           std::move(left), std::move(right));
     }
 
-    // Member access
-    case TokenType::Dot: {
-      // Special case: if next token is ??, this is not a member access
-      // Let the nullish coalescing handler deal with it
-      if (at(1).type == TokenType::Nullish) {
-        return std::move(left);
-      }
-      // Property names can be identifiers or certain keywords
+  // Member access
+  case TokenType::Dot: {
+    // Property names can be identifiers or certain keywords
       if (at().type == TokenType::Identifier ||
           at().type == TokenType::And ||
           at().type == TokenType::Or ||
@@ -5943,9 +5938,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseNullishCoalescing() {
-  // Use postfix parsing for left side so member access, indexing, calls work
-  // E.g., obj.field ?? default, arr[0] ?? default, fn() ?? default
-  auto left = parsePostfixExpression(parsePrimaryExpression());
+  // Use logical or parsing for left side so binary operators like == work
+  // E.g., a == b ?? default, obj.field == value ?? default
+  auto left = parseLogicalOr();
 
   while (at().type == havel::TokenType::Nullish) {
     auto opTok = at(); // Save operator token location

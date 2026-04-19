@@ -3197,10 +3197,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     locals = co->locals;
 
     if (frame_arena_.size() <= frame_count_) {
-      frame_arena_.push_back(CallFrame{func, co->ip, 0, 0});
+      frame_arena_.push_back(CallFrame{func, co->ip, 0, co->closure_id});
     } else {
-      frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, 0};
+      frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, co->closure_id};
     }
+    std::cerr << "[DEBUG resume] Resumed generator with closure_id=" << co->closure_id << " function=" << (func ? func->name : "?") << "\n";
     frame_count_++;
 
     co->state = GCHeap::Coroutine::Runnable;
@@ -3261,6 +3262,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     uint32_t coId = heap_.allocateCoroutine(function_index, 0);
     auto *co = heap_.coroutine(coId);
     co->state = GCHeap::Coroutine::Runnable;
+    co->closure_id = closure_id;  // Preserve closure context from the calling closure
+    std::cerr << "[DEBUG gen] Creating generator with closure_id=" << closure_id << " function=" << callee->name << "\n";
 
     // Initialize locals with arguments
     co->locals.resize(callee->local_count, nullptr);
@@ -4374,6 +4377,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::LOAD_UPVALUE: {
     uint32_t upvalue_index = instruction.operands[0].asInt();
     uint32_t closure_id = currentFrame().closure_id;
+    std::cerr << "[DEBUG LOAD_UPVALUE] closure_id=" << closure_id << " upvalue_index=" << upvalue_index << "\n";
     if (closure_id == 0) {
       COMPILER_THROW("LOAD_UPVALUE used without active closure");
     }
@@ -4390,10 +4394,10 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (cell->is_open) {
       this->ensureLocalIndex(cell->open_index);
       value = locals[cell->open_index];
-
-
+      std::cerr << "[DEBUG LOAD_UPVALUE] open upvalue, local_index=" << cell->open_index << " value_type=" << (value.isNull() ? "null" : "not-null") << "\n";
     } else {
       value = cell->closed_value;
+      std::cerr << "[DEBUG LOAD_UPVALUE] closed upvalue, value_type=" << (value.isNull() ? "null" : "not-null") << "\n";
     }
     pushStack(value);
     break;

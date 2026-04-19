@@ -3325,22 +3325,35 @@ case ast::NodeType::CallExpression:
       break;
     }
 
-    // The argument must be an identifier
-    const auto *target_id =
-        dynamic_cast<const ast::Identifier *>(update_expr.argument.get());
-    if (!target_id) {
-      COMPILER_THROW(
-          "Update expression argument must be an identifier");
-    }
+// The argument must be an identifier
+const auto *target_id =
+dynamic_cast<const ast::Identifier *>(update_expr.argument.get());
+if (!target_id) {
+COMPILER_THROW(
+"Update expression argument must be an identifier");
+}
 
-    const auto *binding = bindingFor(*target_id);
-    if (!binding) {
-      COMPILER_THROW(
-          "Missing lexical binding for update expression: " +
-          target_id->symbol);
-    }
+const auto *binding = bindingFor(*target_id);
+if (!binding) {
+COMPILER_THROW(
+"Missing lexical binding for update expression: " +
+target_id->symbol);
+}
 
-    if (update_expr.isPrefix) {
+// Optimization: use single INCLOCAL/DECLOCAL opcode for local variables
+if (binding->kind == ResolvedBindingKind::Local) {
+uint32_t slot = effectiveSlot(binding->slot);
+if (update_expr.isPrefix) {
+// Prefix: ++x or --x
+emit(isIncrement ? OpCode::INCLOCAL : OpCode::DECLOCAL, slot);
+} else {
+// Postfix: x++ or x--
+emit(isIncrement ? OpCode::INCLOCAL_POST : OpCode::DECLOCAL_POST, slot);
+}
+break;
+}
+
+if (update_expr.isPrefix) {
       // Prefix: ++x or --x
       // Load, modify, store, return new value
       if (binding->kind == ResolvedBindingKind::Local) {
@@ -4984,6 +4997,9 @@ void ByteCompiler::leaveFunction() {
     COMPILER_THROW("No active function to close");
   }
 
+  // Apply jump threading optimization
+  optimizeJumps();
+
   // Phase 4 JIT: Initialize type feedback for all instructions
   current_function->type_feedback.resize(current_function->instructions.size());
 
@@ -5891,111 +5907,113 @@ bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
       // These don't make the parent a generator - each function/class has its own compilation
       return false;
     
-    default:
+default:
       return false;
   }
 }
 
-bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
-  // First check if this is a yield expression directly
-  if (expr.kind == ast::NodeType::YieldExpression) {
-    return true;
+void ByteCompiler::optimizeJumps() {
+  if (!current_function || current_function->instructions.empty()) {
+    return;
   }
-  
-  // Then check nested expressions recursively
+
+  auto& instructions = current_function->instructions;
+
+  // First pass: collect all jump instructions and their targets
+  std::unordered_map<uint32_t, uint32_t> jump_targets;
+  for (size_t i = 0; i < instructions.size(); i++) {
+    const auto& instr = instructions[i];
+    if (instr.opcode == OpCode::JUMP ||
+        instr.opcode == OpCode::JUMP_IF_FALSE ||
+        instr.opcode == OpCode::JUMP_IF_TRUE ||
+        instr.opcode == OpCode::JUMP_IF_NULL) {
+      uint32_t target = static_cast<uint32_t>(instr.operands[0].asInt());
+      jump_targets[static_cast<uint32_t>(i)] = target;
+    }
+  }
+
+  if (jump_targets.empty()) {
+    return;
+  }
+
+  // Second pass: follow jump chains
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (auto& [pc, target] : jump_targets) {
+      // Follow the chain: if target is a JUMP to another location, use that instead
+      while (target < instructions.size() &&
+             instructions[target].opcode == OpCode::JUMP) {
+        uint32_t new_target = static_cast<uint32_t>(
+            instructions[target].operands[0].asInt());
+        if (new_target != target) {
+          target = new_target;
+          changed = true;
+        } else {
+          break;  // Self-referencing jump, stop
+        }
+      }
+    }
+  }
+
+  // Third pass: patch instructions with optimized targets
+  for (auto& [pc, target] : jump_targets) {
+    instructions[pc].operands[0] = Value(static_cast<int64_t>(target));
+  }
+}
+
+bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
   switch (expr.kind) {
+    case ast::NodeType::YieldExpression:
+      return true;
+
     case ast::NodeType::BinaryExpression: {
       const auto &binary = static_cast<const ast::BinaryExpression &>(expr);
       return (binary.left && expressionContainsYield(*binary.left)) ||
              (binary.right && expressionContainsYield(*binary.right));
     }
-    
+
     case ast::NodeType::UnaryExpression: {
       const auto &unary = static_cast<const ast::UnaryExpression &>(expr);
       return unary.operand && expressionContainsYield(*unary.operand);
     }
-    
-    case ast::NodeType::CallExpression: {
-      const auto &call = static_cast<const ast::CallExpression &>(expr);
-      if (call.callee && expressionContainsYield(*call.callee)) {
-        return true;
-      }
-      // Check positional arguments
-      for (const auto &arg : call.args) {
-        if (arg && expressionContainsYield(*arg)) {
-          return true;
-        }
-      }
-      // Check keyword arguments
-      for (const auto &[key, kwarg] : call.kwargs) {
-        if (kwarg && expressionContainsYield(*kwarg)) {
-          return true;
-        }
-      }
-      return false;
-    }
-    
-    case ast::NodeType::IfExpression: {
-      const auto &if_expr = static_cast<const ast::IfExpression &>(expr);
-      if (if_expr.condition && expressionContainsYield(*if_expr.condition)) {
-        return true;
-      }
-      if (if_expr.thenBranch && expressionContainsYield(*if_expr.thenBranch)) {
-        return true;
-      }
-      if (if_expr.elseBranch && expressionContainsYield(*if_expr.elseBranch)) {
-        return true;
-      }
-      return false;
-    }
-    
-    case ast::NodeType::ArrayLiteral: {
-      const auto &array = static_cast<const ast::ArrayLiteral &>(expr);
-      for (const auto &elem : array.elements) {
-        if (elem && expressionContainsYield(*elem)) {
-          return true;
-        }
-      }
-      return false;
-    }
-    
-    case ast::NodeType::ObjectLiteral: {
-      const auto &obj = static_cast<const ast::ObjectLiteral &>(expr);
-      for (const auto &entry : obj.pairs) {
-        if (entry.value && expressionContainsYield(*entry.value)) {
-          return true;
-        }
-        if (entry.isComputedKey && entry.keyExpr && expressionContainsYield(*entry.keyExpr)) {
-          return true;
-        }
-      }
-      return false;
-    }
-    
+
+case ast::NodeType::CallExpression: {
+const auto &call = static_cast<const ast::CallExpression &>(expr);
+if (call.callee && expressionContainsYield(*call.callee)) {
+return true;
+}
+for (const auto &arg : call.args) {
+if (arg && expressionContainsYield(*arg)) {
+return true;
+}
+}
+return false;
+}
+
     case ast::NodeType::MemberExpression: {
       const auto &member = static_cast<const ast::MemberExpression &>(expr);
       return member.object && expressionContainsYield(*member.object);
     }
-    
+
     case ast::NodeType::IndexExpression: {
       const auto &index = static_cast<const ast::IndexExpression &>(expr);
       return (index.object && expressionContainsYield(*index.object)) ||
              (index.index && expressionContainsYield(*index.index));
     }
-    
+
     case ast::NodeType::LambdaExpression: {
       // Lambdas are separate functions, don't inherit outer function's yield detection
       return false;
     }
-    
+
     case ast::NodeType::TryExpression: {
       // Note: TryExpression is an expression, not a statement
       // It may contain statements, but we need to be careful with the structure
       // For now, conservatively assume it might contain yield
-      // (the actual structure should be checked in AST.h)
       return true; // TODO: Implement proper TryExpression yield detection
     }
-    
+
     default:
       return false;
   }

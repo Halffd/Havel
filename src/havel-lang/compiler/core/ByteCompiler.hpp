@@ -94,14 +94,15 @@ private:
     return SourceLocationScope(this, node);
   }
 
-  void emit(OpCode op);
-  void emit(OpCode op, Value operand);
-  void emit(OpCode op, std::vector<Value> operands);
-  uint32_t addConstant(const Value &value);
-  uint32_t addStringConstant(const std::string &str);
-  uint32_t emitJump(OpCode op);
-  void patchJump(uint32_t jump_instruction_index, uint32_t target);
-  uint32_t effectiveSlot(uint32_t slot) const;
+void emit(OpCode op);
+void emit(OpCode op, Value operand);
+void emit(OpCode op, std::vector<Value> operands);
+uint32_t addConstant(const Value &value);
+uint32_t addStringConstant(const std::string &str);
+uint32_t emitJump(OpCode op);
+void patchJump(uint32_t jump_instruction_index, uint32_t target);
+uint32_t effectiveSlot(uint32_t slot) const;
+void optimizeJumps();  // Jump threading optimization
 
   void compileFunction(const ast::FunctionDeclaration &function);
   void compileLambda(const ast::LambdaExpression &lambda);

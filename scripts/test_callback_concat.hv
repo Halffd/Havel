@@ -1,0 +1,18 @@
+// Debug callback issue
+print("Test 1: Direct variable concatenation")
+
+let my_int = 42
+
+// This should work
+print("Value is: " + str(my_int))
+
+print("\nTest 2: Same in callback")
+
+let counter = 0
+
+interval_start(500, fn() {
+  print("Inside callback, counter is: " + str(counter))
+})
+
+sleep(600)
+print("Done")

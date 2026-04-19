@@ -1,0 +1,14 @@
+// Simple callback test
+print("Testing simple callback...")
+
+let test_var = 0
+
+// Test 1: Simple print in callback
+interval_start(500, fn() {
+  print("[CALLBACK] About to print test_var...")
+  print("[CALLBACK] test_var = " + str(test_var))
+})
+
+print("Waiting...")
+sleep(600)
+print("Done")

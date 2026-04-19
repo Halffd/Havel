@@ -68,15 +68,21 @@ enum class OpCode : uint8_t {
   SWAP,
   PUSH_NULL,
 
-  // Arithmetic operations
-  ADD,
-  SUB,
-  MUL,
-  DIV,
-  MOD,
-  POW,
+// Arithmetic operations
+ADD,
+SUB,
+MUL,
+DIV,
+MOD,
+POW,
 
-  // Comparison operations
+// Increment/Decrement local variable (optimization)
+INCLOCAL,       // ++local (prefix increment)
+DECLOCAL,       // --local (prefix decrement)
+INCLOCAL_POST,  // local++ (postfix increment)
+DECLOCAL_POST,  // local-- (postfix decrement)
+
+// Comparison operations
   EQ,
   NEQ,
   IS,     // Identity comparison (same object reference)

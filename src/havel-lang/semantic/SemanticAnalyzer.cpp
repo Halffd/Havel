@@ -854,7 +854,7 @@ void SemanticAnalyzer::initializeKnownBuiltins() {
   knownBuiltins_ = {// Output
                     "print", "println", "error", "warn", "info", "debug",
                     // Utility
-                    "len", "type",
+                    "len", "type", "ord", "char",
                     // Math
                     "sqrt", "abs", "sin", "cos", "tan", "PI", "E", "min", "max",
                     "round", "floor", "ceil",

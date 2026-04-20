@@ -1326,6 +1326,52 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeStringId(strRef.id);
   });
 
+  // ord() builtin returns Unicode code point of first character
+  registerHostFunction("ord", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s = this->toString(args[0]);
+    if (s.empty()) return Value::makeNull();
+    unsigned char b0 = static_cast<unsigned char>(s[0]);
+    uint32_t cp = 0;
+    if (b0 < 0x80) { cp = b0; }
+    else if ((b0 & 0xE0) == 0xC0 && s.size() >= 2) {
+      cp = ((b0 & 0x1F) << 6) | (static_cast<unsigned char>(s[1]) & 0x3F);
+    } else if ((b0 & 0xF0) == 0xE0 && s.size() >= 3) {
+      cp = ((b0 & 0x0F) << 12) | ((static_cast<unsigned char>(s[1]) & 0x3F) << 6)
+         | (static_cast<unsigned char>(s[2]) & 0x3F);
+    } else if ((b0 & 0xF8) == 0xF0 && s.size() >= 4) {
+      cp = ((b0 & 0x07) << 18) | ((static_cast<unsigned char>(s[1]) & 0x3F) << 12)
+         | ((static_cast<unsigned char>(s[2]) & 0x3F) << 6)
+         | (static_cast<unsigned char>(s[3]) & 0x3F);
+    } else { return Value::makeNull(); }
+    return Value::makeInt(static_cast<int64_t>(cp));
+  });
+
+  // char() builtin returns string from Unicode code point
+  registerHostFunction("char", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isInt()) return Value::makeNull();
+    int64_t cp = args[0].asInt();
+    if (cp < 0 || cp > 0x10FFFF) return Value::makeNull();
+    std::string result;
+    if (cp < 0x80) {
+      result += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+      result += static_cast<char>(0xC0 | (cp >> 6));
+      result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+      result += static_cast<char>(0xE0 | (cp >> 12));
+      result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+      result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+      result += static_cast<char>(0xF0 | (cp >> 18));
+      result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+      result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+      result += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+    auto strRef = heap_.allocateString(result);
+    return Value::makeStringId(strRef.id);
+  });
+
   // type() builtin returns type name
   registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
     const auto &value = args[0];

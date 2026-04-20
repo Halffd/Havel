@@ -126,8 +126,10 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("keys");
   bridge.options().host_global_names.insert("items");
   bridge.options().host_global_names.insert("list");
-  bridge.options().host_global_names.insert("len");
-  bridge.options().host_global_names.insert("isNumber");
+bridge.options().host_global_names.insert("len");
+bridge.options().host_global_names.insert("ord");
+bridge.options().host_global_names.insert("char");
+bridge.options().host_global_names.insert("isNumber");
   bridge.options().host_global_names.insert("isString");
   bridge.options().host_global_names.insert("isArray");
   bridge.options().host_global_names.insert("isObject");

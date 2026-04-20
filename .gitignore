@@ -6,6 +6,7 @@ src/file
 .vscode
 .codex
 .claude
+havel_crash*
 cmake-build-debug
 file
 src/out

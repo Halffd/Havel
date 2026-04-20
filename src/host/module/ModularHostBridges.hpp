@@ -41,19 +41,31 @@ public:
  */
 class IOBridge : public BridgeModule {
 public:
-  explicit IOBridge(const HostContext *ctx) : ctx_(ctx) {}
-  void install(PipelineOptions &options) override;
+    explicit IOBridge(const HostContext *ctx) : ctx_(ctx) {}
+    void install(PipelineOptions &options) override;
 
-  const HostContext *ctx_;
-  static Value handleSend(const std::vector<Value> &args,
+    const HostContext *ctx_;
+    static Value handleSend(const std::vector<Value> &args,
+                          const HostContext *ctx);
+    static Value handleSendKey(const std::vector<Value> &args,
+                             const HostContext *ctx);
+    static Value handleSendText(const std::vector<Value> &args,
+                              const HostContext *ctx);
+    static Value handleWait(const std::vector<Value> &args,
+                          const HostContext *ctx);
+    static Value handleMouseClick(const std::vector<Value> &args,
+                                const HostContext *ctx);
+    static Value handleMouseMoveTo(const std::vector<Value> &args,
+                                 const HostContext *ctx);
+    static Value handleMouseMoveRel(const std::vector<Value> &args,
                                   const HostContext *ctx);
-  static Value handleSendKey(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-  static Value handleSendText(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-  static Value handleWait(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-  };
+    static Value handleMouseScroll(const std::vector<Value> &args,
+                                 const HostContext *ctx);
+    static Value handleMouseDown(const std::vector<Value> &args,
+                               const HostContext *ctx);
+    static Value handleMouseUp(const std::vector<Value> &args,
+                             const HostContext *ctx);
+};
 /**
  * SystemBridge - File system and process control
  */

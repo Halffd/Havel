@@ -23,6 +23,29 @@
 	* [ ] type() doesn't recognize coroutines
 
 ----
+Phase 1.5: The C API (Before Phase 2)
+You need the C API FIRST because:
+
+Stdlib modules written in Havel need to call C extensions (crypto, zip, net)
+
+Embedders need to call Havel from C++
+
+The self-hosted compiler needs to bootstrap
+
+cpp
+// havel.h - The C API (like lua.h)
+// This should be STABLE before Phase 2
+The use Statement Implementation
+javascript
+// This is actually a macro that expands to:
+use fs from "fs"
+// → let fs = __module_cache__.fs ?? (__module_cache__.fs = __require__("fs"))
+
+// __require__ does:
+// 1. Check .hbc cache
+// 2. Check .hv source
+// 3. Check .so extension
+// 4. Check user packages
 
 📦 Phase 2 — Stdlib Expansion
 fs module
@@ -317,6 +340,24 @@ this is the key perf win Python missed for years:
 ├── mylib.hv
 └── __cache__/
     └── mylib.hbc
+# Python still reparses .pyc files (they're just bytecode, not fast to load)
+# Your .hbc would be memory-mappable, zero-copy load
+Implement it like this:
+
+cpp
+// Bytecode format that's mmap-able:
+struct HavelBytecodeHeader {
+    uint32_t magic;          // 'HAVL'
+    uint32_t version;
+    uint32_t function_count;
+    uint32_t string_table_offset;
+    uint32_t code_offset;
+    // ... then raw data that can be mmap'ed directly
+};
+
+// Load with mmap (zero copy):
+auto* header = (HavelBytecodeHeader*)mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+// Now function bodies are already in memory, ready to execute
 
 
 startup sequence:
@@ -416,3 +457,154 @@ stage 3: compiler can compile itself ← true self-hosting
 	4. stdlib in .hv          ← big cleanup, removes 20+ C++ files
 	5. hpkg packages          ← ecosystem
 	6. self-hosted compiler   ← end game
+
+index);
+const char* havel_tostring(HavelState* H, int index);
+
+// ── Globals ───────────────────────────────────────────────────
+void havel_setglobal(HavelState* H, const char* name);  // pops stack → global
+void havel_getglobal(HavelState* H, const char* name);  // pushes global → stack
+int  havel_hasglobal(HavelState* H, const char* name);
+
+// ── Arrays ────────────────────────────────────────────────────
+void havel_newarray(HavelState* H);                      // push empty array
+void havel_arrayappend(HavelState* H, int index);        // pop → append to array
+void havel_arrayget(HavelState* H, int index, int i);    // push arr[i]
+int  havel_arraylen(HavelState* H, int index);
+
+// ── Objects ───────────────────────────────────────────────────
+void havel_newobject(HavelState* H);                     // push empty object
+void havel_setfield(HavelState* H, int index, const char* key); // pop → obj[key]
+void havel_getfield(HavelState* H, int index, const char* key); // push obj[key]
+
+// ── Coroutines ────────────────────────────────────────────────
+HavelState* havel_newthread(HavelState* H);              // new coroutine
+int         havel_resume(HavelState* H, HavelState* thread, int nargs);
+int         havel_yield(HavelState* H, int nresults);
+int         havel_status(HavelState* H, HavelState* thread);
+// status: HAVEL_OK, HAVEL_YIELD, HAVEL_DEAD, HAVEL_ERROR
+
+// ── Error handling ────────────────────────────────────────────
+const char* havel_errmsg(HavelState* H);
+void        havel_error(HavelState* H, const char* msg);
+
+// ── GC ────────────────────────────────────────────────────────
+void   havel_gc(HavelState* H);
+size_t havel_gcmemory(HavelState* H);
+
+// ── Module registration ───────────────────────────────────────
+void havel_register(HavelState* H, const char* name, HavelCFunction fn);
+void havel_requirec(HavelState* H, const char* name,
+                    int (*init)(HavelState*)); // register C module
+
+// status codes
+#define HAVEL_OK     0
+#define HAVEL_YIELD  1
+#define HAVEL_ERROR  2
+#define HAVEL_DEAD   3
+
+#ifdef __cplusplus
+}
+#endif
+
+// before (broken - all state in one runBytecodePipeline call):
+runBytecodePipeline(code, "__main__", options);
+// yield just... falls through? or gets lost
+
+// after (fixed - coroutine has its OWN HavelState):
+HavelState* main  = havel_newstate();
+HavelState* coro  = havel_newthread(main);
+
+// coro has its own:
+// - call stack (separate frames)
+// - value stack  
+// - saved PC (resumes from exact yield point)
+// - parent pointer back to main
+
+havel_eval(coro, R"(
+    fn inner() {
+        yield "inner1"
+        yield "inner2"
+    }
+    fn outer() {
+        for v in inner() { yield v }
+    }
+)");
+
+havel_getglobal(coro, "outer");
+havel_resume(main, coro, 0);
+printf("%s\n", havel_tostring(coro, -1)); // "inner1"
+havel_pop(coro, 1);
+
+havel_resume(main, coro, 0);
+printf("%s\n", havel_tostring(coro, -1)); // "inner2"
+havel_pop(coro, 1);
+
+----
+
+Migration path — don't rewrite, wrap:
+// PureVM.cpp - thin wrapper over your existing VM
+// no need to rewrite VM.cpp, just expose it cleanly
+
+HavelState* havel_newstate() {
+    auto* H = new HavelState();
+    H->vm     = new havel::compiler::VM();
+    H->ctx    = new havel::HostContext();
+    H->bridge = havel::compiler::createHostBridge(*H->ctx);
+    H->bridge->install();
+    // NO Qt, NO services, NO GUI
+    return H;
+}
+
+HavelChunk* havel_compile(HavelState* H, const char* src, const char* name) {
+    // just call your existing ByteCompiler directly
+    // instead of going through runBytecodePipeline
+    auto program = havel::parser::Parser().produceAST(src);
+    auto chunk   = havel::compiler::ByteCompiler().compile(*program);
+    return new HavelChunk{ std::move(chunk) };
+}
+
+int havel_exec(HavelState* H, HavelChunk* chunk) {
+    // call vm->execute directly
+    // no re-parsing, no re-compiling
+    H->vm->execute(chunk->chunk, "__main__");
+    return HAVEL_OK;
+}
+
+----
+
+what this unlocks immediately:
+✅ coroutine bug fixed (separate state per thread)
+✅ compile once, run many times
+✅ .hvc bytecode load/save is first class
+✅ embedders can use havel like lua (game scripting etc)
+✅ havel-lang separates cleanly from the desktop stuff
+✅ self-hosted stdlib can call back into C via havel_register
+✅ REPL compiles each line, re-runs against same state
+✅ LLVM JIT sits behind havel_exec transparently
+
+Separate VM from Host
+cpp
+// Current: VM and host are coupled
+havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
+// ^^^ This initializes Qt, services, hotkeys, everything
+
+// Desired: Pure VM first
+HavelState* H = havel_newstate();  // NO Qt, NO services
+
+// Then optionally attach host features
+if (needDesktopFeatures) {
+    havel_openlibs(H);  // Loads fs, env, time (pure Havel)
+    havel_require(H, "qt");  // Loads Qt extension (if available)
+}
+
+Implement HavelState* C API - This fixes nested coroutines
+
+Consolidate the 4 module loaders into one unified system
+
+Implement bytecode cache (.hbc with mmap)
+
+Move stdlib to .hv files (start with fs.hv, path.hv, time.hv)
+
+Then Phase 2 (fs features, parse, crypto)
+

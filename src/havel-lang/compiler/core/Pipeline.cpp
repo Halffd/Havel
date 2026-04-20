@@ -648,17 +648,23 @@ BytecodeSmokeResult runBytecodePipeline(
   }
   try {
     result.return_value = vm->execute(*chunk, entry_function);
-  } catch (const ScriptError &e) {
-    if (e.line > 0) {
-      throw std::runtime_error(formatDiagnostic(
-          "RuntimeError", e.message, options.compile_unit_name, source,
-          static_cast<size_t>(e.line), std::max<size_t>(1, e.column),
-          1, "uncaught throw"));
+} catch (const ScriptError &e) {
+        ::havel::errors::ErrorReporter::instance().errorAt(
+            ::havel::errors::ErrorStage::VM, e.message,
+            static_cast<size_t>(std::max(1, static_cast<int>(e.line))),
+            static_cast<size_t>(std::max(1, static_cast<int>(e.column))));
+        if (e.line > 0) {
+            throw std::runtime_error(formatDiagnostic(
+                "RuntimeError", e.message, options.compile_unit_name, source,
+                static_cast<size_t>(e.line), std::max<size_t>(1, e.column),
+                1, "uncaught throw"));
+        }
+        throw std::runtime_error(e.message);
+    } catch (const std::exception &e) {
+        ::havel::errors::ErrorReporter::instance().error(
+            ::havel::errors::ErrorStage::VM, e.what());
+        throw std::runtime_error(enrichRuntimeError(e.what(), options.compile_unit_name, source));
     }
-    throw std::runtime_error(e.message);
-  } catch (const std::exception &e) {
-    throw std::runtime_error(enrichRuntimeError(e.what(), options.compile_unit_name, source));
-  }
   return result;
 }
 

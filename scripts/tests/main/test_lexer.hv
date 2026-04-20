@@ -14,8 +14,8 @@ let str3=''';pgk,.l m,kijmyt,k5r6kl5!!@#$%^&*()_+KJUGBNM<>?:|}|"{
 } ['[[['_'dsefrt566%^&**~``````れｔｂｈじゃへひほふさせしそすかけきこくぁぇぃぉぅぱｓぺぴぽぷーたっつぁ！＠＃＄％＾＆＊（）＿＋ ｋれ４ｔｒ５ｙ６つり６ｔっｇｆｒｇｙ５おえれてつさめ｛｝”｜１２４６４３７８９０−]]]']'''
 
 // f-strings
-let str4 = f"!@#$$%%&()|[]]<>:;''''QWERTYUIOPASDFGHJKL:ZXCVB NM<> - {str1} -"
-let str5 = f'!@#$$%%&()|[]]<>:;''''QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - {str2} -'
+let str4 = f"!@#$$%%&()|[]]<>:;'QWERTYUIOPASDFGHJKL:ZXCVB NM<> - {str1} -"
+let str5 = f'!@#$$%%&()|[]]<>:;QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - {str2} -'
 
 // Many languages
 let str6 = f"""
@@ -91,7 +91,7 @@ print(f"Hadamard MSE: {err2:.6f}")
 print(f"Ratio: {err1 / err2:.2f}x {'(better)' if err2 < err1 else '(worse)'}")
 """
 
-for i, st in [str1,str2,str3,str4,str5,str6,str7,str8,str9] 
+for i, st in [str1,str2,str3,str4,str5,str6,str7,str8,str9]
 {
     print(f"""
  - String {i}:  {st}

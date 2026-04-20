@@ -148,20 +148,134 @@ char Lexer::advance() {
 
 bool Lexer::isAtEnd() const { return position >= source.length(); }
 
-bool Lexer::isAlpha(char c) const { return std::isalpha(c) || c == '_'; }
+bool Lexer::isAlpha(char c) const { return std::isalpha(static_cast<unsigned char>(c)) || c == '_'; }
 
-bool Lexer::isDigit(char c) const { return std::isdigit(c); }
+bool Lexer::isDigit(char c) const { return std::isdigit(static_cast<unsigned char>(c)); }
 
 bool Lexer::isAlphaNumeric(char c) const { return isAlpha(c) || isDigit(c); }
 
 bool Lexer::isSkippable(char c) const {
-  return c == ' ' || c == '\t' || c == '\r';
+    return c == ' ' || c == '\t' || c == '\r';
 }
 
 bool Lexer::isHotkeyChar(char c) const {
-  return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' ||
-         c == '#' || c == '@' || c == '|' || c == '*' || c == '&' || c == ':' ||
-         c == '~' || c == '$' || c == '=' || c == '.' || c == ',' || c == '/';
+    return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' ||
+           c == '#' || c == '@' || c == '|' || c == '*' || c == '&' || c == ':' ||
+           c == '~' || c == '$' || c == '=' || c == '.' || c == ',' || c == '/';
+}
+
+// UTF-8 decoding support
+size_t Lexer::codepointLength(char firstByte) const {
+    unsigned char c = static_cast<unsigned char>(firstByte);
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+uint32_t Lexer::decodeUTF8(size_t& pos) const {
+    if (pos >= source.length()) return 0;
+
+    unsigned char c = static_cast<unsigned char>(source[pos]);
+
+    if (c < 0x80) {
+        pos++;
+        return c;
+    }
+
+    if ((c & 0xE0) == 0xC0) {
+        if (pos + 1 >= source.length()) return 0xFFFD;
+        unsigned char c2 = static_cast<unsigned char>(source[pos + 1]);
+        if ((c2 & 0xC0) != 0x80) return 0xFFFD;
+        pos += 2;
+        return ((c & 0x1F) << 6) | (c2 & 0x3F);
+    }
+
+    if ((c & 0xF0) == 0xE0) {
+        if (pos + 2 >= source.length()) return 0xFFFD;
+        unsigned char c2 = static_cast<unsigned char>(source[pos + 1]);
+        unsigned char c3 = static_cast<unsigned char>(source[pos + 2]);
+        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) return 0xFFFD;
+        pos += 3;
+        return ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+    }
+
+    if ((c & 0xF8) == 0xF0) {
+        if (pos + 3 >= source.length()) return 0xFFFD;
+        unsigned char c2 = static_cast<unsigned char>(source[pos + 1]);
+        unsigned char c3 = static_cast<unsigned char>(source[pos + 2]);
+        unsigned char c4 = static_cast<unsigned char>(source[pos + 3]);
+        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80 || (c4 & 0xC0) != 0x80) return 0xFFFD;
+        pos += 4;
+        return ((c & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
+    }
+
+    return 0xFFFD;
+}
+
+uint32_t Lexer::peekCodepoint() const {
+    size_t tempPos = position;
+    return decodeUTF8(tempPos);
+}
+
+void Lexer::advanceUTF8() {
+    size_t start = position;
+    uint32_t cp = decodeUTF8(position);
+    if (cp == '\n') {
+        line++;
+        column = 1;
+    } else {
+        column++;
+    }
+}
+
+bool Lexer::isUnicodeLetter(uint32_t cp) const {
+    if (cp < 0x80) return std::isalpha(static_cast<unsigned char>(cp)) || cp == '_';
+
+    // Latin-1 Supplement (U+00C0-U+00FF)
+    if (cp >= 0x00C0 && cp <= 0x00D6) return true;
+    if (cp >= 0x00D8 && cp <= 0x00F6) return true;
+    if (cp >= 0x00F8 && cp <= 0x00FF) return true;
+
+    // Latin Extended-A, B, etc.
+    if (cp >= 0x0100 && cp <= 0x017F) return true;
+    if (cp >= 0x0180 && cp <= 0x024F) return true;
+
+    // Cyrillic (U+0400-U+04FF)
+    if (cp >= 0x0400 && cp <= 0x04FF) return true;
+
+    // Arabic (U+0600-U+06FF)
+    if (cp >= 0x0600 && cp <= 0x06FF) return true;
+
+    // Devanagari (U+0900-U+097F)
+    if (cp >= 0x0900 && cp <= 0x097F) return true;
+
+    // Hangul (U+AC00-U+D7AF)
+    if (cp >= 0xAC00 && cp <= 0xD7AF) return true;
+
+    // CJK (U+4E00-U+9FFF)
+    if (cp >= 0x4E00 && cp <= 0x9FFF) return true;
+
+    // Hiragana (U+3040-U+309F)
+    if (cp >= 0x3040 && cp <= 0x309F) return true;
+
+    // Katakana (U+30A0-U+30FF)
+    if (cp >= 0x30A0 && cp <= 0x30FF) return true;
+
+    return false;
+}
+
+bool Lexer::isUnicodeDigit(uint32_t cp) const {
+    if (cp < 0x80) return std::isdigit(static_cast<unsigned char>(cp));
+
+    // Arabic-Indic digits
+    if (cp >= 0x0660 && cp <= 0x0669) return true;
+
+    // Fullwidth digits
+    if (cp >= 0xFF10 && cp <= 0xFF19) return true;
+
+    return false;
 }
 
 Token Lexer::makeToken(const std::string &value, TokenType type,
@@ -633,29 +747,35 @@ Token Lexer::scanShellCommand(bool captureOutput) {
 }
 
 Token Lexer::scanIdentifier() {
-  std::string identifier;
+    std::string identifier;
 
-  // First character (already consumed)
-  identifier += source[position - 1];
+    char first = source[position - 1];
+    identifier += first;
 
-  // Subsequent characters
-  while (!isAtEnd() && isAlphaNumeric(peek())) {
-    identifier += advance();
-  }
+    while (!isAtEnd()) {
+        unsigned char c = static_cast<unsigned char>(peek());
+        if (c < 0x80) {
+            if (!isAlphaNumeric(c) && c != '_') break;
+            identifier += advance();
+        } else {
+            uint32_t cp = peekCodepoint();
+            if (!isUnicodeLetter(cp) && !isUnicodeDigit(cp)) break;
+            size_t len = codepointLength(peek());
+            for (size_t i = 0; i < len && !isAtEnd(); i++) {
+                identifier += advance();
+            }
+        }
+    }
 
-  // Allow ? suffix for predicate functions (Ruby/Elixir style)
-  // e.g., user.logged?, window.visible?, file.exists?
-  // But NOT for optional chaining: autosp?.onDown() — leave ? alone
-  if (!isAtEnd() && peek() == '?' && peek(1) != '.') {
-    identifier += advance();
-  }
+    if (!isAtEnd() && peek() == '?' && peek(1) != '.') {
+        identifier += advance();
+    }
 
-  // Check if it's a keyword
-  auto keywordIt = KEYWORDS.find(identifier);
-  TokenType type =
-      (keywordIt != KEYWORDS.end()) ? keywordIt->second : TokenType::Identifier;
+    auto keywordIt = KEYWORDS.find(identifier);
+    TokenType type =
+        (keywordIt != KEYWORDS.end()) ? keywordIt->second : TokenType::Identifier;
 
-  return makeToken(identifier, type);
+    return makeToken(identifier, type);
 }
 
 Token Lexer::scanHotkey() {
@@ -1346,21 +1466,31 @@ std::vector<Token> Lexer::tokenize() {
       }
     }
 
-    // Handle single character tokens
-    auto singleCharIt = SINGLE_CHAR_TOKENS.find(c);
-    if (debug_lexer) {
-      std::cerr << "[LEXER] Looking up char '" << c << "' in SINGLE_CHAR_TOKENS, found=" << (singleCharIt != SINGLE_CHAR_TOKENS.end()) << std::endl;
-      if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
-        std::cerr << "[LEXER] Mapped to type=" << static_cast<int>(singleCharIt->second) << std::endl;
-      }
-    }
-    if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
-      tokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
-      continue;
-    }
+// Handle single character tokens
+        auto singleCharIt = SINGLE_CHAR_TOKENS.find(c);
+        if (debug_lexer) {
+            std::cerr << "[LEXER] Looking up char '" << c << "' in SINGLE_CHAR_TOKENS, found=" << (singleCharIt != SINGLE_CHAR_TOKENS.end()) << std::endl;
+            if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
+                std::cerr << "[LEXER] Mapped to type=" << static_cast<int>(singleCharIt->second) << std::endl;
+            }
+        }
+        if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
+            tokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
+            continue;
+        }
 
-    // Handle identifiers and potential hotkeys
-    if (isAlpha(c)) {
+        // Handle UTF-8 Unicode characters
+        unsigned char utfByte = static_cast<unsigned char>(c);
+        if (utfByte >= 0x80) {
+            size_t len = codepointLength(c);
+            for (size_t i = 1; i < len && !isAtEnd(); i++) {
+                advance();
+            }
+            continue;
+        }
+
+        // Handle identifiers and potential hotkeys
+        if (isAlpha(c)) {
       // Check if this might be a hotkey starting with F (F1-F12)
       if (c == 'F' && isDigit(peek())) {
         // Could be F-key hotkey, but check if it's followed by assignment or

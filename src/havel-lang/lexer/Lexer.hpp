@@ -220,15 +220,23 @@ private:
 
   bool isAtEnd() const;
   char peek(size_t offset = 0) const;
-  char advance();
+char advance();
 
-  bool isAlpha(char c) const;
-  bool isDigit(char c) const;
-  bool isAlphaNumeric(char c) const;
-  bool isSkippable(char c) const;
-  bool isHotkeyChar(char c) const;
+    bool isAlpha(char c) const;
+    bool isDigit(char c) const;
+    bool isAlphaNumeric(char c) const;
+    bool isSkippable(char c) const;
+    bool isHotkeyChar(char c) const;
 
-  void skipWhitespace();
+    // UTF-8 support
+    uint32_t decodeUTF8(size_t& pos) const;
+    uint32_t peekCodepoint() const;
+    size_t codepointLength(char firstByte) const;
+    bool isUnicodeLetter(uint32_t cp) const;
+    bool isUnicodeDigit(uint32_t cp) const;
+    void advanceUTF8();
+
+    void skipWhitespace();
   void skipComment();
 
   Token makeToken(const std::string &value, TokenType type,

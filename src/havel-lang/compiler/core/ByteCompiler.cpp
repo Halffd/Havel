@@ -2135,50 +2135,49 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
-  case ast::NodeType::ObjectLiteral: {
-    const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
-    // Emit sorted or unsorted object creation based on AST flag
-    if (object.unsorted) {
-      emit(OpCode::OBJECT_NEW_UNSORTED);
-    } else {
-      emit(OpCode::OBJECT_NEW);
-    }
-    uint32_t positionalIndex = 0;
-    for (const auto &entry : object.pairs) {
-      if (!entry.value) {
+case ast::NodeType::ObjectLiteral: {
+const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
+if (object.unsorted) {
+    emit(OpCode::OBJECT_NEW_UNSORTED);
+} else {
+    emit(OpCode::OBJECT_NEW);
+}
+uint32_t positionalIndex = 0;
+for (const auto &entry : object.pairs) {
+    if (!entry.value) {
         COMPILER_THROW("Collection literal contains null value");
-      }
-      emit(OpCode::DUP);
+    }
+    // OBJECT_SET pushes the object back, so no DUP needed for chaining
 
-      // Check for spread
-      if (entry.key == "__spread__") {
+    // Check for spread
+    if (entry.key == "__spread__") {
         compileExpression(*entry.value);
         // Call any.extend(obj, source) to spread
         uint32_t strId = addStringConstant("any.extend");
         emit(OpCode::CALL_HOST, std::vector<Value>{
             Value::makeStringValId(strId),
             Value(static_cast<uint32_t>(2))});
-      } else if (entry.isComputedKey) {
+    } else if (entry.isComputedKey) {
         // Computed key: {[expr]: value}
         compileExpression(*entry.value);
         compileExpression(*entry.keyExpr);
         emit(OpCode::OBJECT_SET);
-      } else if (entry.key.empty()) {
+    } else if (entry.key.empty()) {
         // Positional element: store at numeric index
         compileExpression(*entry.value);
         emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(positionalIndex))));
         positionalIndex++;
         emit(OpCode::OBJECT_SET);
-      } else {
+    } else {
         // Regular key:value pair
         compileExpression(*entry.value);
         uint32_t strId = addStringConstant(entry.key);
         emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(strId)));
         emit(OpCode::OBJECT_SET);
-      }
     }
-      break;
-    }
+}
+break;
+}
 
     case ast::NodeType::IfExpression: {
       const auto &ifExpr = static_cast<const ast::IfExpression &>(expression);

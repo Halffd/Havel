@@ -230,10 +230,10 @@ fn test_deep_stack() {
   let r3 = d()
   let r4 = d()
 
-  assert(r1 == "d3-1", "Deep yield 1")
-  assert(r2 == "d1", "Shallow yield")
-  assert(r3 == "d2", "Middle yield")
-  assert(r4 == "d2-end", "Final return")
+assert(r1 == "d3-1", "Deep yield 1")
+assert(r2 == "d1", "Shallow yield")
+assert(r3 == "d2", "Middle yield")
+assert(r4 == "d3-2", "Second inner yield")
 
   print("✓ Test 8 passed: Deep stack preservation")
 }

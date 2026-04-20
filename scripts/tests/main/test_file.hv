@@ -1,38 +1,260 @@
-// Test file system operations available in pure mode
+// Full file system test suite for Havel
 
-print("=== File System Tests ===\n")
+print("=== Full File System Tests ===\n")
 
-// Test 1: fs.exists
-print("1. Testing fs.exists:")
-let tmpExists = fs.exists("/tmp")
-print("  /tmp exists: " + tmpExists)
+let passed = 0
+let failed = 0
 
-if tmpExists {
-  print("  ✓ fs.exists works\n")
-} else {
-  print("  ✗ fs.exists FAILED\n")
+fn check(name, result, expected) {
+    if result == expected {
+        print("  ✓ " + name)
+        passed++
+    } else {
+        print("  ✗ " + name + " (got: " + result + ", expected: " + expected + ")")
+        failed++
+    }
 }
 
-// Test 2: fs.readDir
-print("2. Testing fs.readDir:")
-let files = fs.readDir("/tmp")
-print("  /tmp has " + files.len() + " entries")
-
-if files.len() > 0 {
-  print("  ✓ fs.readDir works\n")
-} else {
-  print("  ✗ fs.readDir returned empty\n")
+fn checkTrue(name, result) {
+    check(name, result, true)
 }
 
-// Test 3: time.date
-print("3. Testing time.date:")
-let dateStr = time.date()
-print("  Date: " + dateStr)
-
-if dateStr != null {
-  print("  ✓ time.date works\n")
-} else {
-  print("  ✗ time.date returned null\n")
+fn checkNotNull(name, result) {
+    if result != null {
+        print("  ✓ " + name + ": " + result)
+        passed++
+    } else {
+        print("  ✗ " + name + " returned null")
+        failed++
+    }
 }
 
-print("=== File System Tests Complete ===")
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
+let testDir     = "/tmp/havel_fs_test"
+let testFile    = testDir + "/hello.txt"
+let testContent = "hello from havel\nline two\nline three"
+let copyFile    = testDir + "/copy.txt"
+let subDir      = testDir + "/subdir"
+let movedFile   = subDir  + "/moved.txt"
+
+if fs.exists(testDir) {
+    fs.rmdir(testDir, true)
+}
+
+// ─── Test 1: mkdir ───────────────────────────────────────────────────────────
+
+print("1. fs.mkdir")
+fs.mkdir(testDir)
+checkTrue("dir created", fs.exists(testDir))
+
+// ─── Test 2: write ───────────────────────────────────────────────────────────
+
+print("\n2. fs.write")
+fs.write(testFile, testContent)
+checkTrue("file exists after fs.write", fs.exists(testFile))
+write(testFile, testContent)
+checkTrue("file exists after global write", fs.exists(testFile))
+
+// ─── Test 3: read ────────────────────────────────────────────────────────────
+
+print("\n3. fs.read")
+let content = fs.read(testFile)
+check("fs.read content matches", content, testContent)
+content = read(testFile)
+check("global read content matches", content, testContent)
+
+// ─── Test 4: append ──────────────────────────────────────────────────────────
+
+print("\n4. fs.append")
+fs.append(testFile, "\nappended line")
+let afterAppend = fs.read(testFile)
+checkTrue("append added content", afterAppend.len() > testContent.len())
+
+// ─── Test 5: size ────────────────────────────────────────────────────────────
+
+print("\n5. fs.size")
+let sz = fs.size(testFile)
+checkTrue("size > 0", sz > 0)
+print("  size: " + sz + " bytes")
+
+// ─── Test 6: copy ────────────────────────────────────────────────────────────
+
+print("\n6. fs.copy")
+fs.copy(testFile, copyFile)
+checkTrue("copy exists", fs.exists(copyFile))
+check("copy content matches", fs.read(copyFile), fs.read(testFile))
+
+// ─── Test 7: readDir ─────────────────────────────────────────────────────────
+
+print("\n7. fs.readDir")
+let entries = fs.readDir(testDir)
+checkTrue("dir has entries", #entries > 0)
+print("  entries: " + #entries)
+for f in entries {
+    print("    name:        " + f.name)
+    print("    path:        " + f.path)
+    print("    size:        " + f.size)
+    print("    extension:   " + f.extension)
+    print("    permissions: " + f.permissions)
+    print("    modDate:     " + f.modDate)
+    print("    accessDate:  " + f.accessDate)
+    print("    birthDate:   " + f.birthDate)
+    if fs.isFile(f.path) {
+        f.open("r")
+        print("    content:     " + f.read())
+    }
+}
+print("Testing stats:")
+if fs.stat != null {
+    let stats = fs.stat("/tmp")
+    print("  Size: " + stats.size + " bytes")
+    print("  Modified: " + stats.modDate)
+} else {
+    print("  fs.stat not available in this mode")
+}
+
+// ─── Test 8: isFile / isDir ──────────────────────────────────────────────────
+
+print("\n8. fs.isFile / fs.isDir")
+checkTrue("testFile isFile",  fs.isFile(testFile))
+checkTrue("testDir isDir",    fs.isDir(testDir))
+checkTrue("testFile !isDir",  !fs.isDir(testFile))
+checkTrue("testDir !isFile",  !fs.isFile(testDir))
+
+// ─── Test 9: mkdir nested + move ─────────────────────────────────────────────
+
+print("\n9. fs.mkdir (nested) + fs.move")
+fs.mkdir(subDir)
+checkTrue("subdir created", fs.exists(subDir))
+fs.move(copyFile, movedFile)
+checkTrue("moved file exists at dest", fs.exists(movedFile))
+checkTrue("moved file gone from src",  !fs.exists(copyFile))
+
+// ─── Test 10: rename ─────────────────────────────────────────────────────────
+
+print("\n10. fs.rename")
+let renamedFile = subDir + "/renamed.txt"
+fs.rename(movedFile, renamedFile)
+checkTrue("renamed file exists", fs.exists(renamedFile))
+checkTrue("old name gone",       !fs.exists(movedFile))
+
+// ─── Test 11: rm ─────────────────────────────────────────────────────────────
+
+print("\n11. fs.rm")
+fs.rm(renamedFile)
+checkTrue("file removed", !fs.exists(renamedFile))
+
+// ─── Test 12: rmdir ──────────────────────────────────────────────────────────
+
+print("\n12. fs.rmdir")
+fs.rmdir(subDir)
+checkTrue("subdir removed", !fs.exists(subDir))
+
+// ─── Test 13: path helpers ───────────────────────────────────────────────────
+
+print("\n13. path helpers")
+checkNotNull("path.basename", path.basename(testFile))
+checkNotNull("path.dirname",  path.dirname(testFile))
+checkNotNull("path.ext",      path.ext(testFile))
+checkNotNull("path.join",     path.join(testDir, "x.txt"))
+print("  basename: " + path.basename(testFile))
+print("  dirname:  " + path.dirname(testFile))
+print("  ext:      " + path.ext(testFile))
+print("  join:     " + path.join(testDir, "x.txt"))
+
+// ─── Test 14: exists on missing ──────────────────────────────────────────────
+
+print("\n14. fs.exists on missing file")
+checkTrue("missing file returns false", !fs.exists("/tmp/havel_does_not_exist_xyz"))
+
+// ─── Test 15: time helpers ───────────────────────────────────────────────────
+
+print("\n15. time helpers")
+checkNotNull("time.date", time.date())
+checkNotNull("time.now",  time.now())
+
+// ─── Test 16: env.get ────────────────────────────────────────────────────────
+
+print("\n16. env.get")
+checkNotNull("HOME env var", env.get("HOME"))
+
+// ─── Test 17: fs.open file handle ────────────────────────────────────────────
+
+print("\n17. fs.open")
+try {
+    let cpuinfo  = "/proc/cpuinfo"
+    let fi       = fs.open(cpuinfo, "r")
+    let cpuRead  = fi.read()
+    checkNotNull("fi.name",  fi.name)
+    checkNotNull("fi.path",  fi.path)
+    checkTrue("cpuinfo readable", cpuRead.len() > 0)
+    print("  fi.name: " + fi.name)
+    print("  fi.path: " + fi.path)
+
+    let tmpTest = "/tmp/havel_open_test.txt"
+    let fi2 = fs.open(tmpTest, "w+")
+    fi2.write(cpuRead)
+    checkTrue("written file content matches", read(cpuinfo) == read(tmpTest))
+
+    fi2.prepend(time.date() + "\n")
+    fi2.append("\n" + fi2.name)
+
+    let lines = fi2.read().split("\n")
+    print("  first line: " + lines[0])
+    print("  last line:  " + lines[-1])
+
+    fi2.seek(0)
+    fi2.clear()
+    checkTrue("cleared file is empty", fi2.read() == "")
+
+    fi2.remove()
+    checkTrue("file removed after fi2.remove()", !fs.exists(tmpTest))
+} catch e {
+    print("  fs.open error: " + e)
+    failed++
+}
+print("\n18. fs.symlink / fs.readlink")
+let linkPath = testDir + "/link.txt"
+fs.symlink(testFile, linkPath)
+checkTrue("symlink created", fs.isSymlink(linkPath))
+let target = fs.readlink(linkPath)
+check("symlink target", target, testFile)
+
+// Test 19: File permissions
+print("\n19. fs.chmod")
+fs.chmod(testFile, 0o644)
+let stat = fs.stat(testFile)
+print("  permissions: " + stat.permissions)
+
+// Test 20: Watch/notify (if available)
+print("\n20. fs.watch")
+let watcher = fs.watch(testDir)
+watcher.on("change", fn(event, path) {
+    print("  changed: " + path)
+})
+// Test 21: Recursive directory copy
+print("\n21. fs.copyDir")
+let copyDir = testDir + "_copy"
+fs.copyDir(testDir, copyDir)
+checkTrue("recursive copy created", fs.exists(copyDir))
+checkTrue("subdir preserved", fs.exists(copyDir + "/subdir"))
+fs.rmdir(copyDir, true)
+
+// ─── Cleanup ─────────────────────────────────────────────────────────────────
+
+print("\n─── Cleanup ───")
+fs.rmdir(testDir, true)
+checkTrue("test dir cleaned up", !fs.exists(testDir))
+
+// ─── Summary ─────────────────────────────────────────────────────────────────
+
+print("\n=== Results ===")
+print("  passed: " + passed)
+print("  failed: " + failed)
+
+if failed == 0 {
+    print("\n✓ All file system tests passed!")
+} else {
+    print("\n✗ " + failed + " test(s) failed")
+}

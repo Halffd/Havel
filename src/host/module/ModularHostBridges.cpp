@@ -150,27 +150,39 @@ void IOBridge::install(PipelineOptions &options) {
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
-  if (args.empty() || !ctx->io) {
-    return Value::makeBool(false);
-  }
-  ::havel::host::IOService ioService(ctx->io);
-  if (false) { // TODO: string support
-    return Value::makeNull();
-  }
-  return Value::makeBool(false);
+                          const HostContext *ctx) {
+    if (args.empty() || !ctx->io) {
+        return Value::makeBool(false);
+    }
+
+    std::string keys;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        keys = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    } else {
+        return Value::makeBool(false);
+    }
+
+    ::havel::host::IOService ioService(ctx->io);
+    return Value::makeBool(ioService.sendKeys(keys));
 }
 
 Value IOBridge::handleSendKey(const std::vector<Value> &args,
-                                      const HostContext *ctx) {
-  if (args.empty() || !ctx->io) {
-    return Value::makeBool(false);
-  }
-  ::havel::host::IOService ioService(ctx->io);
-  if (false) { // TODO: string support
-    return Value::makeNull();
-  }
-  return Value::makeBool(false);
+                              const HostContext *ctx) {
+    if (args.empty() || !ctx->io) {
+        return Value::makeBool(false);
+    }
+
+    std::string key;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    } else {
+        return Value::makeBool(false);
+    }
+
+    ::havel::host::IOService ioService(ctx->io);
+    return Value::makeBool(ioService.sendKey(key));
 }
 
 Value IOBridge::handleSendText(const std::vector<Value> &args,

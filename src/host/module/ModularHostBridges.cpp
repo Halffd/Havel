@@ -29,6 +29,7 @@
 #include "host/io/IOService.hpp"
 #include "host/io/MapManagerService.hpp"
 #include "host/media/MediaService.hpp"
+#include "host/mouse/MouseService.hpp"
 #include "host/network/NetworkService.hpp"
 #include "host/process/ProcessService.hpp"
 #include "host/screenshot/ScreenshotService.hpp"
@@ -129,24 +130,43 @@ extractHandle(const std::vector<Value> &args, VM *vm,
 // ============================================================================
 
 void IOBridge::install(PipelineOptions &options) {
-  options.host_functions["send"] = [ctx = ctx_](const auto &args) {
-    return handleSend(args, ctx);
-  };
-  options.host_functions["io.send"] = [ctx = ctx_](const auto &args) {
-    return handleSend(args, ctx);
-  };
-  options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
-    return handleSendKey(args, ctx);
-  };
-  options.host_functions["io.sendText"] = [ctx = ctx_](const auto &args) {
-    return handleSendText(args, ctx);
-  };
-  options.host_functions["io.wait"] = [ctx = ctx_](const auto &args) {
-    return handleWait(args, ctx);
-  };
-  options.host_functions["wait"] = [ctx = ctx_](const auto &args) {
-    return handleWait(args, ctx);
-  };
+    options.host_functions["send"] = [ctx = ctx_](const auto &args) {
+        return handleSend(args, ctx);
+    };
+    options.host_functions["io.send"] = [ctx = ctx_](const auto &args) {
+        return handleSend(args, ctx);
+    };
+    options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
+        return handleSendKey(args, ctx);
+    };
+    options.host_functions["io.sendText"] = [ctx = ctx_](const auto &args) {
+        return handleSendText(args, ctx);
+    };
+    options.host_functions["io.wait"] = [ctx = ctx_](const auto &args) {
+        return handleWait(args, ctx);
+    };
+    options.host_functions["wait"] = [ctx = ctx_](const auto &args) {
+        return handleWait(args, ctx);
+    };
+    // Mouse functions
+    options.host_functions["io.click"] = [ctx = ctx_](const auto &args) {
+        return handleMouseClick(args, ctx);
+    };
+    options.host_functions["io.mouseMoveTo"] = [ctx = ctx_](const auto &args) {
+        return handleMouseMoveTo(args, ctx);
+    };
+    options.host_functions["io.mouseMoveRel"] = [ctx = ctx_](const auto &args) {
+        return handleMouseMoveRel(args, ctx);
+    };
+    options.host_functions["io.mouseScroll"] = [ctx = ctx_](const auto &args) {
+        return handleMouseScroll(args, ctx);
+    };
+    options.host_functions["io.mouseDown"] = [ctx = ctx_](const auto &args) {
+        return handleMouseDown(args, ctx);
+    };
+    options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
+        return handleMouseUp(args, ctx);
+    };
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -227,14 +247,128 @@ Value IOBridge::handleSendText(const std::vector<Value> &args,
 }
 
 Value IOBridge::handleWait(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty() || !args[0].isInt()) {
-    return Value::makeBool(false);
-  }
-  int64_t ms = args[0].asInt();
-  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-  return Value::makeBool(true);
+                         const HostContext *ctx) {
+    (void)ctx;
+    if (args.empty() || !args[0].isInt()) {
+        return Value::makeBool(false);
+    }
+    int64_t ms = args[0].asInt();
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleMouseClick(const std::vector<Value> &args,
+                                const HostContext *ctx) {
+    (void)ctx;
+    if (args.empty()) {
+        ::havel::host::MouseService::click();
+        return Value::makeBool(true);
+    }
+
+    auto button = ::havel::host::MouseService::Button::Left;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        button = ::havel::host::MouseService::parseButton(btnStr);
+    } else if (args[0].isInt()) {
+        button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
+    }
+
+    ::havel::host::MouseService::click(button);
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleMouseMoveTo(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    (void)ctx;
+    if (args.size() < 2) {
+        return Value::makeBool(false);
+    }
+
+    int x = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+             args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 0;
+    int y = args[1].isInt() ? static_cast<int>(args[1].asInt()) :
+             args[1].isDouble() ? static_cast<int>(args[1].asDouble()) : 0;
+    int speed = args.size() > 2 && args[2].isInt() ? static_cast<int>(args[2].asInt()) : 5;
+    float accel = args.size() > 3 && args[3].isDouble() ? static_cast<float>(args[3].asDouble()) : 1.0f;
+
+    ::havel::host::MouseService::move(x, y, speed, accel);
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleMouseMoveRel(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+    (void)ctx;
+    if (args.size() < 2) {
+        return Value::makeBool(false);
+    }
+
+    int dx = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+              args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 0;
+    int dy = args[1].isInt() ? static_cast<int>(args[1].asInt()) :
+              args[1].isDouble() ? static_cast<int>(args[1].asDouble()) : 0;
+    int speed = args.size() > 2 && args[2].isInt() ? static_cast<int>(args[2].asInt()) : 5;
+    float accel = args.size() > 3 && args[3].isDouble() ? static_cast<float>(args[3].asDouble()) : 1.0f;
+
+    ::havel::host::MouseService::moveRel(dx, dy, speed, accel);
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleMouseScroll(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    (void)ctx;
+    if (args.empty()) {
+        return Value::makeBool(false);
+    }
+
+    int dy = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+             args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 0;
+    int dx = args.size() > 1 && args[1].isInt() ? static_cast<int>(args[1].asInt()) : 0;
+
+    ::havel::host::MouseService::scroll(dy, dx);
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleMouseDown(const std::vector<Value> &args,
+                               const HostContext *ctx) {
+    (void)ctx;
+    if (args.empty()) {
+        ::havel::host::MouseService::press(::havel::host::MouseService::Button::Left);
+        return Value::makeBool(true);
+    }
+
+    auto button = ::havel::host::MouseService::Button::Left;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        button = ::havel::host::MouseService::parseButton(btnStr);
+    } else if (args[0].isInt()) {
+        button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
+    }
+
+    ::havel::host::MouseService::press(button);
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleMouseUp(const std::vector<Value> &args,
+                             const HostContext *ctx) {
+    (void)ctx;
+    if (args.empty()) {
+        ::havel::host::MouseService::release(::havel::host::MouseService::Button::Left);
+        return Value::makeBool(true);
+    }
+
+    auto button = ::havel::host::MouseService::Button::Left;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        button = ::havel::host::MouseService::parseButton(btnStr);
+    } else if (args[0].isInt()) {
+        button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
+    }
+
+    ::havel::host::MouseService::release(button);
+    return Value::makeBool(true);
 }
 
 // ============================================================================

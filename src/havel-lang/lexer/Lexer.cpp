@@ -291,20 +291,18 @@ Token Lexer::scanChar() {
 }
 
 Token Lexer::scanString(bool isFString, bool isRegexString) {
-  std::string value;
-  std::string raw;
-  bool hasInterpolation = isFString;  // f-strings always have interpolation enabled
+    std::string value;
+    std::string raw;
+    bool hasInterpolation = isFString;
 
-  // Skip opening quote
-  char quote = source[position - 1];
-  int braceDepth = 0; // Tracks depth inside ${ ... } or { ... } for f-strings
+    char quote = source[position - 1];
+    int braceDepth = 0;
 
-  // Single quotes = literal string (no interpolation) unless it's an f-string
-  // Double quotes = interpolated string (with $)
-  // f-strings use {...} without $
-  bool allowInterpolation = (quote == '"') || isFString;
+    bool allowInterpolation = (quote == '"') || isFString;
 
-  size_t stringStartPos = position;
+    size_t stringStartPos = position;
+    size_t stringStartLine = line;
+    size_t stringStartColumn = column;
   while (!isAtEnd()) {
     char c = peek();
 
@@ -422,12 +420,17 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
     assertProgress(stringStartPos, "string literal");
   }
 
-  if (isAtEnd()) {
-    reportError("Unterminated string");
-    // Create error token and try to recover
-    std::string value = raw.substr(1); // Skip opening quote
-    return makeToken(value, TokenType::String, raw);
-  }
+if (isAtEnd()) {
+        size_t savedLine = line;
+        size_t savedColumn = column;
+        line = stringStartLine;
+        column = stringStartColumn;
+        reportError("Unterminated string");
+        line = savedLine;
+        column = savedColumn;
+        std::string value = raw.substr(1);
+        return makeToken(value, TokenType::String, raw);
+    }
 
   // Consume closing quote
   advance();
@@ -444,10 +447,13 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
 }
 
 Token Lexer::scanMultilineString(bool isFString) {
-  std::string value;
-  std::string raw;
-  bool hasInterpolation = isFString;  // f-strings always have interpolation enabled
-  int braceDepth = 0; // Tracks depth inside ${ ... } or { ... } for f-strings
+    std::string value;
+    std::string raw;
+    bool hasInterpolation = isFString;
+    int braceDepth = 0;
+
+    size_t stringStartLine = line;
+    size_t stringStartColumn = column;
 
   // Skip opening """ (already consumed by caller)
   // Multiline strings support interpolation like regular double-quoted strings
@@ -553,10 +559,16 @@ Token Lexer::scanMultilineString(bool isFString) {
     }
   }
 
-  if (isAtEnd()) {
-    reportError("Unterminated multiline string");
-    return makeToken(value, TokenType::MultilineString, raw);
-  }
+if (isAtEnd()) {
+        size_t savedLine = line;
+        size_t savedColumn = column;
+        line = stringStartLine;
+        column = stringStartColumn;
+        reportError("Unterminated multiline string");
+        line = savedLine;
+        column = savedColumn;
+        return makeToken(value, TokenType::MultilineString, raw);
+    }
 
   // Consume closing """
   advance();

@@ -490,12 +490,14 @@ llvm::Value *Compiler::GenerateStringLiteral(const ast::StringLiteral &str) {
                                    "strptr");
 }
 llvm::Value *Compiler::GenerateNumberLiteral(const ast::NumberLiteral &num) {
-  // Check if it's actually an integer
-  if (num.value == std::floor(num.value)) {
-    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
-                                  static_cast<int64_t>(num.value));
-  }
-  return llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), num.value);
+    if (num.was_written_as_float) {
+        return llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), num.value);
+    }
+    if (num.value == std::floor(num.value)) {
+        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
+                                       static_cast<int64_t>(num.value));
+    }
+    return llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), num.value);
 }
 void Compiler::RegisterType(const std::string &name,
                             const ast::TypeDefinition &definition) {

@@ -438,19 +438,19 @@ current_function->variadic_param_index = static_cast<uint32_t>(i);
         }
     }
 
-    // Store default value if present (only simple literals for now)
-    if (param->defaultValue.has_value()) {
-      const auto &defaultExpr = param->defaultValue.value();
-      if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
+// Store default value if present (only simple literals for now)
+if (param->defaultValue.has_value()) {
+    const auto &defaultExpr = param->defaultValue.value();
+    if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
         const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
-        if (isIntegerLiteral(num.value)) {
-          current_function->default_values.push_back(
-              Value::makeInt(static_cast<int64_t>(num.value)));
+        if (num.was_written_as_float) {
+            current_function->default_values.push_back(Value::makeDouble(num.value));
+        } else if (isIntegerLiteral(num.value)) {
+            current_function->default_values.push_back(Value::makeInt(static_cast<int64_t>(num.value)));
         } else {
-          current_function->default_values.push_back(
-              Value::makeDouble(num.value));
+            current_function->default_values.push_back(Value::makeDouble(num.value));
         }
-      } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+    } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
         const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
             Value::makeNull()); // TODO: string default
@@ -602,19 +602,22 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
       }
     }
 
-    // Store default value if present
+// Store default value if present
     if (param->defaultValue.has_value()) {
-      const auto &defaultExpr = param->defaultValue.value();
-      if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
-        const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
-        if (isIntegerLiteral(num.value)) {
-          current_function->default_values.push_back(
-              Value::makeInt(static_cast<int64_t>(num.value)));
-        } else {
-          current_function->default_values.push_back(
-              Value::makeDouble(num.value));
-        }
-      } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+        const auto &defaultExpr = param->defaultValue.value();
+        if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
+            const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
+            if (num.was_written_as_float) {
+                current_function->default_values.push_back(
+                    Value::makeDouble(num.value));
+            } else if (isIntegerLiteral(num.value)) {
+                current_function->default_values.push_back(
+                    Value::makeInt(static_cast<int64_t>(num.value)));
+            } else {
+                current_function->default_values.push_back(
+                    Value::makeDouble(num.value));
+            }
+        } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
         const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
             Value::makeNull()); // TODO: string default
@@ -1932,15 +1935,17 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
 void ByteCompiler::compileExpression(const ast::Expression &expression) {
   auto source_scope = atNode(expression);
   switch (expression.kind) {
-  case ast::NodeType::NumberLiteral: {
-    const auto &num = static_cast<const ast::NumberLiteral &>(expression);
-    if (isIntegerLiteral(num.value)) {
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(num.value))));
-    } else {
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(num.value)));
+case ast::NodeType::NumberLiteral: {
+        const auto &num = static_cast<const ast::NumberLiteral &>(expression);
+        if (num.was_written_as_float) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(num.value)));
+        } else if (isIntegerLiteral(num.value)) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(num.value))));
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(num.value)));
+        }
+        break;
     }
-    break;
-  }
 
   case ast::NodeType::StringLiteral: {
     const auto &str = static_cast<const ast::StringLiteral &>(expression);

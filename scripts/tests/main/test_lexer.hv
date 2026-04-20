@@ -29,7 +29,7 @@ qwfpgjlQWFPHJKHqwertyuiop[]asdfghj[]iu章啦藕片欧文【❳
 let str7 = f"$str1 $str2 $str3 $str4 $str5 $str6"
 
 // Math
-let str8 = """
+let str8 = """📈😎🐧🎸😭
 {\displaystyle \sinh x={\frac {e^{x}-e^{-x}}{2}}={\frac {e^{2x}-1}{2e^{x}}}.}
  z=\sqrt{r_s}cosh(u). dz=\sqrt{r_s}sinh(u).
 2\int cosh^2(u) du = \int [1+cosh(2u)]du=u+[sinh(2u)/2]
@@ -100,4 +100,8 @@ for i, st in [str1,str2,str3,str4,str5,str6,str7,str8,str9]
 """)
 }
 // Test python code string
-run(f"python -c {str9}")
+let cmd = f"""python << 'EOF'
+{str9}
+EOF"""
+
+run(cmd)

@@ -1,0 +1,103 @@
+// Lexer test and string tests
+
+// symbols
+let str1="1kjivYYGuygut6E5tD6rD&\0ugyvJHYF\t&\ni,o][':\"{{:<L>?<>?\"}}]"
+
+// multi-line
+let str2 = """
+<.<>?'\[pp;'[p0kloojh<>> VBNJKNMKIHNM<\"
+lgo\n\tgp]]\t$TGTHT$<MHGTR$&UHGUJMHO*KUJH
+"""
+// with quotes
+let str3=''';pgk,.l m,kijmyt,k5r6kl5!!@#$%^&*()_+KJUGBNM<>?:|}|"{
+{`^}^`_JKO(YUI*Yá´géŕ´tt´uíáýóúèàgtnmk~ ~ãojkitgjr oikltoirr)}
+} ['[[['_'dsefrt566%^&**~``````れｔｂｈじゃへひほふさせしそすかけきこくぁぇぃぉぅぱｓぺぴぽぷーたっつぁ！＠＃＄％＾＆＊（）＿＋ ｋれ４ｔｒ５ｙ６つり６ｔっｇｆｒｇｙ５おえれてつさめ｛｝”｜１２４６４３７８９０−]]]']'''
+
+// f-strings
+let str4 = f"!@#$$%%&()|[]]<>:;''''QWERTYUIOPASDFGHJKL:ZXCVB NM<> - {str1} -"
+let str5 = f'!@#$$%%&()|[]]<>:;''''QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - {str2} -'
+
+// Many languages
+let str6 = f"""
+üǘ0opü´äöll,.-QWERTZUOPÜ~ÜÄÖÄʼẞÜ”¸ẞẞ”ẞḩq°§ℓ»U„I“°”ㅈㅂㄱㅎㅇㅀㅇㅀ쇼ㅗㅕㅓㅏ,ㅈ퓨ㅜㅡ,하효ㅗ휴푸ㅏㅣㅐ9ㅛㅕㅑ7ㅇㄹ호ㅛㅕ5숏643ㄷㄳ효호쇼ㅕㅑㅐㅛㅣㅗ후류ㅜㅡㅓ ㅗㅜㅡ,явертыуиопшщасдфгхйкл;'эзьцжбнм,.//1234567890-ч!@ёЁъЪ&*()_Ч
+qwfpgjlQWFPHJKHqwertyuiop[]asdfghj[]iu章啦藕片欧文【❳
+】】、、=-12【‘人生破录取’】صثقفغعهخحبللاالربؤلا ىةؤىلا|ئءؤربللاىاةتضصثقفغعهخحج1234567890-لاتنمحلتقةنومخ/5فلبىرةنولهفغ6فتقن5بخ5عفتنبمخيحستنمق5غغقثخثحجلغاجعحطجدا
+हगकतदुवपोॆेंमनवलस,करपुि्ॆॆंमिुबपहगदचच़ॉटटयच1234567890-=!@#$%^&*()_+
+{str1} {str2} {[str1, str2, str3, str4]} {str4 + str5}
+"""
+/* f strings with $ format */
+let str7 = f"$str1 $str2 $str3 $str4 $str5 $str6"
+
+// Math
+let str8 = """
+{\displaystyle \sinh x={\frac {e^{x}-e^{-x}}{2}}={\frac {e^{2x}-1}{2e^{x}}}.}
+ z=\sqrt{r_s}cosh(u). dz=\sqrt{r_s}sinh(u).
+2\int cosh^2(u) du = \int [1+cosh(2u)]du=u+[sinh(2u)/2]
+[math] \displaystyle
+L=2\int_{0}^{\frac{d}{2}}\sqrt{1+\left(\frac{d}{dx}a\cosh\left(\frac{x}{a}\right)\right)^2} dx \\
+\frac{d}{dx}a\cosh\left(\frac{x}{a}\right) = \sinh(\frac{x}{a}) \\
+\sqrt{1+\left( \sinh (\frac{x}{a}) \right)^2} = \cosh (\frac{x}{a}) \\
+\int \cosh (\frac{x}{a}) \; dx = a\sinh (\frac{x}{a}) \\
+L= 2a \sinh (\frac{d}{2a}) \\
+d = 2a \sinh ^{-1} (\frac{L}{2a}) \\
+a = 10 \\
+L = 100 \\
+d \approx 92.105
+[/math]
+"""
+
+// Code
+let str9 = """
+import numpy as np
+
+x = np.random.randn(64).astype(np.float32)
+x[0] = 5 # outlier
+
+
+def quantize(x, num_bits=4, block_size=None):
+ qmin = -(2**(num_bits - 1))
+ qmax = (2**(num_bits - 1)) - 1
+
+ scale = np.max(np.abs(x)) / qmax if np.max(np.abs(x)) > 0 else 1.0
+ q = np.round(x / scale).clip(qmin, qmax).astype(np.int32)
+ return q, scale
+
+
+def dequantize(q, scales):
+ return q * scales
+
+def hadamard_matrix(n):
+ assert n > 0 and (n & (n - 1)) == 0, "n must be a power of 2"
+ H = np.array([[1.0]])
+ while H.shape[0] < n:
+ H = np.block([[H, H], [H, -H]])
+ return H / np.sqrt(n)
+
+print(f"Max abs: {np.max(np.abs(x)):.4f}, Std: {np.std(x):.4f}")
+
+q1, s1 = quantize(x)
+x_hat1 = dequantize(q1, s1)
+err1 = np.mean((x - x_hat1) ** 2)
+print(f"Direct MSE: {err1:.6f}")
+
+H = hadamard_matrix(len(x))
+x_rot = H @ x
+
+q2, s2 = quantize(x_rot)
+x_rot_hat = dequantize(q2, s2)
+x_hat2 = H @ x_rot_hat
+err2 = np.mean((x - x_hat2) ** 2)
+print(f"Hadamard MSE: {err2:.6f}")
+print(f"Ratio: {err1 / err2:.2f}x {'(better)' if err2 < err1 else '(worse)'}")
+"""
+
+for i, st in [str1,str2,str3,str4,str5,str6,str7,str8,str9] 
+{
+    print(f"""
+ - String {i}:  {st}
+
+
+""")
+}
+// Test python code string
+run(f"python -c {str9}")

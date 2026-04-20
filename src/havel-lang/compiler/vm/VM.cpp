@@ -3179,10 +3179,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       return;
     }
 
-    // Set current coroutine context
+    co->saved_coroutine_id = current_coroutine_id_;
     current_coroutine_id_ = coId;
 
-    // Save caller's state so we can restore it when the coroutine yields/returns
     co->saved_frame_count = frame_count_;
     co->saved_locals = locals;
 
@@ -3254,27 +3253,55 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   }
 
 
-  // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
+// Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
-  if (callee->is_generator) {
-    // Create coroutine object for this generator function
-    uint32_t coId = heap_.allocateCoroutine(function_index, 0);
-    auto *co = heap_.coroutine(coId);
-    co->state = GCHeap::Coroutine::Runnable;
-    co->closure_id = closure_id;  // Preserve closure context from the calling closure
+if (callee->is_generator) {
+// Create coroutine object for this generator function
+uint32_t coId = heap_.allocateCoroutine(function_index, 0);
+auto *co = heap_.coroutine(coId);
+co->state = GCHeap::Coroutine::Runnable;
+co->closure_id = closure_id;
 
-    // Initialize locals: first copy parent locals (for upvalues), then resize to function's size
-    // This ensures upvalues can reference values from the parent scope
-    co->locals.resize(std::max(callee->local_count, static_cast<uint32_t>(locals.size())));
-    
-    // Copy parent frame's locals into generator's locals (so upvalues work)
-    for (size_t i = 0; i < locals.size() && i < co->locals.size(); i++) {
-      co->locals[i] = locals[i];
+// Save the caller's locals so nested generators can access outer frames' values
+co->saved_locals = locals;
+
+// Generators should NOT copy parent's locals into their own locals.
+// The generator's locals are for its own variables only.
+// Upvalues are accessed through the closure, not through copied locals.
+co->locals.resize(callee->local_count, nullptr);
+
+// Close all open upvalues in the closure by copying their current values.
+// For generators, upvalues must be closed because the generator runs in its own
+// isolated locals context and can't access outer frames' locals directly.
+// Special case for nested generators: if the upvalue points to an outer frame,
+// use the caller coroutine's saved_locals to access the value.
+if (closure_id != 0) {
+    auto *closure = heap_.closure(closure_id);
+    if (closure) {
+        for (auto &cell : closure->upvalues) {
+            if (cell && cell->is_open) {
+                uint32_t abs_index = cell->locals_base + cell->open_index;
+                
+                std::vector<Value>* target_locals = &locals;
+                if (current_coroutine_id_ != UINT32_MAX) {
+                    auto* caller_co = heap_.coroutine(current_coroutine_id_);
+                    // If we're in a generator and the upvalue points outside our locals, use saved_locals
+                    if (caller_co && abs_index >= locals.size()) {
+                        target_locals = &caller_co->saved_locals;
+                    }
+                }
+                
+                if (abs_index < target_locals->size()) {
+                    cell->closed_value = (*target_locals)[abs_index];
+                }
+                cell->is_open = false;
+                open_upvalues.erase(abs_index);
+            }
+        }
     }
-    
-    // Then resize to exactly what the function needs
-    co->locals.resize(callee->local_count, nullptr);
-    co->ip = 0;
+}
+
+co->ip = 0;
 
     // Copy args into coroutine locals (same as normal call)
     size_t base = 0;
@@ -3663,17 +3690,13 @@ void VM::doReturn() {
     locals.resize(finished.locals_base);
   }
 
-  // If returning from a coroutine, restore caller's state
   if (current_coroutine_id_ != 0) {
     auto *co = heap_.coroutine(current_coroutine_id_);
     if (co) {
-      // Mark coroutine as done
       co->state = GCHeap::Coroutine::Done;
-
-      // Restore caller's state
       frame_count_ = co->saved_frame_count;
       locals = co->saved_locals;
-      current_coroutine_id_ = 0;
+      current_coroutine_id_ = co->saved_coroutine_id;
     }
   }
 
@@ -6517,17 +6540,14 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
                            static_cast<uint32_t>(locals.size()));
         if (locals.size() >= finished.locals_base) {
-          locals.resize(finished.locals_base);
-        }
-        
-        // Restore caller's state
-        frame_count_ = co->saved_frame_count;
-        locals = co->saved_locals;
-        uint32_t coId = current_coroutine_id_;
-        current_coroutine_id_ = UINT32_MAX;
-        
-        // Push yielded value to caller's stack
-        pushStack(yield_value);
+locals.resize(finished.locals_base);
+  }
+
+  frame_count_ = co->saved_frame_count;
+  locals = co->saved_locals;
+  current_coroutine_id_ = co->saved_coroutine_id;
+
+  pushStack(yield_value);
         
         // Increment the caller's IP since we popped the coroutine frame
         // The normal IP increment doesn't happen when frame_count changes

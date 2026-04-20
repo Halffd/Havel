@@ -106,8 +106,11 @@ private:
                                          const HostContext *ctx);
   static Value handleProcessNice(const std::vector<Value> &args,
                                          const HostContext *ctx);
-  static Value handleProcessRun(const std::vector<Value> &args,
-                                        const HostContext *ctx);
+static Value handleProcessRun(const std::vector<Value> &args,
+                              const HostContext *ctx);
+  static Value
+  handleProcessRunCapture(const std::vector<Value> &args,
+                          const HostContext *ctx);
   static Value
   handleProcessRunDetached(const std::vector<Value> &args,
                            const HostContext *ctx);

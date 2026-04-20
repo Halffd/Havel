@@ -1257,6 +1257,17 @@ case ast::NodeType::MemberExpression: {
     break;
   }
 
+  case ast::NodeType::BacktickExpression:
+    break;
+
+  case ast::NodeType::ShellCommandExpression: {
+    const auto &shellExpr = static_cast<const ast::ShellCommandExpression &>(expression);
+    if (shellExpr.commandExpr) {
+      resolveExpression(*shellExpr.commandExpr);
+    }
+    break;
+  }
+
   // Hotkey expression: ~space => { ... } — same scoping as statement form
   case ast::NodeType::HotkeyExpression: {
     const auto &hkExpr = static_cast<const ast::HotkeyExpression &>(expression);

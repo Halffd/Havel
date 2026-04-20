@@ -74,10 +74,19 @@ case ast::NodeType::MemberExpression:
     case ast::NodeType::PipelineExpression:
       compilePipelineExpression(static_cast<const ast::PipelineExpression&>(expression));
       break;
-    case ast::NodeType::InterpolatedStringExpression:
-      compileInterpolatedString(static_cast<const ast::InterpolatedStringExpression&>(expression));
-      break;
-    default:
+case ast::NodeType::InterpolatedStringExpression:
+    compileInterpolatedString(static_cast<const ast::InterpolatedStringExpression&>(expression));
+    break;
+  case ast::NodeType::BacktickExpression: {
+    const auto& backtick = static_cast<const ast::BacktickExpression&>(expression);
+    emitLoadConst(Value::makeStringValId(emitter_.addStringConstant(backtick.command)));
+    uint32_t strId = emitter_.addStringConstant("runCapture");
+    emitter_.emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(1))});
+    break;
+  }
+  default:
       COMPILER_THROW("Unsupported expression type: " + expression.toString());
   }
 }

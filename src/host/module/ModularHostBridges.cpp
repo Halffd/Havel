@@ -484,6 +484,9 @@ void SystemBridge::install(PipelineOptions &options) {
   options.host_functions["run"] = [ctx = ctx_](const auto &args) {
     return handleProcessRun(args, ctx);
   };
+  options.host_functions["runCapture"] = [ctx = ctx_](const auto &args) {
+    return handleProcessRunCapture(args, ctx);
+  };
   options.host_functions["runDetached"] = [ctx = ctx_](const auto &args) {
     return handleProcessRunDetached(args, ctx);
   };
@@ -757,6 +760,34 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   vm->setHostObjectField(obj, "stdout", Value::makeNull());
   vm->setHostObjectField(obj, "stderr", Value::makeNull());
   return Value::makeObjectId(obj.id);
+}
+
+Value
+SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("runCapture() requires a command");
+  }
+  std::string cmd;
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    cmd = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+  } else if (args[0].isArrayId()) {
+    auto arr = ArrayRef{args[0].asArrayId()};
+    size_t len = vm->getHostArrayLength(arr);
+    if (len == 0) {
+      throw std::runtime_error("runCapture() requires a non-empty array");
+    }
+    cmd = vm->resolveStringKey(vm->getHostArrayValue(arr, 0));
+    for (size_t i = 1; i < len; ++i) {
+      cmd += " " + vm->resolveStringKey(vm->getHostArrayValue(arr, i));
+    }
+  } else {
+    throw std::runtime_error("runCapture() requires a string or array command");
+  }
+  auto result = ::havel::Launcher::runSync(cmd);
+  auto strRef = vm->getHeap().allocateString(result.stdout);
+  return Value::makeStringId(strRef.id);
 }
 
 Value

@@ -243,10 +243,9 @@ char advance();
                   const std::string &raw = "");
 
   Token scanNumber();
-  Token scanChar();
-  Token scanString(bool isFString = false, bool isRegexString = false);
-  Token scanMultilineString(bool isFString = false);
-  Token scanBacktick();
+  Token scanString(bool isFString = false, bool isRegexString = false, char quote = '"');
+  Token scanMultilineString(bool isFString = false, char quote = '"');
+  Token scanBacktick(bool isMultiline = false);
   Token scanRegexLiteral();
   Token scanShellCommand(bool captureOutput = false);
   Token scanIdentifier();

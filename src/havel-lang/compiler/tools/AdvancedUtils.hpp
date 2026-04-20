@@ -54,8 +54,10 @@ VISIT_CASE(Program);
     VISIT_CASE(SpreadExpression);
     VISIT_CASE(RangeExpression);
     VISIT_CASE(PipelineExpression);
-    VISIT_CASE(InterpolatedStringExpression);
-    VISIT_CASE(FunctionDeclaration);
+VISIT_CASE(InterpolatedStringExpression);
+VISIT_CASE(BacktickExpression);
+VISIT_CASE(ShellCommandExpression);
+VISIT_CASE(FunctionDeclaration);
     VISIT_CASE(ExpressionStatement);
     VISIT_CASE(LetDeclaration);
     VISIT_CASE(IfStatement);
@@ -111,8 +113,10 @@ VISIT_CASE(MemberExpression);
       VISIT_CASE(SpreadExpression);
       VISIT_CASE(RangeExpression);
       VISIT_CASE(PipelineExpression);
-      VISIT_CASE(InterpolatedStringExpression);
-      VISIT_CASE(FunctionDeclaration);
+VISIT_CASE(InterpolatedStringExpression);
+VISIT_CASE(BacktickExpression);
+VISIT_CASE(ShellCommandExpression);
+VISIT_CASE(FunctionDeclaration);
       VISIT_CASE(ExpressionStatement);
       VISIT_CASE(LetDeclaration);
       VISIT_CASE(IfStatement);
@@ -186,8 +190,10 @@ DECLARE_VISIT(MemberExpression)
   DECLARE_VISIT(SpreadExpression)
   DECLARE_VISIT(RangeExpression)
   DECLARE_VISIT(PipelineExpression)
-  DECLARE_VISIT(InterpolatedStringExpression)
-  DECLARE_VISIT(FunctionDeclaration)
+DECLARE_VISIT(InterpolatedStringExpression)
+DECLARE_VISIT(BacktickExpression)
+DECLARE_VISIT(ShellCommandExpression)
+DECLARE_VISIT(FunctionDeclaration)
   DECLARE_VISIT(ExpressionStatement)
   DECLARE_VISIT(LetDeclaration)
   DECLARE_VISIT(IfStatement)

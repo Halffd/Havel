@@ -3526,6 +3526,31 @@ if (update_expr.isPrefix) {
     compileChannelExpression(static_cast<const ast::ChannelExpression &>(expression));
     break;
 
+  case ast::NodeType::BacktickExpression: {
+    const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
+    { uint32_t _sid = addStringConstant(backtick.command); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    uint32_t strId = addStringConstant("runCapture");
+    emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(strId),
+      Value(static_cast<uint32_t>(1))});
+    break;
+  }
+
+  case ast::NodeType::ShellCommandExpression: {
+    const auto &shellExpr = static_cast<const ast::ShellCommandExpression &>(expression);
+    if (shellExpr.commandExpr) {
+      compileExpression(*shellExpr.commandExpr);
+      const char *funcName = shellExpr.captureOutput ? "runCapture" : "run";
+      uint32_t strId = addStringConstant(funcName);
+      emit(OpCode::CALL_HOST, std::vector<Value>{
+        Value::makeStringValId(strId),
+        Value(static_cast<uint32_t>(1))});
+    } else {
+      { uint32_t _sid = addStringConstant(""); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    }
+    break;
+  }
+
   default:
     COMPILER_THROW("Unsupported expression in bytecode compiler: " +
                              expression.toString());

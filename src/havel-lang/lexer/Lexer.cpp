@@ -368,51 +368,12 @@ Token Lexer::scanNumber() {
   return makeToken(number, TokenType::Number);
 }
 
-Token Lexer::scanChar() {
-  std::string value;
-  // The opening ' has already been consumed by the main loop
-  
-  if (isAtEnd()) {
-    return makeToken("", TokenType::CharLiteral);
-  }
-  
-  char c = advance();
-  if (c == '\\') {
-    // Handle escape sequences
-    if (isAtEnd()) {
-      return makeToken("", TokenType::CharLiteral);
-    }
-    char escaped = advance();
-    switch (escaped) {
-      case 'n': c = '\n'; break;
-      case 't': c = '\t'; break;
-      case 'r': c = '\r'; break;
-      case '\\': c = '\\'; break;
-      case '\'': c = '\''; break;
-      case '"': c = '"'; break;
-      default: c = escaped; break;
-    }
-    value = std::string(1, c);
-  } else {
-    value = std::string(1, c);
-  }
-  
-  if (isAtEnd() || advance() != '\'') {
-    return makeToken(value, TokenType::CharLiteral);
-  }
-  
-  return makeToken(value, TokenType::CharLiteral);
-}
-
-Token Lexer::scanString(bool isFString, bool isRegexString) {
+Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
     std::string value;
     std::string raw;
     bool hasInterpolation = isFString;
 
-    char quote = source[position - 1];
     int braceDepth = 0;
-
-    bool allowInterpolation = (quote == '"') || isFString;
 
     size_t stringStartPos = position;
     size_t stringStartLine = line;
@@ -457,40 +418,30 @@ Token Lexer::scanString(bool isFString, bool isRegexString) {
         value += escaped;
         break;
       }
-    } else if (c == '$' && allowInterpolation && !isFString) {
-      // Found interpolation marker (only in double-quoted strings, not f-strings)
+    } else if (c == '$' && isFString && braceDepth == 0) {
+      // $var interpolation in f-strings only
       hasInterpolation = true;
       value += advance(); // $
 
-      // Check if it's ${expr} or $var or $@field
       if (peek() == '{') {
         value += advance(); // {
-        braceDepth++;       // Enter interpolation context
+        braceDepth++;
       } else if (isAlpha(peek()) || peek() == '_') {
-        // Bash-style $var - consume the variable name
-        // Add implicit { } around the variable name for consistent parsing
         value += '{';
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
         }
-        // Allow ? suffix for predicate variables (e.g., $logged?)
         if (!isAtEnd() && peek() == '?') {
           value += advance();
         }
         value += '}';
-        // No change to braceDepth since we synthetically closed it immediately
       } else if (peek() == '@') {
-        // $@field syntax for field access in class methods
-        // Add implicit { } around the @field expression
         value += '{';
         value += advance(); // @
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
         }
         value += '}';
-      } else {
-        // Just a $ not followed by { or identifier or @, treat as literal '$'
-        // Do not mark as interpolation in this case
       }
     } else if (c == '{' && isFString && braceDepth == 0) {
       // F-string interpolation: {...}
@@ -560,7 +511,7 @@ if (isAtEnd()) {
   return makeToken(value, type, raw);
 }
 
-Token Lexer::scanMultilineString(bool isFString) {
+Token Lexer::scanMultilineString(bool isFString, char quote) {
     std::string value;
     std::string raw;
     bool hasInterpolation = isFString;
@@ -569,7 +520,7 @@ Token Lexer::scanMultilineString(bool isFString) {
     size_t stringStartLine = line;
     size_t stringStartColumn = column;
 
-  // Skip opening """ (already consumed by caller)
+  // Skip opening quotes (already consumed by caller)
   // Multiline strings support interpolation like regular double-quoted strings
   // f-strings always support interpolation
 
@@ -580,9 +531,9 @@ Token Lexer::scanMultilineString(bool isFString) {
   }
 
   while (!isAtEnd()) {
-    // Check for closing """
-    if (peek() == '"' && position + 2 < source.length() &&
-        source[position + 1] == '"' && source[position + 2] == '"') {
+    // Check for closing triple-quote
+    if (peek() == quote && position + 2 < source.length() &&
+        source[position + 1] == quote && source[position + 2] == quote) {
       break;
     }
 
@@ -619,8 +570,8 @@ Token Lexer::scanMultilineString(bool isFString) {
         value += escaped;
         break;
       }
-    } else if (c == '$' && braceDepth == 0 && !isFString) {
-      // Interpolation in multiline strings (not f-strings)
+    } else if (c == '$' && isFString && braceDepth == 0) {
+      // $var interpolation in f-strings only
       hasInterpolation = true;
       value += advance(); // $
 
@@ -632,8 +583,14 @@ Token Lexer::scanMultilineString(bool isFString) {
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
         }
-        // Allow ? suffix for predicate variables
         if (!isAtEnd() && peek() == '?') {
+          value += advance();
+        }
+        value += '}';
+      } else if (peek() == '@') {
+        value += '{';
+        value += advance(); // @
+        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
         }
         value += '}';
@@ -684,7 +641,7 @@ if (isAtEnd()) {
         return makeToken(value, TokenType::MultilineString, raw);
     }
 
-  // Consume closing """
+  // Consume closing triple-quote
   advance();
   advance();
   advance();
@@ -694,23 +651,115 @@ if (isAtEnd()) {
   return makeToken(value, type, raw);
 }
 
-Token Lexer::scanBacktick() {
+Token Lexer::scanBacktick(bool isMultiline) {
   std::string value;
   std::string raw;
+  bool hasInterpolation = isMultiline;
 
-  // Consume characters until closing backtick
-  while (!isAtEnd() && peek() != '`') {
-    char c = advance();
-    value += c;
-    raw += c;
+  int braceDepth = 0;
+  size_t stringStartLine = line;
+  size_t stringStartColumn = column;
+
+  if (isMultiline) {
+    if (!isAtEnd() && peek() == '\n') {
+      advance();
+      raw += '\n';
+    }
   }
 
-  // Consume closing backtick
-  if (!isAtEnd()) {
+  while (!isAtEnd()) {
+    if (isMultiline) {
+      if (peek() == '`' && position + 2 < source.length() &&
+          source[position + 1] == '`' && source[position + 2] == '`') {
+        break;
+      }
+    } else if (peek() == '`') {
+      break;
+    }
+
+    char c = peek();
+    raw += c;
+
+    if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
+      advance();
+      raw += peek();
+
+      char escaped = advance();
+      switch (escaped) {
+      case 'n':
+        value += '\n';
+        break;
+      case 't':
+        value += '\t';
+        break;
+      case 'r':
+        value += '\r';
+        break;
+      case '\\':
+        value += '\\';
+        break;
+      case '`':
+        value += '`';
+        break;
+      default:
+        value += '\\';
+        value += escaped;
+        break;
+      }
+    } else if (c == '{' && isMultiline && braceDepth == 0) {
+      if (peek(1) != '{') {
+        hasInterpolation = true;
+        value += advance();
+        braceDepth++;
+      } else {
+        advance();
+        advance();
+        value += '{';
+      }
+    } else if (c == '}' && isMultiline && braceDepth == 0) {
+      if (peek(1) == '}') {
+        advance();
+        advance();
+        value += '}';
+      } else {
+        value += advance();
+      }
+    } else {
+      char consumed = advance();
+      value += consumed;
+
+      if (braceDepth > 0) {
+        if (consumed == '{') {
+          braceDepth++;
+        } else if (consumed == '}') {
+          braceDepth--;
+        }
+      }
+    }
+  }
+
+  if (isAtEnd()) {
+    size_t savedLine = line;
+    size_t savedColumn = column;
+    line = stringStartLine;
+    column = stringStartColumn;
+    reportError("Unterminated backtick string");
+    line = savedLine;
+    column = savedColumn;
+    return makeToken(value, TokenType::Backtick, raw);
+  }
+
+  if (isMultiline) {
+    advance();
+    advance();
+    advance();
+  } else {
     advance();
   }
 
-  return makeToken(value, TokenType::Backtick, raw);
+  TokenType type = hasInterpolation ? TokenType::InterpolatedString
+                                    : TokenType::Backtick;
+  return makeToken(value, type, raw);
 }
 
 Token Lexer::scanRegexLiteral() {
@@ -962,54 +1011,54 @@ std::vector<Token> Lexer::tokenize() {
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;
       }
-      continue;
+continue;
     }
 
-    // Handle strings
+    // Handle strings - both single and double quotes work the same
     if (c == '"' || c == '\'') {
-      // Single quotes are char literals: 'a'
-      if (c == '\'') {
-        tokens.push_back(scanChar());
+        char quote = c;
+        bool isFString = false;
+        bool isRegexString = false;
+        if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
+            if (tokens.back().value == "f" || tokens.back().value == "F") {
+                isFString = true;
+                tokens.pop_back();
+            } else if (tokens.back().value == "r" || tokens.back().value == "R") {
+                isRegexString = true;
+                tokens.pop_back();
+            }
+        }
+
+        // Check for multiline string """ or '''
+        if (position + 2 < source.length() &&
+            source[position] == quote && source[position + 1] == quote) {
+            advance();
+            advance();
+            tokens.push_back(scanMultilineString(isFString, quote));
+        } else {
+            tokens.push_back(scanString(isFString, isRegexString, quote));
+        }
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
         }
         continue;
-      }
-      // Double quotes: check for f-string or regex prefix: f"..." or r"..."
-      bool isFString = false;
-      bool isRegexString = false;
-      if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
-        if (tokens.back().value == "f" || tokens.back().value == "F") {
-          isFString = true;
-          tokens.pop_back();
-        } else if (tokens.back().value == "r" || tokens.back().value == "R") {
-          isRegexString = true;
-          tokens.pop_back();
-        }
-      }
-
-      // Check for multiline string """
-      if (c == '"' && position + 2 < source.length() &&
-          source[position] == '"' && source[position + 1] == '"') {
-        advance();
-        advance();
-        tokens.push_back(scanMultilineString(isFString));
-      } else {
-        tokens.push_back(scanString(isFString, isRegexString));
-      }
-      if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
-      }
-      continue;
     }
 
-    // Handle backtick expressions: `command`
+    // Handle backtick expressions: `command` or ```...```
     if (c == '`') {
-      tokens.push_back(scanBacktick());
-      if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
-      }
-      continue;
+        bool isMultilineBacktick = false;
+        // Check for multiline backtick ```
+        if (position + 2 < source.length() &&
+            source[position] == '`' && source[position + 1] == '`') {
+            advance();
+            advance();
+            isMultilineBacktick = true;
+        }
+        tokens.push_back(scanBacktick(isMultilineBacktick));
+        if (debug_lexer) {
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
     }
 
     // Handle regex literals: /pattern/

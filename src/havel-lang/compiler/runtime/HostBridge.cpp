@@ -970,6 +970,7 @@ void HostBridge::install() {
   registerAnyMethod("kill");
   registerAnyMethod("nice");
   registerAnyMethod("run");
+  registerAnyMethod("runCapture");
   registerAnyMethod("runDetached");
 
   registerAnyMethod("send");

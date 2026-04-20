@@ -679,8 +679,8 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   }
 
   switch (token.type) {
-    case TokenType::Number:
-      return std::make_unique<ast::NumberLiteral>(std::stod(token.value));
+case TokenType::Number:
+        return std::make_unique<ast::NumberLiteral>(std::stod(token.value), token.value.find('.') != std::string::npos);
 
     case TokenType::String:
     case TokenType::MultilineString:
@@ -4485,11 +4485,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     if (at().type == havel::TokenType::OpenBrace) {
       position = savedPos; // Restore position
       // Parse just the count value, not a full expression that might consume
-      // the brace
-      if (at().type == havel::TokenType::Number) {
-        countExpr =
-            std::make_unique<havel::ast::NumberLiteral>(std::stod(at().value));
-        advance();
+// the brace
+        if (at().type == havel::TokenType::Number) {
+            countExpr =
+                std::make_unique<havel::ast::NumberLiteral>(std::stod(at().value), at().value.find('.') != std::string::npos);
+            advance();
       } else if (at().type == havel::TokenType::Identifier) {
         countExpr = std::make_unique<havel::ast::Identifier>(
             at().value, at().line, at().column);
@@ -6282,11 +6282,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   havel::Token tk = at();
 
   switch (tk.type) {
-  case havel::TokenType::Number: {
-    advance();
-    double value = std::stod(tk.value);
-    return std::make_unique<havel::ast::NumberLiteral>(value);
-  }
+case havel::TokenType::Number: {
+            advance();
+            double value = std::stod(tk.value);
+            return std::make_unique<havel::ast::NumberLiteral>(value, tk.value.find('.') != std::string::npos);
+        }
 
   case havel::TokenType::String: {
     advance();
@@ -7612,19 +7612,19 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
   // Number literal
   else if (at().type == havel::TokenType::Number) {
     auto tok = advance();
-    try {
-      if (tok.value.find('.') != std::string::npos || 
-          tok.value.find('e') != std::string::npos ||
-          tok.value.find('E') != std::string::npos) {
-        literal = std::make_unique<havel::ast::NumberLiteral>(std::stod(tok.value));
-      } else {
-        literal = std::make_unique<havel::ast::NumberLiteral>(
-            static_cast<double>(std::stoll(tok.value)));
-      }
-    } catch (...) {
-      failAt(tok, "Invalid number literal");
-      return nullptr;
-    }
+try {
+            if (tok.value.find('.') != std::string::npos ||
+                tok.value.find('e') != std::string::npos ||
+                tok.value.find('E') != std::string::npos) {
+                literal = std::make_unique<havel::ast::NumberLiteral>(std::stod(tok.value), true);
+            } else {
+                literal = std::make_unique<havel::ast::NumberLiteral>(
+                    static_cast<double>(std::stoll(tok.value)), false);
+            }
+        } catch (...) {
+            failAt(tok, "Invalid number literal");
+            return nullptr;
+        }
   }
   // String literal
   else if (at().type == havel::TokenType::String) {

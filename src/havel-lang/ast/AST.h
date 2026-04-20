@@ -1217,18 +1217,19 @@ struct RangePattern : public Expression {
 
 // Number Literal
 struct NumberLiteral : public Expression {
-  double value;
+    double value;
+    bool was_written_as_float; // true if source had decimal point (e.g., "1.0" vs "1")
 
-  NumberLiteral(double val) : value(val) { kind = NodeType::NumberLiteral; }
+    NumberLiteral(double val, bool as_float = false) : value(val), was_written_as_float(as_float) { kind = NodeType::NumberLiteral; }
 
-  std::string toString() const override {
-    // Use stringstream to avoid trailing zeros for whole numbers
-    std::ostringstream oss;
-    oss << value;
-    return "NumberLiteral{" + oss.str() + "}";
-  }
+    std::string toString() const override {
+        // Use stringstream to avoid trailing zeros for whole numbers
+        std::ostringstream oss;
+        oss << value;
+        return "NumberLiteral{" + oss.str() + "}";
+    }
 
-  void accept(ASTVisitor &visitor) const override;
+    void accept(ASTVisitor &visitor) const override;
 };
 
 // Boolean Literal (true, false)

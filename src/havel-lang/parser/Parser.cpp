@@ -5461,15 +5461,142 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
     advance();
   }
 
-  // Syntax 1: use "file.hv" - import script file
+  // =========================================================================
+  // Syntax: use { a, b as c, ... } from "path" or use { a, b as c } from module
+  // =========================================================================
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+    
+    std::vector<std::pair<std::string, std::string>> importNames; // name, alias
+    
+    while (at().type != havel::TokenType::CloseBrace) {
+      while (at().type == havel::TokenType::NewLine) advance();
+      
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier in import list");
+        return nullptr;
+      }
+      
+      std::string name = advance().value;
+      std::string alias = name; // default alias is same as name
+      
+      // Check for "as alias"
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::As) {
+        advance(); // consume 'as'
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected alias after 'as'");
+          return nullptr;
+        }
+        alias = advance().value;
+      }
+      
+      importNames.emplace_back(name, alias);
+      
+      // Skip comma
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+        while (at().type == havel::TokenType::NewLine) advance();
+      }
+    }
+    
+    advance(); // consume '}'
+    
+    // Expect "from"
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type != havel::TokenType::From) {
+      failAt(at(), "Expected 'from' after import list");
+      return nullptr;
+    }
+    advance(); // consume 'from'
+    
+    // Get source
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string source;
+    if (at().type == havel::TokenType::String || 
+        at().type == havel::TokenType::MultilineString) {
+      source = advance().value;
+    } else if (at().type == havel::TokenType::Identifier) {
+      source = advance().value; // module name
+    } else {
+      failAt(at(), "Expected module name or file path after 'from'");
+      return nullptr;
+    }
+    
+    auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
+    stmt->isNamedImport = true;
+    for (auto& [name, alias] : importNames) {
+      stmt->importNames.push_back(name);
+    }
+    stmt->alias = importNames.empty() ? "" : importNames[0].second;
+    return stmt;
+  }
+
+  // =========================================================================
+  // Syntax: use * from "path" or use * from module
+  // =========================================================================
+  if (at().type == havel::TokenType::Multiply) {
+    advance(); // consume '*'
+    
+    // Expect "from"
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type != havel::TokenType::From) {
+      failAt(at(), "Expected 'from' after '*'");
+      return nullptr;
+    }
+    advance(); // consume 'from'
+    
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string source;
+    if (at().type == havel::TokenType::String || 
+        at().type == havel::TokenType::MultilineString) {
+      source = advance().value;
+    } else if (at().type == havel::TokenType::Identifier) {
+      source = advance().value;
+    } else {
+      failAt(at(), "Expected module name or file path after 'from'");
+      return nullptr;
+    }
+    
+    auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{"*"});
+    stmt->isWildcard = true;
+    return stmt;
+  }
+
+  // =========================================================================
+  // Syntax: use "file.hv" or use "file.hv" as alias
+  // =========================================================================
   if (at().type == havel::TokenType::String ||
       at().type == havel::TokenType::MultilineString) {
     std::string filePath = advance().value;
+    
+    // Check for "as alias"
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string alias = "";
+    if (at().type == havel::TokenType::As) {
+      advance(); // consume 'as'
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected alias after 'as'");
+        return nullptr;
+      }
+      alias = advance().value;
+    }
+    
+    if (!alias.empty()) {
+      auto stmt = std::make_unique<havel::ast::UseStatement>(filePath, alias);
+      stmt->isFileImport = true;
+      return stmt;
+    }
     return std::make_unique<havel::ast::UseStatement>(
         filePath, std::vector<std::string>{"*"});
   }
 
-  // Syntax 2: use module or use module.* - import module (Lua-style)
+  // =========================================================================
+  // Syntax: use module or use module.* - import module (Lua-style)
+  // =========================================================================
   if (at().type == havel::TokenType::Identifier) {
     std::string moduleName = advance().value;
 
@@ -5489,13 +5616,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
 
       if (at().type == havel::TokenType::Multiply) {
         advance(); // consume '*'
-        // Wildcard import - flatten all functions into current scope
         auto stmt = std::make_unique<havel::ast::UseStatement>(
             std::vector<std::string>{moduleName});
         stmt->isWildcard = true;
         return stmt;
       } else {
         failAt(at(), "Expected '*' after '.' in use statement");
+        return nullptr;
       }
     }
 

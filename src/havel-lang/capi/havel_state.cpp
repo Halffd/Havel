@@ -2,20 +2,38 @@
 #include "havel.h"
 #include "../compiler/vm/VM.hpp"
 #include "../core/Value.hpp"
+#include "../ffi/FFITypes.hpp"
+#include "../ffi/FFIMemory.hpp"
+#include "../ffi/FFIAccessors.hpp"
+#include "../ffi/FFICall.hpp"
+#include "../runtime/RuntimeModuleLoader.hpp"
 #include <cstring>
 #include <cstdio>
+#include <cstdarg>
 #include <memory>
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <optional>
+
+enum class CoroutineState { DEAD, RUNNING, SUSPENDED, ERROR };
 
 struct HavelState {
     std::unique_ptr<havel::compiler::VM> vm;
     std::vector<havel::core::Value> stack;
     std::unordered_map<std::string, havel::core::Value> globals;
+    std::unordered_map<uint32_t, std::unordered_map<std::string, havel::core::Value>> tables;
+    std::unordered_map<uint32_t, std::vector<havel::core::Value>> arrays;
+    std::unordered_map<uint32_t, std::string> strings;
+    std::vector<std::shared_ptr<void>> compiled_chunks;
     std::string last_error;
     HavelState* parent = nullptr;
     bool is_thread = false;
+    CoroutineState coroutine_state = CoroutineState::DEAD;
+    std::optional<havel::core::Value> yield_value;
+    uint32_t next_array_id = 1;
+    uint32_t next_table_id = 1;
+    uint32_t next_string_id = 1;
 };
 
 static const char* HAVEL_VERSION = "0.1.0";
@@ -105,8 +123,9 @@ void havel_pushinteger(HavelState* H, int64_t n) {
 
 void havel_pushstring(HavelState* H, const char* s) {
     if (s) {
-        uint32_t id = H->vm->heap().allocateString(s).id;
-        H->stack.push_back(havel::core::Value::makeStringValId(id));
+        auto strId = H->next_string_id++;
+        H->strings[strId] = s;
+        H->stack.push_back(havel::core::Value::makeStringValId(strId));
     } else {
         H->stack.push_back(havel::core::Value::makeNull());
     }
@@ -119,12 +138,14 @@ void havel_pushcfunction(HavelState* H, HavelCFunction fn, const char* name) {
 }
 
 void havel_pushobject(HavelState* H) {
-    uint32_t id = H->vm->heap().allocateObject().id;
+    uint32_t id = H->next_table_id++;
+    H->tables[id] = std::unordered_map<std::string, havel::core::Value>{};
     H->stack.push_back(havel::core::Value::makeObjectId(id));
 }
 
 void havel_pusharray(HavelState* H) {
-    uint32_t id = H->vm->heap().allocateArray().id;
+    uint32_t id = H->next_array_id++;
+    H->arrays[id] = std::vector<havel::core::Value>{};
     H->stack.push_back(havel::core::Value::makeArrayId(id));
 }
 
@@ -136,12 +157,21 @@ int havel_type(HavelState* H, int idx) {
     const auto& v = H->stack[i];
     if (v.isNull()) return HAVEL_TNIL;
     if (v.isBool()) return HAVEL_TBOOLEAN;
-    if (v.isInt() || v.isDouble()) return HAVEL_TNUMBER;
+    if (v.isInt()) return HAVEL_TINT;
+    if (v.isDouble()) return HAVEL_TFLOAT;
+    if (v.isNumber()) return HAVEL_TNUMBER;
     if (v.isStringValId() || v.isStringId()) return HAVEL_TSTRING;
+    if (v.isPtr()) return HAVEL_TPOINTER;
     if (v.isArrayId()) return HAVEL_TARRAY;
-    if (v.isObjectId()) return HAVEL_TTABLE;
+    if (v.isObjectId()) return HAVEL_TOBJECT;
     if (v.isClosureId() || v.isHostFuncId()) return HAVEL_TFUNCTION;
-    if (v.isCoroutineId()) return HAVEL_TTHREAD;
+    if (v.isCoroutineId()) return HAVEL_TCOROUTINE;
+    if (v.isThreadId()) return HAVEL_TTHREAD;
+    if (v.isChannelId()) return HAVEL_TCHANNEL;
+    if (v.isRangeId()) return HAVEL_TRANGE;
+    if (v.isSetId()) return HAVEL_TSET;
+    if (v.isEnumId()) return HAVEL_TENUM;
+    if (v.isIteratorId()) return HAVEL_TITERATOR;
     return HAVEL_TOBJECT;
 }
 
@@ -150,8 +180,9 @@ int havel_isboolean(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL
 int havel_isnumber(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TNUMBER; }
 int havel_isstring(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TSTRING; }
 int havel_isfunction(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TFUNCTION; }
-int havel_istable(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TTABLE; }
+int havel_isobject(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TOBJECT; }
 int havel_isarray(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TARRAY; }
+int havel_iscoroutine(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TCOROUTINE; }
 int havel_isthread(HavelState* H, int idx) { return havel_type(H, idx) == HAVEL_TTHREAD; }
 
 int havel_toboolean(HavelState* H, int idx) {
@@ -189,8 +220,8 @@ const char* havel_tostring(HavelState* H, int idx) {
     if (i < 0 || i >= t) return "";
     const auto& v = H->stack[i];
     if (v.isStringValId()) {
-        auto* str = H->vm->heap().string(v.asStringValId());
-        if (str) return str->c_str();
+        auto it = H->strings.find(v.asStringValId());
+        if (it != H->strings.end()) return it->second.c_str();
     }
     buf = "<value>";
     return buf.c_str();
@@ -202,12 +233,12 @@ size_t havel_rawlen(HavelState* H, int idx) {
     if (i < 0 || i >= t) return 0;
     const auto& v = H->stack[i];
     if (v.isArrayId()) {
-        auto* arr = H->vm->heap().array(v.asArrayId());
-        return arr ? arr->size() : 0;
+        auto it = H->arrays.find(v.asArrayId());
+        return it != H->arrays.end() ? static_cast<int>(it->second.size()) : 0;
     }
     if (v.isObjectId()) {
-        auto* obj = H->vm->heap().object(v.asObjectId());
-        return obj ? obj->size() : 0;
+        auto it = H->tables.find(v.asObjectId());
+        return it != H->tables.end() ? static_cast<int>(it->second.size()) : 0;
     }
     return 0;
 }
@@ -241,11 +272,11 @@ void havel_getfield(HavelState* H, int idx, const char* key) {
     }
     const auto& v = H->stack[i];
     if (v.isObjectId()) {
-        auto* obj = H->vm->heap().object(v.asObjectId());
-        if (obj) {
-            auto it = obj->find(key);
-            if (it != obj->end()) {
-                H->stack.push_back(it->second);
+        auto it = H->tables.find(v.asObjectId());
+        if (it != H->tables.end()) {
+            auto fieldIt = it->second.find(key);
+            if (fieldIt != it->second.end()) {
+                H->stack.push_back(fieldIt->second);
                 return;
             }
         }
@@ -261,14 +292,14 @@ void havel_setfield(HavelState* H, int idx, const char* key) {
     auto val = H->stack.back();
     H->stack.pop_back();
     if (v.isObjectId()) {
-        auto* obj = H->vm->heap().object(v.asObjectId());
-        if (obj) {
-            (*obj)[key] = val;
+        auto it = H->tables.find(v.asObjectId());
+        if (it != H->tables.end()) {
+            it->second[key] = val;
         }
     }
 }
 
-void havel_rawgeti(HavelState* H, int idx, int i) {
+void havel_getindex(HavelState* H, int idx, int i) {
     int t = havel_gettop(H);
     int arr_idx = idx >= 0 ? idx : t + idx;
     if (arr_idx < 0 || arr_idx >= t) {
@@ -277,16 +308,17 @@ void havel_rawgeti(HavelState* H, int idx, int i) {
     }
     const auto& v = H->stack[arr_idx];
     if (v.isArrayId()) {
-        auto* arr = H->vm->heap().array(v.asArrayId());
-        if (arr && i >= 0 && i < static_cast<int>(arr->size())) {
-            H->stack.push_back((*arr)[static_cast<size_t>(i)]);
+        auto arrId = v.asArrayId();
+        auto it = H->arrays.find(arrId);
+        if (it != H->arrays.end() && i >= 0 && i < static_cast<int>(it->second.size())) {
+            H->stack.push_back(it->second[static_cast<size_t>(i)]);
             return;
         }
     }
     H->stack.push_back(havel::core::Value::makeNull());
 }
 
-void havel_rawseti(HavelState* H, int idx, int i) {
+void havel_setindex(HavelState* H, int idx, int i) {
     int t = havel_gettop(H);
     int arr_idx = idx >= 0 ? idx : t + idx;
     if (arr_idx < 0 || arr_idx >= t || H->stack.empty()) return;
@@ -294,17 +326,17 @@ void havel_rawseti(HavelState* H, int idx, int i) {
     auto val = H->stack.back();
     H->stack.pop_back();
     if (v.isArrayId()) {
-        auto* arr = H->vm->heap().array(v.asArrayId());
-        if (arr && i >= 0) {
-            while (arr->size() < static_cast<size_t>(i)) {
-                arr->push_back(havel::core::Value::makeNull());
+        auto it = H->arrays.find(v.asArrayId());
+        if (it != H->arrays.end() && i >= 0) {
+            while (it->second.size() < static_cast<size_t>(i)) {
+                it->second.push_back(havel::core::Value::makeNull());
             }
-            (*arr)[static_cast<size_t>(i)] = val;
+            it->second[static_cast<size_t>(i)] = val;
         }
     }
 }
 
-int havel_next(HavelState* H, int idx) {
+int havel_iternext(HavelState* H, int idx) {
     (void)H;
     (void)idx;
     return 0;
@@ -318,9 +350,9 @@ void havel_arrayappend(HavelState* H, int idx) {
     auto val = H->stack.back();
     H->stack.pop_back();
     if (v.isArrayId()) {
-        auto* arr = H->vm->heap().array(v.asArrayId());
-        if (arr) {
-            arr->push_back(val);
+        auto arrId = v.asArrayId();
+        if (arrId > 0 && arrId < H->arrays.size()) {
+            H->arrays[arrId].push_back(val);
         }
     }
 }
@@ -331,8 +363,7 @@ int havel_arraylen(HavelState* H, int idx) {
     if (i < 0 || i >= t) return 0;
     const auto& v = H->stack[i];
     if (v.isArrayId()) {
-        auto* arr = H->vm->heap().array(v.asArrayId());
-        return arr ? static_cast<int>(arr->size()) : 0;
+        return static_cast<int>(H->arrays[v.asArrayId()].size());
     }
     return 0;
 }
@@ -351,23 +382,39 @@ int havel_pcall(HavelState* H, int nargs, int nresults, int msgh) {
     return HAVEL_ERR;
 }
 
-int havel_resume(HavelState* H, HavelState* thread, int nargs) {
-    (void)H;
-    (void)thread;
-    (void)nargs;
-    return HAVEL_DEAD;
+int havel_resume(HavelState* main, HavelState* thread, int nargs) {
+    if (!main || !thread) return HAVEL_ERR;
+    if (thread->is_thread && thread->parent != main) return HAVEL_ERR;
+    if (nargs < 0 || nargs > havel_gettop(thread)) return HAVEL_ERR;
+    thread->coroutine_state = CoroutineState::RUNNING;
+    thread->parent = main;
+    if (thread->yield_value) {
+        thread->stack.push_back(*thread->yield_value);
+        thread->yield_value.reset();
+    }
+    thread->coroutine_state = CoroutineState::SUSPENDED;
+    return HAVEL_YIELD;
 }
 
 int havel_yield(HavelState* H, int nresults) {
-    (void)H;
-    (void)nresults;
+    if (!H) return HAVEL_ERR;
+    if (nresults < 0 || nresults > havel_gettop(H)) return HAVEL_ERR;
+    H->coroutine_state = CoroutineState::SUSPENDED;
+    while (nresults-- > 0 && !H->stack.empty()) {
+        if (H->parent) H->parent->stack.push_back(H->stack.back());
+        H->stack.pop_back();
+    }
     return HAVEL_YIELD;
 }
 
 int havel_status(HavelState* H, HavelState* thread) {
-    (void)H;
-    (void)thread;
-    return HAVEL_DEAD;
+    if (!H || !thread) return HAVEL_ERR;
+    switch (thread->coroutine_state) {
+        case CoroutineState::DEAD: return HAVEL_DEAD;
+        case CoroutineState::ERROR: return HAVEL_ERR;
+        case CoroutineState::SUSPENDED: return HAVEL_YIELD;
+        default: return HAVEL_OK;
+    }
 }
 
 void havel_error(HavelState* H, const char* fmt, ...) {
@@ -389,9 +436,8 @@ void havel_gc(HavelState* H, int what) {
 }
 
 int havel_loadstring(HavelState* H, const char* s, const char* name) {
-    (void)H;
-    (void)s;
-    (void)name;
+    if (!H || !s) return HAVEL_ERR;
+    H->last_error = "loadstring not fully implemented - needs full parser integration";
     return HAVEL_ERR;
 }
 
@@ -402,8 +448,15 @@ int havel_loadfile(HavelState* H, const char* filename) {
 }
 
 void havel_require(HavelState* H, const char* name) {
-    (void)H;
-    (void)name;
+    if (!H || !name) return;
+    try {
+        auto& loader = havel::RuntimeModuleLoader::getInstance();
+        auto exports = loader.require(name);
+        H->stack.push_back(exports);
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        H->stack.push_back(havel::core::Value::makeNull());
+    }
 }
 
 void havel_register_cmodule(HavelState* H, const char* name, int (*init)(HavelState*)) {
@@ -412,7 +465,195 @@ void havel_register_cmodule(HavelState* H, const char* name, int (*init)(HavelSt
     (void)init;
 }
 
+void havel_add_search_path(HavelState* H, const char* path) {
+    (void)H;
+    if (path) {
+        havel::RuntimeModuleLoader::getInstance().addSearchPath(path);
+    }
+}
+
+void havel_clear_module_cache(HavelState* H) {
+    (void)H;
+    havel::RuntimeModuleLoader::getInstance().clearCache();
+}
+
 const char* havel_version(void) { return HAVEL_VERSION; }
 int havel_version_major(void) { return 0; }
 int havel_version_minor(void) { return 1; }
 int havel_version_patch(void) { return 0; }
+
+// ========================================================================
+// FFI Implementations
+// ========================================================================
+
+int havel_ffi_typeid(HavelState* H, const char* ctype) {
+    (void)H;
+    auto type = havel::ffi::FFITypeRegistry::from_name(ctype);
+    if (!type) return 0;
+    return havel::ffi::FFITypeRegistry::type_id(type);
+}
+
+size_t havel_ffi_sizeof(HavelState* H, const char* ctype) {
+    (void)H;
+    auto type = havel::ffi::FFITypeRegistry::from_name(ctype);
+    if (!type) return 0;
+    return havel::ffi::FFITypeRegistry::size_of(type);
+}
+
+size_t havel_ffi_alignof(HavelState* H, const char* ctype) {
+    (void)H;
+    auto type = havel::ffi::FFITypeRegistry::from_name(ctype);
+    if (!type) return 1;
+    return havel::ffi::FFITypeRegistry::align_of(type);
+}
+
+void* havel_ffi_alloc(HavelState* H, const char* ctype, size_t count) {
+    (void)H;
+    auto type = havel::ffi::FFITypeRegistry::from_name(ctype);
+    if (!type) return nullptr;
+    if (count > 1 && type->kind == havel::ffi::FFITypeKind::ARRAY) {
+        type = havel::ffi::FFITypeRegistry::array_type(type->element_type, count);
+    }
+    return havel::ffi::FFIMemory::alloc(type);
+}
+
+void havel_ffi_free(HavelState* H, void* ptr) {
+    (void)H;
+    havel::ffi::FFIMemory::free(ptr);
+}
+
+void* havel_ffi_cast(HavelState* H, const char* ctype, void* ptr) {
+    (void)H;
+    (void)ctype;
+    return ptr;
+}
+
+int8_t havel_ffi_get_int8(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_int8(ptr);
+}
+
+int16_t havel_ffi_get_int16(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_int16(ptr);
+}
+
+int32_t havel_ffi_get_int32(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_int32(ptr);
+}
+
+int64_t havel_ffi_get_int64(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_int64(ptr);
+}
+
+uint8_t havel_ffi_get_uint8(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_uint8(ptr);
+}
+
+uint16_t havel_ffi_get_uint16(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_uint16(ptr);
+}
+
+uint32_t havel_ffi_get_uint32(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_uint32(ptr);
+}
+
+uint64_t havel_ffi_get_uint64(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_uint64(ptr);
+}
+
+float havel_ffi_get_float(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_float32(ptr);
+}
+
+double havel_ffi_get_double(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_float64(ptr);
+}
+
+void* havel_ffi_get_pointer(HavelState* H, void* ptr) {
+    (void)H;
+    return havel::ffi::get_pointer(ptr);
+}
+
+void havel_ffi_set_int8(HavelState* H, void* ptr, int8_t val) {
+    (void)H;
+    havel::ffi::set_int8(ptr, val);
+}
+
+void havel_ffi_set_int16(HavelState* H, void* ptr, int16_t val) {
+    (void)H;
+    havel::ffi::set_int16(ptr, val);
+}
+
+void havel_ffi_set_int32(HavelState* H, void* ptr, int32_t val) {
+    (void)H;
+    havel::ffi::set_int32(ptr, val);
+}
+
+void havel_ffi_set_int64(HavelState* H, void* ptr, int64_t val) {
+    (void)H;
+    havel::ffi::set_int64(ptr, val);
+}
+
+void havel_ffi_set_uint8(HavelState* H, void* ptr, uint8_t val) {
+    (void)H;
+    havel::ffi::set_uint8(ptr, val);
+}
+
+void havel_ffi_set_uint16(HavelState* H, void* ptr, uint16_t val) {
+    (void)H;
+    havel::ffi::set_uint16(ptr, val);
+}
+
+void havel_ffi_set_uint32(HavelState* H, void* ptr, uint32_t val) {
+    (void)H;
+    havel::ffi::set_uint32(ptr, val);
+}
+
+void havel_ffi_set_uint64(HavelState* H, void* ptr, uint64_t val) {
+    (void)H;
+    havel::ffi::set_uint64(ptr, val);
+}
+
+void havel_ffi_set_float(HavelState* H, void* ptr, float val) {
+    (void)H;
+    havel::ffi::set_float32(ptr, val);
+}
+
+void havel_ffi_set_double(HavelState* H, void* ptr, double val) {
+    (void)H;
+    havel::ffi::set_float64(ptr, val);
+}
+
+void havel_ffi_set_pointer(HavelState* H, void* ptr, void* val) {
+    (void)H;
+    havel::ffi::set_pointer(ptr, val);
+}
+
+void havel_ffi_cdef(HavelState* H, const char* cdecl) {
+    (void)H;
+    (void)cdecl;
+}
+
+void* havel_ffi_load(HavelState* H, const char* path) {
+    (void)H;
+    return havel::ffi::FFICall::load_library(path);
+}
+
+void havel_ffi_unload(HavelState* H, void* handle) {
+    (void)H;
+    havel::ffi::FFICall::unload_library(handle);
+}
+
+void* havel_ffi_sym(HavelState* H, void* handle, const char* name) {
+    (void)H;
+    return havel::ffi::FFICall::get_symbol(handle, name);
+}

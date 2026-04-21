@@ -117,43 +117,6 @@ void havel_register_cmodule(HavelState* H, const char* name,
 void havel_add_search_path(HavelState* H, const char* path);
 void havel_clear_module_cache(HavelState* H);
 
-int havel_ffi_typeid(HavelState* H, const char* ctype);
-size_t havel_ffi_sizeof(HavelState* H, const char* ctype);
-size_t havel_ffi_alignof(HavelState* H, const char* ctype);
-
-void* havel_ffi_alloc(HavelState* H, const char* ctype, size_t count);
-void havel_ffi_free(HavelState* H, void* ptr);
-void* havel_ffi_cast(HavelState* H, const char* ctype, void* ptr);
-
-int8_t   havel_ffi_get_int8(HavelState* H, void* ptr);
-int16_t  havel_ffi_get_int16(HavelState* H, void* ptr);
-int32_t  havel_ffi_get_int32(HavelState* H, void* ptr);
-int64_t  havel_ffi_get_int64(HavelState* H, void* ptr);
-uint8_t  havel_ffi_get_uint8(HavelState* H, void* ptr);
-uint16_t havel_ffi_get_uint16(HavelState* H, void* ptr);
-uint32_t havel_ffi_get_uint32(HavelState* H, void* ptr);
-uint64_t havel_ffi_get_uint64(HavelState* H, void* ptr);
-float    havel_ffi_get_float(HavelState* H, void* ptr);
-double   havel_ffi_get_double(HavelState* H, void* ptr);
-void*    havel_ffi_get_pointer(HavelState* H, void* ptr);
-
-void havel_ffi_set_int8(HavelState* H, void* ptr, int8_t val);
-void havel_ffi_set_int16(HavelState* H, void* ptr, int16_t val);
-void havel_ffi_set_int32(HavelState* H, void* ptr, int32_t val);
-void havel_ffi_set_int64(HavelState* H, void* ptr, int64_t val);
-void havel_ffi_set_uint8(HavelState* H, void* ptr, uint8_t val);
-void havel_ffi_set_uint16(HavelState* H, void* ptr, uint16_t val);
-void havel_ffi_set_uint32(HavelState* H, void* ptr, uint32_t val);
-void havel_ffi_set_uint64(HavelState* H, void* ptr, uint64_t val);
-void havel_ffi_set_float(HavelState* H, void* ptr, float val);
-void havel_ffi_set_double(HavelState* H, void* ptr, double val);
-void havel_ffi_set_pointer(HavelState* H, void* ptr, void* val);
-
-void havel_ffi_cdef(HavelState* H, const char* cdecl);
-void* havel_ffi_load(HavelState* H, const char* path);
-void havel_ffi_unload(HavelState* H, void* handle);
-void* havel_ffi_sym(HavelState* H, void* handle, const char* name);
-
 const char* havel_version(void);
 int havel_version_major(void);
 int havel_version_minor(void);

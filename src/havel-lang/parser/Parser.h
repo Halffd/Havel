@@ -346,7 +346,6 @@ private:
 
   // Helper methods for Pratt parser
   std::unique_ptr<ast::Expression> parseParenthesizedExpression();
-  std::unique_ptr<ast::Expression> parseBacktickExpression();
   std::unique_ptr<ast::Expression> parseLambdaExpression();
   std::unique_ptr<ast::Expression> parseExpressionFromString(const std::string &expr);
 

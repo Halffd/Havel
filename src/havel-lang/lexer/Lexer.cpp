@@ -965,6 +965,25 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    if (c == '_') {
+      if (!isAtEnd()) {
+        char next = peek();
+        if (std::isalpha(next) || std::isdigit(next) || next == '_') {
+          std::string identifier = "_";
+          while (!isAtEnd()) {
+            char cn = peek();
+            if (std::isalnum(cn) || cn == '_') {
+              identifier += advance();
+            } else {
+              break;
+            }
+          }
+          tokens.push_back(makeToken(identifier, TokenType::Identifier));
+          continue;
+        }
+      }
+    }
+
     // Handle # as length operator or hotkey modifier
     if (c == '#') {
       // Determine if we're in expression context or statement context
@@ -1420,15 +1439,31 @@ continue;
     // Handle shell command prefix: $ command (must be before hotkey handling)
     // But NOT if followed by => (which would make it a hotkey like $Esc =>)
     if (c == '$') {
-      // Check for capture mode: $!
-      bool captureOutput = false;
-      if (!isAtEnd() && peek() == '!') {
-        advance(); // consume '!'
-        captureOutput = true;
+      if (!isAtEnd()) {
+        char next = peek();
+        if (std::isalpha(next) || std::isdigit(next) || next == '_') {
+          std::string identifier = "$";
+          while (!isAtEnd()) {
+            char cn = peek();
+            if (std::isalnum(cn) || cn == '_') {
+              identifier += advance();
+            } else {
+              break;
+            }
+          }
+          tokens.push_back(makeToken(identifier, TokenType::Identifier));
+          if (debug_lexer) {
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+          }
+          continue;
+        }
       }
 
-      // Don't skip whitespace - let parser handle it
-      // Just emit the token and let parser parse the expression
+      bool captureOutput = false;
+      if (!isAtEnd() && peek() == '!') {
+        advance();
+        captureOutput = true;
+      }
 
       tokens.push_back(scanShellCommand(captureOutput));
       if (debug_lexer) {

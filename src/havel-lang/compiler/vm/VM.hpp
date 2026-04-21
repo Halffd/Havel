@@ -196,6 +196,10 @@ private:
 
   std::vector<std::unordered_map<std::string, Value>> globals_stack_;
 
+  // ObjectId of the _G heap object; UINT32_MAX = unset.
+  // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
+  uint32_t globals_mirror_object_id_ = UINT32_MAX;
+
   // Coroutine support (Lua-style coroutines)
   uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index

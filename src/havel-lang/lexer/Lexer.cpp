@@ -1553,8 +1553,14 @@ continue;
             }
         }
         if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
-            tokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
-            continue;
+            // Special case: '_' followed by alphanumeric is an identifier (_G, _foo, etc.)
+            // Not a standalone underscore wildcard token
+            if (c == '_' && !isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                // Fall through to identifier scanning below
+            } else {
+                tokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
+                continue;
+            }
         }
 
         // Handle UTF-8 Unicode characters

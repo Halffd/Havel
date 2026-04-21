@@ -3,6 +3,7 @@
 #include "../core/BytecodeIR.hpp"
 #include "../gc/GC.hpp"
 #include "VMImage.hpp"
+#include "../../runtime/HostContext.hpp"
 
 #include <array>
 #include <atomic>
@@ -22,8 +23,6 @@ namespace havel::compiler {
 class Fiber;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
-
-struct HostContext; // Forward declaration
 
 namespace havel::errors {
   struct HavelError;

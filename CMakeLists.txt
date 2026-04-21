@@ -111,6 +111,17 @@ if(NOT Lua_FOUND)
     endif()
 endif()
 
+# libffi (for FFI - Foreign Function Interface)
+set(HAVE_LIBFFI 0)
+pkg_check_modules(LIBFFI QUIET libffi)
+if(LIBFFI_FOUND)
+    message(STATUS "libffi:       ✓ FOUND (${LIBFFI_VERSION})")
+    set(HAVE_LIBFFI 1 CACHE BOOL "libffi available")
+else()
+    message(STATUS "libffi:       ✗ NOT FOUND (FFI will be limited)")
+    set(HAVE_LIBFFI 0 CACHE BOOL "libffi available")
+endif()
+
 # X11 extensions
 find_library(XTEST_LIB Xtst REQUIRED)
 find_library(XRANDR_LIB Xrandr REQUIRED)  
@@ -900,6 +911,7 @@ if(ENABLE_HAVEL_LANG)
         ${WAYLAND_INCLUDE_DIRS}
         ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
+        $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
         # Note: LLVM_INCLUDE_DIRS scoped to BytecodeOrcJIT.cpp only (see below)
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtCore>
@@ -911,6 +923,8 @@ if(ENABLE_HAVEL_LANG)
         ${COMMON_LIBS}
         spdlog::spdlog
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        $<$<BOOL:${HAVE_LIBFFI}>:ffi>
+        dl
     )
 
     # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow

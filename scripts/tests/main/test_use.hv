@@ -1,0 +1,45 @@
+// 1. Relative path (with extension)
+use "./math.hv" as m
+print(m.PI)
+print(m.add(1.2, 2.4))
+
+// 2. Relative path (without extension - assumes .hv)
+use shell
+print(shell.getHome())
+
+// 3. Absolute path
+use "/home/all/repos/havel/scripts/tests/main/math.hv"
+print(math.sub(5, 3))
+
+// 4. Module name (searches HAVEL_PATH)
+use fs     // built-in module
+// override
+use ffi as f
+print(f)
+
+// 5. Selective import
+{
+use { add, PI } from "./math.hv"
+print(add(1, 2))
+print(PI)
+}
+{
+// 6. Rename on import
+use { add as plus } from "./math.hv"
+print(plus(3, 4))
+}
+{
+// 7. Import all
+use * from "./math.hv"
+print(add(1, 2))
+print(sub(3, 1))
+}
+{
+use shell.*
+print(getHome)
+}
+{
+// 8. Default import
+use exec from "./shell.hv"
+print(exec("ls -la"))
+}

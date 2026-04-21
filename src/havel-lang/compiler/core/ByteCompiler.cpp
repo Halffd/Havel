@@ -3526,15 +3526,20 @@ if (update_expr.isPrefix) {
     compileChannelExpression(static_cast<const ast::ChannelExpression &>(expression));
     break;
 
-  case ast::NodeType::BacktickExpression: {
-    const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
-    { uint32_t _sid = addStringConstant(backtick.command); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    uint32_t strId = addStringConstant("runCapture");
-    emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(1))});
-    break;
-  }
+case ast::NodeType::BacktickExpression: {
+  const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
+  std::cerr << "[DEBUG BC] backtick.command='" << backtick.command << "' len=" << backtick.command.size() << std::endl;
+  uint32_t _sid = addStringConstant(backtick.command);
+  std::cerr << "[DEBUG BC] _sid=" << _sid << std::endl;
+  uint32_t _cid = addConstant(Value::makeStringValId(_sid));
+  std::cerr << "[DEBUG BC] _cid=" << _cid << std::endl;
+  emit(OpCode::LOAD_CONST, _cid);
+  uint32_t strId = addStringConstant("runCapture");
+  emit(OpCode::CALL_HOST, std::vector<Value>{
+    Value::makeStringValId(strId),
+    Value(static_cast<uint32_t>(1))});
+  break;
+}
 
   case ast::NodeType::ShellCommandExpression: {
     const auto &shellExpr = static_cast<const ast::ShellCommandExpression &>(expression);

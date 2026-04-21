@@ -4406,13 +4406,6 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     }
 
-    // Special case: $G returns global count
-    if (name == "$G") {
-      int64_t count = static_cast<int64_t>(globals.size() + host_function_globals_.size());
-      pushStack(Value::makeInt(count));
-      break;
-    }
-
     // Then check host function globals (fallback for built-in functions)
     auto hostIt = host_function_globals_.find(name);
     if (hostIt != host_function_globals_.end()) {

@@ -3528,12 +3528,7 @@ if (update_expr.isPrefix) {
 
 case ast::NodeType::BacktickExpression: {
   const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
-  std::cerr << "[DEBUG BC] backtick.command='" << backtick.command << "' len=" << backtick.command.size() << std::endl;
-  uint32_t _sid = addStringConstant(backtick.command);
-  std::cerr << "[DEBUG BC] _sid=" << _sid << std::endl;
-  uint32_t _cid = addConstant(Value::makeStringValId(_sid));
-  std::cerr << "[DEBUG BC] _cid=" << _cid << std::endl;
-  emit(OpCode::LOAD_CONST, _cid);
+  { uint32_t _sid = addStringConstant(backtick.command); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
   uint32_t strId = addStringConstant("runCapture");
   emit(OpCode::CALL_HOST, std::vector<Value>{
     Value::makeStringValId(strId),

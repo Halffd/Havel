@@ -943,6 +943,7 @@ if(ENABLE_HAVEL_LANG)
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
+        $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
     )
 
     # -----------------------------------------------------------------------

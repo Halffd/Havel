@@ -190,6 +190,9 @@ private:
   bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
 
+  // Module exports for END_MODULE opcode
+  Value module_exports_;
+
   // Coroutine support (Lua-style coroutines)
   uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
@@ -622,6 +625,19 @@ public:
   void setGlobalThreadSafe(const std::string &name, Value value);
   std::optional<Value>
   getGlobalThreadSafe(const std::string &name) const;
+
+  // Get all globals (for module export collection)
+  const std::unordered_map<std::string, Value> &getAllGlobals() const { return globals; }
+
+    // Get _G as object (for module exports)
+    Value getGlobalObject() {
+        return globals["_G"];
+    }
+
+    // Set _G global object (for module isolation)
+    void setGlobalObject(const std::string& name, const Value& value) {
+        globals[name] = value;
+    }
 
   // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }

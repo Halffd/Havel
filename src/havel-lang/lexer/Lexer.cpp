@@ -655,9 +655,6 @@ Token Lexer::scanBacktick(bool isMultiline) {
   std::string value;
   std::string raw;
   bool hasInterpolation = isMultiline;
-  std::cerr << "[DEBUG scanBacktick] isMultiline=" << isMultiline << " position=" << position << " next_chars='";
-  for (size_t i = 0; i < 20 && position + i < source.length(); i++) std::cerr << source[position + i];
-  std::cerr << "'" << std::endl;
 
   int braceDepth = 0;
   size_t stringStartLine = line;
@@ -760,9 +757,8 @@ Token Lexer::scanBacktick(bool isMultiline) {
     advance();
   }
 
-  TokenType type = hasInterpolation ? TokenType::InterpolatedString
+  TokenType type = hasInterpolation ? TokenType::InterpolatedBacktick
                                          : TokenType::Backtick;
-  std::cerr << "[DEBUG scanBacktick] returning value='" << value << "' len=" << value.size() << " type=" << static_cast<int>(type) << std::endl;
   return makeToken(value, type, raw);
 }
 

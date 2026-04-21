@@ -79,7 +79,8 @@ enum class TokenType {
   RegexString,         // r"pattern" regex string literal
   MultilineString, // """...""" multiline strings
   InterpolatedString,
-  Backtick,            // `command` for shell output
+  InterpolatedBacktick, // ```...{expr}...``` backtick with interpolation
+  Backtick, // `command` for shell output
   RegexLiteral,        // /pattern/ for regex
   ShellCommand,        // $ command for shell execution
   ShellCommandCapture, // $! command (capture output)

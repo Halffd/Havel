@@ -770,13 +770,6 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
   }
   std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
-  std::cerr << "[DEBUG runCapture] args[0] isStringValId=" << args[0].isStringValId()
-            << " isStringId=" << args[0].isStringId()
-            << " isInt=" << args[0].isInt()
-            << " isNull=" << args[0].isNull();
-  if (args[0].isStringValId()) std::cerr << " stringValId=" << args[0].asStringValId();
-  if (args[0].isStringId()) std::cerr << " stringId=" << args[0].asStringId();
-  std::cerr << std::endl;
   if (args[0].isStringValId() || args[0].isStringId()) {
     cmd = vm ? vm->toString(args[0]) : args[0].toString();
   } else if (args[0].isArrayId()) {
@@ -793,9 +786,7 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
     throw std::runtime_error("runCapture() requires a string or array command");
   }
   auto result = ::havel::Launcher::runSync(cmd);
-  std::cerr << "[DEBUG runCapture] cmd='" << cmd << "' stdout='" << result.stdout << "' stdout_len=" << result.stdout.size() << std::endl;
   auto strRef = vm->getHeap().allocateString(result.stdout);
-  std::cerr << "[DEBUG runCapture] allocated StringId=" << strRef.id << std::endl;
   return Value::makeStringId(strRef.id);
 }
 

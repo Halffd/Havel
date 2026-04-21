@@ -35,10 +35,10 @@ The self-hosted compiler needs to bootstrap
 cpp
 // havel.h - The C API (like lua.h)
 // This should be STABLE before Phase 2
+Implement fully module system
 The use Statement Implementation
-javascript
 // This is actually a macro that expands to:
-use fs from "fs"
+use fs
 // → let fs = __module_cache__.fs ?? (__module_cache__.fs = __require__("fs"))
 
 // __require__ does:

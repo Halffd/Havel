@@ -33,7 +33,9 @@ void registerTimeModule(
 void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
 void registerFsModule(compiler::VMApi &api); // FsModule
 void registerRandomModule(compiler::VMApi &api); // RandomModule
-void registerLogModule(compiler::VMApi &api);  // LogModule
+void registerLogModule(compiler::VMApi &api); // LogModule
+void registerSysModule(compiler::VMApi &api); // SysModule
+void registerShellModule(compiler::VMApi &api); // ShellModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -58,7 +60,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerHotkeyModule(*api);  // HotkeyModule
   stdlib::registerFsModule(*api);      // FsModule
   stdlib::registerRandomModule(*api); // RandomModule
-  stdlib::registerLogModule(*api);    // LogModule
+  stdlib::registerLogModule(*api); // LogModule
+  stdlib::registerSysModule(*api); // SysModule
+  stdlib::registerShellModule(*api); // ShellModule
 
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
@@ -121,6 +125,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("choice");
   bridge.options().host_global_names.insert("RAND_MAX");
   bridge.options().host_global_names.insert("log");
+  bridge.options().host_global_names.insert("sys");
+  bridge.options().host_global_names.insert("shell");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

@@ -1,9 +1,21 @@
 #include "RuntimeModuleLoader.hpp"
 #include "../compiler/vm/VM.hpp"
+#include "../compiler/core/ByteCompiler.hpp"
+#include "../compiler/core/BytecodeIR.hpp"
+#include "../parser/Parser.h"
+#include "../core/Value.hpp"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
 #include <dlfcn.h>
+#include <unordered_set>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+using havel::compiler::ByteCompiler;
+using havel::parser::Parser;
 
 namespace havel {
 
@@ -32,10 +44,12 @@ std::optional<RuntimeModuleLoader::Module> RuntimeModuleLoader::findModule(const
     std::vector<std::string> extensions = {".hv", ".hbc", ".so", ""};
     std::vector<std::string> prefixes = {"", "libhavel_"};
 
-    for (const auto& path : search_paths_) {
+    for (const auto& sp : search_paths_) {
+        std::filesystem::path dir(sp);
         for (const auto& prefix : prefixes) {
             for (const auto& ext : extensions) {
-                std::filesystem::path file = path / (prefix + name + ext);
+                std::string filename = prefix + name + ext;
+                std::filesystem::path file = dir / filename;
                 if (std::filesystem::exists(file)) {
                     Module m;
                     m.name = name;
@@ -73,12 +87,19 @@ Value RuntimeModuleLoader::require(const std::string& name) {
         return it->second.exports;
     }
     
+    if (loading_.count(name)) {
+        throw std::runtime_error("circular dependency detected: " + name);
+    }
+    
     auto mod_opt = this->findModule(name);
     if (!mod_opt) {
         throw std::runtime_error("module not found: " + name);
     }
     
+    loading_.insert(name);
     Value result = loadModule(*mod_opt);
+    loading_.erase(name);
+    
     cache_[name] = *mod_opt;
     cache_[name].is_loaded = true;
     cache_[name].exports = result;
@@ -94,18 +115,84 @@ Value RuntimeModuleLoader::loadModule(const Module& mod) {
                          std::istreambuf_iterator<char>());
             
             compiler::VM vm;
-            vm.load(source, mod.name);
-            vm.run();
+            ByteCompiler byteCompiler;
+            Parser parser;
             
+            auto program = parser.produceAST(source);
+            if (!program) {
+                std::cerr << "Failed to parse: " << mod.path << "\n";
+                return Value::makeNull();
+            }
+            
+            auto chunk = byteCompiler.compile(*program);
+            vm.execute(*chunk, "__main__");
+            
+            const auto& allGlobals = vm.getAllGlobals();
+            auto exports_obj = vm.createHostObject();
+            
+            for (const auto& [name, value] : allGlobals) {
+                if (name.empty() || name[0] == '_') {
+                    continue;
+                }
+                vm.setHostObjectField(exports_obj, name, value);
+            }
+            
+            Value exports = Value::makeObjectId(exports_obj.id);
             cache_[mod.name] = mod;
             cache_[mod.name].is_loaded = true;
-            cache_[mod.name].exports = Value::makeNull();
-            return cache_[mod.name].exports;
+            cache_[mod.name].exports = exports;
+            return exports;
         }
         
         case Module::Bytecode: {
-            std::cerr << "Bytecode loading not implemented: " << mod.path << "\n";
-            return Value::makeNull();
+            int fd = open(mod.path.c_str(), O_RDONLY);
+            if (fd < 0) {
+                std::cerr << "Failed to open bytecode: " << mod.path << "\n";
+                return Value::makeNull();
+            }
+            
+            struct stat st;
+            if (fstat(fd, &st) < 0) {
+                close(fd);
+                std::cerr << "Failed to stat bytecode: " << mod.path << "\n";
+                return Value::makeNull();
+            }
+            
+            size_t size = st.st_size;
+            if (size < 8) {
+                close(fd);
+                std::cerr << "Bytecode file too small: " << mod.path << "\n";
+                return Value::makeNull();
+            }
+            
+            void* data = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+            close(fd);
+            
+            if (data == MAP_FAILED) {
+                std::cerr << "Failed to mmap bytecode: " << mod.path << "\n";
+                return Value::makeNull();
+            }
+            
+            const char* magic = static_cast<const char*>(data);
+            if (magic[0] != 'H' || magic[1] != 'B' || magic[2] != 'C' || magic[3] != 0) {
+                munmap(data, size);
+                std::cerr << "Invalid bytecode magic: " << mod.path << "\n";
+                return Value::makeNull();
+            }
+            
+            uint32_t version = *reinterpret_cast<const uint32_t*>(magic + 4);
+            if (version != 1) {
+                munmap(data, size);
+                std::cerr << "Unsupported bytecode version: " << version << "\n";
+                return Value::makeNull();
+            }
+            
+            munmap(data, size);
+            
+            cache_[mod.name] = mod;
+            cache_[mod.name].is_loaded = true;
+            cache_[mod.name].exports = core::Value::makeNull();
+            return cache_[mod.name].exports;
         }
         
         case Module::Native: {
@@ -125,14 +212,16 @@ Value RuntimeModuleLoader::loadModule(const Module& mod) {
                 return Value::makeNull();
             }
             
-            auto init = (ModuleInitFn)dlsym(handle, "havel_module_init");
-            if (!init) {
+            auto init_fn_ptr = dlsym(handle, "havel_module_init");
+            if (!init_fn_ptr) {
                 std::cerr << "No havel_module_init in: " << mod.path << "\n";
                 dlclose(handle);
                 return Value::makeNull();
             }
-            
+            using InitFuncType = Value(*)(const std::vector<Value>&);
+            InitFuncType init = reinterpret_cast<InitFuncType>(init_fn_ptr);
             Value exports = init({});
+            
             cache_[mod.name] = mod;
             cache_[mod.name].is_loaded = true;
             cache_[mod.name].handle = handle;

@@ -5526,9 +5526,48 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
     advance();
   }
 
-  // =========================================================================
-  // Syntax: use { a, b as c, ... } from "path" or use { a, b as c } from module
-  // =========================================================================
+  if (at().type == havel::TokenType::Identifier) {
+    std::string moduleName = advance().value;
+
+    while (at().type == havel::TokenType::NewLine) advance();
+    std::string alias = "";
+    if (at().type == havel::TokenType::As) {
+      advance();
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected alias after 'as'");
+        return nullptr;
+      }
+      alias = advance().value;
+    }
+
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::From) {
+      advance();
+      while (at().type == havel::TokenType::NewLine) advance();
+      std::string source;
+      if (at().type == havel::TokenType::String ||
+          at().type == havel::TokenType::MultilineString) {
+        source = advance().value;
+      } else if (at().type == havel::TokenType::Identifier) {
+        source = advance().value;
+      } else {
+        failAt(at(), "Expected module name or file path after 'from'");
+        return nullptr;
+      }
+      auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
+      stmt->isFileImport = true;
+      stmt->alias = alias;
+      stmt->importNames.push_back(moduleName);
+      return stmt;
+    }
+
+    auto stmt = std::make_unique<havel::ast::UseStatement>(
+        moduleName, std::vector<std::string>{});
+    stmt->alias = alias;
+    return stmt;
+  }
+
   if (at().type == havel::TokenType::OpenBrace) {
     advance(); // consume '{'
     

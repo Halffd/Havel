@@ -3,10 +3,11 @@
 #include "../../errors/ErrorSystem.h"
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
-#include "../../runtime/concurrency/DependencyTracker.hpp"  // Phase 2D: Track global accesses
+#include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
-#include "../runtime/EventQueue.hpp"  // Phase 2A: For variable change events
+#include "../runtime/EventQueue.hpp"
 #include "../../runtime/HostContext.hpp"
+#include "../core/CompilationPipeline.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -2275,6 +2276,13 @@ void VM::registerDefaultHostFunctions() {
 }
 
 void VM::registerDefaultHostGlobals() {
+  auto g_obj = heap_.allocateObject();
+  setGlobal("_G", Value::makeObjectId(g_obj.id));
+
+  for (const auto& [name, value] : host_function_globals_) {
+    setHostObjectField(g_obj, name, value);
+  }
+
   auto system_obj = heap_.allocateObject();
   setHostObjectField(system_obj, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
   setHostObjectField(system_obj, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
@@ -5688,6 +5696,22 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
+    if (object.isHostFuncId()) {
+      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      if (key) {
+        uint32_t idx = object.asHostFuncId();
+        if (*key == "name" && idx < host_function_names_.size()) {
+          pushStack(Value::makeStringId(heap_.allocateString(host_function_names_[idx]).id));
+          break;
+        } else if (*key == "arity") {
+          pushStack(Value::makeInt(0));
+          break;
+        }
+      }
+      pushStack(Value::makeNull());
+      break;
+    }
+
     if (!object.isObjectId()) {
       pushStack(Value::makeNull());
       break;
@@ -7706,6 +7730,42 @@ void VM::emitVariableChanged(const std::string& var_name) {
 
 void VM::throwError(const std::string &msg) {
   COMPILER_THROW(msg);
+}
+
+Value VM::runInContext(const std::string& source, Value context) {
+  globals_stack_.push_back(globals);
+  Value old_g = globals["_G"];
+
+  if (context.isNull()) {
+    globals.clear();
+    Value new_g = Value::makeObjectId(createHostObject().id);
+    globals["_G"] = new_g;
+  } else if (context.isObjectId()) {
+    globals.clear();
+    globals["_G"] = context;
+  } else {
+    globals_stack_.pop_back();
+    throwError("runInContext: context must be null or object");
+    return Value::makeNull();
+  }
+
+  CompilationPipeline pipeline(CompilationPipeline::Options{});
+  auto result = pipeline.compile(source, "<runInContext>");
+
+  if (!result.success) {
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+    globals["_G"] = old_g;
+    return Value::makeNull();
+  }
+
+  Value exec_result = execute(*result.chunk, "__main__");
+
+  globals = std::move(globals_stack_.back());
+  globals_stack_.pop_back();
+  globals["_G"] = old_g;
+
+  return exec_result;
 }
 
 } // namespace havel::compiler

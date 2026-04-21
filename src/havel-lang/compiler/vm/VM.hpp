@@ -20,6 +20,7 @@
 namespace havel::compiler {
 
 // Forward declarations
+class CompilationPipeline;
 class Fiber;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
@@ -192,6 +193,8 @@ private:
 
   // Module exports for END_MODULE opcode
   Value module_exports_;
+
+  std::vector<std::unordered_map<std::string, Value>> globals_stack_;
 
   // Coroutine support (Lua-style coroutines)
   uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
@@ -634,10 +637,11 @@ public:
         return globals["_G"];
     }
 
-    // Set _G global object (for module isolation)
     void setGlobalObject(const std::string& name, const Value& value) {
         globals[name] = value;
     }
+
+    Value runInContext(const std::string& source, Value context);
 
   // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }

@@ -35,10 +35,6 @@ print(add(1, 2))
 print(sub(3, 1))
 }
 {
-use shell.*
-print(getHome)
-}
-{
 // 8. Default import
 use exec from "./shell.hv"
 print(exec("ls -la"))

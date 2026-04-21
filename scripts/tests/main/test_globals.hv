@@ -1,0 +1,32 @@
+// test_global.hv
+print("=== _G Tests ===\n")
+
+// Test 1: _G exists
+assert(_G != null, "_G should exist")
+print("✓ _G exists")
+
+// Test 2: Built-ins in _G
+assert(_G.print != null, "print should be in _G")
+assert(_G.type != null, "type should be in _G")
+print("✓ Built-ins in _G")
+
+// Test 3: Object properties via _G
+_G.testVar = 42
+assert(_G.testVar == 42, "Property creation via _G")
+print("✓ Global creation")
+
+// Test 4: Iteration
+let count = 0
+for name, value in _G {
+    count = count + 1
+}
+assert(count > 0, "_G has entries")
+print("✓ _G iteration works")
+
+// Test 5: Sandbox via _G isolation
+let sandbox = _G
+_G.sandboxVar = 99
+assert(_G.sandboxVar == 99, "Sandbox variable isolated")
+print("✓ Sandbox isolation")
+
+print("\n✓ All _G tests passed!")

@@ -2,10 +2,12 @@
 #include "havel.h"
 #include "../compiler/vm/VM.hpp"
 #include "../core/Value.hpp"
+#ifdef HAVE_LIBFFI
 #include "../ffi/FFITypes.hpp"
 #include "../ffi/FFIMemory.hpp"
 #include "../ffi/FFIAccessors.hpp"
 #include "../ffi/FFICall.hpp"
+#endif
 #include "../runtime/RuntimeModuleLoader.hpp"
 #include <cstring>
 #include <cstdio>
@@ -483,8 +485,10 @@ int havel_version_minor(void) { return 1; }
 int havel_version_patch(void) { return 0; }
 
 // ========================================================================
-// FFI Implementations
+// FFI Implementations (stub when HAVE_LIBFFI not available)
 // ========================================================================
+
+#ifdef HAVE_LIBFFI
 
 int havel_ffi_typeid(HavelState* H, const char* ctype) {
     (void)H;
@@ -657,3 +661,153 @@ void* havel_ffi_sym(HavelState* H, void* handle, const char* name) {
     (void)H;
     return havel::ffi::FFICall::get_symbol(handle, name);
 }
+
+#else // HAVE_LIBFFI
+
+int havel_ffi_typeid(HavelState* H, const char* ctype) {
+    (void)H; (void)ctype;
+    return 0;
+}
+
+size_t havel_ffi_sizeof(HavelState* H, const char* ctype) {
+    (void)H; (void)ctype;
+    return 0;
+}
+
+size_t havel_ffi_alignof(HavelState* H, const char* ctype) {
+    (void)H; (void)ctype;
+    return 1;
+}
+
+void* havel_ffi_alloc(HavelState* H, const char* ctype, size_t count) {
+    (void)H; (void)ctype; (void)count;
+    return nullptr;
+}
+
+void havel_ffi_free(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+}
+
+void* havel_ffi_cast(HavelState* H, const char* ctype, void* ptr) {
+    (void)H; (void)ctype;
+    return ptr;
+}
+
+int8_t havel_ffi_get_int8(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+int16_t havel_ffi_get_int16(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+int32_t havel_ffi_get_int32(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+int64_t havel_ffi_get_int64(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+uint8_t havel_ffi_get_uint8(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+uint16_t havel_ffi_get_uint16(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+uint32_t havel_ffi_get_uint32(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+uint64_t havel_ffi_get_uint64(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0;
+}
+
+float havel_ffi_get_float(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0.0f;
+}
+
+double havel_ffi_get_double(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return 0.0;
+}
+
+void* havel_ffi_get_pointer(HavelState* H, void* ptr) {
+    (void)H; (void)ptr;
+    return nullptr;
+}
+
+void havel_ffi_set_int8(HavelState* H, void* ptr, int8_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_int16(HavelState* H, void* ptr, int16_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_int32(HavelState* H, void* ptr, int32_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_int64(HavelState* H, void* ptr, int64_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_uint8(HavelState* H, void* ptr, uint8_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_uint16(HavelState* H, void* ptr, uint16_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_uint32(HavelState* H, void* ptr, uint32_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_uint64(HavelState* H, void* ptr, uint64_t val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_float(HavelState* H, void* ptr, float val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_double(HavelState* H, void* ptr, double val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_set_pointer(HavelState* H, void* ptr, void* val) {
+    (void)H; (void)ptr; (void)val;
+}
+
+void havel_ffi_cdef(HavelState* H, const char* cdecl) {
+    (void)H; (void)cdecl;
+}
+
+void* havel_ffi_load(HavelState* H, const char* path) {
+    (void)H; (void)path;
+    return nullptr;
+}
+
+void havel_ffi_unload(HavelState* H, void* handle) {
+    (void)H; (void)handle;
+}
+
+void* havel_ffi_sym(HavelState* H, void* handle, const char* name) {
+    (void)H; (void)handle; (void)name;
+    return nullptr;
+}
+
+#endif // HAVE_LIBFFI

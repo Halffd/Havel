@@ -7,6 +7,9 @@
 #include <regex>
 #include <dlfcn.h>
 
+#ifdef HAVE_LIBFFI
+#include <ffi.h>
+
 namespace havel::ffi {
 
 std::unordered_map<void*, std::string> FFICall::libraries_;
@@ -201,4 +204,6 @@ bool FFICall::register_declaration(const FFIDeclaration& decl) {
     return true;
 }
 
-}
+} // namespace havel::ffi
+
+#endif // HAVE_LIBFFI

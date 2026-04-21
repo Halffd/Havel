@@ -1,5 +1,7 @@
 #include "FFITypes.hpp"
 
+#ifdef HAVE_LIBFFI
+
 namespace havel::ffi {
 
 std::unordered_map<std::string, std::shared_ptr<FFIType>> FFITypeRegistry::named_types_;
@@ -243,4 +245,6 @@ void FFITypeRegistry::compute_layout(std::shared_ptr<FFIType> type) {
     type->alignment = max_align;
 }
 
-}
+} // namespace havel::ffi
+
+#endif // HAVE_LIBFFI

@@ -1214,6 +1214,13 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeStringId(strRef.id);
   });
 
+  // globals() - returns count of global variables
+  registerHostFunction("globals", [this](const std::vector<Value> &args) {
+    (void)args;
+    int64_t count = static_cast<int64_t>(globals.size() + host_function_globals_.size());
+    return Value::makeInt(count);
+  });
+
   // Enhanced sleep() with duration string support
   registerHostFunction(
       "sleep", 1, [this](const std::vector<Value> &args) {
@@ -4382,13 +4389,7 @@ void VM::executeInstruction(const Instruction &instruction) {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
 
-    // Special case: _G returns count of globals
-    if (name == "_G") {
-      size_t count = globals.size() + host_function_globals_.size();
-      Value result = Value::makeInt(static_cast<int64_t>(count));
-      pushStack(result);
-      break;
-    }
+    
 
     // First check regular globals (user variables shadow host functions)
     auto it = globals.find(name);

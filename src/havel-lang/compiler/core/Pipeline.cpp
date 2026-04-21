@@ -643,10 +643,26 @@ BytecodeSmokeResult runBytecodePipeline(
     options.vm_setup(*vm);
   }
   // Set up system object initializer to run after execute() initializes state
-  if (options.system_object_initializer) {
-    vm->setSystemObjectInitializer(options.system_object_initializer);
-  }
-  try {
+    if (options.system_object_initializer) {
+        vm->setSystemObjectInitializer(options.system_object_initializer);
+    }
+    // Set script directory for relative imports (use compile_unit_name if it's a file path)
+    if (!options.compile_unit_name.empty() && options.compile_unit_name != "unit" && options.compile_unit_name != "script") {
+        namespace fs = std::filesystem;
+        std::string name = options.compile_unit_name;
+        auto plusPos = name.find(" + ");
+        if (plusPos != std::string::npos) name = name.substr(0, plusPos);
+        fs::path p(name);
+        if (p.is_absolute() && fs::exists(p)) {
+            vm->setCurrentScriptDir(fs::canonical(p).parent_path().string());
+        } else if (!p.is_absolute()) {
+            fs::path resolved = fs::current_path() / p;
+            if (fs::exists(resolved)) {
+                vm->setCurrentScriptDir(fs::canonical(resolved).parent_path().string());
+            }
+        }
+    }
+    try {
     result.return_value = vm->execute(*chunk, entry_function);
 } catch (const ScriptError &e) {
         ::havel::errors::ErrorReporter::instance().errorAt(

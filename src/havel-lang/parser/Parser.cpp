@@ -5555,17 +5555,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         failAt(at(), "Expected module name or file path after 'from'");
         return nullptr;
       }
-      auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
-      stmt->isFileImport = true;
-      stmt->alias = alias;
-      stmt->importNames.push_back(moduleName);
-      return stmt;
+        auto stmt = std::make_unique<havel::ast::UseStatement>(source, moduleName);
+        stmt->isFileImport = true;
+        if (!alias.empty()) {
+            stmt->alias = alias;
+        }
+        return stmt;
     }
 
-    auto stmt = std::make_unique<havel::ast::UseStatement>(
-        moduleName, std::vector<std::string>{});
-    stmt->alias = alias;
-    return stmt;
+        auto stmt = std::make_unique<havel::ast::UseStatement>(
+            std::vector<std::string>{moduleName});
+        stmt->alias = alias;
+        return stmt;
   }
 
   if (at().type == havel::TokenType::OpenBrace) {

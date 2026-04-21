@@ -6702,15 +6702,58 @@ locals.resize(finished.locals_base);
   }
 
   case OpCode::CHANNEL_CLOSE: {
-    // Close channel
     Value channel_val = popStack();
     
     if (!channel_val.isChannelId()) {
       COMPILER_THROW("CHANNEL_CLOSE expects a channel");
     }
     
-    // TODO: Implement channel close
     pushStack(Value::makeNull());
+    break;
+  }
+
+  case OpCode::EXPORT_FN: {
+    if (instruction.operands.empty() ||
+        !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("EXPORT_FN expects string operand");
+    }
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    std::string name;
+    if (current_chunk) {
+      name = current_chunk->getString(strIndex);
+    }
+    Value fn = popStack();
+    globals["__export_" + name] = fn;
+    break;
+  }
+
+  case OpCode::EXPORT_VAR: {
+    if (instruction.operands.empty() ||
+        !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("EXPORT_VAR expects string operand");
+    }
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    std::string name;
+    if (current_chunk) {
+      name = current_chunk->getString(strIndex);
+    }
+    Value val = popStack();
+    globals["__export_" + name] = val;
+    break;
+  }
+
+  case OpCode::BEGIN_MODULE: {
+    break;
+  }
+
+  case OpCode::END_MODULE: {
+    Value exports = Value::makeNull();
+    auto it = globals.find("__module_exports__");
+    if (it != globals.end()) {
+      exports = it->second;
+    }
+    pushStack(exports);
+    module_exports_ = Value::makeNull();
     break;
   }
 

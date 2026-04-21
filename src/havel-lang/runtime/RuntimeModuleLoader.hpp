@@ -3,15 +3,17 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <functional>
 #include <optional>
 
-#include "../../core/Value.hpp"
+#include "../core/Value.hpp"
 
 namespace havel {
 
-using ModuleInitFn = std::function<core::Value(const std::vector<core::Value>&)>;
+using Value = core::Value;
+using ModuleInitFn = std::function<Value(const std::vector<Value>&)>;
 using NativeModuleLoader = std::function<void*(const std::string&)>;
 
 class RuntimeModuleLoader {
@@ -57,6 +59,7 @@ private:
     std::unordered_map<std::string, core::Value> builtin_modules_;
     NativeModuleLoader native_loader_;
     bool native_loader_registered_ = false;
+    std::unordered_set<std::string> loading_; // Circular dependency detection
 };
 
 core::Value import_module(const std::vector<core::Value>& args);

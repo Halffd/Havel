@@ -231,7 +231,15 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   CHANNEL_SEND,     // Send value to channel
   CHANNEL_RECEIVE,  // Receive value from channel (blocking)
   CHANNEL_CLOSE,    // Close channel
-  
+
+  // Module exports
+  EXPORT_FN,        // Export function: name string constant
+  EXPORT_VAR,        // Export variable: name string constant
+
+  // Module context
+  BEGIN_MODULE,     // Begin module scope, collect exports to object on stack
+  END_MODULE,       // End module scope, filter private vars, return exports
+
   NOP
 };
 

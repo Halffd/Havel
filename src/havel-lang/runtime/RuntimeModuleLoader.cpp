@@ -128,11 +128,20 @@ Value RuntimeModuleLoader::loadModule(const Module& mod) {
             vm.execute(*chunk, "__main__");
             
             const auto& allGlobals = vm.getAllGlobals();
+            auto exports_obj = vm.createHostObject();
             
+            for (const auto& [name, value] : allGlobals) {
+                if (name.empty() || name[0] == '_') {
+                    continue;
+                }
+                vm.setHostObjectField(exports_obj, name, value);
+            }
+            
+            Value exports = Value::makeObjectId(exports_obj.id);
             cache_[mod.name] = mod;
             cache_[mod.name].is_loaded = true;
-            cache_[mod.name].exports = core::Value::makeNull();
-            return cache_[mod.name].exports;
+            cache_[mod.name].exports = exports;
+            return exports;
         }
         
         case Module::Bytecode: {

@@ -2356,17 +2356,9 @@ Value VM::invokeHostFunction(const std::string &name,
     if (stack.empty()) {
       COMPILER_THROW("Stack underflow while reading host arguments");
     }
-    args[arg_count - 1 - i] = stack.top();
-    stack.pop();
-    // Debug: check what type the argument is
-    std::string typeInfo = "unknown";
-    if (args[arg_count - 1 - i].isNull()) typeInfo = "null";
-    else if (args[arg_count - 1 - i].isInt()) typeInfo = "int";
-    else if (args[arg_count - 1 - i].isClosureId()) typeInfo = "closure_id";
-    else if (args[arg_count - 1 - i].isFunctionObjId()) typeInfo = "function_obj_id";
-    else if (args[arg_count - 1 - i].isObjectId()) typeInfo = "object_id";
-    else if (args[arg_count - 1 - i].isHostFuncId()) typeInfo = "host_func_id";
-  }
+      args[arg_count - 1 - i] = stack.top();
+      stack.pop();
+    }
 
   return it->second(args);
 }

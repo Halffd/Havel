@@ -520,6 +520,7 @@ setBoth(PowerAssign, 10, 10);
       can_start[static_cast<size_t>(String)] = true;
       can_start[static_cast<size_t>(MultilineString)] = true;
       can_start[static_cast<size_t>(InterpolatedString)] = true;
+  can_start[static_cast<size_t>(InterpolatedBacktick)] = true;
       can_start[static_cast<size_t>(Identifier)] = true;
       can_start[static_cast<size_t>(True)] = true;
       can_start[static_cast<size_t>(False)] = true;
@@ -630,12 +631,13 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   // Implicit call sugar: expr "string" -> expr("string")
   // This handles function calls without parentheses like: print "hello"
   // Also handles: print a ** 5 -> print(a ** 5)
-  if (context.allowBraceSugar &&
-      (at().type == TokenType::String ||
-       at().type == TokenType::MultilineString ||
-       at().type == TokenType::Number ||
-       at().type == TokenType::Identifier ||
-       at().type == TokenType::InterpolatedString)) {
+    if (context.allowBraceSugar &&
+        (at().type == TokenType::String ||
+         at().type == TokenType::MultilineString ||
+         at().type == TokenType::Number ||
+         at().type == TokenType::Identifier ||
+         at().type == TokenType::InterpolatedString ||
+         at().type == TokenType::InterpolatedBacktick)) {
     Token arg_token = at();
     // Parse argument as full expression (with operators), but disable nested implicit calls
     // to prevent infinite recursion and ensure operators like ** bind tighter than the call
@@ -772,8 +774,77 @@ case TokenType::Number:
         segments.emplace_back(currentLiteral);
       }
       
-      return std::make_unique<ast::InterpolatedStringExpression>(std::move(segments));
+    return std::make_unique<ast::InterpolatedStringExpression>(std::move(segments));
+  }
+
+  case TokenType::InterpolatedBacktick: {
+    std::vector<ast::InterpolatedStringExpression::Segment> segments;
+    const std::string &value = token.value;
+    size_t pos = 0;
+    std::string currentLiteral;
+
+    while (pos < value.length()) {
+      if (value[pos] == '$' && pos + 1 < value.length() && value[pos + 1] == '{') {
+        if (!currentLiteral.empty()) {
+          segments.emplace_back(currentLiteral);
+          currentLiteral.clear();
+        }
+        pos += 2;
+        size_t braceDepth = 1;
+        size_t exprStart = pos;
+        while (pos < value.length() && braceDepth > 0) {
+          if (value[pos] == '{') braceDepth++;
+          else if (value[pos] == '}') braceDepth--;
+          if (braceDepth > 0) pos++;
+        }
+        if (braceDepth == 0) {
+          std::string exprStr = value.substr(exprStart, pos - exprStart);
+          auto expr = parseExpressionFromString(exprStr);
+          if (expr) {
+            segments.emplace_back(std::move(expr));
+          }
+          pos++;
+        } else {
+          currentLiteral += value.substr(exprStart - 2);
+          break;
+        }
+      } else if (value[pos] == '{' && !(pos > 0 && value[pos-1] == '$')) {
+        if (!currentLiteral.empty()) {
+          segments.emplace_back(currentLiteral);
+          currentLiteral.clear();
+        }
+        pos += 1;
+        size_t braceDepth = 1;
+        size_t exprStart = pos;
+        while (pos < value.length() && braceDepth > 0) {
+          if (value[pos] == '{') braceDepth++;
+          else if (value[pos] == '}') braceDepth--;
+          if (braceDepth > 0) pos++;
+        }
+        if (braceDepth == 0) {
+          std::string exprStr = value.substr(exprStart, pos - exprStart);
+          auto expr = parseExpressionFromString(exprStr);
+          if (expr) {
+            segments.emplace_back(std::move(expr));
+          }
+          pos++;
+        } else {
+          currentLiteral += value.substr(exprStart - 1);
+          break;
+        }
+      } else {
+        currentLiteral += value[pos++];
+      }
     }
+
+    if (!currentLiteral.empty()) {
+      segments.emplace_back(currentLiteral);
+    }
+
+    auto interpExpr = std::make_unique<ast::InterpolatedStringExpression>(std::move(segments));
+    auto shellExpr = std::make_unique<ast::ShellCommandExpression>(std::move(interpExpr), true);
+    return shellExpr;
+  }
 
     case TokenType::Identifier:
     case TokenType::Config:
@@ -1104,8 +1175,8 @@ case TokenType::Number:
       return std::make_unique<ast::SpreadExpression>(std::move(operand));
     }
 
-    case TokenType::Backtick:
-      return parseBacktickExpression();
+  case TokenType::Backtick:
+    return std::make_unique<ast::BacktickExpression>(token.value);
 
     // Concurrency Primitives
     case TokenType::Thread:
@@ -1700,12 +1771,6 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   advance(); // consume ')'
 
   return expr;
-}
-
-std::unique_ptr<ast::Expression> Parser::parseBacktickExpression() {
-  // Parse backtick string for shell output: `command`
-  // The lexer already extracted the content
-  return std::make_unique<ast::BacktickExpression>(at().value);
 }
 
 std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
@@ -6591,11 +6656,94 @@ case havel::TokenType::Number: {
       pos = end + 1;
     }
 
-    return std::make_unique<havel::ast::InterpolatedStringExpression>(
-        std::move(segments));
-  }
+        return std::make_unique<havel::ast::InterpolatedStringExpression>(
+            std::move(segments));
+        }
 
-  case havel::TokenType::True: {
+        case havel::TokenType::InterpolatedBacktick: {
+            advance();
+            std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
+            std::string str = tk.value;
+            size_t pos = 0;
+
+            while (pos < str.length()) {
+                // Check for ${expr} pattern
+                size_t dollarBrace = str.find("${", pos);
+                // Check for {expr} pattern (bare brace, not preceded by $)
+                size_t bareBrace = std::string::npos;
+                for (size_t i = pos; i < str.length(); i++) {
+                    if (str[i] == '{' && (i == 0 || str[i-1] != '$')) {
+                        // Make sure this isn't inside a ${} we already found
+                        if (dollarBrace == std::string::npos || i < dollarBrace) {
+                            bareBrace = i;
+                            break;
+                        }
+                    }
+                }
+
+                // Determine which comes first
+                size_t nextInterp = std::string::npos;
+                bool isDollarBrace = false;
+                if (dollarBrace != std::string::npos && (bareBrace == std::string::npos || dollarBrace <= bareBrace)) {
+                    nextInterp = dollarBrace;
+                    isDollarBrace = true;
+                } else if (bareBrace != std::string::npos) {
+                    nextInterp = bareBrace;
+                    isDollarBrace = false;
+                }
+
+                if (nextInterp == std::string::npos) {
+                    if (pos < str.length()) {
+                        segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
+                            str.substr(pos)));
+                    }
+                    break;
+                }
+
+                // Add text before interpolation as literal
+                if (nextInterp > pos) {
+                    segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
+                        str.substr(pos, nextInterp - pos)));
+                }
+
+                // Skip ${ or {
+                size_t exprStart = isDollarBrace ? nextInterp + 2 : nextInterp + 1;
+
+                // Find matching } with brace depth tracking
+                size_t braceDepth = 1;
+                size_t i = exprStart;
+                while (i < str.length() && braceDepth > 0) {
+                    if (str[i] == '{') braceDepth++;
+                    else if (str[i] == '}') braceDepth--;
+                    if (braceDepth > 0) i++;
+                }
+
+                if (braceDepth == 0) {
+                    std::string exprCode = str.substr(exprStart, i - exprStart);
+                    havel::Lexer exprLexer(exprCode);
+                    auto exprTokens = exprLexer.tokenize();
+                    auto savedTokens = tokens;
+                    auto savedPos = position;
+                    tokens = exprTokens;
+                    position = 0;
+                    auto expr = parseExpression();
+                    tokens = savedTokens;
+                    position = savedPos;
+                    segments.push_back(
+                        havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
+                    pos = i + 1;
+                } else {
+                    failAt(tk, "Unclosed interpolation in backtick string");
+                }
+            }
+
+            auto interpExpr = std::make_unique<havel::ast::InterpolatedStringExpression>(
+                std::move(segments));
+            return std::make_unique<havel::ast::ShellCommandExpression>(
+                std::move(interpExpr), true);
+        }
+
+        case havel::TokenType::True: {
     advance();
     return std::make_unique<havel::ast::BooleanLiteral>(true);
   }

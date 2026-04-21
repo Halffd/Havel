@@ -1,0 +1,36 @@
+// test_global.hv
+print("=== _G Tests ===\n")
+
+// Test 1: _G exists
+assert(_G != null, "_G should exist")
+print("✓ _G exists")
+
+// Test 2: Built-ins in _G
+assert(_G.print == print, "print should be in _G")
+assert(_G.type == type, "type should be in _G")
+print("✓ Built-ins in _G")
+
+// Test 3: Creating globals via _G
+_G.testVar = 42
+assert(testVar == 42, "Global created via _G")
+print("✓ Global creation")
+
+// Test 4: Iteration
+let count = 0
+for name, value in _G {
+    count = count + 1
+}
+assert(count > 0, "_G has entries")
+print("✓ _G iteration works")
+
+// Test 5: Sandbox
+let sandbox = { print: print }
+runInContext(`
+    sandboxVar = 99
+    print("from sandbox")
+`, sandbox)
+assert(sandbox.sandboxVar == 99, "Sandbox variable isolated")
+assert(_G.sandboxVar == null, "Main _G not polluted")
+print("✓ Sandbox isolation")
+
+print("\n✓ All _G tests passed!")

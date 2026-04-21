@@ -5,6 +5,8 @@
 #include <cstring>
 #include <iostream>
 
+#ifdef HAVE_LIBFFI
+
 namespace havel::ffi {
 
 std::unordered_map<void*, Allocation> FFIMemory::allocations_;
@@ -159,4 +161,6 @@ size_t FFIMemory::total_used() {
     return total_used_;
 }
 
-}
+} // namespace havel::ffi
+
+#endif // HAVE_LIBFFI

@@ -16,6 +16,7 @@
 #include <mutex>
 #include <optional>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -864,11 +865,65 @@ bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
 // Iterator helpers
 IteratorRef VM::createIterator(const Value &iterable) {
   IteratorRef ref;
+
+  // _G globals mirror: iterate the live globals maps, not the stale heap snapshot
+  if (iterable.isObjectId() && iterable.asObjectId() == globals_mirror_object_id_) {
+    ref.id = heap_.createIterator(iterable);
+    auto *iter = heap_.iterator(ref.id);
+    if (iter) {
+      iter->keys.clear();
+      std::set<std::string> seen;
+      for (const auto& [name, _] : globals) {
+        if (seen.insert(name).second) iter->keys.push_back(name);
+      }
+      for (const auto& [name, _] : host_function_globals_) {
+        if (seen.insert(name).second) iter->keys.push_back(name);
+      }
+    }
+    return ref;
+  }
+
   ref.id = heap_.createIterator(iterable);
   return ref;
 }
 
 Value VM::iteratorNext(IteratorRef iterRef) {
+  auto *iter = heap_.iterator(iterRef.id);
+  if (!iter) {
+    return heap_.iteratorNext(iterRef.id);
+  }
+
+  // _G globals mirror: resolve values from the live globals maps
+  if (iter->iterable.isObjectId() && iter->iterable.asObjectId() == globals_mirror_object_id_) {
+    if (iter->index >= iter->keys.size()) {
+      auto resultObj = heap_.allocateObject();
+      auto *obj = heap_.object(resultObj.id);
+      (*obj)["first"] = Value::makeNull();
+      (*obj)["second"] = Value::makeNull();
+      (*obj)["done"] = Value::makeBool(true);
+      return Value::makeObjectId(resultObj.id);
+    }
+    auto key = iter->keys[iter->index++];
+    auto keyStrRef = heap_.allocateString(key);
+    Value first = Value::makeStringId(keyStrRef.id);
+    Value second = Value::makeNull();
+    auto it = globals.find(key);
+    if (it != globals.end()) {
+      second = it->second;
+    } else {
+      auto hostIt = host_function_globals_.find(key);
+      if (hostIt != host_function_globals_.end()) {
+        second = hostIt->second;
+      }
+    }
+    auto resultObj = heap_.allocateObject();
+    auto *obj = heap_.object(resultObj.id);
+    (*obj)["first"] = first;
+    (*obj)["second"] = second;
+    (*obj)["done"] = Value::makeBool(false);
+    return Value::makeObjectId(resultObj.id);
+  }
+
   return heap_.iteratorNext(iterRef.id);
 }
 
@@ -1448,6 +1503,10 @@ void VM::registerDefaultHostFunctions() {
       return Value::makeBool(false);
     }
     if (args[0].isObjectId()) {
+      if (args[0].asObjectId() == globals_mirror_object_id_) {
+        return Value::makeBool(globals.find(name) != globals.end() ||
+                               host_function_globals_.find(name) != host_function_globals_.end());
+      }
       auto *obj = heap_.object(args[0].asObjectId());
       return Value::makeBool(obj && obj->find(name) != obj->end());
     }
@@ -2277,6 +2336,7 @@ void VM::registerDefaultHostFunctions() {
 
 void VM::registerDefaultHostGlobals() {
   auto g_obj = heap_.allocateObject();
+  globals_mirror_object_id_ = g_obj.id;
   setGlobal("_G", Value::makeObjectId(g_obj.id));
 
   for (const auto& [name, value] : host_function_globals_) {
@@ -5380,19 +5440,38 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-    if (container.isObjectId()) {
-      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
-      if (!key) {
-        COMPILER_THROW("OBJECT index expects string/number/bool key");
-      }
-      auto *object = heap_.object(container.asObjectId());
-      if (!object) {
-        COMPILER_THROW("ARRAY_GET unknown object id");
-      }
-      auto kv = object->find(*key);
-      pushStack(kv == object->end() ? Value::makeNull() : kv->second);
-      break;
-    }
+	if (container.isObjectId()) {
+		// _G globals mirror: resolve from live globals maps
+		if (container.asObjectId() == globals_mirror_object_id_) {
+			auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+			if (!key) {
+				COMPILER_THROW("OBJECT index expects string/number/bool key");
+			}
+			auto it = globals.find(*key);
+			if (it != globals.end()) {
+				pushStack(it->second);
+				break;
+			}
+			auto hostIt = host_function_globals_.find(*key);
+			if (hostIt != host_function_globals_.end()) {
+				pushStack(hostIt->second);
+				break;
+			}
+			pushStack(Value::makeNull());
+			break;
+		}
+		auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+		if (!key) {
+			COMPILER_THROW("OBJECT index expects string/number/bool key");
+		}
+		auto *object = heap_.object(container.asObjectId());
+		if (!object) {
+			COMPILER_THROW("ARRAY_GET unknown object id");
+		}
+		auto kv = object->find(*key);
+		pushStack(kv == object->end() ? Value::makeNull() : kv->second);
+		break;
+	}
 
     COMPILER_THROW("ARRAY_GET expects array/set/object container");
   }
@@ -5469,18 +5548,27 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-    if (container.isObjectId()) {
-      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
-      if (!key) {
-        COMPILER_THROW("OBJECT index assignment expects valid key");
-      }
-      auto *object = heap_.object(container.asObjectId());
-      if (!object) {
-        COMPILER_THROW("ARRAY_SET unknown object id");
-      }
-      (*object)[*key] = value;
-      break;
-    }
+	if (container.isObjectId()) {
+		auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+		if (!key) {
+			COMPILER_THROW("OBJECT index assignment expects valid key");
+		}
+		if (container.asObjectId() == globals_mirror_object_id_) {
+			auto *object = heap_.object(container.asObjectId());
+			if (!object) {
+				COMPILER_THROW("ARRAY_SET unknown object id");
+			}
+			(*object)[*key] = value;
+			globals[*key] = value;
+			break;
+		}
+		auto *object = heap_.object(container.asObjectId());
+		if (!object) {
+			COMPILER_THROW("ARRAY_SET unknown object id");
+		}
+		(*object)[*key] = value;
+		break;
+	}
 
     COMPILER_THROW("ARRAY_SET expects array/set/object container");
   }
@@ -5705,11 +5793,70 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-    if (!object.isObjectId()) {
-      pushStack(Value::makeNull());
-      break;
-    }
-    auto objRef = ObjectRef{object.asObjectId(), true};
+  if (!object.isObjectId()) {
+    pushStack(Value::makeNull());
+    break;
+  }
+
+	// _G globals mirror: delegate property access to the live globals maps
+	if (object.asObjectId() == globals_mirror_object_id_) {
+		// Numeric index on _G: index into sorted list of global keys
+		if (key_value.isInt()) {
+			std::vector<std::string> allKeys;
+			std::set<std::string> seen;
+			for (const auto& [name, _] : globals) {
+				if (seen.insert(name).second) allKeys.push_back(name);
+			}
+			for (const auto& [name, _] : host_function_globals_) {
+				if (seen.insert(name).second) allKeys.push_back(name);
+			}
+			int64_t index = key_value.asInt();
+			if (index < 0) {
+				index = static_cast<int64_t>(allKeys.size()) + index;
+			}
+			if (index >= 0 && static_cast<size_t>(index) < allKeys.size()) {
+				const std::string& keyName = allKeys[static_cast<size_t>(index)];
+				pushStack(Value::makeStringId(heap_.allocateString(keyName).id));
+			} else {
+				pushStack(Value::makeNull());
+			}
+			break;
+		}
+		auto key = keyFromValue(key_value, &heap_, current_chunk);
+		if (!key) {
+			COMPILER_THROW("OBJECT_GET expects string/number/bool key");
+		}
+		auto it = globals.find(*key);
+		if (it != globals.end()) {
+			if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
+				auto boundObj = heap_.allocateObject();
+				auto *bObj = heap_.object(boundObj.id);
+				(*bObj)["fn"] = it->second;
+				(*bObj)["self"] = object;
+				pushStack(Value::makeObjectId(boundObj.id));
+			} else {
+				pushStack(it->second);
+			}
+			break;
+		}
+		auto hostIt = host_function_globals_.find(*key);
+		if (hostIt != host_function_globals_.end()) {
+			if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() || hostIt->second.isHostFuncId()) {
+				auto boundObj = heap_.allocateObject();
+				auto *bObj = heap_.object(boundObj.id);
+				(*bObj)["fn"] = hostIt->second;
+				(*bObj)["self"] = object;
+				pushStack(Value::makeObjectId(boundObj.id));
+			} else {
+				pushStack(hostIt->second);
+			}
+			break;
+		}
+	pushStack(Value::makeNull());
+			break;
+		}
+
+	auto objRef = ObjectRef{object.asObjectId(), true};
     auto *obj = heap_.object(objRef.id);
     if (!obj) {
       COMPILER_THROW("OBJECT_GET unknown object id");
@@ -5827,11 +5974,23 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-    if (!object.isObjectId()) {
-      COMPILER_THROW("OBJECT_SET expects object container");
-    }
+  if (!object.isObjectId()) {
+    COMPILER_THROW("OBJECT_SET expects object container");
+  }
 
+  // _G globals mirror: writing to _G also updates the globals map
+  if (object.asObjectId() == globals_mirror_object_id_) {
     auto *obj = heap_.object(object.asObjectId());
+    if (!obj) {
+      COMPILER_THROW("OBJECT_SET unknown object id");
+    }
+    obj->set(*keyStr, value);
+    globals[*keyStr] = value;
+    pushStack(object);
+    break;
+  }
+
+  auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
       COMPILER_THROW("OBJECT_SET unknown object id");
     }
@@ -5840,42 +5999,56 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     break;
   }
 
-  case OpCode::OBJECT_GET_RAW: {
-    // Like OBJECT_GET but without method binding - returns raw property value
-    Value key_value = popStack();
-    Value object = popStack();
+	case OpCode::OBJECT_GET_RAW: {
+		Value key_value = popStack();
+		Value object = popStack();
 
-    if (!object.isObjectId()) {
-      pushStack(Value::makeNull());
-      break;
-    }
+		if (!object.isObjectId()) {
+			pushStack(Value::makeNull());
+			break;
+		}
 
-    auto key = keyFromValue(key_value, &heap_, current_chunk);
-    if (!key) {
-      pushStack(Value::makeNull());
-      break;
-    }
+		auto key = keyFromValue(key_value, &heap_, current_chunk);
+		if (!key) {
+			pushStack(Value::makeNull());
+			break;
+		}
 
-    GCHeap::ObjectEntry *current_obj = heap_.object(object.asObjectId());
-    while (current_obj) {
-      auto *val = current_obj->get(*key);
-      if (val) {
-        pushStack(*val);
-        break;
-      }
-      auto* parent_val = current_obj->get("__class");
-      if (!parent_val) parent_val = current_obj->get("__parent");
-      if (parent_val && parent_val->isObjectId()) {
-        current_obj = heap_.object(parent_val->asObjectId());
-      } else {
-        current_obj = nullptr;
-      }
-    }
-    if (!current_obj) {
-      pushStack(Value::makeNull());
-    }
-    break;
-  }
+		if (object.asObjectId() == globals_mirror_object_id_) {
+			auto it = globals.find(*key);
+			if (it != globals.end()) {
+				pushStack(it->second);
+				break;
+			}
+			auto hostIt = host_function_globals_.find(*key);
+			if (hostIt != host_function_globals_.end()) {
+				pushStack(hostIt->second);
+				break;
+			}
+			pushStack(Value::makeNull());
+			break;
+		}
+
+		GCHeap::ObjectEntry *current_obj = heap_.object(object.asObjectId());
+		while (current_obj) {
+			auto *val = current_obj->get(*key);
+			if (val) {
+				pushStack(*val);
+				break;
+			}
+			auto* parent_val = current_obj->get("__class");
+			if (!parent_val) parent_val = current_obj->get("__parent");
+			if (parent_val && parent_val->isObjectId()) {
+				current_obj = heap_.object(parent_val->asObjectId());
+			} else {
+				current_obj = nullptr;
+			}
+		}
+		if (!current_obj) {
+			pushStack(Value::makeNull());
+		}
+		break;
+	}
 
   // Object intrinsics (VM-level operations)
   case OpCode::OBJECT_KEYS: {
@@ -7727,14 +7900,17 @@ void VM::throwError(const std::string &msg) {
 
 Value VM::runInContext(const std::string& source, Value context) {
   globals_stack_.push_back(globals);
+  auto old_mirror_id = globals_mirror_object_id_;
   Value old_g = globals["_G"];
 
   if (context.isNull()) {
     globals.clear();
-    Value new_g = Value::makeObjectId(createHostObject().id);
-    globals["_G"] = new_g;
+    auto g_obj = createHostObject();
+    globals_mirror_object_id_ = g_obj.id;
+    globals["_G"] = Value::makeObjectId(g_obj.id);
   } else if (context.isObjectId()) {
     globals.clear();
+    globals_mirror_object_id_ = context.asObjectId();
     globals["_G"] = context;
   } else {
     globals_stack_.pop_back();
@@ -7749,6 +7925,7 @@ Value VM::runInContext(const std::string& source, Value context) {
     globals = std::move(globals_stack_.back());
     globals_stack_.pop_back();
     globals["_G"] = old_g;
+    globals_mirror_object_id_ = old_mirror_id;
     return Value::makeNull();
   }
 
@@ -7757,6 +7934,7 @@ Value VM::runInContext(const std::string& source, Value context) {
   globals = std::move(globals_stack_.back());
   globals_stack_.pop_back();
   globals["_G"] = old_g;
+  globals_mirror_object_id_ = old_mirror_id;
 
   return exec_result;
 }

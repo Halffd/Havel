@@ -1390,6 +1390,7 @@ void VM::registerDefaultHostFunctions() {
     else if (value.isFunctionObjId()) typeName = "function";
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
+    else if (value.isCoroutineId()) typeName = "coroutine";
     else typeName = "unknown";
     auto strRef = heap_.allocateString(typeName);
     return Value::makeStringId(strRef.id);

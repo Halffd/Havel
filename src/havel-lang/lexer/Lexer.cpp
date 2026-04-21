@@ -154,6 +154,19 @@ bool Lexer::isDigit(char c) const { return std::isdigit(static_cast<unsigned cha
 
 bool Lexer::isAlphaNumeric(char c) const { return isAlpha(c) || isDigit(c); }
 
+bool Lexer::isHexDigit(char c) const {
+  c = static_cast<char>(std::toupper(c));
+  return std::isdigit(c) || (c >= 'A' && c <= 'F');
+}
+
+bool Lexer::isOctalDigit(char c) const {
+  return c >= '0' && c <= '7';
+}
+
+bool Lexer::isBinaryDigit(char c) const {
+  return c == '0' || c == '1';
+}
+
 bool Lexer::isSkippable(char c) const {
     return c == ' ' || c == '\t' || c == '\r';
 }
@@ -352,7 +365,23 @@ Token Lexer::scanNumber() {
     start--;
   }
 
-  // Scan integer part
+  if (start > 0 && source[start - 1] != '-' && !isDigit(source[start - 1])) {
+    if (peek() == 'x' || peek() == 'X') {
+      advance();
+      while (!isAtEnd() && isHexDigit(peek())) number += advance();
+      return makeToken(number, TokenType::Number);
+    }
+    if (peek() == 'o' || peek() == 'O') {
+      advance();
+      while (!isAtEnd() && isOctalDigit(peek())) number += advance();
+      return makeToken(number, TokenType::Number);
+    }
+    if (peek() == 'b' || peek() == 'B') {
+      advance();
+      while (!isAtEnd() && isBinaryDigit(peek())) number += advance();
+      return makeToken(number, TokenType::Number);
+    }
+  }
   while (!isAtEnd() && isDigit(peek())) {
     number += advance();
   }

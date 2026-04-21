@@ -218,17 +218,20 @@ private:
 
   static const std::unordered_map<char, TokenType> SINGLE_CHAR_TOKENS;
 
-  bool isAtEnd() const;
+bool isAtEnd() const;
   char peek(size_t offset = 0) const;
-char advance();
+  char advance();
 
-    bool isAlpha(char c) const;
-    bool isDigit(char c) const;
-    bool isAlphaNumeric(char c) const;
-    bool isSkippable(char c) const;
-    bool isHotkeyChar(char c) const;
+  bool isAlpha(char c) const;
+  bool isDigit(char c) const;
+  bool isAlphaNumeric(char c) const;
+  bool isHexDigit(char c) const;
+  bool isOctalDigit(char c) const;
+  bool isBinaryDigit(char c) const;
+  bool isSkippable(char c) const;
+  bool isHotkeyChar(char c) const;
 
-    // UTF-8 support
+  // UTF-8 support
     uint32_t decodeUTF8(size_t& pos) const;
     uint32_t peekCodepoint() const;
     size_t codepointLength(char firstByte) const;

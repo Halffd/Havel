@@ -15,6 +15,7 @@
 #include "../utils/Logger.hpp"
 
 namespace havel::errors {
+using havel::debug;
 
 // ============================================================================
 // ERROR SEVERITY
@@ -289,7 +290,7 @@ public:
   // Print all errors to the log
   void printAll() const {
     for (const auto& err : errors_) {
-      havel::debug(err.what());
+      debug(err.what());
     }
   }
 
@@ -302,7 +303,7 @@ public:
         if (errorCount_ > 0) oss << ", ";
         oss << warningCount_ << " warning(s)";
       }
-      havel::debug(oss.str());
+      debug(oss.str());
     }
   }
 

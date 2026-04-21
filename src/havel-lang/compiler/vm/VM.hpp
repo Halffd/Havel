@@ -16,20 +16,15 @@
 #include <unordered_map>
 #include <vector>
 
-namespace havel {
-struct HostContext; // Forward declaration
-}
-
 namespace havel::compiler {
 
 // Forward declarations
-class Fiber;  // For executeOneStep()
-
-// Opaque callback handle - systems can store this without knowing VM internals
+class Fiber;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
-// Forward declare error system
+struct HostContext; // Forward declaration
+
 namespace havel::errors {
   struct HavelError;
 }
@@ -226,7 +221,7 @@ private:
       prototypes_;
 
   // Host context for service access (non-owning)
-  const ::havel::HostContext *context_ = nullptr;
+  const HostContext *context_ = nullptr;
 
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
@@ -335,7 +330,7 @@ public:
                                   const std::vector<Value> &args);
 
   VM();
-  VM(const ::havel::HostContext &ctx);
+  VM(const HostContext &ctx);
   ~VM() override;
   Value execute(const BytecodeChunk &chunk,
                 const std::string &function_name,
@@ -637,7 +632,7 @@ public:
   std::string resolveStringKey(const Value &value) const;
 
   /** Injected embedder context; null if VM was default-constructed. */
-  const ::havel::HostContext *hostContext() const { return context_; }
+  const HostContext *hostContext() const { return context_; }
 
 private:
   std::atomic<uint32_t> active_hotkey_executions_{0};

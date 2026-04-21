@@ -1,0 +1,12 @@
+fn currentDir() -> string {
+    run("pwd")
+}
+
+fn getHome() -> string {
+    env.home()
+}
+
+// Default export (optional)
+fn exec(cmd: string) -> string {
+    run(cmd)
+}

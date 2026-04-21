@@ -317,10 +317,8 @@ three styles, all valid:
 use fs from "fs"
 use { read, write } from "fs"
 
-// auto-available globals (configured in havel.config.json)
-{
-    "autouses": ["fs", "path", "time"]
-}
+// auto-available globals (configured in havel.config.tomlo)
+autouses = ["fs", "path", "time"]
 
 // dynamic use (for optional/conditional loading)
 let crypto = use("crypto")
@@ -414,20 +412,24 @@ bash
 hpkg install express        # installs to ~/.havel/packages/
 hpkg install express --global  # installs to /usr/lib/havel/packages/
 hpkg publish                # publish to registry
-hpkg init                   # create havel.pkg.json
+hpkg init                   # create havel.pkg.toml
 
-```json
-// havel.pkg.json
-{
-    "name": "myapp",
-    "version": "1.0.0",
-    "dependencies": {
-        "express": "^2.0.0",
-        "sqlite": "^1.0.0"
-    },
-    "autouses": ["fs", "path", "time"],
-    "features": ["crypto", "zip"]
-}
+```havel.pkg.toml:
+
+toml
+name = "myapp"
+version = "1.0.0"
+
+[dependencies]
+express = "2.0.0"
+sqlite = "1.0.0"
+
+autouses = ["fs", "path", "time"]
+features = ["crypto", "zip"]
+
+[build]
+flags = ["-O2"]
+link = ["ssl", "crypto"]
 
 ----
 

@@ -1726,44 +1726,45 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program,
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
-  // Handle host modules first (lazy loading via HostBridge)
-  if (host_bridge_ && !statement.isFileImport) {
-    for (const auto &moduleName : statement.moduleNames) {
-      if (host_bridge_->isModuleAvailable(moduleName)) {
-        if (!host_bridge_->loadModule(moduleName)) {
-          COMPILER_THROW("Failed to load host module: " + moduleName);
-        }
-
-        // If wildcard 'use module.*', flatten exports into global scope
-        if (statement.isWildcard) {
-          // This requires VM support to copy exported names from module namespace
-          // to current scope. For now, we emit a marker.
-          { uint32_t _sid = addStringConstant("Flattening host module: " + moduleName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::POP);
-        } else {
-          // Regular 'use module' makes the module object available by its name
-          { uint32_t _sid = addStringConstant("Host module loaded: " + moduleName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::POP);
+    if (!statement.isFileImport) {
+        for (const auto &moduleName : statement.moduleNames) {
+            uint32_t name_sid = addStringConstant(moduleName);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+            emit(OpCode::IMPORT);
+            uint32_t mod_sid = addStringConstant(moduleName);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(mod_sid));
         }
         return;
-      }
     }
-  }
 
-  // Fall back to file-based module loading
-  if (!module_loader_) {
-    COMPILER_THROW("Module loader not available for use statement");
-  }
-  // Load the module (script file)
-  if (statement.isFileImport) {
-    // Emit the IMPORT opcode with the file path as a constant
-    uint32_t path_sid = addStringConstant(statement.filePath);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
-    emit(OpCode::IMPORT);
-    // Result is the module object (or null on error/direct run success)
-    emit(OpCode::POP);
-    return;
-  }
+    if (statement.isFileImport) {
+        uint32_t path_sid = addStringConstant(statement.filePath);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
+        emit(OpCode::IMPORT);
+
+        if (statement.isNamedImport && !statement.importNames.empty()) {
+            for (const auto &name : statement.importNames) {
+                emit(OpCode::DUP);
+                uint32_t key_sid = addStringConstant(name);
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
+                emit(OpCode::OBJECT_GET);
+                uint32_t global_sid = addStringConstant(name);
+                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+            }
+            emit(OpCode::POP);
+        } else if (!statement.alias.empty()) {
+            uint32_t alias_sid = addStringConstant(statement.alias);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(alias_sid));
+        } else if (!statement.filePath.empty()) {
+            std::filesystem::path p(statement.filePath);
+            std::string modName = p.stem().string();
+            uint32_t mod_sid = addStringConstant(modName);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(mod_sid));
+        } else {
+            emit(OpCode::POP);
+        }
+        return;
+    }
 }
 
 void ByteCompiler::compileExportStatement(

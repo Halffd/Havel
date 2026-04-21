@@ -7,10 +7,16 @@
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
 #include "../../runtime/HostContext.hpp"
+#include "../runtime/HostBridge.hpp"
 #include "../core/CompilationPipeline.hpp"
+#include "../core/ByteCompiler.hpp"
+#include "../../lexer/Lexer.hpp"
+#include "../../parser/Parser.h"
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -212,10 +218,17 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     result += "}";
     return result;
   }
-  if (value.isSetId()) {
-    auto *set = heap_.set(value.asSetId());
-    if (!set) return "#[]";
-    std::string result = "#[";
+    if (value.isHostFuncId()) {
+        uint32_t idx = value.asHostFuncId();
+        if (idx < host_function_names_.size()) {
+            return "<fn " + host_function_names_[idx] + ">";
+        }
+        return "<fn:" + std::to_string(idx) + ">";
+    }
+    if (value.isSetId()) {
+        auto *set = heap_.set(value.asSetId());
+        if (!set) return "#[]";
+        std::string result = "#[";
     bool first = true;
     for (const auto &pair : *set) {
       if (!first) result += ", ";
@@ -6596,30 +6609,23 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     break;
   }
 
-  case OpCode::IMPORT: {
-    Value path_val = popStack();
-    std::string path;
-    if (path_val.isStringValId() && current_chunk) {
-      path = current_chunk->getString(path_val.asStringValId());
-    } else if (path_val.isStringId()) {
-      if (auto *s = heap_.string(path_val.asStringId())) path = *s;
-    }
+        case OpCode::IMPORT: {
+            Value path_val = popStack();
+            std::string path;
+            if (path_val.isStringValId() && current_chunk) {
+                path = current_chunk->getString(path_val.asStringValId());
+            } else if (path_val.isStringId()) {
+                if (auto *s = heap_.string(path_val.asStringId())) path = *s;
+            }
 
-    if (path.empty()) {
-      COMPILER_THROW("IMPORT expects valid string path");
-    }
+            if (path.empty()) {
+                COMPILER_THROW("IMPORT expects valid string path");
+            }
 
-    // Note: hostBridge import disabled for now
-    /*
-    if (context_ && context_->hostBridge) {
-      if (!context_->hostBridge->import(path)) {
-        COMPILER_THROW("Failed to import module: " + path);
-      }
-    }
-    */
-    pushStack(Value::makeNull());
-    break;
-  }
+            Value exports = loadModule(path);
+            pushStack(exports);
+            break;
+        }
 
   // ============================================================================
   // CONCURRENCY PRIMITIVES
@@ -7896,6 +7902,340 @@ void VM::emitVariableChanged(const std::string& var_name) {
 
 void VM::throwError(const std::string &msg) {
   COMPILER_THROW(msg);
+}
+
+std::optional<std::filesystem::path> VM::resolveModulePath(const std::string& modulePath) const {
+    namespace fs = std::filesystem;
+
+    // Absolute path: use as-is
+    if (modulePath.size() >= 1 && modulePath[0] == '/') {
+        fs::path p(modulePath);
+        if (fs::exists(p)) return p;
+        if (fs::exists(fs::path(modulePath + ".hv"))) return fs::path(modulePath + ".hv");
+        return std::nullopt;
+    }
+
+    // Relative path starting with ./ or ../
+    if (modulePath.size() >= 2 && modulePath[0] == '.' &&
+        (modulePath[1] == '/' || (modulePath.size() >= 3 && modulePath[1] == '.' && modulePath[2] == '/'))) {
+        fs::path base = current_script_dir_.empty() ? fs::current_path() : fs::path(current_script_dir_);
+        fs::path p = base / modulePath;
+        if (fs::exists(p)) return fs::canonical(p);
+        if (fs::exists(fs::path(p.string() + ".hv"))) return fs::canonical(fs::path(p.string() + ".hv"));
+        return std::nullopt;
+    }
+
+    // Bare module name: search module paths
+    std::vector<std::string> searchPaths = module_search_paths_;
+    if (auto home = std::getenv("HOME")) {
+        searchPaths.push_back(std::string(home) + "/.havel/modules");
+    }
+    searchPaths.push_back("/usr/local/lib/havel");
+    searchPaths.push_back("/usr/lib/havel");
+    if (auto havelPath = std::getenv("HAVEL_PATH")) {
+        searchPaths.push_back(havelPath);
+    }
+
+    for (const auto& dir : searchPaths) {
+        fs::path base(dir);
+        // Try: dir/name.hv, dir/name/name.hv, dir/name.hbc
+        fs::path direct = base / (modulePath + ".hv");
+        if (fs::exists(direct)) return fs::canonical(direct);
+
+        fs::path pkg = base / modulePath / (modulePath + ".hv");
+        if (fs::exists(pkg)) return fs::canonical(pkg);
+
+        fs::path hbc = base / (modulePath + ".hbc");
+        if (fs::exists(hbc)) return fs::canonical(hbc);
+    }
+
+    return std::nullopt;
+}
+
+Value VM::loadModule(const std::string& path) {
+    // Check cache first (idempotent — like Python's sys.modules)
+    auto cached = module_cache_.find(path);
+    if (cached != module_cache_.end()) {
+        return cached->second;
+    }
+
+    // Also check by resolved canonical path
+    auto resolved = resolveModulePath(path);
+    if (resolved) {
+        std::string canonicalKey = resolved->string();
+        auto cachedResolved = module_cache_.find(canonicalKey);
+        if (cachedResolved != module_cache_.end()) {
+            // Also cache under the original key for faster lookup next time
+            module_cache_[path] = cachedResolved->second;
+            return cachedResolved->second;
+        }
+    }
+
+    if (!resolved) {
+        std::string prefix = path + ".";
+        bool hasNamespace = false;
+        for (const auto& [name, value] : host_function_globals_) {
+            if (name.rfind(prefix, 0) == 0) { hasNamespace = true; break; }
+        }
+        if (hasNamespace || (context_ && context_->hostBridge && context_->hostBridge->loadModule(path))) {
+            auto exportsObj = createHostObject();
+            auto *obj = heap_.object(exportsObj.id);
+            for (const auto& [name, value] : host_function_globals_) {
+                if (name.rfind(prefix, 0) == 0) {
+                    std::string localName = name.substr(prefix.size());
+                    (*obj)[localName] = value;
+                }
+            }
+            Value exports = Value::makeObjectId(exportsObj.id);
+            module_cache_[path] = exports;
+            return exports;
+        }
+        COMPILER_THROW("Module not found: " + path);
+    }
+
+    std::string canonicalKey = resolved->string();
+
+    // Circular dependency detection
+    if (modules_loading_.count(canonicalKey)) {
+        COMPILER_THROW("Circular dependency detected: " + path);
+    }
+    modules_loading_.insert(canonicalKey);
+
+    // Read source file
+    std::ifstream file(resolved->string());
+    if (!file.is_open()) {
+        modules_loading_.erase(canonicalKey);
+        COMPILER_THROW("Failed to open module file: " + resolved->string());
+    }
+    std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    // Set script directory for relative imports within the module
+    std::string prev_script_dir = current_script_dir_;
+    current_script_dir_ = resolved->parent_path().string();
+
+    // Compile the module source using the real parser + ByteCompiler pipeline
+    // (CompilationPipeline is a stub — we must use the same path as runBytecodePipeline)
+    parser::Parser parser{{}};
+    std::unique_ptr<ast::Program> program;
+    try {
+        program = parser.produceAST(source);
+    } catch (const ::havel::LexError &e) {
+        modules_loading_.erase(canonicalKey);
+        current_script_dir_ = prev_script_dir;
+        COMPILER_THROW("Module " + path + " lexer error: " + e.what());
+    } catch (const ::havel::parser::ParseError &e) {
+        modules_loading_.erase(canonicalKey);
+        current_script_dir_ = prev_script_dir;
+        COMPILER_THROW("Module " + path + " parse error: " + e.what());
+    }
+    if (!program || parser.hasErrors()) {
+        modules_loading_.erase(canonicalKey);
+        current_script_dir_ = prev_script_dir;
+        std::string errors;
+        if (parser.hasErrors()) {
+            for (const auto &err : parser.getErrors()) errors += err.message + "\n";
+        }
+        COMPILER_THROW("Module " + path + " failed to parse: " + errors);
+    }
+
+    ByteCompiler compiler;
+    for (const auto &name : host_function_globals_) {
+        compiler.addHostGlobal(name.first);
+    }
+
+    std::shared_ptr<BytecodeChunk> chunk;
+    try {
+        chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+    } catch (const std::exception &e) {
+        modules_loading_.erase(canonicalKey);
+        current_script_dir_ = prev_script_dir;
+        COMPILER_THROW("Module " + path + " compilation error: " + std::string(e.what()));
+    }
+    if (!chunk) {
+        modules_loading_.erase(canonicalKey);
+        current_script_dir_ = prev_script_dir;
+        COMPILER_THROW("Module " + path + " compiler returned null chunk");
+    }
+
+    // Execute the module in a sandboxed globals context
+    // Save current globals state
+    globals_stack_.push_back(globals);
+    auto old_mirror_id = globals_mirror_object_id_;
+    Value old_g = globals["_G"];
+
+    // Save caller's execution state (stack, locals, frames, chunk, exception)
+    auto saved_stack = stack;
+    auto saved_locals = locals;
+    auto saved_frame_count = frame_count_;
+    auto saved_frames = frame_arena_;
+    const BytecodeChunk *saved_chunk = current_chunk;
+    bool saved_exception = has_current_exception_;
+    Value saved_exception_val = current_exception_;
+
+    // Fresh globals for the module — populate with host globals so
+    // the module can call print(), len(), etc.
+    globals.clear();
+    // Register host function globals into sandbox (print, len, str, etc.)
+    for (const auto& [name, value] : host_function_globals_) {
+        globals[name] = value;
+    }
+    auto g_obj = createHostObject();
+    globals_mirror_object_id_ = g_obj.id;
+    globals["_G"] = Value::makeObjectId(g_obj.id);
+    // Also register the _G mirror with host function entries
+    for (const auto& [name, value] : host_function_globals_) {
+        setHostObjectField(g_obj, name, value);
+    }
+
+    // Set up the module's execution context WITHOUT resetting the heap.
+    // execute() would call heap_.reset() which destroys the caller's objects.
+    // Instead, we set up the call frame directly (like executePersistent).
+    current_chunk = chunk.get();
+    const auto *entry = chunk->getFunction("__main__");
+    if (!entry) {
+        // Restore everything on error
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+        globals["_G"] = old_g;
+        globals_mirror_object_id_ = old_mirror_id;
+        stack = std::move(saved_stack);
+        locals = std::move(saved_locals);
+        frame_count_ = saved_frame_count;
+        frame_arena_ = std::move(saved_frames);
+        current_chunk = saved_chunk;
+        has_current_exception_ = saved_exception;
+        current_exception_ = saved_exception_val;
+        current_script_dir_ = prev_script_dir;
+        modules_loading_.erase(canonicalKey);
+        COMPILER_THROW("Module " + path + " has no __main__ function");
+    }
+
+    while (!stack.empty()) stack.pop();
+    locals.clear();
+    frame_count_ = 0;
+    open_upvalues.clear();
+    has_current_exception_ = false;
+    current_exception_ = nullptr;
+
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
+    }
+    frame_count_++;
+    locals.resize(entry->local_count);
+
+    // Execute the module's bytecode (same heap, sandboxed globals)
+    Value exec_result;
+    try {
+        runDispatchLoop(0);
+        if (!stack.empty()) {
+            exec_result = stack.top();
+            stack.pop();
+        }
+    } catch (...) {
+        // Restore caller's globals and execution state on error
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+        globals["_G"] = old_g;
+        globals_mirror_object_id_ = old_mirror_id;
+        stack = std::move(saved_stack);
+        locals = std::move(saved_locals);
+        frame_count_ = saved_frame_count;
+        frame_arena_ = std::move(saved_frames);
+        current_chunk = saved_chunk;
+        has_current_exception_ = saved_exception;
+        current_exception_ = saved_exception_val;
+        current_script_dir_ = prev_script_dir;
+        modules_loading_.erase(canonicalKey);
+        throw;
+    }
+
+    // Keep module chunk alive so exported functions can reference it
+    module_chunks_[canonicalKey] = chunk;
+
+    // Materialize chunk-relative values into heap-stable values before
+    // restoring the caller's chunk. StringValId and FunctionObjId are
+    // indices into the *module's* chunk — they'd resolve against the
+    // caller's chunk after restore, producing garbage.
+    auto exportsObj = createHostObject();
+    auto *obj = heap_.object(exportsObj.id);
+    for (const auto& [name, value] : globals) {
+        if (!name.empty() && name[0] != '_') {
+            if (host_function_globals_.count(name) == 0) {
+                Value materialized = value;
+                if (value.isStringValId() && current_chunk) {
+                    auto strRef = heap_.allocateString(
+                        current_chunk->getString(value.asStringValId()));
+                    materialized = Value::makeStringId(strRef.id);
+                } else if (value.isFunctionObjId() && current_chunk) {
+                    uint32_t funcIdx = value.asFunctionObjId();
+                    auto moduleChunk = chunk;
+                    const auto* moduleFunc = current_chunk->getFunction(funcIdx);
+                    uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+                    auto wrapperName = "$module_fn_" + canonicalKey + "_" + name;
+                    registerHostFunction(wrapperName,
+                        [this, funcIdx, moduleChunk, paramCount](const std::vector<Value>& args) -> Value {
+                            std::vector<Value> callArgs = args;
+                            if (callArgs.size() > paramCount && paramCount > 0) {
+                                callArgs.erase(callArgs.begin());
+                            }
+                            auto* savedChunk = current_chunk;
+                            current_chunk = moduleChunk.get();
+                            const auto* callee = moduleChunk->getFunction(funcIdx);
+                            if (!callee) {
+                                current_chunk = savedChunk;
+                                return Value::makeNull();
+                            }
+                            size_t base = locals.size();
+                            locals.resize(base + callee->local_count, nullptr);
+                            if (frame_arena_.size() <= frame_count_) {
+                                frame_arena_.push_back(CallFrame{callee, 0, base, 0});
+                            } else {
+                                frame_arena_[frame_count_] = CallFrame{callee, 0, base, 0};
+                            }
+                            frame_count_++;
+                            for (uint32_t i = 0; i < callee->param_count; i++) {
+                                if (i < callArgs.size()) {
+                                    locals[base + i] = std::move(callArgs[i]);
+                                } else {
+                                    locals[base + i] = Value::makeNull();
+                                }
+                            }
+                            runDispatchLoop(frame_count_ - 1);
+                            Value result = popStack();
+                            current_chunk = savedChunk;
+                            return result;
+                        });
+                    uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+                    materialized = Value::makeHostFuncId(hostIdx);
+                }
+                (*obj)[name] = materialized;
+            }
+        }
+    }
+    Value exports = Value::makeObjectId(exportsObj.id);
+
+    // Restore caller's globals and execution state
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+    globals["_G"] = old_g;
+    globals_mirror_object_id_ = old_mirror_id;
+    stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    frame_count_ = saved_frame_count;
+    frame_arena_ = std::move(saved_frames);
+    current_chunk = saved_chunk;
+    has_current_exception_ = saved_exception;
+    current_exception_ = saved_exception_val;
+    current_script_dir_ = prev_script_dir;
+
+    // Cache under both keys
+    module_cache_[path] = exports;
+    module_cache_[canonicalKey] = exports;
+    modules_loading_.erase(canonicalKey);
+
+    return exports;
 }
 
 Value VM::runInContext(const std::string& source, Value context) {

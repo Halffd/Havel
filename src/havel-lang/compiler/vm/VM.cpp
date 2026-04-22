@@ -8017,70 +8017,30 @@ void VM::throwError(const std::string &msg) {
   COMPILER_THROW(msg);
 }
 
-std::optional<std::filesystem::path> VM::resolveModulePath(const std::string& modulePath) const {
-    namespace fs = std::filesystem;
-
-    // Absolute path: use as-is
-    if (modulePath.size() >= 1 && modulePath[0] == '/') {
-        fs::path p(modulePath);
-        if (fs::exists(p)) return p;
-        if (fs::exists(fs::path(modulePath + ".hv"))) return fs::path(modulePath + ".hv");
-        return std::nullopt;
-    }
-
-    // Relative path starting with ./ or ../
-    if (modulePath.size() >= 2 && modulePath[0] == '.' &&
-        (modulePath[1] == '/' || (modulePath.size() >= 3 && modulePath[1] == '.' && modulePath[2] == '/'))) {
-        fs::path base = current_script_dir_.empty() ? fs::current_path() : fs::path(current_script_dir_);
-        fs::path p = base / modulePath;
-        if (fs::exists(p)) return fs::canonical(p);
-        if (fs::exists(fs::path(p.string() + ".hv"))) return fs::canonical(fs::path(p.string() + ".hv"));
-        return std::nullopt;
-    }
-
-    // Bare module name: search module paths
-    std::vector<std::string> searchPaths = module_search_paths_;
-    if (auto home = std::getenv("HOME")) {
-        searchPaths.push_back(std::string(home) + "/.havel/modules");
-    }
-    searchPaths.push_back("/usr/local/lib/havel");
-    searchPaths.push_back("/usr/lib/havel");
-    if (auto havelPath = std::getenv("HAVEL_PATH")) {
-        searchPaths.push_back(havelPath);
-    }
-
-    for (const auto& dir : searchPaths) {
-        fs::path base(dir);
-        // Try: dir/name.hv, dir/name/name.hv, dir/name.hbc
-        fs::path direct = base / (modulePath + ".hv");
-        if (fs::exists(direct)) return fs::canonical(direct);
-
-        fs::path pkg = base / modulePath / (modulePath + ".hv");
-        if (fs::exists(pkg)) return fs::canonical(pkg);
-
-        fs::path hbc = base / (modulePath + ".hbc");
-        if (fs::exists(hbc)) return fs::canonical(hbc);
-    }
-
-    return std::nullopt;
-}
-
 Value VM::loadModule(const std::string& path) {
-    // Check cache first (idempotent — like Python's sys.modules)
-    auto cached = module_cache_.find(path);
-    if (cached != module_cache_.end()) {
-        return cached->second;
+    // Check cache via canonical ModuleLoader
+    if (moduleLoader_.isCached(path)) {
+        void* cachedPtr = nullptr;
+        if (moduleLoader_.getCached(path, &cachedPtr)) {
+            return *static_cast<Value*>(cachedPtr);
+        }
     }
 
-    // Also check by resolved canonical path
-    auto resolved = resolveModulePath(path);
+    // Resolve the module path
+    auto resolved = moduleLoader_.resolve(path, current_script_dir_);
     if (resolved) {
-        std::string canonicalKey = resolved->string();
-        auto cachedResolved = module_cache_.find(canonicalKey);
-        if (cachedResolved != module_cache_.end()) {
-            // Also cache under the original key for faster lookup next time
-            module_cache_[path] = cachedResolved->second;
-            return cachedResolved->second;
+        std::string canonicalKey = resolved->canonicalPath;
+        
+        // Check cache by resolved path
+        if (moduleLoader_.isCached(canonicalKey)) {
+            void* cachedPtr = nullptr;
+            if (moduleLoader_.getCached(canonicalKey, &cachedPtr)) {
+                Value exports = *static_cast<Value*>(cachedPtr);
+                // Also cache under the original key for faster lookup next time
+                auto* cacheVal = new Value(exports);
+                moduleLoader_.putCache(path, cacheVal);
+                return exports;
+            }
         }
     }
 
@@ -8100,13 +8060,14 @@ Value VM::loadModule(const std::string& path) {
                 }
             }
             Value exports = Value::makeObjectId(exportsObj.id);
-            module_cache_[path] = exports;
+            auto* cacheVal = new Value(exports);
+            moduleLoader_.putCache(path, cacheVal);
             return exports;
         }
         COMPILER_THROW("Module not found: " + path);
     }
 
-    std::string canonicalKey = resolved->string();
+    std::string canonicalKey = resolved->canonicalPath;
 
     // Circular dependency detection
     if (modules_loading_.count(canonicalKey)) {
@@ -8115,16 +8076,16 @@ Value VM::loadModule(const std::string& path) {
     modules_loading_.insert(canonicalKey);
 
     // Read source file
-    std::ifstream file(resolved->string());
+    std::ifstream file(resolved->canonicalPath);
     if (!file.is_open()) {
         modules_loading_.erase(canonicalKey);
-        COMPILER_THROW("Failed to open module file: " + resolved->string());
+        COMPILER_THROW("Failed to open module file: " + resolved->canonicalPath);
     }
     std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     // Set script directory for relative imports within the module
     std::string prev_script_dir = current_script_dir_;
-    current_script_dir_ = resolved->parent_path().string();
+    current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
 
     // Compile the module source using the real parser + ByteCompiler pipeline
     // (CompilationPipeline is a stub — we must use the same path as runBytecodePipeline)
@@ -8343,9 +8304,10 @@ Value VM::loadModule(const std::string& path) {
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
 
-    // Cache under both keys
-    module_cache_[path] = exports;
-    module_cache_[canonicalKey] = exports;
+    // Cache under both keys via canonical ModuleLoader
+    auto* cacheVal = new Value(exports);
+    moduleLoader_.putCache(path, cacheVal);
+    moduleLoader_.putCache(canonicalKey, cacheVal);
     modules_loading_.erase(canonicalKey);
 
     return exports;

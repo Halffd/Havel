@@ -28,11 +28,15 @@ namespace havel::repl {
  * REPL configuration
  */
 struct REPLConfig {
-    bool debugMode = false;
-    bool showAST = false;
-    bool stopOnError = false;
-    std::string prompt = "havel> ";
-    std::string continuePrompt = "... ";
+  bool debugMode = false;
+  bool showAST = false;
+  bool stopOnError = false;
+  bool debugBytecode = false;
+  bool debugLexer = false;
+  bool debugParser = false;
+  bool debugAst = false;
+  std::string prompt = "havel> ";
+  std::string continuePrompt = "... ";
 };
 
 /**

@@ -226,11 +226,20 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
     context_.inFunction = context_.functionStack.back();
     context_.functionStack.pop_back();
 
-    exitScope();
-    break;
-  }
+ exitScope();
+ break;
+ }
 
-  case ast::NodeType::BlockStatement: {
+ case ast::NodeType::DecoratorStatement: {
+ const auto &dec = static_cast<const ast::DecoratorStatement &>(stmt);
+ for (const auto &decoExpr : dec.decorators) {
+ if (decoExpr) visitExpression(*decoExpr);
+ }
+ if (dec.target) visitStatement(*dec.target);
+ break;
+ }
+
+ case ast::NodeType::BlockStatement: {
     const auto &block = static_cast<const ast::BlockStatement &>(stmt);
 
     enterScope("block");

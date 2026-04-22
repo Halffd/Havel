@@ -134,9 +134,10 @@ enum class NodeType {
 
   // Functional statements (minimize these)
   ExpressionStatement, // Most things are expressions
-  LetDeclaration,      // let x = 5 (immutable)
+  LetDeclaration, // let x = 5 (immutable)
   FunctionDeclaration, // let add = fn(a, b) -> a + b
-  FunctionParameter,   // function parameter with optional default value
+  FunctionParameter, // function parameter with optional default value
+  DecoratorStatement, // @decorator fn foo() { } - decorator applied to declaration
 
   // Type system (if you want static typing)
   TypeDeclaration,   // type Point = {x: Float, y: Float}
@@ -288,6 +289,7 @@ struct Identifier;
 struct BlockStatement;
 struct FunctionParameter;
 struct FunctionDeclaration;
+struct DecoratorStatement;
 struct StructMethodDef;
 struct TraitMethod;
 
@@ -1950,6 +1952,30 @@ struct FunctionDeclaration : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+struct DecoratorStatement : public Statement {
+  std::vector<std::unique_ptr<Expression>> decorators;
+  std::unique_ptr<Statement> target;
+
+  DecoratorStatement(
+      std::vector<std::unique_ptr<Expression>> decs,
+      std::unique_ptr<Statement> tgt)
+      : decorators(std::move(decs)), target(std::move(tgt)) {
+    kind = NodeType::DecoratorStatement;
+  }
+
+  std::string toString() const override {
+    std::string result = "DecoratorStatement{decorators: [";
+    for (size_t i = 0; i < decorators.size(); ++i) {
+      result += decorators[i] ? decorators[i]->toString() : "null";
+      if (i < decorators.size() - 1) result += ", ";
+    }
+    result += "], target: " + (target ? target->toString() : "null") + "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Implementation Declaration (impl Trait for Type)
 struct ImplDeclaration : public Statement {
   std::unique_ptr<Identifier> traitName;
@@ -3009,6 +3035,8 @@ public:
   virtual void visitFunctionDeclaration(const FunctionDeclaration &node) = 0;
   virtual void visitFunctionParameter(const FunctionParameter &node) = 0;
 
+  virtual void visitDecoratorStatement(const DecoratorStatement &node) = 0;
+
   virtual void visitTypeDeclaration(const TypeDeclaration &node) = 0;
   virtual void visitTypeAnnotation(const TypeAnnotation &node) = 0;
   virtual void visitUnionType(const UnionType &node) = 0;
@@ -3245,6 +3273,10 @@ inline void StructMethodDef::accept(ASTVisitor &visitor) const {
 
 inline void FunctionDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitFunctionDeclaration(*this);
+}
+
+inline void DecoratorStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDecoratorStatement(*this);
 }
 
 inline void ArrayLiteral::accept(ASTVisitor &visitor) const {

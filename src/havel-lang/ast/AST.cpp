@@ -324,6 +324,25 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 
+  void visitDecoratorStatement(const DecoratorStatement &node) override {
+    out << getIndent() << "DecoratorStatement {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "decorators: [" << std::endl;
+    indentLevel++;
+    for (const auto &dec : node.decorators) {
+      if (dec) {
+        dec->accept(*this);
+      } else {
+        out << getIndent() << "nullptr" << std::endl;
+      }
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    printChildNode("target: ", node.target);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
   void visitTypeDeclaration(const TypeDeclaration &node) override {
     out << getIndent() << "TypeDeclaration {" << std::endl;
     indentLevel++;

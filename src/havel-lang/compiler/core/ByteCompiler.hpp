@@ -126,6 +126,7 @@ void optimizeJumps();  // Jump threading optimization
   void compileStatement(const ast::Statement &statement);
   void compileUseStatement(const ast::UseStatement &statement);
   void compileExportStatement(const ast::ExportStatement &statement);
+  void compileDecoratorStatement(const ast::DecoratorStatement &statement);
   void compileExpression(const ast::Expression &expression);
   void compilePattern(const ast::Expression &pattern, uint32_t discSlot);
   void compileHotkeyBinding(const ast::HotkeyBinding &binding);

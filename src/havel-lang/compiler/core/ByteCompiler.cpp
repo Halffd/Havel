@@ -133,7 +133,16 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   uint32_t next_function_index = 0;
   for (size_t i = 0; i < program.body.size(); i++) {
     const auto &statement = program.body[i];
-    if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
+    const ast::FunctionDeclaration *fnDecl = nullptr;
+    if (statement && statement->kind == ast::NodeType::FunctionDeclaration) {
+      fnDecl = &static_cast<const ast::FunctionDeclaration &>(*statement);
+    } else if (statement && statement->kind == ast::NodeType::DecoratorStatement) {
+      const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+      if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+        fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
+      }
+    }
+    if (!fnDecl) {
       if (statement && statement->kind == ast::NodeType::StructDeclaration) {
         const auto &decl =
             static_cast<const ast::StructDeclaration &>(*statement);
@@ -152,14 +161,12 @@ ByteCompiler::compileImpl(const ast::Program &program) {
       }
       continue;
     }
-    const auto &decl =
-        static_cast<const ast::FunctionDeclaration &>(*statement);
-    if (!decl.name) {
+    if (!fnDecl->name) {
       COMPILER_THROW("Function declaration missing name");
     }
-    top_level_function_indices_by_name_[decl.name->symbol] =
+    top_level_function_indices_by_name_[fnDecl->name->symbol] =
         next_function_index;
-    function_indices_by_node_[&decl] = next_function_index++;
+    function_indices_by_node_[fnDecl] = next_function_index++;
   }
 
   for (const auto &statement : program.body) {
@@ -202,12 +209,15 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     compileFunction(*decl);
   }
 
-  for (const auto &statement : program.body) {
-    if (!statement || statement->kind != ast::NodeType::ClassDeclaration) {
-      continue;
-    }
-    const auto &class_decl =
-        static_cast<const ast::ClassDeclaration &>(*statement);
+ for (const auto &statement : program.body) {
+ if (!statement) {
+ continue;
+ }
+ if (statement->kind != ast::NodeType::ClassDeclaration) {
+ continue;
+ }
+ const auto &class_decl =
+ static_cast<const ast::ClassDeclaration &>(*statement);
     for (const auto &method : class_decl.definition.methods) {
       if (!method) {
         continue;
@@ -269,6 +279,42 @@ ByteCompiler::compileImpl(const ast::Program &program) {
       uint32_t fnNameStrId = addStringConstant(functionDecl.name->symbol);
       emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
       continue;
+    }
+
+    if (statement->kind == ast::NodeType::DecoratorStatement) {
+      const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+      if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+        const auto &fnDecl = static_cast<const ast::FunctionDeclaration &>(*dec.target);
+        if (!fnDecl.name) continue;
+
+        auto index_it = function_indices_by_node_.find(&fnDecl);
+        if (index_it == function_indices_by_node_.end()) continue;
+
+        auto upvalues_it = lexical_resolution_.function_upvalues.find(&fnDecl);
+        if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+            !upvalues_it->second.empty()) {
+          emit(OpCode::CLOSURE, index_it->second);
+        } else {
+          emit(OpCode::LOAD_CONST,
+               addConstant(Value::makeFunctionObjId(index_it->second)));
+        }
+
+        uint32_t fnNameStrId = addStringConstant(fnDecl.name->symbol);
+        emit(OpCode::DUP);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+
+        for (auto it = dec.decorators.rbegin(); it != dec.decorators.rend(); ++it) {
+          const auto &decoExpr = *it;
+          if (!decoExpr) continue;
+          compileExpression(*decoExpr);
+          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(fnNameStrId));
+          emit(OpCode::CALL, static_cast<uint32_t>(1));
+          emit(OpCode::DUP);
+          emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+        }
+        emit(OpCode::POP);
+        continue;
+      }
     }
 
     compileStatement(*statement);
@@ -1275,11 +1321,16 @@ if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
         emit(OpCode::LOAD_CONST,
              addConstant(Value::makeFunctionObjId(index_it->second)));
       }
-      emit(OpCode::STORE_VAR, slot);
-    }
-    break;
+  emit(OpCode::STORE_VAR, slot);
+  }
+  break;
 
-  case ast::NodeType::TryExpression:
+case ast::NodeType::DecoratorStatement:
+  compileDecoratorStatement(
+      static_cast<const ast::DecoratorStatement &>(statement));
+  break;
+
+case ast::NodeType::TryExpression:
     compileTryStatement(static_cast<const ast::TryExpression &>(statement));
     break;
 
@@ -1777,6 +1828,35 @@ void ByteCompiler::compileExportStatement(
   if (statement.exported) {
     // The exported value is already compiled as part of the normal compilation
     // We just mark it as exported in the module's export table
+  }
+}
+
+void ByteCompiler::compileDecoratorStatement(
+    const ast::DecoratorStatement &statement) {
+  compileStatement(*statement.target);
+
+  if (!statement.target ||
+      statement.target->kind != ast::NodeType::FunctionDeclaration) {
+    COMPILER_THROW("Decorator target must be a function declaration");
+  }
+  const auto &fnDecl =
+      static_cast<const ast::FunctionDeclaration &>(*statement.target);
+  if (!fnDecl.name) {
+    COMPILER_THROW("Decorated function declaration missing name");
+  }
+  uint32_t slot = declarationSlot(*fnDecl.name);
+
+  // Bottom-up stacking: @a @b fn f() -> f = a(b(f_original))
+  for (auto it = statement.decorators.rbegin();
+       it != statement.decorators.rend(); ++it) {
+    const auto &decoExpr = *it;
+    if (!decoExpr) continue;
+
+    // Stack: [callee=deco, arg=fn] -> CALL 1 -> result=wrapped_fn
+    compileExpression(*decoExpr);
+    emit(OpCode::LOAD_VAR, slot);
+    emit(OpCode::CALL, static_cast<uint32_t>(1));
+    emit(OpCode::STORE_VAR, slot);
   }
 }
 
@@ -4488,6 +4568,14 @@ void ByteCompiler::collectFunctionDeclarations(
         }
       }
     }
+      break;
+    }
+
+  case ast::NodeType::DecoratorStatement: {
+    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+    if (dec.target) {
+      collectFunctionDeclarations(*dec.target, out);
+    }
     break;
   }
 
@@ -4624,6 +4712,18 @@ void ByteCompiler::collectLambdaExpressions(
             collectLambdaExpressions(*nested, out);
           }
         }
+      }
+    }
+      break;
+    }
+  case ast::NodeType::DecoratorStatement: {
+    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+    if (dec.target) {
+      collectLambdaExpressions(*dec.target, out);
+    }
+    for (const auto &deco : dec.decorators) {
+      if (deco) {
+        collectLambdaExpressions(*deco, out);
       }
     }
     break;
@@ -5931,11 +6031,11 @@ bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
     // Phase 3B-3: FunctionDeclaration inside generators should recursively check if nested function contains yield
     // Note: We check if the IMMEDIATE parent function contains yield, not nested ones
     // Nested functions are compiled separately and get their own is_generator flag
-    case ast::NodeType::FunctionDeclaration:
-    case ast::NodeType::ClassDeclaration:
-    case ast::NodeType::EnumDeclaration:
-      // These don't make the parent a generator - each function/class has its own compilation
-      return false;
+  case ast::NodeType::FunctionDeclaration:
+  case ast::NodeType::ClassDeclaration:
+  case ast::NodeType::EnumDeclaration:
+  case ast::NodeType::DecoratorStatement:
+    return false;
     
 default:
       return false;

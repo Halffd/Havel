@@ -1,5 +1,6 @@
 // ModuleLoader.hpp
-// Module loading system with dynamic discovery and loading
+// DEPRECATED: This module loader is dead code. Use havel::ModuleLoader from
+// havel-lang/runtime/ModuleLoader.hpp instead.
 // Simple, explicit, no magic
 
 #pragma once

@@ -66,49 +66,69 @@ void ConcurrencyBridge::initThreadPool(size_t pool_size) {
 }
 
 void ConcurrencyBridge::install(PipelineOptions &options) {
-  // Thread operations
+  // Thread operations (snake_case + dot aliases)
   options.host_functions["thread_spawn"] = [this](const std::vector<Value> &args) {
     return threadSpawn(args);
   };
+  options.host_functions["thread.spawn"] = options.host_functions["thread_spawn"];
+
   options.host_functions["thread_join"] = [this](const std::vector<Value> &args) {
     return threadJoin(args);
   };
+  options.host_functions["thread.join"] = options.host_functions["thread_join"];
+
   options.host_functions["thread_send"] = [this](const std::vector<Value> &args) {
     return threadSend(args);
   };
+  options.host_functions["thread.send"] = options.host_functions["thread_send"];
+
   options.host_functions["thread_receive"] = [this](const std::vector<Value> &args) {
     return threadReceive(args);
   };
+  options.host_functions["thread.receive"] = options.host_functions["thread_receive"];
 
-  // Interval operations
+  // Interval operations (snake_case + dot aliases)
   options.host_functions["interval_start"] = [this](const std::vector<Value> &args) {
     return intervalStart(args);
   };
+  options.host_functions["interval.start"] = options.host_functions["interval_start"];
+
   options.host_functions["interval_stop"] = [this](const std::vector<Value> &args) {
     return intervalStop(args);
   };
+  options.host_functions["interval.stop"] = options.host_functions["interval_stop"];
 
-  // Timeout operations
+  // Timeout operations (snake_case + dot aliases)
   options.host_functions["timeout_start"] = [this](const std::vector<Value> &args) {
     return timeoutStart(args);
   };
+  options.host_functions["timeout.start"] = options.host_functions["timeout_start"];
+
   options.host_functions["timeout_cancel"] = [this](const std::vector<Value> &args) {
     return timeoutCancel(args);
   };
+  options.host_functions["timeout.cancel"] = options.host_functions["timeout_cancel"];
 
-  // Channel operations
+  // Channel operations (snake_case + dot aliases)
   options.host_functions["channel_new"] = [this](const std::vector<Value> &args) {
     return channelNew(args);
   };
+  options.host_functions["channel.new"] = options.host_functions["channel_new"];
+
   options.host_functions["channel_send"] = [this](const std::vector<Value> &args) {
     return channelSend(args);
   };
+  options.host_functions["channel.send"] = options.host_functions["channel_send"];
+
   options.host_functions["channel_receive"] = [this](const std::vector<Value> &args) {
     return channelReceive(args);
   };
+  options.host_functions["channel.receive"] = options.host_functions["channel_receive"];
+
   options.host_functions["channel_close"] = [this](const std::vector<Value> &args) {
     return channelClose(args);
   };
+  options.host_functions["channel.close"] = options.host_functions["channel_close"];
 }
 
 Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {

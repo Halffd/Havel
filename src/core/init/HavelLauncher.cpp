@@ -46,6 +46,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <unordered_set>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -86,9 +87,32 @@ static std::string readScriptFile(const std::string &path) {
   return content;
 }
 
+static std::unordered_set<std::string>
+collectKnownGlobals(const havel::compiler::VM *vm) {
+  std::unordered_set<std::string> globals;
+  if (!vm) {
+    return globals;
+  }
+  for (const auto &[name, value] : vm->getAllGlobals()) {
+    (void)value;
+    if (name.empty() || name[0] == '_') {
+      continue;
+    }
+    globals.insert(name);
+  }
+  return globals;
+}
+
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
+
+    // Target mode controls execution backend defaults.
+    if (cfg.target == Target::INTERPRET) {
+      cfg.useJIT = false;
+    } else if (cfg.target == Target::JIT) {
+      cfg.useJIT = true;
+    }
 
     // Apply JIT settings to global config
     Configs::Get().Set("Compiler.JIT", cfg.useJIT ? "true" : "false");
@@ -168,6 +192,41 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       repl = true;
     } else if (arg == "--no-jit") {
       cfg.useJIT = false;
+      if (cfg.target == Target::JIT) {
+        cfg.target = Target::INTERPRET;
+      }
+    } else if (arg == "--target") {
+      if (i + 1 >= argc) {
+        error("--target requires one of: interpret, jit, aot, asm, ir, wasm");
+        continue;
+      }
+      std::string target = argv[++i];
+      if (target == "interpret") {
+        cfg.target = Target::INTERPRET;
+        cfg.useJIT = false;
+      } else if (target == "jit") {
+        cfg.target = Target::JIT;
+        cfg.useJIT = true;
+      } else if (target == "aot") {
+        cfg.target = Target::AOT;
+        cfg.buildOnly = true;
+        cfg.emitObj = true;
+        cfg.emitBinary = true;
+      } else if (target == "asm") {
+        cfg.target = Target::ASM;
+        cfg.buildOnly = true;
+        cfg.emitAsm = true;
+      } else if (target == "ir") {
+        cfg.target = Target::IR;
+        cfg.buildOnly = true;
+        cfg.emitLLVM = true;
+      } else if (target == "wasm") {
+        cfg.target = Target::WASM;
+        cfg.buildOnly = true;
+        cfg.emitWasm = true;
+      } else {
+        error("Unknown --target '{}'. Expected: interpret, jit, aot, asm, ir, wasm", target);
+      }
     } else if (arg == "--debug-jit" || arg == "-djt") {
       cfg.debugJIT = true;
       cfg.dumpIR = true;
@@ -220,18 +279,21 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         cfg.outputPath = argv[++i];
     }
 } else if (arg == "--emit-llvm") {
+    cfg.target = Target::IR;
     cfg.emitLLVM = true;
     cfg.buildOnly = true;
     if (i + 1 < argc && argv[i + 1][0] != '-') {
         cfg.scriptFiles.push_back(argv[++i]);
     }
 } else if (arg == "--emit-asm") {
+    cfg.target = Target::ASM;
     cfg.emitAsm = true;
     cfg.buildOnly = true;
     if (i + 1 < argc && argv[i + 1][0] != '-') {
         cfg.scriptFiles.push_back(argv[++i]);
     }
 } else if (arg == "--emit-obj") {
+    cfg.target = Target::AOT;
     cfg.emitObj = true;
     cfg.buildOnly = true;
     if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -777,6 +839,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
  try {
  havel::HavelEngine engine({
      .debugBytecode = cfg.debugBytecode,
+     .debugLexer = cfg.debugLexer,
+     .debugParser = cfg.debugParser,
+     .debugAst = cfg.debugAst,
      .stopOnError = cfg.stopOnError
  });
  engine.initializeMinimal();
@@ -801,22 +866,28 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         info("Running scripts and starting REPL in minimal mode...");
 
         std::string combinedCode;
+        std::string combinedNames;
         for (const auto& f : cfg.scriptFiles) {
             std::string content = readScriptFile(f);
             if (!content.empty()) {
                 combinedCode += content + "\n";
+                if (!combinedNames.empty()) combinedNames += " + ";
+                combinedNames += f;
             }
         }
 
         havel::HavelEngine engine({
             .debugBytecode = cfg.debugBytecode,
+            .debugLexer = cfg.debugLexer,
+            .debugParser = cfg.debugParser,
+            .debugAst = cfg.debugAst,
             .stopOnError = cfg.stopOnError
         });
         engine.initializeMinimal();
 
         info("Executing script code...");
         try {
-            engine.execute(combinedCode, "__main__", "script");
+            engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
         } catch (const std::exception &e) {
             error("Script execution failed: {}", e.what());
             return 1;
@@ -830,7 +901,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         replConfig.debugParser = cfg.debugParser;
         replConfig.debugAst = cfg.debugAst;
         havel::repl::REPL repl(replConfig);
-        repl.attach(engine.vm(), engine.hostBridge(), {});
+        repl.attach(engine.vm(), engine.hostBridge(), collectKnownGlobals(engine.vm()));
 
         return repl.run();
     } else {
@@ -908,7 +979,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
       // Attach REPL to the existing VM from the Havel instance
       // (instead of initialize() which creates a new VM)
-      repl.attach(bytecodeVM, havel_inst.getHostBridge(), {});
+      repl.attach(bytecodeVM, havel_inst.getHostBridge(), collectKnownGlobals(bytecodeVM));
 
       // Enter REPL
       return repl.run();
@@ -943,6 +1014,7 @@ std::cout << " --output, -o PATH Set output path for --build\n";
 std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
 std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
 std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
+std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm\n";
 std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
   std::cout << "  -S                  Output compiled IR and Assembly to files\n";
@@ -961,6 +1033,12 @@ std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  havel --lint script.hv    - Check for errors without running\n";
   std::cout << "  havel --build script.hv   - Compile to bytecode (.hvc)\n";
   std::cout << "  havel --build script.hv -o out.hvc  - Compile to specific file\n";
+  std::cout << "  havel --target interpret script.hv   - Run on bytecode interpreter\n";
+  std::cout << "  havel --target jit script.hv         - Run with LLVM JIT enabled\n";
+  std::cout << "  havel --target ir script.hv          - Emit LLVM IR (.ll)\n";
+  std::cout << "  havel --target asm script.hv         - Emit native assembly (.s)\n";
+  std::cout << "  havel --target aot script.hv         - Emit object (.o) + shared binary (.so)\n";
+  std::cout << "  havel --target wasm script.hv        - Emit WebAssembly binary (.wasm)\n";
   std::cout << "  havel --minimal script.hv - Run script in MINIMAL mode\n";
   std::cout << "  havel --repl --minimal    - Start REPL in MINIMAL mode\n";
   std::cout << "\nFull mode (default):\n";
@@ -983,7 +1061,13 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
     if (cfg.minimalMode) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
 
-        havel::HavelEngine engine;
+        havel::HavelEngine engine({
+            .debugBytecode = cfg.debugBytecode,
+            .debugLexer = cfg.debugLexer,
+            .debugParser = cfg.debugParser,
+            .debugAst = cfg.debugAst,
+            .stopOnError = cfg.stopOnError
+        });
         engine.initializeMinimal();
 
         havel::repl::REPLConfig replConfig;
@@ -995,7 +1079,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         replConfig.debugAst = cfg.debugAst;
 
         havel::repl::REPL repl(replConfig);
-        repl.attach(engine.vm(), engine.hostBridge(), {});
+        repl.attach(engine.vm(), engine.hostBridge(), collectKnownGlobals(engine.vm()));
 
         return repl.run();
     } else {
@@ -1056,7 +1140,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
           std::vector<std::string>{}));
       
       havel::initializeServiceRegistry(hostAPI);
-      repl.initialize(hostAPI);
+      repl.attach(bytecodeVM, hostBridge, collectKnownGlobals(bytecodeVM));
 
       // Run REPL
       return repl.run();
@@ -1298,7 +1382,7 @@ info("Compilation successful, {} functions", chunk->getFunctionCount());
 
 #ifdef HAVEL_ENABLE_LLVM
 // Handle AOT LLVM output
-if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
+if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary) {
     // Import LLVM JIT for translation
     havel::compiler::BytecodeOrcJIT jit;
     jit.setDumpIR(true);
@@ -1321,10 +1405,13 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
         return 1;
     }
 
-    // Determine output path
+    // Determine output base path
     std::string aotOutput = cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
-    if (aotOutput.rfind(".hv") == aotOutput.size() - 3) {
+    if (aotOutput.size() >= 3 && aotOutput.rfind(".hv") == aotOutput.size() - 3) {
         aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+    }
+    if (aotOutput.empty()) {
+        aotOutput = "output";
     }
 
     if (cfg.emitLLVM) {
@@ -1340,7 +1427,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
         info("LLVM IR written to: {}", llPath);
     }
 
-    if (cfg.emitAsm || cfg.emitObj) {
+    if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary) {
         // Initialize target for native code gen
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
@@ -1363,6 +1450,8 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
 
         module->setDataLayout(targetMachine->createDataLayout());
 
+        std::string nativeObjPath;
+
         if (cfg.emitAsm) {
             std::string asmPath = aotOutput + ".s";
             std::error_code ec;
@@ -1379,12 +1468,12 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
             info("Assembly written to: {}", asmPath);
         }
 
-        if (cfg.emitObj) {
-            std::string objPath = aotOutput + ".o";
+        if (cfg.emitObj || cfg.emitBinary) {
+            nativeObjPath = aotOutput + ".o";
             std::error_code ec;
-            llvm::raw_fd_ostream out(objPath, ec, llvm::sys::fs::OF_None);
+            llvm::raw_fd_ostream out(nativeObjPath, ec, llvm::sys::fs::OF_None);
             if (ec) {
-                error("Cannot open output file: {}", objPath);
+                error("Cannot open output file: {}", nativeObjPath);
                 return 1;
             }
             llvm::legacy::PassManager pm;
@@ -1392,14 +1481,59 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
                 llvm::CodeGenFileType::ObjectFile);
             pm.run(*module);
             out.close();
-            info("Object file written to: {}", objPath);
+            info("Object file written to: {}", nativeObjPath);
         }
+
+        if (cfg.emitBinary) {
+            std::string soPath = aotOutput + ".so";
+            std::string linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath +
+                                  "\" -o \"" + soPath + "\"";
+            int linkRc = std::system(linkCmd.c_str());
+            if (linkRc != 0) {
+                error("Failed to link native shared binary with command: {}", linkCmd);
+                return 1;
+            }
+            info("Native shared binary written to: {}", soPath);
+        }
+    }
+
+    if (cfg.emitWasm) {
+        std::string targetTripleStr = "wasm32-unknown-unknown";
+        llvm::Triple targetTriple(targetTripleStr);
+        module->setTargetTriple(targetTriple);
+
+        std::string err;
+        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+        if (!target) {
+            error("Cannot find WebAssembly target: {}", err);
+            return 1;
+        }
+
+        llvm::TargetOptions opt;
+        auto targetMachine = target->createTargetMachine(
+            targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
+
+        module->setDataLayout(targetMachine->createDataLayout());
+
+        std::string wasmPath = aotOutput + ".wasm";
+        std::error_code ec;
+        llvm::raw_fd_ostream out(wasmPath, ec, llvm::sys::fs::OF_None);
+        if (ec) {
+            error("Cannot open output file: {}", wasmPath);
+            return 1;
+        }
+        llvm::legacy::PassManager pm;
+        targetMachine->addPassesToEmitFile(pm, out, nullptr,
+            llvm::CodeGenFileType::ObjectFile);
+        pm.run(*module);
+        out.close();
+        info("WebAssembly binary written to: {}", wasmPath);
     }
 
     return 0;
 }
 #else
-if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj) {
+if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary) {
     error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
     return 1;
 }

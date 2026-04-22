@@ -562,6 +562,7 @@ public:
   getHostFunctions() const {
     return host_functions;
   }
+  std::optional<std::string> getHostFunctionName(uint32_t index) const;
 
   uint64_t pinExternalRoot(const Value &value);
   bool unpinExternalRoot(uint64_t root_id);

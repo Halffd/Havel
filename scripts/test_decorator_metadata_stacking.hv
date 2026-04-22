@@ -1,0 +1,25 @@
+// Test decorator metadata with stacking and factory
+
+fn deco_a(func) {
+    return func
+}
+
+fn deco_b(func) {
+    return func
+}
+
+@deco_a
+@deco_b
+fn compute(x, y, z) {
+    return x + y + z
+}
+
+// Stacked: __name__ should still be "compute"
+print(compute.__name__)
+
+// Stacked: __arity__ should be 3
+print(compute.__arity__)
+
+// Stacked: __wrapped__ should be callable
+let wrapped = compute.__wrapped__
+print(wrapped(1, 2, 3))

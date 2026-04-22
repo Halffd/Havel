@@ -309,10 +309,44 @@ ByteCompiler::compileImpl(const ast::Program &program) {
           compileExpression(*decoExpr);
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(fnNameStrId));
           emit(OpCode::CALL, static_cast<uint32_t>(1));
-          emit(OpCode::DUP);
-          emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
-        }
-        emit(OpCode::POP);
+            emit(OpCode::DUP);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+            }
+
+            // Emit metadata: fn.__name__ = original_name, fn.__wrapped__ = original_fn, fn.__arity__ = N
+            {
+                uint32_t nameStrId = addStringConstant("__name__");
+                uint32_t wrappedStrId = addStringConstant("__wrapped__");
+                uint32_t arityStrId = addStringConstant("__arity__");
+                uint32_t origNameStrId = addStringConstant(fnDecl.name->symbol);
+
+                // __name__
+                emit(OpCode::DUP);
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(origNameStrId)));
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(nameStrId)));
+                emit(OpCode::OBJECT_SET);
+                emit(OpCode::POP);
+
+                // __wrapped__ — reload the original function
+                emit(OpCode::DUP);
+                if (upvalues_it != lexical_resolution_.function_upvalues.end() && !upvalues_it->second.empty()) {
+                    emit(OpCode::CLOSURE, index_it->second);
+                } else {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
+                }
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(wrappedStrId)));
+                emit(OpCode::OBJECT_SET);
+                emit(OpCode::POP);
+
+                // __arity__
+                emit(OpCode::DUP);
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(fnDecl.parameters.size()))));
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(arityStrId)));
+                emit(OpCode::OBJECT_SET);
+                emit(OpCode::POP);
+            }
+
+            emit(OpCode::POP);
         continue;
       }
     }
@@ -1846,18 +1880,53 @@ void ByteCompiler::compileDecoratorStatement(
   }
   uint32_t slot = declarationSlot(*fnDecl.name);
 
-  // Bottom-up stacking: @a @b fn f() -> f = a(b(f_original))
-  for (auto it = statement.decorators.rbegin();
-       it != statement.decorators.rend(); ++it) {
-    const auto &decoExpr = *it;
-    if (!decoExpr) continue;
+    // Bottom-up stacking: @a @b fn f() -> f = a(b(f_original))
+    for (auto it = statement.decorators.rbegin();
+         it != statement.decorators.rend(); ++it) {
+        const auto &decoExpr = *it;
+        if (!decoExpr) continue;
 
-    // Stack: [callee=deco, arg=fn] -> CALL 1 -> result=wrapped_fn
-    compileExpression(*decoExpr);
-    emit(OpCode::LOAD_VAR, slot);
-    emit(OpCode::CALL, static_cast<uint32_t>(1));
-    emit(OpCode::STORE_VAR, slot);
-  }
+        // Stack: [callee=deco, arg=fn] -> CALL 1 -> result=wrapped_fn
+        compileExpression(*decoExpr);
+        emit(OpCode::LOAD_VAR, slot);
+        emit(OpCode::CALL, static_cast<uint32_t>(1));
+        emit(OpCode::STORE_VAR, slot);
+    }
+
+    // Emit metadata: fn.__name__ = original_name, fn.__wrapped__ = original_fn, fn.__arity__ = N
+    auto index_it = function_indices_by_node_.find(&fnDecl);
+    if (index_it != function_indices_by_node_.end()) {
+        uint32_t nameStrId = addStringConstant("__name__");
+        uint32_t wrappedStrId = addStringConstant("__wrapped__");
+        uint32_t arityStrId = addStringConstant("__arity__");
+        uint32_t origNameStrId = addStringConstant(fnDecl.name->symbol);
+
+        // __name__
+        emit(OpCode::LOAD_VAR, slot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(origNameStrId)));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(nameStrId)));
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
+
+        // __wrapped__
+        emit(OpCode::LOAD_VAR, slot);
+        auto upvalues_it = lexical_resolution_.function_upvalues.find(&fnDecl);
+        if (upvalues_it != lexical_resolution_.function_upvalues.end() && !upvalues_it->second.empty()) {
+            emit(OpCode::CLOSURE, index_it->second);
+        } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
+        }
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(wrappedStrId)));
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
+
+        // __arity__
+        emit(OpCode::LOAD_VAR, slot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(fnDecl.parameters.size()))));
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(arityStrId)));
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
+    }
 }
 
 // Compile a match pattern, emitting code that leaves a boolean on the stack

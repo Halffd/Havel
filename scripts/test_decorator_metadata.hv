@@ -1,0 +1,22 @@
+// Test decorator metadata preservation (__name__, __wrapped__, __arity__)
+
+fn identity(func) {
+    return func
+}
+
+@identity
+fn greet(name) {
+    return "Hello, " + name
+}
+
+// Test __name__ preserves original function name
+let n = greet.__name__
+print(n)
+
+// Test __arity__ preserves original parameter count
+let a = greet.__arity__
+print(a)
+
+// Test __wrapped__ is the original function and callable
+let original = greet.__wrapped__
+print(original("World"))

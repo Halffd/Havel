@@ -187,10 +187,12 @@ private:
   std::vector<std::string> host_function_names_; // Index -> name mapping
   std::unordered_map<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
   
-  // Function properties support (fn.prop = value for static state, memoization, etc.)
-  std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
-  
-  bool has_current_exception_ = false;
+        // Function properties support (fn.prop = value for static state, memoization, etc.)
+        std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
+        std::unordered_map<uint32_t, ObjectRef> closure_properties_;  // closure_id -> properties object
+        std::unordered_map<uint32_t, ObjectRef> hostfunc_properties_; // host_func_idx -> properties object
+
+        bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
 
     // Module exports for END_MODULE opcode

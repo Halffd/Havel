@@ -5643,8 +5643,84 @@ auto *parent_closure = heap_.closure(parent_closure_id);
           }
         }
       }
-      pushStack(Value::makeNull());
-      break;
+        pushStack(Value::makeNull());
+        break;
+    }
+
+    // Handle closure objects - support closure.name, closure.arity, closure.prop
+    if (object.isClosureId()) {
+        uint32_t closureId = object.asClosureId();
+        auto key = keyFromValue(key_value, &heap_, current_chunk);
+
+        // First check for user-defined properties
+        if (key) {
+            auto propIt = closure_properties_.find(closureId);
+            if (propIt != closure_properties_.end()) {
+                auto* props = heap_.object(propIt->second.id);
+                if (props) {
+                    auto* val = props->get(*key);
+                    if (val) {
+                        pushStack(*val);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Then check built-in properties from underlying function
+        auto* closure = heap_.closure(closureId);
+        if (closure && current_chunk && key) {
+            if (closure->function_index < current_chunk->getFunctionCount()) {
+                const auto* func = current_chunk->getFunction(closure->function_index);
+                if (func) {
+                    if (*key == "name") {
+                        pushStack(Value::makeStringId(heap_.allocateString(func->name).id));
+                        break;
+                    } else if (*key == "arity") {
+                        pushStack(Value::makeInt(static_cast<int64_t>(func->param_count)));
+                        break;
+                    }
+                }
+            }
+        }
+        pushStack(Value::makeNull());
+        break;
+    }
+
+    // Handle host function objects - support hostfn.name, hostfn.prop
+    if (object.isHostFuncId()) {
+        uint32_t hostIdx = object.asHostFuncId();
+        auto key = keyFromValue(key_value, &heap_, current_chunk);
+
+        // First check for user-defined properties
+        if (key) {
+            auto propIt = hostfunc_properties_.find(hostIdx);
+            if (propIt != hostfunc_properties_.end()) {
+                auto* props = heap_.object(propIt->second.id);
+                if (props) {
+                    auto* val = props->get(*key);
+                    if (val) {
+                        pushStack(*val);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Then check built-in properties
+        if (key) {
+            if (*key == "name") {
+                if (hostIdx < host_function_names_.size()) {
+                    pushStack(Value::makeStringId(heap_.allocateString(host_function_names_[hostIdx]).id));
+                    break;
+                }
+            } else if (*key == "arity") {
+                pushStack(Value::makeInt(-1));
+                break;
+            }
+        }
+        pushStack(Value::makeNull());
+        break;
     }
 
     // Handle class/struct prototype objects - support Class.name, Class.methods, Class.fields
@@ -5962,11 +6038,16 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       COMPILER_THROW("OBJECT_SET expects string/number/bool key");
     }
 
-    // Safety: reject __ prefixed keys (reserved for internal use)
-    if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_') {
-      COMPILER_THROW(
-          "OBJECT_SET: keys starting with '__' are reserved");
-    }
+        // Safety: reject __ prefixed keys (reserved for internal use)
+        // Exception: __name__, __wrapped__, __arity__ are allowed on callable types
+        // for decorator metadata preservation (Python convention)
+        bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId();
+        bool isAllowedDunder = *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
+        if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
+            !(isCallable && isAllowedDunder)) {
+            COMPILER_THROW(
+                "OBJECT_SET: keys starting with '__' are reserved");
+        }
 
     // Handle function objects - support fn.prop = value
     if (object.isFunctionObjId()) {
@@ -5982,12 +6063,44 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       if (!props) {
         COMPILER_THROW("OBJECT_SET: failed to get function properties object");
       }
-      props->set(*keyStr, std::move(value));
-      pushStack(object); // Return the function object for chaining
-      break;
+        props->set(*keyStr, std::move(value));
+        pushStack(object); // Return the function object for chaining
+        break;
     }
 
-  if (!object.isObjectId()) {
+    // Handle closure objects - support closure.prop = value
+    if (object.isClosureId()) {
+        uint32_t closureId = object.asClosureId();
+        auto& propRef = closure_properties_[closureId];
+        if (propRef.id == 0) {
+            propRef = heap_.allocateObject(true);
+        }
+        auto* props = heap_.object(propRef.id);
+        if (!props) {
+            COMPILER_THROW("OBJECT_SET: failed to get closure properties object");
+        }
+        props->set(*keyStr, std::move(value));
+        pushStack(object);
+        break;
+    }
+
+    // Handle host function objects - support hostfn.prop = value
+    if (object.isHostFuncId()) {
+        uint32_t hostIdx = object.asHostFuncId();
+        auto& propRef = hostfunc_properties_[hostIdx];
+        if (propRef.id == 0) {
+            propRef = heap_.allocateObject(true);
+        }
+        auto* props = heap_.object(propRef.id);
+        if (!props) {
+            COMPILER_THROW("OBJECT_SET: failed to get host func properties object");
+        }
+        props->set(*keyStr, std::move(value));
+        pushStack(object);
+        break;
+    }
+
+    if (!object.isObjectId()) {
     COMPILER_THROW("OBJECT_SET expects object container");
   }
 

@@ -1,0 +1,11 @@
+// Test 1: Simple decorator — identity decorator
+fn log(func) {
+    return func
+}
+
+@log
+fn greet(name) {
+    return "Hello, " + name
+}
+
+print(greet("World"))

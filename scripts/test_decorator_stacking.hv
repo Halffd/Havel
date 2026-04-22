@@ -1,0 +1,20 @@
+// Test 3: Multiple decorator stacking
+// @a @b fn f() -> f = a(b(f_original))
+
+fn deco_a(fn_inner) {
+    print("deco_a wrapping")
+    return fn_inner
+}
+
+fn deco_b(fn_inner) {
+    print("deco_b wrapping")
+    return fn_inner
+}
+
+@deco_a
+@deco_b
+fn my_func() {
+    return 42
+}
+
+print(my_func())

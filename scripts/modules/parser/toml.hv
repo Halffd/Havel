@@ -1,0 +1,545 @@
+// parse/toml.hv
+// Pure Havel TOML parser - no external deps
+
+// ============================================================
+// Lexer
+// ============================================================
+
+enum TokenType {
+    EOF,
+    Newline,
+    Comment,
+    Key,
+    Equals,
+    String,
+    Integer,
+    Float,
+    Boolean,
+    Date,
+    DateTime,
+    LeftBracket,
+    RightBracket,
+    LeftDoubleBracket,
+    RightDoubleBracket,
+    LeftBrace,
+    RightBrace,
+    Comma,
+    Dot
+}
+
+struct Token {
+    type: TokenType
+    value: string
+    line: int
+    col: int
+}
+
+fn lex(source: string) -> [Token] {
+    let tokens = []
+    let i = 0
+    let line = 1
+    let col = 1
+    let n = source.len
+    
+    while i < n {
+        let ch = source[i]
+        
+        // Skip whitespace (except newline)
+        if ch == ' ' || ch == '\r' || ch == '\t' {
+            i += 1
+            col += 1
+            continue
+        }
+        
+        // Newline
+        if ch == '\n' {
+            tokens.push(Token{type: TokenType.Newline, value: "\n", line: line, col: col})
+            i += 1
+            line += 1
+            col = 1
+            continue
+        }
+        
+        // Comment
+        if ch == '#' {
+            let start = i
+            while i < n && source[i] != '\n' {
+                i += 1
+            }
+            tokens.push(Token{type: TokenType.Comment, value: source[start:i], line: line, col: col})
+            col += i - start
+            continue
+        }
+        
+        // String
+        if ch == '"' {
+            i += 1
+            let start = i
+            while i < n && source[i] != '"' {
+                if source[i] == '\\' {
+                    i += 2  // Skip escape
+                } else {
+                    i += 1
+                }
+            }
+            let str = source[start:i]
+            i += 1  // Skip closing quote
+            tokens.push(Token{type: TokenType.String, value: str, line: line, col: col})
+            col += str.len + 2
+            continue
+        }
+        
+        // Multiline string """
+        if ch == '"' && i + 2 < n && source[i+1] == '"' && source[i+2] == '"' {
+            i += 3
+            let start = i
+            while i + 2 < n && !(source[i] == '"' && source[i+1] == '"' && source[i+2] == '"') {
+                i += 1
+            }
+            let str = source[start:i]
+            i += 3
+            tokens.push(Token{type: TokenType.String, value: str, line: line, col: col})
+            col += str.len + 6
+            continue
+        }
+        
+        // Key (bare or dotted)
+        if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || (ch >= '0' && ch <= '9' && i > 0) {
+            let start = i
+            while i < n {
+                let c = source[i]
+                if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+                    i += 1
+                } else {
+                    break
+                }
+            }
+            let key = source[start:i]
+            tokens.push(Token{type: TokenType.Key, value: key, line: line, col: col})
+            col += key.len
+            continue
+        }
+        
+        // Equals
+        if ch == '=' {
+            tokens.push(Token{type: TokenType.Equals, value: "=", line: line, col: col})
+            i += 1
+            col += 1
+            continue
+        }
+        
+        // Left bracket [
+        if ch == '[' {
+            if i + 1 < n && source[i+1] == '[' {
+                tokens.push(Token{type: TokenType.LeftDoubleBracket, value: "[[", line: line, col: col})
+                i += 2
+                col += 2
+            } else {
+                tokens.push(Token{type: TokenType.LeftBracket, value: "[", line: line, col: col})
+                i += 1
+                col += 1
+            }
+            continue
+        }
+        
+        // Right bracket ]
+        if ch == ']' {
+            if i + 1 < n && source[i+1] == ']' {
+                tokens.push(Token{type: TokenType.RightDoubleBracket, value: "]]", line: line, col: col})
+                i += 2
+                col += 2
+            } else {
+                tokens.push(Token{type: TokenType.RightBracket, value: "]", line: line, col: col})
+                i += 1
+                col += 1
+            }
+            continue
+        }
+        
+        // Left brace {
+        if ch == '{' {
+            tokens.push(Token{type: TokenType.LeftBrace, value: "{", line: line, col: col})
+            i += 1
+            col += 1
+            continue
+        }
+        
+        // Right brace }
+        if ch == '}' {
+            tokens.push(Token{type: TokenType.RightBrace, value: "}", line: line, col: col})
+            i += 1
+            col += 1
+            continue
+        }
+        
+        // Comma
+        if ch == ',' {
+            tokens.push(Token{type: TokenType.Comma, value: ",", line: line, col: col})
+            i += 1
+            col += 1
+            continue
+        }
+        
+        // Dot
+        if ch == '.' {
+            tokens.push(Token{type: TokenType.Dot, value: ".", line: line, col: col})
+            i += 1
+            col += 1
+            continue
+        }
+        
+        // Numbers (integer/float)
+        if (ch >= '0' && ch <= '9') || ch == '-' || ch == '+' {
+            let start = i
+            let hasDot = false
+            if ch == '-' || ch == '+' {
+                i += 1
+            }
+            while i < n {
+                let c = source[i]
+                if c >= '0' && c <= '9' {
+                    i += 1
+                } else if c == '.' && !hasDot {
+                    hasDot = true
+                    i += 1
+                } else {
+                    break
+                }
+            }
+            let num = source[start:i]
+            if hasDot {
+                tokens.push(Token{type: TokenType.Float, value: num, line: line, col: col})
+            } else {
+                tokens.push(Token{type: TokenType.Integer, value: num, line: line, col: col})
+            }
+            col += num.len
+            continue
+        }
+        
+        // Boolean
+        if i + 3 < n && source[i:i+4] == "true" {
+            tokens.push(Token{type: TokenType.Boolean, value: "true", line: line, col: col})
+            i += 4
+            col += 4
+            continue
+        }
+        if i + 4 < n && source[i:i+5] == "false" {
+            tokens.push(Token{type: TokenType.Boolean, value: "false", line: line, col: col})
+            i += 5
+            col += 5
+            continue
+        }
+        
+        // Date/DateTime (simple ISO detection)
+        if i + 9 < n && source[i+4] == '-' && source[i+7] == '-' {
+            let start = i
+            while i < n && (source[i] >= '0' && source[i] <= '9' || source[i] == '-' || source[i] == 'T' || source[i] == ':' || source[i] == 'Z' || source[i] == '+' || source[i] == '.' || source[i] == ' ') {
+                i += 1
+            }
+            let dateStr = source[start:i]
+            if dateStr.has("T") {
+                tokens.push(Token{type: TokenType.DateTime, value: dateStr, line: line, col: col})
+            } else {
+                tokens.push(Token{type: TokenType.Date, value: dateStr, line: line, col: col})
+            }
+            col += dateStr.len
+            continue
+        }
+        
+        // Unknown - skip
+        i += 1
+        col += 1
+    }
+    
+    tokens.push(Token{type: TokenType.EOF, value: "", line: line, col: col})
+    return tokens
+}
+
+// ============================================================
+// Parser
+// ============================================================
+
+struct Parser {
+    tokens: [Token]
+    pos: int
+    current_table: object
+}
+
+fn Parser.init(tokens: [Token]) -> Parser {
+    return Parser{tokens: tokens, pos: 0, current_table: {}}
+}
+
+fn Parser.peek(self) -> Token {
+    if self.pos < self.tokens.len {
+        return self.tokens[self.pos]
+    }
+    return Token{type: TokenType.EOF, value: "", line: 0, col: 0}
+}
+
+fn Parser.advance(self) -> Token {
+    let tok = self.peek()
+    self.pos += 1
+    return tok
+}
+
+fn Parser.skipNewlines(self) {
+    while self.peek().type == TokenType.Newline || self.peek().type == TokenType.Comment {
+        self.advance()
+    }
+}
+
+fn Parser.parseValue(self, tok: Token) -> any {
+    if tok.type == TokenType.String {
+        return tok.value
+    }
+    if tok.type == TokenType.Integer {
+        return int(tok.value)
+    }
+    if tok.type == TokenType.Float {
+        return num(tok.value)
+    }
+    if tok.type == TokenType.Boolean {
+        return tok.value == "true"
+    }
+    if tok.type == TokenType.Date || tok.type == TokenType.DateTime {
+        // Return as string for now (caller can parse with time module)
+        return tok.value
+    }
+    if tok.type == TokenType.LeftBracket {
+        return self.parseArray()
+    }
+    if tok.type == TokenType.LeftBrace {
+        return self.parseInlineTable()
+    }
+    return null
+}
+
+fn Parser.parseArray(self) -> [any] {
+    self.advance() // consume '['
+    let arr = []
+    
+    while true {
+        self.skipNewlines()
+        let tok = self.peek()
+        if tok.type == TokenType.RightBracket {
+            self.advance()
+            break
+        }
+        let val = self.parseValue(tok)
+        if val != null {
+            arr.push(val)
+        }
+        self.skipNewlines()
+        let next = self.peek()
+        if next.type == TokenType.Comma {
+            self.advance()
+            continue
+        }
+        if next.type != TokenType.RightBracket {
+            break
+        }
+    }
+    return arr
+}
+
+fn Parser.parseInlineTable(self) -> object {
+    self.advance() // consume '{'
+    let obj = {}
+    
+    while true {
+        self.skipNewlines()
+        let tok = self.peek()
+        if tok.type == TokenType.RightBrace {
+            self.advance()
+            break
+        }
+        if tok.type != TokenType.Key {
+            break
+        }
+        let key = tok.value
+        self.advance()
+        self.skipNewlines()
+        if self.peek().type != TokenType.Equals {
+            break
+        }
+        self.advance() // consume '='
+        self.skipNewlines()
+        let valTok = self.peek()
+        let val = self.parseValue(valTok)
+        if val != null {
+            obj[key] = val
+        }
+        self.skipNewlines()
+        let next = self.peek()
+        if next.type == TokenType.Comma {
+            self.advance()
+            continue
+        }
+        if next.type != TokenType.RightBrace {
+            break
+        }
+    }
+    return obj
+}
+
+fn Parser.parseKey(self) -> [string] {
+    let keys = []
+    let tok = self.peek()
+    if tok.type != TokenType.Key && tok.type != TokenType.String {
+        return keys
+    }
+    keys.push(tok.value)
+    self.advance()
+    
+    while self.peek().type == TokenType.Dot {
+        self.advance()
+        let next = self.peek()
+        if next.type != TokenType.Key && next.type != TokenType.String {
+            break
+        }
+        keys.push(next.value)
+        self.advance()
+    }
+    return keys
+}
+
+fn Parser.setValue(self, keys: [string], value: any) {
+    if keys.len == 0 {
+        return
+    }
+    let obj = self.current_table
+    for i in 0..(keys.len - 1) {
+        let key = keys[i]
+        if obj[key] == null {
+            obj[key] = {}
+        }
+        obj = obj[key]
+    }
+    obj[keys[-1]] = value
+}
+
+fn Parser.parse(self) -> object {
+    let result = {}
+    
+    while true {
+        self.skipNewlines()
+        let tok = self.peek()
+        if tok.type == TokenType.EOF {
+            break
+        }
+        
+        // Table header: [name]
+        if tok.type == TokenType.LeftBracket {
+            self.advance()
+            self.skipNewlines()
+            let keys = self.parseKey()
+            self.skipNewlines()
+            if self.peek().type != TokenType.RightBracket {
+                // Error
+                self.advance()
+                continue
+            }
+            self.advance()
+            
+            // Navigate to or create table
+            let table = result
+            for key in keys {
+                if table[key] == null {
+                    table[key] = {}
+                }
+                table = table[key]
+            }
+            self.current_table = table
+            continue
+        }
+        
+        // Array table: [[name]]
+        if tok.type == TokenType.LeftDoubleBracket {
+            self.advance()
+            self.skipNewlines()
+            let keys = self.parseKey()
+            self.skipNewlines()
+            if self.peek().type != TokenType.RightDoubleBracket {
+                self.advance()
+                continue
+            }
+            self.advance()
+            
+            // Navigate to parent
+            let parent = result
+            for i in 0..(keys.len - 1) {
+                let key = keys[i]
+                if parent[key] == null {
+                    parent[key] = []
+                }
+                // If it's an array, take last element as table
+                if parent[key] is [any] {
+                    let arr = parent[key]
+                    if arr.len == 0 {
+                        arr.push({})
+                    }
+                    parent = arr[-1]
+                } else {
+                    parent = parent[key]
+                }
+            }
+            
+            let lastKey = keys[-1]
+            if parent[lastKey] == null {
+                parent[lastKey] = []
+            }
+            let arr = parent[lastKey]
+            let newTable = {}
+            arr.push(newTable)
+            self.current_table = newTable
+            continue
+        }
+        
+        // Key-value pair
+        if tok.type == TokenType.Key || tok.type == TokenType.String {
+            let keys = self.parseKey()
+            self.skipNewlines()
+            if self.peek().type != TokenType.Equals {
+                // Skip invalid
+                self.advance()
+                continue
+            }
+            self.advance()
+            self.skipNewlines()
+            let valTok = self.peek()
+            let val = self.parseValue(valTok)
+            if val != null {
+                if keys.len == 1 {
+                    self.current_table[keys[0]] = val
+                } else {
+                    self.setValue(keys, val)
+                }
+            }
+            self.advance()
+            continue
+        }
+        
+        // Skip unknown
+        self.advance()
+    }
+    
+    return result
+}
+
+// ============================================================
+// Public API
+// ============================================================
+
+fn parse(source: string) -> object {
+    let tokens = lex(source)
+    let parser = Parser.init(tokens)
+    return parser.parse()
+}
+
+fn parseFile(path: string) -> object {
+    let source = fs.read(path)
+    if source == null {
+        return {}
+    }
+    return parse(source)
+}

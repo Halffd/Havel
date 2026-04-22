@@ -1,0 +1,16 @@
+// Test 2: Decorator factory
+fn repeat(n) {
+    return fn(fn_inner) {
+        return fn(*args) {
+            let result = fn_inner(*args)
+            return result
+        }
+    }
+}
+
+@repeat(3)
+fn say_hi() {
+    return "hi"
+}
+
+print(say_hi())

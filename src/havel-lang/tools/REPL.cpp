@@ -13,6 +13,7 @@
 #include "../parser/Parser.h"
 #include "../utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/runtime/DebugUtils.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -270,8 +271,12 @@ bool REPL::execute(const std::string& code) {
   try {
     // Compile and execute only the new code
     // executePersistent preserves globals/state between calls
-    compiler::ByteCompiler byteCompiler;
-    parser::Parser parser;
+        compiler::ByteCompiler byteCompiler;
+        parser::Parser parser{{
+            .lexer = config_.debugLexer,
+            .parser = config_.debugParser,
+            .ast = config_.debugAst
+        }};
 
     // Tell compiler about globals from previous REPL lines
     // so `let x = 5` on line 1 means `x` resolves as Global on line 2
@@ -297,7 +302,12 @@ bool REPL::execute(const std::string& code) {
       return false;
     }
 
-    auto chunk = byteCompiler.compile(*program);
+        auto chunk = byteCompiler.compile(*program);
+
+        if (config_.debugBytecode && chunk) {
+            compiler::BytecodeDisassembler disasm(*chunk);
+            std::cout << disasm.disassemble() << std::endl;
+        }
 
     // Collect new global names from the resolver and add to known_globals_
     // so subsequent REPL lines know about variables declared here

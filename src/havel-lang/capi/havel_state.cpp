@@ -450,10 +450,9 @@ int havel_loadfile(HavelState* H, const char* filename) {
 }
 
 void havel_require(HavelState* H, const char* name) {
-    if (!H || !name) return;
+    if (!H || !name || !H->vm) return;
     try {
-        auto& loader = havel::RuntimeModuleLoader::getInstance();
-        auto exports = loader.require(name);
+        auto exports = H->vm->loadModule(name);
         H->stack.push_back(exports);
     } catch (const std::exception& e) {
         H->last_error = e.what();
@@ -468,15 +467,15 @@ void havel_register_cmodule(HavelState* H, const char* name, int (*init)(HavelSt
 }
 
 void havel_add_search_path(HavelState* H, const char* path) {
-    (void)H;
-    if (path) {
-        havel::RuntimeModuleLoader::getInstance().addSearchPath(path);
+    if (H && H->vm && path) {
+        H->vm->addModuleSearchPath(path);
     }
 }
 
 void havel_clear_module_cache(HavelState* H) {
-    (void)H;
-    havel::RuntimeModuleLoader::getInstance().clearCache();
+    if (H && H->vm) {
+        H->vm->moduleLoader().clearCache();
+    }
 }
 
 const char* havel_version(void) { return HAVEL_VERSION; }

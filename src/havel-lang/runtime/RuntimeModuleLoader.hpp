@@ -2,44 +2,36 @@
 
 #include <string>
 #include <vector>
-#include <unordered_map>
-#include <unordered_set>
-#include <memory>
-#include <functional>
 #include <optional>
+#include <functional>
 
 #include "../core/Value.hpp"
 
 namespace havel {
 
-using Value = core::Value;
-using ModuleInitFn = std::function<Value(const std::vector<Value>&)>;
-using NativeModuleLoader = std::function<void*(const std::string&)>;
+// Forward declare VM to avoid circular include
+namespace compiler { class VM; }
 
+// RuntimeModuleLoader - Thin shim that delegates to VM::loadModule()
+// DEPRECATED: Use VM::loadModule() or VM::moduleLoader() directly instead.
+// This class exists only for backward compatibility with the C API.
 class RuntimeModuleLoader {
 public:
-    struct Module {
-        std::string name;
-        std::string path;
-        enum Type { Source, Bytecode, Native, Builtin };
-        Type type;
-        bool is_loaded = false;
-        core::Value exports;
-        void* handle = nullptr;
-    };
+    // No longer a singleton - constructed with a VM reference
+    explicit RuntimeModuleLoader(compiler::VM& vm) : vm_(vm) {}
 
+    // Legacy singleton access (DEPRECATED - returns a default-VM instance)
     static RuntimeModuleLoader& getInstance();
 
     void addSearchPath(const std::string& path);
     void setSearchPaths(const std::vector<std::string>& paths);
 
     std::optional<std::string> resolve(const std::string& name);
-
     core::Value load(const std::string& name);
     core::Value require(const std::string& name);
 
     void registerBuiltin(const std::string& name, core::Value exports);
-    void registerNativeLoader(NativeModuleLoader loader);
+    void registerNativeLoader(std::function<void*(const std::string&)> loader);
 
     bool isCached(const std::string& name);
     void clearCache();
@@ -48,21 +40,7 @@ public:
     std::vector<std::string> getLoadedModules() const;
 
 private:
-    RuntimeModuleLoader() = default;
-    ~RuntimeModuleLoader() = default;
-
-    std::optional<Module> findModule(const std::string& name);
-    core::Value loadModule(const Module& mod);
-
-    std::vector<std::string> search_paths_;
-    std::unordered_map<std::string, Module> cache_;
-    std::unordered_map<std::string, core::Value> builtin_modules_;
-    NativeModuleLoader native_loader_;
-    bool native_loader_registered_ = false;
-    std::unordered_set<std::string> loading_; // Circular dependency detection
+    compiler::VM& vm_;
 };
 
-core::Value import_module(const std::vector<core::Value>& args);
-core::Value load_stdlib();
-
-}
+} // namespace havel

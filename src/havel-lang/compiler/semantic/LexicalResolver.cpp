@@ -91,30 +91,51 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
           }
         }
       }
-    } else if (statement->kind == ast::NodeType::FunctionDeclaration) {
-      // Just add to top_level_functions_ - don't declare as local
-      const auto &fn =
-          static_cast<const ast::FunctionDeclaration &>(*statement);
-      if (fn.name) {
-        top_level_functions_.insert(fn.name->symbol);
-      }
-    }
+ } else if (statement->kind == ast::NodeType::FunctionDeclaration) {
+ // Just add to top_level_functions_ - don't declare as local
+ const auto &fn =
+ static_cast<const ast::FunctionDeclaration &>(*statement);
+ if (fn.name) {
+ top_level_functions_.insert(fn.name->symbol);
+ }
+ } else if (statement->kind == ast::NodeType::DecoratorStatement) {
+ const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+ if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+ const auto &fn = static_cast<const ast::FunctionDeclaration &>(*dec.target);
+ if (fn.name) {
+ top_level_functions_.insert(fn.name->symbol);
+ }
+ }
+ }
   }
 
-  // Second pass: resolve function bodies (can now see globals)
-  for (const auto &statement : program.body) {
-    if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
-      continue;
-    }
-    const auto &fn = static_cast<const ast::FunctionDeclaration &>(*statement);
-    resolveFunctionDeclaration(fn);
-  }
+ // Second pass: resolve function bodies (can now see globals)
+ for (const auto &statement : program.body) {
+ if (!statement) continue;
+
+ const ast::FunctionDeclaration *fnDecl = nullptr;
+ if (statement->kind == ast::NodeType::FunctionDeclaration) {
+ fnDecl = &static_cast<const ast::FunctionDeclaration &>(*statement);
+ } else if (statement->kind == ast::NodeType::DecoratorStatement) {
+ const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+ if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+ fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
+ for (const auto &decoExpr : dec.decorators) {
+ if (decoExpr) resolveExpression(*decoExpr);
+ }
+ }
+ }
+ if (fnDecl) {
+ resolveFunctionDeclaration(*fnDecl);
+ }
+ }
 
   // Third pass: resolve top-level non-function, non-let statements
   // LetDeclaration was already handled in the first pass
   for (const auto &statement : program.body) {
-    if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
-        statement->kind == ast::NodeType::LetDeclaration) {
+ if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
+ statement->kind == ast::NodeType::LetDeclaration ||
+ statement->kind == ast::NodeType::DecoratorStatement) {
       continue;
     }
     resolveStatement(*statement);
@@ -130,16 +151,22 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
 }
 
 void LexicalResolver::collectTopLevelFunctions(const ast::Program &program) {
-  for (const auto &statement : program.body) {
-    if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
-      continue;
-    }
+ for (const auto &statement : program.body) {
+ if (!statement) continue;
 
-    const auto &fn = static_cast<const ast::FunctionDeclaration &>(*statement);
-    if (fn.name) {
-      top_level_functions_.insert(fn.name->symbol);
-    }
-  }
+ const ast::FunctionDeclaration *fnDecl = nullptr;
+ if (statement->kind == ast::NodeType::FunctionDeclaration) {
+ fnDecl = &static_cast<const ast::FunctionDeclaration &>(*statement);
+ } else if (statement->kind == ast::NodeType::DecoratorStatement) {
+ const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+ if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+ fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
+ }
+ }
+ if (fnDecl && fnDecl->name) {
+ top_level_functions_.insert(fnDecl->name->symbol);
+ }
+ }
 }
 
 void LexicalResolver::collectTopLevelStructs(const ast::Program &program) {
@@ -617,31 +644,40 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
-  case ast::NodeType::FunctionDeclaration: {
-    const auto &fn = static_cast<const ast::FunctionDeclaration &>(statement);
-    if (fn.name) {
-      // Check if this is a top-level function (in program body, not nested)
-      if (top_level_functions_.count(fn.name->symbol) > 0) {
-        // Top-level function - create Function binding
-        ResolvedBinding binding;
-        binding.kind = ResolvedBindingKind::Function;
-        binding.name = fn.name->symbol;
-        result_.identifier_bindings[fn.name.get()] = binding;
-      } else {
-        // Nested function - declare as local in current (enclosing) scope
-        uint32_t slot = declareLocal(fn.name->symbol, fn.name.get(), false);
-        // Also record the binding for the function name itself so ByteCompiler can find it
-        ResolvedBinding binding;
-        binding.kind = ResolvedBindingKind::Local;
-        binding.slot = slot;
-        binding.name = fn.name->symbol;
-        binding.is_const = false;
-        result_.identifier_bindings[fn.name.get()] = binding;
-      }
-    }
-    resolveFunctionDeclaration(fn);
-    break;
-  }
+ case ast::NodeType::FunctionDeclaration: {
+ const auto &fn = static_cast<const ast::FunctionDeclaration &>(statement);
+ if (fn.name) {
+ // Check if this is a top-level function (in program body, not nested)
+ if (top_level_functions_.count(fn.name->symbol) > 0) {
+ // Top-level function - create Function binding
+ ResolvedBinding binding;
+ binding.kind = ResolvedBindingKind::Function;
+ binding.name = fn.name->symbol;
+ result_.identifier_bindings[fn.name.get()] = binding;
+ } else {
+ // Nested function - declare as local in current (enclosing) scope
+ uint32_t slot = declareLocal(fn.name->symbol, fn.name.get(), false);
+ // Also record the binding for the function name itself so ByteCompiler can find it
+ ResolvedBinding binding;
+ binding.kind = ResolvedBindingKind::Local;
+ binding.slot = slot;
+ binding.name = fn.name->symbol;
+ binding.is_const = false;
+ result_.identifier_bindings[fn.name.get()] = binding;
+ }
+ }
+ resolveFunctionDeclaration(fn);
+ break;
+ }
+
+ case ast::NodeType::DecoratorStatement: {
+ const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+ for (const auto &decoExpr : dec.decorators) {
+ if (decoExpr) resolveExpression(*decoExpr);
+ }
+ if (dec.target) resolveStatement(*dec.target);
+ break;
+ }
 
   case ast::NodeType::TryExpression: {
     const auto &try_stmt = static_cast<const ast::TryExpression &>(statement);

@@ -117,11 +117,22 @@ void registerShellModule(VMApi &api) {
                          return makeStringId(val, api);
                        });
 
-  api.registerFunction("shell.getcwd",
+  api.registerFunction("shell.cwd",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
                          return makeStringId(
                              fs::current_path().string(), api);
+                       });
+
+  api.registerFunction("shell.getenv",
+                       [&api](const std::vector<Value> &args) {
+                         if (args.empty())
+                           return Value::makeNull();
+                         std::string name = valueToString(args[0], api);
+                         const char *val = std::getenv(name.c_str());
+                         if (!val)
+                           return Value::makeNull();
+                         return makeStringId(val, api);
                        });
 
   api.registerFunction("shell.cd",
@@ -154,7 +165,8 @@ void registerShellModule(VMApi &api) {
   api.setField(shellObj, "exec", api.makeFunctionRef("shell.exec"));
   api.setField(shellObj, "which", api.makeFunctionRef("shell.which"));
   api.setField(shellObj, "env", api.makeFunctionRef("shell.env"));
-  api.setField(shellObj, "getcwd", api.makeFunctionRef("shell.getcwd"));
+  api.setField(shellObj, "getenv", api.makeFunctionRef("shell.getenv"));
+  api.setField(shellObj, "cwd", api.makeFunctionRef("shell.cwd"));
   api.setField(shellObj, "cd", api.makeFunctionRef("shell.cd"));
   api.setField(shellObj, "escape", api.makeFunctionRef("shell.escape"));
   api.setGlobal("shell", shellObj);

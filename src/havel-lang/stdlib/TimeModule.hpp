@@ -8,19 +8,9 @@
 #include <chrono>
 #include <ctime>
 
-namespace havel {
-class Environment;
-}
-
 namespace havel::stdlib {
 
-// OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerTimeModule(Environment &env);
-
-// NEW: Register time module with VMApi (stable API layer)
+// Register time module with VMApi
 void registerTimeModule(compiler::VMApi &api);
-
-// Implementation of old registerTimeModule (placeholder)
-inline void registerTimeModule(Environment &env) { (void)env; }
 
 } // namespace havel::stdlib

@@ -20,10 +20,9 @@ static std::string valueToString(const Value &v, VMApi &api) {
   return api.vm.resolveStringKey(v);
 }
 
-// Helper: create StringId from std::string
-static Value makeStringId(const std::string &s, VMApi &api) {
-  auto strRef = api.vm.getHeap().allocateString(s);
-  return Value::makeStringId(strRef.id);
+// Helper: create String from std::string using VMApi
+static Value makeString(const std::string &s, VMApi &api) {
+  return api.makeString(s);
 }
 
 // Helper: get current tm struct
@@ -93,7 +92,7 @@ void registerTimeModule(VMApi &api) {
         std::tm *tm = std::localtime(&time);
         char buf[256];
         std::strftime(buf, sizeof(buf), fmt.c_str(), tm);
-        return makeStringId(buf, api);
+        return makeString(buf, api);
       });
 
   // time.parse(datestr, format?) — parse date string to millisecond
@@ -186,7 +185,7 @@ void registerTimeModule(VMApi &api) {
     auto tm = getLocalTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
-    return makeStringId(buf, api);
+    return makeString(buf, api);
   });
 
   // time.time() — current time as "HH:MM:SS" string
@@ -195,7 +194,7 @@ void registerTimeModule(VMApi &api) {
     auto tm = getLocalTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
-    return makeStringId(buf, api);
+    return makeString(buf, api);
   });
 
   // Build namespace object

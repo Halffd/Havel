@@ -70,26 +70,27 @@ VISIT_CASE(FunctionDeclaration);
     VISIT_CASE(TryExpression);
     VISIT_CASE(ThrowStatement);
     VISIT_CASE(AtExpression);
-    VISIT_CASE(AtAtExpression);
-    // VISIT_CASE(WhenBlock); // Not in AST.h NodeType enum
-    VISIT_CASE(ModeBlock);
-    VISIT_CASE(HotkeyBinding);
-    VISIT_CASE(HotkeyExpression);
-    VISIT_CASE(ConditionalHotkey);
-    VISIT_CASE(InputStatement);
-    VISIT_CASE(UseStatement);
-    VISIT_CASE(ExportStatement);
-    VISIT_CASE(ArrayPattern);
-    VISIT_CASE(ObjectPattern);
+ VISIT_CASE(AtAtExpression);
+ case ast::NodeType::WhenBlockStatement: return visitWhenBlock(static_cast<ast::WhenBlock&>(node));
+ VISIT_CASE(ModeBlock);
+ VISIT_CASE(HotkeyBinding);
+ VISIT_CASE(HotkeyExpression);
+ VISIT_CASE(ConditionalHotkey);
+ VISIT_CASE(InputStatement);
+ VISIT_CASE(UseStatement);
+ VISIT_CASE(ExportStatement);
+ VISIT_CASE(DecoratorStatement);
+ VISIT_CASE(ArrayPattern);
+ VISIT_CASE(ObjectPattern);
 
 #undef VISIT_CASE
 
-default:
-    return visitDefault(node);
-}
-}
+ default:
+ return visitDefault(node);
+ }
+ }
 
-ReturnType dispatch(const ast::ASTNode& node) {
+ ReturnType dispatch(const ast::ASTNode& node) {
 switch (node.kind) {
 #define VISIT_CASE(NodeT) \
 case ast::NodeType::NodeT: \
@@ -103,52 +104,53 @@ VISIT_CASE(CallExpression);
 VISIT_CASE(AssignmentExpression);
 VISIT_CASE(MultipleAssignment);
 VISIT_CASE(MemberExpression);
-      VISIT_CASE(IndexExpression);
-      VISIT_CASE(LambdaExpression);
-      VISIT_CASE(ArrayLiteral);
-      VISIT_CASE(ObjectLiteral);
-      VISIT_CASE(TernaryExpression);
-      VISIT_CASE(UpdateExpression);
-      VISIT_CASE(AwaitExpression);
-      VISIT_CASE(SpreadExpression);
-      VISIT_CASE(RangeExpression);
-      VISIT_CASE(PipelineExpression);
+VISIT_CASE(IndexExpression);
+VISIT_CASE(LambdaExpression);
+VISIT_CASE(ArrayLiteral);
+VISIT_CASE(ObjectLiteral);
+VISIT_CASE(TernaryExpression);
+VISIT_CASE(UpdateExpression);
+VISIT_CASE(AwaitExpression);
+VISIT_CASE(SpreadExpression);
+VISIT_CASE(RangeExpression);
+VISIT_CASE(PipelineExpression);
 VISIT_CASE(InterpolatedStringExpression);
 VISIT_CASE(BacktickExpression);
 VISIT_CASE(ShellCommandExpression);
 VISIT_CASE(FunctionDeclaration);
-      VISIT_CASE(ExpressionStatement);
-      VISIT_CASE(LetDeclaration);
-      VISIT_CASE(IfStatement);
-      VISIT_CASE(WhileStatement);
-      VISIT_CASE(DoWhileStatement);
-      VISIT_CASE(ForStatement);
-      VISIT_CASE(LoopStatement);
-      VISIT_CASE(ReturnStatement);
-      VISIT_CASE(BlockStatement);
-      VISIT_CASE(TryExpression);
-      VISIT_CASE(ThrowStatement);
-      VISIT_CASE(AtExpression);
-      VISIT_CASE(AtAtExpression);
-      // VISIT_CASE(WhenBlock);  // Not in AST.h NodeType enum
-      VISIT_CASE(ModeBlock);
-      VISIT_CASE(HotkeyBinding);
-      VISIT_CASE(HotkeyExpression);
-      VISIT_CASE(ConditionalHotkey);
-      VISIT_CASE(InputStatement);
-      VISIT_CASE(UseStatement);
-      VISIT_CASE(ExportStatement);
-      VISIT_CASE(ArrayPattern);
-      VISIT_CASE(ObjectPattern);
+VISIT_CASE(ExpressionStatement);
+VISIT_CASE(LetDeclaration);
+VISIT_CASE(IfStatement);
+VISIT_CASE(WhileStatement);
+VISIT_CASE(DoWhileStatement);
+VISIT_CASE(ForStatement);
+VISIT_CASE(LoopStatement);
+VISIT_CASE(ReturnStatement);
+VISIT_CASE(BlockStatement);
+VISIT_CASE(TryExpression);
+VISIT_CASE(ThrowStatement);
+VISIT_CASE(AtExpression);
+ VISIT_CASE(AtAtExpression);
+ case ast::NodeType::WhenBlockStatement: return visitWhenBlock(static_cast<const ast::WhenBlock&>(node));
+ VISIT_CASE(ModeBlock);
+VISIT_CASE(HotkeyBinding);
+VISIT_CASE(HotkeyExpression);
+VISIT_CASE(ConditionalHotkey);
+VISIT_CASE(InputStatement);
+VISIT_CASE(UseStatement);
+VISIT_CASE(ExportStatement);
+VISIT_CASE(DecoratorStatement);
+VISIT_CASE(ArrayPattern);
+VISIT_CASE(ObjectPattern);
 
-      #undef VISIT_CASE
+#undef VISIT_CASE
 
-      default:
-        return visitDefault(node);
-    }
-  }
+default:
+    return visitDefault(node);
+}
+}
 
-  // Default visitor - override in subclasses
+ // Default visitor - override in subclasses
   virtual ReturnType visitDefault(ast::ASTNode& node) {
     (void)node;
     if constexpr (!std::is_void_v<ReturnType>) {
@@ -213,10 +215,11 @@ DECLARE_VISIT(FunctionDeclaration)
   DECLARE_VISIT(HotkeyExpression)
   DECLARE_VISIT(ConditionalHotkey)
   DECLARE_VISIT(InputStatement)
-  DECLARE_VISIT(UseStatement)
-  DECLARE_VISIT(ExportStatement)
-  DECLARE_VISIT(ArrayPattern)
-  DECLARE_VISIT(ObjectPattern)
+DECLARE_VISIT(UseStatement)
+DECLARE_VISIT(ExportStatement)
+DECLARE_VISIT(DecoratorStatement)
+DECLARE_VISIT(ArrayPattern)
+DECLARE_VISIT(ObjectPattern)
 
   #undef DECLARE_VISIT
 };

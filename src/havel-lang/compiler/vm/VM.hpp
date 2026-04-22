@@ -4,6 +4,7 @@
 #include "../gc/GC.hpp"
 #include "VMImage.hpp"
 #include "../../runtime/HostContext.hpp"
+#include "../../runtime/ModuleLoader.hpp"
 
 #include <array>
 #include <atomic>
@@ -198,14 +199,15 @@ private:
     // Module exports for END_MODULE opcode
     Value module_exports_;
 
-    // Module system: cache of loaded modules (resolved path -> exports object)
-    // Prevents re-execution of already-imported modules (like Python's sys.modules)
-    std::unordered_map<std::string, Value> module_cache_;
+    // Module system: delegate path resolution + caching to canonical ModuleLoader
+    // Circular dependency detection still in VM
     std::unordered_set<std::string> modules_loading_; // Circular dependency detection
-    std::vector<std::string> module_search_paths_;
     std::string current_script_dir_; // Directory of the currently executing script (for relative imports)
     // Keep module BytecodeChunks alive so exported closures can reference them
     std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
+
+    // Canonical module loader for path resolution and caching
+    ModuleLoader moduleLoader_;
 
     std::vector<std::unordered_map<std::string, Value>> globals_stack_;
 
@@ -661,10 +663,10 @@ public:
     Value runInContext(const std::string& source, Value context);
 
     Value loadModule(const std::string& path);
-    std::optional<std::filesystem::path> resolveModulePath(const std::string& modulePath) const;
+    void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
+    void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
 
-    void addModuleSearchPath(const std::string& path) { module_search_paths_.push_back(path); }
-  void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
+    ModuleLoader& moduleLoader() { return moduleLoader_; }
 
     // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }

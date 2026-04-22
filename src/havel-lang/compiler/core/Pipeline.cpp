@@ -261,6 +261,8 @@ std::string opcodeName(OpCode opcode) {
     return "DUP";
   case OpCode::SWAP:
     return "SWAP";
+  case OpCode::PUSH_NULL:
+    return "PUSH_NULL";
   case OpCode::ADD:
     return "ADD";
   case OpCode::SUB:
@@ -341,12 +343,18 @@ std::string opcodeName(OpCode opcode) {
     return "ARRAY_GET";
   case OpCode::ARRAY_SET:
     return "ARRAY_SET";
+  case OpCode::ARRAY_DEL:
+    return "ARRAY_DEL";
   case OpCode::ARRAY_PUSH:
     return "ARRAY_PUSH";
   case OpCode::ARRAY_LEN:
+    return "ARRAY_LEN";
   case OpCode::ARRAY_FREEZE:
     return "ARRAY_FREEZE";
-    return "ARRAY_LEN";
+  case OpCode::SET_SET:
+    return "SET_SET";
+  case OpCode::SET_DEL:
+    return "SET_DEL";
   case OpCode::ITER_NEW:
     return "ITER_NEW";
   case OpCode::ITER_NEXT:
@@ -374,6 +382,8 @@ std::string opcodeName(OpCode opcode) {
     return "OBJECT_HAS";
   case OpCode::OBJECT_DELETE:
     return "OBJECT_DELETE";
+  case OpCode::OBJECT_GET_RAW:
+    return "OBJECT_GET_RAW";
   case OpCode::ARRAY_POP:
     return "ARRAY_POP";
   case OpCode::ARRAY_HAS:
@@ -454,6 +464,46 @@ std::string opcodeName(OpCode opcode) {
     return "LOAD_CLASS_PROTO";
   case OpCode::CALL_SUPER:
     return "CALL_SUPER";
+  case OpCode::IMPORT:
+    return "IMPORT";
+  case OpCode::THREAD_SPAWN:
+    return "THREAD_SPAWN";
+  case OpCode::THREAD_JOIN:
+    return "THREAD_JOIN";
+  case OpCode::THREAD_SEND:
+    return "THREAD_SEND";
+  case OpCode::THREAD_RECEIVE:
+    return "THREAD_RECEIVE";
+  case OpCode::INTERVAL_START:
+    return "INTERVAL_START";
+  case OpCode::INTERVAL_STOP:
+    return "INTERVAL_STOP";
+  case OpCode::TIMEOUT_START:
+    return "TIMEOUT_START";
+  case OpCode::TIMEOUT_CANCEL:
+    return "TIMEOUT_CANCEL";
+  case OpCode::YIELD:
+    return "YIELD";
+  case OpCode::YIELD_RESUME:
+    return "YIELD_RESUME";
+  case OpCode::GO_ASYNC:
+    return "GO_ASYNC";
+  case OpCode::CHANNEL_NEW:
+    return "CHANNEL_NEW";
+  case OpCode::CHANNEL_SEND:
+    return "CHANNEL_SEND";
+  case OpCode::CHANNEL_RECEIVE:
+    return "CHANNEL_RECEIVE";
+  case OpCode::CHANNEL_CLOSE:
+    return "CHANNEL_CLOSE";
+  case OpCode::EXPORT_FN:
+    return "EXPORT_FN";
+  case OpCode::EXPORT_VAR:
+    return "EXPORT_VAR";
+  case OpCode::BEGIN_MODULE:
+    return "BEGIN_MODULE";
+  case OpCode::END_MODULE:
+    return "END_MODULE";
   case OpCode::NOP:
     return "NOP";
   }

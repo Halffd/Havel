@@ -1,11 +1,8 @@
-// ModuleLoader.hpp
-// Simple, explicit module loading system
-// No singletons, no static registration, no macro magic
-
 #pragma once
+#include <filesystem>
 #include <functional>
 #include <memory>
-#include <stdexcept>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,149 +14,119 @@ class Environment;
 class IHostAPI;
 class Interpreter;
 
-/**
- * Module registration function
- */
+// Backward-compatible typedefs (from old ModuleLoader)
 using ModuleFn = std::function<void(Environment &)>;
-
-/**
- * Interpreter module registration function (has Interpreter access)
- * For modules that need to call user functions
- */
 using InterpreterModuleFn = std::function<void(Environment &, Interpreter *)>;
+using HostModuleFn = std::function<void(Environment &, std::shared_ptr<IHostAPI>)>;
 
-/**
- * Host module registration function (has IHostAPI access)
- * Takes shared_ptr to keep HostAPI alive for lambdas
- */
-using HostModuleFn =
-    std::function<void(Environment &, std::shared_ptr<IHostAPI>)>;
-
-/**
- * Simple module registry - NOT a singleton
- * Each Interpreter can have its own registry
- */
+// ============================================================================
+// ModuleLoader - Canonical module loading system
+// ============================================================================
+// Priority-based search:
+//   1. Check cache (already loaded?)
+//   2. Check __cache__/*.hbc (compiled bytecode cache)
+//   3. Check stdlib/*.hv (bundled source)
+//   4. Check ~/.havel/packages/ (user packages)
+//   5. Check module_search_paths_/*.hv (user paths)
+//   6. Check ./*.so (native extensions via dlopen)
+//   7. Error: module not found
+// ============================================================================
 class ModuleLoader {
 public:
-  ModuleLoader() = default; // Public constructor
-
-  /**
-   * Register a standard library module
-   */
-  void add(const std::string &name, ModuleFn fn) {
-    modules[name] = fn;
-    hostModules[name] = false;
-    interpreterModules[name] = false;
-  }
-
-  /**
-   * Register an interpreter module (needs interpreter access)
-   */
-  void addInterpreter(const std::string &name, InterpreterModuleFn fn) {
-    interpreterFns[name] = fn;
-    hostModules[name] = false;
-    interpreterModules[name] = true;
-  }
-
-  /**
-   * Register a host module
-   */
-  void addHost(const std::string &name, HostModuleFn fn) {
-    modules[name] = [fn](Environment &env) {
-      // Wrapper - will fail at load time if hostAPI not provided
+    // --- Resolved module info ---
+    struct ResolvedModule {
+        enum Type {
+            Cached,           // Already in module cache
+            BytecodeCache,    // .hbc file in __cache__/
+            StdlibSource,     // .hv file in stdlib/
+            PackageSource,    // .hv file in ~/.havel/packages/
+            UserSource,       // .hv file in user search paths
+            NativeExtension, // .so file
+            HostBuiltin      // Host module (registered via host_function_globals_)
+        };
+        Type type;
+        std::string canonicalPath;  // Resolved absolute path (empty for Cached/HostBuiltin)
+        std::string moduleName;     // Original module name
     };
-    hostFns[name] = fn;
-    hostModules[name] = true;
-    interpreterModules[name] = false;
-  }
 
-  /**
-   * Load a module
-   */
-  bool load(Environment &env, const std::string &name,
-            std::shared_ptr<IHostAPI> hostAPI = nullptr,
-            Interpreter *interpreter = nullptr) {
-    // Check if interpreter module
-    if (interpreterModules[name]) {
-      auto it = interpreterFns.find(name);
-      if (it != interpreterFns.end()) {
-        it->second(env, interpreter);
-        loaded.insert(name);
-        return true;
-      }
-      return false;
-    }
+    // --- Native extension handle ---
+    struct NativeHandle {
+        void* dlHandle = nullptr;
+        std::string name;
+    };
 
-    // Check if host module
-    if (hostModules[name]) {
-      if (!hostAPI) {
-        throw std::runtime_error("Host module '" + name +
-                                 "' requires host API");
-      }
-      auto hostIt = hostFns.find(name);
-      if (hostIt != hostFns.end()) {
-        hostIt->second(env, hostAPI);
-        loaded.insert(name);
-        return true;
-      }
-      return false;
-    }
+    ModuleLoader() = default;
+    ~ModuleLoader();
 
-    // Standard module
-    auto it = modules.find(name);
-    if (it == modules.end()) {
-      return false;
-    }
+    // Non-copyable, movable
+    ModuleLoader(const ModuleLoader&) = delete;
+    ModuleLoader& operator=(const ModuleLoader&) = delete;
+    ModuleLoader(ModuleLoader&&) = default;
+    ModuleLoader& operator=(ModuleLoader&&) = default;
 
-    it->second(env);
-    loaded.insert(name);
-    return true;
-  }
+    // ========================================================================
+    // Search path management
+    // ========================================================================
+    void addSearchPath(const std::string& path);
+    void setStdlibPath(const std::string& path);
+    const std::vector<std::string>& getSearchPaths() const { return searchPaths_; }
+    const std::string& getStdlibPath() const { return stdlibPath_; }
 
-  /**
-   * Load all registered modules
-   */
-  void loadAll(Environment &env, std::shared_ptr<IHostAPI> hostAPI = nullptr) {
-    for (const auto &[name, fn] : modules) {
-      load(env, name, hostAPI);
-    }
-  }
+    // ========================================================================
+    // Path resolution (priority-based)
+    // ========================================================================
+    std::optional<ResolvedModule> resolve(const std::string& modulePath,
+                                           const std::string& scriptDir) const;
 
-  /**
-   * Check if module exists
-   */
-  bool has(const std::string &name) const { return modules.count(name) > 0; }
+    // ========================================================================
+    // Module cache (for VM to store/retrieve loaded module exports)
+    // ========================================================================
+    bool isCached(const std::string& key) const;
+    // Use forward declaration of Value to avoid including Value.hpp here
+    // The cache stores void* that VM casts appropriately
+    bool getCached(const std::string& key, void** outValue) const;
+    void putCache(const std::string& key, void* value);
+    void clearCache();
 
-  /**
-   * Check if module is loaded
-   */
-  bool isLoaded(const std::string &name) const {
-    return loaded.count(name) > 0;
-  }
+    // ========================================================================
+    // Native extension loading (.so via dlopen)
+    // ========================================================================
+    std::optional<NativeHandle> loadNativeExtension(const std::string& path);
+    void unloadNativeExtensions();
 
-  /**
-   * Get list of all modules
-   */
-  std::vector<std::string> list() const {
-    std::vector<std::string> names;
-    for (const auto &[name, fn] : modules) {
-      names.push_back(name);
-    }
-    return names;
-  }
-
-  /**
-   * Clear loaded state (for testing)
-   */
-  void clearLoaded() { loaded.clear(); }
+    // ========================================================================
+    // Backward compatibility: Environment-based host module registry
+    // (deprecated - kept for HostModules.hpp/cpp which still reference it)
+    // ========================================================================
+    void add(const std::string& name, ModuleFn fn);
+    void addInterpreter(const std::string& name, InterpreterModuleFn fn);
+    void addHost(const std::string& name, HostModuleFn fn);
+    bool load(Environment& env, const std::string& name,
+              std::shared_ptr<IHostAPI> hostAPI = nullptr,
+              Interpreter* interpreter = nullptr);
+    bool has(const std::string& name) const;
+    bool isLoaded(const std::string& name) const;
+    std::vector<std::string> list() const;
+    void clearLoaded();
 
 private:
-  std::unordered_map<std::string, ModuleFn> modules;
-  std::unordered_map<std::string, HostModuleFn> hostFns;
-  std::unordered_map<std::string, InterpreterModuleFn> interpreterFns;
-  std::unordered_map<std::string, bool> hostModules;
-  std::unordered_map<std::string, bool> interpreterModules;
-  std::unordered_set<std::string> loaded;
+    // Search paths for .hv module resolution
+    std::vector<std::string> searchPaths_;
+    std::string stdlibPath_;  // Bundled stdlib directory
+
+    // Module cache: canonicalKey -> opaque value pointer (VM manages actual Value objects)
+    std::unordered_map<std::string, void*> cache_;
+
+    // Native extension handles (for dlopen/dlclose)
+    std::unordered_map<std::string, NativeHandle> nativeHandles_;
+
+    // Backward compat: Environment-based module registry (deprecated)
+    std::unordered_map<std::string, ModuleFn> envModules_;
+    std::unordered_map<std::string, HostModuleFn> hostFns_;
+    std::unordered_map<std::string, InterpreterModuleFn> interpreterFns_;
+    std::unordered_map<std::string, bool> hostModuleFlags_;
+    std::unordered_map<std::string, bool> interpreterModuleFlags_;
+    std::unordered_set<std::string> envLoaded_;
 };
 
 } // namespace havel

@@ -12,6 +12,15 @@ namespace havel::init {
 
 class HavelLauncher {
 public:
+  enum class Target {
+    INTERPRET, // Bytecode VM interpreter
+    JIT,       // LLVM JIT for hot functions
+    AOT,       // Native binary artifact (.so)
+    ASM,       // Native assembly (.s)
+    IR,        // LLVM IR (.ll)
+    WASM       // WebAssembly binary (.wasm)
+  };
+
   enum class Mode {
     DAEMON,          // Full system with hotkeys + GUI (default)
     SCRIPT,          // Execute .hv script file with full IO
@@ -50,11 +59,14 @@ bool useJIT = true;
     bool debugJIT = false;
     bool dumpIR = false;
     bool outputAsmToFile = false;
+    Target target = Target::INTERPRET;
 
     // AOT compilation options
     bool emitLLVM = false;      // --emit-llvm: output .ll file
     bool emitAsm = false;       // --emit-asm: output .s assembly file
     bool emitObj = false;       // --emit-obj: output .o object file
+    bool emitWasm = false;      // --target wasm: output .wasm
+    bool emitBinary = false;    // --target aot: output native .so
     std::string aotOutput;      // -o for AOT output path
 
 };

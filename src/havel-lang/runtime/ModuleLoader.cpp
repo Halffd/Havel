@@ -34,7 +34,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         return std::nullopt;
     }
 
-    // Handle relative paths starting with ./ or ./
+    // Handle explicit relative paths starting with ./ or ../
     if (modulePath.starts_with("./") || modulePath.starts_with("../")) {
         fs::path resolved = fs::path(scriptDir) / modulePath;
         if (fs::exists(resolved)) {
@@ -52,7 +52,25 @@ ModuleLoader::resolve(const std::string& modulePath,
         return ResolvedModule{ResolvedModule::Cached, "", modulePath};
     }
 
-    // 2. Check __cache__/name.hbc relative to scriptDir
+    // 2. Check script directory first for local modules:
+    //    scriptDir/name.hv and scriptDir/name/name.hv
+    if (!scriptDir.empty()) {
+        fs::path scriptDirPath(scriptDir);
+
+        fs::path localHvPath = scriptDirPath / (name + ".hv");
+        if (fs::exists(localHvPath)) {
+            return ResolvedModule{ResolvedModule::UserSource,
+                                fs::canonical(localHvPath).string(), modulePath};
+        }
+
+        fs::path localPkgHvPath = scriptDirPath / name / (name + ".hv");
+        if (fs::exists(localPkgHvPath)) {
+            return ResolvedModule{ResolvedModule::UserSource,
+                                fs::canonical(localPkgHvPath).string(), modulePath};
+        }
+    }
+
+    // 3. Check __cache__/name.hbc relative to scriptDir
     if (!scriptDir.empty()) {
         fs::path cachePath = fs::path(scriptDir) / "__cache__" / (name + ".hbc");
         if (fs::exists(cachePath)) {
@@ -61,7 +79,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         }
     }
 
-    // 3. Check stdlibPath_/name.hv (bundled source)
+    // 4. Check stdlibPath_/name.hv (bundled source)
     if (!stdlibPath_.empty()) {
         fs::path stdlibPath = fs::path(stdlibPath_) / (name + ".hv");
         if (fs::exists(stdlibPath)) {
@@ -70,7 +88,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         }
     }
 
-    // 4. Check ~/.havel/packages/name/name.hv
+    // 5. Check ~/.havel/packages/name/name.hv
     if (const char* home = std::getenv("HOME")) {
         fs::path pkgPath = fs::path(home) / ".havel" / "packages" / name / (name + ".hv");
         if (fs::exists(pkgPath)) {
@@ -79,7 +97,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         }
     }
 
-    // 5. Check each user search path for name.hv or name/name.hv
+    // 6. Check each user search path for name.hv or name/name.hv
     for (const auto& sp : searchPaths_) {
         fs::path spDir(sp);
 
@@ -98,7 +116,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         }
     }
 
-    // 6. Check each search path for native extensions (.so)
+    // 7. Check each search path for native extensions (.so)
     for (const auto& sp : searchPaths_) {
         fs::path spDir(sp);
 
@@ -117,7 +135,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         }
     }
 
-    // 7. Check for host builtin module
+    // 8. Check for host builtin module
     if (hostFns_.count(name) > 0 || envModules_.count(name) > 0) {
         return ResolvedModule{ResolvedModule::HostBuiltin, "", modulePath};
     }

@@ -61,6 +61,7 @@ public:
     void setDebugMode(bool enabled) { debug_jit_ = enabled; }
     void setDumpIR(bool enabled) { dump_ir_ = enabled; }
     void setDumpAsmToFile(bool enabled) { dump_asm_to_file_ = enabled; }
+    void setOptimizationLevel(uint8_t level) { optimization_level_ = level > 3 ? 3 : level; }
 
     void dumpAssembly(const std::string &filename);
 
@@ -74,6 +75,7 @@ private:
     bool debug_jit_ = false;
     bool dump_ir_ = false;
     bool dump_asm_to_file_ = false;
+    uint8_t optimization_level_ = 1; // 0=O0 fast start, 1=O1 baseline, 2=O2, 3=O3
     std::string last_asm_;
 
     void initTargetMachine();

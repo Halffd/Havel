@@ -1135,6 +1135,13 @@ std::vector<std::string> VM::getPrototypeMethods(const Value &value) {
   return methods;
 }
 
+std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {
+  if (index >= host_function_names_.size()) {
+    return std::nullopt;
+  }
+  return host_function_names_[index];
+}
+
 uint64_t VM::pinExternalRoot(const Value &value) {
   return heap_.pinExternalRoot(value);
 }

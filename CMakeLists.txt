@@ -372,10 +372,11 @@ if(ENABLE_HAVEL_LANG)
     # -----------------------------------------------------------------------
     if(ENABLE_LLVM)
         set(JIT_SRC "${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp")
+        set(LAUNCHER_SRC "${CMAKE_SOURCE_DIR}/src/core/init/HavelLauncher.cpp")
         # Convert list of include dirs to properly formatted -I flags
         # LLVM_INCLUDE_DIRS is a semicolon-separated list, so we need to prefix each with -I
         string(REGEX REPLACE ";" " -I" LLVM_INCLUDE_FLAGS "-I${LLVM_INCLUDE_DIRS}")
-        set_source_files_properties(${JIT_SRC} PROPERTIES
+        set_source_files_properties(${JIT_SRC} ${LAUNCHER_SRC} PROPERTIES
             COMPILE_FLAGS "${LLVM_INCLUDE_FLAGS}"
         )
     endif()

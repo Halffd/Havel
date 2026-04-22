@@ -15,6 +15,7 @@
 #include <llvm/MC/TargetRegistry.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
@@ -52,6 +53,14 @@ void havel_vm_throw_error(void* vm_ptr, const char* msg) {
     if (!vm_ptr) return;
     auto* vm = static_cast<VM*>(vm_ptr);
     vm->throwError(msg);
+}
+
+void havel_vm_throw_value(void* vm_ptr, uint64_t value_bits) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value v;
+    std::memcpy(&v, &value_bits, sizeof(uint64_t));
+    vm->throwError(vm->toString(v));
 }
 
 void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
@@ -305,22 +314,170 @@ uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
   return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
 }
 
-// Concurrency primitives - stubs (premature for JIT, use interpreter)
+// Concurrency primitives
 uint64_t havel_vm_thread_new(void* vm_ptr, uint32_t func_id) {
-  // TODO: Wire to ConcurrencyBridge when JIT is mature enough
-  return Value::makeNull().rawBits();
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value fn = Value::makeFunctionObjId(func_id);
+
+  // Prefer explicit concurrency bridge naming, then language-level naming.
+  Value result = vm->invokeHostFunctionDirect("thread_spawn", {fn});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("thread.spawn", {fn});
+  }
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("thread", {fn});
+  }
+  return result.rawBits();
 }
 
 uint64_t havel_vm_channel_new(void* vm_ptr, uint64_t cap_bits) {
-  return Value::makeNull().rawBits();
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value cap;
+  std::memcpy(&cap, &cap_bits, sizeof(uint64_t));
+
+  Value result = vm->invokeHostFunctionDirect("channel_new", {cap});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("channel.new", {cap});
+  }
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("channel_new", {});
+  }
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("channel.new", {});
+  }
+
+  // Fallback: preserve runtime progress even when host bridge isn't installed.
+  if (result.isNull()) {
+    auto ref = vm->getHeap().allocateChannel();
+    result = Value::makeChannelId(ref.id);
+  }
+  return result.rawBits();
 }
 
 void havel_vm_channel_send(void* vm_ptr, uint64_t chan_bits, uint64_t val_bits) {
-  // No-op stub
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value chan, val;
+  std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+
+  Value result = vm->invokeHostFunctionDirect("channel_send", {chan, val});
+  if (result.isNull()) {
+    (void)vm->invokeHostFunctionDirect("channel.send", {chan, val});
+  }
 }
 
 uint64_t havel_vm_channel_recv(void* vm_ptr, uint64_t chan_bits) {
-  return Value::makeNull().rawBits();
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value chan;
+  std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
+
+  Value result = vm->invokeHostFunctionDirect("channel_receive", {chan});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("channel.receive", {chan});
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_thread_join(void* vm_ptr, uint64_t thread_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value thread;
+  std::memcpy(&thread, &thread_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("thread_join", {thread});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("thread.join", {thread});
+  }
+  return result.rawBits();
+}
+
+void havel_vm_thread_send(void* vm_ptr, uint64_t thread_bits, uint64_t val_bits) {
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value thread, val;
+  std::memcpy(&thread, &thread_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("thread_send", {thread, val});
+  if (result.isNull()) {
+    (void)vm->invokeHostFunctionDirect("thread.send", {thread, val});
+  }
+}
+
+uint64_t havel_vm_thread_recv(void* vm_ptr, uint64_t thread_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value thread;
+  std::memcpy(&thread, &thread_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("thread_receive", {thread});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("thread.receive", {thread});
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_interval_start(void* vm_ptr, uint64_t duration_bits, uint64_t callback_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value duration, callback;
+  std::memcpy(&duration, &duration_bits, sizeof(uint64_t));
+  std::memcpy(&callback, &callback_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("interval_start", {duration, callback});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("interval.start", {duration, callback});
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_interval_stop(void* vm_ptr, uint64_t interval_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value interval;
+  std::memcpy(&interval, &interval_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("interval_stop", {interval});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("interval.stop", {interval});
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_timeout_start(void* vm_ptr, uint64_t delay_bits, uint64_t callback_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value delay, callback;
+  std::memcpy(&delay, &delay_bits, sizeof(uint64_t));
+  std::memcpy(&callback, &callback_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("timeout_start", {delay, callback});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("timeout.start", {delay, callback});
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_timeout_cancel(void* vm_ptr, uint64_t timeout_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value timeout;
+  std::memcpy(&timeout, &timeout_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("timeout_cancel", {timeout});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("timeout.cancel", {timeout});
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_channel_close(void* vm_ptr, uint64_t chan_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value chan;
+  std::memcpy(&chan, &chan_bits, sizeof(uint64_t));
+  Value result = vm->invokeHostFunctionDirect("channel_close", {chan});
+  if (result.isNull()) {
+    result = vm->invokeHostFunctionDirect("channel.close", {chan});
+  }
+  return result.rawBits();
 }
 
 uint64_t havel_vm_yield(void* vm_ptr, uint64_t val_bits) {
@@ -379,6 +536,59 @@ uint64_t havel_vm_call_host(void* vm_ptr, uint32_t host_idx, uint64_t* args, uin
     return vm->callHostFunction(host_idx, valArgs).rawBits();
 }
 
+uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t method_name_id,
+                              uint64_t* args, uint32_t arg_count) {
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    auto* chunk = vm->getCurrentChunk();
+    if (!chunk) return Value::makeNull().rawBits();
+
+    Value receiver;
+    std::memcpy(&receiver, &receiver_bits, sizeof(uint64_t));
+    const std::string method_name = chunk->getString(method_name_id);
+    if (method_name.empty()) return Value::makeNull().rawBits();
+
+    std::vector<Value> callArgs;
+    callArgs.reserve(static_cast<size_t>(arg_count) + 1);
+    callArgs.push_back(receiver);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+        Value v;
+        std::memcpy(&v, &args[i], sizeof(uint64_t));
+        callArgs.push_back(v);
+    }
+
+    if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
+        if (auto hostName = vm->getHostFunctionName(*methodIdx)) {
+            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
+            if (!result.isNull()) return result.rawBits();
+        }
+    }
+
+    if (receiver.isObjectId()) {
+        Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
+        if (!methodValue.isNull()) {
+            if (methodValue.isHostFuncId()) {
+                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
+                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
+                }
+            }
+            return vm->callFunction(methodValue, callArgs).rawBits();
+        }
+    }
+
+    std::string typeName;
+    if (receiver.isStringValId() || receiver.isStringId()) typeName = "string";
+    else if (receiver.isArrayId()) typeName = "array";
+    else if (receiver.isObjectId()) typeName = "object";
+
+    if (!typeName.empty()) {
+        Value result = vm->invokeHostFunctionDirect(typeName + "." + method_name, callArgs);
+        if (!result.isNull()) return result.rawBits();
+    }
+
+    return Value::makeNull().rawBits();
+}
+
 } // extern "C"
 
 // ============================================================================
@@ -397,6 +607,12 @@ void BytecodeOrcJIT::InitializeLLVM() {
 BytecodeOrcJIT::BytecodeOrcJIT() {
     InitializeLLVM();
     initTargetMachine();
+    if (const char* optEnv = std::getenv("HAVEL_JIT_OPT_LEVEL")) {
+        int parsed = std::atoi(optEnv);
+        if (parsed < 0) parsed = 0;
+        if (parsed > 3) parsed = 3;
+        optimization_level_ = static_cast<uint8_t>(parsed);
+    }
 
     auto jit_or_err = LLJITBuilder().create();
     if (!jit_or_err) {
@@ -417,6 +633,7 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
     };
 
 addSym("havel_vm_throw_error", reinterpret_cast<void*>(&havel_vm_throw_error));
+addSym("havel_vm_throw_value", reinterpret_cast<void*>(&havel_vm_throw_value));
 addSym("havel_gc_write_barrier", reinterpret_cast<void*>(&havel_gc_write_barrier));
 addSym("havel_gc_register_roots", reinterpret_cast<void*>(&havel_gc_register_roots));
 addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_roots));
@@ -440,14 +657,23 @@ addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
 addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
 addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
 addSym("havel_vm_thread_new", reinterpret_cast<void*>(&havel_vm_thread_new));
+addSym("havel_vm_thread_join", reinterpret_cast<void*>(&havel_vm_thread_join));
+addSym("havel_vm_thread_send", reinterpret_cast<void*>(&havel_vm_thread_send));
+addSym("havel_vm_thread_recv", reinterpret_cast<void*>(&havel_vm_thread_recv));
 addSym("havel_vm_channel_new", reinterpret_cast<void*>(&havel_vm_channel_new));
 addSym("havel_vm_channel_send", reinterpret_cast<void*>(&havel_vm_channel_send));
 addSym("havel_vm_channel_recv", reinterpret_cast<void*>(&havel_vm_channel_recv));
+addSym("havel_vm_channel_close", reinterpret_cast<void*>(&havel_vm_channel_close));
+addSym("havel_vm_interval_start", reinterpret_cast<void*>(&havel_vm_interval_start));
+addSym("havel_vm_interval_stop", reinterpret_cast<void*>(&havel_vm_interval_stop));
+addSym("havel_vm_timeout_start", reinterpret_cast<void*>(&havel_vm_timeout_start));
+addSym("havel_vm_timeout_cancel", reinterpret_cast<void*>(&havel_vm_timeout_cancel));
 addSym("havel_vm_yield", reinterpret_cast<void*>(&havel_vm_yield));
 addSym("havel_vm_await", reinterpret_cast<void*>(&havel_vm_await));
 addSym("havel_vm_string_len", reinterpret_cast<void*>(&havel_vm_string_len));
 addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat));
 addSym("havel_vm_call_host", reinterpret_cast<void*>(&havel_vm_call_host));
+addSym("havel_vm_call_method", reinterpret_cast<void*>(&havel_vm_call_method));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         llvm::consumeError(std::move(err));
@@ -575,7 +801,15 @@ void BytecodeOrcJIT::runOptimizations(llvm::Module &module) {
     pb.registerLoopAnalyses(lam);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
     
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    llvm::OptimizationLevel level = llvm::OptimizationLevel::O1;
+    switch (optimization_level_) {
+      case 0: level = llvm::OptimizationLevel::O0; break;
+      case 1: level = llvm::OptimizationLevel::O1; break;
+      case 2: level = llvm::OptimizationLevel::O2; break;
+      case 3: level = llvm::OptimizationLevel::O3; break;
+      default: level = llvm::OptimizationLevel::O1; break;
+    }
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
     mpm.run(module, mam);
 }
 
@@ -759,41 +993,17 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
     return phi;
 };
 
-    // First pass: identify jump targets and create basic blocks
-    std::vector<llvm::BasicBlock*> basicBlocks(func.instructions.size(), nullptr);
-    std::unordered_set<size_t> jumpTargets;
-
-    // Find all jump targets
-    for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
-        const auto &instr = func.instructions[ip];
-        if (instr.opcode == OpCode::JUMP) {
-            jumpTargets.insert(instr.operands[0].asInt());
-        } else if (instr.opcode == OpCode::JUMP_IF_FALSE ||
-                   instr.opcode == OpCode::JUMP_IF_TRUE ||
-                   instr.opcode == OpCode::JUMP_IF_NULL) {
-            jumpTargets.insert(instr.operands[1].asInt());
-        }
+    // Build one block per bytecode instruction plus one exit/fallthrough block.
+    // This gives correct branch fallthrough targets for conditional jumps.
+    std::vector<llvm::BasicBlock*> basicBlocks(func.instructions.size() + 1, nullptr);
+    for (size_t ip = 0; ip <= func.instructions.size(); ++ip) {
+        basicBlocks[ip] = llvm::BasicBlock::Create(ctx, "ip" + std::to_string(ip), f);
     }
-    // Entry point is always a jump target
-    jumpTargets.insert(0);
+    B.CreateBr(basicBlocks[0]);
 
-    // Create basic blocks for jump targets
-    for (size_t ip : jumpTargets) {
-        if (ip < func.instructions.size()) {
-            basicBlocks[ip] = llvm::BasicBlock::Create(ctx, "ip" + std::to_string(ip), f);
-        }
-    }
-
-    // Second pass: emit instructions with control flow
+    // Emit instructions with control flow.
     for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
-        // If this is a jump target, switch to its basic block
-        if (basicBlocks[ip] != nullptr) {
-            // Terminate previous block if needed
-            if (B.GetInsertBlock()->getTerminator() == nullptr) {
-                B.CreateBr(basicBlocks[ip]);
-            }
-            B.SetInsertPoint(basicBlocks[ip]);
-        }
+        B.SetInsertPoint(basicBlocks[ip]);
 
         // Skip if current block is already terminated
         if (B.GetInsertBlock()->getTerminator() != nullptr) {
@@ -849,6 +1059,27 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             vstack.push_back(phi);
             break;
         }
+        case OpCode::INCLOCAL:
+        case OpCode::DECLOCAL:
+        case OpCode::INCLOCAL_POST:
+        case OpCode::DECLOCAL_POST: {
+            uint32_t slot = instr.operands[0].asInt();
+            llvm::Value* oldBoxed = B.CreateLoad(i64, vlocals[slot]);
+            llvm::Value* oldRaw = unboxInt(oldBoxed);
+            llvm::Value* delta = llvm::ConstantInt::get(i64,
+                (instr.opcode == OpCode::INCLOCAL || instr.opcode == OpCode::INCLOCAL_POST) ? 1 : -1);
+            llvm::Value* newRaw = B.CreateAdd(oldRaw, delta);
+            llvm::Value* newBoxed = boxInt(newRaw);
+            B.CreateStore(newBoxed, vlocals[slot]);
+
+            // Postfix returns old value; prefix returns new value.
+            if (instr.opcode == OpCode::INCLOCAL_POST || instr.opcode == OpCode::DECLOCAL_POST) {
+                vstack.push_back(oldBoxed);
+            } else {
+                vstack.push_back(newBoxed);
+            }
+            break;
+        }
 
         // Comparisons
         case OpCode::EQ:
@@ -894,8 +1125,10 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         // Control flow
         case OpCode::JUMP: {
             size_t target = instr.operands[0].asInt();
-            if (basicBlocks[target]) {
+            if (target < basicBlocks.size()) {
                 B.CreateBr(basicBlocks[target]);
+            } else {
+                B.CreateBr(basicBlocks[ip + 1]);
             }
             break;
         }
@@ -907,8 +1140,10 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
                 B.CreateICmpEQ(cond, makeNull()),
                 B.CreateICmpEQ(cond, boxInt(llvm::ConstantInt::get(i64, 0)))
             );
-            if (basicBlocks[target]) {
-                B.CreateCondBr(isFalsy, basicBlocks[target], B.GetInsertBlock());
+            if (target < basicBlocks.size()) {
+                B.CreateCondBr(isFalsy, basicBlocks[target], basicBlocks[ip + 1]);
+            } else {
+                B.CreateBr(basicBlocks[ip + 1]);
             }
             break;
         }
@@ -919,8 +1154,10 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
                 B.CreateICmpNE(cond, makeNull()),
                 B.CreateICmpNE(cond, boxInt(llvm::ConstantInt::get(i64, 0)))
             );
-            if (basicBlocks[target]) {
-                B.CreateCondBr(isTruthy, basicBlocks[target], B.GetInsertBlock());
+            if (target < basicBlocks.size()) {
+                B.CreateCondBr(isTruthy, basicBlocks[target], basicBlocks[ip + 1]);
+            } else {
+                B.CreateBr(basicBlocks[ip + 1]);
             }
             break;
         }
@@ -929,8 +1166,10 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             llvm::Value* v = vstack.back();
             llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
             vstack.pop_back(); // Coalesce consumes the value
-            if (basicBlocks[target]) {
-                B.CreateCondBr(isNull, basicBlocks[target], B.GetInsertBlock());
+            if (target < basicBlocks.size()) {
+                B.CreateCondBr(isNull, basicBlocks[target], basicBlocks[ip + 1]);
+            } else {
+                B.CreateBr(basicBlocks[ip + 1]);
             }
             break;
         }
@@ -1001,6 +1240,38 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
             B.CreateCall(fn_unreg, {frame});
             B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
+            break;
+        }
+        case OpCode::TRY_ENTER:
+        case OpCode::TRY_EXIT:
+            // Current JIT path does not model VM exception handler stack yet.
+            // Keep as no-op to preserve forward progress for non-throwing paths.
+            break;
+        case OpCode::LOAD_EXCEPTION:
+            // Placeholder until VM exception object APIs are exposed to JIT bridge.
+            vstack.push_back(makeNull());
+            break;
+        case OpCode::THROW: {
+            llvm::Value* thrown = vstack.empty() ? makeNull() : vstack.back();
+            if (!vstack.empty()) {
+                vstack.pop_back();
+            }
+            llvm::Function* fnThrow = module.getFunction("havel_vm_throw_value");
+            if (!fnThrow) {
+                fnThrow = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_throw_value", &module);
+            }
+            B.CreateCall(fnThrow, {vmArg, thrown});
+            // throwError() raises C++ exception; this return is unreachable fallback.
+            llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+            if (!fn_unreg) {
+                fn_unreg = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+                    llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+            }
+            B.CreateCall(fn_unreg, {frame});
+            B.CreateRet(makeNull());
             break;
         }
 
@@ -1251,6 +1522,87 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             vstack.push_back(B.CreateCall(fnThread, {vmArg, llvm::ConstantInt::get(i32, funcId)}));
             break;
         }
+        case OpCode::THREAD_JOIN: {
+            llvm::Value* thread = vstack.back(); vstack.pop_back();
+            llvm::Function* fnJoin = module.getFunction("havel_vm_thread_join");
+            if (!fnJoin) {
+                fnJoin = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_thread_join", &module);
+            }
+            vstack.push_back(B.CreateCall(fnJoin, {vmArg, thread}));
+            break;
+        }
+        case OpCode::THREAD_SEND: {
+            llvm::Value* msg = vstack.back(); vstack.pop_back();
+            llvm::Value* thread = vstack.back(); vstack.pop_back();
+            llvm::Function* fnSend = module.getFunction("havel_vm_thread_send");
+            if (!fnSend) {
+                fnSend = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_thread_send", &module);
+            }
+            B.CreateCall(fnSend, {vmArg, thread, msg});
+            vstack.push_back(makeNull());
+            break;
+        }
+        case OpCode::THREAD_RECEIVE: {
+            llvm::Value* thread = vstack.back(); vstack.pop_back();
+            llvm::Function* fnRecv = module.getFunction("havel_vm_thread_recv");
+            if (!fnRecv) {
+                fnRecv = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_thread_recv", &module);
+            }
+            vstack.push_back(B.CreateCall(fnRecv, {vmArg, thread}));
+            break;
+        }
+        case OpCode::INTERVAL_START: {
+            llvm::Value* callback = vstack.back(); vstack.pop_back();
+            llvm::Value* duration = vstack.back(); vstack.pop_back();
+            llvm::Function* fnStart = module.getFunction("havel_vm_interval_start");
+            if (!fnStart) {
+                fnStart = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_interval_start", &module);
+            }
+            vstack.push_back(B.CreateCall(fnStart, {vmArg, duration, callback}));
+            break;
+        }
+        case OpCode::INTERVAL_STOP: {
+            llvm::Value* interval = vstack.back(); vstack.pop_back();
+            llvm::Function* fnStop = module.getFunction("havel_vm_interval_stop");
+            if (!fnStop) {
+                fnStop = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_interval_stop", &module);
+            }
+            vstack.push_back(B.CreateCall(fnStop, {vmArg, interval}));
+            break;
+        }
+        case OpCode::TIMEOUT_START: {
+            llvm::Value* callback = vstack.back(); vstack.pop_back();
+            llvm::Value* delay = vstack.back(); vstack.pop_back();
+            llvm::Function* fnStart = module.getFunction("havel_vm_timeout_start");
+            if (!fnStart) {
+                fnStart = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_timeout_start", &module);
+            }
+            vstack.push_back(B.CreateCall(fnStart, {vmArg, delay, callback}));
+            break;
+        }
+        case OpCode::TIMEOUT_CANCEL: {
+            llvm::Value* timeout = vstack.back(); vstack.pop_back();
+            llvm::Function* fnCancel = module.getFunction("havel_vm_timeout_cancel");
+            if (!fnCancel) {
+                fnCancel = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_timeout_cancel", &module);
+            }
+            vstack.push_back(B.CreateCall(fnCancel, {vmArg, timeout}));
+            break;
+        }
         case OpCode::CHANNEL_NEW: {
             llvm::Value* cap = vstack.empty() ? llvm::ConstantInt::get(i64, 0) : vstack.back();
             if (!vstack.empty()) vstack.pop_back();
@@ -1285,6 +1637,17 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
                     llvm::Function::ExternalLinkage, "havel_vm_channel_recv", &module);
             }
             vstack.push_back(B.CreateCall(fnRecv, {vmArg, chan}));
+            break;
+        }
+        case OpCode::CHANNEL_CLOSE: {
+            llvm::Value* chan = vstack.back(); vstack.pop_back();
+            llvm::Function* fnClose = module.getFunction("havel_vm_channel_close");
+            if (!fnClose) {
+                fnClose = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_channel_close", &module);
+            }
+            vstack.push_back(B.CreateCall(fnClose, {vmArg, chan}));
             break;
         }
         case OpCode::YIELD: {
@@ -1337,6 +1700,8 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             vstack.push_back(a);
             break;
         }
+        case OpCode::NOP:
+            break;
 
         // Host function calls
         case OpCode::CALL_HOST: {
@@ -1364,9 +1729,61 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             }));
             break;
         }
+        case OpCode::CALL_METHOD: {
+            if (instr.operands.size() != 2 || !instr.operands[0].isStringValId() || !instr.operands[1].isInt()) {
+                vstack.push_back(makeNull());
+                break;
+            }
+
+            uint32_t methodNameId = instr.operands[0].asStringValId();
+            uint32_t argCount = static_cast<uint32_t>(instr.operands[1].asInt());
+
+            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "method_args");
+            for (uint32_t i = 0; i < argCount; ++i) {
+                llvm::Value* arg = vstack.back(); vstack.pop_back();
+                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+            }
+            llvm::Value* receiver = vstack.back(); vstack.pop_back();
+
+            llvm::Function* fnMethod = module.getFunction("havel_vm_call_method");
+            if (!fnMethod) {
+                fnMethod = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i32, i64p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_call_method", &module);
+            }
+
+            vstack.push_back(B.CreateCall(fnMethod, {
+                vmArg,
+                receiver,
+                llvm::ConstantInt::get(i32, methodNameId),
+                B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}),
+                llvm::ConstantInt::get(i32, argCount)
+            }));
+            break;
+        }
 
         default: break;
         }
+
+        // Default fallthrough to next instruction block if the opcode didn't terminate.
+        if (B.GetInsertBlock()->getTerminator() == nullptr) {
+            B.CreateBr(basicBlocks[ip + 1]);
+        }
+    }
+
+    // Function epilogue for paths that reach the synthetic exit block.
+    B.SetInsertPoint(basicBlocks[func.instructions.size()]);
+    if (B.GetInsertBlock()->getTerminator() == nullptr) {
+        llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+        if (!fn_unreg) {
+            fn_unreg = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+                llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        }
+        B.CreateCall(fn_unreg, {frame});
+        B.CreateRet(makeNull());
     }
 }
 

@@ -6,11 +6,12 @@
 #include <filesystem>
 #include <functional>
 
+#include "../module/ModuleLoader.hpp"
+
 namespace havel::compiler {
 
 // Forward declarations
 class BytecodeChunk;
-class ModuleLoader;
 
 // ============================================================================
 // ModuleResolver - Handles module resolution and loading

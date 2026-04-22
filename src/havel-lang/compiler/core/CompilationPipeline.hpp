@@ -17,7 +17,6 @@ namespace havel::compiler {
 class BytecodeChunk;
 class Lexer;
 class Parser;
-class ModuleLoader;
 
 // ============================================================================
 // CompilationPipeline - Orchestrates the entire compilation process

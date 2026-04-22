@@ -458,72 +458,211 @@ std::string BytecodeDisassembler::disassembleConstantPool() const {
 
 std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
   switch (opcode) {
-    case OpCode::LOAD_CONST: return "LOAD_CONST";
-    case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
-    case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
-    case OpCode::LOAD_VAR: return "LOAD_VAR";
-    case OpCode::STORE_VAR: return "STORE_VAR";
-    case OpCode::LOAD_UPVALUE: return "LOAD_UPVALUE";
-    case OpCode::STORE_UPVALUE: return "STORE_UPVALUE";
-    case OpCode::POP: return "POP";
-    case OpCode::DUP: return "DUP";
-case OpCode::ADD: return "ADD";
-case OpCode::SUB: return "SUB";
-case OpCode::MUL: return "MUL";
-case OpCode::DIV: return "DIV";
-case OpCode::MOD: return "MOD";
-case OpCode::POW: return "POW";
-case OpCode::INCLOCAL: return "INCLOCAL";
-case OpCode::DECLOCAL: return "DECLOCAL";
-case OpCode::INCLOCAL_POST: return "INCLOCAL_POST";
-case OpCode::DECLOCAL_POST: return "DECLOCAL_POST";
-case OpCode::EQ: return "EQ";
-    case OpCode::NEQ: return "NEQ";
-    case OpCode::LT: return "LT";
-    case OpCode::LTE: return "LTE";
-    case OpCode::GT: return "GT";
-    case OpCode::GTE: return "GTE";
-    case OpCode::AND: return "AND";
-    case OpCode::OR: return "OR";
-    case OpCode::NOT: return "NOT";
-    case OpCode::NEGATE: return "NEGATE";
-    case OpCode::JUMP: return "JUMP";
-    case OpCode::JUMP_IF_TRUE: return "JUMP_IF_TRUE";
-    case OpCode::JUMP_IF_FALSE: return "JUMP_IF_FALSE";
-    case OpCode::CALL: return "CALL";
-    case OpCode::TAIL_CALL: return "TAIL_CALL";
-    case OpCode::RETURN: return "RETURN";
-    case OpCode::CLOSURE: return "CLOSURE";
-    case OpCode::ARRAY_NEW: return "ARRAY_NEW";
-    case OpCode::ARRAY_GET: return "ARRAY_GET";
-    case OpCode::ARRAY_SET: return "ARRAY_SET";
-    case OpCode::OBJECT_NEW: return "OBJECT_NEW";
-    case OpCode::OBJECT_GET: return "OBJECT_GET";
-    case OpCode::OBJECT_SET: return "OBJECT_SET";
-    case OpCode::SPREAD: return "SPREAD";
-    case OpCode::RANGE_NEW: return "RANGE_NEW";
-    case OpCode::RANGE_STEP_NEW: return "RANGE_STEP_NEW";
-    case OpCode::TRY_ENTER: return "TRY_ENTER";
-    case OpCode::TRY_EXIT: return "TRY_EXIT";
-    case OpCode::THROW: return "THROW";
-    case OpCode::CALL_HOST: return "CALL_HOST";
-    default: return "UNKNOWN";
+  // Stack operations
+  case OpCode::LOAD_CONST: return "LOAD_CONST";
+  case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
+  case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
+  case OpCode::LOAD_VAR: return "LOAD_VAR";
+  case OpCode::STORE_VAR: return "STORE_VAR";
+  case OpCode::LOAD_UPVALUE: return "LOAD_UPVALUE";
+  case OpCode::STORE_UPVALUE: return "STORE_UPVALUE";
+  case OpCode::POP: return "POP";
+  case OpCode::DUP: return "DUP";
+  case OpCode::SWAP: return "SWAP";
+  case OpCode::PUSH_NULL: return "PUSH_NULL";
+
+  // Arithmetic operations
+  case OpCode::ADD: return "ADD";
+  case OpCode::SUB: return "SUB";
+  case OpCode::MUL: return "MUL";
+  case OpCode::DIV: return "DIV";
+  case OpCode::MOD: return "MOD";
+  case OpCode::POW: return "POW";
+
+  // Increment/Decrement
+  case OpCode::INCLOCAL: return "INCLOCAL";
+  case OpCode::DECLOCAL: return "DECLOCAL";
+  case OpCode::INCLOCAL_POST: return "INCLOCAL_POST";
+  case OpCode::DECLOCAL_POST: return "DECLOCAL_POST";
+
+  // Comparison operations
+  case OpCode::EQ: return "EQ";
+  case OpCode::NEQ: return "NEQ";
+  case OpCode::IS: return "IS";
+  case OpCode::LT: return "LT";
+  case OpCode::LTE: return "LTE";
+  case OpCode::GT: return "GT";
+  case OpCode::GTE: return "GTE";
+
+  // Logical operations
+  case OpCode::AND: return "AND";
+  case OpCode::OR: return "OR";
+  case OpCode::NOT: return "NOT";
+  case OpCode::NEGATE: return "NEGATE";
+  case OpCode::IS_NULL: return "IS_NULL";
+
+  // Control flow
+  case OpCode::JUMP: return "JUMP";
+  case OpCode::JUMP_IF_FALSE: return "JUMP_IF_FALSE";
+  case OpCode::JUMP_IF_TRUE: return "JUMP_IF_TRUE";
+  case OpCode::JUMP_IF_NULL: return "JUMP_IF_NULL";
+  case OpCode::CALL: return "CALL";
+  case OpCode::TAIL_CALL: return "TAIL_CALL";
+  case OpCode::CALL_HOST: return "CALL_HOST";
+  case OpCode::CALL_METHOD: return "CALL_METHOD";
+  case OpCode::RETURN: return "RETURN";
+  case OpCode::TRY_ENTER: return "TRY_ENTER";
+  case OpCode::TRY_EXIT: return "TRY_EXIT";
+  case OpCode::LOAD_EXCEPTION: return "LOAD_EXCEPTION";
+  case OpCode::THROW: return "THROW";
+
+  // Function operations
+  case OpCode::DEFINE_FUNC: return "DEFINE_FUNC";
+  case OpCode::CLOSURE: return "CLOSURE";
+
+  // Array operations
+  case OpCode::ARRAY_NEW: return "ARRAY_NEW";
+  case OpCode::ARRAY_GET: return "ARRAY_GET";
+  case OpCode::ARRAY_SET: return "ARRAY_SET";
+  case OpCode::ARRAY_DEL: return "ARRAY_DEL";
+  case OpCode::ARRAY_PUSH: return "ARRAY_PUSH";
+  case OpCode::ARRAY_LEN: return "ARRAY_LEN";
+  case OpCode::ARRAY_FREEZE: return "ARRAY_FREEZE";
+
+  // Set operations
+  case OpCode::SET_SET: return "SET_SET";
+  case OpCode::SET_DEL: return "SET_DEL";
+
+  // Range operations
+  case OpCode::RANGE_NEW: return "RANGE_NEW";
+  case OpCode::RANGE_STEP_NEW: return "RANGE_STEP_NEW";
+
+  // Enum operations
+  case OpCode::ENUM_NEW: return "ENUM_NEW";
+  case OpCode::ENUM_TAG: return "ENUM_TAG";
+  case OpCode::ENUM_PAYLOAD: return "ENUM_PAYLOAD";
+  case OpCode::ENUM_MATCH: return "ENUM_MATCH";
+
+  // Object intrinsics
+  case OpCode::OBJECT_KEYS: return "OBJECT_KEYS";
+  case OpCode::OBJECT_VALUES: return "OBJECT_VALUES";
+  case OpCode::OBJECT_ENTRIES: return "OBJECT_ENTRIES";
+  case OpCode::OBJECT_HAS: return "OBJECT_HAS";
+  case OpCode::OBJECT_DELETE: return "OBJECT_DELETE";
+  case OpCode::OBJECT_GET_RAW: return "OBJECT_GET_RAW";
+
+  // Array intrinsics
+  case OpCode::ARRAY_POP: return "ARRAY_POP";
+  case OpCode::ARRAY_HAS: return "ARRAY_HAS";
+  case OpCode::ARRAY_FIND: return "ARRAY_FIND";
+  case OpCode::ARRAY_MAP: return "ARRAY_MAP";
+  case OpCode::ARRAY_FILTER: return "ARRAY_FILTER";
+  case OpCode::ARRAY_REDUCE: return "ARRAY_REDUCE";
+  case OpCode::ARRAY_FOREACH: return "ARRAY_FOREACH";
+
+  // String intrinsics
+  case OpCode::STRING_LEN: return "STRING_LEN";
+  case OpCode::STRING_UPPER: return "STRING_UPPER";
+  case OpCode::STRING_LOWER: return "STRING_LOWER";
+  case OpCode::STRING_TRIM: return "STRING_TRIM";
+  case OpCode::STRING_SUB: return "STRING_SUB";
+  case OpCode::STRING_FIND: return "STRING_FIND";
+  case OpCode::STRING_HAS: return "STRING_HAS";
+  case OpCode::STRING_STARTS: return "STRING_STARTS";
+  case OpCode::STRING_ENDS: return "STRING_ENDS";
+  case OpCode::STRING_SPLIT: return "STRING_SPLIT";
+  case OpCode::STRING_REPLACE: return "STRING_REPLACE";
+  case OpCode::STRING_PROMOTE: return "STRING_PROMOTE";
+
+  // Iteration protocol
+  case OpCode::ITER_NEW: return "ITER_NEW";
+  case OpCode::ITER_NEXT: return "ITER_NEXT";
+  case OpCode::SET_NEW: return "SET_NEW";
+
+  // Object operations
+  case OpCode::OBJECT_NEW: return "OBJECT_NEW";
+  case OpCode::OBJECT_NEW_UNSORTED: return "OBJECT_NEW_UNSORTED";
+  case OpCode::OBJECT_GET: return "OBJECT_GET";
+  case OpCode::OBJECT_SET: return "OBJECT_SET";
+
+  // String operations
+  case OpCode::STRING_CONCAT: return "STRING_CONCAT";
+
+  // Spread operator
+  case OpCode::SPREAD: return "SPREAD";
+  case OpCode::SPREAD_CALL: return "SPREAD_CALL";
+
+  // Type conversion
+  case OpCode::AS_TYPE: return "AS_TYPE";
+  case OpCode::TO_INT: return "TO_INT";
+  case OpCode::TO_FLOAT: return "TO_FLOAT";
+  case OpCode::TO_STRING: return "TO_STRING";
+  case OpCode::TO_BOOL: return "TO_BOOL";
+  case OpCode::TYPE_OF: return "TYPE_OF";
+
+  // Special operations
+  case OpCode::PRINT: return "PRINT";
+  case OpCode::DEBUG: return "DEBUG";
+
+  // Class operations
+  case OpCode::CLASS_NEW: return "CLASS_NEW";
+  case OpCode::CLASS_GET_FIELD: return "CLASS_GET_FIELD";
+  case OpCode::CLASS_SET_FIELD: return "CLASS_SET_FIELD";
+  case OpCode::LOAD_CLASS_PROTO: return "LOAD_CLASS_PROTO";
+  case OpCode::CALL_SUPER: return "CALL_SUPER";
+  case OpCode::IMPORT: return "IMPORT";
+
+  // Concurrency primitives
+  case OpCode::THREAD_SPAWN: return "THREAD_SPAWN";
+  case OpCode::THREAD_JOIN: return "THREAD_JOIN";
+  case OpCode::THREAD_SEND: return "THREAD_SEND";
+  case OpCode::THREAD_RECEIVE: return "THREAD_RECEIVE";
+  case OpCode::INTERVAL_START: return "INTERVAL_START";
+  case OpCode::INTERVAL_STOP: return "INTERVAL_STOP";
+  case OpCode::TIMEOUT_START: return "TIMEOUT_START";
+  case OpCode::TIMEOUT_CANCEL: return "TIMEOUT_CANCEL";
+
+  // Coroutines
+  case OpCode::YIELD: return "YIELD";
+  case OpCode::YIELD_RESUME: return "YIELD_RESUME";
+  case OpCode::GO_ASYNC: return "GO_ASYNC";
+
+  // Channels
+  case OpCode::CHANNEL_NEW: return "CHANNEL_NEW";
+  case OpCode::CHANNEL_SEND: return "CHANNEL_SEND";
+  case OpCode::CHANNEL_RECEIVE: return "CHANNEL_RECEIVE";
+  case OpCode::CHANNEL_CLOSE: return "CHANNEL_CLOSE";
+
+  // Module exports
+  case OpCode::EXPORT_FN: return "EXPORT_FN";
+  case OpCode::EXPORT_VAR: return "EXPORT_VAR";
+
+  // Module context
+  case OpCode::BEGIN_MODULE: return "BEGIN_MODULE";
+  case OpCode::END_MODULE: return "END_MODULE";
+
+  case OpCode::NOP: return "NOP";
+  default: return "UNKNOWN";
   }
 }
 
 std::string BytecodeDisassembler::operandToString(const Value& operand) {
+  if (operand.isNull()) return "nil";
+  if (operand.isBool()) return operand.asBool() ? "true" : "false";
   if (operand.isInt()) return std::to_string(operand.asInt());
   if (operand.isDouble()) return std::to_string(operand.asDouble());
-  if (operand.isBool()) return operand.asBool() ? "true" : "false";
-  if (operand.isNull()) return "nil";
-  if (operand.isStringValId()) {
-    // TODO: string pool lookup
-    return "\"<string>\"";
-  }
-  if (operand.isStringId()) return std::to_string(operand.asStringId());
-  if (operand.isObjectId()) return std::to_string(operand.asObjectId());
-  if (operand.isArrayId()) return std::to_string(operand.asArrayId());
-  return "<?>"; // For FunctionObject, ClosureRef, etc.
+  if (operand.isStringValId()) return "str[" + std::to_string(operand.asStringValId()) + "]";
+  if (operand.isStringId()) return "strid[" + std::to_string(operand.asStringId()) + "]";
+  if (operand.isFunctionObjId()) return "fn[" + std::to_string(operand.asFunctionObjId()) + "]";
+  if (operand.isClosureId()) return "closure[" + std::to_string(operand.asClosureId()) + "]";
+  if (operand.isArrayId()) return "array[" + std::to_string(operand.asArrayId()) + "]";
+  if (operand.isObjectId()) return "object[" + std::to_string(operand.asObjectId()) + "]";
+  if (operand.isSetId()) return "set[" + std::to_string(operand.asSetId()) + "]";
+  if (operand.isHostFuncId()) return "hostfn[" + std::to_string(operand.asHostFuncId()) + "]";
+  if (operand.isRangeId()) return "range[" + std::to_string(operand.asRangeId()) + "]";
+  if (operand.isEnumId()) return "enum[" + std::to_string(operand.asEnumId()) + "]";
+  if (operand.isIteratorId()) return "iter[" + std::to_string(operand.asIteratorId()) + "]";
+  return "<?>";
 }
 
 std::string BytecodeDisassembler::formatInstruction(

@@ -318,43 +318,9 @@ bool REPL::execute(const std::string& code) {
     // Execute persistently (preserves globals between REPL lines)
     auto result = vm_->executePersistent(*chunk, "__main__");
 
-    // Print result if not null (use simple type-based conversion)
-    if (!result.isNull()) {
-      if (result.isStringValId()) {
-        // TODO: string pool lookup
-        printValue("<string>");
-      } else if (result.isInt()) {
-        printValue(std::to_string(result.asInt()));
-      } else if (result.isDouble()) {
-        printValue(std::to_string(result.asDouble()));
-      } else if (result.isBool()) {
-        printValue(result.asBool() ? "true" : "false");
-      } else if (result.isArrayId()) {
-        // Print array as [elem1, elem2, ...]
-        auto arrRef = compiler::ArrayRef{result.asArrayId()};
-        std::string arrStr = "[";
-        size_t len = vm_->getHostArrayLength(arrRef);
-        for (size_t i = 0; i < len; i++) {
-          if (i > 0) arrStr += ", ";
-          const auto& elem = vm_->getHostArrayValue(arrRef, i);
-          if (elem.isStringValId()) {
-            arrStr += "<string>";
-          } else if (elem.isInt()) {
-            arrStr += std::to_string(elem.asInt());
-          } else if (elem.isDouble()) {
-            arrStr += std::to_string(elem.asDouble());
-          } else if (elem.isBool()) {
-            arrStr += elem.asBool() ? "true" : "false";
-          } else if (elem.isNull()) {
-            arrStr += "null";
-          } else {
-            arrStr += "?";
-          }
+        if (!result.isNull()) {
+            printValue(vm_->toString(result));
         }
-        arrStr += "]";
-        printValue(arrStr);
-      }
-    }
     return true;
   } catch (const std::exception& e) {
     printError(e.what(), currentLine);

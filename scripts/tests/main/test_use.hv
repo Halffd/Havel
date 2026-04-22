@@ -1,5 +1,5 @@
 // 1. Relative path (with extension)
-use "./mathteat.hv" as m
+use "./mathtest.hv" as m
 print(m.PI)
 print(m.add(1.2, 2.4))
 
@@ -8,8 +8,8 @@ use sh
 print(sh.getHome())
 
 // 3. Absolute path
-use "/home/all/repos/havel/scripts/tests/main/mathteat.hv" as mathteat
-print(mathteat.sub(5, 3))
+use "/home/all/repos/havel/scripts/tests/main/mathtest.hv" as mathtest
+print(mathtest.sub(5, 3))
 
 // 4. Module name (searches HAVEL_PATH)
 use fs     // built-in module
@@ -19,18 +19,18 @@ print(f)
 
 // 5. Selective import
 {
-use { add, PI } from "./mathteat.hv"
+use { add, PI } from "./mathtest.hv"
 print(add(1, 2))
 print(PI)
 }
 {
 // 6. Rename on import
-use { add as plus } from "./mathteat.hv"
+use { add as plus } from "./mathtest.hv"
 print(plus(3, 4))
 }
 {
 // 7. Import all
-use * from "./mathteat.hv"
+use * from "./mathtest.hv"
 print(add(1, 2))
 print(sub(3, 1))
 }

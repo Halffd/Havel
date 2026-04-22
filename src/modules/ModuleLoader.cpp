@@ -1,4 +1,6 @@
-// ModuleLoader.cpp - STUBBED (interpreter removed)
+// ModuleLoader.cpp - DEPRECATED: This module loader is dead code. Use havel::ModuleLoader from
+// havel-lang/runtime/ModuleLoader.hpp instead.
+// STUBBED (interpreter removed)
 // Module loading requires Environment which was removed with interpreter
 
 #include "ModuleLoader.hpp"

@@ -242,92 +242,96 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     }
   }
 
-  enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
-  // Ensure next_local_index accounts for resolver-allocated slots
-  next_local_index = max_slot;
+enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
+next_local_index = max_slot;
 
-  for (const auto &statement : program.body) {
+const ast::Statement *lastRegularStmt = nullptr;
+for (auto it = program.body.rbegin(); it != program.body.rend(); ++it) {
+    if (!*it) continue;
+    if ((*it)->kind == ast::NodeType::FunctionDeclaration) continue;
+    if ((*it)->kind == ast::NodeType::DecoratorStatement) continue;
+    lastRegularStmt = it->get();
+    break;
+}
+bool lastStmtIsExpr = lastRegularStmt &&
+    lastRegularStmt->kind == ast::NodeType::ExpressionStatement;
+
+for (const auto &statement : program.body) {
     if (!statement) {
-      continue;
+        continue;
     }
 
     if (statement->kind == ast::NodeType::FunctionDeclaration) {
-      // For top-level fn declarations, store function object in globals
-      const auto &functionDecl =
-          static_cast<const ast::FunctionDeclaration &>(*statement);
-      if (!functionDecl.name) {
+        const auto &functionDecl =
+            static_cast<const ast::FunctionDeclaration &>(*statement);
+        if (!functionDecl.name) {
+            continue;
+        }
+
+        auto index_it = function_indices_by_node_.find(&functionDecl);
+        if (index_it == function_indices_by_node_.end()) {
+            continue;
+        }
+
+        auto upvalues_it =
+            lexical_resolution_.function_upvalues.find(&functionDecl);
+        if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+            !upvalues_it->second.empty()) {
+            emit(OpCode::CLOSURE, index_it->second);
+        } else {
+            emit(OpCode::LOAD_CONST,
+                 addConstant(Value::makeFunctionObjId(index_it->second)));
+        }
+
+        uint32_t fnNameStrId = addStringConstant(functionDecl.name->symbol);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
         continue;
-      }
-
-      auto index_it = function_indices_by_node_.find(&functionDecl);
-      if (index_it == function_indices_by_node_.end()) {
-        continue;
-      }
-
-      // Load function object onto stack
-      auto upvalues_it =
-          lexical_resolution_.function_upvalues.find(&functionDecl);
-      if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
-          !upvalues_it->second.empty()) {
-        emit(OpCode::CLOSURE, index_it->second);
-      } else {
-        emit(OpCode::LOAD_CONST,
-             addConstant(Value::makeFunctionObjId(index_it->second)));
-      }
-
-      // Store in global scope so it's callable
-      uint32_t fnNameStrId = addStringConstant(functionDecl.name->symbol);
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
-      continue;
     }
 
     if (statement->kind == ast::NodeType::DecoratorStatement) {
-      const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
-      if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
-        const auto &fnDecl = static_cast<const ast::FunctionDeclaration &>(*dec.target);
-        if (!fnDecl.name) continue;
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+        if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+            const auto &fnDecl = static_cast<const ast::FunctionDeclaration &>(*dec.target);
+            if (!fnDecl.name) continue;
 
-        auto index_it = function_indices_by_node_.find(&fnDecl);
-        if (index_it == function_indices_by_node_.end()) continue;
+            auto index_it = function_indices_by_node_.find(&fnDecl);
+            if (index_it == function_indices_by_node_.end()) continue;
 
-        auto upvalues_it = lexical_resolution_.function_upvalues.find(&fnDecl);
-        if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
-            !upvalues_it->second.empty()) {
-          emit(OpCode::CLOSURE, index_it->second);
-        } else {
-          emit(OpCode::LOAD_CONST,
-               addConstant(Value::makeFunctionObjId(index_it->second)));
-        }
-
-        uint32_t fnNameStrId = addStringConstant(fnDecl.name->symbol);
-        emit(OpCode::DUP);
-        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
-
-        for (auto it = dec.decorators.rbegin(); it != dec.decorators.rend(); ++it) {
-          const auto &decoExpr = *it;
-          if (!decoExpr) continue;
-          compileExpression(*decoExpr);
-          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(fnNameStrId));
-          emit(OpCode::CALL, static_cast<uint32_t>(1));
-            emit(OpCode::DUP);
-            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+            auto upvalues_it = lexical_resolution_.function_upvalues.find(&fnDecl);
+            if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+                !upvalues_it->second.empty()) {
+                emit(OpCode::CLOSURE, index_it->second);
+            } else {
+                emit(OpCode::LOAD_CONST,
+                     addConstant(Value::makeFunctionObjId(index_it->second)));
             }
 
-            // Emit metadata: fn.__name__ = original_name, fn.__wrapped__ = original_fn, fn.__arity__ = N
+            uint32_t fnNameStrId = addStringConstant(fnDecl.name->symbol);
+            emit(OpCode::DUP);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+
+            for (auto it = dec.decorators.rbegin(); it != dec.decorators.rend(); ++it) {
+                const auto &decoExpr = *it;
+                if (!decoExpr) continue;
+                compileExpression(*decoExpr);
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(fnNameStrId));
+                emit(OpCode::CALL, static_cast<uint32_t>(1));
+                emit(OpCode::DUP);
+                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+            }
+
             {
                 uint32_t nameStrId = addStringConstant("__name__");
                 uint32_t wrappedStrId = addStringConstant("__wrapped__");
                 uint32_t arityStrId = addStringConstant("__arity__");
                 uint32_t origNameStrId = addStringConstant(fnDecl.name->symbol);
 
-                // __name__
                 emit(OpCode::DUP);
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(origNameStrId)));
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(nameStrId)));
                 emit(OpCode::OBJECT_SET);
                 emit(OpCode::POP);
 
-                // __wrapped__ — reload the original function
                 emit(OpCode::DUP);
                 if (upvalues_it != lexical_resolution_.function_upvalues.end() && !upvalues_it->second.empty()) {
                     emit(OpCode::CLOSURE, index_it->second);
@@ -338,7 +342,6 @@ ByteCompiler::compileImpl(const ast::Program &program) {
                 emit(OpCode::OBJECT_SET);
                 emit(OpCode::POP);
 
-                // __arity__
                 emit(OpCode::DUP);
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(fnDecl.parameters.size()))));
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(arityStrId)));
@@ -347,16 +350,29 @@ ByteCompiler::compileImpl(const ast::Program &program) {
             }
 
             emit(OpCode::POP);
-        continue;
-      }
+            continue;
+        }
     }
 
+    if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
+        enterTailPosition();
+        clearTailCallFlag();
+    }
     compileStatement(*statement);
-  }
+    if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
+        exitTailPosition();
+    }
+}
 
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-  emit(OpCode::RETURN);
-  leaveFunction();
+if (lastStmtIsExpr) {
+    if (!wasTailCall()) {
+        emit(OpCode::RETURN);
+    }
+} else {
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+}
+leaveFunction();
 
   for (auto &function : compiled_functions) {
     if (!function) {

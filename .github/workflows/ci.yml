@@ -48,12 +48,12 @@ jobs:
       - name: build
         run: cmake --build build-debug -j$(nproc)
 
-      - name: bytecode smoke test
-        run: ./build-debug/havel-bytecode-smoke
+  - name: smoke test
+      run: ./build-debug/hvtest --smoke
 
-      - name: unit tests
-        working-directory: build-debug
-        run: ctest --output-on-failure -j$(nproc)
+    - name: unit tests
+      working-directory: build-debug
+      run: ctest --output-on-failure -j$(nproc)
 
   build-release:
     name: release (no llvm)
@@ -88,12 +88,12 @@ jobs:
       - name: build
         run: cmake --build build-release -j$(nproc)
 
-      - name: bytecode smoke test
-        run: ./build-release/havel-bytecode-smoke
+  - name: smoke test
+      run: ./build-release/hvtest --smoke
 
-      - name: unit tests
-        working-directory: build-release
-        run: ctest --output-on-failure -j$(nproc)
+    - name: unit tests
+      working-directory: build-release
+      run: ctest --output-on-failure -j$(nproc)
 
   build-with-llvm:
     name: debug (with llvm)
@@ -129,12 +129,12 @@ jobs:
       - name: build
         run: cmake --build build-llvm -j$(nproc)
 
-      - name: bytecode smoke test
-        run: ./build-llvm/havel-bytecode-smoke
+  - name: smoke test
+      run: ./build-llvm/hvtest --smoke
 
-      - name: unit tests
-        working-directory: build-llvm
-        run: ctest --output-on-failure -j$(nproc)
+    - name: unit tests
+      working-directory: build-llvm
+      run: ctest --output-on-failure -j$(nproc)
 
   coverage:
     name: coverage
@@ -178,7 +178,7 @@ jobs:
       - name: generate coverage report
         run: |
           llvm-profdata merge -sparse build-cov/default.profdata -o build-cov/merged.profdata 2>/dev/null || true
-          for bin in build-cov/havel_lang_tests build-cov/havel-bytecode-smoke; do
+          for bin in build-cov/hvtest; do
             if [ -f "$bin" ]; then
               llvm-cov export "$bin" \
                 --instr-profile=build-cov/merged.profdata \
@@ -227,19 +227,5 @@ jobs:
             -DENABLE_LLVM=OFF
           cmake --build build-debug -j$(nproc)
 
- - name: run havel test scripts
- run: |
- pass=0
- fail=0
- for script in scripts/smoke/*.hv scripts/tests/main/*.hv; do
- if [ -f "$script" ]; then
- echo "running: $script"
- if ./build-debug/havel "$script" 2>&1; then
- pass=$((pass + 1))
- else
- fail=$((fail + 1))
- echo "FAILED: $script"
- fi
- fi
- done
- echo "havel scripts: $pass passed, $fail failed"
+  - name: run havel test scripts
+      run: ./build-debug/hvtest --scripts

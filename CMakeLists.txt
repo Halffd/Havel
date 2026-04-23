@@ -773,51 +773,50 @@ target_include_directories(havel-lsp PRIVATE
  target_link_options(havel-lsp PRIVATE --coverage)
  endif()
 
+# ==============================================================================
+# UNIFIED TEST RUNNER
+# ==============================================================================
 if(ENABLE_HAVEL_LANG)
-    set(BYTECODE_SMOKE_SOURCES
-        src/havel-lang/tools/BytecodeSmokeMain.cpp
-        src/utils/Logger.cpp
-    )
+set(HVTEST_SOURCES
+  src/hvtest/main.cpp
+  src/hvtest/smoke_runner.cpp
+  src/utils/Logger.cpp
+)
 
-    add_executable(havel-bytecode-smoke ${BYTECODE_SMOKE_SOURCES})
-    set_target_properties(havel-bytecode-smoke PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-    )
+add_executable(hvtest ${HVTEST_SOURCES})
+set_target_properties(hvtest PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
 
-    target_include_directories(havel-bytecode-smoke PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/src/havel-lang
-    )
+target_compile_options(hvtest PRIVATE -fno-lto)
+target_link_options(hvtest PRIVATE -fno-lto)
 
-    target_link_libraries(havel-bytecode-smoke PRIVATE
-        spdlog::spdlog
-        havel_lang
-    )
+target_include_directories(hvtest PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
 
-    # NOTE: bytecode-smoke test disabled in Release builds — havel_lang is built
-    # with LTO + hidden visibility, which generates code too large for 32-bit
-    # PC-relative relocations in a PIE binary (>2GB address space).
-    # Fixing this requires either:
-    #   - Building havel_lang as SHARED instead of STATIC, or
-    #   - Adding -mcmodel=large to havel_lang itself (not just the test), or
-    #   - Disabling LTO/hidden-visibility for Release builds
-    # Debug builds disable LTO on havel_lang, so the test works there.
- if(CMAKE_BUILD_TYPE STREQUAL "Debug")
- enable_testing()
- add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)
- if(ENABLE_COVERAGE)
- target_compile_options(havel-bytecode-smoke PRIVATE --coverage)
- target_link_options(havel-bytecode-smoke PRIVATE --coverage)
- endif()
- endif()
- endif()
+target_link_libraries(hvtest PRIVATE
+  spdlog::spdlog
+  havel_lang
+)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  enable_testing()
+  add_test(NAME hvtest-smoke COMMAND hvtest --smoke)
+  if(ENABLE_COVERAGE)
+    target_compile_options(hvtest PRIVATE --coverage)
+    target_link_options(hvtest PRIVATE --coverage)
+  endif()
+endif()
+endif()
 
 # Set target properties
 set_target_properties(havel PROPERTIES
-    CXX_STANDARD 23
+  CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
@@ -1062,10 +1061,24 @@ endif()
 # ==============================================================================
 # INSTALLATION RULES
 # ==============================================================================
-install(TARGETS havel 
-    RUNTIME DESTINATION bin
-    COMPONENT Runtime
+install(TARGETS havel
+  RUNTIME DESTINATION bin
+  COMPONENT Runtime
 )
+
+if(TARGET havel-lsp)
+install(TARGETS havel-lsp
+  RUNTIME DESTINATION bin
+  COMPONENT Runtime
+)
+endif()
+
+if(TARGET hvtest)
+install(TARGETS hvtest
+  RUNTIME DESTINATION bin
+  COMPONENT Runtime
+)
+endif()
 
 if(TARGET havel_lang)
     install(TARGETS havel_lang
@@ -1151,6 +1164,12 @@ endif()
 message(STATUS "")
 message(STATUS "=== BUILD TARGETS ===")
 message(STATUS "Main executable: havel")
+if(TARGET havel-lsp)
+message(STATUS "LSP server: havel-lsp")
+endif()
+if(TARGET hvtest)
+message(STATUS "Test runner: hvtest")
+endif()
 if(TARGET havel_lang)
     message(STATUS "Language lib:    libhavel_lang.a")
 endif()

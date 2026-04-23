@@ -1,8 +1,0 @@
-// Debug test - check arithmetic specifically
-fn add(a, b):
-    print "before arithmetic"
-    let result = a + b
-    print "after arithmetic"
-    result
-
-print add(5, 3)

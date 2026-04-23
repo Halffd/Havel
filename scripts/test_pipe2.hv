@@ -1,3 +1,0 @@
-s := " hello world "
-result := s | trim | upper
-print(result)

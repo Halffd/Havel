@@ -1,4 +1,0 @@
-fn bomb(x) { if x == 2 { throw "boom" } return x }
-let arr = [1,2,3]
-arr.map(bomb)
-print("after")

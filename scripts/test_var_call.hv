@@ -1,8 +1,0 @@
-// Test variable in function call
-
-let msg = "hello"
-print(msg)
-
-let len = len(msg)
-print("len: ")
-print(len)

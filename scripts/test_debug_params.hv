@@ -1,7 +1,0 @@
-// Debug test - check if parameters are resolved
-fn add(a, b):
-    print a  // Just use 'a', don't do arithmetic
-    print b  // Just use 'b'
-    42
-
-print add(5, 3)

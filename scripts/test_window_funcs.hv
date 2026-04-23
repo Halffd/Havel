@@ -1,3 +1,0 @@
-print("Testing window functions:")
-print("Title: " + window.getTitle())
-print("PID: " + window.getPID())

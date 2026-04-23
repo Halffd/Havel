@@ -1,9 +1,0 @@
-// Debug nested array
-
-let inner1 = [1, 2]
-let inner2 = [3, 4]
-let inner3 = [5, 6]
-let nested = [inner1, inner2, inner3]
-
-print("nested: ")
-print(nested)

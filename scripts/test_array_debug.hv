@@ -1,7 +1,0 @@
-// Debug ArrayModule functionality
-print("=== ArrayModule Debug ===");
-
-print("Testing array.len with array literal:");
-print("array.len([1,2,3]):", array.len([1,2,3]));
-
-print("=== Debug Complete ===");

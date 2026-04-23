@@ -1,6 +1,0 @@
-// Basic null test
-print("Testing null support...");
-print("null == null:", null == null);
-print("null != null:", null != null);
-print("null truthiness:", null ? "truthy" : "falsy");
-print("Done.");

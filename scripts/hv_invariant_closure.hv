@@ -1,3 +1,0 @@
-fn makeMul(k) { fn m(x) { return x * k } return m }
-let f = makeMul(3)
-print([1,2].map(f))

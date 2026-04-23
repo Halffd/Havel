@@ -8,7 +8,6 @@
 #include "../ffi/FFIAccessors.hpp"
 #include "../ffi/FFICall.hpp"
 #endif
-#include "../runtime/RuntimeModuleLoader.hpp"
 #include <cstring>
 #include <cstdio>
 #include <cstdarg>

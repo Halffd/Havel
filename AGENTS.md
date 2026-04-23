@@ -1,3 +1,4 @@
+```markdown
 # AGENTS.md
 
 ## Build System
@@ -27,12 +28,47 @@ Common commands:
 
 Run Havel scripts: `./build-debug/havel script.hv`
 
-## Architecture Notes
+## Architecture
 
-- **Havel Language** (`src/havel-lang/`): Compiler pipeline (Lexer → Parser → Semantic → Bytecode) + VM + optional LLVM JIT
-- **Host Modules** (`src/havel-lang/stdlib/`): Provide built-in functions (Math, String, Array, Hotkey, Window, etc.)
-- **UI**: Qt6 loaded as dynamic extension, not linked to main binary
-- **Wayland**: Protocols auto-generated at build time to `build/generated/wayland/`
+### Directory Structure
+
+**Core Window Management** (`src/`)
+- `core/` - Core application logic, automation, I/O
+- `window/` - X11/Wayland window management
+- `utils/`, `fs/`, `process/`, `media/` - Utility modules
+- `host/` - Host module system for extensible functionality
+- `tests/` - Unit test utilities
+
+**Havel Language Implementation** (`src/havel-lang/`)
+- `compiler/` - Bytecode compiler (pipeline, IR generation, optimization)
+  - `vm/` - Stack-based virtual machine
+  - `gc/` - Garbage collector
+  - `core/` - Builtin values and types
+- `lexer/` - Lexical analysis
+- `parser/` - Syntax parsing (expression, statement, pattern parsers)
+- `semantic/` - Type checking, symbol table, module resolution
+- `runtime/` - VM execution engine
+- `stdlib/` - Standard library modules (Math, String, Array, etc.)
+- `errors/` - Error reporting and diagnostics
+- `lsp/` - Language Server Protocol support
+- `llvm/` - LLVM JIT integration (optional)
+
+### Compiler Pipeline
+
+1. **Lexer**: Tokenizes source into tokens
+2. **Parser**: Builds AST with precedence climbing for expressions
+3. **Semantic Analyzer**: Type checking, symbol resolution, module imports
+4. **Bytecode Compiler**: Generates bytecode IR, optimizes, emits final bytecode
+5. **VM/JIT**: Executes bytecode or compiles via LLVM
+
+### Host Module System
+
+Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
+- `HotkeyModule` - Global hotkey registration
+- `WindowModule` - Window manipulation
+- `MathModule`, `StringModule`, `ArrayModule` - Standard data operations
+- `FsModule`, `ProcessModule` - System interaction
+- `TypeModule` - Type introspection
 
 ## Testing
 
@@ -41,6 +77,17 @@ Run Havel scripts: `./build-debug/havel script.hv`
 - **Bytecode smoke test**: `havel-bytecode-smoke` (Debug builds only - Release LTO causes relocation overflow)
 
 CI runs: CMake configure → build → bytecode-smoke → ctest
+
+```bash
+# Run a single Havel script
+./build-release/havel script.hv
+
+# Run test suite
+./build.sh test
+
+# Run specific test script
+./build-debug/havel run scripts/test_basic.hv
+```
 
 ## Dependencies
 
@@ -63,3 +110,58 @@ Optional (graceful fallback):
 - **Release builds**: Thin LTO + native march + visibility hidden
 - **LLVM ↔ Havel Lang**: LLVM JIT requires ENABLE_HAVEL_LANG (auto-enabled if missing)
 - **Qt6/MOC conflicts**: `#define True=1`, `#define False=0`, etc. to fix keyword conflicts
+
+## Development
+
+### Build Mode Selection
+- Use modes 0-5 with LLVM for full functionality (requires LLVM dev libraries)
+- Use modes 6-9 without LLVM for faster builds on systems without LLVM
+- Mode 0: Debug with all features (default for development)
+- Mode 5: Release with all features (default for distribution)
+
+### Common Development Tasks
+
+```bash
+# Quick iteration without LLVM
+./build.sh 8 build && ./build-debug/havel script.hv
+
+# Full test run
+./build.sh 0 test
+
+# Debug a specific issue
+./build.sh 0 build
+gdb ./build-debug/havel
+```
+
+### Debugging the Language
+- Use `scripts/tests/*.hv` files for language feature testing
+- Compiler errors are reported with source locations via the error system
+- VM execution traces available in debug builds
+- Use `--debug-bytecode` flag for bytecode execution tracing
+
+### Adding New Features
+- **New host function**: Add to appropriate stdlib module, register in module's `register_*_functions()`
+- **New syntax**: Modify lexer, update parser for new grammar, add AST node, update semantic analyzer
+- **New builtin type**: Add to `src/havel-lang/core/Value.hpp`, update VM operations
+
+
+## Code Rules
+
+1. No stubs. Every function has a real implementation.
+2. No "would". Write real code or say you don't know.
+3. No parallel implementations. One file per feature.
+4. No scope creep. Do exactly what was asked.
+5. No documentation of broken things. Fix it instead.
+6. Do not reimplement existing things.
+7. Verify before marking done. Show output or test result.
+8. Fix one thing, confirm it works, then move to next.
+9. Do not add abstraction layers over broken abstraction layers.
+10. No hardcoded placeholder values. Real values from real APIs.
+
+## Commit Rules
+
+11. No capslock in commit messages.
+12. No emoji in commits.
+13. Commit messages are for humans, not marketing.
+14. No hype words (synergy, paradigm, revolutionary, ecosystem, zero-cost abstraction).
+15. No emoji in code comments unless the bug is genuinely funny.

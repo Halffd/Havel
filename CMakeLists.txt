@@ -814,6 +814,20 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 endif()
 
+# ==============================================================================
+# PACKAGE MANAGER
+# ==============================================================================
+if(ENABLE_HAVEL_LANG)
+add_executable(hpkg src/hpkg/main.cpp)
+set_target_properties(hpkg PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+target_compile_options(hpkg PRIVATE -fno-lto)
+target_link_options(hpkg PRIVATE -fno-lto)
+endif()
+
 # Set target properties
 set_target_properties(havel PROPERTIES
   CXX_STANDARD 23
@@ -1075,9 +1089,16 @@ endif()
 
 if(TARGET hvtest)
 install(TARGETS hvtest
-  RUNTIME DESTINATION bin
-  COMPONENT Runtime
-)
+    RUNTIME DESTINATION bin
+    COMPONENT Runtime
+    )
+endif()
+
+if(TARGET hpkg)
+install(TARGETS hpkg
+    RUNTIME DESTINATION bin
+    COMPONENT Runtime
+    )
 endif()
 
 if(TARGET havel_lang)
@@ -1169,6 +1190,9 @@ message(STATUS "LSP server: havel-lsp")
 endif()
 if(TARGET hvtest)
 message(STATUS "Test runner: hvtest")
+endif()
+if(TARGET hpkg)
+message(STATUS "Package manager: hpkg")
 endif()
 if(TARGET havel_lang)
     message(STATUS "Language lib:    libhavel_lang.a")

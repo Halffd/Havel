@@ -8,7 +8,6 @@
 #include "../runtime/EventQueue.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "../runtime/HostBridge.hpp"
-#include "../core/CompilationPipeline.hpp"
 #include "../core/ByteCompiler.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
@@ -8340,18 +8339,55 @@ Value VM::runInContext(const std::string& source, Value context) {
     return Value::makeNull();
   }
 
-  CompilationPipeline pipeline(CompilationPipeline::Options{});
-  auto result = pipeline.compile(source, "<runInContext>");
+ parser::Parser parser{{}};
+ std::unique_ptr<ast::Program> program;
+ try {
+ program = parser.produceAST(source);
+ } catch (const ::havel::LexError &) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ } catch (const ::havel::parser::ParseError &) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+ if (!program || parser.hasErrors()) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
 
-  if (!result.success) {
-    globals = std::move(globals_stack_.back());
-    globals_stack_.pop_back();
-    globals["_G"] = old_g;
-    globals_mirror_object_id_ = old_mirror_id;
-    return Value::makeNull();
-  }
+ ByteCompiler compiler;
+ for (const auto &name : host_function_globals_) {
+ compiler.addHostGlobal(name.first);
+ }
 
-  Value exec_result = execute(*result.chunk, "__main__");
+ std::shared_ptr<BytecodeChunk> chunk;
+ try {
+ chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+ } catch (const std::exception &) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+ if (!chunk) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+
+ Value exec_result = execute(*chunk, "__main__");
 
   globals = std::move(globals_stack_.back());
   globals_stack_.pop_back();

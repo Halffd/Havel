@@ -227,19 +227,19 @@ jobs:
             -DENABLE_LLVM=OFF
           cmake --build build-debug -j$(nproc)
 
-      - name: run havel test scripts
-        run: |
-          pass=0
-          fail=0
-          for script in scripts/tests/test_*.hv; do
-            if [ -f "$script" ]; then
-              echo "running: $script"
-              if ./build-debug/havel "$script" 2>&1; then
-                pass=$((pass + 1))
-              else
-                fail=$((fail + 1))
-                echo "FAILED: $script"
-              fi
-            fi
-          done
-          echo "havel scripts: $pass passed, $fail failed"
+ - name: run havel test scripts
+ run: |
+ pass=0
+ fail=0
+ for script in scripts/smoke/*.hv scripts/tests/main/*.hv; do
+ if [ -f "$script" ]; then
+ echo "running: $script"
+ if ./build-debug/havel "$script" 2>&1; then
+ pass=$((pass + 1))
+ else
+ fail=$((fail + 1))
+ echo "FAILED: $script"
+ fi
+ fi
+ done
+ echo "havel scripts: $pass passed, $fail failed"

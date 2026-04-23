@@ -1,1 +1,0 @@
-struct Point { x: int } p := Point.new(5) print(p.x)

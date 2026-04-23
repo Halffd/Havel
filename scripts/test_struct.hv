@@ -1,4 +1,0 @@
-// Test struct.define with str()
-let typeId = struct.define("Point", ["x", "y"])
-print("typeId: " + str(typeId))
-print("type(typeId): " + type(typeId))

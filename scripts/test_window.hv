@@ -1,3 +1,0 @@
-print("Available functions:")
-print("window.getTitle(): " + window.getTitle())
-print("window.getPID(): " + window.getPID())

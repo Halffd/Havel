@@ -1,7 +1,0 @@
-// Test script to verify VMApi ArrayModule functionality
-print("Testing VMApi ArrayModule...");
-
-// Test array functions
-print("array.len([1,2,3]):", array.len([1,2,3]));
-
-print("VMApi ArrayModule test completed successfully!");

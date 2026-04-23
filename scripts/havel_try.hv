@@ -1,9 +1,0 @@
-fn test() {
-  try {
-    throw {code: 41}
-  } catch (e) {
-    return e.code + 1
-  }
-}
-print(test())
-return test()

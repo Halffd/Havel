@@ -1,7 +1,0 @@
-// Test basic object creation and access
-
-let obj = {"a": 1, "b": 2}
-print("obj.a = ")
-print(obj.a)
-print("obj.b = ")
-print(obj.b)

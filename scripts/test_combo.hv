@@ -1,5 +1,0 @@
-@RShift & WheelUp => print "WheelUp with RShift"
-@LButton & RButton => print "LButton & RButton"
-@RButton & LButton => print "RButton & LButton"
-@RButton & WheelUp => print "RButton & WheelUp"
-@RButton & WheelDown => print "RButton & WheelDown"

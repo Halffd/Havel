@@ -1,3 +1,0 @@
-let nums=[1,2]
-let out=nums.map(1)
-print(out)

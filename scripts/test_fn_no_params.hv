@@ -1,6 +1,0 @@
-// Test function without using parameters
-fn test():
-    print "hello"
-    42
-
-print test()

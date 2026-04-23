@@ -1,6 +1,0 @@
-try {
-  throw "boom"
-} finally {
-  print("fin")
-}
-return 0

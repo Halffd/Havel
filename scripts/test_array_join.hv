@@ -1,6 +1,0 @@
-// Test ArrayModule join functionality
-print("=== ArrayModule Join Test ===");
-
-print("array.join([1,2,3], ','):", array.join([1,2,3], ','));
-
-print("=== Join Test Complete ===");

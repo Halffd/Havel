@@ -1,4 +1,0 @@
-// Test Semantic Analyzer - Undefined Module Detection
-
-// This should FAIL: undefined module
-let x = nonexistentModule.someFunction()

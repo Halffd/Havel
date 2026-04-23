@@ -8,6 +8,7 @@ option(USE_CLANG "Force use of Clang compiler" ON)
 option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 # UI Backend Options
 set(UI_BACKEND "QT" CACHE STRING "UI Backend to use (QT, GTK, IMGUI, AUTO)")
@@ -762,10 +763,15 @@ target_include_directories(havel-lsp PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 
-target_link_libraries(havel-lsp PRIVATE
-    spdlog::spdlog
-    nlohmann_json::nlohmann_json
-)
+ target_link_libraries(havel-lsp PRIVATE
+ spdlog::spdlog
+ nlohmann_json::nlohmann_json
+ )
+
+ if(ENABLE_COVERAGE)
+ target_compile_options(havel-lsp PRIVATE --coverage)
+ target_link_options(havel-lsp PRIVATE --coverage)
+ endif()
 
 if(ENABLE_HAVEL_LANG)
     set(BYTECODE_SMOKE_SOURCES
@@ -799,11 +805,15 @@ if(ENABLE_HAVEL_LANG)
     #   - Adding -mcmodel=large to havel_lang itself (not just the test), or
     #   - Disabling LTO/hidden-visibility for Release builds
     # Debug builds disable LTO on havel_lang, so the test works there.
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        enable_testing()
-        add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)
-    endif()
-endif()
+ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+ enable_testing()
+ add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)
+ if(ENABLE_COVERAGE)
+ target_compile_options(havel-bytecode-smoke PRIVATE --coverage)
+ target_link_options(havel-bytecode-smoke PRIVATE --coverage)
+ endif()
+ endif()
+ endif()
 
 # Set target properties
 set_target_properties(havel PROPERTIES
@@ -834,11 +844,17 @@ target_precompile_headers(havel PRIVATE
     <sys/types.h>
 )
 
-# Sanitizers - only for Debug builds to reduce binary size
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-    target_link_options(havel PRIVATE -fsanitize=address,undefined)
-endif()
+ # Sanitizers - only for Debug builds to reduce binary size
+ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+ target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+ target_link_options(havel PRIVATE -fsanitize=address,undefined)
+ endif()
+
+ # Coverage instrumentation (mutually exclusive with sanitizers in CI)
+ if(ENABLE_COVERAGE)
+ target_compile_options(havel PRIVATE --coverage -fno-omit-frame-pointer)
+ target_link_options(havel PRIVATE --coverage)
+ endif()
 
 # Include directories
 target_include_directories(havel PRIVATE
@@ -1017,9 +1033,14 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
         )
         
-        # Add to CTest
-        add_test(NAME ${test_name} COMMAND ${test_name})
-    endforeach()
+ # Add to CTest
+ add_test(NAME ${test_name} COMMAND ${test_name})
+
+ if(ENABLE_COVERAGE)
+ target_compile_options(${test_name} PRIVATE --coverage)
+ target_link_options(${test_name} PRIVATE --coverage)
+ endif()
+ endforeach()
     
     # Special GUI test if it exists
     if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp")
@@ -1100,13 +1121,19 @@ else()
     message(STATUS "LLVM JIT:        ✗ DISABLED")
 endif()
 
-if(ENABLE_TESTS AND GTest_FOUND)
-    message(STATUS "Tests:           ✓ ENABLED")
-elseif(ENABLE_TESTS)
-    message(STATUS "Tests:           ⚠ REQUESTED BUT GTEST MISSING")
-else()
-    message(STATUS "Tests:           ✗ DISABLED")
-endif()
+ if(ENABLE_TESTS AND GTest_FOUND)
+ message(STATUS "Tests: ✓ ENABLED")
+ elseif(ENABLE_TESTS)
+ message(STATUS "Tests: ⚠ REQUESTED BUT GTEST MISSING")
+ else()
+ message(STATUS "Tests: ✗ DISABLED")
+ endif()
+
+ if(ENABLE_COVERAGE)
+ message(STATUS "Coverage: ✓ ENABLED (--coverage)")
+ else()
+ message(STATUS "Coverage: ✗ DISABLED")
+ endif()
 
 # Dependency versions
 message(STATUS "")

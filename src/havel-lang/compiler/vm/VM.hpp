@@ -23,7 +23,6 @@
 namespace havel::compiler {
 
 // Forward declarations
-class CompilationPipeline;
 class Fiber;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;

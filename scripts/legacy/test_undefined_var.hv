@@ -1,7 +1,0 @@
-// Test Semantic Error Detection - Undefined Variable
-
-print("=== Testing Undefined Variable Detection ===\n")
-
-let x = 10
-print(x)
-print(undefinedVar)  // This should trigger: UndefinedVariable

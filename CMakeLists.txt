@@ -102,15 +102,6 @@ else()
     message(STATUS "PipeWire:        ✗ NOT FOUND (Falling back to PulseAudio/ALSA)")
 endif()
 
-# Lua (try 5.4 first, fallback to pkg-config)
-find_package(Lua 5.4 QUIET)
-if(NOT Lua_FOUND)
-    pkg_search_module(LUA REQUIRED lua5.4 lua-5.4 lua54 lua)
-    if(NOT LUA_FOUND)
-        message(FATAL_ERROR "Lua 5.4 not found. Install lua5.4-dev or lua-devel")
-    endif()
-endif()
-
 # libffi (for FFI - Foreign Function Interface)
 set(HAVE_LIBFFI 0)
 pkg_check_modules(LIBFFI QUIET libffi)
@@ -566,9 +557,8 @@ set(COMMON_LIBS
     ${ALSA_LIBRARIES}
     Threads::Threads
     ncurses
-    ${DBUS_LIBRARIES}
-    ${LUA_LIBRARIES}
-    # OCR libraries
+  ${DBUS_LIBRARIES}
+  # OCR libraries
     ${TESSERACT_LIBRARIES}
     ${LEPTONICA_LIBRARIES}
     ${OPENCV_ESSENTIAL_LIBS}
@@ -878,8 +868,7 @@ target_include_directories(havel PRIVATE
     ${PULSEAUDIO_INCLUDE_DIRS}
     ${PIPEWIRE_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
-    ${LUA_INCLUDE_DIR}
-    ${WAYLAND_INCLUDE_DIRS}
+  ${WAYLAND_INCLUDE_DIRS}
     ${GENERATED_PROTO_DIR}
     ${TESSERACT_INCLUDE_DIRS}
     ${LEPTONICA_INCLUDE_DIRS}
@@ -933,9 +922,8 @@ if(ENABLE_HAVEL_LANG)
         ${DBUS_INCLUDE_DIRS}
         ${PULSEAUDIO_INCLUDE_DIRS}
         ${PIPEWIRE_INCLUDE_DIRS}
-        ${ALSA_INCLUDE_DIRS}
-        ${LUA_INCLUDE_DIR}
-        ${WAYLAND_INCLUDE_DIRS}
+  ${ALSA_INCLUDE_DIRS}
+  ${WAYLAND_INCLUDE_DIRS}
         ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
         $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
@@ -1004,10 +992,9 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             ${DBUS_INCLUDE_DIRS}
             ${PULSEAUDIO_INCLUDE_DIRS}
             ${PIPEWIRE_INCLUDE_DIRS}
-            ${ALSA_INCLUDE_DIRS}
-            ${LUA_INCLUDE_DIR}
-            ${WAYLAND_INCLUDE_DIRS}
-            ${GENERATED_PROTO_DIR}
+  ${ALSA_INCLUDE_DIRS}
+  ${WAYLAND_INCLUDE_DIRS}
+  ${GENERATED_PROTO_DIR}
             $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
             $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
@@ -1166,8 +1153,7 @@ endif()
 # Dependency versions
 message(STATUS "")
 message(STATUS "=== DEPENDENCIES ===")
-message(STATUS "Lua:             ${LUA_VERSION_STRING}")
-message(STATUS "Qt6:             ${Qt6_VERSION}")
+message(STATUS "Qt6: ${Qt6_VERSION}")
 if(ENABLE_LLVM)
     message(STATUS "LLVM:            ${LLVM_PACKAGE_VERSION}")
 endif()

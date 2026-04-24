@@ -7,10 +7,9 @@ arch=('x86_64')
 url="https://github.com/Halffd/Havel"
 license=('MIT')
 depends=(
-    'qt6-base'
-    'qt6-charts'
-    'lua54'
-    'mpv'
+  'qt6-base'
+  'qt6-charts'
+  'mpv'
     'libx11'
     'libxrandr'
     'libxinerama'
@@ -26,8 +25,7 @@ depends=(
     'opencv'
     'tesseract'
     'leptonica'
-    'spdlog'
-    'nlohmann-json'
+  'nlohmann-json'
     'wayland'
     'pipewire'
 )

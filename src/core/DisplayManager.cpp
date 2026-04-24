@@ -41,7 +41,7 @@ void DisplayManager::Initialize() {
       XSetErrorHandler(X11ErrorHandler);
       XSetIOErrorHandler([](Display *display) -> int {
         (void)display; // Mark as unused
-        std::cerr << "X11 I/O Error - Display connection lost\n";
+        havel::fatal("X11 I/O Error - Display connection lost");
         std::exit(EXIT_FAILURE);
       });
       initialized = true;
@@ -61,7 +61,7 @@ void DisplayManager::Close() {
 Display *DisplayManager::GetDisplay() {
   Initialize();
   if (!display || display == (Display *)0xbebebebebebebebe) {
-    std::cerr << "X11 display is invalid or corrupted" << std::endl;
+        havel::error("X11 display is invalid or corrupted");
     return nullptr;
   }
   return display;
@@ -179,13 +179,13 @@ std::vector<DisplayManager::MonitorInfo> DisplayManager::GetMonitorsX11() {
   std::vector<MonitorInfo> monitors;
 
   if (!display) {
-    std::cerr << "Error: X11 display not initialized\n";
+        havel::error("X11 display not initialized");
     return monitors;
   }
 
   XRRScreenResources *screen_res = XRRGetScreenResourcesCurrent(display, root);
   if (!screen_res) {
-    std::cerr << "Error: Failed to get X11 screen resources\n";
+        havel::error("Failed to get X11 screen resources");
     return monitors;
   }
 
@@ -246,7 +246,7 @@ std::vector<DisplayManager::MonitorInfo> DisplayManager::GetMonitorsWayland() {
   // This is a simplified placeholder that should be expanded based on
   // your specific Wayland protocol integration.
 
-  std::cerr << "Warning: Wayland monitor detection not fully implemented\n";
+    havel::warning("Wayland monitor detection not fully implemented");
 
   // You would implement this similar to how BrightnessManager handles Wayland:
   // 1. Connect to Wayland display
@@ -271,11 +271,10 @@ int DisplayManager::X11ErrorHandler(Display *display, XErrorEvent *event) {
 
   char errorText[256];
   XGetErrorText(display, event->error_code, errorText, sizeof(errorText));
-  std::cerr << "X11 Error: " << errorText
-            << " (code: " << static_cast<int>(event->error_code)
-            << ", request: " << static_cast<int>(event->request_code)
-            << ", minor: " << static_cast<int>(event->minor_code) << ")"
-            << std::endl;
+    havel::error("X11 Error: {} (code: {}, request: {}, minor: {})",
+                errorText, static_cast<int>(event->error_code),
+                static_cast<int>(event->request_code),
+                static_cast<int>(event->minor_code));
   return 0; // Continue execution
 }
 

@@ -1,4 +1,5 @@
 #include "Lexer.hpp"
+#include "../utils/Logger.hpp"
 #include <cctype>
 #include <iomanip>
 #include <iostream>
@@ -1547,9 +1548,10 @@ continue;
 // Handle single character tokens
         auto singleCharIt = SINGLE_CHAR_TOKENS.find(c);
         if (debug_lexer) {
-            std::cerr << "[LEXER] Looking up char '" << c << "' in SINGLE_CHAR_TOKENS, found=" << (singleCharIt != SINGLE_CHAR_TOKENS.end()) << std::endl;
-            if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
-                std::cerr << "[LEXER] Mapped to type=" << static_cast<int>(singleCharIt->second) << std::endl;
+                havel::debug("[LEXER] Looking up char '{}' in SINGLE_CHAR_TOKENS, found={}",
+                             c, (singleCharIt != SINGLE_CHAR_TOKENS.end()));
+                if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {
+                    havel::debug("[LEXER] Mapped to type={}", static_cast<int>(singleCharIt->second));
             }
         }
         if (singleCharIt != SINGLE_CHAR_TOKENS.end()) {

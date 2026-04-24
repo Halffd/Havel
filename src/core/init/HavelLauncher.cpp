@@ -1087,9 +1087,9 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       info("Starting Havel REPL with full features (hotkeys, GUI)...");
       
       // Debug: Show mode information
-      std::cerr << "[DEBUG] Running in REPL mode (full):" << std::endl;
-      std::cerr << "  - GUI: enabled" << std::endl;
-      std::cerr << "  - IO/Hotkeys: enabled" << std::endl;
+        havel::debug("Running in REPL mode (full):");
+        havel::debug(" - GUI: enabled");
+        havel::debug(" - IO/Hotkeys: enabled");
 
       // Full mode - initialize Qt and havel::Havel
       int dummy_argc = 1;

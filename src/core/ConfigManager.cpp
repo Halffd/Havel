@@ -70,7 +70,7 @@ void EnsureConfigDir() {
   namespace fs = std::filesystem;
   try {
     if (GetConfigDirStatic().empty()) {
-      std::cerr << "Config directory path is empty, using fallback\n";
+      havel::warning("Config directory path is empty, using fallback");
       GetConfigDirStatic() = "./havel/";
       GetMainConfigStatic() = GetConfigDirStatic() + "havel.cfg";
       GetHotkeysDirStatic() = GetConfigDirStatic() + "hotkeys/";
@@ -82,11 +82,10 @@ void EnsureConfigDir() {
     if (!fs::exists(GetHotkeysDirStatic())) {
       fs::create_directories(GetHotkeysDirStatic());
     }
-  } catch (const fs::filesystem_error &e) {
-    std::cerr << "Failed to create config directories: " << e.what()
-              << "\nDirectory: " << GetConfigDirStatic() << " " << GetHotkeysDirStatic()
-              << " Config: " << GetMainConfigStatic() << "\n";
-  }
+} catch (const fs::filesystem_error &e) {
+    havel::error("Failed to create config directories: {} (Directory: {} {} Config: {})",
+                 e.what(), GetConfigDirStatic(), GetHotkeysDirStatic(), GetMainConfigStatic());
+}
 }
 } // namespace ConfigPaths
 
@@ -167,7 +166,7 @@ void havel::Configs::Reload() {
     // Replace config
     config = newConfig;
   } catch (const std::exception &e) {
-    std::cerr << "Config reload failed: " << e.what() << std::endl;
+        havel::error("Config reload failed: {}", e.what());
   }
 }
 
@@ -179,7 +178,7 @@ void havel::Configs::Load(const std::string &filename) {
   std::string line, currentSection;
 
   if (!file.is_open()) {
-    std::cerr << "Could not open config file: " << path << std::endl;
+        havel::error("Could not open config file: {}", path);
     return;
   }
 
@@ -229,7 +228,7 @@ void havel::Configs::Save(const std::string &filename) {
     // Use ConfigObject's toString method
     file << config.toString();
   } catch (const std::exception &e) {
-    std::cerr << "Config save failed: " << e.what() << std::endl;
+        havel::error("Config save failed: {}", e.what());
   }
 }
 
@@ -298,7 +297,7 @@ void havel::Configs::EnsureConfigFile(const std::string &filename) {
       file << "GammaAmount=" << Configs::DEFAULT_GAMMA_AMOUNT << std::endl;
       file.close();
     } catch (const std::exception &e) {
-      std::cerr << "Failed to create default config: " << e.what() << std::endl;
+        havel::error("Failed to create default config: {}", e.what());
     }
   }
 }
@@ -325,7 +324,7 @@ void havel::Configs::StartFileWatching(const std::string &filename) {
   watchingThread = std::thread([this, filename]() {
     int fd = inotify_init1(IN_NONBLOCK);
     if (fd == -1) {
-      std::cerr << "inotify_init failed, falling back to polling\n";
+      havel::warning("inotify_init failed, falling back to polling");
       // Fallback to polling
       auto lastModified = GetLastModified(path);
       while (watching.load()) {
@@ -344,7 +343,7 @@ void havel::Configs::StartFileWatching(const std::string &filename) {
 
     int wd = inotify_add_watch(fd, path.c_str(), IN_MODIFY | IN_CLOSE_WRITE);
     if (wd == -1) {
-      std::cerr << "inotify_add_watch failed\n";
+        havel::error("inotify_add_watch failed");
       close(fd);
       return;
     }

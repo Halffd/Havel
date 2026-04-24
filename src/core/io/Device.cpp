@@ -1,4 +1,5 @@
 #include "Device.hpp"
+#include "utils/Logger.hpp"
 #include <fstream>
 #include <algorithm>
 #include <iostream>
@@ -354,7 +355,7 @@ std::vector<Device> Device::getAllDevices() {
     std::ifstream proc("/proc/bus/input/devices");
     
     if (!proc.is_open()) {
-        std::cerr << "Cannot open /proc/bus/input/devices" << std::endl;
+        havel::warning("Cannot open /proc/bus/input/devices");
         return devices;
     }
     

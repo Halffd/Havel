@@ -619,7 +619,7 @@ wID WindowManager::GetwIDByPID(pID pid) {
   Atom pidAtom =
       XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_PID", x11::XTrue);
   if (pidAtom == x11::XNone) {
-    std::cerr << "X11 does not support _NET_WM_PID." << std::endl;
+    havel::warning("X11 does not support _NET_WM_PID");
     return 0;
   }
 
@@ -672,7 +672,7 @@ wID WindowManager::GetwIDByProcessName(cstr processName) {
   Atom pidAtom =
       XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_PID", x11::XTrue);
   if (pidAtom == x11::XNone) {
-    std::cerr << "X11 does not support _NET_WM_PID." << std::endl;
+    havel::warning("X11 does not support _NET_WM_PID");
     return 0;
   }
 
@@ -822,8 +822,7 @@ std::string WindowManager::getProcessName(pid_t windowPID) {
     fclose(procFile);
     return std::string(procName); // Return the process name as a string
   } else {
-    std::cerr << "Error: Could not read from file " << path << ": "
-              << std::strerror(errno) << "\n";
+        havel::error("Could not read from file {}: {}", path, std::strerror(errno));
     return ""; // Handle the error as needed
   }
 #else
@@ -945,7 +944,7 @@ wID WindowManager::NewWindow(cstr name, std::vector<int> *dimensions,
 
   return reinterpret_cast<wID>(newWindow);
 #else
-  std::cerr << "NewWindow not supported on this platform." << std::endl;
+    havel::warning("NewWindow not supported on this platform");
   return 0;
 #endif
 }
@@ -1352,7 +1351,7 @@ bool WindowManager::MoveToCorner(wID windowId, const std::string &corner) {
     x = monitor.x + monitor.width - attrs.width;
     y = monitor.y + monitor.height - attrs.height;
   } else {
-    std::cerr << "Unknown corner: " << corner << std::endl;
+        havel::warning("Unknown corner: {}", corner);
     return false;
   }
 
@@ -1393,7 +1392,7 @@ bool WindowManager::Move(const std::string &windowTitle, int x, int y,
                          bool centerOnScreen) {
   wID windowId = FindByTitle(windowTitle);
   if (!windowId) {
-    std::cerr << "Window not found: " << windowTitle << std::endl;
+        havel::warning("Window not found: {}", windowTitle);
     return false;
   }
   return Move(windowId, x, y, centerOnScreen);
@@ -1407,7 +1406,7 @@ bool WindowManager::Resize(const std::string &windowTitle, int width,
                            int height, bool fullscreen) {
   wID windowId = FindByTitle(windowTitle);
   if (!windowId) {
-    std::cerr << "Window not found: " << windowTitle << std::endl;
+        havel::warning("Window not found: {}", windowTitle);
     return false;
   }
   return Resize(windowId, width, height, fullscreen);
@@ -1425,7 +1424,7 @@ bool WindowManager::SetResolution(wID windowId, const std::string &resolution) {
 
   auto it = resolutions.find(resolution);
   if (it == resolutions.end()) {
-    std::cerr << "Unknown resolution: " << resolution << std::endl;
+        havel::warning("Unknown resolution: {}", resolution);
     return false;
   }
 
@@ -1470,7 +1469,7 @@ void WindowManager::ManageVirtualDesktops(int action) {
 #ifdef __linux__
   auto *display = DisplayManager::GetDisplay();
   if (!display) {
-    std::cerr << "Cannot manage desktops - no X11 display\n";
+        havel::error("Cannot manage desktops - no X11 display");
     return;
   }
 

@@ -1,7 +1,8 @@
 #include "KeyMap.hpp"
+#include "utils/Logger.hpp"
 #include <X11/XF86keysym.h>
-#include <algorithm> // For std::transform
-#include <iostream>  // For debugging
+#include <algorithm>
+#include <iostream>
 
 // This file contains all the key mapping data extracted from IO.cpp
 // It populates the KeyMap with comprehensive mappings for evdev, X11, and Windows
@@ -16,29 +17,25 @@ std::unordered_map<unsigned long, std::string> KeyMap::x11ToName;
 std::unordered_map<int, std::string> KeyMap::windowsToName;
 
 void KeyMap::AddKey(const std::string& name, int evdev, unsigned long x11, int windows) {
-    // Check for duplicate key names
-    if (nameToKey.find(name) != nameToKey.end()) {
-        std::cerr << "WARNING: Duplicate key name '" << name << "' found!" << std::endl;
-        std::cerr << "Previous evdev code: " << nameToKey[name].evdevCode << ", New evdev code: " << evdev << std::endl;
-    }
+if (nameToKey.find(name) != nameToKey.end()) {
+havel::warning("Duplicate key name '{}' found! Previous evdev: {}, New evdev: {}",
+               name, nameToKey[name].evdevCode, evdev);
+}
 
-    // Check for duplicate evdev codes
-    if (evdev != 0 && evdevToName.find(evdev) != evdevToName.end()) {
-        std::cerr << "WARNING: Duplicate evdev code " << evdev << " found!" << std::endl;
-        std::cerr << "Previous name: " << evdevToName[evdev] << ", New name: " << name << std::endl;
-    }
+if (evdev != 0 && evdevToName.find(evdev) != evdevToName.end()) {
+havel::warning("Duplicate evdev code {} found! Previous: {}, New: {}",
+               evdev, evdevToName[evdev], name);
+}
 
-    // Check for duplicate X11 codes
-    if (x11 != 0 && x11ToName.find(x11) != x11ToName.end()) {
-        std::cerr << "WARNING: Duplicate X11 code " << x11 << " found!" << std::endl;
-        std::cerr << "Previous name: " << x11ToName[x11] << ", New name: " << name << std::endl;
-    }
+if (x11 != 0 && x11ToName.find(x11) != x11ToName.end()) {
+havel::warning("Duplicate X11 code {} found! Previous: {}, New: {}",
+               x11, x11ToName[x11], name);
+}
 
-    // Check for duplicate Windows codes
-    if (windows != 0 && windowsToName.find(windows) != windowsToName.end()) {
-        std::cerr << "WARNING: Duplicate Windows code " << windows << " found!" << std::endl;
-        std::cerr << "Previous name: " << windowsToName[windows] << ", New name: " << name << std::endl;
-    }
+if (windows != 0 && windowsToName.find(windows) != windowsToName.end()) {
+havel::warning("Duplicate Windows code {} found! Previous: {}, New: {}",
+               windows, windowsToName[windows], name);
+}
 
     KeyEntry entry = {name, {}, evdev, x11, windows};
     nameToKey[name] = entry;
@@ -54,7 +51,7 @@ void KeyMap::AddAlias(const std::string& alias, const std::string& primaryName) 
         nameToKey[alias] = it->second; // Alias points to the same entry
     } else {
         // Handle error: primaryName not found
-        std::cerr << "Warning: Primary key name '" << primaryName << "' not found for alias '" << alias << "'" << std::endl;
+        havel::warning("Primary key name '{}' not found for alias '{}'", primaryName, alias);
     }
 }
 

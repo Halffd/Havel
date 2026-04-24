@@ -1,5 +1,5 @@
 #include "ChainedTask.hpp"
-#include <iostream>
+#include "utils/Logger.hpp"
 
 namespace havel::automation {
 
@@ -120,8 +120,8 @@ void ChainedTask::executeCurrentAction() {
             action();
         }
     } catch (const std::exception& e) {
-        std::cerr << "Error executing action " << currentActionIndex_ 
-                  << " in chained task " << name_ << ": " << e.what() << std::endl;
+        havel::error("Error executing action {} in chained task {}: {}",
+                     currentActionIndex_, name_, e.what());
     }
 }
 

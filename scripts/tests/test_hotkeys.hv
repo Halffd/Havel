@@ -1,0 +1,31 @@
+f1 => {
+   send("xxxxxxxxxxx")
+}
+a => print "hello"
+b => {
+  try {
+      print(rand())
+      print 1/0
+  } catch e {
+    print e
+  }
+}
+c => {
+    if 1 > 0 {
+       print 1 > 0
+    } else  {
+       print 0
+    }
+}
+!d => send "#d"
+RShift => print 'zoom'
+let d
+d = d => {
+  //print @id
+  //print @alias
+  //print @key
+  //@disable()
+  //print @status
+  print d
+}
+print d

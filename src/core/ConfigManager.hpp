@@ -11,6 +11,7 @@
 
 #include "ConfigObject.hpp"
 #include "types.hpp"
+#include "utils/Logger.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include <QStandardPaths>
@@ -92,8 +93,7 @@ public:
   // Convenience setters for numeric types
   template <typename T>
   void Set(const std::string &key, const T &value, bool save = false) {
-    std::cerr << "Set template called with type: " << typeid(T).name()
-              << std::endl;
+    havel::debug("Set template called with type: {}", typeid(T).name());
     config.set<T>(key, value);
     if (save)
       RequestSave();
@@ -249,7 +249,7 @@ inline void BackupConfig(const std::string &path = "havel.cfg") {
                     fs::copy_options::overwrite_existing);
     }
   } catch (const fs::filesystem_error &e) {
-    std::cerr << "Config backup failed: " << e.what() << "\n";
+        havel::error("Config backup failed: {}", e.what());
   }
 }
 
@@ -263,7 +263,7 @@ inline void RestoreConfig(const std::string &path = "havel.cfg") {
                     fs::copy_options::overwrite_existing);
     }
   } catch (const fs::filesystem_error &e) {
-    std::cerr << "Config restore failed: " << e.what() << "\n";
+        havel::error("Config restore failed: {}", e.what());
   }
 }
 

@@ -115,9 +115,8 @@ void Parser::errorAt(const havel::Token &token, const std::string &message) {
 const havel::Token &Parser::at(size_t offset) const {
   // Sanity check - offset should never be huge (indicates memory corruption)
   if (offset > 10000) {
-    std::cerr << "FATAL: Parser::at() called with invalid offset: " << offset
-              << " (position=" << position
-              << ", tokens.size()=" << tokens.size() << ")\n";
+        havel::fatal("Parser::at() called with invalid offset: {} (position={}, tokens.size()={})",
+                     offset, position, tokens.size());
     std::abort();
   }
 
@@ -1637,7 +1636,8 @@ case TokenType::Plus: {
 
 case TokenType::Arrow: {
       // Arrow function: identifier => body
-      std::cerr << "DEBUG Arrow: left=" << left->toString() << ", at=" << at().toString() << ", Arrow.type=" << static_cast<int>(TokenType::Arrow) << std::endl;
+        havel::debug("Arrow: left={}, at={}, Arrow.type={}",
+                     left->toString(), at().toString(), static_cast<int>(TokenType::Arrow));
       if (context.inMatchExpression) {
         return nullptr;
       }

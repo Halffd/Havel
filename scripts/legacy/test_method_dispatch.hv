@@ -1,5 +1,0 @@
-// Test script for method dispatch
-s := "hello"
-result := s.upper()
-print("Original: " + s)
-print("Upper: " + result)

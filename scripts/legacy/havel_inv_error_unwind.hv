@@ -1,8 +1,0 @@
-fn bad(x) {
-    return 10 / (x - 2)
-}
-
-let nums = [1, 2, 3]
-let out = nums.map(bad)
-print(out)
-return 0

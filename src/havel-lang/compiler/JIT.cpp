@@ -34,22 +34,20 @@ void JIT::CompileHotkey(const std::string &combination,
   // 4. Store compiled function
   compiledHotkeys[combination] = compiledFunc;
 
-  std::cout << "🔥 Compiled hotkey '" << combination << "' to native code!"
-            << std::endl;
+    havel::info("Compiled hotkey '{}' to native code", combination);
 }
 
 void JIT::ExecuteHotkey(const std::string &combination) {
-  auto it = compiledHotkeys.find(combination);
-  if (it != compiledHotkeys.end() && it->second) {
-    // Execute pure machine code - BLAZING FAST! ⚡
-    it->second();
-  } else {
+    auto it = compiledHotkeys.find(combination);
+    if (it != compiledHotkeys.end() && it->second) {
+        it->second();
+    } else {
         havel::error("No compiled hotkey found for: {}", combination);
-  }
+    }
 }
 
 void JIT::CompileScript(const ast::Program &program) {
-  std::cout << "🚀 JIT compiling full script..." << std::endl;
+    havel::info("JIT compiling full script...");
   
   // Compile the entire program AST to LLVM IR
   llvm::Function *mainFunc = compiler.CompileProgram(program);
@@ -65,7 +63,7 @@ void JIT::CompileScript(const ast::Program &program) {
       return;
   }
 
-  std::cout << "🔥 Script compiled successfully! Ready for blazing fast execution! ⚡" << std::endl;
+    havel::info("Script compiled successfully");
   
   // Execute it!
   compiledMain();

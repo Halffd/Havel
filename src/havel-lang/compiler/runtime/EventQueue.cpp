@@ -1,4 +1,5 @@
 #include "EventQueue.hpp"
+#include "../../../utils/Logger.hpp"
 #include <algorithm>
 #include <iostream>
 
@@ -69,9 +70,9 @@ void EventQueue::processAll() {
             }
         } catch (const std::exception& e) {
             // Log but don't crash - keep processing remaining events
-            std::cerr << "[EventQueue] Handler exception: " << e.what() << std::endl;
+            havel::error("[EventQueue] Handler exception: {}", e.what());
         } catch (...) {
-            std::cerr << "[EventQueue] Handler unknown exception" << std::endl;
+            havel::error("[EventQueue] Handler unknown exception");
         }
     }
 }

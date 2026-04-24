@@ -1015,14 +1015,14 @@ std::vector<Token> Lexer::tokenize() {
         if (inExpressionContext) {
           tokens.push_back(makeToken("#", TokenType::Length));
           if (debug_lexer) {
-            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+                havel::debug("LEX: {}", tokens.back().toString());
           }
           continue;
         }
         // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
         tokens.push_back(scanHotkey());
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
@@ -1030,7 +1030,7 @@ std::vector<Token> Lexer::tokenize() {
       // If not followed by identifier-starting char, scan as hotkey
       tokens.push_back(scanHotkey());
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1039,7 +1039,7 @@ std::vector<Token> Lexer::tokenize() {
     if (isDigit(c) || (c == '-' && isDigit(peek()))) {
       tokens.push_back(scanNumber());
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
 continue;
     }
@@ -1069,7 +1069,7 @@ continue;
             tokens.push_back(scanString(isFString, isRegexString, quote));
         }
         if (debug_lexer) {
-            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+                havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
     }
@@ -1086,7 +1086,7 @@ continue;
         }
         tokens.push_back(scanBacktick(isMultilineBacktick));
         if (debug_lexer) {
-            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+                havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
     }
@@ -1103,7 +1103,7 @@ continue;
         tokens.push_back(makeToken("/", TokenType::Hotkey));
         advance(); // consume '/'
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
@@ -1150,7 +1150,7 @@ continue;
           tokens.push_back(makeToken(hotkeyValue, TokenType::Hotkey));
         }
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
@@ -1179,7 +1179,7 @@ continue;
       if (isRegexContext && !isDigit(peek())) {
         tokens.push_back(scanRegexLiteral());
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
@@ -1190,7 +1190,7 @@ continue;
       advance(); // consume '>'
       tokens.push_back(makeToken("->", TokenType::ReturnType));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1207,7 +1207,7 @@ continue;
       advance(); // consume second ':'
       tokens.push_back(makeToken("::", TokenType::ColonColon));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1217,7 +1217,7 @@ continue;
       advance();
       tokens.push_back(makeToken("++", TokenType::PlusPlus));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1225,7 +1225,7 @@ continue;
       advance();
       tokens.push_back(makeToken("--", TokenType::MinusMinus));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1235,7 +1235,7 @@ continue;
       advance();
       tokens.push_back(makeToken("+=", TokenType::PlusAssign));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1243,7 +1243,7 @@ continue;
       advance();
       tokens.push_back(makeToken("-=", TokenType::MinusAssign));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1251,7 +1251,7 @@ continue;
       advance();
       tokens.push_back(makeToken("*=", TokenType::MultiplyAssign));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1259,7 +1259,7 @@ continue;
       advance();
       tokens.push_back(makeToken("/=", TokenType::DivideAssign));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1267,7 +1267,7 @@ continue;
       advance();
       tokens.push_back(makeToken("%=", TokenType::ModuloAssign));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1280,7 +1280,7 @@ continue;
         advance(); // consume =
         tokens.push_back(makeToken("**=", TokenType::PowerAssign));
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       } else {
@@ -1288,7 +1288,7 @@ continue;
         advance(); // consume second *
         tokens.push_back(makeToken("**", TokenType::Power));
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
@@ -1300,7 +1300,7 @@ continue;
       advance();
       tokens.push_back(makeToken("??", TokenType::Nullish));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1310,7 +1310,7 @@ continue;
       advance();
       tokens.push_back(makeToken("==", TokenType::Equals));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1318,7 +1318,7 @@ continue;
       advance();
       tokens.push_back(makeToken("!=", TokenType::NotEquals));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1328,7 +1328,7 @@ continue;
       advance();
       tokens.push_back(makeToken("&&", TokenType::And));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1336,7 +1336,7 @@ continue;
       advance();
       tokens.push_back(makeToken("||", TokenType::Or));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1346,7 +1346,7 @@ continue;
       advance();
       tokens.push_back(makeToken("<=", TokenType::LessEquals));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1354,7 +1354,7 @@ continue;
       advance();
       tokens.push_back(makeToken(">=", TokenType::GreaterEquals));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1364,7 +1364,7 @@ continue;
       advance(); // consume second '>'
       tokens.push_back(makeToken(">>", TokenType::ShiftRight));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1373,14 +1373,14 @@ continue;
     if (c == '<') {
       tokens.push_back(makeToken("<", TokenType::Less));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
     if (c == '>') {
       tokens.push_back(makeToken(">", TokenType::Greater));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1389,7 +1389,7 @@ continue;
     if (c == '=') {
       tokens.push_back(makeToken("=", TokenType::Assign));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1433,7 +1433,7 @@ continue;
 
       tokens.push_back(scanShellCommand(captureOutput));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1444,7 +1444,7 @@ continue;
       advance(); // consume '>'
       tokens.push_back(makeToken("@->", TokenType::SuperArrow));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1454,7 +1454,7 @@ continue;
       advance(); // consume second '@'
       tokens.push_back(makeToken("@@", TokenType::AtAt));
       if (debug_lexer) {
-        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
@@ -1487,7 +1487,7 @@ continue;
         // @identifier with anything else ( = / . / ( / \n / etc ) - field access
         tokens.push_back(makeToken("@", TokenType::At));
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
@@ -1508,7 +1508,7 @@ continue;
       if (c == '!' && peek() == '{') {
         tokens.push_back(makeToken("!", TokenType::Not));
         if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+            havel::debug("LEX: {}", tokens.back().toString());
         }
         // Don't consume '{' - let it be handled normally
         continue;
@@ -1634,11 +1634,11 @@ continue;
 }
 
 void Lexer::printTokens(const std::vector<Token> &tokens) const {
-  std::cout << "=== HAVEL TOKENS ===" << std::endl;
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    std::cout << "[" << i << "] " << tokens[i].toString() << std::endl;
-  }
-  std::cout << "===================" << std::endl;
+    havel::debug("=== HAVEL TOKENS ===");
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        havel::debug("[{}] {}", i, tokens[i].toString());
+    }
+    havel::debug("===================");
 }
 
 } // namespace havel

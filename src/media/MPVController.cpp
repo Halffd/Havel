@@ -1,4 +1,5 @@
 #include "MPVController.hpp"
+#include "../utils/Logger.hpp"
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -24,13 +25,13 @@ MPVController::~MPVController() { Shutdown(); }
 bool MPVController::Initialize() {
   if (initialized)
     return true;
-  std::cout << "Initializing MPV controller" << std::endl;
-  initialized = true;
-  if (ConnectSocket()) {
-    std::cout << "Connected to MPV socket" << std::endl;
-  } else {
-    std::cout << "MPV socket not open" << std::endl;
-  }
+    havel::info("Initializing MPV controller");
+    initialized = true;
+    if (ConnectSocket()) {
+        havel::info("Connected to MPV socket");
+    } else {
+        havel::warning("MPV socket not open");
+    }
   return true;
 }
 
@@ -40,7 +41,7 @@ void MPVController::Shutdown() {
     socket_fd = -1;
   }
   initialized = false;
-  std::cout << "Shutting down MPV controller" << std::endl;
+    havel::info("Shutting down MPV controller");
 }
 
 bool MPVController::EnsureInitialized() {
@@ -84,7 +85,7 @@ void MPVController::SendCommand(const std::vector<std::string> &cmd) {
     return;
 
   if (!IsSocketAlive() && !ConnectSocket()) {
-    std::cerr << "MPV socket not available\n";
+        havel::warning("MPV socket not available");
     return;
   }
 
@@ -110,9 +111,9 @@ void MPVController::SendCommand(const std::vector<std::string> &cmd) {
     char buffer[1024] = {0};
     ssize_t len = recv(socket_fd, buffer, sizeof(buffer) - 1, 0);
     if (len > 0) {
-      std::cout << "MPV response: " << buffer << std::endl;
+        havel::debug("MPV response: {}", buffer);
     } else {
-      std::cout << "No response or timeout from MPV" << std::endl;
+        havel::debug("No response or timeout from MPV");
     }
     return;
   }
@@ -120,7 +121,7 @@ void MPVController::SendCommand(const std::vector<std::string> &cmd) {
   auto now = std::chrono::steady_clock::now();
   if (std::chrono::duration_cast<std::chrono::seconds>(now - last_error_time)
           .count() > 60) {
-    std::cerr << "Failed to send MPV command after retries." << std::endl;
+            havel::error("Failed to send MPV command after retries.");
     last_error_time = now;
   }
 }

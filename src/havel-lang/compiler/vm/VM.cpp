@@ -103,10 +103,6 @@ static bool valuesEqual(const Value &a, const Value &b) {
   return false;
 }
 
-struct ScriptThrow final {
-  Value value;
-};
-
 // Internal toString with depth limit only (no cycle detection - confuses users)
 } // anonymous namespace
 

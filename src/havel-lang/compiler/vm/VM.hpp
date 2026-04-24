@@ -32,21 +32,25 @@ namespace havel::errors {
 }
 
 // Error handling with stack traces
+struct ScriptThrow final {
+    Value value;
+};
+
 struct ScriptError final {
-  Value value;
-  std::string message;
-  std::string stackTrace;
-  uint32_t line = 0;
-  uint32_t column = 0;
+    Value value;
+    std::string message;
+    std::string stackTrace;
+    uint32_t line = 0;
+    uint32_t column = 0;
 
-  ScriptError(Value val, const std::string &msg,
-              const std::string &trace, uint32_t ln = 0, uint32_t col = 0)
-      : value(std::move(val)), message(msg), stackTrace(trace), line(ln),
-        column(col) {}
+    ScriptError(Value val, const std::string &msg,
+        const std::string &trace, uint32_t ln = 0, uint32_t col = 0)
+        : value(std::move(val)), message(msg), stackTrace(trace), line(ln),
+          column(col) {}
 
-  const char *what() const noexcept { return message.c_str(); }
-  
-  // Note: toHavelError() implementation moved to .cpp to avoid Qt moc issues
+    const char *what() const noexcept { return message.c_str(); }
+
+    // Note: toHavelError() implementation moved to .cpp to avoid Qt moc issues
 };
 
 // ============================================================================
@@ -352,8 +356,38 @@ public:
     bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
     Value callFunctionSyncPublic(const Value &fn, const std::vector<Value> &args) { return callFunctionSync(fn, args); }
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
-    void pushStackPublic(Value value) { pushStack(std::move(value)); }
-    Value popStackPublic() { return popStack(); }
+  void pushStackPublic(Value value) { pushStack(std::move(value)); }
+  Value popStackPublic() { return popStack(); }
+  // Upvalue/closure access for JIT bridges
+  uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
+  GCHeap::RuntimeClosure* currentClosurePublic() {
+    uint32_t id = currentFrame().closure_id;
+    if (id == 0) return nullptr;
+    return heap_.closure(id);
+  }
+  Value readLocalPublic(uint32_t abs_index) {
+    ensureLocalIndex(abs_index);
+    return locals[abs_index];
+  }
+  void writeLocalPublic(uint32_t abs_index, Value value) {
+    ensureLocalIndex(abs_index);
+    locals[abs_index] = std::move(value);
+  }
+  uint32_t toAbsoluteLocalPublic(uint32_t local_index) { return toAbsoluteLocal(local_index); }
+  void closeFrameUpvaluesPublic(uint32_t locals_base, uint32_t locals_end) { closeFrameUpvalues(locals_base, locals_end); }
+  size_t currentLocalsBasePublic() const { return currentFrame().locals_base; }
+  size_t currentLocalsSizePublic() const { return locals.size(); }
+  std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>& openUpvaluesPublic() { return open_upvalues; }
+  void doTailCallPublic(Value callee_value, std::vector<Value> args) { doTailCall(std::move(callee_value), std::move(args)); }
+  void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
+  size_t frameCountPublic() const { return frame_count_; }
+  void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip) {
+    currentFrame().try_stack.push_back(TryHandler{.catch_ip = catch_ip, .finally_ip = finally_ip, .finally_return_ip = 0, .stack_depth = 0});
+  }
+  void tryExitPublic() { if (!currentFrame().try_stack.empty()) currentFrame().try_stack.pop_back(); }
+  Value currentExceptionPublic() const { return has_current_exception_ ? current_exception_ : Value::makeNull(); }
+  bool hasCurrentExceptionPublic() const { return has_current_exception_; }
+  void setCurrentExceptionPublic(const Value& v) { has_current_exception_ = true; current_exception_ = v; }
 
   // Direct invocation (bypasses stack, takes args as vector)
   Value invokeHostFunctionDirect(const std::string &name,

@@ -6,7 +6,7 @@
 #ifdef HAVE_IMGUI_BACKEND
 
 #include "modules/ui/UIElement.hpp"
-#include <spdlog/spdlog.h>
+#include "utils/Logger.hpp"
 #include <iostream>
 #include <cstring>
 
@@ -42,13 +42,13 @@ bool ImGuiBackend::initialize() {
     
     // Initialize GLFW
     if (!initGLFW()) {
-        spdlog::error("Failed to initialize GLFW");
+        havel::error("Failed to initialize GLFW");
         return false;
     }
     
     // Initialize ImGui
     if (!initImGui()) {
-        spdlog::error("Failed to initialize ImGui");
+        havel::error("Failed to initialize ImGui");
         shutdownGLFW();
         return false;
     }
@@ -56,7 +56,7 @@ bool ImGuiBackend::initialize() {
     initialized_ = true;
     running_ = true;
     
-    spdlog::info("ImGui backend initialized (ImGui {})", IMGUI_VERSION);
+    havel::info("ImGui backend initialized (ImGui {})", IMGUI_VERSION);
     
     return true;
 }
@@ -72,7 +72,7 @@ void ImGuiBackend::shutdown() {
     shutdownGLFW();
     
     initialized_ = false;
-    spdlog::info("ImGui backend shutdown complete");
+    havel::info("ImGui backend shutdown complete");
 }
 
 bool ImGuiBackend::initGLFW() {
@@ -495,12 +495,12 @@ void ImGuiBackend::close(std::shared_ptr<ui::UIElement> window) {
 void ImGuiBackend::alert(const std::string &message) {
     // Queue alert for next frame
     // In ImGui, we'd use a popup modal
-    spdlog::info("Alert: {}", message);
+    havel::info("Alert: {}", message);
 }
 
 bool ImGuiBackend::confirm(const std::string &message) {
     // In ImGui, this would be a blocking modal
-    spdlog::info("Confirm: {} (returning true)", message);
+    havel::info("Confirm: {} (returning true)", message);
     return true;
 }
 
@@ -518,7 +518,7 @@ std::string ImGuiBackend::dirPicker(const std::string &title) {
 void ImGuiBackend::notify(const std::string &message, const std::string &type) {
     // ImGui doesn't have native notifications
     // Could use a toast system or external library
-    spdlog::info("Notification [{}]: {}", type, message);
+    havel::info("Notification [{}]: {}", type, message);
 }
 
 void ImGuiBackend::pumpEvents(int timeoutMs) {
@@ -695,7 +695,7 @@ void ImGuiBackend::trayMenu(std::shared_ptr<ui::UIElement> menu) {
 void ImGuiBackend::trayNotify(const std::string &title, const std::string &message, const std::string &iconType) {
     (void)title;
     (void)iconType;
-    spdlog::info("Tray notification: {}", message);
+    havel::info("Tray notification: {}", message);
 }
 
 void ImGuiBackend::trayShow() {

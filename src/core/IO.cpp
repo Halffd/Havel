@@ -1147,7 +1147,7 @@ bool IO::SetHardwareMouseSensitivity(double sensitivity) {
 void IO::SendX11Key(const std::string &keyName, bool press) {
 #if defined(__linux__)
   if (!display) {
-    std::cerr << "X11 display not initialized!" << std::endl;
+        havel::error("X11 display not initialized!");
     return;
   }
 
@@ -1195,7 +1195,7 @@ bool IO::TryReleaseKey(int keycode) {
 
 void IO::EmergencyReleaseAllKeys() {
   std::lock_guard<std::mutex> lock(keyStateMutex);
-  std::cerr << "EMERGENCY: Releasing " << pressedKeys.size() << " stuck keys\n";
+    havel::warning("EMERGENCY: Releasing {} stuck keys", pressedKeys.size());
 
   // Copy the set to avoid iterator invalidation
   std::set<int> keysToRelease = pressedKeys;
@@ -1496,7 +1496,7 @@ bool IO::Suspend() {
       return true;
     }
   } catch (const std::exception &e) {
-    std::cerr << "Error in IO::Suspend: " << e.what() << std::endl;
+        havel::error("Error in IO::Suspend: {}", e.what());
     return false;
   }
 }
@@ -2006,8 +2006,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
         KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
 
         if (keycode == 0) {
-          std::cerr << "Invalid key: '" << parsed.keyPart
-                    << "' in hotkey: " << rawInput << "\n";
+        havel::error("Invalid key: '{}' in hotkey: {}", parsed.keyPart, rawInput);
           return {};
         }
 
@@ -2230,7 +2229,7 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
     hk = AddHotkey(rawInput, std::move(action), id);
   }
   if (!hk.success) {
-    std::cerr << "Failed to register hotkey: " << rawInput << "\n";
+        havel::error("Failed to register hotkey: {}", rawInput);
     failedHotkeys.push_back(hk);
     return false;
   }
@@ -2267,7 +2266,7 @@ void IO::ControlSend(const std::string &control, const std::string &keys) {
   // Use WindowManager to find the window
   wID hwnd = WindowManager::FindByTitle(control);
   if (!hwnd) {
-    std::cerr << "Window not found: " << control << std::endl;
+        havel::warning("Window not found: {}", control);
     return;
   }
 
@@ -2438,7 +2437,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
 
   KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
   if (keycode == 0) {
-    std::cerr << "Invalid key code for hotkey: " << hotkey.alias << std::endl;
+        havel::warning("Invalid key code for hotkey: {}", hotkey.alias);
     return;
   }
 
@@ -2448,7 +2447,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
   // Grab the key
   if (XGrabKey(display, keycode, hotkey.modifiers, root, x11::XFalse,
                GrabModeAsync, GrabModeAsync) != x11::XSuccess) {
-    std::cerr << "Failed to grab key: " << hotkey.alias << std::endl;
+            havel::error("Failed to grab key: {}", hotkey.alias);
   }
 
   XFlush(display);
@@ -2507,7 +2506,7 @@ int IO::GetKeyboard() {
                                            0, 0, 1, 1, 0, 0, 0);
   if (XGrabKeyboard(display, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
                     CurrentTime) != GrabSuccess) {
-    std::cerr << "Unable to grab keyboard!" << std::endl;
+        havel::error("Unable to grab keyboard!");
     XDestroyWindow(display, window);
     return EXIT_FAILURE;
   }
@@ -2740,14 +2739,14 @@ Key IO::GetKeyCode(cstr keyName) {
   // Convert string to keysym
   KeySym keysym = StringToVirtualKey(keyName);
   if (keysym == NoSymbol) {
-    std::cerr << "Unknown keysym for: " << keyName << "\n";
+        havel::warning("Unknown keysym for: {}", keyName);
     return 0;
   }
 
   // Convert keysym to keycode
   KeyCode keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
   if (keycode == 0) {
-    std::cerr << "Invalid keycode for keysym: " << keyName << "\n";
+        havel::warning("Invalid keycode for keysym: {}", keyName);
     return 0;
   }
   return keycode;
@@ -2759,7 +2758,7 @@ void IO::PressKey(const std::string &keyName, bool press) {
 #ifdef __linux__
   Display *display = havel::DisplayManager::GetDisplay();
   if (!display) {
-    std::cerr << "No X11 display available for key press\n";
+        havel::error("No X11 display available for key press");
     return;
   }
   Key keycode = GetKeyCode(keyName);
@@ -2778,7 +2777,7 @@ bool IO::GrabHotkey(int hotkeyId) {
 
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
-    std::cerr << "Hotkey ID not found: " << hotkeyId << std::endl;
+        havel::warning("Hotkey ID not found: {}", hotkeyId);
     return false;
   }
 
@@ -2787,7 +2786,7 @@ bool IO::GrabHotkey(int hotkeyId) {
   KeyCode keycode = hotkey.key;
 
   if (keycode == 0) {
-    std::cerr << "Invalid keycode for hotkey: " << hotkey.alias << std::endl;
+        havel::warning("Invalid keycode for hotkey: {}", hotkey.alias);
     return false;
   }
 

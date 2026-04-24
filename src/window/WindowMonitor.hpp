@@ -122,10 +122,10 @@ private:
         std::cout << "[WindowMonitor] " << msg << std::endl;
     }
     static void LogWarning(const std::string& msg) {
-        std::cerr << "[WindowMonitor] WARNING: " << msg << std::endl;
+        havel::warning("[WindowMonitor] {}", msg);
     }
     static void LogError(const std::string& msg) {
-        std::cerr << "[WindowMonitor] ERROR: " << msg << std::endl;
+        havel::error("[WindowMonitor] {}", msg);
     }
 };
 

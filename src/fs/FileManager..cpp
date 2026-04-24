@@ -489,8 +489,7 @@ std::vector<std::string> FileManager::glob(const std::string& pattern) {
             // Check for errors after each iteration
             if (ec) {
                 // Log the error but continue (don't crash)
-                std::cerr << "Warning: Cannot access " << entry.path() 
-                         << " - " << ec.message() << std::endl;
+            havel::warning("Cannot access {} - {}", entry.path().string(), ec.message());
                 ec.clear(); // Clear the error and continue
                 continue;
             }
@@ -510,18 +509,18 @@ std::vector<std::string> FileManager::glob(const std::string& pattern) {
         
         // Check if there was an error during construction/iteration
         if (ec) {
-            std::cerr << "Directory iteration error: " << ec.message() << std::endl;
+            havel::error("Directory iteration error: {}", ec.message());
         }
         
     } catch (const fs::filesystem_error& e) {
-        std::cerr << "Filesystem error in glob(): " << e.what() << std::endl;
+        havel::error("Filesystem error in glob(): {}", e.what());
         // Return empty results instead of crashing
         return results;
     } catch (const regex_error& e) {
-        std::cerr << "Regex error in glob(): " << e.what() << std::endl;
+        havel::error("Regex error in glob(): {}", e.what());
         return results;
     } catch (const std::exception& e) {
-        std::cerr << "Unexpected error in glob(): " << e.what() << std::endl;
+        havel::error("Unexpected error in glob(): {}", e.what());
         return results;
     }
     

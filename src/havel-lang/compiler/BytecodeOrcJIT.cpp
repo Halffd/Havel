@@ -23,6 +23,7 @@
 #include <llvm/Passes/PassBuilder.h>
 
 #include "BytecodeOrcJIT.h"
+#include "../../utils/Logger.hpp"
 #include <cstring>
 #include <iostream>
 
@@ -115,8 +116,7 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
 }
 
 void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
-    std::cerr << "[JIT] Deoptimizing in " << func << " for types: 0x"
-              << std::hex << l << " op 0x" << r << std::dec << std::endl;
+    havel::debug("[JIT] Deoptimizing in {} for types: 0x{:x} op 0x{:x}", func, l, r);
 }
 
 // JIT helper for function calls - delegates to VM
@@ -1697,7 +1697,7 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     runOptimizations(*module);
 
     if (dump_ir_) {
-        std::cerr << "--- LLVM IR for " << func.name << " ---" << std::endl;
+        havel::debug("--- LLVM IR for {} ---", func.name);
         module->print(llvm::errs(), nullptr);
     }
 
@@ -1724,8 +1724,8 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
                     asm_input.close();
                     
                     if (debug_jit_) {
-                        std::cerr << "--- Assembly for " << func.name << " ---" << std::endl;
-                        std::cerr << last_asm_ << std::endl;
+        havel::debug("--- Assembly for {} ---", func.name);
+        havel::debug("{}", last_asm_);
                     }
                 }
             }

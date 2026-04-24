@@ -1,12 +1,12 @@
 // HotkeyExecutor.hpp
 #pragma once
+#include "utils/Logger.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <future>
-#include <iostream>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -89,8 +89,7 @@ private:
     if (stopFlag)
       return {false};
     if (taskQueue.size() >= maxQueue) {
-      std::cerr << "[HotkeyExecutor] Queue full (" << taskQueue.size() << "/"
-                << maxQueue << "), dropping hotkey\n";
+            havel::warning("[HotkeyExecutor] Queue full ({}/{}), dropping hotkey", taskQueue.size(), maxQueue);
       return {false};
     }
 
@@ -139,8 +138,8 @@ private:
           now - t->createdTime);
       bool alreadyTimedOut = elapsed.count() > t->timeoutMs;
       if (alreadyTimedOut) {
-        std::cerr << "[HotkeyExecutor] Task timed out before execution: "
-                  << elapsed.count() << "ms > " << t->timeoutMs << "ms\n";
+                havel::warning("[HotkeyExecutor] Task timed out before execution: {}ms > {}ms",
+                               elapsed.count(), t->timeoutMs);
         t->timedOut.store(true);
       }
 
@@ -155,7 +154,7 @@ private:
           t->errorCallback(t->errorMessage);
         } else {
           // Default: print to stderr
-          std::cerr << "[HotkeyExecutor] " << t->errorMessage << std::endl;
+                havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
       } catch (const std::exception &e) {
         // Capture error message
@@ -164,7 +163,7 @@ private:
         if (t->errorCallback) {
           t->errorCallback(t->errorMessage);
         } else {
-          std::cerr << "[HotkeyExecutor] " << t->errorMessage << std::endl;
+                havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
       } catch (...) {
         t->errorMessage = "Unknown exception in hotkey execution";
@@ -172,7 +171,7 @@ private:
         if (t->errorCallback) {
           t->errorCallback(t->errorMessage);
         } else {
-          std::cerr << "[HotkeyExecutor] " << t->errorMessage << std::endl;
+                havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
       }
 

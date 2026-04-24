@@ -1,7 +1,7 @@
 #include "AutoKeyPresser.hpp"
+#include "utils/Logger.hpp"
 #include <stdexcept>
 #include <utility>
-#include <iostream>
 
 namespace havel::automation {
 
@@ -49,7 +49,7 @@ void AutoKeyPresser::onStop() {
         try {
             io_->Send("{" + currentKey_ + ":up}");
         } catch (const std::exception& e) {
-            std::cerr << "Error releasing key: " << e.what() << std::endl;
+            havel::error("Error releasing key: {}", e.what());
         }
     }
 }
@@ -71,7 +71,7 @@ void AutoKeyPresser::executeKeyPress() {
             const auto& [nextKey, nextInterval] = keySequence_[currentKeyIndex_];
             setIntervalMs(static_cast<int>(nextInterval.count()));
         } catch (const std::exception& e) {
-            std::cerr << "Error in key sequence: " << e.what() << std::endl;
+            havel::error("Error in key sequence: {}", e.what());
             stop();
         }
     } else if (!currentKey_.empty()) {
@@ -80,7 +80,7 @@ void AutoKeyPresser::executeKeyPress() {
             io_->Send("{" + currentKey_ + "}");
             io_->Send("{" + currentKey_ + ":up}");
         } catch (const std::exception& e) {
-            std::cerr << "Error sending key: " << e.what() << std::endl;
+            havel::error("Error sending key: {}", e.what());
             stop();
         }
     }

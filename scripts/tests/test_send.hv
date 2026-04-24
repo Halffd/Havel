@@ -1,0 +1,61 @@
+fn msH(ms) {
+    ms / 3600000.0
+}
+fn hMs(h) { h * 3600000.0 }
+
+let delayH = 0.0
+let delayM = 0.0  
+let delayS = 1.0
+let delayMs = 0.0
+let delay = (delayH * 3600000) + (delayM * 60000) + (delayS * 1000) + delayMs
+print("delay: ", delay )
+
+let pr = [
+1,
+2,
+"abc{Enter}",
+"""fn f
+      print""",
+3
+]
+let it = #pr - 1
+print(it)
+let totH = 12
+let limH = totH / msH(delay)
+print(it, limH, delay)
+if it > limH {
+    print("Too many, limiting to ", limH)
+    it = limH
+}
+for i in 0..it {
+    print(i, ": ", pr[i])
+}
+let prmap = {
+    "1": "continue",
+    "2": "build",
+    "3": "test"
+}
+fn xx(h, p){
+    let sc = h
+ sleep(sc)
+// sleep(9000)
+ send("{enter}")
+ run("echo \"$p\" | xargs -0 printf '%q' | xclip -selection clipboard")
+ send("^+v")
+// send("!{left}")
+// sleep(1000)
+// send("{enter}")
+}
+for i in 0..it {
+    let p = pr[i]
+    if type(p) == "number" {
+        if p > 0 && p < 11 {
+           p = prmap[p]
+        }
+    }
+    print(i, " : ", p)
+    xx(delay, p)
+}
+send("{enter}")
+send("{lalt:down}{left}{lalt:up}")
+send("^{d}")

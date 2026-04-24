@@ -1,4 +1,5 @@
 #include "JIT.h"
+#include "../../utils/Logger.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
 namespace havel::compiler {
@@ -18,8 +19,7 @@ void JIT::CompileHotkey(const std::string &combination,
   // 2. Compile the action to LLVM IR
   llvm::Function *func = compiler.CompileHotkeyAction(action);
   if (!func) {
-    std::cerr << "Failed to compile hotkey action for: " << combination
-              << std::endl;
+            havel::error("Failed to compile hotkey action for: {}", combination);
     return;
   }
   func->setName(funcName);
@@ -27,7 +27,7 @@ void JIT::CompileHotkey(const std::string &combination,
   // 3. JIT compile to native machine code
   auto compiledFunc = compiler.GetCompiledFunction(funcName);
   if (!compiledFunc) {
-    std::cerr << "Failed to JIT compile function: " << funcName << std::endl;
+        havel::error("Failed to JIT compile function: {}", funcName);
     return;
   }
 
@@ -44,7 +44,7 @@ void JIT::ExecuteHotkey(const std::string &combination) {
     // Execute pure machine code - BLAZING FAST! ⚡
     it->second();
   } else {
-    std::cerr << "No compiled hotkey found for: " << combination << std::endl;
+        havel::error("No compiled hotkey found for: {}", combination);
   }
 }
 
@@ -54,14 +54,14 @@ void JIT::CompileScript(const ast::Program &program) {
   // Compile the entire program AST to LLVM IR
   llvm::Function *mainFunc = compiler.CompileProgram(program);
   if (!mainFunc) {
-      std::cerr << "Failed to compile main program script" << std::endl;
+        havel::error("Failed to compile main program script");
       return;
   }
 
   // JIT compile to native machine code
   auto compiledMain = compiler.GetCompiledFunction("main");
   if (!compiledMain) {
-      std::cerr << "Failed to JIT compile script main entry point" << std::endl;
+        havel::error("Failed to JIT compile script main entry point");
       return;
   }
 

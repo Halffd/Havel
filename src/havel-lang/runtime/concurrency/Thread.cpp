@@ -1,5 +1,6 @@
 // Thread.cpp - Implementation of Thread, Interval, Timeout, and TimeRange
 #include "Thread.hpp"
+#include "../../../utils/Logger.hpp"
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -98,7 +99,7 @@ void Thread::messageLoop(MessageHandler handler) {
         handler(msg);
       } catch (const std::exception &e) {
         // Log error but continue processing
-        std::cerr << "[Thread] Handler exception: " << e.what() << std::endl;
+        havel::error("[Thread] Handler exception: {}", e.what());
       }
     }
   }

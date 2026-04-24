@@ -1,4 +1,5 @@
 #include "VM.hpp"
+#include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../../errors/ErrorSystem.h"
 #include "../../runtime/concurrency/Thread.hpp"
@@ -542,8 +543,7 @@ void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
 
 VM::~VM() {
   if (heap_.externalRootCount() > 0) {
-    std::cerr << "[VM][GC] Warning: " << heap_.externalRootCount()
-              << " external roots still pinned at VM shutdown" << std::endl;
+        havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
   }
 }
 
@@ -1788,7 +1788,7 @@ void VM::registerDefaultHostFunctions() {
         
         this->call(closure, {arg});
       } catch (const std::exception &e) {
-        std::cerr << "[thread] Exception: " << e.what() << std::endl;
+        havel::error("[thread] Exception: {}", e.what());
       }
     };
     
@@ -1906,7 +1906,7 @@ void VM::registerDefaultHostFunctions() {
       try {
         this->call(closure, {});
       } catch (const std::exception &e) {
-        std::cerr << "[interval] Exception: " << e.what() << std::endl;
+        havel::error("[interval] Exception: {}", e.what());
       }
     };
     
@@ -1976,7 +1976,7 @@ void VM::registerDefaultHostFunctions() {
       try {
         this->call(closure, {});
       } catch (const std::exception &e) {
-        std::cerr << "[timeout] Exception: " << e.what() << std::endl;
+        havel::error("[timeout] Exception: {}", e.what());
       }
     };
     
@@ -2896,9 +2896,8 @@ void VM::loadFiberState(Fiber *fiber) {
   }
 
   if (debug_mode) {
-    std::cerr << "[VM] Loaded fiber " << fiber->id << " state: "
-              << frame_count_ << " frames, " << stack.size() << " stack items"
-              << std::endl;
+        havel::debug("[VM] Loaded fiber {} state: {} frames, {} stack items",
+                     fiber->id, frame_count_, stack.size());
   }
 }
 
@@ -2981,9 +2980,8 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 
   if (debug_mode) {
-    std::cerr << "[VM] Saved fiber " << fiber->id << " state: "
-              << frame_count_ << " frames, " << stack.size() << " stack items"
-              << std::endl;
+        havel::debug("[VM] Saved fiber {} state: {} frames, {} stack items",
+                     fiber->id, frame_count_, stack.size());
   }
 }
 
@@ -3000,8 +2998,7 @@ void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
   thread_wait_map_[thread_id] = fiber;
   
   if (debug_mode) {
-    std::cerr << "[VM] Registered fiber " << fiber->id 
-              << " waiting on thread " << thread_id << std::endl;
+        havel::debug("[VM] Registered fiber {} waiting on thread {}", fiber->id, thread_id);
   }
 }
 
@@ -3044,7 +3041,7 @@ void VM::unregisterThreadWait(uint32_t thread_id) {
   thread_wait_map_.erase(thread_id);
   
   if (debug_mode) {
-    std::cerr << "[VM] Unregistered thread wait for thread " << thread_id << std::endl;
+        havel::debug("[VM] Unregistered thread wait for thread {}", thread_id);
   }
 }
 

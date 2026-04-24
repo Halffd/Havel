@@ -112,14 +112,13 @@ if(NOT Lua_FOUND)
 endif()
 
 # libffi (for FFI - Foreign Function Interface)
-set(HAVE_LIBFFI 0)
 pkg_check_modules(LIBFFI QUIET libffi)
 if(LIBFFI_FOUND)
     message(STATUS "libffi:       ✓ FOUND (${LIBFFI_VERSION})")
-    set(HAVE_LIBFFI 1 CACHE BOOL "libffi available")
+    set(HAVE_LIBFFI 1)
 else()
     message(STATUS "libffi:       ✗ NOT FOUND (FFI will be limited)")
-    set(HAVE_LIBFFI 0 CACHE BOOL "libffi available")
+    set(HAVE_LIBFFI 0)
 endif()
 
 # X11 extensions
@@ -898,6 +897,7 @@ $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
 ${OPENCV_FFMPEG_WORKAROUND}
     havel_extension_runtime
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+    $<$<BOOL:${HAVE_LIBFFI}>:ffi>
 )
 
 # Compile definitions
@@ -907,6 +907,7 @@ target_compile_definitions(havel PRIVATE
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
     $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
     $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+    $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
     ${UI_BACKEND_DEFS}
     UI_BACKEND=\"${UI_BACKEND}\"
 )

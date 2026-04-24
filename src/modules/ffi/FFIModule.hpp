@@ -1,4 +1,3 @@
-#include "havel-lang/runtime/HostAPI.hpp"
 /*
  * FFIModule.hpp
  *
@@ -7,24 +6,26 @@
  */
 #pragma once
 
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
 namespace havel::modules::ffi {
 
 /**
- * Register FFI module in environment
- * 
+ * Register FFI module with the VM.
+ *
  * Exposes:
- * - ffi.dl(path) -> library handle
- * - ffi.sym(lib, name) -> function pointer
- * - ffi.call(fn, ...) -> result
- * - ffi.close(lib) -> void
- * 
+ * - ffi.open(path) -> library handle
+ * - ffi.close(handle) -> void
+ * - ffi.sym(handle, name) -> function pointer
+ * - ffi.call(fn_ptr, ret_type, arg_types, args...) -> result
+ * - ffi.cdef(decl_string) -> parsed declarations
+ *
  * Usage:
  *   import ffi
- *   libc = ffi.dl("libc.so")
+ *   libc = ffi.open("libc.so.6")
  *   printf = ffi.sym(libc, "printf")
- *   ffi.call(printf, "hello\n")
+ *   ffi.call(printf, "int32", ["string", "int32"], "hello %d\n", 42)
  */
-void registerFFIModule(Environment& env);
+void registerFFIModule(compiler::VMApi& api);
 
 } // namespace havel::modules::ffi

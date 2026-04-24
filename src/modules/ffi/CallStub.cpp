@@ -1,12 +1,4 @@
 /*
- * CallStub.cpp - STUBBED (interpreter removed)
- * FFI functionality requires migration to bytecode VM
+ * CallStub.cpp - DEPRECATED
+ * FFI functionality has been migrated to FFIModule.cpp
  */
-#include "DynamicLibrary.hpp"
-#include <cstdint>
-
-namespace havel::modules::ffi {
-
-// STUBBED - FFI requires HavelValue which was removed with interpreter
-
-} // namespace havel::modules::ffi

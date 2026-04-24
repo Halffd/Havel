@@ -1,6 +1,7 @@
 #include "ModuleResolver.hpp"
 #include "../module/ModuleLoader.hpp"
 #include "../core/BytecodeIR.hpp"
+#include <cstdlib>
 #include <fstream>
 
 namespace havel::compiler {
@@ -135,11 +136,39 @@ ModuleResolver::ResolutionResult ModuleResolver::searchInPaths(
     return ResolutionResult{true, relativePath, ""};
   }
 
-  // Check in module paths
+  // Try .hv extension relative to base path
+  std::string hvFileName = fileName;
+  auto dotPos = hvFileName.rfind(".havel");
+  if (dotPos != std::string::npos) {
+    hvFileName.replace(dotPos, 6, ".hv");
+  }
+  auto relativeHvPath = basePath / hvFileName;
+  if (isValidModuleFile(relativeHvPath)) {
+    return ResolutionResult{true, relativeHvPath, ""};
+  }
+
+  // Check in module paths (try both .havel and .hv)
   for (const auto& searchPath : modulePaths_) {
     auto fullPath = searchPath / fileName;
     if (isValidModuleFile(fullPath)) {
       return ResolutionResult{true, fullPath, ""};
+    }
+    auto fullHvPath = searchPath / hvFileName;
+    if (isValidModuleFile(fullHvPath)) {
+      return ResolutionResult{true, fullHvPath, ""};
+    }
+  }
+
+  // Check ~/.havel/packages/<name>/<name>.hv
+  if (const char* home = std::getenv("HOME")) {
+    std::string pkgName = moduleName;
+    for (char& c : pkgName) {
+      if (c == '.') c = '/';
+    }
+    auto pkgPath = std::filesystem::path(home) / ".havel" / "packages" /
+                   moduleName / (moduleName + ".hv");
+    if (isValidModuleFile(pkgPath)) {
+      return ResolutionResult{true, pkgPath, ""};
     }
   }
 

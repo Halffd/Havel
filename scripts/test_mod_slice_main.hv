@@ -1,0 +1,2 @@
+use test_mod_slice as t
+print(t.test())

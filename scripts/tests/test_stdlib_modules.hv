@@ -1,0 +1,25 @@
+// test_stdlib_modules.hv - verify .hv stdlib modules load correctly
+
+use time
+use sys
+use shell
+
+print("--- time module ---")
+print("time.now(): " + time.now())
+print("time.epoch(): " + time.epoch())
+print("time.date(): " + time.date())
+print("time.time(): " + time.time())
+print("time.year(): " + time.year())
+
+print("--- sys module ---")
+print("sys.platform(): " + sys.platform())
+print("sys.arch(): " + sys.arch())
+print("sys.cwd(): " + sys.cwd())
+print("sys.pid(): " + sys.pid())
+
+print("--- shell module ---")
+print("shell.cwd(): " + shell.cwd())
+print("shell.getenv(\"HOME\"): " + shell.getenv("HOME"))
+print("shell.escape(\"hello world\"): " + shell.escape("hello world"))
+
+print("--- all stdlib modules loaded successfully ---")

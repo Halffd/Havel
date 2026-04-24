@@ -327,8 +327,9 @@ private:
   int64_t toInt(const Value &value) const;
   double toFloat(const Value &value) const;
   bool toBool(const Value &value) const;
-  std::optional<std::string> valueAsString(const Value &value) const;
-  bool valuesEqualDeep(const Value &left, const Value &right) const;
+    std::optional<std::string> valueAsString(const Value &value) const;
+    std::optional<std::string> resolveKey(const Value &value) const;
+    bool valuesEqualDeep(const Value &left, const Value &right) const;
   bool valuesEqualDeep(const Value &left, const Value &right,
                        std::unordered_set<uint64_t> &visited_array_pairs,
                        std::unordered_set<uint64_t> &visited_object_pairs) const;
@@ -344,9 +345,13 @@ private:
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:
-  // Value utility functions (public for prototype method implementations)
-  bool toBoolPublic(const Value &value) const { return toBool(value); }
-  bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
+    // Value utility functions (public for prototype method implementations and JIT bridges)
+    int64_t toIntPublic(const Value &value) const { return toInt(value); }
+    double toFloatPublic(const Value &value) const { return toFloat(value); }
+    bool toBoolPublic(const Value &value) const { return toBool(value); }
+    bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
+    Value callFunctionSyncPublic(const Value &fn, const std::vector<Value> &args) { return callFunctionSync(fn, args); }
+    std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
 
   // Direct invocation (bypasses stack, takes args as vector)
   Value invokeHostFunctionDirect(const std::string &name,
@@ -450,8 +455,11 @@ public:
   
   // Phase 4 JIT: Hot function notification
   using HotFunctionCallback = std::function<void(const BytecodeFunction&)>;
-
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
+
+  // Phase 4 JIT: Set JIT compiler pointer for dispatch
+  void setJITCompiler(JITCompiler* jit) { jit_compiler_ = jit; }
+  JITCompiler* getJITCompiler() const { return jit_compiler_; }
 
   // System object initializer - called after registerDefaultHostGlobals()
   void setSystemObjectInitializer(SystemObjectInitializer init) {
@@ -684,6 +692,7 @@ private:
   uint32_t app_args_array_id_ = 0;
   std::function<void()> restart_callback_;
   HotFunctionCallback hot_func_cb_;
+  JITCompiler* jit_compiler_ = nullptr;
 
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }

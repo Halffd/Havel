@@ -18,11 +18,13 @@
 #include "io/KeyTap.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+#include "core/util/Env.hpp"
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
 #include "net/NetworkManager.hpp"
 #include <csignal>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
@@ -171,11 +173,12 @@ void Havel::initialize(bool isStartup) {
     }
 
     // Hook up to VM
-    bytecodeVM->setHotFunctionCallback([jit_ptr = jit.get()](const compiler::BytecodeFunction& func) {
-        if (!jit_ptr->isCompiled(func.name)) {
-            jit_ptr->compileFunction(func);
-        }
-    });
+  bytecodeVM->setHotFunctionCallback([jit_ptr = jit.get()](const compiler::BytecodeFunction& func) {
+    if (!jit_ptr->isCompiled(func.name)) {
+      jit_ptr->compileFunction(func);
+    }
+  });
+  bytecodeVM->setJITCompiler(jit.get());
     
     // Store JIT in some way? Or just keep it alive?
     // We'll need a member in Havel to keep the JIT instance alive.
@@ -188,11 +191,27 @@ void Havel::initialize(bool isStartup) {
   // Create HostBridge
   hostBridge = compiler::createHostBridge(*hostContext);
 
-  // Register stdlib modules
-  registerStdLibWithVM(*hostBridge);
-  hostBridge->install();
+// Register stdlib modules
+registerStdLibWithVM(*hostBridge);
+hostBridge->install();
 
-  // Phase 2G: Create Scheduler and ExecutionEngine for reactive watcher system
+{
+    std::string stdlibPath;
+    const char* envStdlib = std::getenv("HAVEL_STDLIB");
+    if (envStdlib && envStdlib[0] != '\0') {
+        stdlibPath = envStdlib;
+    } else {
+        auto exePath = Env::executable();
+        if (!exePath.empty()) {
+            stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "stdlib").string();
+        } else {
+            stdlibPath = "./stdlib";
+        }
+    }
+    bytecodeVM->moduleLoader().setStdlibPath(stdlibPath);
+}
+
+// Phase 2G: Create Scheduler and ExecutionEngine for reactive watcher system
   scheduler = &compiler::Scheduler::instance();
   if (!scheduler) {
     throw std::runtime_error("Failed to create Scheduler");

@@ -362,33 +362,36 @@ std::string IO::GetActiveWindowProcess() {
 }
 
 void IO::listInputDevices() {
-    auto devices = Device::getAllDevices();
+  auto devices = Device::getAllDevices();
 
-    havel::info("=== Input Device Detection Results ===");
+  std::cout << "=== Input Device Detection Results ===" << std::endl;
 
-    for (const auto &device : devices) {
-        havel::info("{}", device.toString());
-    }
+  for (const auto &device : devices) {
+    std::cout << device.toString() << std::endl;
+  }
 
-    havel::info("=== Summary ===");
+  std::cout << "\n=== Summary ===" << std::endl;
 
-    auto keyboards = Device::findKeyboards();
-    havel::info("Keyboards found: {}", keyboards.size());
-    for (const auto &kb : keyboards) {
-        havel::info(" - {} ({:.0f}%)", kb.name, kb.confidence * 100);
-    }
+  auto keyboards = Device::findKeyboards();
+  std::cout << "Keyboards found: " << keyboards.size() << std::endl;
+  for (const auto &kb : keyboards) {
+    std::cout << "  - " << kb.name << " (" << (kb.confidence * 100) << "%)"
+              << std::endl;
+  }
 
-    auto mice = Device::findMice();
-    havel::info("Mice found: {}", mice.size());
-    for (const auto &mouse : mice) {
-        havel::info(" - {} ({:.0f}%)", mouse.name, mouse.confidence * 100);
-    }
+  auto mice = Device::findMice();
+  std::cout << "Mice found: " << mice.size() << std::endl;
+  for (const auto &mouse : mice) {
+    std::cout << "  - " << mouse.name << " (" << (mouse.confidence * 100)
+              << "%)" << std::endl;
+  }
 
-    auto gamepads = Device::findGamepads();
-    havel::info("Gamepads/Joysticks found: {}", gamepads.size());
-    for (const auto &gamepad : gamepads) {
-        havel::info(" - {} ({:.0f}%)", gamepad.name, gamepad.confidence * 100);
-    }
+  auto gamepads = Device::findGamepads();
+  std::cout << "Gamepads/Joysticks found: " << gamepads.size() << std::endl;
+  for (const auto &gamepad : gamepads) {
+    std::cout << "  - " << gamepad.name << " (" << (gamepad.confidence * 100)
+              << "%)" << std::endl;
+  }
 }
 
 // Updated constructor
@@ -581,7 +584,7 @@ void IO::cleanup() {
   debug("Final cleanup completed - all devices should be ungrabbed");
 #endif
 
-    havel::debug("IO cleanup completed");
+  std::cout << "IO cleanup completed" << std::endl;
 }
 
 bool IO::GrabKeyboard() {
@@ -726,7 +729,7 @@ bool IO::ModifierMatch(unsigned int expected, unsigned int actual) {
 // X11 hotkey monitoring thread
 void IO::InitKeyMap() {
   // Basic implementation of key map
-    havel::debug("Initializing key map");
+  std::cout << "Initializing key map" << std::endl;
 
   // Initialize key mappings for common keys
 #ifdef __linux__
@@ -1499,7 +1502,7 @@ bool IO::Suspend() {
 }
 // Method to suspend hotkeys
 bool IO::Suspend(int id) {
-    havel::debug("Suspending hotkey ID: {}", id);
+  std::cout << "Suspending hotkey ID: " << id << std::endl;
   auto it = hotkeys.find(id);
   if (it != hotkeys.end()) {
     it->second.enabled = false;
@@ -1510,7 +1513,7 @@ bool IO::Suspend(int id) {
 
 // Method to resume hotkeys
 bool IO::Resume(int id) {
-    havel::debug("Resuming hotkey ID: {}", id);
+  std::cout << "Resuming hotkey ID: " << id << std::endl;
   auto it = hotkeys.find(id);
   if (it != hotkeys.end()) {
     it->second.enabled = true;
@@ -1555,7 +1558,7 @@ int IO::ParseMouseButton(const std::string &str) {
 bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
                    std::function<void()> callback) {
   std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
-    havel::debug("Adding hotkey: {}", alias);
+  std::cout << "Adding hotkey: " << alias << std::endl;
   HotKey hotkey;
   hotkey.id = ++hotkeyCount;
   hotkey.alias = alias;
@@ -2259,7 +2262,7 @@ void IO::UpdateNumLockMask() {
 }
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {
-      havel::debug("Control send: {} keys: {}", control, keys);
+  std::cout << "Control send: " << control << " keys: " << keys << std::endl;
   // Use WindowManager to find the window
   wID hwnd = WindowManager::FindByTitle(control);
   if (!hwnd) {
@@ -2408,7 +2411,7 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
 // Display a message box
 void IO::MsgBox(const std::string &message) {
   // Stub implementation for message box
-    havel::info("Message Box: {}", message);
+  std::cout << "Message Box: " << message << std::endl;
 }
 
 // Assign a hotkey to a specific ID
@@ -2476,7 +2479,8 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
           if (modifiersMatch) {
             if (hotkey.callback) {
-                    havel::debug("Action from non-blocking callback for {}", hotkey.alias);
+              std::cout << "Action from non-blocking callback for "
+                        << hotkey.alias << "\n";
               hotkey.callback(); // Call the associated action
             }
             break; // Exit after the first match
@@ -2511,7 +2515,7 @@ int IO::GetKeyboard() {
   while (true) {
     XNextEvent(display, &event);
     if (event.type == x11::XKeyPress) {
-            havel::debug("Key pressed: {}", event.xkey.keycode);
+      std::cout << "Key pressed: " << event.xkey.keycode << std::endl;
     }
   }
 
@@ -2748,7 +2752,8 @@ Key IO::GetKeyCode(cstr keyName) {
   return keycode;
 }
 void IO::PressKey(const std::string &keyName, bool press) {
-    havel::debug("Pressing key: {} (press: {})", keyName, press);
+  std::cout << "Pressing key: " << keyName << " (press: " << press << ")"
+            << std::endl;
 
 #ifdef __linux__
   Display *display = havel::DisplayManager::GetDisplay();
@@ -2791,7 +2796,7 @@ bool IO::GrabHotkey(int hotkeyId) {
   }
   hotkeys[hotkeyId].enabled = true;
 
-    havel::info("Successfully grabbed hotkey: {}", hotkey.alias);
+  std::cout << "Successfully grabbed hotkey: " << hotkey.alias << std::endl;
   return true;
 #else
   return false;

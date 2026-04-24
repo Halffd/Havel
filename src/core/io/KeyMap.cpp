@@ -161,10 +161,10 @@ std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
 // Helper to add all key mappings
 void KeyMap::Initialize() {
     if (initialized) {
-        havel::debug("KeyMap::Initialize(): Already initialized, skipping.");
+        std::cout << "KeyMap::Initialize(): Already initialized, skipping." << std::endl;
         return;
     }
-    havel::debug("KeyMap::Initialize(): Starting initialization...");
+    std::cout << "KeyMap::Initialize(): Starting initialization..." << std::endl;
     
     // Windows VK codes (for reference when WINDOWS is not defined)
     #ifndef WINDOWS
@@ -661,7 +661,7 @@ void KeyMap::Initialize() {
     AddKey("unknown", KEY_UNKNOWN, 0, 0);
     AddAlias("nosymbol", "unknown");
 
-    havel::debug("KeyMap::Initialize(): Completed initialization, total keys: {}", nameToKey.size());
+    std::cout << "KeyMap::Initialize(): Completed initialization, total keys: " << nameToKey.size() << std::endl;
     initialized = true;
 }
 

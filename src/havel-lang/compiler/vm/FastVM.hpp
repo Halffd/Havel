@@ -1,5 +1,4 @@
 #include "havel-lang/errors/ErrorSystem.h"
-#include "../../../utils/Logger.hpp"
 #pragma once
 
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
@@ -165,7 +164,8 @@ public:
     if (block->allocateExecutableMemory()) {
       total_compiled_bytes += block->size;
       compiled_blocks[start] = std::move(block);
-            havel::debug("[JIT] Compiled block {}-{} ({} bytes)", start, end, compiled_blocks[start]->size);
+      std::cout << "[JIT] Compiled block " << start << "-" << end
+                << " (" << compiled_blocks[start]->size << " bytes)" << std::endl;
       return true;
     }
     return false;
@@ -383,7 +383,7 @@ public:
     while (!stack.empty()) stack.pop();
 
     if (debug_mode) {
-            havel::debug("=== Optimized Execution: {} ===", function_name);
+      std::cout << "=== Optimized Execution: " << function_name << " ===" << std::endl;
     }
 
     while (instruction_pointer < function->instructions.size()) {
@@ -405,7 +405,7 @@ public:
       }
 
       if (jit.isCompiled(instruction_pointer) && debug_mode) {
-            havel::debug("[JIT] Executing compiled block at {}", instruction_pointer);
+        std::cout << "[JIT] Executing compiled block at " << instruction_pointer << std::endl;
       }
 
       executeInstruction(instruction);
@@ -447,17 +447,17 @@ public:
     return stats;
   }
 
-    void printPerformanceStats() const {
-        auto stats = getPerformanceStats();
-        havel::info("=== Performance Statistics ===");
-        havel::info("Total instructions: {}", stats.total_instructions);
-        havel::info("Cache hits: {}", stats.cache_hits);
-        havel::info("Cache misses: {}", stats.cache_misses);
-        havel::info("Cache hit rate: {:.1f}%", stats.cache_hit_rate * 100);
-        havel::info("JIT compiled blocks: {}", stats.jit_compiled_blocks);
-        havel::info("JIT code size: {} bytes", stats.jit_code_size);
-        havel::info("==============================");
-    }
+  void printPerformanceStats() const {
+    auto stats = getPerformanceStats();
+    std::cout << "\n=== Performance Statistics ===" << std::endl;
+    std::cout << "Total instructions: " << stats.total_instructions << std::endl;
+    std::cout << "Cache hits: " << stats.cache_hits << std::endl;
+    std::cout << "Cache misses: " << stats.cache_misses << std::endl;
+    std::cout << "Cache hit rate: " << (stats.cache_hit_rate * 100) << "%" << std::endl;
+    std::cout << "JIT compiled blocks: " << stats.jit_compiled_blocks << std::endl;
+    std::cout << "JIT code size: " << stats.jit_code_size << " bytes" << std::endl;
+    std::cout << "==============================\n" << std::endl;
+  }
 
   void resetPerformanceStats() {
     add_caches.clear();

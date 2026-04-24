@@ -119,7 +119,7 @@ private:
 
     // Logging helpers
     static void LogInfo(const std::string& msg) {
-        havel::info("[WindowMonitor] {}", msg);
+        std::cout << "[WindowMonitor] " << msg << std::endl;
     }
     static void LogWarning(const std::string& msg) {
         havel::warning("[WindowMonitor] {}", msg);

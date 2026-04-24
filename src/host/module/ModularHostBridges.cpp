@@ -2,7 +2,6 @@
  * ModularHostBridges.cpp - Modular bridge component implementations
  */
 #include "ModularHostBridges.hpp"
-#include "../../utils/Logger.hpp"
 #include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/stdlib/HotkeyModule.hpp"
 #include "core/ConfigManager.hpp"
@@ -834,22 +833,24 @@ Value
 SystemBridge::handleSystemDetect(const std::vector<Value> &args,
                                  const HostContext *ctx) {
   (void)args;
-    havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
-                 ctx ? ctx->vm : nullptr);
+  std::cerr << "[DEBUG] handleSystemDetect: ctx=" << ctx
+            << " ctx->vm=" << (ctx ? ctx->vm : nullptr) << "\n";
 
-    if (!ctx || !ctx->vm) {
-        havel::debug("[SystemDetect] ctx or vm is null, returning empty string");
+  if (!ctx || !ctx->vm) {
+    // Return a minimal object if VM is not available
+    std::cerr << "[DEBUG] handleSystemDetect: ctx or vm is null, returning "
+                 "empty string\n";
     return Value::makeNull();
   }
 
-    auto *vm = static_cast<compiler::VM *>(ctx->vm);
-    havel::debug("[SystemDetect] vm={}, creating object", static_cast<void*>(vm));
-    auto obj = vm->createHostObject();
-    havel::debug("[SystemDetect] object created, setting fields");
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  std::cerr << "[DEBUG] handleSystemDetect: vm=" << vm << ", creating object\n";
+  auto obj = vm->createHostObject();
+  std::cerr << "[DEBUG] handleSystemDetect: object created, setting fields\n";
 
-    // Use HardwareDetector for system detection
-    auto sysInfo = ::havel::HardwareDetector::detectSystem();
-    havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
+  // Use HardwareDetector for system detection
+  auto sysInfo = ::havel::HardwareDetector::detectSystem();
+  std::cerr << "[DEBUG] handleSystemDetect: detected OS=" << sysInfo.os << "\n";
 
   // Allocate strings on heap for non-empty values
   auto makeStr = [vm](const std::string &s) -> Value {
@@ -858,13 +859,13 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
     return Value::makeStringId(ref.id);
   };
 
-    vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
-    havel::debug("[SystemDetect] set os field");
+  vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
+  std::cerr << "[DEBUG] handleSystemDetect: set os field\n";
   vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
   vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
   vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
   vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
-    havel::debug("[SystemDetect] all fields set, returning");
+  std::cerr << "[DEBUG] handleSystemDetect: all fields set, returning\n";
 
   // Linux-specific fields (always set, even if empty)
   vm->setHostObjectField(obj, "displayProtocol",

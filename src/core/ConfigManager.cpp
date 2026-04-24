@@ -384,11 +384,11 @@ void havel::Configs::Watch(const std::string &key, WatchCallback callback) {
 }
 
 void havel::Configs::Print() const {
-    havel::info("=== Config Values ===");
-    for (const auto &[key, value] : config.values()) {
-        havel::info("{} = {}", key, value);
-    }
-    havel::info("====================");
+  std::cout << "=== Config Values ===" << std::endl;
+  for (const auto &[key, value] : config.values()) {
+    std::cout << key << " = " << value << std::endl;
+  }
+  std::cout << "====================" << std::endl;
 }
 
 } // namespace havel

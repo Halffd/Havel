@@ -1,5 +1,4 @@
 #include "ModuleLoader.hpp"
-#include "../../utils/Logger.hpp"
 #include "../compiler/runtime/HostBridge.hpp"
 #include <dlfcn.h>
 #include <filesystem>
@@ -178,7 +177,7 @@ ModuleLoader::loadNativeExtension(const std::string& path) {
     // dlopen the .so file
     void* handle = dlopen(path.c_str(), RTLD_LAZY);
     if (!handle) {
-        havel::error("dlopen failed: {}", dlerror());
+        std::cerr << "dlopen failed: " << dlerror() << std::endl;
         return std::nullopt;
     }
 

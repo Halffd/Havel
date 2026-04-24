@@ -1,7 +1,7 @@
 #include <map>
 #include <unordered_map>
 #include <sstream>
-#include "Logger.hpp"
+#include <iostream>
 
 namespace havel {
 
@@ -26,12 +26,12 @@ std::string toJson(const std::unordered_map<K, V>& m) {
 
 template<typename K, typename V>
 void printMap(const std::map<K, V>& m) {
-    havel::debug("{}", toJson(m));
+    std::cout << toJson(m) << "\n";
 }
 
 template<typename K, typename V>
 void printMap(const std::unordered_map<K, V>& m) {
-    havel::debug("{}", toJson(m));
+    std::cout << toJson(m) << "\n";
 }
 
 }

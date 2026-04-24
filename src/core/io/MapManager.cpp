@@ -7,7 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <random>
 #include <regex>
-#include <spdlog/spdlog.h>
+#include "utils/Logger.hpp"
 #include <sstream>
 #include <thread>
 
@@ -17,7 +17,6 @@
 #endif
 
 using json = nlohmann::json;
-using namespace spdlog;
 
 namespace havel {
 
@@ -135,14 +134,14 @@ const Mapping *Profile::FindMapping(const std::string &sourceKey) const {
 // MapManager Implementation
 // ============================================================================
 
-MapManager::MapManager(IO *io) : io(io) { info("MapManager initialized"); }
+MapManager::MapManager(IO *io) : io(io) { havel::info("MapManager initialized"); }
 
 MapManager::~MapManager() { ClearAllMappings(); }
 
 void MapManager::AddProfile(const Profile &profile) {
   std::lock_guard<std::mutex> lock(profileMutex);
   profiles[profile.id] = profile;
-  info("Added profile: {} ({})", profile.name, profile.id);
+  havel::info("Added profile: {} ({})", profile.name, profile.id);
 }
 
 void MapManager::RemoveProfile(const std::string &profileId) {
@@ -155,7 +154,7 @@ void MapManager::RemoveProfile(const std::string &profileId) {
 
   profiles.erase(profileId);
   stats.erase(profileId);
-  info("Removed profile: {}", profileId);
+  havel::info("Removed profile: {}", profileId);
 }
 
 Profile *MapManager::GetProfile(const std::string &profileId) {
@@ -183,7 +182,7 @@ void MapManager::SetActiveProfile(const std::string &profileId) {
   std::lock_guard<std::mutex> lock(profileMutex);
 
   if (profiles.find(profileId) == profiles.end()) {
-    error("Profile not found: {}", profileId);
+    havel::error("Profile not found: {}", profileId);
     return;
   }
 
@@ -193,7 +192,7 @@ void MapManager::SetActiveProfile(const std::string &profileId) {
   }
 
   activeProfileId = profileId;
-  info("Activated profile: {}", profileId);
+  havel::info("Activated profile: {}", profileId);
 
   // Apply new profile
   ApplyProfile(profileId);
@@ -207,7 +206,7 @@ void MapManager::AddMapping(const std::string &profileId,
 
   auto it = profiles.find(profileId);
   if (it == profiles.end()) {
-    error("Profile not found: {}", profileId);
+    havel::error("Profile not found: {}", profileId);
     return;
   }
 
@@ -218,7 +217,7 @@ void MapManager::AddMapping(const std::string &profileId,
     RegisterMapping(profileId, it->second.mappings.back());
   }
 
-  info("Added mapping '{}' to profile '{}'", mapping.name, profileId);
+  havel::info("Added mapping '{}' to profile '{}'", mapping.name, profileId);
 }
 
 void MapManager::RemoveMapping(const std::string &profileId,
@@ -239,7 +238,7 @@ void MapManager::RemoveMapping(const std::string &profileId,
       UnregisterMapping(profileId, *mappingIt);
     }
     profile.mappings.erase(mappingIt);
-    info("Removed mapping: {}", mappingId);
+    havel::info("Removed mapping: {}", mappingId);
   }
 }
 
@@ -270,7 +269,7 @@ void MapManager::UpdateMapping(const std::string &profileId,
       RegisterMapping(profileId, *mappingIt);
     }
 
-    info("Updated mapping: {}", mapping.id);
+    havel::info("Updated mapping: {}", mapping.id);
   }
 }
 
@@ -343,7 +342,7 @@ void MapManager::ApplyProfile(const std::string &profileId) {
   if (it == profiles.end() || !it->second.enabled)
     return;
 
-  info("Applying profile: {}", it->second.name);
+  havel::info("Applying profile: {}", it->second.name);
 
   for (auto &mapping : it->second.mappings) {
     if (mapping.enabled) {
@@ -409,7 +408,7 @@ void MapManager::SetProfileSwitchHotkey(const std::string &hotkey) {
     NextProfile();
     auto profile = GetActiveProfile();
     if (profile) {
-      info("Switched to profile: {}", profile->name);
+      havel::info("Switched to profile: {}", profile->name);
     }
   });
 }
@@ -419,12 +418,12 @@ void MapManager::StartMacroRecording(const std::string &macroName) {
   currentMacroName = macroName;
   recordedMacro.clear();
   lastMacroEvent = std::chrono::steady_clock::now();
-  info("Started macro recording: {}", macroName);
+  havel::info("Started macro recording: {}", macroName);
 }
 
 void MapManager::StopMacroRecording() {
   macroRecording = false;
-  info("Stopped macro recording: {} ({} events)", currentMacroName,
+  havel::info("Stopped macro recording: {} ({} events)", currentMacroName,
        recordedMacro.size());
 }
 
@@ -433,7 +432,7 @@ void MapManager::SaveMacro(const std::string &profileId,
   auto mapping = GetMapping(profileId, mappingId);
   if (mapping) {
     mapping->macroSequence = recordedMacro;
-    info("Saved macro to mapping: {}", mappingId);
+    havel::info("Saved macro to mapping: {}", mappingId);
   }
 }
 
@@ -472,7 +471,7 @@ void MapManager::RegisterMapping(const std::string &profileId,
 
   if (hotkeyId >= 0) {
     profileHotkeyIds[profileId].push_back(hotkeyId);
-    debug("Registered mapping: {} -> {}", mapping.sourceKey,
+    havel::debug("Registered mapping: {} -> {}", mapping.sourceKey,
           mapping.targetKeys.empty() ? "action" : mapping.targetKeys[0]);
   }
 }
@@ -663,13 +662,13 @@ void MapManager::SaveProfiles(const std::string &filepath) {
 
   std::ofstream file(filepath);
   file << j.dump(2);
-  info("Saved {} profiles to {}", profiles.size(), filepath);
+  havel::info("Saved {} profiles to {}", profiles.size(), filepath);
 }
 
 void MapManager::LoadProfiles(const std::string &filepath) {
   std::ifstream file(filepath);
   if (!file.is_open()) {
-    error("Failed to open profiles file: {}", filepath);
+    havel::error("Failed to open profiles file: {}", filepath);
     return;
   }
 
@@ -680,7 +679,7 @@ void MapManager::LoadProfiles(const std::string &filepath) {
     ImportProfileFromJson(profileJson.dump());
   }
 
-  info("Loaded profiles from {}", filepath);
+  havel::info("Loaded profiles from {}", filepath);
 }
 
 std::string
@@ -743,7 +742,7 @@ void MapManager::ImportProfileFromJson(const std::string &jsonStr) {
 
     AddProfile(profile);
   } catch (const std::exception &e) {
-    error("Failed to import profile: {}", e.what());
+    havel::error("Failed to import profile: {}", e.what());
   }
 }
 
@@ -770,7 +769,7 @@ void MapManager::ResetStats() { stats.clear(); }
 
 void MapManager::StartKeyRecording() {
   if (!io) {
-    spdlog::error("MapManager: IO not available for key recording");
+    havel::error("MapManager: IO not available for key recording");
     return;
   }
 
@@ -802,9 +801,9 @@ void MapManager::StartKeyRecording() {
       }
     });
 
-    spdlog::info("MapManager: Started key recording");
+    havel::info("MapManager: Started key recording");
   } else {
-    spdlog::error("MapManager: EventListener not available for key recording");
+    havel::error("MapManager: EventListener not available for key recording");
     keyRecording = false;
   }
 }
@@ -821,7 +820,7 @@ void MapManager::StopKeyRecording() {
     }
   }
 
-  spdlog::info("MapManager: Stopped key recording");
+  havel::info("MapManager: Stopped key recording");
 }
 
 MapManager::RecordedKey MapManager::GetLastRecordedKey() const {
@@ -1067,7 +1066,7 @@ void MapManager::RecordKeyEvent(int keyCode, bool isDown) {
         lastRecordedKey.modifiers + lastRecordedKey.keyName;
   }
 
-  spdlog::info("MapManager: Recorded key: {} (code: {}, source: {})",
+  havel::info("MapManager: Recorded key: {} (code: {}, source: {})",
                lastRecordedKey.keyName, lastRecordedKey.keyCode,
                lastRecordedKey.source);
 }
@@ -1112,7 +1111,7 @@ void MapManager::RecordMouseWheelEvent(int wheelCode, int value) {
         lastRecordedKey.modifiers + lastRecordedKey.keyName;
   }
 
-  spdlog::info("MapManager: Recorded mouse wheel: {} (code: {}, value: {})",
+  havel::info("MapManager: Recorded mouse wheel: {} (code: {}, value: {})",
                lastRecordedKey.keyName, lastRecordedKey.keyCode, value);
 }
 
@@ -1153,7 +1152,7 @@ void MapManager::AddAutopressToggleMapping(
   // Register with IO system
   RegisterMapping(profileId, mapping);
 
-  spdlog::info("MapManager: Added autopress toggle mapping: {} -> {} "
+  havel::info("MapManager: Added autopress toggle mapping: {} -> {} "
                "(interval: {}ms, timeout: {}ms)",
                sourceKey, targetKeys[0], intervalMs, timeoutMs);
 }
@@ -1173,7 +1172,7 @@ void MapManager::SetAutopressToggleInterval(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autopressInterval = intervalMs;
-    spdlog::info("MapManager: Set autopress interval to {}ms for mapping {}",
+    havel::info("MapManager: Set autopress interval to {}ms for mapping {}",
                  intervalMs, mappingId);
   }
 }
@@ -1193,7 +1192,7 @@ void MapManager::SetAutopressToggleTimeout(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autopressTimeout = timeoutMs;
-    spdlog::info("MapManager: Set autopress timeout to {}ms for mapping {}",
+    havel::info("MapManager: Set autopress timeout to {}ms for mapping {}",
                  timeoutMs, mappingId);
   }
 }
@@ -1214,7 +1213,7 @@ void MapManager::SetAutopressToggleCondition(const std::string &profileId,
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autopressCondition = !condition.empty();
     mappingIt->autopressConditionExpr = condition;
-    spdlog::info("MapManager: Set autopress condition for mapping {}: {}",
+    havel::info("MapManager: Set autopress condition for mapping {}: {}",
                  mappingId, condition);
   }
 }
@@ -1258,7 +1257,7 @@ void MapManager::StopAutopressToggle(const std::string &profileId,
     }
   }
 
-  spdlog::info("MapManager: Stopped autopress toggle for mapping {}",
+  havel::info("MapManager: Stopped autopress toggle for mapping {}",
                mappingId);
 }
 
@@ -1317,7 +1316,7 @@ void MapManager::ExecuteAutopressToggle(const std::string &profileId,
 
         // Clean up
         activeFlag.store(false);
-        spdlog::info("MapManager: Autopress toggle stopped for mapping {}",
+        havel::info("MapManager: Autopress toggle stopped for mapping {}",
                      mapping.id);
       });
 }
@@ -1373,7 +1372,7 @@ void MapManager::SetAutofireRate(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autofireRate = rateMs;
-    spdlog::info("MapManager: Set autofire rate to {}ms for mapping {}", rateMs,
+    havel::info("MapManager: Set autofire rate to {}ms for mapping {}", rateMs,
                  mappingId);
   }
 }
@@ -1393,7 +1392,7 @@ void MapManager::SetAutofireBurstCount(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autofireBurstCount = burstCount;
-    spdlog::info("MapManager: Set autofire burst count to {} for mapping {}",
+    havel::info("MapManager: Set autofire burst count to {} for mapping {}",
                  burstCount, mappingId);
   }
 }
@@ -1413,7 +1412,7 @@ void MapManager::SetAutofireBurstDelay(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autofireBurstDelay = burstDelayMs;
-    spdlog::info("MapManager: Set autofire burst delay to {}ms for mapping {}",
+    havel::info("MapManager: Set autofire burst delay to {}ms for mapping {}",
                  burstDelayMs, mappingId);
   }
 }
@@ -1433,7 +1432,7 @@ void MapManager::SetAutofireMode(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autofireMode = mode;
-    spdlog::info("MapManager: Set autofire mode to '{}' for mapping {}", mode,
+    havel::info("MapManager: Set autofire mode to '{}' for mapping {}", mode,
                  mappingId);
   }
 }
@@ -1453,7 +1452,7 @@ void MapManager::SetAutofireCondition(const std::string &profileId,
       [&mappingId](const Mapping &m) { return m.id == mappingId; });
   if (mappingIt != profileIt->second.mappings.end()) {
     mappingIt->autofireCondition = condition;
-    spdlog::info("MapManager: Set autofire condition for mapping {}: {}",
+    havel::info("MapManager: Set autofire condition for mapping {}: {}",
                  mappingId, condition);
   }
 }
@@ -1573,7 +1572,7 @@ void MapManager::StopAutofire(const std::string &profileId,
     }
   }
 
-  spdlog::info("MapManager: Stopped autofire for mapping {}", mappingId);
+  havel::info("MapManager: Stopped autofire for mapping {}", mappingId);
 }
 
 void MapManager::ExecuteConfigurableAutofire(const std::string &profileId,
@@ -1668,7 +1667,7 @@ void MapManager::ExecuteConfigurableAutofire(const std::string &profileId,
 
         // Clean up
         activeFlag.store(false);
-        spdlog::info("MapManager: Configurable autofire stopped for mapping {}",
+        havel::info("MapManager: Configurable autofire stopped for mapping {}",
                      mapping.id);
       });
 }

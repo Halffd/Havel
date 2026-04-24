@@ -3,17 +3,15 @@
 #include "X11HotkeyMonitor.hpp"
 #include "../IO.hpp"
 #include "../../havel-lang/compiler/runtime/EventQueue.hpp"
-#include <spdlog/spdlog.h>
+#include "utils/Logger.hpp"
 #include <algorithm>
 #include <chrono>
 #include <thread>
 
-using namespace spdlog;
-
 namespace havel {
 
 X11HotkeyMonitor::X11HotkeyMonitor() {
-    info("X11HotkeyMonitor created");
+    havel::info("X11HotkeyMonitor created");
 }
 
 X11HotkeyMonitor::~X11HotkeyMonitor() {
@@ -22,19 +20,19 @@ X11HotkeyMonitor::~X11HotkeyMonitor() {
 
 bool X11HotkeyMonitor::Start(Display* disp) {
     if (running.load()) {
-        warn("X11HotkeyMonitor already running");
+        havel::warning("X11HotkeyMonitor already running");
         return false;
     }
 
     if (!disp) {
-        error("Display is null, cannot start X11 hotkey monitoring");
+        havel::error("Display is null, cannot start X11 hotkey monitoring");
         return false;
     }
 
     display = disp;
 
     if (!XInitThreads()) {
-        error("Failed to initialize X11 threading support");
+        havel::error("Failed to initialize X11 threading support");
         return false;
     }
 
@@ -46,7 +44,7 @@ bool X11HotkeyMonitor::Start(Display* disp) {
 
     monitorThread = std::thread(&X11HotkeyMonitor::MonitorLoop, this);
 
-    info("X11HotkeyMonitor started");
+    havel::info("X11HotkeyMonitor started");
     return true;
 }
 
@@ -55,7 +53,7 @@ void X11HotkeyMonitor::Stop() {
         return;
     }
 
-    info("Stopping X11HotkeyMonitor...");
+    havel::info("Stopping X11HotkeyMonitor...");
     running = false;
     shutdown = true;
 
@@ -63,25 +61,25 @@ void X11HotkeyMonitor::Stop() {
         monitorThread.join();
     }
 
-    info("X11HotkeyMonitor stopped");
+    havel::info("X11HotkeyMonitor stopped");
 }
 
 void X11HotkeyMonitor::RegisterHotkey(int id, const HotKey& hotkey) {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
     hotkeys[id] = hotkey;
-    debug("X11 hotkey registered: {} (id: {})", hotkey.alias, id);
+    havel::debug("X11 hotkey registered: {} (id: {})", hotkey.alias, id);
 }
 
 void X11HotkeyMonitor::UnregisterHotkey(int id) {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
     hotkeys.erase(id);
-    debug("X11 hotkey unregistered: id {}", id);
+    havel::debug("X11 hotkey unregistered: id {}", id);
 }
 
 void X11HotkeyMonitor::ClearHotkeys() {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
     hotkeys.clear();
-    info("All X11 hotkeys cleared");
+    havel::info("All X11 hotkeys cleared");
 }
 
 size_t X11HotkeyMonitor::GetHotkeyCount() const {
@@ -90,7 +88,7 @@ size_t X11HotkeyMonitor::GetHotkeyCount() const {
 }
 
 void X11HotkeyMonitor::MonitorLoop() {
-    info("X11 hotkey monitoring loop started");
+    havel::info("X11 hotkey monitoring loop started");
 
     XEvent event;
     std::vector<int> triggeredHotkeyIds;
@@ -105,7 +103,7 @@ void X11HotkeyMonitor::MonitorLoop() {
     try {
         while (running.load() && !shutdown.load()) {
             if (!display) {
-                error("Display connection lost");
+                havel::error("Display connection lost");
                 break;
             }
 
@@ -134,7 +132,7 @@ void X11HotkeyMonitor::MonitorLoop() {
             // Process all pending events in batch
             for (int i = 0; i < pendingEvents && running.load(); ++i) {
                 if (XNextEvent(display, &event) != 0) {
-                    error("XNextEvent failed - X11 connection error");
+                    havel::error("XNextEvent failed - X11 connection error");
                     running = false;
                     break;
                 }
@@ -178,7 +176,7 @@ void X11HotkeyMonitor::MonitorLoop() {
 
                                 // Push hotkey event to EventQueue
                                 if (eventQueue_) {
-                                    info("X11 hotkey triggered: {} key: {} modifiers: {}",
+                                    havel::info("X11 hotkey triggered: {} key: {} modifiers: {}",
                                          hotkey.alias, hotkey.key, hotkey.modifiers);
                                     triggeredHotkeyIds.push_back(id);
                                 }
@@ -192,27 +190,27 @@ void X11HotkeyMonitor::MonitorLoop() {
                             try {
                                 eventQueue_->push(compiler::Event(compiler::EventType::HOTKEY_TRIGGER, hotkeyId));
                             } catch (const std::exception& e) {
-                                error("Error pushing hotkey event to queue: {}", e.what());
+                                havel::error("Error pushing hotkey event to queue: {}", e.what());
                             }
                         }
                     }
 
                 } catch (const std::exception& e) {
-                    error("Error processing X11 event: {}", e.what());
+                    havel::error("Error processing X11 event: {}", e.what());
                 } catch (...) {
-                    error("Unknown error processing X11 event");
+                    havel::error("Unknown error processing X11 event");
                 }
             }
         }
     } catch (const std::exception& e) {
-        error("Fatal error in X11 hotkey monitoring: {}", e.what());
+        havel::error("Fatal error in X11 hotkey monitoring: {}", e.what());
         running = false;
     } catch (...) {
-        error("Unknown fatal error in X11 hotkey monitoring");
+        havel::error("Unknown fatal error in X11 hotkey monitoring");
         running = false;
     }
 
-    info("X11 hotkey monitoring loop stopped");
+    havel::info("X11 hotkey monitoring loop stopped");
 }
 
 bool X11HotkeyMonitor::IsModifierKeySym(KeySym ks) {

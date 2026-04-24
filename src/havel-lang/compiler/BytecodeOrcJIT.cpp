@@ -60,7 +60,26 @@ void havel_vm_throw_value(void* vm_ptr, uint64_t value_bits) {
     auto* vm = static_cast<VM*>(vm_ptr);
     Value v;
     std::memcpy(&v, &value_bits, sizeof(uint64_t));
-    vm->throwError(vm->toString(v));
+    vm->setCurrentExceptionPublic(v);
+    throw ScriptThrow{v};
+}
+
+void havel_vm_try_enter(void* vm_ptr, uint32_t catch_ip, uint32_t finally_ip) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    vm->tryEnterPublic(catch_ip, finally_ip);
+}
+
+void havel_vm_try_exit(void* vm_ptr) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    vm->tryExitPublic();
+}
+
+uint64_t havel_vm_load_exception(void* vm_ptr) {
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return vm->currentExceptionPublic().rawBits();
 }
 
 void havel_gc_write_barrier(void* vm_ptr, uint64_t new_value_bits) {
@@ -129,10 +148,37 @@ uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) {
     return bits;
 }
 
-// JIT helper for tail calls - reuses current frame
+// JIT helper for tail calls - reuses current frame (proper TCO)
 uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
-    // Tail call: same as regular call but caller handles frame reuse
-    return havel_vm_call(vm_ptr, args, count);
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+
+    // Convert args array to vector
+    std::vector<Value> valArgs;
+    for (uint32_t i = 0; i < count; ++i) {
+        Value v;
+        std::memcpy(&v, &args[i], sizeof(uint64_t));
+        valArgs.push_back(v);
+    }
+
+    if (valArgs.empty()) return Value::makeNull().rawBits();
+
+    Value callee = valArgs[0];
+    valArgs.erase(valArgs.begin());
+
+    // Close open upvalues for current frame before reusing it
+    uint32_t locals_base = static_cast<uint32_t>(vm->currentLocalsBasePublic());
+    vm->closeFrameUpvaluesPublic(locals_base,
+        static_cast<uint32_t>(vm->currentLocalsSizePublic()));
+
+    // Reuse current frame (TCO)
+    size_t saved_frame_count = vm->frameCountPublic();
+    vm->doTailCallPublic(callee, std::move(valArgs));
+    vm->runDispatchLoopPublic(saved_frame_count - 1);
+
+    // Get result from stack
+    Value result = vm->popStackPublic();
+    return result.rawBits();
 }
 
 // Global variable access - use public API
@@ -163,13 +209,48 @@ void havel_vm_global_set(void* vm_ptr, uint32_t name_id, uint64_t value) {
   vm->setGlobalThreadSafe(name, v);
 }
 
-// Upvalue access - stub (JIT doesn't use closures yet in hot paths)
 uint64_t havel_vm_upvalue_get(void* vm_ptr, uint32_t slot) {
-  return Value::makeNull().rawBits();
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    auto* closure = vm->currentClosurePublic();
+    if (!closure || slot >= closure->upvalues.size() || !closure->upvalues[slot])
+        return Value::makeNull().rawBits();
+    const auto& cell = closure->upvalues[slot];
+    if (cell->is_open) {
+        uint32_t abs_index = cell->locals_base + cell->open_index;
+        return vm->readLocalPublic(abs_index).rawBits();
+    }
+    return cell->closed_value.rawBits();
 }
 
 void havel_vm_upvalue_set(void* vm_ptr, uint32_t slot, uint64_t value) {
-  // No-op stub
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    auto* closure = vm->currentClosurePublic();
+    if (!closure || slot >= closure->upvalues.size() || !closure->upvalues[slot])
+        return;
+    auto& cell = closure->upvalues[slot];
+    Value v;
+    std::memcpy(&v, &value, sizeof(uint64_t));
+    if (cell->is_open) {
+        uint32_t abs_index = cell->locals_base + cell->open_index;
+        vm->writeLocalPublic(abs_index, v);
+    } else {
+        cell->closed_value = v;
+    }
+}
+
+void havel_vm_close_upvalues(void* vm_ptr, uint32_t locals_base) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    vm->closeFrameUpvaluesPublic(locals_base,
+        static_cast<uint32_t>(vm->currentLocalsSizePublic()));
+}
+
+uint32_t havel_vm_locals_base(void* vm_ptr) {
+    if (!vm_ptr) return 0;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    return static_cast<uint32_t>(vm->currentLocalsBasePublic());
 }
 
 // Semantic comparison bridges — handle NaN-boxed type dispatch correctly
@@ -680,14 +761,42 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
   }
 
 uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  auto* chunk = vm->getCurrentChunk();
-  if (!chunk || !chunk->getFunction(func_index))
-    return Value::makeNull().rawBits();
-  auto ref = vm->getHeap().allocateClosure(
-    GCHeap::RuntimeClosure{.function_index = func_index});
-  return Value::makeClosureId(ref.id).rawBits();
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    auto* chunk = vm->getCurrentChunk();
+    if (!chunk || !chunk->getFunction(func_index))
+        return Value::makeNull().rawBits();
+    const auto* target = chunk->getFunction(func_index);
+
+    GCHeap::RuntimeClosure closure;
+    closure.function_index = func_index;
+    closure.upvalues.reserve(target->upvalues.size());
+
+    for (const auto& descriptor : target->upvalues) {
+        if (descriptor.captures_local) {
+            uint32_t abs = vm->toAbsoluteLocalPublic(descriptor.index);
+            auto& open_uv = vm->openUpvaluesPublic();
+            auto open_it = open_uv.find(abs);
+            if (open_it == open_uv.end()) {
+                auto cell = std::make_shared<GCHeap::UpvalueCell>();
+                cell->is_open = true;
+                cell->open_index = descriptor.index;
+                cell->locals_base = static_cast<uint32_t>(vm->currentLocalsBasePublic());
+                open_uv.emplace(abs, cell);
+                closure.upvalues.push_back(std::move(cell));
+            } else {
+                closure.upvalues.push_back(open_it->second);
+            }
+        } else {
+            auto* parent_closure = vm->currentClosurePublic();
+            if (!parent_closure || descriptor.index >= parent_closure->upvalues.size())
+                return Value::makeNull().rawBits();
+            closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
+        }
+    }
+
+    auto ref = vm->getHeap().allocateClosure(std::move(closure));
+    return Value::makeClosureId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_array_del(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
@@ -1420,6 +1529,9 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
 
 addSym("havel_vm_throw_error", reinterpret_cast<void*>(&havel_vm_throw_error));
 addSym("havel_vm_throw_value", reinterpret_cast<void*>(&havel_vm_throw_value));
+    addSym("havel_vm_try_enter", reinterpret_cast<void*>(&havel_vm_try_enter));
+    addSym("havel_vm_try_exit", reinterpret_cast<void*>(&havel_vm_try_exit));
+    addSym("havel_vm_load_exception", reinterpret_cast<void*>(&havel_vm_load_exception));
 addSym("havel_gc_write_barrier", reinterpret_cast<void*>(&havel_gc_write_barrier));
 addSym("havel_gc_register_roots", reinterpret_cast<void*>(&havel_gc_register_roots));
 addSym("havel_gc_unregister_roots",reinterpret_cast<void*>(&havel_gc_unregister_roots));
@@ -1430,6 +1542,8 @@ addSym("havel_vm_global_get", reinterpret_cast<void*>(&havel_vm_global_get));
 addSym("havel_vm_global_set", reinterpret_cast<void*>(&havel_vm_global_set));
 addSym("havel_vm_upvalue_get", reinterpret_cast<void*>(&havel_vm_upvalue_get));
 addSym("havel_vm_upvalue_set", reinterpret_cast<void*>(&havel_vm_upvalue_set));
+addSym("havel_vm_close_upvalues", reinterpret_cast<void*>(&havel_vm_close_upvalues));
+addSym("havel_vm_locals_base", reinterpret_cast<void*>(&havel_vm_locals_base));
 addSym("havel_vm_pow", reinterpret_cast<void*>(&havel_vm_pow));
 addSym("havel_vm_array_new", reinterpret_cast<void*>(&havel_vm_array_new));
 addSym("havel_vm_array_get", reinterpret_cast<void*>(&havel_vm_array_get));
@@ -2860,22 +2974,60 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             break;
         }
 
-        case OpCode::RETURN: {
-            llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-            if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
-            B.CreateCall(fn_unreg, {frame});
-            B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
-            break;
-        }
-        case OpCode::TRY_ENTER:
-        case OpCode::TRY_EXIT:
-            // Current JIT path does not model VM exception handler stack yet.
-            // Keep as no-op to preserve forward progress for non-throwing paths.
-            break;
-        case OpCode::LOAD_EXCEPTION:
-            // Placeholder until VM exception object APIs are exposed to JIT bridge.
-            vstack.push_back(makeNull());
-            break;
+case OpCode::RETURN: {
+    // Close open upvalues for this frame before returning
+    llvm::Function* fnClose = module.getFunction("havel_vm_close_upvalues");
+    if (!fnClose) {
+        fnClose = llvm::Function::Create(
+            llvm::FunctionType::get(voidT, {i8p, i32}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_close_upvalues", &module);
+    }
+    llvm::Function* fnLocalsBase = module.getFunction("havel_vm_locals_base");
+    if (!fnLocalsBase) {
+        fnLocalsBase = llvm::Function::Create(
+            llvm::FunctionType::get(i32, {i8p}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_locals_base", &module);
+    }
+    llvm::Value* lb = B.CreateCall(fnLocalsBase, {vmArg});
+    B.CreateCall(fnClose, {vmArg, lb});
+    llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+    if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+    B.CreateCall(fn_unreg, {frame});
+    B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
+    break;
+}
+case OpCode::TRY_ENTER: {
+    uint32_t catchIp = instr.operands[0].asInt();
+    uint32_t finallyIp = (instr.operands.size() >= 2 && instr.operands[1].isInt()) ? instr.operands[1].asInt() : 0;
+    llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
+    if (!fnTryEnter) {
+        fnTryEnter = llvm::Function::Create(
+            llvm::FunctionType::get(voidT, {i8p, i32, i32}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
+    }
+    B.CreateCall(fnTryEnter, {vmArg, llvm::ConstantInt::get(i32, catchIp), llvm::ConstantInt::get(i32, finallyIp)});
+    break;
+}
+case OpCode::TRY_EXIT: {
+    llvm::Function* fnTryExit = module.getFunction("havel_vm_try_exit");
+    if (!fnTryExit) {
+        fnTryExit = llvm::Function::Create(
+            llvm::FunctionType::get(voidT, {i8p}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_try_exit", &module);
+    }
+    B.CreateCall(fnTryExit, {vmArg});
+    break;
+}
+case OpCode::LOAD_EXCEPTION: {
+    llvm::Function* fnLoadExc = module.getFunction("havel_vm_load_exception");
+    if (!fnLoadExc) {
+        fnLoadExc = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_load_exception", &module);
+    }
+    vstack.push_back(B.CreateCall(fnLoadExc, {vmArg}));
+    break;
+}
         case OpCode::THROW: {
             llvm::Value* thrown = vstack.empty() ? makeNull() : vstack.back();
             if (!vstack.empty()) {

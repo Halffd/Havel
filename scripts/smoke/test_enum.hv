@@ -1,0 +1,128 @@
+// test_enum.hv
+// Test Havel enum functionality
+
+// Define enum types
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Result {
+    Ok(value),
+    Err(message)
+}
+
+enum Optional {
+    Some(value),
+    None
+}
+
+// Test 1: Enum creation and tag checking
+let c = Color.Red
+print("Color tag: " + enum.tag(c))
+assert(enum.tag(c) == 0)
+
+let c2 = Color.Green
+assert(enum.tag(c2) == 1)
+
+let c3 = Color.Blue
+assert(enum.tag(c3) == 2)
+
+// Test 2: Enums with payloads
+let ok = Result.Ok(42)
+let err = Result.Err("something went wrong")
+
+print("Ok tag: " + enum.tag(ok))
+print("Err tag: " + enum.tag(err))
+
+assert(enum.tag(ok) == 0)
+assert(enum.tag(err) == 1)
+
+// Test 3: Payload extraction
+let okValue = enum.payload(ok, 0)
+print("Ok payload: " + okValue)
+assert(okValue == 42)
+
+let errMsg = enum.payload(err, 0)
+print("Err message: " + errMsg)
+assert(errMsg == "something went wrong")
+
+// Test 4: Optional type
+let some = Optional.Some(100)
+let none = Optional.None
+
+assert(enum.tag(some) == 0)
+assert(enum.tag(none) == 1)
+
+let someValue = enum.payload(some, 0)
+print("Some value: " + someValue)
+assert(someValue == 100)
+
+// Test 5: Pattern matching with enums (using match if available)
+fn processResult(r) {
+    let tag = enum.tag(r)
+    if tag == 0 {
+        let val = enum.payload(r, 0)
+        return "Ok: " + val
+    } else {
+        let msg = enum.payload(r, 0)
+        return "Error: " + msg
+    }
+}
+
+let r1 = Result.Ok(99)
+let r2 = Result.Err("oops")
+
+print(processResult(r1))
+print(processResult(r2))
+
+// Test 6: Enum in function return
+fn maybeDivide(a, b) {
+    if b == 0 {
+        return Result.Err("division by zero")
+    }
+    return Result.Ok(a / b)
+}
+
+let div1 = maybeDivide(10, 2)
+let div2 = maybeDivide(10, 0)
+
+assert(enum.tag(div1) == 0)
+assert(enum.payload(div1, 0) == 5)
+
+assert(enum.tag(div2) == 1)
+assert(enum.payload(div2, 0) == "division by zero")
+
+// Test 7: Enum variants with multiple payloads
+enum ParseResult {
+    Success(value, remaining),
+    Failure(error, position)
+}
+
+let success = ParseResult.Success(42, "")
+assert(enum.tag(success) == 0)
+assert(enum.payload(success, 0) == 42)
+assert(enum.payload(success, 1) == "")
+
+let fail = ParseResult.Failure("unexpected token", 10)
+assert(enum.tag(fail) == 1)
+assert(enum.payload(fail, 0) == "unexpected token")
+assert(enum.payload(fail, 1) == 10)
+
+// Test 8: Enum in data structures
+let results = [Result.Ok(1), Result.Ok(2), Result.Err("fail")]
+let successCount = 0
+let errorCount = 0
+
+for r in results {
+    if enum.tag(r) == 0 {
+        successCount += 1
+    } else {
+        errorCount += 1
+    }
+}
+assert(successCount == 2)
+assert(errorCount == 1)
+
+print("All enum tests passed!")

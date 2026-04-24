@@ -550,11 +550,11 @@ public:
   // Phase 2A: Event queue for variable change notifications
   void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
   
-  void setGlobal(std::string name, Value value) {
-    globals[std::move(name)] = std::move(value);
-    // Phase 2A: Emit VAR_CHANGED event when global is modified
-    emitVariableChanged(name);
-  }
+    void setGlobal(std::string name, Value value) {
+            std::string key = name;
+            globals[std::move(name)] = std::move(value);
+            emitVariableChanged(key);
+        }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);
   }

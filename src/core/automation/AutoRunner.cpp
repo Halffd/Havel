@@ -52,7 +52,7 @@ namespace havel::automation
         timer = TimerManager::SetTimer(1700, [this, winId]()
                                        {
           if (WindowManager::GetActiveWindow() != winId) {
-              havel::info("Window changed, stopping F timer");
+              ::havel::info("Window changed, stopping F timer");
               if (timer) {
                   TimerManager::StopTimer(timer);
                   timer = nullptr;
@@ -74,7 +74,7 @@ namespace havel::automation
           }
           io_->Send("{LShift}");
         }, true);  // repeating=true
-        havel::info("AutoRunner started - holding {} and Shift", direction_);
+        ::havel::info("AutoRunner started - holding {} and Shift", direction_);
     }
 
     void AutoRunner::onStop()
@@ -87,7 +87,7 @@ namespace havel::automation
             TimerManager::StopTimer(timer);
             timer = nullptr;
         }
-        havel::info("AutoRunner stopped - released {} and Shift", direction_);
+        ::havel::info("AutoRunner stopped - released {} and Shift", direction_);
     }
 
     void AutoRunner::setupDirectionAction()

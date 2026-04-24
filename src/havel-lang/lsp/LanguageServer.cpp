@@ -132,7 +132,7 @@ void LanguageServer::handleMessage(const json& message) {
     json params = message.value("params", json::object());
     json id = message.value("id", json(nullptr));
     
-    havel::debug("LSP: Received method: {}", method);
+    ::havel::debug("LSP: Received method: {}", method);
     
     if (method == "initialize") {
       sendMessage(makeResponse(id, handleInitialize(params)));
@@ -156,10 +156,10 @@ void LanguageServer::handleMessage(const json& message) {
     } else if (method == "textDocument/documentSymbol") {
       sendMessage(makeResponse(id, handleDocumentSymbol(params)));
     } else {
-      havel::debug("LSP: Unhandled method: {}", method);
+      ::havel::debug("LSP: Unhandled method: {}", method);
     }
   } catch (const std::exception& e) {
-    havel::error("LSP error: {}", e.what());
+    ::havel::error("LSP error: {}", e.what());
   }
 }
 
@@ -171,26 +171,26 @@ json LanguageServer::handleInitialize(const json& params) {
     {"capabilities", getServerCapabilities()}
   };
   
-  havel::info("LSP: Initialized");
+  ::havel::info("LSP: Initialized");
   return result;
 }
 
 json LanguageServer::handleInitialized(const json& params) {
   (void)params;
-  havel::info("LSP: Server fully initialized");
+  ::havel::info("LSP: Server fully initialized");
   return json();
 }
 
 json LanguageServer::handleShutdown(const json& params) {
   (void)params;
   shutdownRequested = true;
-  havel::info("LSP: Shutdown requested");
+  ::havel::info("LSP: Shutdown requested");
   return json();
 }
 
 void LanguageServer::handleExit(const json& params) {
   (void)params;
-  havel::info("LSP: Exit requested");
+  ::havel::info("LSP: Exit requested");
 }
 
 void LanguageServer::handleDidOpen(const json& params) {

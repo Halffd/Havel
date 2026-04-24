@@ -42,13 +42,13 @@ bool ImGuiBackend::initialize() {
     
     // Initialize GLFW
     if (!initGLFW()) {
-        havel::error("Failed to initialize GLFW");
+        ::havel::error("Failed to initialize GLFW");
         return false;
     }
     
     // Initialize ImGui
     if (!initImGui()) {
-        havel::error("Failed to initialize ImGui");
+        ::havel::error("Failed to initialize ImGui");
         shutdownGLFW();
         return false;
     }
@@ -56,7 +56,7 @@ bool ImGuiBackend::initialize() {
     initialized_ = true;
     running_ = true;
     
-    havel::info("ImGui backend initialized (ImGui {})", IMGUI_VERSION);
+    ::havel::info("ImGui backend initialized (ImGui {})", IMGUI_VERSION);
     
     return true;
 }
@@ -72,7 +72,7 @@ void ImGuiBackend::shutdown() {
     shutdownGLFW();
     
     initialized_ = false;
-    havel::info("ImGui backend shutdown complete");
+    ::havel::info("ImGui backend shutdown complete");
 }
 
 bool ImGuiBackend::initGLFW() {
@@ -495,12 +495,12 @@ void ImGuiBackend::close(std::shared_ptr<ui::UIElement> window) {
 void ImGuiBackend::alert(const std::string &message) {
     // Queue alert for next frame
     // In ImGui, we'd use a popup modal
-    havel::info("Alert: {}", message);
+    ::havel::info("Alert: {}", message);
 }
 
 bool ImGuiBackend::confirm(const std::string &message) {
     // In ImGui, this would be a blocking modal
-    havel::info("Confirm: {} (returning true)", message);
+    ::havel::info("Confirm: {} (returning true)", message);
     return true;
 }
 
@@ -518,7 +518,7 @@ std::string ImGuiBackend::dirPicker(const std::string &title) {
 void ImGuiBackend::notify(const std::string &message, const std::string &type) {
     // ImGui doesn't have native notifications
     // Could use a toast system or external library
-    havel::info("Notification [{}]: {}", type, message);
+    ::havel::info("Notification [{}]: {}", type, message);
 }
 
 void ImGuiBackend::pumpEvents(int timeoutMs) {
@@ -695,7 +695,7 @@ void ImGuiBackend::trayMenu(std::shared_ptr<ui::UIElement> menu) {
 void ImGuiBackend::trayNotify(const std::string &title, const std::string &message, const std::string &iconType) {
     (void)title;
     (void)iconType;
-    havel::info("Tray notification: {}", message);
+    ::havel::info("Tray notification: {}", message);
 }
 
 void ImGuiBackend::trayShow() {

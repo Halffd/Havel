@@ -59,13 +59,13 @@ void registerLogModule(VMApi &api) {
 
     api.registerFunction("log.info", [&api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
-        havel::info("{}", msg);
+        ::havel::info("{}", msg);
         return Value::makeNull();
     });
 
     api.registerFunction("log.error", [&api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
-        havel::error("{}", msg);
+        ::havel::error("{}", msg);
         return Value::makeNull();
     });
 
@@ -77,7 +77,7 @@ void registerLogModule(VMApi &api) {
 
     api.registerFunction("log.debug", [&api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
-        havel::debug("{}", msg);
+        ::havel::debug("{}", msg);
         return Value::makeNull();
     });
 

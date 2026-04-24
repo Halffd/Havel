@@ -1149,7 +1149,7 @@ uint64_t havel_vm_to_float(void* vm_ptr, uint64_t val_bits) {
   auto* vm = static_cast<VM*>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-  return vm->toFloatPublic(v).rawBits();
+    return Value::makeDouble(vm->toFloatPublic(v)).rawBits();
 }
 
 uint64_t havel_vm_to_string(void* vm_ptr, uint64_t val_bits) {
@@ -1166,7 +1166,7 @@ uint64_t havel_vm_to_bool(void* vm_ptr, uint64_t val_bits) {
   auto* vm = static_cast<VM*>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-  return vm->toBoolPublic(v).rawBits();
+    return Value::makeBool(vm->toBoolPublic(v)).rawBits();
 }
 
 uint64_t havel_vm_type_of(void* vm_ptr, uint64_t val_bits) {
@@ -1253,7 +1253,7 @@ uint64_t havel_vm_spread(void* vm_ptr, uint64_t val_bits) {
     auto* arr = vm->getHeap().array(v.asArrayId());
     if (!arr) return val_bits;
     for (const auto& elem : *arr) {
-      vm->pushStack(elem);
+        vm->pushStackPublic(elem);
     }
   }
   return val_bits;
@@ -1306,38 +1306,40 @@ uint64_t havel_vm_call_super(void* vm_ptr, uint64_t obj_bits, uint32_t method_id
   return Value::makeNull().rawBits();
 }
 
-uint64_t havel_vm_enum_new(void* vm_ptr, uint32_t tag, uint32_t payload_count) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  std::vector<Value> payloads;
-  for (uint32_t i = 0; i < payload_count; ++i) {
-    Value p = vm->popStack();
-    payloads.insert(payloads.begin(), p);
-  }
-  auto ref = vm->getHeap().allocateEnum(tag, std::move(payloads));
-  return Value::makeEnumId(ref.id).rawBits();
+uint64_t havel_vm_enum_new(void* vm_ptr, uint32_t type_id, uint32_t tag, uint32_t payload_count) {
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    EnumRef ref = vm->createEnum(type_id, tag, payload_count);
+    if (payload_count > 0) {
+        auto* payloads = vm->getHeap().enumPayloadsMut(ref.id);
+        if (payloads) {
+            for (uint32_t i = 0; i < payload_count && i < payloads->size(); ++i) {
+                Value p = vm->popStackPublic();
+                (*payloads)[payloads->size() - 1 - i] = p;
+            }
+        }
+    }
+    return Value::makeEnumId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_enum_tag(void* vm_ptr, uint64_t enum_bits) {
-  if (!vm_ptr) return Value::makeInt(0).rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  Value v;
-  std::memcpy(&v, &enum_bits, sizeof(uint64_t));
-  if (!v.isEnumId()) return Value::makeInt(0).rawBits();
-  auto* e = vm->getHeap().enumVal(v.asEnumId());
-  if (!e) return Value::makeInt(0).rawBits();
-  return Value::makeInt(static_cast<int64_t>(e->tag)).rawBits();
+    if (!vm_ptr) return Value::makeInt(0).rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value v;
+    std::memcpy(&v, &enum_bits, sizeof(uint64_t));
+    if (!v.isEnumId()) return Value::makeInt(0).rawBits();
+    EnumRef ref{v.asEnumId(), 0, 0};
+    return Value::makeInt(static_cast<int64_t>(vm->getEnumTag(ref))).rawBits();
 }
 
 uint64_t havel_vm_enum_payload(void* vm_ptr, uint64_t enum_bits, uint32_t idx) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  auto* vm = static_cast<VM*>(vm_ptr);
-  Value v;
-  std::memcpy(&v, &enum_bits, sizeof(uint64_t));
-  if (!v.isEnumId()) return Value::makeNull().rawBits();
-  auto* e = vm->getHeap().enumVal(v.asEnumId());
-  if (!e || idx >= e->payloads.size()) return Value::makeNull().rawBits();
-  return e->payloads[idx].rawBits();
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value v;
+    std::memcpy(&v, &enum_bits, sizeof(uint64_t));
+    if (!v.isEnumId()) return Value::makeNull().rawBits();
+    EnumRef ref{v.asEnumId(), 0, 0};
+    return vm->getEnumPayload(ref, idx).rawBits();
 }
 
 uint64_t havel_vm_export_fn(void* vm_ptr, uint32_t name_id, uint64_t fn_bits) {
@@ -2129,18 +2131,19 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
     // Enum operations
     case OpCode::ENUM_NEW: {
         // Operands: typeId, tag, payloadCount
-        uint32_t typeId = instr.operands[0].asInt();
-        uint32_t tag = instr.operands[1].asInt();
-        uint32_t payloadCount = instr.operands[2].asInt();
-        llvm::Function* fnEnum = module.getFunction("havel_vm_enum_new");
-        if (!fnEnum) {
-            fnEnum = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i32, i32}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_enum_new", &module);
-        }
-        vstack.push_back(B.CreateCall(fnEnum, {vmArg,
-            llvm::ConstantInt::get(i32, tag),
-            llvm::ConstantInt::get(i32, payloadCount)}));
+    uint32_t typeId = instr.operands[0].asInt();
+    uint32_t tag = instr.operands[1].asInt();
+    uint32_t payloadCount = instr.operands[2].asInt();
+    llvm::Function* fnEnum = module.getFunction("havel_vm_enum_new");
+    if (!fnEnum) {
+        fnEnum = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p, i32, i32, i32}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_enum_new", &module);
+    }
+    vstack.push_back(B.CreateCall(fnEnum, {vmArg,
+        llvm::ConstantInt::get(i32, typeId),
+        llvm::ConstantInt::get(i32, tag),
+        llvm::ConstantInt::get(i32, payloadCount)}));
         break;
     }
     case OpCode::ENUM_TAG: {

@@ -207,6 +207,22 @@ Coroutine() = default;
         const std::vector<std::string> &variants);
     EnumRef allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
 
+    uint32_t enumTag(uint32_t id) const {
+        auto it = enums_.find(id);
+        if (it == enums_.end()) return 0;
+        return it->second.first;
+    }
+    const std::vector<Value>* enumPayloads(uint32_t id) const {
+        auto it = enums_.find(id);
+        if (it == enums_.end()) return nullptr;
+        return &it->second.second;
+    }
+    std::vector<Value>* enumPayloadsMut(uint32_t id) {
+        auto it = enums_.find(id);
+        if (it == enums_.end()) return nullptr;
+        return &it->second.second;
+    }
+
     IteratorRef allocateIterator(const Value &iterable);
 
     ThreadRef allocateThreadObj(std::shared_ptr<::havel::Thread> thread);

@@ -352,6 +352,8 @@ public:
     bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
     Value callFunctionSyncPublic(const Value &fn, const std::vector<Value> &args) { return callFunctionSync(fn, args); }
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
+    void pushStackPublic(Value value) { pushStack(std::move(value)); }
+    Value popStackPublic() { return popStack(); }
 
   // Direct invocation (bypasses stack, takes args as vector)
   Value invokeHostFunctionDirect(const std::string &name,

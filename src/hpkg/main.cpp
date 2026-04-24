@@ -141,24 +141,18 @@ static int cmd_init(const std::vector<std::string>& args) {
         return 1;
     }
 
-    fs::path pkg_src_dir = cwd / pkg_name;
-    if (!fs::exists(pkg_src_dir)) {
-        fs::create_directory(pkg_src_dir);
-        std::cout << "created " << pkg_src_dir.string() << "/" << std::endl;
-    }
+  fs::path entry_point = cwd / (pkg_name + ".hv");
+  if (!fs::exists(entry_point)) {
+    std::ofstream f(entry_point);
+    f << "// " << pkg_name << " - a Havel package\n\n";
+    f << "fn hello() {\n";
+    f << "  print(\"hello from " << pkg_name << "\")\n";
+    f << "}\n\n";
+    f << "export hello\n";
+    std::cout << "created " << entry_point.string() << std::endl;
+}
 
-    fs::path entry_point = pkg_src_dir / (pkg_name + ".hv");
-    if (!fs::exists(entry_point)) {
-        std::ofstream f(entry_point);
-        f << "// " << pkg_name << " - a Havel package\n\n";
-        f << "fn hello() {\n";
-        f << "    print(\"hello from " << pkg_name << "\")\n";
-        f << "}\n\n";
-        f << "export hello\n";
-        std::cout << "created " << entry_point.string() << std::endl;
-    }
-
-    PackageManifest manifest;
+  PackageManifest manifest;
     manifest.name = pkg_name;
     if (!write_havel_toml(toml_path, manifest)) {
         std::cerr << "hpkg: failed to write havel.toml" << std::endl;
@@ -210,26 +204,39 @@ static int cmd_install(const std::vector<std::string>& args) {
                 return 1;
             }
 
-            fs::path dest = fs::path(pkgs_dir) / manifest.name;
-            if (fs::exists(dest)) {
-                fs::remove_all(dest);
-            }
+        fs::path dest = fs::path(pkgs_dir) / manifest.name;
+        if (fs::exists(dest)) {
+          fs::remove_all(dest);
+        }
+        fs::create_directories(dest);
 
-            std::error_code ec;
-            fs::copy(source, dest,
-                fs::copy_options::recursive |
-                fs::copy_options::skip_existing, ec);
+        std::error_code ec;
 
+        fs::copy_file(toml, dest / "havel.toml",
+                      fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+          std::cerr << "hpkg: copy havel.toml failed: " << ec.message() << std::endl;
+          return 1;
+        }
+
+        fs::path src_dir = source;
+        if (fs::is_directory(source / manifest.name)) {
+          src_dir = source / manifest.name;
+        }
+
+        for (const auto& entry : fs::directory_iterator(src_dir)) {
+          if (!entry.is_regular_file()) continue;
+          if (entry.path().extension() == ".hv") {
+            fs::copy_file(entry.path(), dest / entry.path().filename(),
+                          fs::copy_options::overwrite_existing, ec);
             if (ec) {
-                std::cerr << "hpkg: copy failed: " << ec.message() << std::endl;
-                return 1;
+              std::cerr << "hpkg: copy failed: " << ec.message() << std::endl;
+              return 1;
             }
+          }
+        }
 
-            fs::remove_all(dest / "__cache__");
-            fs::remove_all(dest / "build-debug");
-            fs::remove_all(dest / "build-release");
-
-            std::cout << "installed " << manifest.name << " v" << manifest.version << std::endl;
+        std::cout << "installed " << manifest.name << " v" << manifest.version << std::endl;
             continue;
         }
 
@@ -330,21 +337,18 @@ static int cmd_publish(const std::vector<std::string>& args) {
         return 1;
     }
 
-    fs::path entry = cwd / manifest.name / (manifest.name + ".hv");
-    if (!fs::exists(entry)) {
-        std::cerr << "hpkg: missing entry point " << (manifest.name + "/" + manifest.name + ".hv") << std::endl;
-        return 1;
-    }
+  fs::path entry = cwd / (manifest.name + ".hv");
+  if (!fs::exists(entry)) {
+    std::cerr << "hpkg: missing entry point " << (manifest.name + ".hv") << std::endl;
+    return 1;
+  }
 
-    std::vector<std::string> hv_files;
-    fs::path pkg_src = cwd / manifest.name;
-    if (fs::is_directory(pkg_src)) {
-        for (const auto& e : fs::recursive_directory_iterator(pkg_src)) {
-            if (e.is_regular_file() && e.path().extension() == ".hv") {
-                hv_files.push_back(fs::relative(e.path(), cwd).string());
-            }
-        }
+  std::vector<std::string> hv_files;
+  for (const auto& e : fs::directory_iterator(cwd)) {
+    if (e.is_regular_file() && e.path().extension() == ".hv") {
+      hv_files.push_back(e.path().filename().string());
     }
+  }
 
     if (manifest.version.empty()) {
         std::cerr << "hpkg: version is required in havel.toml" << std::endl;
@@ -447,7 +451,7 @@ static int cmd_info(const std::vector<std::string>& args) {
     for (const auto& name : args) {
         fs::path pkg_path = fs::path(pkgs_dir) / name;
         fs::path toml = pkg_path / "havel.toml";
-        fs::path hv_file = pkg_path / name / (name + ".hv");
+        fs::path hv_file = pkg_path / (name + ".hv");
 
         std::cout << name << ":" << std::endl;
         std::cout << "  location: " << pkg_path.string() << std::endl;
@@ -488,11 +492,10 @@ static void print_usage(const char* prog) {
         "  remove <name>        remove an installed package\n"
         "\n"
         "package layout:\n"
-        "  my-pkg/\n"
-        "    havel.toml         package manifest\n"
-        "    my-pkg/\n"
-        "      my-pkg.hv        entry point\n"
-        "      *.hv             additional sources\n"
+  " my-pkg/\n"
+  "   havel.toml          package manifest\n"
+  "   my-pkg.hv           entry point\n"
+  "   *.hv                additional sources\n"
         "\n"
         "installed packages live in ~/.havel/packages/<name>/\n";
 }

@@ -455,6 +455,30 @@ uint64_t havel_vm_object_set(void* vm_ptr, uint64_t obj_bits, uint32_t key_id, u
   return val_bits;
 }
 
+uint64_t havel_vm_object_get_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj, key_val;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    if (!obj.isObjectId()) return Value::makeNull().rawBits();
+
+    auto key_str = vm->resolveKeyPublic(key_val);
+    if (!key_str) return Value::makeNull().rawBits();
+
+    if (obj.asObjectId() == vm->globalsMirrorObjectId()) {
+        return vm->lookupGlobalByKey(*key_str).rawBits();
+    }
+
+    return vm->objectGetWithClassChain(obj.asObjectId(), *key_str).rawBits();
+}
+
+void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    vm->recordBackedgePublic(ip);
+}
+
 // Range and iterator operations - use public heap API
 uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
@@ -1551,8 +1575,9 @@ addSym("havel_vm_array_set", reinterpret_cast<void*>(&havel_vm_array_set));
 addSym("havel_vm_array_len", reinterpret_cast<void*>(&havel_vm_array_len));
 addSym("havel_vm_array_push", reinterpret_cast<void*>(&havel_vm_array_push));
 addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
-addSym("havel_vm_object_get", reinterpret_cast<void*>(&havel_vm_object_get));
-addSym("havel_vm_object_set", reinterpret_cast<void*>(&havel_vm_object_set));
+    addSym("havel_vm_object_get", reinterpret_cast<void*>(&havel_vm_object_get));
+    addSym("havel_vm_object_get_raw", reinterpret_cast<void*>(&havel_vm_object_get_raw));
+    addSym("havel_vm_object_set", reinterpret_cast<void*>(&havel_vm_object_set));
 addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
 addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
 addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
@@ -1601,8 +1626,9 @@ addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat
         addSym("havel_vm_object_values", reinterpret_cast<void*>(&havel_vm_object_values));
         addSym("havel_vm_object_entries", reinterpret_cast<void*>(&havel_vm_object_entries));
         addSym("havel_vm_object_has", reinterpret_cast<void*>(&havel_vm_object_has));
-        addSym("havel_vm_object_delete", reinterpret_cast<void*>(&havel_vm_object_delete));
-        addSym("havel_vm_object_new_unsorted", reinterpret_cast<void*>(&havel_vm_object_new_unsorted));
+    addSym("havel_vm_object_delete", reinterpret_cast<void*>(&havel_vm_object_delete));
+    addSym("havel_vm_backedge", reinterpret_cast<void*>(&havel_vm_backedge));
+    addSym("havel_vm_object_new_unsorted", reinterpret_cast<void*>(&havel_vm_object_new_unsorted));
         addSym("havel_vm_string_upper", reinterpret_cast<void*>(&havel_vm_string_upper));
         addSym("havel_vm_string_lower", reinterpret_cast<void*>(&havel_vm_string_lower));
         addSym("havel_vm_string_trim", reinterpret_cast<void*>(&havel_vm_string_trim));
@@ -2380,20 +2406,18 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         vstack.push_back(B.CreateCall(fnDel, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
         break;
     }
-    case OpCode::OBJECT_GET_RAW: {
-        // Stack: [object, key_value] - uses dynamic key from stack
-        llvm::Value* key = vstack.back(); vstack.pop_back();
-        llvm::Value* obj = vstack.back(); vstack.pop_back();
-        // OBJECT_GET_RAW is same as OBJECT_GET but with stack key instead of operand key
-        // Use a bridge: havel_vm_object_get with stack-based key
-        // Since we have havel_vm_object_get(vm, obj, key_id) for operand-based,
-        // we need a different approach for OBJECT_GET_RAW.
-        // For now, use the existing object_get bridge with key as a i32 constant
-        // This is imperfect - OBJECT_GET_RAW needs a stack-based key bridge
-        // Fallback: push null
-        vstack.push_back(makeNull());
-        break;
-    }
+        case OpCode::OBJECT_GET_RAW: {
+            llvm::Value* key = vstack.back(); vstack.pop_back();
+            llvm::Value* obj = vstack.back(); vstack.pop_back();
+            llvm::Function* fnGetRaw = module.getFunction("havel_vm_object_get_raw");
+            if (!fnGetRaw) {
+                fnGetRaw = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_object_get_raw", &module);
+            }
+            vstack.push_back(B.CreateCall(fnGetRaw, {vmArg, obj, key}));
+            break;
+        }
 
     // String additional operations
     case OpCode::STRING_UPPER: {
@@ -2857,6 +2881,15 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         // Control flow
         case OpCode::JUMP: {
             size_t target = instr.operands[0].asInt();
+            if (target < ip) {
+                llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
+                if (!fnBe) {
+                    fnBe = llvm::Function::Create(
+                        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
+                        llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
+                }
+                B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
+            }
             if (target < basicBlocks.size()) {
                 B.CreateBr(basicBlocks[target]);
             } else {
@@ -2864,42 +2897,60 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
             }
             break;
         }
-      case OpCode::JUMP_IF_FALSE: {
-        size_t target = instr.operands[1].asInt();
-        llvm::Value* cond = vstack.back(); vstack.pop_back();
-        llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
-        if (!fnTruthy) {
-          fnTruthy = llvm::Function::Create(
-            llvm::FunctionType::get(i32, {i64}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+        case OpCode::JUMP_IF_FALSE: {
+            size_t target = instr.operands[1].asInt();
+            llvm::Value* cond = vstack.back(); vstack.pop_back();
+            llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
+            if (!fnTruthy) {
+                fnTruthy = llvm::Function::Create(
+                    llvm::FunctionType::get(i32, {i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+            }
+            llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
+            llvm::Value* isFalsy = B.CreateICmpEQ(truthyResult, llvm::ConstantInt::get(i32, 0));
+            if (target < ip) {
+                llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
+                if (!fnBe) {
+                    fnBe = llvm::Function::Create(
+                        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
+                        llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
+                }
+                B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
+            }
+            if (target < basicBlocks.size()) {
+                B.CreateCondBr(isFalsy, basicBlocks[target], basicBlocks[ip + 1]);
+            } else {
+                B.CreateBr(basicBlocks[ip + 1]);
+            }
+            break;
         }
-        llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
-        llvm::Value* isFalsy = B.CreateICmpEQ(truthyResult, llvm::ConstantInt::get(i32, 0));
-        if (target < basicBlocks.size()) {
-          B.CreateCondBr(isFalsy, basicBlocks[target], basicBlocks[ip + 1]);
-        } else {
-          B.CreateBr(basicBlocks[ip + 1]);
+        case OpCode::JUMP_IF_TRUE: {
+            size_t target = instr.operands[1].asInt();
+            llvm::Value* cond = vstack.back(); vstack.pop_back();
+            llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
+            if (!fnTruthy) {
+                fnTruthy = llvm::Function::Create(
+                    llvm::FunctionType::get(i32, {i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+            }
+            llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
+            llvm::Value* isTruthy = B.CreateICmpNE(truthyResult, llvm::ConstantInt::get(i32, 0));
+            if (target < ip) {
+                llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
+                if (!fnBe) {
+                    fnBe = llvm::Function::Create(
+                        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
+                        llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
+                }
+                B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
+            }
+            if (target < basicBlocks.size()) {
+                B.CreateCondBr(isTruthy, basicBlocks[target], basicBlocks[ip + 1]);
+            } else {
+                B.CreateBr(basicBlocks[ip + 1]);
+            }
+            break;
         }
-        break;
-      }
-      case OpCode::JUMP_IF_TRUE: {
-        size_t target = instr.operands[1].asInt();
-        llvm::Value* cond = vstack.back(); vstack.pop_back();
-        llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
-        if (!fnTruthy) {
-          fnTruthy = llvm::Function::Create(
-            llvm::FunctionType::get(i32, {i64}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
-        }
-        llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
-        llvm::Value* isTruthy = B.CreateICmpNE(truthyResult, llvm::ConstantInt::get(i32, 0));
-        if (target < basicBlocks.size()) {
-          B.CreateCondBr(isTruthy, basicBlocks[target], basicBlocks[ip + 1]);
-        } else {
-          B.CreateBr(basicBlocks[ip + 1]);
-        }
-        break;
-      }
         case OpCode::JUMP_IF_NULL: {
             size_t target = instr.operands[1].asInt();
             llvm::Value* v = vstack.back();

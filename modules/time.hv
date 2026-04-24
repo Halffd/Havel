@@ -1,0 +1,21 @@
+// time.hv - Havel stdlib time module
+// Wraps C++ host functions so they become proper module exports.
+// When `use time` resolves this file, the sandbox has `time.now`, `time.epoch`, etc.
+// as host_function_globals_ — but those are excluded from exports.
+// These wrapper functions are NEW globals that DO get exported.
+
+fn now() { time.now() }
+fn epoch() { time.epoch() }
+fn millis() { time.millis() }
+fn format(ts, fmt) { time.format(ts, fmt) }
+fn parse(datestr, fmt) { time.parse(datestr, fmt) }
+fn sleep(ms) { time.sleep(ms) }
+fn year() { time.year() }
+fn month() { time.month() }
+fn day() { time.day() }
+fn hour() { time.hour() }
+fn minute() { time.minute() }
+fn second() { time.second() }
+fn weekday() { time.weekday() }
+fn date() { time.date() }
+fn time() { time.time() }

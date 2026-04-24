@@ -1,0 +1,19 @@
+// sys.hv - Havel stdlib sys module
+// Wraps C++ host functions so they become proper module exports.
+
+fn platform() { sys.platform() }
+fn arch() { sys.arch() }
+fn version() { sys.version() }
+fn argv() { sys.argv() }
+fn env(name) { sys.env(name) }
+fn envAll() { sys.envAll() }
+fn cwd() { sys.cwd() }
+fn pid() { sys.pid() }
+fn ppid() { sys.ppid() }
+fn exit(code) { sys.exit(code) }
+fn hostname() { sys.hostname() }
+fn username() { sys.username() }
+fn home() { sys.home() }
+fn tmpdir() { sys.tmpdir() }
+fn shell() { sys.shell() }
+fn uptime() { sys.uptime() }

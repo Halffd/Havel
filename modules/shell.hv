@@ -1,0 +1,8 @@
+fn run(cmd) { shell.run(cmd) }
+fn exec(cmd) { shell.exec(cmd) }
+fn which(name) { shell.which(name) }
+fn env(name, value=null) { shell.env(name, value) }
+fn getenv(name) { shell.getenv(name) }
+fn cwd() { shell.cwd() }
+fn cd(path) { shell.cd(path) }
+fn escape(input) { shell.escape(input) }

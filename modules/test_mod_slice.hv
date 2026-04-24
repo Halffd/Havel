@@ -1,0 +1,7 @@
+// test_mod_slice.hv - test slicing in module context
+fn test() {
+  let s = "hello"
+  let i = 0
+  let ch = s[i:i+1]
+  return ch
+}

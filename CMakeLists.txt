@@ -81,7 +81,6 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 # Optional: GNU Readline for REPL line-editing/history
@@ -765,7 +764,6 @@ target_include_directories(havel-lsp PRIVATE
 )
 
  target_link_libraries(havel-lsp PRIVATE
- spdlog::spdlog
  nlohmann_json::nlohmann_json
  )
 
@@ -801,8 +799,7 @@ target_include_directories(hvtest PRIVATE
 )
 
 target_link_libraries(hvtest PRIVATE
-  spdlog::spdlog
-  havel_lang
+ havel_lang
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -896,10 +893,9 @@ target_include_directories(havel PRIVATE
 # Link libraries
 target_link_libraries(havel PRIVATE
     ${COMMON_LIBS}
-    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
-    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
-    spdlog::spdlog
-    ${OPENCV_FFMPEG_WORKAROUND}
+$<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
+$<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
+${OPENCV_FFMPEG_WORKAROUND}
     havel_extension_runtime
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 )
@@ -950,10 +946,9 @@ if(ENABLE_HAVEL_LANG)
         $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
     )
     
-    target_link_libraries(havel_lang PRIVATE
-        ${COMMON_LIBS}
-        spdlog::spdlog
-        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+target_link_libraries(havel_lang PRIVATE
+${COMMON_LIBS}
+$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
         $<$<BOOL:${HAVE_LIBFFI}>:ffi>
         dl
     )
@@ -1021,10 +1016,9 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
         )
         
-        target_link_libraries(${test_name} PRIVATE 
-            ${COMMON_LIBS}
-            spdlog::spdlog
-            GTest::gtest 
+target_link_libraries(${test_name} PRIVATE
+${COMMON_LIBS}
+GTest::gtest
             GTest::gtest_main 
             Qt6::Test
             $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
@@ -1060,9 +1054,8 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
     if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp")
         add_executable(test_gui tests/TestGUI.cpp)
         
-        target_link_libraries(test_gui PRIVATE
-            spdlog::spdlog
-            Qt6::Widgets 
+target_link_libraries(test_gui PRIVATE
+Qt6::Widgets
             Qt6::Test
             GTest::gtest 
             GTest::gtest_main

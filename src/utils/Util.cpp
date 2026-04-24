@@ -21,13 +21,6 @@ void printStackTrace(int len) {
     free(strs);
 }
 
-    for (int i = 0; i < frames; ++i) {
-        std::cout << "  " << i << ": " << strs[i] << std::endl;
-    }
-    std::cout << "----------------" << std::endl;
-    free(strs);
-    }
-
 std::string ToLower(const std::string& str) {
     std::string result = str;
     std::transform(result.begin(), result.end(), result.begin(), 

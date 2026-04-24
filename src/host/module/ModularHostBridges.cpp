@@ -834,22 +834,22 @@ Value
 SystemBridge::handleSystemDetect(const std::vector<Value> &args,
                                  const HostContext *ctx) {
   (void)args;
-    havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
-                 ctx ? ctx->vm : nullptr);
+::havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
+               ctx ? static_cast<const void*>(ctx->vm) : nullptr);
 
     if (!ctx || !ctx->vm) {
-        havel::debug("[SystemDetect] ctx or vm is null, returning empty string");
+        ::havel::debug("[SystemDetect] ctx or vm is null, returning empty string");
     return Value::makeNull();
   }
 
     auto *vm = static_cast<compiler::VM *>(ctx->vm);
-    havel::debug("[SystemDetect] vm={}, creating object", static_cast<void*>(vm));
+    ::havel::debug("[SystemDetect] vm={}, creating object", static_cast<void*>(vm));
     auto obj = vm->createHostObject();
-    havel::debug("[SystemDetect] object created, setting fields");
+    ::havel::debug("[SystemDetect] object created, setting fields");
 
     // Use HardwareDetector for system detection
     auto sysInfo = ::havel::HardwareDetector::detectSystem();
-    havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
+    ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
 
   // Allocate strings on heap for non-empty values
   auto makeStr = [vm](const std::string &s) -> Value {
@@ -859,12 +859,12 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   };
 
     vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
-    havel::debug("[SystemDetect] set os field");
+    ::havel::debug("[SystemDetect] set os field");
   vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
   vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
   vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
   vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
-    havel::debug("[SystemDetect] all fields set, returning");
+    ::havel::debug("[SystemDetect] all fields set, returning");
 
   // Linux-specific fields (always set, even if empty)
   vm->setHostObjectField(obj, "displayProtocol",

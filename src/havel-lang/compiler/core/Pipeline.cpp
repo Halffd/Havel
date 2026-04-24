@@ -625,7 +625,7 @@ BytecodeSmokeResult runBytecodePipeline(
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
     if (options.debugBytecode) {
-            havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
+            ::havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
     }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
@@ -673,7 +673,7 @@ BytecodeSmokeResult runBytecodePipeline(
     if (chunk && !chunk->getAllFunctions().empty()) {
       result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
       if (options.debugBytecode) {
-        havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
+        ::havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
     }
     } else {
       result.snapshot.bytecode = "<no bytecode generated>";

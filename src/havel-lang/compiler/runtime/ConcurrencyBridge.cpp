@@ -3,7 +3,6 @@
 #include "../vm/VM.hpp"
 
 #include <chrono>
-#include <iostream>
 
 namespace havel::compiler {
 
@@ -408,7 +407,7 @@ void ConcurrencyBridge::checkTimers() {
           vm_->invokeCallback(cbId, {});
           vm_->releaseCallback(cbId);
         } catch (const std::exception &e) {
-          havel::error("Error executing timer callback: {}", e.what());
+          ::havel::error("Error executing timer callback: {}", e.what());
         }
       }
       

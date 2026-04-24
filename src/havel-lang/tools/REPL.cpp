@@ -214,7 +214,7 @@ void REPL::printError(const std::string& error, int line, int column, int length
   if (printHandler_) {
     printHandler_(result);
         } else {
-            havel::info("{}", result);
+            ::havel::info("{}", result);
   }
 }
 
@@ -343,7 +343,7 @@ bool REPL::executeFile(const std::string& filename) {
 
 int REPL::run() {
   if (!initialized) {
-        havel::error("REPL not initialized. Call initialize() first.");
+        ::havel::error("REPL not initialized. Call initialize() first.");
     return 1;
   }
 

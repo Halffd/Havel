@@ -2,7 +2,6 @@
 #include "Thread.hpp"
 #include "../../../utils/Logger.hpp"
 #include <chrono>
-#include <iostream>
 #include <thread>
 
 namespace havel {

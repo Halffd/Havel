@@ -70,9 +70,9 @@ void EventQueue::processAll() {
             }
         } catch (const std::exception& e) {
             // Log but don't crash - keep processing remaining events
-            havel::error("[EventQueue] Handler exception: {}", e.what());
+            ::havel::error("[EventQueue] Handler exception: {}", e.what());
         } catch (...) {
-            havel::error("[EventQueue] Handler unknown exception");
+            ::havel::error("[EventQueue] Handler unknown exception");
         }
     }
 }

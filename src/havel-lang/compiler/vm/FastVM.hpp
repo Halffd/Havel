@@ -165,7 +165,7 @@ public:
     if (block->allocateExecutableMemory()) {
       total_compiled_bytes += block->size;
       compiled_blocks[start] = std::move(block);
-            havel::debug("[JIT] Compiled block {}-{} ({} bytes)", start, end, compiled_blocks[start]->size);
+            ::havel::debug("[JIT] Compiled block {}-{} ({} bytes)", start, end, compiled_blocks[start]->size);
       return true;
     }
     return false;
@@ -383,7 +383,7 @@ public:
     while (!stack.empty()) stack.pop();
 
     if (debug_mode) {
-            havel::debug("=== Optimized Execution: {} ===", function_name);
+            ::havel::debug("=== Optimized Execution: {} ===", function_name);
     }
 
     while (instruction_pointer < function->instructions.size()) {
@@ -405,7 +405,7 @@ public:
       }
 
       if (jit.isCompiled(instruction_pointer) && debug_mode) {
-            havel::debug("[JIT] Executing compiled block at {}", instruction_pointer);
+            ::havel::debug("[JIT] Executing compiled block at {}", instruction_pointer);
       }
 
       executeInstruction(instruction);
@@ -449,14 +449,14 @@ public:
 
     void printPerformanceStats() const {
         auto stats = getPerformanceStats();
-        havel::info("=== Performance Statistics ===");
-        havel::info("Total instructions: {}", stats.total_instructions);
-        havel::info("Cache hits: {}", stats.cache_hits);
-        havel::info("Cache misses: {}", stats.cache_misses);
-        havel::info("Cache hit rate: {:.1f}%", stats.cache_hit_rate * 100);
-        havel::info("JIT compiled blocks: {}", stats.jit_compiled_blocks);
-        havel::info("JIT code size: {} bytes", stats.jit_code_size);
-        havel::info("==============================");
+        ::havel::info("=== Performance Statistics ===");
+        ::havel::info("Total instructions: {}", stats.total_instructions);
+        ::havel::info("Cache hits: {}", stats.cache_hits);
+        ::havel::info("Cache misses: {}", stats.cache_misses);
+        ::havel::info("Cache hit rate: {:.1f}%", stats.cache_hit_rate * 100);
+        ::havel::info("JIT compiled blocks: {}", stats.jit_compiled_blocks);
+        ::havel::info("JIT code size: {} bytes", stats.jit_code_size);
+        ::havel::info("==============================");
     }
 
   void resetPerformanceStats() {

@@ -543,7 +543,7 @@ void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
 
 VM::~VM() {
   if (heap_.externalRootCount() > 0) {
-        havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
+        ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
   }
 }
 
@@ -1788,7 +1788,7 @@ void VM::registerDefaultHostFunctions() {
         
         this->call(closure, {arg});
       } catch (const std::exception &e) {
-        havel::error("[thread] Exception: {}", e.what());
+        ::havel::error("[thread] Exception: {}", e.what());
       }
     };
     
@@ -1906,7 +1906,7 @@ void VM::registerDefaultHostFunctions() {
       try {
         this->call(closure, {});
       } catch (const std::exception &e) {
-        havel::error("[interval] Exception: {}", e.what());
+        ::havel::error("[interval] Exception: {}", e.what());
       }
     };
     
@@ -1976,7 +1976,7 @@ void VM::registerDefaultHostFunctions() {
       try {
         this->call(closure, {});
       } catch (const std::exception &e) {
-        havel::error("[timeout] Exception: {}", e.what());
+        ::havel::error("[timeout] Exception: {}", e.what());
       }
     };
     
@@ -2512,7 +2512,7 @@ Value VM::execute(const BytecodeChunk &chunk,
   }
 
   if (debug_mode) {
-            havel::debug("=== Executing function: {} ===", function_name);
+            ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
   runDispatchLoop(0);
@@ -2705,7 +2705,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     const auto &instruction = function->instructions[ip];
 
     if (debug_mode) {
-            havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
+            ::havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
     }
 
     // Track for profiling
@@ -2894,7 +2894,7 @@ void VM::loadFiberState(Fiber *fiber) {
   }
 
   if (debug_mode) {
-        havel::debug("[VM] Loaded fiber {} state: {} frames, {} stack items",
+        ::havel::debug("[VM] Loaded fiber {} state: {} frames, {} stack items",
                      fiber->id, frame_count_, stack.size());
   }
 }
@@ -2978,7 +2978,7 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 
   if (debug_mode) {
-        havel::debug("[VM] Saved fiber {} state: {} frames, {} stack items",
+        ::havel::debug("[VM] Saved fiber {} state: {} frames, {} stack items",
                      fiber->id, frame_count_, stack.size());
   }
 }
@@ -2996,7 +2996,7 @@ void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
   thread_wait_map_[thread_id] = fiber;
   
   if (debug_mode) {
-        havel::debug("[VM] Registered fiber {} waiting on thread {}", fiber->id, thread_id);
+        ::havel::debug("[VM] Registered fiber {} waiting on thread {}", fiber->id, thread_id);
   }
 }
 
@@ -3039,7 +3039,7 @@ void VM::unregisterThreadWait(uint32_t thread_id) {
   thread_wait_map_.erase(thread_id);
   
   if (debug_mode) {
-        havel::debug("[VM] Unregistered thread wait for thread {}", thread_id);
+        ::havel::debug("[VM] Unregistered thread wait for thread {}", thread_id);
   }
 }
 
@@ -3086,7 +3086,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
 
 
         if (debug_mode) {
-            havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
+            ::havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
         }
 
     try {
@@ -6723,8 +6723,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
   }
 
   case OpCode::DEBUG: {
-            havel::debug("DEBUG: Stack size: {}", stack.size());
-            havel::debug("DEBUG: Locals size: {}", locals.size());
+            ::havel::debug("DEBUG: Stack size: {}", stack.size());
+            ::havel::debug("DEBUG: Locals size: {}", locals.size());
     break;
   }
 

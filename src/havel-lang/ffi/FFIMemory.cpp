@@ -4,7 +4,6 @@
 #include "../core/Value.hpp"
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 
 #ifdef HAVE_LIBFFI
 
@@ -141,10 +140,10 @@ Value FFIMemory::to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ow
 
 void FFIMemory::dump_stats() {
     std::lock_guard<std::mutex> lock(alloc_mutex_);
-    havel::info("FFI Memory Stats:");
-    havel::info(" Allocations: {}", allocations_.size());
-    havel::info(" Total allocated: {} bytes", total_allocated_);
-    havel::info(" Total used: {} bytes", total_used_);
+    ::havel::info("FFI Memory Stats:");
+    ::havel::info(" Allocations: {}", allocations_.size());
+    ::havel::info(" Total allocated: {} bytes", total_allocated_);
+    ::havel::info(" Total used: {} bytes", total_used_);
 }
 
 bool FFIMemory::is_valid(void* ptr) {

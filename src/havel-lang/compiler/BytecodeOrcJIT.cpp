@@ -116,7 +116,7 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
 }
 
 void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
-    havel::debug("[JIT] Deoptimizing in {} for types: 0x{:x} op 0x{:x}", func, l, r);
+    ::havel::debug("[JIT] Deoptimizing in {} for types: 0x{:x} op 0x{:x}", func, l, r);
 }
 
 // JIT helper for function calls - delegates to VM
@@ -1347,13 +1347,13 @@ uint64_t havel_vm_print(void* vm_ptr, uint64_t val_bits) {
   auto* vm = static_cast<VM*>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-    havel::debug("{}", vm->toString(v));
+    ::havel::debug("{}", vm->toString(v));
   return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_debug(void* vm_ptr) {
   if (!vm_ptr) return Value::makeNull().rawBits();
-    havel::debug("JIT debug breakpoint");
+    ::havel::debug("JIT debug breakpoint");
   return Value::makeNull().rawBits();
 }
 
@@ -1697,7 +1697,7 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     runOptimizations(*module);
 
     if (dump_ir_) {
-        havel::debug("--- LLVM IR for {} ---", func.name);
+        ::havel::debug("--- LLVM IR for {} ---", func.name);
         module->print(llvm::errs(), nullptr);
     }
 
@@ -1724,8 +1724,8 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
                     asm_input.close();
                     
                     if (debug_jit_) {
-        havel::debug("--- Assembly for {} ---", func.name);
-        havel::debug("{}", last_asm_);
+        ::havel::debug("--- Assembly for {} ---", func.name);
+        ::havel::debug("{}", last_asm_);
                     }
                 }
             }

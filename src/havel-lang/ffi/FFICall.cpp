@@ -4,7 +4,6 @@
 #include "FFIMemory.hpp"
 #include "FFIAccessors.hpp"
 #include "../core/Value.hpp"
-#include <iostream>
 #include <regex>
 #include <dlfcn.h>
 
@@ -49,7 +48,7 @@ void* FFICall::load_library(const std::string& path) {
     
     void* handle = dlopen(path.c_str(), flags);
     if (!handle) {
-        havel::error("FFICall: failed to load {}: {}", path, dlerror());
+        ::havel::error("FFICall: failed to load {}: {}", path, dlerror());
     }
     return handle;
 }
@@ -67,7 +66,7 @@ void* FFICall::get_symbol(void* handle, const std::string& name) {
     void* sym = dlsym(handle, name.c_str());
     char* error = dlerror();
     if (error) {
-        havel::error("FFICall: failed to find symbol {}: {}", name, error);
+        ::havel::error("FFICall: failed to find symbol {}: {}", name, error);
         return nullptr;
     }
     return sym;
@@ -93,7 +92,7 @@ Value FFICall::call_function(void* fn_ptr,
                                   static_cast<unsigned int>(param_types.size()),
                                   ffi_ret, ffi_param_types.data());
     if (status != FFI_OK) {
-        havel::error("FFICall: failed to prep cif: {}", status);
+        ::havel::error("FFICall: failed to prep cif: {}", status);
         return Value::makeNull();
     }
     

@@ -216,9 +216,11 @@ private:
 
   // ObjectId of the _G heap object; UINT32_MAX = unset.
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.
-  uint32_t globals_mirror_object_id_ = UINT32_MAX;
+    uint32_t globals_mirror_object_id_ = UINT32_MAX;
 
-  // Coroutine support (Lua-style coroutines)
+    std::unordered_map<uint32_t, uint64_t> backedge_counters_;
+
+    // Coroutine support (Lua-style coroutines)
   uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
 
@@ -387,7 +389,37 @@ public:
   void tryExitPublic() { if (!currentFrame().try_stack.empty()) currentFrame().try_stack.pop_back(); }
   Value currentExceptionPublic() const { return has_current_exception_ ? current_exception_ : Value::makeNull(); }
   bool hasCurrentExceptionPublic() const { return has_current_exception_; }
-  void setCurrentExceptionPublic(const Value& v) { has_current_exception_ = true; current_exception_ = v; }
+    void setCurrentExceptionPublic(const Value& v) { has_current_exception_ = true; current_exception_ = v; }
+
+    // OBJECT_GET_RAW support — dynamic key lookup with class/parent chain walk
+    uint32_t globalsMirrorObjectId() const { return globals_mirror_object_id_; }
+    Value objectGetWithClassChain(uint32_t obj_id, const std::string& key) {
+        GCHeap::ObjectEntry *current_obj = heap_.object(obj_id);
+        while (current_obj) {
+            auto *val = current_obj->get(key);
+            if (val) return *val;
+            auto* parent_val = current_obj->get("__class");
+            if (!parent_val) parent_val = current_obj->get("__parent");
+            if (parent_val && parent_val->isObjectId()) {
+                current_obj = heap_.object(parent_val->asObjectId());
+            } else {
+                current_obj = nullptr;
+            }
+        }
+        return Value::makeNull();
+    }
+    Value lookupGlobalByKey(const std::string& key) {
+        auto it = globals.find(key);
+        if (it != globals.end()) return it->second;
+        auto hostIt = host_function_globals_.find(key);
+        if (hostIt != host_function_globals_.end()) return hostIt->second;
+        return Value::makeNull();
+    }
+
+    // Backedge loop detection
+    void recordBackedgePublic(uint32_t ip) {
+        ++backedge_counters_[ip];
+    }
 
   // Direct invocation (bypasses stack, takes args as vector)
   Value invokeHostFunctionDirect(const std::string &name,

@@ -1945,9 +1945,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   }
 
   // Get hotkey string
+  auto *vm = static_cast<VM *>(ctx->vm);
   std::string hotkeyStr;
   if (args[0].isStringValId()) {
-    hotkeyStr = args[0].toString();
+    hotkeyStr = vm->resolveStringKey(args[0]);
   } else {
     return Value::makeNull();
   }
@@ -1960,7 +1961,6 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
 
   // Create hotkey context object using HotkeyModule
-  auto *vm = static_cast<VM *>(ctx->vm);
   auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
       vm, hotkeyId, hotkeyStr, hotkeyStr, "",
       "Hotkey registered via hotkey.register", callbackId);

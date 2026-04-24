@@ -1347,13 +1347,13 @@ uint64_t havel_vm_print(void* vm_ptr, uint64_t val_bits) {
   auto* vm = static_cast<VM*>(vm_ptr);
   Value v;
   std::memcpy(&v, &val_bits, sizeof(uint64_t));
-  std::cout << vm->toString(v) << std::endl;
+    havel::debug("{}", vm->toString(v));
   return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_debug(void* vm_ptr) {
   if (!vm_ptr) return Value::makeNull().rawBits();
-  std::cout << "DEBUG: JIT debug breakpoint" << std::endl;
+    havel::debug("JIT debug breakpoint");
   return Value::makeNull().rawBits();
 }
 

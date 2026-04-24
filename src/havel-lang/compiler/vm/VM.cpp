@@ -2512,8 +2512,7 @@ Value VM::execute(const BytecodeChunk &chunk,
   }
 
   if (debug_mode) {
-    std::cout << "=== Executing function: " << function_name
-              << " ===" << std::endl;
+            havel::debug("=== Executing function: {} ===", function_name);
   }
 
   runDispatchLoop(0);
@@ -2706,8 +2705,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     const auto &instruction = function->instructions[ip];
 
     if (debug_mode) {
-      std::cout << "IP: " << ip << " OP: " << static_cast<int>(instruction.opcode)
-                << std::endl;
+            havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
     }
 
     // Track for profiling
@@ -3087,10 +3085,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     const auto &instruction = function->instructions[ip];
 
 
-    if (debug_mode) {
-      std::cout << "IP: " << ip
-                << " OP: " << static_cast<int>(instruction.opcode) << std::endl;
-    }
+        if (debug_mode) {
+            havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
+        }
 
     try {
       if (profiling_enabled_) {
@@ -6726,8 +6723,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
   }
 
   case OpCode::DEBUG: {
-    std::cout << "DEBUG: Stack size: " << stack.size() << std::endl;
-    std::cout << "DEBUG: Locals size: " << locals.size() << std::endl;
+            havel::debug("DEBUG: Stack size: {}", stack.size());
+            havel::debug("DEBUG: Locals size: {}", locals.size());
     break;
   }
 

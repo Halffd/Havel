@@ -2,7 +2,7 @@
 
 #include <chrono>
 #include <limits>
-#include <spdlog/spdlog.h>
+#include "utils/Logger.hpp"
 
 namespace havel::compiler {
 
@@ -500,7 +500,7 @@ void GCHeap::collectGarbage(
     }
 
     if (isCollectionInProgress()) {
-        spdlog::warn("[GC] Collection exceeded max iterations, forcing completion");
+        havel::warning("[GC] Collection exceeded max iterations, forcing completion");
         completeCollection();
     }
 }
@@ -596,7 +596,7 @@ void GCHeap::startIncrementalCollection(
     gc_state_ = IncrementalState::Mark;
     markRoots();
 
-    spdlog::debug("[GC] Started {} collection (budget: {}, objects: {})",
+    havel::debug("[GC] Started {} collection (budget: {}, objects: {})",
         current_collection_full_ ? "full" : "minor",
         allocation_budget_,
         arrays_.size() + objects_.size() + sets_.size() + closures_.size());
@@ -1259,7 +1259,7 @@ void GCHeap::completeCollection() {
         minor_collections_since_full_++;
     }
 
-    spdlog::debug("[GC] Collection complete: recovered {} objects, new budget: {}",
+    havel::debug("[GC] Collection complete: recovered {} objects, new budget: {}",
         recovered_in_cycle_, allocation_budget_);
 }
 

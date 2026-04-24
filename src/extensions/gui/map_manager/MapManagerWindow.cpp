@@ -7,9 +7,7 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QMessageBox>
-#include <spdlog/spdlog.h>
-
-using namespace spdlog;
+#include "utils/Logger.hpp"
 
 namespace havel {
 

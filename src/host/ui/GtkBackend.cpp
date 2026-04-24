@@ -6,7 +6,7 @@
 #ifdef HAVE_GTK_BACKEND
 
 #include "modules/ui/UIElement.hpp"
-#include <spdlog/spdlog.h>
+#include "utils/Logger.hpp"
 #include <iostream>
 
 // GTK headers - using extern "C" for C headers
@@ -43,21 +43,21 @@ bool GtkBackend::initialize() {
     
     // Initialize GTK
     if (!gtk_init_check()) {
-        spdlog::error("Failed to initialize GTK");
+        havel::error("Failed to initialize GTK");
         return false;
     }
     
     // Create application
     app_ = gtk_application_new(appId_.c_str(), G_APPLICATION_DEFAULT_FLAGS);
     if (!app_) {
-        spdlog::error("Failed to create GTK application");
+        havel::error("Failed to create GTK application");
         return false;
     }
     
     setupSignalHandlers();
     initialized_ = true;
     
-    spdlog::info("GTK backend initialized (GTK {}.{}.{})",
+    havel::info("GTK backend initialized (GTK {}.{}.{})",
                  gtk_get_major_version(),
                  gtk_get_minor_version(),
                  gtk_get_micro_version());
@@ -85,7 +85,7 @@ void GtkBackend::shutdown() {
     }
     
     initialized_ = false;
-    spdlog::info("GTK backend shutdown complete");
+    havel::info("GTK backend shutdown complete");
 }
 
 // Element creation implementations

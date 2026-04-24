@@ -477,7 +477,11 @@ std::optional<std::string> keyFromValue(const Value &value, const GCHeap *heap =
   if (value.isBool()) {
     return value.asBool() ? "true" : "false";
   }
-  return std::nullopt;
+      return std::nullopt;
+}
+
+std::optional<std::string> VM::resolveKey(const Value &value) const {
+    return ::havel::compiler::keyFromValue(value, &heap_, current_chunk);
 }
 
 std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
@@ -3379,14 +3383,20 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                               std::to_string(function_index));
   }
 
-  // Phase 4 JIT: Track execution count and trigger JIT if hot
-  callee->execution_count++;
-  if (callee->execution_count == 1000 && hot_func_cb_) {
-    hot_func_cb_(*callee);
-  }
-
-
-// Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
+// Phase 4 JIT: Track execution count and trigger JIT if hot
+ callee->execution_count++;
+ if (callee->execution_count == 1000 && hot_func_cb_) {
+ hot_func_cb_(*callee);
+ }
+ 
+ // Phase 4 JIT: If function has been JIT-compiled, execute native code directly
+ if (callee->jit_compiled && jit_compiler_) {
+ Value result = jit_compiler_->executeCompiled(this, callee->name, args);
+ pushStack(result);
+ return;
+ }
+ 
+ // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
   // If so, create a coroutine object and return it instead of executing
 if (callee->is_generator) {
 // Create coroutine object for this generator function
@@ -5446,7 +5456,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (container.isSetId()) {
-      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW(
             "SET membership expects string/number/bool key");
@@ -5462,7 +5472,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 	if (container.isObjectId()) {
 		// _G globals mirror: resolve from live globals maps
 		if (container.asObjectId() == globals_mirror_object_id_) {
-			auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+			auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
 			if (!key) {
 				COMPILER_THROW("OBJECT index expects string/number/bool key");
 			}
@@ -5479,7 +5489,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 			pushStack(Value::makeNull());
 			break;
 		}
-		auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+		auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
 		if (!key) {
 			COMPILER_THROW("OBJECT index expects string/number/bool key");
 		}
@@ -5539,7 +5549,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (container.isSetId()) {
-      auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW(
             "SET assignment expects string/number/bool key");
@@ -5568,7 +5578,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
 	if (container.isObjectId()) {
-		auto key = keyFromValue(index_or_key, &heap_, current_chunk);
+		auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
 		if (!key) {
 			COMPILER_THROW("OBJECT index assignment expects valid key");
 		}
@@ -5611,7 +5621,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     // Handle function objects - support fn.name, fn.arity, fn.params, fn.prop
     if (object.isFunctionObjId()) {
       uint32_t funcIdx = object.asFunctionObjId();
-      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
       
       // First check for user-defined properties
       if (key) {
@@ -5656,7 +5666,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     // Handle closure objects - support closure.name, closure.arity, closure.prop
     if (object.isClosureId()) {
         uint32_t closureId = object.asClosureId();
-        auto key = keyFromValue(key_value, &heap_, current_chunk);
+        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
 
         // First check for user-defined properties
         if (key) {
@@ -5696,7 +5706,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     // Handle host function objects - support hostfn.name, hostfn.prop
     if (object.isHostFuncId()) {
         uint32_t hostIdx = object.asHostFuncId();
-        auto key = keyFromValue(key_value, &heap_, current_chunk);
+        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
 
         // First check for user-defined properties
         if (key) {
@@ -5739,7 +5749,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
           isClass = true;
         }
         if (isClass) {
-          auto key = keyFromValue(key_value, &heap_, current_chunk);
+          auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
           if (key) {
             if (*key == "name") {
               auto* nameVal = obj->get("__name");
@@ -5804,7 +5814,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       }
       
       // Then check for prototype methods
-      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
       if (key) {
         auto method = getPrototypeMethod(object, *key);
         if (method) {
@@ -5832,7 +5842,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         auto strRef = heap_.allocateString(s);
         stringVal = Value::makeStringId(strRef.id);
       }
-      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
       if (key) {
         auto method = getPrototypeMethod(stringVal, *key);
         if (method) {
@@ -5854,7 +5864,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (object.isRangeId()) {
       auto *r = heap_.range(object.asRangeId());
       if (r) {
-        auto key = keyFromValue(key_value, &heap_, current_chunk);
+        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
         if (key) {
           if (*key == "step") {
             pushStack(Value::makeInt(r->step));
@@ -5873,7 +5883,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (object.isHostFuncId()) {
-      auto key = keyFromValue(key_value, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
       if (key) {
         uint32_t idx = object.asHostFuncId();
         if (*key == "name" && idx < host_function_names_.size()) {
@@ -5917,7 +5927,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 			}
 			break;
 		}
-		auto key = keyFromValue(key_value, &heap_, current_chunk);
+		auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
 		if (!key) {
 			COMPILER_THROW("OBJECT_GET expects string/number/bool key");
 		}
@@ -5978,7 +5988,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-    auto key = keyFromValue(key_value, &heap_, current_chunk);
+    auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
@@ -6039,7 +6049,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     Value value = popStack();
     Value object = popStack();
 
-    auto keyStr = keyFromValue(key, &heap_, current_chunk);
+    auto keyStr = ::havel::compiler::keyFromValue(key, &heap_, current_chunk);
     if (!keyStr) {
       COMPILER_THROW("OBJECT_SET expects string/number/bool key");
     }
@@ -6140,7 +6150,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 			break;
 		}
 
-		auto key = keyFromValue(key_value, &heap_, current_chunk);
+		auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
 		if (!key) {
 			pushStack(Value::makeNull());
 			break;
@@ -6259,7 +6269,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_HAS expects object");
     }
-    auto key = keyFromValue(keyValue, &heap_, current_chunk);
+    auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("OBJECT_HAS expects string/number/bool key");
     }
@@ -6278,7 +6288,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_DELETE expects object");
     }
-    auto key = keyFromValue(keyValue, &heap_, current_chunk);
+    auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("OBJECT_DELETE expects string/number/bool key");
     }
@@ -6316,7 +6326,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       if (!set) {
         COMPILER_THROW("ARRAY_DEL unknown set id");
       }
-      auto key = keyFromValue(keyValue, &heap_, current_chunk);
+      auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
       if (!key) {
         COMPILER_THROW("ARRAY_DEL expects string/number key for set");
       }
@@ -6337,7 +6347,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!set) {
       COMPILER_THROW("SET_DEL unknown set id");
     }
-    auto key = keyFromValue(keyValue, &heap_, current_chunk);
+    auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
     if (!key) {
       COMPILER_THROW("SET_DEL expects string/number key");
     }

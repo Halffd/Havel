@@ -7,8 +7,11 @@
 #include "HostAPI.hpp"
 #include "../../modules/HostModules.hpp"
 #include "../../host/ServiceRegistry.hpp"
+#include "../../core/util/Env.hpp"
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <cstdlib>
 
 namespace havel {
 
@@ -57,6 +60,22 @@ public:
         }
 
         vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
+
+        {
+            std::string stdlibPath;
+            const char* envStdlib = std::getenv("HAVEL_STDLIB");
+            if (envStdlib && envStdlib[0] != '\0') {
+                stdlibPath = envStdlib;
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "stdlib").string();
+                } else {
+                    stdlibPath = "./stdlib";
+                }
+            }
+            vm_->moduleLoader().setStdlibPath(stdlibPath);
+        }
 
         initialized_ = true;
     }

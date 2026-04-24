@@ -18,6 +18,7 @@ public:
 
   int GetSignalFd() const { return signalFd; }
   static int GetSignalFlag();
+  static void ClearSignalFlag();
 
 private:
   static SignalHandler *instance;

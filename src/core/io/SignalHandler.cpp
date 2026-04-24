@@ -35,6 +35,10 @@ int SignalHandler::GetSignalFlag() {
   return gSignalFlag.load(std::memory_order_relaxed);
 }
 
+void SignalHandler::ClearSignalFlag() {
+  gSignalFlag.store(0, std::memory_order_relaxed);
+}
+
 void SignalHandler::InstallAsyncHandlers() {
   struct sigaction sa;
   sa.sa_flags = SA_RESTART;

@@ -430,12 +430,16 @@ void EventListener::EventLoop() {
   // No need to call SetupSignalHandling() here
 
   while (running.load() && !shutdown.load()) {
-    // Check for signal from atomic flag
+    // Check for signal from atomic flag (set by traditional async handlers)
     int signalFlag = SignalHandler::GetSignalFlag();
-    if (signalFlag != 0) {
-      debug("Signal detected via atomic flag: {}", signalFlag);
+    if (signalFlag == SIGINT || signalFlag == SIGTERM) {
+      debug("Shutdown signal detected via atomic flag: {}", signalFlag);
       RequestShutdownFromSignal(signalFlag);
       break;
+    } else if (signalFlag != 0) {
+      // Non-shutdown signals (SIGCHLD, SIGALRM, etc.) — clear the flag and
+      // continue. The signalfd path in HandleSignal handles these properly.
+      SignalHandler::ClearSignalFlag();
     }
 
     // Check for expired timers (single-threaded VM timer queue)

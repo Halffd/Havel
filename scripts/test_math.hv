@@ -1,0 +1,6 @@
+// Test that math module is accessible
+if math != null {
+    print("Math module loaded")
+} else {
+    print("Math module NOT loaded")
+}

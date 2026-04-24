@@ -1,4 +1,5 @@
 #include "CompilerUtils.hpp"
+#include "../../../utils/Logger.hpp"
 #include <cctype>
 #include <iostream>
 
@@ -95,10 +96,9 @@ std::string CompilerUtils::bindingKindToString(ResolvedBindingKind kind) {
 }
 
 void CompilerUtils::printBinding(const ResolvedBinding& binding) {
-  std::cout << "Binding: " << binding.name
-            << " [" << bindingKindToString(binding.kind) << "]"
-            << " slot=" << binding.slot
-            << " distance=" << binding.scope_distance;
+    havel::debug("Binding: {} [{}] slot={} distance={}",
+                 binding.name, bindingKindToString(binding.kind),
+                 binding.slot, binding.scope_distance);
 }
 
 bool CompilerUtils::validateSlot(uint32_t slot, uint32_t maxSlots) {

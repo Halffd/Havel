@@ -1,4 +1,5 @@
 #include "FFIMemory.hpp"
+#include "../../utils/Logger.hpp"
 #include "FFITypes.hpp"
 #include "../core/Value.hpp"
 #include <cstdlib>
@@ -140,10 +141,10 @@ Value FFIMemory::to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ow
 
 void FFIMemory::dump_stats() {
     std::lock_guard<std::mutex> lock(alloc_mutex_);
-    std::cout << "FFI Memory Stats:\n";
-    std::cout << "  Allocations: " << allocations_.size() << "\n";
-    std::cout << "  Total allocated: " << total_allocated_ << " bytes\n";
-    std::cout << "  Total used: " << total_used_ << " bytes\n";
+    havel::info("FFI Memory Stats:");
+    havel::info(" Allocations: {}", allocations_.size());
+    havel::info(" Total allocated: {} bytes", total_allocated_);
+    havel::info(" Total used: {} bytes", total_used_);
 }
 
 bool FFIMemory::is_valid(void* ptr) {

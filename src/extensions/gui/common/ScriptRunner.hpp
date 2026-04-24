@@ -32,7 +32,7 @@ private:
 
     QTabWidget* tabWidget;
     QTextEdit* pythonScriptEdit;
-    QTextEdit* luaScriptEdit;
+    QTextEdit* scriptEdit;
     QTextEdit* havelScriptEdit;
     QTextEdit* outputLog;
     QPushButton* runButton;

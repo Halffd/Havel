@@ -8,7 +8,7 @@ std::unordered_map<std::string, std::shared_ptr<FFIType>> FFITypeRegistry::named
 std::vector<std::shared_ptr<FFIType>> FFITypeRegistry::type_registry_;
 bool FFITypeRegistry::initialized_ = false;
 
-void init_builtins() {
+void FFITypeRegistry::init_builtins() {
     if (initialized_) return;
     
     auto v = std::make_shared<FFIType>();

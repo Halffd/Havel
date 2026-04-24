@@ -9,6 +9,7 @@
 #include "../../modules/SingleFileMathModule.cpp"
 #include "../../modules/automation/AutomationModule.hpp"
 #include "../../modules/config/ConfigModule.hpp"
+#include "../../modules/ffi/FFIModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
 #include "../../modules/hotkey/HotkeyModule.hpp"
 #include "../../modules/mouse/MouseModule.hpp"
@@ -82,6 +83,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Register automation module (auto clicker, runner, key presser)
   modules::registerAutomationModule(*api);
 
+  // Register FFI module (dynamic library loading and C function calls)
+  modules::ffi::registerFFIModule(*api);
+
   // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are
   // initialized This ensures we use the existing WindowMonitor from
   // HotkeyManager
@@ -127,6 +131,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("log");
   bridge.options().host_global_names.insert("sys");
   bridge.options().host_global_names.insert("shell");
+
+  // FFI
+  bridge.options().host_global_names.insert("ffi");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

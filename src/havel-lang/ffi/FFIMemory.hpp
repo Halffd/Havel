@@ -5,10 +5,12 @@
 #include <functional>
 #include <mutex>
 #include <unordered_map>
+#include "../core/Value.hpp"
 
 namespace havel::ffi {
 
 struct FFIType;
+using Value = ::havel::core::Value;
 
 struct Allocation {
     void* ptr = nullptr;
@@ -32,8 +34,8 @@ public:
     static void sweep();
     static void attach_finalizer(void* ptr, std::function<void(void*)> finalizer);
     
-    static void* to_native(const class Value& v, std::shared_ptr<FFIType> type);
-    static class Value to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ownership = false);
+    static void* to_native(const Value& v, std::shared_ptr<FFIType> type);
+    static Value to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ownership = false);
     
     static void dump_stats();
     static bool is_valid(void* ptr);

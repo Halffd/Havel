@@ -83,6 +83,7 @@ private:
     static std::unordered_map<std::string, std::shared_ptr<FFIType>> named_types_;
     static std::vector<std::shared_ptr<FFIType>> type_registry_;
     static bool initialized_;
+    static void init_builtins();
 };
 
 }

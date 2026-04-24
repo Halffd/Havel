@@ -159,7 +159,7 @@ void Interval::timerLoop() {
     try {
       callback();
     } catch (const std::exception &e) {
-        havel::error("[Interval] Callback exception: {}", e.what());
+      std::cerr << "[Interval] Callback exception: " << e.what() << std::endl;
     }
   }
   
@@ -205,7 +205,7 @@ void Timeout::timerLoop() {
   try {
     callback();
   } catch (const std::exception &e) {
-        havel::error("[Timeout] Callback exception: {}", e.what());
+    std::cerr << "[Timeout] Callback exception: " << e.what() << std::endl;
   }
 }
 

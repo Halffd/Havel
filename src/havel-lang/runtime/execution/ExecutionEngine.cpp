@@ -1,5 +1,4 @@
 #include "ExecutionEngine.hpp"
-#include "../../../utils/Logger.hpp"
 #include "../concurrency/Fiber.hpp"
 #include "../concurrency/DependencyTracker.hpp"  // Phase 2E: For tracking dependencies
 #include <iostream>
@@ -60,7 +59,7 @@ bool ExecutionEngine::executeFrame() {
     if (!g) {
       // No runnable goroutine - idle
       if (debug_mode_) {
-            havel::debug("[ExecutionEngine] No runnable goroutines, idle");
+        std::cout << "[ExecutionEngine] No runnable goroutines, idle" << std::endl;
       }
       return false;
     }
@@ -80,7 +79,7 @@ bool ExecutionEngine::executeFrame() {
       // Phase 2I: This is a hotkey action Fiber
       // Get the registered callback and execute it
       if (debug_mode_) {
-                havel::debug("[ExecutionEngine] Executing hotkey action Fiber {}", g->fiber->id);
+        std::cout << "[ExecutionEngine] Executing hotkey action Fiber " << g->fiber->id << std::endl;
       }
       
       // Call the registered hotkey action callback if available
@@ -90,7 +89,7 @@ bool ExecutionEngine::executeFrame() {
         } catch (const std::exception& e) {
           // Handle exceptions from hotkey actions
           if (debug_mode_) {
-                    havel::debug("[ExecutionEngine] Exception in hotkey action: {}", e.what());
+            std::cout << "[ExecutionEngine] Exception in hotkey action: " << e.what() << std::endl;
           }
           g->fiber->had_error = true;
           g->fiber->error_message = std::string("Hotkey action error: ") + e.what();
@@ -149,7 +148,7 @@ bool ExecutionEngine::executeFrame() {
     return true;  // Work remains
     
   } catch (const std::exception& e) {
-        havel::error("[ExecutionEngine] Exception in executeFrame: {}", e.what());
+    std::cerr << "[ExecutionEngine] Exception in executeFrame: " << e.what() << std::endl;
     running_ = false;
     return false;
   }
@@ -190,7 +189,7 @@ void ExecutionEngine::shutdown() {
 
 void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine] Goroutine yielded, returning to runnable queue");
+    std::cout << "[ExecutionEngine] Goroutine yielded, returning to runnable queue" << std::endl;
   }
   // Return goroutine to scheduler's runnable queue
   if (g) {
@@ -200,7 +199,7 @@ void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
 
 void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine] Goroutine suspended, waiting for external event");
+    std::cout << "[ExecutionEngine] Goroutine suspended, waiting for external event" << std::endl;
   }
   // Goroutine is already marked SUSPENDED by the suspension operation
   // EventQueue will unpark it when the waiting condition is met
@@ -208,7 +207,7 @@ void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
 
 void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine] Goroutine completed execution");
+    std::cout << "[ExecutionEngine] Goroutine completed execution" << std::endl;
   }
   // Mark goroutine DONE
   if (g) {
@@ -218,7 +217,7 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
 
 void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine] Goroutine error: {}", msg);
+    std::cout << "[ExecutionEngine] Goroutine error: " << msg << std::endl;
   }
   // Mark goroutine DONE with error
   if (g) {
@@ -239,7 +238,7 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
   }
 
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine] Thread {} completed (event-driven)", thread_id);
+    std::cout << "[ExecutionEngine] Thread " << thread_id << " completed (event-driven)" << std::endl;
   }
 
   // Get the fiber that was waiting on this thread
@@ -247,7 +246,7 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
   
   if (waiting_fiber) {
     if (debug_mode_) {
-                    havel::debug("[ExecutionEngine] Unparking fiber waiting on thread {}", thread_id);
+      std::cout << "[ExecutionEngine] Unparking fiber waiting on thread " << thread_id << std::endl;
     }
     
     // Mark fiber as runnable (no longer suspended on thread.join())
@@ -276,8 +275,8 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
   const std::string var_name = static_cast<const char*>(event.ptr);
   
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine] Variable '{}' changed, checking {} watchers",
-                     var_name, watcher_registry_->getWatcherCount());
+    std::cout << "[ExecutionEngine] Variable '" << var_name << "' changed, "
+              << "checking " << watcher_registry_->getWatcherCount() << " watchers" << std::endl;
   }
   
   // Phase 2C: Notify watcher registry and evaluate watchers that depend on this variable
@@ -294,7 +293,7 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
   for (Fiber* fiber : fired_fibers) {
     if (fiber && scheduler_) {
       if (debug_mode_) {
-                    havel::debug("[ExecutionEngine] Resuming fiber for fired watcher");
+        std::cout << "[ExecutionEngine] Resuming fiber for fired watcher" << std::endl;
       }
       fiber->state = FiberState::RUNNABLE;
     }
@@ -334,8 +333,8 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
   );
   
   if (debug_mode_) {
-        havel::debug("[ExecutionEngine::evaluateCondition] Watcher {} condition evaluated to: {}",
-                     watcher_id, result ? "true" : "false");
+    std::cout << "[ExecutionEngine::evaluateCondition] Watcher " << watcher_id 
+              << " condition evaluated to: " << (result ? "true" : "false") << std::endl;
   }
   
   return result;

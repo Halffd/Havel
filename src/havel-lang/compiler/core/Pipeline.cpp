@@ -1,5 +1,4 @@
 #include "Pipeline.hpp"
-#include "../../../utils/Logger.hpp"
 
 #include "ByteCompiler.hpp"
 #include "../vm/VM.hpp"
@@ -625,7 +624,8 @@ BytecodeSmokeResult runBytecodePipeline(
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
     if (options.debugBytecode) {
-            havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
+      std::cout << "=== BYTECODE ===\n";
+      std::cout << result.snapshot.bytecode << "\n";
     }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
@@ -673,8 +673,9 @@ BytecodeSmokeResult runBytecodePipeline(
     if (chunk && !chunk->getAllFunctions().empty()) {
       result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
       if (options.debugBytecode) {
-        havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
-    }
+        std::cout << "=== BYTECODE ===\n";
+        std::cout << result.snapshot.bytecode << "\n";
+      }
     } else {
       result.snapshot.bytecode = "<no bytecode generated>";
     }

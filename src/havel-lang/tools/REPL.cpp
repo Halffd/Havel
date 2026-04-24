@@ -4,7 +4,6 @@
  * Bytecode VM-based REPL for Havel language.
  */
 #include "REPL.hpp"
-#include "../../utils/Logger.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../modules/HostModules.hpp"
 #include "../runtime/StdLibModules.hpp"
@@ -213,8 +212,8 @@ void REPL::printError(const std::string& error, int line, int column, int length
   
   if (printHandler_) {
     printHandler_(result);
-        } else {
-            havel::info("{}", result);
+  } else {
+    std::cerr << result;
   }
 }
 
@@ -343,7 +342,7 @@ bool REPL::executeFile(const std::string& filename) {
 
 int REPL::run() {
   if (!initialized) {
-        havel::error("REPL not initialized. Call initialize() first.");
+    std::cerr << "Error: REPL not initialized. Call initialize() first." << std::endl;
     return 1;
   }
 

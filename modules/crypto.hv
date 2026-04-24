@@ -1,0 +1,288 @@
+// crypto.hv - Havel stdlib crypto module
+// Pure-Havel cryptographic utilities using random.bytes and string
+// methods available in the module sandbox.
+//
+// Provides: hex encode/decode, base64 encode/decode, random token generation,
+// simple hash functions (FNV-1a, DJB2), UUID v4 generation.
+//
+// NOTE: These are NOT suitable for real security-critical applications.
+// They are provided for scripting convenience (tokens, IDs, checksums).
+
+// --- Hex Encoding ---
+
+let _hexChars = "0123456789abcdef"
+
+// Internal: get hex char at index using slicing (s[i] is broken in sandbox)
+fn _hexAt(i) {
+  return _hexChars[i:i+1]
+}
+
+// Encode a byte array (array of ints 0-255) to a hex string.
+fn hexEncode(bytes) {
+  let result = ""
+  for b in bytes {
+    let hi = b / 16
+    let lo = b % 16
+    result = result + _hexAt(hi) + _hexAt(lo)
+  }
+  return result
+}
+
+// Decode a hex string to a byte array.
+fn hexDecode(hex) {
+  let bytes = []
+  let i = 0
+  let len = #hex
+  while i + 1 < len {
+    let hi = _hexVal(hex[i:i+1])
+    let lo = _hexVal(hex[i+1:i+2])
+    if hi >= 0 {
+      if lo >= 0 {
+        bytes.push(hi * 16 + lo)
+      }
+    }
+    i += 2
+  }
+  return bytes
+}
+
+// Internal: hex char to value
+fn _hexVal(ch) {
+  if ch == "0" { return 0 }
+  if ch == "1" { return 1 }
+  if ch == "2" { return 2 }
+  if ch == "3" { return 3 }
+  if ch == "4" { return 4 }
+  if ch == "5" { return 5 }
+  if ch == "6" { return 6 }
+  if ch == "7" { return 7 }
+  if ch == "8" { return 8 }
+  if ch == "9" { return 9 }
+  if ch == "a" { return 10 }
+  if ch == "A" { return 10 }
+  if ch == "b" { return 11 }
+  if ch == "B" { return 11 }
+  if ch == "c" { return 12 }
+  if ch == "C" { return 12 }
+  if ch == "d" { return 13 }
+  if ch == "D" { return 13 }
+  if ch == "e" { return 14 }
+  if ch == "E" { return 14 }
+  if ch == "f" { return 15 }
+  if ch == "F" { return 15 }
+  return -1
+}
+
+// --- Base64 Encoding ---
+
+let _b64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+// Internal: get base64 char at index using slicing
+fn _b64At(i) {
+  return _b64Chars[i:i+1]
+}
+
+// Encode a byte array to a base64 string.
+fn base64Encode(bytes) {
+  let result = ""
+  let i = 0
+  let len = #bytes
+
+  while i < len {
+    let b0 = bytes[i]
+    let b1 = 0
+    let b2 = 0
+    let count = 1
+
+    let i1 = i + 1
+    if i1 < len {
+      b1 = bytes[i1]
+      count = 2
+    }
+    let i2 = i + 2
+    if i2 < len {
+      b2 = bytes[i2]
+      count = 3
+    }
+
+    // pack 3 bytes into 24 bits
+    let n = (b0 * 65536) + (b1 * 256) + b2
+
+    // extract 4 sextets
+    let s0 = (n / 262144) % 64
+    let s1 = (n / 4096) % 64
+    result = result + _b64At(s0) + _b64At(s1)
+
+    if count == 3 {
+      let s2 = (n / 64) % 64
+      let s3 = n % 64
+      result = result + _b64At(s2) + _b64At(s3)
+    } else {
+      if count == 2 {
+        let s2 = (n / 64) % 64
+        result = result + _b64At(s2) + "="
+      } else {
+        result = result + "=="
+      }
+    }
+
+    i += 3
+  }
+
+  return result
+}
+
+// Internal: base64 char to value
+fn _b64Val(ch) {
+  let idx = _b64Chars.find(ch)
+  if idx != null {
+    if idx >= 0 {
+      return idx
+    }
+  }
+  if ch == "+" { return 62 }
+  if ch == "/" { return 63 }
+  return -1
+}
+
+// Decode a base64 string to a byte array.
+fn base64Decode(b64) {
+  let bytes = []
+  let i = 0
+  let len = #b64
+
+  while i + 3 < len {
+    let c0 = _b64Val(b64[i:i+1])
+    let i1 = i + 1
+    let c1 = _b64Val(b64[i1:i1+1])
+    let i2 = i + 2
+    let c2 = _b64Val(b64[i2:i2+1])
+    let i3 = i + 3
+    let c3 = _b64Val(b64[i3:i3+1])
+
+    if c0 < 0 { return bytes }
+    if c1 < 0 { return bytes }
+
+    // pack 4 sextets into 24 bits
+    let n = (c0 * 262144) + (c1 * 4096)
+    if c2 >= 0 {
+      n = n + (c2 * 64)
+    }
+    if c3 >= 0 {
+      n = n + c3
+    }
+
+    bytes.push((n / 65536) % 256)
+    if c2 >= 0 {
+      bytes.push((n / 256) % 256)
+    }
+    if c3 >= 0 {
+      bytes.push(n % 256)
+    }
+
+    i += 4
+  }
+
+  return bytes
+}
+
+// --- Hash Functions ---
+
+// Internal: convert a character to a numeric value for hashing.
+// Uses iteration since s[i] is broken in sandbox.
+fn _charVal(ch) {
+  let i = 0
+  let table = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+  let len = #table
+  while i < len {
+    if table[i:i+1] == ch {
+      return i + 32
+    }
+    i += 1
+  }
+  return 0
+}
+
+// FNV-1a 32-bit hash of a string. Returns hex string.
+fn fnv1a(text) {
+  let hash = 2166136261
+  for ch in text {
+    let chVal = _charVal(ch)
+    hash = hash ^ chVal
+    hash = (hash * 16777619) % 4294967296
+  }
+  let b0 = (hash / 16777216) % 256
+  let b1 = (hash / 65536) % 256
+  let b2 = (hash / 256) % 256
+  let b3 = hash % 256
+  return hexEncode([b0, b1, b2, b3])
+}
+
+// DJB2 hash of a string. Returns hex string.
+fn djb2(text) {
+  let hash = 5381
+  for ch in text {
+    let chVal = _charVal(ch)
+    hash = ((hash * 33) + chVal) % 4294967296
+  }
+  let b0 = (hash / 16777216) % 256
+  let b1 = (hash / 65536) % 256
+  let b2 = (hash / 256) % 256
+  let b3 = hash % 256
+  return hexEncode([b0, b1, b2, b3])
+}
+
+// --- Random Token Generation ---
+
+// Generate a random hex token of the given byte length.
+// e.g. token(16) -> 32-char hex string (128 bits)
+fn token(n) {
+  if n == null { n = 16 }
+  let bytes = random.bytes(n)
+  return hexEncode(bytes)
+}
+
+// Generate a random UUID v4 (version 4, variant 1).
+// Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+fn uuid() {
+  let bytes = random.bytes(16)
+
+  // Set version nibble to 4 (byte 6, high nibble)
+  let b6 = (bytes[6] % 16) + 64
+
+  // Set variant nibble to 10xx (byte 8, high 2 bits = 10)
+  let b8 = (bytes[8] % 64) + 128
+
+  // Build hex string
+  let h = hexEncode([
+    bytes[0], bytes[1], bytes[2], bytes[3],
+    bytes[4], bytes[5], b6, bytes[7],
+    b8, bytes[9], bytes[10], bytes[11],
+    bytes[12], bytes[13], bytes[14], bytes[15]
+  ])
+
+  // Format: 8-4-4-4-12
+  return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
+// --- Simple XOR Cipher ---
+
+// XOR a byte array with a key (byte array). Key cycles if shorter than data.
+fn xorCrypt(data, key) {
+  let result = []
+  let klen = #key
+  let i = 0
+  let dlen = #data
+  while i < dlen {
+    result.push(data[i] ^ key[i % klen])
+    i += 1
+  }
+  return result
+}
+
+// Convenience: XOR a hex string with a hex key, returns hex.
+fn xorHex(dataHex, keyHex) {
+  let data = hexDecode(dataHex)
+  let key = hexDecode(keyHex)
+  return hexEncode(xorCrypt(data, key))
+}

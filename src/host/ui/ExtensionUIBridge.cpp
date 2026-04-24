@@ -2,6 +2,7 @@
  * ExtensionUIBridge.cpp - Bridge implementation for extension-based UI backends
  */
 #include "ExtensionUIBridge.hpp"
+#include "../../utils/Logger.hpp"
 
 #include <iostream>
 
@@ -36,9 +37,9 @@ bool ExtensionUIBridge::loadExtension() {
   loaded_ = loader_->loadExtensionByName(extName);
   
   if (!loaded_) {
-    std::cerr << "[ExtensionUIBridge] Failed to load " << extName << std::endl;
+        havel::warning("[ExtensionUIBridge] Failed to load {}", extName);
   } else {
-    std::cout << "[ExtensionUIBridge] Loaded " << extName << std::endl;
+        havel::info("[ExtensionUIBridge] Loaded {}", extName);
   }
   
   return loaded_;
@@ -278,12 +279,12 @@ void ExtensionUIBridge::close(std::shared_ptr<ui::UIElement> element) {
 }
 
 void ExtensionUIBridge::alert(const std::string& message) {
-  std::cout << "[" << extensionName_ << "::alert] " << message << std::endl;
+    havel::warning("[{}::alert] {}", extensionName_, message);
 }
 
 bool ExtensionUIBridge::confirm(const std::string& message) {
-  std::cout << "[" << extensionName_ << "::confirm] " << message << std::endl;
-  return false;
+    havel::warning("[{}::confirm] {}", extensionName_, message);
+    return false;
 }
 
 std::string ExtensionUIBridge::filePicker(const std::string& title) {
@@ -297,7 +298,7 @@ std::string ExtensionUIBridge::dirPicker(const std::string& title) {
 }
 
 void ExtensionUIBridge::notify(const std::string& message, const std::string& type) {
-  std::cout << "[" << extensionName_ << "::notify] (" << type << ") " << message << std::endl;
+    havel::info("[{}::notify] ({}) {}", extensionName_, type, message);
 }
 
 void ExtensionUIBridge::trayIcon(const std::string& iconPath, const std::string& tooltip) {
@@ -316,7 +317,7 @@ void ExtensionUIBridge::trayMenu(std::shared_ptr<ui::UIElement> menu) {
 }
 
 void ExtensionUIBridge::trayNotify(const std::string& title, const std::string& message, const std::string& iconType) {
-  std::cout << "[" << extensionName_ << "::trayNotify] " << title << ": " << message << " (" << iconType << ")" << std::endl;
+    havel::info("[{}::trayNotify] {}: {} ({})", extensionName_, title, message, iconType);
 }
 
 bool ExtensionUIBridge::trayIsVisible() const {

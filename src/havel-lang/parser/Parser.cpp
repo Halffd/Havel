@@ -1777,9 +1777,13 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   bool isMultiParamLambda = false;
 
   if (at().type == TokenType::Identifier) {
+    havel::debug("PARSER: Leading identifier found: {}", at().toString());
     // Collect comma-separated identifiers
     while (true) {
-      if (at().type != TokenType::Identifier) break;
+      if (at().type != TokenType::Identifier) {
+          havel::debug("PARSER: Breaking param collection at {}", at().toString());
+          break;
+      }
       auto pattern = makeIdentifier(advance());
       lambdaParams.push_back(std::make_unique<ast::FunctionParameter>(
           std::move(pattern), std::nullopt, std::nullopt, false));
@@ -1790,6 +1794,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       }
     }
     // Check for ) =>
+    havel::debug("PARSER: Collected {} params. Current: {}, Next: {}", lambdaParams.size(), at().toString(), at(1).toString());
     if (lambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
       advance(); // consume ')'
       advance(); // consume '=>'

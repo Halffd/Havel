@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "../core/Value.hpp"
 
 namespace havel {
 
@@ -82,10 +83,9 @@ public:
     // Module cache (for VM to store/retrieve loaded module exports)
     // ========================================================================
     bool isCached(const std::string& key) const;
-    // Use forward declaration of Value to avoid including Value.hpp here
-    // The cache stores void* that VM casts appropriately
-    bool getCached(const std::string& key, void** outValue) const;
-    void putCache(const std::string& key, void* value);
+    // The cache stores core::Value objects by value (8-byte NaN boxes)
+    bool getCached(const std::string& key, core::Value* outValue) const;
+    void putCache(const std::string& key, core::Value value);
     void clearCache();
 
     // ========================================================================
@@ -114,8 +114,8 @@ private:
     std::vector<std::string> searchPaths_;
     std::string stdlibPath_;  // Bundled stdlib directory
 
-    // Module cache: canonicalKey -> opaque value pointer (VM manages actual Value objects)
-    std::unordered_map<std::string, void*> cache_;
+    // Module cache: canonicalKey -> export value (replaces old void* leaking cache)
+    std::unordered_map<std::string, core::Value> cache_;
 
     // Native extension handles (for dlopen/dlclose)
     std::unordered_map<std::string, NativeHandle> nativeHandles_;

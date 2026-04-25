@@ -126,7 +126,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("Time");
   bridge.options().host_global_names.insert("time");
   bridge.options().host_global_names.insert("ui");
-  bridge.options().host_global_names.insert("fs");
+bridge.options().host_global_names.insert("fs");
   bridge.options().host_global_names.insert("random");
   bridge.options().host_global_names.insert("rand");
   bridge.options().host_global_names.insert("randint");
@@ -136,7 +136,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("sys");
   bridge.options().host_global_names.insert("shell");
 
-    // Pointer/Format/Pack
+  // Pointer/Format/Pack
     bridge.options().host_global_names.insert("ptr");
     bridge.options().host_global_names.insert("deref");
     bridge.options().host_global_names.insert("offset");

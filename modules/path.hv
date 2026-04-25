@@ -1,0 +1,36 @@
+let sep = "/"
+let delimiter = ":"
+
+fn basename(p) {
+    let parts = p.split(sep)
+    let n = parts.len()
+    let idx = n - 1
+    let result = parts[idx]
+    if result == "" {
+        if n > 1 { return sep }
+        return p
+    }
+    return result
+}
+
+fn extname(p) {
+    let b = basename(p)
+    let dot = b.find(".")
+    if dot == null { return "" }
+    return b[dot:]
+}
+
+fn join(a, b) {
+    if a == sep { return sep + b }
+    let n = a.len()
+    let idx = n - 1
+    let last = a[idx:]
+    if last == sep { return a + b }
+    return a + sep + b
+}
+
+export sep
+export delimiter
+export basename
+export extname
+export join

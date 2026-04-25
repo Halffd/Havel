@@ -15,24 +15,24 @@ if info != null {
     print("  isDir: " + info.isDir)
 }
 
-let content = fs.readFile("/etc/hostname")
+let content = fs.read("/etc/hostname")
 if content != null {
-    print("readFile /etc/hostname: " + content)
+    print("read /etc/hostname: " + content)
 }
 
 let entries = fs.readDir("/tmp")
-print("readDir /tmp count: " + entries.length)
+print("readDir /tmp count: " + #entries)
 
 print("mkdir /tmp/havel_fs_test: " + fs.mkdir("/tmp/havel_fs_test"))
 print("isDir /tmp/havel_fs_test: " + fs.isDir("/tmp/havel_fs_test"))
 
-print("writeFile: " + fs.writeFile("/tmp/havel_fs_test/hello.txt", "hello from havel fs module\n"))
-let r = fs.readFile("/tmp/havel_fs_test/hello.txt")
-print("readFile: " + r)
+print("write: " + fs.write("/tmp/havel_fs_test/hello.txt", "hello from havel fs module\n"))
+let r = fs.read("/tmp/havel_fs_test/hello.txt")
+print("read: " + r)
 
-print("appendFile: " + fs.appendFile("/tmp/havel_fs_test/hello.txt", "appended line\n"))
-let r2 = fs.readFile("/tmp/havel_fs_test/hello.txt")
-print("readFile after append: " + r2)
+print("append: " + fs.append("/tmp/havel_fs_test/hello.txt", "appended line\n"))
+let r2 = fs.read("/tmp/havel_fs_test/hello.txt")
+print("read after append: " + r2)
 
 print("rename: " + fs.rename("/tmp/havel_fs_test/hello.txt", "/tmp/havel_fs_test/renamed.txt"))
 print("exists renamed: " + fs.exists("/tmp/havel_fs_test/renamed.txt"))
@@ -40,8 +40,8 @@ print("exists renamed: " + fs.exists("/tmp/havel_fs_test/renamed.txt"))
 print("copy: " + fs.copy("/tmp/havel_fs_test/renamed.txt", "/tmp/havel_fs_test/copied.txt"))
 print("exists copied: " + fs.exists("/tmp/havel_fs_test/copied.txt"))
 
-print("unlink renamed: " + fs.unlink("/tmp/havel_fs_test/renamed.txt"))
-print("unlink copied: " + fs.unlink("/tmp/havel_fs_test/copied.txt"))
+print("rm renamed: " + fs.rm("/tmp/havel_fs_test/renamed.txt"))
+print("rm copied: " + fs.rm("/tmp/havel_fs_test/copied.txt"))
 
 print("rmdir: " + fs.rmdir("/tmp/havel_fs_test"))
 print("exists after rmdir: " + fs.exists("/tmp/havel_fs_test"))

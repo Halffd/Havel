@@ -1,0 +1,7 @@
+let s = "/home/user"
+let n = len(s)
+print("n=" + n)
+let end = n - 1
+print("end=" + end)
+let last = s[end:]
+print("last=" + last)

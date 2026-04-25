@@ -1,0 +1,8 @@
+let p = "/home/user/file.txt"
+let parts = p.split("/")
+let n = len(parts)
+let idx = n - 1
+let last = parts[idx]
+print("n=" + n)
+print("idx=" + idx)
+print("last=" + last)

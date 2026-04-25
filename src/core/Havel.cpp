@@ -208,8 +208,20 @@ hostBridge->install();
             stdlibPath = "./stdlib";
         }
     }
-    bytecodeVM->moduleLoader().setStdlibPath(stdlibPath);
-}
+        bytecodeVM->moduleLoader().setStdlibPath(stdlibPath);
+    }
+
+    {
+        auto exePath = Env::executable();
+        if (!exePath.empty()) {
+            auto modulesPath = std::filesystem::path(exePath).parent_path()
+                / ".." / "modules";
+            if (std::filesystem::exists(modulesPath)) {
+                bytecodeVM->moduleLoader().addSearchPath(
+                    std::filesystem::canonical(modulesPath).string());
+            }
+        }
+    }
 
 // Phase 2G: Create Scheduler and ExecutionEngine for reactive watcher system
   scheduler = &compiler::Scheduler::instance();

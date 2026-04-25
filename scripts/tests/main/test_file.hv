@@ -97,19 +97,19 @@ for f in entries {
     print("    size:        " + f.size)
     print("    extension:   " + f.extension)
     print("    permissions: " + f.permissions)
-    print("    modDate:     " + f.modDate)
-    print("    accessDate:  " + f.accessDate)
-    print("    birthDate:   " + f.birthDate)
+    print(" modified: " + f.modified)
+    print(" access: " + f.access)
+    print(" birthDate: " + f.birthDate)
     if fs.isFile(f.path) {
-        f.open("r")
-        print("    content:     " + f.read())
+        let content = fs.read(f.path)
+        print("  content: " + content)
     }
 }
 print("Testing stats:")
 if fs.stat != null {
     let stats = fs.stat("/tmp")
-    print("  Size: " + stats.size + " bytes")
-    print("  Modified: " + stats.modDate)
+    print(" Size: " + stats.size + " bytes")
+    print(" Modified: " + stats.mtime)
 } else {
     print("  fs.stat not available in this mode")
 }
@@ -229,10 +229,11 @@ print("  permissions: " + stat.permissions)
 
 // Test 20: Watch/notify (if available)
 print("\n20. fs.watch")
-let watcher = fs.watch(testDir)
-watcher.on("change", fn(event, path) {
+let watcher = fs.watch(testDir, fn(event, path) {
     print("  changed: " + path)
 })
+print("  watcher fd: " + watcher.fd)
+watcher.close()
 // Test 21: Recursive directory copy
 print("\n21. fs.copyDir")
 let copyDir = testDir + "_copy"

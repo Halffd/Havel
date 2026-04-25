@@ -1,0 +1,8 @@
+let s = "hello"
+let i = 0
+loop {
+    if i >= 3 { break }
+    let s = s + "!"
+    let i = i + 1
+}
+print(s)

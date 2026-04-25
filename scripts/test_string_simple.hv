@@ -1,0 +1,2 @@
+use string
+print(string.upper("hello"))

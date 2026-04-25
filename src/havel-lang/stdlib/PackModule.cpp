@@ -215,9 +215,13 @@ void registerPackModule(VMApi &api) {
                         s = api.toString(val);
                     else
                         s = std::to_string(getIntArg(val));
-                    for (size_t j = 0; j < s.size(); ++j)
-                        out.push_back(static_cast<uint8_t>(s[j]));
-                    argIdx += (count - 1) * 0;
+                    size_t write_len = static_cast<size_t>(count);
+                    for (size_t j = 0; j < write_len; ++j) {
+                        if (j < s.size())
+                            out.push_back(static_cast<uint8_t>(s[j]));
+                        else
+                            out.push_back(0);
+                    }
                     i = count;
                     break;
                 }

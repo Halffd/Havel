@@ -36,6 +36,10 @@ void registerRandomModule(compiler::VMApi &api); // RandomModule
 void registerLogModule(compiler::VMApi &api); // LogModule
 void registerSysModule(compiler::VMApi &api); // SysModule
 void registerShellModule(compiler::VMApi &api); // ShellModule
+void registerPointerModule(compiler::VMApi &api); // PointerModule
+void registerFormatModule(compiler::VMApi &api); // FormatModule
+void registerPackModule(compiler::VMApi &api); // PackModule
+void registerBitModule(compiler::VMApi &api); // BitModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -63,6 +67,10 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerLogModule(*api); // LogModule
   stdlib::registerSysModule(*api); // SysModule
   stdlib::registerShellModule(*api); // ShellModule
+  stdlib::registerPointerModule(*api); // PointerModule
+  stdlib::registerFormatModule(*api); // FormatModule
+  stdlib::registerPackModule(*api); // PackModule
+  stdlib::registerBitModule(*api); // BitModule
 
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
@@ -127,6 +135,41 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("log");
   bridge.options().host_global_names.insert("sys");
   bridge.options().host_global_names.insert("shell");
+
+  // Pointer/Format/Pack
+  bridge.options().host_global_names.insert("ptr");
+  bridge.options().host_global_names.insert("deref");
+  bridge.options().host_global_names.insert("offset");
+  bridge.options().host_global_names.insert("ptreq");
+  bridge.options().host_global_names.insert("hex");
+  bridge.options().host_global_names.insert("oct");
+  bridge.options().host_global_names.insert("bin");
+  bridge.options().host_global_names.insert("b64");
+  bridge.options().host_global_names.insert("b64decode");
+  bridge.options().host_global_names.insert("pack");
+  bridge.options().host_global_names.insert("unpack");
+
+  // Bitwise
+  bridge.options().host_global_names.insert("bit");
+  bridge.options().host_global_names.insert("bit.and");
+  bridge.options().host_global_names.insert("bit.or");
+  bridge.options().host_global_names.insert("bit.xor");
+  bridge.options().host_global_names.insert("bit.not");
+  bridge.options().host_global_names.insert("bit.lshift");
+  bridge.options().host_global_names.insert("bit.rshift");
+  bridge.options().host_global_names.insert("bit.arshift");
+  bridge.options().host_global_names.insert("bit.test");
+  bridge.options().host_global_names.insert("bit.set");
+  bridge.options().host_global_names.insert("bit.clear");
+  bridge.options().host_global_names.insert("bit.toggle");
+  bridge.options().host_global_names.insert("bit.lsb");
+  bridge.options().host_global_names.insert("bit.msb");
+  bridge.options().host_global_names.insert("bit.count");
+  bridge.options().host_global_names.insert("bit.parity");
+  bridge.options().host_global_names.insert("bit.rol");
+  bridge.options().host_global_names.insert("bit.ror");
+  bridge.options().host_global_names.insert("bit.getfield");
+  bridge.options().host_global_names.insert("bit.setfield");
 
   // Utility helpers
   bridge.options().host_global_names.insert("keys");

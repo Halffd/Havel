@@ -56,18 +56,28 @@ static void* resolvePtr(const Value& v) {
     return nullptr;
 }
 
+static std::vector<Value> stripReceiver(const std::vector<Value>& args) {
+    if (!args.empty() && args[0].isObjectId()) {
+        std::vector<Value> stripped(args.begin() + 1, args.end());
+        return stripped;
+    }
+    return args;
+}
+
 // ============================================================================
 // Library management
 // ============================================================================
 
-static Value ffiOpen(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiOpen(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     std::string path = api.toString(args[0]);
     void* handle = FFICall::load_library(path);
     return Value::makePtr(handle);
 }
 
-static Value ffiClose(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiClose(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* handle = resolvePtr(args[0]);
     if (handle) {
@@ -76,7 +86,8 @@ static Value ffiClose(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiSym(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiSym(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* handle = resolvePtr(args[0]);
     std::string name = api.toString(args[1]);
@@ -88,7 +99,8 @@ static Value ffiSym(compiler::VMApi& api, const std::vector<Value>& args) {
 // FFI call (existing)
 // ============================================================================
 
-static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 3) {
         return Value::makeNull();
     }
@@ -169,7 +181,8 @@ static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& args) {
 // C definition parser
 // ============================================================================
 
-static Value ffiCdef(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiCdef(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     std::string cdef = api.toString(args[0]);
 
@@ -230,7 +243,8 @@ static Value ffiCdef(compiler::VMApi& api, const std::vector<Value>& args) {
 // Memory management
 // ============================================================================
 
-static Value ffiAlloc(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiAlloc(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     // If arg is an integer, treat as byte count (like allocBytes)
     if (args[0].isInt()) {
@@ -244,28 +258,32 @@ static Value ffiAlloc(compiler::VMApi& api, const std::vector<Value>& args) {
     return Value::makePtr(ptr);
 }
 
-static Value ffiAllocBytes(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiAllocBytes(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     size_t size = static_cast<size_t>(args[0].asInt64());
     void* ptr = FFIMemory::alloc_bytes(size);
     return Value::makePtr(ptr);
 }
 
-static Value ffiFree(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiFree(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     FFIMemory::free(ptr);
     return Value::makeNull();
 }
 
-static Value ffiSizeof(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiSizeof(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     auto t = resolveType(api, args[0]);
     if (!t) return Value::makeNull();
     return Value(static_cast<int64_t>(FFITypeRegistry::size_of(t)));
 }
 
-static Value ffiAlignof(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiAlignof(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     auto t = resolveType(api, args[0]);
     if (!t) return Value::makeNull();
@@ -276,7 +294,8 @@ static Value ffiAlignof(compiler::VMApi& api, const std::vector<Value>& args) {
 // Type conversion
 // ============================================================================
 
-static Value ffiString(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiString(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -284,7 +303,8 @@ static Value ffiString(compiler::VMApi& api, const std::vector<Value>& args) {
     return api.makeString(std::string(str));
 }
 
-static Value ffiCstring(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiCstring(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     std::string s = api.toString(args[0]);
     char* buf = static_cast<char*>(FFIMemory::alloc_bytes(s.size() + 1));
@@ -293,7 +313,8 @@ static Value ffiCstring(compiler::VMApi& api, const std::vector<Value>& args) {
     return Value::makePtr(buf);
 }
 
-static Value ffiArray(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiArray(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 3) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -311,7 +332,8 @@ static Value ffiArray(compiler::VMApi& api, const std::vector<Value>& args) {
     return arr;
 }
 
-static Value ffiCast(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiCast(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     auto t = resolveType(api, args[1]);
@@ -324,7 +346,8 @@ static Value ffiCast(compiler::VMApi& api, const std::vector<Value>& args) {
 // Struct operations
 // ============================================================================
 
-static Value ffiStruct(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiStruct(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     std::string name = api.toString(args[0]);
     auto st = FFITypeRegistry::struct_type(name);
@@ -347,7 +370,8 @@ static Value ffiStruct(compiler::VMApi& api, const std::vector<Value>& args) {
     return Value::makePtr(st.get());
 }
 
-static Value ffiField(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiField(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 3) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -366,7 +390,8 @@ static Value ffiField(compiler::VMApi& api, const std::vector<Value>& args) {
     return FFIMemory::to_havel(fieldPtr, fit->second);
 }
 
-static Value ffiSetField(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiSetField(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 4) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -395,7 +420,8 @@ static Value ffiSetField(compiler::VMApi& api, const std::vector<Value>& args) {
 // Callbacks
 // ============================================================================
 
-static Value ffiCallback(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiCallback(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 3) return Value::makeNull();
 
     // args[0] is a Havel closure/function
@@ -424,7 +450,8 @@ static Value ffiCallback(compiler::VMApi& api, const std::vector<Value>& args) {
     return Value::makePtr(cb);
 }
 
-static Value ffiClosure(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiClosure(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     // Attach closure context to callback - stub for now
     if (args.size() < 1) return Value::makeNull();
     void* cb = resolvePtr(args[0]);
@@ -435,7 +462,8 @@ static Value ffiClosure(compiler::VMApi&, const std::vector<Value>& args) {
 // Global variables
 // ============================================================================
 
-static Value ffiVar(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiVar(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* handle = resolvePtr(args[0]);
     std::string name = api.toString(args[1]);
@@ -443,7 +471,8 @@ static Value ffiVar(compiler::VMApi& api, const std::vector<Value>& args) {
     return Value::makePtr(sym);
 }
 
-static Value ffiGet(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiGet(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -452,7 +481,8 @@ static Value ffiGet(compiler::VMApi& api, const std::vector<Value>& args) {
     return FFIMemory::to_havel(ptr, t);
 }
 
-static Value ffiSet(compiler::VMApi& api, const std::vector<Value>& args) {
+static Value ffiSet(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 3) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -472,16 +502,18 @@ static Value ffiSet(compiler::VMApi& api, const std::vector<Value>& args) {
 // ============================================================================
 
 #define DEFINE_GETTER(name, ctype, accessor) \
-    static Value ffi##name(compiler::VMApi&, const std::vector<Value>& args) { \
-        if (args.size() < 1) return Value::makeNull(); \
+static Value ffi##name(compiler::VMApi&, const std::vector<Value>& rawArgs) { \
+    auto args = stripReceiver(rawArgs); \
+    if (args.size() < 1) return Value::makeNull(); \
         void* ptr = resolvePtr(args[0]); \
         if (!ptr) return Value::makeNull(); \
         return accessor(ptr); \
     }
 
 #define DEFINE_SETTER(name, ctype, accessor) \
-    static Value ffi##name(compiler::VMApi&, const std::vector<Value>& args) { \
-        if (args.size() < 2) return Value::makeNull(); \
+static Value ffi##name(compiler::VMApi&, const std::vector<Value>& rawArgs) { \
+    auto args = stripReceiver(rawArgs); \
+    if (args.size() < 2) return Value::makeNull(); \
         void* ptr = resolvePtr(args[0]); \
         if (!ptr) return Value::makeNull(); \
         ctype v = static_cast<ctype>(args[1].asInt64()); \
@@ -489,13 +521,15 @@ static Value ffiSet(compiler::VMApi& api, const std::vector<Value>& args) {
         return Value::makeNull(); \
     }
 
-static Value ffiGetI8(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetI8(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_int8(ptr)));
 }
-static Value ffiSetI8(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetI8(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -503,13 +537,15 @@ static Value ffiSetI8(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetI16(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetI16(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_int16(ptr)));
 }
-static Value ffiSetI16(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetI16(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -517,13 +553,15 @@ static Value ffiSetI16(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetI32(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetI32(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_int32(ptr)));
 }
-static Value ffiSetI32(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetI32(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -531,13 +569,15 @@ static Value ffiSetI32(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetI64(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetI64(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(havel::ffi::get_int64(ptr));
 }
-static Value ffiSetI64(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetI64(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -545,13 +585,15 @@ static Value ffiSetI64(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetU8(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetU8(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_uint8(ptr)));
 }
-static Value ffiSetU8(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetU8(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -559,13 +601,15 @@ static Value ffiSetU8(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetU16(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetU16(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_uint16(ptr)));
 }
-static Value ffiSetU16(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetU16(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -573,13 +617,15 @@ static Value ffiSetU16(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetU32(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetU32(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_uint32(ptr)));
 }
-static Value ffiSetU32(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetU32(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -587,13 +633,15 @@ static Value ffiSetU32(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetU64(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetU64(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value(static_cast<int64_t>(havel::ffi::get_uint64(ptr)));
 }
-static Value ffiSetU64(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetU64(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -601,13 +649,15 @@ static Value ffiSetU64(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetF32(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetF32(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value::makeDouble(static_cast<double>(havel::ffi::get_float32(ptr)));
 }
-static Value ffiSetF32(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetF32(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -615,13 +665,15 @@ static Value ffiSetF32(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetF64(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetF64(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value::makeDouble(havel::ffi::get_float64(ptr));
 }
-static Value ffiSetF64(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetF64(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
@@ -629,13 +681,15 @@ static Value ffiSetF64(compiler::VMApi&, const std::vector<Value>& args) {
     return Value::makeNull();
 }
 
-static Value ffiGetPtr(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiGetPtr(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     return Value::makePtr(havel::ffi::get_pointer(ptr));
 }
-static Value ffiSetPtr(compiler::VMApi&, const std::vector<Value>& args) {
+static Value ffiSetPtr(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
     if (args.size() < 2) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();

@@ -1412,12 +1412,16 @@ case ast::NodeType::TryExpression:
 
       // Compile value expression
       compileExpression(*valueExpr);
+      uint32_t tempVal = next_local_index++;
+      reserveLocalSlot(tempVal);
+      emit(OpCode::STORE_VAR, tempVal);
 
       // Set conf.key = value (conf object is global)
       {
         uint32_t confStrId = addStringConstant("conf");
         emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(confStrId));
       }
+      emit(OpCode::LOAD_VAR, tempVal);
       { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_SET);
 
@@ -1463,6 +1467,7 @@ case ast::NodeType::TryExpression:
     // Store condition result
     uint32_t condSlot = next_local_index++;
     reserveLocalSlot(condSlot);
+    emit(OpCode::DUP);
     emit(OpCode::STORE_VAR, condSlot);
 
     // Jump to end if condition is false
@@ -3185,8 +3190,8 @@ break;
         emit(OpCode::DUP);
         emit(OpCode::STORE_VAR, temp_result);
         emit(OpCode::LOAD_VAR, temp_object);
-        { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::LOAD_VAR, temp_result);
+        { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
@@ -3249,8 +3254,8 @@ break;
         emit(OpCode::STORE_VAR, temp_result);
         // Store back to self.field
         emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::LOAD_VAR, temp_result);
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
@@ -3285,8 +3290,8 @@ break;
         emit(OpCode::STORE_VAR, temp_obj);
         // Rebuild: [class_obj, result, field_key]
         { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
-        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::LOAD_VAR, temp_obj);
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
@@ -5288,6 +5293,7 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
   // Store condition result
   uint32_t condSlot = next_local_index++;
   reserveLocalSlot(condSlot);
+  emit(OpCode::DUP);
   emit(OpCode::STORE_VAR, condSlot);
 
   // Jump to end if condition is false

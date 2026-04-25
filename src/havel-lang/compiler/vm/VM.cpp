@@ -8057,9 +8057,9 @@ void VM::throwError(const std::string &msg) {
 Value VM::loadModule(const std::string& path) {
     // Check cache via canonical ModuleLoader
     if (moduleLoader_.isCached(path)) {
-        void* cachedPtr = nullptr;
-        if (moduleLoader_.getCached(path, &cachedPtr)) {
-            return *static_cast<Value*>(cachedPtr);
+        Value cachedVal;
+        if (moduleLoader_.getCached(path, &cachedVal)) {
+            return cachedVal;
         }
     }
 
@@ -8070,12 +8070,11 @@ Value VM::loadModule(const std::string& path) {
         
         // Check cache by resolved path
         if (moduleLoader_.isCached(canonicalKey)) {
-            void* cachedPtr = nullptr;
-            if (moduleLoader_.getCached(canonicalKey, &cachedPtr)) {
-                Value exports = *static_cast<Value*>(cachedPtr);
+            Value cachedVal;
+            if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
+                Value exports = cachedVal;
                 // Also cache under the original key for faster lookup next time
-                auto* cacheVal = new Value(exports);
-                moduleLoader_.putCache(path, cacheVal);
+                moduleLoader_.putCache(path, exports);
                 return exports;
             }
         }
@@ -8097,8 +8096,7 @@ Value VM::loadModule(const std::string& path) {
                 }
             }
             Value exports = Value::makeObjectId(exportsObj.id);
-            auto* cacheVal = new Value(exports);
-            moduleLoader_.putCache(path, cacheVal);
+            moduleLoader_.putCache(path, exports);
             return exports;
         }
         COMPILER_THROW("Module not found: " + path);
@@ -8190,6 +8188,16 @@ Value VM::loadModule(const std::string& path) {
     for (const auto& [name, value] : host_function_globals_) {
         globals[name] = value;
     }
+    // Also carry over namespace objects (fs, sys, math, etc.) from the
+    // caller's globals so module code can call fs.read(), sys.cwd(), etc.
+    auto &callerGlobals = globals_stack_.back();
+    for (const auto& [name, value] : callerGlobals) {
+        if (name.empty() || name[0] == '_') continue;
+        if (globals.count(name)) continue; // don't overwrite host function globals
+        if (value.isObjectId()) {
+            globals[name] = value;
+        }
+    }
     auto g_obj = createHostObject();
     globals_mirror_object_id_ = g_obj.id;
     globals["_G"] = Value::makeObjectId(g_obj.id);
@@ -8273,7 +8281,7 @@ Value VM::loadModule(const std::string& path) {
     auto *obj = heap_.object(exportsObj.id);
     for (const auto& [name, value] : globals) {
         if (!name.empty() && name[0] != '_') {
-            if (host_function_globals_.count(name) == 0) {
+            if (host_function_globals_.count(name) == 0 || !value.isHostFuncId()) {
                 Value materialized = value;
                 if (value.isStringValId() && current_chunk) {
                     auto strRef = heap_.allocateString(
@@ -8284,40 +8292,62 @@ Value VM::loadModule(const std::string& path) {
                     auto moduleChunk = chunk;
                     const auto* moduleFunc = current_chunk->getFunction(funcIdx);
                     uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
-                    auto wrapperName = "$module_fn_" + canonicalKey + "_" + name;
-                    registerHostFunction(wrapperName,
-                        [this, funcIdx, moduleChunk, paramCount](const std::vector<Value>& args) -> Value {
-                            std::vector<Value> callArgs = args;
-                            if (callArgs.size() > paramCount && paramCount > 0) {
-                                callArgs.erase(callArgs.begin());
-                            }
-                            auto* savedChunk = current_chunk;
-                            current_chunk = moduleChunk.get();
-                            const auto* callee = moduleChunk->getFunction(funcIdx);
-                            if (!callee) {
-                                current_chunk = savedChunk;
-                                return Value::makeNull();
-                            }
-                            size_t base = locals.size();
-                            locals.resize(base + callee->local_count, nullptr);
-                            if (frame_arena_.size() <= frame_count_) {
-                                frame_arena_.push_back(CallFrame{callee, 0, base, 0});
-                            } else {
-                                frame_arena_[frame_count_] = CallFrame{callee, 0, base, 0};
-                            }
-                            frame_count_++;
-                            for (uint32_t i = 0; i < callee->param_count; i++) {
-                                if (i < callArgs.size()) {
-                                    locals[base + i] = std::move(callArgs[i]);
-                                } else {
-                                    locals[base + i] = Value::makeNull();
-                                }
-                            }
-                            runDispatchLoop(frame_count_ - 1);
-                            Value result = popStack();
-                            current_chunk = savedChunk;
-                            return result;
-                        });
+        auto moduleGlobals = globals;
+        auto wrapperName = "$module_fn_" + canonicalKey + "_" + name;
+        registerHostFunction(wrapperName,
+        [this, funcIdx, moduleChunk, paramCount, moduleGlobals](const std::vector<Value>& args) -> Value {
+            std::vector<Value> callArgs = args;
+            if (callArgs.size() > paramCount && paramCount > 0) {
+                callArgs.erase(callArgs.begin());
+            }
+            auto* savedChunk = current_chunk;
+            auto savedGlobals = globals;
+            auto savedMirrorId = globals_mirror_object_id_;
+            Value savedG = globals["_G"];
+            globals = moduleGlobals;
+            current_chunk = moduleChunk.get();
+            const auto* callee = moduleChunk->getFunction(funcIdx);
+            if (!callee) {
+                globals = std::move(savedGlobals);
+                globals_mirror_object_id_ = savedMirrorId;
+                globals["_G"] = savedG;
+                current_chunk = savedChunk;
+                return Value::makeNull();
+            }
+            size_t base = locals.size();
+            locals.resize(base + callee->local_count, nullptr);
+            if (frame_arena_.size() <= frame_count_) {
+                frame_arena_.push_back(CallFrame{callee, 0, base, 0});
+            } else {
+                frame_arena_[frame_count_] = CallFrame{callee, 0, base, 0};
+            }
+            frame_count_++;
+            for (uint32_t i = 0; i < callee->param_count; i++) {
+                if (i < callArgs.size()) {
+                    Value argVal = callArgs[i];
+                    if (argVal.isStringValId() && savedChunk) {
+                        auto strRef = heap_.allocateString(
+                            savedChunk->getString(argVal.asStringValId()));
+                        argVal = Value::makeStringId(strRef.id);
+                    }
+                    locals[base + i] = std::move(argVal);
+                } else {
+                    locals[base + i] = Value::makeNull();
+                }
+            }
+            runDispatchLoop(frame_count_ - 1);
+            Value result = popStack();
+            if (result.isStringValId() && current_chunk) {
+                auto strRef = heap_.allocateString(
+                    current_chunk->getString(result.asStringValId()));
+                result = Value::makeStringId(strRef.id);
+            }
+            globals = std::move(savedGlobals);
+            globals_mirror_object_id_ = savedMirrorId;
+            globals["_G"] = savedG;
+            current_chunk = savedChunk;
+            return result;
+        });
                     uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
                     materialized = Value::makeHostFuncId(hostIdx);
                 }
@@ -8342,9 +8372,8 @@ Value VM::loadModule(const std::string& path) {
     current_script_dir_ = prev_script_dir;
 
     // Cache under both keys via canonical ModuleLoader
-    auto* cacheVal = new Value(exports);
-    moduleLoader_.putCache(path, cacheVal);
-    moduleLoader_.putCache(canonicalKey, cacheVal);
+    moduleLoader_.putCache(path, exports);
+    moduleLoader_.putCache(canonicalKey, exports);
     modules_loading_.erase(canonicalKey);
 
     return exports;

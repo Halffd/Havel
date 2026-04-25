@@ -1275,8 +1275,8 @@ continue;
     }
     if (c == '*' && peek() == '*') {
       // Check for **= (power assign) or ** (power)
-      size_t look = position + 1;
-      if (look < source.length() && source[look] == '=') {
+      size_t lookAhead = position + 1;
+      if (lookAhead < source.length() && source[lookAhead] == '=') {
         advance(); // consume first *
         advance(); // consume second *
         advance(); // consume =
@@ -1326,7 +1326,57 @@ continue;
     }
 
     // Handle (( )) bitwise expression delimiters
-        if (c == '(' && peek() == '(' && !inBitwiseExpr) {
+    if (c == '(' && peek() == '(' && !inBitwiseExpr) {
+        // Look ahead for lambda indicators (comma or =>) to avoid misidentifying
+        // Higher-Order Function arguments like ob.map((v, k) => ...) as bitwise blocks.
+        size_t look = position + 2; // Start scanning AFTER the initial '(('
+        int parenDepth = 2;         // Already at depth 2 from '(('
+        bool looksLikeLambda = false;
+        
+        while (look < source.length() && parenDepth > 0) {
+            char lc = source[look];
+            if (lc == '(') {
+                parenDepth++;
+            } else if (lc == ')') {
+                if (parenDepth == 2) {
+                    // Check if followed by =>
+                    size_t next = look + 1;
+                    while (next < source.length() && (source[next] == ' ' || source[next] == '\t' || source[next] == '\n')) {
+                        next++;
+                    }
+                    if (next + 1 < source.length() && source[next] == '=' && source[next + 1] == '>') {
+                        looksLikeLambda = true;
+                        break;
+                    }
+                }
+                parenDepth--;
+            } else if (lc == ',' && parenDepth == 2) {
+                // Comma at the second level indicates parameter list (v, k)
+                looksLikeLambda = true;
+                break;
+            } else if (lc == '\n') {
+                // Heuristic: lambdas usually don't have newlines in param lists 
+                // but bitwise blocks might. If we see a newline before we find 
+                // lambda markers, it's likely NOT a simple lambda param list.
+                break;
+            }
+            look++;
+        }
+
+        if (looksLikeLambda) {
+            // Treat as regular nested parentheses, not a bitwise block start.
+            // Emit both '(' as separate tokens to ensure the parser sees them correctly.
+            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            advance();
+            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            advance();
+            if (debug_lexer) {
+                havel::debug("LEX: ( ( (explicitly emitted nested parens)");
+            }
+            continue;
+        }
+
+        advance(); // consume first '('
         advance(); // consume second '('
         inBitwiseExpr = true;
         tokens.push_back(makeToken("((", TokenType::DoubleOpenParen));
@@ -1634,7 +1684,7 @@ continue;
 
         // Handle identifiers and potential hotkeys
         if (isAlpha(c)) {
-      // Check if this might be a hotkey starting with F (F1-F12)
+      // Check if this might be a hotkey starting with F (F1..F12)
       if (c == 'F' && isDigit(peek())) {
         // Could be F-key hotkey, but check if it's followed by assignment or
         // other non-hotkey syntax If next non-digit char is '=' or

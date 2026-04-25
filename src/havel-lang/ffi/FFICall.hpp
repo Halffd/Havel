@@ -24,14 +24,18 @@ public:
     static void* get_symbol(void* handle, const std::string& name);
 
     static Value call_function(void* fn_ptr,
-                            const std::vector<Value>& args,
-                            std::shared_ptr<FFIType> return_type,
-                            const std::vector<std::shared_ptr<FFIType>>& param_types);
+                               const std::vector<Value>& args,
+                               std::shared_ptr<FFIType> return_type,
+                               const std::vector<std::shared_ptr<FFIType>>& param_types,
+                               bool variadic = false,
+                               const std::vector<std::shared_ptr<FFIType>>& variadic_types = {});
 
     static Value call_native(void* fn_ptr,
-                            const std::vector<void*>& arg_ptrs,
-                            std::shared_ptr<FFIType> return_type,
-                            const std::vector<std::shared_ptr<FFIType>>& param_types);
+                             const std::vector<void*>& arg_ptrs,
+                             std::shared_ptr<FFIType> return_type,
+                             const std::vector<std::shared_ptr<FFIType>>& param_types,
+                             bool variadic = false,
+                             const std::vector<std::shared_ptr<FFIType>>& variadic_types = {});
 
     static void* create_callback(std::function<Value(const std::vector<Value>&)> fn,
                              std::shared_ptr<FFIType> signature);

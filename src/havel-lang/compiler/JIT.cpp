@@ -19,7 +19,7 @@ void JIT::CompileHotkey(const std::string &combination,
   // 2. Compile the action to LLVM IR
   llvm::Function *func = compiler.CompileHotkeyAction(action);
   if (!func) {
-            havel::error("Failed to compile hotkey action for: {}", combination);
+            ::havel::error("Failed to compile hotkey action for: {}", combination);
     return;
   }
   func->setName(funcName);
@@ -27,45 +27,43 @@ void JIT::CompileHotkey(const std::string &combination,
   // 3. JIT compile to native machine code
   auto compiledFunc = compiler.GetCompiledFunction(funcName);
   if (!compiledFunc) {
-        havel::error("Failed to JIT compile function: {}", funcName);
+        ::havel::error("Failed to JIT compile function: {}", funcName);
     return;
   }
 
   // 4. Store compiled function
   compiledHotkeys[combination] = compiledFunc;
 
-  std::cout << "🔥 Compiled hotkey '" << combination << "' to native code!"
-            << std::endl;
+    ::havel::info("Compiled hotkey '{}' to native code", combination);
 }
 
 void JIT::ExecuteHotkey(const std::string &combination) {
-  auto it = compiledHotkeys.find(combination);
-  if (it != compiledHotkeys.end() && it->second) {
-    // Execute pure machine code - BLAZING FAST! ⚡
-    it->second();
-  } else {
-        havel::error("No compiled hotkey found for: {}", combination);
-  }
+    auto it = compiledHotkeys.find(combination);
+    if (it != compiledHotkeys.end() && it->second) {
+        it->second();
+    } else {
+        ::havel::error("No compiled hotkey found for: {}", combination);
+    }
 }
 
 void JIT::CompileScript(const ast::Program &program) {
-  std::cout << "🚀 JIT compiling full script..." << std::endl;
+    ::havel::info("JIT compiling full script...");
   
   // Compile the entire program AST to LLVM IR
   llvm::Function *mainFunc = compiler.CompileProgram(program);
   if (!mainFunc) {
-        havel::error("Failed to compile main program script");
+        ::havel::error("Failed to compile main program script");
       return;
   }
 
   // JIT compile to native machine code
   auto compiledMain = compiler.GetCompiledFunction("main");
   if (!compiledMain) {
-        havel::error("Failed to JIT compile script main entry point");
+        ::havel::error("Failed to JIT compile script main entry point");
       return;
   }
 
-  std::cout << "🔥 Script compiled successfully! Ready for blazing fast execution! ⚡" << std::endl;
+    ::havel::info("Script compiled successfully");
   
   // Execute it!
   compiledMain();

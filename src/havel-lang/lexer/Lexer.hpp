@@ -169,7 +169,13 @@ enum class TokenType {
   Channel,        // channel
   Dsl,            // dsl
   Del,            // del - delete variable/element
-  EOF_TOKEN
+  DoubleOpenParen,  // (( bitwise expression start
+  DoubleCloseParen, // )) bitwise expression end
+  BitwiseAnd,     // &  bitwise AND (single &)
+  BitwiseXor,     // ^  bitwise XOR
+  BitwiseOr,      // |  bitwise OR (single |, but distinct from Pipe)
+  ShiftLeft,      // << bitwise left shift
+ EOF_TOKEN
   };
 
 struct Token {
@@ -216,6 +222,7 @@ private:
   std::vector<CompilerError> errors; // Collected errors
 
   bool debug_lexer = false;
+  bool inBitwiseExpr = false;
 
   static const std::unordered_map<char, TokenType> SINGLE_CHAR_TOKENS;
 

@@ -2,24 +2,24 @@
 #include "./Logger.hpp"
 #include <limits.h>
 namespace havel {
-    void printStackTrace(int len) {
-    std::cout << "----------------" << std::endl;
+void printStackTrace(int len) {
+    havel::debug("----------------");
     std::vector<void *> callstack(len);
     int frames = backtrace(callstack.data(), len);
     char **strs = backtrace_symbols(callstack.data(), frames);
 
     if (strs == nullptr) {
-        std::cout << "Failed to get backtrace symbols" << std::endl;
-        std::cout << "----------------" << std::endl;
+        havel::error("Failed to get backtrace symbols");
+        havel::debug("----------------");
         return;
     }
 
     for (int i = 0; i < frames; ++i) {
-        std::cout << "  " << i << ": " << strs[i] << std::endl;
+        havel::debug(" {}: {}", i, strs[i]);
     }
-    std::cout << "----------------" << std::endl;
+    havel::debug("----------------");
     free(strs);
-    }
+}
 
 std::string ToLower(const std::string& str) {
     std::string result = str;

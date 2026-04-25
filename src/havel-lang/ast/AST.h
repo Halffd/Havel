@@ -370,7 +370,12 @@ enum class BinaryOperator {
   Matches,     // regex match: title matches ".*Steam.*"
   Tilde,       // regex match shorthand: title ~ /pattern/ or title ~ "string"
   Nullish,     // ?? nullish coalescing: x ?? default
-  ConfigAppend // >> config operator
+  ConfigAppend,      // >> config operator
+    BitwiseOr,          // |  bitwise OR (inside (( )))
+    BitwiseXor,         // ^  bitwise XOR (inside (( )))
+    BitwiseAnd,         // &  bitwise AND (inside (( )))
+    BitwiseShiftLeft,   // << bitwise left shift (inside (( )))
+    BitwiseShiftRight   // >> bitwise right shift (inside (( )))
 };
 
 // Overload operator<< for BinaryOperator
@@ -425,10 +430,20 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
   case BinaryOperator::Matches:
     return os << "matches";
   case BinaryOperator::ConfigAppend:
-    return os << ">>";
-  default:
-    return os << "UNKNOWN_OPERATOR";
-  }
+      return os << ">>";
+    case BinaryOperator::BitwiseOr:
+      return os << "|";
+    case BinaryOperator::BitwiseXor:
+      return os << "^";
+    case BinaryOperator::BitwiseAnd:
+      return os << "&";
+    case BinaryOperator::BitwiseShiftLeft:
+      return os << "<<";
+    case BinaryOperator::BitwiseShiftRight:
+      return os << ">>";
+    default:
+      return os << "UNKNOWN_OPERATOR";
+    }
 }
 
 struct BinaryExpression : public Expression {
@@ -505,6 +520,16 @@ struct BinaryExpression : public Expression {
     case BinaryOperator::Nullish:
       return "??";
     case BinaryOperator::ConfigAppend:
+      return ">>";
+    case BinaryOperator::BitwiseOr:
+      return "|";
+    case BinaryOperator::BitwiseXor:
+      return "^";
+    case BinaryOperator::BitwiseAnd:
+      return "&";
+    case BinaryOperator::BitwiseShiftLeft:
+      return "<<";
+    case BinaryOperator::BitwiseShiftRight:
       return ">>";
     }
     return "UNKNOWN_OPERATOR";
@@ -2188,7 +2213,8 @@ struct UnaryExpression : public Expression {
     Not,    // !expr, not expr
     Minus,  // -expr
     Plus,   // +expr (unary plus)
-    Length  // #expr (length operator)
+    Length, // #expr (length operator)
+    BitwiseNot // ~expr bitwise NOT (inside (( )))
   };
 
   UnaryOperator operator_;
@@ -2202,7 +2228,8 @@ struct UnaryExpression : public Expression {
   std::string toString() const override {
     std::string opStr = (operator_ == UnaryOperator::Not)     ? "!"
                         : (operator_ == UnaryOperator::Minus) ? "-"
-                                                              : "+";
+                                                              : (operator_ == UnaryOperator::BitwiseNot) ? "~"
+                : "+"
     return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") +
            "}";
   }

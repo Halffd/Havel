@@ -120,8 +120,8 @@ void ChainedTask::executeCurrentAction() {
             action();
         }
     } catch (const std::exception& e) {
-        havel::error("Error executing action {} in chained task {}: {}",
-                     currentActionIndex_.load(), name_, e.what());
+::havel::error("Error executing action {} in chained task {}: {}",
+                currentActionIndex_.load(), name_, e.what());
     }
 }
 

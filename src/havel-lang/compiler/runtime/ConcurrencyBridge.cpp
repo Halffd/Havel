@@ -1,8 +1,8 @@
 #include "ConcurrencyBridge.hpp"
+#include "../../../utils/Logger.hpp"
 #include "../vm/VM.hpp"
 
 #include <chrono>
-#include <iostream>
 
 namespace havel::compiler {
 
@@ -407,7 +407,7 @@ void ConcurrencyBridge::checkTimers() {
           vm_->invokeCallback(cbId, {});
           vm_->releaseCallback(cbId);
         } catch (const std::exception &e) {
-          std::cerr << "Error executing timer callback: " << e.what() << std::endl;
+          ::havel::error("Error executing timer callback: {}", e.what());
         }
       }
       

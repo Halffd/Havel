@@ -49,7 +49,7 @@ void AutoKeyPresser::onStop() {
         try {
             io_->Send("{" + currentKey_ + ":up}");
         } catch (const std::exception& e) {
-            havel::error("Error releasing key: {}", e.what());
+            ::havel::error("Error releasing key: {}", e.what());
         }
     }
 }
@@ -71,7 +71,7 @@ void AutoKeyPresser::executeKeyPress() {
             const auto& [nextKey, nextInterval] = keySequence_[currentKeyIndex_];
             setIntervalMs(static_cast<int>(nextInterval.count()));
         } catch (const std::exception& e) {
-            havel::error("Error in key sequence: {}", e.what());
+            ::havel::error("Error in key sequence: {}", e.what());
             stop();
         }
     } else if (!currentKey_.empty()) {
@@ -80,7 +80,7 @@ void AutoKeyPresser::executeKeyPress() {
             io_->Send("{" + currentKey_ + "}");
             io_->Send("{" + currentKey_ + ":up}");
         } catch (const std::exception& e) {
-            havel::error("Error sending key: {}", e.what());
+            ::havel::error("Error sending key: {}", e.what());
             stop();
         }
     }

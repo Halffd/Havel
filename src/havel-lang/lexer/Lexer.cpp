@@ -355,35 +355,32 @@ void Lexer::skipComment() {
 }
 
 Token Lexer::scanNumber() {
-  size_t start = position - 1; // Include the first digit we already consumed
-  std::string number;
-  number += source[start];
+size_t start = position - 1;
+std::string number;
+number += source[start];
 
-  // Handle negative numbers
-  bool isNegative = (start > 0 && source[start - 1] == '-');
-  if (isNegative) {
+bool isNegative = (start > 0 && source[start - 1] == '-');
+if (isNegative) {
     number = "-" + number;
     start--;
-  }
+}
 
-  if (start > 0 && source[start - 1] != '-' && !isDigit(source[start - 1])) {
     if (peek() == 'x' || peek() == 'X') {
-      advance();
-      while (!isAtEnd() && isHexDigit(peek())) number += advance();
-      return makeToken(number, TokenType::Number);
+        number += advance();
+        while (!isAtEnd() && isHexDigit(peek())) number += advance();
+        return makeToken(number, TokenType::Number);
     }
     if (peek() == 'o' || peek() == 'O') {
-      advance();
-      while (!isAtEnd() && isOctalDigit(peek())) number += advance();
-      return makeToken(number, TokenType::Number);
+        number += advance();
+        while (!isAtEnd() && isOctalDigit(peek())) number += advance();
+        return makeToken(number, TokenType::Number);
     }
     if (peek() == 'b' || peek() == 'B') {
-      advance();
-      while (!isAtEnd() && isBinaryDigit(peek())) number += advance();
-      return makeToken(number, TokenType::Number);
+        number += advance();
+        while (!isAtEnd() && isBinaryDigit(peek())) number += advance();
+        return makeToken(number, TokenType::Number);
     }
-  }
-  while (!isAtEnd() && isDigit(peek())) {
+    while (!isAtEnd() && isDigit(peek())) {
     number += advance();
   }
 
@@ -1002,10 +999,15 @@ std::vector<Token> Lexer::tokenize() {
           prevType == TokenType::Question || prevType == TokenType::Colon ||
           prevType == TokenType::ColonColon ||
           prevType == TokenType::PlusPlus || prevType == TokenType::MinusMinus ||
-          prevType == TokenType::Not ||
-          prevType == TokenType::Nullish || prevType == TokenType::Pipe ||
-          prevType == TokenType::Matches || prevType == TokenType::Tilde ||
-          prevType == TokenType::Return);
+prevType == TokenType::Not ||
+        prevType == TokenType::Nullish || prevType == TokenType::Pipe ||
+        prevType == TokenType::Matches || prevType == TokenType::Tilde ||
+        prevType == TokenType::DoubleCloseParen ||
+        prevType == TokenType::BitwiseOr ||
+        prevType == TokenType::BitwiseAnd ||
+        prevType == TokenType::BitwiseXor ||
+        prevType == TokenType::ShiftLeft ||
+        prevType == TokenType::Return);
       }
 
       // If followed by identifier, '(', '[', string, or number
@@ -1324,22 +1326,22 @@ continue;
     }
 
     // Handle (( )) bitwise expression delimiters
-  if (c == '(' && peek() == '(' && !inBitwiseExpr) {
-    advance(); // consume second '('
-    inBitwiseExpr = true;
-    tokens.push_back(makeToken("((", TokenType::DoubleOpenParen));
-    if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+        if (c == '(' && peek() == '(' && !inBitwiseExpr) {
+        advance(); // consume second '('
+        inBitwiseExpr = true;
+        tokens.push_back(makeToken("((", TokenType::DoubleOpenParen));
+	if (debug_lexer) {
+            havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
     }
-    continue;
-  }
-  if (c == ')' && peek() == ')' && inBitwiseExpr) {
-    advance(); // consume second ')'
-    inBitwiseExpr = false;
-    tokens.push_back(makeToken("))", TokenType::DoubleCloseParen));
-    if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
-    }
+    if (c == ')' && peek() == ')' && inBitwiseExpr) {
+        advance(); // consume second ')'
+        inBitwiseExpr = false;
+	tokens.push_back(makeToken("))", TokenType::DoubleCloseParen));
+	if (debug_lexer) {
+            havel::debug("LEX: {}", tokens.back().toString());
+        }
     continue;
   }
 
@@ -1361,9 +1363,9 @@ continue;
     continue;
   }
   // Inside (( )), single | is bitwise OR, not pipeline
-  if (c == '|' && inBitwiseExpr) {
-    tokens.push_back(makeToken("|", TokenType::BitwiseOr));
-    if (debug_lexer) {
+    if (c == '|' && inBitwiseExpr) {
+	tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+	if (debug_lexer) {
       havel::debug("LEX: {}", tokens.back().toString());
     }
     continue;

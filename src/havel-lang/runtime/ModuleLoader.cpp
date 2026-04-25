@@ -147,7 +147,7 @@ bool ModuleLoader::isCached(const std::string& key) const {
     return cache_.count(key) > 0;
 }
 
-bool ModuleLoader::getCached(const std::string& key, void** outValue) const {
+bool ModuleLoader::getCached(const std::string& key, core::Value* outValue) const {
     auto it = cache_.find(key);
     if (it == cache_.end()) {
         return false;
@@ -158,7 +158,7 @@ bool ModuleLoader::getCached(const std::string& key, void** outValue) const {
     return true;
 }
 
-void ModuleLoader::putCache(const std::string& key, void* value) {
+void ModuleLoader::putCache(const std::string& key, core::Value value) {
     cache_[key] = value;
 }
 

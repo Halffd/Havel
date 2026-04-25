@@ -162,20 +162,25 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug" || arg == "-d") {
       cfg.debugMode = true;
       Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
-    } else if (arg == "--debug-parser" || arg == "-dp") {
-      debugging::debug_parser = true;
-      cfg.debugParser = true;
-    } else if (arg == "--debug-ast" || arg == "-da") {
-      debugging::debug_ast = true;
-      cfg.debugAst = true;
-    } else if (arg == "--debug-lexer" || arg == "-dl") {
-      debugging::debug_lexer = true;
-      cfg.debugLexer = true;
-    } else if (arg == "--debug-bytecode" || arg == "-dbc") {
-      cfg.debugBytecode = true;
-    } else if (arg == "--diff" || arg == "-diff") {
-      cfg.diffBytecode = true;
-      cfg.debugBytecode = true; // --diff implies --debug-bytecode
+ } else if (arg == "--debug-parser" || arg == "-dp") {
+            debugging::debug_parser = true;
+            cfg.debugParser = true;
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+        } else if (arg == "--debug-ast" || arg == "-da") {
+            debugging::debug_ast = true;
+            cfg.debugAst = true;
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+        } else if (arg == "--debug-lexer" || arg == "-dl") {
+            debugging::debug_lexer = true;
+            cfg.debugLexer = true;
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+        } else if (arg == "--debug-bytecode" || arg == "-dbc") {
+            cfg.debugBytecode = true;
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+ } else if (arg == "--diff" || arg == "-diff") {
+            cfg.diffBytecode = true;
+            cfg.debugBytecode = true; // --diff implies --debug-bytecode
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
@@ -227,9 +232,10 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       } else {
         error("Unknown --target '{}'. Expected: interpret, jit, aot, asm, ir, wasm", target);
       }
-    } else if (arg == "--debug-jit" || arg == "-djt") {
-      cfg.debugJIT = true;
-      cfg.dumpIR = true;
+ } else if (arg == "--debug-jit" || arg == "-djt") {
+            cfg.debugJIT = true;
+            cfg.dumpIR = true;
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "-S") {
       cfg.outputAsmToFile = true;
       cfg.dumpIR = true;

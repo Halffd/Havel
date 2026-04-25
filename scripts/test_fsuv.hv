@@ -1,0 +1,281 @@
+use ffi
+
+let libuv = ffi.open("libuv.so.1")
+if libuv == null { libuv = ffi.open("libuv.so") }
+
+let _loop = ffi.call(ffi.sym(libuv, "uv_default_loop"), "pointer", [])
+
+let O_RDONLY = 0
+let O_WRONLY = 1
+let O_RDWR = 2
+let O_CREAT = 64
+let O_TRUNC = 512
+let O_APPEND = 1024
+
+let _t_p = ["pointer"]
+let _t_pp = ["pointer", "pointer"]
+let _t_pppp = ["pointer", "pointer", "pointer", "pointer"]
+let _t_pp32pi = ["pointer", "pointer", "pointer", "int32", "pointer"]
+let _t_pppipip = ["pointer", "pointer", "pointer", "int32", "int32", "pointer"]
+let _t_pp32pp = ["pointer", "pointer", "int32", "pointer", "uint32", "int64", "pointer"]
+let _t_ppi = ["pointer", "pointer", "int32"]
+let _t_pppppp = ["pointer", "pointer", "pointer", "pointer", "pointer"]
+let _t_ppppip = ["pointer", "pointer", "pointer", "pointer", "int32", "pointer"]
+
+let _uv_fs_open = ffi.sym(libuv, "uv_fs_open")
+let _uv_fs_close = ffi.sym(libuv, "uv_fs_close")
+let _uv_fs_read = ffi.sym(libuv, "uv_fs_read")
+let _uv_fs_write = ffi.sym(libuv, "uv_fs_write")
+let _uv_fs_unlink = ffi.sym(libuv, "uv_fs_unlink")
+let _uv_fs_stat = ffi.sym(libuv, "uv_fs_stat")
+let _uv_fs_lstat = ffi.sym(libuv, "uv_fs_lstat")
+let _uv_fs_fstat = ffi.sym(libuv, "uv_fs_fstat")
+let _uv_fs_mkdir = ffi.sym(libuv, "uv_fs_mkdir")
+let _uv_fs_rmdir = ffi.sym(libuv, "uv_fs_rmdir")
+let _uv_fs_rename = ffi.sym(libuv, "uv_fs_rename")
+let _uv_fs_copyfile = ffi.sym(libuv, "uv_fs_copyfile")
+let _uv_fs_scandir = ffi.sym(libuv, "uv_fs_scandir")
+let _uv_fs_scandir_next = ffi.sym(libuv, "uv_fs_scandir_next")
+let _uv_fs_access = ffi.sym(libuv, "uv_fs_access")
+let _uv_fs_req_cleanup = ffi.sym(libuv, "uv_fs_req_cleanup")
+let _uv_fs_get_result = ffi.sym(libuv, "uv_fs_get_result")
+let _uv_fs_get_statbuf = ffi.sym(libuv, "uv_fs_get_statbuf")
+
+fn _req() { return ffi.allocBytes(440) }
+fn _cleanup(req) { ffi.call(_uv_fs_req_cleanup, "pointer", _t_p, req) }
+fn _result(req) { return ffi.call(_uv_fs_get_result, "int64", _t_p, req) }
+
+fn uv_open(path, flags, perm) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_open, "int64", _t_pppipip, _loop, req, cp, flags, perm, 0)
+    let fd = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return fd
+}
+
+fn uv_close(fd) {
+    let req = _req()
+    ffi.call(_uv_fs_close, "int64", _t_ppi + ["pointer"], _loop, req, fd, 0)
+    let r = _result(req)
+    _cleanup(req)
+    return r
+}
+
+fn _mkbuf(ptr, len) {
+    let bv = ffi.allocBytes(16)
+    ffi.set_ptr(bv, ptr)
+    ffi.set_u64(offset(bv, 8), len)
+    return bv
+}
+
+fn uv_read(fd, sz, offs) {
+    let buf = ffi.allocBytes(sz)
+    let bv = _mkbuf(buf, sz)
+    let req = _req()
+    if offs == null { offs = -1 }
+    ffi.call(_uv_fs_read, "int64", _t_pp32pp, _loop, req, fd, bv, 1, offs, 0)
+    let n = _result(req)
+    _cleanup(req)
+    ffi.free(bv)
+    if n < 0 { ffi.free(buf); return null }
+    let s = ffi.string(buf)
+    ffi.free(buf)
+    return s
+}
+
+fn uv_write(fd, data, offs) {
+    let cp = ffi.cstring(data)
+    let bv = _mkbuf(cp, data.len())
+    let req = _req()
+    if offs == null { offs = -1 }
+    ffi.call(_uv_fs_write, "int64", _t_pp32pp, _loop, req, fd, bv, 1, offs, 0)
+    let n = _result(req)
+    _cleanup(req)
+    ffi.free(bv)
+    ffi.free(cp)
+    return n
+}
+
+fn uv_stat(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_stat, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    if r < 0 { _cleanup(req); ffi.free(cp); return null }
+    let sb = ffi.call(_uv_fs_get_statbuf, "pointer", _t_p, req)
+    let info = {}
+    info.size = ffi.get_i64(offset(sb, 56))
+    info.st_mode = ffi.get_u64(offset(sb, 8))
+    info.isDir = (( info.st_mode & 0o170000 )) == 0o040000
+    info.isFile = (( info.st_mode & 0o170000 )) == 0o100000
+    _cleanup(req)
+    ffi.free(cp)
+    return info
+}
+
+fn uv_exists(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_access, "int64", _t_pp32pi, _loop, req, cp, 0, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn uv_mkdir(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_mkdir, "int64", _t_pp32pi, _loop, req, cp, 0o755, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn uv_rmdir(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_rmdir, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn uv_unlink(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_unlink, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn uv_rename(oldPath, newPath) {
+    let req = _req()
+    let co = ffi.cstring(oldPath)
+    let cn = ffi.cstring(newPath)
+    ffi.call(_uv_fs_rename, "int64", _t_pppppp, _loop, req, co, cn, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(co)
+    ffi.free(cn)
+    return r == 0
+}
+
+fn uv_copy(src, dst) {
+    let req = _req()
+    let cs = ffi.cstring(src)
+    let cd = ffi.cstring(dst)
+    ffi.call(_uv_fs_copyfile, "int64", _t_ppppip, _loop, req, cs, cd, 0, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cs)
+    ffi.free(cd)
+    return r == 0
+}
+
+fn uv_readDir(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_scandir, "int64", _t_pp32pi, _loop, req, cp, 0, 0)
+    let count = _result(req)
+    let entries = []
+    if count > 0 {
+        let ent = ffi.allocBytes(16)
+        for i in 0..count {
+            let n = ffi.call(_uv_fs_scandir_next, "int32", _t_pp, req, ent)
+            if n < 0 { break }
+            let namePtr = ffi.get_ptr(ent)
+            let name = ffi.string(namePtr)
+            entries.push(name)
+        }
+        ffi.free(ent)
+    }
+    _cleanup(req)
+    ffi.free(cp)
+    return entries
+}
+
+// === TESTS ===
+
+print("=== libuv fs test ===")
+
+print("--- exists ---")
+print("exists /etc/passwd: " + uv_exists("/etc/passwd"))
+print("exists /nonexistent_xyz: " + uv_exists("/nonexistent_xyz"))
+
+print("--- stat ---")
+let info = uv_stat("/etc/passwd")
+if info != null {
+    print("stat /etc/passwd size: " + info.size)
+    print("stat /etc/passwd isFile: " + info.isFile)
+    print("stat /etc/passwd isDir: " + info.isDir)
+} else {
+    print("stat /etc/passwd returned null")
+}
+
+let dirInfo = uv_stat("/etc")
+if dirInfo != null {
+    print("stat /etc isDir: " + dirInfo.isDir)
+    print("stat /etc isFile: " + dirInfo.isFile)
+}
+
+print("--- open/read/close ---")
+let fd = uv_open("/etc/hostname", O_RDONLY, 0)
+print("open fd: " + fd)
+if fd >= 0 {
+    let content = uv_read(fd, 256, 0)
+    print("read: " + content)
+    uv_close(fd)
+}
+
+print("--- mkdir/rmdir ---")
+print("mkdir /tmp/havel_uv_test: " + uv_mkdir("/tmp/havel_uv_test"))
+print("exists after mkdir: " + uv_exists("/tmp/havel_uv_test"))
+let di = uv_stat("/tmp/havel_uv_test")
+if di != null { print("isDir: " + di.isDir) }
+print("rmdir: " + uv_rmdir("/tmp/havel_uv_test"))
+print("exists after rmdir: " + uv_exists("/tmp/havel_uv_test"))
+
+print("--- write/read/unlink ---")
+let tmpdir = "/tmp/havel_uv_test2"
+uv_mkdir(tmpdir)
+let wfd = uv_open(tmpdir + "/test.txt", (( O_WRONLY | O_CREAT | O_TRUNC )), 438)
+print("write fd: " + wfd)
+if wfd >= 0 {
+    let n = uv_write(wfd, "hello from havel libuv fs\n", 0)
+    print("bytes written: " + n)
+    uv_close(wfd)
+}
+let rfd = uv_open(tmpdir + "/test.txt", O_RDONLY, 0)
+if rfd >= 0 {
+    let c = uv_read(rfd, 256, 0)
+    print("read back: " + c)
+    uv_close(rfd)
+}
+
+print("--- rename ---")
+print("rename: " + uv_rename(tmpdir + "/test.txt", tmpdir + "/renamed.txt"))
+print("exists old: " + uv_exists(tmpdir + "/test.txt"))
+print("exists new: " + uv_exists(tmpdir + "/renamed.txt"))
+
+print("--- copy ---")
+print("copy: " + uv_copy(tmpdir + "/renamed.txt", tmpdir + "/copied.txt"))
+print("exists copy: " + uv_exists(tmpdir + "/copied.txt"))
+
+print("--- readDir ---")
+let entries = uv_readDir(tmpdir)
+print("readDir count: " + entries.len())
+for e in entries { print("  " + e) }
+
+print("--- unlink ---")
+uv_unlink(tmpdir + "/renamed.txt")
+uv_unlink(tmpdir + "/copied.txt")
+uv_rmdir(tmpdir)
+
+print("=== all tests done ===")

@@ -1,0 +1,338 @@
+use ffi
+
+let libuv = ffi.open("libuv.so.1")
+if libuv == null { libuv = ffi.open("libuv.so") }
+
+let _loop = ffi.call(ffi.sym(libuv, "uv_default_loop"), "pointer", [])
+
+let O_RDONLY = 0
+let O_WRONLY = 1
+let O_RDWR = 2
+let O_CREAT = 64
+let O_TRUNC = 512
+let O_APPEND = 1024
+
+let _uv_fs_open = ffi.sym(libuv, "uv_fs_open")
+let _uv_fs_close = ffi.sym(libuv, "uv_fs_close")
+let _uv_fs_read = ffi.sym(libuv, "uv_fs_read")
+let _uv_fs_write = ffi.sym(libuv, "uv_fs_write")
+let _uv_fs_unlink = ffi.sym(libuv, "uv_fs_unlink")
+let _uv_fs_stat = ffi.sym(libuv, "uv_fs_stat")
+let _uv_fs_lstat = ffi.sym(libuv, "uv_fs_lstat")
+let _uv_fs_fstat = ffi.sym(libuv, "uv_fs_fstat")
+let _uv_fs_mkdir = ffi.sym(libuv, "uv_fs_mkdir")
+let _uv_fs_rmdir = ffi.sym(libuv, "uv_fs_rmdir")
+let _uv_fs_rename = ffi.sym(libuv, "uv_fs_rename")
+let _uv_fs_copyfile = ffi.sym(libuv, "uv_fs_copyfile")
+let _uv_fs_scandir = ffi.sym(libuv, "uv_fs_scandir")
+let _uv_fs_scandir_next = ffi.sym(libuv, "uv_fs_scandir_next")
+let _uv_fs_access = ffi.sym(libuv, "uv_fs_access")
+let _uv_fs_req_cleanup = ffi.sym(libuv, "uv_fs_req_cleanup")
+let _uv_fs_get_result = ffi.sym(libuv, "uv_fs_get_result")
+let _uv_fs_get_statbuf = ffi.sym(libuv, "uv_fs_get_statbuf")
+
+let _t_p = ["pointer"]
+let _t_pp = ["pointer", "pointer"]
+let _t_ppi = ["pointer", "pointer", "int32"]
+let _t_ppip = ["pointer", "pointer", "int32", "pointer"]
+let _t_pppp = ["pointer", "pointer", "pointer", "pointer"]
+let _t_ppppp = ["pointer", "pointer", "pointer", "pointer", "pointer"]
+let _t_pp32pi = ["pointer", "pointer", "pointer", "int32", "pointer"]
+let _t_pppipip = ["pointer", "pointer", "pointer", "int32", "int32", "pointer"]
+let _t_pp32pp = ["pointer", "pointer", "int32", "pointer", "uint32", "int64", "pointer"]
+let _t_ppppip = ["pointer", "pointer", "pointer", "pointer", "int32", "pointer"]
+
+fn _req() { return ffi.allocBytes(440) }
+
+fn _cleanup(req) { ffi.call(_uv_fs_req_cleanup, "pointer", _t_p, req) }
+
+fn _result(req) { return ffi.call(_uv_fs_get_result, "int64", _t_p, req) }
+
+fn open(path, flags, perm) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_open, "int64", _t_pppipip, _loop, req, cp, flags, perm, 0)
+    let fd = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return fd
+}
+
+fn close(fd) {
+    let req = _req()
+    ffi.call(_uv_fs_close, "int64", _t_ppi + ["pointer"], _loop, req, fd, 0)
+    let r = _result(req)
+    _cleanup(req)
+    return r
+}
+
+fn _mkbuf(ptr, len) {
+    let bv = ffi.allocBytes(16)
+    ffi.set_ptr(bv, ptr)
+    ffi.set_u64(offset(bv, 8), len)
+    return bv
+}
+
+fn read(fd, sz, offs) {
+    let buf = ffi.allocBytes(sz)
+    let bv = _mkbuf(buf, sz)
+    let req = _req()
+    if offs == null { offs = -1 }
+    ffi.call(_uv_fs_read, "int64", _t_pp32pp, _loop, req, fd, bv, 1, offs, 0)
+    let n = _result(req)
+    _cleanup(req)
+    ffi.free(bv)
+    if n < 0 { ffi.free(buf); return null }
+    let s = ffi.string(buf)
+    ffi.free(buf)
+    return s
+}
+
+fn write(fd, data, offs) {
+    let cp = ffi.cstring(data)
+    let bv = _mkbuf(cp, data.len())
+    let req = _req()
+    if offs == null { offs = -1 }
+    ffi.call(_uv_fs_write, "int64", _t_pp32pp, _loop, req, fd, bv, 1, offs, 0)
+    let n = _result(req)
+    _cleanup(req)
+    ffi.free(bv)
+    ffi.free(cp)
+    return n
+}
+
+fn readFile(path) {
+    let fd = open(path, O_RDONLY, 0)
+    if fd < 0 { return null }
+    let s = fstat(fd)
+    if s == null { close(fd); return null }
+    let content = read(fd, s.size, 0)
+    close(fd)
+    return content
+}
+
+fn writeFile(path, content) {
+    let fl = (( O_WRONLY | O_CREAT | O_TRUNC ))
+    let fd = open(path, fl, 438)
+    if fd < 0 { return false }
+    let n = write(fd, content, 0)
+    close(fd)
+    return n >= 0
+}
+
+fn appendFile(path, content) {
+    let fl = (( O_WRONLY | O_CREAT | O_APPEND ))
+    let fd = open(path, fl, 438)
+    if fd < 0 { return false }
+    let n = write(fd, content, 0)
+    close(fd)
+    return n >= 0
+}
+
+fn _parseStat(sb) {
+    let info = {}
+    info.dev = ffi.get_u64(offset(sb, 0))
+    info.st_mode = ffi.get_u64(offset(sb, 8))
+    info.nlink = ffi.get_u64(offset(sb, 16))
+    info.uid = ffi.get_u64(offset(sb, 24))
+    info.gid = ffi.get_u64(offset(sb, 32))
+    info.rdev = ffi.get_u64(offset(sb, 40))
+    info.ino = ffi.get_u64(offset(sb, 48))
+    info.size = ffi.get_i64(offset(sb, 56))
+    info.blksize = ffi.get_u64(offset(sb, 64))
+    info.blocks = ffi.get_u64(offset(sb, 72))
+    info.atime_sec = ffi.get_i64(offset(sb, 96))
+    info.mtime_sec = ffi.get_i64(offset(sb, 112))
+    info.ctime_sec = ffi.get_i64(offset(sb, 128))
+    info.birthtime_sec = ffi.get_i64(offset(sb, 144))
+    info.isDir = (( info.st_mode & 0o170000 )) == 0o040000
+    info.isFile = (( info.st_mode & 0o170000 )) == 0o100000
+    info.isSymlink = (( info.st_mode & 0o170000 )) == 0o120000
+    return info
+}
+
+fn stat(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_stat, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    if r < 0 { _cleanup(req); ffi.free(cp); return null }
+    let sb = ffi.call(_uv_fs_get_statbuf, "pointer", _t_p, req)
+    let info = _parseStat(sb)
+    _cleanup(req)
+    ffi.free(cp)
+    return info
+}
+
+fn lstat(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_lstat, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    if r < 0 { _cleanup(req); ffi.free(cp); return null }
+    let sb = ffi.call(_uv_fs_get_statbuf, "pointer", _t_p, req)
+    let info = _parseStat(sb)
+    _cleanup(req)
+    ffi.free(cp)
+    return info
+}
+
+fn fstat(fd) {
+    let req = _req()
+    ffi.call(_uv_fs_fstat, "int64", _t_ppi + ["pointer"], _loop, req, fd, 0)
+    let r = _result(req)
+    if r < 0 { _cleanup(req); return null }
+    let sb = ffi.call(_uv_fs_get_statbuf, "pointer", _t_p, req)
+    let info = {}
+    info.size = ffi.get_i64(offset(sb, 56))
+    info.st_mode = ffi.get_u64(offset(sb, 8))
+    info.isDir = (( info.st_mode & 0o170000 )) == 0o040000
+    info.isFile = (( info.st_mode & 0o170000 )) == 0o100000
+    _cleanup(req)
+    return info
+}
+
+fn exists(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(ffi.sym(libuv, "uv_fs_access"), "int64", _t_pp32pi, _loop, req, cp, 0, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn isDir(path) {
+    let info = stat(path)
+    if info == null { return false }
+    return info.isDir
+}
+
+fn isFile(path) {
+    let info = stat(path)
+    if info == null { return false }
+    return info.isFile
+}
+
+fn unlink(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_unlink, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn mkdir(path, perm) {
+    if perm == null { perm = 0o755 }
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_mkdir, "int64", _t_pp32pi, _loop, req, cp, perm, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn mkdirAll(path) {
+    if exists(path) { return true }
+    let parts = path.split("/")
+    let cur = ""
+    for part in parts {
+        if part == "" { continue }
+        cur = cur + "/" + part
+        if !exists(cur) { if !mkdir(cur) { return false } }
+    }
+    return true
+}
+
+fn rmdir(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_rmdir, "int64", _t_pppp, _loop, req, cp, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cp)
+    return r == 0
+}
+
+fn rename(oldPath, newPath) {
+    let req = _req()
+    let co = ffi.cstring(oldPath)
+    let cn = ffi.cstring(newPath)
+    ffi.call(_uv_fs_rename, "int64", _t_pppppp, _loop, req, co, cn, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(co)
+    ffi.free(cn)
+    return r == 0
+}
+
+fn copy(src, dst) {
+    let req = _req()
+    let cs = ffi.cstring(src)
+    let cd = ffi.cstring(dst)
+    ffi.call(_uv_fs_copyfile, "int64", _t_ppppip, _loop, req, cs, cd, 0, 0)
+    let r = _result(req)
+    _cleanup(req)
+    ffi.free(cs)
+    ffi.free(cd)
+    return r == 0
+}
+
+fn readDir(path) {
+    let req = _req()
+    let cp = ffi.cstring(path)
+    ffi.call(_uv_fs_scandir, "int64", _t_pp32pi, _loop, req, cp, 0, 0)
+    let count = _result(req)
+    let entries = []
+    if count > 0 {
+        let ent = ffi.allocBytes(16)
+        for i in 0..count {
+            let n = ffi.call(_uv_fs_scandir_next, "int32", _t_pp, req, ent)
+            if n < 0 { break }
+            let namePtr = ffi.get_ptr(ent)
+            let name = ffi.string(namePtr)
+            entries.push(name)
+        }
+        ffi.free(ent)
+    }
+    _cleanup(req)
+    ffi.free(cp)
+    return entries
+}
+
+fn touch(path) {
+    let fd = open(path, (( O_WRONLY | O_CREAT )), 438)
+    if fd >= 0 { close(fd); return true }
+    return false
+}
+
+export open
+export close
+export read
+export write
+export readFile
+export writeFile
+export appendFile
+export stat
+export lstat
+export fstat
+export exists
+export isDir
+export isFile
+export unlink
+export mkdir
+export mkdirAll
+export rmdir
+export rename
+export copy
+export readDir
+export touch
+export O_RDONLY
+export O_WRONLY
+export O_RDWR
+export O_CREAT
+export O_TRUNC
+export O_APPEND

@@ -3880,12 +3880,16 @@ void VM::execBinaryOp(const Instruction &instruction) {
     case OpCode::ADD:
     case OpCode::SUB:
     case OpCode::MUL:
-    case OpCode::DIV:
-    case OpCode::MOD:
-    case OpCode::POW:
-      // Arithmetic with null results in null (not an error)
-      pushStack(Value::makeNull());
-      return;
+        case OpCode::DIV:
+        case OpCode::MOD:
+        case OpCode::POW:
+        case OpCode::BIT_AND:
+        case OpCode::BIT_OR:
+        case OpCode::BIT_XOR:
+        case OpCode::BIT_LSH:
+        case OpCode::BIT_RSH:
+          pushStack(Value::makeNull());
+          return;
     default:
       COMPILER_THROW("Invalid operation opcode with null");
     }
@@ -3946,17 +3950,22 @@ void VM::execBinaryOp(const Instruction &instruction) {
       if (r == 0) throw ScriptThrow{Value("Modulo by zero")};
       pushStack(l % r);
       break;
-    case OpCode::POW:
-      pushStack(static_cast<int64_t>(
-          std::pow(static_cast<double>(l), static_cast<double>(r))));
-      break;
-    case OpCode::EQ:   pushStack(l == r); break;
-    case OpCode::NEQ:  pushStack(l != r); break;
-    case OpCode::LT:   pushStack(l < r); break;
-    case OpCode::LTE:  pushStack(l <= r); break;
-    case OpCode::GT:   pushStack(l > r); break;
-    case OpCode::GTE:  pushStack(l >= r); break;
-    default: COMPILER_THROW("Unsupported integer operation");
+        case OpCode::POW:
+          pushStack(static_cast<int64_t>(
+              std::pow(static_cast<double>(l), static_cast<double>(r))));
+          break;
+        case OpCode::EQ: pushStack(l == r); break;
+        case OpCode::NEQ: pushStack(l != r); break;
+        case OpCode::LT: pushStack(l < r); break;
+        case OpCode::LTE: pushStack(l <= r); break;
+        case OpCode::GT: pushStack(l > r); break;
+        case OpCode::GTE: pushStack(l >= r); break;
+        case OpCode::BIT_AND: pushStack(l & r); break;
+        case OpCode::BIT_OR: pushStack(l | r); break;
+        case OpCode::BIT_XOR: pushStack(l ^ r); break;
+        case OpCode::BIT_LSH: pushStack(l << r); break;
+        case OpCode::BIT_RSH: pushStack(l >> r); break;
+        default: COMPILER_THROW("Unsupported integer operation");
     }
     return;
   }
@@ -3983,8 +3992,13 @@ void VM::execBinaryOp(const Instruction &instruction) {
     case OpCode::LT:   pushStack(l < r); break;
     case OpCode::LTE:  pushStack(l <= r); break;
     case OpCode::GT:   pushStack(l > r); break;
-    case OpCode::GTE:  pushStack(l >= r); break;
-    default: COMPILER_THROW("Unsupported floating point operation");
+        case OpCode::GTE: pushStack(l >= r); break;
+        case OpCode::BIT_AND: pushStack(static_cast<int64_t>(l) & static_cast<int64_t>(r)); break;
+        case OpCode::BIT_OR: pushStack(static_cast<int64_t>(l) | static_cast<int64_t>(r)); break;
+        case OpCode::BIT_XOR: pushStack(static_cast<int64_t>(l) ^ static_cast<int64_t>(r)); break;
+        case OpCode::BIT_LSH: pushStack(static_cast<int64_t>(l) << static_cast<int64_t>(r)); break;
+        case OpCode::BIT_RSH: pushStack(static_cast<int64_t>(l) >> static_cast<int64_t>(r)); break;
+        default: COMPILER_THROW("Unsupported floating point operation");
     }
     return;
   }
@@ -4688,32 +4702,49 @@ break;
     break;
   }
 
-  case OpCode::ADD:
-  case OpCode::SUB:
-  case OpCode::MUL:
-  case OpCode::DIV:
-  case OpCode::MOD:
-  case OpCode::POW:
-  case OpCode::EQ:
-  case OpCode::NEQ:
-  case OpCode::IS:
-  case OpCode::LT:
-  case OpCode::LTE:
-  case OpCode::GT:
-  case OpCode::GTE:
-    execBinaryOp(instruction);
-    break;
+    case OpCode::ADD:
+    case OpCode::SUB:
+    case OpCode::MUL:
+    case OpCode::DIV:
+    case OpCode::MOD:
+    case OpCode::POW:
+    case OpCode::EQ:
+    case OpCode::NEQ:
+    case OpCode::IS:
+    case OpCode::LT:
+    case OpCode::LTE:
+    case OpCode::GT:
+    case OpCode::GTE:
+    case OpCode::BIT_AND:
+    case OpCode::BIT_OR:
+    case OpCode::BIT_XOR:
+    case OpCode::BIT_LSH:
+    case OpCode::BIT_RSH:
+      execBinaryOp(instruction);
+      break;
 
   case OpCode::AND:
   case OpCode::OR:
     execLogicalOp(instruction.opcode);
     break;
 
-  case OpCode::NOT: {
-    Value v = popStack();
-    pushStack(!isTruthy(v));
-    break;
-  }
+    case OpCode::NOT: {
+      Value v = popStack();
+      pushStack(!isTruthy(v));
+      break;
+    }
+
+    case OpCode::BIT_NOT: {
+      Value v = popStack();
+      if (v.isInt()) {
+        pushStack(~v.asInt());
+      } else if (v.isDouble()) {
+        pushStack(~static_cast<int64_t>(v.asDouble()));
+      } else {
+        COMPILER_THROW("Bitwise NOT requires integer operand");
+      }
+      break;
+    }
 
   case OpCode::NEGATE:
     execNegate();

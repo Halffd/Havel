@@ -8,6 +8,24 @@ using enum havel::TokenType;
 
 namespace havel::parser {
 
+static double parseNumberLiteral(const std::string& s) {
+    if (s.size() >= 2 && s[0] == '0') {
+        if (s[1] == 'x' || s[1] == 'X')
+            return static_cast<double>(std::stoll(s, nullptr, 0));
+        if (s[1] == 'o' || s[1] == 'O')
+            return static_cast<double>(std::stoll(s.substr(2), nullptr, 8));
+        if (s[1] == 'b' || s[1] == 'B')
+            return static_cast<double>(std::stoll(s.substr(2), nullptr, 2));
+    }
+    return std::stod(s);
+}
+
+static bool hasDecimalPart(const std::string& s) {
+    return s.find('.') != std::string::npos ||
+           s.find('e') != std::string::npos ||
+           s.find('E') != std::string::npos;
+}
+
 void Parser::reportError(const std::string &message) {
   CompilerError err(ErrorSeverity::Error, at().line, at().column, message);
   errors.push_back(err);
@@ -370,11 +388,28 @@ case TokenType::Nullish:
     case TokenType::DotDot:
       return 70;
 
-    // Pipe
-    case TokenType::Pipe:
-      return 75;
+// Pipe
+case TokenType::Pipe:
+return 75;
 
-    // Additive
+// Bitwise OR
+case TokenType::BitwiseOr:
+return 80;
+
+// Bitwise XOR
+case TokenType::BitwiseXor:
+return 90;
+
+// Bitwise AND
+case TokenType::BitwiseAnd:
+return 100;
+
+// Shift
+case TokenType::ShiftLeft:
+case TokenType::ShiftRight:
+return 110;
+
+// Additive
     case TokenType::Plus:
     case TokenType::Minus:
       return 70;
@@ -498,8 +533,15 @@ setBoth(PowerAssign, 10, 10);
       setBoth(Power, 90, 91);
       
       // Prefix operators (handled in nud, not led)
-      // Pipeline
-      setBoth(Pipe, 35, 35);
+        // Pipeline
+        setBoth(Pipe, 35, 35);
+
+        // Bitwise operators (inside (( )))
+        setBoth(BitwiseOr, 80, 80);
+        setBoth(BitwiseXor, 90, 90);
+        setBoth(BitwiseAnd, 100, 100);
+        setBoth(ShiftLeft, 110, 110);
+        setBoth(ShiftRight, 110, 110);
       
       // Postfix operators (very high left binding power, 0 right)
       left_bp[static_cast<size_t>(PlusPlus)] = 100;
@@ -537,8 +579,10 @@ setBoth(PowerAssign, 10, 10);
       can_start[static_cast<size_t>(MinusMinus)] = true;
       can_start[static_cast<size_t>(Length)] = true;
       can_start[static_cast<size_t>(Spread)] = true;
-      can_start[static_cast<size_t>(Hash)] = true;
-      can_start[static_cast<size_t>(Backtick)] = true;
+        can_start[static_cast<size_t>(Hash)] = true;
+        can_start[static_cast<size_t>(Backtick)] = true;
+        can_start[static_cast<size_t>(DoubleOpenParen)] = true;
+        can_start[static_cast<size_t>(Tilde)] = true;
     }
     
     void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
@@ -681,7 +725,7 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
 
   switch (token.type) {
 case TokenType::Number:
-        return std::make_unique<ast::NumberLiteral>(std::stod(token.value), token.value.find('.') != std::string::npos);
+        return std::make_unique<ast::NumberLiteral>(parseNumberLiteral(token.value), hasDecimalPart(token.value));
 
     case TokenType::String:
     case TokenType::MultilineString:
@@ -1201,17 +1245,24 @@ case TokenType::Number:
       return parseHotkeyExpression(token);
 
     case TokenType::Tilde: {
-      // ~identifier at statement start or after = is a hotkey with "no grab" flag
-      // Check if followed by identifier, number, or another hotkey char
       if (at().type == TokenType::Identifier ||
           at().type == TokenType::Number ||
           at().type == TokenType::Hotkey) {
         return parseTildeHotkeyExpression();
       }
-      // Otherwise treat as bitwise NOT operator
       auto operand = parsePrattExpression(bp(BindingPower::Prefix));
       return std::make_unique<ast::UnaryExpression>(
-          ast::UnaryExpression::UnaryOperator::Not, std::move(operand));
+          ast::UnaryExpression::UnaryOperator::BitwiseNot, std::move(operand));
+    }
+
+    case TokenType::DoubleOpenParen: {
+        auto inner = parsePrattExpression(bp(BindingPower::Assignment));
+    if (at().type != TokenType::DoubleCloseParen) {
+        errorAt(at(), "Expected '))' to close bitwise expression");
+      } else {
+        advance();
+      }
+      return inner;
     }
 
     default:
@@ -1617,21 +1668,47 @@ case TokenType::Plus: {
           std::move(left), ast::UpdateExpression::Operator::Decrement, false);
 
     case TokenType::Pipe: {
-      // Pipeline: expr | func(args)
       auto right = parsePrattExpression(getRightBindingPower(token.type));
-      
-      // Convert to call expression: func(args..., expr)
-      // If right is already a call, append left as last arg
+
       if (auto *call = dynamic_cast<ast::CallExpression*>(right.get())) {
         call->args.push_back(std::move(left));
         return right;
       }
-      
-      // Otherwise wrap right in a call with left as argument
+
       std::vector<std::unique_ptr<ast::Expression>> args;
       args.push_back(std::move(left));
       return std::make_unique<ast::CallExpression>(
           std::move(right), std::move(args));
+    }
+
+    case TokenType::BitwiseOr: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::BitwiseOr, std::move(right));
+    }
+
+    case TokenType::BitwiseXor: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::BitwiseXor, std::move(right));
+    }
+
+    case TokenType::BitwiseAnd: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::BitwiseAnd, std::move(right));
+    }
+
+    case TokenType::ShiftLeft: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::BitwiseShiftLeft, std::move(right));
+    }
+
+    case TokenType::ShiftRight: {
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::BitwiseShiftRight, std::move(right));
     }
 
 case TokenType::Arrow: {
@@ -4565,7 +4642,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
 // the brace
         if (at().type == havel::TokenType::Number) {
             countExpr =
-                std::make_unique<havel::ast::NumberLiteral>(std::stod(at().value), at().value.find('.') != std::string::npos);
+                std::make_unique<havel::ast::NumberLiteral>(parseNumberLiteral(at().value), hasDecimalPart(at().value));
             advance();
       } else if (at().type == havel::TokenType::Identifier) {
         countExpr = std::make_unique<havel::ast::Identifier>(
@@ -6172,13 +6249,12 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
   }
 
   // Check for config append operator >>
-  if (at().type == havel::TokenType::ShiftRight) {
-    auto opTok = at();
-    auto op = tokenToBinaryOperator(at().type);
-    advance(); // consume '>>'
-    auto right = parseLogicalOr();
-    auto bin = std::make_unique<havel::ast::BinaryExpression>(
-        std::move(left), op, std::move(right));
+    if (at().type == havel::TokenType::ShiftRight) {
+      auto opTok = at();
+      advance();
+      auto right = parseLogicalOr();
+      auto bin = std::make_unique<havel::ast::BinaryExpression>(
+          std::move(left), havel::ast::BinaryOperator::ConfigAppend, std::move(right));
     bin->line = opTok.line;
     bin->column = opTok.column;
     return std::move(bin);
@@ -6523,8 +6599,18 @@ havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
     return TokenType::Greater;
   case ast::BinaryOperator::And:
     return TokenType::And;
-  case ast::BinaryOperator::Or:
-    return TokenType::Or;
+      case ast::BinaryOperator::Or:
+        return TokenType::Or;
+      case ast::BinaryOperator::BitwiseAnd:
+        return TokenType::BitwiseAnd;
+      case ast::BinaryOperator::BitwiseOr:
+        return TokenType::BitwiseOr;
+      case ast::BinaryOperator::BitwiseXor:
+        return TokenType::BitwiseXor;
+      case ast::BinaryOperator::BitwiseShiftLeft:
+        return TokenType::ShiftLeft;
+      case ast::BinaryOperator::BitwiseShiftRight:
+        return TokenType::ShiftRight;
   default:
     fail("Unknown binary operator");
   }
@@ -6560,15 +6646,23 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
     return havel::ast::BinaryOperator::LessEqual;
   case TokenType::GreaterEquals:
     return havel::ast::BinaryOperator::GreaterEqual;
-  case TokenType::And:
-    return havel::ast::BinaryOperator::And;
-  case TokenType::Or:
-    return havel::ast::BinaryOperator::Or;
-  case TokenType::Matches:
-  case TokenType::Tilde: // ~ is shorthand for matches
-    return havel::ast::BinaryOperator::Matches;
-  case TokenType::ShiftRight:
-    return havel::ast::BinaryOperator::ConfigAppend;
+    case TokenType::And:
+      return havel::ast::BinaryOperator::And;
+    case TokenType::Or:
+      return havel::ast::BinaryOperator::Or;
+    case TokenType::BitwiseAnd:
+      return havel::ast::BinaryOperator::BitwiseAnd;
+    case TokenType::BitwiseOr:
+      return havel::ast::BinaryOperator::BitwiseOr;
+    case TokenType::BitwiseXor:
+      return havel::ast::BinaryOperator::BitwiseXor;
+    case TokenType::ShiftLeft:
+      return havel::ast::BinaryOperator::BitwiseShiftLeft;
+    case TokenType::ShiftRight:
+      return havel::ast::BinaryOperator::BitwiseShiftRight;
+    case TokenType::Matches:
+    case TokenType::Tilde:
+      return havel::ast::BinaryOperator::Matches;
   default:
     fail("Invalid binary operator token: " +
          std::to_string(static_cast<int>(tokenType)));
@@ -6580,8 +6674,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   switch (tk.type) {
 case havel::TokenType::Number: {
             advance();
-            double value = std::stod(tk.value);
-            return std::make_unique<havel::ast::NumberLiteral>(value, tk.value.find('.') != std::string::npos);
+        double value = parseNumberLiteral(tk.value);
+        return std::make_unique<havel::ast::NumberLiteral>(value, hasDecimalPart(tk.value));
         }
 
   case havel::TokenType::String: {
@@ -7992,14 +8086,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePatternAtom() {
   else if (at().type == havel::TokenType::Number) {
     auto tok = advance();
 try {
-            if (tok.value.find('.') != std::string::npos ||
-                tok.value.find('e') != std::string::npos ||
-                tok.value.find('E') != std::string::npos) {
-                literal = std::make_unique<havel::ast::NumberLiteral>(std::stod(tok.value), true);
-            } else {
-                literal = std::make_unique<havel::ast::NumberLiteral>(
-                    static_cast<double>(std::stoll(tok.value)), false);
-            }
+        literal = std::make_unique<havel::ast::NumberLiteral>(parseNumberLiteral(tok.value), hasDecimalPart(tok.value));
         } catch (...) {
             failAt(tok, "Invalid number literal");
             return nullptr;

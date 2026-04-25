@@ -76,12 +76,12 @@ static Value createFileObject(const fs::path &path, VMApi &api) {
 
 void registerFsModule(VMApi &api) {
   // File existence checks
-  api.registerFunction(
-      "fs.exists", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-          return Value::makeBool(false);
-        std::string path = valueToString(args[0], api);
-        return Value::makeBool(fs::exists(path));
+    api.registerFunction(
+        "fs.exists", [&api](const std::vector<Value> &args) {
+            if (args.empty())
+                return Value::makeBool(false);
+            std::string path = valueToString(args[0], api);
+            return Value::makeBool(fs::exists(path));
       });
 
   api.registerFunction(

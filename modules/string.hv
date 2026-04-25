@@ -1,0 +1,377 @@
+// modules/string.hv
+// Pure Havel string module using FFI when needed, pure Havel otherwise
+
+// ============================================================
+// Core string operations (pure Havel, no FFI)
+// ============================================================
+
+fn upper(s) {
+    let result = ""
+    let i = 0
+    let len = #s
+    while i < len {
+        let ch = s[i:i+1]
+        if ch >= "a" && ch <= "z" {
+            result = result + chr(ord(ch) - 32)
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn lower(s) {
+    let result = ""
+    let i = 0
+    let len = #s
+    while i < len {
+        let ch = s[i:i+1]
+        if ch >= "A" && ch <= "Z" {
+            result = result + chr(ord(ch) + 32)
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn trim(s) {
+    let start = 0
+    let end = #s - 1
+    while start <= end {
+        let ch = s[start:start+1]
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            break
+        }
+        start = start + 1
+    }
+    while end >= start {
+        let ch = s[end:end+1]
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            break
+        }
+        end = end - 1
+    }
+    if start > end {
+        return ""
+    }
+    return s[start:end+1]
+}
+
+fn split(s, delim) {
+    let result = []
+    if delim == null {
+        delim = ","
+    }
+    let pos = 0
+    let dlen = #delim
+    let slen = #s
+    while pos <= slen {
+        let found = s.find(delim, pos)
+        if found == null || found < 0 {
+            result.push(s[pos:])
+            break
+        }
+        result.push(s[pos:found])
+        pos = found + dlen
+    }
+    return result
+}
+
+fn join(arr, delim) {
+    if delim == null {
+        delim = ""
+    }
+    let result = ""
+    let i = 0
+    let len = #arr
+    while i < len {
+        if i > 0 {
+            result = result + delim
+        }
+        result = result + arr[i]
+        i = i + 1
+    }
+    return result
+}
+
+fn replace(s, old, new) {
+    if old == null || old == "" {
+        return s
+    }
+    let result = ""
+    let pos = 0
+    let slen = #s
+    let olen = #old
+    while true {
+        let idx = s.find(old, pos)
+        if idx == null || idx < 0 {
+            result = result + s[pos:]
+            break
+        }
+        result = result + s[pos:idx] + new
+        pos = idx + olen
+    }
+    return result
+}
+
+fn startsWith(s, prefix) {
+    if #prefix > #s {
+        return false
+    }
+    return s[0:#prefix] == prefix
+}
+
+fn endsWith(s, suffix) {
+    if #suffix > #s {
+        return false
+    }
+    return s[#s - #suffix:] == suffix
+}
+
+fn contains(s, sub) {
+    return s.find(sub) != null && s.find(sub) >= 0
+}
+
+fn count(s, sub) {
+    if sub == null || sub == "" {
+        return 0
+    }
+    let cnt = 0
+    let pos = 0
+    let slen = #s
+    let olen = #sub
+    while pos <= slen {
+        let idx = s.find(sub, pos)
+        if idx == null || idx < 0 {
+            break
+        }
+        cnt = cnt + 1
+        pos = idx + olen
+    }
+    return cnt
+}
+
+fn repeat(s, n) {
+    if n <= 0 {
+        return ""
+    }
+    let result = ""
+    let i = 0
+    while i < n {
+        result = result + s
+        i = i + 1
+    }
+    return result
+}
+
+fn padStart(s, width, pad) {
+    if pad == null {
+        pad = " "
+    }
+    if #s >= width {
+        return s
+    }
+    let needed = width - #s
+    let padLen = #pad
+    let prefix = ""
+    let i = 0
+    while i < needed {
+        prefix = prefix + pad[i % padLen:i % padLen + 1]
+        i = i + 1
+    }
+    return prefix + s
+}
+
+fn padEnd(s, width, pad) {
+    if pad == null {
+        pad = " "
+    }
+    if #s >= width {
+        return s
+    }
+    let needed = width - #s
+    let padLen = #pad
+    let suffix = ""
+    let i = 0
+    while i < needed {
+        suffix = suffix + pad[i % padLen:i % padLen + 1]
+        i = i + 1
+    }
+    return s + suffix
+}
+
+fn left(s, n) {
+    if n <= 0 {
+        return ""
+    }
+    if n >= #s {
+        return s
+    }
+    return s[0:n]
+}
+
+fn right(s, n) {
+    if n <= 0 {
+        return ""
+    }
+    if n >= #s {
+        return s
+    }
+    return s[#s - n:]
+}
+
+fn chars(s) {
+    let result = []
+    let i = 0
+    let len = #s
+    while i < len {
+        result.push(s[i:i+1])
+        i = i + 1
+    }
+    return result
+}
+
+fn bytes(s) {
+    // Returns array of byte values (0-255)
+    let result = []
+    let i = 0
+    let len = #s
+    while i < len {
+        result.push(ord(s[i:i+1]))
+        i = i + 1
+    }
+    return result
+}
+
+// ============================================================
+// FFI-based operations (if libc available)
+// ============================================================
+
+let _libc = null
+let _toupper = null
+let _tolower = null
+let _strlen = null
+
+fn _initLibc() {
+    if _libc != null {
+        return
+    }
+    _libc = ffi.open("libc.so.6")
+    if _libc != null {
+        _toupper = ffi.sym(_libc, "toupper")
+        _tolower = ffi.sym(_libc, "tolower")
+        _strlen = ffi.sym(_libc, "strlen")
+    }
+}
+
+fn upperFast(s) {
+    _initLibc()
+    if _toupper == null {
+        return upper(s)
+    }
+    // Implementation would need to iterate over bytes
+    // For now, fall back to pure Havel
+    return upper(s)
+}
+
+fn lowerFast(s) {
+    _initLibc()
+    if _tolower == null {
+        return lower(s)
+    }
+    return lower(s)
+}
+
+// ============================================================
+// Character helpers (pure Havel)
+// ============================================================
+
+fn ord(ch) {
+    // Returns Unicode code point of first character
+    // Simplified: only ASCII for now
+    if ch == null || ch == "" {
+        return 0
+    }
+    // This is a limitation — real implementation needs UTF-8 decode
+    return ch[0]  // This won't work, need actual byte value
+}
+
+fn chr(code) {
+    // Convert code point to string
+    // Simplified: only ASCII
+    if code < 0 || code > 127 {
+        return ""
+    }
+    // Need way to create string from code
+    return str(code)  // This is wrong, need actual char
+}
+
+// ============================================================
+// Utility functions
+// ============================================================
+
+fn isUpper(ch) {
+    if #ch != 1 {
+        return false
+    }
+    return ch >= "A" && ch <= "Z"
+}
+
+fn isLower(ch) {
+    if #ch != 1 {
+        return false
+    }
+    return ch >= "a" && ch <= "z"
+}
+
+fn isDigit(ch) {
+    if #ch != 1 {
+        return false
+    }
+    return ch >= "0" && ch <= "9"
+}
+
+fn isLetter(ch) {
+    if #ch != 1 {
+        return false
+    }
+    return (ch >= "A" && ch <= "Z") or (ch >= "a" && ch <= "z")
+}
+
+fn isAlphaNum(ch) {
+    return isLetter(ch) or isDigit(ch)
+}
+
+fn isSpace(ch) {
+    if #ch != 1 {
+        return false
+    }
+    return ch == " " or ch == "\t" or ch == "\n" or ch == "\r"
+}
+
+// ============================================================
+// Reverse (by code units, not graphemes)
+// ============================================================
+
+fn reverse(s) {
+    let result = ""
+    let i = #s - 1
+    while i >= 0 {
+        result = result + s[i:i+1]
+        i = i - 1
+    }
+    return result
+}
+
+// ============================================================
+// Export public API
+// ============================================================
+
+export upper, lower, trim, split, join, replace
+export startsWith, endsWith, contains, count, repeat
+export padStart, padEnd, left, right, reverse
+export chars, bytes
+export isUpper, isLower, isDigit, isLetter, isAlphaNum, isSpace

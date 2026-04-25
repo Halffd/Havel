@@ -1,0 +1,49 @@
+use fs
+
+print("=== fs module test ===")
+
+print("exists /etc/passwd: " + fs.exists("/etc/passwd"))
+print("isFile /etc/passwd: " + fs.isFile("/etc/passwd"))
+print("isDir /etc: " + fs.isDir("/etc"))
+
+let info = fs.stat("/etc/passwd")
+if info != null {
+    print("stat /etc/passwd:")
+    print("  size: " + info.size)
+    print("  uid: " + info.uid)
+    print("  isFile: " + info.isFile)
+    print("  isDir: " + info.isDir)
+}
+
+let content = fs.readFile("/etc/hostname")
+if content != null {
+    print("readFile /etc/hostname: " + content)
+}
+
+let entries = fs.readDir("/tmp")
+print("readDir /tmp count: " + entries.length)
+
+print("mkdir /tmp/havel_fs_test: " + fs.mkdir("/tmp/havel_fs_test"))
+print("isDir /tmp/havel_fs_test: " + fs.isDir("/tmp/havel_fs_test"))
+
+print("writeFile: " + fs.writeFile("/tmp/havel_fs_test/hello.txt", "hello from havel fs module\n"))
+let r = fs.readFile("/tmp/havel_fs_test/hello.txt")
+print("readFile: " + r)
+
+print("appendFile: " + fs.appendFile("/tmp/havel_fs_test/hello.txt", "appended line\n"))
+let r2 = fs.readFile("/tmp/havel_fs_test/hello.txt")
+print("readFile after append: " + r2)
+
+print("rename: " + fs.rename("/tmp/havel_fs_test/hello.txt", "/tmp/havel_fs_test/renamed.txt"))
+print("exists renamed: " + fs.exists("/tmp/havel_fs_test/renamed.txt"))
+
+print("copy: " + fs.copy("/tmp/havel_fs_test/renamed.txt", "/tmp/havel_fs_test/copied.txt"))
+print("exists copied: " + fs.exists("/tmp/havel_fs_test/copied.txt"))
+
+print("unlink renamed: " + fs.unlink("/tmp/havel_fs_test/renamed.txt"))
+print("unlink copied: " + fs.unlink("/tmp/havel_fs_test/copied.txt"))
+
+print("rmdir: " + fs.rmdir("/tmp/havel_fs_test"))
+print("exists after rmdir: " + fs.exists("/tmp/havel_fs_test"))
+
+print("=== all tests done ===")

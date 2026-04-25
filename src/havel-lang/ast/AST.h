@@ -2214,7 +2214,7 @@ struct UnaryExpression : public Expression {
     Minus,  // -expr
     Plus,   // +expr (unary plus)
     Length, // #expr (length operator)
-    BitwiseNot // ~expr bitwise NOT (inside (( )))
+    BitwiseNot, // ~expr bitwise NOT (inside (( )))
   };
 
   UnaryOperator operator_;
@@ -2226,10 +2226,10 @@ struct UnaryExpression : public Expression {
   }
 
   std::string toString() const override {
-    std::string opStr = (operator_ == UnaryOperator::Not)     ? "!"
-                        : (operator_ == UnaryOperator::Minus) ? "-"
-                                                              : (operator_ == UnaryOperator::BitwiseNot) ? "~"
-                : "+"
+    std::string opStr = (operator_ == UnaryOperator::Not) ? "!"
+        : (operator_ == UnaryOperator::Minus) ? "-"
+        : (operator_ == UnaryOperator::BitwiseNot) ? "~"
+        : "+";
     return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") +
            "}";
   }

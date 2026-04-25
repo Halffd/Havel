@@ -3784,6 +3784,14 @@ void VM::garbageCollectionSafePoint(size_t work_budget) {
 
 Value VM::popStack() {
   if (stack.empty()) {
+    if (frame_count_ > 0) {
+      const auto &frame = currentFrame();
+      ::havel::error("Stack underflow in function '{}' at IP {}", frame.function->name, frame.ip);
+      if (frame.ip < frame.function->instructions.size()) {
+        const auto &instr = frame.function->instructions[frame.ip];
+        ::havel::error("Offending Instruction: IP {} OpCode {}", frame.ip, static_cast<int>(instr.opcode));
+      }
+    }
     COMPILER_THROW("Stack underflow");
   }
   Value value = stack.top();

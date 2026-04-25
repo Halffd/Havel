@@ -136,16 +136,37 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("sys");
   bridge.options().host_global_names.insert("shell");
 
-  // Pointer/Format/Pack
-  bridge.options().host_global_names.insert("ptr");
-  bridge.options().host_global_names.insert("deref");
-  bridge.options().host_global_names.insert("offset");
-  bridge.options().host_global_names.insert("ptreq");
+    // Pointer/Format/Pack
+    bridge.options().host_global_names.insert("ptr");
+    bridge.options().host_global_names.insert("deref");
+    bridge.options().host_global_names.insert("offset");
+    bridge.options().host_global_names.insert("ptreq");
+    bridge.options().host_global_names.insert("deref.i8");
+    bridge.options().host_global_names.insert("deref.i16");
+    bridge.options().host_global_names.insert("deref.i32");
+    bridge.options().host_global_names.insert("deref.i64");
+    bridge.options().host_global_names.insert("deref.u8");
+    bridge.options().host_global_names.insert("deref.u16");
+    bridge.options().host_global_names.insert("deref.u32");
+    bridge.options().host_global_names.insert("deref.u64");
+    bridge.options().host_global_names.insert("deref.f32");
+    bridge.options().host_global_names.insert("deref.f64");
+    bridge.options().host_global_names.insert("write.i8");
+    bridge.options().host_global_names.insert("write.i16");
+    bridge.options().host_global_names.insert("write.i32");
+    bridge.options().host_global_names.insert("write.i64");
+    bridge.options().host_global_names.insert("write.u8");
+    bridge.options().host_global_names.insert("write.u16");
+    bridge.options().host_global_names.insert("write.u32");
+    bridge.options().host_global_names.insert("write.u64");
+    bridge.options().host_global_names.insert("write.f32");
+    bridge.options().host_global_names.insert("write.f64");
   bridge.options().host_global_names.insert("hex");
   bridge.options().host_global_names.insert("oct");
   bridge.options().host_global_names.insert("bin");
   bridge.options().host_global_names.insert("b64");
-  bridge.options().host_global_names.insert("b64decode");
+    bridge.options().host_global_names.insert("b64decode");
+    bridge.options().host_global_names.insert("format");
   bridge.options().host_global_names.insert("pack");
   bridge.options().host_global_names.insert("unpack");
 

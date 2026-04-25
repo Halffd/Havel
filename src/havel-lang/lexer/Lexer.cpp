@@ -1323,7 +1323,27 @@ continue;
       continue;
     }
 
-    // Handle && and ||
+    // Handle (( )) bitwise expression delimiters
+  if (c == '(' && peek() == '(' && !inBitwiseExpr) {
+    advance(); // consume second '('
+    inBitwiseExpr = true;
+    tokens.push_back(makeToken("((", TokenType::DoubleOpenParen));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+  if (c == ')' && peek() == ')' && inBitwiseExpr) {
+    advance(); // consume second ')'
+    inBitwiseExpr = false;
+    tokens.push_back(makeToken("))", TokenType::DoubleCloseParen));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+
+  // Handle && and ||
     if (c == '&' && peek() == '&') {
       advance();
       tokens.push_back(makeToken("&&", TokenType::And));
@@ -1332,34 +1352,52 @@ continue;
       }
       continue;
     }
-    if (c == '|' && peek() == '|') {
-      advance();
-      tokens.push_back(makeToken("||", TokenType::Or));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
+  if (c == '|' && peek() == '|') {
+    advance();
+    tokens.push_back(makeToken("||", TokenType::Or));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
     }
+    continue;
+  }
+  // Inside (( )), single | is bitwise OR, not pipeline
+  if (c == '|' && inBitwiseExpr) {
+    tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
 
-    // Handle <= and >=
-    if (c == '<' && peek() == '=') {
-      advance();
-      tokens.push_back(makeToken("<=", TokenType::LessEquals));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
+  // Handle <= and >=
+  if (c == '<' && peek() == '=') {
+    advance();
+    tokens.push_back(makeToken("<=", TokenType::LessEquals));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
     }
-    if (c == '>' && peek() == '=') {
-      advance();
-      tokens.push_back(makeToken(">=", TokenType::GreaterEquals));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
+    continue;
+  }
+  if (c == '>' && peek() == '=') {
+    advance();
+    tokens.push_back(makeToken(">=", TokenType::GreaterEquals));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
     }
+    continue;
+  }
 
-    // Handle >> (config append/get operator) - must check before single >
+  // Handle << (bitwise left shift) - must check before single <
+  if (c == '<' && peek() == '<') {
+    advance(); // consume second '<'
+    tokens.push_back(makeToken("<<", TokenType::ShiftLeft));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+
+  // Handle >> (config append/get or bitwise right shift) - must check before single >
     if (c == '>' && peek() == '>') {
       advance(); // consume second '>'
       tokens.push_back(makeToken(">>", TokenType::ShiftRight));
@@ -1493,17 +1531,34 @@ continue;
       }
     }
 
-    // Handle modifier-based hotkeys starting with special characters like # and
-    // combo '&'
-    if (c == '#' || c == '&') {
-      tokens.push_back(scanHotkey());
+  // Handle modifier-based hotkeys starting with special characters like # and
+  // combo '&' — but inside (( )), & is bitwise AND
+  if (c == '&') {
+    if (inBitwiseExpr) {
+      tokens.push_back(makeToken("&", TokenType::BitwiseAnd));
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
       continue;
     }
+    tokens.push_back(scanHotkey());
+    continue;
+  }
+  if (c == '#') {
+    tokens.push_back(scanHotkey());
+    continue;
+  }
 
-    // Handle modifier-based hotkeys starting with special characters like ^ + !
-    // @ ~ $ This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized
-    // as Plus. EXCEPTION: + after expression context should be Plus operator
-    if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
+  // Handle modifier-based hotkeys starting with special characters like ^ + !
+  // @ ~ $ — but inside (( )), ^ is bitwise XOR and ~ is bitwise NOT
+  if (c == '^' && inBitwiseExpr) {
+    tokens.push_back(makeToken("^", TokenType::BitwiseXor));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+  if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
       // Special case: !{ for unsorted object literals - emit ! then { separately
       if (c == '!' && peek() == '{') {
         tokens.push_back(makeToken("!", TokenType::Not));

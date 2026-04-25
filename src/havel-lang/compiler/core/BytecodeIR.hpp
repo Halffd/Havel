@@ -91,12 +91,20 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   GT,
   GTE,
 
-  // Logical operations
-  AND,
-  OR,
-  NOT,
-  NEGATE,  // Unary minus (negate number)
-  IS_NULL, // Check if value is null or undefined
+    // Logical operations
+    AND,
+    OR,
+    NOT,
+    NEGATE, // Unary minus (negate number)
+    IS_NULL, // Check if value is null or undefined
+
+    // Bitwise operations
+    BIT_AND,
+    BIT_OR,
+    BIT_XOR,
+    BIT_LSH,
+    BIT_RSH,
+    BIT_NOT, // Unary bitwise NOT (~)
 
   // Control flow
   JUMP,

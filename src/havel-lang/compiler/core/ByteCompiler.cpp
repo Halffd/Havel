@@ -50,10 +50,22 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::GT;
   case ast::BinaryOperator::GreaterEqual:
     return OpCode::GTE;
-  case ast::BinaryOperator::And:
-    return OpCode::AND;
-  case ast::BinaryOperator::Or:
-    return OpCode::OR;
+    case ast::BinaryOperator::And:
+      return OpCode::AND;
+    case ast::BinaryOperator::Or:
+      return OpCode::OR;
+    case ast::BinaryOperator::BitwiseAnd:
+      return OpCode::BIT_AND;
+    case ast::BinaryOperator::BitwiseOr:
+      return OpCode::BIT_OR;
+    case ast::BinaryOperator::BitwiseXor:
+      return OpCode::BIT_XOR;
+    case ast::BinaryOperator::BitwiseShiftLeft:
+      return OpCode::BIT_LSH;
+    case ast::BinaryOperator::BitwiseShiftRight:
+      return OpCode::BIT_RSH;
+    case ast::BinaryOperator::ConfigAppend:
+      return OpCode::NOP;
   case ast::BinaryOperator::Matches:
   case ast::BinaryOperator::Tilde:
     // Regex matching - will be compiled as host function call
@@ -2642,7 +2654,13 @@ break;
             Value::makeStringValId(strId),
             Value(static_cast<uint32_t>(2))});
       }
-    } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
+      } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
+      } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
+        compileExpression(*binary.left);
+        compileExpression(*binary.right);
+        uint32_t strId = addStringConstant("config.append");
+        emit(OpCode::CALL_HOST, std::vector<Value>{
+            Value::makeStringValId(strId), Value(static_cast<uint32_t>(2))});
       // Nullish coalescing: left ?? right
       // Evaluate left side
       compileExpression(*binary.left);
@@ -3599,9 +3617,12 @@ if (update_expr.isPrefix) {
 
     // Apply unary operator
     switch (unary.operator_) {
-    case ast::UnaryExpression::UnaryOperator::Not:
-      emit(OpCode::NOT);
-      break;
+        case ast::UnaryExpression::UnaryOperator::Not:
+          emit(OpCode::NOT);
+          break;
+        case ast::UnaryExpression::UnaryOperator::BitwiseNot:
+          emit(OpCode::BIT_NOT);
+          break;
     case ast::UnaryExpression::UnaryOperator::Minus:
       emit(OpCode::NEGATE);
       break;

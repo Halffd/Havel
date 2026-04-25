@@ -259,6 +259,8 @@ if(ENABLE_LLVM AND ENABLE_HAVEL_LANG)
         
         # Combine all libraries - this returns raw flags like "-lLLVMCore -lLLVMSupport ..."
         set(LLVM_LIBS "${LLVM_LINKFLAGS} ${LLVM_SYSTEM_LIBS}")
+        string(STRIP "${LLVM_LIBS}" LLVM_LIBS)
+        separate_arguments(LLVM_LIBS) # Convert space-separated string to CMake list
         
         # Add LLVM library search directory to linker search path
         if(LLVM_LIBDIR)
@@ -444,7 +446,7 @@ if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE)
         /usr/include/qt6/QtWidgets
         /usr/include/qt6/QtGui
     )
-    list(APPEND COMMON_LIBS Qt6::Core Qt6::Widgets Qt6::Gui)
+    list(APPEND BACKEND_LIBS Qt6::Core Qt6::Widgets Qt6::Gui)
     list(APPEND UI_BACKEND_DEFS HAVE_QT_EXTENSION)
     message(STATUS "Qt6:             ✓ Linked to main + dynamic extension available")
 elseif(UI_BACKEND STREQUAL "GTK" AND GTK_BACKEND_AVAILABLE)
@@ -570,6 +572,9 @@ set(COMMON_LIBS
     # Note: Qt6 is loaded dynamically as an extension, not linked here
 )
 
+# Append backend libs to common libs
+list(APPEND COMMON_LIBS ${BACKEND_LIBS})
+
 # ==============================================================================
 # NATIVE EXTENSIONS (MODULE libraries loaded via dlopen)
 # ==============================================================================
@@ -581,6 +586,9 @@ add_library(havel_extension_runtime STATIC
 target_include_directories(havel_extension_runtime PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
+)
+set_target_properties(havel_extension_runtime PROPERTIES 
+    POSITION_INDEPENDENT_CODE ON
 )
 
 # Image extension (OpenCV-based)
@@ -752,7 +760,7 @@ target_include_directories(havel-lsp PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 
- target_link_libraries(havel-lsp PRIVATE
+target_link_libraries(havel-lsp PRIVATE
  nlohmann_json::nlohmann_json
  )
 
@@ -866,7 +874,7 @@ target_include_directories(havel PRIVATE
     ${DBUS_INCLUDE_DIRS}
     ${PULSEAUDIO_INCLUDE_DIRS}
     ${PIPEWIRE_INCLUDE_DIRS}
-    ${ALSA_INCLUDE_DIRS}
+  ${ALSA_INCLUDE_DIRS}
   ${WAYLAND_INCLUDE_DIRS}
     ${GENERATED_PROTO_DIR}
     ${TESSERACT_INCLUDE_DIRS}
@@ -874,7 +882,7 @@ target_include_directories(havel PRIVATE
     ${OpenCV_INCLUDE_DIRS}
     ${UI_BACKEND_INCLUDES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-    # Note: LLVM_INCLUDE_DIRS intentionally omitted here - scoped to BytecodeOrcJIT.cpp only
+    # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
     # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
 )
 
@@ -907,7 +915,12 @@ target_compile_definitions(havel PRIVATE
 if(ENABLE_HAVEL_LANG)
     set(HAVEL_LANG_LIB_SOURCES ${HAVEL_LANG_SOURCES})
     list(REMOVE_ITEM HAVEL_LANG_LIB_SOURCES
-        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridge.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridgeNew.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/Compiler.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JIT.cpp
     )
     # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
     list(APPEND HAVEL_LANG_LIB_SOURCES
@@ -928,19 +941,16 @@ if(ENABLE_HAVEL_LANG)
         ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
         $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
-        # Note: LLVM_INCLUDE_DIRS scoped to BytecodeOrcJIT.cpp only (see below)
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtCore>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtWidgets>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
+        # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
+        # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
     )
     
 target_link_libraries(havel_lang PRIVATE
 ${COMMON_LIBS}
 $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-        $<$<BOOL:${HAVE_LIBFFI}>:ffi>
-        dl
-    )
+$<$<BOOL:${HAVE_LIBFFI}>:ffi>
+dl
+)
 
     # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow
     # in PIE test binaries. Release builds keep LTO for performance.
@@ -951,15 +961,15 @@ $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
         target_compile_options(havel_lang PRIVATE -fno-lto)
     endif()
     
-    target_compile_definitions(havel_lang PRIVATE
-        $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
-        $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:HAVE_QT_EXTENSION>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
-        $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
-        $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
-    )
+target_compile_definitions(havel_lang PRIVATE
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+$<$<BOOL:${QT_BACKEND_AVAILABLE}>:HAVE_QT_EXTENSION>
+$<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
+$<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
+$<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
+$<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
+)
 
     # -----------------------------------------------------------------------
     # Note: LLVM_INCLUDE_DIRS handling is applied globally at source assembly
@@ -973,7 +983,7 @@ endif()
 # ==============================================================================
 # TEST EXECUTABLES (CONDITIONAL)
 # ==============================================================================
-if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
+if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
     foreach(test_file ${TEST_SOURCES})
         get_filename_component(test_name ${test_file} NAME_WE)
 
@@ -1137,7 +1147,7 @@ else()
     message(STATUS "LLVM JIT:        ✗ DISABLED")
 endif()
 
- if(ENABLE_TESTS AND GTest_FOUND)
+ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
  message(STATUS "Tests: ✓ ENABLED")
  elseif(ENABLE_TESTS)
  message(STATUS "Tests: ⚠ REQUESTED BUT GTEST MISSING")

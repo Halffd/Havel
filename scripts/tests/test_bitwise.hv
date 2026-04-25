@@ -1,0 +1,28 @@
+let a = 0xFF00
+let b = 0x00FF
+let c = (( a | b ))
+print(c)
+
+let d = (( a & b ))
+print(d)
+
+let e = (( a ^ b ))
+print(e)
+
+let f = (( 1 << 8 ))
+print(f)
+
+let g = (( 256 >> 4 ))
+print(g)
+
+let h = (( ~0 ))
+print(h)
+
+let i = (( a | b & 0x0F ))
+print(i)
+
+let j = (( (a | b) & 0x0F ))
+print(j)
+
+let k = (( 1 << 2 | 1 ))
+print(k)

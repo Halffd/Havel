@@ -7,6 +7,28 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+
+static int popcount64(uint64_t v) { return static_cast<int>(__popcnt64(v)); }
+static int ctz64(uint64_t v) {
+    unsigned long idx;
+    if (!_BitScanForward64(&idx, v)) return 64;
+    return static_cast<int>(idx);
+}
+static int clz64(uint64_t v) {
+    unsigned long idx;
+    if (!_BitScanReverse64(&idx, v)) return 64;
+    return 63 - static_cast<int>(idx);
+}
+static int parity64(uint64_t v) { return popcount64(v) & 1; }
+#else
+static int popcount64(uint64_t v) { return __builtin_popcountll(v); }
+static int ctz64(uint64_t v) { return v == 0 ? 64 : __builtin_ctzll(v); }
+static int clz64(uint64_t v) { return v == 0 ? 64 : __builtin_clzll(v); }
+static int parity64(uint64_t v) { return __builtin_parityll(v); }
+#endif
+
 static int64_t getInt(const Value &v) {
     if (v.isInt()) return v.asInt();
     if (v.isDouble()) return static_cast<int64_t>(v.asDouble());
@@ -92,25 +114,25 @@ void registerBitModule(VMApi &api) {
         if (args.empty()) throw std::runtime_error("bit.lsb() requires an argument");
         uint64_t v = static_cast<uint64_t>(getInt(args[0]));
         if (v == 0) return Value(static_cast<int64_t>(-1));
-        return Value(static_cast<int64_t>(__builtin_ctzll(v)));
+        return Value(static_cast<int64_t>(ctz64(v)));
     });
 
     api.registerFunction("bit.msb", [&api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("bit.msb() requires an argument");
         uint64_t v = static_cast<uint64_t>(getInt(args[0]));
         if (v == 0) return Value(static_cast<int64_t>(-1));
-        return Value(static_cast<int64_t>(63 - __builtin_clzll(v)));
+        return Value(static_cast<int64_t>(63 - clz64(v)));
     });
 
     api.registerFunction("bit.count", [&api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("bit.count() requires an argument");
-        return Value(static_cast<int64_t>(__builtin_popcountll(
+        return Value(static_cast<int64_t>(popcount64(
             static_cast<uint64_t>(getInt(args[0])))));
     });
 
     api.registerFunction("bit.parity", [&api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("bit.parity() requires an argument");
-        return Value(static_cast<int64_t>(__builtin_parityll(
+        return Value(static_cast<int64_t>(parity64(
             static_cast<uint64_t>(getInt(args[0])))));
     });
 

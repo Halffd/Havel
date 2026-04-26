@@ -1456,16 +1456,84 @@ case ast::NodeType::MemberExpression: {
     if (spreadPat.target) resolveExpression(*spreadPat.target);
     break;
   }
-  case ast::NodeType::RangePattern: {
-    const auto &rangePat = static_cast<const ast::RangePattern &>(expression);
-    if (rangePat.start) resolveExpression(*rangePat.start);
-    if (rangePat.end) resolveExpression(*rangePat.end);
-    break;
-  }
+    case ast::NodeType::RangePattern: {
+        const auto &rangePat = static_cast<const ast::RangePattern &>(expression);
+        if (rangePat.start) resolveExpression(*rangePat.start);
+        if (rangePat.end) resolveExpression(*rangePat.end);
+        break;
+    }
 
-  default:
-    break;
-  }
+    case ast::NodeType::TernaryExpression: {
+        const auto &ternary = static_cast<const ast::TernaryExpression &>(expression);
+        if (ternary.condition) resolveExpression(*ternary.condition);
+        if (ternary.trueValue) resolveExpression(*ternary.trueValue);
+        if (ternary.falseValue) resolveExpression(*ternary.falseValue);
+        break;
+    }
+
+    case ast::NodeType::IfExpression: {
+        const auto &ifExpr = static_cast<const ast::IfExpression &>(expression);
+        if (ifExpr.condition) resolveExpression(*ifExpr.condition);
+        if (ifExpr.thenBranch) resolveExpression(*ifExpr.thenBranch);
+        if (ifExpr.elseBranch) resolveExpression(*ifExpr.elseBranch);
+        break;
+    }
+
+    case ast::NodeType::BlockExpression: {
+        const auto &block = static_cast<const ast::BlockExpression &>(expression);
+        for (const auto &stmt : block.body) {
+            if (stmt) resolveStatement(*stmt);
+        }
+        if (block.value) resolveExpression(*block.value);
+        break;
+    }
+
+    case ast::NodeType::CastExpression: {
+        const auto &cast = static_cast<const ast::CastExpression &>(expression);
+        if (cast.expr) resolveExpression(*cast.expr);
+        break;
+    }
+
+    case ast::NodeType::CollectionExpression: {
+        const auto &coll = static_cast<const ast::CollectionExpression &>(expression);
+        for (const auto &entry : coll.entries) {
+            if (entry.keyExpr) resolveExpression(*entry.keyExpr);
+            if (entry.value) resolveExpression(*entry.value);
+        }
+        break;
+    }
+
+    case ast::NodeType::AtExpression: {
+        const auto &at = static_cast<const ast::AtExpression &>(expression);
+        if (at.field) resolveExpression(*at.field);
+        break;
+    }
+
+    case ast::NodeType::AtAtExpression: {
+        const auto &atat = static_cast<const ast::AtAtExpression &>(expression);
+        if (atat.field) resolveExpression(*atat.field);
+        break;
+    }
+
+    case ast::NodeType::GoExpression: {
+        const auto &go = static_cast<const ast::GoExpression &>(expression);
+        if (go.call) resolveExpression(*go.call);
+        break;
+    }
+
+    case ast::NodeType::ChannelExpression:
+    case ast::NodeType::ThisExpression:
+        break;
+
+    case ast::NodeType::GetInputExpression: {
+        const auto &getInput = static_cast<const ast::GetInputExpression &>(expression);
+        if (getInput.prompt) resolveExpression(*getInput.prompt);
+        break;
+    }
+
+    default:
+        break;
+    }
 }
 
 std::optional<ResolvedBinding>

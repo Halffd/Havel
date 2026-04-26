@@ -1,5 +1,6 @@
             #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -214,7 +215,10 @@ public:
 
   // Error handling
   const std::vector<CompilerError> &getErrors() const { return errors; }
-  bool hasErrors() const { return !errors.empty(); }
+  bool hasErrors() const {
+    return std::any_of(errors.begin(), errors.end(),
+                       [](const auto &e) { return e.severity == ErrorSeverity::Error; });
+  }
 
   static const std::unordered_map<std::string, TokenType> KEYWORDS;
 

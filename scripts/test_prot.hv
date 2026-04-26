@@ -1,0 +1,7 @@
+// Test prot keyword
+prot Drawable {
+  fn draw()
+  fn resize(w, h)
+}
+
+print("protocol parsed ok")

@@ -251,8 +251,16 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> host function index
   std::unordered_map<std::string,
-                     std::unordered_map<std::string, uint32_t>>
-      prototypes_;
+  std::unordered_map<std::string, uint32_t>>
+  prototypes_;
+
+  // Protocol system - protocol declarations and implementations
+  // protocol_contracts_: protocol name -> set of required method names
+  std::unordered_map<std::string, std::unordered_set<std::string>> protocol_contracts_;
+  // protocol_impls_: protocol name -> set of type names that implement it
+  std::unordered_map<std::string, std::unordered_set<std::string>> protocol_impls_;
+  // type_protocols_: type name -> set of protocol names it implements
+  std::unordered_map<std::string, std::unordered_set<std::string>> type_protocols_;
 
   // Host context for service access (non-owning)
   const HostContext *context_ = nullptr;
@@ -625,14 +633,25 @@ public:
 
   // Prototype system - methods on types
   void registerPrototypeMethod(const std::string &typeName,
-                               const std::string &methodName,
-                               uint32_t hostFuncIndex);
+                                const std::string &methodName,
+                                uint32_t hostFuncIndex);
   void registerPrototypeMethodByName(const std::string &typeName,
-                                     const std::string &methodName,
-                                     const std::string &funcName);
+                                      const std::string &methodName,
+                                      const std::string &funcName);
   std::optional<uint32_t>
   getPrototypeMethod(const Value &value, const std::string &methodName);
   std::vector<std::string> getPrototypeMethods(const Value &value);
+
+  // Protocol system
+  void registerProtocol(const std::string &protocolName,
+                        const std::unordered_set<std::string> &methods);
+  void registerProtocolImpl(const std::string &protocolName,
+                            const std::string &typeName);
+  bool typeImplementsProtocol(const std::string &typeName,
+                              const std::string &protocolName) const;
+  std::unordered_set<std::string> getTypeProtocols(const std::string &typeName) const;
+  std::unordered_set<std::string> getProtocolMethods(const std::string &protocolName) const;
+  std::vector<std::string> getProtocolNames() const;
 
   // Get registered host functions (for copying to options)
   std::unordered_map<std::string, BytecodeHostFunction> &getHostFunctions() {

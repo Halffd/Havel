@@ -60,13 +60,15 @@ enum class TokenType {
   Config,
   Devices,
   Modes,
+  Pool,  // pool - hotkey pool declaration
   Signal,
   Group,
   Struct, // struct
   Class,  // class
   Enum,   // enum
-  Trait,  // trait
-  Impl,   // impl
+  Trait, // trait
+  Prot,  // prot (protocol)
+  Impl, // impl
   This,   // this - current object reference
   On,
   Off,
@@ -132,6 +134,7 @@ enum class TokenType {
   Nullish,      // ?? nullish coalescing
   Length,       // # length operator
   Pipe,
+  PipeRight, // |> pipeline operator
   Comment,
   NewLine,
   Import,       // import
@@ -165,8 +168,10 @@ enum class TokenType {
   Interval,       // interval
   Timeout,        // timeout
   Yield,          // yield
-  Go,             // go
-  Channel,        // channel
+  Go, // go
+  Sync,  // sync - synchronous hotkey modifier
+  Async, // async - asynchronous hotkey modifier
+  Channel, // channel
   Dsl,            // dsl
   Del,            // del - delete variable/element
   DoubleOpenParen,  // (( bitwise expression start

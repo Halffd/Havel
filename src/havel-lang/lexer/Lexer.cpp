@@ -37,6 +37,8 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"timeout", TokenType::Timeout},
     {"yield", TokenType::Yield},
     {"go", TokenType::Go},
+    {"sync", TokenType::Sync},
+    {"async", TokenType::Async},
     {"channel", TokenType::Channel},
     {"del", TokenType::Del},
     {"config", TokenType::Config},
@@ -48,6 +50,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"class", TokenType::Class},
     {"enum", TokenType::Enum},
     {"trait", TokenType::Trait},
+    {"prot", TokenType::Prot},
     {"impl", TokenType::Impl},
     {"this", TokenType::This},
     {"on", TokenType::On},
@@ -55,6 +58,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"when", TokenType::When},
     {"mode", TokenType::Mode},
     {"repeat", TokenType::Repeat},
+    {"pool", TokenType::Pool},
     {"true", TokenType::True},
     {"false", TokenType::False},
     {"null", TokenType::Null},
@@ -1430,16 +1434,25 @@ continue;
       }
       continue;
     }
-  if (c == '|' && peek() == '|') {
-    advance();
-    tokens.push_back(makeToken("||", TokenType::Or));
-    if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
-    }
-    continue;
-  }
-  // Inside (( )), single | is bitwise OR, not pipeline
-    if (c == '|' && inBitwiseExpr) {
+      if (c == '|' && peek() == '|') {
+        advance();
+        tokens.push_back(makeToken("||", TokenType::Or));
+        if (debug_lexer) {
+          havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+      }
+      // |> pipeline operator
+      if (c == '|' && peek() == '>') {
+        advance();
+        tokens.push_back(makeToken("|>", TokenType::PipeRight));
+        if (debug_lexer) {
+          havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+      }
+      // Inside (( )), single | is bitwise OR, not pipeline
+      if (c == '|' && inBitwiseExpr) {
 	tokens.push_back(makeToken("|", TokenType::BitwiseOr));
 	if (debug_lexer) {
       havel::debug("LEX: {}", tokens.back().toString());

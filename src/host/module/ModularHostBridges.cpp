@@ -1970,35 +1970,68 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   auto *modeMgr = ctx->modeManager;
   auto *hotkeyMgr = ctx->hotkeyManager;
 
-  // Register hotkey with thread-safe EventQueue dispatch
-  // When the hotkey fires, the callback is pushed to the event queue
-  // and executed in the main event loop, giving access to shared globals/heap
-  bool success = ctx->hotkeyManager->AddHotkey(
-      hotkeyStr, [vm, callbackId, hotkeyContext, eventQueue]() {
-        if (eventQueue) {
-          // Thread-safe: push callback to event queue for main loop execution
-          eventQueue->push([vm, callbackId, hotkeyContext]() {
-            vm->beginHotkeyExecution();
-            try {
-              vm->invokeCallback(callbackId, {hotkeyContext});
-            } catch (...) {
-              vm->endHotkeyExecution();
-              throw;
-            }
-            vm->endHotkeyExecution();
-          });
-        } else {
-          // Fallback: direct execution (no event queue configured)
-          vm->beginHotkeyExecution();
-          try {
-            vm->invokeCallback(callbackId, {hotkeyContext});
-          } catch (...) {
-            vm->endHotkeyExecution();
-            throw;
-          }
-          vm->endHotkeyExecution();
+// Register hotkey with dispatch based on IO.Executor config mode
+auto *io = ctx->io;
+ExecutorMode execMode = io ? io->GetExecutorMode() : ExecutorMode::Scheduler;
+
+bool success = ctx->hotkeyManager->AddHotkey(
+  hotkeyStr, [vm, callbackId, hotkeyContext, eventQueue, io, execMode]() {
+    auto invoke = [vm, callbackId, hotkeyContext]() {
+      vm->beginHotkeyExecution();
+      try {
+        vm->invokeCallback(callbackId, {hotkeyContext});
+      } catch (...) {
+        vm->endHotkeyExecution();
+        throw;
+      }
+      vm->endHotkeyExecution();
+    };
+
+    switch (execMode) {
+    case ExecutorMode::Executor: {
+      if (io) {
+        auto *executor = io->GetHotkeyExecutor();
+        if (executor) {
+          executor->submitExecutionContext(*vm,
+            [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
+              ctx.invokeCallback(callbackId, {hotkeyContext});
+            });
+          return;
         }
-      });
+      }
+      // Fallback to Scheduler if no executor available
+      if (eventQueue) {
+        eventQueue->push([invoke]() { invoke(); });
+      } else {
+        invoke();
+      }
+      return;
+    }
+    case ExecutorMode::Scheduler: {
+      if (eventQueue) {
+        eventQueue->push([invoke]() { invoke(); });
+      } else {
+        invoke();
+      }
+      return;
+    }
+    case ExecutorMode::Sync: {
+      invoke();
+      return;
+    }
+    case ExecutorMode::Thread: {
+      std::thread([invoke]() {
+        try { invoke(); }
+        catch (const std::exception &e) {
+          ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
+        } catch (...) {
+          ::havel::error("[Hotkey:Thread] unknown exception");
+        }
+      }).detach();
+      return;
+    }
+    }
+  });
 
   // Register conditional hotkey (when/if mode conditions)
   // This uses the Scheduler's event loop to evaluate conditions and trigger actions
@@ -2010,30 +2043,63 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
           std::string mode = modeMgr->getCurrentMode();
           return !mode.empty() && mode != "default";
         },
-        // True action: dispatch through EventQueue to main loop
-        [vm, callbackId, hotkeyContext, eventQueue]() {
-          if (eventQueue) {
-            eventQueue->push([vm, callbackId, hotkeyContext]() {
-              vm->beginHotkeyExecution();
-              try {
-                vm->invokeCallback(callbackId, {hotkeyContext});
-              } catch (...) {
-                vm->endHotkeyExecution();
-                throw;
-              }
-              vm->endHotkeyExecution();
+// True action: dispatch based on IO.Executor mode
+[vm, callbackId, hotkeyContext, eventQueue, io, execMode]() {
+  auto invoke = [vm, callbackId, hotkeyContext]() {
+    vm->beginHotkeyExecution();
+    try {
+      vm->invokeCallback(callbackId, {hotkeyContext});
+    } catch (...) {
+      vm->endHotkeyExecution();
+      throw;
+    }
+    vm->endHotkeyExecution();
+  };
+
+  switch (execMode) {
+  case ExecutorMode::Executor: {
+    if (io) {
+      auto *executor = io->GetHotkeyExecutor();
+      if (executor) {
+          executor->submitExecutionContext(*vm,
+            [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
+              ctx.invokeCallback(callbackId, {hotkeyContext});
             });
-          } else {
-            vm->beginHotkeyExecution();
-            try {
-              vm->invokeCallback(callbackId, {hotkeyContext});
-            } catch (...) {
-              vm->endHotkeyExecution();
-              throw;
-            }
-            vm->endHotkeyExecution();
-          }
-        });
+        return;
+      }
+    }
+    if (eventQueue) {
+      eventQueue->push([invoke]() { invoke(); });
+    } else {
+      invoke();
+    }
+    return;
+  }
+  case ExecutorMode::Scheduler: {
+    if (eventQueue) {
+      eventQueue->push([invoke]() { invoke(); });
+    } else {
+      invoke();
+    }
+    return;
+  }
+  case ExecutorMode::Sync: {
+    invoke();
+    return;
+  }
+  case ExecutorMode::Thread: {
+    std::thread([invoke]() {
+      try { invoke(); }
+      catch (const std::exception &e) {
+        ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
+      } catch (...) {
+        ::havel::error("[Hotkey:Thread] unknown exception");
+      }
+    }).detach();
+    return;
+  }
+  }
+});
   }
 
   // Return hotkey context object on success, null on failure

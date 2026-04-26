@@ -14,6 +14,13 @@
 #include <variant>
 #include <vector>
 
+enum class ExecutorMode {
+  Executor,   // HotkeyExecutor thread pool (isolated VMExecutionContext per callback)
+  Scheduler,  // EventQueue -> main loop (cooperative, single-threaded VM access)
+  Sync,       // Synchronous blocking on caller thread
+  Thread      // Separate detached thread per callback
+};
+
 #include "../../havel-lang/compiler/vm/VM.hpp"
 
 class HotkeyExecutor {

@@ -171,6 +171,14 @@ ByteCompiler::compileImpl(const ast::Program &program) {
           class_method_indices_by_node_[method.get()] = next_function_index++;
         }
       }
+      if (statement && statement->kind == ast::NodeType::ImplDeclaration) {
+        const auto &impl =
+            static_cast<const ast::ImplDeclaration &>(*statement);
+        for (const auto &method : impl.funcs) {
+          if (!method || !method->name) continue;
+          function_indices_by_node_[method.get()] = next_function_index++;
+        }
+      }
       continue;
     }
     if (!fnDecl->name) {
@@ -1715,16 +1723,42 @@ case ast::NodeType::TryExpression:
     break;
   }
 
-  case ast::NodeType::TraitDeclaration: {
-    const auto &traitDecl =
-        static_cast<const ast::TraitDeclaration &>(statement);
-    break;
-  }
+    case ast::NodeType::TraitDeclaration: {
+      const auto &traitDecl =
+          static_cast<const ast::TraitDeclaration &>(statement);
+      break;
+    }
 
-  case ast::NodeType::ImplDeclaration: {
-    const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
-    break;
+    case ast::NodeType::ProtocolDeclaration: {
+      const auto &protDecl =
+          static_cast<const ast::ProtocolDeclaration &>(statement);
+      break;
+    }
+
+case ast::NodeType::ImplDeclaration: {
+  const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
+  std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
+  std::string traitName = implDecl.traitName ? implDecl.traitName->symbol : "";
+  for (const auto &method : implDecl.funcs) {
+    if (!method || !method->name) continue;
+    auto index_it = function_indices_by_node_.find(method.get());
+    if (index_it == function_indices_by_node_.end()) continue;
+    // Load type object from globals
+    uint32_t type_name_sid = addStringConstant(typeName);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name_sid));
+    // Load method name
+    uint32_t method_name_sid = addStringConstant(method->name->symbol);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_name_sid)));
+    // Load function
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
+    // Call class.method(typeObj, methodName, funcObj)
+    uint32_t register_sid = addStringConstant("class.method");
+    emit(OpCode::CALL_HOST, std::vector<Value>{
+      Value::makeStringValId(register_sid), Value::makeInt(3)});
+    emit(OpCode::POP);
   }
+  break;
+}
 
   case ast::NodeType::UseStatement: {
     compileUseStatement(static_cast<const ast::UseStatement &>(statement));
@@ -4709,13 +4743,30 @@ void ByteCompiler::collectFunctionDeclarations(
       break;
     }
 
- case ast::NodeType::DecoratorStatement: {
-        const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
-        if (dec.target) {
-            collectFunctionDeclarations(*dec.target, out);
-        }
-        break;
+  case ast::NodeType::DecoratorStatement: {
+    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+    if (dec.target) {
+      collectFunctionDeclarations(*dec.target, out);
     }
+    break;
+  }
+
+  case ast::NodeType::ImplDeclaration: {
+    const auto &impl = static_cast<const ast::ImplDeclaration &>(statement);
+    for (const auto &method : impl.funcs) {
+      if (method) {
+        out.push_back(method.get());
+        if (method->body) {
+          for (const auto &nested : method->body->body) {
+            if (nested) {
+              collectFunctionDeclarations(*nested, out);
+            }
+          }
+        }
+      }
+    }
+    break;
+  }
 
   default:
     break;

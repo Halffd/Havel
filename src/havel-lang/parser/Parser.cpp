@@ -46,6 +46,14 @@ void Parser::reportErrorAt(const Token &token, const std::string &message) {
       token.line, token.column, token.length);
 }
 
+void Parser::reportWarning(const std::string &message) {
+  CompilerError err(ErrorSeverity::Warning, at().line, at().column, message);
+  errors.push_back(err);
+
+  errors::ErrorReporter::instance().warning(
+      ::havel::errors::ErrorStage::Parser, message);
+}
+
 // ============================================================================
 // PARSER SAFETY CHECKS
 // ============================================================================
@@ -397,10 +405,14 @@ case TokenType::Nullish:
       return 70;
 
 // Pipe
-case TokenType::Pipe:
-return 75;
+      case TokenType::Pipe:
+        return 75;
 
-// Bitwise OR
+      // |> pipeline operator (same precedence as |)
+      case TokenType::PipeRight:
+        return 75;
+
+      // Bitwise OR
 case TokenType::BitwiseOr:
 return 80;
 
@@ -548,8 +560,9 @@ setBoth(PowerAssign, 10, 10);
       setBoth(Power, 90, 91);
       
       // Prefix operators (handled in nud, not led)
-        // Pipeline
-        setBoth(Pipe, 35, 35);
+      // Pipeline
+      setBoth(Pipe, 35, 35);
+      setBoth(PipeRight, 35, 35);
 
         // Bitwise operators (inside (( )))
         setBoth(BitwiseOr, 80, 80);
@@ -1688,8 +1701,9 @@ case TokenType::Plus: {
       return std::make_unique<ast::UpdateExpression>(
           std::move(left), ast::UpdateExpression::Operator::Decrement, false);
 
-    case TokenType::Pipe: {
-      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      case TokenType::Pipe:
+      case TokenType::PipeRight: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
 
       if (auto *call = dynamic_cast<ast::CallExpression*>(right.get())) {
         call->args.push_back(std::move(left));
@@ -2436,12 +2450,14 @@ case havel::TokenType::Identifier: {
       advance();
     }
 
-    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
-  }
-  case havel::TokenType::Let:
-  case havel::TokenType::Const:
-    return parseLetDeclaration();
-  case havel::TokenType::If:
+  return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+    case havel::TokenType::Let:
+      reportWarning("'let' is deprecated, use 'val' or plain assignment");
+      [[fallthrough]];
+    case havel::TokenType::Const:
+      return parseLetDeclaration();
+    case havel::TokenType::If:
     return parseIfStatement();
   case havel::TokenType::While:
     return parseWhileStatement();
@@ -2481,9 +2497,11 @@ case havel::TokenType::Identifier: {
     return parseClassDeclaration();
   case havel::TokenType::Enum:
     return parseEnumDeclaration();
-  case havel::TokenType::Trait:
-    return parseTraitDeclaration();
-  case havel::TokenType::Impl:
+      case havel::TokenType::Trait:
+        return parseTraitDeclaration();
+      case havel::TokenType::Prot:
+        return parseProtocolDeclaration();
+      case havel::TokenType::Impl:
     return parseImplDeclaration();
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
@@ -3992,7 +4010,92 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
   advance(); // consume '}'
 
   return std::make_unique<havel::ast::TraitDeclaration>(std::move(traitName),
-                                                        std::move(methods));
+                                                          std::move(methods));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
+  advance(); // consume 'prot'
+
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected protocol name after 'prot'");
+  }
+  auto protName = makeIdentifier(advance());
+
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after protocol name");
+  }
+  advance(); // consume '{'
+
+  std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
+
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Comment) {
+      advance();
+      continue;
+    }
+
+    // Expect 'fn' keyword
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' in protocol body");
+    }
+    advance(); // consume 'fn'
+
+    // Method name or operator (e.g. fn +, fn [])
+    if (at().type != havel::TokenType::Identifier &&
+        at().type != havel::TokenType::Plus &&
+        at().type != havel::TokenType::Minus &&
+        at().type != havel::TokenType::Multiply &&
+        at().type != havel::TokenType::Divide &&
+        at().type != havel::TokenType::Equals &&
+        at().type != havel::TokenType::Less &&
+        at().type != havel::TokenType::Greater &&
+        at().type != havel::TokenType::OpenBracket) {
+      failAt(at(), "Expected method or operator name in protocol");
+    }
+    auto methodName = makeIdentifier(advance());
+
+    // Parse parameters
+    if (at().type != havel::TokenType::OpenParen) {
+      failAt(at(), "Expected '(' after method name");
+    }
+    advance(); // consume '('
+
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    while (at().type != havel::TokenType::CloseParen && notEOF()) {
+      if (at().type == havel::TokenType::Identifier) {
+        auto paramName = makeIdentifier(advance());
+        params.push_back(std::make_unique<havel::ast::FunctionParameter>(
+            std::move(paramName)));
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ',' or ')' in parameter list");
+      }
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after parameters");
+    }
+    advance(); // consume ')'
+
+    // Check for default implementation
+    std::unique_ptr<havel::ast::BlockStatement> defaultBody;
+    if (at().type == havel::TokenType::OpenBrace) {
+      defaultBody = parseBlockStatement();
+    }
+
+    methods.push_back(std::make_unique<havel::ast::TraitMethod>(
+        std::move(methodName), std::move(params), std::move(defaultBody)));
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close protocol definition");
+  }
+  advance(); // consume '}'
+
+  return std::make_unique<havel::ast::ProtocolDeclaration>(std::move(protName),
+                                                             std::move(methods));
 }
 
 // Parse impl declaration: impl Trait for Type { fn method() { ... } }
@@ -6286,13 +6389,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
 std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
   auto left = parseAssignmentExpression();
 
-  // Check for pipeline operator |
-  if (at().type == havel::TokenType::Pipe) {
+  // Check for pipeline operator | or |>
+  if (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::PipeRight) {
     auto pipeline = std::make_unique<havel::ast::PipelineExpression>();
     pipeline->stages.push_back(std::move(left));
 
-    while (at().type == havel::TokenType::Pipe) {
-      advance(); // consume '|'
+    while (at().type == havel::TokenType::Pipe || at().type == havel::TokenType::PipeRight) {
+      advance(); // consume '|' or '|>'
       auto stage = parseAssignmentExpression();
       pipeline->stages.push_back(std::move(stage));
     }
@@ -8866,8 +8969,9 @@ Parser::parseKeyValueBlock() {
         at().type == havel::TokenType::Fn ||
         at().type == havel::TokenType::Struct ||
         at().type == havel::TokenType::Enum ||
-        at().type == havel::TokenType::Trait ||
-        at().type == havel::TokenType::Impl ||
+      at().type == havel::TokenType::Trait ||
+      at().type == havel::TokenType::Prot ||
+      at().type == havel::TokenType::Impl ||
         at().type == havel::TokenType::Let ||
         at().type == havel::TokenType::Const ||
         at().type == havel::TokenType::In ||

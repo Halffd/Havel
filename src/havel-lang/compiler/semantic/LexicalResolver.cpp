@@ -821,18 +821,72 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
-  case ast::NodeType::TraitDeclaration: {
-    const auto &traitDecl =
-        static_cast<const ast::TraitDeclaration &>(statement);
-    // Register trait name in current scope
-    break;
+case ast::NodeType::TraitDeclaration: {
+  const auto &traitDecl =
+      static_cast<const ast::TraitDeclaration &>(statement);
+  for (const auto &method : traitDecl.methods) {
+    if (method && method->defaultBody) {
+      beginFunction(method.get());
+      for (const auto &param : method->parameters) {
+        if (param && param->pattern) {
+          collectPatternIdentifiers(*param->pattern);
+        }
+      }
+      for (const auto &stmt : method->defaultBody->body) {
+        if (stmt) {
+          resolveStatement(*stmt);
+        }
+      }
+      endFunction();
+    }
   }
+  break;
+}
 
-  case ast::NodeType::ImplDeclaration: {
-    const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
-    // Register impl block - methods are added to type
-    break;
+case ast::NodeType::ProtocolDeclaration: {
+  const auto &protDecl =
+      static_cast<const ast::ProtocolDeclaration &>(statement);
+  for (const auto &method : protDecl.methods) {
+    if (method && method->defaultBody) {
+      beginFunction(method.get());
+      for (const auto &param : method->parameters) {
+        if (param && param->pattern) {
+          collectPatternIdentifiers(*param->pattern);
+        }
+      }
+      for (const auto &stmt : method->defaultBody->body) {
+        if (stmt) {
+          resolveStatement(*stmt);
+        }
+      }
+      endFunction();
+    }
   }
+  break;
+}
+
+case ast::NodeType::ImplDeclaration: {
+  const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
+  for (const auto &method : implDecl.funcs) {
+    if (method) {
+      beginFunction(method.get());
+      for (const auto &param : method->parameters) {
+        if (param && param->pattern) {
+          collectPatternIdentifiers(*param->pattern);
+        }
+      }
+      if (method->body) {
+        for (const auto &stmt : method->body->body) {
+          if (stmt) {
+            resolveStatement(*stmt);
+          }
+        }
+      }
+      endFunction();
+    }
+  }
+  break;
+}
 
   // Shell command: $ cmd or $! cmd
   case ast::NodeType::ShellCommandStatement: {

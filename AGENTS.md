@@ -170,7 +170,7 @@ gdb ./build-debug/havel
 
 IF YOU GENERATE HAVEL CODE THAT USES:
 - Parentheses around if/for conditions → REJECTED
-- Semicolons inside conditions/loops → REJECTED  
+- Semicolons inside conditions/loops → REJECTED
 - Variable declaration with let → REJECTED  (use python-style declaration)
 - const keyword → REJECTED  (use uppercase)
 - `export` keyword → REJECTED
@@ -180,8 +180,7 @@ IF YOU GENERATE HAVEL CODE THAT USES:
 - this keyword → REJECTED (use @ ruby-style)
 - static keyword → REJECTED (use @@)
 - # comments → REJECTED (use //)
-- String concatenation with +, commas, dot or newlines → REJECTED (use f-strings python-style)
-
+- String concatenation with +, commas, dot or newlines → REJECTED (use {var} or $var)
 THE COMPILER WILL ERROR ON THESE PATTERNS. DO NOT USE THEM.
 Function calls without parenthesis - ALLOWED
 DO NOT THINK ABOUT WHAT HAVEL SYNTAX SHOULD BE

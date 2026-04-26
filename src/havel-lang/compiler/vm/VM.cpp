@@ -1195,6 +1195,45 @@ std::vector<std::string> VM::getPrototypeMethods(const Value &value) {
   return methods;
 }
 
+void VM::registerProtocol(const std::string &protocolName,
+                          const std::unordered_set<std::string> &methods) {
+  protocol_contracts_[protocolName] = methods;
+}
+
+void VM::registerProtocolImpl(const std::string &protocolName,
+                              const std::string &typeName) {
+  protocol_impls_[protocolName].insert(typeName);
+  type_protocols_[typeName].insert(protocolName);
+}
+
+bool VM::typeImplementsProtocol(const std::string &typeName,
+                                const std::string &protocolName) const {
+  auto it = type_protocols_.find(typeName);
+  if (it == type_protocols_.end()) return false;
+  return it->second.count(protocolName) > 0;
+}
+
+std::unordered_set<std::string> VM::getTypeProtocols(const std::string &typeName) const {
+  auto it = type_protocols_.find(typeName);
+  if (it == type_protocols_.end()) return {};
+  return it->second;
+}
+
+std::unordered_set<std::string> VM::getProtocolMethods(const std::string &protocolName) const {
+  auto it = protocol_contracts_.find(protocolName);
+  if (it == protocol_contracts_.end()) return {};
+  return it->second;
+}
+
+std::vector<std::string> VM::getProtocolNames() const {
+  std::vector<std::string> names;
+  names.reserve(protocol_contracts_.size());
+  for (const auto &[name, _] : protocol_contracts_) {
+    names.push_back(name);
+  }
+  return names;
+}
+
 std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {
   if (index >= host_function_names_.size()) {
     return std::nullopt;

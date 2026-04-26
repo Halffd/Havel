@@ -154,6 +154,7 @@ private:
 
   void reportError(const std::string &message);
   void reportErrorAt(const Token &token, const std::string &message);
+  void reportWarning(const std::string &message);
   void synchronize();                 // Panic mode recovery
   void synchronizeTo(TokenType type); // Recover to specific token
   bool atStatementStart();
@@ -251,6 +252,7 @@ private:
   std::unique_ptr<ast::Statement> parseClassDeclaration();
   std::unique_ptr<ast::Statement> parseEnumDeclaration();
   std::unique_ptr<ast::Statement> parseTraitDeclaration();
+  std::unique_ptr<ast::Statement> parseProtocolDeclaration();
   std::unique_ptr<ast::Statement> parseImplDeclaration();
   std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
   std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();

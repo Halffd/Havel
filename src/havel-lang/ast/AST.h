@@ -19,6 +19,7 @@ struct StructDefinition;
 struct ClassDefinition;
 struct EnumDefinition;
 struct TraitDeclaration;
+struct ProtocolDeclaration;
 struct ImplDeclaration;
 enum class NodeType {
   // Program structure
@@ -153,9 +154,10 @@ enum class NodeType {
   EnumDeclaration,   // enum Color { Red, Green, Blue }
   EnumDefinition,    // enum body definition
   EnumVariantDef,    // enum variant with optional payload
-  TraitDeclaration,  // trait Drawable { fn draw() }
-  TraitMethod,       // trait method (with optional default impl)
-  ImplDeclaration,   // impl Drawable for Circle { ... }
+  TraitDeclaration, // trait Drawable { fn draw() }
+  TraitMethod, // trait method (with optional default impl)
+  ProtocolDeclaration, // prot Drawable { fn draw() }
+  ImplDeclaration, // impl Drawable for Circle { ... }
 
   // Higher-order constructs
   PartialApplication, // add(5, _) creates fn(b) -> 5 + b
@@ -936,6 +938,26 @@ struct TraitDeclaration : public Statement {
 
   std::string toString() const override {
     return "TraitDeclaration{name: " + (name ? name->symbol : "?") +
+           ", methods: " + std::to_string(methods.size()) + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Protocol Declaration (prot Drawable { fn draw() })
+// Like trait but with protocol semantics: operator overloading, built-in protocols
+struct ProtocolDeclaration : public Statement {
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<TraitMethod>> methods;
+
+  ProtocolDeclaration(std::unique_ptr<Identifier> n,
+                      std::vector<std::unique_ptr<TraitMethod>> meths)
+      : name(std::move(n)), methods(std::move(meths)) {
+    kind = NodeType::ProtocolDeclaration;
+  }
+
+  std::string toString() const override {
+    return "ProtocolDeclaration{name: " + (name ? name->symbol : "?") +
            ", methods: " + std::to_string(methods.size()) + "}";
   }
 
@@ -3127,6 +3149,7 @@ virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitEnumDeclaration(const EnumDeclaration &node) = 0;
   virtual void visitTraitDeclaration(const TraitDeclaration &node) = 0;
   virtual void visitTraitMethod(const TraitMethod &node) = 0;
+  virtual void visitProtocolDeclaration(const ProtocolDeclaration &node) = 0;
   virtual void visitImplDeclaration(const ImplDeclaration &node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
@@ -3559,6 +3582,10 @@ inline void TraitDeclaration::accept(ASTVisitor &visitor) const {
 
 inline void TraitMethod::accept(ASTVisitor &visitor) const {
   visitor.visitTraitMethod(*this);
+}
+
+inline void ProtocolDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitProtocolDeclaration(*this);
 }
 
 inline void ImplDeclaration::accept(ASTVisitor &visitor) const {

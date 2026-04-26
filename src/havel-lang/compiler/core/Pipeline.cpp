@@ -684,9 +684,37 @@ BytecodeSmokeResult runBytecodePipeline(
     vm->registerHostFunction(name, fn);
     // registerHostFunction already adds to globals
   }
-  if (options.vm_setup) {
-    options.vm_setup(*vm);
+if (options.vm_setup) {
+  options.vm_setup(*vm);
+}
+// Register protocols and impls from AST with VM
+for (const auto &stmt : program->body) {
+  if (!stmt) continue;
+  if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
+    const auto &protDecl =
+        static_cast<const ast::ProtocolDeclaration &>(*stmt);
+    std::unordered_set<std::string> methodNames;
+    for (const auto &method : protDecl.methods) {
+      if (method && method->name) {
+        methodNames.insert(method->name->symbol);
+      }
+    }
+    if (protDecl.name) {
+      vm->registerProtocol(protDecl.name->symbol, methodNames);
+    }
   }
+  if (stmt->kind == ast::NodeType::ImplDeclaration) {
+    const auto &implDecl =
+        static_cast<const ast::ImplDeclaration &>(*stmt);
+    std::string traitName =
+        implDecl.traitName ? implDecl.traitName->symbol : "";
+    std::string typeName =
+        implDecl.typeName ? implDecl.typeName->symbol : "";
+    if (!traitName.empty() && !typeName.empty()) {
+      vm->registerProtocolImpl(traitName, typeName);
+    }
+  }
+}
   // Set up system object initializer to run after execute() initializes state
     if (options.system_object_initializer) {
         vm->setSystemObjectInitializer(options.system_object_initializer);

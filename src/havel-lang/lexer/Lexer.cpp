@@ -449,10 +449,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
       hasInterpolation = true;
       value += advance(); // $
 
-      if (peek() == '{') {
-        value += advance(); // {
-        braceDepth++;
-      } else if (isAlpha(peek()) || peek() == '_') {
+      if (isAlpha(peek()) || peek() == '_') {
         value += '{';
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
@@ -465,6 +462,9 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         value += '{';
         value += advance(); // @
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+          value += advance();
+        }
+        if (!isAtEnd() && peek() == '?') {
           value += advance();
         }
         value += '}';
@@ -1048,14 +1048,17 @@ continue;
     // Handle strings - both single and double quotes work the same
     if (c == '"' || c == '\'') {
         char quote = c;
-        bool isFString = false;
+        bool isFString = true;
         bool isRegexString = false;
         if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
             if (tokens.back().value == "f" || tokens.back().value == "F") {
-                isFString = true;
+                tokens.pop_back();
+            } else if (tokens.back().value == "u" || tokens.back().value == "U") {
+                isFString = false;
                 tokens.pop_back();
             } else if (tokens.back().value == "r" || tokens.back().value == "R") {
                 isRegexString = true;
+                isFString = false;
                 tokens.pop_back();
             }
         }
@@ -1064,7 +1067,8 @@ continue;
         if (position + 2 < source.length() &&
             source[position] == quote && source[position + 1] == quote) {
             advance();
-            advance();
+          
+                isFString = true;  advance();
             tokens.push_back(scanMultilineString(isFString, quote));
         } else {
             tokens.push_back(scanString(isFString, isRegexString, quote));
@@ -1075,7 +1079,7 @@ continue;
         continue;
     }
 
-    // Handle backtick expressions: `command` or ```...```
+    // Handle backtick expressions: `command` or ```...``` for shell commandd
     if (c == '`') {
         bool isMultilineBacktick = false;
         // Check for multiline backtick ```

@@ -633,10 +633,6 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
   case OpCode::CHANNEL_RECEIVE: return "CHANNEL_RECEIVE";
   case OpCode::CHANNEL_CLOSE: return "CHANNEL_CLOSE";
 
-  // Module exports
-  case OpCode::EXPORT_FN: return "EXPORT_FN";
-  case OpCode::EXPORT_VAR: return "EXPORT_VAR";
-
   // Module context
   case OpCode::BEGIN_MODULE: return "BEGIN_MODULE";
   case OpCode::END_MODULE: return "END_MODULE";

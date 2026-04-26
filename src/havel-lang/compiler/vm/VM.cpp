@@ -7082,36 +7082,6 @@ locals.resize(finished.locals_base);
     break;
   }
 
-  case OpCode::EXPORT_FN: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
-      COMPILER_THROW("EXPORT_FN expects string operand");
-    }
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    std::string name;
-    if (current_chunk) {
-      name = current_chunk->getString(strIndex);
-    }
-    Value fn = popStack();
-    globals["__export_" + name] = fn;
-    break;
-  }
-
-  case OpCode::EXPORT_VAR: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
-      COMPILER_THROW("EXPORT_VAR expects string operand");
-    }
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    std::string name;
-    if (current_chunk) {
-      name = current_chunk->getString(strIndex);
-    }
-    Value val = popStack();
-    globals["__export_" + name] = val;
-    break;
-  }
-
   case OpCode::BEGIN_MODULE: {
     break;
   }

@@ -105,19 +105,11 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
             if (fn.name) {
                 top_level_functions_.insert(fn.name->symbol);
             }
-        }
-    } else if (statement->kind == ast::NodeType::ExportStatement) {
-        const auto &exp = static_cast<const ast::ExportStatement &>(*statement);
-        if (exp.exported && exp.exported->kind == ast::NodeType::FunctionDeclaration) {
-            const auto &fn = static_cast<const ast::FunctionDeclaration &>(*exp.exported);
-            if (fn.name) {
-                top_level_functions_.insert(fn.name->symbol);
-            }
-        }
     }
   }
+  }
 
- // Second pass: resolve function bodies (can now see globals)
+  // Second pass: resolve function bodies (can now see globals)
  for (const auto &statement : program.body) {
  if (!statement) continue;
 
@@ -132,13 +124,8 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                 if (decoExpr) resolveExpression(*decoExpr);
             }
         }
-    } else if (statement->kind == ast::NodeType::ExportStatement) {
-        const auto &exp = static_cast<const ast::ExportStatement &>(*statement);
-        if (exp.exported && exp.exported->kind == ast::NodeType::FunctionDeclaration) {
-            fnDecl = &static_cast<const ast::FunctionDeclaration &>(*exp.exported);
-        }
-    }
- if (fnDecl) {
+  }
+  if (fnDecl) {
  resolveFunctionDeclaration(*fnDecl);
  }
  }
@@ -148,8 +135,7 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   for (const auto &statement : program.body) {
     if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
         statement->kind == ast::NodeType::LetDeclaration ||
-        statement->kind == ast::NodeType::DecoratorStatement ||
-        statement->kind == ast::NodeType::ExportStatement) {
+    statement->kind == ast::NodeType::DecoratorStatement) {
       continue;
     }
     resolveStatement(*statement);
@@ -176,13 +162,8 @@ void LexicalResolver::collectTopLevelFunctions(const ast::Program &program) {
         if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
             fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
         }
-    } else if (statement->kind == ast::NodeType::ExportStatement) {
-        const auto &exp = static_cast<const ast::ExportStatement &>(*statement);
-        if (exp.exported && exp.exported->kind == ast::NodeType::FunctionDeclaration) {
-            fnDecl = &static_cast<const ast::FunctionDeclaration &>(*exp.exported);
-        }
-    }
-    if (fnDecl && fnDecl->name) {
+  }
+  if (fnDecl && fnDecl->name) {
  top_level_functions_.insert(fnDecl->name->symbol);
  }
  }
@@ -698,13 +679,7 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
         break;
     }
 
-    case ast::NodeType::ExportStatement: {
-        const auto &exp = static_cast<const ast::ExportStatement &>(statement);
-        if (exp.exported) resolveStatement(*exp.exported);
-        break;
-    }
-
-    case ast::NodeType::TryExpression: {
+  case ast::NodeType::TryExpression: {
     const auto &try_stmt = static_cast<const ast::TryExpression &>(statement);
     if (try_stmt.tryBody) {
       resolveStatement(*try_stmt.tryBody);

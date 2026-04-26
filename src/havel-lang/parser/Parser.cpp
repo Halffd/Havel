@@ -432,10 +432,14 @@ return 110;
 
     // Member access, optional chaining, calls, indexing
     case TokenType::Dot:
-    case TokenType::Question:  // ?. optional chaining
+    case TokenType::QuestionDot:
     case TokenType::OpenParen:
     case TokenType::OpenBracket:
       return 170;
+
+    // Ternary operator (?)
+    case TokenType::Question:
+      return 15;
 
     default:
       return 0;
@@ -462,6 +466,9 @@ int Parser::getRightBindingPower(TokenType type) const {
 
     case TokenType::Nullish:
       return 15;  // Right-associative
+
+    case TokenType::Question:
+      return 10;  // Right-associative (lbp=15, rbp=10)
 
     default:
       return getBindingPower(type);
@@ -1437,9 +1444,7 @@ case TokenType::Plus: {
     }
 
     // Optional chaining: obj?.field or obj?.method()
-    case TokenType::Question: {
-      if (at().type == TokenType::Dot) {
-        advance(); // consume '.'
+    case TokenType::QuestionDot: {
         // Property names can be identifiers or certain keywords
         if (at().type == TokenType::Identifier ||
             at().type == TokenType::And ||
@@ -1458,10 +1463,19 @@ case TokenType::Plus: {
               std::move(left), std::move(property), true);
           return member;
         }
-        failAt(at(), "Expected identifier after '?.");
-      }
-      // Just ? alone - treat as ternary-like or passthrough
-      return std::move(left);
+        failAt(at(), "Expected identifier after '?.'");
+    }
+
+    // Ternary operator: cond ? trueExpr : falseExpr
+    case TokenType::Question: {
+        auto trueValue = parsePrattExpression(0);
+        if (at().type != TokenType::Colon) {
+            failAt(at(), "Expected ':' after ternary expression condition");
+        }
+        advance(); // consume ':'
+        auto falseValue = parsePrattExpression(getRightBindingPower(TokenType::Question));
+        return std::make_unique<ast::TernaryExpression>(
+            std::move(left), std::move(trueValue), std::move(falseValue));
     }
 
     case TokenType::DotDot: {
@@ -2478,8 +2492,6 @@ case havel::TokenType::Identifier: {
     return parseImportStatement();
   case havel::TokenType::Use:
     return parseUseStatement();
-  case havel::TokenType::Export:
-    return parseExportStatement();
   case havel::TokenType::With:
     return parseWithStatement();
   case havel::TokenType::Config:
@@ -5829,26 +5841,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
 
   failAt(at(), "Expected module name or file path after 'use'");
   return nullptr;
-}
-
-std::unique_ptr<havel::ast::Statement> Parser::parseExportStatement() {
-  advance(); // consume 'export'
-
-  // Skip newlines
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-
-  // Parse the declaration being exported (fn, let, const, class, etc.)
-  // For now, support: export fn name() {}, export let x = 5, export class Foo
-  // {}
-  auto exported = parseStatement();
-  if (!exported) {
-    failAt(at(), "Expected declaration after 'export'");
-    return nullptr;
-  }
-
-  return std::make_unique<havel::ast::ExportStatement>(std::move(exported));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseDecoratorStatement() {

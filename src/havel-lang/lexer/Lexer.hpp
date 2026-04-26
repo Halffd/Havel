@@ -138,13 +138,13 @@ enum class TokenType {
   From,         // from
   As,           // as
   Use,          // use
-  Export,       // export (legacy, ignored - everything public)
-  With,         // with
+  With, // with
   Where,        // where - LINQ filter
   Select,       // select - LINQ transform
   ColonColon,   // :: hotkey block trigger
   Colon,        // :
   Question,     // ?
+  QuestionDot,  // ?.
   OpenBracket,  // [
   CloseBracket, // ]
   DotDot,       // ..

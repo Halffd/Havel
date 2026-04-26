@@ -232,7 +232,6 @@ private:
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();
   std::unique_ptr<ast::Statement> parseUseStatement();
-  std::unique_ptr<ast::Statement> parseExportStatement();
   std::unique_ptr<ast::Statement> parseDecoratorStatement();
   std::unique_ptr<ast::Statement> parseWithStatement();
   std::unique_ptr<ast::Statement> parseConfigBlock();

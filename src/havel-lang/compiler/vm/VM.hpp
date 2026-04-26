@@ -208,8 +208,10 @@ private:
     std::string current_script_dir_; // Directory of the currently executing script (for relative imports)
  // Keep module BytecodeChunks alive so exported closures can reference them
  std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
- // Keep the main chunk alive so hotkey/event callbacks can execute after __main__ returns
- std::shared_ptr<BytecodeChunk> main_chunk_;
+// Keep the main chunk alive so hotkey/event callbacks can execute after __main__ returns
+std::shared_ptr<BytecodeChunk> main_chunk_;
+// Keep REPL chunks alive so closures/functions from previous lines remain valid
+std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
 
     // Canonical module loader for path resolution and caching
     ModuleLoader moduleLoader_;
@@ -750,10 +752,14 @@ public:
  // Get the current bytecode chunk (for execution contexts)
  const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
- void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
- main_chunk_ = std::move(chunk);
- current_chunk = main_chunk_.get();
- }
+void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+  main_chunk_ = std::move(chunk);
+  current_chunk = main_chunk_.get();
+}
+void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
+  repl_chunks_.push_back(chunk);
+  current_chunk = chunk.get();
+}
 
   // Resolve a Value that might be a string to an actual string
   std::string resolveStringKey(const Value &value) const;

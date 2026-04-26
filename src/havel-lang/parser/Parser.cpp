@@ -6217,7 +6217,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     }
 
     // Parse result expression (use parseAssignmentExpression to handle assignments like x = true)
-    auto result = parseAssignmentExpression();
+    std::unique_ptr<havel::ast::Expression> result;
+    try {
+      result = parseAssignmentExpression();
+    } catch (const std::exception& e) {
+      if (debug.parser) {
+        havel::debug("PARSE: parseMatchExpression caught exception from parseAssignmentExpression: {}", e.what());
+      }
+      throw;
+    }
 
     if (debug.parser) {
       havel::debug("PARSE: parseMatchExpression after result expression, at {}", at().toString());

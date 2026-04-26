@@ -206,8 +206,10 @@ private:
     // Circular dependency detection still in VM
     std::unordered_set<std::string> modules_loading_; // Circular dependency detection
     std::string current_script_dir_; // Directory of the currently executing script (for relative imports)
-    // Keep module BytecodeChunks alive so exported closures can reference them
-    std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
+ // Keep module BytecodeChunks alive so exported closures can reference them
+ std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
+ // Keep the main chunk alive so hotkey/event callbacks can execute after __main__ returns
+ std::shared_ptr<BytecodeChunk> main_chunk_;
 
     // Canonical module loader for path resolution and caching
     ModuleLoader moduleLoader_;
@@ -745,9 +747,13 @@ public:
 
     ModuleLoader& moduleLoader() { return moduleLoader_; }
 
-    // Get the current bytecode chunk (for execution contexts)
-  const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
-  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
+ // Get the current bytecode chunk (for execution contexts)
+ const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
+ void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
+ void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+ main_chunk_ = std::move(chunk);
+ current_chunk = main_chunk_.get();
+ }
 
   // Resolve a Value that might be a string to an actual string
   std::string resolveStringKey(const Value &value) const;

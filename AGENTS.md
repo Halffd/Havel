@@ -183,6 +183,8 @@ IF YOU GENERATE HAVEL CODE THAT USES:
 - String concatenation with +, commas, dot or newlines → REJECTED (use f-strings python-style)
 
 THE COMPILER WILL ERROR ON THESE PATTERNS. DO NOT USE THEM.
+Function calls without parenthesis - ALLOWED
+DO NOT THINK ABOUT WHAT HAVEL SYNTAX SHOULD BE
 
 ## Module System
 

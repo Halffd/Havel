@@ -1,3 +1,5 @@
+I[02:17:08.011] <-- $/cancelRequest
+I[02:17:08.017] <-- $/cancelRequest
 // Test iteration protocol
 print("=== Iteration Protocol Tests ===")
 

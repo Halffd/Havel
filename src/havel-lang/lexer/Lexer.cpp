@@ -1333,8 +1333,23 @@ continue;
       continue;
     }
 
-    // Handle (( )) bitwise expression delimiters
-    if (c == '(' && peek() == '(' && !inBitwiseExpr) {
+        // Handle (( )) bitwise expression delimiters
+        if (c == '(' && peek() == '(' && !inBitwiseExpr) {
+        // If previous token suggests function call context, emit two separate OpenParens
+        // e.g. print((expr)) should be: print ( ( expr ) )
+        if (!tokens.empty()) {
+            TokenType prevType = tokens.back().type;
+            if (prevType == TokenType::Identifier ||
+                prevType == TokenType::CloseParen ||
+                prevType == TokenType::CloseBracket ||
+                prevType == TokenType::String ||
+                prevType == TokenType::Number) {
+                tokens.push_back(makeToken("(", TokenType::OpenParen));
+                advance(); // consume second '('
+                tokens.push_back(makeToken("(", TokenType::OpenParen));
+                continue;
+            }
+        }
         // Look ahead for lambda indicators (comma or =>) to avoid misidentifying
         // Higher-Order Function arguments like ob.map((v, k) => ...) as bitwise blocks.
         size_t look = position + 1; // Start scanning AFTER the initial '(('

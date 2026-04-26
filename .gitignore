@@ -75,8 +75,10 @@ WARP.md
 
 __cache__/
 *.hbc
+
 TestResults/
 coverage/
 docs/archive
 scripts/legacy
 scripts/old
+.gitw*

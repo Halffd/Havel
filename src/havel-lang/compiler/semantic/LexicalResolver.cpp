@@ -99,14 +99,22 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
  top_level_functions_.insert(fn.name->symbol);
  }
  } else if (statement->kind == ast::NodeType::DecoratorStatement) {
- const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
- if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
- const auto &fn = static_cast<const ast::FunctionDeclaration &>(*dec.target);
- if (fn.name) {
- top_level_functions_.insert(fn.name->symbol);
- }
- }
- }
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+        if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+            const auto &fn = static_cast<const ast::FunctionDeclaration &>(*dec.target);
+            if (fn.name) {
+                top_level_functions_.insert(fn.name->symbol);
+            }
+        }
+    } else if (statement->kind == ast::NodeType::ExportStatement) {
+        const auto &exp = static_cast<const ast::ExportStatement &>(*statement);
+        if (exp.exported && exp.exported->kind == ast::NodeType::FunctionDeclaration) {
+            const auto &fn = static_cast<const ast::FunctionDeclaration &>(*exp.exported);
+            if (fn.name) {
+                top_level_functions_.insert(fn.name->symbol);
+            }
+        }
+    }
   }
 
  // Second pass: resolve function bodies (can now see globals)
@@ -116,15 +124,20 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
  const ast::FunctionDeclaration *fnDecl = nullptr;
  if (statement->kind == ast::NodeType::FunctionDeclaration) {
  fnDecl = &static_cast<const ast::FunctionDeclaration &>(*statement);
- } else if (statement->kind == ast::NodeType::DecoratorStatement) {
- const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
- if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
- fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
- for (const auto &decoExpr : dec.decorators) {
- if (decoExpr) resolveExpression(*decoExpr);
- }
- }
- }
+    } else if (statement->kind == ast::NodeType::DecoratorStatement) {
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+        if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+            fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
+            for (const auto &decoExpr : dec.decorators) {
+                if (decoExpr) resolveExpression(*decoExpr);
+            }
+        }
+    } else if (statement->kind == ast::NodeType::ExportStatement) {
+        const auto &exp = static_cast<const ast::ExportStatement &>(*statement);
+        if (exp.exported && exp.exported->kind == ast::NodeType::FunctionDeclaration) {
+            fnDecl = &static_cast<const ast::FunctionDeclaration &>(*exp.exported);
+        }
+    }
  if (fnDecl) {
  resolveFunctionDeclaration(*fnDecl);
  }
@@ -133,9 +146,10 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   // Third pass: resolve top-level non-function, non-let statements
   // LetDeclaration was already handled in the first pass
   for (const auto &statement : program.body) {
- if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
- statement->kind == ast::NodeType::LetDeclaration ||
- statement->kind == ast::NodeType::DecoratorStatement) {
+    if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
+        statement->kind == ast::NodeType::LetDeclaration ||
+        statement->kind == ast::NodeType::DecoratorStatement ||
+        statement->kind == ast::NodeType::ExportStatement) {
       continue;
     }
     resolveStatement(*statement);
@@ -157,13 +171,18 @@ void LexicalResolver::collectTopLevelFunctions(const ast::Program &program) {
  const ast::FunctionDeclaration *fnDecl = nullptr;
  if (statement->kind == ast::NodeType::FunctionDeclaration) {
  fnDecl = &static_cast<const ast::FunctionDeclaration &>(*statement);
- } else if (statement->kind == ast::NodeType::DecoratorStatement) {
- const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
- if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
- fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
- }
- }
- if (fnDecl && fnDecl->name) {
+    } else if (statement->kind == ast::NodeType::DecoratorStatement) {
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
+        if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
+            fnDecl = &static_cast<const ast::FunctionDeclaration &>(*dec.target);
+        }
+    } else if (statement->kind == ast::NodeType::ExportStatement) {
+        const auto &exp = static_cast<const ast::ExportStatement &>(*statement);
+        if (exp.exported && exp.exported->kind == ast::NodeType::FunctionDeclaration) {
+            fnDecl = &static_cast<const ast::FunctionDeclaration &>(*exp.exported);
+        }
+    }
+    if (fnDecl && fnDecl->name) {
  top_level_functions_.insert(fnDecl->name->symbol);
  }
  }
@@ -671,15 +690,21 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
  }
 
  case ast::NodeType::DecoratorStatement: {
- const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
- for (const auto &decoExpr : dec.decorators) {
- if (decoExpr) resolveExpression(*decoExpr);
- }
- if (dec.target) resolveStatement(*dec.target);
- break;
- }
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+        for (const auto &decoExpr : dec.decorators) {
+            if (decoExpr) resolveExpression(*decoExpr);
+        }
+        if (dec.target) resolveStatement(*dec.target);
+        break;
+    }
 
-  case ast::NodeType::TryExpression: {
+    case ast::NodeType::ExportStatement: {
+        const auto &exp = static_cast<const ast::ExportStatement &>(statement);
+        if (exp.exported) resolveStatement(*exp.exported);
+        break;
+    }
+
+    case ast::NodeType::TryExpression: {
     const auto &try_stmt = static_cast<const ast::TryExpression &>(statement);
     if (try_stmt.tryBody) {
       resolveStatement(*try_stmt.tryBody);

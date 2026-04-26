@@ -2467,69 +2467,73 @@ Value VM::invokeHostFunctionDirect(const std::string &name,
 }
 
 Value VM::execute(const BytecodeChunk &chunk,
-                          const std::string &function_name,
-                          const std::vector<Value> &args) {
-  current_chunk = &chunk;
+ const std::string &function_name,
+ const std::vector<Value> &args) {
+ const BytecodeChunk *saved_chunk = current_chunk;
+ current_chunk = &chunk;
 
-  const auto *entry = chunk.getFunction(function_name);
-  if (!entry) {
-    COMPILER_THROW("Function not found: " + function_name);
-  }
+ const auto *entry = chunk.getFunction(function_name);
+ if (!entry) {
+ COMPILER_THROW("Function not found: " + function_name);
+ }
 
-  while (!stack.empty()) {
-    stack.pop();
-  }
-  locals.clear();
-  frame_count_ = 0;
-  heap_.reset();
+ while (!stack.empty()) {
+ stack.pop();
+ }
+ locals.clear();
+ frame_count_ = 0;
+ heap_.reset();
 
-  open_upvalues.clear();
-  has_current_exception_ = false;
-  current_exception_ = nullptr;
-  registerDefaultHostGlobals();
-  opcode_counts_.fill(0);
-  executed_instructions_ = 0;
+ open_upvalues.clear();
+ has_current_exception_ = false;
+ current_exception_ = nullptr;
+ registerDefaultHostGlobals();
+ opcode_counts_.fill(0);
+ executed_instructions_ = 0;
 
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
-  } else {
-    frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
-  }
-  frame_count_++;
-  locals.resize(entry->local_count);
+ if (frame_arena_.size() <= frame_count_) {
+ frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
+ } else {
+ frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
+ }
+ frame_count_++;
+ locals.resize(entry->local_count);
 
-  if (!args.empty()) {
-    if (args.size() != entry->param_count) {
-      COMPILER_THROW("Argument count mismatch for entry function '" +
-                               function_name + "' (expected " +
-                               std::to_string(entry->param_count) + ", got " +
-                               std::to_string(args.size()) + ")");
-    }
+ if (!args.empty()) {
+ if (args.size() != entry->param_count) {
+ COMPILER_THROW("Argument count mismatch for entry function '" +
+ function_name + "' (expected " +
+ std::to_string(entry->param_count) + ", got " +
+ std::to_string(args.size()) + ")");
+ }
 
-    for (uint32_t i = 0; i < entry->param_count; ++i) {
-      locals[i] = args[i];
-    }
-  }
+ for (uint32_t i = 0; i < entry->param_count; ++i) {
+ locals[i] = args[i];
+ }
+ }
 
-  if (debug_mode) {
-            ::havel::debug("=== Executing function: {} ===", function_name);
-  }
+ if (debug_mode) {
+ ::havel::debug("=== Executing function: {} ===", function_name);
+ }
 
-  runDispatchLoop(0);
+ runDispatchLoop(0);
 
-  if (stack.empty()) {
-    return nullptr;
-  }
+ current_chunk = saved_chunk;
 
-  Value result = stack.top();
-  stack.pop();
-  return result;
+ if (stack.empty()) {
+ return nullptr;
+ }
+
+ Value result = stack.top();
+ stack.pop();
+ return result;
 }
 
 Value VM::executePersistent(const BytecodeChunk &chunk,
-                                    const std::string &function_name,
-                                    const std::vector<Value> &args) {
-  current_chunk = &chunk;
+ const std::string &function_name,
+ const std::vector<Value> &args) {
+ const BytecodeChunk *saved_chunk = current_chunk;
+ current_chunk = &chunk;
 
   const auto *entry = chunk.getFunction(function_name);
   if (!entry) {
@@ -2572,16 +2576,18 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
     }
   }
 
-  runDispatchLoop(0);
+ runDispatchLoop(0);
 
-  if (stack.empty()) {
-    return nullptr;
-  }
+ current_chunk = saved_chunk;
 
-  Value result = stack.top();
-  stack.pop();
-  return result;
-}
+ if (stack.empty()) {
+ return nullptr;
+ }
+
+ Value result = stack.top();
+ stack.pop();
+ return result;
+ }
 
 // ============================================================================
 // PHASE 2E: CONDITION BYTECODE EVALUATION

@@ -366,12 +366,3 @@ fn reverse(s) {
     return result
 }
 
-// ============================================================
-// Export public API
-// ============================================================
-
-export upper, lower, trim, split, join, replace
-export startsWith, endsWith, contains, count, repeat
-export padStart, padEnd, left, right, reverse
-export chars, bytes
-export isUpper, isLower, isDigit, isLetter, isAlphaNum, isSpace

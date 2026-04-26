@@ -309,30 +309,3 @@ fn touch(path) {
     return false
 }
 
-export open
-export close
-export read
-export write
-export readFile
-export writeFile
-export appendFile
-export stat
-export lstat
-export fstat
-export exists
-export isDir
-export isFile
-export unlink
-export mkdir
-export mkdirAll
-export rmdir
-export rename
-export copy
-export readDir
-export touch
-export O_RDONLY
-export O_WRONLY
-export O_RDWR
-export O_CREAT
-export O_TRUNC
-export O_APPEND

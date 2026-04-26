@@ -272,9 +272,9 @@ private:
   static constexpr size_t TIMER_CHECK_INTERVAL = 1000;  // Check every 1000 instructions
 
   template <typename T> T getValue(const Value &value);
-  std::string toStringInternal(const Value &value,
-                               std::unordered_set<uint32_t> &visitedIds,
-                               int depth) const;
+ std::string toStringInternal(const Value &value,
+                                  std::unordered_set<uint32_t> &visitedIds,
+                                  int depth);
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
   Value getConstant(uint32_t index);
@@ -513,7 +513,7 @@ public:
   
   Value call(const Value &callee_value,
              const std::vector<Value> &args = {});
-  std::string toString(const Value &value) const;
+  std::string toString(const Value &value);
   bool toBoolPublic(const Value &value);
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,

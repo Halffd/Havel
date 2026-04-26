@@ -2,5 +2,3 @@ fn _test_arr(arr) {
   let v0 = arr[0]
   return v0
 }
-
-export _test_arr

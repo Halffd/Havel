@@ -1305,6 +1305,16 @@ continue;
       continue;
     }
 
+    // Handle ?. (optional chaining)
+    if (c == '?' && peek() == '.') {
+      advance();
+      tokens.push_back(makeToken("?.", TokenType::QuestionDot));
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
+      continue;
+    }
+
     // Handle == and !=
     if (c == '=' && peek() == '=') {
       advance();

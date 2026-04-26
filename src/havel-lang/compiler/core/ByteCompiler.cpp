@@ -3373,8 +3373,20 @@ case ast::NodeType::CallExpression:
 
     // Check if object is an identifier (variable) - use OBJECT_GET directly
     compileExpression(*member.object);
+    
+    uint32_t opt_jump = 0;
+    if (member.isOptional) {
+      emit(OpCode::DUP);
+      opt_jump = emitJump(OpCode::JUMP_IF_NULL);
+    }
+    
     emit(OpCode::LOAD_CONST, loadStringConst(property->symbol));
     emit(OpCode::OBJECT_GET);
+
+    if (member.isOptional) {
+      patchJump(opt_jump,
+                static_cast<uint32_t>(current_function->instructions.size()));
+    }
     break;
   }
 
@@ -3894,6 +3906,13 @@ void ByteCompiler::compileCallExpression(
     // For primitives: direct dispatch via prototype tables (no boxing).
     // For objects/classes: prototype chain lookup via bound method objects.
     compileExpression(*member.object);
+    
+    uint32_t opt_jump = 0;
+    if (member.isOptional) {
+      emit(OpCode::DUP);
+      opt_jump = emitJump(OpCode::JUMP_IF_NULL);
+    }
+    
     // Compile args, expanding spread
     uint32_t totalArgs = 0;
     for (const auto &arg : expression.args) {
@@ -3934,6 +3953,11 @@ void ByteCompiler::compileCallExpression(
     emit(OpCode::CALL_METHOD, std::vector<Value>{
         Value::makeStringValId(method_sid),
         Value(totalArgs)});
+        
+    if (member.isOptional) {
+      patchJump(opt_jump,
+                static_cast<uint32_t>(current_function->instructions.size()));
+    }
     return;
   }
 

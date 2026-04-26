@@ -165,3 +165,29 @@ gdb ./build-debug/havel
 13. Commit messages are for humans, not marketing.
 14. No hype words (synergy, paradigm, revolutionary, ecosystem, zero-cost abstraction).
 15. No emoji in code comments unless the bug is genuinely funny.
+
+# ⚠️ HAVEL SYNTAX RULES (READ BEFORE CODING) ⚠️
+
+IF YOU GENERATE HAVEL CODE THAT USES:
+- Parentheses around if/for conditions → REJECTED
+- Semicolons inside conditions/loops → REJECTED  
+- Variable declaration with let → REJECTED  (use python-style declaration)
+- const keyword → REJECTED  (use uppercase)
+- `export` keyword → REJECTED
+- `hotkey "Ctrl+Shift+F1" {}` → REJECTED (use `^+F1 => { }` syntax)
+- `hotkey.register()` → REJECTED (only in loops/objects, use `F1 => { }` syntax)
+- Explicit returns → REJECTED (use implicit)
+- this keyword → REJECTED (use @ ruby-style)
+- static keyword → REJECTED (use @@)
+- # comments → REJECTED (use //)
+- String concatenation with +, commas, dot or newlines → REJECTED (use f-strings python-style)
+
+THE COMPILER WILL ERROR ON THESE PATTERNS. DO NOT USE THEM.
+
+## Module System
+
+Havel uses **Python-style modules**:
+- Every top-level function, variable, and class is exported.
+- No `export` keyword.
+- Prefix with `_` to indicate "private by convention" (not enforced).
+- Module consumer: `use mymodule` or `use { fn } from "mymodule"`.

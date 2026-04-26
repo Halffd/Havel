@@ -1,0 +1,8 @@
+// Test script for Ternary Operator and Optional Chaining
+class MyClass {
+    prop = "passed"
+}
+obj2 = null
+res = null
+res = obj2?.prop
+log.log("", "Test 9 (null?.prop): " + (res == null ? "passed" : "failed"))

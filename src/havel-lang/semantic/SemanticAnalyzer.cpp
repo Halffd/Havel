@@ -523,6 +523,17 @@ void SemanticAnalyzer::visitExpression(const ast::Expression &expr) {
     break;
   }
 
+  case ast::NodeType::TernaryExpression: {
+    const auto &ternary = static_cast<const ast::TernaryExpression &>(expr);
+    if (ternary.condition)
+      visitExpression(*ternary.condition);
+    if (ternary.trueValue)
+      visitExpression(*ternary.trueValue);
+    if (ternary.falseValue)
+      visitExpression(*ternary.falseValue);
+    break;
+  }
+
   case ast::NodeType::UnaryExpression: {
     const auto &unary = static_cast<const ast::UnaryExpression &>(expr);
     if (unary.operand)

@@ -2498,6 +2498,28 @@ break;
     break;
   }
 
+  case ast::NodeType::BlockExpression: {
+    const auto &block = static_cast<const ast::BlockExpression &>(expression);
+
+    // Compile all statements in the block body
+    for (const auto &stmt : block.body) {
+      if (stmt) {
+        compileStatement(*stmt);
+        // Pop any values left on stack by statements
+        emit(OpCode::POP);
+      }
+    }
+
+    // If there's a value expression, compile it
+    // Otherwise push null as the block's value
+    if (block.value) {
+      compileExpression(*block.value);
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    }
+    break;
+  }
+
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
 
@@ -4858,6 +4880,20 @@ void ByteCompiler::collectLambdaExpressions(
     out.push_back(&lambda);
     if (lambda.body) {
       collectLambdaExpressions(*lambda.body, out);
+    }
+    break;
+  }
+  case ast::NodeType::BlockExpression: {
+    const auto &block = static_cast<const ast::BlockExpression &>(expression);
+    // Collect lambdas from statements in the block
+    for (const auto &stmt : block.body) {
+      if (stmt) {
+        collectLambdaExpressions(*stmt, out);
+      }
+    }
+    // Collect lambdas from the value expression
+    if (block.value) {
+      collectLambdaExpressions(*block.value, out);
     }
     break;
   }

@@ -707,8 +707,14 @@ BytecodeSmokeResult runBytecodePipeline(
             }
         }
     }
-    try {
-    result.return_value = vm->execute(*chunk, entry_function);
+ try {
+ if (options.vm_override) {
+ auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
+ vm->storeMainChunk(shared_chunk);
+ result.return_value = vm->execute(*shared_chunk, entry_function);
+ } else {
+ result.return_value = vm->execute(*chunk, entry_function);
+ }
 } catch (const ScriptError &e) {
         ::havel::errors::ErrorReporter::instance().errorAt(
             ::havel::errors::ErrorStage::VM, e.message,

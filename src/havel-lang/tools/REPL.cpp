@@ -303,25 +303,34 @@ bool REPL::execute(const std::string& code) {
       return false;
     }
 
-        auto chunk = byteCompiler.compile(*program);
+auto chunk = byteCompiler.compile(*program);
 
-        if (config_.debugBytecode && chunk) {
-            compiler::BytecodeDisassembler disasm(*chunk);
-            std::cout << disasm.disassemble() << std::endl;
-        }
+if (config_.debugBytecode && chunk) {
+compiler::BytecodeDisassembler disasm(*chunk);
+std::cout << disasm.disassemble() << std::endl;
+}
 
-    // Collect new global names from the resolver and add to known_globals_
-    // so subsequent REPL lines know about variables declared here
-    for (const auto& name : byteCompiler.lexicalResolution().global_variables) {
-      known_globals_.insert(name);
-    }
+// Keep the chunk alive in the VM so closures/functions from this
+// REPL line remain valid (values reference into the BytecodeChunk)
+auto sharedChunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+vm_->storeReplChunk(sharedChunk);
 
-    // Execute persistently (preserves globals between REPL lines)
-    auto result = vm_->executePersistent(*chunk, "__main__");
+// Collect new global names from the resolver and add to known_globals_
+// so subsequent REPL lines know about variables declared here
+for (const auto& name : byteCompiler.lexicalResolution().global_variables) {
+known_globals_.insert(name);
+}
 
-        if (!result.isNull()) {
-            printValue(vm_->toString(result));
-        }
+// Execute persistently (preserves globals between REPL lines)
+auto result = vm_->executePersistent(*sharedChunk, "__main__");
+
+// Restore current_chunk to this REPL line's chunk so toString can
+// resolve function names/string IDs from it
+vm_->setCurrentChunk(sharedChunk.get());
+
+if (!result.isNull()) {
+printValue(vm_->toString(result));
+}
     return true;
   } catch (const std::exception& e) {
     printError(e.what(), currentLine);

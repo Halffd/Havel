@@ -497,10 +497,6 @@ std::string opcodeName(OpCode opcode) {
     return "CHANNEL_RECEIVE";
   case OpCode::CHANNEL_CLOSE:
     return "CHANNEL_CLOSE";
-  case OpCode::EXPORT_FN:
-    return "EXPORT_FN";
-  case OpCode::EXPORT_VAR:
-    return "EXPORT_VAR";
   case OpCode::BEGIN_MODULE:
     return "BEGIN_MODULE";
   case OpCode::END_MODULE:

@@ -2791,32 +2791,7 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         break;
     }
 
-    // Module exports
-    case OpCode::EXPORT_FN: {
-        uint32_t nameId = instr.operands[0].asStringValId();
-        llvm::Value* fn = vstack.back(); vstack.pop_back();
-        llvm::Function* fnExport = module.getFunction("havel_vm_export_fn");
-        if (!fnExport) {
-            fnExport = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i32, i64}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_export_fn", &module);
-        }
-        B.CreateCall(fnExport, {vmArg, llvm::ConstantInt::get(i32, nameId), fn});
-        break;
-    }
-    case OpCode::EXPORT_VAR: {
-        uint32_t nameId = instr.operands[0].asStringValId();
-        llvm::Value* val = vstack.back(); vstack.pop_back();
-        llvm::Function* fnExport = module.getFunction("havel_vm_export_var");
-        if (!fnExport) {
-            fnExport = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i32, i64}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_export_var", &module);
-        }
-        B.CreateCall(fnExport, {vmArg, llvm::ConstantInt::get(i32, nameId), val});
-        break;
-    }
-    case OpCode::BEGIN_MODULE: {
+  case OpCode::BEGIN_MODULE: {
         llvm::Function* fnBegin = module.getFunction("havel_vm_begin_module");
         if (!fnBegin) {
             fnBegin = llvm::Function::Create(

@@ -26,8 +26,7 @@ enum class NodeType {
   Module,
   ImportStatement, // import List from "std/collections"
   UseStatement,    // use io, use media
-  ExportStatement, // export fn foo() or export let x = 5
-  WithStatement,   // with io { ... }
+ WithStatement, // with io { ... }
 
   // Core functional expressions
   HotkeyBinding,          // F1 => { ... }
@@ -2952,23 +2951,6 @@ struct UseStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Export Statement (export fn foo() or export let x = 5 or export class Foo)
-struct ExportStatement : public Statement {
-  std::unique_ptr<Statement> exported; // The declaration being exported
-
-  explicit ExportStatement(std::unique_ptr<Statement> decl)
-      : exported(std::move(decl)) {
-    kind = NodeType::ExportStatement;
-  }
-
-  std::string toString() const override {
-    return "ExportStatement{" + (exported ? exported->toString() : "null") +
-           "}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
 // With Statement (with io { ... })
 struct WithStatement : public Statement {
   std::string objectName;                       // The object/module name
@@ -3075,7 +3057,6 @@ public:
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement &node) = 0;
   virtual void visitUseStatement(const UseStatement &node) = 0;
-  virtual void visitExportStatement(const ExportStatement &node) = 0;
   virtual void visitWithStatement(const WithStatement &node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
   virtual void visitTupleExpression(const TupleExpression &node) = 0;
@@ -3512,10 +3493,6 @@ inline void ImportStatement::accept(ASTVisitor &visitor) const {
 
 inline void UseStatement::accept(ASTVisitor &visitor) const {
   visitor.visitUseStatement(*this);
-}
-
-inline void ExportStatement::accept(ASTVisitor &visitor) const {
-  visitor.visitExportStatement(*this);
 }
 
 inline void WithStatement::accept(ASTVisitor &visitor) const {

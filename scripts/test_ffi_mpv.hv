@@ -1,0 +1,25 @@
+let mpv = ffi.open("/usr/lib/libmpv.so")
+
+let mpv_create = ffi.sym(mpv, "mpv_create")
+let mpv_initialize = ffi.sym(mpv, "mpv_initialize")
+let mpv_command = ffi.sym(mpv, "mpv_command")
+let mpv_set_option_string = ffi.sym(mpv, "mpv_set_option_string")
+let mpv_wait_event = ffi.sym(mpv, "mpv_wait_event")
+let mpv_terminate_destroy = ffi.sym(mpv, "mpv_terminate_destroy")
+
+let ctx = ffi.call(mpv_create)
+ffi.call(mpv_set_option_string, ctx, ffi.cstring("vo"), ffi.cstring("gpu"))
+ffi.call(mpv_initialize, ctx)
+
+// play a file
+let cmd = ffi.array("loadfile", "/home/arc/video.mp4", null)
+ffi.call(mpv_command, ctx, cmd)
+
+// event loop
+while true {
+    let ev = ffi.call(mpv_wait_event, ctx, -1)
+    let id = ffi.get_i32(ev, 0)
+    if id == 1 { break }   // MPV_EVENT_SHUTDOWN
+}
+
+ffi.call(mpv_terminate_destroy, ctx)

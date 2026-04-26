@@ -1,0 +1,27 @@
+let gl = ffi.open("/usr/lib/libGL.so")
+let glfw = ffi.open("/usr/lib/libglfw.so")
+
+let glfwInit = ffi.sym(glfw, "glfwInit")
+let glfwCreateWindow = ffi.sym(glfw, "glfwCreateWindow")
+let glfwMakeContextCurrent = ffi.sym(glfw, "glfwMakeContextCurrent")
+let glfwWindowShouldClose = ffi.sym(glfw, "glfwWindowShouldClose")
+let glfwSwapBuffers = ffi.sym(glfw, "glfwSwapBuffers")
+let glfwPollEvents = ffi.sym(glfw, "glfwPollEvents")
+let glfwTerminate = ffi.sym(glfw, "glfwTerminate")
+
+let glClear = ffi.sym(gl, "glClear")
+let glClearColor = ffi.sym(gl, "glClearColor")
+
+ffi.call(glfwInit)
+
+let win = ffi.call(glfwCreateWindow, 800, 600, ffi.cstring("Havel GL"), 0, 0)
+ffi.call(glfwMakeContextCurrent, win)
+ffi.call(glClearColor, 0.1, 0.2, 0.3, 1.0)
+
+while ffi.call(glfwWindowShouldClose, win) == 0 {
+    ffi.call(glClear, 0x4000)  // GL_COLOR_BUFFER_BIT
+    ffi.call(glfwSwapBuffers, win)
+    ffi.call(glfwPollEvents)
+}
+
+ffi.call(glfwTerminate)

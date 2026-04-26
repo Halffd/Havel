@@ -108,16 +108,16 @@ static bool valuesEqual(const Value &a, const Value &b) {
 } // anonymous namespace
 
 
-std::string VM::toString(const Value &value) const {
-  std::unordered_set<uint32_t> visited;
-  return toStringInternal(value, visited, 0);
+std::string VM::toString(const Value &value) {
+ std::unordered_set<uint32_t> visited;
+ return toStringInternal(value, visited, 0);
 }
 
 bool VM::toBoolPublic(const Value &value) {
   return isTruthy(value);
 }
 
-std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds, int depth) const {
+std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t> &visitedIds, int depth) {
   if (depth > 8) return "...";
 
   if (value.isNull()) return "null";
@@ -197,22 +197,83 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     result += "]";
     return result;
   }
-  if (value.isObjectId()) {
-    auto *obj = heap_.object(value.asObjectId());
-    if (!obj) return "{}";
-    std::string result = "{";
-    bool first = true;
-    for (const auto &[key, val] : *obj) {
-      // Skip internal fields (start with __)
-      if (key.size() >= 2 && key[0] == '_' && key[1] == '_') {
-        continue;
-      }
-      if (!first) result += ", ";
-      first = false;
-      result += key + ": " + toStringInternal(val, visitedIds, depth + 1);
-    }
-    result += "}";
-    return result;
+if (value.isObjectId()) {
+auto *obj = heap_.object(value.asObjectId());
+if (!obj) return "{}";
+if (visitedIds.count(value.asObjectId())) return "{...}";
+visitedIds.insert(value.asObjectId());
+
+auto* isClass = obj->get("__is_class");
+auto* isStruct = obj->get("__is_struct");
+
+if (isClass && isClass->isBool() && isClass->asBool()) {
+auto* nameVal = obj->get("__name");
+std::string className = (nameVal && nameVal->isStringValId() && current_chunk)
+? current_chunk->getString(nameVal->asStringValId()) : "class";
+visitedIds.erase(value.asObjectId());
+return "<class " + className + ">";
+}
+if (isStruct && isStruct->isBool() && isStruct->asBool()) {
+auto* nameVal = obj->get("__name");
+std::string structName = (nameVal && nameVal->isStringValId() && current_chunk)
+? current_chunk->getString(nameVal->asStringValId()) : "struct";
+visitedIds.erase(value.asObjectId());
+return "<struct " + structName + ">";
+}
+
+ Value* classOrStruct = obj->get("__class");
+ if (!classOrStruct) classOrStruct = obj->get("__struct");
+
+ if (classOrStruct && classOrStruct->isObjectId()) {
+ auto* proto = heap_.object(classOrStruct->asObjectId());
+ while (proto) {
+ auto* methodVal = proto->get("toString");
+ if (methodVal && (methodVal->isFunctionObjId() || methodVal->isClosureId())) {
+ visitedIds.erase(value.asObjectId());
+ try {
+ Value result = callFunctionSync(*methodVal, {value});
+ visitedIds.insert(value.asObjectId());
+ if (result.isStringValId() && current_chunk) {
+ return current_chunk->getString(result.asStringValId());
+ } else if (result.isStringId()) {
+ if (auto* s = heap_.string(result.asStringId())) return *s;
+ } else if (result.isInt()) {
+ return std::to_string(result.asInt());
+ } else if (result.isDouble()) {
+ std::ostringstream out;
+ out << result.asDouble();
+ return out.str();
+ } else if (result.isBool()) {
+ return result.asBool() ? "true" : "false";
+ } else if (!result.isNull()) {
+ return toStringInternal(result, visitedIds, depth + 1);
+ }
+ } catch (...) {
+ }
+ visitedIds.insert(value.asObjectId());
+ break;
+ }
+ auto* parentVal = proto->get("__parent");
+ if (parentVal && parentVal->isObjectId()) {
+ proto = heap_.object(parentVal->asObjectId());
+ } else {
+ break;
+ }
+ }
+ }
+
+ std::string result = "{";
+ bool first = true;
+ for (const auto &[key, val] : *obj) {
+ if (key.size() >= 2 && key[0] == '_' && key[1] == '_') {
+ continue;
+ }
+ if (!first) result += ", ";
+ first = false;
+ result += key + ": " + toStringInternal(val, visitedIds, depth + 1);
+ }
+ result += "}";
+ return result;
   }
     if (value.isHostFuncId()) {
         uint32_t idx = value.asHostFuncId();
@@ -2168,94 +2229,107 @@ void VM::registerDefaultHostFunctions() {
             arg_idx++;
         }
 
-        // Check for class fields (@@fields)
-        if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
-            proto->set("__class_fields", args[arg_idx]);
-        }
+ // Check for class fields (@@fields)
+if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
+proto->set("__class_fields", args[arg_idx]);
+}
 
-        return Value::makeObjectId(protoRef.id);
+proto->set("new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
+proto->set("method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
+
+return Value::makeObjectId(protoRef.id);
       });
 
-  registerHostFunction(
-      "class.new", [this](const std::vector<Value> &args) {
-        if (args.empty()) {
-          COMPILER_THROW("class.new(type, ...values) requires a type argument");
-        }
-        if (!current_chunk) COMPILER_THROW("class.new requires active chunk");
+registerHostFunction(
+"class.new", [this](const std::vector<Value> &args) {
+if (args.empty()) {
+COMPILER_THROW("class.new(type, ...values) requires a type argument");
+}
+if (!current_chunk) COMPILER_THROW("class.new requires active chunk");
 
-        const auto &name = current_chunk->getString(args[0].asStringValId());
-        auto it = globals.find(name);
-        if (it == globals.end()) {
-            COMPILER_THROW("Unknown class type: " + name);
-        }
-        
-        Value protoVal = it->second;
-        if (!protoVal.isObjectId()) {
-            COMPILER_THROW("Class type is not an object prototype: " + name);
-        }
+Value protoVal;
+size_t ctor_offset = 1;
+if (args[0].isObjectId()) {
+protoVal = args[0];
+ctor_offset = 1;
+} else if (args[0].isStringValId()) {
+const auto &name = current_chunk->getString(args[0].asStringValId());
+auto it = globals.find(name);
+if (it == globals.end()) {
+COMPILER_THROW("Unknown class type: " + name);
+}
+protoVal = it->second;
+ctor_offset = 1;
+} else {
+COMPILER_THROW("class.new: first argument must be class name or prototype object");
+}
 
-        auto instanceRef = heap_.allocateObject();
-        auto* instance = heap_.object(instanceRef.id);
-        
-        instance->set("__class", protoVal); // Bind to prototype
+if (!protoVal.isObjectId()) {
+COMPILER_THROW("Class type is not an object prototype");
+}
 
-        auto* currentProto = heap_.object(protoVal.asObjectId());
-        while (currentProto) {
-            auto fieldsVal = currentProto->get("__fields");
-            if (fieldsVal && fieldsVal->isArrayId()) {
-                auto* fields = heap_.array(fieldsVal->asArrayId());
-                for (const auto& f : *fields) {
-                    std::string fName = current_chunk->getString(f.asStringValId());
-                    instance->set(fName, Value::makeNull());
-                }
-            }
-            auto parentVal = currentProto->get("__parent");
-            if (parentVal && parentVal->isObjectId()) {
-                currentProto = heap_.object(parentVal->asObjectId());
-            } else {
-                currentProto = nullptr;
-            }
-        }
+auto instanceRef = heap_.allocateObject();
+auto* instance = heap_.object(instanceRef.id);
 
-        Value initMethodVal = Value::makeNull();
-        currentProto = heap_.object(protoVal.asObjectId());
-        while (currentProto) {
-            auto val = currentProto->get("init");
-            if (val) {
-                initMethodVal = *val;
-                break;
-            }
-            auto parentVal = currentProto->get("__parent");
-            if (parentVal && parentVal->isObjectId()) {
-                currentProto = heap_.object(parentVal->asObjectId());
-            } else {
-                break;
-            }
-        }
+instance->set("__class", protoVal);
 
-        if (!initMethodVal.isNull()) {
-            std::vector<Value> ctor_args;
-            ctor_args.reserve(args.size());
-            ctor_args.push_back(Value::makeObjectId(instanceRef.id)); // 'this'
-            for (size_t i = 1; i < args.size(); ++i) {
-                ctor_args.push_back(args[i]);
-            }
-            (void)call(initMethodVal, ctor_args);
-        } else {
-            auto* proto = heap_.object(protoVal.asObjectId());
-            auto fieldsVal = proto->get("__fields");
-            if (fieldsVal && fieldsVal->isArrayId()) {
-                auto* fields = heap_.array(fieldsVal->asArrayId());
-                const size_t provided = args.size() - 1;
-                for (size_t i = 0; i < provided && i < fields->size(); ++i) {
-                    std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
-                    instance->set(fieldName, args[i + 1]);
-                }
-            }
-        }
+auto* currentProto = heap_.object(protoVal.asObjectId());
+while (currentProto) {
+auto fieldsVal = currentProto->get("__fields");
+if (fieldsVal && fieldsVal->isArrayId()) {
+auto* fields = heap_.array(fieldsVal->asArrayId());
+for (const auto& f : *fields) {
+std::string fName = current_chunk->getString(f.asStringValId());
+instance->set(fName, Value::makeNull());
+}
+}
+auto parentVal = currentProto->get("__parent");
+if (parentVal && parentVal->isObjectId()) {
+currentProto = heap_.object(parentVal->asObjectId());
+} else {
+currentProto = nullptr;
+}
+}
 
-        return Value::makeObjectId(instanceRef.id);
-      });
+Value initMethodVal = Value::makeNull();
+currentProto = heap_.object(protoVal.asObjectId());
+while (currentProto) {
+auto val = currentProto->get("init");
+if (val) {
+initMethodVal = *val;
+break;
+}
+auto parentVal = currentProto->get("__parent");
+if (parentVal && parentVal->isObjectId()) {
+currentProto = heap_.object(parentVal->asObjectId());
+} else {
+break;
+}
+}
+
+if (!initMethodVal.isNull()) {
+std::vector<Value> ctor_args;
+ctor_args.reserve(args.size());
+ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+for (size_t i = ctor_offset; i < args.size(); ++i) {
+ctor_args.push_back(args[i]);
+}
+(void)call(initMethodVal, ctor_args);
+} else {
+auto* proto = heap_.object(protoVal.asObjectId());
+auto fieldsVal = proto->get("__fields");
+if (fieldsVal && fieldsVal->isArrayId()) {
+auto* fields = heap_.array(fieldsVal->asArrayId());
+const size_t provided = args.size() - ctor_offset;
+for (size_t i = 0; i < provided && i < fields->size(); ++i) {
+std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
+instance->set(fieldName, args[i + ctor_offset]);
+}
+}
+}
+
+return Value::makeObjectId(instanceRef.id);
+});
 
   registerHostFunction(
       "class.method", [this](const std::vector<Value> &args) {
@@ -4896,12 +4970,12 @@ break;
     }
 
     // Get the function name from the function's string table
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    const auto* func = currentFrame().function;
-    std::string function_name;
-    if (current_chunk) {
-      function_name = current_chunk->getString(strIndex);
-    } else {
+uint32_t strIndex = instruction.operands[0].asStringValId();
+const auto* func = currentFrame().function;
+std::string function_name;
+if (current_chunk) {
+function_name = current_chunk->getString(strIndex);
+} else {
       function_name = "<unknown:" + std::to_string(strIndex) + ">";
     }
     uint32_t arg_count = instruction.operands[1].asInt();

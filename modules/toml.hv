@@ -40,17 +40,17 @@ fn lex(source: string) -> [Token] {
     let line = 1
     let col = 1
     let n = source.len
-    
+
     while i < n {
         let ch = source[i]
-        
+
         // Skip whitespace (except newline)
         if ch == ' ' || ch == '\r' || ch == '\t' {
             i += 1
             col += 1
             continue
         }
-        
+
         // Newline
         if ch == '\n' {
             tokens.push(Token{type: TokenType.Newline, value: "\n", line: line, col: col})
@@ -59,7 +59,7 @@ fn lex(source: string) -> [Token] {
             col = 1
             continue
         }
-        
+
         // Comment
         if ch == '#' {
             let start = i
@@ -70,7 +70,7 @@ fn lex(source: string) -> [Token] {
             col += i - start
             continue
         }
-        
+
         // String
         if ch == '"' {
             i += 1
@@ -88,7 +88,7 @@ fn lex(source: string) -> [Token] {
             col += str.len + 2
             continue
         }
-        
+
         // Multiline string """
         if ch == '"' && i + 2 < n && source[i+1] == '"' && source[i+2] == '"' {
             i += 3
@@ -102,7 +102,7 @@ fn lex(source: string) -> [Token] {
             col += str.len + 6
             continue
         }
-        
+
         // Key (bare or dotted)
         if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || (ch >= '0' && ch <= '9' && i > 0) {
             let start = i
@@ -119,7 +119,7 @@ fn lex(source: string) -> [Token] {
             col += key.len
             continue
         }
-        
+
         // Equals
         if ch == '=' {
             tokens.push(Token{type: TokenType.Equals, value: "=", line: line, col: col})
@@ -127,7 +127,7 @@ fn lex(source: string) -> [Token] {
             col += 1
             continue
         }
-        
+
         // Left bracket [
         if ch == '[' {
             if i + 1 < n && source[i+1] == '[' {
@@ -141,7 +141,7 @@ fn lex(source: string) -> [Token] {
             }
             continue
         }
-        
+
         // Right bracket ]
         if ch == ']' {
             if i + 1 < n && source[i+1] == ']' {
@@ -155,7 +155,7 @@ fn lex(source: string) -> [Token] {
             }
             continue
         }
-        
+
         // Left brace {
         if ch == '{' {
             tokens.push(Token{type: TokenType.LeftBrace, value: "{", line: line, col: col})
@@ -163,7 +163,7 @@ fn lex(source: string) -> [Token] {
             col += 1
             continue
         }
-        
+
         // Right brace }
         if ch == '}' {
             tokens.push(Token{type: TokenType.RightBrace, value: "}", line: line, col: col})
@@ -171,7 +171,7 @@ fn lex(source: string) -> [Token] {
             col += 1
             continue
         }
-        
+
         // Comma
         if ch == ',' {
             tokens.push(Token{type: TokenType.Comma, value: ",", line: line, col: col})
@@ -179,7 +179,7 @@ fn lex(source: string) -> [Token] {
             col += 1
             continue
         }
-        
+
         // Dot
         if ch == '.' {
             tokens.push(Token{type: TokenType.Dot, value: ".", line: line, col: col})
@@ -187,7 +187,7 @@ fn lex(source: string) -> [Token] {
             col += 1
             continue
         }
-        
+
         // Numbers (integer/float)
         if (ch >= '0' && ch <= '9') || ch == '-' || ch == '+' {
             let start = i
@@ -215,7 +215,7 @@ fn lex(source: string) -> [Token] {
             col += num.len
             continue
         }
-        
+
         // Boolean
         if i + 3 < n && source[i:i+4] == "true" {
             tokens.push(Token{type: TokenType.Boolean, value: "true", line: line, col: col})
@@ -229,7 +229,7 @@ fn lex(source: string) -> [Token] {
             col += 5
             continue
         }
-        
+
         // Date/DateTime (simple ISO detection)
         if i + 9 < n && source[i+4] == '-' && source[i+7] == '-' {
             let start = i
@@ -245,12 +245,12 @@ fn lex(source: string) -> [Token] {
             col += dateStr.len
             continue
         }
-        
+
         // Unknown - skip
         i += 1
         col += 1
     }
-    
+
     tokens.push(Token{type: TokenType.EOF, value: "", line: line, col: col})
     return tokens
 }
@@ -317,7 +317,7 @@ fn Parser.parseValue(self, tok: Token) -> any {
 fn Parser.parseArray(self) -> [any] {
     self.advance() // consume '['
     let arr = []
-    
+
     while true {
         self.skipNewlines()
         let tok = self.peek()
@@ -345,7 +345,7 @@ fn Parser.parseArray(self) -> [any] {
 fn Parser.parseInlineTable(self) -> object {
     self.advance() // consume '{'
     let obj = {}
-    
+
     while true {
         self.skipNewlines()
         let tok = self.peek()
@@ -390,7 +390,7 @@ fn Parser.parseKey(self) -> [string] {
     }
     keys.push(tok.value)
     self.advance()
-    
+
     while self.peek().type == TokenType.Dot {
         self.advance()
         let next = self.peek()
@@ -420,14 +420,14 @@ fn Parser.setValue(self, keys: [string], value: any) {
 
 fn Parser.parse(self) -> object {
     let result = {}
-    
+
     while true {
         self.skipNewlines()
         let tok = self.peek()
         if tok.type == TokenType.EOF {
             break
         }
-        
+
         // Table header: [name]
         if tok.type == TokenType.LeftBracket {
             self.advance()
@@ -440,7 +440,7 @@ fn Parser.parse(self) -> object {
                 continue
             }
             self.advance()
-            
+
             // Navigate to or create table
             let table = result
             for key in keys {
@@ -452,7 +452,7 @@ fn Parser.parse(self) -> object {
             self.current_table = table
             continue
         }
-        
+
         // Array table: [[name]]
         if tok.type == TokenType.LeftDoubleBracket {
             self.advance()
@@ -464,7 +464,7 @@ fn Parser.parse(self) -> object {
                 continue
             }
             self.advance()
-            
+
             // Navigate to parent
             let parent = result
             for i in 0..(keys.len - 1) {
@@ -483,7 +483,7 @@ fn Parser.parse(self) -> object {
                     parent = parent[key]
                 }
             }
-            
+
             let lastKey = keys[-1]
             if parent[lastKey] == null {
                 parent[lastKey] = []
@@ -494,7 +494,7 @@ fn Parser.parse(self) -> object {
             self.current_table = newTable
             continue
         }
-        
+
         // Key-value pair
         if tok.type == TokenType.Key || tok.type == TokenType.String {
             let keys = self.parseKey()
@@ -518,11 +518,11 @@ fn Parser.parse(self) -> object {
             self.advance()
             continue
         }
-        
+
         // Skip unknown
         self.advance()
     }
-    
+
     return result
 }
 

@@ -2640,37 +2640,37 @@ break;
             Value::makeStringValId(strId),
             Value(static_cast<uint32_t>(2))});
       }
-      } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
-      } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
-        compileExpression(*binary.left);
-        compileExpression(*binary.right);
-        uint32_t strId = addStringConstant("config.append");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId), Value(static_cast<uint32_t>(2))});
-      // Nullish coalescing: left ?? right
-      // Evaluate left side
-      compileExpression(*binary.left);
+ } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
+            // Nullish coalescing: left ?? right
+            // Evaluate left side
+            compileExpression(*binary.left);
 
-      // Duplicate the value (we need it for both the null check and potential
-      // result)
-      emit(OpCode::DUP);
+            // Duplicate the value (we need it for both the null check and potential
+            // result)
+            emit(OpCode::DUP);
 
-      // Jump to right side if left is null/undefined (this pops the duplicate)
-      uint32_t jumpToRight = emitJump(OpCode::JUMP_IF_NULL);
+            // Jump to right side if left is null/undefined (this pops the duplicate)
+            uint32_t jumpToRight = emitJump(OpCode::JUMP_IF_NULL);
 
-      // Left is not null - the original value is still on stack, just skip the
-      // right side
-      uint32_t done = emitJump(OpCode::JUMP);
+            // Left is not null - the original value is still on stack, just skip the
+            // right side
+            uint32_t done = emitJump(OpCode::JUMP);
 
-      // Left was null - evaluate right side (the null was already popped by
-      // JUMP_IF_NULL)
-      patchJump(jumpToRight,
+            // Left was null - evaluate right side (the null was already popped by
+            // JUMP_IF_NULL)
+            patchJump(jumpToRight,
                 static_cast<uint32_t>(current_function->instructions.size()));
-      compileExpression(*binary.right);
+            compileExpression(*binary.right);
 
-      // Done
-      patchJump(done,
+            // Done
+            patchJump(done,
                 static_cast<uint32_t>(current_function->instructions.size()));
+ } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            uint32_t strId = addStringConstant("config.append");
+            emit(OpCode::CALL_HOST, std::vector<Value>{
+                Value::makeStringValId(strId), Value(static_cast<uint32_t>(2))});
     } else {
       compileExpression(*binary.left);
       compileExpression(*binary.right);

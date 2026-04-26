@@ -28,4 +28,10 @@ d = d => {
   //print @status
   print d
 }
+e => {
+  exit(0)
+}
+f => {
+  run("firefox")
+}
 print d

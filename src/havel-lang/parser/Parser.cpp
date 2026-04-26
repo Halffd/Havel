@@ -356,6 +356,9 @@ case TokenType::Nullish:
     // and lets parseMatchExpression handle the => as a match arm separator
     case TokenType::Arrow:
       if (context.inMatchExpression) {
+        if (debug.parser) {
+          havel::debug("BP: Arrow in match context, returning 0");
+        }
         return 0;
       }
       return 10;
@@ -624,7 +627,7 @@ bool Parser::isInfixOperator(TokenType type) const {
 std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   DepthGuard depth_guard(recursion_depth_);
   if (debug.parser) {
-    havel::debug("PRATT: parseExpression with rbp={} at {}", rbp, at().toString());
+    havel::debug("PRATT: parseExpression START rbp={} at {}", rbp, at().toString());
   }
 
   // Get the first token (null denotation)
@@ -6022,16 +6025,14 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
-    if (debug.parser) {
-      havel::debug("PARSE: parseAssignmentExpression starting at {}", at().toString());
-    }
     auto left = parseTernaryExpression();
 
     // Check for comma-separated targets: a, b, c = value
+    // But NOT when in match expression - the comma is the match arm separator
     std::vector<std::unique_ptr<havel::ast::Expression>> targets;
     bool hasComma = false;
     
-    if (at().type == havel::TokenType::Comma) {
+    if (at().type == havel::TokenType::Comma && !context.inMatchExpression) {
         hasComma = true;
         targets.push_back(std::move(left));
         
@@ -6085,9 +6086,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
         failAt(at(), "Expected '=' after comma-separated targets");
     }
 
-    if (debug.parser) {
-      havel::debug("PARSE: parseAssignmentExpression returning");
-    }
     return left;
 }
 
@@ -6116,10 +6114,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
   // Note: the 'match' token has already been consumed by nud() before calling this.
   // Do NOT check for Match token or advance here.
 
-  if (debug.parser) {
-    havel::debug("PARSE: parseMatchExpression starting at {}", at().toString());
-  }
-
   // Save and set inMatchExpression flag for the ENTIRE match block.
   // This prevents => from being parsed as arrow functions in match arms.
   bool savedInMatchExpression = context.inMatchExpression;
@@ -6133,10 +6127,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
   context.allowBraceSugar = false;
 
   discriminants.push_back(parseBinaryExpression());
-
-  if (debug.parser) {
-    havel::debug("PARSE: parseMatchExpression after discriminant, at {}", at().toString());
-  }
 
   // Parse additional discriminants separated by commas
   while (at().type == havel::TokenType::Comma) {
@@ -6163,10 +6153,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
       break;
     }
 
-    if (debug.parser) {
-      havel::debug("PARSE: parseMatchExpression parsing arm at {}", at().toString());
-    }
-
     // Parse comma-separated patterns using the new pattern parser
     std::vector<std::unique_ptr<havel::ast::Expression>> patterns;
     std::unique_ptr<havel::ast::Expression> guard;
@@ -6174,9 +6160,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
 
     // Parse first pattern
     auto firstPat = parsePattern();
-    if (debug.parser) {
-      havel::debug("PARSE: parseMatchExpression after parsePattern");
-    }
     isDefault = (firstPat && firstPat->kind == ast::NodeType::WildcardPattern);
     patterns.push_back(std::move(firstPat));
 
@@ -6212,24 +6195,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     }
     advance(); // consume '=>'
 
-    if (debug.parser) {
-      havel::debug("PARSE: parseMatchExpression after consuming =>");
-    }
-
     // Parse result expression (use parseAssignmentExpression to handle assignments like x = true)
-    std::unique_ptr<havel::ast::Expression> result;
-    try {
-      result = parseAssignmentExpression();
-    } catch (const std::exception& e) {
-      if (debug.parser) {
-        havel::debug("PARSE: parseMatchExpression caught exception from parseAssignmentExpression: {}", e.what());
-      }
-      throw;
-    }
-
-    if (debug.parser) {
-      havel::debug("PARSE: parseMatchExpression after result expression, at {}", at().toString());
-    }
+    auto result = parseAssignmentExpression();
 
     if (isDefault) {
       match->defaultCase = std::move(result);
@@ -6257,10 +6224,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
     failAt(at(), "Expected '}' to close match expression");
   }
   advance(); // consume '}'
-
-  if (debug.parser) {
-    havel::debug("PARSE: parseMatchExpression returning, next token is {}", at().toString());
-  }
 
   // Restore context
   context.allowBraceSugar = savedBraceSugar;

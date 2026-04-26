@@ -260,8 +260,9 @@ next_local_index = max_slot;
 const ast::Statement *lastRegularStmt = nullptr;
 for (auto it = program.body.rbegin(); it != program.body.rend(); ++it) {
     if (!*it) continue;
-    if ((*it)->kind == ast::NodeType::FunctionDeclaration) continue;
-    if ((*it)->kind == ast::NodeType::DecoratorStatement) continue;
+ if ((*it)->kind == ast::NodeType::FunctionDeclaration) continue;
+        if ((*it)->kind == ast::NodeType::DecoratorStatement) continue;
+        if ((*it)->kind == ast::NodeType::ExportStatement) continue;
     lastRegularStmt = it->get();
     break;
 }
@@ -361,9 +362,52 @@ for (const auto &statement : program.body) {
                 emit(OpCode::POP);
             }
 
-            emit(OpCode::POP);
+        emit(OpCode::POP);
+        continue;
+    }
+    }
+
+    if (statement->kind == ast::NodeType::ExportStatement) {
+        const auto &expStmt = static_cast<const ast::ExportStatement &>(*statement);
+        if (!expStmt.exported) continue;
+
+        if (expStmt.exported->kind == ast::NodeType::FunctionDeclaration) {
+            const auto &fnDecl = static_cast<const ast::FunctionDeclaration &>(*expStmt.exported);
+            if (!fnDecl.name) continue;
+
+            auto index_it = function_indices_by_node_.find(&fnDecl);
+            if (index_it == function_indices_by_node_.end()) continue;
+
+            auto upvalues_it = lexical_resolution_.function_upvalues.find(&fnDecl);
+            if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+                !upvalues_it->second.empty()) {
+                emit(OpCode::CLOSURE, index_it->second);
+            } else {
+                emit(OpCode::LOAD_CONST,
+                     addConstant(Value::makeFunctionObjId(index_it->second)));
+            }
+
+            uint32_t fnNameStrId = addStringConstant(fnDecl.name->symbol);
+            emit(OpCode::DUP);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+            emit(OpCode::EXPORT_FN, Value::makeStringValId(fnNameStrId));
             continue;
         }
+
+        if (expStmt.exported->kind == ast::NodeType::LetDeclaration ||
+            expStmt.exported->kind == ast::NodeType::ConstDeclaration) {
+            compileStatement(*expStmt.exported);
+            const auto &letStmt = static_cast<const ast::LetDeclaration &>(*expStmt.exported);
+            if (letStmt.name) {
+                uint32_t nameStrId = addStringConstant(letStmt.name->symbol);
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
+                emit(OpCode::EXPORT_VAR, Value::makeStringValId(nameStrId));
+            }
+            continue;
+        }
+
+        compileStatement(*expStmt.exported);
+        continue;
     }
 
     if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
@@ -1887,15 +1931,49 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
 
 void ByteCompiler::compileExportStatement(
     const ast::ExportStatement &statement) {
-  // Export statements are handled during semantic analysis
-  // They mark which declarations should be exported from the module
-  // For now, this is a no-op at the bytecode level
-  // In a full implementation, we would track exports for the module loader
+    if (!statement.exported) return;
 
-  if (statement.exported) {
-    // The exported value is already compiled as part of the normal compilation
-    // We just mark it as exported in the module's export table
-  }
+    if (statement.exported->kind == ast::NodeType::FunctionDeclaration) {
+        const auto &fnDecl =
+            static_cast<const ast::FunctionDeclaration &>(*statement.exported);
+        if (!fnDecl.name) return;
+
+        auto index_it = function_indices_by_node_.find(&fnDecl);
+        if (index_it == function_indices_by_node_.end()) {
+            COMPILER_THROW("Missing function index for exported function: " +
+                           fnDecl.name->symbol);
+        }
+
+        auto upvalues_it = lexical_resolution_.function_upvalues.find(&fnDecl);
+        if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+            !upvalues_it->second.empty()) {
+            emit(OpCode::CLOSURE, index_it->second);
+        } else {
+            emit(OpCode::LOAD_CONST,
+                 addConstant(Value::makeFunctionObjId(index_it->second)));
+        }
+
+        uint32_t fnNameStrId = addStringConstant(fnDecl.name->symbol);
+        emit(OpCode::DUP);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(fnNameStrId));
+        emit(OpCode::EXPORT_FN, Value::makeStringValId(fnNameStrId));
+        return;
+    }
+
+    if (statement.exported->kind == ast::NodeType::LetDeclaration ||
+        statement.exported->kind == ast::NodeType::ConstDeclaration) {
+        compileStatement(*statement.exported);
+        const auto &letStmt =
+            static_cast<const ast::LetDeclaration &>(*statement.exported);
+        if (letStmt.name) {
+            uint32_t nameStrId = addStringConstant(letStmt.name->symbol);
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
+            emit(OpCode::EXPORT_VAR, Value::makeStringValId(nameStrId));
+        }
+        return;
+    }
+
+    compileStatement(*statement.exported);
 }
 
 void ByteCompiler::compileDecoratorStatement(
@@ -4682,15 +4760,23 @@ void ByteCompiler::collectFunctionDeclarations(
       break;
     }
 
-  case ast::NodeType::DecoratorStatement: {
-    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
-    if (dec.target) {
-      collectFunctionDeclarations(*dec.target, out);
+ case ast::NodeType::DecoratorStatement: {
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+        if (dec.target) {
+            collectFunctionDeclarations(*dec.target, out);
+        }
+        break;
     }
-    break;
-  }
 
-  default:
+    case ast::NodeType::ExportStatement: {
+        const auto &exp = static_cast<const ast::ExportStatement &>(statement);
+        if (exp.exported) {
+            collectFunctionDeclarations(*exp.exported, out);
+        }
+        break;
+    }
+
+    default:
     break;
   }
 }
@@ -4827,19 +4913,26 @@ void ByteCompiler::collectLambdaExpressions(
     }
       break;
     }
-  case ast::NodeType::DecoratorStatement: {
-    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
-    if (dec.target) {
-      collectLambdaExpressions(*dec.target, out);
+ case ast::NodeType::DecoratorStatement: {
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+        if (dec.target) {
+            collectLambdaExpressions(*dec.target, out);
+        }
+        for (const auto &deco : dec.decorators) {
+            if (deco) {
+                collectLambdaExpressions(*deco, out);
+            }
+        }
+        break;
     }
-    for (const auto &deco : dec.decorators) {
-      if (deco) {
-        collectLambdaExpressions(*deco, out);
-      }
+    case ast::NodeType::ExportStatement: {
+        const auto &exp = static_cast<const ast::ExportStatement &>(statement);
+        if (exp.exported) {
+            collectLambdaExpressions(*exp.exported, out);
+        }
+        break;
     }
-    break;
-  }
-  default:
+    default:
     break;
   }
 }

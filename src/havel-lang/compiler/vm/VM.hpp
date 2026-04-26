@@ -213,6 +213,7 @@ private:
     ModuleLoader moduleLoader_;
 
     std::vector<std::unordered_map<std::string, Value>> globals_stack_;
+ std::unordered_map<std::string, Value> rootGlobals_;
 
   // ObjectId of the _G heap object; UINT32_MAX = unset.
   // OBJECT_GET/OBJECT_SET/ITER_NEW check this to delegate to live globals maps.

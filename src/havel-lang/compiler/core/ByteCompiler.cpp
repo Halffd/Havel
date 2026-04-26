@@ -394,12 +394,12 @@ for (const auto &statement : program.body) {
             continue;
         }
 
-        if (expStmt.exported->kind == ast::NodeType::LetDeclaration ||
-            expStmt.exported->kind == ast::NodeType::ConstDeclaration) {
+        if (expStmt.exported->kind == ast::NodeType::LetDeclaration) {
             compileStatement(*expStmt.exported);
             const auto &letStmt = static_cast<const ast::LetDeclaration &>(*expStmt.exported);
-            if (letStmt.name) {
-                uint32_t nameStrId = addStringConstant(letStmt.name->symbol);
+            if (letStmt.pattern && letStmt.pattern->kind == ast::NodeType::Identifier) {
+                const auto &ident = static_cast<const ast::Identifier &>(*letStmt.pattern);
+                uint32_t nameStrId = addStringConstant(ident.symbol);
                 emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
                 emit(OpCode::EXPORT_VAR, Value::makeStringValId(nameStrId));
             }
@@ -1960,13 +1960,13 @@ void ByteCompiler::compileExportStatement(
         return;
     }
 
-    if (statement.exported->kind == ast::NodeType::LetDeclaration ||
-        statement.exported->kind == ast::NodeType::ConstDeclaration) {
+    if (statement.exported->kind == ast::NodeType::LetDeclaration) {
         compileStatement(*statement.exported);
         const auto &letStmt =
             static_cast<const ast::LetDeclaration &>(*statement.exported);
-        if (letStmt.name) {
-            uint32_t nameStrId = addStringConstant(letStmt.name->symbol);
+        if (letStmt.pattern && letStmt.pattern->kind == ast::NodeType::Identifier) {
+            const auto &ident = static_cast<const ast::Identifier &>(*letStmt.pattern);
+            uint32_t nameStrId = addStringConstant(ident.symbol);
             emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
             emit(OpCode::EXPORT_VAR, Value::makeStringValId(nameStrId));
         }

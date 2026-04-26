@@ -4,6 +4,7 @@
 #include "../ast/AST.h"
 #include "../common/Debug.hpp"
 #include "../lexer/Lexer.hpp"
+#include <algorithm>
 #include <cassert>
 #include <memory>
 #include <stdexcept>
@@ -363,7 +364,10 @@ public:
 
   // Error access
   const std::vector<CompilerError> &getErrors() const { return errors; }
-  bool hasErrors() const { return !errors.empty(); }
+  bool hasErrors() const {
+    return std::any_of(errors.begin(), errors.end(),
+                       [](const auto &e) { return e.severity == ErrorSeverity::Error; });
+  }
 };
 
 } // namespace havel::parser

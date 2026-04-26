@@ -2155,15 +2155,55 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   }
 
   // Context-sensitive decorator detection:
-  // @ at statement start + next is Identifier + after that is fn/( = decorator
-  // @ anywhere else = field access (handled in parsePrattExpression)
-  if (at().type == havel::TokenType::At &&
+  // [decorator] or [decorator(args)] at statement start = decorator
+  // Must be followed by a declaration (fn, class, etc.)
+  // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
+  // Distinguish from [a, b, c] = ... array destructuring by lookahead:
+  // Decorator: [identifier] followed by declaration
+  // Array: [expression, ...] or [pattern] = value
+  // Pattern: [a, b] (comma indicates array, not decorator)
+  if (at().type == havel::TokenType::OpenBracket &&
       at(1).type == havel::TokenType::Identifier &&
-      (at(2).type == havel::TokenType::Fn ||
-       at(2).type == havel::TokenType::OpenParen ||
-       at(2).type == havel::TokenType::At ||
-       at(2).type == havel::TokenType::NewLine)) {
-    return parseDecoratorStatement();
+      (at(2).type == havel::TokenType::CloseBracket ||
+       at(2).type == havel::TokenType::OpenParen)) {
+    // Lookahead to find what comes after the [...] decorator
+    // Save position and scan forward
+    size_t savePos = position;
+    advance(); // consume '['
+    // Only single identifier allowed in decorator brackets
+    // If we see comma, it's array destructuring not decorator
+    if (at().type == havel::TokenType::Identifier) {
+      advance(); // consume identifier
+      // Check for decorator arguments: [decorator(args)]
+      if (at().type == havel::TokenType::OpenParen) {
+        // Skip over parenthesized arguments
+        advance(); // consume '('
+        int parenDepth = 1;
+        while (notEOF() && parenDepth > 0) {
+          if (at().type == havel::TokenType::OpenParen) parenDepth++;
+          else if (at().type == havel::TokenType::CloseParen) parenDepth--;
+          advance();
+        }
+      }
+    }
+    // Expect closing bracket
+    if (at().type == havel::TokenType::CloseBracket) {
+      advance(); // consume ']'
+    } else {
+      // Not a valid decorator bracket, restore and fall through
+      position = savePos;
+    }
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) advance();
+    // Check if followed by declaration keywords
+    bool isDecorator = (at().type == havel::TokenType::Fn ||
+                        at().type == havel::TokenType::Class ||
+                        at().type == havel::TokenType::Let ||
+                        at().type == havel::TokenType::Const);
+    position = savePos; // restore position
+    if (isDecorator) {
+      return parseDecoratorStatement();
+    }
   }
 
   switch (at().type) {
@@ -5853,17 +5893,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseDecoratorStatement() {
   std::vector<std::unique_ptr<havel::ast::Expression>> decorators;
 
-  while (at().type == havel::TokenType::At) {
-    advance(); // consume '@'
+  // Parse decorators in [decorator] or [decorator(args)] syntax (C#/Rust style)
+  while (at().type == havel::TokenType::OpenBracket) {
+    advance(); // consume '['
 
     if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected decorator name after '@'");
+      failAt(at(), "Expected decorator name after '['");
       return nullptr;
     }
-    auto decoName = makeIdentifier(advance());
 
+    // Parse decorator name
+    auto decoName = makeIdentifier(advance());
     std::unique_ptr<havel::ast::Expression> decoExpr = std::move(decoName);
 
+    // Parse optional decorator arguments: [decorator(arg1, arg2)]
     if (at().type == havel::TokenType::OpenParen) {
       advance(); // consume '('
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
@@ -5887,8 +5930,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDecoratorStatement() {
           std::move(decoExpr), std::move(args));
     }
 
+    // Expect closing bracket
+    if (at().type != havel::TokenType::CloseBracket) {
+      failAt(at(), "Expected ']' after decorator");
+      return nullptr;
+    }
+    advance(); // consume ']'
+
     decorators.push_back(std::move(decoExpr));
 
+    // Skip newlines between decorators
     while (at().type == havel::TokenType::NewLine) advance();
   }
 

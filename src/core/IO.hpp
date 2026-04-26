@@ -52,6 +52,8 @@ enum class MouseButton {
 
 enum class HotkeyEventType { Both, Down, Up };
 
+// ExecutorMode is defined in io/HotkeyExecutor.hpp
+
 enum class HotkeyType {
   Keyboard,
   MouseButton,
@@ -396,6 +398,7 @@ public:
   void SetInputEventCallback(InputEventCallback callback);
   void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback);
   HotkeyExecutor *GetHotkeyExecutor() const;
+ExecutorMode GetExecutorMode() const;
 
   bool GrabHotkeysByPrefix(const std::string &prefix);
 
@@ -502,6 +505,7 @@ public:
   // Track mouse button state for combos
   std::map<int, bool> evdevMouseButtonState;
   std::unique_ptr<HotkeyExecutor> hotkeyExecutor;
+  ExecutorMode executorMode_ = ExecutorMode::Scheduler;
   std::unordered_map<std::string, HotKey> instanceHotkeys;
   // Renamed to avoid conflict
   std::unordered_map<std::string, bool> hotkeyStates;

@@ -181,10 +181,13 @@ public:
     keyUpCallback = std::move(callback);
   }
 
-  // Set HotkeyExecutor for thread-safe callback execution
-  void SetHotkeyExecutor(HotkeyExecutor *executor) {
-    hotkeyExecutor = executor;
-  }
+// Set HotkeyExecutor for thread-safe callback execution
+void SetHotkeyExecutor(HotkeyExecutor *executor) {
+  hotkeyExecutor = executor;
+}
+void SetExecutorMode(ExecutorMode mode) {
+  executorMode_ = mode;
+}
 
   // Get current mouse position (from evdev ABS events)
   std::pair<int, int> GetMousePosition() const {
@@ -355,9 +358,10 @@ private:
   bool grabDevices = false;
   MouseMovementCallback mouseMovementCallback;
 
-  // HotkeyExecutor for thread-safe callback execution
-  HotkeyExecutor *hotkeyExecutor = nullptr;
-  std::mutex hotkeyExecMutex;
+// HotkeyExecutor for thread-safe callback execution
+HotkeyExecutor *hotkeyExecutor = nullptr;
+ExecutorMode executorMode_ = ExecutorMode::Scheduler;
+std::mutex hotkeyExecMutex;
   std::unordered_set<std::string> executingHotkeys;
 
   // Event batching for reduced syscall overhead

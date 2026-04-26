@@ -434,8 +434,23 @@ IO::IO() {
     }
   }
 
-  // Clamp worker threads to reasonable range
-  workerThreads = std::clamp(workerThreads, 1, 32);
+// Clamp worker threads to reasonable range
+workerThreads = std::clamp(workerThreads, 1, 32);
+
+// Read executor mode from config
+std::string executorModeStr = Configs::Get().Get<std::string>("IO.Executor", "Scheduler");
+std::transform(executorModeStr.begin(), executorModeStr.end(), executorModeStr.begin(),
+               [](unsigned char c){ return std::tolower(c); });
+if (executorModeStr == "executor") {
+  executorMode_ = ExecutorMode::Executor;
+} else if (executorModeStr == "sync") {
+  executorMode_ = ExecutorMode::Sync;
+} else if (executorModeStr == "thread") {
+  executorMode_ = ExecutorMode::Thread;
+} else {
+  executorMode_ = ExecutorMode::Scheduler;
+}
+debug("Hotkey executor mode: {} (config: IO.Executor={})", static_cast<int>(executorMode_), executorModeStr);
 
   // Initialize HotkeyExecutor for thread-safe hotkey execution
   hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
@@ -502,8 +517,9 @@ IO::IO() {
         mouseController->SetScrollSpeed(
             Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
 
-        // Pass HotkeyExecutor to EventListener for thread-safe execution
-        eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
+// Pass HotkeyExecutor to EventListener for thread-safe execution
+eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
+eventListener->SetExecutorMode(executorMode_);
 
         // Set mouse and scroll sensitivity on EventListener (for internal use)
         eventListener->SetMouseSensitivity(mouseSensitivity);
@@ -2913,6 +2929,7 @@ void IO::SetInputBlockCallback(
 }
 
 HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }
+ExecutorMode IO::GetExecutorMode() const { return executorMode_; }
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
 #ifdef __linux__

@@ -749,9 +749,10 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   auto callback_copy = hotkey.callback;
   std::string alias_copy = hotkey.alias;
 
-  // Use HotkeyExecutor if available for thread-safe execution
-  if (hotkeyExecutor) {
-    auto result = hotkeyExecutor->submit(
+  switch (executorMode_) {
+  case ExecutorMode::Executor: {
+    if (hotkeyExecutor) {
+      auto result = hotkeyExecutor->submit(
         [callback = callback_copy, hotkeyAlias = alias_copy, this]() {
           try {
             callback();
@@ -760,32 +761,73 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
           } catch (...) {
             error("Hotkey '{}' threw unknown exception", hotkeyAlias);
           }
-
-          // Remove from executing set when done
           {
             std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
             executingHotkeys.erase(hotkeyAlias);
           }
         });
-
-    if (!result.accepted) {
-      warn("Hotkey task queue full, dropping callback: {}", alias_copy);
-      // Remove from executing set since we won't execute
-      {
-        std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-        executingHotkeys.erase(alias_copy);
+      if (!result.accepted) {
+        warn("Hotkey task queue full, dropping callback: {}", alias_copy);
+        {
+          std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+          executingHotkeys.erase(alias_copy);
+        }
       }
+      return;
+    }
+    break;
+  }
+  case ExecutorMode::Scheduler: {
+    if (hotkeyExecutor) {
+      auto result = hotkeyExecutor->submit(
+        [callback = callback_copy, hotkeyAlias = alias_copy, this]() {
+          try {
+            callback();
+          } catch (const std::exception &e) {
+            error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
+          } catch (...) {
+            error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+          }
+          {
+            std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+            executingHotkeys.erase(hotkeyAlias);
+          }
+        });
+      if (!result.accepted) {
+        warn("Hotkey task queue full, dropping callback: {}", alias_copy);
+        {
+          std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+          executingHotkeys.erase(alias_copy);
+        }
+      }
+      return;
+    }
+    break;
+  }
+  case ExecutorMode::Sync: {
+    try {
+      callback_copy();
+    } catch (const std::exception &e) {
+      error("Hotkey '{}' threw: {}", alias_copy, e.what());
+    } catch (...) {
+      error("Hotkey '{}' threw unknown exception", alias_copy);
+    }
+    {
+      std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+      executingHotkeys.erase(alias_copy);
     }
     return;
   }
+  case ExecutorMode::Thread:
+    break;
+  }
 
-  // Fallback: Use detached thread if HotkeyExecutor not available
+  // Thread mode (or fallback when no executor available)
   pendingCallbacks++;
 
   std::thread([callback = callback_copy, alias = alias_copy, this]() {
     try {
       if (running.load() && !shutdown.load()) {
-        // Thread runs OUTSIDE of mutex locks
         callback();
       }
     } catch (const std::exception &e) {
@@ -793,7 +835,6 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
     }
     pendingCallbacks--;
 
-    // Remove from executing set when done
     {
       std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
       executingHotkeys.erase(alias);

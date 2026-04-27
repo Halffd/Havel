@@ -7,6 +7,7 @@
 #include <functional>
 #include <cstdint>
 #include <memory>
+#include <algorithm>
 
 namespace havel::compiler {
 
@@ -136,10 +137,29 @@ public:
     /**
      * Phase 2E: Get watcher by ID (for condition evaluation)
      */
-    const Watcher* getWatcher(WatcherId watcher_id) const {
-        auto it = watchers_.find(watcher_id);
-        return (it != watchers_.end()) ? &it->second : nullptr;
-    }
+	const Watcher* getWatcher(WatcherId watcher_id) const {
+	auto it = watchers_.find(watcher_id);
+	return (it != watchers_.end()) ? &it->second : nullptr;
+	}
+
+	void updateDependencies(WatcherId watcher_id,
+	const std::unordered_set<std::string>& new_deps) {
+	auto it = watchers_.find(watcher_id);
+	if (it == watchers_.end()) return;
+	auto& watcher = it->second;
+	// Remove old deps from reverse index
+	for (const auto& var : watcher.dependencies) {
+	auto& list = var_to_watchers_[var];
+	list.erase(std::remove(list.begin(), list.end(), watcher_id), list.end());
+	if (list.empty()) var_to_watchers_.erase(var);
+	}
+	// Set new deps
+	watcher.dependencies = new_deps;
+	// Add new deps to reverse index
+	for (const auto& var : new_deps) {
+	var_to_watchers_[var].push_back(watcher_id);
+	}
+	}
 
 private:
     // All registered watchers (id → watcher)

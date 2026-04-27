@@ -8162,25 +8162,47 @@ std::string VM::resolveStringKey(const Value &value) const {
 // ============================================================================
 
 void VM::emitVariableChanged(const std::string& var_name) {
-  // Only emit if event queue is connected
-  if (!event_queue_) {
-    return;
-  }
-  
-  // For now, use var_name hash as data1 identifier
-  // TODO: Could use string pool for more efficient storage
-  uint32_t var_hash = std::hash<std::string>{}(var_name);
-  
-  // Push VAR_CHANGED event with variable identifier
-  // Event payload:
-  //   type: VAR_CHANGED
-  //   data1: hash of variable name
-  //   data2: unused (could be old value, new value, etc.)
-  //   ptr: unsafe pointer to var_name (ephemeral, handler must copy)
-  Event change_event(EventType::VAR_CHANGED, var_hash);
-  change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
-  
-  event_queue_->push(change_event);
+// Synchronous path: notify watcher registry directly
+// This ensures when blocks fire during script execution,
+// not just when the event loop processes queued events.
+if (watcher_registry_) {
+auto fired_fibers = watcher_registry_->onVariableChanged(
+var_name,
+[this](uint32_t watcher_id) -> bool {
+const auto* watcher = watcher_registry_->getWatcher(watcher_id);
+if (!watcher) return false;
+auto tracker = std::make_shared<DependencyTracker>();
+DependencyTrackerScope scope(tracker);
+bool result = evaluateConditionBytecode(
+watcher->condition_func_id, watcher->condition_ip);
+// Update dependencies in case condition depends on new variables
+auto new_deps = tracker->getGlobalDependencies();
+watcher_registry_->updateDependencies(watcher_id, new_deps);
+return result;
+}
+);
+	for (Fiber* fiber : fired_fibers) {
+	if (fiber && current_chunk && fiber->current_function_id < current_chunk->getFunctionCount()) {
+	// Execute the when body synchronously
+	try {
+	Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
+	call(body_func, {});
+	} catch (...) {
+	// Body execution failed, continue
+	}
+	}
+}
+}
+
+// Async path: also push to event queue for the event loop
+if (!event_queue_) {
+return;
+}
+
+uint32_t var_hash = std::hash<std::string>{}(var_name);
+Event change_event(EventType::VAR_CHANGED, var_hash);
+change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
+event_queue_->push(change_event);
 }
 
 void VM::throwError(const std::string &msg) {

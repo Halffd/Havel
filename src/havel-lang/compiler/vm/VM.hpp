@@ -24,6 +24,8 @@ namespace havel::compiler {
 
 // Forward declarations
 class Fiber;
+class Scheduler;
+class WatcherRegistry;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
@@ -242,8 +244,11 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
   mutable std::shared_mutex thread_wait_mutex_;
 
-  // Phase 2A: Event queue reference for variable change notifications
-  class EventQueue* event_queue_ = nullptr;
+	// Phase 2A: Event queue reference for variable change notifications
+	class EventQueue* event_queue_ = nullptr;
+
+	WatcherRegistry* watcher_registry_ = nullptr;
+	Scheduler* scheduler_ = nullptr;
   
   // Phase 2A: Helper to emit VAR_CHANGED events
   void emitVariableChanged(const std::string& var_name);
@@ -560,8 +565,14 @@ public:
   GCHeap& getHeap() { return heap_; }
   const GCHeap& getHeap() const { return heap_; }
   
-  // Phase 2A: Event queue for variable change notifications
-  void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
+	// Phase 2A: Event queue for variable change notifications
+	void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
+
+	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }
+	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }
+
+	void setScheduler(Scheduler* sched) { scheduler_ = sched; }
+	Scheduler* getScheduler() const { return scheduler_; }
   
     void setGlobal(std::string name, Value value) {
             std::string key = name;

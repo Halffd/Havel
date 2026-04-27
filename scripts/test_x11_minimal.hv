@@ -1,0 +1,26 @@
+// Test the window module directly
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+print(_xlib)
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+_dpy_val = ffi.ptr_to_uint(_dpy)
+print(_dpy_val)
+
+if _dpy_val != 0 {
+  print("display open")
+  _XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
+  _focus_ptr = ffi.allocBytes(8)
+  _revert_ptr = ffi.allocBytes(4)
+  ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
+  _focus = ffi.get_u64(_focus_ptr)
+  ffi.free(_focus_ptr)
+  ffi.free(_revert_ptr)
+  print(_focus)
+
+  _XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+  ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+  print("done")
+}

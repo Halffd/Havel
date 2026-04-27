@@ -1,0 +1,156 @@
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
+_XFetchName = ffi.sym(_xlib, "XFetchName")
+_XGetClassHint = ffi.sym(_xlib, "XGetClassHint")
+_XGetWindowProperty = ffi.sym(_xlib, "XGetWindowProperty")
+_XFree = ffi.sym(_xlib, "XFree")
+_XInternAtom = ffi.sym(_xlib, "XInternAtom")
+
+fn activeTitle() {
+  _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+  _dpy_val = ffi.ptr_to_uint(_dpy)
+  if _dpy_val == 0 { "" }
+  else {
+    _focus_ptr = ffi.allocBytes(8)
+    _revert_ptr = ffi.allocBytes(4)
+    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
+    _focus = ffi.get_u64(_focus_ptr)
+    ffi.free(_focus_ptr)
+    ffi.free(_revert_ptr)
+    if _focus == 0 {
+      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+      ""
+    } else {
+      _name_ptr = ffi.allocBytes(8)
+      ffi.call(_XFetchName, "int32", ["pointer", "uint64", "pointer"], _dpy, _focus, _name_ptr)
+      _name_ptr_val = ffi.get_u64(_name_ptr)
+      if _name_ptr_val == 0 {
+        ffi.free(_name_ptr)
+        ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+        ""
+      } else {
+        _title = ffi.string(_name_ptr_val)
+        ffi.call(_XFree, "int32", ["pointer"], _name_ptr_val)
+        ffi.free(_name_ptr)
+        ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+        _title
+      }
+    }
+  }
+}
+
+fn activeClass() {
+  _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+  _dpy_val = ffi.ptr_to_uint(_dpy)
+  if _dpy_val == 0 { "" }
+  else {
+    _focus_ptr = ffi.allocBytes(8)
+    _revert_ptr = ffi.allocBytes(4)
+    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
+    _focus = ffi.get_u64(_focus_ptr)
+    ffi.free(_focus_ptr)
+    ffi.free(_revert_ptr)
+    if _focus == 0 {
+      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+      ""
+    } else {
+      _class_hint = ffi.allocBytes(16)
+      _ret = ffi.call(_XGetClassHint, "int32", ["pointer", "uint64", "pointer"], _dpy, _focus, _class_hint)
+      _class_str = ""
+      if _ret != 0 {
+        _res_name_ptr = ffi.get_ptr(_class_hint)
+        _res_class_ptr = ffi.get_ptr(_class_hint, 8)
+        _res_class_val = ffi.ptr_to_uint(_res_class_ptr)
+        _res_name_val = ffi.ptr_to_uint(_res_name_ptr)
+        if _res_class_val != 0 {
+          _class_str = ffi.string(_res_class_val)
+          ffi.call(_XFree, "int32", ["pointer"], _res_class_val)
+        }
+        if _res_name_val != 0 {
+          ffi.call(_XFree, "int32", ["pointer"], _res_name_val)
+        }
+      }
+      ffi.free(_class_hint)
+      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+      _class_str
+    }
+  }
+}
+
+fn activePid() {
+  _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+  _dpy_val = ffi.ptr_to_uint(_dpy)
+  if _dpy_val == 0 { 0 }
+  else {
+    _focus_ptr = ffi.allocBytes(8)
+    _revert_ptr = ffi.allocBytes(4)
+    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
+    _focus = ffi.get_u64(_focus_ptr)
+    ffi.free(_focus_ptr)
+    ffi.free(_revert_ptr)
+    if _focus == 0 {
+      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+      0
+    } else {
+      _atom_name = ffi.cstring("_NET_WM_PID")
+      _atom = ffi.call(_XInternAtom, "uint64", ["pointer", "pointer", "int32"], _dpy, _atom_name, 0)
+      ffi.free(_atom_name)
+      _actual_type = ffi.allocBytes(8)
+      _actual_format = ffi.allocBytes(4)
+      _nitems = ffi.allocBytes(8)
+      _bytes_after = ffi.allocBytes(8)
+      _prop_ptr = ffi.allocBytes(8)
+      _pid_ret = ffi.call(_XGetWindowProperty, "int32", ["pointer", "uint64", "uint64", "int64", "int64", "int32", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer"], _dpy, _focus, _atom, 0, 1, 0, 0, _actual_type, _actual_format, _nitems, _bytes_after, _prop_ptr)
+      _pid = 0
+      if _pid_ret == 0 {
+        _prop_val = ffi.get_u64(_prop_ptr)
+        if _prop_val != 0 {
+          _pid = ffi.get_i32(_prop_val)
+          ffi.call(_XFree, "int32", ["pointer"], _prop_val)
+        }
+      }
+      ffi.free(_actual_type)
+      ffi.free(_actual_format)
+      ffi.free(_nitems)
+      ffi.free(_bytes_after)
+      ffi.free(_prop_ptr)
+      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
+      _pid
+    }
+  }
+}
+
+fn activeExe() {
+  _pid = activePid()
+  if _pid == 0 { "" }
+  else {
+    _c = ffi.open("libc.so.6")
+    _fopen = ffi.sym(_c, "fopen")
+    _fgets = ffi.sym(_c, "fgets")
+    _fclose = ffi.sym(_c, "fclose")
+    _path = "/proc/${_pid}/exe"
+    _buf = ffi.allocBytes(4096)
+    _readlink = ffi.sym(_c, "readlink")
+    _n = ffi.call(_readlink, "int64", ["pointer", "pointer", "int64"], ffi.cstring(_path), _buf, 4095)
+    _exe = ""
+    if _n > 0 {
+      ffi.set_i8(_buf, _n, 0)
+      _exe = ffi.string(_buf)
+    }
+    ffi.free(_buf)
+    ffi.close(_c)
+    _exe
+  }
+}
+
+fn active() {
+  _t = activeTitle()
+  _c = activeClass()
+  _p = activePid()
+  _e = activeExe()
+  {title: _t, class: _c, pid: _p, exe: _e}
+}

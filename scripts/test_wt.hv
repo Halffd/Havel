@@ -1,0 +1,2 @@
+use window_test
+print(window_test.test())

@@ -1,0 +1,4 @@
+// Test os.arch() specifically
+use os
+a = os.arch()
+print(a)

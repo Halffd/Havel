@@ -82,3 +82,5 @@ docs/archive
 scripts/legacy
 scripts/old
 .gitw*
+docs/plans
+docs/specs

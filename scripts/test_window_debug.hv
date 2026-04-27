@@ -1,0 +1,10 @@
+// Test window module with debug
+use window
+
+print(window.activeTitle())
+print(window.activePid())
+
+// Also test FFI directly
+use ffi
+_xlib = ffi.open("libX11.so.6")
+print(_xlib)

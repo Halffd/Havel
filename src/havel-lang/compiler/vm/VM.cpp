@@ -4411,10 +4411,37 @@ void VM::execBinaryOp(const Instruction &instruction) {
     return;
   }
 
-  // Handle object operations
-  if (left.isObjectId() || right.isObjectId()) {
-    switch (instruction.opcode) {
-    case OpCode::ADD: {
+	// Operator overloading: if left is an object, check for op_* methods
+	if (left.isObjectId()) {
+		const char *opMethodName = nullptr;
+		switch (instruction.opcode) {
+		case OpCode::ADD: opMethodName = "op_add"; break;
+		case OpCode::SUB: opMethodName = "op_sub"; break;
+		case OpCode::MUL: opMethodName = "op_mul"; break;
+		case OpCode::DIV: opMethodName = "op_div"; break;
+		case OpCode::MOD: opMethodName = "op_mod"; break;
+		case OpCode::EQ: opMethodName = "op_eq"; break;
+		case OpCode::NEQ: opMethodName = "op_ne"; break;
+		case OpCode::LT: opMethodName = "op_lt"; break;
+		case OpCode::GT: opMethodName = "op_gt"; break;
+		case OpCode::LTE: opMethodName = "op_le"; break;
+		case OpCode::GTE: opMethodName = "op_ge"; break;
+		default: break;
+		}
+
+		if (opMethodName) {
+			Value opMethod = getHostObjectField(ObjectRef{left.asObjectId(), true}, opMethodName);
+			if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+				pushStack(callFunction(opMethod, {left, right}));
+				return;
+			}
+		}
+	}
+
+	// Handle object operations
+	if (left.isObjectId() || right.isObjectId()) {
+		switch (instruction.opcode) {
+		case OpCode::ADD: {
       // object + object → merge (right overwrites left)
       if (left.isObjectId() && right.isObjectId()) {
         auto *lobj = heap_.object(left.asObjectId());
@@ -4920,28 +4947,29 @@ break;
     else if (callee_value.isObjectId()) typeInfo = "object_id";
     else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
 
-    // Handle callable objects (Lua-style __call metamethod)
-    if (callee_value.isObjectId()) {
-      auto *obj = heap_.object(callee_value.asObjectId());
-      if (obj) {
-        // Look up __call in the object and its prototype chain
-        GCHeap::ObjectEntry* search = obj;
-        Value callFn = Value::makeNull();
-        while (search) {
-          auto* val = search->get("__call");
-          if (val) {
-            callFn = *val;
-            break;
-          }
-          auto* parentVal = search->get("__proto");
-          if (!parentVal) parentVal = search->get("__class");
-          if (!parentVal) parentVal = search->get("__parent");
-          if (parentVal && parentVal->isObjectId()) {
-            search = heap_.object(parentVal->asObjectId());
-          } else {
-            break;
-          }
-        }
+	// Handle callable objects (Lua-style __call metamethod, or op_call operator)
+	if (callee_value.isObjectId()) {
+		auto *obj = heap_.object(callee_value.asObjectId());
+		if (obj) {
+			// Look up __call or op_call in the object and its prototype chain
+			GCHeap::ObjectEntry* search = obj;
+			Value callFn = Value::makeNull();
+			while (search) {
+				auto* val = search->get("__call");
+				if (!val) val = search->get("op_call");
+				if (val) {
+					callFn = *val;
+					break;
+				}
+				auto* parentVal = search->get("__proto");
+				if (!parentVal) parentVal = search->get("__class");
+				if (!parentVal) parentVal = search->get("__parent");
+				if (parentVal && parentVal->isObjectId()) {
+					search = heap_.object(parentVal->asObjectId());
+				} else {
+					break;
+				}
+			}
         if (!callFn.isNull() && (callFn.isFunctionObjId() || callFn.isClosureId() || callFn.isHostFuncId())) {
           // Call __call with self as first arg
           std::vector<Value> callArgs;
@@ -6079,12 +6107,21 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		}
 
 	auto objRef = ObjectRef{object.asObjectId(), true};
-    auto *obj = heap_.object(objRef.id);
-    if (!obj) {
-      COMPILER_THROW("OBJECT_GET unknown object id");
-    }
+	auto *obj = heap_.object(objRef.id);
+	if (!obj) {
+		COMPILER_THROW("OBJECT_GET unknown object id");
+	}
 
-    // Check for numeric index (obj[0], obj[-1])
+	// Operator overloading: check for op_index method
+	{
+		Value opIndex = getHostObjectField(objRef, "op_index");
+		if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
+			pushStack(callFunction(opIndex, {object, key_value}));
+			break;
+		}
+	}
+
+	// Check for numeric index (obj[0], obj[-1])
     if (key_value.isInt()) {
       int64_t index = key_value.asInt();
       auto keys = obj->getKeys();
@@ -6233,11 +6270,21 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         break;
     }
 
-    if (!object.isObjectId()) {
-    COMPILER_THROW("OBJECT_SET expects object container");
-  }
+	if (!object.isObjectId()) {
+		COMPILER_THROW("OBJECT_SET expects object container");
+	}
 
-  // _G globals mirror: writing to _G also updates the globals map
+	// Operator overloading: check for op_index_set method
+	{
+		Value opIndexSet = getHostObjectField(ObjectRef{object.asObjectId(), true}, "op_index_set");
+		if (!opIndexSet.isNull() && (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() || opIndexSet.isHostFuncId())) {
+			callFunction(opIndexSet, {object, key, value});
+			pushStack(object);
+			break;
+		}
+	}
+
+	// _G globals mirror: writing to _G also updates the globals map
   if (object.asObjectId() == globals_mirror_object_id_) {
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {

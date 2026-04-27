@@ -3598,12 +3598,15 @@ Parser::parseStructMembers() {
         } else if (tokenVal == "[") {
           methodName = "op_index";
           advance();
+ } else if (tokenVal == "[]=") {
+ methodName = "op_index_set";
+ advance();
         } else if (tokenVal == "(") {
           methodName = "op_call";
           advance();
         } else {
           failAt(at(),
-                 "Expected operator symbol (+, -, *, /, ==, etc.) after 'op'");
+                 "Expected operator symbol (+, -, *, /, ==, [], []=, etc.) after 'op'");
         }
       } else {
         // Regular method - expect identifier
@@ -3759,12 +3762,15 @@ Parser::parseClassMembers() {
         } else if (tokenVal == "[") {
           methodName = "op_index";
           advance();
+ } else if (tokenVal == "[]=") {
+ methodName = "op_index_set";
+ advance();
         } else if (tokenVal == "(") {
           methodName = "op_call";
           advance();
         } else {
           failAt(at(),
-                 "Expected operator symbol (+, -, *, /, ==, etc.) after 'op'");
+                 "Expected operator symbol (+, -, *, /, ==, [], []=, etc.) after 'op'");
         }
       } else {
         // Regular method - expect identifier

@@ -35,11 +35,8 @@ public:
   std::unique_ptr<BytecodeChunk> compile(const ast::Program &program) override;
   std::unique_ptr<BytecodeChunk>
   compileWithModuleLoader(const ast::Program &program, ModuleLoader &loader,
-                          const std::filesystem::path &basePath);
-  void addHostGlobal(std::string name) {
-    host_global_names_.insert(std::move(name));
-  }
-  // Pre-populate known global names (for REPL persistence across compiles)
+	const std::filesystem::path &basePath);
+	// Pre-populate known global names (for REPL persistence across compiles)
   void setKnownGlobals(const std::unordered_set<std::string> &names) {
     known_globals_ = names;
   }
@@ -205,24 +202,8 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   uint32_t next_local_index = 0;
   std::optional<SourceLocation> current_source_location_;
   LexicalResolutionResult lexical_resolution_;
-  std::unordered_set<std::string> host_global_names_{
-      "print",   "sleep",    "sleep_ms", "clock_ms", "clock_ns", "clock_us",
-      "assert",  "time.now", "window",   "io",       "system",   "hotkey",
-      "mode",    "process",  "display",  "async",    "struct",   "thread",   "interval",
-      "timeout", "string",   "array",    "object",   "type",     "utility",  "inherits",
-      "regex",   "physics",  "time",     "math",
-      // Bare process globals
-      "run", "runDetached",
-      // Reflection and runtime evaluation
-      "eval", "caller", "describe", "bytecode", "tokenize",
-      "inspect", "prototypes", "defun",
-      // Prototype OOP primitives
-      "proto", "getproto", "setproto", "del",
-      // Duck typing / protocol functions
-      "iter",    "next",     "callable", "hasattr",  "isIterable", "isIndexable",
-      "items",   "capital"};
 
-  // Pre-known globals (from previous REPL sessions)
+	// Pre-known globals (from previous REPL sessions)
   std::unordered_set<std::string> known_globals_;
 
   // Module loading

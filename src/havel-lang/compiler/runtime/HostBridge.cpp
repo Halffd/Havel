@@ -40,9 +40,8 @@ static std::string opcodeNameStr(OpCode opcode) {
     case OpCode::MUL: return "MUL";
     case OpCode::DIV: return "DIV";
     case OpCode::RETURN: return "RETURN";
-    case OpCode::CALL: return "CALL";
-    case OpCode::CALL_HOST: return "CALL_HOST";
-    case OpCode::JUMP: return "JUMP";
+	case OpCode::CALL: return "CALL";
+	case OpCode::JUMP: return "JUMP";
     case OpCode::JUMP_IF_FALSE: return "JUMP_IF_FALSE";
     case OpCode::OBJECT_NEW: return "OBJECT_NEW";
     case OpCode::OBJECT_SET: return "OBJECT_SET";
@@ -428,15 +427,11 @@ void HostBridge::install() {
             return Value::makeStringId(ref.id);
           }
 
-          ByteCompiler byteCompiler;
-          // Register known host globals so the lexical resolver recognizes them
-          for (const auto &name : options_.host_global_names) {
-            byteCompiler.addHostGlobal(name);
-          }
-          auto chunk = byteCompiler.compile(*program);
-          if (!chunk) {
-            auto ref = ctx_->vm->getHeap().allocateString("eval: compilation failed");
-            return Value::makeStringId(ref.id);
+	ByteCompiler byteCompiler;
+	auto chunk = byteCompiler.compile(*program);
+	if (!chunk) {
+		auto ref = ctx_->vm->getHeap().allocateString("eval: compilation failed");
+		return Value::makeStringId(ref.id);
           }
 
           // Execute using the VM's execute() which handles state properly
@@ -764,11 +759,8 @@ void HostBridge::install() {
             return Value::makeStringId(ref.id);
           }
 
-          ByteCompiler byteCompiler;
-          for (const auto &name : options_.host_global_names) {
-            byteCompiler.addHostGlobal(name);
-          }
-          auto chunk = byteCompiler.compile(*program);
+	ByteCompiler byteCompiler;
+	auto chunk = byteCompiler.compile(*program);
           if (!chunk) {
             auto ref = ctx_->vm->getHeap().allocateString("bytecode: compilation failed");
             return Value::makeStringId(ref.id);

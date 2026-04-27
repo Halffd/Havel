@@ -507,9 +507,8 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
   case OpCode::JUMP_IF_TRUE: return "JUMP_IF_TRUE";
   case OpCode::JUMP_IF_NULL: return "JUMP_IF_NULL";
   case OpCode::CALL: return "CALL";
-  case OpCode::TAIL_CALL: return "TAIL_CALL";
-  case OpCode::CALL_HOST: return "CALL_HOST";
-  case OpCode::CALL_METHOD: return "CALL_METHOD";
+	case OpCode::TAIL_CALL: return "TAIL_CALL";
+	case OpCode::CALL_METHOD: return "CALL_METHOD";
   case OpCode::RETURN: return "RETURN";
   case OpCode::TRY_ENTER: return "TRY_ENTER";
   case OpCode::TRY_EXIT: return "TRY_EXIT";

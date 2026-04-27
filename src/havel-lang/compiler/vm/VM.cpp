@@ -3404,16 +3404,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
   if (frame_count_ >= max_call_depth_) {
     COMPILER_THROW("Stack overflow: maximum call depth " +
                              std::to_string(max_call_depth_) + " reached");
-  }
+	}
 
-  // Handle host function call (duplicate check after depth check)
-  if (callee_value.isHostFuncId()) {
-    // TODO: host func name lookup
-    (void)callee_value.asHostFuncId();
-    COMPILER_THROW("Host function call via doCall not yet supported with NaN boxing");
-  }
-
-  // Handle coroutine resume
+	// Handle coroutine resume
   if (callee_value.isCoroutineId()) {
     uint32_t coId = callee_value.asCoroutineId();
     auto *co = heap_.coroutine(coId);
@@ -5000,31 +4993,7 @@ break;
     break;
   }
 
-  case OpCode::CALL_HOST: {
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isStringValId() ||
-        !instruction.operands[1].isInt()) {
-      COMPILER_THROW("CALL_HOST expects operands: <string "
-                               "function_name, uint32 arg_count>");
-    }
-
-    // Get the function name from the function's string table
-uint32_t strIndex = instruction.operands[0].asStringValId();
-const auto* func = currentFrame().function;
-std::string function_name;
-if (current_chunk) {
-function_name = current_chunk->getString(strIndex);
-} else {
-      function_name = "<unknown:" + std::to_string(strIndex) + ">";
-    }
-    uint32_t arg_count = instruction.operands[1].asInt();
-    
-    auto result = invokeHostFunction(function_name, arg_count);
-    pushStack(result);
-    break;
-  }
-
-  case OpCode::CALL_METHOD: {
+	case OpCode::CALL_METHOD: {
     // CALL_METHOD: operands are [method_name_string_index, arg_count]
     // Dispatches based on receiver type without boxing.
     if (instruction.operands.size() != 2 ||
@@ -7994,34 +7963,7 @@ const auto &cell = closure->upvalues[upvalue_index];
     break;
   }
 
-  case OpCode::CALL_HOST: {
-    // Get the function name from the function's string table
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
-    std::string function_name;
-    if (current_chunk) {
-      function_name = current_chunk->getString(strIndex);
-    } else {
-      function_name = "<unknown:" + std::to_string(strIndex) + ">";
-    }
-    uint32_t arg_count = static_cast<uint32_t>(instruction.operands[1].asInt());
-
-    std::vector<Value> args(arg_count);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
-    }
-
-    auto it = parent_vm_->host_functions.find(function_name);
-    if (it != parent_vm_->host_functions.end()) {
-      push(it->second(args));
-    } else {
-      COMPILER_THROW(parent_vm_->formatErrorWithContext(
-          "Host function not found: " + function_name));
-    }
-    break;
-  }
-
-  case OpCode::CALL_METHOD: {
+	case OpCode::CALL_METHOD: {
     // Delegate to parent VM's method dispatch
     if (instruction.operands.size() != 2 ||
         !instruction.operands[0].isStringValId() ||
@@ -8244,12 +8186,9 @@ Value VM::loadModule(const std::string& path) {
         COMPILER_THROW("Module " + path + " failed to parse: " + errors);
     }
 
-    ByteCompiler compiler;
-    for (const auto &name : host_function_globals_) {
-        compiler.addHostGlobal(name.first);
-    }
+	ByteCompiler compiler;
 
-    std::shared_ptr<BytecodeChunk> chunk;
+	std::shared_ptr<BytecodeChunk> chunk;
     try {
         chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
     } catch (const std::exception &e) {
@@ -8521,12 +8460,9 @@ Value VM::runInContext(const std::string& source, Value context) {
  return Value::makeNull();
  }
 
- ByteCompiler compiler;
- for (const auto &name : host_function_globals_) {
- compiler.addHostGlobal(name.first);
- }
+	ByteCompiler compiler;
 
- std::shared_ptr<BytecodeChunk> chunk;
+	std::shared_ptr<BytecodeChunk> chunk;
  try {
  chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
  } catch (const std::exception &) {

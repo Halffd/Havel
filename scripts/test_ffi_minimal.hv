@@ -1,0 +1,2 @@
+use ffi
+print(ffi.open("libc.so.6"))

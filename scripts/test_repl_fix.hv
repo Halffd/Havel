@@ -1,0 +1,17 @@
+// test decorator + function print (was causing heap-use-after-free in REPL)
+
+[log]
+fn greet(name)
+  f"hello {name}"
+
+print greet("world")
+
+class Point
+  fn init(x, y)
+    @x = x
+    @y = y
+  fn toString()
+    f"Point({@x}, {@y})"
+
+p = Point.new(3, 4)
+print p

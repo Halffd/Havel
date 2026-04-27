@@ -1,0 +1,10 @@
+// Test |> pipeline operator
+print([1, 2, 3] |> len)
+
+// Test |> with identifier
+nums = [3, 1, 2]
+result = nums |> len
+print(result)
+
+// Test original | pipe still works
+print("hello" | print)

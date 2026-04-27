@@ -1,0 +1,5 @@
+use window
+print(window.activeTitle())
+print(window.activeClass())
+print(window.activePid())
+print(window.activeExe())

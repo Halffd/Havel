@@ -1,0 +1,3 @@
+use window
+print(window)
+print(window.activeTitle)

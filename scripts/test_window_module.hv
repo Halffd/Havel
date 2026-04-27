@@ -1,0 +1,6 @@
+// Test window.hv module
+use window
+
+print(window.activeTitle())
+print(window.activePid())
+print(window.activeClass())

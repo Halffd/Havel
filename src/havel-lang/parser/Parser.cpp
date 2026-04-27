@@ -7966,6 +7966,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseIfExpression() {
   }
 
   // Save location before moving
+  if (!condition) {
+    failAt(at(), "Expected condition after 'if'");
+  }
   size_t line = condition->line;
   size_t column = condition->column;
 

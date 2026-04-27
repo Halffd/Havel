@@ -698,6 +698,33 @@ static Value ffiSetPtr(compiler::VMApi&, const std::vector<Value>& rawArgs) {
     return Value::makeNull();
 }
 
+static Value ffiPtrAdd(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+  auto args = stripReceiver(rawArgs);
+  if (args.size() < 2) return Value::makeNull();
+  void* ptr = resolvePtr(args[0]);
+  if (!ptr) return Value::makeNull();
+  int64_t offset = args[1].isInt() ? args[1].asInt64() :
+                   args[1].isDouble() ? static_cast<int64_t>(args[1].asDouble()) : 0;
+  return Value::makePtr(static_cast<char*>(ptr) + offset);
+}
+
+static Value ffiPtrSub(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+  auto args = stripReceiver(rawArgs);
+  if (args.size() < 2) return Value::makeNull();
+  void* ptr = resolvePtr(args[0]);
+  if (!ptr) return Value::makeNull();
+  int64_t offset = args[1].isInt() ? args[1].asInt64() :
+                   args[1].isDouble() ? static_cast<int64_t>(args[1].asDouble()) : 0;
+  return Value::makePtr(static_cast<char*>(ptr) - offset);
+}
+
+static Value ffiPtrToUint(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+  auto args = stripReceiver(rawArgs);
+  if (args.empty()) return Value::makeNull();
+  void* ptr = resolvePtr(args[0]);
+  return Value(static_cast<int64_t>(reinterpret_cast<uintptr_t>(ptr)));
+}
+
 // ============================================================================
 // Platform-specific
 // ============================================================================
@@ -779,7 +806,12 @@ void registerFFIModule(compiler::VMApi& api) {
     reg("ffi.get_ptr", ffiGetPtr);
     reg("ffi.set_ptr", ffiSetPtr);
 
-    // Platform
+    // Pointer arithmetic
+  reg("ffi.ptr_add", ffiPtrAdd);
+  reg("ffi.ptr_sub", ffiPtrSub);
+  reg("ffi.ptr_to_uint", ffiPtrToUint);
+
+  // Platform
     reg("ffi.lastError", ffiLastError);
     reg("ffi.clearError", ffiClearError);
 
@@ -827,9 +859,12 @@ void registerFFIModule(compiler::VMApi& api) {
     api.setField(ffiObj, "set_f32", api.makeFunctionRef("ffi.set_f32"));
     api.setField(ffiObj, "get_f64", api.makeFunctionRef("ffi.get_f64"));
     api.setField(ffiObj, "set_f64", api.makeFunctionRef("ffi.set_f64"));
-    api.setField(ffiObj, "get_ptr", api.makeFunctionRef("ffi.get_ptr"));
-    api.setField(ffiObj, "set_ptr", api.makeFunctionRef("ffi.set_ptr"));
-    api.setField(ffiObj, "lastError", api.makeFunctionRef("ffi.lastError"));
+  api.setField(ffiObj, "get_ptr", api.makeFunctionRef("ffi.get_ptr"));
+  api.setField(ffiObj, "set_ptr", api.makeFunctionRef("ffi.set_ptr"));
+  api.setField(ffiObj, "ptr_add", api.makeFunctionRef("ffi.ptr_add"));
+  api.setField(ffiObj, "ptr_sub", api.makeFunctionRef("ffi.ptr_sub"));
+  api.setField(ffiObj, "ptr_to_uint", api.makeFunctionRef("ffi.ptr_to_uint"));
+  api.setField(ffiObj, "lastError", api.makeFunctionRef("ffi.lastError"));
     api.setField(ffiObj, "clearError", api.makeFunctionRef("ffi.clearError"));
 
     api.setGlobal("ffi", ffiObj);

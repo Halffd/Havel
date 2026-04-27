@@ -236,11 +236,15 @@ hostBridge->install();
   }
 
   // Create ExecutionEngine for main loop integration
-  executionEngine = std::make_unique<compiler::ExecutionEngine>(
-      bytecodeVM.get(), scheduler, eventQueue);
-  if (!executionEngine) {
-    throw std::runtime_error("Failed to create ExecutionEngine");
-  }
+	executionEngine = std::make_unique<compiler::ExecutionEngine>(
+		bytecodeVM.get(), scheduler, eventQueue);
+	if (!executionEngine) {
+		throw std::runtime_error("Failed to create ExecutionEngine");
+	}
+
+	// Wire VM to WatcherRegistry and Scheduler for reactive when
+	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
+	bytecodeVM->setScheduler(scheduler);
 
   // Phase 2I: Register hotkey action callback with ExecutionEngine
   // When a hotkey action Fiber is executed (function_id == 0xFFFFFFFF),

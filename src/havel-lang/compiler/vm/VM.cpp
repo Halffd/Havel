@@ -5,6 +5,8 @@
 #include "../../runtime/concurrency/Thread.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
 #include "../../runtime/concurrency/DependencyTracker.hpp"
+#include "../../runtime/concurrency/WatcherRegistry.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
 #include "../../runtime/HostContext.hpp"
@@ -2461,9 +2463,9 @@ return Value::makeObjectId(instanceRef.id);
         
         auto* instance = heap_.object(args[offset].asObjectId());
         std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
-        instance->set(fieldName, args[offset + 2]);
-        return Value::makeNull();
-      });
+	instance->set(fieldName, args[offset + 2]);
+	return Value::makeNull();
+	});
 }
 
 void VM::registerDefaultHostGlobals() {
@@ -4639,19 +4641,21 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     
 
-    // First check regular globals (user variables shadow host functions)
-    auto it = globals.find(name);
-    if (it != globals.end()) {
-      pushStack(it->second);
-      break;
-    }
+	// First check regular globals (user variables shadow host functions)
+	auto it = globals.find(name);
+	if (it != globals.end()) {
+		trackGlobalAccess(name);
+		pushStack(it->second);
+		break;
+	}
 
-    // Then check host function globals (fallback for built-in functions)
-    auto hostIt = host_function_globals_.find(name);
-    if (hostIt != host_function_globals_.end()) {
-      pushStack(hostIt->second);
-      break;
-    }
+	// Then check host function globals (fallback for built-in functions)
+	auto hostIt = host_function_globals_.find(name);
+	if (hostIt != host_function_globals_.end()) {
+		trackGlobalAccess(name);
+		pushStack(hostIt->second);
+		break;
+	}
 
     COMPILER_THROW("Undefined variable: '" + name + "'");
     break;
@@ -4670,21 +4674,18 @@ void VM::executeInstruction(const Instruction &instruction) {
     } else {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
-    Value value = popStack();
+Value value = popStack();
 
+	globals[name] = value;
+	emitVariableChanged(name);
+	break;
+}
 
-
-
-    globals[name] = value;
-    break;
-  }
-
-  case OpCode::LOAD_VAR: {
-    uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value value = locals[abs];
-
+case OpCode::LOAD_VAR: {
+	uint32_t var_index = instruction.operands[0].asInt();
+	uint32_t abs = this->toAbsoluteLocal(var_index);
+	this->ensureLocalIndex(abs);
+	Value value = locals[abs];
 
 
     pushStack(value);
@@ -7683,10 +7684,11 @@ void VM::VMExecutionContext::executeInstructionInContext(
     } else {
       name = "<unknown:" + std::to_string(strIndex) + ">";
     }
-    Value value = pop();
-    parent_vm_->setGlobalThreadSafe(name, std::move(value));
-    break;
-  }
+	Value value = pop();
+	parent_vm_->setGlobalThreadSafe(name, std::move(value));
+	parent_vm_->emitVariableChanged(name);
+	break;
+	}
 
   case OpCode::LOAD_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();

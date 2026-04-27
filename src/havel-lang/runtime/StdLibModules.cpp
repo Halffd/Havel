@@ -27,9 +27,9 @@ void registerTypeModule(compiler::VMApi &api); // TypeModule
 void registerUtilityModule(compiler::VMApi &api); // UtilityModule
 void registerRegexModule(compiler::VMApi &api); // RegexModule
 void registerPhysicsModule(
-    compiler::VMApi &api); // PhysicsModule (constants only)
+	compiler::VMApi &api); // PhysicsModule (constants only)
 void registerTimeModule(
-    compiler::VMApi &api); // TimeModule (timestamp ops only)
+	compiler::VMApi &api); // TimeModule (timestamp ops only)
 void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
 void registerFsModule(compiler::VMApi &api); // FsModule
 void registerRandomModule(compiler::VMApi &api); // RandomModule
@@ -45,254 +45,77 @@ void registerBitModule(compiler::VMApi &api); // BitModule
 namespace havel {
 
 void registerStdLibWithVM(compiler::HostBridge &bridge) {
-  // Create VMApi from bridge's VM - store as shared to ensure lifetime
-  static auto api = std::make_shared<compiler::VMApi>(*bridge.context().vm);
+	// Create VMApi from bridge's VM - store as shared to ensure lifetime
+	static auto api = std::make_shared<compiler::VMApi>(*bridge.context().vm);
 
-  // Register all auto-registered single-file modules first
-  REGISTER_ALL_MODULES(*api);
+	// Register all auto-registered single-file modules first
+	REGISTER_ALL_MODULES(*api);
 
-  // Register PURE stdlib modules (no OS access)
-  stdlib::registerMathModule(*api);    // MathModule
-  stdlib::registerStringModule(*api);  // StringModule
-  stdlib::registerArrayModule(*api);   // ArrayModule
-  stdlib::registerObjectModule(*api);  // ObjectModule
-  stdlib::registerTypeModule(*api);    // TypeModule
-  stdlib::registerUtilityModule(*api); // UtilityModule
-  stdlib::registerRegexModule(*api);   // RegexModule
-  stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
-  stdlib::registerTimeModule(*api);    // TimeModule (timestamps)
-  stdlib::registerHotkeyModule(*api);  // HotkeyModule
-  stdlib::registerFsModule(*api);      // FsModule
-  stdlib::registerRandomModule(*api); // RandomModule
-  stdlib::registerLogModule(*api); // LogModule
-  stdlib::registerSysModule(*api); // SysModule
-  stdlib::registerShellModule(*api); // ShellModule
-  stdlib::registerPointerModule(*api); // PointerModule
-  stdlib::registerFormatModule(*api); // FormatModule
-  stdlib::registerPackModule(*api); // PackModule
-  stdlib::registerBitModule(*api); // BitModule
+	// Register PURE stdlib modules (no OS access)
+	stdlib::registerMathModule(*api); // MathModule
+	stdlib::registerStringModule(*api); // StringModule
+	stdlib::registerArrayModule(*api); // ArrayModule
+	stdlib::registerObjectModule(*api); // ObjectModule
+	stdlib::registerTypeModule(*api); // TypeModule
+	stdlib::registerUtilityModule(*api); // UtilityModule
+	stdlib::registerRegexModule(*api); // RegexModule
+	stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
+	stdlib::registerTimeModule(*api); // TimeModule (timestamps)
+	stdlib::registerHotkeyModule(*api); // HotkeyModule
+	stdlib::registerFsModule(*api); // FsModule
+	stdlib::registerRandomModule(*api); // RandomModule
+	stdlib::registerLogModule(*api); // LogModule
+	stdlib::registerSysModule(*api); // SysModule
+	stdlib::registerShellModule(*api); // ShellModule
+	stdlib::registerPointerModule(*api); // PointerModule
+	stdlib::registerFormatModule(*api); // FormatModule
+	stdlib::registerPackModule(*api); // PackModule
+	stdlib::registerBitModule(*api); // BitModule
 
-  // Register config module (has OS dependencies - config file access)
-  modules::registerConfigModule(*api);
+	// Register config module (has OS dependencies - config file access)
+	modules::registerConfigModule(*api);
 
-  // Register window monitor module (dynamic window variables)
-  modules::registerWindowMonitorModule(*api);
+	// Register window monitor module (dynamic window variables)
+	modules::registerWindowMonitorModule(*api);
 
-  // Register help module (documentation system)
-  modules::registerHelpModule(*api);
+	// Register help module (documentation system)
+	modules::registerHelpModule(*api);
 
-  // Register mouse module (mouse control)
-  modules::registerMouseModule(*api);
+	// Register mouse module (mouse control)
+	modules::registerMouseModule(*api);
 
-  // Register UI module (user interface)
-  modules::registerUIModule(*api);
+	// Register UI module (user interface)
+	modules::registerUIModule(*api);
 
-  // Register automation module (auto clicker, runner, key presser)
-  modules::registerAutomationModule(*api);
+	// Register automation module (auto clicker, runner, key presser)
+	modules::registerAutomationModule(*api);
 
-  // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are
-  // initialized This ensures we use the existing WindowMonitor from
-  // HotkeyManager
+	// Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are
+	// initialized This ensures we use the existing WindowMonitor from
+	// HotkeyManager
 
-  // Register host global names for pure stdlib only
-  bridge.options().host_global_names.insert("PI");
-  bridge.options().host_global_names.insert("E");
-  bridge.options().host_global_names.insert("math");
-  bridge.options().host_global_names.insert("String");
-  bridge.options().host_global_names.insert("string");
-  bridge.options().host_global_names.insert("Array");
-  bridge.options().host_global_names.insert("array");
-  bridge.options().host_global_names.insert("Object");
-  bridge.options().host_global_names.insert("object");
-  bridge.options().host_global_names.insert("Type");
-  bridge.options().host_global_names.insert("type");
-  bridge.options().host_global_names.insert("type.of");
-  bridge.options().host_global_names.insert("type.is");
-  bridge.options().host_global_names.insert("Utility");
-  bridge.options().host_global_names.insert("utility");
-  bridge.options().host_global_names.insert("regex");
-  bridge.options().host_global_names.insert("Regex");
-  bridge.options().host_global_names.insert("config");
-  bridge.options().host_global_names.insert("conf");
-  bridge.options().host_global_names.insert("window");
-  bridge.options().host_global_names.insert("mouse");
-  bridge.options().host_global_names.insert("title");
-  bridge.options().host_global_names.insert("class");
-  bridge.options().host_global_names.insert("exe");
-  bridge.options().host_global_names.insert("pid");
-  bridge.options().host_global_names.insert("Physics");
-  bridge.options().host_global_names.insert("physics");
-  bridge.options().host_global_names.insert("E_CHARGE");
-  bridge.options().host_global_names.insert("Time");
-  bridge.options().host_global_names.insert("time");
-  bridge.options().host_global_names.insert("ui");
-bridge.options().host_global_names.insert("fs");
-  bridge.options().host_global_names.insert("random");
-  bridge.options().host_global_names.insert("rand");
-  bridge.options().host_global_names.insert("randint");
-  bridge.options().host_global_names.insert("choice");
-  bridge.options().host_global_names.insert("RAND_MAX");
-  bridge.options().host_global_names.insert("log");
-  bridge.options().host_global_names.insert("sys");
-  bridge.options().host_global_names.insert("shell");
-
-  // Pointer/Format/Pack
-    bridge.options().host_global_names.insert("ptr");
-    bridge.options().host_global_names.insert("deref");
-    bridge.options().host_global_names.insert("offset");
-    bridge.options().host_global_names.insert("ptreq");
-    bridge.options().host_global_names.insert("deref.i8");
-    bridge.options().host_global_names.insert("deref.i16");
-    bridge.options().host_global_names.insert("deref.i32");
-    bridge.options().host_global_names.insert("deref.i64");
-    bridge.options().host_global_names.insert("deref.u8");
-    bridge.options().host_global_names.insert("deref.u16");
-    bridge.options().host_global_names.insert("deref.u32");
-    bridge.options().host_global_names.insert("deref.u64");
-    bridge.options().host_global_names.insert("deref.f32");
-    bridge.options().host_global_names.insert("deref.f64");
-    bridge.options().host_global_names.insert("write.i8");
-    bridge.options().host_global_names.insert("write.i16");
-    bridge.options().host_global_names.insert("write.i32");
-    bridge.options().host_global_names.insert("write.i64");
-    bridge.options().host_global_names.insert("write.u8");
-    bridge.options().host_global_names.insert("write.u16");
-    bridge.options().host_global_names.insert("write.u32");
-    bridge.options().host_global_names.insert("write.u64");
-    bridge.options().host_global_names.insert("write.f32");
-    bridge.options().host_global_names.insert("write.f64");
-  bridge.options().host_global_names.insert("hex");
-  bridge.options().host_global_names.insert("oct");
-  bridge.options().host_global_names.insert("bin");
-  bridge.options().host_global_names.insert("b64");
-    bridge.options().host_global_names.insert("b64decode");
-    bridge.options().host_global_names.insert("format");
-  bridge.options().host_global_names.insert("pack");
-  bridge.options().host_global_names.insert("unpack");
-
-  // Bitwise
-  bridge.options().host_global_names.insert("bit");
-  bridge.options().host_global_names.insert("bit.and");
-  bridge.options().host_global_names.insert("bit.or");
-  bridge.options().host_global_names.insert("bit.xor");
-  bridge.options().host_global_names.insert("bit.not");
-  bridge.options().host_global_names.insert("bit.lshift");
-  bridge.options().host_global_names.insert("bit.rshift");
-  bridge.options().host_global_names.insert("bit.arshift");
-  bridge.options().host_global_names.insert("bit.test");
-  bridge.options().host_global_names.insert("bit.set");
-  bridge.options().host_global_names.insert("bit.clear");
-  bridge.options().host_global_names.insert("bit.toggle");
-  bridge.options().host_global_names.insert("bit.lsb");
-  bridge.options().host_global_names.insert("bit.msb");
-  bridge.options().host_global_names.insert("bit.count");
-  bridge.options().host_global_names.insert("bit.parity");
-  bridge.options().host_global_names.insert("bit.rol");
-  bridge.options().host_global_names.insert("bit.ror");
-  bridge.options().host_global_names.insert("bit.getfield");
-  bridge.options().host_global_names.insert("bit.setfield");
-
-  // Utility helpers
-  bridge.options().host_global_names.insert("keys");
-  bridge.options().host_global_names.insert("items");
-  bridge.options().host_global_names.insert("list");
-bridge.options().host_global_names.insert("len");
-bridge.options().host_global_names.insert("ord");
-bridge.options().host_global_names.insert("char");
-bridge.options().host_global_names.insert("isNumber");
-  bridge.options().host_global_names.insert("isString");
-  bridge.options().host_global_names.insert("isArray");
-  bridge.options().host_global_names.insert("isObject");
-  bridge.options().host_global_names.insert("isNull");
-  bridge.options().host_global_names.insert("isBoolean");
-  bridge.options().host_global_names.insert("toString");
-  bridge.options().host_global_names.insert("toNumber");
-  bridge.options().host_global_names.insert("wait");
-  bridge.options().host_global_names.insert("newEnum");
-  bridge.options().host_global_names.insert("getVariant");
-  bridge.options().host_global_names.insert("getVariantPayload");
-  bridge.options().host_global_names.insert("help");
-  // Pipeline function aliases - add to both host_functions and
-  // host_global_names
-  bridge.options().host_functions.insert(
-      {"upper", [](const std::vector<compiler::Value> &args) {
-         if (args.empty() ||
-             (!args[0].isStringValId() && !args[0].isStringId()))
-           return compiler::Value::makeNull();
-         return args[0];
-       }});
-  bridge.options().host_functions.insert(
-      {"lower", [](const std::vector<compiler::Value> &args) {
-         if (args.empty() ||
-             (!args[0].isStringValId() && !args[0].isStringId()))
-           return compiler::Value::makeNull();
-         return args[0];
-       }});
-  bridge.options().host_functions.insert(
-      {"trim", [](const std::vector<compiler::Value> &args) {
-         if (args.empty() ||
-             (!args[0].isStringValId() && !args[0].isStringId()))
-           return compiler::Value::makeNull();
-         return args[0];
-       }});
-  bridge.options().host_global_names.insert("upper");
-  bridge.options().host_global_names.insert("lower");
-  bridge.options().host_global_names.insert("trim");
-  bridge.options().host_global_names.insert("replace");
-
-  // HOST services are registered separately through HostBridge
-  // File, Process, Timer, Hotkey, Window, Clipboard, IO -> host layer
-  // Register host global names for host services
-
-  // File system
-  bridge.options().host_global_names.insert("readFile");
-  bridge.options().host_global_names.insert("writeFile");
-  bridge.options().host_global_names.insert("fileExists");
-  bridge.options().host_global_names.insert("fileSize");
-  bridge.options().host_global_names.insert("deleteFile");
-
-  // Process
-  bridge.options().host_global_names.insert("execute");
-  bridge.options().host_global_names.insert("getpid");
-  bridge.options().host_global_names.insert("getppid");
-  bridge.options().host_global_names.insert("process");
-
-  // Window
-  bridge.options().host_global_names.insert("window");
-
-  // Hotkey
-  bridge.options().host_global_names.insert("hotkey");
-
-  // Mode
-  bridge.options().host_global_names.insert("mode");
-
-  // Clipboard
-  bridge.options().host_global_names.insert("clipboard");
-
-  // Screenshot
-  bridge.options().host_global_names.insert("screenshot");
-
-  // Audio
-  bridge.options().host_global_names.insert("audio");
-
-  // Brightness
-  bridge.options().host_global_names.insert("brightness");
-
-  // Automation
-  bridge.options().host_global_names.insert("automation");
-
-  // Browser
-  bridge.options().host_global_names.insert("browser");
-
-  // TextChunker
-  bridge.options().host_global_names.insert("textchunker");
-
-  // MapManager (input remapping)
-  bridge.options().host_global_names.insert("mapmanager");
-
-  // AltTab (window switcher)
-  bridge.options().host_global_names.insert("alttab");
-  bridge.options().host_global_names.insert("input");
+	// Pipeline function aliases
+	bridge.options().host_functions.insert(
+		{"upper", [](const std::vector<compiler::Value> &args) {
+			 if (args.empty() ||
+				 (!args[0].isStringValId() && !args[0].isStringId()))
+				 return compiler::Value::makeNull();
+			 return args[0];
+		 }});
+	bridge.options().host_functions.insert(
+		{"lower", [](const std::vector<compiler::Value> &args) {
+			 if (args.empty() ||
+				 (!args[0].isStringValId() && !args[0].isStringId()))
+				 return compiler::Value::makeNull();
+			 return args[0];
+		 }});
+	bridge.options().host_functions.insert(
+		{"trim", [](const std::vector<compiler::Value> &args) {
+			 if (args.empty() ||
+				 (!args[0].isStringValId() && !args[0].isStringId()))
+				 return compiler::Value::makeNull();
+			 return args[0];
+		 }});
 }
 
 } // namespace havel

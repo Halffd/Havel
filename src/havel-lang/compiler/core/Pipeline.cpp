@@ -319,10 +319,8 @@ std::string opcodeName(OpCode opcode) {
   case OpCode::CALL:
     return "CALL";
   case OpCode::TAIL_CALL:
-    return "TAIL_CALL";
-  case OpCode::CALL_HOST:
-    return "CALL_HOST";
-  case OpCode::CALL_METHOD:
+	return "TAIL_CALL";
+	case OpCode::CALL_METHOD:
     return "CALL_METHOD";
   case OpCode::RETURN:
     return "RETURN";
@@ -606,11 +604,8 @@ BytecodeSmokeResult runBytecodePipeline(
     COMPILER_THROW(allErrors);
   }
 
-  ByteCompiler compiler;
-  for (const auto &name : options.host_global_names) {
-    compiler.addHostGlobal(name);
-  }
-  BytecodeSmokeResult result;
+	ByteCompiler compiler;
+	BytecodeSmokeResult result;
   std::unique_ptr<BytecodeChunk> chunk;
   try {
     chunk = compiler.compile(*program);

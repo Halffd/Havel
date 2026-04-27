@@ -1341,26 +1341,24 @@ if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
       }
     }
 
-    if (is_numeric) {
-      if (seen_dot) {
-        emit(OpCode::LOAD_CONST,
-             addConstant(Value::makeDouble(std::stod(sleep.duration))));
-      } else {
-        emit(OpCode::LOAD_CONST,
-             addConstant(Value::makeInt(std::stoll(sleep.duration))));
-      }
-    } else {
-      // Fallback: duration string (e.g. "500ms", "1s", "2.5m", "1h").
-      uint32_t strId = addStringConstant(sleep.duration);
-      emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
-    }
-    // Call sleep() with the duration string
-    {
-      uint32_t fnId = addStringConstant("sleep");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(fnId),
-          Value(static_cast<uint32_t>(1))});
-    }
+ {
+ uint32_t fnId = addStringConstant("sleep");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(fnId));
+ }
+ if (is_numeric) {
+ if (seen_dot) {
+ emit(OpCode::LOAD_CONST,
+ addConstant(Value::makeDouble(std::stod(sleep.duration))));
+ } else {
+ emit(OpCode::LOAD_CONST,
+ addConstant(Value::makeInt(std::stoll(sleep.duration))));
+ }
+ } else {
+ // Fallback: duration string (e.g. "500ms", "1s", "2.5m", "1h").
+ uint32_t strId = addStringConstant(sleep.duration);
+ emit(OpCode::LOAD_CONST, Value::makeStringValId(strId));
+ }
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
     emit(OpCode::POP); // Discard result
     break;
   }
@@ -1433,15 +1431,14 @@ case ast::NodeType::TryExpression:
       { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
       emit(OpCode::OBJECT_SET);
 
-      // Call config.set(key, value) to save to file
-      { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      compileExpression(*valueExpr); // Re-compile value for config.set
-      {
-        uint32_t strId = addStringConstant("config.set");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(2))});
-      }
+ // Call config.set(key, value) to save to file
+ {
+ uint32_t strId = addStringConstant("config.set");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ compileExpression(*valueExpr); // Re-compile value for config.set
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
       emit(OpCode::POP); // Discard result
     }
     break;
@@ -1457,14 +1454,12 @@ case ast::NodeType::TryExpression:
     const auto &modeBlock = static_cast<const ast::ModeBlock &>(statement);
 
     // Compile condition: mode == "modeName"
-    // Call mode() host function to get current mode
-    { uint32_t _sid = addStringConstant("mode"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    {
-      uint32_t modeStrId = addStringConstant("mode");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(modeStrId),
-          Value(static_cast<uint32_t>(0))});
-    }
+ // Call mode() host function to get current mode
+ {
+ uint32_t modeStrId = addStringConstant("mode");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(modeStrId));
+ }
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
 
     // Load the mode name to compare against
     { uint32_t _sid = addStringConstant(modeBlock.modeName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
@@ -1499,13 +1494,17 @@ case ast::NodeType::TryExpression:
     // ... }; exit { ... } }
     const auto &modesBlock = static_cast<const ast::ModesBlock &>(statement);
 
-    for (const auto &modeDef : modesBlock.modes) {
-      // Register mode with ModeManager at runtime
-      // mode.register(name, priority, condition, enter, exit, onEnterFrom,
-      // onExitTo, ...)
+ for (const auto &modeDef : modesBlock.modes) {
+ // Register mode with ModeManager at runtime
+ // mode.register(name, priority, condition, enter, exit, onEnterFrom,
+ // onExitTo, ...)
 
-      // Load mode name
-      { uint32_t _sid = addStringConstant(modeDef.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ {
+ uint32_t strId = addStringConstant("mode.register");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // Load mode name
+ { uint32_t _sid = addStringConstant(modeDef.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
 
       // Load priority
       emit(OpCode::LOAD_CONST,
@@ -1557,14 +1556,9 @@ case ast::NodeType::TryExpression:
       // emit(OpCode::LOAD_CONST, addConstant(modeDef.preventRetrigger));
       emit(OpCode::LOAD_CONST, Value::makeBool(false));
 
-      // Call mode.register
-      {
-        uint32_t strId = addStringConstant("mode.register");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(8))});
-      }
-      emit(OpCode::POP); // Discard result
+ // Call mode.register
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(8)));
+ emit(OpCode::POP); // Discard result
     }
     break;
   }
@@ -1610,19 +1604,18 @@ case ast::NodeType::TryExpression:
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl =
         static_cast<const ast::StructDeclaration &>(statement);
-    // Runtime registration: struct.define("Name", ["field1", ...])
-    { uint32_t _sid = addStringConstant(structDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    emit(OpCode::ARRAY_NEW);
-    for (const auto &field : structDecl.definition.fields) {
-      { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::ARRAY_PUSH);
-    }
-    {
-      uint32_t strId = addStringConstant("struct.define");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(2))});
-    }
+ // Runtime registration: struct.define("Name", ["field1", ...])
+ {
+ uint32_t strId = addStringConstant("struct.define");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(structDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::ARRAY_NEW);
+ for (const auto &field : structDecl.definition.fields) {
+ { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::ARRAY_PUSH);
+ }
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
     // Store the type_id in a global variable so constructor calls work
     {
       uint32_t strId = addStringConstant(structDecl.name);
@@ -1634,8 +1627,12 @@ case ast::NodeType::TryExpression:
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
         static_cast<const ast::ClassDeclaration &>(statement);
-    // Runtime registration: class.define("Name", ["field1", ...], parent, ["@@class_field1", ...])
-    { uint32_t _sid = addStringConstant(classDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ // Runtime registration: class.define("Name", ["field1", ...], parent, ["@@class_field1", ...])
+ {
+ uint32_t strId = addStringConstant("class.define");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(classDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::ARRAY_NEW);
     // Instance fields (@field)
     for (const auto &field : classDecl.definition.fields) {
@@ -1659,14 +1656,9 @@ case ast::NodeType::TryExpression:
         emit(OpCode::ARRAY_PUSH);
       }
     }
-    // Arity: name(1) + instance_fields(1) + parent(1) + class_fields(1) = 4
-    uint32_t define_arity = 4;
-    {
-      uint32_t strId = addStringConstant("class.define");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(define_arity)});
-    }
+ // Arity: name(1) + instance_fields(1) + parent(1) + class_fields(1) = 4
+ uint32_t define_arity = 4;
+ emit(OpCode::CALL, Value(define_arity));
     // Store the type_id in a global variable so constructor calls work
     {
       uint32_t strId = addStringConstant(classDecl.name);
@@ -1687,29 +1679,30 @@ case ast::NodeType::TryExpression:
       }
     }
 
-    // Register compiled methods on the class type.
-    for (const auto &method : classDecl.definition.methods) {
-      if (!method) {
-        continue;
-      }
-      auto method_index_it = class_method_indices_by_node_.find(method.get());
-      if (method_index_it == class_method_indices_by_node_.end()) {
-        COMPILER_THROW("Missing class method index: " + classDecl.name + "." +
-                       method->name);
-      }
-      uint32_t class_name_sid = addStringConstant(classDecl.name);
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(class_name_sid));
-      uint32_t method_name_sid = addStringConstant(method->name);
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeStringValId(method_name_sid)));
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
-                              method_index_it->second)));
-      uint32_t register_sid = addStringConstant("class.method");
-      emit(OpCode::CALL_HOST,
-           std::vector<Value>{Value::makeStringValId(register_sid),
-                              Value::makeInt(3)});
-      emit(OpCode::POP);
-    }
+ // Register compiled methods on the class type.
+ for (const auto &method : classDecl.definition.methods) {
+ if (!method) {
+ continue;
+ }
+ auto method_index_it = class_method_indices_by_node_.find(method.get());
+ if (method_index_it == class_method_indices_by_node_.end()) {
+ COMPILER_THROW("Missing class method index: " + classDecl.name + "." +
+ method->name);
+ }
+ {
+ uint32_t register_sid = addStringConstant("class.method");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(register_sid));
+ }
+ uint32_t class_name_sid = addStringConstant(classDecl.name);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(class_name_sid));
+ uint32_t method_name_sid = addStringConstant(method->name);
+ emit(OpCode::LOAD_CONST,
+ addConstant(Value::makeStringValId(method_name_sid)));
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
+ method_index_it->second)));
+ emit(OpCode::CALL, Value::makeInt(3));
+ emit(OpCode::POP);
+ }
     break;
   }
 
@@ -1739,24 +1732,26 @@ case ast::NodeType::ImplDeclaration: {
   const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
   std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
   std::string traitName = implDecl.traitName ? implDecl.traitName->symbol : "";
-  for (const auto &method : implDecl.funcs) {
-    if (!method || !method->name) continue;
-    auto index_it = function_indices_by_node_.find(method.get());
-    if (index_it == function_indices_by_node_.end()) continue;
-    // Load type object from globals
-    uint32_t type_name_sid = addStringConstant(typeName);
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name_sid));
-    // Load method name
-    uint32_t method_name_sid = addStringConstant(method->name->symbol);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_name_sid)));
-    // Load function
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
-    // Call class.method(typeObj, methodName, funcObj)
-    uint32_t register_sid = addStringConstant("class.method");
-    emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(register_sid), Value::makeInt(3)});
-    emit(OpCode::POP);
-  }
+ for (const auto &method : implDecl.funcs) {
+ if (!method || !method->name) continue;
+ auto index_it = function_indices_by_node_.find(method.get());
+ if (index_it == function_indices_by_node_.end()) continue;
+ {
+ uint32_t register_sid = addStringConstant("class.method");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(register_sid));
+ }
+ // Load type object from globals
+ uint32_t type_name_sid = addStringConstant(typeName);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name_sid));
+ // Load method name
+ uint32_t method_name_sid = addStringConstant(method->name->symbol);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_name_sid)));
+ // Load function
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
+ // Call class.method(typeObj, methodName, funcObj)
+ emit(OpCode::CALL, Value::makeInt(3));
+ emit(OpCode::POP);
+ }
   break;
 }
 
@@ -2352,15 +2347,16 @@ for (const auto &entry : object.pairs) {
     }
     // OBJECT_SET pushes the object back, so no DUP needed for chaining
 
-    // Check for spread
-    if (entry.key == "__spread__") {
-        compileExpression(*entry.value);
-        // Call any.extend(obj, source) to spread
-        uint32_t strId = addStringConstant("any.extend");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(2))});
-    } else if (entry.isComputedKey) {
+ // Check for spread
+ if (entry.key == "__spread__") {
+ // Stack: [obj] (from OBJECT_NEW / previous OBJECT_SET)
+ // Need: [callee, obj, source] for CALL 2
+ uint32_t strId = addStringConstant("any.extend");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ emit(OpCode::SWAP); // [callee, obj]
+ compileExpression(*entry.value); // [callee, obj, source]
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+ } else if (entry.isComputedKey) {
         // Computed key: {[expr]: value}
         compileExpression(*entry.value);
         compileExpression(*entry.keyExpr);
@@ -2677,25 +2673,23 @@ break;
     }
 
     // Special handling for 'in' and 'not in' - compile as host function call
-    if (binary.operator_ == ast::BinaryOperator::In ||
-        binary.operator_ == ast::BinaryOperator::NotIn) {
-      compileExpression(*binary.left);  // value to check
-      compileExpression(*binary.right); // container
-      std::string fnName =
-          binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
-      emit(OpCode::CALL_HOST,
-           std::vector<Value>{Value::makeStringValId(addStringConstant(fnName)), Value::makeInt(static_cast<int64_t>(2))});
-    } else if (binary.operator_ == ast::BinaryOperator::Matches ||
-               binary.operator_ == ast::BinaryOperator::Tilde) {
-      // Regex/string matching - compile as regex_search host function call
-      compileExpression(*binary.left);  // string to match
-      compileExpression(*binary.right); // pattern
-      {
-        uint32_t strId = addStringConstant("regex_search");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(2))});
-      }
+ if (binary.operator_ == ast::BinaryOperator::In ||
+ binary.operator_ == ast::BinaryOperator::NotIn) {
+ std::string fnName =
+ binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
+ uint32_t strId = addStringConstant(fnName);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ compileExpression(*binary.left); // value to check
+ compileExpression(*binary.right); // container
+ emit(OpCode::CALL, Value::makeInt(static_cast<int64_t>(2)));
+ } else if (binary.operator_ == ast::BinaryOperator::Matches ||
+ binary.operator_ == ast::BinaryOperator::Tilde) {
+ // Regex/string matching - compile as regex_search host function call
+ uint32_t strId = addStringConstant("regex_search");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ compileExpression(*binary.left); // string to match
+ compileExpression(*binary.right); // pattern
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
  } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
             // Nullish coalescing: left ?? right
             // Evaluate left side
@@ -2722,11 +2716,11 @@ break;
             patchJump(done,
                 static_cast<uint32_t>(current_function->instructions.size()));
  } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
-            compileExpression(*binary.left);
-            compileExpression(*binary.right);
-            uint32_t strId = addStringConstant("config.append");
-            emit(OpCode::CALL_HOST, std::vector<Value>{
-                Value::makeStringValId(strId), Value(static_cast<uint32_t>(2))});
+ uint32_t strId = addStringConstant("config.append");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ compileExpression(*binary.left);
+ compileExpression(*binary.right);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
     } else {
       compileExpression(*binary.left);
       compileExpression(*binary.right);
@@ -2815,17 +2809,15 @@ break;
       }
       // Identifier: | print, | upper, etc.
       // Tap behavior: function receives value, we ensure pass-through
-      else if (stage->kind == ast::NodeType::Identifier) {
-        const auto &ident = static_cast<const ast::Identifier &>(*stage);
-        emit(OpCode::LOAD_VAR, pipe_temp); // Load piped value as arg
-
-        // Route through any.* dispatch for consistency
-        {
-          uint32_t strId = addStringConstant("any." + ident.symbol);
-          emit(OpCode::CALL_HOST, std::vector<Value>{
-              Value::makeStringValId(strId),
-              Value(static_cast<uint32_t>(1))});
-        }
+ else if (stage->kind == ast::NodeType::Identifier) {
+ const auto &ident = static_cast<const ast::Identifier &>(*stage);
+ // Route through any.* dispatch for consistency
+ {
+ uint32_t strId = addStringConstant("any." + ident.symbol);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ emit(OpCode::LOAD_VAR, pipe_temp); // Load piped value as arg
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
 
         // For tap functions (print), ensure value passes through
         // If result is nil, restore the previous pipe value
@@ -3467,21 +3459,20 @@ case ast::NodeType::CallExpression:
     break;
   }
 
-  case ast::NodeType::AwaitExpression: {
-    const auto &await_expr =
-        static_cast<const ast::AwaitExpression &>(expression);
-    if (!await_expr.argument) {
-      COMPILER_THROW("Await expression missing argument");
-    }
-    compileExpression(*await_expr.argument);
-    {
-      uint32_t strId = addStringConstant("async.await");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(1))});
-    }
-    break;
-  }
+ case ast::NodeType::AwaitExpression: {
+ const auto &await_expr =
+ static_cast<const ast::AwaitExpression &>(expression);
+ if (!await_expr.argument) {
+ COMPILER_THROW("Await expression missing argument");
+ }
+ {
+ uint32_t strId = addStringConstant("async.await");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ compileExpression(*await_expr.argument);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ break;
+ }
 
   case ast::NodeType::UpdateExpression: {
     const auto &update_expr =
@@ -3683,15 +3674,14 @@ if (update_expr.isPrefix) {
     case ast::UnaryExpression::UnaryOperator::Plus:
       // No-op for unary plus
       break;
-    case ast::UnaryExpression::UnaryOperator::Length:
-      // Length operator: call any.len on the operand
-      {
-        uint32_t strId = addStringConstant("any.len");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(1))});
-      }
-      break;
+ case ast::UnaryExpression::UnaryOperator::Length: {
+ // Length operator: call any.len on the operand
+ uint32_t strId = addStringConstant("any.len");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ compileExpression(*unary.operand);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ }
+ break;
     default:
       COMPILER_THROW("Unsupported unary operator");
     }
@@ -3767,30 +3757,30 @@ if (update_expr.isPrefix) {
     compileChannelExpression(static_cast<const ast::ChannelExpression &>(expression));
     break;
 
-case ast::NodeType::BacktickExpression: {
-  const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
-  { uint32_t _sid = addStringConstant(backtick.command); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-  uint32_t strId = addStringConstant("runCapture");
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-    Value::makeStringValId(strId),
-    Value(static_cast<uint32_t>(1))});
-  break;
-}
+ case ast::NodeType::BacktickExpression: {
+ const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
+ {
+ uint32_t strId = addStringConstant("runCapture");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(backtick.command); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ break;
+ }
 
-  case ast::NodeType::ShellCommandExpression: {
-    const auto &shellExpr = static_cast<const ast::ShellCommandExpression &>(expression);
-    if (shellExpr.commandExpr) {
-      compileExpression(*shellExpr.commandExpr);
-      const char *funcName = shellExpr.captureOutput ? "runCapture" : "run";
-      uint32_t strId = addStringConstant(funcName);
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-        Value::makeStringValId(strId),
-        Value(static_cast<uint32_t>(1))});
-    } else {
-      { uint32_t _sid = addStringConstant(""); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    }
-    break;
-  }
+ case ast::NodeType::ShellCommandExpression: {
+ const auto &shellExpr = static_cast<const ast::ShellCommandExpression &>(expression);
+ if (shellExpr.commandExpr) {
+ const char *funcName = shellExpr.captureOutput ? "runCapture" : "run";
+ uint32_t strId = addStringConstant(funcName);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ compileExpression(*shellExpr.commandExpr);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ } else {
+ { uint32_t _sid = addStringConstant(""); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ }
+ break;
+ }
 
   default:
     COMPILER_THROW("Unsupported expression in bytecode compiler: " +
@@ -3837,86 +3827,78 @@ void ByteCompiler::compileCallExpression(
     return;
   }
 
-  if (expression.callee->kind == ast::NodeType::Identifier) {
-    const auto &callee_id =
-        static_cast<const ast::Identifier &>(*expression.callee);
-    const auto *binding = bindingFor(callee_id);
-    // Check if this is a known host function (even if resolver didn't mark it as such)
-    bool isHostFunc = (binding && binding->kind == ResolvedBindingKind::HostFunction) ||
-                      host_global_names_.count(callee_id.symbol) > 0;
-    if (binding && binding->kind == ResolvedBindingKind::Global &&
-        top_level_struct_names_.find(callee_id.symbol) !=
-            top_level_struct_names_.end()) {
-      { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      uint32_t totalArgs = 1; // type name
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          totalArgs++;
-          continue;
+if (expression.callee->kind == ast::NodeType::Identifier) {
+        const auto &callee_id =
+            static_cast<const ast::Identifier &>(*expression.callee);
+        const auto *binding = bindingFor(callee_id);
+        if (binding && binding->kind == ResolvedBindingKind::Global &&
+            top_level_struct_names_.find(callee_id.symbol) !=
+                top_level_struct_names_.end()) {
+            {
+                uint32_t strId = addStringConstant("struct.new");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
+            { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            uint32_t totalArgs = 1;
+            for (const auto &arg : expression.args) {
+                if (!arg) {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                    totalArgs++;
+                    continue;
+                }
+                compileExpression(*arg);
+                totalArgs++;
+            }
+            emit(OpCode::CALL, Value(totalArgs));
+            return;
         }
-        compileExpression(*arg);
-        totalArgs++;
-      }
-      {
-        uint32_t strId = addStringConstant("struct.new");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(totalArgs)});
-      }
-      return;
-    }
-    if (binding && binding->kind == ResolvedBindingKind::Global &&
-        top_level_class_names_.find(callee_id.symbol) !=
-            top_level_class_names_.end()) {
-      { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      uint32_t totalArgs = 1; // type name
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          totalArgs++;
-          continue;
+        if (binding && binding->kind == ResolvedBindingKind::Global &&
+            top_level_class_names_.find(callee_id.symbol) !=
+                top_level_class_names_.end()) {
+            {
+                uint32_t strId = addStringConstant("class.new");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
+            { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            uint32_t totalArgs = 1;
+            for (const auto &arg : expression.args) {
+                if (!arg) {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                    totalArgs++;
+                    continue;
+                }
+                compileExpression(*arg);
+                totalArgs++;
+            }
+            emit(OpCode::CALL, Value(totalArgs));
+            return;
         }
-        compileExpression(*arg);
-        totalArgs++;
-      }
-      {
-        uint32_t strId = addStringConstant("class.new");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(totalArgs)});
-      }
-      return;
-    }
-    // Check if calling a host function
-    if (isHostFunc) {
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          continue;
-        }
-        compileExpression(*arg);
-      }
-      uint32_t totalArgs = arg_count;
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          compileExpression(*kwarg.value);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::OBJECT_SET);
-        }
-        totalArgs++;
-      }
-      {
-        uint32_t strId = addStringConstant(binding ? binding->name : callee_id.symbol);
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(totalArgs)});
-      }
-      return;
-    }
-  }
-  // Check for member call
+        bool isHostFunc = binding && binding->kind == ResolvedBindingKind::HostFunction;
+        if (isHostFunc) {
+            uint32_t strId = addStringConstant(binding ? binding->name : callee_id.symbol);
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            for (const auto &arg : expression.args) {
+                if (!arg) {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                    continue;
+                }
+                compileExpression(*arg);
+            }
+            uint32_t totalArgs = arg_count;
+            if (hasKwargs) {
+                emit(OpCode::OBJECT_NEW);
+                for (const auto &kwarg : expression.kwargs) {
+                    compileExpression(*kwarg.value);
+                    { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                    emit(OpCode::OBJECT_SET);
+                }
+                totalArgs++;
+            }
+ emit(OpCode::CALL, Value(totalArgs));
+ return;
+ }
+ }
+ // Check for member call
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
     const auto &member =
         static_cast<const ast::MemberExpression &>(*expression.callee);
@@ -3926,38 +3908,65 @@ void ByteCompiler::compileCallExpression(
       COMPILER_THROW("Unsupported member call expression");
     }
 
-    // Namespace/module call: system.hardware(), display.getMonitors(), etc.
-    // Do not rewrite these to any.*; call the qualified host function directly.
-    if (auto *objIdent =
-            dynamic_cast<const ast::Identifier *>(member.object.get())) {
-      if (host_global_names_.count(objIdent->symbol) > 0) {
-        for (const auto &arg : expression.args) {
-          if (!arg) {
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-            continue;
-          }
-          compileExpression(*arg);
-        }
-        uint32_t totalArgs = arg_count;
-        if (hasKwargs) {
-          emit(OpCode::OBJECT_NEW);
-          for (const auto &kwarg : expression.kwargs) {
-            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-            compileExpression(*kwarg.value);
-            emit(OpCode::OBJECT_SET);
-          }
-          totalArgs++;
-        }
-        uint32_t strId =
-            addStringConstant(objIdent->symbol + "." + property->symbol);
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-                                   Value::makeStringValId(strId),
-                                   Value(totalArgs)});
-        return;
-      }
-    }
+ // Namespace/module call: window.activeTitle(), system.detect(), etc.
+ // Always emit LOAD_GLOBAL + CALL_METHOD — the VM dispatches at runtime.
+ // Host namespace objects (window, system, etc.) have HostFuncId fields
+ // which CALL_METHOD handles natively.
+ if (auto *objIdent =
+ dynamic_cast<const ast::Identifier *>(member.object.get())) {
+ // Push namespace object as receiver
+ uint32_t objSid = addStringConstant(objIdent->symbol);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
 
-    // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...), "hello".len(), arr.len()).
+ // Compile args
+ uint32_t totalArgs = 0;
+ for (const auto &arg : expression.args) {
+ if (!arg) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ totalArgs++;
+ continue;
+ }
+ if (arg->kind == ast::NodeType::SpreadExpression) {
+ // handle spread...
+ const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+ if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+ const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+ for (const auto &elem : arrLit.elements) {
+ if (elem) {
+ compileExpression(*elem);
+ totalArgs++;
+ }
+ }
+ } else {
+ compileExpression(*arg);
+ totalArgs++;
+ }
+ } else {
+ compileExpression(*arg);
+ totalArgs++;
+ }
+ }
+ if (hasKwargs) {
+ emit(OpCode::OBJECT_NEW);
+ for (const auto &kwarg : expression.kwargs) {
+ emit(OpCode::DUP);
+ { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ compileExpression(*kwarg.value);
+ emit(OpCode::OBJECT_SET);
+ }
+ totalArgs++;
+ }
+
+ // Call method
+ uint32_t method_sid = addStringConstant(property->symbol);
+ emit(OpCode::CALL_METHOD, std::vector<Value>{
+ Value::makeStringValId(method_sid),
+ Value(totalArgs)});
+ return;
+ }
+ // Fall through to instance-style call for non-identifier objects
+
+ // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...), "hello".len(), arr.len()).
     // Always emit CALL_METHOD - the VM will dispatch based on runtime type.
     // For primitives: direct dispatch via prototype tables (no boxing).
     // For objects/classes: prototype chain lookup via bound method objects.
@@ -4021,104 +4030,76 @@ void ByteCompiler::compileCallExpression(
     const auto &callee_id =
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
-    if (!binding) {
-      // Check if this is a known host global (e.g., print, sleep)
-      if (host_global_names_.count(callee_id.symbol) > 0) {
-        // Compile as host function call, expanding spread args
-        uint32_t totalArgs = 0;
-        for (const auto &arg : expression.args) {
-          if (!arg) {
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-            totalArgs++;
-            continue;
-          }
-          if (arg->kind == ast::NodeType::SpreadExpression) {
-            const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
-            if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
-              const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
-              for (const auto &elem : arrLit.elements) {
-                if (elem) {
-                  compileExpression(*elem);
-                  totalArgs++;
-                }
-              }
-            } else {
-              compileExpression(*arg);
-              totalArgs++;
-            }
-          } else {
-            compileExpression(*arg);
-            totalArgs++;
-          }
-        }
-        if (hasKwargs) {
-          emit(OpCode::OBJECT_NEW);
-          for (const auto &kwarg : expression.kwargs) {
-            emit(OpCode::DUP);
-            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-            compileExpression(*kwarg.value);
-            emit(OpCode::OBJECT_SET);
-          }
-          totalArgs++;
-        }
-        {
-          uint32_t strId = addStringConstant(callee_id.symbol);
-          emit(OpCode::CALL_HOST, std::vector<Value>{
-              Value::makeStringValId(strId),
-              Value(totalArgs)});
-        }
-        return;
-      }
-      COMPILER_THROW("Missing lexical binding for callee: " +
-                               callee_id.symbol);
-    }
+ if (!binding) {
+ // Unknown identifier — try as global function call (runtime will throw if not found)
+ uint32_t strId = addStringConstant(callee_id.symbol);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ uint32_t totalArgs = 0;
+ for (const auto &arg : expression.args) {
+ if (!arg) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ totalArgs++;
+ continue;
+ }
+ compileExpression(*arg);
+ totalArgs++;
+ }
+ if (hasKwargs) {
+ emit(OpCode::OBJECT_NEW);
+ for (const auto &kwarg : expression.kwargs) {
+ emit(OpCode::DUP);
+ { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ compileExpression(*kwarg.value);
+ emit(OpCode::OBJECT_SET);
+ }
+ totalArgs++;
+ }
+ emit(OpCode::CALL, Value(totalArgs));
+ return;
+ }
 
-    if (binding->kind == ResolvedBindingKind::HostFunction) {
-      // Host function - call via CALL_HOST, expanding spread args
-      uint32_t totalArgs = 0;
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          totalArgs++;
-          continue;
-        }
-        if (arg->kind == ast::NodeType::SpreadExpression) {
-          const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
-          if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
-            const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
-            for (const auto &elem : arrLit.elements) {
-              if (elem) {
-                compileExpression(*elem);
-                totalArgs++;
-              }
-            }
-          } else {
-            compileExpression(*arg);
-            totalArgs++;
-          }
-        } else {
-          compileExpression(*arg);
-          totalArgs++;
-        }
-      }
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          compileExpression(*kwarg.value);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::OBJECT_SET);
-        }
-        totalArgs++;
-      }
-
-      {
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(totalArgs)});
-      }
-      return;
-    }
+ if (binding->kind == ResolvedBindingKind::HostFunction) {
+ // Host function - call via LOAD_GLOBAL + CALL, expanding spread args
+ uint32_t strId = addStringConstant(binding->name);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ uint32_t totalArgs = 0;
+ for (const auto &arg : expression.args) {
+ if (!arg) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ totalArgs++;
+ continue;
+ }
+ if (arg->kind == ast::NodeType::SpreadExpression) {
+ const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+ if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+ const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+ for (const auto &elem : arrLit.elements) {
+ if (elem) {
+ compileExpression(*elem);
+ totalArgs++;
+ }
+ }
+ } else {
+ compileExpression(*arg);
+ totalArgs++;
+ }
+ } else {
+ compileExpression(*arg);
+ totalArgs++;
+ }
+ }
+ if (hasKwargs) {
+ emit(OpCode::OBJECT_NEW);
+ for (const auto &kwarg : expression.kwargs) {
+ compileExpression(*kwarg.value);
+ { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_SET);
+ }
+ totalArgs++;
+ }
+ emit(OpCode::CALL, Value(totalArgs));
+ return;
+ }
 
     if (binding->kind == ResolvedBindingKind::Function) {
       // User-defined function - load as FunctionObject and call
@@ -5245,19 +5226,19 @@ current_function->type_feedback[ip].has_aot_hint = true;
 void ByteCompiler::emitTypeAssertionForLocal(
     const std::string &normalized_expected, uint32_t slot,
     const std::string &label) {
-  const auto emitTypeEq = [&](const char *runtime_type_name) {
-    emit(OpCode::LOAD_VAR, slot);
-    {
-      const uint32_t type_name = addStringConstant("type");
-      emit(OpCode::CALL_HOST,
-           std::vector<Value>{Value::makeStringValId(type_name), Value(1)});
-    }
-    {
-      const uint32_t expected_id = addStringConstant(runtime_type_name);
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(expected_id)));
-    }
-    emit(OpCode::EQ);
-  };
+ const auto emitTypeEq = [&](const char *runtime_type_name) {
+ {
+ const uint32_t type_name = addStringConstant("type");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name));
+ }
+ emit(OpCode::LOAD_VAR, slot);
+ emit(OpCode::CALL, Value(1));
+ {
+ const uint32_t expected_id = addStringConstant(runtime_type_name);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(expected_id)));
+ }
+ emit(OpCode::EQ);
+ };
 
   if (normalized_expected == "number") {
     emitTypeEq("int");
@@ -5271,17 +5252,18 @@ void ByteCompiler::emitTypeAssertionForLocal(
     emitTypeEq(normalized_expected.c_str());
   }
 
-  const std::string message = "Type annotation mismatch for '" + label +
-                              "': expected " + normalized_expected;
-  {
-    const uint32_t msg_id = addStringConstant(message);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(msg_id)));
-  }
-  {
-    const uint32_t assert_name = addStringConstant("assert");
-    emit(OpCode::CALL_HOST,
-         std::vector<Value>{Value::makeStringValId(assert_name), Value(2)});
-  }
+ const std::string message = "Type annotation mismatch for '" + label +
+ "': expected " + normalized_expected;
+ {
+ const uint32_t assert_name = addStringConstant("assert");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(assert_name));
+ }
+ emit(OpCode::SWAP); // [callee, condition_result]
+ {
+ const uint32_t msg_id = addStringConstant(message);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(msg_id)));
+ }
+ emit(OpCode::CALL, Value(2));
   emit(OpCode::POP);
 }
 
@@ -5468,19 +5450,17 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
       emit(OpCode::POP);
     }
 
-    // Load the hotkey action function
-    {
-      uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
-
-    // Create hotkey context object
-    {
-      uint32_t strId = addStringConstant("Hotkey");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(1))});
-    }
+ // Create hotkey context object
+ {
+ uint32_t strId = addStringConstant("Hotkey");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // Load the hotkey action function
+ {
+ uint32_t strId = addStringConstant("hotkey_action");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ emit(OpCode::CALL, static_cast<uint32_t>(1));
 
     // Store hotkey context as 'this' so @field/@directive works in hotkey blocks
     {
@@ -5514,23 +5494,22 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
       emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
     }
 
-    // Register the hotkey with the wrapper function
-    // First, compile the hotkey string
-    compileExpression(*hotkeyExpr);
-    
-    // Load the hotkey_wrapper function from globals
-    {
-      uint32_t strId = addStringConstant("hotkey_wrapper");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
+ // Register the hotkey with the wrapper function
+ {
+ uint32_t strId = addStringConstant("hotkey.register");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // First, compile the hotkey string
+ compileExpression(*hotkeyExpr);
 
-    // Call hotkey.register with (hotkey_string, wrapper_function)
-    {
-      uint32_t strId = addStringConstant("hotkey.register");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(2))});
-    }
+ // Load the hotkey_wrapper function from globals
+ {
+ uint32_t strId = addStringConstant("hotkey_wrapper");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+
+ // Call hotkey.register with (hotkey_string, wrapper_function)
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
     emit(OpCode::POP); // Discard result
 
     // Handle conditions if present (for when blocks)
@@ -5596,19 +5575,17 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
       emit(OpCode::POP);
     }
 
-    // Load hotkey_action
-    {
-      uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
-
-    // Create hotkey context object
-    {
-      uint32_t strId = addStringConstant("Hotkey");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(1))});
-    }
+ // Create hotkey context object
+ {
+ uint32_t strId = addStringConstant("Hotkey");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // Load hotkey_action
+ {
+ uint32_t strId = addStringConstant("hotkey_action");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ emit(OpCode::CALL, static_cast<uint32_t>(1));
 
     // Store as 'this' for @field/@directive access
     {
@@ -5638,96 +5615,87 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
       emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
     }
 
-    // Register the hotkey - result (context object) stays on stack
-    compileExpression(*hotkeyExpr);
-    {
-      uint32_t strId = addStringConstant("hotkey_wrapper");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
-    {
-      uint32_t strId = addStringConstant("hotkey.register");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId),
-          Value(static_cast<uint32_t>(2))});
-    }
-    // DON'T POP - leave context object on stack for assignment
+ // Register the hotkey - result (context object) stays on stack
+ {
+ uint32_t strId = addStringConstant("hotkey.register");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ compileExpression(*hotkeyExpr);
+ {
+ uint32_t strId = addStringConstant("hotkey_wrapper");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+ // DON'T POP - leave context object on stack for assignment
   }
 }
 
 // Compile input statement: > "text" or > {Enter}
 void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
   // Each input command becomes a host function call to io.send or similar
-  for (const auto &cmd : statement.commands) {
-    switch (cmd.type) {
-    case ast::InputCommand::SendText:
-      // io.send(cmd.text)
-      { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      {
-        uint32_t strId = addStringConstant("io.send");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(1))});
-      }
-      break;
-    case ast::InputCommand::SendKey:
-      // io.sendKey(cmd.key)
-      { uint32_t _sid = addStringConstant(cmd.key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      {
-        uint32_t strId = addStringConstant("io.sendKey");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(1))});
-      }
-      break;
-    case ast::InputCommand::MouseClick:
-      // io.mouseClick(cmd.text) - text contains button name
-      { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      {
-        uint32_t strId = addStringConstant("io.mouseClick");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(1))});
-      }
-      break;
-    case ast::InputCommand::MouseMove:
-      // io.mouseMove(x, y) - xExprStr and yExprStr contain coordinates
-      // For now, treat as strings and evaluate them
-      // TODO: Properly evaluate expressions
-      { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      {
-        uint32_t strId = addStringConstant("io.mouseMove");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(2))});
-      }
-      break;
-    case ast::InputCommand::MouseRelative:
-      // Similar to MouseMove but relative
-      { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      {
-        uint32_t strId = addStringConstant("io.mouseMoveRel");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(2))});
-      }
-      break;
-    case ast::InputCommand::Sleep:
-      // sleep_ms(cmd.duration)
-      emit(OpCode::LOAD_CONST, Value::makeInt(std::stoi(cmd.duration)));
-      {
-        uint32_t strId = addStringConstant("sleep_ms");
-        emit(OpCode::CALL_HOST, std::vector<Value>{
-            Value::makeStringValId(strId),
-            Value(static_cast<uint32_t>(1))});
-      }
-      break;
-    default:
-      // Other commands not yet implemented
-      break;
-    }
-  }
+ for (const auto &cmd : statement.commands) {
+ switch (cmd.type) {
+ case ast::InputCommand::SendText:
+ // io.send(cmd.text)
+ {
+ uint32_t strId = addStringConstant("io.send");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ break;
+ case ast::InputCommand::SendKey:
+ // io.sendKey(cmd.key)
+ {
+ uint32_t strId = addStringConstant("io.sendKey");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(cmd.key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ break;
+ case ast::InputCommand::MouseClick:
+ // io.mouseClick(cmd.text) - text contains button name
+ {
+ uint32_t strId = addStringConstant("io.mouseClick");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ break;
+ case ast::InputCommand::MouseMove:
+ // io.mouseMove(x, y) - xExprStr and yExprStr contain coordinates
+ {
+ uint32_t strId = addStringConstant("io.mouseMove");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+ break;
+ case ast::InputCommand::MouseRelative:
+ // Similar to MouseMove but relative
+ {
+ uint32_t strId = addStringConstant("io.mouseMoveRel");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+ break;
+ case ast::InputCommand::Sleep:
+ // sleep_ms(cmd.duration)
+ {
+ uint32_t strId = addStringConstant("sleep_ms");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ emit(OpCode::LOAD_CONST, Value::makeInt(std::stoi(cmd.duration)));
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ break;
+ default:
+ // Other commands not yet implemented
+ break;
+ }
+ }
 }
 
 // Compile shell command: $ cmd or $! cmd
@@ -5736,30 +5704,29 @@ void ByteCompiler::compileShellCommandStatement(const ast::ShellCommandStatement
     COMPILER_THROW("Shell command missing expression");
   }
 
-  // Compile the command expression
-  compileExpression(*statement.commandExpr);
+ // Call run() or runCapture() host function
+ const char *funcName = statement.captureOutput ? "runCapture" : "run";
+ {
+ uint32_t strId = addStringConstant(funcName);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // Compile the command expression
+ compileExpression(*statement.commandExpr);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ emit(OpCode::POP);
 
-  // Call run() or runCapture() host function
-  const char *funcName = statement.captureOutput ? "runCapture" : "run";
-  uint32_t strId = addStringConstant(funcName);
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(1))});
-  emit(OpCode::POP);
-
-  // Handle pipe chain: $! cmd1 | cmd2 | cmd3
-  const ast::ShellCommandStatement *next = statement.next.get();
-  while (next) {
-    if (next->commandExpr) {
-      compileExpression(*next->commandExpr);
-      uint32_t strId2 = addStringConstant("run");
-      emit(OpCode::CALL_HOST, std::vector<Value>{
-          Value::makeStringValId(strId2),
-          Value(static_cast<uint32_t>(1))});
-      emit(OpCode::POP);
-    }
-    next = next->next.get();
-  }
+ // Handle pipe chain: $! cmd1 | cmd2 | cmd3
+ const ast::ShellCommandStatement *next = statement.next.get();
+ while (next) {
+ if (next->commandExpr) {
+ uint32_t strId2 = addStringConstant("run");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
+ compileExpression(*next->commandExpr);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ emit(OpCode::POP);
+ }
+ next = next->next.get();
+ }
 }
 
 void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
@@ -5771,17 +5738,14 @@ void ByteCompiler::compileWaitStatement(const ast::WaitStatement &statement) {
     compileExpression(*statement.condition);
     uint32_t jumpToEnd = emitJump(OpCode::JUMP_IF_TRUE);
 
-    // Sleep a bit (10ms) to avoid high CPU usage
-    {
-      uint32_t _sid = addStringConstant("10ms");
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
-    };
-    {
-      uint32_t strId = addStringConstant("sleep");
-      emit(OpCode::CALL_HOST, std::vector<Value>{Value::makeStringValId(strId),
-                                                 Value(static_cast<uint32_t>(1))});
-    }
-    emit(OpCode::POP); // discard sleep result
+ // Sleep a bit (10ms) to avoid high CPU usage
+ {
+ uint32_t strId = addStringConstant("sleep");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ { uint32_t _sid = addStringConstant("10ms"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ emit(OpCode::POP); // discard sleep result
 
     emit(OpCode::JUMP, startLabel);
 
@@ -5802,16 +5766,18 @@ void ByteCompiler::compileGetInputExpression(
     fnName = "io.get" + source;
   }
 
-  // Special case for prompt
-  uint32_t argCount = 0;
-  if (expression.prompt) {
-    compileExpression(*expression.prompt);
-    argCount = 1;
-  }
+ // Special case for prompt
+ uint32_t argCount = 0;
+ {
+ uint32_t strId = addStringConstant(fnName);
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ if (expression.prompt) {
+ compileExpression(*expression.prompt);
+ argCount = 1;
+ }
 
-  uint32_t strId = addStringConstant(fnName);
-  emit(OpCode::CALL_HOST, std::vector<Value>{Value::makeStringValId(strId),
-                                             Value(argCount)});
+ emit(OpCode::CALL, Value(argCount));
 }
 
 // ============================================================================
@@ -5821,17 +5787,17 @@ void ByteCompiler::compileGetInputExpression(
 void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expression) {
   // thread { ... } -> spawn a new thread with the body as a function
 
-  if (!expression.body) {
-    COMPILER_THROW("Thread expression missing body");
-  }
+ if (!expression.body) {
+ COMPILER_THROW("Thread expression missing body");
+ }
 
-  compileClosureBody(*expression.body, "<thread>");
+ // Emit LOAD_GLOBAL + CALL to thread.spawn
+ uint32_t strId = addStringConstant("thread.spawn");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
 
-  // Emit CALL_HOST to thread.spawn
-  uint32_t strId = addStringConstant("thread.spawn");
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(1))});
+ compileClosureBody(*expression.body, "<thread>");
+
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
 }
 
 void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expression) {
@@ -5841,20 +5807,21 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
     COMPILER_THROW("Interval expression missing duration");
   }
 
-  if (!expression.body) {
-    COMPILER_THROW("Interval expression missing body");
-  }
+ if (!expression.body) {
+ COMPILER_THROW("Interval expression missing body");
+ }
 
-  // Compile the interval duration
-  compileExpression(*expression.intervalMs);
+ {
+ uint32_t strId = addStringConstant("interval.start");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // Compile the interval duration
+ compileExpression(*expression.intervalMs);
 
-  compileClosureBody(*expression.body, "<interval>");
+ compileClosureBody(*expression.body, "<interval>");
 
-  // Emit CALL_HOST to interval.start
-  uint32_t strId = addStringConstant("interval.start");
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(2))});
+ // Emit LOAD_GLOBAL + CALL to interval.start
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
 }
 
 void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expression) {
@@ -5864,20 +5831,21 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
     COMPILER_THROW("Timeout expression missing duration");
   }
 
-  if (!expression.body) {
-    COMPILER_THROW("Timeout expression missing body");
-  }
+ if (!expression.body) {
+ COMPILER_THROW("Timeout expression missing body");
+ }
 
-  // Compile the delay duration
-  compileExpression(*expression.delayMs);
+ {
+ uint32_t strId = addStringConstant("timeout.start");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ // Compile the delay duration
+ compileExpression(*expression.delayMs);
 
-  compileClosureBody(*expression.body, "<timeout>");
+ compileClosureBody(*expression.body, "<timeout>");
 
-  // Emit CALL_HOST to timeout.start
-  uint32_t strId = addStringConstant("timeout.start");
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(2))});
+ // Emit LOAD_GLOBAL + CALL to timeout.start
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
 }
 
 // Compile a closure body, resolving identifiers against the enclosing function's scope
@@ -6054,15 +6022,13 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
     COMPILER_THROW("Go expression missing call expression");
   }
   
-  // Compile the expression/function being spawned
-  compileExpression(*expression.call);
-  
-  // Call the host function thread_spawn with the function as argument
-  uint32_t strId = addStringConstant("thread_spawn");
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(1))  // 1 argument
-  });
+ // Compile the expression/function being spawned
+ {
+ uint32_t strId = addStringConstant("thread_spawn");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
+ compileExpression(*expression.call);
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
 }
 
 // Compile del target: del variable, del obj.field, del arr[index], del set[key]
@@ -6108,17 +6074,16 @@ void ByteCompiler::compileDelTarget(const ast::Expression &target) {
   }
 }
 
-void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {
-  // channel() -> create a new channel
-  // Emit CALL_HOST to channel.new
-  
-  (void)expression; // Unused parameter
-  
-  // Emit CALL_HOST to channel.new
-  uint32_t strId = addStringConstant("channel.new");
-  emit(OpCode::CALL_HOST, std::vector<Value>{
-      Value::makeStringValId(strId),
-      Value(static_cast<uint32_t>(0))});
+ void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {
+ // channel() -> create a new channel
+ // Emit LOAD_GLOBAL + CALL to channel.new
+
+ (void)expression; // Unused parameter
+
+ // Emit LOAD_GLOBAL + CALL to channel.new
+ uint32_t strId = addStringConstant("channel.new");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
 }
 
 // Phase 3B-3: Generator Detection Implementation

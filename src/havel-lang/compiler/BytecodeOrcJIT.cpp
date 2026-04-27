@@ -3507,36 +3507,10 @@ case OpCode::LOAD_EXCEPTION: {
             vstack.push_back(a);
             break;
         }
-        case OpCode::NOP:
-            break;
+	case OpCode::NOP:
+		break;
 
-        // Host function calls
-        case OpCode::CALL_HOST: {
-            uint32_t hostIdx = instr.operands[0].asInt();
-            uint32_t argCount = instr.operands[1].asInt();
-            // Collect args
-            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "host_args");
-            for (uint32_t i = 0; i < argCount; ++i) {
-                llvm::Value* arg = vstack.back(); vstack.pop_back();
-                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
-            }
-            llvm::Function* fnHost = module.getFunction("havel_vm_call_host");
-            if (!fnHost) {
-                fnHost = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i32, i64p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_call_host", &module);
-            }
-            vstack.push_back(B.CreateCall(fnHost, {
-                vmArg,
-                llvm::ConstantInt::get(i32, hostIdx),
-                B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}),
-                llvm::ConstantInt::get(i32, argCount)
-            }));
-            break;
-        }
-        case OpCode::CALL_METHOD: {
+	case OpCode::CALL_METHOD: {
             if (instr.operands.size() != 2 || !instr.operands[0].isStringValId() || !instr.operands[1].isInt()) {
                 vstack.push_back(makeNull());
                 break;

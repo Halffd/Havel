@@ -192,3 +192,11 @@ Havel uses **Python-style modules**:
 - No `export` keyword.
 - Prefix with `_` to indicate "private by convention" (not enforced).
 - Module consumer: `use mymodule` or `use { fn } from "mymodule"`.
+## NO host_global_names
+
+- NEVER reintroduce `host_global_names` set.
+- The compiler uses runtime dispatch via `CALL` + `HostFunctionRef`.
+- Host functions are registered via `registerHostFunction()` and exist as globals.
+- `host_global_names` was removed because it duplicated runtime information and caused desync bugs.
+- If you see `host_global_names` in code → DELETE IT.
+- If you think you need `host_global_names` → YOU ARE WRONG.

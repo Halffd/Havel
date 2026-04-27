@@ -73,11 +73,9 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "JUMP_IF_FALSE";
   case OpCode::JUMP_IF_TRUE:
     return "JUMP_IF_TRUE";
-  case OpCode::CALL:
-    return "CALL";
-  case OpCode::CALL_HOST:
-    return "CALL_HOST";
-  case OpCode::RETURN:
+	case OpCode::CALL:
+	return "CALL";
+	case OpCode::RETURN:
     return "RETURN";
   case OpCode::TRY_ENTER:
     return "TRY_ENTER";
@@ -345,13 +343,9 @@ int runAsyncCase(const std::string &name, const std::string &source,
     havel::compiler::PipelineOptions options;
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
-    options.write_snapshot_artifact = !snapshot_dir.empty();
-    options.host_global_names.insert("async");
-    options.host_global_names.insert("thread");
-    options.host_global_names.insert("interval");
-    options.host_global_names.insert("timeout");
+	options.write_snapshot_artifact = !snapshot_dir.empty();
 
-    havel::compiler::VM *vm_ptr = nullptr;
+	havel::compiler::VM *vm_ptr = nullptr;
     uint64_t next_task_id = 1;
     std::unordered_map<std::string, Value> task_results;
     std::unordered_map<std::string, std::deque<Value>> channels;

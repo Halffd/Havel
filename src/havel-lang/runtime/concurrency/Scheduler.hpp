@@ -187,11 +187,14 @@ public:
    */
   void waitAll();
 
-  // ===== Diagnostics =====
+	// ===== Diagnostics =====
 
-  size_t goroutineCount() const;
-  size_t runnableCount() const;
-  size_t suspendedCount() const;
+	size_t goroutineCount() const;
+	size_t runnableCount() const;
+	size_t suspendedCount() const;
+
+	// Attach a Fiber to a goroutine by ID
+	void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 
 private:
   Scheduler();

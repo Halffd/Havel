@@ -176,4 +176,12 @@ size_t Scheduler::suspendedCount() const {
     return count;
 }
 
-}  // namespace havel::compiler
+void Scheduler::attachFiber(uint32_t goroutine_id, Fiber* fiber) {
+	std::lock_guard<std::mutex> lock(goroutines_mutex_);
+	auto it = goroutines_.find(goroutine_id);
+	if (it != goroutines_.end()) {
+		it->second->fiber = fiber;
+	}
+}
+
+} // namespace havel::compiler

@@ -5355,34 +5355,59 @@ bool ByteCompiler::wasTailCall() const { return emitted_tail_call_; }
 void ByteCompiler::clearTailCallFlag() { emitted_tail_call_ = false; }
 
 // Compile when block: when condition { statements }
+// Reactive: compiles condition and body as separate functions,
+// registers a watcher that fires on false->true edge transitions.
 void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
-  // Compile the condition expression
-  if (whenBlock.condition) {
-    compileExpression(*whenBlock.condition);
-  } else {
-    emit(OpCode::LOAD_CONST,
-         Value::makeBool(true)); // Default to true if no condition
-  }
+	// Phase 1: Compile condition expression into a separate function
+	BytecodeFunction conditionFn("when_condition");
+	enterFunction(std::move(conditionFn));
 
-  // Store condition result
-  uint32_t condSlot = next_local_index++;
-  reserveLocalSlot(condSlot);
-  emit(OpCode::DUP);
-  emit(OpCode::STORE_VAR, condSlot);
+	if (whenBlock.condition) {
+		compileExpression(*whenBlock.condition);
+	} else {
+		emit(OpCode::LOAD_CONST, Value::makeBool(true));
+	}
+	emit(OpCode::RETURN);
 
-  // Jump to end if condition is false
-  uint32_t endJump = emitJump(OpCode::JUMP_IF_FALSE);
+	leaveFunction();
 
-  // Compile statements in the when block
-  for (const auto &stmt : whenBlock.statements) {
-    if (stmt) {
-      compileStatement(*stmt);
-    }
-  }
+	uint32_t condition_func_index =
+		static_cast<uint32_t>(compiled_functions.size() - 1);
 
-  // Patch the jump
-  patchJump(endJump,
-            static_cast<uint32_t>(current_function->instructions.size()));
+	// Phase 2: Compile body statements into a separate function
+	BytecodeFunction bodyFn("when_body");
+	enterFunction(std::move(bodyFn));
+
+	for (const auto &stmt : whenBlock.statements) {
+		if (stmt) {
+			compileStatement(*stmt);
+		}
+	}
+	emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+	emit(OpCode::RETURN);
+
+	leaveFunction();
+
+	uint32_t body_func_index =
+		static_cast<uint32_t>(compiled_functions.size() - 1);
+
+	// Phase 3: In the main function, call when.register(cond_func, body_func)
+	{
+		uint32_t strId = addStringConstant("when.register");
+		emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+	}
+
+	// Push condition function reference
+	emit(OpCode::LOAD_CONST,
+		addConstant(Value::makeFunctionObjId(condition_func_index)));
+
+	// Push body function reference
+	emit(OpCode::LOAD_CONST,
+		addConstant(Value::makeFunctionObjId(body_func_index)));
+
+	// Call when.register with 2 args
+	emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+	emit(OpCode::POP); // Discard result
 }
 
 // Compile hotkey binding: hotkey => action

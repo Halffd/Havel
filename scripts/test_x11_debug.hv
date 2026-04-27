@@ -1,42 +1,17 @@
-// test_x11_debug.hv - Debug X11 FFI arg passing
-
 use ffi
-
-let xlib = ffi.open("libX11.so.6")
-print("xlib: loaded")
-
-let XOpenDisplay = ffi.sym(xlib, "XOpenDisplay")
-let XDefaultRootWindow = ffi.sym(xlib, "XDefaultRootWindow")
-let XGetInputFocus = ffi.sym(xlib, "XGetInputFocus")
-let XCloseDisplay = ffi.sym(xlib, "XCloseDisplay")
-
-print("symbols: resolved")
-
-let dpy = ffi.call(XOpenDisplay, "pointer", ["pointer"], 0)
-print("dpy: " + dpy)
-
-if dpy != 0 {
-    let root = ffi.call(XDefaultRootWindow, "uint64", ["pointer"], dpy)
-    print("root: " + root)
-
-    // Use allocBytes (not alloc with type) to allocate output buffers
-    let focus_ptr = ffi.allocBytes(8)
-    let revert_ptr = ffi.allocBytes(4)
-
-    print("about to call XGetInputFocus")
-    print("focus_ptr: " + focus_ptr)
-    print("revert_ptr: " + revert_ptr)
-
-    let result = ffi.call(XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], dpy, focus_ptr, revert_ptr)
-
-    print("XGetInputFocus returned: " + result)
-    let focus = ffi.get_u64(focus_ptr)
-    let revert = ffi.get_i32(revert_ptr)
-    print("focus: " + focus)
-    print("revert: " + revert)
-
-    ffi.call(XCloseDisplay, "int32", ["pointer"], dpy)
-    print("closed")
+_dpy = ffi.call(ffi.sym(ffi.open("libX11.so.6"), "XOpenDisplay"), "pointer", ["pointer"], 0)
+print(_dpy)
+if _dpy != 0 {
+  _root_fn = ffi.sym(ffi.open("libX11.so.6"), "XDefaultRootWindow")
+  _root = ffi.call(_root_fn, "uint64", ["pointer"], _dpy)
+  print(_root)
+  _focus_ptr = ffi.allocBytes(8)
+  _revert_ptr = ffi.allocBytes(4)
+  _focus_fn = ffi.sym(ffi.open("libX11.so.6"), "XGetInputFocus")
+  ffi.call(_focus_fn, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
+  _focus = ffi.get_u64(_focus_ptr)
+  print(_focus)
+  ffi.free(_focus_ptr)
+  ffi.free(_revert_ptr)
+  ffi.call(ffi.sym(ffi.open("libX11.so.6"), "XCloseDisplay"), "int32", ["pointer"], _dpy)
 }
-
-print("Done")

@@ -1,0 +1,46 @@
+// map.hv — Functional map/reduce/filter composition and Map data structure
+// Provides: map.compose, map.pipe, map.identity, map.constant,
+// map.curry, map.uncurry, map.flip,
+// map.dict — hash map with proper get/set/has/del/keys/vals
+
+fn compose(f, g) {
+	fn(x) { f(g(x)) }
+}
+
+fn pipe(f, g) {
+	fn(x) { g(f(x)) }
+}
+
+fn identity(x) { x }
+
+fn constant(val) {
+	fn(_) { val }
+}
+
+fn curry(f) {
+	fn(a) {
+		fn(b) { f(a, b) }
+	}
+}
+
+fn uncurry(f) {
+	fn(a, b) { f(a)(b) }
+}
+
+fn flip(f) {
+	fn(a, b) { f(b, a) }
+}
+
+// Map data structure using object
+fn dict(pairs=null) {
+	_obj = {}
+	if pairs != null && type.of(pairs) == "array" {
+		for pair in pairs {
+			if type.of(pair) == "array" && pair.len() >= 2 {
+				_key = "{pair[0]}"
+				_obj.set(_key, pair[1])
+			}
+		}
+	}
+	_obj
+}

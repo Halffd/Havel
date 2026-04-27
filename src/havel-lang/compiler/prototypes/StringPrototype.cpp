@@ -247,13 +247,53 @@ void registerStringPrototype(VM& vm) {
     return Value::makeInt(pos == std::string::npos ? -1 : static_cast<int64_t>(pos));
   });
 
-  regProto("find", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2) return Value::makeNull();
-    std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
-    size_t pos = s.find(sub);
-    if (pos == std::string::npos) return Value::makeNull();
-    return Value::makeInt(static_cast<int64_t>(pos));
-  });
+	regProto("find", 2, [&vm](const std::vector<Value>& args) {
+		if (args.size() < 2) return Value::makeNull();
+		std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
+		size_t pos = s.find(sub);
+		if (pos == std::string::npos) return Value::makeNull();
+		return Value::makeInt(static_cast<int64_t>(pos));
+	});
+
+	regProto("lastIndexOf", 2, [&vm](const std::vector<Value>& args) {
+		if (args.size() < 2) return Value::makeInt(-1);
+		std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
+		size_t pos = s.rfind(sub);
+		return Value::makeInt(pos == std::string::npos ? -1 : static_cast<int64_t>(pos));
+	});
+
+	regProto("findLast", 2, [&vm](const std::vector<Value>& args) {
+		if (args.size() < 2) return Value::makeNull();
+		if (args[1].isFunctionObjId() || args[1].isClosureId()) {
+			std::string s = extractString(vm, args[0]);
+			for (size_t i = s.size(); i-- > 0;) {
+				auto predResult = vm.call(args[1], {makeString(vm, std::string(1, s[i]))});
+				if (vm.toBoolPublic(predResult)) return makeString(vm, std::string(1, s[i]));
+			}
+		} else {
+			std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
+			size_t pos = s.rfind(sub);
+			if (pos == std::string::npos) return Value::makeNull();
+			return Value::makeInt(static_cast<int64_t>(pos));
+		}
+		return Value::makeNull();
+	});
+
+	regProto("findLastIndex", 2, [&vm](const std::vector<Value>& args) {
+		if (args.size() < 2) return Value::makeInt(-1);
+		if (args[1].isFunctionObjId() || args[1].isClosureId()) {
+			std::string s = extractString(vm, args[0]);
+			for (size_t i = s.size(); i-- > 0;) {
+				auto predResult = vm.call(args[1], {makeString(vm, std::string(1, s[i]))});
+				if (vm.toBoolPublic(predResult)) return Value::makeInt(static_cast<int64_t>(i));
+			}
+		} else {
+			std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
+			size_t pos = s.rfind(sub);
+			return Value::makeInt(pos == std::string::npos ? -1 : static_cast<int64_t>(pos));
+		}
+		return Value::makeInt(-1);
+	});
 
   regProto("replace", 3, [&vm](const std::vector<Value>& args) {
     if (args.size() < 3) return Value::makeNull();

@@ -247,11 +247,11 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
 	// Phase 2A: Event queue reference for variable change notifications
 	class EventQueue* event_queue_ = nullptr;
 
-	WatcherRegistry* watcher_registry_ = nullptr;
-	Scheduler* scheduler_ = nullptr;
-  
-  // Phase 2A: Helper to emit VAR_CHANGED events
-  void emitVariableChanged(const std::string& var_name);
+ WatcherRegistry* watcher_registry_ = nullptr;
+ Scheduler* scheduler_ = nullptr;
+
+ // Phase 2A: Helper to emit VAR_CHANGED events
+ void emitVariableChanged(const std::string& var_name);
   
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> host function index

@@ -2467,18 +2467,18 @@ return Value::makeObjectId(instanceRef.id);
 	return Value::makeNull();
 	});
 
-	registerHostFunction(
-	"when.register", [this](const std::vector<Value> &args) {
-	if (args.size() < 2) COMPILER_THROW("when.register requires condition_func_id and body_func_id");
-	if (!args[0].isFunctionObjId() && !args[0].isClosureId())
-	COMPILER_THROW("when.register first arg must be a function");
-	if (!args[1].isFunctionObjId() && !args[1].isClosureId())
-	COMPILER_THROW("when.register second arg must be a function");
+registerHostFunction(
+ "when.register", [this](const std::vector<Value> &args) {
+ if (args.size() < 2) COMPILER_THROW("when.register requires condition_func_id and body_func_id");
+ if (!args[0].isFunctionObjId() && !args[0].isClosureId())
+ COMPILER_THROW("when.register first arg must be a function");
+ if (!args[1].isFunctionObjId() && !args[1].isClosureId())
+ COMPILER_THROW("when.register second arg must be a function");
 
-	uint32_t cond_func_id = args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
-	uint32_t body_func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
+ uint32_t cond_func_id = args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
+ uint32_t body_func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
 
-	if (!watcher_registry_ || !scheduler_) {
+	if (!watcher_registry_) {
 	return Value::makeNull();
 	}
 
@@ -2496,17 +2496,23 @@ return Value::makeObjectId(instanceRef.id);
 
 	Fiber* raw_fiber = fiber.get();
 
+	if (scheduler_) {
 	uint32_t goroutine_id = scheduler_->spawn(body_func_id, {}, "when_body");
 	scheduler_->attachFiber(goroutine_id, raw_fiber);
+	}
 
 	fiber.release();
 
-	watcher_registry_->registerWatcher(
-	cond_func_id, 0, initial_result, deps, raw_fiber);
+ watcher_registry_->registerWatcher(
+ cond_func_id, 0, initial_result, deps, raw_fiber);
 
-	if (initial_result) {
-	raw_fiber->state = FiberState::RUNNABLE;
-	}
+ if (initial_result) {
+ try {
+ Value body_func = Value::makeFunctionObjId(body_func_id);
+ call(body_func, {});
+ } catch (...) {
+ }
+ }
 
 	auto strRef = heap_.allocateString("watcher_registered");
 	return Value::makeStringId(strRef.id);
@@ -2687,9 +2693,9 @@ Value VM::execute(const BytecodeChunk &chunk,
  Value result = stack.top();
  stack.pop();
  return result;
-}
+ }
 
-Value VM::executePersistent(const BytecodeChunk &chunk,
+ Value VM::executePersistent(const BytecodeChunk &chunk,
  const std::string &function_name,
  const std::vector<Value> &args) {
  const BytecodeChunk *saved_chunk = current_chunk;
@@ -2749,8 +2755,8 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
  return result;
  }
 
-// ============================================================================
-// PHASE 2E: CONDITION BYTECODE EVALUATION
+ // ============================================================================
+ // PHASE 2E: CONDITION BYTECODE EVALUATION
 // ============================================================================
 
 bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
@@ -2784,28 +2790,37 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   // Phase 2D: Dependency tracking is already automatic via trackGlobalAccess()
   // in VM::getGlobalThreadSafe(), so we don't need extra setup here
   
-  // Save current stack state (conditions shouldn't consume/modify main stack)
-  std::stack<Value> saved_stack = stack;
-  
-  try {
-    // Execute function and get result
-    // We call the function through the normal call mechanism
-    (void)ip;
-    Value func_value = Value::makeFunctionObjId(func_index);
-    Value result = call(func_value, {});
-    
-    // Convert result to boolean
-    bool condition_result = toBool(result);
-    
-    // Restore stack
-    stack = saved_stack;
-    
-    return condition_result;
-  } catch (...) {
-    // Restore stack on error
-    stack = saved_stack;
-    return false;
-  }
+// Save current stack state (conditions shouldn't consume/modify main stack)
+ std::stack<Value> saved_stack = stack;
+ size_t saved_frame_count = frame_count_;
+ auto saved_locals = locals;
+ auto saved_frame_arena = frame_arena_;
+
+ try {
+ // Execute function and get result
+ // We call the function through the normal call mechanism
+ (void)ip;
+ Value func_value = Value::makeFunctionObjId(func_index);
+ Value result = call(func_value, {});
+
+ // Convert result to boolean
+ bool condition_result = toBool(result);
+
+ // Restore stack
+ stack = saved_stack;
+ frame_count_ = saved_frame_count;
+ locals = saved_locals;
+ frame_arena_ = saved_frame_arena;
+
+ return condition_result;
+ } catch (...) {
+ // Restore stack on error
+ stack = saved_stack;
+ frame_count_ = saved_frame_count;
+ locals = saved_locals;
+ frame_arena_ = saved_frame_arena;
+ return false;
+ }
 }
 
 // ============================================================================
@@ -4637,8 +4652,8 @@ void VM::execNegate() {
 }
 
 void VM::execJump(const Instruction &instruction) {
-  uint32_t target = instruction.operands[0].asInt();
-  currentFrame().ip = target;
+ uint32_t target = instruction.operands[0].asInt();
+ currentFrame().ip = target;
 }
 
 void VM::execJumpIfFalse(const Instruction &instruction) {
@@ -7939,11 +7954,11 @@ const auto &cell = closure->upvalues[upvalue_index];
     break;
   }
 
-  case OpCode::JUMP: {
-    uint32_t target = instruction.operands[0].asInt();
-    currentFrame().ip = target;
-    break;
-  }
+ case OpCode::JUMP: {
+ uint32_t target = instruction.operands[0].asInt();
+ currentFrame().ip = target;
+ break;
+ }
 
   case OpCode::JUMP_IF_FALSE: {
     uint32_t target = instruction.operands[0].asInt();
@@ -8162,50 +8177,43 @@ std::string VM::resolveStringKey(const Value &value) const {
 // ============================================================================
 
 void VM::emitVariableChanged(const std::string& var_name) {
-// Synchronous path: notify watcher registry directly
-// This ensures when blocks fire during script execution,
-// not just when the event loop processes queued events.
-if (watcher_registry_) {
-auto fired_fibers = watcher_registry_->onVariableChanged(
-var_name,
-[this](uint32_t watcher_id) -> bool {
-const auto* watcher = watcher_registry_->getWatcher(watcher_id);
-if (!watcher) return false;
-auto tracker = std::make_shared<DependencyTracker>();
-DependencyTrackerScope scope(tracker);
-bool result = evaluateConditionBytecode(
-watcher->condition_func_id, watcher->condition_ip);
-// Update dependencies in case condition depends on new variables
-auto new_deps = tracker->getGlobalDependencies();
-watcher_registry_->updateDependencies(watcher_id, new_deps);
-return result;
-}
-);
-	for (Fiber* fiber : fired_fibers) {
-	if (fiber && current_chunk && fiber->current_function_id < current_chunk->getFunctionCount()) {
-	// Execute the when body synchronously
-	try {
-	Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
-	call(body_func, {});
-	} catch (...) {
-	// Body execution failed, continue
-	}
-	}
-}
+ if (watcher_registry_) {
+ auto fired_fibers = watcher_registry_->onVariableChanged(
+ var_name,
+ [this](uint32_t watcher_id) -> bool {
+ const auto* watcher = watcher_registry_->getWatcher(watcher_id);
+ if (!watcher) return false;
+ auto tracker = std::make_shared<DependencyTracker>();
+ DependencyTrackerScope scope(tracker);
+ bool result = evaluateConditionBytecode(
+ watcher->condition_func_id, watcher->condition_ip);
+ auto new_deps = tracker->getGlobalDependencies();
+ watcher_registry_->updateDependencies(watcher_id, new_deps);
+ return result;
+ }
+ );
+ for (Fiber* fiber : fired_fibers) {
+ if (fiber && current_chunk && fiber->current_function_id < current_chunk->getFunctionCount()) {
+ try {
+ Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
+ call(body_func, {});
+ } catch (...) {
+ }
+ }
+ }
+ }
+
+ if (!event_queue_) {
+ return;
+ }
+
+ uint32_t var_hash = std::hash<std::string>{}(var_name);
+ Event change_event(EventType::VAR_CHANGED, var_hash);
+ change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
+ event_queue_->push(change_event);
 }
 
-// Async path: also push to event queue for the event loop
-if (!event_queue_) {
-return;
-}
-
-uint32_t var_hash = std::hash<std::string>{}(var_name);
-Event change_event(EventType::VAR_CHANGED, var_hash);
-change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
-event_queue_->push(change_event);
-}
-
-void VM::throwError(const std::string &msg) {
+ void VM::throwError(const std::string &msg) {
   COMPILER_THROW(msg);
 }
 

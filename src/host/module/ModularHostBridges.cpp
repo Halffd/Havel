@@ -752,15 +752,22 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.run() requires a string or array command");
   }
-  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
-  auto obj = vm->createHostObject();
-  vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
-  vm->setHostObjectField(obj, "exitCode", Value::makeInt(result.exitCode));
-  vm->setHostObjectField(obj, "success", Value::makeBool(result.success));
-  vm->setHostObjectField(obj, "error", Value::makeNull());
-  vm->setHostObjectField(obj, "stdout", Value::makeNull());
-  vm->setHostObjectField(obj, "stderr", Value::makeNull());
-  return Value::makeObjectId(obj.id);
+    auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
+    vm->setHostObjectField(obj, "exitCode", Value::makeInt(result.exitCode));
+    vm->setHostObjectField(obj, "success", Value::makeBool(result.success));
+    if (result.error.empty()) {
+        vm->setHostObjectField(obj, "error", Value::makeNull());
+    } else {
+        auto errRef = vm->getHeap().allocateString(result.error);
+        vm->setHostObjectField(obj, "error", Value::makeStringId(errRef.id));
+    }
+    auto outRef = vm->getHeap().allocateString(result.stdout);
+    vm->setHostObjectField(obj, "stdout", Value::makeStringId(outRef.id));
+    auto errOutRef = vm->getHeap().allocateString(result.stderr);
+    vm->setHostObjectField(obj, "stderr", Value::makeStringId(errOutRef.id));
+    return Value::makeObjectId(obj.id);
 }
 
 Value

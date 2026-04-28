@@ -8,6 +8,7 @@
 #include "../../modules/HostModules.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../core/util/Env.hpp"
+#include "../runtime/concurrency/WatcherRegistry.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -59,7 +60,11 @@ public:
             vm_->registerHostFunction(name, fn);
         }
 
-        vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
+	vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
+
+	// Wire watcher registry for reactive when blocks
+	watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
+	vm_->setWatcherRegistry(watcher_registry_.get());
 
         {
             std::string stdlibPath;
@@ -111,11 +116,12 @@ public:
     }
 
 private:
-    EngineConfig config_;
-    std::shared_ptr<compiler::VM> vm_;
-    std::unique_ptr<HostContext> hostContext_;
-    std::shared_ptr<compiler::HostBridge> hostBridge_;
-    bool initialized_ = false;
+	EngineConfig config_;
+	std::shared_ptr<compiler::VM> vm_;
+	std::unique_ptr<HostContext> hostContext_;
+	std::shared_ptr<compiler::HostBridge> hostBridge_;
+	std::unique_ptr<compiler::WatcherRegistry> watcher_registry_;
+	bool initialized_ = false;
 };
 
 } // namespace havel

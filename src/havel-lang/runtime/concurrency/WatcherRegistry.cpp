@@ -72,14 +72,17 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
 ) {
     std::vector<Fiber*> fired_fibers;
     
-    // Find all watchers that depend on this variable
-    auto var_it = var_to_watchers_.find(var_name);
-    if (var_it == var_to_watchers_.end()) {
-        return fired_fibers;  // No watchers for this variable
-    }
-    
-    // Re-evaluate each watcher that depends on this variable
-    for (WatcherId watcher_id : var_it->second) {
+ // Find all watchers that depend on this variable
+ auto var_it = var_to_watchers_.find(var_name);
+ if (var_it == var_to_watchers_.end()) {
+ return fired_fibers; // No watchers for this variable
+ }
+
+ // Copy the list — evaluator may call updateDependencies which modifies var_to_watchers_
+ auto watcher_ids = var_it->second;
+
+ // Re-evaluate each watcher that depends on this variable
+ for (WatcherId watcher_id : watcher_ids) {
         auto watcher_it = watchers_.find(watcher_id);
         if (watcher_it == watchers_.end()) {
             continue;  // Watcher was unregistered

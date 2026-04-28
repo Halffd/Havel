@@ -453,12 +453,13 @@ void VMExecutionContext::executeInstruction(const Instruction& instruction) {
     case OpCode::POP:
       stack_.pop();
       break;
-    case OpCode::ADD:
-    case OpCode::SUB:
-    case OpCode::MUL:
-    case OpCode::DIV:
-      executeBinaryOp(instruction.opcode);
-      break;
+        case OpCode::ADD:
+        case OpCode::SUB:
+        case OpCode::MUL:
+        case OpCode::DIV:
+        case OpCode::INT_DIV:
+            executeBinaryOp(instruction.opcode);
+            break;
     case OpCode::CALL:
       executeCall(static_cast<uint32_t>(instruction.operands[0].asInt()));
       break;
@@ -481,10 +482,17 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
     int64_t result = 0;
 
     switch (op) {
-      case OpCode::ADD: result = ai + bi; break;
-      case OpCode::SUB: result = ai - bi; break;
-      case OpCode::MUL: result = ai * bi; break;
-      case OpCode::DIV: result = ai / bi; break;
+    case OpCode::ADD: result = ai + bi; break;
+    case OpCode::SUB: result = ai - bi; break;
+    case OpCode::MUL: result = ai * bi; break;
+    case OpCode::DIV: {
+        if (bi == 0) COMPILER_THROW("Division by zero");
+        double dl = static_cast<double>(ai);
+        double dr = static_cast<double>(bi);
+        stack_.push(Value::makeDouble(dl / dr));
+        return;
+    }
+    case OpCode::INT_DIV: result = ai / bi; break;
       default: COMPILER_THROW("Unknown binary op");
     }
 
@@ -495,10 +503,11 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
     double result = 0;
 
     switch (op) {
-      case OpCode::ADD: result = ad + bd; break;
-      case OpCode::SUB: result = ad - bd; break;
-      case OpCode::MUL: result = ad * bd; break;
-      case OpCode::DIV: result = ad / bd; break;
+    case OpCode::ADD: result = ad + bd; break;
+    case OpCode::SUB: result = ad - bd; break;
+    case OpCode::MUL: result = ad * bd; break;
+    case OpCode::DIV: result = ad / bd; break;
+    case OpCode::INT_DIV: result = static_cast<double>(static_cast<int64_t>(ad) / static_cast<int64_t>(bd)); break;
       default: COMPILER_THROW("Unknown binary op");
     }
 

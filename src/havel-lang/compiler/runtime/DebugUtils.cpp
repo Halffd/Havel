@@ -475,8 +475,9 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
   case OpCode::ADD: return "ADD";
   case OpCode::SUB: return "SUB";
   case OpCode::MUL: return "MUL";
-  case OpCode::DIV: return "DIV";
-  case OpCode::MOD: return "MOD";
+    case OpCode::DIV: return "DIV";
+    case OpCode::INT_DIV: return "INT_DIV";
+    case OpCode::MOD: return "MOD";
   case OpCode::POW: return "POW";
 
   // Increment/Decrement

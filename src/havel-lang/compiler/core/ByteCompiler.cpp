@@ -28,14 +28,14 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::SUB;
   case ast::BinaryOperator::Mul:
     return OpCode::MUL;
-  case ast::BinaryOperator::Div:
-    return OpCode::DIV;
-  case ast::BinaryOperator::Mod:
-    return OpCode::MOD;
-  case ast::BinaryOperator::Pow:
-    return OpCode::POW;
-  case ast::BinaryOperator::IntDiv:
-    return OpCode::DIV; // Integer division uses same opcode, VM handles type
+    case ast::BinaryOperator::Div:
+        return OpCode::DIV;
+    case ast::BinaryOperator::Mod:
+        return OpCode::MOD;
+    case ast::BinaryOperator::Pow:
+        return OpCode::POW;
+    case ast::BinaryOperator::IntDiv:
+        return OpCode::INT_DIV;
   case ast::BinaryOperator::Equal:
     return OpCode::EQ;
   case ast::BinaryOperator::NotEqual:
@@ -5417,12 +5417,13 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     if (!hotkeyExpr)
       continue;
 
-    // Create a function that wraps the action with @ context injection
-    // The action will receive @ as its first parameter
-    BytecodeFunction hotkeyActionFn("hotkey_action");
-    enterFunction(std::move(hotkeyActionFn));
+        // Create a function that wraps the action with @ context injection
+        // The action will receive @ as its first parameter
+        BytecodeFunction hotkeyActionFn("hotkey_action");
+        hotkeyActionFn.param_count = 1;
+        enterFunction(std::move(hotkeyActionFn));
 
-    // Compile the action statement/expression
+        // Compile the action statement/expression
     if (binding.action) {
       if (auto *blockStmt =
               dynamic_cast<const ast::BlockStatement *>(binding.action.get())) {
@@ -5557,6 +5558,7 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
 
     // Create a function that wraps the action with @ context injection
     BytecodeFunction hotkeyActionFn("hotkey_action");
+    hotkeyActionFn.param_count = 1;
     enterFunction(std::move(hotkeyActionFn));
 
     if (binding.action) {

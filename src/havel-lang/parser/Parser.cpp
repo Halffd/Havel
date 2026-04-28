@@ -1373,9 +1373,15 @@ case TokenType::Plus: {
     }
 
     case TokenType::Modulo: {
-      auto right = parsePrattExpression(getRightBindingPower(token.type));
-      return std::make_unique<ast::BinaryExpression>(
-          std::move(left), ast::BinaryOperator::Mod, std::move(right));
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return std::make_unique<ast::BinaryExpression>(
+            std::move(left), ast::BinaryOperator::Mod, std::move(right));
+    }
+
+    case TokenType::Backslash: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return std::make_unique<ast::BinaryExpression>(
+            std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
     }
 
     case TokenType::Power: {
@@ -5805,15 +5811,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
       advance();
       while (at().type == havel::TokenType::NewLine) advance();
       std::string source;
-      if (at().type == havel::TokenType::String ||
-          at().type == havel::TokenType::MultilineString) {
-        source = advance().value;
-      } else if (at().type == havel::TokenType::Identifier) {
-        source = advance().value;
-      } else {
-        failAt(at(), "Expected module name or file path after 'from'");
-        return nullptr;
-      }
+        if (at().type == havel::TokenType::String ||
+            at().type == havel::TokenType::MultilineString ||
+            at().type == havel::TokenType::InterpolatedString) {
+            source = advance().value;
+        } else if (at().type == havel::TokenType::Identifier) {
+            source = advance().value;
+        } else {
+            failAt(at(), "Expected module name or file path after 'from'");
+            return nullptr;
+        }
         auto stmt = std::make_unique<havel::ast::UseStatement>(source, moduleName);
         stmt->isFileImport = true;
         if (!alias.empty()) {
@@ -5822,11 +5829,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         return stmt;
     }
 
-        auto stmt = std::make_unique<havel::ast::UseStatement>(
-            std::vector<std::string>{moduleName});
-        stmt->alias = alias;
-        return stmt;
-  }
+    auto stmt = std::make_unique<havel::ast::UseStatement>(
+        std::vector<std::string>{moduleName});
+    stmt->alias = alias;
+    return stmt;
+}
 
   if (at().type == havel::TokenType::OpenBrace) {
     advance(); // consume '{'
@@ -5879,16 +5886,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
     // Get source
     while (at().type == havel::TokenType::NewLine) advance();
     std::string source;
-    if (at().type == havel::TokenType::String || 
-        at().type == havel::TokenType::MultilineString) {
-      source = advance().value;
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
+        source = advance().value;
     } else if (at().type == havel::TokenType::Identifier) {
-      source = advance().value; // module name
+        source = advance().value; // module name
     } else {
-      failAt(at(), "Expected module name or file path after 'from'");
-      return nullptr;
+        failAt(at(), "Expected module name or file path after 'from'");
+        return nullptr;
     }
-    
+
     auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
     stmt->isNamedImport = true;
     for (auto& [name, alias] : importNames) {
@@ -5914,26 +5922,28 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
     
     while (at().type == havel::TokenType::NewLine) advance();
     std::string source;
-    if (at().type == havel::TokenType::String || 
-        at().type == havel::TokenType::MultilineString) {
-      source = advance().value;
+    if (at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::MultilineString ||
+        at().type == havel::TokenType::InterpolatedString) {
+        source = advance().value;
     } else if (at().type == havel::TokenType::Identifier) {
-      source = advance().value;
+        source = advance().value;
     } else {
-      failAt(at(), "Expected module name or file path after 'from'");
-      return nullptr;
+        failAt(at(), "Expected module name or file path after 'from'");
+        return nullptr;
     }
-    
+
     auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{"*"});
     stmt->isWildcard = true;
     return stmt;
-  }
+}
 
   // =========================================================================
-  // Syntax: use "file.hv" or use "file.hv" as alias
-  // =========================================================================
-  if (at().type == havel::TokenType::String ||
-      at().type == havel::TokenType::MultilineString) {
+// Syntax: use "file.hv" or use "file.hv" as alias
+// =========================================================================
+if (at().type == havel::TokenType::String ||
+    at().type == havel::TokenType::MultilineString ||
+    at().type == havel::TokenType::InterpolatedString) {
     std::string filePath = advance().value;
     
     // Check for "as alias"

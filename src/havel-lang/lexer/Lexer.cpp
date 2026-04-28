@@ -973,8 +973,8 @@ std::vector<Token> Lexer::tokenize() {
       if (!tokens.empty()) {
         TokenType prevType = tokens.back().type;
         inExpressionContext = (prevType == TokenType::Number ||
-          prevType == TokenType::String || prevType == TokenType::RegexString ||
-          prevType == TokenType::Identifier ||
+prevType == TokenType::String || prevType == TokenType::InterpolatedString || prevType == TokenType::MultilineString || prevType == TokenType::RegexString ||
+prevType == TokenType::Identifier ||
           prevType == TokenType::True || prevType == TokenType::False ||
           prevType == TokenType::Null ||
           prevType == TokenType::CloseParen ||
@@ -1350,8 +1350,10 @@ continue;
             if (prevType == TokenType::Identifier ||
                 prevType == TokenType::CloseParen ||
                 prevType == TokenType::CloseBracket ||
-                prevType == TokenType::String ||
-                prevType == TokenType::Number) {
+prevType == TokenType::String ||
+prevType == TokenType::InterpolatedString ||
+prevType == TokenType::MultilineString ||
+prevType == TokenType::Number) {
                 tokens.push_back(makeToken("(", TokenType::OpenParen));
                 advance(); // consume second '('
                 tokens.push_back(makeToken("(", TokenType::OpenParen));
@@ -1673,8 +1675,11 @@ continue;
         // (if, while, for, etc.)
         if (prevType == TokenType::Number ||
             prevType == TokenType::Identifier ||
-            prevType == TokenType::String ||
-            prevType == TokenType::CloseParen ||
+prevType == TokenType::String ||
+prevType == TokenType::InterpolatedString ||
+prevType == TokenType::MultilineString ||
+prevType == TokenType::RegexString ||
+prevType == TokenType::CloseParen ||
             prevType == TokenType::OpenParen ||
             prevType == TokenType::CloseBracket ||
             prevType == TokenType::Not ||

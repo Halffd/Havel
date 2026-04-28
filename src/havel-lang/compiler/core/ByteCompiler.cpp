@@ -3651,36 +3651,36 @@ if (update_expr.isPrefix) {
     break;
   }
 
-  case ast::NodeType::UnaryExpression: {
+case ast::NodeType::UnaryExpression: {
     const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
     if (!unary.operand) {
-      COMPILER_THROW("Unary expression missing operand");
+        COMPILER_THROW("Unary expression missing operand");
     }
-
-    // Compile operand first
-    compileExpression(*unary.operand);
 
     // Apply unary operator
     switch (unary.operator_) {
-        case ast::UnaryExpression::UnaryOperator::Not:
-          emit(OpCode::NOT);
-          break;
-        case ast::UnaryExpression::UnaryOperator::BitwiseNot:
-          emit(OpCode::BIT_NOT);
-          break;
+    case ast::UnaryExpression::UnaryOperator::Not:
+        compileExpression(*unary.operand);
+        emit(OpCode::NOT);
+        break;
+    case ast::UnaryExpression::UnaryOperator::BitwiseNot:
+        compileExpression(*unary.operand);
+        emit(OpCode::BIT_NOT);
+        break;
     case ast::UnaryExpression::UnaryOperator::Minus:
-      emit(OpCode::NEGATE);
-      break;
+        compileExpression(*unary.operand);
+        emit(OpCode::NEGATE);
+        break;
     case ast::UnaryExpression::UnaryOperator::Plus:
-      // No-op for unary plus
-      break;
- case ast::UnaryExpression::UnaryOperator::Length: {
- // Length operator: call any.len on the operand
- uint32_t strId = addStringConstant("any.len");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- compileExpression(*unary.operand);
- emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
- }
+        compileExpression(*unary.operand);
+        break;
+    case ast::UnaryExpression::UnaryOperator::Length: {
+        // Length operator: call any.len on the operand
+        uint32_t strId = addStringConstant("any.len");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+        compileExpression(*unary.operand);
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+    }
  break;
     default:
       COMPILER_THROW("Unsupported unary operator");

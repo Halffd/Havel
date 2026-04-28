@@ -966,13 +966,13 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-    // Handle # as length operator or hotkey modifier
-    if (c == '#') {
-      // Determine if we're in expression context or statement context
-      bool inExpressionContext = false;
-      if (!tokens.empty()) {
-        TokenType prevType = tokens.back().type;
-        inExpressionContext = (prevType == TokenType::Number ||
+// Handle # as length operator or hotkey modifier
+        if (c == '#') {
+        // Determine if we're in expression context or statement context
+            bool inExpressionContext = false;
+            if (!tokens.empty()) {
+                TokenType prevType = tokens.back().type;
+                inExpressionContext = (prevType == TokenType::Number ||
 prevType == TokenType::String || prevType == TokenType::InterpolatedString || prevType == TokenType::MultilineString || prevType == TokenType::RegexString ||
 prevType == TokenType::Identifier ||
           prevType == TokenType::True || prevType == TokenType::False ||
@@ -1013,16 +1013,18 @@ prevType == TokenType::Not ||
         prevType == TokenType::Return);
       }
 
-      // If followed by identifier, '(', '[', string, or number
-      if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
-        // In expression context, treat as length operator
-        // In statement context, treat as hotkey modifier
-        if (inExpressionContext) {
-          tokens.push_back(makeToken("#", TokenType::Length));
-          if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
-          }
-          continue;
+
+        // If followed by identifier, '(', '[', string, or number
+        if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
+            // In expression context, treat as length operator
+            // In statement context, treat as hotkey modifier
+                if (inExpressionContext) {
+                    auto lenToken = makeToken("#", TokenType::Length);
+                    tokens.push_back(lenToken);
+                if (debug_lexer) {
+                    havel::debug("LEX: {}", tokens.back().toString());
+                }
+                continue;
         }
         // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
         tokens.push_back(scanHotkey());

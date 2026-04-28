@@ -1,0 +1,7 @@
+_r = shell.exec("echo hello")
+print("raw result: " + str(_r))
+print("type: " + type(_r))
+
+_x = shell.run("echo hello")
+print("run result: " + str(_x))
+print("run type: " + type(_x))

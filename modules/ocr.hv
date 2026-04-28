@@ -1,0 +1,236 @@
+// ocr.hv — OCR via Tesseract C API + Leptonica FFI
+// Uses TessBaseAPICreate/Init3/SetImage/Recognize/GetUTF8Text C API
+// Leptonica for image I/O (pixRead handles PNG/JPEG/TIFF/BMP)
+// Provides: ocr.init, ocr.close, ocr.recognize, ocr.recognizeFile,
+//           ocr.confidence, ocr.words, ocr.setVariable,
+//           ocr.setPageSegMode, ocr.fromScreenshot, ocr.version
+
+use ffi
+
+_tess = ffi.open("libtesseract.so.5")
+if _tess == 0 { _tess = ffi.open("libtesseract.so") }
+
+_lept = ffi.open("libleptonica.so.6")
+if _lept == 0 { _lept = ffi.open("libleptonica.so") }
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_TessBaseAPICreate = ffi.sym(_tess, "TessBaseAPICreate")
+_TessBaseAPIDelete = ffi.sym(_tess, "TessBaseAPIDelete")
+_TessBaseAPIInit3 = ffi.sym(_tess, "TessBaseAPIInit3")
+_TessBaseAPIEnd = ffi.sym(_tess, "TessBaseAPIEnd")
+_TessBaseAPISetImage = ffi.sym(_tess, "TessBaseAPISetImage")
+_TessBaseAPISetImage2 = ffi.sym(_tess, "TessBaseAPISetImage2")
+_TessBaseAPISetPageSegMode = ffi.sym(_tess, "TessBaseAPISetPageSegMode")
+_TessBaseAPIRecognize = ffi.sym(_tess, "TessBaseAPIRecognize")
+_TessBaseAPIGetUTF8Text = ffi.sym(_tess, "TessBaseAPIGetUTF8Text")
+_TessBaseAPIMeanTextConf = ffi.sym(_tess, "TessBaseAPIMeanTextConf")
+_TessBaseAPISetVariable = ffi.sym(_tess, "TessBaseAPISetVariable")
+_TessBaseAPIClear = ffi.sym(_tess, "TessBaseAPIClear")
+_TessBaseAPIGetIterator = ffi.sym(_tess, "TessBaseAPIGetIterator")
+_TessResultIteratorDelete = ffi.sym(_tess, "TessResultIteratorDelete")
+_TessResultIteratorNext = ffi.sym(_tess, "TessResultIteratorNext")
+_TessResultIteratorGetUTF8Text = ffi.sym(_tess, "TessResultIteratorGetUTF8Text")
+_TessResultIteratorConfidence = ffi.sym(_tess, "TessResultIteratorConfidence")
+_TessDeleteText = ffi.sym(_tess, "TessDeleteText")
+_TessDeleteIntArray = ffi.sym(_tess, "TessDeleteIntArray")
+_TessVersion = ffi.sym(_tess, "TessVersion")
+
+_pixRead = ffi.sym(_lept, "pixRead")
+_pixDestroy = ffi.sym(_lept, "pixDestroy")
+_pixGetWidth = ffi.sym(_lept, "pixGetWidth")
+_pixGetHeight = ffi.sym(_lept, "pixGetHeight")
+_pixGetDepth = ffi.sym(_lept, "pixGetDepth")
+_pixGetData = ffi.sym(_lept, "pixGetData")
+_pixGetWpl = ffi.sym(_lept, "pixGetWpl")
+_pixConvertTo32 = ffi.sym(_lept, "pixConvertTo32")
+_pixConvertTo8 = ffi.sym(_lept, "pixConvertTo8")
+
+_free = ffi.sym(_c, "free")
+_memcpy = ffi.sym(_c, "memcpy")
+
+_OEM_LSTM_ONLY = 1
+_OEM_DEFAULT = 3
+_PSM_AUTO = 3
+_PSM_SINGLE_BLOCK = 6
+_PSM_SINGLE_LINE = 7
+_PSM_SINGLE_WORD = 8
+_RIL_WORD = 3
+
+fn version() {
+  _v = ffi.call(_TessVersion, "pointer", [])
+  if _v == 0 { "unknown" } else { ffi.string(_v) }
+}
+
+fn init(lang, oem) {
+  if lang == null { lang = "eng" }
+  if oem == null { oem = _OEM_LSTM_ONLY }
+  _api = ffi.call(_TessBaseAPICreate, "pointer", [])
+  if _api == 0 { return null }
+  _lang_cs = ffi.cstring(lang)
+  _ret = ffi.call(_TessBaseAPIInit3, "int32", ["pointer", "pointer", "pointer"], _api, 0, _lang_cs)
+  ffi.free(_lang_cs)
+  if _ret != 0 {
+    ffi.call(_TessBaseAPIEnd, "void", ["pointer"], _api)
+    ffi.call(_TessBaseAPIDelete, "void", ["pointer"], _api)
+    return null
+  }
+  _api
+}
+
+fn close(api) {
+  if api == null || api == 0 { return null }
+  ffi.call(_TessBaseAPIEnd, "void", ["pointer"], api)
+  ffi.call(_TessBaseAPIDelete, "void", ["pointer"], api)
+  null
+}
+
+fn recognizeFile(api, path) {
+  if api == null || api == 0 { return "" }
+  _path_cs = ffi.cstring(path)
+  _pix = ffi.call(_pixRead, "pointer", ["pointer"], _path_cs)
+  ffi.free(_path_cs)
+  if _pix == 0 { return "" }
+  ffi.call(_TessBaseAPISetImage2, "void", ["pointer", "pointer"], api, _pix)
+  ffi.call(_TessBaseAPIRecognize, "int32", ["pointer", "pointer"], api, 0)
+  _text_ptr = ffi.call(_TessBaseAPIGetUTF8Text, "pointer", ["pointer"], api)
+  _text = ""
+  if _text_ptr != 0 {
+    _text = ffi.string(_text_ptr)
+    ffi.call(_TessDeleteText, "void", ["pointer"], _text_ptr)
+  }
+  _pix_ptr_ptr = ffi.allocBytes(8)
+  ffi.set_ptr(_pix_ptr_ptr, _pix)
+  ffi.call(_pixDestroy, "void", ["pointer"], _pix_ptr_ptr)
+  ffi.free(_pix_ptr_ptr)
+  ffi.call(_TessBaseAPIClear, "void", ["pointer"], api)
+  _text
+}
+
+fn recognize(api, width, height, pixels, bpp, bpl) {
+  if api == null || api == 0 { return "" }
+  if bpp == null { bpp = 4 }
+  if bpl == null { bpl = width * bpp }
+  ffi.call(_TessBaseAPISetImage, "void", ["pointer", "pointer", "int32", "int32", "int32", "int32"], api, pixels, width, height, bpp, bpl)
+  ffi.call(_TessBaseAPIRecognize, "int32", ["pointer", "pointer"], api, 0)
+  _text_ptr = ffi.call(_TessBaseAPIGetUTF8Text, "pointer", ["pointer"], api)
+  _text = ""
+  if _text_ptr != 0 {
+    _text = ffi.string(_text_ptr)
+    ffi.call(_TessDeleteText, "void", ["pointer"], _text_ptr)
+  }
+  ffi.call(_TessBaseAPIClear, "void", ["pointer"], api)
+  _text
+}
+
+fn fromScreenshot(api, shot) {
+  if api == null || shot == null { return "" }
+  recognize(api, shot.width, shot.height, shot.pixels, 4, shot.width * 4)
+}
+
+fn confidence(api) {
+  if api == null || api == 0 { return 0 }
+  ffi.call(_TessBaseAPIMeanTextConf, "int32", ["pointer"], api)
+}
+
+fn words(api) {
+  if api == null || api == 0 { return [] }
+  _it = ffi.call(_TessBaseAPIGetIterator, "pointer", ["pointer"], api)
+  if _it == 0 { return [] }
+  _result = []
+  _looping = true
+  while _looping {
+    _word_ptr = ffi.call(_TessResultIteratorGetUTF8Text, "pointer", ["pointer", "int32"], _it, _RIL_WORD)
+    if _word_ptr == 0 {
+      _looping = false
+    } else {
+      _word = ffi.string(_word_ptr)
+      ffi.call(_TessDeleteText, "void", ["pointer"], _word_ptr)
+      _conf = ffi.call(_TessResultIteratorConfidence, "float32", ["pointer", "int32"], _it, _RIL_WORD)
+      _result.push({text: _word, confidence: _conf})
+      _next = ffi.call(_TessResultIteratorNext, "int32", ["pointer", "int32"], _it, _RIL_WORD)
+      if _next == 0 { _looping = false }
+    }
+  }
+  ffi.call(_TessResultIteratorDelete, "void", ["pointer"], _it)
+  _result
+}
+
+fn setVariable(api, name, value) {
+  if api == null || api == 0 { return false }
+  _name_cs = ffi.cstring(name)
+  _value_cs = ffi.cstring(value)
+  _ret = ffi.call(_TessBaseAPISetVariable, "int32", ["pointer", "pointer", "pointer"], api, _name_cs, _value_cs)
+  ffi.free(_name_cs)
+  ffi.free(_value_cs)
+  _ret != 0
+}
+
+fn setPageSegMode(api, psm) {
+  if api == null || api == 0 { return null }
+  if psm == null { psm = _PSM_AUTO }
+  ffi.call(_TessBaseAPISetPageSegMode, "void", ["pointer", "int32"], api, psm)
+  null
+}
+
+fn pixLoad(path) {
+  _path_cs = ffi.cstring(path)
+  _pix = ffi.call(_pixRead, "pointer", ["pointer"], _path_cs)
+  ffi.free(_path_cs)
+  if _pix == 0 { return null }
+  _w = ffi.call(_pixGetWidth, "int32", ["pointer"], _pix)
+  _h = ffi.call(_pixGetHeight, "int32", ["pointer"], _pix)
+  _d = ffi.call(_pixGetDepth, "int32", ["pointer"], _pix)
+  {pix: _pix, width: _w, height: _h, depth: _d}
+}
+
+fn pixFree(pixObj) {
+  if pixObj == null { return null }
+  _pix_ptr_ptr = ffi.allocBytes(8)
+  ffi.set_ptr(_pix_ptr_ptr, pixObj.pix)
+  ffi.call(_pixDestroy, "void", ["pointer"], _pix_ptr_ptr)
+  ffi.free(_pix_ptr_ptr)
+  null
+}
+
+fn pixToRGBA(pixObj) {
+  if pixObj == null { return null }
+  _pix32 = pixObj.pix
+  if pixObj.depth != 32 {
+    _pix32 = ffi.call(_pixConvertTo32, "pointer", ["pointer"], pixObj.pix)
+    if _pix32 == 0 { return null }
+  }
+  _w = ffi.call(_pixGetWidth, "int32", ["pointer"], _pix32)
+  _h = ffi.call(_pixGetHeight, "int32", ["pointer"], _pix32)
+  _data = ffi.call(_pixGetData, "pointer", ["pointer"], _pix32)
+  _wpl = ffi.call(_pixGetWpl, "int32", ["pointer"], _pix32)
+  _size = _w * _h * 4
+  _pixels = ffi.allocBytes(_size)
+  for _y in range(0, _h) {
+    for _x in range(0, _w) {
+      _src_off = _y * _wpl + _x
+      _pixel = ffi.get_u32(ffi.ptr_add(_data, _src_off * 4))
+      _b = ((_pixel & 255))
+      _gt = _pixel >> 8
+      _g = ((_gt & 255))
+      _rt = _pixel >> 16
+      _r = ((_rt & 255))
+      _at = _pixel >> 24
+      _a = ((_at & 255))
+      if _a == 0 { _a = 255 }
+      _dst_off = (_y * _w + _x) * 4
+      ffi.set_u8(ffi.ptr_add(_pixels, _dst_off), _r)
+      ffi.set_u8(ffi.ptr_add(_pixels, _dst_off + 1), _g)
+      ffi.set_u8(ffi.ptr_add(_pixels, _dst_off + 2), _b)
+      ffi.set_u8(ffi.ptr_add(_pixels, _dst_off + 3), _a)
+    }
+  }
+  if pixObj.depth != 32 {
+    _pp = ffi.allocBytes(8)
+    ffi.set_ptr(_pp, _pix32)
+    ffi.call(_pixDestroy, "void", ["pointer"], _pp)
+    ffi.free(_pp)
+  }
+  {width: _w, height: _h, pixels: _pixels, format: "rgba8"}
+}

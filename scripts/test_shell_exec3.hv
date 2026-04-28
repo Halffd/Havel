@@ -1,0 +1,4 @@
+use shell
+
+_r = shell.exec("echo hello")
+print("result: " + str(_r))

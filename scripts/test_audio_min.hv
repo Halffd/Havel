@@ -1,0 +1,8 @@
+use shell
+
+fn test() {
+  _r = shell.exec("pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null")
+  print(_r.stdout)
+}
+
+test()

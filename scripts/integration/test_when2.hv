@@ -1,0 +1,15 @@
+// test_when_loop.hv
+x = 0
+
+when x > 5 {
+    print("triggered!")
+    exit(0)
+}
+
+x = 10
+print("x set to 10")
+
+// Keep running to let event loop process
+while true {
+    sleep(100)
+}

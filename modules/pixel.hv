@@ -1,0 +1,142 @@
+// pixel.hv — Pixel reading and matching via X11 FFI
+// Provides: pixel.get, pixel.cursor, pixel.colorAt, pixel.wait,
+// pixel.hex, pixel.waitForColor
+
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_XGetImage = ffi.sym(_xlib, "XGetImage")
+_XDestroyImage = ffi.sym(_xlib, "XDestroyImage")
+_DefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_XQueryPointer = ffi.sym(_xlib, "XQueryPointer")
+_XFlush = ffi.sym(_xlib, "XFlush")
+
+_t_p = ["pointer"]
+_t_ppppuuu = ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64"]
+_t_ppppppppu = ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"]
+
+_ALLPLANES = 4294967295
+
+fn _openDisplay() {
+  ffi.call(_XOpenDisplay, "pointer", _t_p, 0)
+}
+
+fn _rootWindow(dpy) {
+  ffi.call(_DefaultRootWindow, "uint64", ["pointer"], dpy)
+}
+
+fn _closeDisplay(dpy) {
+  ffi.call(_XCloseDisplay, "int32", _t_p, dpy)
+}
+
+fn _ximageData(img) {
+  _data_ptr_ptr = ffi.ptr_add(img, 88)
+  ffi.get_ptr(_data_ptr_ptr)
+}
+
+fn get(x, y) {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return null }
+  _root = _rootWindow(_dpy)
+  _img = ffi.call(_XGetImage, "pointer", _t_ppppuuu, _dpy, _root, x, y, 1, 1, _ALLPLANES)
+  if _img == 0 {
+    _closeDisplay(_dpy)
+    return null
+  }
+  _data = _ximageData(_img)
+  _pixel = 0
+  if _data != 0 { _pixel = ffi.get_u32(_data) }
+_b = ((_pixel & 255))
+_gt = _pixel >> 8
+_g = ((_gt & 255))
+_rt = _pixel >> 16
+_r = ((_rt & 255))
+  ffi.call(_XDestroyImage, "int32", _t_p, _img)
+  _closeDisplay(_dpy)
+  {r: _r, g: _g, b: _b, a: 255}
+}
+
+fn cursor() {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return null }
+  _root = _rootWindow(_dpy)
+  _root_ret = ffi.allocBytes(8)
+  _child_ret = ffi.allocBytes(8)
+  _rx_ret = ffi.allocBytes(4)
+  _ry_ret = ffi.allocBytes(4)
+  _wx_ret = ffi.allocBytes(4)
+  _wy_ret = ffi.allocBytes(4)
+  _mask_ret = ffi.allocBytes(4)
+  ffi.call(_XQueryPointer, "int32", _t_ppppppppu, _dpy, _root, _root_ret, _child_ret, _rx_ret, _ry_ret, _wx_ret, _wy_ret, _mask_ret)
+  _rx = ffi.get_i32(_rx_ret)
+  _ry = ffi.get_i32(_ry_ret)
+  ffi.free(_root_ret)
+  ffi.free(_child_ret)
+  ffi.free(_rx_ret)
+  ffi.free(_ry_ret)
+  ffi.free(_wx_ret)
+  ffi.free(_wy_ret)
+  ffi.free(_mask_ret)
+  _closeDisplay(_dpy)
+  {x: _rx, y: _ry}
+}
+
+fn hex(color) {
+  if color == null { return "#000000" }
+  _r = color.r
+  _g = color.g
+  _b = color.b
+  if _r == null { _r = 0 }
+  if _g == null { _g = 0 }
+  if _b == null { _b = 0 }
+_rh = _r >> 4
+_rl = ((_r & 15))
+_gh = _g >> 4
+_gl = ((_g & 15))
+_bh = _b >> 4
+_bl = ((_b & 15))
+  _h = "0123456789abcdef"
+  "${_h[_rh]}${_h[_rl]}${_h[_gh]}${_h[_gl]}${_h[_bh]}${_h[_bl]}"
+}
+
+fn colorAt(x, y, r, g, b, tolerance) {
+  if tolerance == null { tolerance = 10 }
+  _c = get(x, y)
+  if _c == null { return false }
+  _dr = _c.r - r
+  if _dr < 0 { _dr = -_dr }
+  _dg = _c.g - g
+  if _dg < 0 { _dg = -_dg }
+  _db = _c.b - b
+  if _db < 0 { _db = -_db }
+  _dr <= tolerance && _dg <= tolerance && _db <= tolerance
+}
+
+fn wait(x, y, r, g, b, ms) {
+  if ms == null { ms = 5000 }
+  _steps = ms / 50
+  if _steps < 1 { _steps = 1 }
+  for _i in range(0, _steps) {
+    if colorAt(x, y, r, g, b, 10) { return true }
+    time.sleep(50)
+  }
+  false
+}
+
+fn waitForColor(r, g, b, ms) {
+  if ms == null { ms = 5000 }
+  _steps = ms / 100
+  if _steps < 1 { _steps = 1 }
+  for _i in range(0, _steps) {
+    _pos = cursor()
+    if _pos != null {
+      if colorAt(_pos.x, _pos.y, r, g, b, 10) { return true }
+    }
+    time.sleep(100)
+  }
+  false
+}

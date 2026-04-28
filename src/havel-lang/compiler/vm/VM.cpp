@@ -4117,17 +4117,21 @@ void VM::execBinaryOp(const Instruction &instruction) {
     return;
   }
 
-  if (left.isInt() && right.isInt()) {
-    int64_t l = left.asInt();
-    int64_t r = right.asInt();
-    switch (instruction.opcode) {
-    case OpCode::ADD:  pushStack(l + r); break;
-    case OpCode::SUB:  pushStack(l - r); break;
-    case OpCode::MUL:  pushStack(l * r); break;
-    case OpCode::DIV:
-      if (r == 0) throw ScriptThrow{Value("Division by zero")};
-      pushStack(l / r);
-      break;
+    if (left.isInt() && right.isInt()) {
+        int64_t l = left.asInt();
+        int64_t r = right.asInt();
+        switch (instruction.opcode) {
+        case OpCode::ADD: pushStack(l + r); break;
+        case OpCode::SUB: pushStack(l - r); break;
+        case OpCode::MUL: pushStack(l * r); break;
+        case OpCode::DIV:
+            if (r == 0) throw ScriptThrow{Value("Division by zero")};
+            pushStack(static_cast<double>(l) / static_cast<double>(r));
+            break;
+        case OpCode::INT_DIV:
+            if (r == 0) throw ScriptThrow{Value("Division by zero")};
+            pushStack(l / r);
+            break;
     case OpCode::MOD:
       if (r == 0) throw ScriptThrow{Value("Modulo by zero")};
       pushStack(l % r);
@@ -4160,10 +4164,14 @@ void VM::execBinaryOp(const Instruction &instruction) {
     case OpCode::ADD:  pushStack(l + r); break;
     case OpCode::SUB:  pushStack(l - r); break;
     case OpCode::MUL:  pushStack(l * r); break;
-    case OpCode::DIV:
-      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
-      pushStack(l / r);
-      break;
+        case OpCode::DIV:
+            if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+            pushStack(l / r);
+            break;
+        case OpCode::INT_DIV:
+            if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+            pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
+            break;
     case OpCode::MOD:
       if (r == 0.0) COMPILER_THROW("Modulo by zero");
       pushStack(std::fmod(l, r));
@@ -4480,7 +4488,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		case OpCode::ADD: opMethodName = "op_add"; break;
 		case OpCode::SUB: opMethodName = "op_sub"; break;
 		case OpCode::MUL: opMethodName = "op_mul"; break;
-		case OpCode::DIV: opMethodName = "op_div"; break;
+    case OpCode::DIV: opMethodName = "op_div"; break;
+    case OpCode::INT_DIV: opMethodName = "op_int_div"; break;
 		case OpCode::MOD: opMethodName = "op_mod"; break;
 		case OpCode::EQ: opMethodName = "op_eq"; break;
 		case OpCode::NEQ: opMethodName = "op_ne"; break;
@@ -4914,6 +4923,7 @@ break;
     case OpCode::SUB:
     case OpCode::MUL:
     case OpCode::DIV:
+    case OpCode::INT_DIV:
     case OpCode::MOD:
     case OpCode::POW:
     case OpCode::EQ:
@@ -7884,20 +7894,31 @@ const auto &cell = closure->upvalues[upvalue_index];
     break;
   }
 
-  case OpCode::DIV: {
-    Value right = pop();
-    Value left = pop();
-    double l = left.isInt()
-                   ? static_cast<double>(left.asInt())
-                   : left.asDouble();
-    double r = right.isInt()
-                   ? static_cast<double>(right.asInt())
-                   : right.asDouble();
-    if (r == 0)
-      throw ScriptThrow{Value("Division by zero")};
-    push(l / r);
-    break;
-  }
+    case OpCode::DIV: {
+        Value right = pop();
+        Value left = pop();
+        double l = left.isInt()
+            ? static_cast<double>(left.asInt())
+            : left.asDouble();
+        double r = right.isInt()
+            ? static_cast<double>(right.asInt())
+            : right.asDouble();
+        if (r == 0)
+            throw ScriptThrow{Value("Division by zero")};
+        push(l / r);
+        break;
+    }
+
+    case OpCode::INT_DIV: {
+        Value right = pop();
+        Value left = pop();
+        int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
+        int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
+        if (r == 0)
+            throw ScriptThrow{Value("Division by zero")};
+        push(l / r);
+        break;
+    }
 
   case OpCode::EQ: {
     Value right = pop();

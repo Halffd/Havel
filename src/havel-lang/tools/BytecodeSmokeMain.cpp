@@ -43,9 +43,11 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "SUB";
   case OpCode::MUL:
     return "MUL";
-  case OpCode::DIV:
-    return "DIV";
-  case OpCode::MOD:
+    case OpCode::DIV:
+        return "DIV";
+    case OpCode::INT_DIV:
+        return "INT_DIV";
+    case OpCode::MOD:
     return "MOD";
   case OpCode::POW:
     return "POW";

@@ -1899,7 +1899,13 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         if (op == OpCode::ADD) iRes = B.CreateAdd(lIv, rIv);
         else if (op == OpCode::SUB) iRes = B.CreateSub(lIv, rIv);
         else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
-        else if (op == OpCode::DIV) iRes = B.CreateSDiv(lIv, rIv);
+        else if (op == OpCode::INT_DIV) iRes = B.CreateSDiv(lIv, rIv);
+        else if (op == OpCode::DIV) {
+            llvm::Value* lD = B.CreateSIToFP(lIv, f64);
+            llvm::Value* rD = B.CreateSIToFP(rIv, f64);
+            llvm::Value* dRes = B.CreateFDiv(lD, rD);
+            return B.CreateBitCast(dRes, i64);
+        }
         else if (op == OpCode::MOD) iRes = B.CreateSRem(lIv, rIv);
         else iRes = B.CreateAdd(lIv, rIv);
         return boxInt(iRes);
@@ -1914,6 +1920,12 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
         else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
         else if (op == OpCode::DIV) dRes = B.CreateFDiv(lDv, rDv);
+        else if (op == OpCode::INT_DIV) {
+            llvm::Value* lI = B.CreateFPToSI(lDv, i64);
+            llvm::Value* rI = B.CreateFPToSI(rDv, i64);
+            llvm::Value* iRes = B.CreateSDiv(lI, rI);
+            return boxInt(iRes);
+        }
         else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
         else dRes = B.CreateFAdd(lDv, rDv);
         return B.CreateBitCast(dRes, i64);
@@ -1934,13 +1946,20 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
     llvm::Value *lIv = unboxInt(left);
     llvm::Value *rIv = unboxInt(right);
     llvm::Value *iRes = nullptr;
+    llvm::Value *iBoxed = nullptr;
     if (op == OpCode::ADD) iRes = B.CreateAdd(lIv, rIv);
     else if (op == OpCode::SUB) iRes = B.CreateSub(lIv, rIv);
     else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
-    else if (op == OpCode::DIV) iRes = B.CreateSDiv(lIv, rIv);
+    else if (op == OpCode::INT_DIV) iRes = B.CreateSDiv(lIv, rIv);
+    else if (op == OpCode::DIV) {
+        llvm::Value* lD = B.CreateSIToFP(lIv, f64);
+        llvm::Value* rD = B.CreateSIToFP(rIv, f64);
+        llvm::Value* dRes = B.CreateFDiv(lD, rD);
+        iBoxed = B.CreateBitCast(dRes, i64);
+    }
     else if (op == OpCode::MOD) iRes = B.CreateSRem(lIv, rIv);
     else iRes = B.CreateAdd(lIv, rIv); // Fallback
-    llvm::Value *iBoxed = boxInt(iRes);
+    if (!iBoxed) iBoxed = boxInt(iRes);
     auto* iExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
@@ -1951,13 +1970,21 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
     B.SetInsertPoint(dblBB);
     llvm::Value *lDv = B.CreateBitCast(left, f64);
     llvm::Value *rDv = B.CreateBitCast(right, f64);
-    llvm::Value *dRes = nullptr;
-    if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
-    else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
-    else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
-    else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
-    else dRes = B.CreateFDiv(lDv, rDv);
-    llvm::Value *dBoxed = B.CreateBitCast(dRes, i64);
+    llvm::Value *dBoxed = nullptr;
+    if (op == OpCode::INT_DIV) {
+        llvm::Value* lI = B.CreateFPToSI(lDv, i64);
+        llvm::Value* rI = B.CreateFPToSI(rDv, i64);
+        llvm::Value* iRes2 = B.CreateSDiv(lI, rI);
+        dBoxed = boxInt(iRes2);
+    } else {
+        llvm::Value *dRes = nullptr;
+        if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
+        else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
+        else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
+        else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
+        else dRes = B.CreateFDiv(lDv, rDv);
+        dBoxed = B.CreateBitCast(dRes, i64);
+    }
     auto* dExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
@@ -2022,12 +2049,13 @@ auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, ll
         case OpCode::ADD:
         case OpCode::SUB:
         case OpCode::MUL:
-        case OpCode::DIV: {
-            llvm::Value* r = vstack.back(); vstack.pop_back();
-            llvm::Value* l = vstack.back(); vstack.pop_back();
-            vstack.push_back(emitSpecializedBinop(instr.opcode, fb, ip, l, r));
-            break;
-        }
+    case OpCode::DIV:
+    case OpCode::INT_DIV: {
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        vstack.push_back(emitSpecializedBinop(instr.opcode, fb, ip, l, r));
+        break;
+    }
         case OpCode::NEGATE: {
             llvm::Value* v = vstack.back(); vstack.pop_back();
             // Negate: for int48, unbox, negate, rebox; for double, just fneg

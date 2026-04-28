@@ -1,0 +1,309 @@
+// opencv.hv — OpenCV C API bindings via FFI
+// Uses IplImage-based C functions (cvCreateImage, cvResize, cvCvtColor, etc.)
+// imread/imwrite not available via C API in OpenCV4 — use image.hv BMP I/O
+// or the C++ extension (image_extension.so) for PNG/JPEG
+// Provides: opencv.create, opencv.release, opencv.width, opencv.height,
+//           opencv.channels, opencv.fromRGBA, opencv.toRGBA,
+//           opencv.resize, opencv.cvtColor, opencv.blur, opencv.canny,
+//           opencv.matchTemplate, opencv.line, opencv.rectangle, opencv.circle
+
+use ffi
+
+_core = ffi.open("libopencv_core.so")
+if _core == 0 { _core = ffi.open("libopencv_core.so.413") }
+if _core == 0 { _core = ffi.open("libopencv_core.so.409") }
+if _core == 0 { _core = ffi.open("libopencv_core.so.408") }
+
+_imgproc = ffi.open("libopencv_imgproc.so")
+if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.413") }
+if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.409") }
+if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.408") }
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_cvCreateImage = ffi.sym(_core, "cvCreateImage")
+_cvReleaseImage = ffi.sym(_core, "cvReleaseImage")
+_cvReleaseData = ffi.sym(_core, "cvReleaseData")
+_cvReleaseImageHeader = ffi.sym(_core, "cvReleaseImageHeader")
+_cvCloneImage = ffi.sym(_core, "cvCloneImage")
+
+_cvResize = ffi.sym(_imgproc, "cvResize")
+_cvCvtColor = ffi.sym(_imgproc, "cvCvtColor")
+_cvSmooth = ffi.sym(_imgproc, "cvSmooth")
+_cvCanny = ffi.sym(_imgproc, "cvCanny")
+_cvMatchTemplate = ffi.sym(_imgproc, "cvMatchTemplate")
+_cvLine = ffi.sym(_imgproc, "cvLine")
+_cvRectangle = ffi.sym(_imgproc, "cvRectangle")
+_cvCircle = ffi.sym(_imgproc, "cvCircle")
+
+_memcpy = ffi.sym(_c, "memcpy")
+_free = ffi.sym(_c, "free")
+
+_IPL_DEPTH_8U = 8
+_CV_GAUSSIAN = 5
+_CV_INTER_LINEAR = 1
+_CV_INTER_AREA = 3
+_CV_INTER_CUBIC = 2
+_CV_BGR2GRAY = 6
+_CV_GRAY2BGR = 8
+_CV_BGR2RGB = 4
+_CV_RGB2GRAY = 7
+_CV_RGB2BGR = 4
+_CV_TM_SQDIFF_NORMED = 1
+_CV_TM_CCOEFF_NORMED = 5
+
+fn _p(ptr, n) {
+  ffi.ptr_add(ptr, n)
+}
+
+fn create(width, height, channels) {
+  if channels == null { channels = 3 }
+  _size = ffi.allocBytes(8)
+  ffi.set_i32(_size, width)
+  ffi.set_i32(ffi.ptr_add(_size, 4), height)
+  _img = ffi.call(_cvCreateImage, "pointer", ["pointer", "int32", "int32"], _size, _IPL_DEPTH_8U, channels)
+  ffi.free(_size)
+  if _img == 0 { null } else { _img }
+}
+
+fn release(img) {
+  if img == null || img == 0 { return null }
+  _ptr_ptr = ffi.allocBytes(8)
+  ffi.set_ptr(_ptr_ptr, img)
+  ffi.call(_cvReleaseImage, "void", ["pointer"], _ptr_ptr)
+  ffi.free(_ptr_ptr)
+  null
+}
+
+fn width(img) {
+  if img == null || img == 0 { 0 } else { ffi.get_i32(ffi.ptr_add(img, 40)) }
+}
+
+fn height(img) {
+  if img == null || img == 0 { 0 } else { ffi.get_i32(ffi.ptr_add(img, 44)) }
+}
+
+fn channels(img) {
+  if img == null || img == 0 { 0 } else { ffi.get_i32(ffi.ptr_add(img, 8)) }
+}
+
+fn fromRGBA(rgbaData, w, h) {
+  _img = create(w, h, 3)
+  if _img == null { return null }
+  _st = ffi.get_i32(_p(_img, 96))
+  _dt = ffi.get_ptr(_p(_img, 88))
+  for _y in range(0, h) {
+    for _x in range(0, w) {
+      _src = _p(rgbaData, (_y * w + _x) * 4)
+      _r = ffi.get_u8(_src)
+      _g = ffi.get_u8(_p(_src, 1))
+      _b = ffi.get_u8(_p(_src, 2))
+      _dst = _p(_dt, _y * _st + _x * 3)
+      ffi.set_u8(_dst, _b)
+      ffi.set_u8(_p(_dst, 1), _g)
+      ffi.set_u8(_p(_dst, 2), _r)
+    }
+  }
+  _img
+}
+
+fn fromScreenshot(shot) {
+  if shot == null { return null }
+  fromRGBA(shot.pixels, shot.width, shot.height)
+}
+
+fn toRGBA(img) {
+  if img == null || img == 0 { return null }
+  _w = width(img)
+  _h = height(img)
+  _ch = channels(img)
+  _st = ffi.get_i32(_p(img, 96))
+  _dt = ffi.get_ptr(_p(img, 88))
+  _size = _w * _h * 4
+  _pixels = ffi.allocBytes(_size)
+  if _ch == 3 {
+    for _y in range(0, _h) {
+      for _x in range(0, _w) {
+        _src = _p(_dt, _y * _st + _x * 3)
+        _b = ffi.get_u8(_src)
+        _g = ffi.get_u8(_p(_src, 1))
+        _r = ffi.get_u8(_p(_src, 2))
+        _dst = _p(_pixels, (_y * _w + _x) * 4)
+        ffi.set_u8(_dst, _r)
+        ffi.set_u8(_p(_dst, 1), _g)
+        ffi.set_u8(_p(_dst, 2), _b)
+        ffi.set_u8(_p(_dst, 3), 255)
+      }
+    }
+  } else if _ch == 1 {
+    for _y in range(0, _h) {
+      for _x in range(0, _w) {
+        _src = _p(_dt, _y * _st + _x)
+        _gray = ffi.get_u8(_src)
+        _dst = _p(_pixels, (_y * _w + _x) * 4)
+        ffi.set_u8(_dst, _gray)
+        ffi.set_u8(_p(_dst, 1), _gray)
+        ffi.set_u8(_p(_dst, 2), _gray)
+        ffi.set_u8(_p(_dst, 3), 255)
+      }
+    }
+  }
+  {width: _w, height: _h, pixels: _pixels, format: "rgba8"}
+}
+
+fn resize(img, nw, nh, interpolation) {
+  if img == null || img == 0 { return null }
+  if interpolation == null { interpolation = _CV_INTER_LINEAR }
+  _dst = create(nw, nh, channels(img))
+  if _dst == null { return null }
+  ffi.call(_cvResize, "void", ["pointer", "pointer", "int32"], img, _dst, interpolation)
+  _dst
+}
+
+fn cvtColor(img, code) {
+  if img == null || img == 0 { return null }
+  if code == null { code = _CV_BGR2GRAY }
+  _src_ch = channels(img)
+  _dst_ch = 3
+  if code == _CV_BGR2GRAY || code == _CV_RGB2GRAY { _dst_ch = 1 }
+  else if code == _CV_GRAY2BGR { _dst_ch = 3 }
+  _dst = create(width(img), height(img), _dst_ch)
+  if _dst == null { return null }
+  ffi.call(_cvCvtColor, "void", ["pointer", "pointer", "int32"], img, _dst, code)
+  _dst
+}
+
+fn blur(img, ksize) {
+  if img == null || img == 0 { return null }
+  if ksize == null { ksize = 3 }
+  _dst = create(width(img), height(img), channels(img))
+  if _dst == null { return null }
+  ffi.call(_cvSmooth, "void", ["pointer", "pointer", "int32", "int32", "int32", "float64", "float64"], img, _dst, _CV_GAUSSIAN, ksize, 0, 0.0, 0.0)
+  _dst
+}
+
+fn canny(img, threshold1, threshold2, aperture) {
+  if img == null || img == 0 { return null }
+  if threshold1 == null { threshold1 = 100.0 }
+  if threshold2 == null { threshold2 = 200.0 }
+  if aperture == null { aperture = 3 }
+  _gray = img
+  if channels(img) == 3 { _gray = cvtColor(img, _CV_BGR2GRAY) }
+  _dst = create(width(img), height(img), 1)
+  if _dst == null { return null }
+  ffi.call(_cvCanny, "void", ["pointer", "pointer", "float64", "float64", "int32"], _gray, _dst, threshold1, threshold2, aperture)
+  if channels(img) == 3 { release(_gray) }
+  _dst
+}
+
+fn matchTemplate(image, templ, method) {
+  if image == null || templ == null { return null }
+  if method == null { method = _CV_TM_CCOEFF_NORMED }
+  _iw = width(image)
+  _ih = height(image)
+  _tw = width(templ)
+  _th = height(templ)
+  _rw = _iw - _tw + 1
+  _rh = _ih - _th + 1
+  if _rw <= 0 || _rh <= 0 { return null }
+  _src_ch = channels(image)
+  _tmpl_ch = channels(templ)
+  _src = image
+  _tmpl = templ
+  if _src_ch != _tmpl_ch {
+    if _src_ch == 3 && _tmpl_ch == 1 { _tmpl = cvtColor(templ, _CV_GRAY2BGR) }
+    else if _src_ch == 1 && _tmpl_ch == 3 { _src = cvtColor(image, _CV_GRAY2BGR) }
+  }
+  _result = create(_rw, _rh, 1)
+  if _result == null { return null }
+  ffi.call(_cvMatchTemplate, "void", ["pointer", "pointer", "pointer", "int32"], _src, _tmpl, _result, method)
+  if _src != image { release(_src) }
+  if _tmpl != templ { release(_tmpl) }
+  _result
+}
+
+fn _makePoint(x, y) {
+  _pt = ffi.allocBytes(8)
+  ffi.set_i32(_pt, x)
+  ffi.set_i32(_p(_pt, 4), y)
+  _pt
+}
+
+fn _makeScalar(v0, v1, v2, v3) {
+  _s = ffi.allocBytes(32)
+  ffi.set_f64(_s, v0)
+  ffi.set_f64(_p(_s, 8), v1)
+  ffi.set_f64(_p(_s, 16), v2)
+  ffi.set_f64(_p(_s, 24), v3)
+  _s
+}
+
+fn line(img, x1, y1, x2, y2, r, g, b, thickness) {
+  if img == null || img == 0 { return null }
+  if r == null { r = 255 }
+  if g == null { g = 255 }
+  if b == null { b = 255 }
+  if thickness == null { thickness = 1 }
+  _pt1 = _makePoint(x1, y1)
+  _pt2 = _makePoint(x2, y2)
+  _color = _makeScalar(b, g, r, 0)
+  ffi.call(_cvLine, "void", ["pointer", "pointer", "pointer", "pointer", "int32", "int32", "int32"], img, _pt1, _pt2, _color, thickness, 8, 0)
+  ffi.free(_pt1)
+  ffi.free(_pt2)
+  ffi.free(_color)
+  null
+}
+
+fn rectangle(img, x1, y1, x2, y2, r, g, b, thickness) {
+  if img == null || img == 0 { return null }
+  if r == null { r = 255 }
+  if g == null { g = 255 }
+  if b == null { b = 255 }
+  if thickness == null { thickness = 1 }
+  _pt1 = _makePoint(x1, y1)
+  _pt2 = _makePoint(x2, y2)
+  _color = _makeScalar(b, g, r, 0)
+  ffi.call(_cvRectangle, "void", ["pointer", "pointer", "pointer", "pointer", "int32", "int32", "int32"], img, _pt1, _pt2, _color, thickness, 8, 0)
+  ffi.free(_pt1)
+  ffi.free(_pt2)
+  ffi.free(_color)
+  null
+}
+
+fn circle(img, cx, cy, radius, r, g, b, thickness) {
+  if img == null || img == 0 { return null }
+  if r == null { r = 255 }
+  if g == null { g = 255 }
+  if b == null { b = 255 }
+  if thickness == null { thickness = 1 }
+  _center = _makePoint(cx, cy)
+  _color = _makeScalar(b, g, r, 0)
+  ffi.call(_cvCircle, "void", ["pointer", "pointer", "int32", "pointer", "int32", "int32", "int32"], img, _center, radius, _color, thickness, 8, 0)
+  ffi.free(_center)
+  ffi.free(_color)
+  null
+}
+
+fn findBestMatch(resultImg) {
+  if resultImg == null || resultImg == 0 { return null }
+  _w = width(resultImg)
+  _h = height(resultImg)
+  _st = ffi.get_i32(_p(resultImg, 96))
+  _dt = ffi.get_ptr(_p(resultImg, 88))
+  _best_val = -999999.0
+  _best_x = 0
+  _best_y = 0
+  for _y in range(0, _h) {
+    for _x in range(0, _w) {
+      _off = _y * _st + _x * 4
+      _v = ffi.get_f32(_p(_dt, _off))
+      if _v > _best_val {
+        _best_val = _v
+        _best_x = _x
+        _best_y = _y
+      }
+    }
+  }
+  {x: _best_x, y: _best_y, confidence: _best_val}
+}

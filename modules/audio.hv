@@ -1,0 +1,371 @@
+// audio.hv — Audio control module via pactl
+// Uses FFI popen/pclose for command execution
+// Provides: audio.volume, audio.mute, audio.toggleMute,
+//           audio.sinks, audio.defaultSink, audio.sinkVolume, audio.sinkMute,
+//           audio.setSinkDefault, audio.sources, audio.defaultSource,
+//           audio.sourceVolume, audio.sourceMute, audio.setSourceDefault,
+//           audio.apps, audio.appVolume, audio.appMute,
+//           audio.volumeUp, audio.volumeDown
+
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_popen = ffi.sym(_c, "popen")
+_pclose = ffi.sym(_c, "pclose")
+_fgets = ffi.sym(_c, "fgets")
+_fread = ffi.sym(_c, "fread")
+_feof = ffi.sym(_c, "feof")
+_system = ffi.sym(_c, "system")
+
+_fn_null = ffi.sym(_c, "free")
+
+fn _shell(cmd) {
+  _cs = ffi.cstring(cmd)
+  _mode = ffi.cstring("r")
+  _fp = ffi.call(_popen, "pointer", ["pointer", "pointer"], _cs, _mode)
+  ffi.free(_cs)
+  ffi.free(_mode)
+  if _fp == 0 { return "" }
+  _buf = ffi.allocBytes(8192)
+  _result = ""
+  _looping = true
+  while _looping {
+    _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 8192, _fp)
+    if _ret == 0 {
+      _looping = false
+    } else {
+      _chunk = ffi.string(_buf)
+      _result = _result + _chunk
+    }
+  }
+  ffi.call(_pclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  _result
+}
+
+fn _shellQuiet(cmd) {
+  _cs = ffi.cstring(cmd + " 2>/dev/null")
+  _mode = ffi.cstring("r")
+  _fp = ffi.call(_popen, "pointer", ["pointer", "pointer"], _cs, _mode)
+  ffi.free(_cs)
+  ffi.free(_mode)
+  if _fp == 0 { return "" }
+  _buf = ffi.allocBytes(8192)
+  _result = ""
+  _looping = true
+  while _looping {
+    _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 8192, _fp)
+    if _ret == 0 {
+      _looping = false
+    } else {
+      _chunk = ffi.string(_buf)
+      _result = _result + _chunk
+    }
+  }
+  ffi.call(_pclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  _result
+}
+
+fn _run(cmd) {
+  _cs = ffi.cstring(cmd + " 2>/dev/null")
+  ffi.call(_system, "int32", ["pointer"], _cs)
+  ffi.free(_cs)
+}
+
+fn _pactl(args) {
+  _shellQuiet("pactl " + args)
+}
+
+fn _parseVolPct(volStr) {
+  if volStr == null || #volStr == 0 { return 0 }
+  _idx = volStr.find("/")
+  if _idx == null || _idx < 0 { return 0 }
+  _after = volStr[_idx + 1:]
+  _end = _after.find("%")
+  if _end == null || _end < 0 { return 0 }
+  _pct = _after[:_end]
+  _pct = _pct.trim()
+  int(_pct)
+}
+
+fn _parseSinks() {
+  _raw = _pactl("list sinks")
+  if _raw == null || #_raw == 0 { return [] }
+  _lines = _raw.split("\n")
+  _sinks = []
+  _cur = null
+  for _line in _lines {
+    _t = _line.trim()
+    if #_t == 0 { continue }
+    if _t.find("Sink #") == 0 {
+      if _cur != null { _sinks.push(_cur) }
+      _cur = {}
+      _idStr = _t[6:]
+      _cur.id = int(_idStr.trim())
+    } else if _cur != null {
+      if _t.find("Name:") == 0 {
+        _cur.name = _t[5:].trim()
+      } else if _t.find("Description:") == 0 {
+        _cur.description = _t[12:].trim()
+      } else if _t.find("State:") == 0 {
+        _cur.state = _t[6:].trim()
+      } else if _t.find("Mute:") == 0 {
+        _m = _t[5:].trim()
+        _cur.mute = _m == "yes"
+      } else if _t.find("Volume:") == 0 {
+        _cur.volume = _parseVolPct(_t)
+      }
+    }
+  }
+  if _cur != null { _sinks.push(_cur) }
+  _sinks
+}
+
+fn _parseSources() {
+  _raw = _pactl("list sources")
+  if _raw == null || #_raw == 0 { return [] }
+  _lines = _raw.split("\n")
+  _sources = []
+  _cur = null
+  for _line in _lines {
+    _t = _line.trim()
+    if #_t == 0 { continue }
+    if _t.find("Source #") == 0 {
+      if _cur != null { _sources.push(_cur) }
+      _cur = {}
+      _idStr = _t[8:]
+      _cur.id = int(_idStr.trim())
+    } else if _cur != null {
+      if _t.find("Name:") == 0 {
+        _cur.name = _t[5:].trim()
+      } else if _t.find("Description:") == 0 {
+        _cur.description = _t[12:].trim()
+      } else if _t.find("State:") == 0 {
+        _cur.state = _t[6:].trim()
+      } else if _t.find("Mute:") == 0 {
+        _m = _t[5:].trim()
+        _cur.mute = _m == "yes"
+      } else if _t.find("Volume:") == 0 {
+        _cur.volume = _parseVolPct(_t)
+      }
+    }
+  }
+  if _cur != null { _sources.push(_cur) }
+  _sources
+}
+
+fn _parseSinkInputs() {
+  _raw = _pactl("list sink-inputs")
+  if _raw == null || #_raw == 0 { return [] }
+  _lines = _raw.split("\n")
+  _apps = []
+  _cur = null
+  for _line in _lines {
+    _t = _line.trim()
+    if #_t == 0 { continue }
+    if _t.find("Sink Input #") == 0 {
+      if _cur != null { _apps.push(_cur) }
+      _cur = {}
+      _idStr = _t[12:]
+      _cur.id = int(_idStr.trim())
+    } else if _cur != null {
+      _appIdx = _t.find("application.name")
+      if _appIdx != null && _appIdx >= 0 {
+        _eq = _t.find("=")
+        if _eq != null && _eq >= 0 {
+          _val = _t[_eq + 1:]
+          if #_val > 0 && _val[0:1] == "\"" {
+            _endQ = _val.find("\"", 1)
+            if _endQ != null && _endQ > 0 {
+              _cur.app = _val[1:_endQ]
+            }
+          }
+        }
+      } else if _t.find("Sink:") == 0 {
+        _cur.sink = int(_t[5:].trim())
+      } else if _t.find("Mute:") == 0 {
+        _m = _t[5:].trim()
+        _cur.mute = _m == "yes"
+      } else if _t.find("Volume:") == 0 {
+        _cur.volume = _parseVolPct(_t)
+      }
+    }
+  }
+  if _cur != null { _apps.push(_cur) }
+  _apps
+}
+
+fn _defaultSinkName() {
+  _raw = _pactl("get-default-sink")
+  if _raw == null { "" }
+  else { _raw.trim() }
+}
+
+fn _defaultSourceName() {
+  _raw = _pactl("get-default-source")
+  if _raw == null { "" }
+  else { _raw.trim() }
+}
+
+fn volume(val) {
+  if val == null {
+    _raw = _pactl("get-sink-volume @DEFAULT_SINK@")
+    _parseVolPct(_raw)
+  } else {
+    _v = val
+    if _v < 0 { _v = 0 }
+    if _v > 150 { _v = 150 }
+    _run("pactl set-sink-volume @DEFAULT_SINK@ " + str(_v) + "%")
+    null
+  }
+}
+
+fn mute(val) {
+  if val == null {
+    _raw = _pactl("get-sink-mute @DEFAULT_SINK@")
+    if _raw == null { false }
+    else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
+  } else {
+    if val { _run("pactl set-sink-mute @DEFAULT_SINK@ 1") }
+    else { _run("pactl set-sink-mute @DEFAULT_SINK@ 0") }
+    null
+  }
+}
+
+fn toggleMute() {
+  _m = mute()
+  mute(!_m)
+  !_m
+}
+
+fn sinks() {
+  _parseSinks()
+}
+
+fn defaultSink() {
+  _name = _defaultSinkName()
+  if _name == "" { return null }
+  _all = _parseSinks()
+  for _s in _all {
+    if _s.name == _name { return _s }
+  }
+  null
+}
+
+fn sinkVolume(id, val) {
+  if val == null {
+    _raw = _pactl("get-sink-volume " + str(id))
+    _parseVolPct(_raw)
+  } else {
+    _v = val
+    if _v < 0 { _v = 0 }
+    if _v > 150 { _v = 150 }
+    _run("pactl set-sink-volume " + str(id) + " " + str(_v) + "%")
+    null
+  }
+}
+
+fn sinkMute(id, val) {
+  if val == null {
+    _raw = _pactl("get-sink-mute " + str(id))
+    if _raw == null { false }
+    else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
+  } else {
+    if val { _run("pactl set-sink-mute " + str(id) + " 1") }
+    else { _run("pactl set-sink-mute " + str(id) + " 0") }
+    null
+  }
+}
+
+fn setSinkDefault(id) {
+  _run("pactl set-default-sink " + str(id))
+}
+
+fn sources() {
+  _parseSources()
+}
+
+fn defaultSource() {
+  _name = _defaultSourceName()
+  if _name == "" { return null }
+  _all = _parseSources()
+  for _s in _all {
+    if _s.name == _name { return _s }
+  }
+  null
+}
+
+fn sourceVolume(id, val) {
+  if val == null {
+    _raw = _pactl("get-source-volume " + str(id))
+    _parseVolPct(_raw)
+  } else {
+    _v = val
+    if _v < 0 { _v = 0 }
+    if _v > 150 { _v = 150 }
+    _run("pactl set-source-volume " + str(id) + " " + str(_v) + "%")
+    null
+  }
+}
+
+fn sourceMute(id, val) {
+  if val == null {
+    _raw = _pactl("get-source-mute " + str(id))
+    if _raw == null { false }
+    else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
+  } else {
+    if val { _run("pactl set-source-mute " + str(id) + " 1") }
+    else { _run("pactl set-source-mute " + str(id) + " 0") }
+    null
+  }
+}
+
+fn setSourceDefault(id) {
+  _run("pactl set-default-source " + str(id))
+}
+
+fn apps() {
+  _parseSinkInputs()
+}
+
+fn appVolume(id, val) {
+  if val == null {
+    _raw = _pactl("get-sink-input-volume " + str(id))
+    _parseVolPct(_raw)
+  } else {
+    _v = val
+    if _v < 0 { _v = 0 }
+    if _v > 150 { _v = 150 }
+    _run("pactl set-sink-input-volume " + str(id) + " " + str(_v) + "%")
+    null
+  }
+}
+
+fn appMute(id, val) {
+  if val == null {
+    _raw = _pactl("get-sink-input-mute " + str(id))
+    if _raw == null { false }
+    else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
+  } else {
+    if val { _run("pactl set-sink-input-mute " + str(id) + " 1") }
+    else { _run("pactl set-sink-input-mute " + str(id) + " 0") }
+    null
+  }
+}
+
+fn volumeUp(step) {
+  if step == null { step = 5 }
+  _cur = volume()
+  volume(_cur + step)
+}
+
+fn volumeDown(step) {
+  if step == null { step = 5 }
+  _cur = volume()
+  _new = _cur - step
+  if _new < 0 { _new = 0 }
+  volume(_new)
+}

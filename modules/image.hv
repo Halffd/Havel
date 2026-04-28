@@ -1,0 +1,417 @@
+// image.hv — Pure Havel image operations on raw RGBA pixel data
+// No OpenCV dependency — works with screenshot module output
+// Provides: image.create, image.width, image.height, image.getPixel,
+//           image.setPixel, image.fill, image.crop, image.resize,
+//           image.flipH, image.flipV, image.rotate90, image.rotate180,
+//           image.rotate270, image.grayscale, image.invert,
+//           image.brightness, image.contrast, image.blit, image.save,
+//           image.load
+
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_malloc = ffi.sym(_c, "malloc")
+_free = ffi.sym(_c, "free")
+_memcpy = ffi.sym(_c, "memcpy")
+_memset = ffi.sym(_c, "memset")
+_fopen = ffi.sym(_c, "fopen")
+_fwrite = ffi.sym(_c, "fwrite")
+_fread = ffi.sym(_c, "fread")
+_fclose = ffi.sym(_c, "fclose")
+_fseek = ffi.sym(_c, "fseek")
+
+fn _p8(ptr, n) {
+  ffi.ptr_add(ptr, n)
+}
+
+fn create(width, height, r, g, b, a) {
+  if r == null { r = 0 }
+  if g == null { g = 0 }
+  if b == null { b = 0 }
+  if a == null { a = 255 }
+  _size = width * height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _i in range(0, width * height) {
+    ffi.set_u8(_p8(_pixels, _i * 4), r)
+    ffi.set_u8(_p8(_pixels, _i * 4 + 1), g)
+    ffi.set_u8(_p8(_pixels, _i * 4 + 2), b)
+    ffi.set_u8(_p8(_pixels, _i * 4 + 3), a)
+  }
+  {width: width, height: height, pixels: _pixels, format: "rgba8"}
+}
+
+fn width(img) {
+  if img == null { 0 } else { img.width }
+}
+
+fn height(img) {
+  if img == null { 0 } else { img.height }
+}
+
+fn getPixel(img, x, y) {
+  if img == null { return null }
+  if x < 0 || x >= img.width || y < 0 || y >= img.height { return null }
+  _p = _p8(img.pixels, (y * img.width + x) * 4)
+  {r: ffi.get_u8(_p), g: ffi.get_u8(_p8(_p, 1)), b: ffi.get_u8(_p8(_p, 2)), a: ffi.get_u8(_p8(_p, 3))}
+}
+
+fn setPixel(img, x, y, r, g, b, a) {
+  if img == null { return null }
+  if x < 0 || x >= img.width || y < 0 || y >= img.height { return null }
+  if a == null { a = 255 }
+  _p = _p8(img.pixels, (y * img.width + x) * 4)
+  ffi.set_u8(_p, r)
+  ffi.set_u8(_p8(_p, 1), g)
+  ffi.set_u8(_p8(_p, 2), b)
+  ffi.set_u8(_p8(_p, 3), a)
+  null
+}
+
+fn fill(img, r, g, b, a) {
+  if img == null { return null }
+  if a == null { a = 255 }
+  for _i in range(0, img.width * img.height) {
+    _p = _p8(img.pixels, _i * 4)
+    ffi.set_u8(_p, r)
+    ffi.set_u8(_p8(_p, 1), g)
+    ffi.set_u8(_p8(_p, 2), b)
+    ffi.set_u8(_p8(_p, 3), a)
+  }
+  null
+}
+
+fn crop(img, x, y, w, h) {
+  if img == null { return null }
+  if x < 0 { x = 0 }
+  if y < 0 { y = 0 }
+  if x + w > img.width { w = img.width - x }
+  if y + h > img.height { h = img.height - y }
+  _size = w * h * 4
+  _pixels = ffi.allocBytes(_size)
+  for _row in range(0, h) {
+    _src_off = ((y + _row) * img.width + x) * 4
+    _dst_off = _row * w * 4
+    ffi.call(_memcpy, "pointer", ["pointer", "pointer", "uint64"], _p8(_pixels, _dst_off), _p8(img.pixels, _src_off), w * 4)
+  }
+  {width: w, height: h, pixels: _pixels, format: "rgba8"}
+}
+
+fn resize(img, nw, nh) {
+  if img == null { return null }
+  _size = nw * nh * 4
+  _pixels = ffi.allocBytes(_size)
+  _x_ratio = img.width / nw
+  _y_ratio = img.height / nh
+  for _dy in range(0, nh) {
+    _sy = int(_dy * _y_ratio)
+    if _sy >= img.height { _sy = img.height - 1 }
+    for _dx in range(0, nw) {
+      _sx = int(_dx * _x_ratio)
+      if _sx >= img.width { _sx = img.width - 1 }
+      _src = _p8(img.pixels, (_sy * img.width + _sx) * 4)
+      _dst = _p8(_pixels, (_dy * nw + _dx) * 4)
+      ffi.set_u8(_dst, ffi.get_u8(_src))
+      ffi.set_u8(_p8(_dst, 1), ffi.get_u8(_p8(_src, 1)))
+      ffi.set_u8(_p8(_dst, 2), ffi.get_u8(_p8(_src, 2)))
+      ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
+    }
+  }
+  {width: nw, height: nh, pixels: _pixels, format: "rgba8"}
+}
+
+fn flipH(img) {
+  if img == null { return null }
+  _size = img.width * img.height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _y in range(0, img.height) {
+    for _x in range(0, img.width) {
+      _sx = img.width - 1 - _x
+      _src = _p8(img.pixels, (_y * img.width + _sx) * 4)
+      _dst = _p8(_pixels, (_y * img.width + _x) * 4)
+      ffi.set_u8(_dst, ffi.get_u8(_src))
+      ffi.set_u8(_p8(_dst, 1), ffi.get_u8(_p8(_src, 1)))
+      ffi.set_u8(_p8(_dst, 2), ffi.get_u8(_p8(_src, 2)))
+      ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
+    }
+  }
+  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+}
+
+fn flipV(img) {
+  if img == null { return null }
+  _size = img.width * img.height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _y in range(0, img.height) {
+    _sy = img.height - 1 - _y
+    ffi.call(_memcpy, "pointer", ["pointer", "pointer", "uint64"], _p8(_pixels, _y * img.width * 4), _p8(img.pixels, _sy * img.width * 4), img.width * 4)
+  }
+  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+}
+
+fn rotate90(img) {
+  if img == null { return null }
+  _nw = img.height
+  _nh = img.width
+  _size = _nw * _nh * 4
+  _pixels = ffi.allocBytes(_size)
+  for _y in range(0, img.height) {
+    for _x in range(0, img.width) {
+      _src = _p8(img.pixels, (_y * img.width + _x) * 4)
+      _dx = img.height - 1 - _y
+      _dy = _x
+      _dst = _p8(_pixels, (_dy * _nw + _dx) * 4)
+      ffi.set_u8(_dst, ffi.get_u8(_src))
+      ffi.set_u8(_p8(_dst, 1), ffi.get_u8(_p8(_src, 1)))
+      ffi.set_u8(_p8(_dst, 2), ffi.get_u8(_p8(_src, 2)))
+      ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
+    }
+  }
+  {width: _nw, height: _nh, pixels: _pixels, format: "rgba8"}
+}
+
+fn rotate180(img) {
+  if img == null { return null }
+  _fh = flipH(img)
+  _fv = flipV(_fh)
+  ffi.free(_fh.pixels)
+  _fv
+}
+
+fn rotate270(img) {
+  if img == null { return null }
+  _nw = img.height
+  _nh = img.width
+  _size = _nw * _nh * 4
+  _pixels = ffi.allocBytes(_size)
+  for _y in range(0, img.height) {
+    for _x in range(0, img.width) {
+      _src = _p8(img.pixels, (_y * img.width + _x) * 4)
+      _dx = _y
+      _dy = img.width - 1 - _x
+      _dst = _p8(_pixels, (_dy * _nw + _dx) * 4)
+      ffi.set_u8(_dst, ffi.get_u8(_src))
+      ffi.set_u8(_p8(_dst, 1), ffi.get_u8(_p8(_src, 1)))
+      ffi.set_u8(_p8(_dst, 2), ffi.get_u8(_p8(_src, 2)))
+      ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
+    }
+  }
+  {width: _nw, height: _nh, pixels: _pixels, format: "rgba8"}
+}
+
+fn grayscale(img) {
+  if img == null { return null }
+  _size = img.width * img.height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _i in range(0, img.width * img.height) {
+    _s = _p8(img.pixels, _i * 4)
+    _r = ffi.get_u8(_s)
+    _g = ffi.get_u8(_p8(_s, 1))
+    _b = ffi.get_u8(_p8(_s, 2))
+    _a = ffi.get_u8(_p8(_s, 3))
+    _gray = int(_r * 0.299 + _g * 0.587 + _b * 0.114)
+    _d = _p8(_pixels, _i * 4)
+    ffi.set_u8(_d, _gray)
+    ffi.set_u8(_p8(_d, 1), _gray)
+    ffi.set_u8(_p8(_d, 2), _gray)
+    ffi.set_u8(_p8(_d, 3), _a)
+  }
+  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+}
+
+fn invert(img) {
+  if img == null { return null }
+  _size = img.width * img.height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _i in range(0, img.width * img.height) {
+    _s = _p8(img.pixels, _i * 4)
+    _d = _p8(_pixels, _i * 4)
+    ffi.set_u8(_d, 255 - ffi.get_u8(_s))
+    ffi.set_u8(_p8(_d, 1), 255 - ffi.get_u8(_p8(_s, 1)))
+    ffi.set_u8(_p8(_d, 2), 255 - ffi.get_u8(_p8(_s, 2)))
+    ffi.set_u8(_p8(_d, 3), ffi.get_u8(_p8(_s, 3)))
+  }
+  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+}
+
+fn brightness(img, factor) {
+  if img == null { return null }
+  _size = img.width * img.height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _i in range(0, img.width * img.height) {
+    _s = _p8(img.pixels, _i * 4)
+    _d = _p8(_pixels, _i * 4)
+    _r = ffi.get_u8(_s) * factor
+    _g = ffi.get_u8(_p8(_s, 1)) * factor
+    _b = ffi.get_u8(_p8(_s, 2)) * factor
+    _a = ffi.get_u8(_p8(_s, 3))
+    if _r > 255 { _r = 255 }
+    if _g > 255 { _g = 255 }
+    if _b > 255 { _b = 255 }
+    ffi.set_u8(_d, int(_r))
+    ffi.set_u8(_p8(_d, 1), int(_g))
+    ffi.set_u8(_p8(_d, 2), int(_b))
+    ffi.set_u8(_p8(_d, 3), _a)
+  }
+  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+}
+
+fn contrast(img, factor) {
+  if img == null { return null }
+  _size = img.width * img.height * 4
+  _pixels = ffi.allocBytes(_size)
+  for _i in range(0, img.width * img.height) {
+    _s = _p8(img.pixels, _i * 4)
+    _d = _p8(_pixels, _i * 4)
+    _r = (ffi.get_u8(_s) - 128) * factor + 128
+    _g = (ffi.get_u8(_p8(_s, 1)) - 128) * factor + 128
+    _b = (ffi.get_u8(_p8(_s, 2)) - 128) * factor + 128
+    _a = ffi.get_u8(_p8(_s, 3))
+    if _r < 0 { _r = 0 } else if _r > 255 { _r = 255 }
+    if _g < 0 { _g = 0 } else if _g > 255 { _g = 255 }
+    if _b < 0 { _b = 0 } else if _b > 255 { _b = 255 }
+    ffi.set_u8(_d, int(_r))
+    ffi.set_u8(_p8(_d, 1), int(_g))
+    ffi.set_u8(_p8(_d, 2), int(_b))
+    ffi.set_u8(_p8(_d, 3), _a)
+  }
+  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+}
+
+fn blit(dst, dx, dy, src, sx, sy, w, h) {
+  if dst == null || src == null { return null }
+  if sx == null { sx = 0 }
+  if sy == null { sy = 0 }
+  if w == null { w = src.width }
+  if h == null { h = src.height }
+  for _row in range(0, h) {
+    _dy2 = dy + _row
+    _sy2 = sy + _row
+    if _dy2 < 0 || _dy2 >= dst.height { continue }
+    if _sy2 < 0 || _sy2 >= src.height { continue }
+    for _col in range(0, w) {
+      _dx2 = dx + _col
+      _sx2 = sx + _col
+      if _dx2 < 0 || _dx2 >= dst.width { continue }
+      if _sx2 < 0 || _sx2 >= src.width { continue }
+      _sp = _p8(src.pixels, (_sy2 * src.width + _sx2) * 4)
+      _dp = _p8(dst.pixels, (_dy2 * dst.width + _dx2) * 4)
+      ffi.set_u8(_dp, ffi.get_u8(_sp))
+      ffi.set_u8(_p8(_dp, 1), ffi.get_u8(_p8(_sp, 1)))
+      ffi.set_u8(_p8(_dp, 2), ffi.get_u8(_p8(_sp, 2)))
+      ffi.set_u8(_p8(_dp, 3), ffi.get_u8(_p8(_sp, 3)))
+    }
+  }
+  null
+}
+
+fn save(img, path) {
+  if img == null { return false }
+  _w = img.width
+  _h = img.height
+  _pixels = img.pixels
+  _row_size = _w * 4
+  _padded_row = _row_size
+  if _row_size % 4 != 0 { _padded_row = ((_row_size / 4) + 1) * 4 }
+  _pad = _padded_row - _row_size
+  _data_size = _padded_row * _h
+  _file_size = 54 + _data_size
+  _buf = ffi.allocBytes(_file_size)
+  ffi.set_u8(_buf, 66)
+  ffi.set_u8(_p8(_buf, 1), 77)
+  ffi.set_u32(_p8(_buf, 2), _file_size)
+  ffi.set_u32(_p8(_buf, 6), 0)
+  ffi.set_u32(_p8(_buf, 10), 54)
+  ffi.set_u32(_p8(_buf, 14), 40)
+  ffi.set_u32(_p8(_buf, 18), _w)
+  ffi.set_i32(_p8(_buf, 22), _h)
+  ffi.set_u16(_p8(_buf, 26), 1)
+  ffi.set_u16(_p8(_buf, 28), 32)
+  ffi.set_u32(_p8(_buf, 30), 0)
+  ffi.set_u32(_p8(_buf, 34), _data_size)
+  ffi.set_u32(_p8(_buf, 38), 2835)
+  ffi.set_u32(_p8(_buf, 42), 2835)
+  ffi.set_u32(_p8(_buf, 46), 0)
+  ffi.set_u32(_p8(_buf, 50), 0)
+  _off = 54
+  for _y in range(0, _h) {
+    _src_row = _h - 1 - _y
+    for _x in range(0, _w) {
+      _src_off = (_src_row * _w + _x) * 4
+      _r = ffi.get_u8(_p8(_pixels, _src_off))
+      _g = ffi.get_u8(_p8(_pixels, _src_off + 1))
+      _b = ffi.get_u8(_p8(_pixels, _src_off + 2))
+      ffi.set_u8(_p8(_buf, _off), _b)
+      ffi.set_u8(_p8(_buf, _off + 1), _g)
+      ffi.set_u8(_p8(_buf, _off + 2), _r)
+      ffi.set_u8(_p8(_buf, _off + 3), 255)
+      _off = _off + 4
+    }
+    _off = _off + _pad
+  }
+  _path_cs = ffi.cstring(path)
+  _mode_cs = ffi.cstring("wb")
+  _fp = ffi.call(_fopen, "pointer", ["pointer", "pointer"], _path_cs, _mode_cs)
+  ffi.free(_path_cs)
+  ffi.free(_mode_cs)
+  if _fp == 0 {
+    ffi.free(_buf)
+    return false
+  }
+  ffi.call(_fwrite, "int64", ["pointer", "int64", "int64", "pointer"], _buf, 1, _file_size, _fp)
+  ffi.call(_fclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  true
+}
+
+fn load(path) {
+  _path_cs = ffi.cstring(path)
+  _mode_cs = ffi.cstring("rb")
+  _fp = ffi.call(_fopen, "pointer", ["pointer", "pointer"], _path_cs, _mode_cs)
+  ffi.free(_path_cs)
+  ffi.free(_mode_cs)
+  if _fp == 0 { return null }
+  _header = ffi.allocBytes(54)
+  ffi.call(_fread, "int64", ["pointer", "int64", "int64", "pointer"], _header, 1, 54, _fp)
+  _b0 = ffi.get_u8(_header)
+  _b1 = ffi.get_u8(_p8(_header, 1))
+  if _b0 != 66 || _b1 != 77 {
+    ffi.call(_fclose, "int32", ["pointer"], _fp)
+    ffi.free(_header)
+    return null
+  }
+  _w = ffi.get_u32(_p8(_header, 18))
+  _h = ffi.get_i32(_p8(_header, 22))
+  if _h < 0 { _h = -_h }
+  ffi.call(_fseek, "int32", ["pointer", "int64", "int32"], _fp, 54, 0)
+  _row_size = _w * 4
+  _padded_row = _row_size
+  if _row_size % 4 != 0 { _padded_row = ((_row_size / 4) + 1) * 4 }
+  _pad = _padded_row - _row_size
+  _data_size = _padded_row * _h
+  _raw = ffi.allocBytes(_data_size)
+  ffi.call(_fread, "int64", ["pointer", "int64", "int64", "pointer"], _raw, 1, _data_size, _fp)
+  ffi.call(_fclose, "int32", ["pointer"], _fp)
+  ffi.free(_header)
+  _pixels = ffi.allocBytes(_w * _h * 4)
+  _src_off = 0
+  for _y in range(0, _h) {
+    _dst_row = _h - 1 - _y
+    for _x in range(0, _w) {
+      _b = ffi.get_u8(_p8(_raw, _src_off))
+      _g = ffi.get_u8(_p8(_raw, _src_off + 1))
+      _r = ffi.get_u8(_p8(_raw, _src_off + 2))
+      _a = ffi.get_u8(_p8(_raw, _src_off + 3))
+      _dst_off = (_dst_row * _w + _x) * 4
+      ffi.set_u8(_p8(_pixels, _dst_off), _r)
+      ffi.set_u8(_p8(_pixels, _dst_off + 1), _g)
+      ffi.set_u8(_p8(_pixels, _dst_off + 2), _b)
+      ffi.set_u8(_p8(_pixels, _dst_off + 3), _a)
+      _src_off = _src_off + 4
+    }
+    _src_off = _src_off + _pad
+  }
+  ffi.free(_raw)
+  {width: _w, height: _h, pixels: _pixels, format: "rgba8"}
+}

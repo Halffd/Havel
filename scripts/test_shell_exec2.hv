@@ -1,0 +1,8 @@
+print("shell.run type: " + type(shell))
+print("shell.exec type: " + type(shell.exec))
+_r = shell.exec("echo hello")
+print("result: " + str(_r))
+print("type: " + type(_r))
+
+_r2 = shell.run("pactl get-sink-volume @DEFAULT_SINK@")
+print("run result: " + str(_r2))

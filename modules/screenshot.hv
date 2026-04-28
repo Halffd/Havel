@@ -1,0 +1,275 @@
+// screenshot.hv — Screen capture via X11/Xrandr FFI
+// Provides: screenshot.all, screenshot.region, screenshot.monitor,
+//           screenshot.monitors, screenshot.monitorCount,
+//           screenshot.pixel, screenshot.save
+
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_xrandr = ffi.open("libXrandr.so.2")
+if _xrandr == 0 { _xrandr = ffi.open("libXrandr.so") }
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_DefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_XGetWindowAttributes = ffi.sym(_xlib, "XGetWindowAttributes")
+_XGetImage = ffi.sym(_xlib, "XGetImage")
+_XDestroyImage = ffi.sym(_xlib, "XDestroyImage")
+_XFree = ffi.sym(_xlib, "XFree")
+
+_XRRGetScreenResourcesCurrent = ffi.sym(_xrandr, "XRRGetScreenResourcesCurrent")
+_XRRGetOutputPrimary = ffi.sym(_xrandr, "XRRGetOutputPrimary")
+_XRRGetOutputInfo = ffi.sym(_xrandr, "XRRGetOutputInfo")
+_XRRGetCrtcInfo = ffi.sym(_xrandr, "XRRGetCrtcInfo")
+_XRRFreeCrtcInfo = ffi.sym(_xrandr, "XRRFreeCrtcInfo")
+_XRRFreeOutputInfo = ffi.sym(_xrandr, "XRRFreeOutputInfo")
+_XRRFreeScreenResources = ffi.sym(_xrandr, "XRRFreeScreenResources")
+
+_malloc = ffi.sym(_c, "malloc")
+_free = ffi.sym(_c, "free")
+_memcpy = ffi.sym(_c, "memcpy")
+_fopen = ffi.sym(_c, "fopen")
+_fwrite = ffi.sym(_c, "fwrite")
+_fclose = ffi.sym(_c, "fclose")
+
+_ALLPLANES = 4294967295
+
+fn _openDisplay() {
+  ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+}
+
+fn _rootWindow(dpy) {
+  ffi.call(_DefaultRootWindow, "uint64", ["pointer"], dpy)
+}
+
+fn _closeDisplay(dpy) {
+  ffi.call(_XCloseDisplay, "int32", ["pointer"], dpy)
+}
+
+fn _ximageData(img) {
+  _data_ptr_ptr = ffi.ptr_add(img, 88)
+  ffi.get_ptr(_data_ptr_ptr)
+}
+
+fn _ximageWidth(img) {
+  ffi.get_i32(ffi.ptr_add(img, 40))
+}
+
+fn _ximageHeight(img) {
+  ffi.get_i32(ffi.ptr_add(img, 44))
+}
+
+fn _ximageBpl(img) {
+  ffi.get_i32(ffi.ptr_add(img, 96))
+}
+
+fn _ximageBpp(img) {
+  ffi.get_i32(ffi.ptr_add(img, 24))
+}
+
+fn _bgraToRgba(buf, width, height) {
+  _total = width * height
+  for _i in range(0, _total) {
+    _off = _i * 4
+    _p = ffi.ptr_add(buf, _off)
+    _b = ffi.get_u8(_p)
+    _g = ffi.get_u8(ffi.ptr_add(_p, 1))
+    _r = ffi.get_u8(ffi.ptr_add(_p, 2))
+    _a = ffi.get_u8(ffi.ptr_add(_p, 3))
+    ffi.set_u8(_p, _r)
+    ffi.set_u8(ffi.ptr_add(_p, 1), _g)
+    ffi.set_u8(ffi.ptr_add(_p, 2), _b)
+    ffi.set_u8(ffi.ptr_add(_p, 3), _a)
+  }
+}
+
+fn _capture(dpy, root, x, y, w, h) {
+  _img = ffi.call(_XGetImage, "pointer", ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64"], _dpy, _root, _x, _y, _w, _h, _ALLPLANES)
+  if _img == 0 { return null }
+  _iw = _ximageWidth(_img)
+  _ih = _ximageHeight(_img)
+  _bpl = _ximageBpl(_img)
+  _data = _ximageData(_img)
+  if _data == 0 {
+    ffi.call(_XDestroyImage, "int32", ["pointer"], _img)
+    return null
+  }
+  _row_size = _iw * 4
+  _total = _row_size * _ih
+  _pixels = ffi.allocBytes(_total)
+  if _bpl == _row_size {
+    ffi.call(_memcpy, "pointer", ["pointer", "pointer", "uint64"], _pixels, _data, _total)
+  } else {
+    for _y2 in range(0, _ih) {
+      _src = ffi.ptr_add(_data, _y2 * _bpl)
+      _dst = ffi.ptr_add(_pixels, _y2 * _row_size)
+      ffi.call(_memcpy, "pointer", ["pointer", "pointer", "uint64"], _dst, _src, _row_size)
+    }
+  }
+  _bgraToRgba(_pixels, _iw, _ih)
+  ffi.call(_XDestroyImage, "int32", ["pointer"], _img)
+  {width: _iw, height: _ih, pixels: _pixels, format: "rgba8"}
+}
+
+fn all() {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return null }
+  _root = _rootWindow(_dpy)
+  _attr = ffi.allocBytes(104)
+  ffi.call(_XGetWindowAttributes, "int32", ["pointer", "uint64", "pointer"], _dpy, _root, _attr)
+  _w = ffi.get_i32(ffi.ptr_add(_attr, 40))
+  _h = ffi.get_i32(ffi.ptr_add(_attr, 44))
+  ffi.free(_attr)
+  _result = _capture(_dpy, _root, 0, 0, _w, _h)
+  _closeDisplay(_dpy)
+  _result
+}
+
+fn region(x, y, w, h) {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return null }
+  _root = _rootWindow(_dpy)
+  _result = _capture(_dpy, _root, x, y, w, h)
+  _closeDisplay(_dpy)
+  _result
+}
+
+fn monitors() {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return [] }
+  _root = _rootWindow(_dpy)
+  _res = ffi.call(_XRRGetScreenResourcesCurrent, "pointer", ["pointer", "uint64"], _dpy, _root)
+  if _res == 0 {
+    _closeDisplay(_dpy)
+    return []
+  }
+  _noutput = ffi.get_i32(ffi.ptr_add(_res, 8))
+  _outputs_base = ffi.ptr_add(_res, 16)
+  _mons = []
+  for _i in range(0, _noutput) {
+    _output = ffi.get_u32(ffi.ptr_add(_outputs_base, _i * 4))
+    _oinfo = ffi.call(_XRRGetOutputInfo, "pointer", ["pointer", "pointer", "uint32"], _dpy, _res, _output)
+    if _oinfo != 0 {
+      _connection = ffi.get_i32(ffi.ptr_add(_oinfo, 32))
+      _crtc = ffi.get_u64(ffi.ptr_add(_oinfo, 40))
+      if _connection == 0 && _crtc != 0 {
+        _cinfo = ffi.call(_XRRGetCrtcInfo, "pointer", ["pointer", "pointer", "uint64"], _dpy, _res, _crtc)
+        if _cinfo != 0 {
+          _mx = ffi.get_i32(_cinfo)
+          _my = ffi.get_i32(ffi.ptr_add(_cinfo, 4))
+          _mw = ffi.get_u32(ffi.ptr_add(_cinfo, 8))
+          _mh = ffi.get_u32(ffi.ptr_add(_cinfo, 12))
+          _name_ptr = ffi.get_ptr(ffi.ptr_add(_oinfo, 8))
+          _name = ""
+          if _name_ptr != 0 { _name = ffi.string(_name_ptr) }
+          _mons.push({x: _mx, y: _my, width: _mw, height: _mh, name: _name, id: _output})
+          ffi.call(_XRRFreeCrtcInfo, "void", ["pointer"], _cinfo)
+        }
+      }
+      ffi.call(_XRRFreeOutputInfo, "void", ["pointer"], _oinfo)
+    }
+  }
+  ffi.call(_XRRFreeScreenResources, "void", ["pointer"], _res)
+  _closeDisplay(_dpy)
+  _mons
+}
+
+fn monitorCount() {
+  #monitors()
+}
+
+fn monitor(idx) {
+  if idx == null { idx = 0 }
+  _mons = monitors()
+  if idx < 0 || idx >= #_mons { return null }
+  _m = _mons[idx]
+  region(_m.x, _m.y, _m.width, _m.height)
+}
+
+fn pixel(x, y) {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return null }
+  _root = _rootWindow(_dpy)
+  _img = ffi.call(_XGetImage, "pointer", ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64"], _dpy, _root, x, y, 1, 1, _ALLPLANES)
+  _result = null
+  if _img != 0 {
+    _data = _ximageData(_img)
+    if _data != 0 {
+      _pv = ffi.get_u32(_data)
+    _b = ((_pv & 255))
+    _gt = _pv >> 8
+    _g = ((_gt & 255))
+    _rt = _pv >> 16
+    _r = ((_rt & 255))
+      _result = {r: _r, g: _g, b: _b, a: 255}
+    }
+    ffi.call(_XDestroyImage, "int32", ["pointer"], _img)
+  }
+  _closeDisplay(_dpy)
+  _result
+}
+
+fn save(shot, path) {
+  if shot == null { return false }
+  _w = shot.width
+  _h = shot.height
+  _pixels = shot.pixels
+  if _w == null || _h == null || _pixels == null { return false }
+  _row_size = _w * 4
+  _padded_row = _row_size
+  if _row_size % 4 != 0 { _padded_row = ((_row_size / 4) + 1) * 4 }
+  _pad = _padded_row - _row_size
+  _data_size = _padded_row * _h
+  _file_size = 54 + _data_size
+  _buf = ffi.allocBytes(_file_size)
+  ffi.set_u8(_buf, 66)
+  ffi.set_u8(ffi.ptr_add(_buf, 1), 77)
+  ffi.set_u32(ffi.ptr_add(_buf, 2), _file_size)
+  ffi.set_u32(ffi.ptr_add(_buf, 6), 0)
+  ffi.set_u32(ffi.ptr_add(_buf, 10), 54)
+  ffi.set_u32(ffi.ptr_add(_buf, 14), 40)
+  ffi.set_u32(ffi.ptr_add(_buf, 18), _w)
+  ffi.set_i32(ffi.ptr_add(_buf, 22), _h)
+  ffi.set_u16(ffi.ptr_add(_buf, 26), 1)
+  ffi.set_u16(ffi.ptr_add(_buf, 28), 32)
+  ffi.set_u32(ffi.ptr_add(_buf, 30), 0)
+  ffi.set_u32(ffi.ptr_add(_buf, 34), _data_size)
+  ffi.set_u32(ffi.ptr_add(_buf, 38), 2835)
+  ffi.set_u32(ffi.ptr_add(_buf, 42), 2835)
+  ffi.set_u32(ffi.ptr_add(_buf, 46), 0)
+  ffi.set_u32(ffi.ptr_add(_buf, 50), 0)
+  _off = 54
+  for _y in range(0, _h) {
+    _src_row = _h - 1 - _y
+    for _x in range(0, _w) {
+      _src_off = (_src_row * _w + _x) * 4
+      _r = ffi.get_u8(ffi.ptr_add(_pixels, _src_off))
+      _g = ffi.get_u8(ffi.ptr_add(_pixels, _src_off + 1))
+      _b = ffi.get_u8(ffi.ptr_add(_pixels, _src_off + 2))
+      ffi.set_u8(ffi.ptr_add(_buf, _off), _b)
+      ffi.set_u8(ffi.ptr_add(_buf, _off + 1), _g)
+      ffi.set_u8(ffi.ptr_add(_buf, _off + 2), _r)
+      ffi.set_u8(ffi.ptr_add(_buf, _off + 3), 255)
+      _off = _off + 4
+    }
+    _off = _off + _pad
+  }
+  _path_cs = ffi.cstring(path)
+  _mode_cs = ffi.cstring("wb")
+  _fp = ffi.call(_fopen, "pointer", ["pointer", "pointer"], _path_cs, _mode_cs)
+  ffi.free(_path_cs)
+  ffi.free(_mode_cs)
+  if _fp == 0 {
+    ffi.free(_buf)
+    return false
+  }
+  ffi.call(_fwrite, "int64", ["pointer", "int64", "int64", "pointer"], _buf, 1, _file_size, _fp)
+  ffi.call(_fclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  true
+}

@@ -62,7 +62,8 @@ fn _containsLower(s, sub) {
 fn _parseHandlers(line) {
   _h_match = line.find("Handlers=")
   if _h_match == null || _h_match < 0 { return [] }
-  _val = line[_h_match + 9:]
+    _hi = _h_match + 9
+    _val = line[_hi:]
   _end = _val.find(" ")
   if _end != null && _end >= 0 { _val = _val[:_end] }
   if #_val == 0 { return [] }

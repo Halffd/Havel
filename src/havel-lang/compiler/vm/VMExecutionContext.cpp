@@ -4,6 +4,7 @@
 #include "VM.hpp"
 #include <mutex>
 #include <stdexcept>
+#include <cmath>
 
 // Macro for throwing errors with source location info
 #define COMPILER_THROW(msg) \
@@ -453,13 +454,17 @@ void VMExecutionContext::executeInstruction(const Instruction& instruction) {
     case OpCode::POP:
       stack_.pop();
       break;
-        case OpCode::ADD:
-        case OpCode::SUB:
-        case OpCode::MUL:
-        case OpCode::DIV:
-        case OpCode::INT_DIV:
-            executeBinaryOp(instruction.opcode);
-            break;
+case OpCode::ADD:
+    case OpCode::SUB:
+    case OpCode::MUL:
+    case OpCode::DIV:
+    case OpCode::INT_DIV:
+    case OpCode::DIVMOD:
+    case OpCode::REMAINDER:
+    case OpCode::MOD:
+    case OpCode::POW:
+      executeBinaryOp(instruction.opcode);
+      break;
     case OpCode::CALL:
       executeCall(static_cast<uint32_t>(instruction.operands[0].asInt()));
       break;
@@ -493,6 +498,23 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
         return;
     }
     case OpCode::INT_DIV: result = ai / bi; break;
+    case OpCode::REMAINDER: result = ai % bi; break;
+    case OpCode::DIVMOD: {
+      if (bi == 0) COMPILER_THROW("Division by zero");
+      int64_t rem = ai % bi;
+      if (rem != 0 && ((rem < 0) != (bi < 0))) rem += bi;
+      int64_t quot = (ai - rem) / bi;
+      stack_.push(Value::makeInt(quot));
+      stack_.push(Value::makeInt(rem));
+      return;
+    }
+    case OpCode::MOD: {
+      if (bi == 0) COMPILER_THROW("Modulo by zero");
+      int64_t m = ai % bi;
+      if (m != 0 && ((m < 0) != (bi < 0))) m += bi;
+      stack_.push(Value::makeInt(m));
+      return;
+    }
       default: COMPILER_THROW("Unknown binary op");
     }
 
@@ -508,6 +530,13 @@ void VMExecutionContext::executeBinaryOp(OpCode op) {
     case OpCode::MUL: result = ad * bd; break;
     case OpCode::DIV: result = ad / bd; break;
     case OpCode::INT_DIV: result = static_cast<double>(static_cast<int64_t>(ad) / static_cast<int64_t>(bd)); break;
+    case OpCode::REMAINDER: result = static_cast<double>(static_cast<int64_t>(ad) % static_cast<int64_t>(bd)); break;
+    case OpCode::MOD: {
+      double m = std::fmod(ad, bd);
+      if (m != 0.0 && ((m < 0.0) != (bd < 0.0))) m += bd;
+      stack_.push(Value::makeDouble(m));
+      return;
+    }
       default: COMPILER_THROW("Unknown binary op");
     }
 

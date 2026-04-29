@@ -272,12 +272,42 @@ std::string opcodeName(OpCode opcode) {
     return "MUL";
     case OpCode::DIV:
         return "DIV";
-    case OpCode::INT_DIV:
-        return "INT_DIV";
-    case OpCode::MOD:
+case OpCode::INT_DIV:
+    return "INT_DIV";
+  case OpCode::DIVMOD:
+    return "DIVMOD";
+  case OpCode::REMAINDER:
+    return "REMAINDER";
+  case OpCode::MOD:
     return "MOD";
   case OpCode::POW:
     return "POW";
+  case OpCode::ADD_ASSIGN:
+    return "ADD_ASSIGN";
+  case OpCode::SUB_ASSIGN:
+    return "SUB_ASSIGN";
+  case OpCode::MUL_ASSIGN:
+    return "MUL_ASSIGN";
+  case OpCode::DIV_ASSIGN:
+    return "DIV_ASSIGN";
+  case OpCode::INT_DIV_ASSIGN:
+    return "INT_DIV_ASSIGN";
+  case OpCode::REMAINDER_ASSIGN:
+    return "REMAINDER_ASSIGN";
+  case OpCode::MOD_ASSIGN:
+    return "MOD_ASSIGN";
+  case OpCode::POW_ASSIGN:
+    return "POW_ASSIGN";
+  case OpCode::BITWISE_AND_ASSIGN:
+    return "BITWISE_AND_ASSIGN";
+  case OpCode::BITWISE_OR_ASSIGN:
+    return "BITWISE_OR_ASSIGN";
+  case OpCode::BITWISE_XOR_ASSIGN:
+    return "BITWISE_XOR_ASSIGN";
+  case OpCode::SHIFT_LEFT_ASSIGN:
+    return "SHIFT_LEFT_ASSIGN";
+  case OpCode::SHIFT_RIGHT_ASSIGN:
+    return "SHIFT_RIGHT_ASSIGN";
   case OpCode::INCLOCAL:
     return "INCLOCAL";
   case OpCode::DECLOCAL:

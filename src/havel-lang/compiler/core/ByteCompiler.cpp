@@ -62,9 +62,28 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
       return OpCode::BIT_XOR;
     case ast::BinaryOperator::BitwiseShiftLeft:
       return OpCode::BIT_LSH;
-    case ast::BinaryOperator::BitwiseShiftRight:
-      return OpCode::BIT_RSH;
-    case ast::BinaryOperator::ConfigAppend:
+case ast::BinaryOperator::BitwiseShiftRight:
+    return OpCode::BIT_RSH;
+case ast::BinaryOperator::DivMod:
+    return OpCode::DIVMOD;
+  case ast::BinaryOperator::Remainder:
+    return OpCode::REMAINDER;
+  // Compound assigns go through AssignmentExpression/emitCompound, not here
+  case ast::BinaryOperator::IntDivAssign:
+  case ast::BinaryOperator::RemainderAssign:
+  case ast::BinaryOperator::BitwiseAndAssign:
+  case ast::BinaryOperator::BitwiseOrAssign:
+  case ast::BinaryOperator::BitwiseXorAssign:
+  case ast::BinaryOperator::BitwiseShiftLeftAssign:
+  case ast::BinaryOperator::BitwiseShiftRightAssign:
+  case ast::BinaryOperator::AddAssign:
+  case ast::BinaryOperator::SubAssign:
+  case ast::BinaryOperator::MulAssign:
+  case ast::BinaryOperator::DivAssign:
+  case ast::BinaryOperator::ModAssign:
+  case ast::BinaryOperator::PowAssign:
+    return OpCode::NOP;
+  case ast::BinaryOperator::ConfigAppend:
       return OpCode::NOP;
   case ast::BinaryOperator::Matches:
   case ast::BinaryOperator::Tilde:
@@ -3348,10 +3367,38 @@ break;
       emitCompound(OpCode::MOD);
       break;
     }
-    if (assignment.operator_ == "**=") {
-      emitCompound(OpCode::POW);
-      break;
-    }
+if (assignment.operator_ == "**=") {
+    emitCompound(OpCode::POW);
+    break;
+  }
+  if (assignment.operator_ == "\\=") {
+    emitCompound(OpCode::INT_DIV);
+    break;
+  }
+  if (assignment.operator_ == "%%=") {
+    emitCompound(OpCode::REMAINDER);
+    break;
+  }
+  if (assignment.operator_ == "&=") {
+    emitCompound(OpCode::BIT_AND);
+    break;
+  }
+  if (assignment.operator_ == "|=") {
+    emitCompound(OpCode::BIT_OR);
+    break;
+  }
+  if (assignment.operator_ == "^=") {
+    emitCompound(OpCode::BIT_XOR);
+    break;
+  }
+  if (assignment.operator_ == "<<=") {
+    emitCompound(OpCode::BIT_LSH);
+    break;
+  }
+  if (assignment.operator_ == ">>=") {
+    emitCompound(OpCode::BIT_RSH);
+    break;
+  }
 
 COMPILER_THROW("Unsupported assignment operator: " +
     assignment.operator_);

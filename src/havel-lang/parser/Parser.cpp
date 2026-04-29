@@ -8,6 +8,23 @@ using enum havel::TokenType;
 
 namespace havel::parser {
 
+static bool isKeywordToken(TokenType t) {
+    switch (t) {
+    case TokenType::Group: case TokenType::Mode: case TokenType::Sync:
+    case TokenType::Class: case TokenType::Match: case TokenType::Select:
+    case TokenType::Where: case TokenType::Config: case TokenType::Devices:
+    case TokenType::Modes: case TokenType::Signal: case TokenType::Pool:
+    case TokenType::Repeat: case TokenType::On: case TokenType::Off:
+    case TokenType::When: case TokenType::True: case TokenType::False:
+    case TokenType::Null: case TokenType::Del: case TokenType::Trait:
+    case TokenType::Prot: case TokenType::Impl: case TokenType::This:
+    case TokenType::Struct: case TokenType::Enum: case TokenType::Op:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static double parseNumberLiteral(const std::string& s) {
     if (s.size() >= 2 && s[0] == '0') {
         if (s[1] == 'x' || s[1] == 'X')
@@ -1609,51 +1626,58 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
 
     // Function call
     case TokenType::OpenParen: {
-      std::vector<std::unique_ptr<ast::Expression>> args;
-      std::vector<ast::KeywordArg> kwargs;
+        std::vector<std::unique_ptr<ast::Expression>> args;
+        std::vector<ast::KeywordArg> kwargs;
 
-      // Parse arguments
-      while (at().type != TokenType::CloseParen) {
-        if (!args.empty() || !kwargs.empty()) {
-          if (at().type == TokenType::Comma) {
-            advance();
-          }
+        // Parse arguments
+        while (at().type != TokenType::CloseParen) {
+            // Skip newlines before each argument
+            while (at().type == TokenType::NewLine) { advance(); }
+            if (at().type == TokenType::CloseParen) { break; }
+
+            if (!args.empty() || !kwargs.empty()) {
+                if (at().type == TokenType::Comma) {
+                    advance();
+                }
+            }
+
+            // Skip newlines after comma
+            while (at().type == TokenType::NewLine) { advance(); }
+            if (at().type == TokenType::CloseParen) { break; }
+
+            // Check for keyword argument: name=value
+            // Must check BEFORE calling parsePrattExpression to avoid treating
+            // '=' as an assignment operator
+            if (at().type == TokenType::Identifier &&
+                at(1).type == TokenType::Assign) {
+                std::string name = advance().value; // consume identifier
+                advance(); // consume '='
+                auto value = parsePrattExpression(0);
+                kwargs.emplace_back(std::move(name), std::move(value));
+            } else {
+                // Positional argument (possibly with spread)
+                std::unique_ptr<ast::Expression> arg;
+                if (at().type == TokenType::Spread) {
+                    advance(); // consume '...'
+                    auto target = parsePrattExpression(0);
+                    arg = std::make_unique<ast::SpreadExpression>(std::move(target));
+                } else {
+                    arg = parsePrattExpression(0);
+                }
+                args.push_back(std::move(arg));
+            }
+
+            // Skip newlines after argument
+            while (at().type == TokenType::NewLine) { advance(); }
         }
 
-        if (at().type == TokenType::CloseParen) {
-          break;
+        if (at().type != TokenType::CloseParen) {
+            failAt(at(), "Expected ')' after arguments");
         }
+        advance(); // consume ')'
 
-        // Check for keyword argument: name=value
-        // Must check BEFORE calling parsePrattExpression to avoid treating
-        // '=' as an assignment operator
-        if (at().type == TokenType::Identifier &&
-            at(1).type == TokenType::Assign) {
-          std::string name = advance().value; // consume identifier
-          advance();                          // consume '='
-          auto value = parsePrattExpression(0);
-          kwargs.emplace_back(std::move(name), std::move(value));
-        } else {
-          // Positional argument (possibly with spread)
-          std::unique_ptr<ast::Expression> arg;
-          if (at().type == TokenType::Spread) {
-            advance(); // consume '...'
-            auto target = parsePrattExpression(0);
-            arg = std::make_unique<ast::SpreadExpression>(std::move(target));
-          } else {
-            arg = parsePrattExpression(0);
-          }
-          args.push_back(std::move(arg));
-        }
-      }
-
-      if (at().type != TokenType::CloseParen) {
-        failAt(at(), "Expected ')' after arguments");
-      }
-      advance(); // consume ')'
-
-      return std::make_unique<ast::CallExpression>(
-          std::move(left), std::move(args), std::move(kwargs));
+        return std::make_unique<ast::CallExpression>(
+            std::move(left), std::move(args), std::move(kwargs));
     }
 
     // Array/Object index or slice
@@ -5843,12 +5867,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
     advance();
   }
 
-  if (at().type == havel::TokenType::Identifier) {
-    std::string moduleName = advance().value;
+    if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+        std::string moduleName = advance().value;
 
-    while (at().type == havel::TokenType::NewLine) advance();
-    std::string alias = "";
-    if (at().type == havel::TokenType::As) {
+        while (at().type == havel::TokenType::NewLine) advance();
+        std::string alias = "";
+        if (at().type == havel::TokenType::As) {
       advance();
       while (at().type == havel::TokenType::NewLine) advance();
       if (at().type != havel::TokenType::Identifier) {
@@ -5867,7 +5891,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
             at().type == havel::TokenType::MultilineString ||
             at().type == havel::TokenType::InterpolatedString) {
             source = advance().value;
-        } else if (at().type == havel::TokenType::Identifier) {
+        } else if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
             source = advance().value;
         } else {
             failAt(at(), "Expected module name or file path after 'from'");
@@ -5895,12 +5919,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
     while (at().type != havel::TokenType::CloseBrace) {
       while (at().type == havel::TokenType::NewLine) advance();
       
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected identifier in import list");
-        return nullptr;
-      }
-      
-      std::string name = advance().value;
+        if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+            failAt(at(), "Expected identifier in import list");
+            return nullptr;
+        }
+
+        std::string name = advance().value;
       std::string alias = name; // default alias is same as name
       
       // Check for "as alias"
@@ -5908,9 +5932,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
       if (at().type == havel::TokenType::As) {
         advance(); // consume 'as'
         while (at().type == havel::TokenType::NewLine) advance();
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected alias after 'as'");
-          return nullptr;
+        if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+            failAt(at(), "Expected alias after 'as'");
+            return nullptr;
         }
         alias = advance().value;
       }
@@ -5942,14 +5966,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         at().type == havel::TokenType::MultilineString ||
         at().type == havel::TokenType::InterpolatedString) {
         source = advance().value;
-    } else if (at().type == havel::TokenType::Identifier) {
-        source = advance().value; // module name
-    } else {
-        failAt(at(), "Expected module name or file path after 'from'");
-        return nullptr;
-    }
+        } else if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+            source = advance().value; // module name
+        } else {
+            failAt(at(), "Expected module name or file path after 'from'");
+            return nullptr;
+        }
 
-    auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
+        auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
     stmt->isNamedImport = true;
     for (auto& [name, alias] : importNames) {
       stmt->importNames.push_back(name);
@@ -5978,7 +6002,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         at().type == havel::TokenType::MultilineString ||
         at().type == havel::TokenType::InterpolatedString) {
         source = advance().value;
-    } else if (at().type == havel::TokenType::Identifier) {
+    } else if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
         source = advance().value;
     } else {
         failAt(at(), "Expected module name or file path after 'from'");
@@ -6004,26 +6028,26 @@ if (at().type == havel::TokenType::String ||
     if (at().type == havel::TokenType::As) {
       advance(); // consume 'as'
       while (at().type == havel::TokenType::NewLine) advance();
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected alias after 'as'");
-        return nullptr;
-      }
-      alias = advance().value;
+        if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
+            failAt(at(), "Expected alias after 'as'");
+            return nullptr;
+        }
+        alias = advance().value;
     }
-    
+
     if (!alias.empty()) {
-      auto stmt = std::make_unique<havel::ast::UseStatement>(filePath, alias);
-      stmt->isFileImport = true;
-      return stmt;
+        auto stmt = std::make_unique<havel::ast::UseStatement>(filePath, alias);
+        stmt->isFileImport = true;
+        return stmt;
     }
     return std::make_unique<havel::ast::UseStatement>(
         filePath, std::vector<std::string>{"*"});
-  }
+    }
 
-  // =========================================================================
-  // Syntax: use module or use module.* - import module (Lua-style)
-  // =========================================================================
-  if (at().type == havel::TokenType::Identifier) {
+    // =========================================================================
+    // Syntax: use module or use module.* - import module (Lua-style)
+    // =========================================================================
+    if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
     std::string moduleName = advance().value;
 
     // Skip newlines

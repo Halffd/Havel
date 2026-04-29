@@ -1,4 +1,591 @@
-fn _test_arr(arr) {
-  let v0 = arr[0]
-  return v0
+// json.hv - Pure Havel JSON parser and stringifier
+// Provides: parse, stringify, parseFile
+
+// ============================================================
+// Parser - recursive descent
+// ============================================================
+
+_pos = 0
+_src = ""
+_len = 0
+_NULL = [0]
+
+fn _at() {
+if _pos < _len {
+return _src[_pos:_pos+1]
+}
+return null
+}
+
+fn _peek(offset) {
+_i = _pos + offset
+if _i < _len {
+return _src[_i:_i+1]
+}
+return null
+}
+
+fn _advance() {
+_pos = _pos + 1
+}
+
+fn _skipWS() {
+while _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == " " || _ch == "\t" || _ch == "\n" || _ch == "\r" {
+_pos = _pos + 1
+} else {
+return
+}
+}
+}
+
+fn _isDigit(ch) {
+if ch == null { return false }
+return ch >= "0" && ch <= "9"
+}
+
+fn _isHex(ch) {
+if ch == null { return false }
+if ch >= "0" && ch <= "9" { return true }
+if ch >= "a" && ch <= "f" { return true }
+if ch >= "A" && ch <= "F" { return true }
+return false
+}
+
+fn _hexVal(ch) {
+if ch == "0" { return 0 }
+if ch == "1" { return 1 }
+if ch == "2" { return 2 }
+if ch == "3" { return 3 }
+if ch == "4" { return 4 }
+if ch == "5" { return 5 }
+if ch == "6" { return 6 }
+if ch == "7" { return 7 }
+if ch == "8" { return 8 }
+if ch == "9" { return 9 }
+if ch == "a" { return 10 }
+if ch == "A" { return 10 }
+if ch == "b" { return 11 }
+if ch == "B" { return 11 }
+if ch == "c" { return 12 }
+if ch == "C" { return 12 }
+if ch == "d" { return 13 }
+if ch == "D" { return 13 }
+if ch == "e" { return 14 }
+if ch == "E" { return 14 }
+if ch == "f" { return 15 }
+if ch == "F" { return 15 }
+return 0
+}
+
+fn _isError(val) {
+if val == null { return true }
+if type.of(val) == "array" {
+if #val == 1 {
+if val[0] == 0 { return true }
+}
+}
+return false
+}
+
+fn _parseValue() {
+_skipWS()
+if _pos >= _len { return null }
+_ch = _src[_pos:_pos+1]
+if _ch == "{" { return _parseObject() }
+if _ch == "[" { return _parseArray() }
+if _ch == "\"" { return _parseString() }
+if _ch == "t" { return _parseTrue() }
+if _ch == "f" { return _parseFalse() }
+if _ch == "n" { return _parseNull() }
+if _ch == "-" || _isDigit(_ch) { return _parseNumber() }
+return _NULL
+}
+
+fn _parseObject() {
+_pos = _pos + 1
+_obj = {}
+_skipWS()
+if _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "}" {
+_pos = _pos + 1
+return _obj
+}
+}
+while true {
+_skipWS()
+if _pos >= _len { return _NULL }
+_ch = _src[_pos:_pos+1]
+if _ch != "\"" { return _NULL }
+_key = _parseString()
+if _isError(_key) { return _NULL }
+_skipWS()
+if _pos >= _len { return _NULL }
+_ch = _src[_pos:_pos+1]
+if _ch != ":" { return _NULL }
+_pos = _pos + 1
+_val = _parseValue()
+if _isError(_val) { return _NULL }
+_obj.set(_key, _val)
+_skipWS()
+if _pos >= _len { return null }
+_ch = _src[_pos:_pos+1]
+if _ch == "," {
+_pos = _pos + 1
+_skipWS()
+if _pos < _len {
+_next = _src[_pos:_pos+1]
+if _next == "}" {
+_pos = _pos + 1
+return _obj
+}
+}
+} else {
+if _ch == "}" {
+_pos = _pos + 1
+return _obj
+}
+return _NULL
+}
+}
+return _NULL
+}
+
+fn _parseArray() {
+_pos = _pos + 1
+_arr = []
+_skipWS()
+if _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "]" {
+_pos = _pos + 1
+return _arr
+}
+}
+while true {
+_skipWS()
+if _pos >= _len { return _NULL }
+_ch = _src[_pos:_pos+1]
+if _ch == "]" {
+_pos = _pos + 1
+return _arr
+}
+_val = _parseValue()
+if _isError(_val) { return _NULL }
+_arr.push(_val)
+_skipWS()
+if _pos >= _len { return _NULL }
+_ch = _src[_pos:_pos+1]
+if _ch == "," {
+_pos = _pos + 1
+_skipWS()
+if _pos < _len {
+_next = _src[_pos:_pos+1]
+if _next == "]" {
+_pos = _pos + 1
+return _arr
+}
+}
+} else {
+if _ch == "]" {
+_pos = _pos + 1
+return _arr
+}
+return _NULL
+}
+}
+return _NULL
+}
+
+fn _parseString() {
+_pos = _pos + 1
+_result = ""
+while _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "\"" {
+_pos = _pos + 1
+return _result
+}
+if _ch == "\\" {
+_pos = _pos + 1
+if _pos >= _len { return null }
+_esc = _src[_pos:_pos+1]
+if _esc == "\"" { _result = _result + "\"" }
+else if _esc == "\\" { _result = _result + "\\" }
+else if _esc == "/" { _result = _result + "/" }
+else if _esc == "b" { _result = _result + "\b" }
+else if _esc == "f" { _result = _result + "\f" }
+else if _esc == "n" { _result = _result + "\n" }
+else if _esc == "r" { _result = _result + "\r" }
+else if _esc == "t" { _result = _result + "\t" }
+else if _esc == "u" {
+_code = 0
+_j = 0
+while _j < 4 {
+_pos = _pos + 1
+if _pos >= _len { return null }
+_h = _src[_pos:_pos+1]
+if !_isHex(_h) { return null }
+_code = _code * 16 + _hexVal(_h)
+_j = _j + 1
+}
+if _code < 128 {
+_result = _result + str(char(_code))
+} else {
+if _code >= 55296 && _code <= 56319 {
+_hi = _code
+if _pos + 2 < _len && _src[_pos+1:_pos+2] == "\\" && _src[_pos+2:_pos+3] == "u" {
+_pos = _pos + 2
+_lo = 0
+_k = 0
+while _k < 4 {
+_pos = _pos + 1
+if _pos >= _len { return null }
+_lh = _src[_pos:_pos+1]
+if !_isHex(_lh) { return null }
+_lo = _lo * 16 + _hexVal(_lh)
+_k = _k + 1
+}
+_cp = 65536 + (_hi - 55296) * 1024 + (_lo - 56320)
+_result = _result + _encodeUtf8(_cp)
+} else {
+_result = _result + "?"
+}
+} else {
+_result = _result + _encodeUtf8(_code)
+}
+}
+}
+else { return null }
+_pos = _pos + 1
+} else {
+_result = _result + _ch
+_pos = _pos + 1
+}
+}
+return null
+}
+
+fn _encodeUtf8(cp) {
+if cp <= 127 {
+return str(char(cp))
+}
+if cp <= 2047 {
+_b1 = 192 + (cp / 64)
+_b2 = 128 + (cp % 64)
+return str(char(_b1)) + str(char(_b2))
+}
+if cp <= 65535 {
+_b1 = 224 + (cp / 4096)
+_b2 = 128 + ((cp / 64) % 64)
+_b3 = 128 + (cp % 64)
+return str(char(_b1)) + str(char(_b2)) + str(char(_b3))
+}
+_b1 = 240 + (cp / 262144)
+_b2 = 128 + ((cp / 4096) % 64)
+_b3 = 128 + ((cp / 64) % 64)
+_b4 = 128 + (cp % 64)
+return str(char(_b1)) + str(char(_b2)) + str(char(_b3)) + str(char(_b4))
+}
+
+fn _parseNumber() {
+_start = _pos
+_hasDot = false
+_hasE = false
+if _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "-" {
+_pos = _pos + 1
+}
+}
+if _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "0" {
+_pos = _pos + 1
+} else {
+if _isDigit(_ch) {
+while _pos < _len {
+_d = _src[_pos:_pos+1]
+if _isDigit(_d) {
+_pos = _pos + 1
+} else {
+break
+}
+}
+} else {
+return _NULL
+}
+}
+}
+if _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "." {
+_hasDot = true
+_pos = _pos + 1
+if _pos >= _len { return _NULL }
+_d = _src[_pos:_pos+1]
+if !_isDigit(_d) { return _NULL }
+while _pos < _len {
+_dd = _src[_pos:_pos+1]
+if _isDigit(_dd) {
+_pos = _pos + 1
+} else {
+break
+}
+}
+}
+}
+if _pos < _len {
+_ch = _src[_pos:_pos+1]
+if _ch == "e" || _ch == "E" {
+_hasE = true
+_pos = _pos + 1
+if _pos < _len {
+_sign = _src[_pos:_pos+1]
+if _sign == "+" || _sign == "-" {
+_pos = _pos + 1
+}
+}
+if _pos >= _len { return null }
+_d = _src[_pos:_pos+1]
+if !_isDigit(_d) { return null }
+while _pos < _len {
+_dd = _src[_pos:_pos+1]
+if _isDigit(_dd) {
+_pos = _pos + 1
+} else {
+break
+}
+}
+}
+}
+_numStr = _src[_start:_pos]
+if _hasDot || _hasE {
+return num(_numStr)
+}
+return int(_numStr)
+}
+
+fn _parseTrue() {
+if _pos + 4 <= _len {
+if _src[_pos:_pos+4] == "true" {
+_pos = _pos + 4
+return true
+}
+}
+return null
+}
+
+fn _parseFalse() {
+if _pos + 5 <= _len {
+if _src[_pos:_pos+5] == "false" {
+_pos = _pos + 5
+return false
+}
+}
+return null
+}
+
+fn _parseNull() {
+if _pos + 4 <= _len {
+if _src[_pos:_pos+4] == "null" {
+_pos = _pos + 4
+return _NULL
+}
+}
+return null
+}
+
+// ============================================================
+// Stringifier
+// ============================================================
+
+fn _escStr(s) {
+_result = "\""
+_i = 0
+_n = #s
+while _i < _n {
+_ch = s[_i:_i+1]
+if _ch == "\"" { _result = _result + "\\\"" }
+else if _ch == "\\" { _result = _result + "\\\\" }
+else if _ch == "\b" { _result = _result + "\\b" }
+else if _ch == "\f" { _result = _result + "\\f" }
+else if _ch == "\n" { _result = _result + "\\n" }
+else if _ch == "\r" { _result = _result + "\\r" }
+else if _ch == "\t" { _result = _result + "\\t" }
+else {
+_code = ord(_ch)
+if _code != null && _code < 32 {
+_result = _result + "\\u" + _hex4(_code)
+} else {
+_result = _result + _ch
+}
+}
+_i = _i + 1
+}
+_result = _result + "\""
+return _result
+}
+
+_h = "0123456789abcdef"
+
+fn _hex1(v) {
+return _h[v:v+1]
+}
+
+fn _hex4(v) {
+return _hex1((v / 4096) % 16) + _hex1((v / 256) % 16) + _hex1((v / 16) % 16) + _hex1(v % 16)
+}
+
+fn _stringify(val, indent, depth) {
+_t = type.of(val)
+if val == null { return "null" }
+if _t == "bool" {
+if val { return "true" }
+return "false"
+}
+if _t == "number" || _t == "int" {
+return str(val)
+}
+if _t == "string" {
+return _escStr(val)
+}
+if _t == "object" {
+return _stringifyObj(val, indent, depth)
+}
+if _t == "array" {
+return _stringifyArr(val, indent, depth)
+}
+return "null"
+}
+
+fn _stringifyObj(obj, indent, depth) {
+_keys = obj.keys()
+_n = #_keys
+if _n == 0 { return "{}" }
+_pretty = indent != null
+_nl = "\n"
+_pad = ""
+if _pretty {
+_i = 0
+while _i < depth {
+_pad = _pad + indent
+_i = _i + 1
+}
+}
+_result = "{"
+_first = true
+_ki = 0
+while _ki < _n {
+_key = _keys[_ki]
+_v = obj.get(_key)
+if _v == null && !obj.has(_key) {
+_ki = _ki + 1
+continue
+}
+if !_first {
+_result = _result + ","
+}
+_first = false
+if _pretty {
+_result = _result + _nl + _pad + indent
+} else {
+_result = _result + " "
+}
+_result = _result + _escStr(_key) + ":"
+if _pretty {
+_result = _result + " "
+} else {
+_result = _result + " "
+}
+_result = _result + _stringify(_v, indent, depth + 1)
+_ki = _ki + 1
+}
+if _pretty {
+_result = _result + _nl + _pad
+} else {
+if !_first {
+_result = _result + " "
+}
+}
+_result = _result + "}"
+return _result
+}
+
+fn _stringifyArr(arr, indent, depth) {
+_n = #arr
+if _n == 0 { return "[]" }
+_pretty = indent != null
+_nl = "\n"
+_pad = ""
+if _pretty {
+_i = 0
+while _i < depth {
+_pad = _pad + indent
+_i = _i + 1
+}
+}
+_result = "["
+_first = true
+_ai = 0
+while _ai < _n {
+_v = arr[_ai]
+if !_first {
+_result = _result + ","
+}
+_first = false
+if _pretty {
+_result = _result + _nl + _pad + indent
+}
+_result = _result + _stringify(_v, indent, depth + 1)
+_ai = _ai + 1
+}
+if _pretty {
+_result = _result + _nl + _pad
+}
+_result = _result + "]"
+return _result
+}
+
+// ============================================================
+// Public API
+// ============================================================
+
+fn parse(source) {
+_src = source
+_pos = 0
+_len = #source
+_result = _parseValue()
+if _result == null { return null }
+_skipWS()
+if _pos != _len { return null }
+return _result
+}
+
+fn stringify(value, indent) {
+_ind = null
+if indent != null {
+if type.of(indent) == "number" || type.of(indent) == "int" {
+if indent > 0 {
+_s = ""
+_i = 0
+while _i < indent {
+_s = _s + " "
+_i = _i + 1
+}
+_ind = _s
+}
+} else {
+_ind = str(indent)
+}
+}
+return _stringify(value, _ind, 0)
+}
+
+fn parseFile(path) {
+_source = fs.read(path)
+if _source == null { return null }
+return parse(_source)
 }

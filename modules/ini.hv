@@ -1,0 +1,369 @@
+// ini.hv - INI parser and writer module
+// Provides: parse, stringify, parseFile, get, set
+
+// ============================================================
+// Internal helpers
+// ============================================================
+
+fn _findInlineComment(line) {
+  len = #line
+  i = 0
+  inDouble = false
+  inSingle = false
+  while i < len {
+    ch = line[i:i+1]
+    if ch == "\"" && !inSingle {
+      inDouble = !inDouble
+    } else if ch == "'" && !inDouble {
+      inSingle = !inSingle
+    } else if !inSingle && !inDouble {
+      if ch == ";" || ch == "#" {
+        return i
+      }
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+fn _unquote(s) {
+  len = #s
+  if len < 2 {
+    return s
+  }
+  first = s[0:1]
+  last = s[len-1:len]
+  if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+    inner = s[1:len-1]
+    result = ""
+    i = 0
+    innerLen = #inner
+    while i < innerLen {
+      ch = inner[i:i+1]
+      if ch == "\\" {
+        nextIdx = i + 1
+        if nextIdx < innerLen {
+          nch = inner[nextIdx:nextIdx+1]
+          if nch == "\\" {
+            result = result + "\\"
+            i = i + 2
+          } else if nch == "\"" {
+            result = result + "\""
+            i = i + 2
+          } else if nch == "'" {
+            result = result + "'"
+            i = i + 2
+          } else if nch == "n" {
+            result = result + "\n"
+            i = i + 2
+          } else if nch == "t" {
+            result = result + "\t"
+            i = i + 2
+          } else if nch == "r" {
+            result = result + "\r"
+            i = i + 2
+          } else {
+            result = result + ch
+            i = i + 1
+          }
+        } else {
+          result = result + ch
+          i = i + 1
+        }
+      } else {
+        result = result + ch
+        i = i + 1
+      }
+    }
+    return result
+  }
+  return s
+}
+
+fn _findSeparator(line) {
+  len = #line
+  i = 0
+  while i < len {
+    ch = line[i:i+1]
+    if ch == "=" || ch == ":" {
+      return [ch, i]
+    }
+    if ch == "\"" || ch == "'" {
+      i = i + 1
+      while i < len {
+        qch = line[i:i+1]
+        if qch == ch {
+          break
+        }
+        i = i + 1
+      }
+    }
+    i = i + 1
+  }
+  return null
+}
+
+// ============================================================
+// Parsing
+// ============================================================
+
+fn parse(source) {
+  result = {}
+  currentSection = ""
+  lines = source.split("\n")
+  lineCount = #lines
+  i = 0
+
+  while i < lineCount {
+    line = lines[i]
+    trimmed = line.trim()
+
+    if #trimmed == 0 {
+      i = i + 1
+    } else {
+      first = trimmed[0:1]
+
+      if first == "#" || first == ";" {
+        i = i + 1
+      } else if first == "[" {
+        endPos = trimmed.find("]")
+        if endPos != null && endPos >= 1 {
+          sectionName = trimmed[1:endPos].trim()
+          currentSection = sectionName
+          if !result.has(sectionName) {
+            result.set(sectionName, {})
+          }
+        }
+        i = i + 1
+      } else {
+        sep = _findSeparator(trimmed)
+        if sep != null {
+          sepIdx = sep[1]
+          key = trimmed[0:sepIdx].trim()
+          valPart = trimmed[sepIdx+1:]
+
+          commentPos = _findInlineComment(valPart)
+          if commentPos >= 0 {
+            valPart = valPart[0:commentPos]
+          }
+          valPart = valPart.trim()
+
+          // multiline continuation (trailing backslash)
+          done = false
+          while !done && #valPart > 0 {
+            vLen = #valPart
+            if vLen >= 1 && valPart[vLen-1:vLen] == "\\" {
+              valPart = valPart[0:vLen-1]
+              nextI = i + 1
+              if nextI < lineCount {
+                nextLine = lines[nextI].trim()
+                if #nextLine > 0 && nextLine[0:1] != "#" && nextLine[0:1] != ";" {
+                  nextCommentPos = _findInlineComment(nextLine)
+                  nextVal = nextLine
+                  if nextCommentPos >= 0 {
+                    nextVal = nextLine[0:nextCommentPos]
+                  }
+                  valPart = valPart + nextVal.trim()
+                }
+                i = i + 1
+              } else {
+                done = true
+              }
+            } else {
+              done = true
+            }
+          }
+
+          unquoted = _unquote(valPart)
+
+          if currentSection == "" {
+            result.set(key, unquoted)
+          } else {
+            sectionObj = result[currentSection]
+            if sectionObj == null {
+              sectionObj = {}
+              result.set(currentSection, sectionObj)
+            }
+            sectionObj.set(key, unquoted)
+          }
+        } else {
+          key = trimmed
+          commentPos = _findInlineComment(key)
+          if commentPos >= 0 {
+            key = key[0:commentPos].trim()
+          }
+          if #key > 0 {
+            if currentSection == "" {
+              result.set(key, "")
+            } else {
+              sectionObj = result[currentSection]
+              if sectionObj == null {
+                sectionObj = {}
+                result.set(currentSection, sectionObj)
+              }
+              sectionObj.set(key, "")
+            }
+          }
+        }
+        i = i + 1
+      }
+    }
+  }
+
+  return result
+}
+
+// ============================================================
+// Stringifying
+// ============================================================
+
+fn _needsQuoting(s) {
+  s = str(s)
+  if #s == 0 {
+    return true
+  }
+  i = 0
+  len = #s
+  while i < len {
+    ch = s[i:i+1]
+    if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == ";" || ch == "#" || ch == "\"" || ch == "'" || ch == "\\" {
+      return true
+    }
+    i = i + 1
+  }
+  return false
+}
+
+fn _quoteValue(s) {
+  result = "\""
+  i = 0
+  len = #s
+  while i < len {
+    ch = s[i:i+1]
+    if ch == "\\" {
+      result = result + "\\\\"
+    } else if ch == "\"" {
+      result = result + "\\\""
+    } else if ch == "\n" {
+      result = result + "\\n"
+    } else if ch == "\t" {
+      result = result + "\\t"
+    } else if ch == "\r" {
+      result = result + "\\r"
+    } else {
+      result = result + ch
+    }
+    i = i + 1
+  }
+  result = result + "\""
+  return result
+}
+
+fn stringify(value) {
+  result = ""
+  globalKeys = []
+  sectionNames = []
+
+  allKeys = value.keys()
+  for key in allKeys {
+    v = value[key]
+    if type.of(v) == "object" {
+      sectionNames.push(key)
+    } else {
+      globalKeys.push(key)
+    }
+  }
+
+  gLen = #globalKeys
+  gi = 0
+  while gi < gLen {
+    key = globalKeys[gi]
+    v = value[key]
+    valStr = str(v)
+    if _needsQuoting(valStr) {
+      valStr = _quoteValue(valStr)
+    }
+    result = result + key + " = " + valStr + "\n"
+    gi = gi + 1
+  }
+
+  sLen = #sectionNames
+  si = 0
+  while si < sLen {
+    sectionName = sectionNames[si]
+    sectionObj = value[sectionName]
+
+    if #result > 0 {
+      result = result + "\n"
+    }
+    result = result + "[" + sectionName + "]\n"
+
+    sectionKeys = sectionObj.keys()
+    kLen = #sectionKeys
+    ki = 0
+    while ki < kLen {
+      key = sectionKeys[ki]
+      v = sectionObj[key]
+      valStr = str(v)
+      if _needsQuoting(valStr) {
+        valStr = _quoteValue(valStr)
+      }
+      result = result + key + " = " + valStr + "\n"
+      ki = ki + 1
+    }
+
+    si = si + 1
+  }
+
+  return result
+}
+
+// ============================================================
+// File I/O
+// ============================================================
+
+fn parseFile(path) {
+  source = fs.read(path)
+  if source == null {
+    return {}
+  }
+  return parse(source)
+}
+
+// ============================================================
+// Convenience accessors
+// ============================================================
+
+fn get(data, section, key, default) {
+  if section == null || section == "" {
+    if data.has(key) {
+      return data[key]
+    }
+    if default != null {
+      return default
+    }
+    return null
+  }
+  if data.has(section) {
+    sectionObj = data[section]
+    if sectionObj != null && sectionObj.has(key) {
+      return sectionObj[key]
+    }
+  }
+  if default != null {
+    return default
+  }
+  return null
+}
+
+fn set(data, section, key, value) {
+  if section == null || section == "" {
+    data.set(key, value)
+    return
+  }
+  if !data.has(section) {
+    data.set(section, {})
+  }
+  sectionObj = data[section]
+  sectionObj.set(key, value)
+}

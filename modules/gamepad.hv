@@ -1,0 +1,205 @@
+// gamepad.hv — Gamepad/joystick access via Linux joystick API (/dev/input/js*)
+// Provides: gamepad.list, gamepad.open, gamepad.close,
+// gamepad.read, gamepad.readNonBlock, gamepad.state,
+// gamepad.axis, gamepad.button, gamepad.rumble, gamepad.name
+
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_open = ffi.sym(_c, "open")
+_close = ffi.sym(_c, "close")
+_read = ffi.sym(_c, "read")
+_ioctl = ffi.sym(_c, "ioctl")
+_popen = ffi.sym(_c, "popen")
+_pclose = ffi.sym(_c, "pclose")
+_fgets = ffi.sym(_c, "fgets")
+
+_O_RDONLY = 0
+_O_NONBLOCK = 2048
+
+_JSIOCGAXES = 2147576337
+_JSIOCGBUTTONS = 2147576338
+_JSIOCGNAME128 = 2155899411
+
+_JS_EVENT_BUTTON = 1
+_JS_EVENT_AXIS = 2
+_JS_EVENT_INIT = 128
+
+fn _shell(cmd) {
+  _cs = ffi.cstring(cmd)
+  _mode = ffi.cstring("r")
+  _fp = ffi.call(_popen, "pointer", ["pointer", "pointer"], _cs, _mode)
+  ffi.free(_cs)
+  ffi.free(_mode)
+  if _fp == 0 { return "" }
+  _buf = ffi.allocBytes(4096)
+  _result = ""
+  _looping = true
+  while _looping {
+    _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 4096, _fp)
+    if _ret == 0 {
+      _looping = false
+    } else {
+      _chunk = ffi.string(_buf)
+      _result = _result + _chunk
+    }
+  }
+  ffi.call(_pclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  _result
+}
+
+fn list() {
+  _raw = _shell("ls /dev/input/js* 2>/dev/null")
+  if _raw == null || #_raw == 0 { return [] }
+  _lines = _raw.split("\n")
+  _result = []
+  for _line in _lines {
+    _t = _line.trim()
+    if #_t > 0 { _result.push(_t) }
+  }
+  _result
+}
+
+fn open(path) {
+  if path == null { path = "/dev/input/js0" }
+  _path_cs = ffi.cstring(path)
+  _fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, _O_RDONLY)
+  ffi.free(_path_cs)
+  if _fd < 0 { return null }
+
+  _axes_buf = ffi.allocBytes(1)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _JSIOCGAXES, _axes_buf)
+  _axes = ffi.get_u8(_axes_buf)
+  ffi.free(_axes_buf)
+
+  _buttons_buf = ffi.allocBytes(1)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _JSIOCGBUTTONS, _buttons_buf)
+  _buttons = ffi.get_u8(_buttons_buf)
+  ffi.free(_buttons_buf)
+
+  _name_buf = ffi.allocBytes(128)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _JSIOCGNAME128, _name_buf)
+  _devname = ffi.string(_name_buf)
+  ffi.free(_name_buf)
+
+  _axes_arr = []
+  _i = 0
+  while _i < _axes {
+    _axes_arr.push(0)
+    _i = _i + 1
+  }
+
+  _buttons_arr = []
+  _i = 0
+  while _i < _buttons {
+    _buttons_arr.push(false)
+    _i = _i + 1
+  }
+
+  {fd: _fd, path: path, name: _devname, axes: _axes, buttons: _buttons, _axes_arr: _axes_arr, _buttons_arr: _buttons_arr, _nonblock: false}
+}
+
+fn close(handle) {
+  if handle == null { return }
+  ffi.call(_close, "int32", ["int32"], handle.fd)
+}
+
+fn _parseEvent(buf) {
+  _time = ffi.get_u32(buf)
+  _value = ffi.get_i16(ffi.ptr_add(buf, 4))
+  _type = ffi.get_u8(ffi.ptr_add(buf, 6))
+  _number = ffi.get_u8(ffi.ptr_add(buf, 7))
+  _init = ((_type & _JS_EVENT_INIT)) != 0
+  _raw_type = ((_type & 127))
+  _type_str = "button"
+  if _raw_type == _JS_EVENT_AXIS { _type_str = "axis" }
+  {time: _time, value: _value, type: _type_str, number: _number, init: _init}
+}
+
+fn _readEvent(handle) {
+  _buf = ffi.allocBytes(8)
+  _n = ffi.call(_read, "int64", ["int32", "pointer", "int64"], handle.fd, _buf, 8)
+  if _n != 8 {
+    ffi.free(_buf)
+    return null
+  }
+  _ev = _parseEvent(_buf)
+  ffi.free(_buf)
+  _ev
+}
+
+fn _applyEvent(handle, ev) {
+  if ev.type == "axis" {
+    if ev.number < #handle._axes_arr {
+      handle._axes_arr[ev.number] = ev.value
+    }
+  } else if ev.type == "button" {
+    if ev.number < #handle._buttons_arr {
+      handle._buttons_arr[ev.number] = ev.value != 0
+    }
+  }
+}
+
+fn read(handle) {
+  if handle == null { return null }
+  _ev = _readEvent(handle)
+  if _ev == null { return null }
+  _applyEvent(handle, _ev)
+  _ev
+}
+
+fn readNonBlock(handle) {
+  if handle == null { return null }
+  if !handle._nonblock {
+    ffi.call(_close, "int32", ["int32"], handle.fd)
+    _path_cs = ffi.cstring(handle.path)
+    handle.fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, ((_O_RDONLY | _O_NONBLOCK))
+    ffi.free(_path_cs)
+    if handle.fd < 0 { return null }
+    handle._nonblock = true
+  }
+  _ev = _readEvent(handle)
+  if _ev == null { return null }
+  _applyEvent(handle, _ev)
+  _ev
+}
+
+fn state(handle) {
+  if handle == null { return null }
+  _looping = true
+  while _looping {
+    _ev = readNonBlock(handle)
+    if _ev == null {
+      _looping = false
+    }
+  }
+  {axes: handle._axes_arr, buttons: handle._buttons_arr}
+}
+
+fn axis(handle, index) {
+  if handle == null { return 0 }
+  if index == null { index = 0 }
+  state(handle)
+  if index < 0 || index >= #handle._axes_arr { return 0 }
+  handle._axes_arr[index]
+}
+
+fn button(handle, index) {
+  if handle == null { return false }
+  if index == null { index = 0 }
+  state(handle)
+  if index < 0 || index >= #handle._buttons_arr { return false }
+  handle._buttons_arr[index]
+}
+
+fn rumble(handle, strong, weak, ms) {
+  false
+}
+
+fn name(handle) {
+  if handle == null { return "" }
+  handle.name
+}

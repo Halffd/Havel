@@ -1,0 +1,295 @@
+// device.hv — Input device enumeration and information
+// Uses FFI popen to parse /proc/bus/input/devices and /sys/class/input
+// Provides: device.list, device.keyboards, device.mice, device.gamepads,
+// device.touchpads, device.byName, device.byHandler, device.count,
+// device.eventDevices, device.jsDevices, device.info
+
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_popen = ffi.sym(_c, "popen")
+_pclose = ffi.sym(_c, "pclose")
+_fgets = ffi.sym(_c, "fgets")
+
+fn _shell(cmd) {
+  _cs = ffi.cstring(cmd)
+  _mode = ffi.cstring("r")
+  _fp = ffi.call(_popen, "pointer", ["pointer", "pointer"], _cs, _mode)
+  ffi.free(_cs)
+  ffi.free(_mode)
+  if _fp == 0 { return "" }
+  _buf = ffi.allocBytes(8192)
+  _result = ""
+  _looping = true
+  while _looping {
+    _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 8192, _fp)
+    if _ret == 0 {
+      _looping = false
+    } else {
+      _result = _result + ffi.string(_buf)
+    }
+  }
+  ffi.call(_pclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  _result
+}
+
+fn _toLowerCase(s) {
+  _result = ""
+  _i = 0
+  _len = #s
+  while _i < _len {
+    _ch = s[_i:_i + 1]
+    if _ch >= "A" && _ch <= "Z" {
+      _result = _result + char(ord(_ch) + 32)
+    } else {
+      _result = _result + _ch
+    }
+    _i = _i + 1
+  }
+  _result
+}
+
+fn _containsLower(s, sub) {
+  _ls = _toLowerCase(s)
+  _lsub = _toLowerCase(sub)
+  _idx = _ls.find(_lsub)
+  _idx != null && _idx >= 0
+}
+
+fn _parseHandlers(line) {
+  _h_match = line.find("Handlers=")
+  if _h_match == null || _h_match < 0 { return [] }
+  _val = line[_h_match + 9:]
+  _end = _val.find(" ")
+  if _end != null && _end >= 0 { _val = _val[:_end] }
+  if #_val == 0 { return [] }
+  _val.split(" ")
+}
+
+fn _extractField(line, field) {
+  _idx = line.find(field + "=")
+  if _idx == null || _idx < 0 { return "" }
+  _rest = line[_idx + #field + 1:]
+  _end = _rest.find(" ")
+  if _end == null || _end < 0 { _end = #_rest }
+  _rest[:_end]
+}
+
+fn _findBusName(code) {
+  if code == "0003" || code == "0004" { "USB" }
+  else if code == "0005" { "Bluetooth" }
+  else if code == "0006" { "Serial" }
+  else if code == "0000" || code == "0018" { "PCI" }
+  else { "ISA" }
+}
+
+fn _parseProcDevices() {
+  _raw = _shell("cat /proc/bus/input/devices 2>/dev/null")
+  if _raw == null || #_raw == 0 { return [] }
+  _lines = _raw.split("\n")
+  _devices = []
+  _cur = null
+  for _line in _lines {
+    _t = _line.trim()
+    if #_t == 0 {
+      if _cur != null {
+        _devices.push(_cur)
+        _cur = null
+      }
+      continue
+    }
+    if _t.find("I:") == 0 {
+      if _cur != null { _devices.push(_cur) }
+      _cur = {name: "", bus: "", vendor: "", product: "", handlers: [], phys: "", sysfs: ""}
+      _bus_code = _extractField(_t, "Bus")
+      if _bus_code != "" { _cur.bus = _findBusName(_bus_code) }
+      _cur.vendor = _extractField(_t, "Vendor")
+      _cur.product = _extractField(_t, "Product")
+    } else if _cur != null {
+      if _t.find("N:") == 0 {
+        _dq1 = _t.find("\"")
+        if _dq1 != null && _dq1 >= 0 {
+          _after = _t[_dq1 + 1:]
+          _dq2 = _after.find("\"")
+          if _dq2 != null && _dq2 >= 0 {
+            _cur.name = _after[:_dq2]
+          } else {
+            _cur.name = _after
+          }
+        }
+      } else if _t.find("H:") == 0 {
+        _cur.handlers = _parseHandlers(_t)
+        _sysfs_match = _t.find("sysfs")
+        if _sysfs_match != null && _sysfs_match >= 0 {
+          _rest = _t[_sysfs_match + 6:]
+          _end = _rest.find(" ")
+          if _end == null || _end < 0 { _end = #_rest }
+          _cur.sysfs = _rest[:_end]
+        }
+      } else if _t.find("P:") == 0 {
+        _cur.phys = _extractField(_t, "Phys")
+      }
+    }
+  }
+  if _cur != null { _devices.push(_cur) }
+  _devices
+}
+
+_cached_devices = null
+
+fn _devices() {
+  if _cached_devices == null {
+    _cached_devices = _parseProcDevices()
+  }
+  _cached_devices
+}
+
+fn _hasHandler(dev, handler) {
+  for _h in dev.handlers {
+    if _h == handler { return true }
+  }
+  false
+}
+
+fn _hasHandlerPrefix(dev, prefix) {
+  _plen = #prefix
+  for _h in dev.handlers {
+    if #_h >= _plen && _h[:_plen] == prefix { return true }
+  }
+  false
+}
+
+fn _countBitmaskWords(raw) {
+  if raw == null || #raw == 0 { return 0 }
+  _trimmed = raw.trim()
+  if #_trimmed == 0 { return 0 }
+  _count = 0
+  _parts = _trimmed.split(" ")
+  for _p in _parts {
+    if #_p.trim() > 0 { _count = _count + 1 }
+  }
+  _count
+}
+
+fn list() {
+  _devices()
+}
+
+fn keyboards() {
+  _all = _devices()
+  _result = []
+  for _d in _all {
+    if _hasHandler(_d, "kbd") { _result.push(_d) }
+  }
+  _result
+}
+
+fn mice() {
+  _all = _devices()
+  _result = []
+  for _d in _all {
+    if _hasHandlerPrefix(_d, "mouse") { _result.push(_d) }
+  }
+  _result
+}
+
+fn gamepads() {
+  _all = _devices()
+  _result = []
+  _GAMEPAD_KEYWORDS = ["gamepad", "joystick", "xbox", "playstation", "controller"]
+  for _d in _all {
+    _matched = false
+    if _hasHandlerPrefix(_d, "js") { _matched = true }
+    if !_matched {
+      for _kw in _GAMEPAD_KEYWORDS {
+        if _containsLower(_d.name, _kw) { _matched = true; break }
+      }
+    }
+    if _matched { _result.push(_d) }
+  }
+  _result
+}
+
+fn touchpads() {
+  _all = _devices()
+  _result = []
+  _TP_KEYWORDS = ["touchpad", "trackpad", "synaptics", "alps"]
+  for _d in _all {
+    _matched = false
+    for _kw in _TP_KEYWORDS {
+      if _containsLower(_d.name, _kw) { _matched = true; break }
+    }
+    if _matched { _result.push(_d) }
+  }
+  _result
+}
+
+fn byName(name) {
+  _all = _devices()
+  for _d in _all {
+    if _containsLower(_d.name, name) { return _d }
+  }
+  null
+}
+
+fn byHandler(handler) {
+  _all = _devices()
+  for _d in _all {
+    if _hasHandler(_d, handler) { return _d }
+  }
+  null
+}
+
+fn count() {
+  #_devices()
+}
+
+fn eventDevices() {
+  _raw = _shell("ls /sys/class/input/ 2>/dev/null")
+  if _raw == null || #_raw == 0 { return [] }
+  _entries = _raw.split("\n")
+  _result = []
+  for _e in _entries {
+    _t = _e.trim()
+    if #_t == 0 { continue }
+    if _t.find("event") == 0 {
+      _name_raw = _shell("cat /sys/class/input/" + _t + "/device/name 2>/dev/null")
+      _result.push({event: _t, path: "/dev/input/" + _t, name: _name_raw.trim()})
+    }
+  }
+  _result
+}
+
+fn jsDevices() {
+  _raw = _shell("ls /dev/input/ 2>/dev/null")
+  if _raw == null || #_raw == 0 { return [] }
+  _entries = _raw.split("\n")
+  _result = []
+  for _e in _entries {
+    _t = _e.trim()
+    if #_t == 0 { continue }
+    if _t.find("js") == 0 { _result.push("/dev/input/" + _t) }
+  }
+  _result
+}
+
+fn info(path) {
+  if path == null || #path == 0 { return null }
+  _basename_raw = _shell("basename " + path + " 2>/dev/null")
+  _basename = _basename_raw.trim()
+  if _basename == "" { return null }
+  _all = _devices()
+  for _d in _all {
+    for _h in _d.handlers {
+      if _h == _basename {
+        _axes = _countBitmaskWords(_shell("cat /sys/class/input/" + _basename + "/device/capabilities/abs 2>/dev/null"))
+        _buttons = _countBitmaskWords(_shell("cat /sys/class/input/" + _basename + "/device/capabilities/key 2>/dev/null")) * 32
+        return {name: _d.name, bus: _d.bus, vendor: _d.vendor, product: _d.product, phys: _d.phys, handlers: _d.handlers, sysfs: _d.sysfs, event: _basename, path: path, axes: _axes, buttons: _buttons}
+      }
+    }
+  }
+  null
+}

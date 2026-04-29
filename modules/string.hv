@@ -6,13 +6,13 @@
 // ============================================================
 
 fn upper(s) {
-    let result = ""
-    let i = 0
-    let len = #s
+    result = ""
+    i = 0
+    len = #s
     while i < len {
-        let ch = s[i:i+1]
+        ch = s[i:i+1]
         if ch >= "a" && ch <= "z" {
-            result = result + chr(ord(ch) - 32)
+            result = result + char(ord(ch) - 32)
         } else {
             result = result + ch
         }
@@ -22,13 +22,13 @@ fn upper(s) {
 }
 
 fn lower(s) {
-    let result = ""
-    let i = 0
-    let len = #s
+    result = ""
+    i = 0
+    len = #s
     while i < len {
-        let ch = s[i:i+1]
+        ch = s[i:i+1]
         if ch >= "A" && ch <= "Z" {
-            result = result + chr(ord(ch) + 32)
+            result = result + char(ord(ch) + 32)
         } else {
             result = result + ch
         }
@@ -38,17 +38,17 @@ fn lower(s) {
 }
 
 fn trim(s) {
-    let start = 0
-    let end = #s - 1
+    start = 0
+    end = #s - 1
     while start <= end {
-        let ch = s[start:start+1]
+        ch = s[start:start+1]
         if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
             break
         }
         start = start + 1
     }
     while end >= start {
-        let ch = s[end:end+1]
+        ch = s[end:end+1]
         if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
             break
         }
@@ -61,15 +61,15 @@ fn trim(s) {
 }
 
 fn split(s, delim) {
-    let result = []
+    result = []
     if delim == null {
         delim = ","
     }
-    let pos = 0
-    let dlen = #delim
-    let slen = #s
+    pos = 0
+    dlen = #delim
+    slen = #s
     while pos <= slen {
-        let found = s.find(delim, pos)
+        found = s.find(delim, pos)
         if found == null || found < 0 {
             result.push(s[pos:])
             break
@@ -84,9 +84,9 @@ fn join(arr, delim) {
     if delim == null {
         delim = ""
     }
-    let result = ""
-    let i = 0
-    let len = #arr
+    result = ""
+    i = 0
+    len = #arr
     while i < len {
         if i > 0 {
             result = result + delim
@@ -101,12 +101,12 @@ fn replace(s, old, new) {
     if old == null || old == "" {
         return s
     }
-    let result = ""
-    let pos = 0
-    let slen = #s
-    let olen = #old
+    result = ""
+    pos = 0
+    slen = #s
+    olen = #old
     while true {
-        let idx = s.find(old, pos)
+        idx = s.find(old, pos)
         if idx == null || idx < 0 {
             result = result + s[pos:]
             break
@@ -139,12 +139,12 @@ fn count(s, sub) {
     if sub == null || sub == "" {
         return 0
     }
-    let cnt = 0
-    let pos = 0
-    let slen = #s
-    let olen = #sub
+    cnt = 0
+    pos = 0
+    slen = #s
+    olen = #sub
     while pos <= slen {
-        let idx = s.find(sub, pos)
+        idx = s.find(sub, pos)
         if idx == null || idx < 0 {
             break
         }
@@ -158,8 +158,8 @@ fn repeat(s, n) {
     if n <= 0 {
         return ""
     }
-    let result = ""
-    let i = 0
+    result = ""
+    i = 0
     while i < n {
         result = result + s
         i = i + 1
@@ -174,10 +174,10 @@ fn padStart(s, width, pad) {
     if #s >= width {
         return s
     }
-    let needed = width - #s
-    let padLen = #pad
-    let prefix = ""
-    let i = 0
+    needed = width - #s
+    padLen = #pad
+    prefix = ""
+    i = 0
     while i < needed {
         prefix = prefix + pad[i % padLen:i % padLen + 1]
         i = i + 1
@@ -192,10 +192,10 @@ fn padEnd(s, width, pad) {
     if #s >= width {
         return s
     }
-    let needed = width - #s
-    let padLen = #pad
-    let suffix = ""
-    let i = 0
+    needed = width - #s
+    padLen = #pad
+    suffix = ""
+    i = 0
     while i < needed {
         suffix = suffix + pad[i % padLen:i % padLen + 1]
         i = i + 1
@@ -224,9 +224,9 @@ fn right(s, n) {
 }
 
 fn chars(s) {
-    let result = []
-    let i = 0
-    let len = #s
+    result = []
+    i = 0
+    len = #s
     while i < len {
         result.push(s[i:i+1])
         i = i + 1
@@ -236,9 +236,9 @@ fn chars(s) {
 
 fn bytes(s) {
     // Returns array of byte values (0-255)
-    let result = []
-    let i = 0
-    let len = #s
+    result = []
+    i = 0
+    len = #s
     while i < len {
         result.push(ord(s[i:i+1]))
         i = i + 1
@@ -250,10 +250,10 @@ fn bytes(s) {
 // FFI-based operations (if libc available)
 // ============================================================
 
-let _libc = null
-let _toupper = null
-let _tolower = null
-let _strlen = null
+_libc = null
+_toupper = null
+_tolower = null
+_strlen = null
 
 fn _initLibc() {
     if _libc != null {
@@ -285,8 +285,10 @@ fn lowerFast(s) {
     return lower(s)
 }
 
+// ord() and char() are provided by the host runtime
+
 // ============================================================
-// Character helpers (pure Havel)
+// Utility functions
 // ============================================================
 
 fn ord(ch) {
@@ -299,7 +301,7 @@ fn ord(ch) {
     return ch[0]  // This won't work, need actual byte value
 }
 
-fn chr(code) {
+fn char(code) {
     // Convert code point to string
     // Simplified: only ASCII
     if code < 0 || code > 127 {
@@ -338,18 +340,18 @@ fn isLetter(ch) {
     if #ch != 1 {
         return false
     }
-    return (ch >= "A" && ch <= "Z") or (ch >= "a" && ch <= "z")
+    return (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z")
 }
 
 fn isAlphaNum(ch) {
-    return isLetter(ch) or isDigit(ch)
+    return isLetter(ch) || isDigit(ch)
 }
 
 fn isSpace(ch) {
     if #ch != 1 {
         return false
     }
-    return ch == " " or ch == "\t" or ch == "\n" or ch == "\r"
+    return ch == " " || ch == "\t" || ch == "\n" || ch == "\r"
 }
 
 // ============================================================
@@ -357,8 +359,8 @@ fn isSpace(ch) {
 // ============================================================
 
 fn reverse(s) {
-    let result = ""
-    let i = #s - 1
+    result = ""
+    i = #s - 1
     while i >= 0 {
         result = result + s[i:i+1]
         i = i - 1

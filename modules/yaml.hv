@@ -1,0 +1,1970 @@
+// modules/yaml.hv
+// Pure Havel YAML parser and stringifier
+// Supports: mappings, sequences, nested structures, flow style,
+// multiline strings (| and >), comments, document markers,
+// scalar types (string, int, float, bool, null)
+
+// ============================================================
+// Internal helpers
+// ============================================================
+
+fn _isWhitespace(ch) {
+    return ch == " " || ch == "\t" || ch == "\n" || ch == "\r"
+}
+
+fn _isNewline(ch) {
+    return ch == "\n" || ch == "\r"
+}
+
+fn _isDigit(ch) {
+    return ch >= "0" && ch <= "9"
+}
+
+fn _isHexDigit(ch) {
+    return _isDigit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+}
+
+fn _isAlpha(ch) {
+    return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_" || ch == "-"
+}
+
+fn _isAnchorChar(ch) {
+    return _isAlpha(ch) || _isDigit(ch)
+}
+
+// ============================================================
+// Line preprocessing
+// ============================================================
+
+fn _line(content, indent, raw) {
+    return {content: content, indent: indent, raw: raw}
+}
+
+fn _preprocess(source) {
+    lines = []
+    rawLines = source.split("\n")
+    i = 0
+    n = #rawLines
+
+    while i < n {
+        raw = rawLines[i]
+        trimmed = raw.trim()
+
+        // skip empty lines but track them for multiline block awareness
+        if #trimmed == 0 {
+            lines.push(_line("", -1, raw))
+            i = i + 1
+            continue
+        }
+
+        // skip document markers
+        if trimmed == "---" || trimmed == "..." {
+            i = i + 1
+            continue
+        }
+
+        // strip inline comment (not inside strings)
+        stripped = _stripComment(trimmed)
+
+        indent = 0
+        j = 0
+        rlen = #raw
+        while j < rlen {
+            ch = raw[j:j+1]
+            if ch == " " {
+                indent = indent + 1
+            } else if ch == "\t" {
+                indent = indent + 2
+            } else {
+                break
+            }
+            j = j + 1
+        }
+
+        lines.push(_line(stripped, indent, raw))
+        i = i + 1
+    }
+
+    return lines
+}
+
+// Strip trailing # comment, respecting quoted strings
+fn _stripComment(line) {
+    i = 0
+    n = #line
+    inSingle = false
+    inDouble = false
+
+    while i < n {
+        ch = line[i:i+1]
+        if inDouble {
+            if ch == "\\" {
+                i = i + 2
+                continue
+            }
+            if ch == "\"" {
+                inDouble = false
+            }
+            i = i + 1
+            continue
+        }
+        if inSingle {
+            if ch == "'" {
+                // check for escaped single quote ''
+                if i + 1 < n && line[i+1:i+2] == "'" {
+                    i = i + 2
+                    continue
+                }
+                inSingle = false
+            }
+            i = i + 1
+            continue
+        }
+        if ch == "\"" {
+            inDouble = true
+            i = i + 1
+            continue
+        }
+        if ch == "'" {
+            inSingle = true
+            i = i + 1
+            continue
+        }
+        if ch == "#" {
+            return line[0:i].trim()
+        }
+        i = i + 1
+    }
+    return line
+}
+
+// ============================================================
+// Scalar value parsing
+// ============================================================
+
+fn _parseScalar(text) {
+    t = text.trim()
+    if #t == 0 {
+        return null
+    }
+
+    lower = _toLowerCase(t)
+
+    // null
+    if lower == "null" || lower == "~" || t == "" {
+        return null
+    }
+    // booleans
+    if lower == "true" || lower == "yes" || lower == "on" {
+        return true
+    }
+    if lower == "false" || lower == "no" || lower == "off" {
+        return false
+    }
+
+    // integers: decimal, hex (0x), octal (0o), binary (0b)
+    if #t >= 3 && t[0:1] == "0" {
+        prefix = t[0:2]
+        if prefix == "0x" || prefix == "0X" {
+            val = _parseHex(t[2:])
+            if val != null {
+                return val
+            }
+        }
+        if prefix == "0o" || prefix == "0O" {
+            val = _parseOctal(t[2:])
+            if val != null {
+                return val
+            }
+        }
+        if prefix == "0b" || prefix == "0B" {
+            val = _parseBinary(t[2:])
+            if val != null {
+                return val
+            }
+        }
+    }
+
+    // decimal integer
+    intVal = _tryParseInt(t)
+    if intVal != null {
+        return intVal
+    }
+
+    // float
+    floatVal = _tryParseFloat(t)
+    if floatVal != null {
+        return floatVal
+    }
+
+    // .inf, -.inf, .nan
+    if lower == ".inf" || lower == "+.inf" {
+        return 1.0 / 0.0
+    }
+    if lower == "-.inf" {
+        return -1.0 / 0.0
+    }
+    if lower == ".nan" {
+        return 0.0 / 0.0
+    }
+
+    // quoted strings
+    if #t >= 2 {
+        first = t[0:1]
+        last = t[#t-1:#t]
+        if first == "\"" && last == "\"" {
+            return _parseDoubleQuoted(t)
+        }
+        if first == "'" && last == "'" {
+            return _parseSingleQuoted(t)
+        }
+    }
+
+    // plain string
+    return t
+}
+
+fn _toLowerCase(s) {
+    result = ""
+    i = 0
+    n = #s
+    while i < n {
+        ch = s[i:i+1]
+        if ch >= "A" && ch <= "Z" {
+            result = result + _toLower(ch)
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn _toLower(ch) {
+    code = 0
+    i = 0
+    while i < 26 {
+        if ch == "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i:i+1] {
+            return "abcdefghijklmnopqrstuvwxyz"[i:i+1]
+        }
+        i = i + 1
+    }
+    return ch
+}
+
+fn _parseHex(s) {
+    if #s == 0 {
+        return null
+    }
+    val = 0
+    i = 0
+    n = #s
+    while i < n {
+        ch = s[i:i+1]
+        d = _hexVal(ch)
+        if d == null {
+            return null
+        }
+        val = val * 16 + d
+        i = i + 1
+    }
+    return val
+}
+
+fn _hexVal(ch) {
+    if ch >= "0" && ch <= "9" {
+        return _digitVal(ch)
+    }
+    lo = _toLower(ch)
+    if lo >= "a" && lo <= "f" {
+        alphabet = "abcdef"
+        i = 0
+        while i < 6 {
+            if lo == alphabet[i:i+1] {
+                return 10 + i
+            }
+            i = i + 1
+        }
+    }
+    return null
+}
+
+fn _digitVal(ch) {
+    digits = "0123456789"
+    i = 0
+    while i < 10 {
+        if ch == digits[i:i+1] {
+            return i
+        }
+        i = i + 1
+    }
+    return null
+}
+
+fn _parseOctal(s) {
+    if #s == 0 {
+        return null
+    }
+    val = 0
+    i = 0
+    n = #s
+    while i < n {
+        ch = s[i:i+1]
+        if ch < "0" || ch > "7" {
+            return null
+        }
+        val = val * 8 + _digitVal(ch)
+        i = i + 1
+    }
+    return val
+}
+
+fn _parseBinary(s) {
+    if #s == 0 {
+        return null
+    }
+    val = 0
+    i = 0
+    n = #s
+    while i < n {
+        ch = s[i:i+1]
+        if ch == "0" {
+            val = val * 2
+        } else if ch == "1" {
+            val = val * 2 + 1
+        } else {
+            return null
+        }
+        i = i + 1
+    }
+    return val
+}
+
+fn _tryParseInt(s) {
+    if #s == 0 {
+        return null
+    }
+    i = 0
+    if s[0:1] == "-" || s[0:1] == "+" {
+        i = 1
+    }
+    if i >= #s {
+        return null
+    }
+
+    // check for underscores (YAML allows 1_000)
+    cleaned = ""
+    j = i
+    while j < #s {
+        ch = s[j:j+1]
+        if ch == "_" {
+            // skip underscore
+        } else if ch >= "0" && ch <= "9" {
+            cleaned = cleaned + ch
+        } else {
+            return null
+        }
+        j = j + 1
+    }
+
+    if #cleaned == 0 {
+        return null
+    }
+
+    val = 0
+    k = 0
+    while k < #cleaned {
+        d = _digitVal(cleaned[k:k+1])
+        val = val * 10 + d
+        k = k + 1
+    }
+
+    if s[0:1] == "-" {
+        return -val
+    }
+    return val
+}
+
+fn _tryParseFloat(s) {
+    if #s == 0 {
+        return null
+    }
+    lower = _toLowerCase(s)
+
+    // must have a dot || 'e' to be a float
+    hasDot = false
+    hasE = false
+    i = 0
+    if lower[0:1] == "-" || lower[0:1] == "+" {
+        i = 1
+    }
+    if i >= #lower {
+        return null
+    }
+
+    beforeDot = ""
+    afterDot = ""
+    expPart = ""
+    inExp = false
+    seenDot = false
+
+    while i < #lower {
+        ch = lower[i:i+1]
+        if ch == "." && !seenDot && !inExp {
+            seenDot = true
+            hasDot = true
+        } else if ch == "e" && !inExp {
+            inExp = true
+            hasE = true
+        } else if ch == "+" || ch == "-" {
+            if inExp && #expPart == 0 {
+                // sign after e is ok
+            } else {
+                return null
+            }
+        } else if ch >= "0" && ch <= "9" {
+            // ok
+        } else if ch == "_" {
+            // skip
+        } else {
+            return null
+        }
+
+        if inExp {
+            if ch != "_" {
+                expPart = expPart + ch
+            }
+        } else if seenDot {
+            if ch != "." && ch != "_" {
+                afterDot = afterDot + ch
+            }
+        } else {
+            beforeDot = beforeDot + ch
+        }
+        i = i + 1
+    }
+
+    if !hasDot && !hasE {
+        return null
+    }
+
+    // parse the float
+    intPart = 0
+    if #beforeDot > 0 {
+        intPart = _tryParseInt(beforeDot)
+        if intPart == null {
+            return null
+        }
+    }
+
+    fracVal = 0
+    fracDiv = 1
+    fi = 0
+    while fi < #afterDot {
+        d = _digitVal(afterDot[fi:fi+1])
+        if d == null {
+            return null
+        }
+        fracVal = fracVal * 10 + d
+        fracDiv = fracDiv * 10
+        fi = fi + 1
+    }
+
+    result = intPart + num(fracVal) / num(fracDiv)
+
+    if #expPart > 0 {
+        expVal = _tryParseInt(expPart)
+        if expVal == null {
+            return null
+        }
+        expMul = 1
+        if expVal >= 0 {
+            ei = 0
+            while ei < expVal {
+                expMul = expMul * 10
+                ei = ei + 1
+            }
+        } else {
+            ei = 0
+            while ei < -expVal {
+                expMul = expMul * 10
+                ei = ei + 1
+            }
+            expMul = num(1) / num(expMul)
+        }
+        result = result * expMul
+    }
+
+    if s[0:1] == "-" {
+        return -result
+    }
+    return result
+}
+
+// Parse double-quoted string with escape sequences
+fn _parseDoubleQuoted(s) {
+    inner = s[1:#s-1]
+    result = ""
+    i = 0
+    n = #inner
+    while i < n {
+        ch = inner[i:i+1]
+        if ch == "\\" && i + 1 < n {
+            next = inner[i+1:i+2]
+            if next == "n" {
+                result = result + "\n"
+                i = i + 2
+            } else if next == "t" {
+                result = result + "\t"
+                i = i + 2
+            } else if next == "r" {
+                result = result + "\r"
+                i = i + 2
+            } else if next == "\\" {
+                result = result + "\\"
+                i = i + 2
+            } else if next == "\"" {
+                result = result + "\""
+                i = i + 2
+            } else if next == "/" {
+                result = result + "/"
+                i = i + 2
+            } else if next == "0" {
+                result = result + "\0"
+                i = i + 2
+            } else if next == " " {
+                // escaped space - skip all following spaces/newlines
+                i = i + 2
+                while i < n && inner[i:i+1] == " " {
+                    i = i + 1
+                }
+                if i < n && inner[i:i+1] == "\n" {
+                    i = i + 1
+                    while i < n && (inner[i:i+1] == " " || inner[i:i+1] == "\t") {
+                        i = i + 1
+                    }
+                }
+            } else if next == "x" && i + 3 < n {
+                hexStr = inner[i+2:i+4]
+                val = _parseHex(hexStr)
+                if val != null {
+                    result = result + str(val)
+                }
+                i = i + 4
+            } else if next == "u" && i + 5 < n {
+                hexStr = inner[i+2:i+6]
+                val = _parseHex(hexStr)
+                if val != null {
+                    result = result + str(val)
+                }
+                i = i + 6
+            } else {
+                result = result + next
+                i = i + 2
+            }
+        } else {
+            result = result + ch
+            i = i + 1
+        }
+    }
+    return result
+}
+
+// Parse single-quoted string ('' is escaped quote)
+fn _parseSingleQuoted(s) {
+    inner = s[1:#s-1]
+    result = ""
+    i = 0
+    n = #inner
+    while i < n {
+        ch = inner[i:i+1]
+        if ch == "'" && i + 1 < n && inner[i+1:i+2] == "'" {
+            result = result + "'"
+            i = i + 2
+        } else {
+            result = result + ch
+            i = i + 1
+        }
+    }
+    return result
+}
+
+// ============================================================
+// Flow-style parsing (inline {a: b, c: d} and [a, b, c])
+// ============================================================
+
+fn _newFlowParser(src) {
+    return {src: src, pos: 0}
+}
+
+fn _flowSkipWS(p) {
+    while p.pos < #p.src {
+        ch = p.src[p.pos:p.pos+1]
+        if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" {
+            p.pos = p.pos + 1
+        } else {
+            break
+        }
+    }
+}
+
+fn _flowPeek(p) {
+    if p.pos < #p.src {
+        return p.src[p.pos:p.pos+1]
+    }
+    return ""
+}
+
+fn _flowAdvance(p) {
+    ch = _flowPeek(p)
+    p.pos = p.pos + 1
+    return ch
+}
+
+fn _flowParseValue(p) {
+    _flowSkipWS(p)
+    if p.pos >= #p.src {
+        return null
+    }
+
+    ch = _flowPeek(p)
+
+    // flow mapping
+    if ch == "{" {
+        return _flowParseMapping(p)
+    }
+    // flow sequence
+    if ch == "[" {
+        return _flowParseSequence(p)
+    }
+    // double-quoted string
+    if ch == "\"" {
+        return _flowParseDoubleString(p)
+    }
+    // single-quoted string
+    if ch == "'" {
+        return _flowParseSingleString(p)
+    }
+
+    // scalar
+    start = p.pos
+    while p.pos < #p.src {
+        c = p.src[p.pos:p.pos+1]
+        if c == "," || c == "]" || c == "}" || c == ":" || c == " " || c == "\t" || c == "\n" {
+            break
+        }
+        p.pos = p.pos + 1
+    }
+    raw = p.src[start:p.pos].trim()
+    if #raw == 0 {
+        return ""
+    }
+    return _parseScalar(raw)
+}
+
+fn _flowParseMapping(p) {
+    _flowAdvance(p) // consume {
+    obj = {}
+    _flowSkipWS(p)
+
+    while p.pos < #p.src {
+        if _flowPeek(p) == "}" {
+            _flowAdvance(p)
+            break
+        }
+
+        _flowSkipWS(p)
+        // parse key
+        key = _flowParseKey(p)
+        _flowSkipWS(p)
+
+        // expect colon
+        if _flowPeek(p) == ":" {
+            _flowAdvance(p)
+        }
+
+        _flowSkipWS(p)
+        val = _flowParseValue(p)
+        obj[key] = val
+
+        _flowSkipWS(p)
+        if _flowPeek(p) == "," {
+            _flowAdvance(p)
+            _flowSkipWS(p)
+        }
+    }
+    return obj
+}
+
+fn _flowParseSequence(p) {
+    _flowAdvance(p) // consume [
+    arr = []
+    _flowSkipWS(p)
+
+    while p.pos < #p.src {
+        if _flowPeek(p) == "]" {
+            _flowAdvance(p)
+            break
+        }
+
+        val = _flowParseValue(p)
+        arr.push(val)
+
+        _flowSkipWS(p)
+        if _flowPeek(p) == "," {
+            _flowAdvance(p)
+            _flowSkipWS(p)
+        }
+    }
+    return arr
+}
+
+fn _flowParseKey(p) {
+    _flowSkipWS(p)
+    if _flowPeek(p) == "\"" {
+        return _flowParseDoubleString(p)
+    }
+    if _flowPeek(p) == "'" {
+        return _flowParseSingleString(p)
+    }
+
+    start = p.pos
+    while p.pos < #p.src {
+        ch = p.src[p.pos:p.pos+1]
+        if ch == ":" || ch == "," || ch == "}" || ch == "]" || ch == " " || ch == "\t" {
+            break
+        }
+        p.pos = p.pos + 1
+    }
+    return p.src[start:p.pos].trim()
+}
+
+fn _flowParseDoubleString(p) {
+    _flowAdvance(p) // consume "
+    result = ""
+    while p.pos < #p.src {
+        ch = p.src[p.pos:p.pos+1]
+        p.pos = p.pos + 1
+        if ch == "\\" && p.pos < #p.src {
+            next = p.src[p.pos:p.pos+1]
+            p.pos = p.pos + 1
+            if next == "n" {
+                result = result + "\n"
+            } else if next == "t" {
+                result = result + "\t"
+            } else if next == "\\" {
+                result = result + "\\"
+            } else if next == "\"" {
+                result = result + "\""
+            } else {
+                result = result + next
+            }
+        } else if ch == "\"" {
+            break
+        } else {
+            result = result + ch
+        }
+    }
+    return result
+}
+
+fn _flowParseSingleString(p) {
+    _flowAdvance(p) // consume '
+    result = ""
+    while p.pos < #p.src {
+        ch = p.src[p.pos:p.pos+1]
+        p.pos = p.pos + 1
+        if ch == "'" {
+            if p.pos < #p.src && p.src[p.pos:p.pos+1] == "'" {
+                result = result + "'"
+                p.pos = p.pos + 1
+            } else {
+                break
+            }
+        } else {
+            result = result + ch
+        }
+    }
+    return result
+}
+
+fn _parseFlowStyle(text) {
+    p = _newFlowParser(text)
+    return _flowParseValue(p)
+}
+
+// ============================================================
+// Main parser - indentation-based
+// ============================================================
+
+fn _newYamlParser(lines) {
+    return {lines: lines, pos: 0}
+}
+
+fn _yamlLine(p) {
+    if p.pos < #p.lines {
+        return p.lines[p.pos]
+    }
+    return null
+}
+
+fn _yamlAdvance(p) {
+    p.pos = p.pos + 1
+}
+
+fn _yamlCurrentIndent(p) {
+    l = _yamlLine(p)
+    if l == null {
+        return -1
+    }
+    return l.indent
+}
+
+// Find the minimum indentation among the next non-empty lines
+fn _yamlNextContentIndent(p) {
+    i = p.pos
+    while i < #p.lines {
+        l = p.lines[i]
+        if #l.content > 0 {
+            return l.indent
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Count how many consecutive empty lines from current pos
+fn _yamlCountEmpty(p) {
+    count = 0
+    i = p.pos
+    while i < #p.lines {
+        l = p.lines[i]
+        if #l.content == 0 {
+            count = count + 1
+        } else {
+            break
+        }
+        i = i + 1
+    }
+    return count
+}
+
+// Parse a value starting at the current position with given base indent
+fn _yamlParseValue(p, baseIndent) {
+    l = _yamlLine(p)
+    if l == null || #l.content == 0 {
+        return null
+    }
+
+    text = l.content
+
+    // Check for multiline block indicator: | || >
+    if #text >= 2 {
+        first = text[0:1]
+        if first == "|" || first == ">" {
+            return _yamlParseBlock(p, text, baseIndent)
+        }
+    }
+
+    // Check for flow mapping { ... }
+    trimmed = text.trim()
+    if #trimmed >= 1 && trimmed[0:1] == "{" {
+        _yamlAdvance(p)
+        return _parseFlowStyle(trimmed)
+    }
+
+    // Check for flow sequence [ ... ]
+    if #trimmed >= 1 && trimmed[0:1] == "[" {
+        _yamlAdvance(p)
+        return _parseFlowStyle(trimmed)
+    }
+
+    // Check if next content line is more indented (multiline plain scalar || nested structure)
+    nextIndent = _yamlNextContentIndent(p)
+
+    // If next line is a mapping key at same || lesser indent, value is just this scalar
+    if nextIndent <= baseIndent {
+        _yamlAdvance(p)
+        return _parseScalar(trimmed)
+    }
+
+    // Next line is deeper - is it a sequence item || mapping key?
+    // Peek at next content line
+    peekLine = _yamlNextContentLine(p)
+    if peekLine == null {
+        _yamlAdvance(p)
+        return _parseScalar(trimmed)
+    }
+
+    // If next line starts with "- " it's a sequence
+    peekContent = peekLine.content
+    if #peekContent >= 2 && peekContent[0:1] == "-" && (peekContent[1:2] == " " || peekContent[1:2] == "\t") {
+        return _yamlParseSequence(p, nextIndent)
+    }
+
+    // If next line is a mapping key
+    if _yamlIsMappingKey(p, peekContent) {
+        return _yamlParseMapping(p, nextIndent)
+    }
+
+    // Otherwise it's a multiline plain scalar
+    return _yamlParsePlainScalar(p, baseIndent)
+}
+
+fn _yamlNextContentLine(p) {
+    i = p.pos + 1
+    while i < #p.lines {
+        l = p.lines[i]
+        if #l.content > 0 {
+            return l
+        }
+        i = i + 1
+    }
+    return null
+}
+
+// Check if a line looks like a mapping key (contains ": " || ends with ":")
+fn _yamlIsMappingKey(p, content) {
+    if #content == 0 {
+        return false
+    }
+    // Skip leading "- " for sequence-of-mappings detection
+    t = content
+    if #t >= 2 && t[0:1] == "-" && (t[1:2] == " " || t[1:2] == "\t") {
+        t = t[1:].trim()
+    }
+    // Find ": " || trailing ":"
+    colonPos = t.find(": ")
+    if colonPos != null && colonPos >= 0 {
+        return true
+    }
+    if #t >= 1 && t[#t-1:#t] == ":" {
+        // trailing colon with no value
+        return true
+    }
+    return false
+}
+
+// Parse a plain (unquoted) multiline scalar
+fn _yamlParsePlainScalar(p, baseIndent) {
+    parts = []
+    l = _yamlLine(p)
+    parts.push(l.content.trim())
+    _yamlAdvance(p)
+
+    while p.pos < #p.lines {
+        cur = _yamlLine(p)
+        if #cur.content == 0 {
+            // empty line - could be part of multiline scalar
+            // but only if followed by a content line at same/deeper indent
+            savedPos = p.pos
+            _yamlAdvance(p)
+            // peek ahead
+            peek = _yamlLine(p)
+            if peek != null && #peek.content > 0 && peek.indent > baseIndent {
+                parts.push("")
+            } else {
+                p.pos = savedPos
+                break
+            }
+        } else if cur.indent > baseIndent {
+            parts.push(cur.content.trim())
+            _yamlAdvance(p)
+        } else {
+            break
+        }
+    }
+
+    return _joinScalarParts(parts)
+}
+
+fn _joinScalarParts(parts) {
+    result = ""
+    i = 0
+    while i < #parts {
+        if i > 0 {
+            if #parts[i] == 0 {
+                result = result + "\n"
+            } else {
+                result = result + " " + parts[i]
+            }
+        } else {
+            result = parts[i]
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// Parse a block scalar (| literal || > folded)
+fn _yamlParseBlock(p, indicator, baseIndent) {
+    ch = indicator[0:1]
+    rest = indicator[1:].trim()
+
+    // Parse block chomping and indent
+    chomp = "clip" // default
+    blockIndent = 0 // 0 means auto-detect
+
+    ri = 0
+    rn = #rest
+    while ri < rn {
+        c = rest[ri:ri+1]
+        if c == "-" {
+            chomp = "strip"
+        } else if c == "+" {
+            chomp = "keep"
+        } else if c >= "1" && c <= "9" {
+            // explicit indent indicator
+            blockIndent = _digitVal(c)
+        }
+        ri = ri + 1
+    }
+
+    _yamlAdvance(p)
+
+    // Determine the indentation of the block content
+    if blockIndent == 0 {
+        // auto-detect: find first non-empty line
+        firstIndent = -1
+        i = p.pos
+        while i < #p.lines {
+            l = p.lines[i]
+            if #l.content > 0 {
+                firstIndent = l.indent
+                break
+            }
+            i = i + 1
+        }
+        if firstIndent < 0 {
+            return ""
+        }
+        blockIndent = firstIndent - baseIndent
+        if blockIndent < 1 {
+            blockIndent = 1
+        }
+    }
+
+    contentIndent = baseIndent + blockIndent
+
+    // Collect lines belonging to the block
+    blockLines = []
+    trailingEmpty = 0
+
+    while p.pos < #p.lines {
+        l = _yamlLine(p)
+        if #l.content == 0 {
+            // empty line - track but may be part of block
+            trailingEmpty = trailingEmpty + 1
+            _yamlAdvance(p)
+            continue
+        }
+
+        if l.indent < contentIndent {
+            // dedented - block is over
+            break
+        }
+
+        // Content line at proper indent
+        // Flush any pending empty lines
+        while trailingEmpty > 0 {
+            blockLines.push("")
+            trailingEmpty = 0
+        }
+
+        blockLines.push(l.raw[contentIndent:])
+        _yamlAdvance(p)
+    }
+
+    if #blockLines == 0 {
+        if chomp == "keep" {
+            return "\n"
+        }
+        return ""
+    }
+
+    // Apply folding || literal
+    result = ""
+    if ch == "|" {
+        // literal: preserve newlines
+        i = 0
+        while i < #blockLines {
+            if i > 0 {
+                result = result + "\n"
+            }
+            result = result + blockLines[i]
+            i = i + 1
+        }
+    } else {
+        // folded: replace single newlines with spaces, preserve blank-line breaks
+        i = 0
+        while i < #blockLines {
+            if #blockLines[i] == 0 {
+                result = result + "\n"
+            } else {
+                if #result > 0 && result[#result-1:#result] != "\n" {
+                    result = result + " "
+                }
+                result = result + blockLines[i]
+            }
+            i = i + 1
+        }
+    }
+
+    // Apply chomping
+    if chomp == "clip" {
+        result = result + "\n"
+    } else if chomp == "keep" {
+        i = 0
+        while i < trailingEmpty {
+            result = result + "\n"
+            i = i + 1
+        }
+        result = result + "\n"
+    }
+    // strip: no trailing newline
+
+    return result
+}
+
+// Parse a mapping (dictionary) starting at given indent level
+fn _yamlParseMapping(p, indent) {
+    obj = {}
+
+    while p.pos < #p.lines {
+        l = _yamlLine(p)
+        if l == null || #l.content == 0 {
+            _yamlAdvance(p)
+            continue
+        }
+        if l.indent < indent {
+            break
+        }
+        if l.indent > indent {
+            // skip over-indented lines (shouldn't happen in correct YAML)
+            _yamlAdvance(p)
+            continue
+        }
+
+        // This line should be a mapping key
+        text = l.content
+
+        // Handle "? " explicit key
+        if #text >= 2 && text[0:1] == "?" && text[1:2] == " " {
+            text = text[1:].trim()
+        }
+
+        colonPos = _findMappingColon(text)
+        if colonPos == null {
+            // not a valid mapping line, skip
+            _yamlAdvance(p)
+            continue
+        }
+
+        key = text[0:colonPos].trim()
+        valuePart = text[colonPos+1:].trim()
+
+        // Unquote key if needed
+        key = _unquoteKey(key)
+
+        _yamlAdvance(p)
+
+        val = null
+
+        if #valuePart > 0 {
+            // Inline value
+            // Check if it starts flow-style
+            if valuePart[0:1] == "{" {
+                val = _parseFlowStyle(valuePart)
+            } else if valuePart[0:1] == "[" {
+                val = _parseFlowStyle(valuePart)
+            } else if #valuePart >= 2 && (valuePart[0:1] == "|" || valuePart[0:1] == ">") {
+                // Block scalar indicator - need to parse with proper indent
+                // The block starts at indent + any further indentation
+                savedPos = p.pos
+                nextContent = _yamlNextContentIndent(p)
+                if nextContent > indent {
+                    p.pos = savedPos
+                    val = _yamlParseBlock(p, valuePart, indent)
+                } else {
+                    val = _parseScalar(valuePart)
+                }
+            } else {
+                val = _parseScalar(valuePart)
+                // Check for multiline plain scalar continuation
+                if p.pos < #p.lines {
+                    next = _yamlLine(p)
+                    if next != null && #next.content > 0 && next.indent > indent {
+                        // There's content at deeper indent that could be continuation
+                        // But only if it's not a mapping || sequence
+                        nText = next.content
+                        if !_yamlIsMappingKey(p, nText) && !(#nText >= 2 && nText[0:1] == "-" && nText[1:2] == " ") {
+                            // multiline scalar continuation
+                            parts = []
+                            if type.of(val) == "string" {
+                                parts.push(val)
+                            } else {
+                                parts.push(str(val))
+                            }
+                            while p.pos < #p.lines {
+                                cur = _yamlLine(p)
+                                if #cur.content == 0 {
+                                    break
+                                }
+                                if cur.indent <= indent {
+                                    break
+                                }
+                                // If it looks like a mapping || sequence, stop
+                                if _yamlIsMappingKey(p, cur.content) {
+                                    break
+                                }
+                                if #cur.content >= 2 && cur.content[0:1] == "-" && cur.content[1:2] == " " {
+                                    break
+                                }
+                                parts.push(cur.content.trim())
+                                _yamlAdvance(p)
+                            }
+                            val = _joinScalarParts(parts)
+                        }
+                    }
+                }
+            }
+        } else {
+            // Value on next line(s)
+            // Peek at next content line
+            nextContent = _yamlNextContentIndent(p)
+            if nextContent > indent {
+                peekLine = _yamlNextContentLine(p)
+                if peekLine != null {
+                    peekText = peekLine.content
+                    if #peekText >= 2 && peekText[0:1] == "-" && (peekText[1:2] == " " || peekText[1:2] == "\t") {
+                        val = _yamlParseSequence(p, nextContent)
+                    } else if _yamlIsMappingKey(p, peekText) {
+                        val = _yamlParseMapping(p, nextContent)
+                    } else if #peekText >= 2 && (peekText[0:1] == "|" || peekText[0:1] == ">") {
+                        val = _yamlParseBlock(p, peekText, indent)
+                    } else if #peekText >= 1 && (peekText[0:1] == "{" || peekText[0:1] == "[") {
+                        val = _yamlParseValue(p, nextContent)
+                    } else {
+                        val = _yamlParsePlainScalar(p, indent)
+                    }
+                } else {
+                    // key: with nothing after - null value
+                    val = null
+                }
+            } else {
+                // key: with nothing after - null value
+                val = null
+            }
+        }
+
+        obj[key] = val
+    }
+
+    return obj
+}
+
+// Find the colon that separates key from value in a mapping line
+// Must find ": " || trailing ":" not inside quotes
+fn _findMappingColon(text) {
+    i = 0
+    n = #text
+    inDouble = false
+    inSingle = false
+
+    while i < n {
+        ch = text[i:i+1]
+        if inDouble {
+            if ch == "\\" {
+                i = i + 2
+                continue
+            }
+            if ch == "\"" {
+                inDouble = false
+            }
+            i = i + 1
+            continue
+        }
+        if inSingle {
+            if ch == "'" {
+                if i + 1 < n && text[i+1:i+2] == "'" {
+                    i = i + 2
+                    continue
+                }
+                inSingle = false
+            }
+            i = i + 1
+            continue
+        }
+        if ch == "\"" {
+            inDouble = true
+            i = i + 1
+            continue
+        }
+        if ch == "'" {
+            inSingle = true
+            i = i + 1
+            continue
+        }
+        if ch == ":" {
+            // ": " || trailing ":"
+            if i + 1 < n && text[i+1:i+2] == " " {
+                return i
+            }
+            if i + 1 == n {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return null
+}
+
+// Unquote a mapping key if it's quoted
+fn _unquoteKey(key) {
+    if #key >= 2 {
+        if key[0:1] == "\"" && key[#key-1:#key] == "\"" {
+            return _parseDoubleQuoted(key)
+        }
+        if key[0:1] == "'" && key[#key-1:#key] == "'" {
+            return _parseSingleQuoted(key)
+        }
+    }
+    return key
+}
+
+// Parse a sequence (list) starting at given indent level
+fn _yamlParseSequence(p, indent) {
+    arr = []
+
+    while p.pos < #p.lines {
+        l = _yamlLine(p)
+        if l == null || #l.content == 0 {
+            _yamlAdvance(p)
+            continue
+        }
+        if l.indent < indent {
+            break
+        }
+        if l.indent > indent {
+            // content deeper than the sequence dash indent
+            // This could be continuation of the previous item
+            // Just skip - it should have been consumed by parseValue
+            _yamlAdvance(p)
+            continue
+        }
+
+        text = l.content
+
+        // Must start with "- "
+        if #text < 2 || text[0:1] != "-" {
+            break
+        }
+        if text[1:2] != " " && text[1:2] != "\t" {
+            break
+        }
+
+        afterDash = text[1:].trim()
+        _yamlAdvance(p)
+
+        val = null
+
+        if #afterDash == 0 {
+            // "- " with nothing on this line
+            nextContent = _yamlNextContentIndent(p)
+            if nextContent > indent {
+                peekLine = _yamlNextContentLine(p)
+                if peekLine != null {
+                    peekText = peekLine.content
+                    if #peekText >= 2 && peekText[0:1] == "-" && (peekText[1:2] == " " || peekText[1:2] == "\t") {
+                        // nested sequence
+                        val = _yamlParseSequence(p, nextContent)
+                    } else if _yamlIsMappingKey(p, peekText) {
+                        val = _yamlParseMapping(p, nextContent)
+                    } else if #peekText >= 2 && (peekText[0:1] == "|" || peekText[0:1] == ">") {
+                        val = _yamlParseBlock(p, peekText, indent)
+                    } else {
+                        val = _yamlParsePlainScalar(p, indent)
+                    }
+                } else {
+                    val = null
+                }
+            } else {
+                val = null
+            }
+        } else {
+            // Value after the dash
+            if afterDash[0:1] == "{" {
+                val = _parseFlowStyle(afterDash)
+            } else if afterDash[0:1] == "[" {
+                val = _parseFlowStyle(afterDash)
+            } else if #afterDash >= 2 && (afterDash[0:1] == "|" || afterDash[0:1] == ">") {
+                nextContent = _yamlNextContentIndent(p)
+                if nextContent > indent {
+                    val = _yamlParseBlock(p, afterDash, indent)
+                } else {
+                    val = _parseScalar(afterDash)
+                }
+            } else {
+                // Check if afterDash is a mapping key: "key: value"
+                colonPos = _findMappingColon(afterDash)
+                if colonPos != null && colonPos > 0 {
+                    // Inline mapping entry on same line as dash
+                    // This starts a mapping, but we need to handle continuation lines
+                    // Re-process: back up and parse as mapping
+                    // The mapping starts at the indent of the content after the dash
+                    itemIndent = indent + 2 // indent of key after "- "
+                    key = afterDash[0:colonPos].trim()
+                    valuePart = afterDash[colonPos+1:].trim()
+                    key = _unquoteKey(key)
+
+                    itemVal = null
+                    if #valuePart > 0 {
+                        itemVal = _parseScalar(valuePart)
+                    } else {
+                        // Check for nested content
+                        nextContent = _yamlNextContentIndent(p)
+                        if nextContent > itemIndent {
+                            peekLine = _yamlNextContentLine(p)
+                            if peekLine != null {
+                                peekText = peekLine.content
+                                if #peekText >= 2 && peekText[0:1] == "-" && (peekText[1:2] == " " || peekText[1:2] == "\t") {
+                                    itemVal = _yamlParseSequence(p, nextContent)
+                                } else if _yamlIsMappingKey(p, peekText) {
+                                    itemVal = _yamlParseMapping(p, nextContent)
+                                } else {
+                                    itemVal = _yamlParsePlainScalar(p, itemIndent)
+                                }
+                            }
+                        }
+                    }
+
+                    // Now check for more mapping keys at the same item indent
+                    obj = {}
+                    obj[key] = itemVal
+
+                    while p.pos < #p.lines {
+                        ml = _yamlLine(p)
+                        if ml == null || #ml.content == 0 {
+                            _yamlAdvance(p)
+                            continue
+                        }
+                        if ml.indent < itemIndent {
+                            break
+                        }
+                        if ml.indent > itemIndent {
+                            // deeper content - skip (already consumed)
+                            _yamlAdvance(p)
+                            continue
+                        }
+                        // Same indent - is it a mapping key?
+                        mText = ml.content
+                        mColonPos = _findMappingColon(mText)
+                        if mColonPos == null {
+                            break
+                        }
+                        mKey = mText[0:mColonPos].trim()
+                        mValuePart = mText[mColonPos+1:].trim()
+                        mKey = _unquoteKey(mKey)
+                        _yamlAdvance(p)
+
+                        mVal = null
+                        if #mValuePart > 0 {
+                            mVal = _parseScalar(mValuePart)
+                        } else {
+                            nextContent = _yamlNextContentIndent(p)
+                            if nextContent > itemIndent {
+                                peekLine = _yamlNextContentLine(p)
+                                if peekLine != null {
+                                    peekText = peekLine.content
+                                    if #peekText >= 2 && peekText[0:1] == "-" && (peekText[1:2] == " " || peekText[1:2] == "\t") {
+                                        mVal = _yamlParseSequence(p, nextContent)
+                                    } else if _yamlIsMappingKey(p, peekText) {
+                                        mVal = _yamlParseMapping(p, nextContent)
+                                    } else {
+                                        mVal = _yamlParsePlainScalar(p, itemIndent)
+                                    }
+                                }
+                            }
+                        }
+                        obj[mKey] = mVal
+                    }
+
+                    arr.push(obj)
+                    continue
+                } else {
+                    // Plain scalar after dash
+                    val = _parseScalar(afterDash)
+
+                    // Check for multiline continuation
+                    if p.pos < #p.lines {
+                        next = _yamlLine(p)
+                        if next != null && #next.content > 0 && next.indent > indent {
+                            nText = next.content
+                            if !_yamlIsMappingKey(p, nText) && !(#nText >= 2 && nText[0:1] == "-" && nText[1:2] == " ") {
+                                parts = []
+                                if type.of(val) == "string" {
+                                    parts.push(val)
+                                } else {
+                                    parts.push(str(val))
+                                }
+                                while p.pos < #p.lines {
+                                    cur = _yamlLine(p)
+                                    if #cur.content == 0 {
+                                        break
+                                    }
+                                    if cur.indent <= indent {
+                                        break
+                                    }
+                                    if _yamlIsMappingKey(p, cur.content) {
+                                        break
+                                    }
+                                    if #cur.content >= 2 && cur.content[0:1] == "-" && cur.content[1:2] == " " {
+                                        break
+                                    }
+                                    parts.push(cur.content.trim())
+                                    _yamlAdvance(p)
+                                }
+                                val = _joinScalarParts(parts)
+                            }
+                        }
+                    }
+                }
+            }
+            arr.push(val)
+        }
+    }
+
+    return arr
+}
+
+// Top-level parse
+fn _yamlParse(p) {
+    // Skip leading empty lines
+    while p.pos < #p.lines {
+        l = _yamlLine(p)
+        if l == null {
+            break
+        }
+        if #l.content > 0 {
+            break
+        }
+        _yamlAdvance(p)
+    }
+
+    l = _yamlLine(p)
+    if l == null {
+        return null
+    }
+
+    text = l.content
+
+    // Top-level sequence
+    if #text >= 2 && text[0:1] == "-" && (text[1:2] == " " || text[1:2] == "\t") {
+        return _yamlParseSequence(p, 0)
+    }
+
+    // Top-level mapping
+    return _yamlParseMapping(p, 0)
+}
+
+// ============================================================
+// Public API: parse
+// ============================================================
+
+fn parse(source) {
+    if source == null || #source == 0 {
+        return null
+    }
+
+    // Normalize line endings
+    normalized = _normalizeNewlines(source)
+    lines = _preprocess(normalized)
+
+    // Check if all lines are empty/comment
+    hasContent = false
+    i = 0
+    while i < #lines {
+        if #lines[i].content > 0 {
+            hasContent = true
+            break
+        }
+        i = i + 1
+    }
+
+    if !hasContent {
+        return null
+    }
+
+    parser = _newYamlParser(lines)
+    return _yamlParse(parser)
+}
+
+fn _normalizeNewlines(s) {
+    result = ""
+    i = 0
+    n = #s
+    while i < n {
+        ch = s[i:i+1]
+        if ch == "\r" {
+            if i + 1 < n && s[i+1:i+2] == "\n" {
+                result = result + "\n"
+                i = i + 2
+            } else {
+                result = result + "\n"
+                i = i + 1
+            }
+        } else {
+            result = result + ch
+            i = i + 1
+        }
+    }
+    return result
+}
+
+// ============================================================
+// Public API: parseFile
+// ============================================================
+
+fn parseFile(path) {
+    source = fs.read(path)
+    if source == null {
+        return null
+    }
+    return parse(source)
+}
+
+// ============================================================
+// Stringifier
+// ============================================================
+
+fn stringify(value, indent) {
+    if indent == null {
+        indent = 2
+    }
+    return _stringifyValue(value, 0, indent, false)
+}
+
+fn _stringifyValue(value, level, indent, isSeqItem) {
+    if value == null {
+        return "null"
+    }
+
+    t = type.of(value)
+
+    if t == "bool" {
+        if value {
+            return "true"
+        }
+        return "false"
+    }
+
+    if t == "int" {
+        return str(value)
+    }
+
+    if t == "num" || t == "float" {
+        return _formatNum(value)
+    }
+
+    if t == "string" {
+        return _stringifyString(value, level, indent, isSeqItem)
+    }
+
+    if t == "array" {
+        return _stringifyArray(value, level, indent)
+    }
+
+    if t == "object" {
+        return _stringifyObject(value, level, indent)
+    }
+
+    return str(value)
+}
+
+fn _formatNum(n) {
+    s = str(n)
+    // If it looks like an integer (no decimal point), add .0
+    hasDot = false
+    i = 0
+    while i < #s {
+        if s[i:i+1] == "." || s[i:i+1] == "e" || s[i:i+1] == "E" {
+            hasDot = true
+        }
+        i = i + 1
+    }
+    if !hasDot && n != int(n) {
+        return s + ".0"
+    }
+    return s
+}
+
+fn _stringifyString(s, level, indent, isSeqItem) {
+    // Check if string needs quoting
+    needsQuoting = _needsQuoting(s)
+
+    if !needsQuoting {
+        return s
+    }
+
+    // Use double-quoted style with escape sequences
+    result = "\""
+    i = 0
+    n = #s
+    while i < n {
+        ch = s[i:i+1]
+        if ch == "\\" {
+            result = result + "\\\\"
+        } else if ch == "\"" {
+            result = result + "\\\""
+        } else if ch == "\n" {
+            result = result + "\\n"
+        } else if ch == "\t" {
+            result = result + "\\t"
+        } else if ch == "\r" {
+            result = result + "\\r"
+        } else if ch == "\0" {
+            result = result + "\\0"
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    result = result + "\""
+    return result
+}
+
+fn _needsQuoting(s) {
+    if #s == 0 {
+        return true
+    }
+
+    first = s[0:1]
+
+    // Starts with special characters
+    if first == "{" || first == "[" || first == "%" || first == "@" || first == "`" {
+        return true
+    }
+
+    // Check if it looks like a YAML special value
+    lower = _toLowerCase(s)
+    if lower == "null" || lower == "true" || lower == "false" || lower == "yes" || lower == "no" || lower == "on" || lower == "off" || lower == "~" {
+        return true
+    }
+
+    // Check if it starts like a number
+    if _isDigit(first) || first == "-" {
+        intVal = _tryParseInt(s)
+        if intVal != null {
+            return true
+        }
+        floatVal = _tryParseFloat(s)
+        if floatVal != null {
+            return true
+        }
+    }
+
+    // Contains characters that would be ambiguous
+    i = 0
+    while i < #s {
+        ch = s[i:i+1]
+        if ch == ":" && i + 1 < #s && s[i+1:i+2] == " " {
+            return true
+        }
+        if ch == " " && (i == 0 || i == #s - 1) {
+            return true
+        }
+        if ch == "#" && i > 0 && s[i-1:i] == " " {
+            return true
+        }
+        if ch == "\n" || ch == "\r" || ch == "\t" {
+            return true
+        }
+        i = i + 1
+    }
+
+    // Starts with indicator chars
+    if first == "-" || first == "?" || first == ":" || first == "," || first == "!" || first == "|" || first == ">" || first == "*" || first == "&" {
+        // Only quote if followed by space (making it look like an indicator)
+        if #s >= 2 && s[1:2] == " " {
+            return true
+        }
+    }
+
+    return false
+}
+
+fn _stringifyArray(arr, level, indent) {
+    if #arr == 0 {
+        return "[]"
+    }
+
+    prefix = _makeIndent(level, indent)
+    result = ""
+    i = 0
+
+    while i < #arr {
+        item = arr[i]
+        t = type.of(item)
+
+        if t == "object" || t == "array" {
+            valStr = _stringifyValue(item, level + 1, indent, true)
+            result = result + prefix + "- " + _stripLeadingNewline(valStr) + "\n"
+        } else {
+            result = result + prefix + "- " + _stringifyValue(item, level, indent, true) + "\n"
+        }
+        i = i + 1
+    }
+
+    // Remove trailing newline
+    if #result > 0 && result[#result-1:#result] == "\n" {
+        result = result[0:#result-1]
+    }
+    return result
+}
+
+fn _stringifyObject(obj, level, indent) {
+    keys = _objectKeys(obj)
+    if #keys == 0 {
+        return "{}"
+    }
+
+    prefix = _makeIndent(level, indent)
+    result = ""
+    i = 0
+
+    while i < #keys {
+        key = keys[i]
+        val = obj[key]
+        t = type.of(val)
+
+        keyStr = _stringifyKey(key)
+
+        if t == "object" || t == "array" {
+            valStr = _stringifyValue(val, level + 1, indent, false)
+            result = result + prefix + keyStr + ":\n" + valStr + "\n"
+        } else if t == "string" && #val > 0 && _hasNewline(val) {
+            // Use literal block for multiline strings
+            result = result + prefix + keyStr + ": |\n" + _indentBlock(val, level + 1, indent) + "\n"
+        } else {
+            result = result + prefix + keyStr + ": " + _stringifyValue(val, level, indent, false) + "\n"
+        }
+        i = i + 1
+    }
+
+    // Remove trailing newline
+    if #result > 0 && result[#result-1:#result] == "\n" {
+        result = result[0:#result-1]
+    }
+    return result
+}
+
+fn _stringifyKey(key) {
+    if _needsKeyQuoting(key) {
+        result = "\""
+        i = 0
+        while i < #key {
+            ch = key[i:i+1]
+            if ch == "\\" {
+                result = result + "\\\\"
+            } else if ch == "\"" {
+                result = result + "\\\""
+            } else {
+                result = result + ch
+            }
+            i = i + 1
+        }
+        return result + "\""
+    }
+    return key
+}
+
+fn _needsKeyQuoting(key) {
+    if #key == 0 {
+        return true
+    }
+    i = 0
+    while i < #key {
+        ch = key[i:i+1]
+        if !_isAlpha(ch) && !_isDigit(ch) {
+            return true
+        }
+        i = i + 1
+    }
+
+    // Check if it's a reserved word
+    lower = _toLowerCase(key)
+    if lower == "null" || lower == "true" || lower == "false" || lower == "yes" || lower == "no" || lower == "on" || lower == "off" {
+        return true
+    }
+
+    // Check if it parses as a number
+    intVal = _tryParseInt(key)
+    if intVal != null {
+        return true
+    }
+    floatVal = _tryParseFloat(key)
+    if floatVal != null {
+        return true
+    }
+
+    return false
+}
+
+fn _objectKeys(obj) {
+    keys = []
+    kvs = obj.keys()
+    if kvs != null {
+        for k in kvs {
+            keys.push(k)
+        }
+    }
+    return keys
+}
+
+fn _makeIndent(level, indent) {
+    result = ""
+    i = 0
+    while i < level * indent {
+        result = result + " "
+        i = i + 1
+    }
+    return result
+}
+
+fn _stripLeadingNewline(s) {
+    if #s > 0 && s[0:1] == "\n" {
+        return s[1:]
+    }
+    return s
+}
+
+fn _hasNewline(s) {
+    i = 0
+    while i < #s {
+        if s[i:i+1] == "\n" {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn _indentBlock(s, level, indent) {
+    prefix = _makeIndent(level, indent)
+    lines = s.split("\n")
+    result = ""
+    i = 0
+    while i < #lines {
+        if i > 0 {
+            result = result + "\n"
+        }
+        // Don't add indent to trailing empty line
+        if #lines[i] == 0 && i == #lines - 1 {
+            // skip
+        } else {
+            result = result + prefix + lines[i]
+        }
+        i = i + 1
+    }
+    return result
+}

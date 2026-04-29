@@ -1,0 +1,239 @@
+// dsl_syntax.hv — DSL syntax helpers for Havel's hotkey notation
+// Provides: parseModifiers, formatModifiers, normalizeKey, parseHotkey,
+// formatHotkey, parseCombo, splitChord, isValidKeyName, modifierMask,
+// maskToModifiers
+
+MOD_CTRL = 1
+MOD_SHIFT = 2
+MOD_ALT = 4
+MOD_SUPER = 8
+MOD_HYPER = 16
+
+MODIFIER_CHARS = {"^": "ctrl", "+": "shift", "!": "alt", "#": "super", "&": "hyper"}
+MODIFIER_ORDER = ["ctrl", "shift", "alt", "super", "hyper"]
+MODIFIER_CHAR_MAP = {"ctrl": "^", "shift": "+", "alt": "!", "super": "#", "hyper": "&"}
+MODIFIER_BIT_MAP = {"ctrl": MOD_CTRL, "shift": MOD_SHIFT, "alt": MOD_ALT, "super": MOD_SUPER, "hyper": MOD_HYPER}
+
+KEY_NAMES = [
+"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+"n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+"0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10",
+"f11", "f12", "f13", "f14", "f15", "f16", "f17", "f18", "f19",
+"f20", "f21", "f22", "f23", "f24",
+"esc", "enter", "space", "tab", "backspace", "delete",
+"home", "end", "pgup", "pgdn", "insert",
+"left", "right", "up", "down",
+"capslock", "numlock", "scrolllock",
+"numpad0", "numpad1", "numpad2", "numpad3", "numpad4",
+"numpad5", "numpad6", "numpad7", "numpad8", "numpad9",
+"numpadenter", "numpadadd", "numpadsub", "numpadmul", "numpaddiv",
+"numpaddot", "numpaddelete",
+"minus", "equal", "leftbrace", "rightbrace",
+"semicolon", "apostrophe", "grave", "backslash",
+"comma", "dot", "slash",
+"print", "sysreq", "pause", "break",
+"menu", "calculator", "mail", "browser", "volumeup",
+"volumedown", "volumemute", "mediaplay", "mediastop",
+"mediaprev", "medianext", "monbrightnessup", "monbrightnessdown",
+"kbdillumup", "kbdillumdown", "kbdillumtoggle",
+"eject", "sleep", "wake", "power",
+"lctrl", "rctrl", "lshift", "rshift", "lalt", "ralt",
+"lsuper", "rsuper", "lhyper", "rhyper",
+"win"
+]
+
+_KEY_SET = {}
+for _k in KEY_NAMES {
+_KEY_SET.set(_k, true)
+}
+
+_ALIAS_MAP = {
+"escape": "esc", "return": "enter", "pageup": "pgup",
+"pagedown": "pgdn", "super": "win", "meta": "win",
+"lwin": "win", "lmeta": "win", "rwin": "win", "rmeta": "win",
+"leftbracket": "leftbrace", "rightbracket": "rightbrace",
+"equals": "equal", "backtick": "grave", "quote": "apostrophe",
+"del": "delete", "ins": "insert", "bksp": "backspace",
+"prior": "pgup", "next": "pgdn",
+"ctrl": "lctrl", "shift": "lshift", "alt": "lalt",
+"lcmd": "lsuper", "rcmd": "rsuper", "cmd": "lsuper"
+}
+
+fn _toLower(s) {
+_result = ""
+_i = 0
+_len = #s
+while _i < _len {
+_ch = s[_i:_i+1]
+if _ch >= "A" && _ch <= "Z" {
+_result = _result + char(ord(_ch) + 32)
+} else {
+_result = _result + _ch
+}
+_i = _i + 1
+}
+_result
+}
+
+fn _isModifierChar(ch) {
+ch == "^" || ch == "+" || ch == "!" || ch == "#" || ch == "&"
+}
+
+fn parseModifiers(str) {
+_mods = {ctrl: false, shift: false, alt: false, super: false, hyper: false}
+_i = 0
+_len = #str
+while _i < _len {
+_ch = str[_i:_i+1]
+if !_isModifierChar(_ch) {
+break
+}
+_name = MODIFIER_CHARS[_ch]
+if _name != null {
+_mods.set(_name, true)
+}
+_i = _i + 1
+}
+_mods.set("rest", str[_i:])
+_mods
+}
+
+fn formatModifiers(mods) {
+_result = ""
+for _name in MODIFIER_ORDER {
+_val = mods[_name]
+if _val == true || _val == 1 {
+_ch = MODIFIER_CHAR_MAP[_name]
+if _ch != null {
+_result = _result + _ch
+}
+}
+}
+_result
+}
+
+fn normalizeKey(name) {
+_lower = _toLower(name)
+_mapped = _ALIAS_MAP[_lower]
+if _mapped != null {
+return _mapped
+}
+_lower
+}
+
+fn parseHotkey(str) {
+_parsed = parseModifiers(str)
+_rawKey = _parsed["rest"]
+_key = normalizeKey(_rawKey)
+_modifiers = {ctrl: false, shift: false, alt: false, super: false, hyper: false}
+for _name in MODIFIER_ORDER {
+_val = _parsed[_name]
+if _val != null {
+_modifiers.set(_name, _val)
+}
+}
+{modifiers: _modifiers, key: _key}
+}
+
+fn formatHotkey(info) {
+_prefix = formatModifiers(info["modifiers"])
+_key = info["key"]
+_prefix + _key
+}
+
+fn parseCombo(str) {
+_lower = _toLower(str)
+_parts = []
+_cur = ""
+_i = 0
+_len = #_lower
+while _i < _len {
+_ch = _lower[_i:_i+1]
+if _ch == "+" || _ch == "," {
+if #_cur > 0 {
+_parts.push(_cur)
+_cur = ""
+}
+} else {
+_cur = _cur + _ch
+}
+_i = _i + 1
+}
+if #_cur > 0 {
+_parts.push(_cur)
+}
+_mods = {ctrl: false, shift: false, alt: false, super: false, hyper: false}
+_key = ""
+_last = #_parts - 1
+_j = 0
+while _j < _last {
+_part = _parts[_j]
+if _part == "ctrl" || _part == "control" {
+_mods.set("ctrl", true)
+} else if _part == "shift" {
+_mods.set("shift", true)
+} else if _part == "alt" {
+_mods.set("alt", true)
+} else if _part == "super" || _part == "win" || _part == "meta" {
+_mods.set("super", true)
+} else if _part == "hyper" {
+_mods.set("hyper", true)
+}
+_j = _j + 1
+}
+if #_parts > 0 {
+_key = normalizeKey(_parts[_last])
+}
+{modifiers: _mods, key: _key}
+}
+
+fn splitChord(str) {
+_parts = []
+_cur = ""
+_i = 0
+_len = #str
+while _i < _len {
+_ch = str[_i:_i+1]
+if _ch == " " || _ch == "," {
+if #_cur > 0 {
+_parts.push(_cur)
+_cur = ""
+}
+} else {
+_cur = _cur + _ch
+}
+_i = _i + 1
+}
+if #_cur > 0 {
+_parts.push(_cur)
+}
+_parts
+}
+
+fn isValidKeyName(name) {
+_lower = normalizeKey(name)
+_KEY_SET.has(_lower)
+}
+
+fn modifierMask(mods) {
+_mask = 0
+for _name in MODIFIER_ORDER {
+_val = mods[_name]
+if _val == true || _val == 1 {
+_bit = MODIFIER_BIT_MAP[_name]
+if _bit != null {
+_mask = _mask | _bit
+}
+}
+}
+_mask
+}
+
+fn maskToModifiers(mask) {
+{ctrl: ((mask & MOD_CTRL) != 0),
+shift: ((mask & MOD_SHIFT) != 0),
+alt: ((mask & MOD_ALT) != 0),
+super: ((mask & MOD_SUPER) != 0),
+hyper: ((mask & MOD_HYPER) != 0)}
+}

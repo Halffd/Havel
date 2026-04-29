@@ -1,0 +1,9 @@
+// Test !{ unordered object literal
+x = !{"z": 1, "a": 0}
+print(x)
+print(x.z)
+print(x.a)
+// Test regular { } sorted object
+y = {"b": 2, "c": 3}
+print(y)
+print(y.b)

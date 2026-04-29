@@ -1,11 +1,9 @@
-I[02:17:08.011] <-- $/cancelRequest
-I[02:17:08.017] <-- $/cancelRequest
 // Test iteration protocol
 print("=== Iteration Protocol Tests ===")
 
 // Test 1: Array iteration
 print("\n1. Array iteration:")
-let arr = [1, 2, 3]
+arr = [1, 2, 3]
 for x in arr {
   print("  ")
   print(x)
@@ -13,7 +11,7 @@ for x in arr {
 
 // Test 2: String iteration (character by character)
 print("\n2. String iteration:")
-let str = "abc"
+str = "abc"
 for c in str {
   print("  '")
   print(c)
@@ -22,13 +20,16 @@ for c in str {
 
 // Test 3: Object iteration (key by key)
 print("\n3. Object iteration:")
-let obj = {"a": 1, "b": 2, "c": 3}
+obj = {"a": 1, "b": 2, "c": 3}
 for entry, n in obj {
   print(f"  key: $entry")
   print(f"  2nd: {n}")
 }
 for entry in obj {
   print(f"  entry: $entry")
+}
+for x in 1..100..3 {
+  print(x, end=" ")
 }
 
 print("\n=== All Tests Passed ===")

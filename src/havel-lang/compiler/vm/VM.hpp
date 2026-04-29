@@ -401,8 +401,13 @@ public:
   void doTailCallPublic(Value callee_value, std::vector<Value> args) { doTailCall(std::move(callee_value), std::move(args)); }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
   size_t frameCountPublic() const { return frame_count_; }
-  void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip) {
-    currentFrame().try_stack.push_back(TryHandler{.catch_ip = catch_ip, .finally_ip = finally_ip, .finally_return_ip = 0, .stack_depth = 0});
+  void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
+                      size_t stack_depth) {
+    currentFrame().try_stack.push_back(
+        TryHandler{.catch_ip = catch_ip,
+                   .finally_ip = finally_ip,
+                   .finally_return_ip = 0,
+                   .stack_depth = stack_depth});
   }
   void tryExitPublic() { if (!currentFrame().try_stack.empty()) currentFrame().try_stack.pop_back(); }
   Value currentExceptionPublic() const { return has_current_exception_ ? current_exception_ : Value::makeNull(); }

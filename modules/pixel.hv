@@ -57,7 +57,7 @@ _rt = _pixel >> 16
 _r = ((_rt & 255))
   ffi.call(_XDestroyImage, "int32", _t_p, _img)
   _closeDisplay(_dpy)
-  {r: _r, g: _g, b: _b, a: 255}
+  ({r: _r, g: _g, b: _b, a: 255})
 }
 
 fn cursor() {
@@ -82,7 +82,7 @@ fn cursor() {
   ffi.free(_wy_ret)
   ffi.free(_mask_ret)
   _closeDisplay(_dpy)
-  {x: _rx, y: _ry}
+  ({x: _rx, y: _ry})
 }
 
 fn hex(color) {

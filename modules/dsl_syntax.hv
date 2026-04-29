@@ -133,7 +133,7 @@ if _val != null {
 _modifiers.set(_name, _val)
 }
 }
-{modifiers: _modifiers, key: _key}
+({modifiers: _modifiers, key: _key})
 }
 
 fn formatHotkey(info) {
@@ -185,7 +185,7 @@ _j = _j + 1
 if #_parts > 0 {
 _key = normalizeKey(_parts[_last])
 }
-{modifiers: _mods, key: _key}
+({modifiers: _mods, key: _key})
 }
 
 fn splitChord(str) {

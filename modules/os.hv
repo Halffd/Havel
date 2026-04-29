@@ -1,134 +1,156 @@
-// os.hv — Operating system module via FFI
-// Provides: os.platform, os.arch, os.env, os.cwd, os.pid, os.ppid,
-//           os.exit, os.hostname, os.username, os.home, os.tmpdir,
-//           os.shell, os.uptime, os.version
+// os.hv — Operating system module
+// Provides: platform, arch, version, env, cwd, pid, ppid,
+// exit, hostname, username, home, tmpdir, shell, uptime,
+// isX11, isWayland, isWindows, displayServer, displayInfo, distro
 
 use ffi
 
 _c = ffi.open("libc.so.6")
-if _c == 0 {
-  _c = ffi.open("libc.so")
-}
+if _c == 0 { _c = ffi.open("libc.so") }
 
-_getenv = ffi.sym(_c, "getenv")
-_gethostname = ffi.sym(_c, "gethostname")
+_uname = ffi.sym(_c, "uname")
 _getpid = ffi.sym(_c, "getpid")
 _getppid = ffi.sym(_c, "getppid")
-_getcwd = ffi.sym(_c, "getcwd")
-_uname = ffi.sym(_c, "uname")
-_fopen = ffi.sym(_c, "fopen")
-_fscanf = ffi.sym(_c, "fscanf")
-_fclose = ffi.sym(_c, "fclose")
+_gethostname = ffi.sym(_c, "gethostname")
 
-fn platform() {
-  "linux"
-}
+fn platform() { "linux" }
 
 fn arch() {
-  // struct utsname: sysname[65], nodename[65], release[65], version[65], machine[65]
-  // machine field offset = 65 * 4 = 260
-  _buf = ffi.allocBytes(390)
-  _ret = ffi.call(_uname, "int32", ["pointer"], _buf)
-  if _ret != 0 {
-    ffi.free(_buf)
-    "unknown"
-  } else {
-    _machine_ptr = ffi.ptr_add(_buf, 260)
-    _m = ffi.string(_machine_ptr)
-    ffi.free(_buf)
-    _m
-  }
+    _buf = ffi.allocBytes(390)
+    _ret = ffi.call(_uname, "int32", ["pointer"], _buf)
+    if _ret != 0 {
+        ffi.free(_buf)
+        "unknown"
+    } else {
+        _machine_ptr = ffi.ptr_add(_buf, 260)
+        _m = ffi.string(_machine_ptr)
+        ffi.free(_buf)
+        _m
+    }
 }
 
-fn version() {
-  "0.1.0"
-}
+fn version() { "0.1.0" }
 
-fn env(name) {
-  _cs = ffi.cstring(name)
-  _ptr = ffi.call(_getenv, "pointer", ["pointer"], _cs)
-  ffi.free(_cs)
-  if _ptr == 0 { null }
-  else { ffi.string(_ptr) }
-}
+fn env(name) { shell.getenv(name) }
 
-fn cwd() {
-  _buf = ffi.allocBytes(4096)
-  _result = ffi.call(_getcwd, "pointer", ["pointer", "uint64"], _buf, 4096)
-  if _result == 0 {
-    ffi.free(_buf)
-    ""
-  } else {
+fn cwd() { shell.cwd() }
+
+fn pid() { ffi.call(_getpid, "int32", []) }
+
+fn ppid() { ffi.call(_getppid, "int32", []) }
+
+fn hostname() {
+    _buf = ffi.allocBytes(256)
+    ffi.call(_gethostname, "int32", ["pointer", "uint64"], _buf, 256)
     _s = ffi.string(_buf)
     ffi.free(_buf)
     _s
-  }
-}
-
-fn pid() {
-  ffi.call(_getpid, "int32", [])
-}
-
-fn ppid() {
-  ffi.call(_getppid, "int32", [])
-}
-
-fn hostname() {
-  _buf = ffi.allocBytes(256)
-  ffi.call(_gethostname, "int32", ["pointer", "uint64"], _buf, 256)
-  _s = ffi.string(_buf)
-  ffi.free(_buf)
-  _s
 }
 
 fn username() {
-  _user = env("USER")
-  if _user != null { _user }
-  else {
-    _logname = env("LOGNAME")
-    if _logname != null { _logname }
-    else { "" }
-  }
+    _user = env("USER")
+    if _user != null { _user }
+    else {
+        _logname = env("LOGNAME")
+        if _logname != null { _logname } else { "" }
+    }
 }
 
 fn home() {
-  _h = env("HOME")
-  if _h != null { _h }
-  else { "" }
+    _h = env("HOME")
+    if _h != null { _h } else { "" }
 }
 
-fn tmpdir() {
-  "/tmp"
-}
+fn tmpdir() { "/tmp" }
 
-fn shell() {
-  _s = env("SHELL")
-  if _s != null { _s }
-  else { "" }
+fn shell_path() {
+    _s = env("SHELL")
+    if _s != null { _s } else { "" }
 }
 
 fn uptime() {
-  _path = ffi.cstring("/proc/uptime")
-  _mode = ffi.cstring("r")
-  _fp = ffi.call(_fopen, "pointer", ["pointer", "pointer"], _path, _mode)
-  ffi.free(_path)
-  ffi.free(_mode)
-
-  if _fp == 0 {
-    0.0
-  } else {
-    _dbl_buf = ffi.allocBytes(8)
-    _fmt = ffi.cstring("%lf")
-    ffi.call(_fscanf, "int32", ["pointer", "pointer", "pointer"], _fp, _fmt, _dbl_buf)
-    ffi.free(_fmt)
-    _uptime = ffi.get_f64(_dbl_buf)
-    ffi.free(_dbl_buf)
-    ffi.call(_fclose, "int32", ["pointer"], _fp)
-    _uptime
-  }
+    _content = fs.read("/proc/uptime")
+    if _content == "" { return 0.0 }
+    _space = _content.find(" ")
+    if _space == null { return float(_content) }
+    float(_content[0:_space])
 }
 
 fn exit(code) {
-  _exit_fn = ffi.sym(_c, "exit")
-  ffi.call(_exit_fn, "void", ["int32"], code)
+    _exit_fn = ffi.sym(_c, "exit")
+    ffi.call(_exit_fn, "void", ["int32"], code)
+}
+
+// ============================================================
+// Display server detection
+// ============================================================
+
+fn isX11() {
+    _d = env("DISPLAY")
+    _d != null && _d != ""
+}
+
+fn isWayland() {
+    _w = env("WAYLAND_DISPLAY")
+    _w != null && _w != ""
+}
+
+fn isWindows() { false }
+
+fn displayServer() {
+    _xdg = env("XDG_SESSION_TYPE")
+    if _xdg != null {
+        if _xdg == "wayland" { return "wayland" }
+        if _xdg == "x11" { return "x11" }
+        if _xdg == "tty" { return "tty" }
+    }
+    if isWayland() { "wayland" }
+    else if isX11() { "x11" }
+    else { "unknown" }
+}
+
+fn displayInfo() {
+    _r = shell.exec("xdpyinfo 2>/dev/null")
+    if _r.exitCode != 0 { return {server: displayServer(), available: false} }
+_out = _r.stdout
+({server: displayServer(), available: true, raw: _out})
+}
+
+fn distro() {
+    _content = fs.read("/etc/os-release")
+    if _content == "" { return "unknown" }
+    for _line in _content.split("\n") {
+        if _line[0:5] == "NAME=" {
+            return _line[5:#_line].replace("\"", "")
+        }
+    }
+    "unknown"
+}
+
+fn kernel() {
+    _buf = ffi.allocBytes(390)
+    _ret = ffi.call(_uname, "int32", ["pointer"], _buf)
+    if _ret != 0 {
+        ffi.free(_buf)
+        "unknown"
+    } else {
+        _release_ptr = ffi.ptr_add(_buf, 130)
+        _r = ffi.string(_release_ptr)
+        ffi.free(_buf)
+        _r
+    }
+}
+
+fn nodename() {
+    _buf = ffi.allocBytes(390)
+    _ret = ffi.call(_uname, "int32", ["pointer"], _buf)
+    if _ret != 0 {
+        ffi.free(_buf)
+        ""
+    } else {
+        _node_ptr = ffi.ptr_add(_buf, 65)
+        _r = ffi.string(_node_ptr)
+        ffi.free(_buf)
+        _r
+    }
 }

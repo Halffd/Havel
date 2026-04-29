@@ -39,7 +39,7 @@ fn create(width, height, r, g, b, a) {
     ffi.set_u8(_p8(_pixels, _i * 4 + 2), b)
     ffi.set_u8(_p8(_pixels, _i * 4 + 3), a)
   }
-  {width: width, height: height, pixels: _pixels, format: "rgba8"}
+  ({width: width, height: height, pixels: _pixels, format: "rgba8"})
 }
 
 fn width(img) {
@@ -54,7 +54,7 @@ fn getPixel(img, x, y) {
   if img == null { return null }
   if x < 0 || x >= img.width || y < 0 || y >= img.height { return null }
   _p = _p8(img.pixels, (y * img.width + x) * 4)
-  {r: ffi.get_u8(_p), g: ffi.get_u8(_p8(_p, 1)), b: ffi.get_u8(_p8(_p, 2)), a: ffi.get_u8(_p8(_p, 3))}
+  ({r: ffi.get_u8(_p), g: ffi.get_u8(_p8(_p, 1)), b: ffi.get_u8(_p8(_p, 2)), a: ffi.get_u8(_p8(_p, 3))})
 }
 
 fn setPixel(img, x, y, r, g, b, a) {
@@ -95,7 +95,7 @@ fn crop(img, x, y, w, h) {
     _dst_off = _row * w * 4
     ffi.call(_memcpy, "pointer", ["pointer", "pointer", "uint64"], _p8(_pixels, _dst_off), _p8(img.pixels, _src_off), w * 4)
   }
-  {width: w, height: h, pixels: _pixels, format: "rgba8"}
+  ({width: w, height: h, pixels: _pixels, format: "rgba8"})
 }
 
 fn resize(img, nw, nh) {
@@ -118,7 +118,7 @@ fn resize(img, nw, nh) {
       ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
     }
   }
-  {width: nw, height: nh, pixels: _pixels, format: "rgba8"}
+  ({width: nw, height: nh, pixels: _pixels, format: "rgba8"})
 }
 
 fn flipH(img) {
@@ -136,7 +136,7 @@ fn flipH(img) {
       ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
     }
   }
-  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+  ({width: img.width, height: img.height, pixels: _pixels, format: "rgba8"})
 }
 
 fn flipV(img) {
@@ -147,7 +147,7 @@ fn flipV(img) {
     _sy = img.height - 1 - _y
     ffi.call(_memcpy, "pointer", ["pointer", "pointer", "uint64"], _p8(_pixels, _y * img.width * 4), _p8(img.pixels, _sy * img.width * 4), img.width * 4)
   }
-  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+  ({width: img.width, height: img.height, pixels: _pixels, format: "rgba8"})
 }
 
 fn rotate90(img) {
@@ -168,7 +168,7 @@ fn rotate90(img) {
       ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
     }
   }
-  {width: _nw, height: _nh, pixels: _pixels, format: "rgba8"}
+  ({width: _nw, height: _nh, pixels: _pixels, format: "rgba8"})
 }
 
 fn rotate180(img) {
@@ -197,7 +197,7 @@ fn rotate270(img) {
       ffi.set_u8(_p8(_dst, 3), ffi.get_u8(_p8(_src, 3)))
     }
   }
-  {width: _nw, height: _nh, pixels: _pixels, format: "rgba8"}
+  ({width: _nw, height: _nh, pixels: _pixels, format: "rgba8"})
 }
 
 fn grayscale(img) {
@@ -217,7 +217,7 @@ fn grayscale(img) {
     ffi.set_u8(_p8(_d, 2), _gray)
     ffi.set_u8(_p8(_d, 3), _a)
   }
-  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+  ({width: img.width, height: img.height, pixels: _pixels, format: "rgba8"})
 }
 
 fn invert(img) {
@@ -232,7 +232,7 @@ fn invert(img) {
     ffi.set_u8(_p8(_d, 2), 255 - ffi.get_u8(_p8(_s, 2)))
     ffi.set_u8(_p8(_d, 3), ffi.get_u8(_p8(_s, 3)))
   }
-  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+  ({width: img.width, height: img.height, pixels: _pixels, format: "rgba8"})
 }
 
 fn brightness(img, factor) {
@@ -254,7 +254,7 @@ fn brightness(img, factor) {
     ffi.set_u8(_p8(_d, 2), int(_b))
     ffi.set_u8(_p8(_d, 3), _a)
   }
-  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+  ({width: img.width, height: img.height, pixels: _pixels, format: "rgba8"})
 }
 
 fn contrast(img, factor) {
@@ -276,7 +276,7 @@ fn contrast(img, factor) {
     ffi.set_u8(_p8(_d, 2), int(_b))
     ffi.set_u8(_p8(_d, 3), _a)
   }
-  {width: img.width, height: img.height, pixels: _pixels, format: "rgba8"}
+  ({width: img.width, height: img.height, pixels: _pixels, format: "rgba8"})
 }
 
 fn blit(dst, dx, dy, src, sx, sy, w, h) {
@@ -413,5 +413,5 @@ fn load(path) {
     _src_off = _src_off + _pad
   }
   ffi.free(_raw)
-  {width: _w, height: _h, pixels: _pixels, format: "rgba8"}
+  ({width: _w, height: _h, pixels: _pixels, format: "rgba8"})
 }

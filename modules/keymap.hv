@@ -161,7 +161,7 @@ fn keycodes() {
   ffi.free(_min_ptr)
   ffi.free(_max_ptr)
   _closeDisplay(_dpy)
-  {min: _min, max: _max}
+  ({min: _min, max: _max})
 }
 
 fn mapping(keycode, count) {
@@ -238,5 +238,5 @@ fn lookup(name) {
   if _ks != 0 {
     _kc = nameToKeycode(name)
   }
-  {name: name, keysym: _ks, keycode: _kc}
+  ({name: name, keysym: _ks, keycode: _kc})
 }

@@ -149,7 +149,7 @@ fn toRGBA(img) {
       }
     }
   }
-  {width: _w, height: _h, pixels: _pixels, format: "rgba8"}
+  ({width: _w, height: _h, pixels: _pixels, format: "rgba8"})
 }
 
 fn resize(img, nw, nh, interpolation) {
@@ -305,5 +305,5 @@ fn findBestMatch(resultImg) {
       }
     }
   }
-  {x: _best_x, y: _best_y, confidence: _best_val}
+  ({x: _best_x, y: _best_y, confidence: _best_val})
 }

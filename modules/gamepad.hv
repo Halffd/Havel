@@ -99,7 +99,7 @@ fn open(path) {
     _i = _i + 1
   }
 
-  {fd: _fd, path: path, name: _devname, axes: _axes, buttons: _buttons, _axes_arr: _axes_arr, _buttons_arr: _buttons_arr, _nonblock: false}
+  ({fd: _fd, path: path, name: _devname, axes: _axes, buttons: _buttons, _axes_arr: _axes_arr, _buttons_arr: _buttons_arr, _nonblock: false})
 }
 
 fn close(handle) {
@@ -116,7 +116,7 @@ fn _parseEvent(buf) {
   _raw_type = ((_type & 127))
   _type_str = "button"
   if _raw_type == _JS_EVENT_AXIS { _type_str = "axis" }
-  {time: _time, value: _value, type: _type_str, number: _number, init: _init}
+  ({time: _time, value: _value, type: _type_str, number: _number, init: _init})
 }
 
 fn _readEvent(handle) {
@@ -176,7 +176,7 @@ fn state(handle) {
       _looping = false
     }
   }
-  {axes: handle._axes_arr, buttons: handle._buttons_arr}
+  ({axes: handle._axes_arr, buttons: handle._buttons_arr})
 }
 
 fn axis(handle, index) {

@@ -1,545 +1,1168 @@
-// parse/toml.hv
-// Pure Havel TOML parser - no external deps
+// toml.hv
+// Pure Havel TOML parser and stringifier
 
 // ============================================================
-// Lexer
+// String helpers
 // ============================================================
 
-enum TokenType {
-    EOF,
-    Newline,
-    Comment,
-    Key,
-    Equals,
-    String,
-    Integer,
-    Float,
-    Boolean,
-    Date,
-    DateTime,
-    LeftBracket,
-    RightBracket,
-    LeftDoubleBracket,
-    RightDoubleBracket,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot
+fn _charAt(s, i) {
+  return s[i:i+1]
 }
 
-struct Token {
-    type: TokenType
-    value: string
-    line: int
-    col: int
+fn _isBareKeyChar(ch) {
+  if ch >= "a" && ch <= "z" { return true }
+  if ch >= "A" && ch <= "Z" { return true }
+  if ch >= "0" && ch <= "9" { return true }
+  if ch == "-" || ch == "_" { return true }
+  return false
 }
 
-fn lex(source: string) -> [Token] {
-    let tokens = []
-    let i = 0
-    let line = 1
-    let col = 1
-    let n = source.len
+fn _isDigit(ch) {
+  return ch >= "0" && ch <= "9"
+}
 
-    while i < n {
-        let ch = source[i]
+fn _isHexDigit(ch) {
+  if ch >= "0" && ch <= "9" { return true }
+  if ch >= "a" && ch <= "f" { return true }
+  if ch >= "A" && ch <= "F" { return true }
+  return false
+}
 
-        // Skip whitespace (except newline)
-        if ch == ' ' || ch == '\r' || ch == '\t' {
-            i += 1
-            col += 1
-            continue
-        }
+fn _isWS(ch) {
+  return ch == " " || ch == "\t"
+}
 
-        // Newline
-        if ch == '\n' {
-            tokens.push(Token{type: TokenType.Newline, value: "\n", line: line, col: col})
-            i += 1
-            line += 1
-            col = 1
-            continue
-        }
-
-        // Comment
-        if ch == '#' {
-            let start = i
-            while i < n && source[i] != '\n' {
-                i += 1
-            }
-            tokens.push(Token{type: TokenType.Comment, value: source[start:i], line: line, col: col})
-            col += i - start
-            continue
-        }
-
-        // String
-        if ch == '"' {
-            i += 1
-            let start = i
-            while i < n && source[i] != '"' {
-                if source[i] == '\\' {
-                    i += 2  // Skip escape
-                } else {
-                    i += 1
-                }
-            }
-            let str = source[start:i]
-            i += 1  // Skip closing quote
-            tokens.push(Token{type: TokenType.String, value: str, line: line, col: col})
-            col += str.len + 2
-            continue
-        }
-
-        // Multiline string """
-        if ch == '"' && i + 2 < n && source[i+1] == '"' && source[i+2] == '"' {
-            i += 3
-            let start = i
-            while i + 2 < n && !(source[i] == '"' && source[i+1] == '"' && source[i+2] == '"') {
-                i += 1
-            }
-            let str = source[start:i]
-            i += 3
-            tokens.push(Token{type: TokenType.String, value: str, line: line, col: col})
-            col += str.len + 6
-            continue
-        }
-
-        // Key (bare or dotted)
-        if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || (ch >= '0' && ch <= '9' && i > 0) {
-            let start = i
-            while i < n {
-                let c = source[i]
-                if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
-                    i += 1
-                } else {
-                    break
-                }
-            }
-            let key = source[start:i]
-            tokens.push(Token{type: TokenType.Key, value: key, line: line, col: col})
-            col += key.len
-            continue
-        }
-
-        // Equals
-        if ch == '=' {
-            tokens.push(Token{type: TokenType.Equals, value: "=", line: line, col: col})
-            i += 1
-            col += 1
-            continue
-        }
-
-        // Left bracket [
-        if ch == '[' {
-            if i + 1 < n && source[i+1] == '[' {
-                tokens.push(Token{type: TokenType.LeftDoubleBracket, value: "[[", line: line, col: col})
-                i += 2
-                col += 2
-            } else {
-                tokens.push(Token{type: TokenType.LeftBracket, value: "[", line: line, col: col})
-                i += 1
-                col += 1
-            }
-            continue
-        }
-
-        // Right bracket ]
-        if ch == ']' {
-            if i + 1 < n && source[i+1] == ']' {
-                tokens.push(Token{type: TokenType.RightDoubleBracket, value: "]]", line: line, col: col})
-                i += 2
-                col += 2
-            } else {
-                tokens.push(Token{type: TokenType.RightBracket, value: "]", line: line, col: col})
-                i += 1
-                col += 1
-            }
-            continue
-        }
-
-        // Left brace {
-        if ch == '{' {
-            tokens.push(Token{type: TokenType.LeftBrace, value: "{", line: line, col: col})
-            i += 1
-            col += 1
-            continue
-        }
-
-        // Right brace }
-        if ch == '}' {
-            tokens.push(Token{type: TokenType.RightBrace, value: "}", line: line, col: col})
-            i += 1
-            col += 1
-            continue
-        }
-
-        // Comma
-        if ch == ',' {
-            tokens.push(Token{type: TokenType.Comma, value: ",", line: line, col: col})
-            i += 1
-            col += 1
-            continue
-        }
-
-        // Dot
-        if ch == '.' {
-            tokens.push(Token{type: TokenType.Dot, value: ".", line: line, col: col})
-            i += 1
-            col += 1
-            continue
-        }
-
-        // Numbers (integer/float)
-        if (ch >= '0' && ch <= '9') || ch == '-' || ch == '+' {
-            let start = i
-            let hasDot = false
-            if ch == '-' || ch == '+' {
-                i += 1
-            }
-            while i < n {
-                let c = source[i]
-                if c >= '0' && c <= '9' {
-                    i += 1
-                } else if c == '.' && !hasDot {
-                    hasDot = true
-                    i += 1
-                } else {
-                    break
-                }
-            }
-            let num = source[start:i]
-            if hasDot {
-                tokens.push(Token{type: TokenType.Float, value: num, line: line, col: col})
-            } else {
-                tokens.push(Token{type: TokenType.Integer, value: num, line: line, col: col})
-            }
-            col += num.len
-            continue
-        }
-
-        // Boolean
-        if i + 3 < n && source[i:i+4] == "true" {
-            tokens.push(Token{type: TokenType.Boolean, value: "true", line: line, col: col})
-            i += 4
-            col += 4
-            continue
-        }
-        if i + 4 < n && source[i:i+5] == "false" {
-            tokens.push(Token{type: TokenType.Boolean, value: "false", line: line, col: col})
-            i += 5
-            col += 5
-            continue
-        }
-
-        // Date/DateTime (simple ISO detection)
-        if i + 9 < n && source[i+4] == '-' && source[i+7] == '-' {
-            let start = i
-            while i < n && (source[i] >= '0' && source[i] <= '9' || source[i] == '-' || source[i] == 'T' || source[i] == ':' || source[i] == 'Z' || source[i] == '+' || source[i] == '.' || source[i] == ' ') {
-                i += 1
-            }
-            let dateStr = source[start:i]
-            if dateStr.has("T") {
-                tokens.push(Token{type: TokenType.DateTime, value: dateStr, line: line, col: col})
-            } else {
-                tokens.push(Token{type: TokenType.Date, value: dateStr, line: line, col: col})
-            }
-            col += dateStr.len
-            continue
-        }
-
-        // Unknown - skip
-        i += 1
-        col += 1
-    }
-
-    tokens.push(Token{type: TokenType.EOF, value: "", line: line, col: col})
-    return tokens
+fn _isNewline(ch) {
+  return ch == "\n" || ch == "\r"
 }
 
 // ============================================================
-// Parser
+// Value parser state
 // ============================================================
 
-struct Parser {
-    tokens: [Token]
-    pos: int
-    current_table: object
+fn _newParser(source) {
+  p = {}
+  p.src = source
+  p.pos = 0
+  p.len = #source
+  p.line = 1
+  p.col = 1
+  return p
 }
 
-fn Parser.init(tokens: [Token]) -> Parser {
-    return Parser{tokens: tokens, pos: 0, current_table: {}}
+fn _peek(p) {
+  if p.pos >= p.len { return "" }
+  return p.src[p.pos:p.pos+1]
 }
 
-fn Parser.peek(self) -> Token {
-    if self.pos < self.tokens.len {
-        return self.tokens[self.pos]
-    }
-    return Token{type: TokenType.EOF, value: "", line: 0, col: 0}
+fn _advance(p) {
+  if p.pos >= p.len { return "" }
+  ch = p.src[p.pos:p.pos+1]
+  p.pos = p.pos + 1
+  if ch == "\n" {
+    p.line = p.line + 1
+    p.col = 1
+  } else {
+    p.col = p.col + 1
+  }
+  return ch
 }
 
-fn Parser.advance(self) -> Token {
-    let tok = self.peek()
-    self.pos += 1
-    return tok
+fn _advanceN(p, n) {
+  i = 0
+  while i < n {
+    _advance(p)
+    i = i + 1
+  }
 }
 
-fn Parser.skipNewlines(self) {
-    while self.peek().type == TokenType.Newline || self.peek().type == TokenType.Comment {
-        self.advance()
-    }
+fn _peekN(p, n) {
+  end = p.pos + n
+  if end > p.len { end = p.len }
+  return p.src[p.pos:end]
 }
 
-fn Parser.parseValue(self, tok: Token) -> any {
-    if tok.type == TokenType.String {
-        return tok.value
+fn _skipWS(p) {
+  while p.pos < p.len {
+    ch = _peek(p)
+    if ch == " " || ch == "\t" {
+      _advance(p)
+    } else {
+      break
     }
-    if tok.type == TokenType.Integer {
-        return int(tok.value)
+  }
+}
+
+fn _skipComment(p) {
+  if _peek(p) == "#" {
+    while p.pos < p.len {
+      ch = _peek(p)
+      if ch == "\n" { break }
+      _advance(p)
     }
-    if tok.type == TokenType.Float {
-        return num(tok.value)
+  }
+}
+
+fn _skipWSAndComment(p) {
+  while p.pos < p.len {
+    ch = _peek(p)
+    if ch == " " || ch == "\t" {
+      _advance(p)
+    } else if ch == "#" {
+      _skipComment(p)
+    } else {
+      break
     }
-    if tok.type == TokenType.Boolean {
-        return tok.value == "true"
+  }
+}
+
+fn _skipNewline(p) {
+  if _peek(p) == "\r" { _advance(p) }
+  if _peek(p) == "\n" { _advance(p) }
+}
+
+fn _skipWSCommentNewline(p) {
+  while p.pos < p.len {
+    ch = _peek(p)
+    if ch == " " || ch == "\t" {
+      _advance(p)
+    } else if ch == "#" {
+      _skipComment(p)
+    } else if ch == "\r" || ch == "\n" {
+      _skipNewline(p)
+    } else {
+      break
     }
-    if tok.type == TokenType.Date || tok.type == TokenType.DateTime {
-        // Return as string for now (caller can parse with time module)
-        return tok.value
+  }
+}
+
+// ============================================================
+// Escape sequence processing
+// ============================================================
+
+fn _processEscapes(s) {
+  result = ""
+  i = 0
+  n = #s
+  while i < n {
+    ch = s[i:i+1]
+    if ch == "\\" {
+      i = i + 1
+      if i >= n { return result }
+      esc = s[i:i+1]
+      if esc == "b" { result = result + "\b" }
+      else if esc == "t" { result = result + "\t" }
+      else if esc == "n" { result = result + "\n" }
+      else if esc == "f" { result = result + "\f" }
+      else if esc == "r" { result = result + "\r" }
+      else if esc == "\"" { result = result + "\"" }
+      else if esc == "\\" { result = result + "\\" }
+      else if esc == "u" {
+        i = i + 1
+        if i + 3 < n {
+          hex = s[i:i+4]
+          code = _parseIntHex(hex)
+          result = result + _codepointToStr(code)
+          i = i + 3
+        }
+      }
+      else if esc == "U" {
+        i = i + 1
+        if i + 7 < n {
+          hex = s[i:i+8]
+          code = _parseIntHex(hex)
+          result = result + _codepointToStr(code)
+          i = i + 7
+        }
+      }
+      else {
+        result = result + esc
+      }
+    } else {
+      result = result + ch
     }
-    if tok.type == TokenType.LeftBracket {
-        return self.parseArray()
+    i = i + 1
+  }
+  return result
+}
+
+fn _digitVal(ch) {
+  if ch == "0" { return 0 }
+  if ch == "1" { return 1 }
+  if ch == "2" { return 2 }
+  if ch == "3" { return 3 }
+  if ch == "4" { return 4 }
+  if ch == "5" { return 5 }
+  if ch == "6" { return 6 }
+  if ch == "7" { return 7 }
+  if ch == "8" { return 8 }
+  if ch == "9" { return 9 }
+  if ch == "a" || ch == "A" { return 10 }
+  if ch == "b" || ch == "B" { return 11 }
+  if ch == "c" || ch == "C" { return 12 }
+  if ch == "d" || ch == "D" { return 13 }
+  if ch == "e" || ch == "E" { return 14 }
+  if ch == "f" || ch == "F" { return 15 }
+  return 0
+}
+
+fn _parseIntHex(s) {
+  val = 0
+  i = 0
+  n = #s
+  while i < n {
+    ch = s[i:i+1]
+    val = val * 16 + _digitVal(ch)
+    i = i + 1
+  }
+  return val
+}
+
+fn _codepointToStr(code) {
+  if code >= 0x20 && code <= 0x7E {
+    return char(code)
+  }
+  return "?"
+}
+
+// ============================================================
+// String parsing
+// ============================================================
+
+fn _parseBasicString(p) {
+  content = ""
+  while p.pos < p.len {
+    ch = _peek(p)
+    if ch == "\"" {
+      next1 = _peekN(p, 2)
+      if next1 == "\"\"" {
+        break
+      }
+      _advance(p)
+      return content
     }
-    if tok.type == TokenType.LeftBrace {
-        return self.parseInlineTable()
+    if ch == "\\" {
+      _advance(p)
+      esc = _peek(p)
+      if esc == "b" { content = content + "\b"; _advance(p) }
+      else if esc == "t" { content = content + "\t"; _advance(p) }
+      else if esc == "n" { content = content + "\n"; _advance(p) }
+      else if esc == "f" { content = content + "\f"; _advance(p) }
+      else if esc == "r" { content = content + "\r"; _advance(p) }
+      else if esc == "\"" { content = content + "\""; _advance(p) }
+      else if esc == "\\" { content = content + "\\"; _advance(p) }
+      else if esc == "u" {
+        _advance(p)
+        hex = ""
+        j = 0
+        while j < 4 && p.pos < p.len {
+          hc = _peek(p)
+          if _isHexDigit(hc) { hex = hex + hc; _advance(p) }
+          else { break }
+          j = j + 1
+        }
+        content = content + _codepointToStr(_parseIntHex(hex))
+      }
+      else if esc == "U" {
+        _advance(p)
+        hex = ""
+        j = 0
+        while j < 8 && p.pos < p.len {
+          hc = _peek(p)
+          if _isHexDigit(hc) { hex = hex + hc; _advance(p) }
+          else { break }
+          j = j + 1
+        }
+        content = content + _codepointToStr(_parseIntHex(hex))
+      }
+      else if esc == "\n" || esc == "\r" {
+        if esc == "\r" { _advance(p) }
+        if _peek(p) == "\n" { _advance(p) }
+        while p.pos < p.len {
+          ws = _peek(p)
+          if ws == " " || ws == "\t" || ws == "\n" || ws == "\r" {
+            _advance(p)
+          } else {
+            break
+          }
+        }
+      }
+      else {
+        content = content + esc
+        _advance(p)
+      }
+    } else {
+      content = content + ch
+      _advance(p)
+    }
+  }
+  return content
+}
+
+fn _parseMultilineBasicString(p) {
+  if _peekN(p, 3) != "\"\"\"" { return "" }
+  _advanceN(p, 3)
+  if _peek(p) == "\n" { _advance(p) }
+  else if _peekN(p, 2) == "\r\n" { _advanceN(p, 2) }
+  content = ""
+  while p.pos < p.len {
+    if _peekN(p, 3) == "\"\"\"" {
+      _advanceN(p, 3)
+      return content
+    }
+    ch = _peek(p)
+    if ch == "\\" {
+      _advance(p)
+      esc = _peek(p)
+      if esc == "b" { content = content + "\b"; _advance(p) }
+      else if esc == "t" { content = content + "\t"; _advance(p) }
+      else if esc == "n" { content = content + "\n"; _advance(p) }
+      else if esc == "f" { content = content + "\f"; _advance(p) }
+      else if esc == "r" { content = content + "\r"; _advance(p) }
+      else if esc == "\"" {
+        quoteRun = ""
+        while _peek(p) == "\"" && #quoteRun < 5 {
+          quoteRun = quoteRun + _peek(p)
+          _advance(p)
+        }
+        content = content + quoteRun
+        if #quoteRun >= 3 { return content }
+      }
+      else if esc == "\\" { content = content + "\\"; _advance(p) }
+      else if esc == "u" {
+        _advance(p)
+        hex = ""
+        j = 0
+        while j < 4 && p.pos < p.len {
+          hc = _peek(p)
+          if _isHexDigit(hc) { hex = hex + hc; _advance(p) }
+          else { break }
+          j = j + 1
+        }
+        content = content + _codepointToStr(_parseIntHex(hex))
+      }
+      else if esc == "U" {
+        _advance(p)
+        hex = ""
+        j = 0
+        while j < 8 && p.pos < p.len {
+          hc = _peek(p)
+          if _isHexDigit(hc) { hex = hex + hc; _advance(p) }
+          else { break }
+          j = j + 1
+        }
+        content = content + _codepointToStr(_parseIntHex(hex))
+      }
+      else if esc == "\n" || esc == "\r" {
+        if esc == "\r" { _advance(p) }
+        if _peek(p) == "\n" { _advance(p) }
+        while p.pos < p.len {
+          ws = _peek(p)
+          if ws == " " || ws == "\t" || ws == "\n" || ws == "\r" {
+            _advance(p)
+          } else {
+            break
+          }
+        }
+      }
+      else {
+        content = content + esc
+        _advance(p)
+      }
+    } else {
+      content = content + ch
+      _advance(p)
+    }
+  }
+  return content
+}
+
+fn _parseLiteralString(p) {
+  content = ""
+  while p.pos < p.len {
+    ch = _peek(p)
+    if ch == "'" {
+      next1 = _peekN(p, 2)
+      if next1 == "''" { break }
+      _advance(p)
+      return content
+    }
+    content = content + ch
+    _advance(p)
+  }
+  return content
+}
+
+fn _parseMultilineLiteralString(p) {
+  if _peekN(p, 3) != "'''" { return "" }
+  _advanceN(p, 3)
+  if _peek(p) == "\n" { _advance(p) }
+  else if _peekN(p, 2) == "\r\n" { _advanceN(p, 2) }
+  content = ""
+  while p.pos < p.len {
+    if _peekN(p, 3) == "'''" {
+      _advanceN(p, 3)
+      return content
+    }
+    ch = _peek(p)
+    if ch == "'" && _peekN(p, 4) == "''''" {
+      content = content + "'"
+      _advance(p)
+    } else if ch == "'" && _peekN(p, 5) == "'''''" {
+      content = content + "''"
+      _advanceN(p, 2)
+    } else {
+      content = content + ch
+      _advance(p)
+    }
+  }
+  return content
+}
+
+fn _parseStringValue(p) {
+  if _peekN(p, 3) == "\"\"\"" { return _parseMultilineBasicString(p) }
+  if _peekN(p, 3) == "'''" { return _parseMultilineLiteralString(p) }
+  if _peek(p) == "\"" {
+    _advance(p)
+    val = _parseBasicString(p)
+    return val
+  }
+  if _peek(p) == "'" {
+    _advance(p)
+    val = _parseLiteralString(p)
+    return val
+  }
+  return null
+}
+
+// ============================================================
+// Number parsing
+// ============================================================
+
+fn _isBinDigit(ch) { return ch == "0" || ch == "1" }
+fn _isOctDigit(ch) { return ch >= "0" && ch <= "7" }
+
+fn _stripUnderscores(s) {
+  result = ""
+  i = 0
+  n = #s
+  while i < n {
+    ch = s[i:i+1]
+    if ch != "_" { result = result + ch }
+    i = i + 1
+  }
+  return result
+}
+
+fn _parseDecInt(s) {
+  clean = _stripUnderscores(s)
+  return int(clean)
+}
+
+fn _parseHexInt(s) {
+  clean = _stripUnderscores(s)
+  val = 0
+  i = 2
+  n = #clean
+  while i < n {
+    ch = clean[i:i+1]
+    val = val * 16
+      if ch >= "0" && ch <= "9" { val = val + (ord(ch) - ord("0")) }
+      else if ch >= "a" && ch <= "f" { val = val + 10 + (ord(ch) - ord("a")) }
+      else if ch >= "A" && ch <= "F" { val = val + 10 + (ord(ch) - ord("A")) }
+    i = i + 1
+  }
+  return val
+}
+
+fn _parseOctInt(s) {
+  clean = _stripUnderscores(s)
+  val = 0
+  i = 2
+  n = #clean
+  while i < n {
+    ch = clean[i:i+1]
+      val = val * 8 + (ord(ch) - ord("0"))
+    i = i + 1
+  }
+  return val
+}
+
+fn _parseBinInt(s) {
+  clean = _stripUnderscores(s)
+  val = 0
+  i = 2
+  n = #clean
+  while i < n {
+    ch = clean[i:i+1]
+    val = val * 2
+    if ch == "1" { val = val + 1 }
+    i = i + 1
+  }
+  return val
+}
+
+fn _parseNum(p) {
+  start = p.pos
+  negative = false
+  if _peek(p) == "+" { _advance(p) }
+  else if _peek(p) == "-" { negative = true; _advance(p) }
+
+  if _peekN(p, 2) == "0x" || _peekN(p, 2) == "0X" {
+    _advanceN(p, 2)
+    while p.pos < p.len && (_isHexDigit(_peek(p)) || _peek(p) == "_") { _advance(p) }
+    raw = p.src[start:p.pos]
+    val = _parseHexInt(raw)
+    if negative { val = -val }
+    return val
+  }
+  if _peekN(p, 2) == "0o" || _peekN(p, 2) == "0O" {
+    _advanceN(p, 2)
+    while p.pos < p.len && (_isOctDigit(_peek(p)) || _peek(p) == "_") { _advance(p) }
+    raw = p.src[start:p.pos]
+    val = _parseOctInt(raw)
+    if negative { val = -val }
+    return val
+  }
+  if _peekN(p, 2) == "0b" || _peekN(p, 2) == "0B" {
+    _advanceN(p, 2)
+    while p.pos < p.len && (_isBinDigit(_peek(p)) || _peek(p) == "_") { _advance(p) }
+    raw = p.src[start:p.pos]
+    val = _parseBinInt(raw)
+    if negative { val = -val }
+    return val
+  }
+
+  if _peek(p) == "i" || _peek(p) == "n" {
+    word = ""
+    while p.pos < p.len {
+      ch = _peek(p)
+      if (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") {
+        word = word + ch
+        _advance(p)
+      } else {
+        break
+      }
+    }
+    if word == "inf" {
+      if negative { return num("-inf") }
+      return num("inf")
+    }
+    if word == "nan" {
+      return num("nan")
     }
     return null
+  }
+
+  hasDigits = false
+  while p.pos < p.len && (_isDigit(_peek(p)) || _peek(p) == "_") {
+    _advance(p)
+    hasDigits = true
+  }
+
+  isFloat = false
+  if _peek(p) == "." {
+    isFloat = true
+    _advance(p)
+    while p.pos < p.len && (_isDigit(_peek(p)) || _peek(p) == "_") {
+      _advance(p)
+    }
+  }
+
+  if _peek(p) == "e" || _peek(p) == "E" {
+    isFloat = true
+    _advance(p)
+    if _peek(p) == "+" || _peek(p) == "-" { _advance(p) }
+    while p.pos < p.len && (_isDigit(_peek(p)) || _peek(p) == "_") {
+      _advance(p)
+    }
+  }
+
+  raw = p.src[start:p.pos]
+  clean = _stripUnderscores(raw)
+
+  if isFloat {
+    if negative && clean[0:1] != "-" { clean = "-" + clean }
+    return num(clean)
+  }
+  val = int(clean)
+  return val
 }
 
-fn Parser.parseArray(self) -> [any] {
-    self.advance() // consume '['
-    let arr = []
+// ============================================================
+// Date/time detection
+// ============================================================
 
-    while true {
-        self.skipNewlines()
-        let tok = self.peek()
-        if tok.type == TokenType.RightBracket {
-            self.advance()
-            break
-        }
-        let val = self.parseValue(tok)
-        if val != null {
-            arr.push(val)
-        }
-        self.skipNewlines()
-        let next = self.peek()
-        if next.type == TokenType.Comma {
-            self.advance()
-            continue
-        }
-        if next.type != TokenType.RightBracket {
-            break
-        }
-    }
-    return arr
+fn _peekDateTime(p) {
+  i = p.pos
+  src = p.src
+  n = p.len
+  if i + 9 >= n { return false }
+  d4 = src[i+4:i+5]
+  if d4 != "-" { return false }
+  d7 = src[i+7:i+8]
+  if d7 != "-" { return false }
+  y0 = src[i:i+1]
+  y1 = src[i+1:i+2]
+  y2 = src[i+2:i+3]
+  y3 = src[i+3:i+4]
+  if !_isDigit(y0) || !_isDigit(y1) || !_isDigit(y2) || !_isDigit(y3) { return false }
+  m0 = src[i+5:i+6]
+  m1 = src[i+6:i+7]
+  if !_isDigit(m0) || !_isDigit(m1) { return false }
+  d0 = src[i+8:i+9]
+  d1 = src[i+9:i+10]
+  if !_isDigit(d0) || !_isDigit(d1) { return false }
+  return true
 }
 
-fn Parser.parseInlineTable(self) -> object {
-    self.advance() // consume '{'
-    let obj = {}
-
-    while true {
-        self.skipNewlines()
-        let tok = self.peek()
-        if tok.type == TokenType.RightBrace {
-            self.advance()
-            break
-        }
-        if tok.type != TokenType.Key {
-            break
-        }
-        let key = tok.value
-        self.advance()
-        self.skipNewlines()
-        if self.peek().type != TokenType.Equals {
-            break
-        }
-        self.advance() // consume '='
-        self.skipNewlines()
-        let valTok = self.peek()
-        let val = self.parseValue(valTok)
-        if val != null {
-            obj[key] = val
-        }
-        self.skipNewlines()
-        let next = self.peek()
-        if next.type == TokenType.Comma {
-            self.advance()
-            continue
-        }
-        if next.type != TokenType.RightBrace {
-            break
-        }
+fn _parseDateTime(p) {
+  start = p.pos
+  while p.pos < p.len {
+    ch = _peek(p)
+    if _isDigit(ch) || ch == "-" || ch == "T" || ch == ":" || ch == "." || ch == "Z" || ch == "+" || ch == " " {
+      _advance(p)
+    } else {
+      break
     }
-    return obj
+  }
+  return p.src[start:p.pos]
 }
 
-fn Parser.parseKey(self) -> [string] {
-    let keys = []
-    let tok = self.peek()
-    if tok.type != TokenType.Key && tok.type != TokenType.String {
-        return keys
-    }
-    keys.push(tok.value)
-    self.advance()
+// ============================================================
+// Value parsing
+// ============================================================
 
-    while self.peek().type == TokenType.Dot {
-        self.advance()
-        let next = self.peek()
-        if next.type != TokenType.Key && next.type != TokenType.String {
-            break
-        }
-        keys.push(next.value)
-        self.advance()
+fn _parseValue(p) {
+  _skipWS(p)
+  if p.pos >= p.len { return null }
+  ch = _peek(p)
+  if ch == "" { return null }
+
+  if ch == "\"" || ch == "'" { return _parseStringValue(p) }
+
+  if ch == "t" {
+    if _peekN(p, 4) == "true" {
+      _advanceN(p, 4)
+      return true
     }
+  }
+  if ch == "f" {
+    if _peekN(p, 5) == "false" {
+      _advanceN(p, 5)
+      return false
+    }
+  }
+
+  if _isDigit(ch) || ch == "-" || ch == "+" {
+    if _peekDateTime(p) { return _parseDateTime(p) }
+    return _parseNum(p)
+  }
+
+  if ch == "[" { return _parseArray(p) }
+  if ch == "{" { return _parseInlineTable(p) }
+
+  if ch == "i" || ch == "n" { return _parseNum(p) }
+
+  return null
+}
+
+fn _parseArray(p) {
+  _advance(p)
+  arr = []
+  _skipWSCommentNewline(p)
+  if _peek(p) == "]" { _advance(p); return arr }
+
+  while p.pos < p.len {
+    _skipWSCommentNewline(p)
+    if _peek(p) == "]" { _advance(p); return arr }
+    val = _parseValue(p)
+    arr.push(val)
+    _skipWSCommentNewline(p)
+    if _peek(p) == "," { _advance(p); _skipWSCommentNewline(p) }
+    else { break }
+  }
+  _skipWSCommentNewline(p)
+  if _peek(p) == "]" { _advance(p) }
+  return arr
+}
+
+fn _parseInlineTable(p) {
+  _advance(p)
+  obj = {}
+  _skipWS(p)
+  if _peek(p) == "}" { _advance(p); return obj }
+
+  while p.pos < p.len {
+    _skipWS(p)
+    if _peek(p) == "}" { _advance(p); return obj }
+    keys = _parseKey(p)
+    _skipWS(p)
+    if _peek(p) != "=" { break }
+    _advance(p)
+    _skipWS(p)
+    val = _parseValue(p)
+    _setNestedValue(obj, keys, val)
+    _skipWS(p)
+    if _peek(p) == "," { _advance(p) }
+    else { break }
+  }
+  _skipWS(p)
+  if _peek(p) == "}" { _advance(p) }
+  return obj
+}
+
+// ============================================================
+// Key parsing
+// ============================================================
+
+fn _parseKey(p) {
+  keys = []
+  _skipWS(p)
+  ch = _peek(p)
+  if ch == "\"" || ch == "'" {
+    key = _parseStringValue(p)
+    keys.push(key)
+  } else if _isBareKeyChar(ch) {
+    key = _parseBareKey(p)
+    keys.push(key)
+  } else {
     return keys
+  }
+
+  while true {
+    _skipWS(p)
+    if _peek(p) != "." { break }
+    _advance(p)
+    _skipWS(p)
+    nch = _peek(p)
+    if nch == "\"" || nch == "'" {
+      key = _parseStringValue(p)
+      keys.push(key)
+    } else if _isBareKeyChar(nch) {
+      key = _parseBareKey(p)
+      keys.push(key)
+    } else {
+      break
+    }
+  }
+  return keys
 }
 
-fn Parser.setValue(self, keys: [string], value: any) {
-    if keys.len == 0 {
-        return
-    }
-    let obj = self.current_table
-    for i in 0..(keys.len - 1) {
-        let key = keys[i]
-        if obj[key] == null {
-            obj[key] = {}
-        }
-        obj = obj[key]
-    }
-    obj[keys[-1]] = value
-}
-
-fn Parser.parse(self) -> object {
-    let result = {}
-
-    while true {
-        self.skipNewlines()
-        let tok = self.peek()
-        if tok.type == TokenType.EOF {
-            break
-        }
-
-        // Table header: [name]
-        if tok.type == TokenType.LeftBracket {
-            self.advance()
-            self.skipNewlines()
-            let keys = self.parseKey()
-            self.skipNewlines()
-            if self.peek().type != TokenType.RightBracket {
-                // Error
-                self.advance()
-                continue
-            }
-            self.advance()
-
-            // Navigate to or create table
-            let table = result
-            for key in keys {
-                if table[key] == null {
-                    table[key] = {}
-                }
-                table = table[key]
-            }
-            self.current_table = table
-            continue
-        }
-
-        // Array table: [[name]]
-        if tok.type == TokenType.LeftDoubleBracket {
-            self.advance()
-            self.skipNewlines()
-            let keys = self.parseKey()
-            self.skipNewlines()
-            if self.peek().type != TokenType.RightDoubleBracket {
-                self.advance()
-                continue
-            }
-            self.advance()
-
-            // Navigate to parent
-            let parent = result
-            for i in 0..(keys.len - 1) {
-                let key = keys[i]
-                if parent[key] == null {
-                    parent[key] = []
-                }
-                // If it's an array, take last element as table
-                if parent[key] is [any] {
-                    let arr = parent[key]
-                    if arr.len == 0 {
-                        arr.push({})
-                    }
-                    parent = arr[-1]
-                } else {
-                    parent = parent[key]
-                }
-            }
-
-            let lastKey = keys[-1]
-            if parent[lastKey] == null {
-                parent[lastKey] = []
-            }
-            let arr = parent[lastKey]
-            let newTable = {}
-            arr.push(newTable)
-            self.current_table = newTable
-            continue
-        }
-
-        // Key-value pair
-        if tok.type == TokenType.Key || tok.type == TokenType.String {
-            let keys = self.parseKey()
-            self.skipNewlines()
-            if self.peek().type != TokenType.Equals {
-                // Skip invalid
-                self.advance()
-                continue
-            }
-            self.advance()
-            self.skipNewlines()
-            let valTok = self.peek()
-            let val = self.parseValue(valTok)
-            if val != null {
-                if keys.len == 1 {
-                    self.current_table[keys[0]] = val
-                } else {
-                    self.setValue(keys, val)
-                }
-            }
-            self.advance()
-            continue
-        }
-
-        // Skip unknown
-        self.advance()
-    }
-
-    return result
+fn _parseBareKey(p) {
+  start = p.pos
+  while p.pos < p.len {
+    ch = _peek(p)
+    if _isBareKeyChar(ch) { _advance(p) }
+    else { break }
+  }
+  return p.src[start:p.pos]
 }
 
 // ============================================================
-// Public API
+// Table header parsing
 // ============================================================
 
-fn parse(source: string) -> object {
-    let tokens = lex(source)
-    let parser = Parser.init(tokens)
-    return parser.parse()
+fn _parseTableHeader(p) {
+  _advance(p)
+  _skipWS(p)
+  keys = _parseKey(p)
+  _skipWS(p)
+  if _peek(p) == "]" { _advance(p) }
+  return keys
 }
 
-fn parseFile(path: string) -> object {
-    let source = fs.read(path)
-    if source == null {
-        return {}
+fn _parseArrayTableHeader(p) {
+  _advanceN(p, 2)
+  _skipWS(p)
+  keys = _parseKey(p)
+  _skipWS(p)
+  if _peekN(p, 2) == "]]" { _advanceN(p, 2) }
+  return keys
+}
+
+// ============================================================
+// Nested object navigation
+// ============================================================
+
+fn _setNestedValue(obj, keys, val) {
+  if #keys == 0 { return }
+  if #keys == 1 {
+    obj[keys[0]] = val
+    return
+  }
+  current = obj
+  i = 0
+  n = #keys - 1
+  while i < n {
+    key = keys[i]
+    if current.has(key) {
+      current = current[key]
+    } else {
+      next = {}
+      current[key] = next
+      current = next
     }
-    return parse(source)
+    i = i + 1
+  }
+  current[keys[#keys - 1]] = val
+}
+
+fn _getOrCreateTable(root, keys) {
+  current = root
+  i = 0
+  n = #keys
+  while i < n {
+    key = keys[i]
+    if current.has(key) {
+      current = current[key]
+    } else {
+      next = {}
+      current[key] = next
+      current = next
+    }
+    i = i + 1
+  }
+  return current
+}
+
+fn _getOrCreateArrayTable(root, keys) {
+  parent = root
+  i = 0
+  n = #keys - 1
+  while i < n {
+    key = keys[i]
+    if parent.has(key) {
+      existing = parent[key]
+      if type.of(existing) == "array" {
+        len = #existing
+        if len > 0 {
+          parent = existing[len - 1]
+        } else {
+          fresh = {}
+          existing.push(fresh)
+          parent = fresh
+        }
+      } else {
+        parent = existing
+      }
+    } else {
+      next = {}
+      parent[key] = next
+      parent = next
+    }
+    i = i + 1
+  }
+  lastKey = keys[#keys - 1]
+  if !parent.has(lastKey) {
+    parent[lastKey] = []
+  }
+  arr = parent[lastKey]
+  newTable = {}
+  arr.push(newTable)
+  return newTable
+}
+
+// ============================================================
+// Line-by-line document parser
+// ============================================================
+
+fn _parseDocument(source) {
+  result = {}
+  current = result
+  p = _newParser(source)
+
+  while p.pos < p.len {
+    _skipWSAndComment(p)
+    if p.pos >= p.len { break }
+    ch = _peek(p)
+
+    if ch == "\n" || ch == "\r" {
+      _skipNewline(p)
+      continue
+    }
+
+    if ch == "#" {
+      _skipComment(p)
+      if p.pos < p.len { _skipNewline(p) }
+      continue
+    }
+
+    if ch == "[" {
+      if _peekN(p, 2) == "[[" {
+        keys = _parseArrayTableHeader(p)
+        current = _getOrCreateArrayTable(result, keys)
+      } else {
+        keys = _parseTableHeader(p)
+        current = _getOrCreateTable(result, keys)
+      }
+      _skipWSAndComment(p)
+      if p.pos < p.len { _skipNewline(p) }
+      continue
+    }
+
+    keys = _parseKey(p)
+    if #keys == 0 {
+      if p.pos < p.len { _advance(p) }
+      continue
+    }
+
+    _skipWS(p)
+    if _peek(p) != "=" {
+      if p.pos < p.len { _advance(p) }
+      continue
+    }
+    _advance(p)
+    _skipWS(p)
+
+    val = _parseValue(p)
+    if val != null {
+      _setNestedValue(current, keys, val)
+    }
+
+    _skipWSAndComment(p)
+    if p.pos < p.len && (_peek(p) == "\n" || _peek(p) == "\r") {
+      _skipNewline(p)
+    }
+  }
+
+  return result
+}
+
+// ============================================================
+// Public API: parse
+// ============================================================
+
+fn parse(source) {
+  if source == null { return {} }
+  return _parseDocument(source)
+}
+
+fn parseFile(path) {
+  source = fs.read(path)
+  if source == null { return {} }
+  return _parseDocument(source)
+}
+
+// ============================================================
+// Stringify helpers
+// ============================================================
+
+fn _needsQuoting(key) {
+  i = 0
+  n = #key
+  if n == 0 { return true }
+  while i < n {
+    ch = key[i:i+1]
+    if !_isBareKeyChar(ch) { return true }
+    i = i + 1
+  }
+  return false
+}
+
+fn _quoteKey(key) {
+  if !_needsQuoting(key) { return key }
+  return "\"" + _escapeBasicString(key) + "\""
+}
+
+fn _escapeBasicString(s) {
+  result = ""
+  i = 0
+  n = #s
+  while i < n {
+    ch = s[i:i+1]
+    if ch == "\t" { result = result + "\\t" }
+    else if ch == "\n" { result = result + "\\n" }
+    else if ch == "\r" { result = result + "\\r" }
+    else if ch == "\\" { result = result + "\\\\" }
+    else if ch == "\"" { result = result + "\\\"" }
+    else if ch == "\b" { result = result + "\\b" }
+    else if ch == "\f" { result = result + "\\f" }
+    else { result = result + ch }
+    i = i + 1
+  }
+  return result
+}
+
+fn _stringifyValue(val) {
+  t = type.of(val)
+  if t == "string" { return "\"" + _escapeBasicString(val) + "\"" }
+  if t == "number" {
+    if val == int(val) { return str(val) + ".0" }
+    return str(val)
+  }
+  if t == "boolean" {
+    if val { return "true" }
+    return "false"
+  }
+  if t == "array" { return _stringifyArray(val) }
+  if t == "object" { return _stringifyInlineTable(val) }
+  return str(val)
+}
+
+fn _stringifyArray(arr) {
+  if #arr == 0 { return "[]" }
+  parts = []
+  i = 0
+  n = #arr
+  while i < n {
+    parts.push(_stringifyValue(arr[i]))
+    i = i + 1
+  }
+  return "[" + _joinArr(parts, ", ") + "]"
+}
+
+fn _stringifyInlineTable(obj) {
+  parts = []
+  keys = obj.keys()
+  i = 0
+  n = #keys
+  while i < n {
+    key = keys[i]
+    val = obj[key]
+    if type.of(val) != "object" && type.of(val) != "array" {
+      parts.push(_quoteKey(key) + " = " + _stringifyValue(val))
+    }
+    i = i + 1
+  }
+  return "{" + _joinArr(parts, ", ") + "}"
+}
+
+fn _joinArr(arr, sep) {
+  result = ""
+  i = 0
+  n = #arr
+  while i < n {
+    if i > 0 { result = result + sep }
+    result = result + arr[i]
+    i = i + 1
+  }
+  return result
+}
+
+fn _isSimpleValue(val) {
+  t = type.of(val)
+  if t == "string" { return true }
+  if t == "number" { return true }
+  if t == "boolean" { return true }
+  if t == "array" {
+    i = 0
+    n = #val
+    while i < n {
+      if !_isSimpleValue(val[i]) { return false }
+      i = i + 1
+    }
+    return true
+  }
+  if t == "object" {
+    keys = val.keys()
+    i = 0
+    n = #keys
+    while i < n {
+      if !_isSimpleValue(val[keys[i]]) { return false }
+      i = i + 1
+    }
+    return true
+  }
+  return false
+}
+
+fn _isTableArray(val) {
+  if type.of(val) != "array" { return false }
+  if #val == 0 { return false }
+  i = 0
+  n = #val
+  while i < n {
+    if type.of(val[i]) != "object" { return false }
+    i = i + 1
+  }
+  return true
+}
+
+fn _stringifySection(obj, prefix, output, isRoot) {
+  simpleKeys = []
+  tableKeys = []
+  tableArrKeys = []
+
+  keys = obj.keys()
+  i = 0
+  n = #keys
+  while i < n {
+    key = keys[i]
+    val = obj[key]
+    t = type.of(val)
+
+    if t == "object" {
+      tableKeys.push(key)
+    } else if _isTableArray(val) {
+      tableArrKeys.push(key)
+    } else {
+      simpleKeys.push(key)
+    }
+    i = i + 1
+  }
+
+  first = isRoot
+
+  i = 0
+  n = #simpleKeys
+  while i < n {
+    key = simpleKeys[i]
+    val = obj[key]
+    if !first { output.push("") }
+    output.push(_quoteKey(key) + " = " + _stringifyValue(val))
+    first = false
+    i = i + 1
+  }
+
+  i = 0
+  n = #tableKeys
+  while i < n {
+    key = tableKeys[i]
+    sub = obj[key]
+    subPrefix = key
+    if #prefix > 0 { subPrefix = prefix + "." + key }
+    output.push("")
+    output.push("[" + subPrefix + "]")
+    _stringifySection(sub, subPrefix, output, false)
+    i = i + 1
+  }
+
+  i = 0
+  n = #tableArrKeys
+  while i < n {
+    key = tableArrKeys[i]
+    arr = obj[key]
+    subPrefix = key
+    if #prefix > 0 { subPrefix = prefix + "." + key }
+    j = 0
+    m = #arr
+    while j < m {
+      item = arr[j]
+      output.push("")
+      output.push("[[" + subPrefix + "]]")
+      _stringifySection(item, subPrefix, output, false)
+      j = j + 1
+    }
+    i = i + 1
+  }
+}
+
+// ============================================================
+// Public API: stringify
+// ============================================================
+
+fn stringify(value) {
+  if value == null { return "" }
+  output = []
+  _stringifySection(value, "", output, true)
+  result = ""
+  i = 0
+  n = #output
+  while i < n {
+    if i > 0 { result = result + "\n" }
+    result = result + output[i]
+    i = i + 1
+  }
+  return result
 }

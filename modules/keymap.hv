@@ -1,0 +1,242 @@
+// keymap.hv — Keyboard key mapping and conversion between X11 KeySym,
+// keycodes, and key names via X11 FFI
+// Provides: keymap.nameToKeysym, keymap.keysymToName, keymap.nameToKeycode,
+// keymap.keycodeToName, keymap.keycodes, keymap.mapping, keymap.isModifier,
+// keymap.modToMask, keymap.maskToMods, keymap.keyNames, keymap.lookup
+
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_XStringToKeysym = ffi.sym(_xlib, "XStringToKeysym")
+_XKeysymToKeycode = ffi.sym(_xlib, "XKeysymToKeycode")
+_XKeycodeToKeysym = ffi.sym(_xlib, "XKeycodeToKeysym")
+_XDisplayKeycodes = ffi.sym(_xlib, "XDisplayKeycodes")
+_XGetKeyboardMapping = ffi.sym(_xlib, "XGetKeyboardMapping")
+_XFree = ffi.sym(_xlib, "XFree")
+
+fn _openDisplay() {
+  ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+}
+
+fn _closeDisplay(dpy) {
+  ffi.call(_XCloseDisplay, "int32", ["pointer"], dpy)
+}
+
+_KEY_TABLE = [
+  ["a", 0x61], ["b", 0x62], ["c", 0x63], ["d", 0x64], ["e", 0x65],
+  ["f", 0x66], ["g", 0x67], ["h", 0x68], ["i", 0x69], ["j", 0x6a],
+  ["k", 0x6b], ["l", 0x6c], ["m", 0x6d], ["n", 0x6e], ["o", 0x6f],
+  ["p", 0x70], ["q", 0x71], ["r", 0x72], ["s", 0x73], ["t", 0x74],
+  ["u", 0x75], ["v", 0x76], ["w", 0x77], ["x", 0x78], ["y", 0x79],
+  ["z", 0x7a],
+  ["0", 0x30], ["1", 0x31], ["2", 0x32], ["3", 0x33], ["4", 0x34],
+  ["5", 0x35], ["6", 0x36], ["7", 0x37], ["8", 0x38], ["9", 0x39],
+  ["minus", 0x2d], ["equal", 0x3d], ["bracketleft", 0x5b],
+  ["bracketright", 0x5d], ["semicolon", 0x3b], ["apostrophe", 0x27],
+  ["grave", 0x60], ["backslash", 0x5c], ["comma", 0x2c],
+  ["period", 0x2e], ["slash", 0x2f],
+  ["Return", 0xff0d], ["Escape", 0xff1b], ["Tab", 0xff09],
+  ["space", 0x20], ["BackSpace", 0xff08], ["Delete", 0xffff],
+  ["Home", 0xff50], ["End", 0xff57], ["Left", 0xff51],
+  ["Right", 0xff53], ["Up", 0xff52], ["Down", 0xff54],
+  ["Page_Up", 0xff55], ["Page_Down", 0xff56], ["Insert", 0xff63],
+  ["F1", 0xffbe], ["F2", 0xffbf], ["F3", 0xffc0], ["F4", 0xffc1],
+  ["F5", 0xffc2], ["F6", 0xffc3], ["F7", 0xffc4], ["F8", 0xffc5],
+  ["F9", 0xffc6], ["F10", 0xffc7], ["F11", 0xffc8], ["F12", 0xffc9],
+  ["F13", 0xffca], ["F14", 0xffcb], ["F15", 0xffcc], ["F16", 0xffcd],
+  ["F17", 0xffce], ["F18", 0xffcf], ["F19", 0xffd0], ["F20", 0xffd1],
+  ["F21", 0xffd2], ["F22", 0xffd3], ["F23", 0xffd4], ["F24", 0xffd5],
+  ["Caps_Lock", 0xffe5], ["Num_Lock", 0xff7f], ["Scroll_Lock", 0xff14],
+  ["Shift_L", 0xffe1], ["Shift_R", 0xffe2],
+  ["Control_L", 0xffe3], ["Control_R", 0xffe4],
+  ["Alt_L", 0xffe9], ["Alt_R", 0xffea],
+  ["Super_L", 0xffeb], ["Super_R", 0xffec],
+  ["KP_0", 0xffb0], ["KP_1", 0xffb1], ["KP_2", 0xffb2],
+  ["KP_3", 0xffb3], ["KP_4", 0xffb4], ["KP_5", 0xffb5],
+  ["KP_6", 0xffb6], ["KP_7", 0xffb7], ["KP_8", 0xffb8],
+  ["KP_9", 0xffb9],
+  ["KP_Add", 0xffab], ["KP_Subtract", 0xffad],
+  ["KP_Multiply", 0xffaa], ["KP_Divide", 0xffaf],
+  ["KP_Enter", 0xff8d], ["KP_Decimal", 0xffae],
+  ["KP_Delete", 0xff9f], ["KP_Home", 0xff95],
+  ["KP_End", 0xff9c], ["KP_Page_Up", 0xff9a],
+  ["KP_Page_Down", 0xff9b], ["KP_Insert", 0xff9e],
+  ["KP_Left", 0xff96], ["KP_Right", 0xff98],
+  ["KP_Up", 0xff97], ["KP_Down", 0xff99],
+  ["Print", 0xff61], ["Pause", 0xff13], ["Menu", 0xff67],
+]
+
+_MODIFIER_NAMES = [
+  "ctrl", "Ctrl", "Control_L", "Control_R",
+  "shift", "Shift", "Shift_L", "Shift_R",
+  "alt", "Alt", "Alt_L", "Alt_R",
+  "win", "meta", "super", "Super", "Super_L", "Super_R",
+  "caps", "Caps_Lock",
+  "num", "Num_Lock",
+]
+
+_MOD_MASKS = [
+  {name: "shift", mask: 1},
+  {name: "Shift", mask: 1},
+  {name: "Shift_L", mask: 1},
+  {name: "Shift_R", mask: 1},
+  {name: "caps", mask: 2},
+  {name: "Caps_Lock", mask: 2},
+  {name: "ctrl", mask: 4},
+  {name: "Ctrl", mask: 4},
+  {name: "Control_L", mask: 4},
+  {name: "Control_R", mask: 4},
+  {name: "alt", mask: 8},
+  {name: "Alt", mask: 8},
+  {name: "Alt_L", mask: 8},
+  {name: "Alt_R", mask: 8},
+  {name: "num", mask: 16},
+  {name: "Num_Lock", mask: 16},
+  {name: "win", mask: 64},
+  {name: "meta", mask: 64},
+  {name: "super", mask: 64},
+  {name: "Super", mask: 64},
+  {name: "Super_L", mask: 64},
+  {name: "Super_R", mask: 64},
+]
+
+fn _buildReverseMap() {
+  _map = {}
+  _i = 0
+  _len = #_KEY_TABLE
+  while _i < _len {
+    _entry = _KEY_TABLE[_i]
+    _map[_entry[1]] = _entry[0]
+    _i = _i + 1
+  }
+  _map
+}
+
+_KEYSYM_TO_NAME = _buildReverseMap()
+
+fn nameToKeysym(name) {
+  _cs = ffi.cstring(name)
+  _ks = ffi.call(_XStringToKeysym, "uint64", ["pointer"], _cs)
+  ffi.free(_cs)
+  _ks
+}
+
+fn keysymToName(keysym) {
+  _name = _KEYSYM_TO_NAME[keysym]
+  if _name != null { return _name }
+  ""
+}
+
+fn nameToKeycode(name) {
+  _ks = nameToKeysym(name)
+  if _ks == 0 { return 0 }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return 0 }
+  _kc = ffi.call(_XKeysymToKeycode, "uint8", ["pointer", "uint64"], _dpy, _ks)
+  _closeDisplay(_dpy)
+  _kc
+}
+
+fn keycodeToName(keycode) {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return "" }
+  _ks = ffi.call(_XKeycodeToKeysym, "uint64", ["pointer", "uint8", "int32"], _dpy, keycode, 0)
+  _closeDisplay(_dpy)
+  if _ks == 0 { return "" }
+  keysymToName(_ks)
+}
+
+fn keycodes() {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return {min: 0, max: 0} }
+  _min_ptr = ffi.allocBytes(4)
+  _max_ptr = ffi.allocBytes(4)
+  ffi.call(_XDisplayKeycodes, "int32", ["pointer", "pointer", "pointer"], _dpy, _min_ptr, _max_ptr)
+  _min = ffi.get_i32(_min_ptr)
+  _max = ffi.get_i32(_max_ptr)
+  ffi.free(_min_ptr)
+  ffi.free(_max_ptr)
+  _closeDisplay(_dpy)
+  {min: _min, max: _max}
+}
+
+fn mapping(keycode, count) {
+  if count == null { count = 1 }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return [] }
+  _sym_per_ptr = ffi.allocBytes(4)
+  _syms_ptr = ffi.call(_XGetKeyboardMapping, "pointer", ["pointer", "uint8", "int32", "pointer"], _dpy, keycode, count, _sym_per_ptr)
+  _sym_per = ffi.get_i32(_sym_per_ptr)
+  ffi.free(_sym_per_ptr)
+  _result = []
+  if _syms_ptr != 0 {
+    _total = count * _sym_per
+    _i = 0
+    while _i < _total {
+      _sym = ffi.get_u64(ffi.ptr_add(_syms_ptr, _i * 8))
+      if _sym != 0 {
+        _result.push(_sym)
+      }
+      _i = _i + 1
+    }
+    ffi.call(_XFree, "int32", ["pointer"], _syms_ptr)
+  }
+  _closeDisplay(_dpy)
+  _result
+}
+
+fn isModifier(name) {
+  _i = 0
+  _len = #_MODIFIER_NAMES
+  while _i < _len {
+    if _MODIFIER_NAMES[_i] == name { return true }
+    _i = _i + 1
+  }
+  false
+}
+
+fn modToMask(name) {
+  _i = 0
+  _len = #_MOD_MASKS
+  while _i < _len {
+    _entry = _MOD_MASKS[_i]
+    if _entry.name == name { return _entry.mask }
+    _i = _i + 1
+  }
+  0
+}
+
+fn maskToMods(mask) {
+  _mods = []
+  if mask & 1 != 0 { _mods.push("Shift") }
+  if mask & 2 != 0 { _mods.push("Caps_Lock") }
+  if mask & 4 != 0 { _mods.push("Ctrl") }
+  if mask & 8 != 0 { _mods.push("Alt") }
+  if mask & 16 != 0 { _mods.push("Num_Lock") }
+  if mask & 64 != 0 { _mods.push("Super") }
+  _mods
+}
+
+fn keyNames() {
+  _names = []
+  _i = 0
+  _len = #_KEY_TABLE
+  while _i < _len {
+    _names.push(_KEY_TABLE[_i][0])
+    _i = _i + 1
+  }
+  _names
+}
+
+fn lookup(name) {
+  _ks = nameToKeysym(name)
+  _kc = 0
+  if _ks != 0 {
+    _kc = nameToKeycode(name)
+  }
+  {name: name, keysym: _ks, keycode: _kc}
+}

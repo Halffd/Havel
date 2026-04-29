@@ -1,0 +1,753 @@
+// keyboard.hv — Keyboard state querying and simulation via X11/Xtst FFI
+// Provides: keyboard.isDown, keyboard.pressed, keyboard.press,
+// keyboard.release, keyboard.tap, keyboard.type, keyboard.grab,
+// keyboard.ungrab, keyboard.leds, keyboard.keycode, keyboard.keysym
+
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_xtst = ffi.open("libXtst.so.6")
+if _xtst == 0 { _xtst = ffi.open("libXtst.so") }
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_XDefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_XQueryKeymap = ffi.sym(_xlib, "XQueryKeymap")
+_XKeysymToKeycode = ffi.sym(_xlib, "XKeysymToKeycode")
+_XStringToKeysym = ffi.sym(_xlib, "XStringToKeysym")
+_XKeycodeToKeysym = ffi.sym(_xlib, "XKeycodeToKeysym")
+_XFlush = ffi.sym(_xlib, "XFlush")
+_XGrabKey = ffi.sym(_xlib, "XGrabKey")
+_XUngrabKey = ffi.sym(_xlib, "XUngrabKey")
+
+_XkbGetState = ffi.sym(_xlib, "XkbGetState")
+
+_XTestFakeKeyEvent = ffi.sym(_xtst, "XTestFakeKeyEvent")
+
+_t_p = ["pointer"]
+
+fn _openDisplay() {
+  ffi.call(_XOpenDisplay, "pointer", _t_p, 0)
+}
+
+fn _closeDisplay(dpy) {
+  ffi.call(_XCloseDisplay, "int32", _t_p, dpy)
+}
+
+fn _rootWindow(dpy) {
+  ffi.call(_XDefaultRootWindow, "uint64", ["pointer"], dpy)
+}
+
+fn _stringToKeysym(name) {
+  _cs = ffi.cstring(name)
+  _ks = ffi.call(_XStringToKeysym, "uint64", ["pointer"], _cs)
+  ffi.free(_cs)
+  _ks
+}
+
+fn _keysymToKeycode(dpy, ks) {
+  ffi.call(_XKeysymToKeycode, "uint64", ["pointer", "uint64"], dpy, ks)
+}
+
+fn _keycodeToKeysym(dpy, kc) {
+  ffi.call(_XKeycodeToKeysym, "uint64", ["pointer", "uint64", "int32"], dpy, kc, 0)
+}
+
+fn _queryKeymap(dpy) {
+  _buf = ffi.allocBytes(32)
+  ffi.call(_XQueryKeymap, "void", ["pointer", "pointer"], dpy, _buf)
+  _buf
+}
+
+fn _isKeycodeDown(buf, kc) {
+  _byte_idx = kc / 8
+  _bit_idx = kc % 8
+  _byte_val = ffi.get_u8(ffi.ptr_add(buf, _byte_idx))
+  (_byte_val & (1 << _bit_idx)) != 0
+}
+
+fn _fakeKey(dpy, kc, press) {
+  ffi.call(_XTestFakeKeyEvent, "int32", ["pointer", "uint64", "int32", "uint64"], dpy, kc, press, 0)
+  ffi.call(_XFlush, "int32", _t_p, dpy)
+}
+
+_XK_a = 97
+_XK_b = 98
+_XK_c = 99
+_XK_d = 100
+_XK_e = 101
+_XK_f = 102
+_XK_g = 103
+_XK_h = 104
+_XK_i = 105
+_XK_j = 106
+_XK_k = 107
+_XK_l = 108
+_XK_m = 109
+_XK_n = 110
+_XK_o = 111
+_XK_p = 112
+_XK_q = 113
+_XK_r = 114
+_XK_s = 115
+_XK_t = 116
+_XK_u = 117
+_XK_v = 118
+_XK_w = 119
+_XK_x = 120
+_XK_y = 121
+_XK_z = 122
+
+_XK_A = 65
+_XK_B = 66
+_XK_C = 67
+_XK_D = 68
+_XK_E = 69
+_XK_F = 70
+_XK_G = 71
+_XK_H = 72
+_XK_I = 73
+_XK_J = 74
+_XK_K = 75
+_XK_L = 76
+_XK_M = 77
+_XK_N = 78
+_XK_O = 79
+_XK_P = 80
+_XK_Q = 81
+_XK_R = 82
+_XK_S = 83
+_XK_T = 84
+_XK_U = 85
+_XK_V = 86
+_XK_W = 87
+_XK_X = 88
+_XK_Y = 89
+_XK_Z = 90
+
+_XK_0 = 48
+_XK_1 = 49
+_XK_2 = 50
+_XK_3 = 51
+_XK_4 = 52
+_XK_5 = 53
+_XK_6 = 54
+_XK_7 = 55
+_XK_8 = 56
+_XK_9 = 57
+
+_XK_Escape = 65307
+_XK_Return = 65293
+_XK_space = 32
+_XK_Tab = 65289
+_XK_BackSpace = 65288
+_XK_Delete = 65535
+_XK_Home = 65360
+_XK_End = 65367
+_XK_Page_Up = 65365
+_XK_Page_Down = 65366
+_XK_Insert = 65379
+_XK_Left = 65361
+_XK_Right = 65363
+_XK_Up = 65362
+_XK_Down = 65364
+
+_XK_Control_L = 65507
+_XK_Control_R = 65508
+_XK_Shift_L = 65505
+_XK_Shift_R = 65506
+_XK_Alt_L = 65513
+_XK_Alt_R = 65514
+_XK_Super_L = 65515
+_XK_Super_R = 65516
+
+_XK_Caps_Lock = 65509
+_XK_Num_Lock = 65407
+_XK_Scroll_Lock = 65399
+
+_XK_F1 = 65470
+_XK_F2 = 65471
+_XK_F3 = 65472
+_XK_F4 = 65473
+_XK_F5 = 65474
+_XK_F6 = 65475
+_XK_F7 = 65476
+_XK_F8 = 65477
+_XK_F9 = 65478
+_XK_F10 = 65479
+_XK_F11 = 65480
+_XK_F12 = 65481
+_XK_F13 = 65482
+_XK_F14 = 65483
+_XK_F15 = 65484
+_XK_F16 = 65485
+_XK_F17 = 65486
+_XK_F18 = 65487
+_XK_F19 = 65488
+_XK_F20 = 65489
+_XK_F21 = 65490
+_XK_F22 = 65491
+_XK_F23 = 65492
+_XK_F24 = 65493
+
+_XK_KP_0 = 65438
+_XK_KP_1 = 65436
+_XK_KP_2 = 65433
+_XK_KP_3 = 65435
+_XK_KP_4 = 65430
+_XK_KP_5 = 65437
+_XK_KP_6 = 65432
+_XK_KP_7 = 65429
+_XK_KP_8 = 65434
+_XK_KP_9 = 65431
+_XK_KP_Add = 65451
+_XK_KP_Subtract = 65453
+_XK_KP_Multiply = 65450
+_XK_KP_Divide = 65455
+_XK_KP_Decimal = 65454
+_XK_KP_Enter = 65421
+_XK_KP_Equal = 65469
+_XK_KP_Separator = 65452
+
+_XK_minus = 45
+_XK_equal = 61
+_XK_bracketleft = 91
+_XK_bracketright = 93
+_XK_semicolon = 59
+_XK_apostrophe = 39
+_XK_grave = 96
+_XK_backslash = 92
+_XK_comma = 44
+_XK_period = 46
+_XK_slash = 47
+
+_XK_Print = 65377
+_XK_Pause = 65299
+_XK_Sys_Req = 65377
+_XK_Menu = 65383
+_XK_Help = 65386
+
+_XK_exclam = 33
+_XK_at = 64
+_XK_numbersign = 35
+_XK_dollar = 36
+_XK_percent = 37
+_XK_asciicircum = 94
+_XK_ampersand = 38
+_XK_asterisk = 42
+_XK_parenleft = 40
+_XK_parenright = 41
+_XK_underscore = 95
+_XK_plus = 43
+_XK_braceleft = 123
+_XK_braceright = 125
+_XK_colon = 58
+_XK_quotedbl = 34
+_XK_asciitilde = 126
+_XK_bar = 124
+_XK_less = 60
+_XK_greater = 62
+_XK_question = 63
+
+_XF86AudioPlay = 269016104
+_XF86AudioStop = 269016105
+_XF86AudioPrev = 269016115
+_XF86AudioNext = 269016116
+_XF86AudioRaiseVolume = 269016111
+_XF86AudioLowerVolume = 269016112
+_XF86AudioMute = 269016113
+_XF86AudioMicMute = 269016114
+_XF86Eject = 269016110
+_XF86HomePage = 269016068
+_XF86Back = 269016064
+_XF86Forward = 269016065
+_XF86Search = 269016066
+_XF86Refresh = 269016063
+_XF86PowerOff = 269016102
+_XF86Sleep = 269016107
+_XF86WakeUp = 269016108
+_XF86MonBrightnessUp = 269016080
+_XF86MonBrightnessDown = 269016081
+_XF86KbdBrightnessUp = 269016082
+_XF86KbdBrightnessDown = 269016083
+_XF86WLAN = 269016096
+_XF86Calculator = 269016079
+_XF86Mail = 269016077
+_XF86WWW = 269016071
+_XF86Copy = 269016120
+_XF86Paste = 269016121
+_XF86Cut = 269016122
+_XF86Open = 269016123
+_XF86Save = 269016124
+_XF86Close = 269016125
+_XF86Documents = 269016126
+_XF86Bluetooth = 269016097
+_XF86Battery = 269016098
+_XF86ZoomIn = 269016133
+_XF86ZoomOut = 269016134
+_XF86Favorites = 269016067
+_XF86Stop = 269016063
+_XF86Messenger = 269016078
+_XF86Finance = 269016072
+_XF86Shop = 269016073
+
+_KN = {
+  97: "a", 98: "b", 99: "c", 100: "d", 101: "e",
+  102: "f", 103: "g", 104: "h", 105: "i", 106: "j",
+  107: "k", 108: "l", 109: "m", 110: "n", 111: "o",
+  112: "p", 113: "q", 114: "r", 115: "s", 116: "t",
+  117: "u", 118: "v", 119: "w", 120: "x", 121: "y",
+  122: "z",
+  65: "A", 66: "B", 67: "C", 68: "D", 69: "E",
+  70: "F", 71: "G", 72: "H", 73: "I", 74: "J",
+  75: "K", 76: "L", 77: "M", 78: "N", 79: "O",
+  80: "P", 81: "Q", 82: "R", 83: "S", 84: "T",
+  85: "U", 86: "V", 87: "W", 88: "X", 89: "Y",
+  90: "Z",
+  48: "0", 49: "1", 50: "2", 51: "3", 52: "4",
+  53: "5", 54: "6", 55: "7", 56: "8", 57: "9",
+  65307: "esc", 65293: "enter", 32: "space", 65289: "tab",
+  65288: "backspace", 65535: "delete",
+  65360: "home", 65367: "end", 65365: "pgup", 65366: "pgdn",
+  65379: "insert",
+  65361: "left", 65363: "right", 65362: "up", 65364: "down",
+  65507: "ctrl", 65508: "rctrl", 65505: "shift", 65506: "rshift",
+  65513: "alt", 65514: "ralt", 65515: "win", 65516: "rwin",
+  65509: "capslock", 65407: "numlock", 65399: "scrolllock",
+  65470: "f1", 65471: "f2", 65472: "f3", 65473: "f4",
+  65474: "f5", 65475: "f6", 65476: "f7", 65477: "f8",
+  65478: "f9", 65479: "f10", 65480: "f11", 65481: "f12",
+  65482: "f13", 65483: "f14", 65484: "f15", 65485: "f16",
+  65486: "f17", 65487: "f18", 65488: "f19", 65489: "f20",
+  65490: "f21", 65491: "f22", 65492: "f23", 65493: "f24",
+  65438: "numpad0", 65436: "numpad1", 65433: "numpad2",
+  65435: "numpad3", 65430: "numpad4", 65437: "numpad5",
+  65432: "numpad6", 65429: "numpad7", 65434: "numpad8",
+  65431: "numpad9",
+  65451: "numpadadd", 65453: "numpadsub", 65450: "numpadmul",
+  65455: "numpaddiv", 65454: "numpaddec", 65421: "numpadenter",
+  65469: "numpadequal", 65452: "numpadcomma",
+  45: "minus", 61: "equal", 91: "leftbrace", 93: "rightbrace",
+  59: "semicolon", 39: "apostrophe", 96: "grave", 92: "backslash",
+  44: "comma", 46: "dot", 47: "slash",
+  65377: "printscreen", 65299: "pause", 65383: "menu", 65386: "help",
+  269016104: "playpause", 269016105: "stopcd",
+  269016115: "previoussong", 269016116: "nextsong",
+  269016111: "volumeup", 269016112: "volumedown", 269016113: "mute",
+  269016114: "micmute", 269016110: "ejectcd",
+  269016068: "homepage", 269016064: "back", 269016065: "forward",
+  269016066: "search", 269016063: "refresh",
+  269016102: "power", 269016107: "sleep", 269016108: "wakeup",
+  269016080: "brightnessup", 269016081: "brightnessdown",
+  269016082: "kbdillumup", 269016083: "kbdillumdown",
+  269016096: "wlan", 269016097: "bluetooth", 269016098: "battery",
+  269016079: "calc", 269016077: "mail", 269016071: "www",
+  269016120: "copy", 269016121: "paste", 269016122: "cut",
+  269016123: "open", 269016124: "save", 269016125: "close",
+  269016126: "file",
+  269016133: "zoomin", 269016134: "zoomout",
+  269016067: "favorites", 269016078: "messenger",
+  269016072: "finance", 269016073: "shop"
+}
+
+fn _nameToKeysym(name) {
+  _l = name.lower()
+  _single = 0
+  if #_l == 1 {
+    _c = _l[0:1]
+    _cv = _c.code()
+    if _cv >= 97 && _cv <= 122 { return _cv }
+    if _cv >= 48 && _cv <= 57 { return _cv }
+  }
+  if _l == "esc" || _l == "escape" { return _XK_Escape }
+  if _l == "enter" || _l == "return" { return _XK_Return }
+  if _l == "space" { return _XK_space }
+  if _l == "tab" { return _XK_Tab }
+  if _l == "backspace" { return _XK_BackSpace }
+  if _l == "delete" || _l == "del" { return _XK_Delete }
+  if _l == "home" { return _XK_Home }
+  if _l == "end" { return _XK_End }
+  if _l == "pgup" || _l == "pageup" { return _XK_Page_Up }
+  if _l == "pgdn" || _l == "pagedown" { return _XK_Page_Down }
+  if _l == "insert" || _l == "ins" { return _XK_Insert }
+  if _l == "left" { return _XK_Left }
+  if _l == "right" { return _XK_Right }
+  if _l == "up" { return _XK_Up }
+  if _l == "down" { return _XK_Down }
+  if _l == "ctrl" || _l == "lctrl" || _l == "control" { return _XK_Control_L }
+  if _l == "rctrl" || _l == "rcontrol" { return _XK_Control_R }
+  if _l == "shift" || _l == "lshift" { return _XK_Shift_L }
+  if _l == "rshift" { return _XK_Shift_R }
+  if _l == "alt" || _l == "lalt" { return _XK_Alt_L }
+  if _l == "ralt" { return _XK_Alt_R }
+  if _l == "win" || _l == "lwin" || _l == "meta" || _l == "lmeta" || _l == "super" { return _XK_Super_L }
+  if _l == "rwin" || _l == "rmeta" || _l == "rsuper" { return _XK_Super_R }
+  if _l == "capslock" || _l == "caps" { return _XK_Caps_Lock }
+  if _l == "numlock" || _l == "num" { return _XK_Num_Lock }
+  if _l == "scrolllock" || _l == "scroll" { return _XK_Scroll_Lock }
+  if _l == "f1" { return _XK_F1 }
+  if _l == "f2" { return _XK_F2 }
+  if _l == "f3" { return _XK_F3 }
+  if _l == "f4" { return _XK_F4 }
+  if _l == "f5" { return _XK_F5 }
+  if _l == "f6" { return _XK_F6 }
+  if _l == "f7" { return _XK_F7 }
+  if _l == "f8" { return _XK_F8 }
+  if _l == "f9" { return _XK_F9 }
+  if _l == "f10" { return _XK_F10 }
+  if _l == "f11" { return _XK_F11 }
+  if _l == "f12" { return _XK_F12 }
+  if _l == "f13" { return _XK_F13 }
+  if _l == "f14" { return _XK_F14 }
+  if _l == "f15" { return _XK_F15 }
+  if _l == "f16" { return _XK_F16 }
+  if _l == "f17" { return _XK_F17 }
+  if _l == "f18" { return _XK_F18 }
+  if _l == "f19" { return _XK_F19 }
+  if _l == "f20" { return _XK_F20 }
+  if _l == "f21" { return _XK_F21 }
+  if _l == "f22" { return _XK_F22 }
+  if _l == "f23" { return _XK_F23 }
+  if _l == "f24" { return _XK_F24 }
+  if _l == "numpad0" { return _XK_KP_0 }
+  if _l == "numpad1" { return _XK_KP_1 }
+  if _l == "numpad2" { return _XK_KP_2 }
+  if _l == "numpad3" { return _XK_KP_3 }
+  if _l == "numpad4" { return _XK_KP_4 }
+  if _l == "numpad5" { return _XK_KP_5 }
+  if _l == "numpad6" { return _XK_KP_6 }
+  if _l == "numpad7" { return _XK_KP_7 }
+  if _l == "numpad8" { return _XK_KP_8 }
+  if _l == "numpad9" { return _XK_KP_9 }
+  if _l == "numpadadd" || _l == "numpadplus" { return _XK_KP_Add }
+  if _l == "numpadsub" || _l == "numpadminus" { return _XK_KP_Subtract }
+  if _l == "numpadmul" || _l == "numpadmult" || _l == "numpadasterisk" { return _XK_KP_Multiply }
+  if _l == "numpaddiv" { return _XK_KP_Divide }
+  if _l == "numpaddec" || _l == "numpaddot" || _l == "numpaddel" || _l == "numpadperiod" || _l == "numpaddecimal" { return _XK_KP_Decimal }
+  if _l == "numpadenter" { return _XK_KP_Enter }
+  if _l == "numpadequal" { return _XK_KP_Equal }
+  if _l == "numpadcomma" { return _XK_KP_Separator }
+  if _l == "minus" || _l == "-" { return _XK_minus }
+  if _l == "equal" || _l == "equals" || _l == "=" { return _XK_equal }
+  if _l == "leftbrace" || _l == "[" { return _XK_bracketleft }
+  if _l == "rightbrace" || _l == "]" { return _XK_bracketright }
+  if _l == "semicolon" || _l == ";" { return _XK_semicolon }
+  if _l == "apostrophe" || _l == "'" { return _XK_apostrophe }
+  if _l == "grave" || _l == "`" { return _XK_grave }
+  if _l == "backslash" || _l == "\\" { return _XK_backslash }
+  if _l == "comma" || _l == "," { return _XK_comma }
+  if _l == "dot" || _l == "period" || _l == "." { return _XK_period }
+  if _l == "slash" || _l == "/" { return _XK_slash }
+  if _l == "printscreen" || _l == "print" || _l == "sysrq" { return _XK_Print }
+  if _l == "pause" || _l == "pausebreak" { return _XK_Pause }
+  if _l == "menu" || _l == "apps" { return _XK_Menu }
+  if _l == "help" { return _XK_Help }
+  if _l == "playpause" || _l == "mediaplay" { return _XF86AudioPlay }
+  if _l == "stopcd" || _l == "mediastop" { return _XF86AudioStop }
+  if _l == "previoussong" || _l == "prev" || _l == "previous" || _l == "mediaprev" { return _XF86AudioPrev }
+  if _l == "nextsong" || _l == "next" || _l == "medianext" { return _XF86AudioNext }
+  if _l == "volumeup" { return _XF86AudioRaiseVolume }
+  if _l == "volumedown" { return _XF86AudioLowerVolume }
+  if _l == "mute" || _l == "volumemute" { return _XF86AudioMute }
+  if _l == "micmute" { return _XF86AudioMicMute }
+  if _l == "ejectcd" || _l == "eject" || _l == "mediaeject" { return _XF86Eject }
+  if _l == "homepage" { return _XF86HomePage }
+  if _l == "back" { return _XF86Back }
+  if _l == "forward" { return _XF86Forward }
+  if _l == "search" { return _XF86Search }
+  if _l == "refresh" { return _XF86Refresh }
+  if _l == "power" { return _XF86PowerOff }
+  if _l == "sleep" { return _XF86Sleep }
+  if _l == "wakeup" { return _XF86WakeUp }
+  if _l == "brightnessup" { return _XF86MonBrightnessUp }
+  if _l == "brightnessdown" { return _XF86MonBrightnessDown }
+  if _l == "kbdillumup" { return _XF86KbdBrightnessUp }
+  if _l == "kbdillumdown" { return _XF86KbdBrightnessDown }
+  if _l == "wlan" || _l == "wifi" { return _XF86WLAN }
+  if _l == "bluetooth" { return _XF86Bluetooth }
+  if _l == "battery" { return _XF86Battery }
+  if _l == "calc" || _l == "calculator" { return _XF86Calculator }
+  if _l == "mail" { return _XF86Mail }
+  if _l == "www" { return _XF86WWW }
+  if _l == "copy" { return _XF86Copy }
+  if _l == "paste" { return _XF86Paste }
+  if _l == "cut" { return _XF86Cut }
+  if _l == "open" { return _XF86Open }
+  if _l == "save" { return _XF86Save }
+  if _l == "close" { return _XF86Close }
+  if _l == "file" { return _XF86Documents }
+  if _l == "zoomin" { return _XF86ZoomIn }
+  if _l == "zoomout" { return _XF86ZoomOut }
+  if _l == "favorites" || _l == "bookmarks" { return _XF86Favorites }
+  if _l == "messenger" { return _XF86Messenger }
+  if _l == "finance" { return _XF86Finance }
+  if _l == "shop" { return _XF86Shop }
+  if _l == "record" || _l == "mediarecord" { return 269016106 }
+  if _l == "rewind" || _l == "mediarewind" { return 269016101 }
+  if _l == "fastforward" || _l == "mediaforward" { return 269016103 }
+  if #_l >= 5 && _l[0:5] == "xk_" { return _stringToKeysym(_l[3:]) }
+  _stringToKeysym(name)
+}
+
+fn _keysymToName(ks) {
+  if ks == 0 { return "" }
+  _n = _KN[ks]
+  if _n != null { return _n }
+  ""
+}
+
+fn _charToKeysym(ch) {
+  _cv = ch.code()
+  if _cv >= 97 && _cv <= 122 { return _cv }
+  if _cv >= 48 && _cv <= 57 { return _cv }
+  if _cv >= 65 && _cv <= 90 { return _cv }
+  if _cv == 32 { return _XK_space }
+  if ch == "!" { return _XK_exclam }
+  if ch == "@" { return _XK_at }
+  if ch == "#" { return _XK_numbersign }
+  if ch == "$" { return _XK_dollar }
+  if ch == "%" { return _XK_percent }
+  if ch == "^" { return _XK_asciicircum }
+  if ch == "&" { return _XK_ampersand }
+  if ch == "*" { return _XK_asterisk }
+  if ch == "(" { return _XK_parenleft }
+  if ch == ")" { return _XK_parenright }
+  if ch == "_" { return _XK_underscore }
+  if ch == "+" { return _XK_plus }
+  if ch == "{" { return _XK_braceleft }
+  if ch == "}" { return _XK_braceright }
+  if ch == ":" { return _XK_colon }
+  if ch == "\"" { return _XK_quotedbl }
+  if ch == "~" { return _XK_asciitilde }
+  if ch == "|" { return _XK_bar }
+  if ch == "<" { return _XK_less }
+  if ch == ">" { return _XK_greater }
+  if ch == "?" { return _XK_question }
+  if ch == "-" { return _XK_minus }
+  if ch == "=" { return _XK_equal }
+  if ch == "[" { return _XK_bracketleft }
+  if ch == "]" { return _XK_bracketright }
+  if ch == ";" { return _XK_semicolon }
+  if ch == "'" { return _XK_apostrophe }
+  if ch == "`" { return _XK_grave }
+  if ch == "\\" { return _XK_backslash }
+  if ch == "," { return _XK_comma }
+  if ch == "." { return _XK_period }
+  if ch == "/" { return _XK_slash }
+  if ch == "\t" { return _XK_Tab }
+  if ch == "\n" { return _XK_Return }
+  _cv
+}
+
+fn _charNeedsShift(ch) {
+  _cv = ch.code()
+  if _cv >= 65 && _cv <= 90 { return true }
+  if ch == "!" { return true }
+  if ch == "@" { return true }
+  if ch == "#" { return true }
+  if ch == "$" { return true }
+  if ch == "%" { return true }
+  if ch == "^" { return true }
+  if ch == "&" { return true }
+  if ch == "*" { return true }
+  if ch == "(" { return true }
+  if ch == ")" { return true }
+  if ch == "_" { return true }
+  if ch == "+" { return true }
+  if ch == "{" { return true }
+  if ch == "}" { return true }
+  if ch == ":" { return true }
+  if ch == "\"" { return true }
+  if ch == "~" { return true }
+  if ch == "|" { return true }
+  if ch == "<" { return true }
+  if ch == ">" { return true }
+  if ch == "?" { return true }
+  false
+}
+
+fn keysym(name) {
+  _nameToKeysym(name)
+}
+
+fn keycode(name) {
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return 0 }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return 0 }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  _closeDisplay(_dpy)
+  _kc
+}
+
+fn isDown(name) {
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return false }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return false }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  if _kc == 0 {
+    _closeDisplay(_dpy)
+    return false
+  }
+  _buf = _queryKeymap(_dpy)
+  _down = _isKeycodeDown(_buf, _kc)
+  ffi.free(_buf)
+  _closeDisplay(_dpy)
+  _down
+}
+
+fn pressed() {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return [] }
+  _buf = _queryKeymap(_dpy)
+  _result = []
+  _kc = 8
+  while _kc < 256 {
+    if _isKeycodeDown(_buf, _kc) {
+      _ks = _keycodeToKeysym(_dpy, _kc)
+      if _ks != 0 {
+        _n = _keysymToName(_ks)
+        if #_n > 0 {
+          _found = false
+          for _existing in _result {
+            if _existing == _n { _found = true }
+          }
+          if !_found { _result.push(_n) }
+        }
+      }
+    }
+    _kc = _kc + 1
+  }
+  ffi.free(_buf)
+  _closeDisplay(_dpy)
+  _result
+}
+
+fn press(name) {
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return false }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return false }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  if _kc == 0 {
+    _closeDisplay(_dpy)
+    return false
+  }
+  _fakeKey(_dpy, _kc, 1)
+  _closeDisplay(_dpy)
+  true
+}
+
+fn release(name) {
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return false }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return false }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  if _kc == 0 {
+    _closeDisplay(_dpy)
+    return false
+  }
+  _fakeKey(_dpy, _kc, 0)
+  _closeDisplay(_dpy)
+  true
+}
+
+fn tap(name, ms) {
+  if ms == null { ms = 50 }
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return false }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return false }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  if _kc == 0 {
+    _closeDisplay(_dpy)
+    return false
+  }
+  ffi.call(_XTestFakeKeyEvent, "int32", ["pointer", "uint64", "int32", "uint64"], _dpy, _kc, 1, 0)
+  ffi.call(_XFlush, "int32", _t_p, _dpy)
+  if ms > 0 { time.sleep(ms) }
+  ffi.call(_XTestFakeKeyEvent, "int32", ["pointer", "uint64", "int32", "uint64"], _dpy, _kc, 0, 0)
+  ffi.call(_XFlush, "int32", _t_p, _dpy)
+  _closeDisplay(_dpy)
+  true
+}
+
+fn type(text) {
+  if text == null || #text == 0 { return }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return }
+  _shift_kc = _keysymToKeycode(_dpy, _XK_Shift_L)
+  _i = 0
+  while _i < #text {
+    _ch = text[_i:_i + 1]
+    _ks = _charToKeysym(_ch)
+    if _ks == 0 { _i = _i + 1; continue }
+    _kc = _keysymToKeycode(_dpy, _ks)
+    if _kc == 0 { _i = _i + 1; continue }
+    _needShift = _charNeedsShift(_ch)
+    if _needShift && _shift_kc != 0 {
+      _fakeKey(_dpy, _shift_kc, 1)
+    }
+    ffi.call(_XTestFakeKeyEvent, "int32", ["pointer", "uint64", "int32", "uint64"], _dpy, _kc, 1, 0)
+    ffi.call(_XFlush, "int32", _t_p, _dpy)
+    ffi.call(_XTestFakeKeyEvent, "int32", ["pointer", "uint64", "int32", "uint64"], _dpy, _kc, 0, 0)
+    ffi.call(_XFlush, "int32", _t_p, _dpy)
+    if _needShift && _shift_kc != 0 {
+      _fakeKey(_dpy, _shift_kc, 0)
+    }
+    time.sleep(10)
+    _i = _i + 1
+  }
+  _closeDisplay(_dpy)
+}
+
+fn grab(name, modifiers) {
+  if modifiers == null { modifiers = 0 }
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return false }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return false }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  if _kc == 0 {
+    _closeDisplay(_dpy)
+    return false
+  }
+  _root = _rootWindow(_dpy)
+  _ret = ffi.call(_XGrabKey, "int32", ["pointer", "uint64", "uint64", "uint64", "int32", "int32", "int32"], _dpy, _kc, modifiers, _root, 0, 0, 0)
+  ffi.call(_XFlush, "int32", _t_p, _dpy)
+  _closeDisplay(_dpy)
+  _ret == 0
+}
+
+fn ungrab(name, modifiers) {
+  if modifiers == null { modifiers = 0 }
+  _ks = _nameToKeysym(name)
+  if _ks == 0 { return false }
+  _dpy = _openDisplay()
+  if _dpy == 0 { return false }
+  _kc = _keysymToKeycode(_dpy, _ks)
+  if _kc == 0 {
+    _closeDisplay(_dpy)
+    return false
+  }
+  _root = _rootWindow(_dpy)
+  ffi.call(_XUngrabKey, "int32", ["pointer", "uint64", "uint64", "uint64"], _dpy, _kc, modifiers, _root)
+  ffi.call(_XFlush, "int32", _t_p, _dpy)
+  _closeDisplay(_dpy)
+  true
+}
+
+fn leds() {
+  _dpy = _openDisplay()
+  if _dpy == 0 { return {caps: false, num: false, scroll: false} }
+  _state = ffi.allocBytes(40)
+  ffi.call(_XkbGetState, "int32", ["pointer", "uint64", "pointer"], _dpy, 256, _state)
+  _locked = ffi.get_u16(ffi.ptr_add(_state, 12))
+  ffi.free(_state)
+  _closeDisplay(_dpy)
+  {caps: (_locked & 2) != 0, num: (_locked & 16) != 0, scroll: (_locked & 4) != 0}
+}

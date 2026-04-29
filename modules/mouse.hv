@@ -1,0 +1,335 @@
+// mouse.hv — Mouse/pointer control and state querying via X11/Xtst FFI
+// Provides: mouse.position, mouse.buttons, mouse.mods, mouse.move,
+// mouse.click, mouse.press, mouse.release, mouse.scroll,
+// mouse.drag, mouse.grab, mouse.ungrab, mouse.mapping, mouse.screen
+
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_xtst = ffi.open("libXtst.so.6")
+if _xtst == 0 { _xtst = ffi.open("libXtst.so") }
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_DefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_XQueryPointer = ffi.sym(_xlib, "XQueryPointer")
+_XWarpPointer = ffi.sym(_xlib, "XWarpPointer")
+_XFlush = ffi.sym(_xlib, "XFlush")
+_XGrabButton = ffi.sym(_xlib, "XGrabButton")
+_XUngrabButton = ffi.sym(_xlib, "XUngrabButton")
+_XGetPointerMapping = ffi.sym(_xlib, "XGetPointerMapping")
+_XGetWindowAttributes = ffi.sym(_xlib, "XGetWindowAttributes")
+
+_XTestFakeMotionEvent = ffi.sym(_xtst, "XTestFakeMotionEvent")
+_XTestFakeButtonEvent = ffi.sym(_xtst, "XTestFakeButtonEvent")
+
+// XDisplayWidth/Height are macros — use XGetWindowAttributes on root instead
+
+_t_p = ["pointer"]
+_t_ppppppppu = ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"]
+_t_ppuuuiiuii = ["pointer", "uint64", "uint64", "int32", "int32", "uint32", "uint32", "int32", "int32"]
+_t_piiiI = ["pointer", "int32", "int32", "int32", "uint64"]
+_t_puIuI = ["pointer", "uint32", "int32", "uint64"]
+_t_ppuuuiiuuiiuu = ["pointer", "uint32", "uint32", "uint64", "int32", "uint32", "int32", "int32", "uint64", "uint64"]
+_t_puuu = ["pointer", "uint32", "uint32", "uint64"]
+_t_ppi = ["pointer", "pointer", "int32"]
+
+BUTTON1_MASK = 256
+BUTTON2_MASK = 512
+BUTTON3_MASK = 1024
+BUTTON4_MASK = 2048
+BUTTON5_MASK = 4096
+
+SHIFT_MASK = 1
+LOCK_MASK = 2
+CONTROL_MASK = 4
+MOD1_MASK = 8
+MOD2_MASK = 16
+MOD3_MASK = 32
+MOD4_MASK = 64
+MOD5_MASK = 128
+
+BUTTON1 = 1
+BUTTON2 = 2
+BUTTON3 = 3
+BUTTON4 = 4
+BUTTON5 = 5
+
+fn _openDisplay() {
+    ffi.call(_XOpenDisplay, "pointer", _t_p, 0)
+}
+
+fn _rootWindow(dpy) {
+    ffi.call(_DefaultRootWindow, "uint64", _t_p, dpy)
+}
+
+fn _closeDisplay(dpy) {
+    ffi.call(_XCloseDisplay, "int32", _t_p, dpy)
+}
+
+fn _flush(dpy) {
+    ffi.call(_XFlush, "int32", _t_p, dpy)
+}
+
+fn _queryPointer(dpy, root) {
+    _root_ret = ffi.allocBytes(8)
+    _child_ret = ffi.allocBytes(8)
+    _rx_ret = ffi.allocBytes(4)
+    _ry_ret = ffi.allocBytes(4)
+    _wx_ret = ffi.allocBytes(4)
+    _wy_ret = ffi.allocBytes(4)
+    _mask_ret = ffi.allocBytes(4)
+    ffi.call(_XQueryPointer, "int32", _t_ppppppppu, dpy, root, _root_ret, _child_ret, _rx_ret, _ry_ret, _wx_ret, _wy_ret, _mask_ret)
+    _rx = ffi.get_i32(_rx_ret)
+    _ry = ffi.get_i32(_ry_ret)
+    _mask = ffi.get_u32(_mask_ret)
+    ffi.free(_root_ret)
+    ffi.free(_child_ret)
+    ffi.free(_rx_ret)
+    ffi.free(_ry_ret)
+    ffi.free(_wx_ret)
+    ffi.free(_wy_ret)
+    ffi.free(_mask_ret)
+    {x: _rx, y: _ry, mask: _mask}
+}
+
+fn position() {
+    _dpy = _openDisplay()
+    if _dpy == 0 { return null }
+    _root = _rootWindow(_dpy)
+    _info = _queryPointer(_dpy, _root)
+    _closeDisplay(_dpy)
+    {x: _info.x, y: _info.y}
+}
+
+fn buttons() {
+    _dpy = _openDisplay()
+    if _dpy == 0 { return null }
+    _root = _rootWindow(_dpy)
+    _info = _queryPointer(_dpy, _root)
+    _closeDisplay(_dpy)
+    _m = _info.mask
+    {
+        left: (_m & BUTTON1_MASK) != 0,
+        middle: (_m & BUTTON2_MASK) != 0,
+        right: (_m & BUTTON3_MASK) != 0,
+        wheelUp: (_m & BUTTON4_MASK) != 0,
+        wheelDown: (_m & BUTTON5_MASK) != 0
+    }
+}
+
+fn mods() {
+    _dpy = _openDisplay()
+    if _dpy == 0 { return null }
+    _root = _rootWindow(_dpy)
+    _info = _queryPointer(_dpy, _root)
+    _closeDisplay(_dpy)
+    _m = _info.mask
+    {
+        shift: (_m & SHIFT_MASK) != 0,
+        ctrl: (_m & CONTROL_MASK) != 0,
+        alt: (_m & MOD1_MASK) != 0,
+        super: (_m & MOD4_MASK) != 0,
+        capsLock: (_m & LOCK_MASK) != 0,
+        numLock: (_m & MOD2_MASK) != 0
+    }
+}
+
+fn move(x, y, relative) {
+    if relative == null { relative = false }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    _root = _rootWindow(_dpy)
+    if relative {
+        ffi.call(_XWarpPointer, "void", _t_ppuuuiiuii, _dpy, 0, 0, 0, 0, 0, 0, x, y)
+    } else {
+        ffi.call(_XWarpPointer, "void", _t_ppuuuiiuii, _dpy, 0, _root, 0, 0, 0, 0, x, y)
+    }
+    _flush(_dpy)
+    _closeDisplay(_dpy)
+    true
+}
+
+fn _fakeButton(dpy, button, is_press) {
+    ffi.call(_XTestFakeButtonEvent, "int32", _t_puIuI, dpy, button, is_press, 0)
+}
+
+fn press(button) {
+    if button == null { button = BUTTON1 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    _fakeButton(_dpy, button, 1)
+    _flush(_dpy)
+    _closeDisplay(_dpy)
+    true
+}
+
+fn release(button) {
+    if button == null { button = BUTTON1 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    _fakeButton(_dpy, button, 0)
+    _flush(_dpy)
+    _closeDisplay(_dpy)
+    true
+}
+
+fn click(button, count) {
+    if button == null { button = BUTTON1 }
+    if count == null { count = 1 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    for _i in range(0, count) {
+        _fakeButton(_dpy, button, 1)
+        _flush(_dpy)
+        time.sleep(10)
+        _fakeButton(_dpy, button, 0)
+        _flush(_dpy)
+        if _i < count - 1 {
+            time.sleep(50)
+        }
+    }
+    _closeDisplay(_dpy)
+    true
+}
+
+fn scroll(dy, dx) {
+    if dy == null { dy = 0 }
+    if dx == null { dx = 0 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    // vertical scroll: dy > 0 = up (button 4), dy < 0 = down (button 5)
+    if dy > 0 {
+        for _i in range(0, dy) {
+            _fakeButton(_dpy, BUTTON4, 1)
+            _flush(_dpy)
+            _fakeButton(_dpy, BUTTON4, 0)
+            _flush(_dpy)
+            time.sleep(10)
+        }
+    }
+    if dy < 0 {
+        _n = -dy
+        for _i in range(0, _n) {
+            _fakeButton(_dpy, BUTTON5, 1)
+            _flush(_dpy)
+            _fakeButton(_dpy, BUTTON5, 0)
+            _flush(_dpy)
+            time.sleep(10)
+        }
+    }
+    // horizontal scroll: dx > 0 = right (button 6), dx < 0 = left (button 7)
+    // most X11 setups map buttons 6/7 for horizontal scroll
+    if dx > 0 {
+        for _i in range(0, dx) {
+            _fakeButton(_dpy, 6, 1)
+            _flush(_dpy)
+            _fakeButton(_dpy, 6, 0)
+            _flush(_dpy)
+            time.sleep(10)
+        }
+    }
+    if dx < 0 {
+        _n = -dx
+        for _i in range(0, _n) {
+            _fakeButton(_dpy, 7, 1)
+            _flush(_dpy)
+            _fakeButton(_dpy, 7, 0)
+            _flush(_dpy)
+            time.sleep(10)
+        }
+    }
+    _closeDisplay(_dpy)
+    true
+}
+
+fn drag(fromX, fromY, toX, toY, button) {
+    if button == null { button = BUTTON1 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    _root = _rootWindow(_dpy)
+    // move to start position
+    ffi.call(_XWarpPointer, "void", _t_ppuuuiiuii, _dpy, 0, _root, 0, 0, 0, 0, fromX, fromY)
+    _flush(_dpy)
+    time.sleep(30)
+    // press button
+    _fakeButton(_dpy, button, 1)
+    _flush(_dpy)
+    time.sleep(30)
+    // move to end position
+    ffi.call(_XWarpPointer, "void", _t_ppuuuiiuii, _dpy, 0, _root, 0, 0, 0, 0, toX, toY)
+    _flush(_dpy)
+    time.sleep(30)
+    // release button
+    _fakeButton(_dpy, button, 0)
+    _flush(_dpy)
+    _closeDisplay(_dpy)
+    true
+}
+
+fn grab(button, modifiers) {
+    if button == null { button = BUTTON1 }
+    if modifiers == null { modifiers = 0 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    _root = _rootWindow(_dpy)
+    // XGrabButton(dpy, button, modifiers, grab_window, owner_events,
+    //   event_mask, pointer_mode, keyboard_mode, confine_to, cursor)
+    // owner_events=1, event_mask=ButtonPressMask|ButtonReleaseMask=0x18000
+    // pointer_mode=GrabModeAsync=1, keyboard_mode=GrabModeAsync=1
+    // confine_to=0, cursor=0
+    ffi.call(_XGrabButton, "int32", _t_ppuuuiiuuiiuu, _dpy, button, modifiers, _root, 1, 98304, 1, 1, 0, 0)
+    _flush(_dpy)
+    _closeDisplay(_dpy)
+    true
+}
+
+fn ungrab(button, modifiers) {
+    if button == null { button = BUTTON1 }
+    if modifiers == null { modifiers = 0 }
+    _dpy = _openDisplay()
+    if _dpy == 0 { return false }
+    _root = _rootWindow(_dpy)
+    ffi.call(_XUngrabButton, "int32", _t_puuu, _dpy, button, modifiers, _root)
+    _flush(_dpy)
+    _closeDisplay(_dpy)
+    true
+}
+
+fn mapping() {
+    _dpy = _openDisplay()
+    if _dpy == 0 { return [] }
+    // XGetPointerMapping returns count, max 256 buttons
+    _map = ffi.allocBytes(256)
+    _n = ffi.call(_XGetPointerMapping, "int32", _t_ppi, _dpy, _map, 256)
+    _result = []
+    if _n > 0 {
+        for _i in range(0, _n) {
+            _result.push(ffi.get_u8(ffi.ptr_add(_map, _i)))
+        }
+    }
+    ffi.free(_map)
+    _closeDisplay(_dpy)
+    _result
+}
+
+fn screen() {
+    _dpy = _openDisplay()
+    if _dpy == 0 { return null }
+    _root = _rootWindow(_dpy)
+    // XDisplayWidth/Height are macros in Xlib.h that dereference the Display struct
+    // they access: ((Display*)_dpy)->screens[DefaultScreen(_dpy)].width/height
+    // instead we use XGetWindowAttributes on the root window
+    _attr = ffi.allocBytes(104)
+    ffi.call(_XGetWindowAttributes, "int32", ["pointer", "uint64", "pointer"], _dpy, _root, _attr)
+    _w = ffi.get_i32(ffi.ptr_add(_attr, 40))
+    _h = ffi.get_i32(ffi.ptr_add(_attr, 44))
+    ffi.free(_attr)
+    _closeDisplay(_dpy)
+    {width: _w, height: _h}
+}

@@ -11,21 +11,21 @@
 
 // Parse a single CSV line (comma-separated, respecting quoted fields).
 fn _splitCsvLine(line, delim) {
-  let fields = []
-  let current = ""
-  let inQuote = false
-  let i = 0
-  let len = #line
+  fields = []
+  current = ""
+  inQuote = false
+  i = 0
+  len = #line
 
   while i < len {
-    let ch = line[i:i+1]
+    ch = line[i:i+1]
 
     if ch == "\"" {
       if inQuote {
         // check for escaped quote ""
-        let ni = i + 1
+        ni = i + 1
         if ni < len {
-          let nch = line[ni:ni+1]
+          nch = line[ni:ni+1]
           if nch == "\"" {
             current = current + "\""
             i += 2
@@ -61,8 +61,8 @@ fn _splitCsvLine(line, delim) {
 // Parse a CSV string into an array of rows.
 fn csv(text, delim) {
   if delim == null { delim = "," }
-  let rows = []
-  let lines = text.split("\n")
+  rows = []
+  lines = text.split("\n")
   for line in lines {
     if #line > 0 {
       rows.push(_splitCsvLine(line, delim))
@@ -77,22 +77,22 @@ fn csv(text, delim) {
 // Lines starting with # or ; are comments. Empty lines skipped.
 fn kv(text, sep) {
   if sep == null { sep = "=" }
-  let pairs = []
-  let lines = text.split("\n")
+  pairs = []
+  lines = text.split("\n")
   for line in lines {
-    let trimmed = line.trim()
+    trimmed = line.trim()
     if #trimmed == 0 {
       // skip empty
     } else {
-      let first = trimmed[0:1]
+      first = trimmed[0:1]
       if first == "#" || first == ";" {
         // skip comment
       } else {
-        let eqPos = trimmed.find(sep)
+        eqPos = trimmed.find(sep)
         if eqPos != null && eqPos >= 0 {
-          let key = trimmed[0:eqPos].trim()
-          let restStart = eqPos + #sep
-          let val = trimmed[restStart:].trim()
+          key = trimmed[0:eqPos].trim()
+          restStart = eqPos + #sep
+          val = trimmed[restStart:].trim()
           pairs.push([key, val])
         }
       }
@@ -107,22 +107,22 @@ fn kv(text, sep) {
 // Each entry is [sectionName, [[key, val], ...]].
 // Global keys (before any section) have sectionName "".
 fn ini(text) {
-  let sections = []
-  let currentPairs = []
-  let currentSection = ""
-  let lines = text.split("\n")
+  sections = []
+  currentPairs = []
+  currentSection = ""
+  lines = text.split("\n")
   for line in lines {
-    let trimmed = line.trim()
+    trimmed = line.trim()
     if #trimmed == 0 {
       // skip empty
     } else {
-      let first = trimmed[0:1]
+      first = trimmed[0:1]
       if first == "#" || first == ";" {
         // skip comment
       } else {
         if first == "[" {
           // section header - save previous section
-          let endPos = trimmed.find("]")
+          endPos = trimmed.find("]")
           if endPos != null && endPos > 1 {
             if #currentPairs > 0 || #currentSection > 0 {
               sections.push([currentSection, currentPairs])
@@ -132,11 +132,11 @@ fn ini(text) {
           }
         } else {
           // key = value
-          let eqPos = trimmed.find("=")
+          eqPos = trimmed.find("=")
           if eqPos != null && eqPos > 0 {
-            let key = trimmed[0:eqPos].trim()
-            let valStart = eqPos + 1
-            let val = trimmed[valStart:].trim()
+            key = trimmed[0:eqPos].trim()
+            valStart = eqPos + 1
+            val = trimmed[valStart:].trim()
             currentPairs.push([key, val])
           }
         }
@@ -155,34 +155,34 @@ fn ini(text) {
 // Parse command-line arguments into an array of [key, value] pairs.
 // Positional args have key "_". Flags without values get value true.
 fn args(argv) {
-  let pairs = []
-  let positionals = []
-  let i = 0
-  let len = #argv
+  pairs = []
+  positionals = []
+  i = 0
+  len = #argv
 
   while i < len {
-    let arg = argv[i]
-    let argLen = #arg
+    arg = argv[i]
+    argLen = #arg
 
     if argLen >= 2 {
-      let prefix = arg[0:2]
+      prefix = arg[0:2]
       if prefix == "--" {
-        let rest = arg[2:]
-        let eqPos = rest.find("=")
+        rest = arg[2:]
+        eqPos = rest.find("=")
         if eqPos != null && eqPos > 0 {
           // --key=value
-          let key = rest[0:eqPos]
-          let valStart = eqPos + 1
-          let val = rest[valStart:]
+          key = rest[0:eqPos]
+          valStart = eqPos + 1
+          val = rest[valStart:]
           pairs.push([key, val])
         } else {
           // --flag or --key value
-          let nextIdx = i + 1
+          nextIdx = i + 1
           if nextIdx < len {
-            let nextArg = argv[nextIdx]
-            let nextLen = #nextArg
+            nextArg = argv[nextIdx]
+            nextLen = #nextArg
             if nextLen > 0 {
-              let nextFirst = nextArg[0:1]
+              nextFirst = nextArg[0:1]
               if nextFirst != "-" {
                 pairs.push([rest, nextArg])
                 i += 1
@@ -198,16 +198,16 @@ fn args(argv) {
         }
       } else {
         if argLen > 1 {
-          let firstChar = arg[0:1]
+          firstChar = arg[0:1]
           if firstChar == "-" {
             // -f or -f value
-            let flag = arg[1:]
-            let nextIdx = i + 1
+            flag = arg[1:]
+            nextIdx = i + 1
             if nextIdx < len {
-              let nextArg = argv[nextIdx]
-              let nextLen = #nextArg
+              nextArg = argv[nextIdx]
+              nextLen = #nextArg
               if nextLen > 0 {
-                let nextFirst = nextArg[0:1]
+                nextFirst = nextArg[0:1]
                 if nextFirst != "-" {
                   pairs.push([flag, nextArg])
                   i += 1
@@ -248,10 +248,10 @@ fn args(argv) {
 
 // Parse text into an array of trimmed, non-empty lines.
 fn lines(text) {
-  let result = []
-  let raw = text.split("\n")
+  result = []
+  raw = text.split("\n")
   for line in raw {
-    let trimmed = line.trim()
+    trimmed = line.trim()
     if #trimmed > 0 {
       result.push(trimmed)
     }
@@ -261,10 +261,10 @@ fn lines(text) {
 
 // Split text on whitespace into tokens.
 fn tokens(text) {
-  let result = []
-  let raw = text.split(" ")
+  result = []
+  raw = text.split(" ")
   for tok in raw {
-    let trimmed = tok.trim()
+    trimmed = tok.trim()
     if #trimmed > 0 {
       result.push(trimmed)
     }

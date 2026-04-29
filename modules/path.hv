@@ -1,11 +1,11 @@
-let sep = "/"
-let delimiter = ":"
+sep = "/"
+delimiter = ":"
 
 fn basename(p) {
-    let parts = p.split(sep)
-    let n = parts.len()
-    let idx = n - 1
-    let result = parts[idx]
+    parts = p.split(sep)
+    n = parts.len()
+    idx = n - 1
+    result = parts[idx]
     if result == "" {
         if n > 1 { return sep }
         return p
@@ -14,17 +14,17 @@ fn basename(p) {
 }
 
 fn extname(p) {
-    let b = basename(p)
-    let dot = b.find(".")
+    b = basename(p)
+    dot = b.find(".")
     if dot == null { return "" }
     return b[dot:]
 }
 
 fn join(a, b) {
     if a == sep { return sep + b }
-    let n = a.len()
-    let idx = n - 1
-    let last = a[idx:]
+    n = a.len()
+    idx = n - 1
+    last = a[idx:]
     if last == sep { return a + b }
     return a + sep + b
 }

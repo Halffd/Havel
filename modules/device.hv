@@ -73,7 +73,8 @@ fn _parseHandlers(line) {
 fn _extractField(line, field) {
   _idx = line.find(field + "=")
   if _idx == null || _idx < 0 { return "" }
-  _rest = line[_idx + #field + 1:]
+    _fi = _idx + #field + 1
+    _rest = line[_fi:]
   _end = _rest.find(" ")
   if _end == null || _end < 0 { _end = #_rest }
   _rest[:_end]
@@ -113,7 +114,8 @@ fn _parseProcDevices() {
       if _t.find("N:") == 0 {
         _dq1 = _t.find("\"")
         if _dq1 != null && _dq1 >= 0 {
-          _after = _t[_dq1 + 1:]
+          _dqi = _dq1 + 1
+        _after = _t[_dqi:]
           _dq2 = _after.find("\"")
           if _dq2 != null && _dq2 >= 0 {
             _cur.name = _after[:_dq2]
@@ -125,7 +127,8 @@ fn _parseProcDevices() {
         _cur.handlers = _parseHandlers(_t)
         _sysfs_match = _t.find("sysfs")
         if _sysfs_match != null && _sysfs_match >= 0 {
-          _rest = _t[_sysfs_match + 6:]
+          _si = _sysfs_match + 6
+        _rest = _t[_si:]
           _end = _rest.find(" ")
           if _end == null || _end < 0 { _end = #_rest }
           _cur.sysfs = _rest[:_end]
@@ -244,9 +247,7 @@ fn byHandler(handler) {
   null
 }
 
-fn count() {
-  #_devices()
-}
+fn count() { _list = _devices(); return #_list }
 
 fn eventDevices() {
   _raw = _shell("ls /sys/class/input/ 2>/dev/null")

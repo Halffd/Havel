@@ -231,9 +231,10 @@ _mask
 }
 
 fn maskToModifiers(mask) {
-{ctrl: ((mask & MOD_CTRL) != 0),
-shift: ((mask & MOD_SHIFT) != 0),
-alt: ((mask & MOD_ALT) != 0),
-super: ((mask & MOD_SUPER) != 0),
-hyper: ((mask & MOD_HYPER) != 0)}
+    _ctrl = (mask & MOD_CTRL) != 0
+    _shift = (mask & MOD_SHIFT) != 0
+    _alt = (mask & MOD_ALT) != 0
+    _super = (mask & MOD_SUPER) != 0
+    _hyper = (mask & MOD_HYPER) != 0
+    ({ctrl: _ctrl, shift: _shift, alt: _alt, super: _super, hyper: _hyper})
 }

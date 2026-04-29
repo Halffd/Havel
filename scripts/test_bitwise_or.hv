@@ -1,0 +1,8 @@
+// Test bitwise OR outside (( ))
+print(5 | 3)
+// Test bitwise OR inside (( ))
+print(((5 | 3)))
+// Test bitwise AND, XOR, OR together
+print(5 & 3)
+print(5 ^ 3)
+print(5 | 3)

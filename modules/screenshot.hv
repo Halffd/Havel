@@ -113,7 +113,7 @@ fn _capture(dpy, root, x, y, w, h) {
   }
   _bgraToRgba(_pixels, _iw, _ih)
   ffi.call(_XDestroyImage, "int32", ["pointer"], _img)
-  {width: _iw, height: _ih, pixels: _pixels, format: "rgba8"}
+  ({width: _iw, height: _ih, pixels: _pixels, format: "rgba8"})
 }
 
 fn all() {

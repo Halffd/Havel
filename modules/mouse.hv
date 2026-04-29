@@ -95,7 +95,7 @@ fn _queryPointer(dpy, root) {
     ffi.free(_wx_ret)
     ffi.free(_wy_ret)
     ffi.free(_mask_ret)
-    {x: _rx, y: _ry, mask: _mask}
+    ({x: _rx, y: _ry, mask: _mask})
 }
 
 fn position() {
@@ -104,7 +104,7 @@ fn position() {
     _root = _rootWindow(_dpy)
     _info = _queryPointer(_dpy, _root)
     _closeDisplay(_dpy)
-    {x: _info.x, y: _info.y}
+    ({x: _info.x, y: _info.y})
 }
 
 fn buttons() {
@@ -331,5 +331,5 @@ fn screen() {
     _h = ffi.get_i32(ffi.ptr_add(_attr, 44))
     ffi.free(_attr)
     _closeDisplay(_dpy)
-    {width: _w, height: _h}
+    ({width: _w, height: _h})
 }

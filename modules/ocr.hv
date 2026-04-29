@@ -182,7 +182,7 @@ fn pixLoad(path) {
   _w = ffi.call(_pixGetWidth, "int32", ["pointer"], _pix)
   _h = ffi.call(_pixGetHeight, "int32", ["pointer"], _pix)
   _d = ffi.call(_pixGetDepth, "int32", ["pointer"], _pix)
-  {pix: _pix, width: _w, height: _h, depth: _d}
+  ({pix: _pix, width: _w, height: _h, depth: _d})
 }
 
 fn pixFree(pixObj) {
@@ -232,5 +232,5 @@ fn pixToRGBA(pixObj) {
     ffi.call(_pixDestroy, "void", ["pointer"], _pp)
     ffi.free(_pp)
   }
-  {width: _w, height: _h, pixels: _pixels, format: "rgba8"}
+  ({width: _w, height: _h, pixels: _pixels, format: "rgba8"})
 }

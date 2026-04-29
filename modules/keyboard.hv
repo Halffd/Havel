@@ -749,5 +749,5 @@ fn leds() {
   _locked = ffi.get_u16(ffi.ptr_add(_state, 12))
   ffi.free(_state)
   _closeDisplay(_dpy)
-  {caps: (_locked & 2) != 0, num: (_locked & 16) != 0, scroll: (_locked & 4) != 0}
+  ({caps: (_locked & 2) != 0, num: (_locked & 16) != 0, scroll: (_locked & 4) != 0})
 }

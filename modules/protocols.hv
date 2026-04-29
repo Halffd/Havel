@@ -1,0 +1,234 @@
+// protocols.hv — EWMH/NET_WM atom constants and protocol helpers
+// Provides: atom constants, state operation codes, helper functions
+// for EWMH-compliant window manager communication
+
+use x11
+
+// EWMH state operations
+STATE_ADD = 1
+STATE_REMOVE = 0
+STATE_TOGGLE = 2
+
+// Source indication for _NET_ACTIVE_WINDOW
+SOURCE_UNKNOWN = 0
+SOURCE_APPLICATION = 1
+SOURCE_PAGER = 2
+
+// Cached display and atoms (lazily initialized)
+_dpy = 0
+_atoms_cache = {}
+
+fn _ensureDpy() {
+    if _dpy == 0 {
+        _dpy = x11.open(null)
+    }
+    _dpy
+}
+
+fn _atom(name) {
+    if _atoms_cache.has(name) { return _atoms_cache.get(name) }
+    _d = _ensureDpy()
+    _a = x11.internAtom(_d, name, 1)
+    _atoms_cache.set(name, _a)
+    _a
+}
+
+// ============================================================
+// Root window atoms
+// ============================================================
+
+fn netSupported() { _atom("_NET_SUPPORTED") }
+fn netClientList() { _atom("_NET_CLIENT_LIST") }
+fn netClientListStacking() { _atom("_NET_CLIENT_LIST_STACKING") }
+fn netNumberOfDesktops() { _atom("_NET_NUMBER_OF_DESKTOPS") }
+fn netCurrentDesktop() { _atom("_NET_CURRENT_DESKTOP") }
+fn netDesktopNames() { _atom("_NET_DESKTOP_NAMES") }
+fn netActiveWindow() { _atom("_NET_ACTIVE_WINDOW") }
+fn netWorkarea() { _atom("_NET_WORKAREA") }
+fn netShowingDesktop() { _atom("_NET_SHOWING_DESKTOP") }
+fn netDesktopViewport() { _atom("_NET_DESKTOP_VIEWPORT") }
+fn netDesktopGeometry() { _atom("_NET_DESKTOP_GEOMETRY") }
+
+// ============================================================
+// Window state atoms
+// ============================================================
+
+fn netWmState() { _atom("_NET_WM_STATE") }
+fn netWmStateModal() { _atom("_NET_WM_STATE_MODAL") }
+fn netWmStateSticky() { _atom("_NET_WM_STATE_STICKY") }
+fn netWmStateMaximizedVert() { _atom("_NET_WM_STATE_MAXIMIZED_VERT") }
+fn netWmStateMaximizedHorz() { _atom("_NET_WM_STATE_MAXIMIZED_HORZ") }
+fn netWmStateShaded() { _atom("_NET_WM_STATE_SHADED") }
+fn netWmStateSkipTaskbar() { _atom("_NET_WM_STATE_SKIP_TASKBAR") }
+fn netWmStateSkipPager() { _atom("_NET_WM_STATE_SKIP_PAGER") }
+fn netWmStateHidden() { _atom("_NET_WM_STATE_HIDDEN") }
+fn netWmStateFullscreen() { _atom("_NET_WM_STATE_FULLSCREEN") }
+fn netWmStateAbove() { _atom("_NET_WM_STATE_ABOVE") }
+fn netWmStateBelow() { _atom("_NET_WM_STATE_BELOW") }
+fn netWmStateDemandsAttention() { _atom("_NET_WM_STATE_DEMANDS_ATTENTION") }
+
+// ============================================================
+// Window property atoms
+// ============================================================
+
+fn netWmName() { _atom("_NET_WM_NAME") }
+fn netWmIconName() { _atom("_NET_WM_ICON_NAME") }
+fn netWmPid() { _atom("_NET_WM_PID") }
+fn netWmWindowType() { _atom("_NET_WM_WINDOW_TYPE") }
+fn netWmWindowOpacity() { _atom("_NET_WM_WINDOW_OPACITY") }
+fn netWmDesktop() { _atom("_NET_WM_DESKTOP") }
+fn netWmIcon() { _atom("_NET_WM_ICON") }
+fn netWmIconGeometry() { _atom("_NET_WM_ICON_GEOMETRY") }
+fn netWmAllowedActions() { _atom("_NET_WM_ALLOWED_ACTIONS") }
+fn netWmMoveResize() { _atom("_NET_MOVERESIZE_WINDOW") }
+fn netWmVisibleName() { _atom("_NET_WM_VISIBLE_NAME") }
+fn netWmVisibleIconName() { _atom("_NET_WM_VISIBLE_ICON_NAME") }
+
+// ============================================================
+// Window type atoms
+// ============================================================
+
+fn netWmWindowTypeDesktop() { _atom("_NET_WM_WINDOW_TYPE_DESKTOP") }
+fn netWmWindowTypeDock() { _atom("_NET_WM_WINDOW_TYPE_DOCK") }
+fn netWmWindowTypeToolbar() { _atom("_NET_WM_WINDOW_TYPE_TOOLBAR") }
+fn netWmWindowTypeMenu() { _atom("_NET_WM_WINDOW_TYPE_MENU") }
+fn netWmWindowTypeUtility() { _atom("_NET_WM_WINDOW_TYPE_UTILITY") }
+fn netWmWindowTypeSplash() { _atom("_NET_WM_WINDOW_TYPE_SPLASH") }
+fn netWmWindowTypeDialog() { _atom("_NET_WM_WINDOW_TYPE_DIALOG") }
+fn netWmWindowTypeNormal() { _atom("_NET_WM_WINDOW_TYPE_NORMAL") }
+
+// ============================================================
+// WM protocol atoms
+// ============================================================
+
+fn wmProtocols() { _atom("WM_PROTOCOLS") }
+fn wmDeleteWindow() { _atom("WM_DELETE_WINDOW") }
+fn wmTakeFocus() { _atom("WM_TAKE_FOCUS") }
+fn wmName() { _atom("WM_NAME") }
+fn wmClass() { _atom("WM_CLASS") }
+
+// ============================================================
+// Helper: send EWMH client message to root window
+// ============================================================
+
+fn sendRootMessage(dpy, win, messageType, d0, d1, d2, d3, d4) {
+    _ev = x11.makeClientMessage(win, messageType, 32, d0, d1, d2, d3, d4)
+    _root = x11.rootWindow(dpy)
+    _m1 = x11.SubstructureRedirectMask
+    _m2 = x11.SubstructureNotifyMask
+    _mask = _m1 | _m2
+    x11.sendEvent(dpy, _root, x11.XFalse, _mask, _ev)
+    x11.flush(dpy)
+    x11.freeClientMessage(_ev)
+}
+
+// Helper: send EWMH state change
+fn sendStateMessage(dpy, win, action, atom1, atom2) {
+    sendRootMessage(dpy, win, netWmState(), action, atom1, atom2, 0, 0)
+}
+
+// Helper: activate window
+fn sendActiveMessage(dpy, win, source) {
+    sendRootMessage(dpy, win, netActiveWindow(), source, x11.CurrentTime, 0, 0, 0)
+}
+
+// Helper: close window via WM_DELETE_WINDOW
+fn sendCloseMessage(dpy, win) {
+    _ev = x11.makeClientMessage(win, wmProtocols(), 32, wmDeleteWindow(), x11.CurrentTime, 0, 0, 0)
+    x11.sendEvent(dpy, win, x11.XFalse, x11.NoEventMask, _ev)
+    x11.flush(dpy)
+    x11.freeClientMessage(_ev)
+}
+
+// Helper: move/resize via _NET_MOVERESIZE_WINDOW
+fn sendMoveResizeMessage(dpy, win, x, y, w, h) {
+    // flags: x(1<<8) | y(1<<9) | w(1<<10) | h(1<<11)
+    _f1 = 1 << 8
+    _f2 = 1 << 9
+    _f3 = 1 << 10
+    _f4 = 1 << 11
+    _flags = _f1 | _f2 | _f3 | _f4
+    sendRootMessage(dpy, win, netWmMoveResize(), _flags, x, y, w, h)
+}
+
+// Helper: change desktop
+fn sendDesktopMessage(dpy, desktop) {
+    _root = x11.rootWindow(dpy)
+    _ev = x11.makeClientMessage(_root, netCurrentDesktop(), 32, desktop, x11.CurrentTime, 0, 0, 0)
+    _m1 = x11.SubstructureRedirectMask
+    _m2 = x11.SubstructureNotifyMask
+    _mask = _m1 | _m2
+    x11.sendEvent(dpy, _root, x11.XFalse, _mask, _ev)
+    x11.flush(dpy)
+    x11.freeClientMessage(_ev)
+}
+
+// Helper: read cardinal property from a window
+fn getCardinalProp(dpy, win, atom) {
+    _r = x11.getWindowProperty(dpy, win, atom, 0, 1, 0, x11.XA_CARDINAL)
+    _val = 0
+    if _r.rcode == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _val = ffi.get_i32(_r.prop)
+        x11.free(_r.prop)
+    }
+    _val
+}
+
+// Helper: read window property (returns a single window ID)
+fn getWindowProp(dpy, win, atom) {
+    _r = x11.getWindowProperty(dpy, win, atom, 0, 1, 0, x11.XA_WINDOW)
+    _val = 0
+    if _r.rcode == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _val = ffi.get_u64(_r.prop)
+        x11.free(_r.prop)
+    }
+    _val
+}
+
+// Helper: read atom array property
+fn getAtomProp(dpy, win, atom) {
+    _r = x11.getWindowProperty(dpy, win, atom, 0, 1024, 0, x11.XA_ATOM)
+    _atoms = []
+    if _r.rcode == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _i = 0
+        while _i < _r.nitems {
+            _a = ffi.get_u64(ffi.ptr_add(_r.prop, _i * 8))
+            _atoms.push(_a)
+            _i = _i + 1
+        }
+        x11.free(_r.prop)
+    }
+    _atoms
+}
+
+// Helper: read string property
+fn getStringProp(dpy, win, atom) {
+    _r = x11.getWindowProperty(dpy, win, atom, 0, 1024, 0, 0)
+    _val = ""
+    if _r.rcode == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _val = ffi.string(_r.prop)
+        x11.free(_r.prop)
+    }
+    _val
+}
+
+// Helper: check if a window has a specific state atom
+fn hasState(dpy, win, stateAtom) {
+    _states = getAtomProp(dpy, win, netWmState())
+    _found = false
+    _i = 0
+    while _i < #_states {
+        if _states[_i] == stateAtom { _found = true }
+        _i = _i + 1
+    }
+    _found
+}
+
+// Cleanup display
+fn cleanup() {
+    if _dpy != 0 {
+        x11.close(_dpy)
+        _dpy = 0
+        _atoms_cache = {}
+    }
+}

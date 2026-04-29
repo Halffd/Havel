@@ -1,0 +1,141 @@
+// mode.hv — Active window tracking and focus monitoring
+// Provides: current, previous, changed, history, onChange, offChange,
+// onActivate, offActivate, onTitleChange, offTitleChange,
+// onDesktopChange, offDesktopChange, activeTitle, activeClass,
+// activeId, activePid, activeDesktop, tick, reset
+
+use window
+use display
+use x11
+
+_lastId = 0
+_lastTitle = ""
+_lastClass = ""
+_lastDesktop = -1
+_prevId = 0
+_prevTitle = ""
+_prevClass = ""
+_history = []
+_maxHistory = 100
+_changed = false
+_onChangeFns = []
+_onActivateFns = []
+_onTitleChangeFns = []
+_onDesktopChangeFns = []
+
+fn current() {
+    _w = window.active()
+    if _w == 0 { null } else { window.info(_w) }
+}
+
+fn previous() {
+    if _prevId == 0 { null } else { window.info(_prevId) }
+}
+
+fn changed() { _changed }
+
+fn history() { _history }
+
+fn activeId() { window.active() }
+
+fn activeTitle() { window.activeTitle() }
+
+fn activeClass() { window.activeClass() }
+
+fn activePid() { window.activePid() }
+
+fn activeDesktop() {
+    _w = window.active()
+    if _w == 0 { -1 } else { window.desktop(_w) }
+}
+
+fn onChange(fn_ref) { _onChangeFns.push(fn_ref) }
+fn offChange(fn_ref) {
+    _newFns = []
+    for _f in _onChangeFns { if _f != fn_ref { _newFns.push(_f) } }
+    _onChangeFns = _newFns
+}
+
+fn onActivate(fn_ref) { _onActivateFns.push(fn_ref) }
+fn offActivate(fn_ref) {
+    _newFns = []
+    for _f in _onActivateFns { if _f != fn_ref { _newFns.push(_f) } }
+    _onActivateFns = _newFns
+}
+
+fn onTitleChange(fn_ref) { _onTitleChangeFns.push(fn_ref) }
+fn offTitleChange(fn_ref) {
+    _newFns = []
+    for _f in _onTitleChangeFns { if _f != fn_ref { _newFns.push(_f) } }
+    _onTitleChangeFns = _newFns
+}
+
+fn onDesktopChange(fn_ref) { _onDesktopChangeFns.push(fn_ref) }
+fn offDesktopChange(fn_ref) {
+    _newFns = []
+    for _f in _onDesktopChangeFns { if _f != fn_ref { _newFns.push(_f) } }
+    _onDesktopChangeFns = _newFns
+}
+
+fn tick() {
+    _w = window.active()
+    _curTitle = ""
+    _curClass = ""
+    _curDesktop = -1
+    if _w != 0 {
+        _curTitle = window.title(_w)
+        _curClass = window.className(_w)
+        _curDesktop = window.desktop(_w)
+    }
+    _changed = false
+    _focusChanged = _w != _lastId
+    _titleChanged = _curTitle != _lastTitle
+    _classChanged = _curClass != _lastClass
+    _desktopChanged = _curDesktop != _lastDesktop
+
+    if _focusChanged {
+        _prevId = _lastId
+        _prevTitle = _lastTitle
+        _prevClass = _lastClass
+        _changed = true
+
+        if _w != 0 {
+            _history.push({id: _w, title: _curTitle, windowClass: _curClass, time: time.now()})
+            if #_history > _maxHistory { _start = #_history - _maxHistory; _history = _history[_start:#_history] }
+        }
+
+        for _fn in _onActivateFns { _fn(_w, _prevId) }
+    }
+
+    if _titleChanged && !_focusChanged {
+        _changed = true
+        for _fn in _onTitleChangeFns { _fn(_w, _curTitle, _lastTitle) }
+    }
+
+    if _desktopChanged && !_focusChanged {
+        _changed = true
+        for _fn in _onDesktopChangeFns { _fn(_w, _curDesktop, _lastDesktop) }
+    }
+
+    if _changed {
+        for _fn in _onChangeFns { _fn(_w, _prevId) }
+    }
+
+    _lastId = _w
+    _lastTitle = _curTitle
+    _lastClass = _curClass
+    _lastDesktop = _curDesktop
+    _changed
+}
+
+fn reset() {
+    _lastId = 0
+    _lastTitle = ""
+    _lastClass = ""
+    _lastDesktop = -1
+    _prevId = 0
+    _prevTitle = ""
+    _prevClass = ""
+    _history = []
+    _changed = false
+}

@@ -1,0 +1,131 @@
+// group.hv — Window grouping: organize windows into named groups
+// Provides: add, remove, get, list, names, has, find, findBy,
+// clear, activateAll, minimizeAll, restoreAll, moveAllToDesktop,
+// count, size, rename, merge
+
+use window
+use display
+use x11
+
+_groups = {}
+
+fn add(name, win) {
+    if !_groups.has(name) { _groups.set(name, []) }
+    _members = _groups.get(name)
+    for _w in _members { if _w == win { return false } }
+    _members.push(win)
+    _groups.set(name, _members)
+    true
+}
+
+fn remove(name, win) {
+    if !_groups.has(name) { return false }
+    _members = _groups.get(name)
+    _new = []
+    for _w in _members { if _w != win { _new.push(_w) } }
+    if #_new == 0 { del _groups[name] } else { _groups.set(name, _new) }
+    true
+}
+
+fn get(name) {
+    if !_groups.has(name) { return [] }
+    _groups.get(name)
+}
+
+fn list() { _groups }
+
+fn names() { _groups.keys() }
+
+fn has(name) { _groups.has(name) }
+
+fn find(name, predicate) {
+    _members = get(name)
+    for _w in _members {
+        _info = window.info(_w)
+        if _info != null && predicate(_info) { return _w }
+    }
+    0
+}
+
+fn findBy(name, field, value) {
+    _members = get(name)
+    for _w in _members {
+        _info = window.info(_w)
+        if _info != null {
+            _v = _info.get(field)
+            if _v == value { return _w }
+        }
+    }
+    0
+}
+
+fn findByTitle(name, title) { findBy(name, "title", title) }
+fn findByClass(name, className) { findBy(name, "class", className) }
+
+fn clear(name) {
+    if name == null || name == "" {
+        _groups = {}
+    } else {
+        del _groups[name]
+    }
+}
+
+fn activateAll(name) {
+    for _w in get(name) { window.activate(_w) }
+}
+
+fn minimizeAll(name) {
+    for _w in get(name) { window.minimize(_w) }
+}
+
+fn restoreAll(name) {
+    for _w in get(name) { window.restore(_w) }
+}
+
+fn moveAllToDesktop(name, desktop_num) {
+    for _w in get(name) { window.moveToDesktop(_w, desktop_num) }
+}
+
+fn count(name) { _list = get(name); return #_list }
+
+fn size() { _list = names(); return #_list }
+
+fn rename(oldName, newName) {
+    if !_groups.has(oldName) { return false }
+    _members = _groups.get(oldName)
+    del _groups[oldName]
+    _groups.set(newName, _members)
+    true
+}
+
+fn merge(target, source) {
+    _src = get(source)
+    for _w in _src { add(target, _w) }
+    del _groups[source]
+    true
+}
+
+fn removeStale(name) {
+    if !_groups.has(name) { return 0 }
+    _members = _groups.get(name)
+    _alive = []
+    for _w in _members { if window.exists(_w) { _alive.push(_w) } }
+    _removed = #_members - #_alive
+    if #_alive == 0 { del _groups[name] } else { _groups.set(name, _alive) }
+    _removed
+}
+
+fn removeStaleAll() {
+    _removed = 0
+    for _n in names() { _removed = _removed + removeStale(_n) }
+    _removed
+}
+
+fn windowsInfo(name) {
+    _infos = []
+    for _w in get(name) {
+        _info = window.info(_w)
+        if _info != null { _infos.push(_info) }
+    }
+    _infos
+}

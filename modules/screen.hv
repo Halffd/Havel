@@ -1,0 +1,126 @@
+// screen.hv — Display monitor enumeration and management via XRandR/xrandr
+// Provides: list, count, primary, at, byName, names, resolutions,
+// current, indexOf, moveWindowTo, area, refreshRate, scale,
+// isPrimary, get, workarea, refresh
+
+use display
+use x11
+
+_cache = null
+
+fn _ensure() {
+    if _cache == null { _cache = display.monitors() }
+}
+
+fn list() {
+    _ensure()
+    _cache
+}
+
+fn count() { _list = list(); return #_list }
+
+fn primary() { display.primaryMonitor() }
+
+fn at(x, y) {
+    for _m in list() {
+        if x >= _m.x && x < _m.x + _m.width && y >= _m.y && y < _m.y + _m.height { return _m }
+    }
+    primary()
+}
+
+fn byName(name) {
+    for _m in list() {
+        if _m.name == name { return _m }
+    }
+    null
+}
+
+fn names() {
+    _result = []
+    for _m in list() { _result.push(_m.name) }
+    _result
+}
+
+fn resolutions() { display.monitorsResolution() }
+
+fn current() {
+    _dpy = display.open()
+    if _dpy == 0 { return primary() }
+    _focus_info = x11.getInputFocus(_dpy)
+    _win = _focus_info.focus
+    if _win == 0 { return primary() }
+    _attrs = x11.getWindowAttributes(_dpy, _win)
+    if _attrs == null { return primary() }
+    at(_attrs.x + (_attrs.width / 2), _attrs.y + (_attrs.height / 2))
+}
+
+fn indexOf(m) {
+    _mons = list()
+    _i = 0
+    while _i < #_mons {
+        if _mons[_i].name == m.name { return _i }
+        _i = _i + 1
+    }
+    -1
+}
+
+fn moveWindowTo(win, monitorIndex) {
+    _mons = list()
+    if monitorIndex < 0 || monitorIndex >= #_mons { return false }
+    _target = _mons[monitorIndex]
+    _dpy = display.open()
+    if _dpy == 0 { return false }
+    _attrs = x11.getWindowAttributes(_dpy, win)
+    if _attrs == null { return false }
+    _cx = _target.x + (_target.width - _attrs.width) / 2
+    _cy = _target.y + (_target.height - _attrs.height) / 2
+    x11.moveResizeWindow(_dpy, win, _cx, _cy, _attrs.width, _attrs.height)
+    x11.flush(_dpy)
+    true
+}
+
+fn area() { display.monitorsArea() }
+
+fn get(index) {
+    _mons = list()
+    if index < 0 || index >= #_mons { return null }
+    _mons[index]
+}
+
+fn isPrimary(index) {
+    _m = get(index)
+    if _m == null { false } else { _m.isPrimary }
+}
+
+fn workarea() { display.monitorsWorkarea() }
+
+fn refreshRate(name) {
+    _output = shell.exec("xrandr --query 2>/dev/null | grep '${name}' | head -1").stdout
+    _star = _output.find("*")
+    if _star == null { return 0 }
+    _si = _star + 1
+    _after = _output[_si:].trim()
+    _parts = _after.split(" ")
+    if #_parts < 1 { return 0 }
+    _hz_str = _parts[0]
+    _dot = _hz_str.find(".")
+    if _dot == null { return int(_hz_str) }
+    float(_hz_str)
+}
+
+fn scale(name) {
+    _output = shell.exec("xrandr --query 2>/dev/null | grep '${name}' | head -1").stdout
+    _x = _output.find(" x ")
+    if _x == null { return 1.0 }
+    _xi = _x + 3
+    _after = _output[_xi:].trim()
+    _parts = _after.split(" ")
+    if #_parts < 1 { return 1.0 }
+    float(_parts[0])
+}
+
+fn refresh() {
+    _cache = null
+    display.refresh()
+    _ensure()
+}

@@ -1,0 +1,466 @@
+// x11.hv — Low-level X11 C API bindings via FFI
+// Provides: open, close, rootWindow, internAtom, getAtomName,
+// getWindowProperty, sendEvent, moveResizeWindow, moveWindow,
+// resizeWindow, getGeometry, getWindowAttributes, translateCoordinates,
+// queryTree, getInputFocus, setInputFocus, getWMName, getClassHint,
+// iconifyWindow, mapWindow, unmapWindow, configureWindow,
+// changeProperty, flush, sync, getDefaultScreen, screenCount,
+// displayWidth, displayHeight, widthOfScreen, heightOfScreen,
+// getWMProtocols, setTransientFor, getTransientFor, killClient
+
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
+_XDefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_XInternAtom = ffi.sym(_xlib, "XInternAtom")
+_XGetAtomName = ffi.sym(_xlib, "XGetAtomName")
+_XGetWindowProperty = ffi.sym(_xlib, "XGetWindowProperty")
+_XSendEvent = ffi.sym(_xlib, "XSendEvent")
+_XMoveResizeWindow = ffi.sym(_xlib, "XMoveResizeWindow")
+_XMoveWindow = ffi.sym(_xlib, "XMoveWindow")
+_XResizeWindow = ffi.sym(_xlib, "XResizeWindow")
+_XGetGeometry = ffi.sym(_xlib, "XGetGeometry")
+_XGetWindowAttributes = ffi.sym(_xlib, "XGetWindowAttributes")
+_XTranslateCoordinates = ffi.sym(_xlib, "XTranslateCoordinates")
+_XQueryTree = ffi.sym(_xlib, "XQueryTree")
+_XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
+_XSetInputFocus = ffi.sym(_xlib, "XSetInputFocus")
+_XFetchName = ffi.sym(_xlib, "XFetchName")
+_XGetClassHint = ffi.sym(_xlib, "XGetClassHint")
+_XIconifyWindow = ffi.sym(_xlib, "XIconifyWindow")
+_XMapWindow = ffi.sym(_xlib, "XMapWindow")
+_XUnmapWindow = ffi.sym(_xlib, "XUnmapWindow")
+_XConfigureWindow = ffi.sym(_xlib, "XConfigureWindow")
+_XChangeProperty = ffi.sym(_xlib, "XChangeProperty")
+_XFlush = ffi.sym(_xlib, "XFlush")
+_XSync = ffi.sym(_xlib, "XSync")
+_XFree = ffi.sym(_xlib, "XFree")
+_XDefaultScreen = ffi.sym(_xlib, "DefaultScreen")
+_XScreenCount = ffi.sym(_xlib, "ScreenCount")
+_XDisplayWidth = ffi.sym(_xlib, "DisplayWidth")
+_XDisplayHeight = ffi.sym(_xlib, "DisplayHeight")
+_XWidthOfScreen = ffi.sym(_xlib, "WidthOfScreen")
+_XHeightOfScreen = ffi.sym(_xlib, "HeightOfScreen")
+_XGetWMProtocols = ffi.sym(_xlib, "XGetWMProtocols")
+_XSetTransientFor = ffi.sym(_xlib, "XSetTransientFor")
+_XGetTransientForHint = ffi.sym(_xlib, "XGetTransientForHint")
+_XKillClient = ffi.sym(_xlib, "XKillClient")
+_XScreenOfDisplay = ffi.sym(_xlib, "ScreenOfDisplay")
+
+_p = ["pointer"]
+
+fn open(name) {
+    if name == null || name == "" {
+        ffi.call(_XOpenDisplay, "pointer", _p, 0)
+    } else {
+        _cs = ffi.cstring(name)
+        _dpy = ffi.call(_XOpenDisplay, "pointer", _p, _cs)
+        ffi.free(_cs)
+        _dpy
+    }
+}
+
+fn close(dpy) {
+    ffi.call(_XCloseDisplay, "int32", _p, dpy)
+}
+
+fn rootWindow(dpy) {
+    ffi.call(_XDefaultRootWindow, "uint64", _p, dpy)
+}
+
+fn internAtom(dpy, name, onlyIfExists) {
+    _cs = ffi.cstring(name)
+    _atom = ffi.call(_XInternAtom, "uint64", ["pointer", "pointer", "int32"], dpy, _cs, onlyIfExists)
+    ffi.free(_cs)
+    _atom
+}
+
+fn getAtomName(dpy, atom) {
+    _ptr = ffi.call(_XGetAtomName, "pointer", ["pointer", "uint64"], dpy, atom)
+    if _ptr == 0 { "" }
+    else {
+        _name = ffi.string(_ptr)
+        ffi.call(_XFree, "int32", _p, _ptr)
+        _name
+    }
+}
+
+fn getWindowProperty(dpy, win, atom, offset, length, delete, reqType) {
+    _actual_type = ffi.allocBytes(8)
+    _actual_format = ffi.allocBytes(4)
+    _nitems = ffi.allocBytes(8)
+    _bytes_after = ffi.allocBytes(8)
+    _prop_ptr = ffi.allocBytes(8)
+    _rcode = ffi.call(_XGetWindowProperty, "int32",
+        ["pointer", "uint64", "uint64", "int64", "int64", "int32", "uint64",
+         "pointer", "pointer", "pointer", "pointer", "pointer"],
+        dpy, win, atom, offset, length, delete, reqType,
+        _actual_type, _actual_format, _nitems, _bytes_after, _prop_ptr)
+    _type_val = ffi.get_u64(_actual_type)
+    _fmt_val = ffi.get_i32(_actual_format)
+    _nitems_val = ffi.get_u64(_nitems)
+    _prop_val = ffi.get_u64(_prop_ptr)
+    ffi.free(_actual_type)
+    ffi.free(_actual_format)
+    ffi.free(_nitems)
+    ffi.free(_bytes_after)
+    ffi.free(_prop_ptr)
+    ({rcode: _rcode, type: _type_val, format: _fmt_val, nitems: _nitems_val, prop: _prop_val})
+}
+
+fn sendEvent(dpy, dest, propagate, mask, event) {
+    ffi.call(_XSendEvent, "int32", ["pointer", "uint64", "int32", "int64", "pointer"],
+        dpy, dest, propagate, mask, event)
+}
+
+fn moveResizeWindow(dpy, win, x, y, w, h) {
+    ffi.call(_XMoveResizeWindow, "int32",
+        ["pointer", "uint64", "int32", "int32", "uint32", "uint32"],
+        dpy, win, x, y, w, h)
+}
+
+fn moveWindow(dpy, win, x, y) {
+    ffi.call(_XMoveWindow, "int32", ["pointer", "uint64", "int32", "int32"],
+        dpy, win, x, y)
+}
+
+fn resizeWindow(dpy, win, w, h) {
+    ffi.call(_XResizeWindow, "int32", ["pointer", "uint64", "uint32", "uint32"],
+        dpy, win, w, h)
+}
+
+fn getGeometry(dpy, win) {
+    _root = ffi.allocBytes(8)
+    _x = ffi.allocBytes(4)
+    _y = ffi.allocBytes(4)
+    _w = ffi.allocBytes(4)
+    _h = ffi.allocBytes(4)
+    _bw = ffi.allocBytes(4)
+    _depth = ffi.allocBytes(4)
+    _rcode = ffi.call(_XGetGeometry, "int32",
+        ["pointer", "uint64", "pointer", "pointer", "pointer",
+         "pointer", "pointer", "pointer", "pointer"],
+        dpy, win, _root, _x, _y, _w, _h, _bw, _depth)
+    _result = {rcode: _rcode,
+        x: ffi.get_i32(_x), y: ffi.get_i32(_y),
+        width: ffi.get_u32(_w), height: ffi.get_u32(_h),
+        border: ffi.get_u32(_bw), depth: ffi.get_u32(_depth),
+        root: ffi.get_u64(_root)}
+    ffi.free(_root)
+    ffi.free(_x)
+    ffi.free(_y)
+    ffi.free(_w)
+    ffi.free(_h)
+    ffi.free(_bw)
+    ffi.free(_depth)
+    _result
+}
+
+fn getWindowAttributes(dpy, win) {
+    _attrs = ffi.allocBytes(92)
+    _rcode = ffi.call(_XGetWindowAttributes, "int32", ["pointer", "uint64", "pointer"],
+        dpy, win, _attrs)
+    if _rcode == 0 {
+        ffi.free(_attrs)
+        null
+    } else {
+        _x = ffi.get_i32(_attrs)
+        _y = ffi.get_i32(ffi.ptr_add(_attrs, 4))
+        _w = ffi.get_i32(ffi.ptr_add(_attrs, 8))
+        _h = ffi.get_i32(ffi.ptr_add(_attrs, 12))
+        _bw = ffi.get_i32(ffi.ptr_add(_attrs, 16))
+        _depth = ffi.get_i32(ffi.ptr_add(_attrs, 20))
+        _visual = ffi.get_u64(ffi.ptr_add(_attrs, 24))
+        _root = ffi.get_u64(ffi.ptr_add(_attrs, 32))
+        _class_val = ffi.get_i32(ffi.ptr_add(_attrs, 40))
+        _map_state = ffi.get_i32(ffi.ptr_add(_attrs, 44))
+        _override_redirect = ffi.get_i32(ffi.ptr_add(_attrs, 76))
+ffi.free(_attrs)
+    ({x: _x, y: _y, width: _w, height: _h, border: _bw,
+        depth: _depth, root: _root, windowClass: _class_val,
+        mapState: _map_state, overrideRedirect: _override_redirect})
+    }
+}
+
+fn translateCoordinates(dpy, src, dst, x, y) {
+    _dst_x = ffi.allocBytes(4)
+    _dst_y = ffi.allocBytes(4)
+    _child = ffi.allocBytes(8)
+    _rcode = ffi.call(_XTranslateCoordinates, "int32",
+        ["pointer", "uint64", "uint64", "int32", "int32", "pointer", "pointer", "pointer"],
+        dpy, src, dst, x, y, _dst_x, _dst_y, _child)
+    _result = {rcode: _rcode,
+        x: ffi.get_i32(_dst_x), y: ffi.get_i32(_dst_y),
+        child: ffi.get_u64(_child)}
+    ffi.free(_dst_x)
+    ffi.free(_dst_y)
+    ffi.free(_child)
+    _result
+}
+
+fn queryTree(dpy, win) {
+    _root = ffi.allocBytes(8)
+    _parent = ffi.allocBytes(8)
+    _children = ffi.allocBytes(8)
+    _nchildren = ffi.allocBytes(4)
+    _rcode = ffi.call(_XQueryTree, "int32",
+        ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer"],
+        dpy, win, _root, _parent, _children, _nchildren)
+    _root_val = ffi.get_u64(_root)
+    _parent_val = ffi.get_u64(_parent)
+    _children_ptr = ffi.get_u64(_children)
+    _nchildren_val = ffi.get_u32(_nchildren)
+    ffi.free(_root)
+    ffi.free(_parent)
+    ffi.free(_children)
+ffi.free(_nchildren)
+    ({rcode: _rcode, root: _root_val, parent: _parent_val,
+        children: _children_ptr, nchildren: _nchildren_val})
+}
+
+fn getInputFocus(dpy) {
+    _focus = ffi.allocBytes(8)
+    _revert = ffi.allocBytes(4)
+    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"],
+        dpy, _focus, _revert)
+    _focus_val = ffi.get_u64(_focus)
+    _revert_val = ffi.get_i32(_revert)
+ffi.free(_focus)
+ffi.free(_revert)
+({focus: _focus_val, revert: _revert_val})
+}
+
+fn setInputFocus(dpy, win, revert, time) {
+    ffi.call(_XSetInputFocus, "int32", ["pointer", "uint64", "int32", "uint64"],
+        dpy, win, revert, time)
+}
+
+fn getWMName(dpy, win) {
+    _name_ptr = ffi.allocBytes(8)
+    _rcode = ffi.call(_XFetchName, "int32", ["pointer", "uint64", "pointer"],
+        dpy, win, _name_ptr)
+    _name_val = ffi.get_u64(_name_ptr)
+    ffi.free(_name_ptr)
+    if _rcode == 0 || _name_val == 0 { "" }
+    else {
+        _name = ffi.string(_name_val)
+        ffi.call(_XFree, "int32", _p, _name_val)
+        _name
+    }
+}
+
+fn getClassHint(dpy, win) {
+    _hint = ffi.allocBytes(16)
+    _rcode = ffi.call(_XGetClassHint, "int32", ["pointer", "uint64", "pointer"],
+        dpy, win, _hint)
+    if _rcode == 0 {
+        ffi.free(_hint)
+        ({resName: "", resClass: ""})
+    } else {
+        _res_name_ptr = ffi.get_u64(_hint)
+        _res_class_ptr = ffi.get_u64(ffi.ptr_add(_hint, 8))
+        _rn = ""
+        _rc = ""
+        if _res_name_ptr != 0 {
+            _rn = ffi.string(_res_name_ptr)
+            ffi.call(_XFree, "int32", _p, _res_name_ptr)
+        }
+        if _res_class_ptr != 0 {
+            _rc = ffi.string(_res_class_ptr)
+            ffi.call(_XFree, "int32", _p, _res_class_ptr)
+        }
+ffi.free(_hint)
+({resName: _rn, resClass: _rc})
+    }
+}
+
+fn iconifyWindow(dpy, win, screen) {
+    ffi.call(_XIconifyWindow, "int32", ["pointer", "uint64", "int32"],
+        dpy, win, screen)
+}
+
+fn mapWindow(dpy, win) {
+    ffi.call(_XMapWindow, "int32", ["pointer", "uint64"], dpy, win)
+}
+
+fn unmapWindow(dpy, win) {
+    ffi.call(_XUnmapWindow, "int32", ["pointer", "uint64"], dpy, win)
+}
+
+fn configureWindow(dpy, win, mask, changes) {
+    ffi.call(_XConfigureWindow, "int32",
+        ["pointer", "uint64", "uint32", "pointer"],
+        dpy, win, mask, changes)
+}
+
+fn changeProp(dpy, win, prop, type, format, propMode, data, nelements) {
+    ffi.call(_XChangeProperty, "int32",
+        ["pointer", "uint64", "uint64", "uint64", "int32", "int32",
+         "pointer", "int32"],
+        dpy, win, prop, type, format, propMode, data, nelements)
+}
+
+fn flush(dpy) {
+    ffi.call(_XFlush, "int32", _p, dpy)
+}
+
+fn xSync(dpy, discard) {
+    ffi.call(_XSync, "int32", ["pointer", "int32"], dpy, discard)
+}
+
+fn free(ptr) {
+    ffi.call(_XFree, "int32", _p, ptr)
+}
+
+fn defaultScreen(dpy) {
+    ffi.call(_XDefaultScreen, "int32", _p, dpy)
+}
+
+fn screenCount(dpy) {
+    ffi.call(_XScreenCount, "int32", _p, dpy)
+}
+
+fn displayWidth(dpy, screen) {
+    ffi.call(_XDisplayWidth, "int32", ["pointer", "int32"], dpy, screen)
+}
+
+fn displayHeight(dpy, screen) {
+    ffi.call(_XDisplayHeight, "int32", ["pointer", "int32"], dpy, screen)
+}
+
+fn widthOfScreen(dpy, screen) {
+    _scr = ffi.call(_XScreenOfDisplay, "pointer", ["pointer", "int32"], dpy, screen)
+    ffi.call(_XWidthOfScreen, "int32", _p, _scr)
+}
+
+fn heightOfScreen(dpy, screen) {
+    _scr = ffi.call(_XScreenOfDisplay, "pointer", ["pointer", "int32"], dpy, screen)
+    ffi.call(_XHeightOfScreen, "int32", _p, _scr)
+}
+
+fn killClient(dpy, win) {
+    ffi.call(_XKillClient, "int32", ["pointer", "uint64"], dpy, win)
+}
+
+fn getWMProtocols(dpy, win) {
+    _protocols = ffi.allocBytes(8)
+    _count = ffi.allocBytes(4)
+    _rcode = ffi.call(_XGetWMProtocols, "int32",
+        ["pointer", "uint64", "pointer", "pointer"],
+        dpy, win, _protocols, _count)
+    _protocols_val = ffi.get_u64(_protocols)
+    _count_val = ffi.get_i32(_count)
+ffi.free(_protocols)
+ffi.free(_count)
+({rcode: _rcode, protocols: _protocols_val, count: _count_val})
+}
+
+fn setTransientFor(dpy, win, propWin) {
+    ffi.call(_XSetTransientFor, "int32", ["pointer", "uint64", "uint64"],
+        dpy, win, propWin)
+}
+
+fn getTransientForHint(dpy, win) {
+    _prop = ffi.allocBytes(8)
+    _rcode = ffi.call(_XGetTransientForHint, "int32",
+        ["pointer", "uint64", "pointer"], dpy, win, _prop)
+_prop_val = ffi.get_u64(_prop)
+ffi.free(_prop)
+({rcode: _rcode, transientFor: _prop_val})
+}
+
+// X11 constants
+XNone = 0
+CurrentTime = 0
+XFalse = 0
+XTrue = 1
+
+// Event masks
+SubstructureRedirectMask = 1048576
+SubstructureNotifyMask = 524288
+StructureNotifyMask = 131072
+NoEventMask = 0
+
+// Configure window flags
+CWX = 1
+CWY = 2
+CWWidth = 4
+CWHeight = 8
+CWBorderWidth = 16
+CWSibling = 32
+CWStackMode = 64
+
+// Stack modes
+Above = 0
+Below = 1
+TopIf = 2
+BottomIf = 3
+Opposite = 4
+
+// Property modes
+PropModeReplace = 0
+PropModePrepend = 1
+PropModeAppend = 2
+
+// Map states
+IsUnmapped = 0
+IsUnviewable = 1
+IsViewable = 2
+
+// Input focus revert
+RevertToXNone = 0
+RevertToPointerRoot = 1
+RevertToParent = 2
+
+// XA atoms
+XA_CARDINAL = 6
+XA_WINDOW = 33
+XA_ATOM = 4
+XA_STRING = 31
+
+// ClientMessage
+ClientMessage = 33
+
+// XWindowChanges struct size = 28 bytes (5 ints + 1 ulong + 1 int)
+fn makeWindowChanges(x, y, w, h, border, sibling, stackMode) {
+    _buf = ffi.allocBytes(28)
+    ffi.set_i32(_buf, x)
+    ffi.set_i32(ffi.ptr_add(_buf, 4), y)
+    ffi.set_i32(ffi.ptr_add(_buf, 8), w)
+    ffi.set_i32(ffi.ptr_add(_buf, 12), h)
+    ffi.set_i32(ffi.ptr_add(_buf, 16), border)
+    ffi.set_u64(ffi.ptr_add(_buf, 20), sibling)
+    ffi.set_i32(ffi.ptr_add(_buf, 28), stackMode)
+    _buf
+}
+
+// XEvent union = 192 bytes
+fn makeClientMessage(win, messageType, format, d0, d1, d2, d3, d4) {
+    _buf = ffi.allocBytes(192)
+    // type = ClientMessage (33)
+    ffi.set_i32(_buf, ClientMessage)
+    // serial at offset 4 (unused for send)
+    // send_event at offset 8
+    // display at offset 16 (pointer)
+    // window at offset 24
+    ffi.set_u64(ffi.ptr_add(_buf, 24), win)
+    // message_type at offset 32
+    ffi.set_u64(ffi.ptr_add(_buf, 32), messageType)
+    // format at offset 40
+    ffi.set_i32(ffi.ptr_add(_buf, 40), format)
+    // data.l[0..4] at offset 44
+    ffi.set_i64(ffi.ptr_add(_buf, 44), d0)
+    ffi.set_i64(ffi.ptr_add(_buf, 52), d1)
+    ffi.set_i64(ffi.ptr_add(_buf, 60), d2)
+    ffi.set_i64(ffi.ptr_add(_buf, 68), d3)
+    ffi.set_i64(ffi.ptr_add(_buf, 76), d4)
+    _buf
+}
+
+fn freeClientMessage(buf) {
+    ffi.free(buf)
+}

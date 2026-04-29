@@ -1,0 +1,656 @@
+// monitor.hv — System resource monitoring: CPU, RAM, processes, windows, files, custom metrics
+// Provides: cpu, cpuPerCore, ram, swap, disk, disks, load, uptime,
+// processCount, processList, processInfo, topProcesses,
+// windowCount, windowList, fileWatch, fileChanged, fileUnwatch, fileWatchers,
+// metric, metrics, metricGet, metricDel,
+// watch, unwatch, watchTick, watchResult, watchList,
+// snapshot, history, historyGet, historyClear, historyNames,
+// network, temperatures, battery, gpu, refresh
+
+use ffi
+use os
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_sysinfo = ffi.sym(_c, "sysinfo")
+_getloadavg = ffi.sym(_c, "getloadavg")
+
+fn _shell(cmd) {
+    _r = shell.exec(cmd + " 2>/dev/null")
+    _r.stdout
+}
+
+// ============================================================
+// CPU monitoring
+// ============================================================
+
+_prev_cpu = null
+
+fn _parseCpuLine(line) {
+    _parts = line.split(" ")
+    _nums = []
+    for _p in _parts {
+        _t = _p.trim()
+        if _t != "" && _t != "cpu" { _nums.push(int(_t)) }
+    }
+    _nums
+}
+
+fn cpu() {
+    _stat = fs.read("/proc/stat")
+    if _stat == "" { return {usage: 0.0, user: 0, nice: 0, system: 0, idle: 0, iowait: 0, irq: 0, softirq: 0, steal: 0, cores: 0, freq: 0.0} }
+    _lines = _stat.split("\n")
+    _nums = _parseCpuLine(_lines[0])
+
+    _user = 0; _nice = 0; _sys = 0; _idle = 0; _iow = 0; _irq = 0; _sirq = 0; _steal = 0
+    if #_nums >= 8 {
+        _user = _nums[0]; _nice = _nums[1]; _sys = _nums[2]; _idle = _nums[3]
+        _iow = _nums[4]; _irq = _nums[5]; _sirq = _nums[6]; _steal = _nums[7]
+    }
+
+    _idle_total = _idle + _iow
+    _total = _user + _nice + _sys + _idle + _iow + _irq + _sirq + _steal
+
+    _usage = 0.0
+    if _prev_cpu != null {
+        _d_idle = _idle_total - _prev_cpu.idle
+        _d_total = _total - _prev_cpu.total
+        if _d_total > 0 { _usage = (1.0 - float(_d_idle) / float(_d_total)) * 100.0 }
+    }
+
+    _prev_cpu = {idle: _idle_total, total: _total}
+
+    _cores = 0
+    for _l in _lines {
+        if _l.find("cpu") == 0 && _l.find("cpu ") == null { _cores = _cores + 1 }
+    }
+
+    _freq_str = fs.read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+    _freq = 0.0
+    if _freq_str != "" { _freq = float(_freq_str.trim()) / 1000.0 }
+
+    ({usage: _usage, user: _user, nice: _nice, system: _sys, idle: _idle,
+        iowait: _iow, irq: _irq, softirq: _sirq, steal: _steal,
+        cores: _cores, freq: _freq})
+}
+
+fn cpuPerCore() {
+    _stat = fs.read("/proc/stat")
+    if _stat == "" { return [] }
+    _lines = _stat.split("\n")
+    _cores = []
+    for _l in _lines {
+        if _l.find("cpu") == 0 && _l.find("cpu ") == null {
+            _nums = _parseCpuLine(_l)
+            if #_nums >= 4 {
+                _idle_t = _nums[3]
+                if #_nums >= 5 { _idle_t = _idle_t + _nums[4] }
+                _total = 0
+                for _n in _nums { _total = _total + _n }
+                _cores.push({idle: _idle_t, total: _total})
+            }
+        }
+    }
+    _cores
+}
+
+// ============================================================
+// RAM monitoring via sysinfo()
+// ============================================================
+
+fn ram() {
+    _buf = ffi.allocBytes(256)
+    _ret = ffi.call(_sysinfo, "int32", ["pointer"], _buf)
+    if _ret != 0 {
+        ffi.free(_buf)
+        return {total: 0, used: 0, free: 0, available: 0, shared: 0, buffcache: 0, percent: 0.0}
+    }
+    _total = ffi.get_u64(ffi.ptr_add(_buf, 8))
+    _free = ffi.get_u64(ffi.ptr_add(_buf, 16))
+    _shared = ffi.get_u64(ffi.ptr_add(_buf, 24))
+    _buff = ffi.get_u64(ffi.ptr_add(_buf, 32))
+    ffi.free(_buf)
+
+    _avail = _free + _buff
+    _meminfo = fs.read("/proc/meminfo")
+    if _meminfo != "" {
+        for _l in _meminfo.split("\n") {
+            if _l.find("MemAvailable:") == 0 {
+                for _p in _l.split(" ") {
+                    _t = _p.trim()
+                    if _t != "" && _t != "MemAvailable:" {
+                        _avail = int(_t) * 1024
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    _used = _total - _avail
+    _pct = 0.0
+    if _total > 0 { _pct = float(_used) / float(_total) * 100.0 }
+
+    ({total: _total, used: _used, free: _free, available: _avail,
+        shared: _shared, buffcache: _buff, percent: _pct})
+}
+
+// ============================================================
+// Swap monitoring
+// ============================================================
+
+fn swap() {
+    _buf = ffi.allocBytes(256)
+    _ret = ffi.call(_sysinfo, "int32", ["pointer"], _buf)
+    if _ret != 0 {
+        ffi.free(_buf)
+        return {total: 0, used: 0, free: 0, percent: 0.0}
+    }
+    _total = ffi.get_u64(ffi.ptr_add(_buf, 40))
+    _free = ffi.get_u64(ffi.ptr_add(_buf, 48))
+    ffi.free(_buf)
+    _used = _total - _free
+    _pct = 0.0
+    if _total > 0 { _pct = float(_used) / float(_total) * 100.0 }
+    ({total: _total, used: _used, free: _free, percent: _pct})
+}
+
+// ============================================================
+// Disk monitoring
+// ============================================================
+
+fn _parseDfLine(line) {
+    _nums = []
+    for _p in line.split(" ") {
+        _t = _p.trim()
+        if _t != "" { _nums.push(_t) }
+    }
+    _nums
+}
+
+fn disk(path) {
+    if path == null { path = "/" }
+    _info = _shell("df -B1 '${path}' | tail -1")
+    if _info == "" { return {total: 0, used: 0, free: 0, percent: 0.0, mount: ""} }
+    _nums = _parseDfLine(_info)
+    if #_nums < 6 { return {total: 0, used: 0, free: 0, percent: 0.0, mount: ""} }
+    _pct_str = _nums[4]
+    _pct_str = _pct_str[0:#_pct_str - 1]
+    ({total: int(_nums[1]), used: int(_nums[2]), free: int(_nums[3]),
+        percent: float(_pct_str), mount: _nums[5]})
+}
+
+fn disks() {
+    _output = _shell("df -B1 | tail -n +2")
+    if _output == "" { return [] }
+    _result = []
+    for _l in _output.split("\n") {
+        _l = _l.trim()
+        if _l != "" {
+            _nums = _parseDfLine(_l)
+            if #_nums >= 6 {
+                _pct_str = _nums[4]
+                _pct_str = _pct_str[0:#_pct_str - 1]
+                _result.push({
+                    device: _nums[0], total: int(_nums[1]), used: int(_nums[2]),
+                    free: int(_nums[3]), percent: float(_pct_str), mount: _nums[5]
+                })
+            }
+        }
+    }
+    _result
+}
+
+// ============================================================
+// Load average
+// ============================================================
+
+fn load() {
+    _buf = ffi.allocBytes(24)
+    _ret = ffi.call(_getloadavg, "int32", ["pointer", "int32"], _buf, 3)
+    _l1 = 0.0; _l5 = 0.0; _l15 = 0.0
+    if _ret > 0 {
+        _l1 = ffi.get_f64(_buf)
+        _l5 = ffi.get_f64(ffi.ptr_add(_buf, 8))
+        _l15 = ffi.get_f64(ffi.ptr_add(_buf, 16))
+    }
+ffi.free(_buf)
+({1: _l1, 5: _l5, 15: _l15})
+}
+
+// ============================================================
+// Uptime
+// ============================================================
+
+fn uptime() { os.uptime() }
+
+// ============================================================
+// Process monitoring
+// ============================================================
+
+fn processCount() {
+    _buf = ffi.allocBytes(256)
+    _ret = ffi.call(_sysinfo, "int32", ["pointer"], _buf)
+    if _ret != 0 { ffi.free(_buf); return 0 }
+    _procs = ffi.get_u16(ffi.ptr_add(_buf, 56))
+    ffi.free(_buf)
+    _procs
+}
+
+fn _isDigit(s) {
+    if #s == 0 { return false }
+    for _c in s.split("") {
+        if _c < "0" || _c > "9" { return false }
+    }
+    true
+}
+
+fn processList() {
+    _pids = []
+    for _e in fs.readDir("/proc") {
+        if _isDigit(_e) { _pids.push(int(_e)) }
+    }
+    _pids
+}
+
+fn processInfo(pid) {
+    _stat = fs.read("/proc/${pid}/stat")
+    if _stat == "" { return null }
+
+    _close = _stat.rfind(")")
+    if _close == null { return null }
+    _after = _stat[_close + 2:#_stat].trim()
+    _fields = _after.split(" ")
+    if #_fields < 18 { return null }
+
+    _state = _fields[0]
+    _ppid = int(_fields[1])
+    _utime = int(_fields[11])
+    _stime = int(_fields[12])
+    _num_threads = int(_fields[17])
+
+    _open = _stat.find("(")
+    _comm = _stat[_open + 1:_close]
+
+    _statm = fs.read("/proc/${pid}/statm")
+    _rss = 0
+    if _statm != "" {
+        _sparts = _statm.split(" ")
+        if #_sparts >= 2 { _rss = int(_sparts[1]) * 4096 }
+    }
+
+    _cmdline = fs.read("/proc/${pid}/cmdline")
+
+    _vmSize = 0; _vmRSS = 0
+    _status = fs.read("/proc/${pid}/status")
+    if _status != "" {
+        for _sl in _status.split("\n") {
+            if _sl.find("VmSize:") == 0 {
+                for _sp in _sl.split(" ") {
+                    _t = _sp.trim()
+                    if _t != "" && _t != "VmSize:" && _t != "kB" { _vmSize = int(_t) * 1024; break }
+                }
+            }
+            if _sl.find("VmRSS:") == 0 {
+                for _sp in _sl.split(" ") {
+                    _t = _sp.trim()
+                    if _t != "" && _t != "VmRSS:" && _t != "kB" { _vmRSS = int(_t) * 1024; break }
+                }
+            }
+        }
+    }
+
+    ({pid: pid, name: _comm, state: _state, ppid: _ppid,
+        threads: _num_threads, rss: _rss, vmSize: _vmSize, vmRSS: _vmRSS,
+        utime: _utime, stime: _stime, cmdline: _cmdline.trim()})
+}
+
+fn topProcesses(sortBy, limit) {
+    if sortBy == null { sortBy = "rss" }
+    if limit == null { limit = 10 }
+    _procs = []
+    for _pid in processList() {
+        _info = processInfo(_pid)
+        if _info != null { _procs.push(_info) }
+    }
+
+    _sorted = []
+    for _p in _procs {
+        _inserted = false
+        _j = 0
+        while _j < #_sorted {
+            _existing = _sorted[_j]
+            _pval = 0; _eval = 0
+            if sortBy == "rss" { _pval = _p.rss; _eval = _existing.rss }
+            else if sortBy == "vmSize" { _pval = _p.vmSize; _eval = _existing.vmSize }
+            else if sortBy == "cpu" { _pval = _p.utime + _p.stime; _eval = _existing.utime + _existing.stime }
+            else if sortBy == "threads" { _pval = _p.threads; _eval = _existing.threads }
+            if _pval > _eval { _sorted.insert(_j, _p); _inserted = true; break }
+            _j = _j + 1
+        }
+        if !_inserted { _sorted.push(_p) }
+    }
+
+    _result = []
+    _i = 0
+    while _i < limit && _i < #_sorted { _result.push(_sorted[_i]); _i = _i + 1 }
+    _result
+}
+
+// ============================================================
+// Window monitoring (X11)
+// ============================================================
+
+_window_count_cache = null
+_window_list_cache = null
+
+fn windowCount() {
+    if _window_count_cache != null { return _window_count_cache }
+    _output = _shell("wmctrl -l | wc -l")
+    _window_count_cache = 0
+    if _output != "" { _window_count_cache = int(_output.trim()) }
+    _window_count_cache
+}
+
+fn windowList() {
+    if _window_list_cache != null { return _window_list_cache }
+    _output = _shell("wmctrl -l")
+    _windows = []
+    if _output == "" { _window_list_cache = _windows; return _windows }
+    for _l in _output.split("\n") {
+        _l = _l.trim()
+        if _l != "" {
+            _filtered = []
+            for _p in _l.split(" ") {
+                _t = _p.trim()
+                if _t != "" { _filtered.push(_t) }
+            }
+            if #_filtered >= 4 {
+                _hex_id = _filtered[0]
+                _desktop = int(_filtered[1])
+                _title = ""
+                _j = 3
+                while _j < #_filtered {
+                    if _title != "" { _title = _title + " " }
+                    _title = _title + _filtered[_j]
+                    _j = _j + 1
+                }
+                _windows.push({id: int(_hex_id), hex: _hex_id, desktop: _desktop, title: _title})
+            }
+        }
+    }
+    _window_list_cache = _windows
+    _windows
+}
+
+// ============================================================
+// File watching
+// ============================================================
+
+_watchers = {}
+
+fn _fileStat(path) {
+    _output = _shell("stat -c '%s %Y' '${path}'")
+    if _output == "" { return null }
+    _parts = _output.trim().split(" ")
+    _nums = []
+    for _p in _parts {
+        _t = _p.trim()
+        if _t != "" && _t != "'" { _nums.push(_t) }
+    }
+    if #_nums < 2 { return null }
+    ({size: int(_nums[0]), mtime: int(_nums[1])})
+}
+
+fn fileWatch(path, interval) {
+    if interval == null { interval = 1000 }
+    _st = _fileStat(path)
+    if _st == null { return false }
+    _watchers.set(path, {size: _st.size, mtime: _st.mtime, interval: interval})
+    true
+}
+
+fn fileChanged(path) {
+    if !_watchers.has(path) { return false }
+    _old = _watchers.get(path)
+    _st = _fileStat(path)
+    if _st == null { return false }
+    _changed = _st.size != _old.size || _st.mtime != _old.mtime
+    if _changed { _watchers.set(path, {size: _st.size, mtime: _st.mtime, interval: _old.interval}) }
+    _changed
+}
+
+fn fileUnwatch(path) {
+    if _watchers.has(path) { del _watchers[path]; true } else { false }
+}
+
+fn fileWatchers() {
+    _result = []
+    for _p in _watchers.keys() {
+        _w = _watchers.get(_p)
+        _result.push({path: _p, size: _w.size, mtime: _w.mtime, interval: _w.interval})
+    }
+    _result
+}
+
+// ============================================================
+// Custom metrics
+// ============================================================
+
+_metrics = {}
+
+fn metric(name, value) { _metrics.set(name, {value: value, time: time.now()}) }
+
+fn metrics() {
+    _result = []
+    for _n in _metrics.keys() {
+        _m = _metrics.get(_n)
+        _result.push({name: _n, value: _m.value, time: _m.time})
+    }
+    _result
+}
+
+fn metricGet(name) { if _metrics.has(name) { _metrics.get(name).value } else { null } }
+
+fn metricDel(name) { if _metrics.has(name) { del _metrics[name]; true } else { false } }
+
+// ============================================================
+// Watch/unwatch — generic periodic monitors
+// ============================================================
+
+_watches = {}
+_watch_counter = 0
+
+fn watch(name, fn, interval) {
+    if interval == null { interval = 1000 }
+    _watch_counter = _watch_counter + 1
+    _watches.set(name, {id: _watch_counter, fn: fn, interval: interval, lastResult: null})
+    _watch_counter
+}
+
+fn unwatch(name) { if _watches.has(name) { del _watches[name]; true } else { false } }
+
+fn watchTick(name) {
+    if !_watches.has(name) { return null }
+    _w = _watches.get(name)
+    _result = _w.fn()
+    _w.lastResult = _result
+    _watches.set(name, _w)
+    _result
+}
+
+fn watchResult(name) { if _watches.has(name) { _watches.get(name).lastResult } else { null } }
+
+fn watchList() {
+    _result = []
+    for _n in _watches.keys() {
+        _w = _watches.get(_n)
+        _result.push({name: _n, id: _w.id, interval: _w.interval, lastResult: _w.lastResult})
+    }
+    _result
+}
+
+// ============================================================
+// Snapshot
+// ============================================================
+
+fn snapshot() {
+    ({cpu: cpu(), ram: ram(), swap: swap(), load: load(),
+        uptime: uptime(), processCount: processCount(),
+        windowCount: windowCount(), disks: disks(), metrics: metrics()})
+}
+
+// ============================================================
+// History — track values over time
+// ============================================================
+
+_history = {}
+_MAX_HISTORY = 100
+
+fn history(name, value) {
+    if !_history.has(name) { _history.set(name, []) }
+    _h = _history.get(name)
+    _h.push({value: value, time: time.now()})
+    if #_h > _MAX_HISTORY {
+        _trimmed = []
+        _i = #_h - _MAX_HISTORY
+        while _i < #_h { _trimmed.push(_h[_i]); _i = _i + 1 }
+        _history.set(name, _trimmed)
+    }
+}
+
+fn historyGet(name) { if _history.has(name) { _history.get(name) } else { [] } }
+
+fn historyClear(name) {
+    if name == null { _history = {} }
+    else if _history.has(name) { del _history[name] }
+}
+
+fn historyNames() { _history.keys() }
+
+// ============================================================
+// Network monitoring
+// ============================================================
+
+fn network() {
+    _interfaces = []
+    _dev = fs.read("/proc/net/dev")
+    if _dev == "" { return _interfaces }
+    _lines = _dev.split("\n")
+    _i = 2
+    while _i < #_lines {
+        _l = _lines[_i].trim()
+        if _l != "" {
+            _colon = _l.find(":")
+            if _colon != null {
+                _name = _l[0:_colon].trim()
+                _nums = []
+                for _p in _l[_colon + 1:#_l].split(" ") {
+                    _t = _p.trim()
+                    if _t != "" { _nums.push(_t) }
+                }
+                if #_nums >= 12 {
+                    _interfaces.push({
+                        name: _name,
+                        rxBytes: int(_nums[0]), rxPackets: int(_nums[1]),
+                        rxErrors: int(_nums[2]), rxDropped: int(_nums[3]),
+                        txBytes: int(_nums[8]), txPackets: int(_nums[9]),
+                        txErrors: int(_nums[10]), txDropped: int(_nums[11])
+                    })
+                }
+            }
+        }
+        _i = _i + 1
+    }
+    _interfaces
+}
+
+// ============================================================
+// Temperature monitoring
+// ============================================================
+
+fn temperatures() {
+    _result = []
+    for _e in _shell("ls /sys/class/thermal/").split("\n") {
+        _e = _e.trim()
+        if _e.find("thermal_zone") == 0 {
+            _temp_str = fs.read("/sys/class/thermal/${_e}/temp")
+            _type_str = fs.read("/sys/class/thermal/${_e}/type")
+            if _temp_str != "" {
+                _result.push({zone: _e, type: _type_str.trim(), temp: float(int(_temp_str.trim())) / 1000.0})
+            }
+        }
+    }
+    for _h in _shell("ls /sys/class/hwmon/").split("\n") {
+        _h = _h.trim()
+        if _h.find("hwmon") == 0 {
+            _name = fs.read("/sys/class/hwmon/${_h}/name").trim()
+            for _inp in _shell("ls /sys/class/hwmon/${_h}/temp*_input").split("\n") {
+                _inp = _inp.trim()
+                if _inp != "" {
+                    _val_str = fs.read(_inp)
+                    if _val_str != "" {
+                        _temp_c = float(int(_val_str.trim())) / 1000.0
+                        _label = fs.read(_inp.replace("_input", "_label")).trim()
+                        if _label == "" { _label = _inp }
+                        _result.push({zone: _h, type: "${name} ${label}", temp: _temp_c})
+                    }
+                }
+            }
+        }
+    }
+    _result
+}
+
+// ============================================================
+// Battery monitoring
+// ============================================================
+
+fn _batRead(file) {
+    _v = fs.read("/sys/class/power_supply/BAT0/${file}")
+    if _v == "" { _v = fs.read("/sys/class/power_supply/BAT1/${file}") }
+    _v
+}
+
+fn battery() {
+    _cap = _batRead("capacity")
+    if _cap == "" { return null }
+    _pct = int(_cap.trim())
+    _st = _batRead("status").trim()
+    _power_now = _batRead("power_now")
+    _rate = 0
+    if _power_now != "" { _rate = int(_power_now.trim()) }
+    _voltage = _batRead("voltage_now")
+    _volts = 0
+    if _voltage != "" { _volts = int(_voltage.trim()) }
+    ({percent: _pct, status: _st, powerRate: _rate, voltage: _volts})
+}
+
+// ============================================================
+// GPU monitoring (NVIDIA)
+// ============================================================
+
+fn gpu() {
+    _output = _shell("nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits")
+    if _output == "" { return null }
+    _parts = _output.trim().split(",")
+    if #_parts < 6 { return null }
+    {
+        utilization: float(_parts[0].trim()),
+        memUtilization: float(_parts[1].trim()),
+        memUsed: int(_parts[2].trim()),
+        memTotal: int(_parts[3].trim()),
+        temperature: float(_parts[4].trim()),
+        power: float(_parts[5].trim())
+    }
+}
+
+// ============================================================
+// Refresh caches
+// ============================================================
+
+fn refresh() {
+    _window_count_cache = null
+    _window_list_cache = null
+}

@@ -1,0 +1,297 @@
+// display.hv — Display management, monitor enumeration, WM detection
+// Provides: monitors, monitorsArea, monitorsCount, isX11, isWayland,
+// isWindows, protocol, open, monitorsResolution, wm, displayNum,
+// screenWidth, screenHeight, primaryMonitor, refresh, close,
+// monitorsWorkarea
+
+use x11
+use protocols
+use ffi
+
+_dpy = 0
+_root = 0
+_screen = 0
+_initialized = false
+
+fn _shell(cmd) {
+    _r = shell.exec(cmd + " 2>/dev/null")
+    _r.stdout
+}
+
+fn _ensureInit() {
+    if !_initialized {
+        _dpy = x11.open(null)
+        if _dpy != 0 {
+            _root = x11.rootWindow(_dpy)
+            _screen = x11.defaultScreen(_dpy)
+            _initialized = true
+        }
+    }
+}
+
+// ============================================================
+// Display server detection
+// ============================================================
+
+_xdg = shell.getenv("XDG_SESSION_TYPE")
+_wayland = shell.getenv("WAYLAND_DISPLAY")
+_display_env = shell.getenv("DISPLAY")
+
+_isWayland = false
+_isX11 = false
+_protocol = "unknown"
+
+if _wayland != null && _wayland != "" {
+    _isWayland = true
+    _protocol = "wayland"
+}
+if _display_env != null && _display_env != "" {
+    _isX11 = true
+    if _protocol == "unknown" { _protocol = "x11" }
+}
+if _xdg != null {
+    if _xdg == "wayland" { _protocol = "wayland" }
+    else if _xdg == "x11" { _protocol = "x11" }
+    else if _xdg == "tty" { _protocol = "tty" }
+}
+
+fn isX11() { _isX11 }
+fn isWayland() { _isWayland }
+fn isWindows() { false }
+fn protocol() { _protocol }
+
+// ============================================================
+// Display open/close
+// ============================================================
+
+fn open() {
+    _ensureInit()
+    _dpy
+}
+
+fn close() {
+    if _initialized {
+        x11.close(_dpy)
+        _dpy = 0
+        _root = 0
+        _initialized = false
+    }
+}
+
+fn displayNum() {
+    _d = shell.getenv("DISPLAY")
+    if _d == null { 0 }
+    else {
+        _colon = _d.find(":")
+        if _colon == null { 0 }
+        else {
+            _dot = _d.find(".")
+            if _dot == null { 0 }
+            else { int(_d[_colon + 1:_dot]) }
+        }
+    }
+}
+
+// ============================================================
+// Screen dimensions
+// ============================================================
+
+fn screenWidth() {
+    _ensureInit()
+    if _dpy == 0 { 0 } else { x11.displayWidth(_dpy, _screen) }
+}
+
+fn screenHeight() {
+    _ensureInit()
+    if _dpy == 0 { 0 } else { x11.displayHeight(_dpy, _screen) }
+}
+
+// ============================================================
+// Window manager detection
+// ============================================================
+
+_wmName = null
+
+fn wm() {
+    if _wmName != null { return _wmName }
+    if _isWayland {
+        _wmName = _shell("cat /proc/$(pgrep -x sway\\|hyprland\\|wayfire\\|labwc\\|river\\|kwin_wayland | head -1)/comm | tr -d '\\n'")
+        if _wmName == "" { _wmName = "wayland-compositor" }
+    } else if _isX11 {
+        _ensureInit()
+        if _dpy == 0 { _wmName = "unknown" }
+        else {
+            _atom = x11.internAtom(_dpy, "_NET_SUPPORTING_WM_CHECK", 1)
+            _r = protocols.getWindowProp(_root, _atom)
+            if _r != 0 {
+                _name_atom = x11.internAtom(_dpy, "_NET_WM_NAME", 1)
+                _name = protocols.getStringProp(_dpy, _r, _name_atom)
+                if _name != "" { _wmName = _name }
+                else { _wmName = _shell("xprop -root _NET_WM_NAME | sed 's/.*= //' | tr -d '\"'") }
+            }
+            if _wmName == null || _wmName == "" { _wmName = "unknown" }
+        }
+    } else {
+        _wmName = "none"
+    }
+    _wmName
+}
+
+// ============================================================
+// Monitor enumeration via XRandR FFI
+// ============================================================
+
+_xrr = ffi.open("libXrandr.so.3")
+if _xrr == 0 { _xrr = ffi.open("libXrandr.so.2") }
+if _xrr == 0 { _xrr = ffi.open("libXrandr.so") }
+
+_XRRGetScreenResourcesCurrent = 0
+_XRRGetOutputInfo = 0
+_XRRGetCrtcInfo = 0
+_XRRFreeScreenResources = 0
+_XRRFreeOutputInfo = 0
+_XRRFreeCrtcInfo = 0
+_XRRGetOutputPrimary = 0
+_hasXRandR = false
+
+if _xrr != 0 {
+    _XRRGetScreenResourcesCurrent = ffi.sym(_xrr, "XRRGetScreenResourcesCurrent")
+    _XRRGetOutputInfo = ffi.sym(_xrr, "XRRGetOutputInfo")
+    _XRRGetCrtcInfo = ffi.sym(_xrr, "XRRGetCrtcInfo")
+    _XRRFreeScreenResources = ffi.sym(_xrr, "XRRFreeScreenResources")
+    _XRRFreeOutputInfo = ffi.sym(_xrr, "XRRFreeOutputInfo")
+    _XRRFreeCrtcInfo = ffi.sym(_xrr, "XRRFreeCrtcInfo")
+    _XRRGetOutputPrimary = ffi.sym(_xrr, "XRRGetOutputPrimary")
+    if _XRRGetScreenResourcesCurrent != 0 { _hasXRandR = true }
+}
+
+fn _parseXrandr() {
+    _output = _shell("xrandr --query")
+    if _output == "" { return [] }
+    _monitors = []
+    for _line in _output.split("\n") {
+        _conn = _line.find(" connected")
+        if _conn != null && _conn >= 0 {
+            _name = _line[0:_conn]
+            _primary = _line.find(" primary") != null
+            _rest = _line[_conn + 11:#_line].trim()
+            if _rest.find("x") != null {
+                _parts = _rest.split(" ")
+                _geom = _parts[0]
+                _plus = _geom.find("+")
+                if _plus != null {
+                    _res_part = _geom[0:_plus]
+                    _pos_part = _geom[_plus + 1:#_geom]
+                    _x_tok = _pos_part.split("+")
+                    _res = _res_part.split("x")
+                    _monitors.push({name: _name, x: int(_x_tok[0]), y: int(_x_tok[1]),
+                        width: int(_res[0]), height: int(_res[1]), isPrimary: _primary})
+                }
+            }
+        }
+    }
+    _monitors
+}
+
+fn monitors() {
+    if !_isX11 { return _parseXrandr() }
+    _ensureInit()
+    if _dpy == 0 { return [] }
+    if _hasXRandR {
+        _res = ffi.call(_XRRGetScreenResourcesCurrent, "pointer", ["pointer", "uint64"], _dpy, _root)
+        if _res == 0 { return _parseXrandr() }
+        _noutput = ffi.get_i32(ffi.ptr_add(_res, 12))
+        _outputs_ptr = ffi.get_u64(ffi.ptr_add(_res, 24))
+        _primary_output = ffi.call(_XRRGetOutputPrimary, "uint64", ["pointer", "uint64"], _dpy, _root)
+        _monitors = []
+        _i = 0
+        while _i < _noutput {
+            _output_id = ffi.get_u64(ffi.ptr_add(_outputs_ptr, _i * 4))
+            _output_info = ffi.call(_XRRGetOutputInfo, "pointer", ["pointer", "pointer", "uint64"], _dpy, _res, _output_id)
+            if _output_info != 0 {
+                _connection = ffi.get_i32(ffi.ptr_add(_output_info, 12))
+                _crtc = ffi.get_u64(ffi.ptr_add(_output_info, 16))
+                _name_ptr = ffi.get_u64(ffi.ptr_add(_output_info, 24))
+                if _connection == 0 && _crtc != 0 {
+                    _crtc_info = ffi.call(_XRRGetCrtcInfo, "pointer", ["pointer", "pointer", "uint64"], _dpy, _res, _crtc)
+                    if _crtc_info != 0 {
+                        _mx = ffi.get_i32(_crtc_info)
+                        _my = ffi.get_i32(ffi.ptr_add(_crtc_info, 4))
+                        _mw = ffi.get_u32(ffi.ptr_add(_crtc_info, 8))
+                        _mh = ffi.get_u32(ffi.ptr_add(_crtc_info, 12))
+                        _mname = ""
+                        if _name_ptr != 0 { _mname = ffi.string(_name_ptr) }
+                        _is_primary = _output_id == _primary_output
+                        _monitors.push({name: _mname, x: _mx, y: _my, width: _mw, height: _mh, isPrimary: _is_primary})
+                        ffi.call(_XRRFreeCrtcInfo, "void", ["pointer"], _crtc_info)
+                    }
+                }
+                ffi.call(_XRRFreeOutputInfo, "void", ["pointer"], _output_info)
+            }
+            _i = _i + 1
+        }
+        ffi.call(_XRRFreeScreenResources, "void", ["pointer"], _res)
+        if #_monitors > 0 { return _monitors }
+    }
+    _parseXrandr()
+}
+
+fn monitorsCount() { #monitors() }
+
+fn monitorsArea() {
+    _mons = monitors()
+    if #_mons == 0 { return {x: 0, y: 0, width: 0, height: 0} }
+    _minX = 999999; _minY = 999999; _maxX = 0; _maxY = 0
+    for _m in _mons {
+        if _m.x < _minX { _minX = _m.x }
+        if _m.y < _minY { _minY = _m.y }
+        _right = _m.x + _m.width
+        _bottom = _m.y + _m.height
+        if _right > _maxX { _maxX = _right }
+        if _bottom > _maxY { _maxY = _bottom }
+    }
+    ({x: _minX, y: _minY, width: _maxX - _minX, height: _maxY - _minY})
+}
+
+fn monitorsResolution() {
+    _res = []
+    for _m in monitors() { _res.push("${_m.width}x${_m.height}") }
+    _res
+}
+
+fn primaryMonitor() {
+    _mons = monitors()
+    for _m in _mons {
+        if _m.isPrimary { return _m }
+    }
+    if #_mons > 0 { _mons[0] } else { {name: "", x: 0, y: 0, width: 0, height: 0, isPrimary: false} }
+}
+
+fn monitorsWorkarea() {
+    if !_isX11 { return [] }
+    _ensureInit()
+    if _dpy == 0 { return [] }
+    _workareas = []
+    _atom = x11.internAtom(_dpy, "_NET_WORKAREA", 1)
+    _r = x11.getWindowProperty(_dpy, _root, _atom, 0, 128, 0, x11.XA_CARDINAL)
+    if _r.ret == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _nDesktops = _r.nitems / 4
+        _d = 0
+        while _d < _nDesktops {
+            _wx = ffi.get_i32(ffi.ptr_add(_r.prop, _d * 16))
+            _wy = ffi.get_i32(ffi.ptr_add(_r.prop, _d * 16 + 4))
+            _ww = ffi.get_i32(ffi.ptr_add(_r.prop, _d * 16 + 8))
+            _wh = ffi.get_i32(ffi.ptr_add(_r.prop, _d * 16 + 12))
+            _workareas.push({x: _wx, y: _wy, width: _ww, height: _wh})
+            _d = _d + 1
+        }
+        x11.free(_r.prop)
+    }
+    _workareas
+}
+
+fn refresh() {
+    close()
+    _wmName = null
+    _ensureInit()
+}

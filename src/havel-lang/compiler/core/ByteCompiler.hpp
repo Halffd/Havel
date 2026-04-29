@@ -219,6 +219,10 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   bool in_tail_position_ = false;
   bool emitted_tail_call_ = false;
 
+  // When block condition tracking - set to condition func index when
+  // compiling hotkeys inside a when block, reset to nullopt otherwise
+  std::optional<uint32_t> when_condition_func_index_;
+
   // HostBridge for lazy module loading and permission checks
   HostBridge *host_bridge_ = nullptr;
 

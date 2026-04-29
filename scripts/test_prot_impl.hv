@@ -16,3 +16,4 @@ impl Drawable for Shape {
 
 s = Shape(5)
 s.draw()
+print s.x

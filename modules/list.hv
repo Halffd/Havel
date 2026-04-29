@@ -1,7 +1,7 @@
 // list.hv — Functional list operations
 // Provides: list.head, list.tail, list.cons, list.init, list.last,
 // list.take, list.drop, list.zip, list.unzip, list.flatten,
-// list.range, list.repeat, list.intercalate, list.partition,
+// list.range, list.replicate, list.intercalate, list.partition,
 // list.groupBy, list.unique, list.chunked
 
 fn head(arr) {
@@ -93,11 +93,11 @@ fn range(start, stop, step=1) {
 	_result
 }
 
-fn repeat(n, val) {
-	_result = []
-	for i in 0..n {
-		_result.push(val)
-	}
+fn replicate(n, value) {
+    _result = []
+    for i in 0..n {
+        _result.push(value)
+    }
 	_result
 }
 

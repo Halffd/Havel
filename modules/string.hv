@@ -128,7 +128,8 @@ fn endsWith(s, suffix) {
     if #suffix > #s {
         return false
     }
-    return s[#s - #suffix:] == suffix
+    _start = #s - #suffix
+    return s[_start:] == suffix
 }
 
 fn contains(s, sub) {
@@ -154,7 +155,7 @@ fn count(s, sub) {
     return cnt
 }
 
-fn repeat(s, n) {
+fn replicate(s, n) {
     if n <= 0 {
         return ""
     }
@@ -179,7 +180,8 @@ fn padStart(s, width, pad) {
     prefix = ""
     i = 0
     while i < needed {
-        prefix = prefix + pad[i % padLen:i % padLen + 1]
+        _idx = i % padLen
+        prefix = prefix + pad[_idx:_idx + 1]
         i = i + 1
     }
     return prefix + s
@@ -197,7 +199,8 @@ fn padEnd(s, width, pad) {
     suffix = ""
     i = 0
     while i < needed {
-        suffix = suffix + pad[i % padLen:i % padLen + 1]
+        _idx = i % padLen
+        suffix = suffix + pad[_idx:_idx + 1]
         i = i + 1
     }
     return s + suffix

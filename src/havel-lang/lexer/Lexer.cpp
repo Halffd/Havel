@@ -1042,14 +1042,14 @@ prevType == TokenType::Not ||
       continue;
     }
 
-    // Handle numbers (including negative numbers in certain contexts)
-    if (isDigit(c) || (c == '-' && isDigit(peek()))) {
-      tokens.push_back(scanNumber());
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-continue;
-    }
+        // Handle numbers (including negative numbers in certain contexts)
+        if (isDigit(c) || (c == '-' && isDigit(peek()))) {
+            tokens.push_back(scanNumber());
+            if (debug_lexer) {
+                havel::debug("LEX: {}", tokens.back().toString());
+            }
+            continue;
+        }
 
     // Handle strings - both single and double quotes work the same
     if (c == '"' || c == '\'') {
@@ -1274,14 +1274,73 @@ continue;
       }
       continue;
     }
-    if (c == '%' && peek() == '=') {
-      advance();
-      tokens.push_back(makeToken("%=", TokenType::ModuloAssign));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
+if (c == '%' && peek() == '=') {
+    advance();
+    tokens.push_back(makeToken("%=", TokenType::ModuloAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
     }
+    continue;
+  }
+  // %% remainder operator or %%= remainder assign
+  if (c == '%' && peek() == '%') {
+    advance(); // consume second %
+    if (peek() == '=') {
+      advance(); // consume =
+      tokens.push_back(makeToken("%%=", TokenType::DoubleModuloAssign));
+    } else {
+      tokens.push_back(makeToken("%%", TokenType::DoubleModulo));
+    }
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+        // \\ divmod operator
+        if (c == '\\' && peek() == '\\') {
+            advance(); // consume second backslash
+            tokens.push_back(makeToken("\\\\", TokenType::DoubleBackslash));
+            if (debug_lexer) {
+                havel::debug("LEX: {}", tokens.back().toString());
+            }
+            continue;
+        }
+  // \= integer division assign
+  if (c == '\\' && peek() == '=') {
+    advance(); // consume =
+    tokens.push_back(makeToken("\\=", TokenType::BackslashAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+  // &= bitwise AND assign
+  if (c == '&' && peek() == '=') {
+    advance();
+    tokens.push_back(makeToken("&=", TokenType::BitwiseAndAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+  // |= bitwise OR assign
+  if (c == '|' && peek() == '=') {
+    advance();
+    tokens.push_back(makeToken("|=", TokenType::BitwiseOrAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
+  // ^= bitwise XOR assign
+  if (c == '^' && peek() == '=') {
+    advance();
+    tokens.push_back(makeToken("^=", TokenType::BitwiseXorAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
     if (c == '*' && peek() == '*') {
       // Check for **= (power assign) or ** (power)
       size_t lookAhead = position + 1;
@@ -1455,13 +1514,41 @@ prevType == TokenType::Number) {
         }
         continue;
       }
-      // Inside (( )), single | is bitwise OR, not pipeline
-      if (c == '|' && inBitwiseExpr) {
-	tokens.push_back(makeToken("|", TokenType::BitwiseOr));
-	if (debug_lexer) {
+// Inside (( )), single | is bitwise OR, not pipeline
+  if (c == '|' && inBitwiseExpr) {
+    tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+    if (debug_lexer) {
       havel::debug("LEX: {}", tokens.back().toString());
     }
     continue;
+  }
+  // Context-aware: if previous token suggests expression context, treat |
+  // as bitwise OR operator rather than pipeline
+  if (c == '|' && !tokens.empty()) {
+    TokenType prevType = tokens.back().type;
+    if (prevType == TokenType::Number ||
+        prevType == TokenType::Identifier ||
+        prevType == TokenType::String ||
+        prevType == TokenType::InterpolatedString ||
+        prevType == TokenType::MultilineString ||
+        prevType == TokenType::RegexString ||
+        prevType == TokenType::CloseParen ||
+        prevType == TokenType::CloseBracket ||
+        prevType == TokenType::Not ||
+        prevType == TokenType::Or ||
+        prevType == TokenType::And ||
+        prevType == TokenType::Assign ||
+        prevType == TokenType::BitwiseOr ||
+        prevType == TokenType::BitwiseAnd ||
+        prevType == TokenType::BitwiseXor ||
+        prevType == TokenType::ShiftLeft ||
+        prevType == TokenType::ShiftRight) {
+      tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
+      continue;
+    }
   }
 
   // Handle <= and >=
@@ -1482,6 +1569,16 @@ prevType == TokenType::Number) {
     continue;
   }
 
+// Handle <<= (bitwise left shift assign) - must check before <<
+  if (c == '<' && peek() == '<' && position + 1 < source.length() && source[position + 1] == '=') {
+    advance(); // consume second '<'
+    advance(); // consume '='
+    tokens.push_back(makeToken("<<=", TokenType::ShiftLeftAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
   // Handle << (bitwise left shift) - must check before single <
   if (c == '<' && peek() == '<') {
     advance(); // consume second '<'
@@ -1492,15 +1589,25 @@ prevType == TokenType::Number) {
     continue;
   }
 
-  // Handle >> (config append/get or bitwise right shift) - must check before single >
-    if (c == '>' && peek() == '>') {
-      advance(); // consume second '>'
-      tokens.push_back(makeToken(">>", TokenType::ShiftRight));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
+  // Handle >>= (bitwise right shift assign) - must check before >>
+  if (c == '>' && peek() == '>' && position + 1 < source.length() && source[position + 1] == '=') {
+    advance(); // consume second '>'
+    advance(); // consume '='
+    tokens.push_back(makeToken(">>=", TokenType::ShiftRightAssign));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
     }
+    continue;
+  }
+  // Handle >> (config append/get or bitwise right shift) - must check before single >
+  if (c == '>' && peek() == '>') {
+    advance(); // consume second '>'
+    tokens.push_back(makeToken(">>", TokenType::ShiftRight));
+    if (debug_lexer) {
+      havel::debug("LEX: {}", tokens.back().toString());
+    }
+    continue;
+  }
 
     // Handle single < and >
     if (c == '<') {
@@ -1677,16 +1784,16 @@ prevType == TokenType::Number) {
         }
         continue;
     }
-    if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
-        // Special case: !{ for unsorted object literals - emit ! then { separately
-        if (c == '!' && peek() == '{') {
-            tokens.push_back(makeToken("!", TokenType::Not));
-            if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
-            }
-            // Don't consume '{' - let it be handled normally
-            continue;
-        }
+if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
+    // Special case: !{ for unsorted object literals
+    if (c == '!' && peek() == '{') {
+      advance(); // consume '{'
+      tokens.push_back(makeToken("!{", TokenType::BangOpenBrace));
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
+      continue;
+    }
         // Special case for +, !, and ~: check context to distinguish operator
         // from hotkey Note: CloseBrace is NOT in expression context - after }
         // we're at statement level
@@ -1817,8 +1924,8 @@ prevType == TokenType::Number) {
                           1);
   }
 
-  // Add EOF token
-  tokens.push_back(makeToken("EndOfFile", TokenType::EOF_TOKEN));
+    // Add EOF token
+    tokens.push_back(makeToken("EndOfFile", TokenType::EOF_TOKEN));
 
   return tokens;
 }

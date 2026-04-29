@@ -108,6 +108,10 @@ enum class TokenType {
   Modulo,
   Power,     // ** power operator
   Backslash, // \ integer division
+  DoubleBackslash, // \\ divmod operator
+  DoubleModulo, // %% remainder operator
+  BackslashAssign, // \= integer division assign
+  DoubleModuloAssign, // %%= remainder assign
   PlusPlus,
   MinusMinus, // Increment/Decrement
   Equals,
@@ -131,7 +135,12 @@ enum class TokenType {
   MultiplyAssign,
   DivideAssign,
   ModuloAssign, // %=
-  PowerAssign,  // **=
+  PowerAssign, // **=
+  BitwiseAndAssign, // &=
+  BitwiseOrAssign, // |=
+  BitwiseXorAssign, // ^=
+  ShiftLeftAssign, // <<=
+  ShiftRightAssign, // >>=
   Nullish,      // ?? nullish coalescing
   Length,       // # length operator
   Pipe,

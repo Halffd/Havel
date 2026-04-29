@@ -375,8 +375,17 @@ enum class BinaryOperator {
     BitwiseOr,          // |  bitwise OR (inside (( )))
     BitwiseXor,         // ^  bitwise XOR (inside (( )))
     BitwiseAnd,         // &  bitwise AND (inside (( )))
-    BitwiseShiftLeft,   // << bitwise left shift (inside (( )))
-    BitwiseShiftRight   // >> bitwise right shift (inside (( )))
+  BitwiseShiftLeft, // << bitwise left shift (inside (( )))
+  BitwiseShiftRight, // >> bitwise right shift (inside (( )))
+  DivMod, // \\ divmod
+  Remainder, // %% remainder
+  IntDivAssign, // \= integer division assign
+  RemainderAssign, // %%= remainder assign
+  BitwiseAndAssign, // &=
+  BitwiseOrAssign, // |=
+  BitwiseXorAssign, // ^=
+  BitwiseShiftLeftAssign, // <<=
+  BitwiseShiftRightAssign // >>=
 };
 
 // Overload operator<< for BinaryOperator
@@ -440,9 +449,29 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
       return os << "&";
     case BinaryOperator::BitwiseShiftLeft:
       return os << "<<";
-    case BinaryOperator::BitwiseShiftRight:
-      return os << ">>";
-    default:
+case BinaryOperator::BitwiseShiftRight:
+    return os << ">>";
+  case BinaryOperator::DivMod:
+    return os << "\\\\";
+  case BinaryOperator::Remainder:
+    return os << "%%";
+  case BinaryOperator::IntDiv:
+    return os << "\\";
+  case BinaryOperator::IntDivAssign:
+    return os << "\\=";
+  case BinaryOperator::RemainderAssign:
+    return os << "%%=";
+  case BinaryOperator::BitwiseAndAssign:
+    return os << "&=";
+  case BinaryOperator::BitwiseOrAssign:
+    return os << "|=";
+  case BinaryOperator::BitwiseXorAssign:
+    return os << "^=";
+  case BinaryOperator::BitwiseShiftLeftAssign:
+    return os << "<<=";
+  case BinaryOperator::BitwiseShiftRightAssign:
+    return os << ">>=";
+  default:
       return os << "UNKNOWN_OPERATOR";
     }
 }

@@ -40,6 +40,8 @@ static std::string opcodeNameStr(OpCode opcode) {
     case OpCode::MUL: return "MUL";
     case OpCode::DIV: return "DIV";
     case OpCode::INT_DIV: return "INT_DIV";
+  case OpCode::DIVMOD: return "DIVMOD";
+  case OpCode::REMAINDER: return "REMAINDER";
     case OpCode::RETURN: return "RETURN";
 	case OpCode::CALL: return "CALL";
 	case OpCode::JUMP: return "JUMP";

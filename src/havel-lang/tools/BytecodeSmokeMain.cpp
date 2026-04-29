@@ -45,8 +45,12 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "MUL";
     case OpCode::DIV:
         return "DIV";
-    case OpCode::INT_DIV:
-        return "INT_DIV";
+case OpCode::INT_DIV:
+    return "INT_DIV";
+  case OpCode::DIVMOD:
+    return "DIVMOD";
+  case OpCode::REMAINDER:
+    return "REMAINDER";
     case OpCode::MOD:
     return "MOD";
   case OpCode::POW:

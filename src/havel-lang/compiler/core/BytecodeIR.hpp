@@ -68,14 +68,31 @@ enum class OpCode : uint8_t {
   SWAP,
   PUSH_NULL,
 
-    // Arithmetic operations
-    ADD,
-    SUB,
-    MUL,
-    DIV,
-    INT_DIV,
-    MOD,
-    POW,
+// Arithmetic operations
+  ADD,
+  SUB,
+  MUL,
+  DIV,
+  INT_DIV,
+  DIVMOD,
+  REMAINDER,
+  MOD,
+  POW,
+
+  // Compound assignment operations
+  ADD_ASSIGN,
+  SUB_ASSIGN,
+  MUL_ASSIGN,
+  DIV_ASSIGN,
+  INT_DIV_ASSIGN,
+  REMAINDER_ASSIGN,
+  MOD_ASSIGN,
+  POW_ASSIGN,
+  BITWISE_AND_ASSIGN,
+  BITWISE_OR_ASSIGN,
+  BITWISE_XOR_ASSIGN,
+  SHIFT_LEFT_ASSIGN,
+  SHIFT_RIGHT_ASSIGN,
 
 // Increment/Decrement local variable (optimization)
 INCLOCAL,       // ++local (prefix increment)

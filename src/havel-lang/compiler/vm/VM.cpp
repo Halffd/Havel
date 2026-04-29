@@ -4059,19 +4059,22 @@ void VM::execBinaryOp(const Instruction &instruction) {
     case OpCode::GTE:
       result = false;
       break;
-    case OpCode::ADD:
+case OpCode::ADD:
     case OpCode::SUB:
     case OpCode::MUL:
-        case OpCode::DIV:
-        case OpCode::MOD:
-        case OpCode::POW:
-        case OpCode::BIT_AND:
-        case OpCode::BIT_OR:
-        case OpCode::BIT_XOR:
-        case OpCode::BIT_LSH:
-        case OpCode::BIT_RSH:
-          pushStack(Value::makeNull());
-          return;
+    case OpCode::DIV:
+    case OpCode::MOD:
+    case OpCode::INT_DIV:
+    case OpCode::DIVMOD:
+    case OpCode::REMAINDER:
+    case OpCode::POW:
+    case OpCode::BIT_AND:
+    case OpCode::BIT_OR:
+    case OpCode::BIT_XOR:
+    case OpCode::BIT_LSH:
+    case OpCode::BIT_RSH:
+      pushStack(Value::makeNull());
+      return;
     default:
       COMPILER_THROW("Invalid operation opcode with null");
     }
@@ -4128,13 +4131,34 @@ void VM::execBinaryOp(const Instruction &instruction) {
             if (r == 0) throw ScriptThrow{Value("Division by zero")};
             pushStack(static_cast<double>(l) / static_cast<double>(r));
             break;
-        case OpCode::INT_DIV:
-            if (r == 0) throw ScriptThrow{Value("Division by zero")};
-            pushStack(l / r);
-            break;
+case OpCode::INT_DIV:
+      if (r == 0) throw ScriptThrow{Value("Division by zero")};
+      pushStack(l / r);
+      break;
+    case OpCode::DIVMOD:
+      if (r == 0) throw ScriptThrow{Value("Division by zero")};
+      {
+        int64_t rem = l % r;
+        if (rem != 0 && ((rem < 0) != (r < 0))) rem += r;
+        int64_t quot = (l - rem) / r;
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        arr->push_back(Value(quot));
+        arr->push_back(Value(rem));
+        pushStack(Value::makeArrayId(arrRef.id));
+      }
+      break;
+    case OpCode::REMAINDER:
+      if (r == 0) throw ScriptThrow{Value("Division by zero")};
+      pushStack(l % r); // C-style: sign follows dividend
+      break;
     case OpCode::MOD:
       if (r == 0) throw ScriptThrow{Value("Modulo by zero")};
-      pushStack(l % r);
+      {
+        int64_t result = l % r;
+        if (result != 0 && ((result < 0) != (r < 0))) result += r;
+        pushStack(result); // Python-style: sign follows divisor
+      }
       break;
         case OpCode::POW:
           pushStack(static_cast<int64_t>(
@@ -4168,13 +4192,36 @@ void VM::execBinaryOp(const Instruction &instruction) {
             if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
             pushStack(l / r);
             break;
-        case OpCode::INT_DIV:
-            if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
-            pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
-            break;
+case OpCode::INT_DIV:
+      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+      pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
+      break;
+    case OpCode::DIVMOD:
+      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+      {
+        int64_t il = static_cast<int64_t>(l);
+        int64_t ir = static_cast<int64_t>(r);
+        int64_t rem = il % ir;
+        if (rem != 0 && ((rem < 0) != (ir < 0))) rem += ir;
+        int64_t quot = (il - rem) / ir;
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        arr->push_back(Value(quot));
+        arr->push_back(Value(rem));
+        pushStack(Value::makeArrayId(arrRef.id));
+      }
+      break;
+    case OpCode::REMAINDER:
+      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+      pushStack(static_cast<int64_t>(l) % static_cast<int64_t>(r)); // C-style
+      break;
     case OpCode::MOD:
       if (r == 0.0) COMPILER_THROW("Modulo by zero");
-      pushStack(std::fmod(l, r));
+      {
+        double m = std::fmod(l, r);
+        if (m != 0.0 && ((m < 0.0) != (r < 0.0))) m += r;
+        pushStack(m); // Python-style: sign follows divisor
+      }
       break;
     case OpCode::POW:  pushStack(std::pow(l, r)); break;
     case OpCode::EQ:   pushStack(l == r); break;
@@ -4490,6 +4537,8 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		case OpCode::MUL: opMethodName = "op_mul"; break;
     case OpCode::DIV: opMethodName = "op_div"; break;
     case OpCode::INT_DIV: opMethodName = "op_int_div"; break;
+      case OpCode::DIVMOD: opMethodName = "op_divmod"; break;
+      case OpCode::REMAINDER: opMethodName = "op_remainder"; break;
 		case OpCode::MOD: opMethodName = "op_mod"; break;
 		case OpCode::EQ: opMethodName = "op_eq"; break;
 		case OpCode::NEQ: opMethodName = "op_ne"; break;
@@ -4925,6 +4974,8 @@ break;
     case OpCode::DIV:
     case OpCode::INT_DIV:
     case OpCode::MOD:
+    case OpCode::DIVMOD:
+    case OpCode::REMAINDER:
     case OpCode::POW:
     case OpCode::EQ:
     case OpCode::NEQ:
@@ -7909,15 +7960,46 @@ const auto &cell = closure->upvalues[upvalue_index];
         break;
     }
 
-    case OpCode::INT_DIV: {
-        Value right = pop();
-        Value left = pop();
-        int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
-        int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-        if (r == 0)
-            throw ScriptThrow{Value("Division by zero")};
-        push(l / r);
-        break;
+case OpCode::INT_DIV: {
+      Value right = pop();
+      Value left = pop();
+      int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
+      int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
+      if (r == 0)
+        throw ScriptThrow{Value("Division by zero")};
+      push(l / r);
+      break;
+    }
+
+    case OpCode::DIVMOD: {
+      Value right = pop();
+      Value left = pop();
+      int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
+      int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
+      if (r == 0)
+        throw ScriptThrow{Value("Division by zero")};
+      {
+        int64_t rem = l % r;
+        if (rem != 0 && ((rem < 0) != (r < 0))) rem += r;
+        int64_t quot = (l - rem) / r;
+        auto arrRef = parent_vm_->heap_.allocateArray();
+        auto *arr = parent_vm_->heap_.array(arrRef.id);
+        arr->push_back(Value(quot));
+        arr->push_back(Value(rem));
+        push(Value::makeArrayId(arrRef.id));
+      }
+      break;
+    }
+
+    case OpCode::REMAINDER: {
+      Value right = pop();
+      Value left = pop();
+      int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
+      int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
+      if (r == 0)
+        throw ScriptThrow{Value("Division by zero")};
+      push(l % r); // C-style: sign follows dividend
+      break;
     }
 
   case OpCode::EQ: {

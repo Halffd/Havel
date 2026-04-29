@@ -347,13 +347,20 @@ int Parser::getBindingPower(TokenType type) const {
 switch (type) {
 // Assignment (right-associative, low precedence)
 case TokenType::Assign:
-case TokenType::PlusAssign:
-case TokenType::MinusAssign:
-case TokenType::MultiplyAssign:
-case TokenType::DivideAssign:
-case TokenType::ModuloAssign:
-case TokenType::PowerAssign:
-return 10;
+  case TokenType::PlusAssign:
+  case TokenType::MinusAssign:
+  case TokenType::MultiplyAssign:
+  case TokenType::DivideAssign:
+  case TokenType::ModuloAssign:
+  case TokenType::PowerAssign:
+  case TokenType::BackslashAssign:
+  case TokenType::DoubleModuloAssign:
+  case TokenType::BitwiseAndAssign:
+  case TokenType::BitwiseOrAssign:
+  case TokenType::BitwiseXorAssign:
+  case TokenType::ShiftLeftAssign:
+  case TokenType::ShiftRightAssign:
+    return 10;
 
 // Nullish coalescing
 case TokenType::Nullish:
@@ -434,12 +441,14 @@ return 110;
     case TokenType::Minus:
       return 70;
 
-    // Multiplicative
-    case TokenType::Multiply:
-    case TokenType::Divide:
-    case TokenType::Modulo:
-    case TokenType::Backslash:
-      return 130;
+// Multiplicative
+  case TokenType::Multiply:
+  case TokenType::Divide:
+  case TokenType::Modulo:
+  case TokenType::Backslash:
+  case TokenType::DoubleBackslash:
+  case TokenType::DoubleModulo:
+    return 130;
 
     // Power (right-associative)
     case TokenType::Power:
@@ -470,13 +479,20 @@ int Parser::getRightBindingPower(TokenType type) const {
   // For right-associative operators, return a lower right binding power
   switch (type) {
     case TokenType::Assign:
-    case TokenType::PlusAssign:
-    case TokenType::MinusAssign:
-    case TokenType::MultiplyAssign:
-    case TokenType::DivideAssign:
-    case TokenType::ModuloAssign:
-    case TokenType::PowerAssign:
-      return 5;  // Right-associative: 10 - 1 = 9, but use lower for safety
+case TokenType::PlusAssign:
+  case TokenType::MinusAssign:
+  case TokenType::MultiplyAssign:
+  case TokenType::DivideAssign:
+  case TokenType::ModuloAssign:
+  case TokenType::PowerAssign:
+  case TokenType::BackslashAssign:
+  case TokenType::DoubleModuloAssign:
+  case TokenType::BitwiseAndAssign:
+  case TokenType::BitwiseOrAssign:
+  case TokenType::BitwiseXorAssign:
+  case TokenType::ShiftLeftAssign:
+  case TokenType::ShiftRightAssign:
+    return 5; // Right-associative: 10 - 1 = 9, but use lower for safety
 
     case TokenType::Arrow:
       return 5;  // Low right binding power for arrow body expressions
@@ -519,7 +535,14 @@ setBoth(MinusAssign, 10, 10);
 setBoth(MultiplyAssign, 10, 10);
 setBoth(DivideAssign, 10, 10);
 setBoth(ModuloAssign, 10, 10);
-setBoth(PowerAssign, 10, 10);
+    setBoth(PowerAssign, 10, 10);
+    setBoth(BackslashAssign, 10, 10);
+    setBoth(DoubleModuloAssign, 10, 10);
+    setBoth(BitwiseAndAssign, 10, 10);
+    setBoth(BitwiseOrAssign, 10, 10);
+    setBoth(BitwiseXorAssign, 10, 10);
+    setBoth(ShiftLeftAssign, 10, 10);
+    setBoth(ShiftRightAssign, 10, 10);
 
 // Nullish coalescing
       setBoth(Nullish, 20, 20);
@@ -551,10 +574,13 @@ setBoth(PowerAssign, 10, 10);
       setBoth(Plus, 70, 70);
       setBoth(Minus, 70, 70);
       
-      // Multiplicative
-      setBoth(Multiply, 80, 80);
-      setBoth(Divide, 80, 80);
-      setBoth(Modulo, 80, 80);
+// Multiplicative
+    setBoth(Multiply, 80, 80);
+    setBoth(Divide, 80, 80);
+    setBoth(Modulo, 80, 80);
+    setBoth(Backslash, 80, 80);
+    setBoth(DoubleBackslash, 80, 80);
+    setBoth(DoubleModulo, 80, 80);
       
       // Power (right-associative)
       setBoth(Power, 90, 91);
@@ -610,8 +636,9 @@ setBoth(PowerAssign, 10, 10);
         can_start[static_cast<size_t>(Hash)] = true;
         can_start[static_cast<size_t>(Backtick)] = true;
         can_start[static_cast<size_t>(DoubleOpenParen)] = true;
-        can_start[static_cast<size_t>(Tilde)] = true;
-    }
+can_start[static_cast<size_t>(Tilde)] = true;
+  can_start[static_cast<size_t>(BangOpenBrace)] = true;
+  }
     
     void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
       size_t idx = static_cast<size_t>(t);
@@ -1136,8 +1163,15 @@ case TokenType::Number:
     case TokenType::If:
       return parseIfExpression();
 
-    case TokenType::Not: {
-      // Check if this is !{} for unsorted object
+case TokenType::BangOpenBrace: {
+  // !{key: value} - unsorted object literal (single token from lexer)
+  auto obj = parseObjectLiteral(true);
+  if (!obj) return nullptr;
+  return parsePostfixExpression(std::move(obj));
+  }
+
+  case TokenType::Not: {
+  // Check if this is !{} for unsorted object
       if (at().type == havel::TokenType::OpenBrace) {
         // Don't consume '{' - parseObjectLiteral expects to consume it
         auto obj = parseObjectLiteral(true); // true = unsorted
@@ -1331,13 +1365,20 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
 
 switch (token.type) {
     // Assignment operators (right-associative)
-    case TokenType::Assign:
+case TokenType::Assign:
     case TokenType::PlusAssign:
     case TokenType::MinusAssign:
     case TokenType::MultiplyAssign:
     case TokenType::DivideAssign:
     case TokenType::ModuloAssign:
-case TokenType::PowerAssign: {
+    case TokenType::PowerAssign:
+    case TokenType::BackslashAssign:
+    case TokenType::DoubleModuloAssign:
+    case TokenType::BitwiseAndAssign:
+    case TokenType::BitwiseOrAssign:
+    case TokenType::BitwiseXorAssign:
+    case TokenType::ShiftLeftAssign:
+    case TokenType::ShiftRightAssign: {
         auto right = parsePrattExpression(getRightBindingPower(token.type));
         std::string op = token.value;
         
@@ -1381,10 +1422,22 @@ case TokenType::Plus: {
     case TokenType::Backslash: {
         auto right = parsePrattExpression(getRightBindingPower(token.type));
         return std::make_unique<ast::BinaryExpression>(
-            std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
-    }
+std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
+  }
 
-    case TokenType::Power: {
+  case TokenType::DoubleBackslash: {
+    auto right = parsePrattExpression(getRightBindingPower(token.type));
+    return std::make_unique<ast::BinaryExpression>(
+      std::move(left), ast::BinaryOperator::DivMod, std::move(right));
+  }
+
+  case TokenType::DoubleModulo: {
+    auto right = parsePrattExpression(getRightBindingPower(token.type));
+    return std::make_unique<ast::BinaryExpression>(
+      std::move(left), ast::BinaryOperator::Remainder, std::move(right));
+  }
+
+  case TokenType::Power: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::Pow, std::move(right));
@@ -1995,12 +2048,11 @@ Parser::produceAST(const std::string &sourceCode) {
     errors.push_back(err);
   }
 
-  position = 0;
+    position = 0;
 
-  if (debug.parser) {
-    havel::debug("PARSE: Starting to parse program with {} tokens",
-                 tokens.size());
-  }
+    if (debug.parser) {
+        havel::debug("PARSE: Starting to parse program with {} tokens", tokens.size());
+    }
 
   // Create program AST node
   auto program = std::make_unique<havel::ast::Program>();
@@ -6213,13 +6265,20 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
     }
 
     // Check for assignment operators
-    if (at().type == havel::TokenType::Assign ||
-        at().type == havel::TokenType::PlusAssign ||
-        at().type == havel::TokenType::MinusAssign ||
-        at().type == havel::TokenType::MultiplyAssign ||
-        at().type == havel::TokenType::DivideAssign ||
-        at().type == havel::TokenType::ModuloAssign ||
-        at().type == havel::TokenType::PowerAssign) {
+if (at().type == havel::TokenType::Assign ||
+      at().type == havel::TokenType::PlusAssign ||
+      at().type == havel::TokenType::MinusAssign ||
+      at().type == havel::TokenType::MultiplyAssign ||
+      at().type == havel::TokenType::DivideAssign ||
+      at().type == havel::TokenType::ModuloAssign ||
+      at().type == havel::TokenType::PowerAssign ||
+      at().type == havel::TokenType::BackslashAssign ||
+      at().type == havel::TokenType::DoubleModuloAssign ||
+      at().type == havel::TokenType::BitwiseAndAssign ||
+      at().type == havel::TokenType::BitwiseOrAssign ||
+      at().type == havel::TokenType::BitwiseXorAssign ||
+      at().type == havel::TokenType::ShiftLeftAssign ||
+      at().type == havel::TokenType::ShiftRightAssign) {
         auto opTok = advance(); // consume the operator
 
         // Right-associative: a = b = c means a = (b = c)
@@ -6704,16 +6763,21 @@ std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
                                                           op, true);
   }
 
-  if (at().type == havel::TokenType::Not) {
-    // Check if this is !{} for unsorted object
-    if (at(1).type == havel::TokenType::OpenBrace) {
-      // !{...} - unsorted object literal
-      advance();                       // consume '!'
-      return parseObjectLiteral(true); // true = unsorted
+if (at().type == havel::TokenType::BangOpenBrace) {
+    // !{...} - unsorted object literal (single BangOpenBrace token)
+    return parseObjectLiteral(true); // true = unsorted
     }
-  }
 
-  if (at().type == havel::TokenType::Not ||
+    if (at().type == havel::TokenType::Not) {
+    // Check if this is !{} for unsorted object (fallback for separate ! and { tokens)
+    if (at(1).type == havel::TokenType::OpenBrace) {
+    // !{...} - unsorted object literal
+    advance(); // consume '!'
+    return parseObjectLiteral(true); // true = unsorted
+    }
+    }
+
+    if (at().type == havel::TokenType::Not ||
       at().type == havel::TokenType::Minus ||
       at().type == havel::TokenType::Plus ||
       at().type == havel::TokenType::Length) {
@@ -6780,8 +6844,26 @@ havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
         return TokenType::BitwiseXor;
       case ast::BinaryOperator::BitwiseShiftLeft:
         return TokenType::ShiftLeft;
-      case ast::BinaryOperator::BitwiseShiftRight:
-        return TokenType::ShiftRight;
+case ast::BinaryOperator::BitwiseShiftRight:
+    return TokenType::ShiftRight;
+  case ast::BinaryOperator::DivMod:
+    return TokenType::DoubleBackslash;
+  case ast::BinaryOperator::Remainder:
+    return TokenType::DoubleModulo;
+  case ast::BinaryOperator::IntDivAssign:
+    return TokenType::BackslashAssign;
+  case ast::BinaryOperator::RemainderAssign:
+    return TokenType::DoubleModuloAssign;
+  case ast::BinaryOperator::BitwiseAndAssign:
+    return TokenType::BitwiseAndAssign;
+  case ast::BinaryOperator::BitwiseOrAssign:
+    return TokenType::BitwiseOrAssign;
+  case ast::BinaryOperator::BitwiseXorAssign:
+    return TokenType::BitwiseXorAssign;
+  case ast::BinaryOperator::BitwiseShiftLeftAssign:
+    return TokenType::ShiftLeftAssign;
+  case ast::BinaryOperator::BitwiseShiftRightAssign:
+    return TokenType::ShiftRightAssign;
   default:
     fail("Unknown binary operator");
   }
@@ -6803,6 +6885,24 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
     return havel::ast::BinaryOperator::Pow;
   case TokenType::Backslash:
     return havel::ast::BinaryOperator::IntDiv;
+  case TokenType::DoubleBackslash:
+    return havel::ast::BinaryOperator::DivMod;
+  case TokenType::DoubleModulo:
+    return havel::ast::BinaryOperator::Remainder;
+  case TokenType::BackslashAssign:
+    return havel::ast::BinaryOperator::IntDivAssign;
+  case TokenType::DoubleModuloAssign:
+    return havel::ast::BinaryOperator::RemainderAssign;
+  case TokenType::BitwiseAndAssign:
+    return havel::ast::BinaryOperator::BitwiseAndAssign;
+  case TokenType::BitwiseOrAssign:
+    return havel::ast::BinaryOperator::BitwiseOrAssign;
+  case TokenType::BitwiseXorAssign:
+    return havel::ast::BinaryOperator::BitwiseXorAssign;
+  case TokenType::ShiftLeftAssign:
+    return havel::ast::BinaryOperator::BitwiseShiftLeftAssign;
+  case TokenType::ShiftRightAssign:
+    return havel::ast::BinaryOperator::BitwiseShiftRightAssign;
   case TokenType::Equals:
     return havel::ast::BinaryOperator::Equal;
   case TokenType::NotEquals:
@@ -7287,10 +7387,16 @@ case havel::TokenType::Number: {
   case havel::TokenType::OpenBracket: {
     auto array = parseArrayLiteral();
     // Handle postfix operations for array literals (moved to common function)
-    return parsePostfixExpression(std::move(array));
-  }
+return parsePostfixExpression(std::move(array));
+    }
 
-  case havel::TokenType::OpenBrace: {
+    case havel::TokenType::BangOpenBrace: {
+    // !{key: value} - unsorted object literal
+    auto obj = parseObjectLiteral(true);
+    return parsePostfixExpression(std::move(obj));
+    }
+
+    case havel::TokenType::OpenBrace: {
     // Could be:
     // 1. Object literal {key: value}
     // 2. Set literal {1, 2, 3} (Python-style)
@@ -7724,9 +7830,19 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
 
 std::unique_ptr<havel::ast::Expression>
 Parser::parseObjectLiteral(bool unsorted) {
-  std::vector<havel::ast::ObjectLiteral::PairEntry> pairs;
+    std::vector<havel::ast::ObjectLiteral::PairEntry> pairs;
 
-  advance(); // consume '{'
+    // Consume opening token: '{' or '!{'
+    // Note: if called from nud() for BangOpenBrace, the token was already
+    // consumed by parsePrattExpression's advance(), so current token is
+    // already inside the object. Only advance if current token is the opener.
+    if (at().type == havel::TokenType::BangOpenBrace) {
+        advance(); // consume '!{'
+        unsorted = true;
+    } else if (at().type == havel::TokenType::OpenBrace) {
+        advance(); // consume '{'
+    }
+    // else: opener was already consumed, we're past it
 
   // Parse entries: key:value, positional value, [expr]:value, or ...spread
   int loopCounter = 0;

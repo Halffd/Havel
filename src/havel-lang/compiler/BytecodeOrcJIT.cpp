@@ -65,10 +65,11 @@ void havel_vm_throw_value(void* vm_ptr, uint64_t value_bits) {
     throw ScriptThrow{v};
 }
 
-void havel_vm_try_enter(void* vm_ptr, uint32_t catch_ip, uint32_t finally_ip) {
+void havel_vm_try_enter(void* vm_ptr, uint32_t catch_ip, uint32_t finally_ip,
+                        uint32_t stack_depth) {
     if (!vm_ptr) return;
     auto* vm = static_cast<VM*>(vm_ptr);
-    vm->tryEnterPublic(catch_ip, finally_ip);
+    vm->tryEnterPublic(catch_ip, finally_ip, stack_depth);
 }
 
 void havel_vm_try_exit(void* vm_ptr) {
@@ -1762,10 +1763,23 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
     typedef uint64_t (*NativeFunc)(void*, const Value*, uint32_t);
     auto func = reinterpret_cast<NativeFunc>(it->second);
 
-    uint64_t res_bits = func(static_cast<void*>(vm), args.data(), static_cast<uint32_t>(args.size()));
-    Value res;
-    std::memcpy(&res, &res_bits, sizeof(uint64_t));
-    return res;
+    try {
+        uint64_t res_bits =
+            func(static_cast<void*>(vm), args.data(), static_cast<uint32_t>(args.size()));
+        Value res;
+        std::memcpy(&res, &res_bits, sizeof(uint64_t));
+        return res;
+    } catch (const ScriptThrow&) {
+        // Preserve script exception semantics so VM dispatch can route to
+        // TRY_ENTER handlers in active VM frames.
+        throw;
+    } catch (const std::exception& e) {
+        vm->throwError(std::string("JIT exception in ") + func_name + ": " + e.what());
+        return Value::makeNull();
+    } catch (...) {
+        vm->throwError(std::string("Unknown JIT exception in ") + func_name);
+        return Value::makeNull();
+    }
 }
 
 bool BytecodeOrcJIT::isCompiled(const std::string &func_name) const {
@@ -3083,10 +3097,13 @@ case OpCode::TRY_ENTER: {
     llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
     if (!fnTryEnter) {
         fnTryEnter = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {i8p, i32, i32}, false),
+            llvm::FunctionType::get(voidT, {i8p, i32, i32, i32}, false),
             llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
     }
-    B.CreateCall(fnTryEnter, {vmArg, llvm::ConstantInt::get(i32, catchIp), llvm::ConstantInt::get(i32, finallyIp)});
+    B.CreateCall(fnTryEnter, {vmArg,
+                              llvm::ConstantInt::get(i32, catchIp),
+                              llvm::ConstantInt::get(i32, finallyIp),
+                              llvm::ConstantInt::get(i32, static_cast<uint32_t>(vstack.size()))});
     break;
 }
 case OpCode::TRY_EXIT: {

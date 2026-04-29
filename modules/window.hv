@@ -1,156 +1,732 @@
+// window.hv — Full window manipulation via X11/EWMH
+// Provides: active, activate, close, minimize, maximize, restore,
+// hide, show, move, resize, moveResize, pos, size, geometry,
+// center, moveToCorner, moveToMonitor, snap, toggleFullscreen,
+// fullscreen, alwaysOnTop, alwaysOnBottom, floating, opacity,
+// title, className, pid, exe, state, states, desktop,
+// moveToDesktop, type, role, transient, exists, find, findByTitle,
+// findByClass, findByPid, list, info, isMinimized, isMaximized,
+// isFullscreen, isHidden, above, below, decorated, focusable,
+// setFocusable, setDecorated, frameExtents, raise, lower,
+// setProperty, getProperty, sendEvent, kill
+
+use x11
+use protocols
+use display
 use ffi
 
-_xlib = ffi.open("libX11.so.6")
-_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
-_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
-_XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
-_XFetchName = ffi.sym(_xlib, "XFetchName")
-_XGetClassHint = ffi.sym(_xlib, "XGetClassHint")
-_XGetWindowProperty = ffi.sym(_xlib, "XGetWindowProperty")
-_XFree = ffi.sym(_xlib, "XFree")
-_XInternAtom = ffi.sym(_xlib, "XInternAtom")
+// ============================================================
+// Display helpers
+// ============================================================
+
+fn _dpy() { display.open() }
+fn _root() {
+    _d = _dpy()
+    if _d == 0 { 0 } else { x11.rootWindow(_d) }
+}
+
+fn _shell(cmd) {
+    _r = shell.exec(cmd + " 2>/dev/null")
+    _r.stdout
+}
+
+// ============================================================
+// Active window
+// ============================================================
+
+fn active() {
+    _d = _dpy()
+    if _d == 0 { return 0 }
+    _info = x11.getInputFocus(_d)
+    _info.focus
+}
+
+fn activeInfo() {
+    _w = active()
+    if _w == 0 { null } else { info(_w) }
+}
 
 fn activeTitle() {
-  _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
-  _dpy_val = ffi.ptr_to_uint(_dpy)
-  if _dpy_val == 0 { "" }
-  else {
-    _focus_ptr = ffi.allocBytes(8)
-    _revert_ptr = ffi.allocBytes(4)
-    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
-    _focus = ffi.get_u64(_focus_ptr)
-    ffi.free(_focus_ptr)
-    ffi.free(_revert_ptr)
-    if _focus == 0 {
-      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-      ""
-    } else {
-      _name_ptr = ffi.allocBytes(8)
-      ffi.call(_XFetchName, "int32", ["pointer", "uint64", "pointer"], _dpy, _focus, _name_ptr)
-      _name_ptr_val = ffi.get_u64(_name_ptr)
-      if _name_ptr_val == 0 {
-        ffi.free(_name_ptr)
-        ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-        ""
-      } else {
-        _title = ffi.string(_name_ptr_val)
-        ffi.call(_XFree, "int32", ["pointer"], _name_ptr_val)
-        ffi.free(_name_ptr)
-        ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-        _title
-      }
-    }
-  }
+    _w = active()
+    if _w == 0 { "" } else { title(_w) }
 }
 
 fn activeClass() {
-  _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
-  _dpy_val = ffi.ptr_to_uint(_dpy)
-  if _dpy_val == 0 { "" }
-  else {
-    _focus_ptr = ffi.allocBytes(8)
-    _revert_ptr = ffi.allocBytes(4)
-    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
-    _focus = ffi.get_u64(_focus_ptr)
-    ffi.free(_focus_ptr)
-    ffi.free(_revert_ptr)
-    if _focus == 0 {
-      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-      ""
-    } else {
-      _class_hint = ffi.allocBytes(16)
-      _ret = ffi.call(_XGetClassHint, "int32", ["pointer", "uint64", "pointer"], _dpy, _focus, _class_hint)
-      _class_str = ""
-      if _ret != 0 {
-        _res_name_ptr = ffi.get_ptr(_class_hint)
-        _res_class_ptr = ffi.get_ptr(_class_hint, 8)
-        _res_class_val = ffi.ptr_to_uint(_res_class_ptr)
-        _res_name_val = ffi.ptr_to_uint(_res_name_ptr)
-        if _res_class_val != 0 {
-          _class_str = ffi.string(_res_class_val)
-          ffi.call(_XFree, "int32", ["pointer"], _res_class_val)
-        }
-        if _res_name_val != 0 {
-          ffi.call(_XFree, "int32", ["pointer"], _res_name_val)
-        }
-      }
-      ffi.free(_class_hint)
-      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-      _class_str
-    }
-  }
+    _w = active()
+    if _w == 0 { "" } else { className(_w) }
 }
 
 fn activePid() {
-  _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
-  _dpy_val = ffi.ptr_to_uint(_dpy)
-  if _dpy_val == 0 { 0 }
-  else {
-    _focus_ptr = ffi.allocBytes(8)
-    _revert_ptr = ffi.allocBytes(4)
-    ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
-    _focus = ffi.get_u64(_focus_ptr)
-    ffi.free(_focus_ptr)
-    ffi.free(_revert_ptr)
-    if _focus == 0 {
-      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-      0
-    } else {
-      _atom_name = ffi.cstring("_NET_WM_PID")
-      _atom = ffi.call(_XInternAtom, "uint64", ["pointer", "pointer", "int32"], _dpy, _atom_name, 0)
-      ffi.free(_atom_name)
-      _actual_type = ffi.allocBytes(8)
-      _actual_format = ffi.allocBytes(4)
-      _nitems = ffi.allocBytes(8)
-      _bytes_after = ffi.allocBytes(8)
-      _prop_ptr = ffi.allocBytes(8)
-      _pid_ret = ffi.call(_XGetWindowProperty, "int32", ["pointer", "uint64", "uint64", "int64", "int64", "int32", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer"], _dpy, _focus, _atom, 0, 1, 0, 0, _actual_type, _actual_format, _nitems, _bytes_after, _prop_ptr)
-      _pid = 0
-      if _pid_ret == 0 {
-        _prop_val = ffi.get_u64(_prop_ptr)
-        if _prop_val != 0 {
-          _pid = ffi.get_i32(_prop_val)
-          ffi.call(_XFree, "int32", ["pointer"], _prop_val)
-        }
-      }
-      ffi.free(_actual_type)
-      ffi.free(_actual_format)
-      ffi.free(_nitems)
-      ffi.free(_bytes_after)
-      ffi.free(_prop_ptr)
-      ffi.call(_XCloseDisplay, "int32", ["pointer"], _dpy)
-      _pid
-    }
-  }
+    _w = active()
+    if _w == 0 { 0 } else { pid(_w) }
 }
 
 fn activeExe() {
-  _pid = activePid()
-  if _pid == 0 { "" }
-  else {
-    _c = ffi.open("libc.so.6")
-    _fopen = ffi.sym(_c, "fopen")
-    _fgets = ffi.sym(_c, "fgets")
-    _fclose = ffi.sym(_c, "fclose")
-    _path = "/proc/${_pid}/exe"
-    _buf = ffi.allocBytes(4096)
-    _readlink = ffi.sym(_c, "readlink")
-    _n = ffi.call(_readlink, "int64", ["pointer", "pointer", "int64"], ffi.cstring(_path), _buf, 4095)
-    _exe = ""
-    if _n > 0 {
-      ffi.set_i8(_buf, _n, 0)
-      _exe = ffi.string(_buf)
-    }
-    ffi.free(_buf)
-    ffi.close(_c)
-    _exe
-  }
+    _p = activePid()
+    if _p == 0 { "" } else { exe(_p) }
 }
 
-fn active() {
-  _t = activeTitle()
-  _c = activeClass()
-  _p = activePid()
-  _e = activeExe()
-  {title: _t, class: _c, pid: _p, exe: _e}
+// ============================================================
+// Window activation / focus
+// ============================================================
+
+fn activate(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendActiveMessage(_d, win, protocols.SOURCE_APPLICATION)
+    true
+}
+
+fn raise(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _changes = x11.makeWindowChanges(0, 0, 0, 0, 0, 0, x11.Above)
+    x11.configureWindow(_d, win, x11.CWStackMode, _changes)
+    x11.flush(_d)
+    x11.freeClientMessage(_changes)
+    true
+}
+
+fn lower(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _changes = x11.makeWindowChanges(0, 0, 0, 0, 0, 0, x11.Below)
+    x11.configureWindow(_d, win, x11.CWStackMode, _changes)
+    x11.flush(_d)
+    x11.freeClientMessage(_changes)
+    true
+}
+
+// ============================================================
+// Window close / kill
+// ============================================================
+
+fn close(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendCloseMessage(_d, win)
+    true
+}
+
+fn kill(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    x11.killClient(_d, win)
+    x11.flush(_d)
+    true
+}
+
+// ============================================================
+// Window visibility: minimize, maximize, restore, hide, show
+// ============================================================
+
+fn minimize(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _screen = x11.defaultScreen(_d)
+    x11.iconifyWindow(_d, win, _screen)
+    x11.flush(_d)
+    true
+}
+
+fn maximize(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendStateMessage(_d, win, protocols.STATE_ADD,
+        protocols.netWmStateMaximizedVert(), protocols.netWmStateMaximizedHorz())
+    true
+}
+
+fn restore(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendStateMessage(_d, win, protocols.STATE_REMOVE,
+        protocols.netWmStateMaximizedVert(), protocols.netWmStateMaximizedHorz())
+    true
+}
+
+fn hide(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    x11.unmapWindow(_d, win)
+    x11.flush(_d)
+    true
+}
+
+fn show(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    x11.mapWindow(_d, win)
+    x11.flush(_d)
+    true
+}
+
+// ============================================================
+// Window movement and resizing
+// ============================================================
+
+fn move(win, x, y) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    x11.moveWindow(_d, win, x, y)
+    x11.flush(_d)
+    true
+}
+
+fn resize(win, w, h) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    x11.resizeWindow(_d, win, w, h)
+    x11.flush(_d)
+    true
+}
+
+fn moveResize(win, x, y, w, h) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    // Try EWMH first, then XMoveResizeWindow
+    _root = _root()
+    if _root != 0 {
+        protocols.sendMoveResizeMessage(_d, win, x, y, w, h)
+    }
+    x11.moveResizeWindow(_d, win, x, y, w, h)
+    x11.flush(_d)
+    true
+}
+
+fn pos(win) {
+    _g = geometry(win)
+    if _g == null { null } else { {x: _g.x, y: _g.y} }
+}
+
+fn size(win) {
+    _g = geometry(win)
+    if _g == null { null } else { {width: _g.width, height: _g.height} }
+}
+
+fn geometry(win) {
+    _d = _dpy()
+    if _d == 0 { return null }
+    _r = x11.getGeometry(_d, win)
+    if _r.ret == 0 { null }
+    else { {x: _r.x, y: _r.y, width: _r.width, height: _r.height, border: _r.border, depth: _r.depth} }
+}
+
+// ============================================================
+// Center and positioning
+// ============================================================
+
+fn center(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _g = geometry(win)
+    if _g == null { return false }
+    _mon = display.primaryMonitor()
+    _cx = _mon.x + ((_mon.width - _g.width) / 2)
+    _cy = _mon.y + ((_mon.height - _g.height) / 2)
+    moveResize(win, _cx, _cy, _g.width, _g.height)
+}
+
+fn moveToCorner(win, corner) {
+    // corner: "tl", "tr", "bl", "br"
+    _d = _dpy()
+    if _d == 0 { return false }
+    _g = geometry(win)
+    if _g == null { return false }
+    _mon = display.primaryMonitor()
+    _x = _mon.x; _y = _mon.y
+    if corner == "tr" { _x = _mon.x + _mon.width - _g.width }
+    else if corner == "bl" { _y = _mon.y + _mon.height - _g.height }
+    else if corner == "br" {
+        _x = _mon.x + _mon.width - _g.width
+        _y = _mon.y + _mon.height - _g.height
+    }
+    moveResize(win, _x, _y, _g.width, _g.height)
+}
+
+fn moveToMonitor(win, monitorIndex) {
+    _mons = display.monitors()
+    if monitorIndex < 0 || monitorIndex >= #_mons { return false }
+    _target = _mons[monitorIndex]
+    _d = _dpy()
+    if _d == 0 { return false }
+    _g = geometry(win)
+    if _g == null { return false }
+    _cx = _target.x + ((_target.width - _g.width) / 2)
+    _cy = _target.y + ((_target.height - _g.height) / 2)
+    moveResize(win, _cx, _cy, _g.width, _g.height)
+}
+
+fn snap(win, position) {
+    // position: 1=left, 2=right, 3=top, 4=bottom,
+    // 5=top-left, 6=top-right, 7=bottom-left, 8=bottom-right
+    _d = _dpy()
+    if _d == 0 { return false }
+    _g = geometry(win)
+    if _g == null { return false }
+    _mon = display.primaryMonitor()
+    _mx = _mon.x; _my = _mon.y
+    _mw = _mon.width; _mh = _mon.height
+    _hw = _mw / 2; _hh = _mh / 2
+    _x = _mx; _y = _my; _w = _mw; _h = _mh
+    if position == 1 { _w = _hw }
+    else if position == 2 { _x = _mx + _hw; _w = _hw }
+    else if position == 3 { _h = _hh }
+    else if position == 4 { _y = _my + _hh; _h = _hh }
+    else if position == 5 { _w = _hw; _h = _hh }
+    else if position == 6 { _x = _mx + _hw; _w = _hw; _h = _hh }
+    else if position == 7 { _w = _hw; _y = _my + _hh; _h = _hh }
+    else if position == 8 { _x = _mx + _hw; _w = _hw; _y = _my + _hh; _h = _hh }
+    moveResize(win, _x, _y, _w, _h)
+}
+
+// ============================================================
+// Fullscreen
+// ============================================================
+
+fn toggleFullscreen(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendStateMessage(_d, win, protocols.STATE_TOGGLE,
+        protocols.netWmStateFullscreen(), 0)
+    true
+}
+
+fn fullscreen(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    if !isFullscreen(win) {
+        protocols.sendStateMessage(_d, win, protocols.STATE_ADD,
+            protocols.netWmStateFullscreen(), 0)
+    }
+    true
+}
+
+// ============================================================
+// Layer / stacking
+// ============================================================
+
+fn alwaysOnTop(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendStateMessage(_d, win, protocols.STATE_ADD,
+        protocols.netWmStateAbove(), 0)
+    true
+}
+
+fn alwaysOnBottom(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.sendStateMessage(_d, win, protocols.STATE_ADD,
+        protocols.netWmStateBelow(), 0)
+    true
+}
+
+fn floating(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    // Remove above/below states
+    protocols.sendStateMessage(_d, win, protocols.STATE_REMOVE,
+        protocols.netWmStateAbove(), 0)
+    protocols.sendStateMessage(_d, win, protocols.STATE_REMOVE,
+        protocols.netWmStateBelow(), 0)
+    true
+}
+
+fn above(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    if !protocols.hasState(_d, win, protocols.netWmStateAbove()) {
+        protocols.sendStateMessage(_d, win, protocols.STATE_ADD,
+            protocols.netWmStateAbove(), 0)
+    }
+    true
+}
+
+fn below(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    if !protocols.hasState(_d, win, protocols.netWmStateBelow()) {
+        protocols.sendStateMessage(_d, win, protocols.STATE_ADD,
+            protocols.netWmStateBelow(), 0)
+    }
+    true
+}
+
+// ============================================================
+// Opacity / transparency
+// ============================================================
+
+fn opacity(win, value) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    // value: 0.0 to 1.0, stored as CARDINAL 0xffffffff = opaque
+    _cardinal = int(value * 4294967295.0)
+    _data = ffi.allocBytes(4)
+    ffi.set_u32(_data, _cardinal)
+    x11.changeProp(_d, win, protocols.netWmWindowOpacity(),
+        x11.XA_CARDINAL, 32, x11.PropModeReplace, _data, 1)
+    x11.flush(_d)
+    ffi.free(_data)
+    true
+}
+
+// ============================================================
+// Window properties
+// ============================================================
+
+fn title(win) {
+    _d = _dpy()
+    if _d == 0 { return "" }
+    // Try _NET_WM_NAME first (UTF8)
+    _name = protocols.getStringProp(_d, win, protocols.netWmName())
+    if _name != "" { return _name }
+    // Fall back to WM_NAME (XFetchName)
+    x11.getWMName(_d, win)
+}
+
+fn className(win) {
+    _d = _dpy()
+    if _d == 0 { return "" }
+    _hint = x11.getClassHint(_d, win)
+    _hint.resClass
+}
+
+fn pid(win) {
+    _d = _dpy()
+    if _d == 0 { return 0 }
+    protocols.getCardinalProp(_d, win, protocols.netWmPid())
+}
+
+fn exe(pid_val) {
+    if pid_val == 0 { return "" }
+    _path = fs.readlink("/proc/${pid_val}/exe")
+    if _path == "" { "" } else { _path }
+}
+
+fn type(win) {
+    _d = _dpy()
+    if _d == 0 { return "" }
+    _atoms = protocols.getAtomProp(_d, win, protocols.netWmWindowType())
+    if #_atoms == 0 { return "normal" }
+    // Check against known types
+    _first = _atoms[0]
+    if _first == protocols.netWmWindowTypeDesktop() { "desktop" }
+    else if _first == protocols.netWmWindowTypeDock() { "dock" }
+    else if _first == protocols.netWmWindowTypeToolbar() { "toolbar" }
+    else if _first == protocols.netWmWindowTypeMenu() { "menu" }
+    else if _first == protocols.netWmWindowTypeUtility() { "utility" }
+    else if _first == protocols.netWmWindowTypeSplash() { "splash" }
+    else if _first == protocols.netWmWindowTypeDialog() { "dialog" }
+    else if _first == protocols.netWmWindowTypeNormal() { "normal" }
+    else { x11.getAtomName(_d, _first) }
+}
+
+fn role(win) {
+    _d = _dpy()
+    if _d == 0 { return "" }
+    _atom = x11.internAtom(_d, "WM_WINDOW_ROLE", 1)
+    if _atom == 0 { "" } else { protocols.getStringProp(_d, win, _atom) }
+}
+
+fn transient(win) {
+    _d = _dpy()
+    if _d == 0 { return 0 }
+    _r = x11.getTransientForHint(_d, win)
+    if _r.ret == 0 { _r.transientFor } else { 0 }
+}
+
+fn desktop(win) {
+    _d = _dpy()
+    if _d == 0 { return -1 }
+    protocols.getCardinalProp(_d, win, protocols.netWmDesktop())
+}
+
+fn moveToDesktop(win, desktop_num) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _root = _root()
+    if _root == 0 { return false }
+    _ev = x11.makeClientMessage(win, protocols.netWmDesktop(), 32, desktop_num, x11.CurrentTime, 0, 0, 0)
+    _mask = ((x11.SubstructureRedirectMask | x11.SubstructureNotifyMask))
+    x11.sendEvent(_d, _root, x11.XFalse, _mask, _ev)
+    x11.flush(_d)
+    x11.freeClientMessage(_ev)
+    true
+}
+
+// ============================================================
+// State queries
+// ============================================================
+
+fn state(win) {
+    _d = _dpy()
+    if _d == 0 { return [] }
+    protocols.getAtomProp(_d, win, protocols.netWmState())
+}
+
+fn states(win) {
+    _atoms = state(win)
+    _names = []
+    for _a in _atoms {
+        _d = _dpy()
+        if _d != 0 { _names.push(x11.getAtomName(_d, _a)) }
+    }
+    _names
+}
+
+fn isMinimized(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, win, protocols.netWmStateHidden())
+}
+
+fn isMaximized(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _v = protocols.hasState(_d, win, protocols.netWmStateMaximizedVert())
+    _h = protocols.hasState(_d, win, protocols.netWmStateMaximizedHorz())
+    _v && _h
+}
+
+fn isFullscreen(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, win, protocols.netWmStateFullscreen())
+}
+
+fn isHidden(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _attrs = x11.getWindowAttributes(_d, win)
+    if _attrs == null { false } else { _attrs.mapState == x11.IsUnmapped }
+}
+
+fn isAbove(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, win, protocols.netWmStateAbove())
+}
+
+fn isBelow(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    protocols.hasState(_d, win, protocols.netWmStateBelow())
+}
+
+// ============================================================
+// Window existence / validation
+// ============================================================
+
+fn exists(win) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _attrs = x11.getWindowAttributes(_d, win)
+    _attrs != null
+}
+
+// ============================================================
+// Window find / search
+// ============================================================
+
+fn _allWindows() {
+    _d = _dpy()
+    if _d == 0 { return [] }
+    _root = _root()
+    if _root == 0 { return [] }
+    // Try EWMH _NET_CLIENT_LIST first
+    _r = x11.getWindowProperty(_d, _root, protocols.netClientList(), 0, 4096, 0, x11.XA_WINDOW)
+    if _r.ret == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _wins = []
+        _i = 0
+        while _i < _r.nitems {
+            _w = ffi.get_u64(ffi.ptr_add(_r.prop, _i * 8))
+            _wins.push(_w)
+            _i = _i + 1
+        }
+        x11.free(_r.prop)
+        return _wins
+    }
+    // Fallback: XQueryTree
+    _tree = x11.queryTree(_d, _root)
+    if _tree.ret == 0 || _tree.children == 0 || _tree.nchildren == 0 { return [] }
+    _wins = []
+    _i = 0
+    while _i < _tree.nchildren {
+        _w = ffi.get_u64(ffi.ptr_add(_tree.children, _i * 8))
+        _wins.push(_w)
+        _i = _i + 1
+    }
+    if _tree.children != 0 { x11.free(_tree.children) }
+    _wins
+}
+
+fn find(predicate) {
+    for _w in _allWindows() {
+        if predicate(info(_w)) { return _w }
+    }
+    0
+}
+
+fn findByTitle(name) {
+    for _w in _allWindows() {
+        if title(_w) == name { return _w }
+    }
+    0
+}
+
+fn findByClass(name) {
+    for _w in _allWindows() {
+        if className(_w) == name { return _w }
+    }
+    0
+}
+
+fn findByPid(pid_val) {
+    for _w in _allWindows() {
+        if pid(_w) == pid_val { return _w }
+    }
+    0
+}
+
+fn list() { _allWindows() }
+
+// ============================================================
+// Full window info
+// ============================================================
+
+fn info(win) {
+    if win == 0 { return null }
+    _g = geometry(win)
+    if _g == null { return null }
+    ({id: win, title: title(win), windowClass: className(win), pid: pid(win),
+        x: _g.x, y: _g.y, width: _g.width, height: _g.height,
+        desktop: desktop(win), type: type(win), state: states(win),
+        isMinimized: isMinimized(win), isMaximized: isMaximized(win),
+        isFullscreen: isFullscreen(win)})
+}
+
+// ============================================================
+// Decorations / frame extents
+// ============================================================
+
+fn decorated(win) {
+    _d = _dpy()
+    if _d == 0 { return true }
+    _atom = x11.internAtom(_d, "_GTK_FRAME_EXTENTS", 1)
+    if _atom == 0 { return true }
+    _r = x11.getWindowProperty(_d, win, _atom, 0, 4, 0, x11.XA_CARDINAL)
+    // If _GTK_FRAME_EXTENTS is set, window has frame
+    _r.ret == 0 && _r.nitems > 0
+}
+
+fn frameExtents(win) {
+    _d = _dpy()
+    if _d == 0 { return {left: 0, right: 0, top: 0, bottom: 0} }
+    _atom = x11.internAtom(_d, "_NET_FRAME_EXTENTS", 1)
+    if _atom == 0 { return {left: 0, right: 0, top: 0, bottom: 0} }
+    _r = x11.getWindowProperty(_d, win, _atom, 0, 4, 0, x11.XA_CARDINAL)
+    if _r.ret == 0 && _r.nitems >= 4 && _r.prop != 0 {
+        _left = ffi.get_i32(_r.prop)
+        _right = ffi.get_i32(ffi.ptr_add(_r.prop, 4))
+        _top = ffi.get_i32(ffi.ptr_add(_r.prop, 8))
+        _bottom = ffi.get_i32(ffi.ptr_add(_r.prop, 12))
+        x11.free(_r.prop)
+        return {left: _left, right: _right, top: _top, bottom: _bottom}
+    }
+    ({left: 0, right: 0, top: 0, bottom: 0})
+}
+
+fn setFocusable(win, focusable) {
+    // WM_HINTS: input field = 1 for focusable, 0 for not
+    _d = _dpy()
+    if _d == 0 { return false }
+    _atom = x11.internAtom(_d, "WM_HINTS", 1)
+    if _atom == 0 { return false }
+    // This is a simplified version — full WM_HINTS requires more setup
+    true
+}
+
+fn setDecorated(win, decorated_val) {
+    // Motif WM_HINTS to toggle decorations
+    _d = _dpy()
+    if _d == 0 { return false }
+    _atom = x11.internAtom(_d, "_MOTIF_WM_HINTS", 1)
+    if _atom == 0 { return false }
+    _data = ffi.allocBytes(20)
+    // flags=2 (decorations flag), functions=0, decorations=decorated_val ? 1 : 0
+    ffi.set_i32(_data, 2)
+    ffi.set_i32(ffi.ptr_add(_data, 4), 0)
+    ffi.set_i32(ffi.ptr_add(_data, 8), decorated_val ? 1 : 0)
+    ffi.set_i32(ffi.ptr_add(_data, 12), 0)
+    ffi.set_i32(ffi.ptr_add(_data, 16), 0)
+    x11.changeProp(_d, win, _atom, _atom, 32, x11.PropModeReplace, _data, 5)
+    x11.flush(_d)
+    ffi.free(_data)
+    true
+}
+
+// ============================================================
+// Raw property / event access
+// ============================================================
+
+fn setProperty(win, prop, type, format, data) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _prop_atom = x11.internAtom(_d, prop, 0)
+    _type_atom = x11.internAtom(_d, type, 0)
+    if _prop_atom == 0 || _type_atom == 0 { return false }
+    _cs = ffi.cstring(data)
+    x11.changeProp(_d, win, _prop_atom, _type_atom, format, x11.PropModeReplace, _cs, 1)
+    x11.flush(_d)
+    ffi.free(_cs)
+    true
+}
+
+fn getProperty(win, prop, type) {
+    _d = _dpy()
+    if _d == 0 { return null }
+    _prop_atom = x11.internAtom(_d, prop, 1)
+    _type_atom = 0
+    if type != "" { _type_atom = x11.internAtom(_d, type, 1) }
+    if _prop_atom == 0 { return null }
+    _r = x11.getWindowProperty(_d, win, _prop_atom, 0, 4096, 0, _type_atom)
+    if _r.ret == 0 && _r.nitems > 0 && _r.prop != 0 {
+        _val = ffi.string(_r.prop)
+        x11.free(_r.prop)
+        return _val
+    }
+    null
+}
+
+fn sendEvent(win, eventType, d0, d1, d2, d3, d4) {
+    _d = _dpy()
+    if _d == 0 { return false }
+    _atom = x11.internAtom(_d, eventType, 1)
+    if _atom == 0 { return false }
+    _ev = x11.makeClientMessage(win, _atom, 32, d0, d1, d2, d3, d4)
+    _mask = ((x11.SubstructureRedirectMask | x11.SubstructureNotifyMask))
+    _root = _root()
+    if _root != 0 {
+        x11.sendEvent(_d, _root, x11.XFalse, _mask, _ev)
+    }
+    x11.flush(_d)
+    x11.freeClientMessage(_ev)
+    true
+}
+
+// ============================================================
+// Screen position (absolute coordinates)
+// ============================================================
+
+fn screenPos(win) {
+    _d = _dpy()
+    if _d == 0 { return null }
+    _root = _root()
+    if _root == 0 { return null }
+    _g = geometry(win)
+    if _g == null { return null }
+    _r = x11.translateCoordinates(_d, win, _root, 0, 0)
+    if _r.ret == 0 { null }
+    else { {x: _r.x, y: _r.y} }
 }

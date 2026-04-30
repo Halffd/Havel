@@ -178,6 +178,7 @@ private:
     size_t locals_base = 0;
     uint32_t closure_id = 0;
     std::vector<TryHandler> try_stack;
+    size_t stack_depth = 0;  // Expression stack depth at call time
   };
 
   std::stack<Value> stack;

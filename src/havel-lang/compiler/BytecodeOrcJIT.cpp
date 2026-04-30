@@ -3480,16 +3480,15 @@ case OpCode::LOAD_EXCEPTION: {
             break;
         }
         case OpCode::ITER_NEXT: {
-            llvm::Value* iter = vstack.back();
+            llvm::Value* iter = vstack.back(); vstack.pop_back();
             llvm::Function* fnNext = module.getFunction("havel_vm_iter_next");
             if (!fnNext) {
                 fnNext = llvm::Function::Create(
                     llvm::FunctionType::get(i64, {i8p, i64}, false),
                     llvm::Function::ExternalLinkage, "havel_vm_iter_next", &module);
             }
-            // Returns value or null if exhausted; stack has [iter], result pushed
+            // Interpreter semantics: consume iterator operand and push next result.
             llvm::Value* result = B.CreateCall(fnNext, {vmArg, iter});
-            // Don't pop iter - it's kept for next iteration
             vstack.push_back(result);
             break;
         }

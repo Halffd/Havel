@@ -3555,9 +3555,16 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  
  // Phase 4 JIT: If function has been JIT-compiled, execute native code directly
  if (callee->jit_compiled && jit_compiler_) {
- Value result = jit_compiler_->executeCompiled(this, callee->name, args);
- pushStack(result);
- return;
+ uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+ try {
+   Value result = jit_compiler_->executeCompiled(this, callee->name, args);
+   setJITActiveClosurePublic(prev_jit_closure);
+   pushStack(result);
+   return;
+ } catch (...) {
+   setJITActiveClosurePublic(prev_jit_closure);
+   throw;
+ }
  }
  
  // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)

@@ -1701,9 +1701,9 @@ failAt(at(), "Expected identifier after '.'");
         
         // Parse optional start (before first colon)
         // Only parse if the current token is NOT a colon or ColonColon
-        if (at(0).type != TokenType::Colon && at(0).type != TokenType::ColonColon) {
-          start = parsePrattExpression(0);
-        }
+if (at(0).type != TokenType::Colon && at(0).type != TokenType::ColonColon) {
+start = parsePrattExpression(0);
+}
         
         // Handle ColonColon (::) as two colons
         if (at().type == TokenType::ColonColon) {

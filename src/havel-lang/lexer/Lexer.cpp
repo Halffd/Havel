@@ -1010,7 +1010,10 @@ prevType == TokenType::Not ||
         prevType == TokenType::BitwiseAnd ||
         prevType == TokenType::BitwiseXor ||
         prevType == TokenType::ShiftLeft ||
-        prevType == TokenType::Return);
+        prevType == TokenType::Return ||
+prevType == TokenType::Semicolon ||
+prevType == TokenType::OpenBrace ||
+prevType == TokenType::NewLine);
       }
 
 
@@ -1042,8 +1045,29 @@ prevType == TokenType::Not ||
       continue;
     }
 
-        // Handle numbers (including negative numbers in certain contexts)
-        if (isDigit(c) || (c == '-' && isDigit(peek()))) {
+// Handle numbers (including negative numbers in certain contexts)
+// Only treat -digit as a negative number when NOT after an expression
+bool canBeNegativeNumber = (c == '-' && isDigit(peek()));
+if (canBeNegativeNumber && !tokens.empty()) {
+TokenType prevType = tokens.back().type;
+if (prevType == TokenType::Number ||
+prevType == TokenType::String ||
+prevType == TokenType::InterpolatedString ||
+prevType == TokenType::MultilineString ||
+prevType == TokenType::Identifier ||
+prevType == TokenType::True ||
+prevType == TokenType::False ||
+prevType == TokenType::Null ||
+prevType == TokenType::CloseParen ||
+prevType == TokenType::CloseBracket ||
+prevType == TokenType::CloseBrace ||
+prevType == TokenType::Length ||
+prevType == TokenType::PlusPlus ||
+prevType == TokenType::MinusMinus) {
+canBeNegativeNumber = false;
+}
+}
+if (isDigit(c) || canBeNegativeNumber) {
             tokens.push_back(scanNumber());
             if (debug_lexer) {
                 havel::debug("LEX: {}", tokens.back().toString());

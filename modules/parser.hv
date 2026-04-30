@@ -92,8 +92,8 @@ fn kv(text, sep) {
         if eqPos != null && eqPos >= 0 {
           key = trimmed[0:eqPos].trim()
           restStart = eqPos + #sep
-          val = trimmed[restStart:].trim()
-          pairs.push([key, val])
+          _val = trimmed[restStart:].trim()
+          pairs.push([key, _val])
         }
       }
     }
@@ -104,7 +104,7 @@ fn kv(text, sep) {
 // --- INI Parsing ---
 
 // Parse INI-format text into an array of [section, pairs] entries.
-// Each entry is [sectionName, [[key, val], ...]].
+// Each entry is [sectionName, [[key, _val], ...]].
 // Global keys (before any section) have sectionName "".
 fn ini(text) {
   sections = []
@@ -136,8 +136,8 @@ fn ini(text) {
           if eqPos != null && eqPos > 0 {
             key = trimmed[0:eqPos].trim()
             valStart = eqPos + 1
-            val = trimmed[valStart:].trim()
-            currentPairs.push([key, val])
+            _val = trimmed[valStart:].trim()
+            currentPairs.push([key, _val])
           }
         }
       }
@@ -173,8 +173,8 @@ fn args(argv) {
           // --key=value
           key = rest[0:eqPos]
           valStart = eqPos + 1
-          val = rest[valStart:]
-          pairs.push([key, val])
+          _val = rest[valStart:]
+          pairs.push([key, _val])
         } else {
           // --flag or --key value
           nextIdx = i + 1

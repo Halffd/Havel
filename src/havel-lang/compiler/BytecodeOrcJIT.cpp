@@ -2348,6 +2348,16 @@ case OpCode::INT_DIV:
           case OpCode::LTE: fname = "havel_vm_lte"; break;
           case OpCode::GT:  fname = "havel_vm_gt";  break;
           case OpCode::GTE: fname = "havel_vm_gte"; break;
+        }
+        llvm::Function* fnComp = module.getFunction(fname);
+        if (!fnComp) {
+            fnComp = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, fname, &module);
+        }
+        vstack.push_back(B.CreateCall(fnComp, {vmArg, l, r}));
+        break;
+      }
     // CLOSURE - operand: func_index
     case OpCode::CLOSURE: {
         uint32_t funcIndex = instr.operands[0].asInt();

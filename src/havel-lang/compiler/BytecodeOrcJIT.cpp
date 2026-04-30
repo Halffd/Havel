@@ -3154,9 +3154,6 @@ case OpCode::INT_DIV:
         break;
     }
 
-    default: break;
-    }
-
       case OpCode::IS: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();

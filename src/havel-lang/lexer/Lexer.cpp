@@ -473,31 +473,31 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
             }
             value += '}';
         }
-    } else if (c == '{' && braceDepth == 0) {
-      // F-string interpolation: {...}
-      // Check if this is a format specifier (has :) or just an expression
-      // Simple heuristic: if next char is not {, it's an interpolation
-      if (peek(1) != '{') {
-        hasInterpolation = true;
-        value += advance(); // {
-        braceDepth++;       // Enter interpolation context
-      } else {
-        // Escaped brace {{ - consume both and add single {
-        advance(); // first {
-        advance(); // second {
-        value += '{';
-      }
-    } else if (c == '}' && braceDepth == 0) {
-      // Check for escaped brace }}
-      if (peek(1) == '}') {
-        advance(); // first }
-        advance(); // second }
-        value += '}';
-      } else {
-        // Single } in f-string without matching { - treat as literal
-        value += advance();
-      }
-    } else {
+ } else if (isFString && c == '{' && braceDepth == 0) {
+ // F-string interpolation: {...}
+ // Check if this is a format specifier (has :) or just an expression
+ // Simple heuristic: if next char is not {, it's an interpolation
+ if (peek(1) != '{') {
+ hasInterpolation = true;
+ value += advance(); // {
+ braceDepth++; // Enter interpolation context
+ } else {
+ // Escaped brace {{ - consume both and add single {
+ advance(); // first {
+ advance(); // second {
+ value += '{';
+ }
+ } else if (isFString && c == '}' && braceDepth == 0) {
+ // Check for escaped brace }}
+ if (peek(1) == '}') {
+ advance(); // first }
+ advance(); // second }
+ value += '}';
+ } else {
+ // Single } in f-string without matching { - treat as literal
+ value += advance();
+ }
+ } else {
       // Regular character processing
       char consumed = advance();
       value += consumed;
@@ -625,28 +625,28 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         }
         value += '}';
       }
-    } else if (c == '{' && braceDepth == 0) {
-      // F-string interpolation: {...}
-      if (peek(1) != '{') {
-        hasInterpolation = true;
-        value += advance(); // {
-        braceDepth++;
-      } else {
-        // Escaped brace {{
-        advance();
-        advance();
-        value += '{';
-      }
-    } else if (c == '}' && braceDepth == 0) {
-      // Check for escaped brace }}
-      if (peek(1) == '}') {
-        advance();
-        advance();
-        value += '}';
-      } else {
-        value += advance();
-      }
-    } else {
+ } else if (isFString && c == '{' && braceDepth == 0) {
+ // F-string interpolation: {...}
+ if (peek(1) != '{') {
+ hasInterpolation = true;
+ value += advance(); // {
+ braceDepth++;
+ } else {
+ // Escaped brace {{
+ advance();
+ advance();
+ value += '{';
+ }
+ } else if (isFString && c == '}' && braceDepth == 0) {
+ // Check for escaped brace }}
+ if (peek(1) == '}') {
+ advance();
+ advance();
+ value += '}';
+ } else {
+ value += advance();
+ }
+ } else {
       char consumed = advance();
       value += consumed;
 
@@ -977,10 +977,12 @@ prevType == TokenType::String || prevType == TokenType::InterpolatedString || pr
 prevType == TokenType::Identifier ||
           prevType == TokenType::True || prevType == TokenType::False ||
           prevType == TokenType::Null ||
-          prevType == TokenType::CloseParen ||
-          prevType == TokenType::CloseBracket ||
-          prevType == TokenType::CloseBrace ||
-          prevType == TokenType::Not ||
+ prevType == TokenType::CloseParen ||
+ prevType == TokenType::CloseBracket ||
+ prevType == TokenType::CloseBrace ||
+ prevType == TokenType::OpenBracket ||
+ prevType == TokenType::OpenParen ||
+ prevType == TokenType::Not ||
           prevType == TokenType::Or || prevType == TokenType::And ||
           prevType == TokenType::Assign ||
           prevType == TokenType::If || prevType == TokenType::While ||
@@ -1432,18 +1434,64 @@ if (c == '%' && peek() == '=') {
         // e.g. print((expr)) should be: print ( ( expr ) )
         if (!tokens.empty()) {
             TokenType prevType = tokens.back().type;
-            if (prevType == TokenType::Identifier ||
-                prevType == TokenType::CloseParen ||
-                prevType == TokenType::CloseBracket ||
-prevType == TokenType::String ||
-prevType == TokenType::InterpolatedString ||
-prevType == TokenType::MultilineString ||
-prevType == TokenType::Number) {
+ if (prevType == TokenType::Identifier ||
+ prevType == TokenType::CloseParen ||
+ prevType == TokenType::CloseBracket ||
+ prevType == TokenType::String ||
+ prevType == TokenType::InterpolatedString ||
+ prevType == TokenType::MultilineString ||
+ prevType == TokenType::Number ||
+            prevType == TokenType::Plus ||
+            prevType == TokenType::Minus ||
+            prevType == TokenType::Multiply ||
+            prevType == TokenType::Divide ||
+            prevType == TokenType::Modulo ||
+            prevType == TokenType::Equals ||
+            prevType == TokenType::NotEquals ||
+            prevType == TokenType::Less ||
+            prevType == TokenType::Greater ||
+            prevType == TokenType::LessEquals ||
+            prevType == TokenType::GreaterEquals ||
+            prevType == TokenType::Comma ||
+            prevType == TokenType::Return ||
+            prevType == TokenType::Colon) {
+            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            advance(); // consume second '('
+            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            continue;
+        }
+        // After Assign, (( could be either bitwise or arithmetic.
+        // Look ahead for bitwise operators (& | ^ << >>) inside the ((...))
+        // If no bitwise ops found, treat as two separate parens.
+        if (prevType == TokenType::Assign) {
+            bool hasBitwiseOp = false;
+            size_t look = position + 1; // after '(('
+            int depth = 2;
+            while (look < source.length() && depth > 0) {
+                char lc = source[look];
+                if (lc == '(') { depth++; }
+                else if (lc == ')') { depth--; if (depth == 0) break; }
+                else if (depth == 2 && (lc == '&' || lc == '|' || lc == '^')) {
+                    // Must not be && or ||
+                    if (lc == '&' && look + 1 < source.length() && source[look + 1] == '&') { /* skip */ }
+                    else if (lc == '|' && look + 1 < source.length() && source[look + 1] == '|') { /* skip */ }
+                    else { hasBitwiseOp = true; break; }
+                }
+                else if (depth == 2 && lc == '<' && look + 1 < source.length() && source[look + 1] == '<') {
+                    hasBitwiseOp = true; break;
+                }
+                else if (depth == 2 && lc == '>' && look + 1 < source.length() && source[look + 1] == '>') {
+                    hasBitwiseOp = true; break;
+                }
+                look++;
+            }
+            if (!hasBitwiseOp) {
                 tokens.push_back(makeToken("(", TokenType::OpenParen));
                 advance(); // consume second '('
                 tokens.push_back(makeToken("(", TokenType::OpenParen));
                 continue;
             }
+        }
         }
         // Look ahead for lambda indicators (comma or =>) to avoid misidentifying
         // Higher-Order Function arguments like ob.map((v, k) => ...) as bitwise blocks.
@@ -1808,24 +1856,24 @@ prevType == TokenType::Number) {
         }
         continue;
     }
-if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
-    // Special case: !{ for unsorted object literals
-    if (c == '!' && peek() == '{') {
-      advance(); // consume '{'
-      tokens.push_back(makeToken("!{", TokenType::BangOpenBrace));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
-    }
-        // Special case for +, !, and ~: check context to distinguish operator
-        // from hotkey Note: CloseBrace is NOT in expression context - after }
-        // we're at statement level
-        // Inside bitwise (( )) blocks, ~ is always bitwise NOT
-        if (c == '~' && inBitwiseExpr) {
-            // Fall through to SINGLE_CHAR_TOKENS for Tilde
-        } else if ((c == '+' || c == '!' || c == '~' || c == '^') && !tokens.empty()) {
-            TokenType prevType = tokens.back().type;
+ if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
+ // Special case: !{ for unsorted object literals
+ if (c == '!' && peek() == '{') {
+ advance(); // consume '{'
+ tokens.push_back(makeToken("!{", TokenType::BangOpenBrace));
+ if (debug_lexer) {
+ havel::debug("LEX: {}", tokens.back().toString());
+ }
+ continue;
+ }
+ // Special case: ! followed by _ or lowercase letter is NOT operator,
+ // not a hotkey modifier (e.g., !_m, !x vs !F1, !Esc)
+ if (c == '!' && (peek() == '_' || (peek() != 0 && std::islower(static_cast<unsigned char>(peek()))))) {
+ // Fall through to SINGLE_CHAR_TOKENS to get Not token
+ } else if (c == '~' && inBitwiseExpr) {
+ // Fall through to SINGLE_CHAR_TOKENS for Tilde
+ } else if ((c == '+' || c == '!' || c == '~' || c == '^') && !tokens.empty()) {
+ TokenType prevType = tokens.back().type;
             // If previous token suggests expression context, treat as operator
             // Exclude CloseBrace - after } we're at statement level (could be
             // hotkey) Include statement starters that are followed by expressions

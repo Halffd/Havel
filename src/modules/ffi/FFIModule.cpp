@@ -1,8 +1,3 @@
-/*
- * FFIModule.cpp
- *
- * FFI module bindings for the Havel bytecode VM.
- */
 #include "FFIModule.hpp"
 #include "havel-lang/ffi/FFICall.hpp"
 #include "havel-lang/ffi/FFIMemory.hpp"
@@ -10,6 +5,7 @@
 #include "havel-lang/ffi/FFIAccessors.hpp"
 #include "havel-lang/core/Value.hpp"
 #include "modules/ModuleRegistry.hpp"
+#include "../../utils/Logger.hpp"
 #include <cstring>
 #include <cerrno>
 #include <memory>
@@ -31,20 +27,7 @@ static std::shared_ptr<FFIType> resolveType(compiler::VMApi& api, const Value& v
     std::string name = api.toString(v);
     auto t = FFITypeRegistry::from_name(name);
     if (!t) {
-        if (name == "void") t = FFITypeRegistry::void_type();
-        else if (name == "bool") t = FFITypeRegistry::bool_type();
-        else if (name == "int8_t" || name == "int8") t = FFITypeRegistry::int8_type();
-        else if (name == "int16_t" || name == "int16") t = FFITypeRegistry::int16_type();
-        else if (name == "int32_t" || name == "int32") t = FFITypeRegistry::int32_type();
-        else if (name == "int64_t" || name == "int64") t = FFITypeRegistry::int64_type();
-        else if (name == "uint8_t" || name == "uint8") t = FFITypeRegistry::uint8_type();
-        else if (name == "uint16_t" || name == "uint16") t = FFITypeRegistry::uint16_type();
-        else if (name == "uint32_t" || name == "uint32") t = FFITypeRegistry::uint32_type();
-        else if (name == "uint64_t" || name == "uint64") t = FFITypeRegistry::uint64_type();
-        else if (name == "float" || name == "f32") t = FFITypeRegistry::float32_type();
-        else if (name == "double" || name == "f64") t = FFITypeRegistry::float64_type();
-        else if (name == "char*" || name == "string") t = FFITypeRegistry::string_type();
-        else if (name == "void*" || name == "pointer") t = FFITypeRegistry::pointer_type(nullptr);
+        ::havel::error("FFI: unknown type: {}", name);
     }
     return t;
 }
@@ -102,30 +85,36 @@ static Value ffiSym(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
 static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
     auto args = stripReceiver(rawArgs);
     if (args.size() < 3) {
+        ::havel::error("ffi.call: need at least 3 args (fn_ptr, ret_type, param_types)");
         return Value::makeNull();
     }
 
     void* fn_ptr = resolvePtr(args[0]);
-    if (!fn_ptr) return Value::makeNull();
+    if (!fn_ptr) {
+        ::havel::error("ffi.call: null function pointer");
+        return Value::makeNull();
+    }
 
     std::shared_ptr<FFIType> ret_type = resolveType(api, args[1]);
     if (!ret_type) return Value::makeNull();
 
-    // args[2] is an array of argument type names
     std::vector<std::shared_ptr<FFIType>> param_types;
     if (args[2].isArrayId()) {
         uint32_t len = api.length(args[2]);
         for (uint32_t i = 0; i < len; i++) {
             auto typeName = api.getAt(args[2], i);
             auto t = resolveType(api, typeName);
-            if (!t) return Value::makeNull();
+            if (!t) {
+                ::havel::error("ffi.call: unknown param type at index {}", i);
+                return Value::makeNull();
+            }
             param_types.push_back(t);
         }
     }
 
-    // The remaining args are the actual arguments to pass to C
     size_t havel_arg_offset = 3;
     if (param_types.size() != args.size() - havel_arg_offset) {
+        ::havel::error("ffi.call: expected {} args, got {}", param_types.size(), args.size() - havel_arg_offset);
         return Value::makeNull();
     }
 
@@ -139,21 +128,16 @@ static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
         auto& pt = param_types[i];
 
         if (pt->kind == FFITypeKind::STRING) {
-            // Resolve string value and allocate a persistent copy
             std::string s;
             if (arg.isPtr()) {
                 s = static_cast<const char*>(arg.asPtr());
             } else if (arg.isStringId() || arg.isStringValId()) {
                 s = api.toString(arg);
             }
-            if (!s.empty()) {
-                auto buf = std::make_unique<char[]>(s.size() + 1);
-                std::memcpy(buf.get(), s.c_str(), s.size() + 1);
-                arg_ptrs.push_back(buf.get());
-                string_storage.push_back(std::move(buf));
-            } else {
-                arg_ptrs.push_back(nullptr);
-            }
+            auto buf = std::make_unique<char[]>(s.size() + 1);
+            std::memcpy(buf.get(), s.c_str(), s.size() + 1);
+            arg_ptrs.push_back(buf.get());
+            string_storage.push_back(std::move(buf));
         } else if (pt->kind == FFITypeKind::POINTER) {
             void* p = resolvePtr(arg);
             auto buf = std::make_unique<uint8_t[]>(sizeof(void*));
@@ -163,6 +147,7 @@ static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
         } else {
             void* native = FFIMemory::to_native(arg, pt);
             if (!native) {
+                ::havel::error("ffi.call: failed to marshal arg {} of type {}", i, pt->name);
                 return Value::makeNull();
             }
             size_t sz = FFITypeRegistry::size_of(pt);
@@ -170,7 +155,7 @@ static Value ffiCall(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
             std::memcpy(buf.get(), native, sz);
             arg_ptrs.push_back(buf.get());
             arg_storage.push_back(std::move(buf));
-            FFIMemory::free(native);
+            std::free(native);
         }
     }
 
@@ -214,6 +199,23 @@ static Value ffiCdef(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
             api.setGlobal(decl.name, Value(static_cast<int64_t>(decl.constant_value)));
         }
 
+        if (decl.kind == FFIDeclaration::Kind::STRUCT && decl.type) {
+            api.setField(obj, "size", Value(static_cast<int64_t>(FFITypeRegistry::size_of(decl.type))));
+            api.setField(obj, "alignment", Value(static_cast<int64_t>(FFITypeRegistry::align_of(decl.type))));
+            auto fields_arr = api.makeArray();
+            for (auto& [fname, ftype] : decl.fields) {
+                auto fobj = api.makeObject();
+                api.setField(fobj, "name", api.makeString(fname));
+                api.setField(fobj, "type", api.makeString(ftype->name));
+                auto it = decl.type->field_offsets.find(fname);
+                if (it != decl.type->field_offsets.end()) {
+                    api.setField(fobj, "offset", Value(static_cast<int64_t>(it->second)));
+                }
+                api.push(fields_arr, fobj);
+            }
+            api.setField(obj, "fields", fields_arr);
+        }
+
         if (decl.kind == FFIDeclaration::Kind::VARIABLE && lib_handle) {
             void* sym = FFICall::get_symbol(lib_handle, decl.name);
             if (sym) {
@@ -232,6 +234,17 @@ static Value ffiCdef(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
                 decl.function_ptr = fn;
                 api.setField(obj, "address", Value::makePtr(fn));
             }
+            if (!decl.param_names.empty()) {
+                auto params_arr = api.makeArray();
+                for (auto& pname : decl.param_names) {
+                    api.push(params_arr, api.makeString(pname));
+                }
+                api.setField(obj, "params", params_arr);
+            }
+        }
+
+        if (decl.kind == FFIDeclaration::Kind::TYPEDEF && decl.type) {
+            api.setField(obj, "underlying", api.makeString(decl.type->name));
         }
 
         api.push(result, obj);
@@ -452,10 +465,36 @@ static Value ffiCallback(compiler::VMApi& api, const std::vector<Value>& rawArgs
 
 static Value ffiClosure(compiler::VMApi&, const std::vector<Value>& rawArgs) {
     auto args = stripReceiver(rawArgs);
-    // Attach closure context to callback - stub for now
     if (args.size() < 1) return Value::makeNull();
     void* cb = resolvePtr(args[0]);
-    return Value::makePtr(cb);
+    FFICall::destroy_callback(cb);
+    return Value::makeNull();
+}
+
+// ============================================================================
+// Bulk memory operations
+// ============================================================================
+
+static Value ffiMemcpy(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
+    if (args.size() < 3) return Value::makeNull();
+    void* dst = resolvePtr(args[0]);
+    void* src = resolvePtr(args[1]);
+    if (!dst || !src) return Value::makeNull();
+    size_t size = static_cast<size_t>(args[2].asInt64());
+    std::memcpy(dst, src, size);
+    return Value::makePtr(dst);
+}
+
+static Value ffiMemset(compiler::VMApi&, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(rawArgs);
+    if (args.size() < 3) return Value::makeNull();
+    void* ptr = resolvePtr(args[0]);
+    if (!ptr) return Value::makeNull();
+    int val = static_cast<int>(args[1].asInt64());
+    size_t size = static_cast<size_t>(args[2].asInt64());
+    std::memset(ptr, val, size);
+    return Value::makePtr(ptr);
 }
 
 // ============================================================================
@@ -777,6 +816,10 @@ void registerFFIModule(compiler::VMApi& api) {
     reg("ffi.callback", ffiCallback);
     reg("ffi.closure", ffiClosure);
 
+    // Bulk memory operations
+    reg("ffi.memcpy", ffiMemcpy);
+    reg("ffi.memset", ffiMemset);
+
     // Global variables
     reg("ffi.var", ffiVar);
     reg("ffi.get", ffiGet);
@@ -836,6 +879,8 @@ void registerFFIModule(compiler::VMApi& api) {
     api.setField(ffiObj, "setField", api.makeFunctionRef("ffi.setField"));
     api.setField(ffiObj, "callback", api.makeFunctionRef("ffi.callback"));
     api.setField(ffiObj, "closure", api.makeFunctionRef("ffi.closure"));
+    api.setField(ffiObj, "memcpy", api.makeFunctionRef("ffi.memcpy"));
+    api.setField(ffiObj, "memset", api.makeFunctionRef("ffi.memset"));
     api.setField(ffiObj, "var", api.makeFunctionRef("ffi.var"));
     api.setField(ffiObj, "get", api.makeFunctionRef("ffi.get"));
     api.setField(ffiObj, "set", api.makeFunctionRef("ffi.set"));

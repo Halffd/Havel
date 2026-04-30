@@ -78,6 +78,7 @@ public:
     
     static void add_struct_field(std::shared_ptr<FFIType> type, const std::string& name, std::shared_ptr<FFIType> field_type);
     static void compute_layout(std::shared_ptr<FFIType> type);
+    static void register_typedef(const std::string& name, std::shared_ptr<FFIType> type);
     
 private:
     static std::unordered_map<std::string, std::shared_ptr<FFIType>> named_types_;

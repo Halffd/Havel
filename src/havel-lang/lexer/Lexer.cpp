@@ -449,31 +449,35 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         break;
       }
 } else if (c == '$' && braceDepth == 0) {
-        // $var and ${...} interpolation in all strings
-        hasInterpolation = true;
-        value += advance(); // $
+        char next = peek();
+        if (isAlpha(next) || next == '_' || next == '@') {
+            hasInterpolation = true;
+            value += advance(); // $
 
-        if (isAlpha(peek()) || peek() == '_') {
-            value += '{';
-            while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-                value += advance();
+            if (isAlpha(peek()) || peek() == '_') {
+                value += '{';
+                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                    value += advance();
+                }
+                if (!isAtEnd() && peek() == '?') {
+                    value += advance();
+                }
+                value += '}';
+            } else if (peek() == '@') {
+                value += '{';
+                value += advance(); // @
+                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                    value += advance();
+                }
+                if (!isAtEnd() && peek() == '?') {
+                    value += advance();
+                }
+                value += '}';
             }
-            if (!isAtEnd() && peek() == '?') {
-                value += advance();
-            }
-            value += '}';
-        } else if (peek() == '@') {
-            value += '{';
-            value += advance(); // @
-            while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-                value += advance();
-            }
-            if (!isAtEnd() && peek() == '?') {
-                value += advance();
-            }
-            value += '}';
+        } else {
+            value += advance(); // $ as literal
         }
- } else if (isFString && c == '{' && braceDepth == 0) {
+    } else if (isFString && c == '{' && braceDepth == 0) {
  // F-string interpolation: {...}
  // Check if this is a format specifier (has :) or just an expression
  // Simple heuristic: if next char is not {, it's an interpolation
@@ -601,31 +605,35 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         break;
       }
 } else if (c == '$' && braceDepth == 0) {
-        // $var and ${...} interpolation in all strings
-        hasInterpolation = true;
-      value += advance(); // $
+        char next = peek();
+        if (next == '{' || isAlpha(next) || next == '_' || next == '@') {
+            hasInterpolation = true;
+            value += advance(); // $
 
-      if (peek() == '{') {
-        value += advance(); // {
-        braceDepth++;
-      } else if (isAlpha(peek()) || peek() == '_') {
-        value += '{';
-        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-          value += advance();
+            if (peek() == '{') {
+                value += advance(); // {
+                braceDepth++;
+            } else if (isAlpha(peek()) || peek() == '_') {
+                value += '{';
+                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                    value += advance();
+                }
+                if (!isAtEnd() && peek() == '?') {
+                    value += advance();
+                }
+                value += '}';
+            } else if (peek() == '@') {
+                value += '{';
+                value += advance(); // @
+                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                    value += advance();
+                }
+                value += '}';
+            }
+        } else {
+            value += advance(); // $ as literal
         }
-        if (!isAtEnd() && peek() == '?') {
-          value += advance();
-        }
-        value += '}';
-      } else if (peek() == '@') {
-        value += '{';
-        value += advance(); // @
-        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-          value += advance();
-        }
-        value += '}';
-      }
- } else if (isFString && c == '{' && braceDepth == 0) {
+    } else if (isFString && c == '{' && braceDepth == 0) {
  // F-string interpolation: {...}
  if (peek(1) != '{') {
  hasInterpolation = true;

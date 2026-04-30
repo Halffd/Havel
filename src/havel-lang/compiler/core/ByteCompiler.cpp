@@ -2938,9 +2938,9 @@ break;
           uint32_t strId = addStringConstant(binding.name);
           emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
-      } else {
-        COMPILER_THROW("Assignment target is not mutable");
-      }
+} else {
+            COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
+        }
     };
 
     auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
@@ -2957,9 +2957,9 @@ break;
           uint32_t strId = addStringConstant(binding.name);
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
-      } else {
-        COMPILER_THROW("Assignment target is not mutable");
-      }
+} else {
+            COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
+        }
     };
 
     auto emitStoreMemberWithResult = [&](const ast::MemberExpression &member) {

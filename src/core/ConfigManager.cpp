@@ -116,120 +116,211 @@ havel::Configs::GetLastModified(const std::string &filepath) const {
 }
 
 void havel::Configs::Reload() {
-  if (path.empty())
-    return;
-  try {
-    std::ifstream file(path);
-    if (!file.is_open())
-      throw std::runtime_error("Could not open config file: " + path);
+    if (path.empty())
+        return;
+    try {
+        std::ifstream file(path);
+        if (!file.is_open())
+            throw std::runtime_error("Could not open config file: " + path);
 
-    // Parse into temporary ConfigObject
-    ConfigObject newConfig;
-    std::string line, currentSection;
+        // Parse into temporary ConfigObject (TOML format)
+        ConfigObject newConfig;
+        std::string line, currentSection;
 
-    while (std::getline(file, line)) {
-      if (line.empty() || line[0] == '#' || line[0] == ';')
-        continue;
-      if (line[0] == '[' && line.back() == ']') {
-        currentSection = trim(line.substr(1, line.size() - 2));
-        continue;
-      }
-      size_t delim = line.find('=');
-      if (delim != std::string::npos) {
-        std::string key = trim(line.substr(0, delim));
-        std::string value = trim(line.substr(delim + 1));
+        while (std::getline(file, line)) {
+            if (line.empty() || line[0] == '#' || line[0] == ';')
+                continue;
+            line = trim(line);
+            if (line.empty()) continue;
 
-        if (!currentSection.empty()) {
-          newConfig.set(currentSection + "." + key, value);
-        } else {
-          newConfig.set(key, value);
-        }
-      }
-    }
-
-    // Notify watchers of changed values
-    for (const auto &key : newConfig.keys()) {
-      std::string oldValue = config.getString(key);
-      std::string newValue = newConfig.getString(key);
-      if (oldValue != newValue) {
-        for (auto &[watchKey, callback] : watchers) {
-          if (watchKey == key || watchKey.empty()) {
-            try {
-              callback(newValue);
-            } catch (...) {
+            // Section header
+            if (line[0] == '[' && line.back() == ']') {
+                currentSection = line.substr(1, line.size() - 2);
+                // Handle [[array_of_tables]]
+                if (currentSection.size() >= 2 && currentSection.front() == '[' && currentSection.back() == ']') {
+                    currentSection = currentSection.substr(1, currentSection.size() - 2);
+                }
+                continue;
             }
-          }
-        }
-      }
-    }
 
-    // Replace config
-    config = newConfig;
-  } catch (const std::exception &e) {
+            size_t delim = line.find('=');
+            if (delim != std::string::npos) {
+                std::string key = trim(line.substr(0, delim));
+                std::string value = trim(line.substr(delim + 1));
+
+                // Strip surrounding quotes from string values (TOML)
+                if (value.size() >= 2 && ((value.front() == '"' && value.back() == '"') ||
+                                          (value.front() == '\'' && value.back() == '\''))) {
+                    value = value.substr(1, value.size() - 2);
+                }
+
+                if (!currentSection.empty()) {
+                    newConfig.set(currentSection + "." + key, value);
+                } else {
+                    newConfig.set(key, value);
+                }
+            }
+        }
+
+        // Notify watchers of changed values
+        for (const auto &key : newConfig.keys()) {
+            std::string oldValue = config.getString(key);
+            std::string newValue = newConfig.getString(key);
+            if (oldValue != newValue) {
+                for (auto &[watchKey, callback] : watchers) {
+                    if (watchKey == key || watchKey.empty()) {
+                        try {
+                            callback(newValue);
+                        } catch (...) {
+                        }
+                    }
+                }
+            }
+        }
+
+        // Replace config
+        config = newConfig;
+    } catch (const std::exception &e) {
         havel::error("Config reload failed: {}", e.what());
-  }
+    }
 }
 
 void havel::Configs::Load(const std::string &filename) {
-  path = ConfigPaths::GetConfigPath(filename);
+    path = ConfigPaths::GetConfigPath(filename);
 
-  std::ifstream file(path);
+    std::ifstream file(path);
 
-  std::string line, currentSection;
+    std::string line, currentSection;
 
-  if (!file.is_open()) {
+    if (!file.is_open()) {
         havel::error("Could not open config file: {}", path);
-    return;
-  }
-
-  while (std::getline(file, line)) {
-    // Skip empty lines and comments
-    if (line.empty() || line[0] == '#' || line[0] == ';')
-      continue;
-
-    // Trim whitespace
-    line = trim(line);
-
-    // Section header
-    if (line[0] == '[' && line.back() == ']') {
-      currentSection = line.substr(1, line.size() - 2);
-      continue;
+        return;
     }
 
-    // Key=value pair
-    size_t delim = line.find('=');
-    if (delim != std::string::npos) {
-      std::string key = trim(line.substr(0, delim));
-      std::string value = trim(line.substr(delim + 1));
+    while (std::getline(file, line)) {
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#' || line[0] == ';')
+            continue;
 
-      if (!currentSection.empty()) {
-        config.set(currentSection + "." + key, value);
-      } else {
-        config.set(key, value);
-      }
+        // Trim whitespace
+        line = trim(line);
+        if (line.empty()) continue;
+
+        // Section header
+        if (line[0] == '[' && line.back() == ']') {
+            currentSection = line.substr(1, line.size() - 2);
+            // Handle [[array_of_tables]]
+            if (currentSection.size() >= 2 && currentSection.front() == '[' && currentSection.back() == ']') {
+                currentSection = currentSection.substr(1, currentSection.size() - 2);
+            }
+            continue;
+        }
+
+        // Key=value pair
+        size_t delim = line.find('=');
+        if (delim != std::string::npos) {
+            std::string key = trim(line.substr(0, delim));
+            std::string value = trim(line.substr(delim + 1));
+
+            // Strip surrounding quotes from string values (TOML)
+            if (value.size() >= 2 && ((value.front() == '"' && value.back() == '"') ||
+                                      (value.front() == '\'' && value.back() == '\''))) {
+                value = value.substr(1, value.size() - 2);
+            }
+
+            if (!currentSection.empty()) {
+                config.set(currentSection + "." + key, value);
+            } else {
+                config.set(key, value);
+            }
+        }
     }
-  }
 }
 
 void havel::Configs::Save(const std::string &filename) {
-  // Don't save if no config path (pure mode)
-  if (path.empty() && filename.empty()) {
-    return;
-  }
+    // Don't save if no config path (pure mode)
+    if (path.empty() && filename.empty()) {
+        return;
+    }
 
-  std::string savePath =
-      filename.empty() ? path : ConfigPaths::GetConfigPath(filename);
-  ConfigPaths::EnsureConfigDir();
-  try {
-    std::ofstream file(savePath);
-    if (!file.is_open())
-      throw std::runtime_error("Could not save config file: " + savePath);
+    std::string savePath =
+        filename.empty() ? path : ConfigPaths::GetConfigPath(filename);
+    ConfigPaths::EnsureConfigDir();
+    try {
+        std::ofstream file(savePath);
+        if (!file.is_open())
+            throw std::runtime_error("Could not save config file: " + savePath);
 
-    // Use ConfigObject's toString method
-    file << config.toString();
-  } catch (const std::exception &e) {
+        // Group keys by section for TOML format
+        std::map<std::string, std::map<std::string, std::string>> sections;
+        std::map<std::string, std::string> rootKeys;
+
+        for (const auto &[key, value] : config.values()) {
+            size_t dotPos = key.find('.');
+            if (dotPos != std::string::npos) {
+                std::string sec = key.substr(0, dotPos);
+                std::string subKey = key.substr(dotPos + 1);
+                sections[sec][subKey] = value;
+            } else {
+                rootKeys[key] = value;
+            }
+        }
+
+        // Helper to write a TOML value (quote strings)
+        auto writeValue = [](std::ofstream &f, const std::string &value) {
+            // If value is a known TOML bare type, write as-is
+            if (value == "true" || value == "false") {
+                f << value;
+                return;
+            }
+            // Check if it's a number
+            try {
+                size_t pos;
+                std::stod(value, &pos);
+                if (pos == value.size()) {
+                    f << value;
+                    return;
+                }
+            } catch (...) {
+            }
+            // Check if already quoted
+            if (value.size() >= 2 &&
+                ((value.front() == '"' && value.back() == '"') ||
+                 (value.front() == '\'' && value.back() == '\''))) {
+                f << value;
+                return;
+            }
+            // Check if it's a TOML array or inline table
+            if (!value.empty() && (value.front() == '[' || value.front() == '{')) {
+                f << value;
+                return;
+            }
+            // Default: quote as string
+            f << "\"" << value << "\"";
+        };
+
+        // Write root-level keys
+        for (const auto &[key, value] : rootKeys) {
+            file << key << " = ";
+            writeValue(file, value);
+            file << "\n";
+        }
+
+        // Write each section
+        for (const auto &[sec, keys] : sections) {
+            if (!rootKeys.empty() || &sec != &sections.begin()->first) {
+                file << "\n";
+            }
+            file << "[" << sec << "]\n";
+            for (const auto &[key, value] : keys) {
+                file << key << " = ";
+                writeValue(file, value);
+                file << "\n";
+            }
+        }
+    } catch (const std::exception &e) {
         havel::error("Config save failed: {}", e.what());
-  }
+    }
 }
 
 void havel::Configs::RequestSave() {
@@ -266,40 +357,42 @@ void havel::Configs::ForceSave() {
 }
 
 void havel::Configs::EnsureConfigFile(const std::string &filename) {
-  path = ConfigPaths::GetConfigPath(filename);
-  ConfigPaths::EnsureConfigDir();
-  namespace fs = std::filesystem;
-  if (!fs::exists(path)) {
-    try {
-      std::ofstream file(path);
-      if (!file.is_open())
-        throw std::runtime_error("Could not create config file: " + path);
-      // Write sensible defaults
-      file << "[Debug]" << std::endl;
-      file << "VerboseKeyLogging=false" << std::endl;
-      file << "VerboseWindowLogging=false" << std::endl;
-      file << "VerboseConditionLogging=false" << std::endl;
-      file << "[Compiler]" << std::endl;
-      file << "JIT=true" << std::endl;
-      file << "[General]" << std::endl;
-      file << "GamingApps=";
-      for (size_t i = 0; i < Configs::DEFAULT_GAMING_APPS.size(); ++i) {
-        file << Configs::DEFAULT_GAMING_APPS[i];
-        if (i + 1 < Configs::DEFAULT_GAMING_APPS.size())
-          file << ",";
-      }
-      file << std::endl;
-      file << "DefaultBrightness=" << Configs::DEFAULT_BRIGHTNESS << std::endl;
-      file << "StartupBrightness=" << Configs::STARTUP_BRIGHTNESS << std::endl;
-      file << "StartupGamma=" << Configs::STARTUP_GAMMA << std::endl;
-      file << "BrightnessAmount=" << Configs::DEFAULT_BRIGHTNESS_AMOUNT
-           << std::endl;
-      file << "GammaAmount=" << Configs::DEFAULT_GAMMA_AMOUNT << std::endl;
-      file.close();
-    } catch (const std::exception &e) {
-        havel::error("Failed to create default config: {}", e.what());
+    path = ConfigPaths::GetConfigPath(filename);
+    ConfigPaths::EnsureConfigDir();
+    namespace fs = std::filesystem;
+    if (!fs::exists(path)) {
+        try {
+            std::ofstream file(path);
+            if (!file.is_open())
+                throw std::runtime_error("Could not create config file: " + path);
+            // Write sensible defaults in TOML format
+            file << "[Debug]\n";
+            file << "VerboseKeyLogging = false\n";
+            file << "VerboseWindowLogging = false\n";
+            file << "VerboseConditionLogging = false\n";
+            file << "\n";
+            file << "[Compiler]\n";
+            file << "JIT = true\n";
+            file << "\n";
+            file << "[General]\n";
+            file << "GamingApps = \"";
+            for (size_t i = 0; i < Configs::DEFAULT_GAMING_APPS.size(); ++i) {
+                file << Configs::DEFAULT_GAMING_APPS[i];
+                if (i + 1 < Configs::DEFAULT_GAMING_APPS.size()) {
+                    file << ",";
+                }
+            }
+            file << "\"\n";
+            file << "DefaultBrightness = " << Configs::DEFAULT_BRIGHTNESS << "\n";
+            file << "StartupBrightness = " << Configs::STARTUP_BRIGHTNESS << "\n";
+            file << "StartupGamma = " << Configs::STARTUP_GAMMA << "\n";
+            file << "BrightnessAmount = " << Configs::DEFAULT_BRIGHTNESS_AMOUNT << "\n";
+            file << "GammaAmount = " << Configs::DEFAULT_GAMMA_AMOUNT << "\n";
+            file.close();
+        } catch (const std::exception &e) {
+            havel::error("Failed to create default config: {}", e.what());
+        }
     }
-  }
 }
 
 std::string havel::Configs::getPath() { return path; }

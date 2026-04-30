@@ -229,53 +229,82 @@ public:
         }
     }
     
-    // Convert to INI-style string
+    // Convert to TOML-style string
     std::string toString(const std::string &section = "") const {
         std::ostringstream oss;
-        
-        if (!section.empty()) {
-            oss << "[" << section << "]\n";
-        }
-        
+
+        // Group keys by section (dot-separated: Section.Key)
+        std::map<std::string, std::map<std::string, std::string>> sections;
+        std::map<std::string, std::string> rootKeys;
+
         for (const auto &[key, value] : values_) {
+            size_t dotPos = key.find('.');
+            if (dotPos != std::string::npos) {
+                std::string sec = key.substr(0, dotPos);
+                std::string subKey = key.substr(dotPos + 1);
+                sections[sec][subKey] = value;
+            } else {
+                rootKeys[key] = value;
+            }
+        }
+
+        // Write root-level keys first (no section header)
+        for (const auto &[key, value] : rootKeys) {
             oss << key << " = " << value << "\n";
         }
-        
+
+        // Write each section
+        for (const auto &[sec, keys] : sections) {
+            if (!rootKeys.empty() || &sec != &sections.begin()->first) {
+                oss << "\n";
+            }
+            oss << "[" << sec << "]\n";
+            for (const auto &[key, value] : keys) {
+                oss << key << " = " << value << "\n";
+            }
+        }
+
+        // Write nested objects (if any)
         for (const auto &[key, obj] : nestedObjects_) {
             oss << "\n" << obj.toString(key);
         }
-        
+
         return oss.str();
     }
     
-    // Parse from INI-style string
+    // Parse from TOML-style string (section headers create dot-prefixed keys)
     static ConfigObject fromString(const std::string &str) {
         ConfigObject result;
         std::istringstream iss(str);
         std::string line, currentSection;
-        
+
         while (std::getline(iss, line)) {
             line = trim(line);
-            
+
             // Skip empty lines and comments
             if (line.empty() || line[0] == '#' || line[0] == ';') {
                 continue;
             }
-            
+
             // Section header
             if (line[0] == '[' && line.back() == ']') {
                 currentSection = line.substr(1, line.size() - 2);
+                // Handle [[array_of_tables]] by stripping one bracket pair
+                if (currentSection.size() >= 2 && currentSection.front() == '[' && currentSection.back() == ']') {
+                    currentSection = currentSection.substr(1, currentSection.size() - 2);
+                }
                 result.nestedObjects_[currentSection] = ConfigObject(currentSection);
                 continue;
             }
-            
+
             // Key=value pair
             size_t delim = line.find('=');
             if (delim != std::string::npos) {
                 std::string key = trim(line.substr(0, delim));
                 std::string value = trim(line.substr(delim + 1));
-                
+
                 if (!currentSection.empty()) {
+                    result.values_[currentSection + "." + key] = value;
                     auto *obj = result.getObject(currentSection);
                     if (obj) {
                         obj->values_[key] = value;
@@ -285,7 +314,7 @@ public:
                 }
             }
         }
-        
+
         return result;
     }
 

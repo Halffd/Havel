@@ -473,7 +473,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
             }
             value += '}';
         }
-    } else if (c == '{' && isFString && braceDepth == 0) {
+    } else if (c == '{' && braceDepth == 0) {
       // F-string interpolation: {...}
       // Check if this is a format specifier (has :) or just an expression
       // Simple heuristic: if next char is not {, it's an interpolation
@@ -487,7 +487,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         advance(); // second {
         value += '{';
       }
-    } else if (c == '}' && isFString && braceDepth == 0) {
+    } else if (c == '}' && braceDepth == 0) {
       // Check for escaped brace }}
       if (peek(1) == '}') {
         advance(); // first }
@@ -625,7 +625,7 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         }
         value += '}';
       }
-    } else if (c == '{' && isFString && braceDepth == 0) {
+    } else if (c == '{' && braceDepth == 0) {
       // F-string interpolation: {...}
       if (peek(1) != '{') {
         hasInterpolation = true;
@@ -637,7 +637,7 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         advance();
         value += '{';
       }
-    } else if (c == '}' && isFString && braceDepth == 0) {
+    } else if (c == '}' && braceDepth == 0) {
       // Check for escaped brace }}
       if (peek(1) == '}') {
         advance();

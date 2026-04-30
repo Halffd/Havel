@@ -1841,12 +1841,26 @@ BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 void BytecodeOrcJIT::initTargetMachine() {
     auto target_triple_str = llvm::sys::getDefaultTargetTriple();
     llvm::Triple target_triple(target_triple_str);
+    llvm::errs() << "DEBUG: Target triple: " << target_triple_str << "\n";
     std::string error;
     auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
-    if (target) {
-        llvm::TargetOptions opt;
-        target_machine_.reset(target->createTargetMachine(
-            target_triple, "generic", "", opt, llvm::Reloc::PIC_));
+    if (!target) {
+        llvm::errs() << "Failed to lookup target for triple '" << target_triple_str
+                     << "': " << error << "\n";
+        return;
+    }
+    llvm::errs() << "DEBUG: Target name: " << target->getName() << "\n";
+    llvm::TargetOptions opt;
+    opt.AllowFPOpFusion = llvm::FPOpFusion::Standard;
+    opt.UnsafeFPMath = false;
+    opt.NoInfsFPMath = false;
+    opt.NoNaNsFPMath = false;
+    target_machine_.reset(target->createTargetMachine(
+        target_triple, "x86-64", "+64bit-mode", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
+    if (!target_machine_) {
+        llvm::errs() << "Failed to create target machine for triple '" << target_triple_str << "'\n";
+    } else {
+        llvm::errs() << "DEBUG: Target machine created successfully\n";
     }
 }
 
@@ -3154,7 +3168,7 @@ case OpCode::INT_DIV:
         break;
     }
 
-      case OpCode::IS: {
+    case OpCode::IS: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();
         llvm::Function* fnIs = module.getFunction("havel_vm_is");
@@ -3165,14 +3179,14 @@ case OpCode::INT_DIV:
         }
         vstack.push_back(B.CreateCall(fnIs, {l, r}));
         break;
-      }
-        case OpCode::IS_NULL: {
-            llvm::Value* v = vstack.back(); vstack.pop_back();
-            llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
-            vstack.push_back(boxInt(B.CreateZExt(isNull, i64)));
-            break;
-        }
-      case OpCode::NOT: {
+    }
+    case OpCode::IS_NULL: {
+        llvm::Value* v = vstack.back(); vstack.pop_back();
+        llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
+        vstack.push_back(boxInt(B.CreateZExt(isNull, i64)));
+        break;
+    }
+    case OpCode::NOT: {
         llvm::Value* v = vstack.back(); vstack.pop_back();
         llvm::Function* fnNot = module.getFunction("havel_vm_not");
         if (!fnNot) {
@@ -3182,776 +3196,776 @@ case OpCode::INT_DIV:
         }
         vstack.push_back(B.CreateCall(fnNot, {v}));
         break;
-      }
-
-        // Control flow
-        case OpCode::JUMP: {
-            size_t target = instr.operands[0].asInt();
-            if (target < ip) {
-                llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
-                if (!fnBe) {
-                    fnBe = llvm::Function::Create(
-                        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
-                        llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
-                }
-                B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
-            }
-            if (target < basicBlocks.size()) {
-                B.CreateBr(basicBlocks[target]);
-            } else {
-                B.CreateBr(basicBlocks[ip + 1]);
-            }
-            break;
-        }
-        case OpCode::JUMP_IF_FALSE: {
-            size_t target = instr.operands[1].asInt();
-            llvm::Value* cond = vstack.back(); vstack.pop_back();
-            llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
-            if (!fnTruthy) {
-                fnTruthy = llvm::Function::Create(
-                    llvm::FunctionType::get(i32, {i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
-            }
-            llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
-            llvm::Value* isFalsy = B.CreateICmpEQ(truthyResult, llvm::ConstantInt::get(i32, 0));
-            if (target < ip) {
-                llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
-                if (!fnBe) {
-                    fnBe = llvm::Function::Create(
-                        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
-                        llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
-                }
-                B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
-            }
-            if (target < basicBlocks.size()) {
-                B.CreateCondBr(isFalsy, basicBlocks[target], basicBlocks[ip + 1]);
-            } else {
-                B.CreateBr(basicBlocks[ip + 1]);
-            }
-            break;
-        }
-        case OpCode::JUMP_IF_TRUE: {
-            size_t target = instr.operands[1].asInt();
-            llvm::Value* cond = vstack.back(); vstack.pop_back();
-            llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
-            if (!fnTruthy) {
-                fnTruthy = llvm::Function::Create(
-                    llvm::FunctionType::get(i32, {i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
-            }
-            llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
-            llvm::Value* isTruthy = B.CreateICmpNE(truthyResult, llvm::ConstantInt::get(i32, 0));
-            if (target < ip) {
-                llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
-                if (!fnBe) {
-                    fnBe = llvm::Function::Create(
-                        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
-                        llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
-                }
-                B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
-            }
-            if (target < basicBlocks.size()) {
-                B.CreateCondBr(isTruthy, basicBlocks[target], basicBlocks[ip + 1]);
-            } else {
-                B.CreateBr(basicBlocks[ip + 1]);
-            }
-            break;
-        }
-        case OpCode::JUMP_IF_NULL: {
-            size_t target = instr.operands[1].asInt();
-            llvm::Value* v = vstack.back();
-            llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
-            vstack.pop_back(); // Coalesce consumes the value
-            if (target < basicBlocks.size()) {
-                B.CreateCondBr(isNull, basicBlocks[target], basicBlocks[ip + 1]);
-            } else {
-                B.CreateBr(basicBlocks[ip + 1]);
-            }
-            break;
-        }
-
-        // Function calls
-        case OpCode::CALL: {
-            uint32_t argCount = instr.operands[0].asInt();
-            // Collect args from stack (in reverse order for calling convention)
-            // Stack layout: [callee, arg0, arg1, ..., argN]
-            // havel_vm_call expects: args[0] = callee, args[1..N] = actual args
-            std::vector<llvm::Value*> args;
-            args.push_back(vmArg);
-            // Create args array on stack (argCount + 1 for callee)
-            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount + 1), nullptr, "call_args");
-            // Pop args in reverse order (argN, argN-1, ..., arg0)
-            for (uint32_t i = 0; i < argCount; ++i) {
-                llvm::Value* arg = vstack.back(); vstack.pop_back();
-                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - i)}));
-            }
-            // Pop callee and store at index 0
-            llvm::Value* callee = vstack.back(); vstack.pop_back();
-            B.CreateStore(callee, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
-                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
-            args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
-                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
-            args.push_back(llvm::ConstantInt::get(i32, argCount + 1)); // +1 for callee
-
-            // Call havel_vm_call(vm, args, count)
-            llvm::Function* fnCall = module.getFunction("havel_vm_call");
-            if (!fnCall) {
-                fnCall = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_call", &module);
-            }
-            vstack.push_back(B.CreateCall(fnCall, args));
-            break;
-        }
-        case OpCode::TAIL_CALL: {
-            uint32_t argCount = instr.operands[0].asInt();
-            // Collect args from stack
-            std::vector<llvm::Value*> args;
-            args.push_back(vmArg);
-            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "tail_args");
-            for (uint32_t i = 0; i < argCount; ++i) {
-                llvm::Value* arg = vstack.back(); vstack.pop_back();
-                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
-            }
-            args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
-            args.push_back(llvm::ConstantInt::get(i32, argCount));
-
-            // Unregister GC roots before tail call
-            llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-            if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
-            B.CreateCall(fn_unreg, {frame});
-
-            // Call havel_vm_tail_call which handles frame reuse
-            llvm::Function* fnTailCall = module.getFunction("havel_vm_tail_call");
-            if (!fnTailCall) {
-                fnTailCall = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_tail_call", &module);
-            }
-            // Musttail call for proper tail call optimization
-            llvm::CallInst* call = B.CreateCall(fnTailCall, args);
-            call->setTailCallKind(llvm::CallInst::TCK_MustTail);
-            B.CreateRet(call);
-            break;
-        }
-
-case OpCode::RETURN: {
-    // Close open upvalues for this frame before returning
-    llvm::Function* fnClose = module.getFunction("havel_vm_close_upvalues");
-    if (!fnClose) {
-        fnClose = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {i8p, i32}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_close_upvalues", &module);
     }
-    llvm::Function* fnLocalsBase = module.getFunction("havel_vm_locals_base");
-    if (!fnLocalsBase) {
-        fnLocalsBase = llvm::Function::Create(
-            llvm::FunctionType::get(i32, {i8p}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_locals_base", &module);
+
+    // Control flow
+    case OpCode::JUMP: {
+        size_t target = instr.operands[0].asInt();
+        if (target < ip) {
+            llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
+            if (!fnBe) {
+                fnBe = llvm::Function::Create(
+                    llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
+            }
+            B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
+        }
+        if (target < basicBlocks.size()) {
+            B.CreateBr(basicBlocks[target]);
+        } else {
+            B.CreateBr(basicBlocks[ip + 1]);
+        }
+        break;
     }
-    llvm::Value* lb = B.CreateCall(fnLocalsBase, {vmArg});
-    B.CreateCall(fnClose, {vmArg, lb});
-    llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-    if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
-    B.CreateCall(fn_unreg, {frame});
-    B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
-    break;
-}
-case OpCode::TRY_ENTER: {
-    uint32_t catchIp = instr.operands[0].asInt();
-    uint32_t finallyIp = (instr.operands.size() >= 2 && instr.operands[1].isInt()) ? instr.operands[1].asInt() : 0;
-    llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
-    if (!fnTryEnter) {
-        fnTryEnter = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType), i32, i32, i32}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
+    case OpCode::JUMP_IF_FALSE: {
+        size_t target = instr.operands[1].asInt();
+        llvm::Value* cond = vstack.back(); vstack.pop_back();
+        llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
+        if (!fnTruthy) {
+            fnTruthy = llvm::Function::Create(
+                llvm::FunctionType::get(i32, {i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+        }
+        llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
+        llvm::Value* isFalsy = B.CreateICmpEQ(truthyResult, llvm::ConstantInt::get(i32, 0));
+        if (target < ip) {
+            llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
+            if (!fnBe) {
+                fnBe = llvm::Function::Create(
+                    llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
+            }
+            B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
+        }
+        if (target < basicBlocks.size()) {
+            B.CreateCondBr(isFalsy, basicBlocks[target], basicBlocks[ip + 1]);
+        } else {
+            B.CreateBr(basicBlocks[ip + 1]);
+        }
+        break;
     }
-    B.CreateCall(fnTryEnter, {frame,
-                              llvm::ConstantInt::get(i32, catchIp),
-                              llvm::ConstantInt::get(i32, finallyIp),
-                              llvm::ConstantInt::get(i32, static_cast<uint32_t>(vstack.size()))});
-    jit_try_stack_depths.push_back(vstack.size());
-    break;
-}
-case OpCode::TRY_EXIT: {
-    llvm::Function* fnTryExit = module.getFunction("havel_vm_try_exit");
-    if (!fnTryExit) {
-        fnTryExit = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_try_exit", &module);
+    case OpCode::JUMP_IF_TRUE: {
+        size_t target = instr.operands[1].asInt();
+        llvm::Value* cond = vstack.back(); vstack.pop_back();
+        llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
+        if (!fnTruthy) {
+            fnTruthy = llvm::Function::Create(
+                llvm::FunctionType::get(i32, {i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+        }
+        llvm::Value* truthyResult = B.CreateCall(fnTruthy, {cond});
+        llvm::Value* isTruthy = B.CreateICmpNE(truthyResult, llvm::ConstantInt::get(i32, 0));
+        if (target < ip) {
+            llvm::Function* fnBe = module.getFunction("havel_vm_backedge");
+            if (!fnBe) {
+                fnBe = llvm::Function::Create(
+                    llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i32}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_backedge", &module);
+            }
+            B.CreateCall(fnBe, {vmArg, llvm::ConstantInt::get(i32, static_cast<uint32_t>(ip))});
+        }
+        if (target < basicBlocks.size()) {
+            B.CreateCondBr(isTruthy, basicBlocks[target], basicBlocks[ip + 1]);
+        } else {
+            B.CreateBr(basicBlocks[ip + 1]);
+        }
+        break;
     }
-    B.CreateCall(fnTryExit, {frame});
-    if (!jit_try_stack_depths.empty()) {
-        jit_try_stack_depths.pop_back();
+    case OpCode::JUMP_IF_NULL: {
+        size_t target = instr.operands[1].asInt();
+        llvm::Value* v = vstack.back();
+        llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
+        vstack.pop_back(); // Coalesce consumes the value
+        if (target < basicBlocks.size()) {
+            B.CreateCondBr(isNull, basicBlocks[target], basicBlocks[ip + 1]);
+        } else {
+            B.CreateBr(basicBlocks[ip + 1]);
+        }
+        break;
     }
-    break;
-}
-case OpCode::LOAD_EXCEPTION: {
-    llvm::Function* fnLoadExc = module.getFunction("havel_vm_load_exception");
-    if (!fnLoadExc) {
-        fnLoadExc = llvm::Function::Create(
-            llvm::FunctionType::get(i64, {i8p}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_load_exception", &module);
+
+    // Function calls
+    case OpCode::CALL: {
+        uint32_t argCount = instr.operands[0].asInt();
+        // Collect args from stack (in reverse order for calling convention)
+        // Stack layout: [callee, arg0, arg1, ..., argN]
+        // havel_vm_call expects: args[0] = callee, args[1..N] = actual args
+        std::vector<llvm::Value*> args;
+        args.push_back(vmArg);
+        // Create args array on stack (argCount + 1 for callee)
+        llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount + 1), nullptr, "call_args");
+        // Pop args in reverse order (argN, argN-1, ..., arg0)
+        for (uint32_t i = 0; i < argCount; ++i) {
+            llvm::Value* arg = vstack.back(); vstack.pop_back();
+            B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - i)}));
+        }
+        // Pop callee and store at index 0
+        llvm::Value* callee = vstack.back(); vstack.pop_back();
+        B.CreateStore(callee, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
+            {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+        args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
+            {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+        args.push_back(llvm::ConstantInt::get(i32, argCount + 1)); // +1 for callee
+
+        // Call havel_vm_call(vm, args, count)
+        llvm::Function* fnCall = module.getFunction("havel_vm_call");
+        if (!fnCall) {
+            fnCall = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_call", &module);
+        }
+        vstack.push_back(B.CreateCall(fnCall, args));
+        break;
     }
-    vstack.push_back(B.CreateCall(fnLoadExc, {vmArg}));
-    break;
-}
-        case OpCode::THROW: {
-            llvm::Value* thrown = vstack.empty() ? makeNull() : vstack.back();
-            if (!vstack.empty()) {
-                vstack.pop_back();
-            }
-            llvm::Function* fnSetExc = module.getFunction("havel_vm_set_exception");
-            if (!fnSetExc) {
-                fnSetExc = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_set_exception", &module);
-            }
-            B.CreateCall(fnSetExc, {vmArg, thrown});
+    case OpCode::TAIL_CALL: {
+        uint32_t argCount = instr.operands[0].asInt();
+        // Collect args from stack
+        std::vector<llvm::Value*> args;
+        args.push_back(vmArg);
+        llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "tail_args");
+        for (uint32_t i = 0; i < argCount; ++i) {
+            llvm::Value* arg = vstack.back(); vstack.pop_back();
+            B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+        }
+        args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+            {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+        args.push_back(llvm::ConstantInt::get(i32, argCount));
 
-            llvm::Value* catchDepthAlloca = B.CreateAlloca(i32, nullptr, "catch_depth");
-            llvm::Value* poppedCountAlloca = B.CreateAlloca(i32, nullptr, "popped_count");
-            B.CreateStore(llvm::ConstantInt::get(i32, 0), catchDepthAlloca);
-            B.CreateStore(llvm::ConstantInt::get(i32, 0), poppedCountAlloca);
+        // Unregister GC roots before tail call
+        llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        B.CreateCall(fn_unreg, {frame});
 
-            llvm::Function* fnFindHandler = module.getFunction("havel_vm_try_find_throw_target");
-            if (!fnFindHandler) {
-                fnFindHandler = llvm::Function::Create(
-                    llvm::FunctionType::get(
-                        i32,
-                        {llvm::PointerType::getUnqual(frameType),
-                         llvm::PointerType::getUnqual(i32),
-                         llvm::PointerType::getUnqual(i32)},
-                        false),
-                    llvm::Function::ExternalLinkage, "havel_vm_try_find_throw_target", &module);
-            }
-            llvm::Value* catchIp =
-                B.CreateCall(fnFindHandler, {frame, catchDepthAlloca, poppedCountAlloca});
-            llvm::Value* hasHandler =
-                B.CreateICmpNE(catchIp, llvm::ConstantInt::get(i32, UINT32_MAX));
+        // Call havel_vm_tail_call which handles frame reuse
+        llvm::Function* fnTailCall = module.getFunction("havel_vm_tail_call");
+        if (!fnTailCall) {
+            fnTailCall = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_tail_call", &module);
+        }
+        // Musttail call for proper tail call optimization
+        llvm::CallInst* call = B.CreateCall(fnTailCall, args);
+        call->setTailCallKind(llvm::CallInst::TCK_MustTail);
+        B.CreateRet(call);
+        break;
+    }
 
-            llvm::BasicBlock* throwDispatchBB = llvm::BasicBlock::Create(ctx, "throw_dispatch", f);
-            llvm::BasicBlock* throwUnwindBB = llvm::BasicBlock::Create(ctx, "throw_unwind", f);
-            B.CreateCondBr(hasHandler, throwDispatchBB, throwUnwindBB);
+    case OpCode::RETURN: {
+        // Close open upvalues for this frame before returning
+        llvm::Function* fnClose = module.getFunction("havel_vm_close_upvalues");
+        if (!fnClose) {
+            fnClose = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_close_upvalues", &module);
+        }
+        llvm::Function* fnLocalsBase = module.getFunction("havel_vm_locals_base");
+        if (!fnLocalsBase) {
+            fnLocalsBase = llvm::Function::Create(
+                llvm::FunctionType::get(i32, {i8p}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_locals_base", &module);
+        }
+        llvm::Value* lb = B.CreateCall(fnLocalsBase, {vmArg});
+        B.CreateCall(fnClose, {vmArg, lb});
+        llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        B.CreateCall(fn_unreg, {frame});
+        B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
+        break;
+    }
+    case OpCode::TRY_ENTER: {
+        uint32_t catchIp = instr.operands[0].asInt();
+        uint32_t finallyIp = (instr.operands.size() >= 2 && instr.operands[1].isInt()) ? instr.operands[1].asInt() : 0;
+        llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
+        if (!fnTryEnter) {
+            fnTryEnter = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType), i32, i32, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
+        }
+        B.CreateCall(fnTryEnter, {frame,
+                                  llvm::ConstantInt::get(i32, catchIp),
+                                  llvm::ConstantInt::get(i32, finallyIp),
+                                  llvm::ConstantInt::get(i32, static_cast<uint32_t>(vstack.size()))});
+        jit_try_stack_depths.push_back(vstack.size());
+        break;
+    }
+    case OpCode::TRY_EXIT: {
+        llvm::Function* fnTryExit = module.getFunction("havel_vm_try_exit");
+        if (!fnTryExit) {
+            fnTryExit = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_try_exit", &module);
+        }
+        B.CreateCall(fnTryExit, {frame});
+        if (!jit_try_stack_depths.empty()) {
+            jit_try_stack_depths.pop_back();
+        }
+        break;
+    }
+    case OpCode::LOAD_EXCEPTION: {
+        llvm::Function* fnLoadExc = module.getFunction("havel_vm_load_exception");
+        if (!fnLoadExc) {
+            fnLoadExc = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_load_exception", &module);
+        }
+        vstack.push_back(B.CreateCall(fnLoadExc, {vmArg}));
+        break;
+    }
+    case OpCode::THROW: {
+        llvm::Value* thrown = vstack.empty() ? makeNull() : vstack.back();
+        if (!vstack.empty()) {
+            vstack.pop_back();
+        }
+        llvm::Function* fnSetExc = module.getFunction("havel_vm_set_exception");
+        if (!fnSetExc) {
+            fnSetExc = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_set_exception", &module);
+        }
+        B.CreateCall(fnSetExc, {vmArg, thrown});
 
-            B.SetInsertPoint(throwDispatchBB);
-            // Conservative stack-state reset for catch entry. This avoids
-            // reusing stale SSA values after handler-walk pops.
-            vstack.clear();
-            jit_try_stack_depths.clear();
-            llvm::SwitchInst* sw = B.CreateSwitch(catchIp, throwUnwindBB, basicBlocks.size());
-            for (size_t target = 0; target < basicBlocks.size(); ++target) {
-                auto* caseVal = llvm::cast<llvm::ConstantInt>(
-                    llvm::ConstantInt::get(i32, static_cast<uint32_t>(target)));
-                sw->addCase(caseVal, basicBlocks[target]);
-            }
+        llvm::Value* catchDepthAlloca = B.CreateAlloca(i32, nullptr, "catch_depth");
+        llvm::Value* poppedCountAlloca = B.CreateAlloca(i32, nullptr, "popped_count");
+        B.CreateStore(llvm::ConstantInt::get(i32, 0), catchDepthAlloca);
+        B.CreateStore(llvm::ConstantInt::get(i32, 0), poppedCountAlloca);
 
-            B.SetInsertPoint(throwUnwindBB);
-            llvm::Function* fnThrow = module.getFunction("havel_vm_throw_from_jit");
-            if (!fnThrow) {
-                fnThrow = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_throw_from_jit", &module);
-            }
-            B.CreateCall(fnThrow, {vmArg, thrown});
-            B.CreateUnreachable();
-            break;
+        llvm::Function* fnFindHandler = module.getFunction("havel_vm_try_find_throw_target");
+        if (!fnFindHandler) {
+            fnFindHandler = llvm::Function::Create(
+                llvm::FunctionType::get(
+                    i32,
+                    {llvm::PointerType::getUnqual(frameType),
+                     llvm::PointerType::getUnqual(i32),
+                     llvm::PointerType::getUnqual(i32)},
+                    false),
+                llvm::Function::ExternalLinkage, "havel_vm_try_find_throw_target", &module);
+        }
+        llvm::Value* catchIp =
+            B.CreateCall(fnFindHandler, {frame, catchDepthAlloca, poppedCountAlloca});
+        llvm::Value* hasHandler =
+            B.CreateICmpNE(catchIp, llvm::ConstantInt::get(i32, UINT32_MAX));
+
+        llvm::BasicBlock* throwDispatchBB = llvm::BasicBlock::Create(ctx, "throw_dispatch", f);
+        llvm::BasicBlock* throwUnwindBB = llvm::BasicBlock::Create(ctx, "throw_unwind", f);
+        B.CreateCondBr(hasHandler, throwDispatchBB, throwUnwindBB);
+
+        B.SetInsertPoint(throwDispatchBB);
+        // Conservative stack-state reset for catch entry. This avoids
+        // reusing stale SSA values after handler-walk pops.
+        vstack.clear();
+        jit_try_stack_depths.clear();
+        llvm::SwitchInst* sw = B.CreateSwitch(catchIp, throwUnwindBB, basicBlocks.size());
+        for (size_t target = 0; target < basicBlocks.size(); ++target) {
+            auto* caseVal = llvm::cast<llvm::ConstantInt>(
+                llvm::ConstantInt::get(i32, static_cast<uint32_t>(target)));
+            sw->addCase(caseVal, basicBlocks[target]);
         }
 
-        // Global and upvalue access - critical for closures
-        case OpCode::LOAD_GLOBAL: {
-            uint32_t nameId = instr.operands[0].asInt();
-            llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
-            if (!fnGet) {
-                fnGet = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_global_get", &module);
-            }
-            vstack.push_back(B.CreateCall(fnGet, {vmArg, llvm::ConstantInt::get(i32, nameId)}));
-            break;
+        B.SetInsertPoint(throwUnwindBB);
+        llvm::Function* fnThrow = module.getFunction("havel_vm_throw_from_jit");
+        if (!fnThrow) {
+            fnThrow = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_throw_from_jit", &module);
         }
-        case OpCode::STORE_GLOBAL: {
-            uint32_t nameId = instr.operands[0].asInt();
-            llvm::Value* v = vstack.back(); vstack.pop_back();
-            llvm::Function* fnSet = module.getFunction("havel_vm_global_set");
-            if (!fnSet) {
-                fnSet = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i32, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_global_set", &module);
-            }
-            B.CreateCall(fnSet, {vmArg, llvm::ConstantInt::get(i32, nameId), v});
-            vstack.push_back(v); // Store returns the value
-            break;
-        }
-        case OpCode::LOAD_UPVALUE: {
-            uint32_t slot = instr.operands[0].asInt();
-            llvm::Function* fnUp = module.getFunction("havel_vm_upvalue_get");
-            if (!fnUp) {
-                fnUp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_upvalue_get", &module);
-            }
-            vstack.push_back(B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot)}));
-            break;
-        }
-        case OpCode::STORE_UPVALUE: {
-            uint32_t slot = instr.operands[0].asInt();
-            llvm::Value* v = vstack.back(); vstack.pop_back();
-            llvm::Function* fnUp = module.getFunction("havel_vm_upvalue_set");
-            if (!fnUp) {
-                fnUp = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i32, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_upvalue_set", &module);
-            }
-            B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot), v});
-            vstack.push_back(v);
-            break;
-        }
+        B.CreateCall(fnThrow, {vmArg, thrown});
+        B.CreateUnreachable();
+        break;
+    }
 
-        // Arithmetic - MOD and POW for loops
-        case OpCode::MOD: {
-            llvm::Value* r = vstack.back(); vstack.pop_back();
-            llvm::Value* l = vstack.back(); vstack.pop_back();
-            // Use specialized path for MOD
-            vstack.push_back(emitSpecializedBinop(OpCode::MOD, fb, ip, l, r));
-            break;
+    // Global and upvalue access - critical for closures
+    case OpCode::LOAD_GLOBAL: {
+        uint32_t nameId = instr.operands[0].asInt();
+        llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
+        if (!fnGet) {
+            fnGet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_global_get", &module);
         }
-        case OpCode::POW: {
-            // Power requires runtime call (no LLVM pow intrinsic for integers)
-            llvm::Value* exp = vstack.back(); vstack.pop_back();
-            llvm::Value* base = vstack.back(); vstack.pop_back();
-            llvm::Function* fnPow = module.getFunction("havel_vm_pow");
-            if (!fnPow) {
-                fnPow = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_pow", &module);
-            }
-            vstack.push_back(B.CreateCall(fnPow, {base, exp}));
-            break;
+        vstack.push_back(B.CreateCall(fnGet, {vmArg, llvm::ConstantInt::get(i32, nameId)}));
+        break;
+    }
+    case OpCode::STORE_GLOBAL: {
+        uint32_t nameId = instr.operands[0].asInt();
+        llvm::Value* v = vstack.back(); vstack.pop_back();
+        llvm::Function* fnSet = module.getFunction("havel_vm_global_set");
+        if (!fnSet) {
+            fnSet = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i32, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_global_set", &module);
         }
+        B.CreateCall(fnSet, {vmArg, llvm::ConstantInt::get(i32, nameId), v});
+        vstack.push_back(v); // Store returns the value
+        break;
+    }
+    case OpCode::LOAD_UPVALUE: {
+        uint32_t slot = instr.operands[0].asInt();
+        llvm::Function* fnUp = module.getFunction("havel_vm_upvalue_get");
+        if (!fnUp) {
+            fnUp = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_upvalue_get", &module);
+        }
+        vstack.push_back(B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot)}));
+        break;
+    }
+    case OpCode::STORE_UPVALUE: {
+        uint32_t slot = instr.operands[0].asInt();
+        llvm::Value* v = vstack.back(); vstack.pop_back();
+        llvm::Function* fnUp = module.getFunction("havel_vm_upvalue_set");
+        if (!fnUp) {
+            fnUp = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i32, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_upvalue_set", &module);
+        }
+        B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot), v});
+        vstack.push_back(v);
+        break;
+    }
 
-        // Logical operations
-      case OpCode::AND: {
+    // Arithmetic - MOD and POW for loops
+    case OpCode::MOD: {
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        // Use specialized path for MOD
+        vstack.push_back(emitSpecializedBinop(OpCode::MOD, fb, ip, l, r));
+        break;
+    }
+    case OpCode::POW: {
+        // Power requires runtime call (no LLVM pow intrinsic for integers)
+        llvm::Value* exp = vstack.back(); vstack.pop_back();
+        llvm::Value* base = vstack.back(); vstack.pop_back();
+        llvm::Function* fnPow = module.getFunction("havel_vm_pow");
+        if (!fnPow) {
+            fnPow = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_pow", &module);
+        }
+        vstack.push_back(B.CreateCall(fnPow, {base, exp}));
+        break;
+    }
+
+    // Logical operations
+    case OpCode::AND: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();
         llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
         if (!fnTruthy) {
-          fnTruthy = llvm::Function::Create(
-            llvm::FunctionType::get(i32, {i64}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+            fnTruthy = llvm::Function::Create(
+                llvm::FunctionType::get(i32, {i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
         }
         llvm::Value* lTruthy = B.CreateCall(fnTruthy, {l});
         llvm::Value* lIsFalsy = B.CreateICmpEQ(lTruthy, llvm::ConstantInt::get(i32, 0));
         vstack.push_back(B.CreateSelect(lIsFalsy, l, r));
         break;
-      }
-      case OpCode::OR: {
+    }
+    case OpCode::OR: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();
         llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
         if (!fnTruthy) {
-          fnTruthy = llvm::Function::Create(
-            llvm::FunctionType::get(i32, {i64}, false),
-            llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
+            fnTruthy = llvm::Function::Create(
+                llvm::FunctionType::get(i32, {i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_is_truthy", &module);
         }
         llvm::Value* lTruthy = B.CreateCall(fnTruthy, {l});
         llvm::Value* lIsTruthy = B.CreateICmpNE(lTruthy, llvm::ConstantInt::get(i32, 0));
         vstack.push_back(B.CreateSelect(lIsTruthy, l, r));
         break;
-      }
+    }
 
-        // Array operations - critical for loops
-        case OpCode::ARRAY_NEW: {
-            llvm::Function* fnNew = module.getFunction("havel_vm_array_new");
-            if (!fnNew) {
-                fnNew = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_array_new", &module);
-            }
-            vstack.push_back(B.CreateCall(fnNew, {vmArg}));
-            break;
+    // Array operations - critical for loops
+    case OpCode::ARRAY_NEW: {
+        llvm::Function* fnNew = module.getFunction("havel_vm_array_new");
+        if (!fnNew) {
+            fnNew = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_array_new", &module);
         }
-        case OpCode::ARRAY_GET: {
-            llvm::Value* idx = vstack.back(); vstack.pop_back();
-            llvm::Value* arr = vstack.back(); vstack.pop_back();
-            llvm::Function* fnGet = module.getFunction("havel_vm_array_get");
-            if (!fnGet) {
-                fnGet = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_array_get", &module);
-            }
-            vstack.push_back(B.CreateCall(fnGet, {vmArg, arr, idx}));
-            break;
+        vstack.push_back(B.CreateCall(fnNew, {vmArg}));
+        break;
+    }
+    case OpCode::ARRAY_GET: {
+        llvm::Value* idx = vstack.back(); vstack.pop_back();
+        llvm::Value* arr = vstack.back(); vstack.pop_back();
+        llvm::Function* fnGet = module.getFunction("havel_vm_array_get");
+        if (!fnGet) {
+            fnGet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_array_get", &module);
         }
-        case OpCode::ARRAY_SET: {
-            llvm::Value* val = vstack.back(); vstack.pop_back();
-            llvm::Value* idx = vstack.back(); vstack.pop_back();
-            llvm::Value* arr = vstack.back(); vstack.pop_back();
-            llvm::Function* fnSet = module.getFunction("havel_vm_array_set");
-            if (!fnSet) {
-                fnSet = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_array_set", &module);
-            }
-            vstack.push_back(B.CreateCall(fnSet, {vmArg, arr, idx, val}));
-            break;
+        vstack.push_back(B.CreateCall(fnGet, {vmArg, arr, idx}));
+        break;
+    }
+    case OpCode::ARRAY_SET: {
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Value* idx = vstack.back(); vstack.pop_back();
+        llvm::Value* arr = vstack.back(); vstack.pop_back();
+        llvm::Function* fnSet = module.getFunction("havel_vm_array_set");
+        if (!fnSet) {
+            fnSet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_array_set", &module);
         }
-        case OpCode::ARRAY_LEN: {
-            llvm::Value* arr = vstack.back(); vstack.pop_back();
-            llvm::Function* fnLen = module.getFunction("havel_vm_array_len");
-            if (!fnLen) {
-                fnLen = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_array_len", &module);
-            }
-            vstack.push_back(B.CreateCall(fnLen, {vmArg, arr}));
-            break;
+        vstack.push_back(B.CreateCall(fnSet, {vmArg, arr, idx, val}));
+        break;
+    }
+    case OpCode::ARRAY_LEN: {
+        llvm::Value* arr = vstack.back(); vstack.pop_back();
+        llvm::Function* fnLen = module.getFunction("havel_vm_array_len");
+        if (!fnLen) {
+            fnLen = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_array_len", &module);
         }
-        case OpCode::ARRAY_PUSH: {
-            llvm::Value* val = vstack.back(); vstack.pop_back();
-            llvm::Value* arr = vstack.back(); vstack.pop_back();
-            llvm::Function* fnPush = module.getFunction("havel_vm_array_push");
-            if (!fnPush) {
-                fnPush = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_array_push", &module);
-            }
-            B.CreateCall(fnPush, {vmArg, arr, val});
-            vstack.push_back(arr); // Push array back
-            break;
+        vstack.push_back(B.CreateCall(fnLen, {vmArg, arr}));
+        break;
+    }
+    case OpCode::ARRAY_PUSH: {
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Value* arr = vstack.back(); vstack.pop_back();
+        llvm::Function* fnPush = module.getFunction("havel_vm_array_push");
+        if (!fnPush) {
+            fnPush = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_array_push", &module);
         }
+        B.CreateCall(fnPush, {vmArg, arr, val});
+        vstack.push_back(arr); // Push array back
+        break;
+    }
 
-        // Object operations
-        case OpCode::OBJECT_NEW: {
-            llvm::Function* fnNew = module.getFunction("havel_vm_object_new");
-            if (!fnNew) {
-                fnNew = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_object_new", &module);
-            }
-            vstack.push_back(B.CreateCall(fnNew, {vmArg}));
-            break;
+    // Object operations
+    case OpCode::OBJECT_NEW: {
+        llvm::Function* fnNew = module.getFunction("havel_vm_object_new");
+        if (!fnNew) {
+            fnNew = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_new", &module);
         }
-        case OpCode::OBJECT_GET: {
-            uint32_t keyId = instr.operands[0].asInt();
-            llvm::Value* obj = vstack.back(); vstack.pop_back();
-            llvm::Function* fnGet = module.getFunction("havel_vm_object_get");
-            if (!fnGet) {
-                fnGet = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_object_get", &module);
-            }
-            vstack.push_back(B.CreateCall(fnGet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
-            break;
+        vstack.push_back(B.CreateCall(fnNew, {vmArg}));
+        break;
+    }
+    case OpCode::OBJECT_GET: {
+        uint32_t keyId = instr.operands[0].asInt();
+        llvm::Value* obj = vstack.back(); vstack.pop_back();
+        llvm::Function* fnGet = module.getFunction("havel_vm_object_get");
+        if (!fnGet) {
+            fnGet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_get", &module);
         }
-        case OpCode::OBJECT_SET: {
-            uint32_t keyId = instr.operands[0].asInt();
-            llvm::Value* val = vstack.back(); vstack.pop_back();
-            llvm::Value* obj = vstack.back(); vstack.pop_back();
-            llvm::Function* fnSet = module.getFunction("havel_vm_object_set");
-            if (!fnSet) {
-                fnSet = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i32, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_object_set", &module);
-            }
-            vstack.push_back(B.CreateCall(fnSet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId), val}));
-            break;
+        vstack.push_back(B.CreateCall(fnGet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
+        break;
+    }
+    case OpCode::OBJECT_SET: {
+        uint32_t keyId = instr.operands[0].asInt();
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Value* obj = vstack.back(); vstack.pop_back();
+        llvm::Function* fnSet = module.getFunction("havel_vm_object_set");
+        if (!fnSet) {
+            fnSet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_set", &module);
         }
+        vstack.push_back(B.CreateCall(fnSet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId), val}));
+        break;
+    }
 
-        // Range and iterators - critical for for loops
-        case OpCode::RANGE_NEW: {
-            llvm::Value* end = vstack.back(); vstack.pop_back();
-            llvm::Value* start = vstack.back(); vstack.pop_back();
-            llvm::Function* fnRange = module.getFunction("havel_vm_range_new");
-            if (!fnRange) {
-                fnRange = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_range_new", &module);
-            }
-            vstack.push_back(B.CreateCall(fnRange, {vmArg, start, end}));
-            break;
+    // Range and iterators - critical for for loops
+    case OpCode::RANGE_NEW: {
+        llvm::Value* end = vstack.back(); vstack.pop_back();
+        llvm::Value* start = vstack.back(); vstack.pop_back();
+        llvm::Function* fnRange = module.getFunction("havel_vm_range_new");
+        if (!fnRange) {
+            fnRange = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_range_new", &module);
         }
-        case OpCode::ITER_NEW: {
-            llvm::Value* coll = vstack.back(); vstack.pop_back();
-            llvm::Function* fnIter = module.getFunction("havel_vm_iter_new");
-            if (!fnIter) {
-                fnIter = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_iter_new", &module);
-            }
-            vstack.push_back(B.CreateCall(fnIter, {vmArg, coll}));
-            break;
+        vstack.push_back(B.CreateCall(fnRange, {vmArg, start, end}));
+        break;
+    }
+    case OpCode::ITER_NEW: {
+        llvm::Value* coll = vstack.back(); vstack.pop_back();
+        llvm::Function* fnIter = module.getFunction("havel_vm_iter_new");
+        if (!fnIter) {
+            fnIter = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_iter_new", &module);
         }
-        case OpCode::ITER_NEXT: {
-            llvm::Value* iter = vstack.back(); vstack.pop_back();
-            llvm::Function* fnNext = module.getFunction("havel_vm_iter_next");
-            if (!fnNext) {
-                fnNext = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_iter_next", &module);
-            }
-            // Interpreter semantics: consume iterator operand and push next result.
-            llvm::Value* result = B.CreateCall(fnNext, {vmArg, iter});
-            vstack.push_back(result);
-            break;
+        vstack.push_back(B.CreateCall(fnIter, {vmArg, coll}));
+        break;
+    }
+    case OpCode::ITER_NEXT: {
+        llvm::Value* iter = vstack.back(); vstack.pop_back();
+        llvm::Function* fnNext = module.getFunction("havel_vm_iter_next");
+        if (!fnNext) {
+            fnNext = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_iter_next", &module);
         }
+        // Interpreter semantics: consume iterator operand and push next result.
+        llvm::Value* result = B.CreateCall(fnNext, {vmArg, iter});
+        vstack.push_back(result);
+        break;
+    }
 
-        // Concurrency primitives - threads, coroutines, channels
-        case OpCode::THREAD_SPAWN: {
-            uint32_t funcId = instr.operands[0].asInt();
-            llvm::Function* fnThread = module.getFunction("havel_vm_thread_new");
-            if (!fnThread) {
-                fnThread = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_thread_new", &module);
-            }
-            vstack.push_back(B.CreateCall(fnThread, {vmArg, llvm::ConstantInt::get(i32, funcId)}));
-            break;
+    // Concurrency primitives - threads, coroutines, channels
+    case OpCode::THREAD_SPAWN: {
+        uint32_t funcId = instr.operands[0].asInt();
+        llvm::Function* fnThread = module.getFunction("havel_vm_thread_new");
+        if (!fnThread) {
+            fnThread = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_thread_new", &module);
         }
-        case OpCode::THREAD_JOIN: {
-            llvm::Value* thread = vstack.back(); vstack.pop_back();
-            llvm::Function* fnJoin = module.getFunction("havel_vm_thread_join");
-            if (!fnJoin) {
-                fnJoin = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_thread_join", &module);
-            }
-            vstack.push_back(B.CreateCall(fnJoin, {vmArg, thread}));
-            break;
+        vstack.push_back(B.CreateCall(fnThread, {vmArg, llvm::ConstantInt::get(i32, funcId)}));
+        break;
+    }
+    case OpCode::THREAD_JOIN: {
+        llvm::Value* thread = vstack.back(); vstack.pop_back();
+        llvm::Function* fnJoin = module.getFunction("havel_vm_thread_join");
+        if (!fnJoin) {
+            fnJoin = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_thread_join", &module);
         }
-        case OpCode::THREAD_SEND: {
-            llvm::Value* msg = vstack.back(); vstack.pop_back();
-            llvm::Value* thread = vstack.back(); vstack.pop_back();
-            llvm::Function* fnSend = module.getFunction("havel_vm_thread_send");
-            if (!fnSend) {
-                fnSend = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_thread_send", &module);
-            }
-            B.CreateCall(fnSend, {vmArg, thread, msg});
+        vstack.push_back(B.CreateCall(fnJoin, {vmArg, thread}));
+        break;
+    }
+    case OpCode::THREAD_SEND: {
+        llvm::Value* msg = vstack.back(); vstack.pop_back();
+        llvm::Value* thread = vstack.back(); vstack.pop_back();
+        llvm::Function* fnSend = module.getFunction("havel_vm_thread_send");
+        if (!fnSend) {
+            fnSend = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_thread_send", &module);
+        }
+        B.CreateCall(fnSend, {vmArg, thread, msg});
+        vstack.push_back(makeNull());
+        break;
+    }
+    case OpCode::THREAD_RECEIVE: {
+        llvm::Value* thread = vstack.back(); vstack.pop_back();
+        llvm::Function* fnRecv = module.getFunction("havel_vm_thread_recv");
+        if (!fnRecv) {
+            fnRecv = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_thread_recv", &module);
+        }
+        vstack.push_back(B.CreateCall(fnRecv, {vmArg, thread}));
+        break;
+    }
+    case OpCode::INTERVAL_START: {
+        llvm::Value* callback = vstack.back(); vstack.pop_back();
+        llvm::Value* duration = vstack.back(); vstack.pop_back();
+        llvm::Function* fnStart = module.getFunction("havel_vm_interval_start");
+        if (!fnStart) {
+            fnStart = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_interval_start", &module);
+        }
+        vstack.push_back(B.CreateCall(fnStart, {vmArg, duration, callback}));
+        break;
+    }
+    case OpCode::INTERVAL_STOP: {
+        llvm::Value* interval = vstack.back(); vstack.pop_back();
+        llvm::Function* fnStop = module.getFunction("havel_vm_interval_stop");
+        if (!fnStop) {
+            fnStop = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_interval_stop", &module);
+        }
+        vstack.push_back(B.CreateCall(fnStop, {vmArg, interval}));
+        break;
+    }
+    case OpCode::TIMEOUT_START: {
+        llvm::Value* callback = vstack.back(); vstack.pop_back();
+        llvm::Value* delay = vstack.back(); vstack.pop_back();
+        llvm::Function* fnStart = module.getFunction("havel_vm_timeout_start");
+        if (!fnStart) {
+            fnStart = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_timeout_start", &module);
+        }
+        vstack.push_back(B.CreateCall(fnStart, {vmArg, delay, callback}));
+        break;
+    }
+    case OpCode::TIMEOUT_CANCEL: {
+        llvm::Value* timeout = vstack.back(); vstack.pop_back();
+        llvm::Function* fnCancel = module.getFunction("havel_vm_timeout_cancel");
+        if (!fnCancel) {
+            fnCancel = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_timeout_cancel", &module);
+        }
+        vstack.push_back(B.CreateCall(fnCancel, {vmArg, timeout}));
+        break;
+    }
+    case OpCode::CHANNEL_NEW: {
+        llvm::Value* cap = vstack.empty() ? llvm::ConstantInt::get(i64, 0) : vstack.back();
+        if (!vstack.empty()) vstack.pop_back();
+        llvm::Function* fnChan = module.getFunction("havel_vm_channel_new");
+        if (!fnChan) {
+            fnChan = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_channel_new", &module);
+        }
+        vstack.push_back(B.CreateCall(fnChan, {vmArg, cap}));
+        break;
+    }
+    case OpCode::CHANNEL_SEND: {
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Value* chan = vstack.back(); vstack.pop_back();
+        llvm::Function* fnSend = module.getFunction("havel_vm_channel_send");
+        if (!fnSend) {
+            fnSend = llvm::Function::Create(
+                llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_channel_send", &module);
+        }
+        B.CreateCall(fnSend, {vmArg, chan, val});
+        vstack.push_back(makeNull());
+        break;
+    }
+    case OpCode::CHANNEL_RECEIVE: {
+        llvm::Value* chan = vstack.back(); vstack.pop_back();
+        llvm::Function* fnRecv = module.getFunction("havel_vm_channel_recv");
+        if (!fnRecv) {
+            fnRecv = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_channel_recv", &module);
+        }
+        vstack.push_back(B.CreateCall(fnRecv, {vmArg, chan}));
+        break;
+    }
+    case OpCode::CHANNEL_CLOSE: {
+        llvm::Value* chan = vstack.back(); vstack.pop_back();
+        llvm::Function* fnClose = module.getFunction("havel_vm_channel_close");
+        if (!fnClose) {
+            fnClose = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_channel_close", &module);
+        }
+        vstack.push_back(B.CreateCall(fnClose, {vmArg, chan}));
+        break;
+    }
+    case OpCode::YIELD: {
+        llvm::Value* val = vstack.empty() ? makeNull() : vstack.back();
+        if (!vstack.empty()) vstack.pop_back();
+        llvm::Function* fnYield = module.getFunction("havel_vm_yield");
+        if (!fnYield) {
+            fnYield = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_yield", &module);
+        }
+        vstack.push_back(B.CreateCall(fnYield, {vmArg, val}));
+        break;
+    }
+    // AWAIT opcode doesn't exist - awaiting is handled by interpreter
+
+    // String operations
+    case OpCode::STRING_LEN: {
+        llvm::Value* str = vstack.back(); vstack.pop_back();
+        llvm::Function* fnLen = module.getFunction("havel_vm_string_len");
+        if (!fnLen) {
+            fnLen = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_string_len", &module);
+        }
+        vstack.push_back(B.CreateCall(fnLen, {vmArg, str}));
+        break;
+    }
+    case OpCode::STRING_CONCAT: {
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        llvm::Function* fnCat = module.getFunction("havel_vm_string_concat");
+        if (!fnCat) {
+            fnCat = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_string_concat", &module);
+        }
+        vstack.push_back(B.CreateCall(fnCat, {vmArg, l, r}));
+        break;
+    }
+
+    // Stack manipulation
+    case OpCode::PUSH_NULL:
+        vstack.push_back(makeNull());
+        break;
+    case OpCode::SWAP: {
+        llvm::Value* b = vstack.back(); vstack.pop_back();
+        llvm::Value* a = vstack.back(); vstack.pop_back();
+        vstack.push_back(b);
+        vstack.push_back(a);
+        break;
+    }
+    case OpCode::NOP:
+        break;
+
+    case OpCode::CALL_METHOD: {
+        if (instr.operands.size() != 2 || !instr.operands[0].isStringValId() || !instr.operands[1].isInt()) {
             vstack.push_back(makeNull());
             break;
         }
-        case OpCode::THREAD_RECEIVE: {
-            llvm::Value* thread = vstack.back(); vstack.pop_back();
-            llvm::Function* fnRecv = module.getFunction("havel_vm_thread_recv");
-            if (!fnRecv) {
-                fnRecv = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_thread_recv", &module);
-            }
-            vstack.push_back(B.CreateCall(fnRecv, {vmArg, thread}));
-            break;
+
+        uint32_t methodNameId = instr.operands[0].asStringValId();
+        uint32_t argCount = static_cast<uint32_t>(instr.operands[1].asInt());
+
+        llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "method_args");
+        for (uint32_t i = 0; i < argCount; ++i) {
+            llvm::Value* arg = vstack.back(); vstack.pop_back();
+            B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
         }
-        case OpCode::INTERVAL_START: {
-            llvm::Value* callback = vstack.back(); vstack.pop_back();
-            llvm::Value* duration = vstack.back(); vstack.pop_back();
-            llvm::Function* fnStart = module.getFunction("havel_vm_interval_start");
-            if (!fnStart) {
-                fnStart = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_interval_start", &module);
-            }
-            vstack.push_back(B.CreateCall(fnStart, {vmArg, duration, callback}));
-            break;
+        llvm::Value* receiver = vstack.back(); vstack.pop_back();
+
+        llvm::Function* fnMethod = module.getFunction("havel_vm_call_method");
+        if (!fnMethod) {
+            fnMethod = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32, i64p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_call_method", &module);
         }
-        case OpCode::INTERVAL_STOP: {
-            llvm::Value* interval = vstack.back(); vstack.pop_back();
-            llvm::Function* fnStop = module.getFunction("havel_vm_interval_stop");
-            if (!fnStop) {
-                fnStop = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_interval_stop", &module);
-            }
-            vstack.push_back(B.CreateCall(fnStop, {vmArg, interval}));
-            break;
-        }
-        case OpCode::TIMEOUT_START: {
-            llvm::Value* callback = vstack.back(); vstack.pop_back();
-            llvm::Value* delay = vstack.back(); vstack.pop_back();
-            llvm::Function* fnStart = module.getFunction("havel_vm_timeout_start");
-            if (!fnStart) {
-                fnStart = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_timeout_start", &module);
-            }
-            vstack.push_back(B.CreateCall(fnStart, {vmArg, delay, callback}));
-            break;
-        }
-        case OpCode::TIMEOUT_CANCEL: {
-            llvm::Value* timeout = vstack.back(); vstack.pop_back();
-            llvm::Function* fnCancel = module.getFunction("havel_vm_timeout_cancel");
-            if (!fnCancel) {
-                fnCancel = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_timeout_cancel", &module);
-            }
-            vstack.push_back(B.CreateCall(fnCancel, {vmArg, timeout}));
-            break;
-        }
-        case OpCode::CHANNEL_NEW: {
-            llvm::Value* cap = vstack.empty() ? llvm::ConstantInt::get(i64, 0) : vstack.back();
-            if (!vstack.empty()) vstack.pop_back();
-            llvm::Function* fnChan = module.getFunction("havel_vm_channel_new");
-            if (!fnChan) {
-                fnChan = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_channel_new", &module);
-            }
-            vstack.push_back(B.CreateCall(fnChan, {vmArg, cap}));
-            break;
-        }
-        case OpCode::CHANNEL_SEND: {
-            llvm::Value* val = vstack.back(); vstack.pop_back();
-            llvm::Value* chan = vstack.back(); vstack.pop_back();
-            llvm::Function* fnSend = module.getFunction("havel_vm_channel_send");
-            if (!fnSend) {
-                fnSend = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_channel_send", &module);
-            }
-            B.CreateCall(fnSend, {vmArg, chan, val});
-            vstack.push_back(makeNull());
-            break;
-        }
-        case OpCode::CHANNEL_RECEIVE: {
-            llvm::Value* chan = vstack.back(); vstack.pop_back();
-            llvm::Function* fnRecv = module.getFunction("havel_vm_channel_recv");
-            if (!fnRecv) {
-                fnRecv = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_channel_recv", &module);
-            }
-            vstack.push_back(B.CreateCall(fnRecv, {vmArg, chan}));
-            break;
-        }
-        case OpCode::CHANNEL_CLOSE: {
-            llvm::Value* chan = vstack.back(); vstack.pop_back();
-            llvm::Function* fnClose = module.getFunction("havel_vm_channel_close");
-            if (!fnClose) {
-                fnClose = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_channel_close", &module);
-            }
-            vstack.push_back(B.CreateCall(fnClose, {vmArg, chan}));
-            break;
-        }
-        case OpCode::YIELD: {
-            llvm::Value* val = vstack.empty() ? makeNull() : vstack.back();
-            if (!vstack.empty()) vstack.pop_back();
-            llvm::Function* fnYield = module.getFunction("havel_vm_yield");
-            if (!fnYield) {
-                fnYield = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_yield", &module);
-            }
-            vstack.push_back(B.CreateCall(fnYield, {vmArg, val}));
-  break;
+
+        vstack.push_back(B.CreateCall(fnMethod, {
+            vmArg,
+            receiver,
+            llvm::ConstantInt::get(i32, methodNameId),
+            B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}),
+            llvm::ConstantInt::get(i32, argCount)
+        }));
+        break;
+    }
+
+    default: break;
+    }
+
+    // Default fallthrough to next instruction block if the opcode didn't terminate.
+    // Use instrBlock (saved at loop start) because some opcodes (emitSpecializedBinop)
+    // may change the insert point to a different block.
+    // Note: check getTerminator() on non-empty blocks; empty() is used as a fast path
+    B.SetInsertPoint(instrBlock);
+    if (instrBlock->empty() || instrBlock->getTerminator() == nullptr) {
+        B.CreateBr(basicBlocks[ip + 1]);
+    }
 }
-// AWAIT opcode doesn't exist - awaiting is handled by interpreter
 
-// String operations
-        case OpCode::STRING_LEN: {
-            llvm::Value* str = vstack.back(); vstack.pop_back();
-            llvm::Function* fnLen = module.getFunction("havel_vm_string_len");
-            if (!fnLen) {
-                fnLen = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_string_len", &module);
-            }
-            vstack.push_back(B.CreateCall(fnLen, {vmArg, str}));
-            break;
-        }
-        case OpCode::STRING_CONCAT: {
-            llvm::Value* r = vstack.back(); vstack.pop_back();
-            llvm::Value* l = vstack.back(); vstack.pop_back();
-            llvm::Function* fnCat = module.getFunction("havel_vm_string_concat");
-            if (!fnCat) {
-                fnCat = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_string_concat", &module);
-            }
-            vstack.push_back(B.CreateCall(fnCat, {vmArg, l, r}));
-            break;
-        }
-
-        // Stack manipulation
-        case OpCode::PUSH_NULL:
-            vstack.push_back(makeNull());
-            break;
-        case OpCode::SWAP: {
-            llvm::Value* b = vstack.back(); vstack.pop_back();
-            llvm::Value* a = vstack.back(); vstack.pop_back();
-            vstack.push_back(b);
-            vstack.push_back(a);
-            break;
-        }
-	case OpCode::NOP:
-		break;
-
-	case OpCode::CALL_METHOD: {
-            if (instr.operands.size() != 2 || !instr.operands[0].isStringValId() || !instr.operands[1].isInt()) {
-                vstack.push_back(makeNull());
-                break;
-            }
-
-            uint32_t methodNameId = instr.operands[0].asStringValId();
-            uint32_t argCount = static_cast<uint32_t>(instr.operands[1].asInt());
-
-            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "method_args");
-            for (uint32_t i = 0; i < argCount; ++i) {
-                llvm::Value* arg = vstack.back(); vstack.pop_back();
-                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
-            }
-            llvm::Value* receiver = vstack.back(); vstack.pop_back();
-
-            llvm::Function* fnMethod = module.getFunction("havel_vm_call_method");
-            if (!fnMethod) {
-                fnMethod = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i32, i64p, i32}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_call_method", &module);
-            }
-
-            vstack.push_back(B.CreateCall(fnMethod, {
-                vmArg,
-                receiver,
-                llvm::ConstantInt::get(i32, methodNameId),
-                B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}),
-                llvm::ConstantInt::get(i32, argCount)
-            }));
-            break;
-        }
-
-        default: break;
-        }
-
-        // Default fallthrough to next instruction block if the opcode didn't terminate.
-        // Use instrBlock (saved at loop start) because some opcodes (emitSpecializedBinop)
-        // may change the insert point to a different block.
-        // Note: use empty() check - LLVM's getTerminator() can return garbage for empty blocks
-        if (instrBlock->empty()) {
-            B.SetInsertPoint(instrBlock);
-            B.CreateBr(basicBlocks[ip + 1]);
-        }
+// Function epilogue for paths that reach the synthetic exit block.
+B.SetInsertPoint(basicBlocks[func.instructions.size()]);
+if (B.GetInsertBlock()->getTerminator() == nullptr) {
+    llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
+    if (!fn_unreg) {
+        fn_unreg = llvm::Function::Create(
+            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+            llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
     }
-
-    // Function epilogue for paths that reach the synthetic exit block.
-    B.SetInsertPoint(basicBlocks[func.instructions.size()]);
-    if (B.GetInsertBlock()->getTerminator() == nullptr) {
-        llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-        if (!fn_unreg) {
-            fn_unreg = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
-                llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
-        }
-        B.CreateCall(fn_unreg, {frame});
-        B.CreateRet(makeNull());
-    }
+    B.CreateCall(fn_unreg, {frame});
+    B.CreateRet(makeNull());
+}
 }
 
 } // namespace havel::compiler

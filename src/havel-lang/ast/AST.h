@@ -108,7 +108,7 @@ enum class NodeType {
   TupleExpression,  // (1, "hello", true)
   RecordExpression, // {name: "John", age: 30}
   MapExpression,    // #{key1: val1, key2: val2}
-  SetExpression,    // #{1, 2, 3}
+  SetExpression,    // {1, 2, 3}
   CollectionExpression, // {"a", "b", x: 10} mixed positional and keyed
 
   // Destructuring patterns
@@ -2446,8 +2446,6 @@ struct SpreadExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Set Expression (#{1, 2, 3} or {1, 2, 3} when parsed as set)
-// Also supports spread: {1, 2, ...other, 5}
 struct SetExpression : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
 

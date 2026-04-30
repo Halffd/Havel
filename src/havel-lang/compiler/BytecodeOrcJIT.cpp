@@ -2249,9 +2249,11 @@ if (op == OpCode::INT_DIV) {
     // Emit instructions with control flow.
     for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
         B.SetInsertPoint(basicBlocks[ip]);
+        llvm::BasicBlock* instrBlock = basicBlocks[ip]; // Save the instruction block
 
-        // Skip if current block is already terminated
-        if (B.GetInsertBlock()->getTerminator() != nullptr) {
+        // Skip if current block already has instructions (and thus may have terminator)
+        // Note: use empty() instead of getTerminator() due to LLVM internal state issues
+        if (!instrBlock->empty()) {
             continue;
         }
 
@@ -3273,18 +3275,25 @@ case OpCode::INT_DIV:
         case OpCode::CALL: {
             uint32_t argCount = instr.operands[0].asInt();
             // Collect args from stack (in reverse order for calling convention)
+            // Stack layout: [callee, arg0, arg1, ..., argN]
+            // havel_vm_call expects: args[0] = callee, args[1..N] = actual args
             std::vector<llvm::Value*> args;
             args.push_back(vmArg);
-            // Create args array on stack
-            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "call_args");
+            // Create args array on stack (argCount + 1 for callee)
+            llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount + 1), nullptr, "call_args");
+            // Pop args in reverse order (argN, argN-1, ..., arg0)
             for (uint32_t i = 0; i < argCount; ++i) {
                 llvm::Value* arg = vstack.back(); vstack.pop_back();
-                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+                B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
+                    {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - i)}));
             }
-            args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+            // Pop callee and store at index 0
+            llvm::Value* callee = vstack.back(); vstack.pop_back();
+            B.CreateStore(callee, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
                 {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
-            args.push_back(llvm::ConstantInt::get(i32, argCount));
+            args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount + 1), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+            args.push_back(llvm::ConstantInt::get(i32, argCount + 1)); // +1 for callee
 
             // Call havel_vm_call(vm, args, count)
             llvm::Function* fnCall = module.getFunction("havel_vm_call");
@@ -3923,7 +3932,11 @@ case OpCode::LOAD_EXCEPTION: {
         }
 
         // Default fallthrough to next instruction block if the opcode didn't terminate.
-        if (B.GetInsertBlock()->getTerminator() == nullptr) {
+        // Use instrBlock (saved at loop start) because some opcodes (emitSpecializedBinop)
+        // may change the insert point to a different block.
+        // Note: use empty() check - LLVM's getTerminator() can return garbage for empty blocks
+        if (instrBlock->empty()) {
+            B.SetInsertPoint(instrBlock);
             B.CreateBr(basicBlocks[ip + 1]);
         }
     }

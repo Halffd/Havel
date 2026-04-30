@@ -3663,11 +3663,12 @@ co->ip = 0;
   }
 
   size_t base = locals.size();
+  size_t stack_depth = stack.size();  // Save current stack depth
   locals.resize(base + callee->local_count, nullptr);
   if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{callee, 0, base, closure_id});
+    frame_arena_.push_back(CallFrame{callee, 0, base, closure_id, {}, stack_depth});
   } else {
-    frame_arena_[frame_count_] = CallFrame{callee, 0, base, closure_id};
+    frame_arena_[frame_count_] = CallFrame{callee, 0, base, closure_id, {}, stack_depth};
   }
   frame_count_++;
 
@@ -4010,6 +4011,11 @@ void VM::doReturn() {
 
   if (locals.size() >= finished.locals_base) {
     locals.resize(finished.locals_base);
+  }
+
+  // Restore expression stack to the depth at call time, preserving return value
+  while (stack.size() > finished.stack_depth) {
+    popStack();
   }
 
   if (current_coroutine_id_ != 0) {
@@ -5067,15 +5073,6 @@ break;
     }
     Value callee_value = popStack();
 
-    // Debug: check what type the callee is
-    std::string typeInfo = "unknown";
-    if (callee_value.isNull()) typeInfo = "null";
-    else if (callee_value.isInt()) typeInfo = "int";
-    else if (callee_value.isClosureId()) typeInfo = "closure_id";
-    else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
-    else if (callee_value.isObjectId()) typeInfo = "object_id";
-    else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-
 	// Handle callable objects (Lua-style __call metamethod, or op_call operator)
 	if (callee_value.isObjectId()) {
 		auto *obj = heap_.object(callee_value.asObjectId());
@@ -5469,17 +5466,6 @@ break;
   }
 
   case OpCode::RETURN: {
-    // Debug: check what type is being returned
-    if (!stack.empty()) {
-      Value ret = stack.top();
-      std::string typeInfo = "unknown";
-      if (ret.isNull()) typeInfo = "null";
-      else if (ret.isInt()) typeInfo = "int";
-      else if (ret.isClosureId()) typeInfo = "closure_id";
-      else if (ret.isFunctionObjId()) typeInfo = "function_obj_id";
-      else if (ret.isObjectId()) typeInfo = "object_id";
-    }
-    
     // If returning from a coroutine, we need special handling for IP
     uint32_t co_id_before_return = current_coroutine_id_;
     this->doReturn();

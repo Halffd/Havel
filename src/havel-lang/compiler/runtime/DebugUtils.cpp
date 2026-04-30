@@ -628,6 +628,11 @@ case OpCode::INT_DIV: return "INT_DIV";
   case OpCode::LOAD_CLASS_PROTO: return "LOAD_CLASS_PROTO";
   case OpCode::CALL_SUPER: return "CALL_SUPER";
   case OpCode::IMPORT: return "IMPORT";
+  case OpCode::STRUCT_NEW: return "STRUCT_NEW";
+  case OpCode::STRUCT_GET: return "STRUCT_GET";
+  case OpCode::STRUCT_SET: return "STRUCT_SET";
+  case OpCode::PROT_CHECK: return "PROT_CHECK";
+  case OpCode::PROT_CAST: return "PROT_CAST";
 
   // Concurrency primitives
   case OpCode::THREAD_SPAWN: return "THREAD_SPAWN";

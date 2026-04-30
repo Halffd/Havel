@@ -233,6 +233,15 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   LOAD_CLASS_PROTO, // Load parent class reference
   CALL_SUPER,       // Call method from parent class
   IMPORT,           // Runtime module import (path -> module object)
+
+  // Struct intrinsics (bypass generic CALL path)
+  STRUCT_NEW,       // Create struct instance: typeNameId + arg_count
+  STRUCT_GET,       // Get struct field by name id
+  STRUCT_SET,       // Set struct field by name id
+
+  // Protocol intrinsics
+  PROT_CHECK,       // Runtime protocol check by name id (value -> bool)
+  PROT_CAST,        // Runtime checked cast by protocol name id (value -> value/null)
   
   // Concurrency Primitives
   THREAD_SPAWN,     // Spawn new thread with function: thread { ... }

@@ -1306,6 +1306,69 @@ try {
 }
 )havel", 7, dump_bytecode, snapshot_dir);
 
+  failures += runCase("try-throw-basic", R"havel(
+try {
+    throw "oops"
+} catch (e) {
+    return e
+}
+return "bad"
+)havel", "oops", dump_bytecode, snapshot_dir);
+
+  failures += runCase("try-throw-nested-rethrow", R"havel(
+try {
+    try {
+        throw "inner"
+    } catch (e) {
+        throw "rethrow"
+    }
+} catch (e) {
+    return e
+}
+return "bad"
+)havel", "rethrow", dump_bytecode, snapshot_dir);
+
+  failures += runCase("try-throw-catch-finally", R"havel(
+let x = 0
+try {
+    throw "x"
+} catch (e) {
+    x = 1
+} finally {
+    x += 2
+}
+return x
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("try-throw-nested-caught-inner", R"havel(
+try {
+    try {
+        throw "inner"
+    } catch (e) { }
+} catch (e) {
+    return "outer-caught"
+}
+return "ok"
+)havel", "ok", dump_bytecode, snapshot_dir);
+
+  failures += runCase("jit-hot-throw-catch", R"havel(
+fn boom() {
+    throw "jit throw"
+}
+
+let c = 0
+for i in 1..1200 {
+    try {
+        boom()
+    } catch (e) {
+        if e == "jit throw" {
+            c += 1
+        }
+    }
+}
+return c
+)havel", 1200, dump_bytecode, snapshot_dir);
+
   failures += runCase("iterable-hof-string-and-object", R"havel(
 let chars = "ab".map((c) => c)
 let keys = {a: 1, b: 2}.map((k) => k)

@@ -497,6 +497,16 @@ case OpCode::INT_DIV:
     return "CALL_SUPER";
   case OpCode::IMPORT:
     return "IMPORT";
+  case OpCode::STRUCT_NEW:
+    return "STRUCT_NEW";
+  case OpCode::STRUCT_GET:
+    return "STRUCT_GET";
+  case OpCode::STRUCT_SET:
+    return "STRUCT_SET";
+  case OpCode::PROT_CHECK:
+    return "PROT_CHECK";
+  case OpCode::PROT_CAST:
+    return "PROT_CAST";
   case OpCode::THREAD_SPAWN:
     return "THREAD_SPAWN";
   case OpCode::THREAD_JOIN:

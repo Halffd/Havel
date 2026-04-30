@@ -3881,22 +3881,20 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         if (binding && binding->kind == ResolvedBindingKind::Global &&
             top_level_struct_names_.find(callee_id.symbol) !=
                 top_level_struct_names_.end()) {
-            {
-                uint32_t strId = addStringConstant("struct.new");
-                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-            }
-            { uint32_t _sid = addStringConstant(callee_id.symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-            uint32_t totalArgs = 1;
+            uint32_t type_sid = addStringConstant(callee_id.symbol);
+            uint32_t totalArgs = 0;
             for (const auto &arg : expression.args) {
                 if (!arg) {
                     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-                    totalArgs++;
+                    ++totalArgs;
                     continue;
                 }
                 compileExpression(*arg);
-                totalArgs++;
+                ++totalArgs;
             }
-            emit(OpCode::CALL, Value(totalArgs));
+            emit(OpCode::STRUCT_NEW,
+                 std::vector<Value>{Value::makeStringValId(type_sid),
+                                    Value(totalArgs)});
             return;
         }
         if (binding && binding->kind == ResolvedBindingKind::Global &&
@@ -3961,6 +3959,33 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  // which CALL_METHOD handles natively.
  if (auto *objIdent =
  dynamic_cast<const ast::Identifier *>(member.object.get())) {
+ // Intrinsic struct helpers bypass generic dynamic call path.
+ if (objIdent->symbol == "struct" && property->symbol == "get" &&
+     expression.args.size() == 2) {
+   compileExpression(*expression.args[0]); // struct instance
+   const auto* fieldLit =
+       dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
+   if (!fieldLit) {
+     COMPILER_THROW("struct.get requires literal string field name");
+   }
+   uint32_t field_sid = addStringConstant(fieldLit->value);
+   emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
+   return;
+ }
+ if (objIdent->symbol == "struct" && property->symbol == "set" &&
+     expression.args.size() == 3) {
+   compileExpression(*expression.args[0]); // struct instance
+   const auto* fieldLit =
+       dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
+   if (!fieldLit) {
+     COMPILER_THROW("struct.set requires literal string field name");
+   }
+   compileExpression(*expression.args[2]); // value
+   uint32_t field_sid = addStringConstant(fieldLit->value);
+   emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
+   return;
+ }
+
  // Push namespace object as receiver
  uint32_t objSid = addStringConstant(objIdent->symbol);
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));

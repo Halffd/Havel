@@ -4,6 +4,7 @@
 #include "../core/Value.hpp"
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 #ifdef HAVE_LIBFFI
 
@@ -207,8 +208,13 @@ Value FFIMemory::to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ow
         return Value(static_cast<int64_t>(*reinterpret_cast<uint16_t*>(ptr)));
     case FFITypeKind::UINT32:
         return Value(static_cast<int64_t>(*reinterpret_cast<uint32_t*>(ptr)));
-    case FFITypeKind::UINT64:
-        return Value(static_cast<int64_t>(*reinterpret_cast<uint64_t*>(ptr)));
+    case FFITypeKind::UINT64: {
+        uint64_t val = *reinterpret_cast<uint64_t*>(ptr);
+        if (val > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+            return Value::makeDouble(static_cast<double>(val));
+        }
+        return Value(static_cast<int64_t>(val));
+    }
     case FFITypeKind::FLOAT32:
         return Value::makeDouble(static_cast<double>(*reinterpret_cast<float*>(ptr)));
     case FFITypeKind::FLOAT64:

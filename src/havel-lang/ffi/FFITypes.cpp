@@ -226,7 +226,7 @@ void FFITypeRegistry::add_struct_field(std::shared_ptr<FFIType> type, const std:
 void FFITypeRegistry::compute_layout(std::shared_ptr<FFIType> type) {
     if (!type || type->kind != FFITypeKind::STRUCT) return;
     if (type->size > 0) return;
-    
+
     size_t offset = 0;
     size_t max_align = 1;
     for (auto& [name, field_type] : type->fields) {
@@ -243,6 +243,11 @@ void FFITypeRegistry::compute_layout(std::shared_ptr<FFIType> type) {
         type->size = (offset / max_align + 1) * max_align;
     }
     type->alignment = max_align;
+}
+
+void FFITypeRegistry::register_typedef(const std::string& name, std::shared_ptr<FFIType> type) {
+    init_builtins();
+    named_types_[name] = type;
 }
 
 } // namespace havel::ffi

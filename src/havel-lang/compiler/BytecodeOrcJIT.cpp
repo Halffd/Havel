@@ -1738,6 +1738,19 @@ void BytecodeOrcJIT::initTargetMachine() {
 }
 
 void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
+    // Coroutines are currently interpreter-only: JIT frame suspension/resume
+    // semantics are not preserved for YIELD/GO_ASYNC paths yet.
+    for (const auto& instr : func.instructions) {
+        switch (instr.opcode) {
+            case OpCode::YIELD:
+            case OpCode::YIELD_RESUME:
+            case OpCode::GO_ASYNC:
+                return;
+            default:
+                break;
+        }
+    }
+
     auto context = std::make_unique<llvm::LLVMContext>();
     auto module  = std::make_unique<llvm::Module>(func.name, *context);
 

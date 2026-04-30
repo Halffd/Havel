@@ -1,0 +1,127 @@
+// config.hv
+// Configuration module with TOML integration and autosave
+
+use toml
+
+// Get a config value by key, with optional default
+fn get(key, _default) {
+    return config.get(key, _default)
+}
+
+// Get a config value by key (no default)
+fn get(key) {
+    return config.get(key)
+}
+
+// Set a config value (autosave enabled via debounced save)
+fn set(key, value) {
+    return config.set(key, value)
+}
+
+// Save config to disk immediately
+fn save() {
+    return config.save()
+}
+
+// Reload config from disk
+fn load() {
+    return config.load()
+}
+
+// Check if a config key exists
+fn has(key) {
+    return config.has(key)
+}
+
+// Get all config keys
+fn keys() {
+    return config.keys()
+}
+
+// Get all config as an object
+fn all() {
+    return config.getAll()
+}
+
+// Get a config section as a TOML-parsed object
+// e.g. config.section("General") returns {GamingApps: "...", DefaultBrightness: 1.0, ...}
+fn section(name) {
+    allConfig = config.getAll()
+    result = {}
+    prefix = name + "."
+    k = config.keys()
+    i = 0
+    n = #k
+    while i < n {
+        key = k[i]
+        if #key > #prefix {
+            if key[0:#prefix] == prefix {
+                subKey = key[#prefix:#key]
+                result[subKey] = allConfig[key]
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// Set multiple config values at once, then save
+fn batch(pairs) {
+    k = pairs.keys()
+    i = 0
+    n = #k
+    while i < n {
+        key = k[i]
+        config.set(key, pairs[key])
+        i = i + 1
+    }
+    config.save()
+}
+
+// Parse a TOML string and merge into config
+fn mergeToml(source) {
+    data = toml.parse(source)
+    _mergeObject(data, "")
+    config.save()
+}
+
+fn _mergeObject(obj, prefix) {
+    k = obj.keys()
+    i = 0
+    n = #k
+    while i < n {
+        key = k[i]
+        _val = obj[key]
+        fullKey = key
+        if #prefix > 0 {
+            fullKey = prefix + "." + key
+        }
+        t = type.of(_val)
+        if t == "object" {
+            _mergeObject(_val, fullKey)
+        } else {
+            config.set(fullKey, _val)
+        }
+        i = i + 1
+    }
+}
+
+// Export config as TOML string
+fn toToml() {
+    allConfig = config.getAll()
+    return toml.stringify(allConfig)
+}
+
+// Reset config to defaults by deleting the config file and reloading
+fn reset() {
+    configPath = conf_path()
+    if fs.exists(configPath) {
+        shell.exec("rm " + configPath)
+    }
+    config.load()
+}
+
+// Get the config file path
+fn conf_path() {
+    return config.get("_config_path", "")
+}

@@ -1,0 +1,564 @@
+// evdev.hv — Linux evdev raw input device access via FFI
+// Provides: evdev.open, evdev.close, evdev.read, evdev.readNonBlock,
+// evdev.name, evdev.grab, evdev.ungrab, evdev.keyState,
+// evdev.deviceId, evdev.phys, evdev.keyBits,
+// evdev.codeToName, evdev.nameToCode,
+// Event type/code constants: EV_SYN, EV_KEY, EV_REL, EV_ABS, etc.
+
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_open = ffi.sym(_c, "open")
+_close = ffi.sym(_c, "close")
+_read = ffi.sym(_c, "read")
+_ioctl = ffi.sym(_c, "ioctl")
+_write = ffi.sym(_c, "write")
+
+_O_RDONLY = 0
+_O_WRONLY = 1
+_O_NONBLOCK = 2048
+
+// Event types
+EV_SYN = 0
+EV_KEY = 1
+EV_REL = 2
+EV_ABS = 3
+EV_MSC = 4
+EV_SW = 5
+EV_LED = 17
+EV_SND = 18
+EV_REP = 20
+EV_FF = 21
+EV_PWR = 22
+EV_FF_STATUS = 23
+
+// Synchronization codes
+SYN_REPORT = 0
+SYN_DROPPED = 3
+
+// Relative axes
+REL_X = 0
+REL_Y = 1
+REL_WHEEL = 8
+REL_HWHEEL = 6
+
+// Absolute axes
+ABS_X = 0
+ABS_Y = 1
+ABS_Z = 2
+ABS_RX = 3
+ABS_RY = 4
+ABS_RZ = 5
+ABS_THROTTLE = 6
+ABS_RUDDER = 7
+ABS_WHEEL = 8
+ABS_GAS = 9
+ABS_BRAKE = 10
+ABS_HAT0X = 16
+ABS_HAT0Y = 17
+ABS_HAT1X = 18
+ABS_HAT1Y = 19
+ABS_PRESSURE = 24
+ABS_DISTANCE = 25
+ABS_TILT_X = 26
+ABS_TILT_Y = 27
+
+// Mouse buttons
+BTN_LEFT = 272
+BTN_RIGHT = 273
+BTN_MIDDLE = 274
+BTN_SIDE = 275
+BTN_EXTRA = 276
+BTN_FORWARD = 277
+BTN_BACK = 278
+BTN_TASK = 279
+
+// Gamepad buttons
+BTN_SOUTH = 304
+BTN_EAST = 305
+BTN_NORTH = 307
+BTN_WEST = 308
+BTN_TL = 310
+BTN_TR = 311
+BTN_TL2 = 312
+BTN_TR2 = 313
+BTN_SELECT = 314
+BTN_START = 315
+BTN_MODE = 316
+BTN_THUMBL = 317
+BTN_THUMBR = 318
+BTN_DPAD_UP = 544
+BTN_DPAD_DOWN = 545
+BTN_DPAD_LEFT = 546
+BTN_DPAD_RIGHT = 547
+
+// Bus types
+BUS_USB = 3
+BUS_BLUETOOTH = 5
+BUS_VIRTUAL = 6
+
+// Key code constants (subset — use nameToCode/codeToName for full mapping)
+KEY_ESC = 1
+KEY_1 = 2
+KEY_2 = 3
+KEY_3 = 4
+KEY_4 = 5
+KEY_5 = 6
+KEY_6 = 7
+KEY_7 = 8
+KEY_8 = 9
+KEY_9 = 10
+KEY_0 = 11
+KEY_MINUS = 12
+KEY_EQUAL = 13
+KEY_BACKSPACE = 14
+KEY_TAB = 15
+KEY_Q = 16
+KEY_W = 17
+KEY_E = 18
+KEY_R = 19
+KEY_T = 20
+KEY_Y = 21
+KEY_U = 22
+KEY_I = 23
+KEY_O = 24
+KEY_P = 25
+KEY_LEFTBRACE = 26
+KEY_RIGHTBRACE = 27
+KEY_ENTER = 28
+KEY_LEFTCTRL = 29
+KEY_A = 30
+KEY_S = 31
+KEY_D = 32
+KEY_F = 33
+KEY_G = 34
+KEY_H = 35
+KEY_J = 36
+KEY_K = 37
+KEY_L = 38
+KEY_SEMICOLON = 39
+KEY_APOSTROPHE = 40
+KEY_GRAVE = 41
+KEY_LEFTSHIFT = 42
+KEY_BACKSLASH = 43
+KEY_Z = 44
+KEY_X = 45
+KEY_C = 46
+KEY_V = 47
+KEY_B = 48
+KEY_N = 49
+KEY_M = 50
+KEY_COMMA = 51
+KEY_DOT = 52
+KEY_SLASH = 53
+KEY_RIGHTSHIFT = 54
+KEY_LEFTALT = 56
+KEY_SPACE = 57
+KEY_CAPSLOCK = 58
+KEY_F1 = 59
+KEY_F2 = 60
+KEY_F3 = 61
+KEY_F4 = 62
+KEY_F5 = 63
+KEY_F6 = 64
+KEY_F7 = 65
+KEY_F8 = 66
+KEY_F9 = 67
+KEY_F10 = 68
+KEY_NUMLOCK = 69
+KEY_SCROLLLOCK = 70
+KEY_HOME = 102
+KEY_UP = 103
+KEY_PAGEUP = 104
+KEY_LEFT = 105
+KEY_RIGHT = 106
+KEY_END = 107
+KEY_DOWN = 108
+KEY_PAGEDOWN = 109
+KEY_INSERT = 110
+KEY_DELETE = 111
+KEY_RIGHTCTRL = 97
+KEY_RIGHTALT = 100
+KEY_LEFTMETA = 125
+KEY_RIGHTMETA = 126
+KEY_MAX = 767
+
+// input_event struct size on 64-bit Linux = 24 bytes
+// Layout: timeval(16: i64 sec + i64 usec) + u16 type(2) + u16 code(2) + i32 value(4)
+_INPUT_EVENT_SIZE = 24
+
+// ioctl request codes (verified against compiled C on this system)
+// _IOC(dir, type, nr, size) = (dir << 30) | (size << 16) | (type << 8) | nr
+// 'E' = 0x45 = 69
+
+// EVIOCGRAB = _IOW('E', 0x90, int) = (1<<30)|(4<<16)|(69<<8)|0x90
+_EVIOCGRAB = 1074021776
+
+// EVIOCGVERSION = _IOR('E', 0x01, int) = (2<<30)|(4<<16)|(69<<8)|0x01
+_EVIOCGVERSION = 2147763457
+
+// EVIOCGID = _IOR('E', 0x02, struct input_id) = (2<<30)|(8<<16)|(69<<8)|0x02
+_EVIOCGID = 2148025602
+
+// EVIOCGNAME(len) = _IOC(2, 69, 0x06, len) = (2<<30)|(len<<16)|(69<<8)|6
+// Base without len: (2<<30)|(69<<8)|6 = 2147501318
+_EVIOCGNAME_BASE = 2147501318
+
+// EVIOCGKEY(len) = _IOC(2, 69, 0x18, len) = (2<<30)|(len<<16)|(69<<8)|24
+// Base without len: (2<<30)|(69<<8)|24 = 2147501336
+_EVIOCGKEY_BASE = 2147501336
+
+// EVIOCGPHYS(len) = _IOC(2, 69, 0x07, len) = (2<<30)|(len<<16)|(69<<8)|7
+// Base without len: (2<<30)|(69<<8)|7 = 2147501319
+_EVIOCGPHYS_BASE = 2147501319
+
+// EVIOCGBIT(ev, len) = _IOC(2, 69, 0x20+ev, len) = (2<<30)|(len<<16)|(69<<8)|(32+ev)
+// Base without ev/len: (2<<30)|(69<<8)|32 = 2147501344
+_EVIOCGBIT_BASE = 2147501344
+
+// Name-to-evdev code mapping (from KeyMap.cpp, verified against linux/input-event-codes.h)
+_NAME_TO_CODE = {
+  "reserved": 0, "esc": 1, "1": 2, "2": 3, "3": 4, "4": 5, "5": 6,
+  "6": 7, "7": 8, "8": 9, "9": 10, "0": 11,
+  "minus": 12, "equal": 13, "backspace": 14, "tab": 15,
+  "q": 16, "w": 17, "e": 18, "r": 19, "t": 20,
+  "y": 21, "u": 22, "i": 23, "o": 24, "p": 25,
+  "leftbrace": 26, "rightbrace": 27, "enter": 28, "lctrl": 29,
+  "a": 30, "s": 31, "d": 32, "f": 33, "g": 34,
+  "h": 35, "j": 36, "k": 37, "l": 38,
+  "semicolon": 39, "apostrophe": 40, "grave": 41, "lshift": 42,
+  "backslash": 43, "z": 44, "x": 45, "c": 46, "v": 47,
+  "b": 48, "n": 49, "m": 50, "comma": 51, "dot": 52,
+  "slash": 53, "rshift": 54, "numpadmul": 55, "lalt": 56,
+  "space": 57, "capslock": 58,
+  "f1": 59, "f2": 60, "f3": 61, "f4": 62, "f5": 63,
+  "f6": 64, "f7": 65, "f8": 66, "f9": 67, "f10": 68,
+  "numlock": 69, "scrolllock": 70,
+  "numpad7": 71, "numpad8": 72, "numpad9": 73, "numpadsub": 74,
+  "numpad4": 75, "numpad5": 76, "numpad6": 77, "numpadadd": 78,
+  "numpad1": 79, "numpad2": 80, "numpad3": 81, "numpad0": 82,
+  "numpaddec": 83, "numpadenter": 96, "rctrl": 97, "numpaddiv": 98,
+  "sysrq": 99, "ralt": 100, "home": 102, "up": 103, "pgup": 104,
+  "left": 105, "right": 106, "end": 107, "down": 108, "pgdn": 109,
+  "insert": 110, "delete": 111,
+  "mute": 113, "volumedown": 114, "volumeup": 115, "power": 116,
+  "numpadequal": 117, "pause": 119, "numpadcomma": 121,
+  "hangeul": 122, "hanja": 123, "yen": 124, "win": 125, "rwin": 126,
+  "stop": 128, "again": 129, "props": 130, "undo": 131, "front": 132,
+  "copy": 133, "open": 134, "redo": 135, "find": 136, "cut": 137,
+  "help": 138, "menu": 139, "calc": 140, "sleep": 142, "wakeup": 143,
+  "file": 144, "www": 150, "coffee": 152, "cyclewindows": 154,
+  "mail": 155, "bookmarks": 156, "computer": 157, "back": 158,
+  "forward": 159, "ejectcd": 161, "nextsong": 163, "playpause": 164,
+  "previoussong": 165, "stopcd": 166, "record": 167, "rewind": 168,
+  "homepage": 172, "refresh": 173, "numpadleftparen": 179,
+  "numpadrightparen": 180,
+  "f11": 87, "f12": 88, "f13": 183, "f14": 184, "f15": 185,
+  "f16": 186, "f17": 187, "f18": 188, "f19": 189, "f20": 190,
+  "f21": 191, "f22": 192, "f23": 193, "f24": 194,
+  "play": 207, "fastforward": 208, "print": 210,
+  "chat": 216, "search": 217, "finance": 219, "shop": 221,
+  "cancel": 223, "brightnessdown": 224, "brightnessup": 225,
+  "media": 226, "kbdillumtoggle": 228, "kbdillumdown": 229,
+  "kbdillumup": 230, "save": 234,
+  "bluetooth": 237, "wlan": 238, "unknown": 240,
+  "switchvideomode": 243, "brightness": 244, "displayoff": 245,
+  "battery": 246, "rfkill": 247, "micmute": 248,
+  "less": 86, "ro": 89, "katakana": 90, "hiragana": 91,
+  "henkan": 92, "katakanahiragana": 93, "muhenkan": 94,
+  "kpjpcomma": 95, "zenkakuhankaku": 85,
+  "lbutton": 272, "rbutton": 273, "mbutton": 274,
+  "xbutton1": 275, "xbutton2": 276, "xbutton3": 277, "xbutton4": 278,
+  "zoomin": 292, "zoomout": 293, "zoomreset": 294,
+  "joya": 304, "joyb": 305, "joyy": 307, "joyx": 308,
+  "joylb": 310, "joyrb": 311, "joylt": 312, "joyrt": 313,
+  "joyback": 314, "joystart": 315, "joyguide": 316,
+  "joylstick": 317, "joyrstick": 318,
+  "select": 353, "favorites": 364, "calendar": 397, "messenger": 430,
+  "fn": 464, "fnesc": 465,
+  "fnf1": 466, "fnf2": 467, "fnf3": 468, "fnf4": 469,
+  "fnf5": 470, "fnf6": 471, "fnf7": 472, "fnf8": 473,
+  "fnf9": 474, "fnf10": 475, "fnf11": 476, "fnf12": 477,
+  "joydpadup": 544, "joydpaddown": 545, "joydpadleft": 546, "joydpadright": 547,
+  "suspend": 205, "close": 206, "dashboard": 204, "scale": 120,
+  "prog1": 162, "prog2": 163, "prog3": 164, "prog4": 165, "macro": 112,
+  "scrollup": 177, "scrolldown": 178,
+}
+
+// Aliases — map alternate key names to canonical names in _NAME_TO_CODE
+_ALIAS_MAP = {
+  "escape": "esc", "return": "enter", "pageup": "pgup",
+  "pagedown": "pgdn", "super": "win", "meta": "win",
+  "lwin": "win", "lmeta": "win", "rmeta": "rwin",
+  "leftbracket": "leftbrace", "rightbracket": "rightbrace",
+  "equals": "equal", "backtick": "grave", "quote": "apostrophe",
+  "del": "delete", "ins": "insert", "bksp": "backspace",
+  "prior": "pgup", "next": "pgdn",
+  "ctrl": "lctrl", "shift": "lshift", "alt": "lalt",
+  "lcmd": "win", "rcmd": "rwin", "cmd": "win",
+  "apps": "menu",
+  "numpadplus": "numpadadd", "numpadminus": "numpadsub",
+  "numpadmult": "numpadmul", "numpadasterisk": "numpadmul",
+  "numpaddot": "numpaddec", "numpaddel": "numpaddec",
+  "numpadperiod": "numpaddec", "numpaddecimal": "numpaddec",
+  "mediaplay": "playpause", "mediastop": "stopcd",
+  "prev": "previoussong", "previous": "previoussong",
+  "mediaprev": "previoussong", "medianext": "nextsong",
+  "volumemute": "mute", "mediaeject": "ejectcd",
+  "eject": "ejectcd", "calculator": "calc",
+  "printscreen": "sysrq", "pausebreak": "pause",
+  "wifi": "wlan",
+  "-": "minus", "=": "equal", "[": "leftbrace", "]": "rightbrace",
+  ";": "semicolon", "'": "apostrophe", "`": "grave", "\\": "backslash",
+  ",": "comma", ".": "dot", "/": "slash",
+  "browser_home": "homepage", "browser_back": "back",
+  "browser_forward": "forward", "browser_search": "search",
+  "browser_bookmarks": "bookmarks", "browser_favorites": "favorites",
+  "browser_refresh": "refresh",
+}
+
+// Evdev code to name mapping (reverse of _NAME_TO_CODE)
+_CODE_TO_NAME = {}
+for _n in _NAME_TO_CODE { _CODE_TO_NAME.set(_NAME_TO_CODE[_n], _n) }
+
+fn nameToCode(name) {
+  if name == null { return 0 }
+  _l = name.lower()
+  _alias = _ALIAS_MAP[_l]
+  if _alias != null { _l = _alias }
+  _c = _NAME_TO_CODE[_l]
+  if _c != null { return _c }
+  0
+}
+
+fn codeToName(code) {
+  if code == null { return "" }
+  _n = _CODE_TO_NAME[code]
+  if _n != null { return _n }
+  ""
+}
+
+// Open an evdev device at /dev/input/eventX
+// Returns a handle object or null on failure
+fn open(path) {
+  if path == null { return null }
+  _path_cs = ffi.cstring(path)
+  _fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, _O_RDONLY)
+  ffi.free(_path_cs)
+  if _fd < 0 { return null }
+
+  // Read device name via EVIOCGNAME(256)
+  _name_ioctl = _EVIOCGNAME_BASE | (256 << 16)
+  _name_buf = ffi.allocBytes(256)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _name_ioctl, _name_buf)
+  _devname = ffi.string(_name_buf)
+  ffi.free(_name_buf)
+
+  // Read device ID (struct input_id: 4 x uint16 = 8 bytes)
+  _id_buf = ffi.allocBytes(8)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _EVIOCGID, _id_buf)
+  _bustype = ffi.get_u16(_id_buf)
+  _vendor = ffi.get_u16(ffi.ptr_add(_id_buf, 2))
+  _product = ffi.get_u16(ffi.ptr_add(_id_buf, 4))
+  _version = ffi.get_u16(ffi.ptr_add(_id_buf, 6))
+  ffi.free(_id_buf)
+
+  ({fd: _fd, path: path, name: _devname, bustype: _bustype, vendor: _vendor,
+    product: _product, version: _version, _nonblock: false})
+}
+
+// Close an evdev device handle
+fn close(handle) {
+  if handle == null { return }
+  ffi.call(_close, "int32", ["int32"], handle.fd)
+}
+
+// Grab (exclusive access) the device
+fn grab(handle) {
+  if handle == null { return false }
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], handle.fd, _EVIOCGRAB, 1)
+  _ret == 0
+}
+
+// Ungrab the device
+fn ungrab(handle) {
+  if handle == null { return false }
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], handle.fd, _EVIOCGRAB, 0)
+  _ret == 0
+}
+
+// Get device name via EVIOCGNAME
+fn name(handle) {
+  if handle == null { return "" }
+  _name_ioctl = _EVIOCGNAME_BASE | (256 << 16)
+  _name_buf = ffi.allocBytes(256)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _name_ioctl, _name_buf)
+  _devname = ffi.string(_name_buf)
+  ffi.free(_name_buf)
+  _devname
+}
+
+// Get physical path via EVIOCGPHYS
+fn phys(handle) {
+  if handle == null { return "" }
+  _phys_ioctl = _EVIOCGPHYS_BASE | (256 << 16)
+  _phys_buf = ffi.allocBytes(256)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _phys_ioctl, _phys_buf)
+  _physname = ffi.string(_phys_buf)
+  ffi.free(_phys_buf)
+  _physname
+}
+
+// Get device ID as {bustype, vendor, product, version}
+fn deviceId(handle) {
+  if handle == null { return null }
+  _id_buf = ffi.allocBytes(8)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _EVIOCGID, _id_buf)
+  _bustype = ffi.get_u16(_id_buf)
+  _vendor = ffi.get_u16(ffi.ptr_add(_id_buf, 2))
+  _product = ffi.get_u16(ffi.ptr_add(_id_buf, 4))
+  _version = ffi.get_u16(ffi.ptr_add(_id_buf, 6))
+  ffi.free(_id_buf)
+  ({bustype: _bustype, vendor: _vendor, product: _product, version: _version})
+}
+
+// Read the current key state bitmask via EVIOCGKEY
+// Returns a map of {code: true} for all currently pressed keys
+fn keyState(handle) {
+  if handle == null { return {} }
+  _key_bits_len = ((_KEY_MAX + 7) / 8)
+  _key_ioctl = _EVIOCGKEY_BASE | (_key_bits_len << 16)
+  _buf = ffi.allocBytes(_key_bits_len)
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _key_ioctl, _buf)
+  _result = {}
+  if _ret >= 0 {
+    _key = 0
+    while _key < _KEY_MAX {
+      _byte_idx = _key / 8
+      _bit_idx = _key % 8
+      _byte_val = ffi.get_u8(ffi.ptr_add(_buf, _byte_idx))
+      if (_byte_val & (1 << _bit_idx)) != 0 {
+        _result.set(_key, true)
+      }
+      _key = _key + 1
+    }
+  }
+  ffi.free(_buf)
+  _result
+}
+
+// Check if a specific key is currently pressed
+fn isKeyDown(handle, code) {
+  if handle == null { return false }
+  if code == null { return false }
+  _key_bits_len = ((_KEY_MAX + 7) / 8)
+  _key_ioctl = _EVIOCGKEY_BASE | (_key_bits_len << 16)
+  _buf = ffi.allocBytes(_key_bits_len)
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _key_ioctl, _buf)
+  _down = false
+  if _ret >= 0 {
+    _byte_idx = code / 8
+    _bit_idx = code % 8
+    _byte_val = ffi.get_u8(ffi.ptr_add(_buf, _byte_idx))
+    _down = (_byte_val & (1 << _bit_idx)) != 0
+  }
+  ffi.free(_buf)
+  _down
+}
+
+// Get event type capability bitmask via EVIOCGBIT
+// Returns array of byte values for the requested event type
+fn keyBits(handle, evType, len) {
+  if handle == null { return null }
+  if len == null { len = 128 }
+  _ioctl_code = _EVIOCGBIT_BASE | (evType) | (len << 16)
+  _buf = ffi.allocBytes(len)
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _ioctl_code, _buf)
+  if _ret < 0 {
+    ffi.free(_buf)
+    return null
+  }
+  // Convert to array of byte values
+  _result = []
+  _i = 0
+  while _i < len {
+    _result.push(ffi.get_u8(ffi.ptr_add(_buf, _i)))
+    _i = _i + 1
+  }
+  ffi.free(_buf)
+  _result
+}
+
+// Parse raw input_event bytes (24 bytes on 64-bit)
+fn _parseEvent(buf) {
+  // timeval: sec at offset 0 (i64), usec at offset 8 (i64)
+  // type at offset 16 (u16), code at offset 18 (u16), value at offset 20 (i32)
+  _sec = ffi.get_i64(buf)
+  _usec = ffi.get_i64(ffi.ptr_add(buf, 8))
+  _type = ffi.get_u16(ffi.ptr_add(buf, 16))
+  _code = ffi.get_u16(ffi.ptr_add(buf, 18))
+  _value = ffi.get_i32(ffi.ptr_add(buf, 20))
+  _type_name = "unknown"
+  if _type == EV_SYN { _type_name = "sync" }
+  else if _type == EV_KEY { _type_name = "key" }
+  else if _type == EV_REL { _type_name = "relative" }
+  else if _type == EV_ABS { _type_name = "absolute" }
+  else if _type == EV_MSC { _type_name = "misc" }
+  else if _type == EV_SW { _type_name = "switch" }
+  else if _type == EV_LED { _type_name = "led" }
+  else if _type == EV_SND { _type_name = "sound" }
+
+  _key_name = ""
+  if _type == EV_KEY { _key_name = codeToName(_code) }
+  else if _type == EV_REL {
+    if _code == REL_X { _key_name = "x" }
+    else if _code == REL_Y { _key_name = "y" }
+    else if _code == REL_WHEEL { _key_name = "wheel" }
+    else if _code == REL_HWHEEL { _key_name = "hwheel" }
+  } else if _type == EV_ABS {
+    if _code == ABS_X { _key_name = "x" }
+    else if _code == ABS_Y { _key_name = "y" }
+  }
+
+  ({sec: _sec, usec: _usec, type: _type, type_name: _type_name,
+    code: _code, value: _value, key_name: _key_name})
+}
+
+// Read a single input event (blocking)
+fn read(handle) {
+  if handle == null { return null }
+  _buf = ffi.allocBytes(_INPUT_EVENT_SIZE)
+  _n = ffi.call(_read, "int64", ["int32", "pointer", "int64"], handle.fd, _buf, _INPUT_EVENT_SIZE)
+  if _n != _INPUT_EVENT_SIZE {
+    ffi.free(_buf)
+    return null
+  }
+  _ev = _parseEvent(_buf)
+  ffi.free(_buf)
+  _ev
+}
+
+// Read a single input event (non-blocking)
+// Switches to O_NONBLOCK mode on first call
+fn readNonBlock(handle) {
+  if handle == null { return null }
+  if !handle._nonblock {
+    ffi.call(_close, "int32", ["int32"], handle.fd)
+    _path_cs = ffi.cstring(handle.path)
+    handle.fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, (_O_RDONLY | _O_NONBLOCK))
+    ffi.free(_path_cs)
+    if handle.fd < 0 { return null }
+    handle._nonblock = true
+  }
+  _buf = ffi.allocBytes(_INPUT_EVENT_SIZE)
+  _n = ffi.call(_read, "int64", ["int32", "pointer", "int64"], handle.fd, _buf, _INPUT_EVENT_SIZE)
+  if _n != _INPUT_EVENT_SIZE {
+    ffi.free(_buf)
+    return null
+  }
+  _ev = _parseEvent(_buf)
+  ffi.free(_buf)
+  _ev
+}

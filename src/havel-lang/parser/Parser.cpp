@@ -1047,11 +1047,12 @@ case TokenType::Number:
       
       // Check if it's an object literal (identifier/string followed by ':')
       bool isObject = false;
-      auto isObjKeyType = [](havel::TokenType t) {
-        return t == havel::TokenType::Identifier ||
-               t == havel::TokenType::String ||
-               t == havel::TokenType::MultilineString ||
-               t == havel::TokenType::Config ||
+ auto isObjKeyType = [](havel::TokenType t) {
+ return t == havel::TokenType::Identifier ||
+ t == havel::TokenType::String ||
+ t == havel::TokenType::MultilineString ||
+ t == havel::TokenType::Number ||
+ t == havel::TokenType::Config ||
                t == havel::TokenType::Devices ||
                t == havel::TokenType::Modes ||
                t == havel::TokenType::Mode ||
@@ -1343,9 +1344,10 @@ case TokenType::BangOpenBrace: {
       return inner;
     }
 
-    default:
-      errorAt(token, "Unexpected token in expression");
-      return nullptr;
+default: {
+            errorAt(token, "Unexpected token in expression: " + token.value);
+            return nullptr;
+        }
   }
 }
 
@@ -1992,8 +1994,8 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
         continue;
       }
 
-      if (at().type == TokenType::Identifier) {
-        auto pattern = makeIdentifier(advance());
+ if (at().type == TokenType::Identifier || at().type == TokenType::Underscore) {
+ auto pattern = makeIdentifier(advance());
 
         std::optional<std::unique_ptr<ast::TypeAnnotation>> typeAnn;
         if (at().type == TokenType::Colon) {
@@ -2968,10 +2970,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
       }
       pattern = makeIdentifier(advance());
       isVariadic = true;
-    } else if (at().type == havel::TokenType::Identifier) {
-      pattern = makeIdentifier(advance());
-    } else {
-      failAt(at(), "Expected identifier or '...' in parameter list");
+ } else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore) {
+ pattern = makeIdentifier(advance());
+ } else {
+ failAt(at(), "Expected identifier or '...' in parameter list");
     }
 
     // Check for type annotation (paramName: Type)
@@ -7463,11 +7465,12 @@ return parsePostfixExpression(std::move(array));
     // Object keys can be identifiers, strings, or keywords (like 'config')
     // followed by ':'
     bool isObject = false;
-    auto isObjKeyType2 = [](havel::TokenType t) {
-      return t == havel::TokenType::Identifier ||
-             t == havel::TokenType::String ||
-             t == havel::TokenType::MultilineString ||
-             t == havel::TokenType::Config ||
+ auto isObjKeyType2 = [](havel::TokenType t) {
+ return t == havel::TokenType::Identifier ||
+ t == havel::TokenType::String ||
+ t == havel::TokenType::MultilineString ||
+ t == havel::TokenType::Number ||
+ t == havel::TokenType::Config ||
              t == havel::TokenType::Devices ||
              t == havel::TokenType::Modes ||
              t == havel::TokenType::Mode ||

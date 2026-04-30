@@ -1447,7 +1447,79 @@ uint64_t havel_vm_spread(void* vm_ptr, uint64_t val_bits) {
 
 uint64_t havel_vm_class_new(void* vm_ptr, uint32_t type_id, uint32_t parent_type_id, uint32_t field_count) {
   if (!vm_ptr) return Value::makeNull().rawBits();
-  return Value::makeNull().rawBits();
+  (void)field_count;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value typeName = Value::makeStringValId(type_id);
+  Value result = vm->invokeHostFunctionDirect("class.new", {typeName});
+  if (!result.isNull() && parent_type_id != 0) {
+    Value parentName = Value::makeStringValId(parent_type_id);
+    Value parentObj = vm->lookupGlobalByKey(vm->toString(parentName));
+    if (!parentObj.isNull()) {
+      (void)vm->invokeHostFunctionDirect("inherits", {result, parentObj});
+    }
+  }
+  return result.rawBits();
+}
+
+uint64_t havel_vm_struct_new(void* vm_ptr, uint32_t type_id, uint64_t* args_bits,
+                             uint32_t arg_count) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value typeName = Value::makeStringValId(type_id);
+  std::vector<Value> args;
+  args.reserve(static_cast<size_t>(arg_count) + 1);
+  args.push_back(typeName);
+  for (uint32_t i = 0; i < arg_count; ++i) {
+    Value v;
+    std::memcpy(&v, &args_bits[i], sizeof(uint64_t));
+    args.push_back(v);
+  }
+  return vm->invokeHostFunctionDirect("struct.new", args).rawBits();
+}
+
+uint64_t havel_vm_struct_get(void* vm_ptr, uint64_t obj_bits, uint32_t field_id) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value obj;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  Value field = Value::makeStringValId(field_id);
+  return vm->invokeHostFunctionDirect("struct.get", {obj, field}).rawBits();
+}
+
+uint64_t havel_vm_struct_set(void* vm_ptr, uint64_t obj_bits, uint32_t field_id,
+                             uint64_t val_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value obj, val;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  std::memcpy(&val, &val_bits, sizeof(uint64_t));
+  Value field = Value::makeStringValId(field_id);
+  return vm->invokeHostFunctionDirect("struct.set", {obj, field, val}).rawBits();
+}
+
+uint64_t havel_vm_prot_check(void* vm_ptr, uint64_t value_bits, uint32_t proto_id) {
+  if (!vm_ptr) return Value::makeBool(false).rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return Value::makeBool(false).rawBits();
+  Value value;
+  std::memcpy(&value, &value_bits, sizeof(uint64_t));
+  const std::string proto = chunk->getString(proto_id);
+  if (proto == "Iterable") return vm->invokeHostFunctionDirect("isIterable", {value}).rawBits();
+  if (proto == "Indexable") return vm->invokeHostFunctionDirect("isIndexable", {value}).rawBits();
+  if (proto == "Callable") return vm->invokeHostFunctionDirect("callable", {value}).rawBits();
+  return Value::makeBool(false).rawBits();
+}
+
+uint64_t havel_vm_prot_cast(void* vm_ptr, uint64_t value_bits, uint32_t proto_id) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value value;
+  std::memcpy(&value, &value_bits, sizeof(uint64_t));
+  uint64_t check_bits = havel_vm_prot_check(vm_ptr, value_bits, proto_id);
+  Value ok;
+  std::memcpy(&ok, &check_bits, sizeof(uint64_t));
+  return vm->toBoolPublic(ok) ? value.rawBits() : Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_class_get_field(void* vm_ptr, uint64_t obj_bits, uint32_t field_id) {
@@ -1484,12 +1556,48 @@ uint64_t havel_vm_class_set_field(void* vm_ptr, uint64_t obj_bits, uint32_t fiel
 
 uint64_t havel_vm_load_class_proto(void* vm_ptr, uint32_t type_id) {
   if (!vm_ptr) return Value::makeNull().rawBits();
-  return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return Value::makeNull().rawBits();
+  const std::string& typeName = chunk->getString(type_id);
+  auto global = vm->getGlobalThreadSafe(typeName);
+  return global.has_value() ? global->rawBits() : Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_call_super(void* vm_ptr, uint64_t obj_bits, uint32_t method_id, uint64_t* args, uint32_t arg_count) {
   if (!vm_ptr) return Value::makeNull().rawBits();
-  return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  auto* chunk = vm->getCurrentChunk();
+  if (!chunk) return Value::makeNull().rawBits();
+
+  Value obj;
+  std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+  if (!obj.isObjectId()) return Value::makeNull().rawBits();
+
+  // Resolve parent class/prototype.
+  Value classObj = vm->getHostObjectField(ObjectRef{obj.asObjectId(), true}, "__class");
+  if (classObj.isNull()) {
+    classObj = vm->getHostObjectField(ObjectRef{obj.asObjectId(), true}, "__parent");
+  }
+  if (!classObj.isObjectId()) return Value::makeNull().rawBits();
+
+  Value parentObj = vm->getHostObjectField(ObjectRef{classObj.asObjectId(), true}, "__parent");
+  if (!parentObj.isObjectId()) return Value::makeNull().rawBits();
+
+  const std::string methodName = chunk->getString(method_id);
+  if (methodName.empty()) return Value::makeNull().rawBits();
+  Value method = vm->objectGetWithClassChain(parentObj.asObjectId(), methodName);
+  if (method.isNull()) return Value::makeNull().rawBits();
+
+  std::vector<Value> callArgs;
+  callArgs.reserve(static_cast<size_t>(arg_count) + 1);
+  callArgs.push_back(obj); // self / receiver
+  for (uint32_t i = 0; i < arg_count; ++i) {
+    Value v;
+    std::memcpy(&v, &args[i], sizeof(uint64_t));
+    callArgs.push_back(v);
+  }
+  return vm->callFunction(method, callArgs).rawBits();
 }
 
 uint64_t havel_vm_enum_new(void* vm_ptr, uint32_t type_id, uint32_t tag, uint32_t payload_count) {
@@ -1706,6 +1814,11 @@ addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat
         addSym("havel_vm_go_async", reinterpret_cast<void*>(&havel_vm_go_async));
         addSym("havel_vm_spread", reinterpret_cast<void*>(&havel_vm_spread));
         addSym("havel_vm_class_new", reinterpret_cast<void*>(&havel_vm_class_new));
+        addSym("havel_vm_struct_new", reinterpret_cast<void*>(&havel_vm_struct_new));
+        addSym("havel_vm_struct_get", reinterpret_cast<void*>(&havel_vm_struct_get));
+        addSym("havel_vm_struct_set", reinterpret_cast<void*>(&havel_vm_struct_set));
+        addSym("havel_vm_prot_check", reinterpret_cast<void*>(&havel_vm_prot_check));
+        addSym("havel_vm_prot_cast", reinterpret_cast<void*>(&havel_vm_prot_cast));
         addSym("havel_vm_class_get_field", reinterpret_cast<void*>(&havel_vm_class_get_field));
         addSym("havel_vm_class_set_field", reinterpret_cast<void*>(&havel_vm_class_set_field));
         addSym("havel_vm_load_class_proto", reinterpret_cast<void*>(&havel_vm_load_class_proto));
@@ -2831,6 +2944,78 @@ case OpCode::INT_DIV:
     }
 
     // Class operations
+    case OpCode::STRUCT_NEW: {
+        // Operands: type_name_id, arg_count
+        uint32_t typeId = instr.operands[0].asStringValId();
+        uint32_t argCount = instr.operands[1].asInt();
+        llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "struct_args");
+        for (uint32_t i = 0; i < argCount; ++i) {
+            llvm::Value* arg = vstack.back(); vstack.pop_back();
+            B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+        }
+        llvm::Function* fnStructNew = module.getFunction("havel_vm_struct_new");
+        if (!fnStructNew) {
+            fnStructNew = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i32, i64p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_struct_new", &module);
+        }
+        vstack.push_back(B.CreateCall(fnStructNew, {vmArg,
+            llvm::ConstantInt::get(i32, typeId),
+            B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}),
+            llvm::ConstantInt::get(i32, argCount)}));
+        break;
+    }
+    case OpCode::STRUCT_GET: {
+        uint32_t fieldId = instr.operands[0].asStringValId();
+        llvm::Value* obj = vstack.back(); vstack.pop_back();
+        llvm::Function* fnStructGet = module.getFunction("havel_vm_struct_get");
+        if (!fnStructGet) {
+            fnStructGet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_struct_get", &module);
+        }
+        vstack.push_back(B.CreateCall(fnStructGet, {vmArg, obj, llvm::ConstantInt::get(i32, fieldId)}));
+        break;
+    }
+    case OpCode::STRUCT_SET: {
+        uint32_t fieldId = instr.operands[0].asStringValId();
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Value* obj = vstack.back(); vstack.pop_back();
+        llvm::Function* fnStructSet = module.getFunction("havel_vm_struct_set");
+        if (!fnStructSet) {
+            fnStructSet = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_struct_set", &module);
+        }
+        vstack.push_back(B.CreateCall(fnStructSet, {vmArg, obj, llvm::ConstantInt::get(i32, fieldId), val}));
+        break;
+    }
+    case OpCode::PROT_CHECK: {
+        uint32_t protoId = instr.operands[0].asStringValId();
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Function* fnProtCheck = module.getFunction("havel_vm_prot_check");
+        if (!fnProtCheck) {
+            fnProtCheck = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_prot_check", &module);
+        }
+        vstack.push_back(B.CreateCall(fnProtCheck, {vmArg, val, llvm::ConstantInt::get(i32, protoId)}));
+        break;
+    }
+    case OpCode::PROT_CAST: {
+        uint32_t protoId = instr.operands[0].asStringValId();
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Function* fnProtCast = module.getFunction("havel_vm_prot_cast");
+        if (!fnProtCast) {
+            fnProtCast = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_prot_cast", &module);
+        }
+        vstack.push_back(B.CreateCall(fnProtCast, {vmArg, val, llvm::ConstantInt::get(i32, protoId)}));
+        break;
+    }
     case OpCode::CLASS_NEW: {
         // Operands: typeId, parentTypeId, fieldCount
         uint32_t typeId = instr.operands[0].asInt();

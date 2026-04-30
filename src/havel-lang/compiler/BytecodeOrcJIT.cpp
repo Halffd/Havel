@@ -3156,15 +3156,7 @@ case OpCode::INT_DIV:
 
     default: break;
     }
-        llvm::Function* fnCmp = module.getFunction(fname);
-        if (!fnCmp) {
-          fnCmp = llvm::Function::Create(
-            llvm::FunctionType::get(i64, {i64, i64}, false),
-            llvm::Function::ExternalLinkage, fname, &module);
-        }
-        vstack.push_back(B.CreateCall(fnCmp, {l, r}));
-        break;
-      }
+
       case OpCode::IS: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();

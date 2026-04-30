@@ -1851,10 +1851,6 @@ void BytecodeOrcJIT::initTargetMachine() {
     }
     llvm::errs() << "DEBUG: Target name: " << target->getName() << "\n";
     llvm::TargetOptions opt;
-    opt.AllowFPOpFusion = llvm::FPOpFusion::Standard;
-    opt.UnsafeFPMath = false;
-    opt.NoInfsFPMath = false;
-    opt.NoNaNsFPMath = false;
     target_machine_.reset(target->createTargetMachine(
         target_triple, "x86-64", "+64bit-mode", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
     if (!target_machine_) {

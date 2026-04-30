@@ -88,7 +88,17 @@ public:
     return config.get<T>(key, defaultVal);
   }
 
-  void Set(const std::string &key, const std::string &value, bool save = false);
+    void Set(const std::string &key, const std::string &value, bool save = false);
+
+    bool Remove(const std::string &key) {
+        bool removed = config.remove(key);
+        if (removed) RequestSave();
+        return removed;
+    }
+
+    bool Has(const std::string &key) const {
+        return config.has(key);
+    }
 
   // Convenience setters for numeric types
   template <typename T>

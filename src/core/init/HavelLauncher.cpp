@@ -367,7 +367,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
   // LINT-ONLY MODE: Parse and type-check ONLY, skip ALL Qt/VM initialization
   if (cfg.lintOnly && !combinedCode.empty()) {
-    info("Linting scripts: {}", combinedNames);
+        info("Linting scripts: {}", combinedNames);
     havel::parser::Parser parser{{
       .lexer = cfg.debugLexer,
       .parser = cfg.debugParser,

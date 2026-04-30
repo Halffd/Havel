@@ -223,7 +223,8 @@ fn right(s, n) {
     if n >= #s {
         return s
     }
-    return s[#s - n:]
+    _start = #s - n
+    return s[_start:]
 }
 
 fn chars(s) {

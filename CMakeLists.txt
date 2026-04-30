@@ -587,9 +587,12 @@ target_include_directories(havel_extension_runtime PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
 )
-set_target_properties(havel_extension_runtime PROPERTIES 
+set_target_properties(havel_extension_runtime PROPERTIES
     POSITION_INDEPENDENT_CODE ON
+    INTERPROCEDURAL_OPTIMIZATION OFF
 )
+target_compile_options(havel_extension_runtime PRIVATE -fno-lto)
+target_link_options(havel_extension_runtime PRIVATE -fno-lto)
 
 # Image extension (OpenCV-based)
 add_library(image_extension MODULE src/extensions/image/image_extension.cpp)

@@ -236,7 +236,7 @@ fn monitors() {
     _parseXrandr()
 }
 
-fn monitorsCount() { #monitors() }
+fn monitorsCount() { _m = monitors(); #_m }
 
 fn monitorsArea() {
     _mons = monitors()

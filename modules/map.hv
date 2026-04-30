@@ -13,8 +13,8 @@ fn pipe(f, g) {
 
 fn identity(x) { x }
 
-fn constant(val) {
-	fn(_) { val }
+fn constant(_val) {
+	fn(_) { _val }
 }
 
 fn curry(f) {

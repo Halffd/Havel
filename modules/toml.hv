@@ -207,15 +207,15 @@ fn _digitVal(ch) {
 }
 
 fn _parseIntHex(s) {
-  val = 0
+  _val = 0
   i = 0
   n = #s
   while i < n {
     ch = s[i:i+1]
-    val = val * 16 + _digitVal(ch)
+    _val = _val * 16 + _digitVal(ch)
     i = i + 1
   }
-  return val
+  return _val
 }
 
 fn _codepointToStr(code) {
@@ -424,13 +424,13 @@ fn _parseStringValue(p) {
   if _peekN(p, 3) == "'''" { return _parseMultilineLiteralString(p) }
   if _peek(p) == "\"" {
     _advance(p)
-    val = _parseBasicString(p)
-    return val
+    _val = _parseBasicString(p)
+    return _val
   }
   if _peek(p) == "'" {
     _advance(p)
-    val = _parseLiteralString(p)
-    return val
+    _val = _parseLiteralString(p)
+    return _val
   }
   return null
 }
@@ -461,45 +461,45 @@ fn _parseDecInt(s) {
 
 fn _parseHexInt(s) {
   clean = _stripUnderscores(s)
-  val = 0
+  _val = 0
   i = 2
   n = #clean
   while i < n {
     ch = clean[i:i+1]
-    val = val * 16
-      if ch >= "0" && ch <= "9" { val = val + (ord(ch) - ord("0")) }
-      else if ch >= "a" && ch <= "f" { val = val + 10 + (ord(ch) - ord("a")) }
-      else if ch >= "A" && ch <= "F" { val = val + 10 + (ord(ch) - ord("A")) }
+    _val = _val * 16
+      if ch >= "0" && ch <= "9" { _val = _val + (ord(ch) - ord("0")) }
+      else if ch >= "a" && ch <= "f" { _val = _val + 10 + (ord(ch) - ord("a")) }
+      else if ch >= "A" && ch <= "F" { _val = _val + 10 + (ord(ch) - ord("A")) }
     i = i + 1
   }
-  return val
+  return _val
 }
 
 fn _parseOctInt(s) {
   clean = _stripUnderscores(s)
-  val = 0
+  _val = 0
   i = 2
   n = #clean
   while i < n {
     ch = clean[i:i+1]
-      val = val * 8 + (ord(ch) - ord("0"))
+      _val = _val * 8 + (ord(ch) - ord("0"))
     i = i + 1
   }
-  return val
+  return _val
 }
 
 fn _parseBinInt(s) {
   clean = _stripUnderscores(s)
-  val = 0
+  _val = 0
   i = 2
   n = #clean
   while i < n {
     ch = clean[i:i+1]
-    val = val * 2
-    if ch == "1" { val = val + 1 }
+    _val = _val * 2
+    if ch == "1" { _val = _val + 1 }
     i = i + 1
   }
-  return val
+  return _val
 }
 
 fn _parseNum(p) {
@@ -512,25 +512,25 @@ fn _parseNum(p) {
     _advanceN(p, 2)
     while p.pos < p.len && (_isHexDigit(_peek(p)) || _peek(p) == "_") { _advance(p) }
     raw = p.src[start:p.pos]
-    val = _parseHexInt(raw)
-    if negative { val = -val }
-    return val
+    _val = _parseHexInt(raw)
+    if negative { _val = -_val }
+    return _val
   }
   if _peekN(p, 2) == "0o" || _peekN(p, 2) == "0O" {
     _advanceN(p, 2)
     while p.pos < p.len && (_isOctDigit(_peek(p)) || _peek(p) == "_") { _advance(p) }
     raw = p.src[start:p.pos]
-    val = _parseOctInt(raw)
-    if negative { val = -val }
-    return val
+    _val = _parseOctInt(raw)
+    if negative { _val = -_val }
+    return _val
   }
   if _peekN(p, 2) == "0b" || _peekN(p, 2) == "0B" {
     _advanceN(p, 2)
     while p.pos < p.len && (_isBinDigit(_peek(p)) || _peek(p) == "_") { _advance(p) }
     raw = p.src[start:p.pos]
-    val = _parseBinInt(raw)
-    if negative { val = -val }
-    return val
+    _val = _parseBinInt(raw)
+    if negative { _val = -_val }
+    return _val
   }
 
   if _peek(p) == "i" || _peek(p) == "n" {
@@ -585,8 +585,8 @@ fn _parseNum(p) {
     if negative && clean[0:1] != "-" { clean = "-" + clean }
     return num(clean)
   }
-  val = int(clean)
-  return val
+  _val = int(clean)
+  return _val
 }
 
 // ============================================================
@@ -676,8 +676,8 @@ fn _parseArray(p) {
   while p.pos < p.len {
     _skipWSCommentNewline(p)
     if _peek(p) == "]" { _advance(p); return arr }
-    val = _parseValue(p)
-    arr.push(val)
+    _val = _parseValue(p)
+    arr.push(_val)
     _skipWSCommentNewline(p)
     if _peek(p) == "," { _advance(p); _skipWSCommentNewline(p) }
     else { break }
@@ -701,8 +701,8 @@ fn _parseInlineTable(p) {
     if _peek(p) != "=" { break }
     _advance(p)
     _skipWS(p)
-    val = _parseValue(p)
-    _setNestedValue(obj, keys, val)
+    _val = _parseValue(p)
+    _setNestedValue(obj, keys, _val)
     _skipWS(p)
     if _peek(p) == "," { _advance(p) }
     else { break }
@@ -785,10 +785,10 @@ fn _parseArrayTableHeader(p) {
 // Nested object navigation
 // ============================================================
 
-fn _setNestedValue(obj, keys, val) {
+fn _setNestedValue(obj, keys, _val) {
   if #keys == 0 { return }
   if #keys == 1 {
-    obj[keys[0]] = val
+    obj[keys[0]] = _val
     return
   }
   current = obj
@@ -805,7 +805,7 @@ fn _setNestedValue(obj, keys, val) {
     }
     i = i + 1
   }
-  current[keys[#keys - 1]] = val
+  current[keys[#keys - 1]] = _val
 }
 
 fn _getOrCreateTable(root, keys) {
@@ -915,9 +915,9 @@ fn _parseDocument(source) {
     _advance(p)
     _skipWS(p)
 
-    val = _parseValue(p)
-    if val != null {
-      _setNestedValue(current, keys, val)
+    _val = _parseValue(p)
+    if _val != null {
+      _setNestedValue(current, keys, _val)
     }
 
     _skipWSAndComment(p)
@@ -984,20 +984,20 @@ fn _escapeBasicString(s) {
   return result
 }
 
-fn _stringifyValue(val) {
-  t = type.of(val)
-  if t == "string" { return "\"" + _escapeBasicString(val) + "\"" }
+fn _stringifyValue(_val) {
+  t = type.of(_val)
+  if t == "string" { return "\"" + _escapeBasicString(_val) + "\"" }
   if t == "number" {
-    if val == int(val) { return str(val) + ".0" }
-    return str(val)
+    if _val == int(_val) { return str(_val) + ".0" }
+    return str(_val)
   }
   if t == "boolean" {
-    if val { return "true" }
+    if _val { return "true" }
     return "false"
   }
-  if t == "array" { return _stringifyArray(val) }
-  if t == "object" { return _stringifyInlineTable(val) }
-  return str(val)
+  if t == "array" { return _stringifyArray(_val) }
+  if t == "object" { return _stringifyInlineTable(_val) }
+  return str(_val)
 }
 
 fn _stringifyArray(arr) {
@@ -1019,9 +1019,9 @@ fn _stringifyInlineTable(obj) {
   n = #keys
   while i < n {
     key = keys[i]
-    val = obj[key]
-    if type.of(val) != "object" && type.of(val) != "array" {
-      parts.push(_quoteKey(key) + " = " + _stringifyValue(val))
+    _val = obj[key]
+    if type.of(_val) != "object" && type.of(_val) != "array" {
+      parts.push(_quoteKey(key) + " = " + _stringifyValue(_val))
     }
     i = i + 1
   }
@@ -1040,26 +1040,26 @@ fn _joinArr(arr, sep) {
   return result
 }
 
-fn _isSimpleValue(val) {
-  t = type.of(val)
+fn _isSimpleValue(_val) {
+  t = type.of(_val)
   if t == "string" { return true }
   if t == "number" { return true }
   if t == "boolean" { return true }
   if t == "array" {
     i = 0
-    n = #val
+    n = #_val
     while i < n {
-      if !_isSimpleValue(val[i]) { return false }
+      if !_isSimpleValue(_val[i]) { return false }
       i = i + 1
     }
     return true
   }
   if t == "object" {
-    keys = val.keys()
+    keys = _val.keys()
     i = 0
     n = #keys
     while i < n {
-      if !_isSimpleValue(val[keys[i]]) { return false }
+      if !_isSimpleValue(_val[keys[i]]) { return false }
       i = i + 1
     }
     return true
@@ -1067,13 +1067,13 @@ fn _isSimpleValue(val) {
   return false
 }
 
-fn _isTableArray(val) {
-  if type.of(val) != "array" { return false }
-  if #val == 0 { return false }
+fn _isTableArray(_val) {
+  if type.of(_val) != "array" { return false }
+  if #_val == 0 { return false }
   i = 0
-  n = #val
+  n = #_val
   while i < n {
-    if type.of(val[i]) != "object" { return false }
+    if type.of(_val[i]) != "object" { return false }
     i = i + 1
   }
   return true
@@ -1089,12 +1089,12 @@ fn _stringifySection(obj, prefix, output, isRoot) {
   n = #keys
   while i < n {
     key = keys[i]
-    val = obj[key]
-    t = type.of(val)
+    _val = obj[key]
+    t = type.of(_val)
 
     if t == "object" {
       tableKeys.push(key)
-    } else if _isTableArray(val) {
+    } else if _isTableArray(_val) {
       tableArrKeys.push(key)
     } else {
       simpleKeys.push(key)
@@ -1108,9 +1108,9 @@ fn _stringifySection(obj, prefix, output, isRoot) {
   n = #simpleKeys
   while i < n {
     key = simpleKeys[i]
-    val = obj[key]
+    _val = obj[key]
     if !first { output.push("") }
-    output.push(_quoteKey(key) + " = " + _stringifyValue(val))
+    output.push(_quoteKey(key) + " = " + _stringifyValue(_val))
     first = false
     i = i + 1
   }

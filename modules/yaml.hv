@@ -166,21 +166,21 @@ fn _parseScalar(text) {
     if #t >= 3 && t[0:1] == "0" {
         prefix = t[0:2]
         if prefix == "0x" || prefix == "0X" {
-            val = _parseHex(t[2:])
-            if val != null {
-                return val
+            _val = _parseHex(t[2:])
+            if _val != null {
+                return _val
             }
         }
         if prefix == "0o" || prefix == "0O" {
-            val = _parseOctal(t[2:])
-            if val != null {
-                return val
+            _val = _parseOctal(t[2:])
+            if _val != null {
+                return _val
             }
         }
         if prefix == "0b" || prefix == "0B" {
-            val = _parseBinary(t[2:])
-            if val != null {
-                return val
+            _val = _parseBinary(t[2:])
+            if _val != null {
+                return _val
             }
         }
     }
@@ -256,7 +256,7 @@ fn _parseHex(s) {
     if #s == 0 {
         return null
     }
-    val = 0
+    _val = 0
     i = 0
     n = #s
     while i < n {
@@ -265,10 +265,10 @@ fn _parseHex(s) {
         if d == null {
             return null
         }
-        val = val * 16 + d
+        _val = _val * 16 + d
         i = i + 1
     }
-    return val
+    return _val
 }
 
 fn _hexVal(ch) {
@@ -305,7 +305,7 @@ fn _parseOctal(s) {
     if #s == 0 {
         return null
     }
-    val = 0
+    _val = 0
     i = 0
     n = #s
     while i < n {
@@ -313,31 +313,31 @@ fn _parseOctal(s) {
         if ch < "0" || ch > "7" {
             return null
         }
-        val = val * 8 + _digitVal(ch)
+        _val = _val * 8 + _digitVal(ch)
         i = i + 1
     }
-    return val
+    return _val
 }
 
 fn _parseBinary(s) {
     if #s == 0 {
         return null
     }
-    val = 0
+    _val = 0
     i = 0
     n = #s
     while i < n {
         ch = s[i:i+1]
         if ch == "0" {
-            val = val * 2
+            _val = _val * 2
         } else if ch == "1" {
-            val = val * 2 + 1
+            _val = _val * 2 + 1
         } else {
             return null
         }
         i = i + 1
     }
-    return val
+    return _val
 }
 
 fn _tryParseInt(s) {
@@ -371,18 +371,18 @@ fn _tryParseInt(s) {
         return null
     }
 
-    val = 0
+    _val = 0
     k = 0
     while k < #cleaned {
         d = _digitVal(cleaned[k:k+1])
-        val = val * 10 + d
+        _val = _val * 10 + d
         k = k + 1
     }
 
     if s[0:1] == "-" {
-        return -val
+        return -_val
     }
-    return val
+    return _val
 }
 
 fn _tryParseFloat(s) {
@@ -546,16 +546,16 @@ fn _parseDoubleQuoted(s) {
                 }
             } else if next == "x" && i + 3 < n {
                 hexStr = inner[i+2:i+4]
-                val = _parseHex(hexStr)
-                if val != null {
-                    result = result + str(val)
+                _val = _parseHex(hexStr)
+                if _val != null {
+                    result = result + str(_val)
                 }
                 i = i + 4
             } else if next == "u" && i + 5 < n {
                 hexStr = inner[i+2:i+6]
-                val = _parseHex(hexStr)
-                if val != null {
-                    result = result + str(val)
+                _val = _parseHex(hexStr)
+                if _val != null {
+                    result = result + str(_val)
                 }
                 i = i + 6
             } else {
@@ -684,8 +684,8 @@ fn _flowParseMapping(p) {
         }
 
         _flowSkipWS(p)
-        val = _flowParseValue(p)
-        obj[key] = val
+        _val = _flowParseValue(p)
+        obj[key] = _val
 
         _flowSkipWS(p)
         if _flowPeek(p) == "," {
@@ -707,8 +707,8 @@ fn _flowParseSequence(p) {
             break
         }
 
-        val = _flowParseValue(p)
-        arr.push(val)
+        _val = _flowParseValue(p)
+        arr.push(_val)
 
         _flowSkipWS(p)
         if _flowPeek(p) == "," {
@@ -1168,15 +1168,15 @@ fn _yamlParseMapping(p, indent) {
 
         _yamlAdvance(p)
 
-        val = null
+        _val = null
 
         if #valuePart > 0 {
             // Inline value
             // Check if it starts flow-style
             if valuePart[0:1] == "{" {
-                val = _parseFlowStyle(valuePart)
+                _val = _parseFlowStyle(valuePart)
             } else if valuePart[0:1] == "[" {
-                val = _parseFlowStyle(valuePart)
+                _val = _parseFlowStyle(valuePart)
             } else if #valuePart >= 2 && (valuePart[0:1] == "|" || valuePart[0:1] == ">") {
                 // Block scalar indicator - need to parse with proper indent
                 // The block starts at indent + any further indentation
@@ -1184,12 +1184,12 @@ fn _yamlParseMapping(p, indent) {
                 nextContent = _yamlNextContentIndent(p)
                 if nextContent > indent {
                     p.pos = savedPos
-                    val = _yamlParseBlock(p, valuePart, indent)
+                    _val = _yamlParseBlock(p, valuePart, indent)
                 } else {
-                    val = _parseScalar(valuePart)
+                    _val = _parseScalar(valuePart)
                 }
             } else {
-                val = _parseScalar(valuePart)
+                _val = _parseScalar(valuePart)
                 // Check for multiline plain scalar continuation
                 if p.pos < #p.lines {
                     next = _yamlLine(p)
@@ -1200,10 +1200,10 @@ fn _yamlParseMapping(p, indent) {
                         if !_yamlIsMappingKey(p, nText) && !(#nText >= 2 && nText[0:1] == "-" && nText[1:2] == " ") {
                             // multiline scalar continuation
                             parts = []
-                            if type.of(val) == "string" {
-                                parts.push(val)
+                            if type.of(_val) == "string" {
+                                parts.push(_val)
                             } else {
-                                parts.push(str(val))
+                                parts.push(str(_val))
                             }
                             while p.pos < #p.lines {
                                 cur = _yamlLine(p)
@@ -1223,7 +1223,7 @@ fn _yamlParseMapping(p, indent) {
                                 parts.push(cur.content.trim())
                                 _yamlAdvance(p)
                             }
-                            val = _joinScalarParts(parts)
+                            _val = _joinScalarParts(parts)
                         }
                     }
                 }
@@ -1237,27 +1237,27 @@ fn _yamlParseMapping(p, indent) {
                 if peekLine != null {
                     peekText = peekLine.content
                     if #peekText >= 2 && peekText[0:1] == "-" && (peekText[1:2] == " " || peekText[1:2] == "\t") {
-                        val = _yamlParseSequence(p, nextContent)
+                        _val = _yamlParseSequence(p, nextContent)
                     } else if _yamlIsMappingKey(p, peekText) {
-                        val = _yamlParseMapping(p, nextContent)
+                        _val = _yamlParseMapping(p, nextContent)
                     } else if #peekText >= 2 && (peekText[0:1] == "|" || peekText[0:1] == ">") {
-                        val = _yamlParseBlock(p, peekText, indent)
+                        _val = _yamlParseBlock(p, peekText, indent)
                     } else if #peekText >= 1 && (peekText[0:1] == "{" || peekText[0:1] == "[") {
-                        val = _yamlParseValue(p, nextContent)
+                        _val = _yamlParseValue(p, nextContent)
                     } else {
-                        val = _yamlParsePlainScalar(p, indent)
+                        _val = _yamlParsePlainScalar(p, indent)
                     }
                 } else {
                     // key: with nothing after - null value
-                    val = null
+                    _val = null
                 }
             } else {
                 // key: with nothing after - null value
-                val = null
+                _val = null
             }
         }
 
-        obj[key] = val
+        obj[key] = _val
     }
 
     return obj
@@ -1366,7 +1366,7 @@ fn _yamlParseSequence(p, indent) {
         afterDash = text[1:].trim()
         _yamlAdvance(p)
 
-        val = null
+        _val = null
 
         if #afterDash == 0 {
             // "- " with nothing on this line
@@ -1377,32 +1377,32 @@ fn _yamlParseSequence(p, indent) {
                     peekText = peekLine.content
                     if #peekText >= 2 && peekText[0:1] == "-" && (peekText[1:2] == " " || peekText[1:2] == "\t") {
                         // nested sequence
-                        val = _yamlParseSequence(p, nextContent)
+                        _val = _yamlParseSequence(p, nextContent)
                     } else if _yamlIsMappingKey(p, peekText) {
-                        val = _yamlParseMapping(p, nextContent)
+                        _val = _yamlParseMapping(p, nextContent)
                     } else if #peekText >= 2 && (peekText[0:1] == "|" || peekText[0:1] == ">") {
-                        val = _yamlParseBlock(p, peekText, indent)
+                        _val = _yamlParseBlock(p, peekText, indent)
                     } else {
-                        val = _yamlParsePlainScalar(p, indent)
+                        _val = _yamlParsePlainScalar(p, indent)
                     }
                 } else {
-                    val = null
+                    _val = null
                 }
             } else {
-                val = null
+                _val = null
             }
         } else {
             // Value after the dash
             if afterDash[0:1] == "{" {
-                val = _parseFlowStyle(afterDash)
+                _val = _parseFlowStyle(afterDash)
             } else if afterDash[0:1] == "[" {
-                val = _parseFlowStyle(afterDash)
+                _val = _parseFlowStyle(afterDash)
             } else if #afterDash >= 2 && (afterDash[0:1] == "|" || afterDash[0:1] == ">") {
                 nextContent = _yamlNextContentIndent(p)
                 if nextContent > indent {
-                    val = _yamlParseBlock(p, afterDash, indent)
+                    _val = _yamlParseBlock(p, afterDash, indent)
                 } else {
-                    val = _parseScalar(afterDash)
+                    _val = _parseScalar(afterDash)
                 }
             } else {
                 // Check if afterDash is a mapping key: "key: value"
@@ -1493,7 +1493,7 @@ fn _yamlParseSequence(p, indent) {
                     continue
                 } else {
                     // Plain scalar after dash
-                    val = _parseScalar(afterDash)
+                    _val = _parseScalar(afterDash)
 
                     // Check for multiline continuation
                     if p.pos < #p.lines {
@@ -1502,10 +1502,10 @@ fn _yamlParseSequence(p, indent) {
                             nText = next.content
                             if !_yamlIsMappingKey(p, nText) && !(#nText >= 2 && nText[0:1] == "-" && nText[1:2] == " ") {
                                 parts = []
-                                if type.of(val) == "string" {
-                                    parts.push(val)
+                                if type.of(_val) == "string" {
+                                    parts.push(_val)
                                 } else {
-                                    parts.push(str(val))
+                                    parts.push(str(_val))
                                 }
                                 while p.pos < #p.lines {
                                     cur = _yamlLine(p)
@@ -1524,13 +1524,13 @@ fn _yamlParseSequence(p, indent) {
                                     parts.push(cur.content.trim())
                                     _yamlAdvance(p)
                                 }
-                                val = _joinScalarParts(parts)
+                                _val = _joinScalarParts(parts)
                             }
                         }
                     }
                 }
             }
-            arr.push(val)
+            arr.push(_val)
         }
     }
 
@@ -1834,19 +1834,19 @@ fn _stringifyObject(obj, level, indent) {
 
     while i < #keys {
         key = keys[i]
-        val = obj[key]
-        t = type.of(val)
+        _val = obj[key]
+        t = type.of(_val)
 
         keyStr = _stringifyKey(key)
 
         if t == "object" || t == "array" {
-            valStr = _stringifyValue(val, level + 1, indent, false)
+            valStr = _stringifyValue(_val, level + 1, indent, false)
             result = result + prefix + keyStr + ":\n" + valStr + "\n"
-        } else if t == "string" && #val > 0 && _hasNewline(val) {
+        } else if t == "string" && #_val > 0 && _hasNewline(_val) {
             // Use literal block for multiline strings
-            result = result + prefix + keyStr + ": |\n" + _indentBlock(val, level + 1, indent) + "\n"
+            result = result + prefix + keyStr + ": |\n" + _indentBlock(_val, level + 1, indent) + "\n"
         } else {
-            result = result + prefix + keyStr + ": " + _stringifyValue(val, level, indent, false) + "\n"
+            result = result + prefix + keyStr + ": " + _stringifyValue(_val, level, indent, false) + "\n"
         }
         i = i + 1
     }

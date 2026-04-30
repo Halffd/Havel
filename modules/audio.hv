@@ -3,7 +3,7 @@
 // Provides: volume, mute, toggleMute, sinks, sources, defaultSink,
 // defaultSource, sinkVolume, sinkMute, setSinkDefault, sourceVolume,
 // sourceMute, setSourceDefault, apps, appVolume, appMute, volumeUp,
-// volumeDown, backend, devices, alsaVolume, alsaMute, setAlsaVolume,
+// volumeDown, backend, _devices, alsaVolume, alsaMute, setAlsaVolume,
 // setAlsaMute, play, playTest
 
 use ffi
@@ -350,10 +350,10 @@ _run("amixer set Master unmute")
 }
 
 // ============================================================
-// Unified devices
+// Unified _devices
 // ============================================================
 
-fn devices() {
+fn _devices() {
 if _backend == "pipewire" || _backend == "pulseaudio" {
 _out = []
 _sinks = _parseSinks()
@@ -379,27 +379,27 @@ return [{name: "Master", description: "ALSA Master", type: "sink", volume: _vol,
 // Public API — default device volume/mute
 // ============================================================
 
-fn volume(val) {
-if val == null {
+fn volume(_val) {
+if _val == null {
 if _backend == "alsa" { return _alsaGetVolume() }
 _raw = _pactl("get-sink-volume @DEFAULT_SINK@")
 _parseVolPct(_raw)
 } else {
-_v = _clampVol(val)
+_v = _clampVol(_val)
 if _backend == "alsa" { _alsaSetVolume(_v); return null }
 _run("pactl set-sink-volume @DEFAULT_SINK@ " + str(_v) + "%")
 null
 }
 }
 
-fn mute(val) {
-if val == null {
+fn mute(_val) {
+if _val == null {
 if _backend == "alsa" { return _alsaGetMute() }
 _raw = _pactl("get-sink-mute @DEFAULT_SINK@")
 if _raw == null { false } else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
 } else {
-if _backend == "alsa" { _alsaSetMute(val); return null }
-if val { _run("pactl set-sink-mute @DEFAULT_SINK@ 1") }
+if _backend == "alsa" { _alsaSetMute(_val); return null }
+if _val { _run("pactl set-sink-mute @DEFAULT_SINK@ 1") }
 else { _run("pactl set-sink-mute @DEFAULT_SINK@ 0") }
 null
 }
@@ -438,27 +438,27 @@ if _s.name == _name { return _s }
 null
 }
 
-fn sinkVolume(id, val) {
-if val == null {
+fn sinkVolume(id, _val) {
+if _val == null {
 if _backend == "alsa" { return _alsaGetVolume() }
 _raw = _pactl("get-sink-volume " + str(id))
 _parseVolPct(_raw)
 } else {
-_v = _clampVol(val)
+_v = _clampVol(_val)
 if _backend == "alsa" { _alsaSetVolume(_v); return null }
 _run("pactl set-sink-volume " + str(id) + " " + str(_v) + "%")
 null
 }
 }
 
-fn sinkMute(id, val) {
-if val == null {
+fn sinkMute(id, _val) {
+if _val == null {
 if _backend == "alsa" { return _alsaGetMute() }
 _raw = _pactl("get-sink-mute " + str(id))
 if _raw == null { false } else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
 } else {
-if _backend == "alsa" { _alsaSetMute(val); return null }
-if val { _run("pactl set-sink-mute " + str(id) + " 1") }
+if _backend == "alsa" { _alsaSetMute(_val); return null }
+if _val { _run("pactl set-sink-mute " + str(id) + " 1") }
 else { _run("pactl set-sink-mute " + str(id) + " 0") }
 null
 }
@@ -510,23 +510,23 @@ if _s.name == _name { return _s }
 null
 }
 
-fn sourceVolume(id, val) {
-if val == null {
+fn sourceVolume(id, _val) {
+if _val == null {
 _raw = _pactl("get-source-volume " + str(id))
 _parseVolPct(_raw)
 } else {
-_v = _clampVol(val)
+_v = _clampVol(_val)
 _run("pactl set-source-volume " + str(id) + " " + str(_v) + "%")
 null
 }
 }
 
-fn sourceMute(id, val) {
-if val == null {
+fn sourceMute(id, _val) {
+if _val == null {
 _raw = _pactl("get-source-mute " + str(id))
 if _raw == null { false } else { _raw.find("yes") != null && _raw.find("yes") >= 0 }
 } else {
-if val { _run("pactl set-source-mute " + str(id) + " 1") }
+if _val { _run("pactl set-source-mute " + str(id) + " 1") }
 else { _run("pactl set-source-mute " + str(id) + " 0") }
 null
 }
@@ -565,8 +565,8 @@ return _parseSinkInputs()
 []
 }
 
-fn appVolume(id, val) {
-if val == null {
+fn appVolume(id, _val) {
+if _val == null {
 if _backend == "pipewire" {
 _raw = _shellQuiet("pw-cli get-param " + str(id) + " Props")
 _p = _raw.find("volume")
@@ -585,7 +585,7 @@ _raw = _pactl("get-sink-input-volume " + str(id))
 _parseVolPct(_raw)
 }
 } else {
-_v = _clampVol(val)
+_v = _clampVol(_val)
 if _backend == "pipewire" {
 _pwSetVolume(id, _v)
 } else {
@@ -595,8 +595,8 @@ null
 }
 }
 
-fn appMute(id, val) {
-if val == null {
+fn appMute(id, _val) {
+if _val == null {
 if _backend == "pipewire" {
 _raw = _shellQuiet("pw-cli get-param " + str(id) + " Props")
 _m = _raw.find("mute")
@@ -611,9 +611,9 @@ if _raw == null { false } else { _raw.find("yes") != null && _raw.find("yes") >=
 }
 } else {
 if _backend == "pipewire" {
-_pwSetMute(id, val)
+_pwSetMute(id, _val)
 } else {
-if val { _run("pactl set-sink-input-mute " + str(id) + " 1") }
+if _val { _run("pactl set-sink-input-mute " + str(id) + " 1") }
 else { _run("pactl set-sink-input-mute " + str(id) + " 0") }
 }
 null
@@ -644,14 +644,14 @@ volume(_new)
 // Public API — ALSA direct
 // ============================================================
 
-fn alsaVolume(val) {
-if val == null { _alsaGetVolume() }
-else { _alsaSetVolume(val); null }
+fn alsaVolume(_val) {
+if _val == null { _alsaGetVolume() }
+else { _alsaSetVolume(_val); null }
 }
 
-fn alsaMute(val) {
-if val == null { _alsaGetMute() }
-else { _alsaSetMute(val); null }
+fn alsaMute(_val) {
+if _val == null { _alsaGetMute() }
+else { _alsaSetMute(_val); null }
 }
 
 fn setAlsaVolume(pct) { _alsaSetVolume(pct) }

@@ -334,24 +334,24 @@ fn parseFile(path) {
 // Convenience accessors
 // ============================================================
 
-fn get(data, section, key, default) {
-  if section == null || section == "" {
-    if data.has(key) {
-      return data[key]
-    }
-    if default != null {
-      return default
-    }
-    return null
-  }
-  if data.has(section) {
-    sectionObj = data[section]
-    if sectionObj != null && sectionObj.has(key) {
-      return sectionObj[key]
-    }
-  }
-  if default != null {
-    return default
+fn get(data, section, key, _default) {
+ if section == null || section == "" {
+ if data.has(key) {
+ return data[key]
+ }
+ if _default != null {
+ return _default
+ }
+ return null
+ }
+ if data.has(section) {
+ sectionObj = data[section]
+ if sectionObj != null && sectionObj.has(key) {
+ return sectionObj[key]
+ }
+ }
+ if _default != null {
+ return _default
   }
   return null
 }

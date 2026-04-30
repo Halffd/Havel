@@ -642,7 +642,11 @@ void havel_ffi_set_pointer(HavelState* H, void* ptr, void* val) {
 
 void havel_ffi_cdef(HavelState* H, const char* cdecl) {
     (void)H;
-    (void)cdecl;
+    if (!cdecl) return;
+    auto decls = havel::ffi::FFICall::parse_cdef(cdecl);
+    for (const auto& decl : decls) {
+        havel::ffi::FFICall::register_declaration(decl);
+    }
 }
 
 void* havel_ffi_load(HavelState* H, const char* path) {

@@ -1682,11 +1682,32 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
 
     // Array/Object index or slice
     case TokenType::OpenBracket: {
-      // Check if this is a slice expression: [start:end:step]
-      // At this point, '[' has been consumed. Check if current token is Colon or if next token is Colon
-      // Also handle ColonColon (::) which can be two colons for slices
-      if (at().type == TokenType::Colon || at().type == TokenType::ColonColon ||
-          at(1).type == TokenType::Colon || at(1).type == TokenType::ColonColon) {
+        // Check if this is a slice expression: [start:end:step]
+        // At this point, '[' has been consumed by the Pratt parser.
+        // Do a proper lookahead scan to find ':' at the top bracket level.
+        bool isSlice = false;
+        {
+            size_t lookahead = 0;
+            int bracketDepth = 1;
+            while (position + lookahead < tokens.size()) {
+                const Token &tok = tokens[position + lookahead];
+                if (tok.type == TokenType::OpenBracket) {
+                    bracketDepth++;
+                } else if (tok.type == TokenType::CloseBracket) {
+                    bracketDepth--;
+                    if (bracketDepth == 0)
+                        break;
+                } else if ((tok.type == TokenType::Colon || tok.type == TokenType::ColonColon) && bracketDepth == 1) {
+                    isSlice = true;
+                    break;
+                } else if (tok.type == TokenType::EOF_TOKEN) {
+                    break;
+                }
+                lookahead++;
+            }
+        }
+
+        if (isSlice) {
         // Slice expression - desugar to target.slice(start, end, step)
         std::unique_ptr<ast::Expression> start, end, step;
         

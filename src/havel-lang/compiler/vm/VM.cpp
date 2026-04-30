@@ -286,15 +286,15 @@ return "<struct " + structName + ">";
     }
     if (value.isSetId()) {
         auto *set = heap_.set(value.asSetId());
-        if (!set) return "#[]";
-        std::string result = "#[";
+        if (!set) return "{}";
+        std::string result = "{";
     bool first = true;
     for (const auto &pair : *set) {
       if (!first) result += ", ";
       first = false;
       result += pair.first;
     }
-    result += "]";
+    result += "}";
     return result;
   }
   return "unknown";

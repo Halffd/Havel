@@ -248,7 +248,7 @@ primary         = literal
 array           = "[" [ expression { "," expression } ] "]" ;
 object          = "{" [ objectMember { "," objectMember } ] "}" ;
 objectMember    = identifier ":" expression ;
-set             = "#{" [ expression { "," expression } ] "}" ;
+set             = "{" [ expression { "," expression } ] "}" ;
 
 fnExpr          = "fn" "(" [ params ] ")" ( "=>" expression | block )
                 | identifier "=>" expression ;
@@ -272,7 +272,7 @@ number          64-bit float                  42, 3.14
 string          UTF-8 text                    "hello"
 array           Dynamic array                 [1, 2, 3]
 object          Key-value map                 {key: value}
-set             Unique elements               #{1, 2, 3}
+set             Unique elements               {1, 2, 3}
 function        First-class function          fn(x) => x * 2
 struct          User-defined type             struct Point { x, y }
 enum            Sum type                      enum Option { Some, None }

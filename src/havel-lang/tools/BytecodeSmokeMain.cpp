@@ -1356,7 +1356,7 @@ return arr[1] + arr[3]
 )havel", 15, dump_bytecode, snapshot_dir);
 
   failures += runCase("set-create-and-assign", R"havel(
-let s = #{1, 2}
+let s = {1, 2}
 s[3] = true
 s[2] = false
 if s[1] {
@@ -1375,7 +1375,7 @@ let i = 0
 while i < 2000 {
     let arr = [i, i + 1, i + 2]
     let obj = {v: i}
-    let s = #{i}
+    let s = {i}
     i += 1
 }
 return i

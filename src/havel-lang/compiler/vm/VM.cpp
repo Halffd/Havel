@@ -4553,12 +4553,19 @@ case OpCode::INT_DIV:
       case OpCode::DIVMOD: opMethodName = "op_divmod"; break;
       case OpCode::REMAINDER: opMethodName = "op_remainder"; break;
 		case OpCode::MOD: opMethodName = "op_mod"; break;
+		case OpCode::POW: opMethodName = "op_pow"; break;
 		case OpCode::EQ: opMethodName = "op_eq"; break;
 		case OpCode::NEQ: opMethodName = "op_ne"; break;
 		case OpCode::LT: opMethodName = "op_lt"; break;
 		case OpCode::GT: opMethodName = "op_gt"; break;
 		case OpCode::LTE: opMethodName = "op_le"; break;
 		case OpCode::GTE: opMethodName = "op_ge"; break;
+		case OpCode::BIT_AND: opMethodName = "op_bit_and"; break;
+		case OpCode::BIT_OR: opMethodName = "op_bit_or"; break;
+		case OpCode::BIT_XOR: opMethodName = "op_bit_xor"; break;
+		case OpCode::BIT_NOT: opMethodName = "op_bit_not"; break;
+		case OpCode::BIT_LSH: opMethodName = "op_shift_left"; break;
+		case OpCode::BIT_RSH: opMethodName = "op_shift_right"; break;
 		default: break;
 		}
 

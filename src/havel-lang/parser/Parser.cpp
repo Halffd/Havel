@@ -3707,16 +3707,108 @@ Parser::parseStructMembers() {
         } else if (tokenVal == "(") {
           methodName = "op_call";
           advance();
+        } else if (tokenVal == "**") {
+          methodName = "op_pow";
+          advance();
+        } else if (tokenVal == "|>") {
+          methodName = "op_pipe_right";
+          advance();
+        } else if (tokenVal == "|") {
+          methodName = "op_bit_or";
+          advance();
+        } else if (tokenVal == "&") {
+          methodName = "op_bit_and";
+          advance();
+        } else if (tokenVal == "^") {
+          methodName = "op_bit_xor";
+          advance();
+        } else if (tokenVal == "~") {
+          methodName = "op_bit_not";
+          advance();
+        } else if (tokenVal == ">>") {
+          methodName = "op_shift_right";
+          advance();
+        } else if (tokenVal == "<<") {
+          methodName = "op_shift_left";
+          advance();
+        } else if (tokenVal == "=") {
+          methodName = "op_copy";
+          advance();
         } else {
           failAt(at(),
                  "Expected operator symbol (+, -, *, /, ==, [], []=, etc.) after 'op'");
         }
       } else {
-        // Regular method - expect identifier
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected method name after 'fn'");
+        // After 'fn' - check for operator symbols or special syntax
+        TokenType ty = at().type;
+        const std::string &tokenVal = at().value;
+        std::cerr << "DEBUG: ty=" << static_cast<int>(ty) << " At=" << static_cast<int>(havel::TokenType::At) << " val=" << tokenVal << std::endl;
+
+        // Check for constructor @() or destructor @-()
+        if (ty == havel::TokenType::At) {
+          advance(); // consume '@'
+          if (at().type == havel::TokenType::Minus) {
+            advance(); // consume '-'
+            methodName = "op_destructor";
+          } else {
+            methodName = "init"; // constructor @()
+          }
+        } else if (ty == havel::TokenType::Length || tokenVal == "#") {
+          advance();
+          methodName = "op_length";
+        } else if (ty == havel::TokenType::String && tokenVal == "\"\"") {
+          advance();
+          methodName = "op_toString";
+        } else if (ty == havel::TokenType::OpenParen) {
+          advance();
+          methodName = "op_call";
+        } else if (ty == havel::TokenType::OpenBracket) {
+          advance(); // consume '['
+          if (at().type == havel::TokenType::CloseBracket) {
+            advance(); // consume ']'
+            if (at().type == havel::TokenType::Assign) {
+              advance(); // consume '='
+              methodName = "op_index_set";
+            } else {
+              methodName = "op_index";
+            }
+          } else {
+            failAt(at(), "Expected ']' after '[' in index method");
+          }
+        } else {
+          // Check for operator symbols
+          bool isOp = false;
+          if (tokenVal == "+") { methodName = "op_add"; isOp = true; }
+          else if (tokenVal == "-") { methodName = "op_sub"; isOp = true; }
+          else if (tokenVal == "*") { methodName = "op_mul"; isOp = true; }
+          else if (tokenVal == "**") { methodName = "op_pow"; isOp = true; }
+          else if (tokenVal == "/") { methodName = "op_div"; isOp = true; }
+          else if (tokenVal == "%") { methodName = "op_mod"; isOp = true; }
+          else if (tokenVal == "==") { methodName = "op_eq"; isOp = true; }
+          else if (tokenVal == "!=") { methodName = "op_ne"; isOp = true; }
+          else if (tokenVal == "<") { methodName = "op_lt"; isOp = true; }
+          else if (tokenVal == ">") { methodName = "op_gt"; isOp = true; }
+          else if (tokenVal == "<=") { methodName = "op_le"; isOp = true; }
+          else if (tokenVal == ">=") { methodName = "op_ge"; isOp = true; }
+          else if (tokenVal == "|>") { methodName = "op_pipe_right"; isOp = true; }
+          else if (tokenVal == "|") { methodName = "op_bit_or"; isOp = true; }
+          else if (tokenVal == "&") { methodName = "op_bit_and"; isOp = true; }
+          else if (tokenVal == "^") { methodName = "op_bit_xor"; isOp = true; }
+          else if (tokenVal == "~") { methodName = "op_bit_not"; isOp = true; }
+          else if (tokenVal == ">>") { methodName = "op_shift_right"; isOp = true; }
+          else if (tokenVal == "<<") { methodName = "op_shift_left"; isOp = true; }
+          else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+
+          if (isOp) {
+            advance();
+          } else {
+            // Regular method - expect identifier
+            if (at().type != havel::TokenType::Identifier) {
+              failAt(at(), "Expected method name, operator, or special syntax after 'fn'");
+            }
+            methodName = advance().value;
+          }
         }
-        methodName = advance().value;
       }
 
       // Check if this is a constructor (named 'init')
@@ -3871,16 +3963,107 @@ Parser::parseClassMembers() {
         } else if (tokenVal == "(") {
           methodName = "op_call";
           advance();
+        } else if (tokenVal == "**") {
+          methodName = "op_pow";
+          advance();
+        } else if (tokenVal == "|>") {
+          methodName = "op_pipe_right";
+          advance();
+        } else if (tokenVal == "|") {
+          methodName = "op_bit_or";
+          advance();
+        } else if (tokenVal == "&") {
+          methodName = "op_bit_and";
+          advance();
+        } else if (tokenVal == "^") {
+          methodName = "op_bit_xor";
+          advance();
+        } else if (tokenVal == "~") {
+          methodName = "op_bit_not";
+          advance();
+        } else if (tokenVal == ">>") {
+          methodName = "op_shift_right";
+          advance();
+        } else if (tokenVal == "<<") {
+          methodName = "op_shift_left";
+          advance();
+        } else if (tokenVal == "=") {
+          methodName = "op_copy";
+          advance();
         } else {
           failAt(at(),
                  "Expected operator symbol (+, -, *, /, ==, [], []=, etc.) after 'op'");
         }
       } else {
-        // Regular method - expect identifier
-        if (at().type != havel::TokenType::Identifier) {
-          failAt(at(), "Expected method name after 'fn'");
+        // After 'fn' - check for operator symbols or special syntax
+        TokenType ty = at().type;
+        const std::string &tokenVal = at().value;
+
+        // Check for constructor @() or destructor @-()
+        if (ty == havel::TokenType::At) {
+          advance(); // consume '@'
+          if (at().type == havel::TokenType::Minus) {
+            advance(); // consume '-'
+            methodName = "op_destructor";
+          } else {
+            methodName = "init"; // constructor @()
+          }
+        } else if (ty == havel::TokenType::Length || tokenVal == "#") {
+          advance();
+          methodName = "op_length";
+        } else if (ty == havel::TokenType::String && tokenVal == "\"\"") {
+          advance();
+          methodName = "op_toString";
+        } else if (ty == havel::TokenType::OpenParen) {
+          advance();
+          methodName = "op_call";
+        } else if (ty == havel::TokenType::OpenBracket) {
+          advance(); // consume '['
+          if (at().type == havel::TokenType::CloseBracket) {
+            advance(); // consume ']'
+            if (at().type == havel::TokenType::Assign) {
+              advance(); // consume '='
+              methodName = "op_index_set";
+            } else {
+              methodName = "op_index";
+            }
+          } else {
+            failAt(at(), "Expected ']' after '[' in index method");
+          }
+        } else {
+          // Check for operator symbols
+          bool isOp = false;
+          if (tokenVal == "+") { methodName = "op_add"; isOp = true; }
+          else if (tokenVal == "-") { methodName = "op_sub"; isOp = true; }
+          else if (tokenVal == "*") { methodName = "op_mul"; isOp = true; }
+          else if (tokenVal == "**") { methodName = "op_pow"; isOp = true; }
+          else if (tokenVal == "/") { methodName = "op_div"; isOp = true; }
+          else if (tokenVal == "%") { methodName = "op_mod"; isOp = true; }
+          else if (tokenVal == "==") { methodName = "op_eq"; isOp = true; }
+          else if (tokenVal == "!=") { methodName = "op_ne"; isOp = true; }
+          else if (tokenVal == "<") { methodName = "op_lt"; isOp = true; }
+          else if (tokenVal == ">") { methodName = "op_gt"; isOp = true; }
+          else if (tokenVal == "<=") { methodName = "op_le"; isOp = true; }
+          else if (tokenVal == ">=") { methodName = "op_ge"; isOp = true; }
+          else if (tokenVal == "|>") { methodName = "op_pipe_right"; isOp = true; }
+          else if (tokenVal == "|") { methodName = "op_bit_or"; isOp = true; }
+          else if (tokenVal == "&") { methodName = "op_bit_and"; isOp = true; }
+          else if (tokenVal == "^") { methodName = "op_bit_xor"; isOp = true; }
+          else if (tokenVal == "~") { methodName = "op_bit_not"; isOp = true; }
+          else if (tokenVal == ">>") { methodName = "op_shift_right"; isOp = true; }
+          else if (tokenVal == "<<") { methodName = "op_shift_left"; isOp = true; }
+          else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+
+          if (isOp) {
+            advance();
+          } else {
+            // Regular method - expect identifier
+            if (at().type != havel::TokenType::Identifier) {
+              failAt(at(), "Expected method name, operator, or special syntax after 'fn'");
+            }
+            methodName = advance().value;
+          }
         }
-        methodName = advance().value;
       }
 
       // Parse parameters

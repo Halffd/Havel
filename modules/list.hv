@@ -106,10 +106,10 @@ fn intercalate(sep, arr) {
 	_first = true
 	for item in arr {
 		if _first {
-			_result = "{item}"
+			_result = "${item}"
 			_first = false
 		} else {
-			_result = "{_result}{sep}{item}"
+			_result = "${_result}${sep}${item}"
 		}
 	}
 	_result
@@ -132,7 +132,7 @@ fn unique(arr) {
 	_seen = {}
 	_result = []
 	for item in arr {
-		_key = "{item}"
+		_key = "${item}"
 		if !_seen.has(_key) {
 			_seen.set(_key, true)
 			_result.push(item)

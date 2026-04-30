@@ -870,7 +870,7 @@ EnumRef VM::createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
   return heap_.allocateEnum(typeId, tag, payloadCount);
 }
 
-uint32_t VM::getEnumTag(EnumRef enum_ref) { return enum_ref.tag; }
+uint32_t VM::getEnumTag(EnumRef enum_ref) { return heap_.enumTag(enum_ref.id); }
 
 Value VM::getEnumPayload(EnumRef enum_ref, size_t index) {
   auto it = heap_.enums_.find(enum_ref.id);
@@ -5381,6 +5381,93 @@ break;
     break;
   }
 
+  case OpCode::STRUCT_NEW: {
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isStringValId() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("STRUCT_NEW expects operands: <string type, uint32 argc>");
+    }
+    const uint32_t argc = instruction.operands[1].asInt();
+    if (stack.size() < argc) {
+      COMPILER_THROW("STRUCT_NEW stack underflow");
+    }
+    std::vector<Value> args(argc + 1);
+    args[0] = Value::makeStringValId(instruction.operands[0].asStringValId());
+    for (uint32_t i = 0; i < argc; ++i) {
+      args[argc - i] = popStack();
+    }
+    pushStack(invokeHostFunctionDirect("struct.new", args));
+    break;
+  }
+
+  case OpCode::STRUCT_GET: {
+    if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("STRUCT_GET expects operand: <string field>");
+    }
+    if (!current_chunk) {
+      COMPILER_THROW("STRUCT_GET requires active chunk");
+    }
+    Value instance = popStack();
+    Value field = Value::makeStringValId(instruction.operands[0].asStringValId());
+    pushStack(invokeHostFunctionDirect("struct.get", {instance, field}));
+    break;
+  }
+
+  case OpCode::STRUCT_SET: {
+    if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("STRUCT_SET expects operand: <string field>");
+    }
+    Value value = popStack();
+    Value instance = popStack();
+    Value field = Value::makeStringValId(instruction.operands[0].asStringValId());
+    pushStack(invokeHostFunctionDirect("struct.set", {instance, field, value}));
+    break;
+  }
+
+  case OpCode::PROT_CHECK: {
+    if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("PROT_CHECK expects operand: <string protocol>");
+    }
+    if (!current_chunk) {
+      COMPILER_THROW("PROT_CHECK requires active chunk");
+    }
+    Value value = popStack();
+    const std::string proto =
+        current_chunk->getString(instruction.operands[0].asStringValId());
+    if (proto == "Iterable") {
+      pushStack(invokeHostFunctionDirect("isIterable", {value}));
+    } else if (proto == "Indexable") {
+      pushStack(invokeHostFunctionDirect("isIndexable", {value}));
+    } else if (proto == "Callable") {
+      pushStack(invokeHostFunctionDirect("callable", {value}));
+    } else {
+      pushStack(Value::makeBool(false));
+    }
+    break;
+  }
+
+  case OpCode::PROT_CAST: {
+    if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
+      COMPILER_THROW("PROT_CAST expects operand: <string protocol>");
+    }
+    if (!current_chunk) {
+      COMPILER_THROW("PROT_CAST requires active chunk");
+    }
+    Value value = popStack();
+    const std::string proto =
+        current_chunk->getString(instruction.operands[0].asStringValId());
+    Value ok = Value::makeBool(false);
+    if (proto == "Iterable") {
+      ok = invokeHostFunctionDirect("isIterable", {value});
+    } else if (proto == "Indexable") {
+      ok = invokeHostFunctionDirect("isIndexable", {value});
+    } else if (proto == "Callable") {
+      ok = invokeHostFunctionDirect("callable", {value});
+    }
+    pushStack(toBool(ok) ? value : Value::makeNull());
+    break;
+  }
+
   case OpCode::RETURN: {
     // Debug: check what type is being returned
     if (!stack.empty()) {
@@ -5629,7 +5716,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       COMPILER_THROW("ENUM_TAG expects enum");
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
-    pushStack(Value::makeInt(static_cast<int64_t>(enumRef.tag)));
+    pushStack(Value::makeInt(static_cast<int64_t>(getEnumTag(enumRef))));
     break;
   }
 
@@ -5654,7 +5741,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
     auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
     int64_t expectedTag = tagVal.asInt();
-    pushStack(Value::makeBool(enumRef.tag == static_cast<uint32_t>(expectedTag)));
+    pushStack(Value::makeBool(getEnumTag(enumRef) ==
+                              static_cast<uint32_t>(expectedTag)));
     break;
   }
 

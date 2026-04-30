@@ -65,17 +65,58 @@ void havel_vm_throw_value(void* vm_ptr, uint64_t value_bits) {
     throw ScriptThrow{v};
 }
 
-void havel_vm_try_enter(void* vm_ptr, uint32_t catch_ip, uint32_t finally_ip,
-                        uint32_t stack_depth) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    vm->tryEnterPublic(catch_ip, finally_ip, stack_depth);
+// JIT throw bridge with explicit intent: this always raises into VM exception
+// handling and never returns normally.
+void havel_vm_throw_from_jit(void* vm_ptr, uint64_t value_bits) {
+    havel_vm_throw_value(vm_ptr, value_bits);
 }
 
-void havel_vm_try_exit(void* vm_ptr) {
+void havel_vm_try_enter(JITStackFrame* frame, uint32_t catch_ip,
+                        uint32_t finally_ip, uint32_t stack_depth) {
+    if (!frame) return;
+    if (frame->handler_count >= JITStackFrame::MAX_EXCEPTION_HANDLERS) return;
+    const uint32_t idx = frame->handler_count++;
+    frame->handler_catch_ip[idx] = catch_ip;
+    frame->handler_finally_ip[idx] = finally_ip;
+    frame->handler_stack_depth[idx] = stack_depth;
+}
+
+void havel_vm_try_exit(JITStackFrame* frame) {
+    if (!frame || frame->handler_count == 0) return;
+    --frame->handler_count;
+}
+
+uint32_t havel_vm_try_find_handler(JITStackFrame* frame, uint32_t* stack_depth_out,
+                                   uint32_t* popped_count_out) {
+    if (stack_depth_out) *stack_depth_out = 0;
+    if (popped_count_out) *popped_count_out = 0;
+    if (!frame || frame->handler_count == 0) return UINT32_MAX;
+
+    uint32_t popped = 0;
+    while (frame->handler_count > 0) {
+        const uint32_t idx = frame->handler_count - 1;
+        const uint32_t catch_ip = frame->handler_catch_ip[idx];
+        const uint32_t depth = frame->handler_stack_depth[idx];
+        frame->handler_count = idx;
+        ++popped;
+
+        if (catch_ip != UINT32_MAX) {
+            if (stack_depth_out) *stack_depth_out = depth;
+            if (popped_count_out) *popped_count_out = popped;
+            return catch_ip;
+        }
+    }
+
+    if (popped_count_out) *popped_count_out = popped;
+    return UINT32_MAX;
+}
+
+void havel_vm_set_exception(void* vm_ptr, uint64_t value_bits) {
     if (!vm_ptr) return;
     auto* vm = static_cast<VM*>(vm_ptr);
-    vm->tryExitPublic();
+    Value v;
+    std::memcpy(&v, &value_bits, sizeof(uint64_t));
+    vm->setCurrentExceptionPublic(v);
 }
 
 uint64_t havel_vm_load_exception(void* vm_ptr) {
@@ -98,6 +139,7 @@ void havel_gc_register_roots(void* vm_ptr, JITStackFrame* frame,
     auto* vm = static_cast<VM*>(vm_ptr);
     frame->vm = vm_ptr;
     frame->root_count = 0;
+    frame->handler_count = 0;
     for (uint32_t i = 0; i < count && i < JITStackFrame::MAX_GC_ROOTS; ++i) {
         ::havel::core::Value val;
         std::memcpy(&val, &slot_bits[i], sizeof(uint64_t));
@@ -1853,7 +1895,17 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     llvm::Value *vmArg = f->getArg(0);
     llvm::Value *argsArg = f->getArg(1);
 
-    llvm::Type *frameType = llvm::StructType::create(ctx, {i8p, llvm::ArrayType::get(i64, 32), llvm::ArrayType::get(i64, 32), i32}, "JITStackFrame");
+    llvm::Type *frameType = llvm::StructType::create(
+        ctx,
+        {i8p,
+         llvm::ArrayType::get(i64, 32),
+         llvm::ArrayType::get(i64, 32),
+         i32,
+         llvm::ArrayType::get(i32, 32),
+         llvm::ArrayType::get(i32, 32),
+         llvm::ArrayType::get(i32, 32),
+         i32},
+        "JITStackFrame");
     llvm::Value *frame = B.CreateAlloca(frameType, nullptr, "gc_frame");
 
     llvm::Function *fn_reg = module.getFunction("havel_gc_register_roots");
@@ -1871,6 +1923,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     }
 
     std::vector<llvm::Value*> vstack;
+    std::vector<size_t> jit_try_stack_depths;
 
     auto makeNull = [&]() { return llvm::ConstantInt::get(i64, QNAN | (3ULL << 48)); };
 
@@ -3097,23 +3150,27 @@ case OpCode::TRY_ENTER: {
     llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
     if (!fnTryEnter) {
         fnTryEnter = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {i8p, i32, i32, i32}, false),
+            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType), i32, i32, i32}, false),
             llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
     }
-    B.CreateCall(fnTryEnter, {vmArg,
+    B.CreateCall(fnTryEnter, {frame,
                               llvm::ConstantInt::get(i32, catchIp),
                               llvm::ConstantInt::get(i32, finallyIp),
                               llvm::ConstantInt::get(i32, static_cast<uint32_t>(vstack.size()))});
+    jit_try_stack_depths.push_back(vstack.size());
     break;
 }
 case OpCode::TRY_EXIT: {
     llvm::Function* fnTryExit = module.getFunction("havel_vm_try_exit");
     if (!fnTryExit) {
         fnTryExit = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {i8p}, false),
+            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
             llvm::Function::ExternalLinkage, "havel_vm_try_exit", &module);
     }
-    B.CreateCall(fnTryExit, {vmArg});
+    B.CreateCall(fnTryExit, {frame});
+    if (!jit_try_stack_depths.empty()) {
+        jit_try_stack_depths.pop_back();
+    }
     break;
 }
 case OpCode::LOAD_EXCEPTION: {
@@ -3131,22 +3188,62 @@ case OpCode::LOAD_EXCEPTION: {
             if (!vstack.empty()) {
                 vstack.pop_back();
             }
-            llvm::Function* fnThrow = module.getFunction("havel_vm_throw_value");
+            llvm::Function* fnSetExc = module.getFunction("havel_vm_set_exception");
+            if (!fnSetExc) {
+                fnSetExc = llvm::Function::Create(
+                    llvm::FunctionType::get(voidT, {i8p, i64}, false),
+                    llvm::Function::ExternalLinkage, "havel_vm_set_exception", &module);
+            }
+            B.CreateCall(fnSetExc, {vmArg, thrown});
+
+            llvm::Value* catchDepthAlloca = B.CreateAlloca(i32, nullptr, "catch_depth");
+            llvm::Value* poppedCountAlloca = B.CreateAlloca(i32, nullptr, "popped_count");
+            B.CreateStore(llvm::ConstantInt::get(i32, 0), catchDepthAlloca);
+            B.CreateStore(llvm::ConstantInt::get(i32, 0), poppedCountAlloca);
+
+            llvm::Function* fnFindHandler = module.getFunction("havel_vm_try_find_handler");
+            if (!fnFindHandler) {
+                fnFindHandler = llvm::Function::Create(
+                    llvm::FunctionType::get(
+                        i32,
+                        {llvm::PointerType::getUnqual(frameType),
+                         llvm::PointerType::getUnqual(i32),
+                         llvm::PointerType::getUnqual(i32)},
+                        false),
+                    llvm::Function::ExternalLinkage, "havel_vm_try_find_handler", &module);
+            }
+            llvm::Value* catchIp =
+                B.CreateCall(fnFindHandler, {frame, catchDepthAlloca, poppedCountAlloca});
+            llvm::Value* hasHandler =
+                B.CreateICmpNE(catchIp, llvm::ConstantInt::get(i32, UINT32_MAX));
+
+            llvm::BasicBlock* throwDispatchBB = llvm::BasicBlock::Create(ctx, "throw_dispatch", f);
+            llvm::BasicBlock* throwUnwindBB = llvm::BasicBlock::Create(ctx, "throw_unwind", f);
+            B.CreateCondBr(hasHandler, throwDispatchBB, throwUnwindBB);
+
+            B.SetInsertPoint(throwDispatchBB);
+            // Conservative stack-state reset for catch entry. This avoids
+            // reusing stale SSA values after handler-walk pops.
+            vstack.clear();
+            if (!jit_try_stack_depths.empty()) {
+                jit_try_stack_depths.pop_back();
+            }
+            llvm::SwitchInst* sw = B.CreateSwitch(catchIp, throwUnwindBB, basicBlocks.size());
+            for (size_t target = 0; target < basicBlocks.size(); ++target) {
+                auto* caseVal = llvm::cast<llvm::ConstantInt>(
+                    llvm::ConstantInt::get(i32, static_cast<uint32_t>(target)));
+                sw->addCase(caseVal, basicBlocks[target]);
+            }
+
+            B.SetInsertPoint(throwUnwindBB);
+            llvm::Function* fnThrow = module.getFunction("havel_vm_throw_from_jit");
             if (!fnThrow) {
                 fnThrow = llvm::Function::Create(
                     llvm::FunctionType::get(voidT, {i8p, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_throw_value", &module);
+                    llvm::Function::ExternalLinkage, "havel_vm_throw_from_jit", &module);
             }
             B.CreateCall(fnThrow, {vmArg, thrown});
-            // throwError() raises C++ exception; this return is unreachable fallback.
-            llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-            if (!fn_unreg) {
-                fn_unreg = llvm::Function::Create(
-                    llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
-                    llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
-            }
-            B.CreateCall(fn_unreg, {frame});
-            B.CreateRet(makeNull());
+            B.CreateUnreachable();
             break;
         }
 

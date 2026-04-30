@@ -31,10 +31,15 @@ namespace havel::compiler {
  */
 struct JITStackFrame {
     static constexpr uint32_t MAX_GC_ROOTS = 32;
+    static constexpr uint32_t MAX_EXCEPTION_HANDLERS = 32;
     void*    vm;                           ///< opaque VM*
     uint64_t root_ids[MAX_GC_ROOTS];       ///< GC external-root handle array
     uint64_t slot_values[MAX_GC_ROOTS];    ///< value bits at pin time
     uint32_t root_count;                   ///< number of live roots
+    uint32_t handler_catch_ip[MAX_EXCEPTION_HANDLERS];
+    uint32_t handler_finally_ip[MAX_EXCEPTION_HANDLERS];
+    uint32_t handler_stack_depth[MAX_EXCEPTION_HANDLERS];
+    uint32_t handler_count;
 };
 
 /**

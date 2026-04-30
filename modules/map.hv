@@ -37,7 +37,7 @@ fn dict(pairs=null) {
 	if pairs != null && type.of(pairs) == "array" {
 		for pair in pairs {
 			if type.of(pair) == "array" && pair.len() >= 2 {
-				_key = "{pair[0]}"
+				_key = "${pair[0]}"
 				_obj.set(_key, pair[1])
 			}
 		}

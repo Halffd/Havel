@@ -1603,25 +1603,13 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
     }
 
   // Member access
-  case TokenType::Dot: {
-    // Property names can be identifiers or certain keywords
-      if (at().type == TokenType::Identifier ||
-          at().type == TokenType::And ||
-          at().type == TokenType::Or ||
-          at().type == TokenType::Not ||
-          at().type == TokenType::Repeat ||
-          at().type == TokenType::Loop ||
-          at().type == TokenType::If ||
-          at().type == TokenType::Else ||
-          at().type == TokenType::While ||
-          at().type == TokenType::For ||
-          at().type == TokenType::Match ||
-          at().type == TokenType::Fn) {
-        auto property = makeIdentifier(advance());
-        return std::make_unique<ast::MemberExpression>(
-            std::move(left), std::move(property));
-      }
-      failAt(at(), "Expected identifier after '.'");
+case TokenType::Dot: {
+if (at().type == TokenType::Identifier || Lexer::KEYWORDS.count(at().value) > 0) {
+auto property = makeIdentifier(advance());
+return std::make_unique<ast::MemberExpression>(
+std::move(left), std::move(property));
+}
+failAt(at(), "Expected identifier after '.'");
     }
 
     // Function call
@@ -2224,10 +2212,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
     return parseReturnStatement();
-  case havel::TokenType::Fn:
-    return parseFunctionDeclaration();
-  case havel::TokenType::Switch:
-    return parseSwitchStatement();
+case havel::TokenType::Fn:
+if (at(1).type == havel::TokenType::OpenParen) {
+auto expr = parseLambdaExpression();
+if (at().type == havel::TokenType::Semicolon) advance();
+return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+}
+return parseFunctionDeclaration();
+case havel::TokenType::Switch:
+return parseSwitchStatement();
   case havel::TokenType::Try:
     return parseTryStatement();
   case havel::TokenType::Catch:
@@ -2581,9 +2574,14 @@ case havel::TokenType::Identifier: {
   case havel::TokenType::Off:
     return parseOffModeStatement();
   case havel::TokenType::Fn:
-    return parseFunctionDeclaration();
-  case havel::TokenType::Struct:
-    // struct.define(...) is a method call, struct Name { } is a declaration
+if (at(1).type == havel::TokenType::OpenParen) {
+auto expr = parseLambdaExpression();
+if (at().type == havel::TokenType::Semicolon) advance();
+return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+}
+return parseFunctionDeclaration();
+case havel::TokenType::Struct:
+// struct.define(...) is a method call, struct Name { } is a declaration
     if (at(1).type == havel::TokenType::Dot) {
       auto expr = parseExpression();
       if (at().type == havel::TokenType::Semicolon) advance();

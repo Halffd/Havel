@@ -1241,6 +1241,25 @@ let p = Point(10, 32)
 return struct.get(p, "y")
 )havel", 32, dump_bytecode, snapshot_dir);
 
+  failures += runCase("struct-opcode-new-get-set", R"havel(
+struct Pair { a, b }
+let p = Pair(1, 2)
+struct.set(p, "b", 41)
+return struct.get(p, "b") + 1
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("protocol-check-cast", R"havel(
+let arr = [1, 2, 3]
+let ok = arr as Iterable
+if ok == null {
+    return 0
+}
+if arr is Iterable {
+    return 42
+}
+return 0
+)havel", 42, dump_bytecode, snapshot_dir);
+
   failures += runCase("closure-return", R"havel(
 fn makeGetter(v) {
     let x = v

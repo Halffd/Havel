@@ -3742,7 +3742,6 @@ Parser::parseStructMembers() {
         // After 'fn' - check for operator symbols or special syntax
         TokenType ty = at().type;
         const std::string &tokenVal = at().value;
-        std::cerr << "DEBUG: ty=" << static_cast<int>(ty) << " At=" << static_cast<int>(havel::TokenType::At) << " val=" << tokenVal << std::endl;
 
         // Check for constructor @() or destructor @-()
         if (ty == havel::TokenType::At) {

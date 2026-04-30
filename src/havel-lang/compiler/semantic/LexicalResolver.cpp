@@ -1040,11 +1040,17 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
                      binding->kind == ResolvedBindingKind::Upvalue)) {
         shouldDeclareLocal = false;
       }
-      // If binding is a "fake" Global (not in global_variables_), still declare local
-      if (binding && binding->kind == ResolvedBindingKind::Global &&
-          global_variables_.count(binding->name) == 0) {
-        shouldDeclareLocal = true;
-      }
+        // If binding is a "fake" Global (not in global_variables_), still declare local
+        if (binding && binding->kind == ResolvedBindingKind::Global &&
+            global_variables_.count(binding->name) == 0) {
+            shouldDeclareLocal = true;
+        }
+        // If binding resolves to a Function or HostFunction name, declare as local
+        // so that shadowing variables (e.g., _root = _root()) work correctly
+        if (binding && (binding->kind == ResolvedBindingKind::Function ||
+                        binding->kind == ResolvedBindingKind::HostFunction)) {
+            shouldDeclareLocal = true;
+        }
 
       if (shouldDeclareLocal) {
         // Implicit declaration on first assignment

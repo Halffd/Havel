@@ -1,0 +1,526 @@
+// uinput.hv — Linux uinput virtual device creation and event injection via FFI
+// Provides: uinput.create, uinput.destroy, uinput.sendEvent,
+// uinput.sendKey, uinput.sendRel, uinput.sendAbs,
+// uinput.tapKey, uinput.typeText,
+// uinput.beginBatch, uinput.endBatch, uinput.releaseAllKeys
+
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_open = ffi.sym(_c, "open")
+_close = ffi.sym(_c, "close")
+_ioctl = ffi.sym(_c, "ioctl")
+_write = ffi.sym(_c, "write")
+_memset = ffi.sym(_c, "memset")
+
+_O_WRONLY = 1
+_O_NONBLOCK = 2048
+
+// Event types (same as evdev.hv for convenience)
+EV_SYN = 0
+EV_KEY = 1
+EV_REL = 2
+EV_ABS = 3
+EV_MSC = 4
+EV_FF = 21
+
+SYN_REPORT = 0
+
+// Relative axes
+REL_X = 0
+REL_Y = 1
+REL_WHEEL = 8
+REL_HWHEEL = 6
+
+// Bus types
+BUS_USB = 3
+BUS_VIRTUAL = 6
+
+// Uinput ioctl codes (verified against compiled C on this system)
+// _IOC(dir, type, nr, size) = (dir << 30) | (size << 16) | (type << 8) | nr
+// 'U' = 0x55 = 85
+
+// UI_DEV_CREATE = _IO('U', 1) = (0<<30)|(0<<16)|(85<<8)|1
+_UI_DEV_CREATE = 21761
+
+// UI_DEV_DESTROY = _IO('U', 2) = (0<<30)|(0<<16)|(85<<8)|2
+_UI_DEV_DESTROY = 21762
+
+// UI_DEV_SETUP = _IOW('U', 3, struct uinput_setup) = (1<<30)|(92<<16)|(85<<8)|3
+_UI_DEV_SETUP = 1079792899
+
+// UI_SET_EVBIT = _IOW('U', 100, int) = (1<<30)|(4<<16)|(85<<8)|100
+_UI_SET_EVBIT = 1074025828
+
+// UI_SET_KEYBIT = _IOW('U', 101, int) = (1<<30)|(4<<16)|(85<<8)|101
+_UI_SET_KEYBIT = 1074025829
+
+// UI_SET_RELBIT = _IOW('U', 102, int) = (1<<30)|(4<<16)|(85<<8)|102
+_UI_SET_RELBIT = 1074025830
+
+// UI_SET_ABSBIT = _IOW('U', 103, int) = (1<<30)|(4<<16)|(85<<8)|103
+_UI_SET_ABSBIT = 1074025831
+
+// UI_SET_MSCBIT = _IOW('U', 104, int) = (1<<30)|(4<<16)|(85<<8)|104
+_UI_SET_MSCBIT = 1074025832
+
+// Key code constants (mirrored from evdev.hv for standalone use)
+KEY_ESC = 1
+KEY_1 = 2
+KEY_2 = 3
+KEY_3 = 4
+KEY_4 = 5
+KEY_5 = 6
+KEY_6 = 7
+KEY_7 = 8
+KEY_8 = 9
+KEY_9 = 10
+KEY_0 = 11
+KEY_MINUS = 12
+KEY_EQUAL = 13
+KEY_BACKSPACE = 14
+KEY_TAB = 15
+KEY_Q = 16
+KEY_W = 17
+KEY_E = 18
+KEY_R = 19
+KEY_T = 20
+KEY_Y = 21
+KEY_U = 22
+KEY_I = 23
+KEY_O = 24
+KEY_P = 25
+KEY_LEFTBRACE = 26
+KEY_RIGHTBRACE = 27
+KEY_ENTER = 28
+KEY_LEFTCTRL = 29
+KEY_A = 30
+KEY_S = 31
+KEY_D = 32
+KEY_F = 33
+KEY_G = 34
+KEY_H = 35
+KEY_J = 36
+KEY_K = 37
+KEY_L = 38
+KEY_SEMICOLON = 39
+KEY_APOSTROPHE = 40
+KEY_GRAVE = 41
+KEY_LEFTSHIFT = 42
+KEY_BACKSLASH = 43
+KEY_Z = 44
+KEY_X = 45
+KEY_C = 46
+KEY_V = 47
+KEY_B = 48
+KEY_N = 49
+KEY_M = 50
+KEY_COMMA = 51
+KEY_DOT = 52
+KEY_SLASH = 53
+KEY_RIGHTSHIFT = 54
+KEY_LEFTALT = 56
+KEY_SPACE = 57
+KEY_CAPSLOCK = 58
+KEY_F1 = 59
+KEY_F2 = 60
+KEY_F3 = 61
+KEY_F4 = 62
+KEY_F5 = 63
+KEY_F6 = 64
+KEY_F7 = 65
+KEY_F8 = 66
+KEY_F9 = 67
+KEY_F10 = 68
+KEY_NUMLOCK = 69
+KEY_SCROLLLOCK = 70
+KEY_HOME = 102
+KEY_UP = 103
+KEY_PAGEUP = 104
+KEY_LEFT = 105
+KEY_RIGHT = 106
+KEY_END = 107
+KEY_DOWN = 108
+KEY_PAGEDOWN = 109
+KEY_INSERT = 110
+KEY_DELETE = 111
+KEY_RIGHTCTRL = 97
+KEY_RIGHTALT = 100
+KEY_LEFTMETA = 125
+KEY_RIGHTMETA = 126
+KEY_MAX = 767
+
+BTN_LEFT = 272
+BTN_RIGHT = 273
+BTN_MIDDLE = 274
+BTN_SIDE = 275
+BTN_EXTRA = 276
+BTN_FORWARD = 277
+BTN_BACK = 278
+BTN_TASK = 279
+_BTN_MOUSE = 272
+_BTN_DIGI = 320
+
+// input_event struct size on 64-bit = 24 bytes
+_INPUT_EVENT_SIZE = 24
+
+// Build an input_event struct in a pre-allocated buffer
+fn _buildInputEvent(buf, type, code, value) {
+  // timeval: sec=0, usec=0 (kernel fills in timestamp for uinput)
+  ffi.set_i64(buf, 0)
+  ffi.set_i64(ffi.ptr_add(buf, 8), 0)
+  ffi.set_u16(ffi.ptr_add(buf, 16), type)
+  ffi.set_u16(ffi.ptr_add(buf, 18), code)
+  ffi.set_i32(ffi.ptr_add(buf, 20), value)
+}
+
+// Write a single input_event to the uinput fd
+fn _writeEvent(handle, type, code, value) {
+  if handle == null || handle.fd < 0 { return false }
+  _buf = ffi.allocBytes(_INPUT_EVENT_SIZE)
+  _buildInputEvent(_buf, type, code, value)
+  _n = ffi.call(_write, "int64", ["int32", "pointer", "int64"], handle.fd, _buf, _INPUT_EVENT_SIZE)
+  ffi.free(_buf)
+  _n == _INPUT_EVENT_SIZE
+}
+
+// Write a SYN_REPORT to flush events
+fn _writeSync(handle) {
+  _buf = ffi.allocBytes(_INPUT_EVENT_SIZE)
+  _buildInputEvent(_buf, EV_SYN, SYN_REPORT, 0)
+  ffi.call(_write, "int64", ["int32", "pointer", "int64"], handle.fd, _buf, _INPUT_EVENT_SIZE)
+  ffi.free(_buf)
+}
+
+// Create a virtual input device
+// opts: {name: string, keyboard: bool, mouse: bool, gamepad: bool, vendor: int, product: int}
+// Returns a handle object or null on failure
+fn create(opts) {
+  if opts == null { opts = {} }
+  _path_cs = ffi.cstring("/dev/uinput")
+  _fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, (_O_WRONLY | _O_NONBLOCK))
+  ffi.free(_path_cs)
+  if _fd < 0 {
+    // Fallback to /dev/input/uinput
+    _path_cs2 = ffi.cstring("/dev/input/uinput")
+    _fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs2, (_O_WRONLY | _O_NONBLOCK))
+    ffi.free(_path_cs2)
+  }
+  if _fd < 0 { return null }
+
+  // Determine which capabilities to enable
+  _doKeyboard = opts["keyboard"]
+  if _doKeyboard == null { _doKeyboard = true }
+  _doMouse = opts["mouse"]
+  if _doMouse == null { _doMouse = true }
+  _doGamepad = opts["gamepad"]
+  if _doGamepad == null { _doGamepad = false }
+  _devName = opts["name"]
+  if _devName == null { _devName = "havel-virtual-device" }
+
+  // Enable event types
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_EVBIT, EV_KEY)
+  ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_EVBIT, EV_SYN)
+
+  if _doMouse {
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_EVBIT, EV_REL)
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_RELBIT, REL_X)
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_RELBIT, REL_Y)
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_RELBIT, REL_WHEEL)
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_RELBIT, REL_HWHEEL)
+  }
+
+  if _doGamepad {
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_EVBIT, EV_ABS)
+    // Gamepad buttons
+    _gbtn = 304
+    while _gbtn <= 318 {
+      ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_KEYBIT, _gbtn)
+      _gbtn = _gbtn + 1
+    }
+    // D-pad buttons
+    _dpad = 544
+    while _dpad <= 547 {
+      ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_KEYBIT, _dpad)
+      _dpad = _dpad + 1
+    }
+  }
+
+  // Enable all key codes
+  if _doKeyboard {
+    _key = 0
+    while _key < _KEY_MAX {
+      ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_KEYBIT, _key)
+      _key = _key + 1
+    }
+  }
+
+  // Enable mouse buttons
+  if _doMouse {
+    _mbtn = _BTN_MOUSE
+    while _mbtn < _BTN_DIGI {
+      ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_SET_KEYBIT, _mbtn)
+      _mbtn = _mbtn + 1
+    }
+  }
+
+  // Build uinput_setup struct (92 bytes struct, 96 bytes with alignment padding):
+  // struct uinput_setup {
+  //   char name[UINPUT_MAX_NAME_SIZE]; // 80 bytes, offset 0
+  //   struct input_id id;              // 8 bytes, offset 80
+  //     __u16 bustype;                 // offset 80
+  //     __u16 vendor;                 // offset 82
+  //     __u16 product;                // offset 84
+  //     __u16 version;                // offset 86
+  //   int ff_effects_max;             // 4 bytes, offset 88
+  // };
+  // sizeof = 92, _IOW uses 92 as the size field
+  _setup_buf = ffi.allocBytes(96)
+  ffi.call(_memset, "pointer", ["pointer", "int32", "int64"], _setup_buf, 0, 96)
+
+  // Write device name (up to 79 chars + null)
+  _name_cs = ffi.cstring(_devName)
+  _name_len = #_devName
+  if _name_len > 79 { _name_len = 79 }
+	// Copy name string into setup buffer at offset 0
+	ffi.memcpy(_setup_buf, _name_cs, _name_len)
+	// Null terminator
+	ffi.set_u8(ffi.ptr_add(_setup_buf, _name_len), 0)
+	ffi.free(_name_cs)
+
+  // Write input_id fields
+  _vendor = opts["vendor"]
+  if _vendor == null { _vendor = 4660 }
+  _product = opts["product"]
+  if _product == null { _product = 22136 }
+  _version = opts["version"]
+  if _version == null { _version = 1 }
+  ffi.set_u16(ffi.ptr_add(_setup_buf, 80), BUS_USB)
+  ffi.set_u16(ffi.ptr_add(_setup_buf, 82), _vendor)
+  ffi.set_u16(ffi.ptr_add(_setup_buf, 84), _product)
+  ffi.set_u16(ffi.ptr_add(_setup_buf, 86), _version)
+  // ff_effects_max at offset 88
+  ffi.set_i32(ffi.ptr_add(_setup_buf, 88), 0)
+
+  // UI_DEV_SETUP
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _UI_DEV_SETUP, _setup_buf)
+  ffi.free(_setup_buf)
+  if _ret < 0 {
+    ffi.call(_close, "int32", ["int32"], _fd)
+    return null
+  }
+
+  // UI_DEV_CREATE
+  _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], _fd, _UI_DEV_CREATE, 0)
+  if _ret < 0 {
+    ffi.call(_close, "int32", ["int32"], _fd)
+    return null
+  }
+
+  ({fd: _fd, name: _devName, keyboard: _doKeyboard, mouse: _doMouse, gamepad: _doGamepad,
+    _pressed_keys: {}, _batching: false, _batch_buf: null, _batch_len: 0})
+}
+
+// Destroy a virtual input device
+fn destroy(handle) {
+  if handle == null { return }
+  if handle.fd >= 0 {
+    ffi.call(_ioctl, "int32", ["int32", "uint64", "int32"], handle.fd, _UI_DEV_DESTROY, 0)
+    ffi.call(_close, "int32", ["int32"], handle.fd)
+    handle.fd = -1
+  }
+}
+
+// Send a raw event (type, code, value) followed by SYN_REPORT
+fn sendEvent(handle, type, code, value) {
+  if handle == null || handle.fd < 0 { return false }
+
+  // Track pressed keys for safety
+  if type == EV_KEY {
+    if value == 1 {
+      handle._pressed_keys.set(code, true)
+    } else if value == 0 {
+      handle._pressed_keys.set(code, false)
+    }
+  }
+
+  // If batching, append to batch buffer
+  if handle._batching {
+    _new_len = handle._batch_len + _INPUT_EVENT_SIZE
+    if handle._batch_buf == null {
+      handle._batch_buf = ffi.allocBytes(_new_len)
+    } else if _new_len > 384 {
+      // Flush if batch gets too large (16 events)
+      endBatch(handle)
+      _writeEvent(handle, type, code, value)
+      _writeSync(handle)
+      return true
+    } else {
+		// Reallocate — allocate new buffer, copy old, free old
+		_new_buf = ffi.allocBytes(_new_len)
+		ffi.memcpy(_new_buf, handle._batch_buf, handle._batch_len)
+		ffi.free(handle._batch_buf)
+      handle._batch_buf = _new_buf
+    }
+    // Write event into batch buffer
+    _buildInputEvent(ffi.ptr_add(handle._batch_buf, handle._batch_len), type, code, value)
+    handle._batch_len = _new_len
+    return true
+  }
+
+  _ok = _writeEvent(handle, type, code, value)
+  _writeSync(handle)
+  _ok
+}
+
+// Send a key event: press (value=1), release (value=0), repeat (value=2)
+fn sendKey(handle, code, value) {
+  if value == null { value = 1 }
+  sendEvent(handle, EV_KEY, code, value)
+}
+
+// Send a relative axis event
+fn sendRel(handle, axis, value) {
+  _ok = _writeEvent(handle, EV_REL, axis, value)
+  _writeSync(handle)
+  _ok
+}
+
+// Send an absolute axis event
+fn sendAbs(handle, axis, value) {
+  _ok = _writeEvent(handle, EV_ABS, axis, value)
+  _writeSync(handle)
+  _ok
+}
+
+// Press and release a key with optional delay in milliseconds
+fn tapKey(handle, code, ms) {
+  if ms == null { ms = 50 }
+  sendEvent(handle, EV_KEY, code, 1)
+  if ms > 0 { time.sleep(ms) }
+  sendEvent(handle, EV_KEY, code, 0)
+}
+
+// Release all tracked pressed keys (emergency safety)
+fn releaseAllKeys(handle) {
+  if handle == null { return }
+  _keys = handle._pressed_keys
+  for _code in _keys {
+    _still_pressed = _keys[_code]
+    if _still_pressed {
+      sendEvent(handle, EV_KEY, _code, 0)
+    }
+  }
+  handle._pressed_keys = {}
+}
+
+// Begin batching events — accumulate events, then flush with endBatch
+fn beginBatch(handle) {
+  if handle == null { return }
+  handle._batching = true
+  handle._batch_len = 0
+  if handle._batch_buf != null {
+    ffi.free(handle._batch_buf)
+  }
+  handle._batch_buf = null
+}
+
+// End batching — write all accumulated events + final SYN_REPORT
+fn endBatch(handle) {
+  if handle == null { return }
+  if !handle._batching { return }
+  handle._batching = false
+  if handle._batch_buf == null || handle._batch_len == 0 { return }
+  // Write all batched events
+  ffi.call(_write, "int64", ["int32", "pointer", "int64"], handle.fd, handle._batch_buf, handle._batch_len)
+  // Free batch buffer
+  ffi.free(handle._batch_buf)
+  handle._batch_buf = null
+  handle._batch_len = 0
+  // Send SYN_REPORT to flush
+  _writeSync(handle)
+}
+
+// Type a string by simulating key presses
+// Uses evdev key codes derived from character values
+fn typeText(handle, text) {
+  if text == null || #text == 0 { return }
+  _shift_code = KEY_LEFTSHIFT
+  // Simple character-to-evdev mapping for printable ASCII
+  _i = 0
+  while _i < #text {
+    _ch = text[_i:_i + 1]
+    _cv = _ch.code()
+    _need_shift = false
+    _evcode = 0
+
+    // Lowercase a-z
+    if _cv >= 97 && _cv <= 122 {
+      _evcode = _cv - 97 + KEY_A
+    }
+    // Uppercase A-Z
+    else if _cv >= 65 && _cv <= 90 {
+      _evcode = _cv - 65 + KEY_A
+      _need_shift = true
+    }
+    // Digit '0' (ASCII 48) maps to KEY_0=11
+    else if _cv == 48 {
+      _evcode = KEY_0
+    }
+    // Digits '1'-'9' (ASCII 49-57) map to KEY_1=2 through KEY_9=10
+    else if _cv >= 49 && _cv <= 57 {
+      _evcode = _cv - 49 + KEY_1
+    }
+    // Space
+    else if _cv == 32 { _evcode = KEY_SPACE }
+    // Newline
+    else if _cv == 10 { _evcode = KEY_ENTER }
+    // Tab
+    else if _cv == 9 { _evcode = KEY_TAB }
+    // Symbols
+    else if _ch == "-" { _evcode = KEY_MINUS }
+    else if _ch == "=" { _evcode = KEY_EQUAL }
+    else if _ch == "[" { _evcode = KEY_LEFTBRACE }
+    else if _ch == "]" { _evcode = KEY_RIGHTBRACE }
+    else if _ch == ";" { _evcode = KEY_SEMICOLON }
+    else if _ch == "'" { _evcode = KEY_APOSTROPHE }
+    else if _ch == "`" { _evcode = KEY_GRAVE }
+    else if _ch == "\\" { _evcode = KEY_BACKSLASH }
+    else if _ch == "," { _evcode = KEY_COMMA }
+    else if _ch == "." { _evcode = KEY_DOT }
+    else if _ch == "/" { _evcode = KEY_SLASH }
+    // Shifted symbols
+    else if _ch == "!" { _evcode = KEY_1; _need_shift = true }
+    else if _ch == "@" { _evcode = KEY_2; _need_shift = true }
+    else if _ch == "#" { _evcode = KEY_3; _need_shift = true }
+    else if _ch == "$" { _evcode = KEY_4; _need_shift = true }
+    else if _ch == "%" { _evcode = KEY_5; _need_shift = true }
+    else if _ch == "^" { _evcode = KEY_6; _need_shift = true }
+    else if _ch == "&" { _evcode = KEY_7; _need_shift = true }
+    else if _ch == "*" { _evcode = KEY_8; _need_shift = true }
+    else if _ch == "(" { _evcode = KEY_9; _need_shift = true }
+    else if _ch == ")" { _evcode = KEY_0; _need_shift = true }
+    else if _ch == "_" { _evcode = KEY_MINUS; _need_shift = true }
+    else if _ch == "+" { _evcode = KEY_EQUAL; _need_shift = true }
+    else if _ch == "{" { _evcode = KEY_LEFTBRACE; _need_shift = true }
+    else if _ch == "}" { _evcode = KEY_RIGHTBRACE; _need_shift = true }
+    else if _ch == ":" { _evcode = KEY_SEMICOLON; _need_shift = true }
+    else if _ch == "\"" { _evcode = KEY_APOSTROPHE; _need_shift = true }
+    else if _ch == "~" { _evcode = KEY_GRAVE; _need_shift = true }
+    else if _ch == "|" { _evcode = KEY_BACKSLASH; _need_shift = true }
+    else if _ch == "<" { _evcode = KEY_COMMA; _need_shift = true }
+    else if _ch == ">" { _evcode = KEY_DOT; _need_shift = true }
+    else if _ch == "?" { _evcode = KEY_SLASH; _need_shift = true }
+
+    if _evcode != 0 {
+      if _need_shift { sendEvent(handle, EV_KEY, _shift_code, 1) }
+      sendEvent(handle, EV_KEY, _evcode, 1)
+      sendEvent(handle, EV_KEY, _evcode, 0)
+      if _need_shift { sendEvent(handle, EV_KEY, _shift_code, 0) }
+      time.sleep(10)
+    }
+    _i = _i + 1
+  }
+}

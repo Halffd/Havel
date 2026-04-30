@@ -381,9 +381,15 @@ public:
   // Upvalue/closure access for JIT bridges
   uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
   GCHeap::RuntimeClosure* currentClosurePublic() {
-    uint32_t id = currentFrame().closure_id;
+    uint32_t id = jit_active_closure_id_ != 0 ? jit_active_closure_id_
+                                               : currentFrame().closure_id;
     if (id == 0) return nullptr;
     return heap_.closure(id);
+  }
+  uint32_t setJITActiveClosurePublic(uint32_t closure_id) {
+    uint32_t prev = jit_active_closure_id_;
+    jit_active_closure_id_ = closure_id;
+    return prev;
   }
   Value readLocalPublic(uint32_t abs_index) {
     ensureLocalIndex(abs_index);
@@ -809,6 +815,7 @@ private:
   std::function<void()> restart_callback_;
   HotFunctionCallback hot_func_cb_;
   JITCompiler* jit_compiler_ = nullptr;
+  uint32_t jit_active_closure_id_ = 0;
 
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }

@@ -448,31 +448,31 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         value += escaped;
         break;
       }
-    } else if (c == '$' && isFString && braceDepth == 0) {
-      // $var interpolation in f-strings only
-      hasInterpolation = true;
-      value += advance(); // $
+} else if (c == '$' && braceDepth == 0) {
+        // $var and ${...} interpolation in all strings
+        hasInterpolation = true;
+        value += advance(); // $
 
-      if (isAlpha(peek()) || peek() == '_') {
-        value += '{';
-        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-          value += advance();
+        if (isAlpha(peek()) || peek() == '_') {
+            value += '{';
+            while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                value += advance();
+            }
+            if (!isAtEnd() && peek() == '?') {
+                value += advance();
+            }
+            value += '}';
+        } else if (peek() == '@') {
+            value += '{';
+            value += advance(); // @
+            while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                value += advance();
+            }
+            if (!isAtEnd() && peek() == '?') {
+                value += advance();
+            }
+            value += '}';
         }
-        if (!isAtEnd() && peek() == '?') {
-          value += advance();
-        }
-        value += '}';
-      } else if (peek() == '@') {
-        value += '{';
-        value += advance(); // @
-        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-          value += advance();
-        }
-        if (!isAtEnd() && peek() == '?') {
-          value += advance();
-        }
-        value += '}';
-      }
     } else if (c == '{' && isFString && braceDepth == 0) {
       // F-string interpolation: {...}
       // Check if this is a format specifier (has :) or just an expression
@@ -600,9 +600,9 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         value += escaped;
         break;
       }
-    } else if (c == '$' && isFString && braceDepth == 0) {
-      // $var interpolation in f-strings only
-      hasInterpolation = true;
+} else if (c == '$' && braceDepth == 0) {
+        // $var and ${...} interpolation in all strings
+        hasInterpolation = true;
       value += advance(); // $
 
       if (peek() == '{') {
@@ -1054,10 +1054,11 @@ prevType == TokenType::Not ||
     // Handle strings - both single and double quotes work the same
     if (c == '"' || c == '\'') {
         char quote = c;
-        bool isFString = true;
+        bool isFString = false;
         bool isRegexString = false;
         if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
             if (tokens.back().value == "f" || tokens.back().value == "F") {
+                isFString = true;
                 tokens.pop_back();
             } else if (tokens.back().value == "u" || tokens.back().value == "U") {
                 isFString = false;
@@ -1073,8 +1074,7 @@ prevType == TokenType::Not ||
         if (position + 2 < source.length() &&
             source[position] == quote && source[position + 1] == quote) {
             advance();
-          
-                isFString = true;  advance();
+            advance();
             tokens.push_back(scanMultilineString(isFString, quote));
         } else {
             tokens.push_back(scanString(isFString, isRegexString, quote));

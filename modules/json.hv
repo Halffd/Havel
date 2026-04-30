@@ -79,11 +79,11 @@ if ch == "F" { return 15 }
 return 0
 }
 
-fn _isError(val) {
-if val == null { return true }
-if type.of(val) == "array" {
-if #val == 1 {
-if val[0] == 0 { return true }
+fn _isError(value) {
+    if value == null { return true }
+    if type.of(value) == "array" {
+        if #value == 1 {
+            if value[0] == 0 { return true }
 }
 }
 return false
@@ -200,72 +200,69 @@ return _NULL
 }
 
 fn _parseString() {
-_pos = _pos + 1
-_result = ""
-while _pos < _len {
-_ch = _src[_pos:_pos+1]
-if _ch == "\"" {
-_pos = _pos + 1
-return _result
-}
-if _ch == "\\" {
-_pos = _pos + 1
-if _pos >= _len { return null }
-_esc = _src[_pos:_pos+1]
-if _esc == "\"" { _result = _result + "\"" }
-else if _esc == "\\" { _result = _result + "\\" }
-else if _esc == "/" { _result = _result + "/" }
-else if _esc == "b" { _result = _result + "\b" }
-else if _esc == "f" { _result = _result + "\f" }
-else if _esc == "n" { _result = _result + "\n" }
-else if _esc == "r" { _result = _result + "\r" }
-else if _esc == "t" { _result = _result + "\t" }
-else if _esc == "u" {
-_code = 0
-_j = 0
-while _j < 4 {
-_pos = _pos + 1
-if _pos >= _len { return null }
-_h = _src[_pos:_pos+1]
-if !_isHex(_h) { return null }
-_code = _code * 16 + _hexVal(_h)
-_j = _j + 1
-}
-if _code < 128 {
-_result = _result + str(char(_code))
-} else {
-if _code >= 55296 && _code <= 56319 {
-_hi = _code
-if _pos + 2 < _len && _src[_pos+1:_pos+2] == "\\" && _src[_pos+2:_pos+3] == "u" {
-_pos = _pos + 2
-_lo = 0
-_k = 0
-while _k < 4 {
-_pos = _pos + 1
-if _pos >= _len { return null }
-_lh = _src[_pos:_pos+1]
-if !_isHex(_lh) { return null }
-_lo = _lo * 16 + _hexVal(_lh)
-_k = _k + 1
-}
-_cp = 65536 + (_hi - 55296) * 1024 + (_lo - 56320)
-_result = _result + _encodeUtf8(_cp)
-} else {
-_result = _result + "?"
-}
-} else {
-_result = _result + _encodeUtf8(_code)
-}
-}
-}
-else { return null }
-_pos = _pos + 1
-} else {
-_result = _result + _ch
-_pos = _pos + 1
-}
-}
-return null
+    _pos = _pos + 1
+    _result = ""
+    while _pos < _len {
+        _ch = _src[_pos:_pos+1]
+        if _ch == "\"" {
+            _pos = _pos + 1
+            return _result
+        }
+        if _ch == "\\" {
+            _pos = _pos + 1
+            if _pos >= _len { return null }
+            _esc = _src[_pos:_pos+1]
+            if _esc == "\"" { _result = _result + "\"" }
+            else if _esc == "\\" { _result = _result + "\\" }
+            else if _esc == "/" { _result = _result + "/" }
+            else if _esc == "b" { _result = _result + "\b" }
+            else if _esc == "f" { _result = _result + "\f" }
+            else if _esc == "n" { _result = _result + "\n" }
+            else if _esc == "r" { _result = _result + "\r" }
+            else if _esc == "t" { _result = _result + "\t" }
+            else if _esc == "u" {
+                _code = 0
+                _j = 0
+                while _j < 4 {
+                    _pos = _pos + 1
+                    if _pos >= _len { return null }
+                    _h = _src[_pos:_pos+1]
+                    if !_isHex(_h) { return null }
+                    _code = _code * 16 + _hexVal(_h)
+                    _j = _j + 1
+                }
+                if _code < 128 {
+                    _result = _result + str(char(_code))
+                } else if _code >= 55296 && _code <= 56319 {
+                    _hi = _code
+                    if _pos + 2 < _len && _src[_pos+1:_pos+2] == "\\" && _src[_pos+2:_pos+3] == "u" {
+                        _pos = _pos + 2
+                        _lo = 0
+                        _k = 0
+                        while _k < 4 {
+                            _pos = _pos + 1
+                            if _pos >= _len { return null }
+                            _lh = _src[_pos:_pos+1]
+                            if !_isHex(_lh) { return null }
+                            _lo = _lo * 16 + _hexVal(_lh)
+                            _k = _k + 1
+                        }
+                        _cp = 65536 + (_hi - 55296) * 1024 + (_lo - 56320)
+                        _result = _result + _encodeUtf8(_cp)
+                    } else {
+                        _result = _result + "?"
+                    }
+                } else {
+                    _result = _result + _encodeUtf8(_code)
+                }
+            } else { return null }
+            _pos = _pos + 1
+        } else {
+            _result = _result + _ch
+            _pos = _pos + 1
+        }
+    }
+    return null
 }
 
 fn _encodeUtf8(cp) {
@@ -439,25 +436,25 @@ fn _hex4(v) {
 return _hex1((v / 4096) % 16) + _hex1((v / 256) % 16) + _hex1((v / 16) % 16) + _hex1(v % 16)
 }
 
-fn _stringify(val, indent, depth) {
-_t = type.of(val)
-if val == null { return "null" }
-if _t == "bool" {
-if val { return "true" }
-return "false"
-}
-if _t == "number" || _t == "int" {
-return str(val)
-}
-if _t == "string" {
-return _escStr(val)
-}
-if _t == "object" {
-return _stringifyObj(val, indent, depth)
-}
-if _t == "array" {
-return _stringifyArr(val, indent, depth)
-}
+fn _stringify(value, indent, depth) {
+    _t = type.of(value)
+    if value == null { return "null" }
+    if _t == "bool" {
+        if value { return "true" }
+        return "false"
+    }
+    if _t == "number" || _t == "int" {
+        return str(value)
+    }
+    if _t == "string" {
+        return _escStr(value)
+    }
+    if _t == "object" {
+        return _stringifyObj(value, indent, depth)
+    }
+    if _t == "array" {
+        return _stringifyArr(value, indent, depth)
+    }
 return "null"
 }
 

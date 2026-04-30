@@ -86,8 +86,9 @@ void havel_vm_try_exit(JITStackFrame* frame) {
     --frame->handler_count;
 }
 
-uint32_t havel_vm_try_find_handler(JITStackFrame* frame, uint32_t* stack_depth_out,
-                                   uint32_t* popped_count_out) {
+uint32_t havel_vm_try_find_throw_target(JITStackFrame* frame,
+                                        uint32_t* stack_depth_out,
+                                        uint32_t* popped_count_out) {
     if (stack_depth_out) *stack_depth_out = 0;
     if (popped_count_out) *popped_count_out = 0;
     if (!frame || frame->handler_count == 0) return UINT32_MAX;
@@ -96,14 +97,23 @@ uint32_t havel_vm_try_find_handler(JITStackFrame* frame, uint32_t* stack_depth_o
     while (frame->handler_count > 0) {
         const uint32_t idx = frame->handler_count - 1;
         const uint32_t catch_ip = frame->handler_catch_ip[idx];
+        const uint32_t finally_ip = frame->handler_finally_ip[idx];
         const uint32_t depth = frame->handler_stack_depth[idx];
         frame->handler_count = idx;
         ++popped;
 
-        if (catch_ip != UINT32_MAX) {
+        // Prefer catch target; fall back to finally target if catch is absent.
+        // Bytecode currently patches catch_ip for try/catch and try/finally,
+        // so this keeps compatibility while honoring finally metadata.
+        uint32_t target_ip = catch_ip;
+        if (target_ip == 0 && finally_ip != 0) {
+            target_ip = finally_ip;
+        }
+
+        if (target_ip != UINT32_MAX && target_ip != 0) {
             if (stack_depth_out) *stack_depth_out = depth;
             if (popped_count_out) *popped_count_out = popped;
-            return catch_ip;
+            return target_ip;
         }
     }
 
@@ -3201,7 +3211,7 @@ case OpCode::LOAD_EXCEPTION: {
             B.CreateStore(llvm::ConstantInt::get(i32, 0), catchDepthAlloca);
             B.CreateStore(llvm::ConstantInt::get(i32, 0), poppedCountAlloca);
 
-            llvm::Function* fnFindHandler = module.getFunction("havel_vm_try_find_handler");
+            llvm::Function* fnFindHandler = module.getFunction("havel_vm_try_find_throw_target");
             if (!fnFindHandler) {
                 fnFindHandler = llvm::Function::Create(
                     llvm::FunctionType::get(
@@ -3210,7 +3220,7 @@ case OpCode::LOAD_EXCEPTION: {
                          llvm::PointerType::getUnqual(i32),
                          llvm::PointerType::getUnqual(i32)},
                         false),
-                    llvm::Function::ExternalLinkage, "havel_vm_try_find_handler", &module);
+                    llvm::Function::ExternalLinkage, "havel_vm_try_find_throw_target", &module);
             }
             llvm::Value* catchIp =
                 B.CreateCall(fnFindHandler, {frame, catchDepthAlloca, poppedCountAlloca});
@@ -3225,9 +3235,7 @@ case OpCode::LOAD_EXCEPTION: {
             // Conservative stack-state reset for catch entry. This avoids
             // reusing stale SSA values after handler-walk pops.
             vstack.clear();
-            if (!jit_try_stack_depths.empty()) {
-                jit_try_stack_depths.pop_back();
-            }
+            jit_try_stack_depths.clear();
             llvm::SwitchInst* sw = B.CreateSwitch(catchIp, throwUnwindBB, basicBlocks.size());
             for (size_t target = 0; target < basicBlocks.size(); ++target) {
                 auto* caseVal = llvm::cast<llvm::ConstantInt>(

@@ -548,3 +548,63 @@ class Chess : Game {
     }
 }
 ```
+
+## Class operators
+fn @()          // constructor
+fn @-()         // destructor
+
+fn [](i)        // index get
+fn []=(i, v)    // index set
+fn #()          // length
+
+fn +(other)     // operators
+fn -(other)
+fn *(other)
+fn /(other)
+fn %(other)
+fn **(other)
+fn =(other) // copy
+fn ==(other)
+fn !=(other)
+fn >=(other)
+fn <=(other)
+fn <(other)
+fn >(other)
+fn |>(other) // pipe
+fn |(other)
+fn &(other)
+fn ^(other)
+fn ~()
+fn >>(other)
+fn <<(other)
+fn ~(other) // match
+fn ()(args...)  // callable
+
+fn ""()        // toString
+fn repr()       // debug repr
+fn code()       // source code
+
+## Usage:
+class Vec2 {
+    x, y
+
+    fn @(x, y) {
+        @x = x
+        @y = y
+    }
+
+    fn @-() {
+        print("Vec2 destroyed")
+    }
+
+    fn +(other) {
+        Vec2(@x + other.x, @y + other.y)
+    }
+
+    fn str() {
+        "Vec2($@x, $@y)"
+    }
+}
+
+v = Vec2(1, 2)
+print(v)        // Vec2(1, 2)

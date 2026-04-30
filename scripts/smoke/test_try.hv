@@ -1,0 +1,19 @@
+// test 1 — basic
+try { throw "oops" } catch e { print(e) }
+
+// test 2 — nested
+try {
+    try { throw "inner" } catch e { throw "rethrow" }
+} catch e { print(e) }
+
+// test 3 — finally
+try { throw "x" } catch e { print("caught") } finally { print("always") }
+
+// test 4 — throw in JIT-compiled hot function
+fn boom() { throw "jit throw" }
+for i in 1..1000 { }  // warm up JIT
+try { boom() } catch e { print(e) }try {
+    try {
+        throw "inner"    // handler walk pops both, jumps to outer catch
+    } catch e { }
+} catch e { }

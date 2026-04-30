@@ -1,0 +1,23 @@
+class Vec2 {
+    x, y
+
+    fn @(x, y) {
+        @x = x
+        @y = y
+    }
+
+    fn @-() {
+        print("Vec2 destroyed")
+    }
+
+    fn +(other) {
+        Vec2(@x + other.x, @y + other.y)
+    }
+
+    fn str() {
+        "Vec2($@x, $@y)"
+    }
+}
+
+v = Vec2(1, 2)
+print(v)        // Vec2(1, 2)

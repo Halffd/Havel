@@ -92,6 +92,9 @@ public:
   void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
   ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
   
+  // ========== EVENT QUEUE ACCESS ==========
+  EventQueue* getEventQueue() const { return event_queue_; }
+  
   // ========== PHASE 2I: HOTKEY ACTION SUPPORT ==========
   /**
    * Set callback for executing hotkey actions (Phase 2I integration)

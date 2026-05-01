@@ -63,6 +63,7 @@ public:
     // Bytecode execution state
     uint32_t function_id;              // Which function's bytecode (required)
     uint32_t chunk_index;              // Which bytecode chunk (for module support)
+    uint32_t closure_id;               // Closure context (for upvalues)
     uint32_t ip;                       // Instruction pointer (resume position)
     std::vector<Value> stack;          // VM operand stack
     std::vector<Value> locals;         // Local variable storage
@@ -88,10 +89,12 @@ public:
     uint32_t parent_id;                // Parent goroutine ID (if spawned by another)
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "")
-        : id(id_), name(name_), function_id(0), chunk_index(0), ip(0),
+        : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
           state(GoroutineState::Created), suspension_reason(SuspensionReason::None),
           waiting_for_channel(0), waiting_for_thread(0),
           created_time(std::chrono::steady_clock::now()), parent_id(0) {}
+
+    ~Goroutine(); // Defined in .cpp to avoid Fiber dependency
   };
 
   // Singleton interface
@@ -107,11 +110,12 @@ public:
    *
    * @param function_id Index of function to execute (into bytecode chunk)
    * @param args Arguments to pass (stored in locals[])
+   * @param closure_id Optional closure context for upvalues
    * @param name Optional name for debugging
    * @return Goroutine ID (for tracking and .join())
    */
   uint32_t spawn(uint32_t function_id, const std::vector<Value>& args,
-                 const std::string& name = "");
+                 uint32_t closure_id = 0, const std::string& name = "");
 
   /**
    * Get the currently executing goroutine

@@ -653,7 +653,8 @@ public:
   void pushHostArrayValue(ArrayRef array_ref, Value value);
 
   // Array helpers
-  size_t getHostArrayLength(ArrayRef array_ref);
+    size_t getHostArrayLength(ArrayRef array_ref);
+    Value execLengthOp(Value v);
   Value getHostArrayValue(ArrayRef array_ref, size_t index);
   void setHostArrayValue(ArrayRef array_ref, size_t index, Value value);
   Value popHostArrayValue(ArrayRef array_ref);

@@ -214,6 +214,10 @@ uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
         std::memcpy(&v, &args[i], sizeof(uint64_t));
         valArgs.push_back(v);
     }
+    
+    if (args) {
+        std::free(args);
+    }
 
     if (valArgs.empty()) return Value::makeNull().rawBits();
 
@@ -3415,7 +3419,15 @@ case OpCode::INT_DIV:
         // Collect args from stack
         std::vector<llvm::Value*> args;
         args.push_back(vmArg);
-        llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, argCount), nullptr, "tail_args");
+        llvm::Function* fnMalloc = module.getFunction("malloc");
+        if (!fnMalloc) {
+            fnMalloc = llvm::Function::Create(
+                llvm::FunctionType::get(i8p, {i64}, false),
+                llvm::Function::ExternalLinkage, "malloc", &module);
+        }
+        llvm::Value* mallocSize = llvm::ConstantInt::get(i64, argCount * sizeof(uint64_t));
+        llvm::Value* argsArrayI8 = B.CreateCall(fnMalloc, {mallocSize});
+        llvm::Value* argsArray = B.CreatePointerCast(argsArrayI8, llvm::PointerType::getUnqual(llvm::ArrayType::get(i64, argCount)), "tail_args");
         for (uint32_t i = 0; i < argCount; ++i) {
             llvm::Value* arg = vstack.back(); vstack.pop_back();
             B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,

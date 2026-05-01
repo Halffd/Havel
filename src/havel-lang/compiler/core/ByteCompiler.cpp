@@ -1287,11 +1287,21 @@ if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
   case ast::NodeType::ReturnStatement: {
     const auto &ret = static_cast<const ast::ReturnStatement &>(statement);
     if (ret.argument) {
+      bool saved_tail = in_tail_position_;
+      enterTailPosition();
+      clearTailCallFlag();
       compileExpression(*ret.argument);
+      bool emitted_tail = wasTailCall();
+      exitTailPosition();
+      in_tail_position_ = saved_tail;
+
+      if (!emitted_tail) {
+        emit(OpCode::RETURN);
+      }
     } else {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      emit(OpCode::RETURN);
     }
-    emit(OpCode::RETURN);
     break;
   }
 
@@ -4216,7 +4226,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
-      emit(OpCode::CALL, totalArgs);
+      if (in_tail_position_) {
+        emit(OpCode::TAIL_CALL, totalArgs);
+        emitted_tail_call_ = true;
+      } else {
+        emit(OpCode::CALL, totalArgs);
+      }
       return;
     }
 
@@ -4264,7 +4279,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
-      emit(OpCode::CALL, totalArgs);
+      if (in_tail_position_) {
+        emit(OpCode::TAIL_CALL, totalArgs);
+        emitted_tail_call_ = true;
+      } else {
+        emit(OpCode::CALL, totalArgs);
+      }
       return;
     }
   }

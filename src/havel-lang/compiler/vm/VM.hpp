@@ -180,6 +180,7 @@ private:
     std::vector<TryHandler> try_stack;
     size_t stack_depth = 0;  // Expression stack depth at call time
   };
+ public:
 
   std::stack<Value> stack;
   std::vector<Value> locals;
@@ -402,7 +403,15 @@ public:
   }
   uint32_t toAbsoluteLocalPublic(uint32_t local_index) { return toAbsoluteLocal(local_index); }
   void closeFrameUpvaluesPublic(uint32_t locals_base, uint32_t locals_end) { closeFrameUpvalues(locals_base, locals_end); }
-  size_t currentLocalsBasePublic() const { return currentFrame().locals_base; }
+  size_t currentLocalsBasePublic() const { return frame_count_ > 0 ? currentFrame().locals_base : 0; }
+  void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
+    if (frame_count_ >= frame_arena_.size()) {
+      frame_arena_.push_back(CallFrame{function, ip, locals_base, closure_id});
+    } else {
+      frame_arena_[frame_count_] = CallFrame{function, ip, locals_base, closure_id};
+    }
+    frame_count_++;
+  }
   size_t currentLocalsSizePublic() const { return locals.size(); }
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>& openUpvaluesPublic() { return open_upvalues; }
   void doTailCallPublic(Value callee_value, std::vector<Value> args) { doTailCall(std::move(callee_value), std::move(args)); }
@@ -792,7 +801,8 @@ public:
     ModuleLoader& moduleLoader() { return moduleLoader_; }
 
  // Get the current bytecode chunk (for execution contexts)
- const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
+  const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
+  void setCurrentChunkPublic(const BytecodeChunk* chunk) { current_chunk = chunk; }
  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
 void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
   main_chunk_ = std::move(chunk);

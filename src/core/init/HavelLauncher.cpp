@@ -17,6 +17,7 @@
 #include "havel-lang/utils/ErrorPrinter.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+#include "core/util/Env.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
 // LLVM headers for AOT
@@ -229,8 +230,13 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         cfg.target = Target::WASM;
         cfg.buildOnly = true;
         cfg.emitWasm = true;
+      } else if (target == "elf" || target == "bin") {
+        cfg.target = Target::ELF;
+        cfg.buildOnly = true;
+        cfg.emitElf = true;
+        cfg.emitObj = true;
       } else {
-        error("Unknown --target '{}'. Expected: interpret, jit, aot, asm, ir, wasm", target);
+        error("Unknown --target '{}'. Expected: interpret, jit, aot, asm, ir, wasm, elf, bin", target);
       }
  } else if (arg == "--debug-jit" || arg == "-djt") {
             cfg.debugJIT = true;
@@ -1020,7 +1026,7 @@ std::cout << " --output, -o PATH Set output path for --build\n";
 std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
 std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
 std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
-std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm\n";
+std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
 std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
   std::cout << "  -S                  Output compiled IR and Assembly to files\n";
@@ -1045,6 +1051,7 @@ std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  havel --target asm script.hv         - Emit native assembly (.s)\n";
   std::cout << "  havel --target aot script.hv         - Emit object (.o) + shared binary (.so)\n";
   std::cout << "  havel --target wasm script.hv        - Emit WebAssembly binary (.wasm)\n";
+  std::cout << "  havel --target elf script.hv         - Emit standalone ELF executable\n";
   std::cout << "  havel --minimal script.hv - Run script in MINIMAL mode\n";
   std::cout << "  havel --repl --minimal    - Start REPL in MINIMAL mode\n";
   std::cout << "\nFull mode (default):\n";
@@ -1388,7 +1395,7 @@ info("Compilation successful, {} functions", chunk->getFunctionCount());
 
 #ifdef HAVEL_ENABLE_LLVM
 // Handle AOT LLVM output
-if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary) {
+if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary || cfg.emitElf) {
     // Import LLVM JIT for translation
     havel::compiler::BytecodeOrcJIT jit;
     jit.setDumpIR(true);
@@ -1472,7 +1479,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             info("Assembly written to: {}", asmPath);
         }
 
-        if (cfg.emitObj || cfg.emitBinary) {
+        if (cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
             nativeObjPath = aotOutput + ".o";
             std::error_code ec;
             llvm::raw_fd_ostream out(nativeObjPath, ec, llvm::sys::fs::OF_None);
@@ -1497,6 +1504,57 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                 return 1;
             }
             info("Native shared binary written to: {}", soPath);
+        }
+
+        if (cfg.emitElf) {
+            std::string binPath = aotOutput;
+            std::string stubPath = aotOutput + "_stub.cpp";
+            {
+                std::ofstream stub(stubPath);
+                stub << "#include <cstdint>\n"
+                     << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
+                     << "extern \"C\" void* havel_vm_init_standalone(const char**, uint32_t);\n"
+                     << "int main() {\n"
+                     << "    const char* strings[] = {\n";
+                const auto& chunkStrings = chunk->getAllStrings();
+                for (size_t i = 0; i < chunkStrings.size(); ++i) {
+                    const std::string& s = chunkStrings[i];
+                    // Escape string
+                    std::string escaped;
+                    for (char c : s) {
+                        if (c == '"') escaped += "\\\"";
+                        else if (c == '\\') escaped += "\\\\";
+                        else if (c == '\n') escaped += "\\n";
+                        else escaped += c;
+                    }
+                    stub << "        \"" << escaped << "\",\n";
+                }
+                stub << "    };\n"
+                     << "    void* vm = havel_vm_init_standalone(strings, " << chunkStrings.size() << ");\n"
+                     << "    uint64_t dummy_args[1024];\n"
+                     << "    for(int i=0; i<1024; ++i) dummy_args[i] = 0x7ffb000000000000ULL;\n"
+                     << "    __main__(vm, dummy_args, 0);\n"
+                     << "    return 0;\n"
+                     << "}\n";
+            }
+            
+            std::string exePath = std::filesystem::canonical("/proc/self/exe").string();
+            std::string libDir = std::filesystem::path(exePath).parent_path().string();
+            
+            // Link against havel_lang and system dependencies
+            std::string linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\" "
+                                  "-L\"" + libDir + "\" -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui "
+                                  "-lX11 -lXtst -lXrandr -lXinerama -lXi -lXcomposite -lXfixes -lpthread -ldl -lstdc++ -lm "
+                                  "$(pkg-config --libs alsa libpulse libpipewire-0.3 dbus-1 libpcre2-8 libpcre2-16 opencv4 Qt6Core Qt6Widgets Qt6Gui tesseract lept)";
+            
+            int linkRc = std::system(linkCmd.c_str());
+            if (linkRc != 0) {
+                error("Failed to link native ELF binary with command: {}", linkCmd);
+                std::filesystem::remove(stubPath);
+                return 1;
+            }
+            info("Native ELF binary written to: {}", binPath);
+            std::filesystem::remove(stubPath);
         }
     }
 

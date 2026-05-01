@@ -3744,10 +3744,14 @@ Parser::parseStructMembers() {
         const std::string &tokenVal = at().value;
 
         // Check for constructor @() or destructor @-()
-        if (ty == havel::TokenType::At) {
-          advance(); // consume '@'
-          if (at().type == havel::TokenType::Minus) {
-            advance(); // consume '-'
+        // Note: @- is lexed as Pipe token with value "@-"
+        if (ty == havel::TokenType::At ||
+            (ty == havel::TokenType::Pipe && tokenVal == "@-")) {
+          advance(); // consume '@' or '@-'
+          // For @- token, we already consumed it. For @ token, check if followed by '-'
+          if (at().type == havel::TokenType::Minus ||
+              (ty == havel::TokenType::Pipe && tokenVal == "@-")) {
+            if (ty != havel::TokenType::Pipe) advance(); // consume '-' only if not already consumed
             methodName = "op_destructor";
           } else {
             methodName = "init"; // constructor @()
@@ -3999,11 +4003,19 @@ Parser::parseClassMembers() {
         const std::string &tokenVal = at().value;
 
         // Check for constructor @() or destructor @-()
-        if (ty == havel::TokenType::At) {
-          advance(); // consume '@'
-          if (at().type == havel::TokenType::Minus) {
-            advance(); // consume '-'
+        // Note: @- is lexed as Pipe token with value "@-"
+        if (ty == havel::TokenType::At ||
+            (ty == havel::TokenType::Pipe && tokenVal == "@-")) {
+          advance(); // consume ' or '-
+          // For @- token, we already consumed it. For @ token, check if followed by '
+          if (at().type == havel::TokenType::Minus ||
+              (ty == havel::TokenType::Pipe && tokenVal == "@-")) {
+            if (ty != havel::TokenType::Pipe) advance(); // consume ' only if not already consumed
             methodName = "op_destructor";
+          } else {
+            methodName = "init"; // constructor @()
+          }
+        }
           } else {
             methodName = "init"; // constructor @()
           }

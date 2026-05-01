@@ -516,8 +516,9 @@ case OpCode::INT_DIV: return "INT_DIV";
   case OpCode::AND: return "AND";
   case OpCode::OR: return "OR";
   case OpCode::NOT: return "NOT";
-  case OpCode::NEGATE: return "NEGATE";
-  case OpCode::IS_NULL: return "IS_NULL";
+	case OpCode::NEGATE: return "NEGATE";
+	case OpCode::IS_NULL: return "IS_NULL";
+	case OpCode::LENGTH: return "LENGTH";
 
   // Control flow
   case OpCode::JUMP: return "JUMP";

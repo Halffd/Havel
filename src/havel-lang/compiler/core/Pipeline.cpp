@@ -336,10 +336,12 @@ case OpCode::INT_DIV:
     return "OR";
   case OpCode::NOT:
     return "NOT";
-  case OpCode::NEGATE:
-    return "NEGATE";
-  case OpCode::IS_NULL:
-    return "IS_NULL";
+	case OpCode::NEGATE:
+		return "NEGATE";
+	case OpCode::IS_NULL:
+		return "IS_NULL";
+	case OpCode::LENGTH:
+		return "LENGTH";
   case OpCode::JUMP:
     return "JUMP";
   case OpCode::JUMP_IF_FALSE:

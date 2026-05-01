@@ -122,9 +122,10 @@ DECLOCAL_POST,  // local-- (postfix decrement)
     BIT_XOR,
     BIT_LSH,
     BIT_RSH,
-    BIT_NOT, // Unary bitwise NOT (~)
+	BIT_NOT, // Unary bitwise NOT (~)
+	LENGTH, // # operator - dispatch to op_length or any.len
 
-  // Control flow
+	// Control flow
   JUMP,
   JUMP_IF_FALSE,
   JUMP_IF_TRUE,

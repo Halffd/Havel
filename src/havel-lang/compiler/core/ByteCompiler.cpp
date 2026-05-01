@@ -3731,13 +3731,10 @@ case ast::NodeType::UnaryExpression: {
     case ast::UnaryExpression::UnaryOperator::Plus:
         compileExpression(*unary.operand);
         break;
-    case ast::UnaryExpression::UnaryOperator::Length: {
-        // Length operator: call any.len on the operand
-        uint32_t strId = addStringConstant("any.len");
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-        compileExpression(*unary.operand);
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
-    }
+	case ast::UnaryExpression::UnaryOperator::Length: {
+		compileExpression(*unary.operand);
+		emit(OpCode::LENGTH);
+	}
  break;
     default:
       COMPILER_THROW("Unsupported unary operator");

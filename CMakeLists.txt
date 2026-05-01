@@ -724,12 +724,53 @@ target_link_options(qt_extension PRIVATE -fno-lto)
 # ==============================================================================
 # MAIN EXECUTABLE
 # ==============================================================================
+add_library(havel_core STATIC ${CORE_SOURCES})
+add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
+add_library(havel_gui STATIC ${GUI_SOURCES})
+
+# Shared configuration for the libraries
+foreach(lib havel_core havel_modules havel_gui)
+    target_include_directories(${lib} PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/extensions
+        ${X11_INCLUDE_DIR}
+        ${XI_INCLUDE_DIR}
+        ${DBUS_INCLUDE_DIRS}
+        ${PULSEAUDIO_INCLUDE_DIRS}
+        ${PIPEWIRE_INCLUDE_DIRS}
+        ${ALSA_INCLUDE_DIRS}
+        ${WAYLAND_INCLUDE_DIRS}
+        ${GENERATED_PROTO_DIR}
+        ${TESSERACT_INCLUDE_DIRS}
+        ${LEPTONICA_INCLUDE_DIRS}
+        ${OpenCV_INCLUDE_DIRS}
+        ${UI_BACKEND_INCLUDES}
+        $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
+    )
+    target_compile_definitions(${lib} PRIVATE
+        $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
+        $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
+        $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+        $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+        $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+        $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
+        $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
+        $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
+        ${UI_BACKEND_DEFS}
+        UI_BACKEND=\"${UI_BACKEND}\"
+    )
+endforeach()
+
 add_executable(havel
     src/main.cpp
-    ${CORE_SOURCES}
-    ${GUI_SOURCES}
-    $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
-    ${HOST_MODULES_SOURCES}
+)
+
+target_link_libraries(havel PRIVATE
+    havel_core
+    havel_modules
+    havel_gui
+    $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
 )
 
 # ==============================================================================

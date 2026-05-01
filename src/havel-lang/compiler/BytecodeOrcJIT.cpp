@@ -1912,23 +1912,14 @@ BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 void BytecodeOrcJIT::initTargetMachine() {
     auto target_triple_str = llvm::sys::getDefaultTargetTriple();
     llvm::Triple target_triple(target_triple_str);
-    llvm::errs() << "DEBUG: Target triple: " << target_triple_str << "\n";
     std::string error;
     auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
     if (!target) {
-        llvm::errs() << "Failed to lookup target for triple '" << target_triple_str
-                     << "': " << error << "\n";
         return;
     }
-    llvm::errs() << "DEBUG: Target name: " << target->getName() << "\n";
     llvm::TargetOptions opt;
     target_machine_.reset(target->createTargetMachine(
         target_triple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
-    if (!target_machine_) {
-        llvm::errs() << "Failed to create target machine for triple '" << target_triple_str << "'\n";
-    } else {
-        llvm::errs() << "DEBUG: Target machine created successfully\n";
-    }
 }
 
 void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {

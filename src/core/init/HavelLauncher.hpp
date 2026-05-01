@@ -23,6 +23,11 @@ public:
     BIN        // Synonym for ELF
   };
 
+  enum class AsmSyntax {
+    ATT,
+    INTEL
+  };
+
   enum class Mode {
     DAEMON,          // Full system with hotkeys + GUI (default)
     SCRIPT,          // Execute .hv script file with full IO
@@ -71,6 +76,8 @@ bool useJIT = true;
     bool emitBinary = false;    // --target aot: output native .so
     bool emitElf = false;       // --target elf/bin: output native ELF executable
     std::string aotOutput;      // -o for AOT output path
+    std::string arch;           // --arch: target triple
+    AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
 
 };
 

@@ -311,6 +311,21 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     if (i + 1 < argc && argv[i + 1][0] != '-') {
         cfg.scriptFiles.push_back(argv[++i]);
     }
+} else if (arg == "--arch") {
+    if (i + 1 < argc) {
+        cfg.arch = argv[++i];
+    }
+} else if (arg == "--syntax") {
+    if (i + 1 < argc) {
+        std::string syntax = argv[++i];
+        if (syntax == "intel") {
+            cfg.asmSyntax = AsmSyntax::INTEL;
+        } else if (syntax == "att") {
+            cfg.asmSyntax = AsmSyntax::ATT;
+        } else {
+            error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
+        }
+    }
 } else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
@@ -1027,6 +1042,8 @@ std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
 std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
 std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
 std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
+std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
+std::cout << " --syntax <type> Assembly syntax: att|intel\n";
 std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
   std::cout << "  -S                  Output compiled IR and Assembly to files\n";
@@ -1445,18 +1462,23 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::InitializeNativeTargetAsmParser();
 
-        std::string targetTripleStr = llvm::sys::getDefaultTargetTriple();
+        std::string targetTripleStr = cfg.arch.empty() ? llvm::sys::getDefaultTargetTriple() : cfg.arch;
         llvm::Triple targetTriple(targetTripleStr);
         module->setTargetTriple(targetTriple);
 
         std::string err;
-        auto target = llvm::TargetRegistry::lookupTarget(targetTriple, err);
+        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
         if (!target) {
             error("Cannot find target: {}", err);
             return 1;
         }
+        info("AOT Target: {} ({})", target->getName(), targetTripleStr);
 
         llvm::TargetOptions opt;
+        if (cfg.asmSyntax == AsmSyntax::INTEL) {
+            opt.MCOptions.OutputAsmVariant = 1;
+        }
+
         auto targetMachine = target->createTargetMachine(
             targetTriple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_);
 

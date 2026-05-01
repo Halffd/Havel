@@ -404,6 +404,10 @@ public:
   uint32_t toAbsoluteLocalPublic(uint32_t local_index) { return toAbsoluteLocal(local_index); }
   void closeFrameUpvaluesPublic(uint32_t locals_base, uint32_t locals_end) { closeFrameUpvalues(locals_base, locals_end); }
   size_t currentLocalsBasePublic() const { return frame_count_ > 0 ? currentFrame().locals_base : 0; }
+  const Value* getLocalsPointerPublic(size_t base) const { 
+    if (base >= locals.size()) return nullptr;
+    return &locals[base]; 
+  }
   void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
     if (frame_count_ >= frame_arena_.size()) {
       frame_arena_.push_back(CallFrame{function, ip, locals_base, closure_id});
@@ -414,7 +418,17 @@ public:
   }
   size_t currentLocalsSizePublic() const { return locals.size(); }
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>& openUpvaluesPublic() { return open_upvalues; }
-  void doTailCallPublic(Value callee_value, std::vector<Value> args) { doTailCall(std::move(callee_value), std::move(args)); }
+  void doTailCallPublic(Value callee_value, std::vector<Value> args) {
+    doTailCall(std::move(callee_value), std::move(args));
+  }
+  
+  // Phase 4: JIT Trampoline support
+  void setJitTailCall(bool occurred) { jit_tail_call_occurred_ = occurred; }
+  bool hasJitTailCall() const { return jit_tail_call_occurred_; }
+
+  const BytecodeFunction* currentFunction() const {
+    return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
+  }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
   size_t frameCountPublic() const { return frame_count_; }
   void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
@@ -557,6 +571,33 @@ public:
   void registerHostFunction(const std::string &name, size_t arity,
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
+  
+  // Phase 3: Goroutine management
+  // Spawn a new goroutine (fiber) to execute a closure or function concurrently
+  // @param callee The closure or function object to execute
+  // @param args Arguments to pass to the function
+  // @return Goroutine ID
+  uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {});
+
+  // Spawn a goroutine from a registered callback
+  uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
+
+  // Hotkey execution state (atomic)
+  void beginHotkeyExecution();
+  void endHotkeyExecution();
+  void garbageCollectionSafePoint(size_t work_budget = 0);
+
+  // Phase 3B-7: Suspension support
+  void requestSuspension(uint8_t reason, void* context = nullptr) {
+    suspension_requested_ = true;
+    suspension_reason_ = reason;
+    suspension_context_ = context;
+  }
+  bool isSuspensionRequested() const { return suspension_requested_; }
+  void clearSuspensionRequest() { suspension_requested_ = false; }
+  uint8_t getSuspensionReason() const { return suspension_reason_; }
+  void* getSuspensionContext() const { return suspension_context_; }
+
   uint32_t getHostFunctionIndex(const std::string &name);
   void throwError(const std::string &msg);
   
@@ -706,10 +747,8 @@ public:
                                const std::vector<Value> &args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
-  void beginHotkeyExecution();
-  void endHotkeyExecution();
-  void garbageCollectionSafePoint(size_t work_budget = 128);
-  
+
+  // ========== IMAGE HELPERS ==========
   // Set timer check callback - called periodically during script execution
   void setTimerCheckFunction(TimerCheckFunction func) {
     timer_check_func_ = std::move(func);
@@ -821,6 +860,7 @@ void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
 
 private:
   std::atomic<uint32_t> active_hotkey_executions_{0};
+  bool jit_tail_call_occurred_ = false;
 
   uint32_t app_args_array_id_ = 0;
   std::function<void()> restart_callback_;

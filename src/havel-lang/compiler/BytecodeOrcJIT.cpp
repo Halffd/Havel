@@ -38,13 +38,13 @@ namespace havel::compiler {
 static constexpr uint64_t QNAN             = 0x7FF8000000000000ULL;
 static constexpr uint64_t TAG_MASK         = 0x0007000000000000ULL;
 static constexpr uint64_t PAYLOAD_MASK     = 0x0000FFFFFFFFFFFFULL;
-static constexpr uint64_t EXT_PAYLOAD_MASK = 0x00000FFFFFFFFFFFULL;
+static constexpr uint64_t EXT_PAYLOAD_MASK = 0x000007FFFFFFFFFFULL; // 43 bits for extended payload
 
 static constexpr uint64_t INT_TAG          = 0x1;
 static constexpr uint64_t EXT_TAG          = 0x7;
 
 static constexpr uint64_t INT_TAG_BITS     = QNAN | (INT_TAG << 48); // 0x7FF9...
-static constexpr uint64_t ARRAY_TAG_BITS   = QNAN | (EXT_TAG << 48) | (0x1ULL << 44);
+static constexpr uint64_t ARRAY_TAG_BITS   = QNAN | (EXT_TAG << 48) | (0x1ULL << 43); // 5-bit tag shift
 
 // ============================================================================
 // Native Bridge Helpers
@@ -228,11 +228,11 @@ uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
     // Reuse current frame (TCO)
     size_t saved_frame_count = vm->frameCountPublic();
     vm->doTailCallPublic(callee, std::move(valArgs));
-    vm->runDispatchLoopPublic(saved_frame_count - 1);
-
-    // Get result from stack
-    Value result = vm->popStackPublic();
-    return result.rawBits();
+    
+    // Phase 4: Signal JIT trampoline that a tail call occurred
+    vm->setJitTailCall(true);
+    
+    return Value::makeNull().rawBits();
 }
 
 // Global variable access - use public API
@@ -1918,6 +1918,7 @@ void BytecodeOrcJIT::initTargetMachine() {
         return;
     }
     llvm::TargetOptions opt;
+    opt.GuaranteedTailCallOpt = true; // Enable aggressive tail call optimization
     target_machine_.reset(target->createTargetMachine(
         target_triple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
 }
@@ -2014,11 +2015,44 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
     auto func = reinterpret_cast<NativeFunc>(it->second);
 
     try {
-        uint64_t res_bits =
-            func(static_cast<void*>(vm), args.data(), static_cast<uint32_t>(args.size()));
-        Value res;
-        std::memcpy(&res, &res_bits, sizeof(uint64_t));
-        return res;
+        // Phase 4: JIT Trampoline Loop
+        // This avoids C stack growth during deep JIT recursion by returning 
+        // to this loop when a tail call is requested.
+        void* current_vm_ptr = static_cast<void*>(vm);
+        const Value* current_args_ptr = args.data();
+        uint32_t current_args_count = static_cast<uint32_t>(args.size());
+        
+        while (true) {
+            vm->setJitTailCall(false); // Reset flag before calling
+            
+            uint64_t res_bits =
+                func(static_cast<void*>(vm), current_args_ptr, current_args_count);
+            
+            // Check if a tail call occurred that we can handle in JIT
+            if (vm->hasJitTailCall()) {
+                const BytecodeFunction* next_func = vm->currentFunction();
+                if (next_func && isCompiled(next_func->name)) {
+                    // Stay in JIT: update function pointer and continue loop
+                    func = reinterpret_cast<NativeFunc>(fptrs_[next_func->name]);
+                    
+                    // Args for the tail call are already set up in the VM's locals array
+                    // by doTailCall. We need to pass them to the next JIT function.
+                    size_t lb = vm->currentLocalsBasePublic();
+                    current_args_ptr = vm->getLocalsPointerPublic(lb);
+                    current_args_count = next_func->param_count;
+                    
+                    continue; // Loop again with new function
+                }
+                
+                // If the next function is NOT JIT-compiled, return back to VM loop
+                // which will handle the interpreter execution.
+                return Value::makeNull(); 
+            }
+
+            Value res;
+            std::memcpy(&res, &res_bits, sizeof(uint64_t));
+            return res;
+        }
     } catch (const ScriptThrow&) {
         // Preserve script exception semantics so VM dispatch can route to
         // TRY_ENTER handlers in active VM frames.

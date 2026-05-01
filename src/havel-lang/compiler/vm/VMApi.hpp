@@ -175,6 +175,10 @@ struct VMApi {
 
   bool isValidCallback(CallbackId id) const { return vm.isValidCallback(id); }
 
+  uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {}) {
+    return vm.spawnGoroutine(callee, args);
+  }
+
   // Image helpers
   VMImage createImage(int width, int height, int stride, PixelFormat format,
                       const uint8_t *data) {

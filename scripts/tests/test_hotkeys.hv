@@ -19,7 +19,7 @@ c => {
 }
 !d => send "#d"
 RShift => print 'zoom'
-let d
+// d is assigned below
 d = d => {
   //print @id
   //print @alias

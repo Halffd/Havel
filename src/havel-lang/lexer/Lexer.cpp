@@ -1876,57 +1876,68 @@ if (c == '%' && peek() == '=') {
  }
  // Special case: ! followed by _ or lowercase letter is NOT operator,
  // not a hotkey modifier (e.g., !_m, !x vs !F1, !Esc)
+ // UNLESS it's followed by => which indicates a hotkey binding
+ bool isHotkeyBinding = false;
  if (c == '!' && (peek() == '_' || (peek() != 0 && std::islower(static_cast<unsigned char>(peek()))))) {
- // Fall through to SINGLE_CHAR_TOKENS to get Not token
+   size_t look = position;
+   while (look < source.size() && (isAlphaNumeric(source[look]) || source[look] == '_')) look++;
+   while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
+   if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
+     isHotkeyBinding = true;
+   }
+ }
+
+ if (c == '!' && !isHotkeyBinding && (peek() == '_' || (peek() != 0 && std::islower(static_cast<unsigned char>(peek()))))) {
+   // Fall through to SINGLE_CHAR_TOKENS to get Not token
  } else if (c == '~' && inBitwiseExpr) {
- // Fall through to SINGLE_CHAR_TOKENS for Tilde
+   // Fall through to SINGLE_CHAR_TOKENS for Tilde
  } else if ((c == '+' || c == '!' || c == '~' || c == '^') && !tokens.empty()) {
- TokenType prevType = tokens.back().type;
-            // If previous token suggests expression context, treat as operator
-            // Exclude CloseBrace - after } we're at statement level (could be
-            // hotkey) Include statement starters that are followed by expressions
-            // (if, while, for, etc.)
-            if (prevType == TokenType::Number ||
-                prevType == TokenType::Identifier ||
-                prevType == TokenType::String ||
-                prevType == TokenType::InterpolatedString ||
-                prevType == TokenType::MultilineString ||
-                prevType == TokenType::RegexString ||
-                prevType == TokenType::CloseParen ||
-                prevType == TokenType::OpenParen ||
-                prevType == TokenType::CloseBracket ||
-                prevType == TokenType::Not ||
-                prevType == TokenType::Or ||
-                prevType == TokenType::And ||
-                prevType == TokenType::Assign ||
-                prevType == TokenType::If ||
-                prevType == TokenType::While ||
-                prevType == TokenType::For ||
-                prevType == TokenType::In ||
-                prevType == TokenType::Matches ||
-                prevType == TokenType::Tilde ||
-                prevType == TokenType::Comma ||
-                prevType == TokenType::BitwiseOr ||
-                prevType == TokenType::BitwiseXor ||
-            prevType == TokenType::BitwiseAnd ||
-            prevType == TokenType::ShiftLeft ||
-            prevType == TokenType::ShiftRight) {
-                if (c == '^') {
-                    tokens.push_back(makeToken("^", TokenType::BitwiseXor));
-                    if (debug_lexer) {
-                        havel::debug("LEX: {}", tokens.back().toString());
-                    }
-                    continue;
-                }
-                // Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
-            } else {
-                tokens.push_back(scanHotkey());
-                continue;
-            }
-    } else {
-        tokens.push_back(scanHotkey());
-        continue;
-    }
+   TokenType prevType = tokens.back().type;
+   // If previous token suggests expression context, treat as operator
+   // Exclude CloseBrace - after } we're at statement level (could be
+   // hotkey) Include statement starters that are followed by expressions
+   // (if, while, for, etc.)
+   if (prevType == TokenType::Number ||
+       prevType == TokenType::Identifier ||
+       prevType == TokenType::String ||
+       prevType == TokenType::InterpolatedString ||
+       prevType == TokenType::MultilineString ||
+       prevType == TokenType::RegexString ||
+       prevType == TokenType::CloseParen ||
+       prevType == TokenType::OpenParen ||
+       prevType == TokenType::CloseBracket ||
+       prevType == TokenType::Not ||
+       prevType == TokenType::Or ||
+       prevType == TokenType::And ||
+       prevType == TokenType::Assign ||
+       prevType == TokenType::If ||
+       prevType == TokenType::While ||
+       prevType == TokenType::For ||
+       prevType == TokenType::In ||
+       prevType == TokenType::Matches ||
+       prevType == TokenType::Tilde ||
+       prevType == TokenType::Comma ||
+       prevType == TokenType::BitwiseOr ||
+       prevType == TokenType::BitwiseXor ||
+   prevType == TokenType::BitwiseAnd ||
+   prevType == TokenType::ShiftLeft ||
+   prevType == TokenType::ShiftRight) {
+     if (c == '^') {
+       tokens.push_back(makeToken("^", TokenType::BitwiseXor));
+       if (debug_lexer) {
+         havel::debug("LEX: {}", tokens.back().toString());
+       }
+       continue;
+     }
+     // Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
+   } else {
+     tokens.push_back(scanHotkey());
+     continue;
+   }
+ } else {
+   tokens.push_back(scanHotkey());
+   continue;
+ }
 }
 
 // Handle single character tokens

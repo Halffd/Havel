@@ -5556,8 +5556,9 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     // Create a wrapper that injects the @ context
     // This wrapper receives the hotkey context as first parameter and passes it
     // to the action
-    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper");
+    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
     enterFunction(std::move(hotkeyWrapperFn));
+    next_local_index = 1; // Account for the hotkey context parameter
 
     // If there's a condition expression, compile and check it first
     uint32_t skipActionJump = 0;
@@ -5572,17 +5573,8 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
       emit(OpCode::POP);
     }
 
- // Create hotkey context object
- {
- uint32_t strId = addStringConstant("Hotkey");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- // Load the hotkey action function
- {
- uint32_t strId = addStringConstant("hotkey_action");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- emit(OpCode::CALL, static_cast<uint32_t>(1));
+    // Use the passed hotkey context (parameter 0)
+    emit(OpCode::LOAD_VAR, 0);
 
     // Store hotkey context as 'this' so @field/@directive works in hotkey blocks
     {
@@ -5594,6 +5586,11 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     }
 
     // Call the action with @ context as parameter
+    {
+      uint32_t strId = addStringConstant("hotkey_action");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
+    emit(OpCode::SWAP);
     emit(OpCode::CALL, static_cast<uint32_t>(1)); // Call with 1 arg (@ context)
 
     // Pop the result (action result)
@@ -5692,8 +5689,9 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     }
 
     // Create wrapper
-    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper");
+    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
     enterFunction(std::move(hotkeyWrapperFn));
+    next_local_index = 1; // Account for the hotkey context parameter
 
     uint32_t skipActionJump = 0;
     if (binding.conditionExpr) {
@@ -5702,17 +5700,8 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
       emit(OpCode::POP);
     }
 
- // Create hotkey context object
- {
- uint32_t strId = addStringConstant("Hotkey");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- // Load hotkey_action
- {
- uint32_t strId = addStringConstant("hotkey_action");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- emit(OpCode::CALL, static_cast<uint32_t>(1));
+    // Use the passed hotkey context (parameter 0)
+    emit(OpCode::LOAD_VAR, 0);
 
     // Store as 'this' for @field/@directive access
     {
@@ -5723,6 +5712,11 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     }
 
     // Call action with @ context
+    {
+      uint32_t strId = addStringConstant("hotkey_action");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
+    emit(OpCode::SWAP);
     emit(OpCode::CALL, static_cast<uint32_t>(1));
     emit(OpCode::POP);
 

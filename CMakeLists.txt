@@ -767,10 +767,12 @@ add_executable(havel
 )
 
 target_link_libraries(havel PRIVATE
-    havel_core
+    -Wl,--start-group
+    $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
     havel_modules
     havel_gui
-    $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
+    havel_core
+    -Wl,--end-group
 )
 
 # ==============================================================================

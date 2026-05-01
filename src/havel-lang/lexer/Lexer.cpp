@@ -1019,11 +1019,14 @@ prevType == TokenType::Not ||
         prevType == TokenType::BitwiseOr ||
         prevType == TokenType::BitwiseAnd ||
         prevType == TokenType::BitwiseXor ||
-        prevType == TokenType::ShiftLeft ||
-        prevType == TokenType::Return ||
-prevType == TokenType::Semicolon ||
-prevType == TokenType::OpenBrace ||
-prevType == TokenType::NewLine);
+			prevType == TokenType::ShiftLeft ||
+				prevType == TokenType::ShiftRight ||
+				prevType == TokenType::Return ||
+				prevType == TokenType::Semicolon ||
+				prevType == TokenType::OpenBrace ||
+				prevType == TokenType::NewLine ||
+				prevType == TokenType::Fn ||
+				prevType == TokenType::Op);
       }
 
 
@@ -1891,45 +1894,55 @@ if (c == '%' && peek() == '=') {
    // Fall through to SINGLE_CHAR_TOKENS to get Not token
  } else if (c == '~' && inBitwiseExpr) {
    // Fall through to SINGLE_CHAR_TOKENS for Tilde
- } else if ((c == '+' || c == '!' || c == '~' || c == '^') && !tokens.empty()) {
-   TokenType prevType = tokens.back().type;
-   // If previous token suggests expression context, treat as operator
-   // Exclude CloseBrace - after } we're at statement level (could be
-   // hotkey) Include statement starters that are followed by expressions
-   // (if, while, for, etc.)
-   if (prevType == TokenType::Number ||
-       prevType == TokenType::Identifier ||
-       prevType == TokenType::String ||
-       prevType == TokenType::InterpolatedString ||
-       prevType == TokenType::MultilineString ||
-       prevType == TokenType::RegexString ||
-       prevType == TokenType::CloseParen ||
-       prevType == TokenType::OpenParen ||
-       prevType == TokenType::CloseBracket ||
-       prevType == TokenType::Not ||
-       prevType == TokenType::Or ||
-       prevType == TokenType::And ||
-       prevType == TokenType::Assign ||
-       prevType == TokenType::If ||
-       prevType == TokenType::While ||
-       prevType == TokenType::For ||
-       prevType == TokenType::In ||
-       prevType == TokenType::Matches ||
-       prevType == TokenType::Tilde ||
-       prevType == TokenType::Comma ||
-       prevType == TokenType::BitwiseOr ||
-       prevType == TokenType::BitwiseXor ||
-   prevType == TokenType::BitwiseAnd ||
-   prevType == TokenType::ShiftLeft ||
-   prevType == TokenType::ShiftRight) {
-     if (c == '^') {
-       tokens.push_back(makeToken("^", TokenType::BitwiseXor));
-       if (debug_lexer) {
-         havel::debug("LEX: {}", tokens.back().toString());
-       }
-       continue;
-     }
-     // Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
+		} else if ((c == '+' || c == '!' || c == '~' || c == '^' || c == '@') && !tokens.empty()) {
+			TokenType prevType = tokens.back().type;
+			// If previous token suggests expression context, treat as operator
+			// Exclude CloseBrace - after } we're at statement level (could be
+			// hotkey) Include statement starters that are followed by expressions
+			// (if, while, for, etc.)
+			if (prevType == TokenType::Number ||
+				prevType == TokenType::Identifier ||
+				prevType == TokenType::String ||
+				prevType == TokenType::InterpolatedString ||
+				prevType == TokenType::MultilineString ||
+				prevType == TokenType::RegexString ||
+				prevType == TokenType::CloseParen ||
+				prevType == TokenType::OpenParen ||
+				prevType == TokenType::CloseBracket ||
+				prevType == TokenType::Not ||
+				prevType == TokenType::Or ||
+				prevType == TokenType::And ||
+				prevType == TokenType::Assign ||
+				prevType == TokenType::If ||
+				prevType == TokenType::While ||
+				prevType == TokenType::For ||
+				prevType == TokenType::In ||
+				prevType == TokenType::Matches ||
+				prevType == TokenType::Tilde ||
+				prevType == TokenType::Comma ||
+				prevType == TokenType::BitwiseOr ||
+				prevType == TokenType::BitwiseXor ||
+				prevType == TokenType::BitwiseAnd ||
+		prevType == TokenType::ShiftLeft ||
+		prevType == TokenType::ShiftRight ||
+		prevType == TokenType::Minus ||
+		prevType == TokenType::Fn ||
+		prevType == TokenType::Op) {
+		if (c == '^') {
+				tokens.push_back(makeToken("^", TokenType::BitwiseXor));
+				if (debug_lexer) {
+					havel::debug("LEX: {}", tokens.back().toString());
+				}
+				continue;
+			}
+			if (c == '@') {
+				tokens.push_back(makeToken("@", TokenType::At));
+				if (debug_lexer) {
+					havel::debug("LEX: {}", tokens.back().toString());
+				}
+				continue;
+			}
+			// Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
    } else {
      tokens.push_back(scanHotkey());
      continue;

@@ -180,7 +180,7 @@ private:
     std::vector<TryHandler> try_stack;
     size_t stack_depth = 0;  // Expression stack depth at call time
   };
-A public:
+  public:
 
   std::stack<Value> stack;
   std::vector<Value> locals;

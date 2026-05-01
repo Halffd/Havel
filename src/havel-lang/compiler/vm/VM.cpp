@@ -1071,10 +1071,17 @@ void VM::setHostObjectSealed(ObjectRef, bool) {
 Value VM::callHostFunction(const Value &fn,
                                    const std::vector<Value> &args) {
   if (fn.isHostFuncId()) {
-    // TODO: host func name lookup
-    // For now, return null since we can't resolve the name without a table
-    (void)fn.asHostFuncId();
-    return Value::makeNull();
+    uint32_t host_func_idx = fn.asHostFuncId();
+    if (host_func_idx >= host_function_names_.size()) {
+      COMPILER_THROW("Host function index out of range: " +
+                     std::to_string(host_func_idx));
+    }
+    const std::string &name = host_function_names_[host_func_idx];
+    auto it = host_functions.find(name);
+    if (it == host_functions.end()) {
+      COMPILER_THROW("Host function not found: " + name);
+    }
+    return it->second(args);
   }
   return Value::makeNull();
 }

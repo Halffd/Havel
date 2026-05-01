@@ -236,32 +236,34 @@ return "<struct " + structName + ">";
  if (classOrStruct && classOrStruct->isObjectId()) {
  auto* proto = heap_.object(classOrStruct->asObjectId());
  while (proto) {
- auto* methodVal = proto->get("toString");
- if (methodVal && (methodVal->isFunctionObjId() || methodVal->isClosureId())) {
- visitedIds.erase(value.asObjectId());
- try {
- Value result = callFunctionSync(*methodVal, {value});
- visitedIds.insert(value.asObjectId());
- if (result.isStringValId() && current_chunk) {
- return current_chunk->getString(result.asStringValId());
- } else if (result.isStringId()) {
- if (auto* s = heap_.string(result.asStringId())) return *s;
- } else if (result.isInt()) {
- return std::to_string(result.asInt());
- } else if (result.isDouble()) {
- std::ostringstream out;
- out << result.asDouble();
- return out.str();
- } else if (result.isBool()) {
- return result.asBool() ? "true" : "false";
- } else if (!result.isNull()) {
- return toStringInternal(result, visitedIds, depth + 1);
- }
- } catch (...) {
- }
- visitedIds.insert(value.asObjectId());
- break;
- }
+		for (const char *name : {"op_toString", "toString"}) {
+			auto* methodVal = proto->get(name);
+			if (methodVal && (methodVal->isFunctionObjId() || methodVal->isClosureId() || methodVal->isHostFuncId())) {
+				visitedIds.erase(value.asObjectId());
+				try {
+					Value result = callFunctionSync(*methodVal, {value});
+					visitedIds.insert(value.asObjectId());
+					if (result.isStringValId() && current_chunk) {
+						return current_chunk->getString(result.asStringValId());
+					} else if (result.isStringId()) {
+						if (auto* s = heap_.string(result.asStringId())) return *s;
+					} else if (result.isInt()) {
+						return std::to_string(result.asInt());
+					} else if (result.isDouble()) {
+						std::ostringstream out;
+						out << result.asDouble();
+						return out.str();
+					} else if (result.isBool()) {
+						return result.asBool() ? "true" : "false";
+					} else if (!result.isNull()) {
+						return toStringInternal(result, visitedIds, depth + 1);
+					}
+				} catch (...) {
+				}
+				visitedIds.insert(value.asObjectId());
+				break;
+			}
+		}
  auto* parentVal = proto->get("__parent");
  if (parentVal && parentVal->isObjectId()) {
  proto = heap_.object(parentVal->asObjectId());
@@ -797,10 +799,35 @@ void VM::pushHostArrayValue(ArrayRef array_ref, Value value) {
 
 // Array helpers
 size_t VM::getHostArrayLength(ArrayRef array_ref) {
-  auto *array = heap_.array(array_ref.id);
-  if (!array)
-    return 0;
-  return array->size();
+    auto *array = heap_.array(array_ref.id);
+    if (!array)
+        return 0;
+    return array->size();
+}
+
+Value VM::execLengthOp(Value v) {
+    if (v.isObjectId()) {
+        Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_length");
+        if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+            return callFunction(opMethod, {v});
+        }
+    }
+    if (v.isArrayId()) {
+        return Value::makeInt(static_cast<int64_t>(getHostArrayLength(ArrayRef{v.asArrayId()})));
+    } else if (v.isStringValId()) {
+        if (current_chunk) {
+            return Value::makeInt(static_cast<int64_t>(current_chunk->getString(v.asStringValId()).size()));
+        }
+        return Value::makeInt(0);
+    } else if (v.isStringId()) {
+        auto *s = heap_.string(v.asStringId());
+        return Value::makeInt(s ? static_cast<int64_t>(s->size()) : 0);
+    }
+    auto it = host_function_globals_.find("any.len");
+    if (it != host_function_globals_.end()) {
+        return callHostFunction(it->second, {v});
+    }
+    COMPILER_THROW("Length operator requires array, string, or object with op_length method");
 }
 
 Value VM::getHostArrayValue(ArrayRef array_ref, size_t index) {
@@ -1039,24 +1066,24 @@ bool VM::hasHostObjectField(ObjectRef object_ref, const std::string &key) {
 }
 
 Value VM::getHostObjectField(ObjectRef object_ref,
-                                     const std::string &key) {
-  auto *object = heap_.object(object_ref.id);
-  if (!object)
-    return Value::makeNull();
-    
-  auto it = object->find(key);
-  if (it != object->end())
-    return it->second;
+	const std::string &key) {
+	auto *object = heap_.object(object_ref.id);
+	if (!object)
+		return Value::makeNull();
 
-  // Check prototype chain
-  auto protoIt = object->find("__proto__");
-  if (protoIt != object->end() && protoIt->second.isObjectId()) {
-    // Avoid infinite recursion by checking if this is a host object
-    // (In a real system we'd use a visited set)
-    return getHostObjectField(ObjectRef{protoIt->second.asObjectId(), true}, key);
-  }
+	auto it = object->find(key);
+	if (it != object->end())
+		return it->second;
 
-  return Value::makeNull();
+	// Check prototype chain via __proto__, __class, or __struct
+	for (const char *protoKey : {"__proto__", "__class", "__struct"}) {
+		auto protoIt = object->find(protoKey);
+		if (protoIt != object->end() && protoIt->second.isObjectId()) {
+			return getHostObjectField(ObjectRef{protoIt->second.asObjectId(), true}, key);
+		}
+	}
+
+	return Value::makeNull();
 }
 
 bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
@@ -3785,10 +3812,12 @@ doCall(callee_value, std::move(args), false);
 return;
 }
 
-if (callee_value.isHostFuncId()) {
-(void)callee_value.asHostFuncId();
-COMPILER_THROW("Host function tail call not yet supported with NaN boxing");
-}
+	if (callee_value.isHostFuncId()) {
+		Value result = callHostFunction(callee_value, args);
+		pushStack(result);
+		this->doReturn();
+		return;
+	}
 
 uint32_t function_index = 0;
 uint32_t closure_id = 0;
@@ -4740,22 +4769,29 @@ void VM::execLogicalOp(OpCode opcode) {
 }
 
 void VM::execNegate() {
-  Value value = popStack();
+	Value value = popStack();
 
-  // Record feedback
-  auto &frame = currentFrame();
-  if (frame.ip < frame.function->type_feedback.size()) {
-    auto &fb = frame.function->type_feedback[frame.ip];
-    fb.execution_count++;
-    fb.left_type_mask |= getFeedbackMask(value);
-  }
-  if (value.isInt()) {
-    pushStack(-value.asInt());
-  } else if (value.isDouble()) {
-    pushStack(-value.asDouble());
-  } else {
-    COMPILER_THROW("Cannot negate non-numeric value");
-  }
+	// Record feedback
+	auto &frame = currentFrame();
+	if (frame.ip < frame.function->type_feedback.size()) {
+		auto &fb = frame.function->type_feedback[frame.ip];
+		fb.execution_count++;
+		fb.left_type_mask |= getFeedbackMask(value);
+	}
+	if (value.isInt()) {
+		pushStack(-value.asInt());
+	} else if (value.isDouble()) {
+		pushStack(-value.asDouble());
+	} else if (value.isObjectId()) {
+		Value opMethod = getHostObjectField(ObjectRef{value.asObjectId(), true}, "op_negate");
+		if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+			pushStack(callFunction(opMethod, {value}));
+		} else {
+			COMPILER_THROW("Cannot negate non-numeric value (no op_negate method)");
+		}
+	} else {
+		COMPILER_THROW("Cannot negate non-numeric value");
+	}
 }
 
 void VM::execJump(const Instruction &instruction) {
@@ -5071,23 +5107,36 @@ break;
       break;
     }
 
-    case OpCode::BIT_NOT: {
-      Value v = popStack();
-      if (v.isInt()) {
-        pushStack(~v.asInt());
-      } else if (v.isDouble()) {
-        pushStack(~static_cast<int64_t>(v.asDouble()));
-      } else {
-        COMPILER_THROW("Bitwise NOT requires integer operand");
-      }
-      break;
-    }
+	case OpCode::BIT_NOT: {
+		Value v = popStack();
+		if (v.isInt()) {
+			pushStack(~v.asInt());
+		} else if (v.isDouble()) {
+			pushStack(~static_cast<int64_t>(v.asDouble()));
+		} else if (v.isObjectId()) {
+			Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_bit_not");
+			if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+				pushStack(callFunction(opMethod, {v}));
+			} else {
+				COMPILER_THROW("Bitwise NOT requires integer operand or op_bit_not method");
+			}
+		} else {
+			COMPILER_THROW("Bitwise NOT requires integer operand");
+		}
+		break;
+	}
 
-  case OpCode::NEGATE:
-    execNegate();
+	case OpCode::NEGATE:
+		execNegate();
+		break;
+
+case OpCode::LENGTH: {
+    Value v = popStack();
+    pushStack(execLengthOp(v));
     break;
+}
 
-  case OpCode::JUMP:
+	case OpCode::JUMP:
     execJump(instruction);
     break;
 

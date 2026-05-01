@@ -1,1 +1,60 @@
-print("Hello from AOT")
+// AOT compilation test - features that work in JIT
+print("=== AOT Test Suite ===")
+
+// Test 1: Basic print
+print("1. Basic print: OK")
+
+// Test 2: Variables and arithmetic
+x = 10
+y = 20
+z = x + y
+print("2. Arithmetic: x + y =")
+print(z)
+
+// Test 3: String values
+name = "Havel"
+print("3. String var:")
+print(name)
+
+// Test 4: If/else
+a = 42
+if a > 40 {
+  print("4. Conditional: OK (a > 40)")
+} else {
+  print("4. Conditional: FAIL")
+}
+
+// Test 5: While loop
+i = 0
+sum = 0
+while i < 5 {
+  sum = sum + i
+  i = i + 1
+}
+print("5. While loop sum 0..4:")
+print(sum)
+
+// Test 6: Function definition and call
+fn add(a, b) {
+  a + b
+}
+result = add(3, 4)
+print("6. Function call add(3,4):")
+print(result)
+
+// Test 7: Nested function calls
+fn double(n) {
+  n * 2
+}
+print("7. double(add(2,3)):")
+print(double(add(2, 3)))
+
+// Test 8: Boolean logic
+print("8. Boolean:")
+print(true and not false)
+
+// Test 9: Comparison
+print("9. 10 == 10:")
+print(10 == 10)
+
+print("\n=== AOT Tests Done ===")

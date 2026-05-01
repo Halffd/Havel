@@ -243,17 +243,9 @@ uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id) {
   if (!chunk) return Value::makeNull().rawBits();
   
   const auto& name = chunk->getString(name_id);
-  if (name.empty()) {
-    printf("[DEBUG] Global get failed: name_id %u out of range\n", name_id);
-    return Value::makeNull().rawBits();
-  }
+  if (name.empty()) return Value::makeNull().rawBits();
   
   auto opt = vm->getGlobalThreadSafe(name);
-  if (!opt.has_value()) {
-    printf("[DEBUG] Global get failed: '%s' not found in globals\n", name.c_str());
-  } else {
-    printf("[DEBUG] Global get: '%s' -> 0x%lx\n", name.c_str(), opt.value().rawBits());
-  }
   return opt.has_value() ? opt.value().rawBits() : Value::makeNull().rawBits();
 }
 
@@ -589,7 +581,6 @@ void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
 extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) {
     static ::havel::HavelEngine engine;
     if (!engine.isInitialized()) {
-        printf("[DEBUG] Initializing havel standalone engine...\n");
         engine.initializeMinimal();
         
         // If we have strings, create a dummy chunk so that name lookups (LOAD_GLOBAL, CALL_METHOD) work in AOT

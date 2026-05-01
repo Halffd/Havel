@@ -75,16 +75,17 @@ enum class ExtendedTag : uint64_t {
   THREAD_ID = 0xD,        // Thread object (stores index into GC heap)
   INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
+  TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
 };
 
 // Bool payload values
 static constexpr uint64_t BOOL_FALSE = 0;
 static constexpr uint64_t BOOL_TRUE = 1;
 
-// Extended tag mask (bits 44-47, 4 bits for values 0-15)
+// Extended tag mask (bits 43-47, 5 bits for values 0-31)
 // Positioned below the primary tag (bits 48-50) to avoid overlap
-static constexpr uint64_t EXTENDED_TAG_MASK = 0x0000F00000000000ULL;
-static constexpr int EXTENDED_TAG_SHIFT = 44;
+static constexpr uint64_t EXTENDED_TAG_MASK = 0x0000F80000000000ULL;
+static constexpr int EXTENDED_TAG_SHIFT = 43;
 
 // ============================================================================
 // Forward declarations for GC object types
@@ -609,11 +610,11 @@ private:
 
   static uint64_t makeExtendedRaw(uint64_t extendedTag, uint64_t payload) {
     // Extended values: primary tag = 7 (EXTENDED) in bits 48-50,
-    // extended tag in bits 45-47, payload in bits 0-44.
-    // Use 4-bit extended tag at bits 44-47 to avoid overlap with primary tag.
-    // Full upper bits: (7 << 48) | (extendedTag << 44)
+    // extended tag in bits 43-47, payload in bits 0-42.
+    // Use 5-bit extended tag at bits 43-47 to avoid overlap with primary tag.
+    // Full upper bits: (7 << 48) | (extendedTag << 43)
     return QNAN | (static_cast<uint64_t>(ValueTag::EXTENDED) << 48) |
-           (extendedTag << 44) | (payload & 0x00000FFFFFFFFFFFULL);
+           (extendedTag << 43) | (payload & 0x000007FFFFFFFFFFULL);
   }
 
   static uint64_t makeIntRaw(int64_t i) {

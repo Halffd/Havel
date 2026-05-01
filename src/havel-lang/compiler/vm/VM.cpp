@@ -2504,7 +2504,7 @@ registerHostFunction(
 	Fiber* raw_fiber = fiber.get();
 
 	if (scheduler_) {
-	uint32_t goroutine_id = scheduler_->spawn(body_func_id, {}, "when_body");
+	uint32_t goroutine_id = scheduler_->spawn(body_func_id, {}, 0, "when_body");
 	scheduler_->attachFiber(goroutine_id, raw_fiber);
 	}
 
@@ -2947,6 +2947,11 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       }
     }
 
+    // Phase 3B-7: Check for suspension requested by host function
+    if (suspension_requested_) {
+      return VMExecutionResult::Suspended();
+    }
+
     // Return normal yield (instruction completed successfully)
     return VMExecutionResult::Yield(nullptr);
 
@@ -3051,10 +3056,19 @@ void VM::loadFiberState(Fiber *fiber) {
     
     auto &vm_frame = frame_arena_[frame_count_];
     
-    // For now, we don't have a direct mapping from function_id to BytecodeFunction*
-    // This will be handled in Phase 3B-4 when we implement generator spawning
-    // TODO: Store BytecodeChunk* in Fiber to resolve function pointer
-    vm_frame.function = nullptr;  // Will be set when we implement generator detection
+    // Resolve function pointer from function_id
+    if (fiber_frame.function_id == 0xFFFFFFFF) {
+        vm_frame.function = nullptr; // Special marker for hotkey action
+    } else if (current_chunk) {
+        // Resolve from current chunk (main or module)
+        if (fiber_frame.function_id < current_chunk->getFunctionCount()) {
+            vm_frame.function = current_chunk->getFunction(fiber_frame.function_id);
+        }
+    }
+    
+    if (!vm_frame.function && fiber_frame.function_id != 0xFFFFFFFF) {
+        ::havel::warn("[VM] loadFiberState: Could not resolve function {} in current chunk", fiber_frame.function_id);
+    }
     vm_frame.ip = fiber_frame.ip;
     vm_frame.locals_base = fiber_frame.locals_base;
     vm_frame.closure_id = fiber_frame.closure_id;
@@ -7495,8 +7509,44 @@ Value VM::invokeCallback(CallbackId id,
   }
 
   // Call the closure and return result
-  return call(*closureValue,
-              std::vector<Value>(args.begin(), args.end()));
+  return call(*closureValue, args);
+}
+
+uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args) {
+  if (!scheduler_) {
+    ::havel::warn("[VM] spawnGoroutine: No scheduler available");
+    return 0;
+  }
+
+  uint32_t function_index = 0;
+  uint32_t closure_id = 0;
+
+  if (callee.isFunctionObjId()) {
+    function_index = callee.asFunctionObjId();
+  } else if (callee.isClosureId()) {
+    closure_id = callee.asClosureId();
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
+      ::havel::warn("[VM] spawnGoroutine: Closure {} not found", closure_id);
+      return 0;
+    }
+    function_index = closure->function_index;
+  } else {
+    ::havel::warn("[VM] spawnGoroutine: Callee is not a function or closure");
+    return 0;
+  }
+
+  // Spawn the goroutine
+  return scheduler_->spawn(function_index, args, closure_id, "async-task");
+}
+
+uint32_t VM::spawnCallback(CallbackId id, const std::vector<Value> &args) {
+  auto closure = externalRootValue(id);
+  if (!closure) {
+    ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
+    return 0;
+  }
+  return spawnGoroutine(*closure, args);
 }
 
 void VM::releaseCallback(CallbackId id) {

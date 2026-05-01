@@ -394,7 +394,15 @@ uint64_t havel_vm_is(uint64_t l, uint64_t r) {
 }
 
 uint64_t havel_vm_not(uint64_t v) {
-  return Value::makeBool(!valueIsTruthy(v)).rawBits();
+    return Value::makeBool(!valueIsTruthy(v)).rawBits();
+}
+
+uint64_t havel_vm_length(void* vm_ptr, uint64_t val_bits) {
+    if (!vm_ptr) return Value(static_cast<int64_t>(0)).rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value v;
+    std::memcpy(&v, &val_bits, sizeof(uint64_t));
+    return vm->execLengthOp(v).rawBits();
 }
 
 int havel_vm_is_truthy(uint64_t v) {
@@ -1843,6 +1851,7 @@ addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat
         addSym("havel_vm_gte", reinterpret_cast<void*>(&havel_vm_gte));
         addSym("havel_vm_is", reinterpret_cast<void*>(&havel_vm_is));
         addSym("havel_vm_not", reinterpret_cast<void*>(&havel_vm_not));
+addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
         addSym("havel_vm_is_truthy", reinterpret_cast<void*>(&havel_vm_is_truthy));
         addSym("havel_vm_closure_new", reinterpret_cast<void*>(&havel_vm_closure_new));
         addSym("havel_vm_array_del", reinterpret_cast<void*>(&havel_vm_array_del));
@@ -2415,11 +2424,11 @@ case OpCode::INT_DIV:
             B.SetInsertPoint(mergeBB);
             llvm::PHINode* phi = B.CreatePHI(i64, 2);
             phi->addIncoming(intNeg, intBB);
-            phi->addIncoming(dblNeg, dblBB);
-            vstack.push_back(phi);
-            break;
-        }
-        case OpCode::INCLOCAL:
+	phi->addIncoming(dblNeg, dblBB);
+		vstack.push_back(phi);
+		break;
+	}
+case OpCode::INCLOCAL:
         case OpCode::DECLOCAL:
         case OpCode::INCLOCAL_POST:
         case OpCode::DECLOCAL_POST: {
@@ -3282,17 +3291,28 @@ case OpCode::INT_DIV:
         vstack.push_back(boxInt(B.CreateZExt(isNull, i64)));
         break;
     }
-    case OpCode::NOT: {
-        llvm::Value* v = vstack.back(); vstack.pop_back();
-        llvm::Function* fnNot = module.getFunction("havel_vm_not");
-        if (!fnNot) {
-          fnNot = llvm::Function::Create(
+case OpCode::NOT: {
+    llvm::Value* v = vstack.back(); vstack.pop_back();
+    llvm::Function* fnNot = module.getFunction("havel_vm_not");
+    if (!fnNot) {
+        fnNot = llvm::Function::Create(
             llvm::FunctionType::get(i64, {i64}, false),
             llvm::Function::ExternalLinkage, "havel_vm_not", &module);
-        }
-        vstack.push_back(B.CreateCall(fnNot, {v}));
-        break;
     }
+    vstack.push_back(B.CreateCall(fnNot, {v}));
+    break;
+}
+case OpCode::LENGTH: {
+    llvm::Value* v = vstack.back(); vstack.pop_back();
+    llvm::Function* fnLen = module.getFunction("havel_vm_length");
+    if (!fnLen) {
+        fnLen = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_length", &module);
+    }
+    vstack.push_back(B.CreateCall(fnLen, {vmArg, v}));
+    break;
+}
 
     // Control flow
     case OpCode::JUMP: {

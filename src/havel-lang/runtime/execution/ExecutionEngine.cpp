@@ -126,8 +126,27 @@ bool ExecutionEngine::executeFrame() {
         break;
         
       case VMExecutionResult::SUSPENDED:
+        // Handle suspension requested via VM (e.g. from host function)
+        if (vm_->isSuspensionRequested()) {
+          uint8_t reason = vm_->getSuspensionReason();
+          void* context = vm_->getSuspensionContext();
+          
+          scheduler_->suspend(g, static_cast<Scheduler::SuspensionReason>(reason));
+          if (g->fiber) {
+            g->fiber->suspend(static_cast<SuspensionReason>(reason), context);
+          }
+          
+          // Special handling for SLEEP - set resume time
+          if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+            // Context for sleep is the duration in milliseconds
+            int64_t ms = reinterpret_cast<intptr_t>(context);
+            g->resume_at_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+          }
+          
+          vm_->clearSuspensionRequest();
+        }
+        
         // Goroutine blocked on external event (channel, timer, thread)
-        // Scheduler already marked it SUSPENDED
         // EventQueue will unpark it when condition is met
         handleSuspended(g);
         break;

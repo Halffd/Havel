@@ -451,8 +451,9 @@ void EventListener::EventLoop() {
     // Phase 3: Execute one bytecode instruction in next runnable goroutine
     // This is the core of the concurrent execution model
     // The ExecutionEngine coordinates with Scheduler and EventQueue
+    bool workRemains = false;
     if (executionEngine) {
-      executionEngine->executeFrame();
+      workRemains = executionEngine->executeFrame();
     }
 
     fd_set readfds;
@@ -478,8 +479,14 @@ void EventListener::EventLoop() {
     }
 
     struct timeval timeout;
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
+    if (workRemains) {
+      // Don't block if there is work to do in the VM
+      timeout.tv_sec = 0;
+      timeout.tv_usec = 0;
+    } else {
+      timeout.tv_sec = 1;
+      timeout.tv_usec = 0;
+    }
 
     int ret = select(maxFd + 1, &readfds, nullptr, nullptr, &timeout);
 
@@ -778,6 +785,25 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
     break;
   }
   case ExecutorMode::Scheduler: {
+    // Phase 3: Single-threaded cooperative execution via EventQueue
+    if (executionEngine && executionEngine->getEventQueue()) {
+      executionEngine->getEventQueue()->push([callback = callback_copy, hotkeyAlias = alias_copy, this]() {
+        try {
+          callback();
+        } catch (const std::exception &e) {
+          error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
+        } catch (...) {
+          error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+        }
+        {
+          std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+          executingHotkeys.erase(hotkeyAlias);
+        }
+      });
+      return;
+    }
+    
+    // Fallback if engine not available
     if (hotkeyExecutor) {
       auto result = hotkeyExecutor->submit(
         [callback = callback_copy, hotkeyAlias = alias_copy, this]() {

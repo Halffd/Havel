@@ -1,4 +1,5 @@
 #include "Scheduler.hpp"
+#include "Fiber.hpp"
 #include <algorithm>
 #include <thread>
 
@@ -21,17 +22,36 @@ Scheduler::~Scheduler() {
     stop();
 }
 
+Scheduler::Goroutine::~Goroutine() {
+    if (fiber) {
+        delete fiber;
+    }
+}
+
 // ===== GOROUTINE LIFECYCLE =====
 
 uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
-                          const std::string& name) {
+                          uint32_t closure_id, const std::string& name) {
     auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name);
     g->function_id = function_id;
+    g->closure_id = closure_id;
     g->state = GoroutineState::Created;
+    
+    // Phase 3B-1: Create a Fiber for this goroutine
+    // This is the actual execution context that will be loaded into the VM
+    g->fiber = new Fiber(g->id, function_id, 0, name);
+    if (closure_id > 0) {
+        g->fiber->currentFrame().closure_id = closure_id;
+    }
     
     // Store arguments in locals
     // Caller responsible for setting up locals correctly
     g->locals = args;
+    
+    // Also push arguments to fiber stack for consistency
+    for (const auto& arg : args) {
+        g->fiber->stack.push(arg);
+    }
     
     uint32_t g_id = g->id;
     
@@ -65,6 +85,22 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 // ===== EXECUTION CONTROL =====
 
 Scheduler::Goroutine* Scheduler::pickNext() {
+    // Phase 3B-7: Check for expired timers in suspended goroutines
+    // This allows sleep() to be non-blocking for goroutines
+    {
+        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        auto now = std::chrono::steady_clock::now();
+        for (auto& [id, g] : goroutines_) {
+            if (g->state == GoroutineState::Suspended && 
+                g->suspension_reason == SuspensionReason::SleepWait &&
+                g->resume_at_time <= now) {
+                // Wake it up
+                // Note: unpark() handles state transition and adding to runnable_
+                unpark(g.get());
+            }
+        }
+    }
+
     std::lock_guard<std::mutex> lock(runnable_mutex_);
     
     if (runnable_.empty()) {

@@ -9,6 +9,7 @@
 #include "../../host/ServiceRegistry.hpp"
 #include "../../core/util/Env.hpp"
 #include "../runtime/concurrency/WatcherRegistry.hpp"
+#include "../../core/ConfigManager.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>

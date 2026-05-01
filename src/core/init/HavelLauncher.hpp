@@ -18,7 +18,9 @@ public:
     AOT,       // Native binary artifact (.so)
     ASM,       // Native assembly (.s)
     IR,        // LLVM IR (.ll)
-    WASM       // WebAssembly binary (.wasm)
+    WASM,      // WebAssembly binary (.wasm)
+    ELF,       // Standalone ELF executable
+    BIN        // Synonym for ELF
   };
 
   enum class Mode {
@@ -67,6 +69,7 @@ bool useJIT = true;
     bool emitObj = false;       // --emit-obj: output .o object file
     bool emitWasm = false;      // --target wasm: output .wasm
     bool emitBinary = false;    // --target aot: output native .so
+    bool emitElf = false;       // --target elf/bin: output native ELF executable
     std::string aotOutput;      // -o for AOT output path
 
 };

@@ -1429,7 +1429,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             return 1;
         }
         module->print(out, nullptr);
-        out.close();
         info("LLVM IR written to: {}", llPath);
     }
 
@@ -1452,7 +1451,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
 
         llvm::TargetOptions opt;
         auto targetMachine = target->createTargetMachine(
-            targetTriple, "native", "", opt, llvm::Reloc::PIC_);
+            targetTriple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_);
 
         module->setDataLayout(targetMachine->createDataLayout());
 
@@ -1470,7 +1469,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             targetMachine->addPassesToEmitFile(pm, out, nullptr,
                 llvm::CodeGenFileType::AssemblyFile);
             pm.run(*module);
-            out.close();
             info("Assembly written to: {}", asmPath);
         }
 
@@ -1486,7 +1484,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             targetMachine->addPassesToEmitFile(pm, out, nullptr,
                 llvm::CodeGenFileType::ObjectFile);
             pm.run(*module);
-            out.close();
             info("Object file written to: {}", nativeObjPath);
         }
 
@@ -1532,7 +1529,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
         targetMachine->addPassesToEmitFile(pm, out, nullptr,
             llvm::CodeGenFileType::ObjectFile);
         pm.run(*module);
-        out.close();
         info("WebAssembly binary written to: {}", wasmPath);
     }
 

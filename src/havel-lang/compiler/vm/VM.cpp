@@ -69,8 +69,15 @@ namespace havel::compiler {
 */
 
 static uint64_t getFeedbackMask(const Value& v) {
-  uint64_t tag = v.getTagBits(); // Bits 48-50
-  return 1ULL << (tag >> 48);
+  if (v.isDouble()) return TYPE_HINT_NUMBER;
+  if (v.isInt()) return TYPE_HINT_INT;
+  if (v.isBool()) return TYPE_HINT_BOOL;
+  if (v.isNull()) return TYPE_HINT_NULL;
+  if (v.isStringId() || v.isStringValId()) return TYPE_HINT_STRING;
+  if (v.isArrayId()) return TYPE_HINT_ARRAY;
+  if (v.isObjectId()) return TYPE_HINT_OBJECT;
+  if (v.isFunctionObjId() || v.isClosureId() || v.isHostFuncId()) return TYPE_HINT_FUNCTION;
+  return 0;
 }
 
 namespace {
@@ -4841,12 +4848,22 @@ Value value = popStack();
 	break;
 }
 
-case OpCode::LOAD_VAR: {
-	uint32_t var_index = instruction.operands[0].asInt();
-	uint32_t abs = this->toAbsoluteLocal(var_index);
-	this->ensureLocalIndex(abs);
-	Value value = locals[abs];
+  case OpCode::LOAD_VAR: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value value = locals[abs];
 
+    // Record feedback
+    auto &frame = currentFrame();
+    if (frame.ip < frame.function->type_feedback.size()) {
+      auto &fb = frame.function->type_feedback[frame.ip];
+      fb.execution_count++;
+      fb.result_type_mask |= getFeedbackMask(value);
+      if (fb.execution_count == 1000 && hot_func_cb_) {
+        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+      }
+    }
 
     pushStack(value);
     break;
@@ -4858,11 +4875,20 @@ case OpCode::LOAD_VAR: {
     this->ensureLocalIndex(abs);
     Value value = popStack();
 
-
-
-        locals[abs] = value;
-        break;
+    // Record feedback
+    auto &frame = currentFrame();
+    if (frame.ip < frame.function->type_feedback.size()) {
+      auto &fb = frame.function->type_feedback[frame.ip];
+      fb.execution_count++;
+      fb.left_type_mask |= getFeedbackMask(value);
+      if (fb.execution_count == 1000 && hot_func_cb_) {
+        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+      }
     }
+
+    locals[abs] = value;
+    break;
+  }
 
     // Increment/Decrement local variable optimization
     case OpCode::INCLOCAL: {
@@ -5810,6 +5836,18 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     Value index_or_key = popStack();
     Value container = popStack();
 
+    // Record feedback
+    auto &frame = currentFrame();
+    if (frame.ip < frame.function->type_feedback.size()) {
+      auto &fb = frame.function->type_feedback[frame.ip];
+      fb.execution_count++;
+      fb.left_type_mask |= getFeedbackMask(container);
+      fb.right_type_mask |= getFeedbackMask(index_or_key);
+      if (fb.execution_count == 1000 && hot_func_cb_) {
+        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+      }
+    }
+
     if (container.isArrayId()) {
       auto index = indexFromValue(index_or_key);
       if (!index) {
@@ -5824,11 +5862,17 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       if (idx < 0) {
         idx = static_cast<int64_t>(array->size()) + idx;
       }
+      Value result;
       if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
-        pushStack(Value::makeNull());
+        result = Value::makeNull();
       } else {
-        pushStack((*array)[static_cast<size_t>(idx)]);
+        result = (*array)[static_cast<size_t>(idx)];
       }
+      
+      if (frame.ip < frame.function->type_feedback.size()) {
+        frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
+      }
+      pushStack(result);
       break;
     }
 
@@ -5842,42 +5886,53 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       if (!set) {
         COMPILER_THROW("ARRAY_GET unknown set id");
       }
-      pushStack(set->find(*key) != set->end());
+      Value result = Value::makeBool(set->find(*key) != set->end());
+      if (frame.ip < frame.function->type_feedback.size()) {
+        frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
+      }
+      pushStack(result);
       break;
     }
 
-	if (container.isObjectId()) {
-		// _G globals mirror: resolve from live globals maps
-		if (container.asObjectId() == globals_mirror_object_id_) {
-			auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
-			if (!key) {
-				COMPILER_THROW("OBJECT index expects string/number/bool key");
-			}
-			auto it = globals.find(*key);
-			if (it != globals.end()) {
-				pushStack(it->second);
-				break;
-			}
-			auto hostIt = host_function_globals_.find(*key);
-			if (hostIt != host_function_globals_.end()) {
-				pushStack(hostIt->second);
-				break;
-			}
-			pushStack(Value::makeNull());
-			break;
-		}
-		auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
-		if (!key) {
-			COMPILER_THROW("OBJECT index expects string/number/bool key");
-		}
-		auto *object = heap_.object(container.asObjectId());
-		if (!object) {
-			COMPILER_THROW("ARRAY_GET unknown object id");
-		}
-		auto kv = object->find(*key);
-		pushStack(kv == object->end() ? Value::makeNull() : kv->second);
-		break;
-	}
+    if (container.isObjectId()) {
+      // _G globals mirror: resolve from live globals maps
+      if (container.asObjectId() == globals_mirror_object_id_) {
+        auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+        if (!key) {
+          COMPILER_THROW("OBJECT index expects string/number/bool key");
+        }
+        Value result = Value::makeNull();
+        auto it = globals.find(*key);
+        if (it != globals.end()) {
+          result = it->second;
+        } else {
+          auto hostIt = host_function_globals_.find(*key);
+          if (hostIt != host_function_globals_.end()) {
+            result = hostIt->second;
+          }
+        }
+        if (frame.ip < frame.function->type_feedback.size()) {
+          frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
+        }
+        pushStack(result);
+        break;
+      }
+      auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+      if (!key) {
+        COMPILER_THROW("OBJECT index expects string/number/bool key");
+      }
+      auto *object = heap_.object(container.asObjectId());
+      if (!object) {
+        COMPILER_THROW("ARRAY_GET unknown object id");
+      }
+      auto kv = object->find(*key);
+      Value result = (kv == object->end() ? Value::makeNull() : kv->second);
+      if (frame.ip < frame.function->type_feedback.size()) {
+        frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
+      }
+      pushStack(result);
+      break;
+    }
 
     COMPILER_THROW("ARRAY_GET expects array/set/object container");
   }

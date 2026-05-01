@@ -85,3 +85,7 @@ scripts/old
 docs/plans
 docs/specs
 session*
+*.hvc
+*.ll
+*.s
+*.S

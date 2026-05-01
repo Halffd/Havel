@@ -26,6 +26,7 @@
 #include "../../utils/Logger.hpp"
 #include <cstring>
 #include <iostream>
+#include "runtime/HavelEngine.hpp"
 
 using namespace llvm::orc;
 
@@ -242,9 +243,17 @@ uint64_t havel_vm_global_get(void* vm_ptr, uint32_t name_id) {
   if (!chunk) return Value::makeNull().rawBits();
   
   const auto& name = chunk->getString(name_id);
-  if (name.empty()) return Value::makeNull().rawBits();
+  if (name.empty()) {
+    printf("[DEBUG] Global get failed: name_id %u out of range\n", name_id);
+    return Value::makeNull().rawBits();
+  }
   
   auto opt = vm->getGlobalThreadSafe(name);
+  if (!opt.has_value()) {
+    printf("[DEBUG] Global get failed: '%s' not found in globals\n", name.c_str());
+  } else {
+    printf("[DEBUG] Global get: '%s' -> 0x%lx\n", name.c_str(), opt.value().rawBits());
+  }
   return opt.has_value() ? opt.value().rawBits() : Value::makeNull().rawBits();
 }
 
@@ -574,6 +583,33 @@ void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
     if (!vm_ptr) return;
     auto* vm = static_cast<VM*>(vm_ptr);
     vm->recordBackedgePublic(ip);
+}
+
+#include "runtime/HavelEngine.hpp"
+extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) {
+    static ::havel::HavelEngine engine;
+    if (!engine.isInitialized()) {
+        printf("[DEBUG] Initializing havel standalone engine...\n");
+        engine.initializeMinimal();
+        
+        // If we have strings, create a dummy chunk so that name lookups (LOAD_GLOBAL, CALL_METHOD) work in AOT
+        if (strings && count > 0) {
+            auto chunk = std::make_shared<BytecodeChunk>();
+            for (uint32_t i = 0; i < count; ++i) {
+                chunk->addString(strings[i]);
+            }
+            // Set as current chunk for the VM (this is a hack for AOT, but it works)
+            engine.vm()->setCurrentChunkPublic(chunk.get());
+            // Push the initial frame for the main script (even if function count is 0)
+            // This ensures that LOAD_VAR/STORE_VAR and other frame-dependent operations
+            // don't crash when executed in the top-level script.
+            engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
+            
+            // Keep it alive
+            static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
+        }
+    }
+    return engine.vm();
 }
 
 // Range and iterator operations - use public heap API

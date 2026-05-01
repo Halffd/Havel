@@ -3984,7 +3984,8 @@ Value VM::popStack() {
 void VM::pushStack(Value value) { stack.push(std::move(value)); }
 
 uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
-  return static_cast<uint32_t>(currentFrame().locals_base + local_index);
+  size_t base = frame_count_ > 0 ? currentFrame().locals_base : 0;
+  return static_cast<uint32_t>(base + local_index);
 }
 
 void VM::ensureLocalIndex(uint32_t absolute_index) {
@@ -8334,10 +8335,14 @@ VM::getGlobalThreadSafe(const std::string &name) const {
   
   std::shared_lock<std::shared_mutex> lock(globals_mutex_);
   auto it = globals.find(name);
-  if (it == globals.end()) {
-    return std::nullopt;
+  if (it != globals.end()) {
+    return it->second;
   }
-  return it->second;
+  auto hostIt = host_function_globals_.find(name);
+  if (hostIt != host_function_globals_.end()) {
+    return hostIt->second;
+  }
+  return std::nullopt;
 }
 
 std::string VM::resolveStringKey(const Value &value) const {

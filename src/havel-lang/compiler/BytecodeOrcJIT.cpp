@@ -526,6 +526,50 @@ uint64_t havel_vm_object_get_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_b
     return vm->objectGetWithClassChain(obj.asObjectId(), *key_str).rawBits();
 }
 
+uint64_t havel_vm_object_set_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits, uint64_t val_bits) {
+    if (!vm_ptr) return val_bits;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj, key_val, val;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    if (!obj.isObjectId()) return val_bits;
+
+    auto key_str = vm->resolveKeyPublic(key_val);
+    if (!key_str) return val_bits;
+
+    vm->setHostObjectField(ObjectRef{obj.asObjectId()}, *key_str, val);
+    return val_bits;
+}
+
+uint64_t havel_vm_object_has_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+    if (!vm_ptr) return Value::makeBool(false).rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj, key_val;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    if (!obj.isObjectId()) return Value::makeBool(false).rawBits();
+
+    auto key_str = vm->resolveKeyPublic(key_val);
+    if (!key_str) return Value::makeBool(false).rawBits();
+
+    return Value::makeBool(vm->hasHostObjectField(ObjectRef{obj.asObjectId()}, *key_str)).rawBits();
+}
+
+void havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+    if (!vm_ptr) return;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj, key_val;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    if (!obj.isObjectId()) return;
+
+    auto key_str = vm->resolveKeyPublic(key_val);
+    if (!key_str) return;
+
+    vm->deleteHostObjectField(ObjectRef{obj.asObjectId()}, *key_str);
+}
+
 void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
     if (!vm_ptr) return;
     auto* vm = static_cast<VM*>(vm_ptr);
@@ -1852,7 +1896,7 @@ void BytecodeOrcJIT::initTargetMachine() {
     llvm::errs() << "DEBUG: Target name: " << target->getName() << "\n";
     llvm::TargetOptions opt;
     target_machine_.reset(target->createTargetMachine(
-        target_triple, "x86-64", "+64bit-mode", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
+        target_triple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
     if (!target_machine_) {
         llvm::errs() << "Failed to create target machine for triple '" << target_triple_str << "'\n";
     } else {
@@ -2662,28 +2706,28 @@ case OpCode::INT_DIV:
         break;
     }
     case OpCode::OBJECT_HAS: {
-        // Uses operand for key_id (same as OBJECT_GET)
-        uint32_t keyId = instr.operands[0].asInt();
+        llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
-        llvm::Function* fnHas = module.getFunction("havel_vm_object_has");
+        llvm::Function* fnHas = module.getFunction("havel_vm_object_has_raw");
         if (!fnHas) {
             fnHas = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_object_has", &module);
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_has_raw", &module);
         }
-        vstack.push_back(B.CreateCall(fnHas, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
+        vstack.push_back(B.CreateCall(fnHas, {vmArg, obj, key}));
         break;
     }
     case OpCode::OBJECT_DELETE: {
-        uint32_t keyId = instr.operands[0].asInt();
+        llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
-        llvm::Function* fnDel = module.getFunction("havel_vm_object_delete");
+        llvm::Function* fnDel = module.getFunction("havel_vm_object_delete_raw");
         if (!fnDel) {
             fnDel = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_object_delete", &module);
+                llvm::FunctionType::get(voidT, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_delete_raw", &module);
         }
-        vstack.push_back(B.CreateCall(fnDel, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
+        B.CreateCall(fnDel, {vmArg, obj, key});
+        vstack.push_back(makeNull());
         break;
     }
         case OpCode::OBJECT_GET_RAW: {
@@ -3214,7 +3258,7 @@ case OpCode::INT_DIV:
         break;
     }
     case OpCode::JUMP_IF_FALSE: {
-        size_t target = instr.operands[1].asInt();
+        size_t target = instr.operands[0].asInt();
         llvm::Value* cond = vstack.back(); vstack.pop_back();
         llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
         if (!fnTruthy) {
@@ -3241,7 +3285,7 @@ case OpCode::INT_DIV:
         break;
     }
     case OpCode::JUMP_IF_TRUE: {
-        size_t target = instr.operands[1].asInt();
+        size_t target = instr.operands[0].asInt();
         llvm::Value* cond = vstack.back(); vstack.pop_back();
         llvm::Function* fnTruthy = module.getFunction("havel_vm_is_truthy");
         if (!fnTruthy) {
@@ -3268,7 +3312,7 @@ case OpCode::INT_DIV:
         break;
     }
     case OpCode::JUMP_IF_NULL: {
-        size_t target = instr.operands[1].asInt();
+        size_t target = instr.operands[0].asInt();
         llvm::Value* v = vstack.back();
         llvm::Value* isNull = B.CreateICmpEQ(v, makeNull());
         vstack.pop_back(); // Coalesce consumes the value
@@ -3646,28 +3690,28 @@ case OpCode::INT_DIV:
         break;
     }
     case OpCode::OBJECT_GET: {
-        uint32_t keyId = instr.operands[0].asInt();
+        llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
-        llvm::Function* fnGet = module.getFunction("havel_vm_object_get");
+        llvm::Function* fnGet = module.getFunction("havel_vm_object_get_raw");
         if (!fnGet) {
             fnGet = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i64, i32}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_object_get", &module);
+                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_get_raw", &module);
         }
-        vstack.push_back(B.CreateCall(fnGet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId)}));
+        vstack.push_back(B.CreateCall(fnGet, {vmArg, obj, key}));
         break;
     }
     case OpCode::OBJECT_SET: {
-        uint32_t keyId = instr.operands[0].asInt();
         llvm::Value* val = vstack.back(); vstack.pop_back();
+        llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
-        llvm::Function* fnSet = module.getFunction("havel_vm_object_set");
+        llvm::Function* fnSet = module.getFunction("havel_vm_object_set_raw");
         if (!fnSet) {
             fnSet = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i64, i32, i64}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_object_set", &module);
+                llvm::FunctionType::get(i64, {i8p, i64, i64, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_object_set_raw", &module);
         }
-        vstack.push_back(B.CreateCall(fnSet, {vmArg, obj, llvm::ConstantInt::get(i32, keyId), val}));
+        vstack.push_back(B.CreateCall(fnSet, {vmArg, obj, key, val}));
         break;
     }
 
@@ -3941,11 +3985,8 @@ case OpCode::INT_DIV:
     }
 
     // Default fallthrough to next instruction block if the opcode didn't terminate.
-    // Use instrBlock (saved at loop start) because some opcodes (emitSpecializedBinop)
-    // may change the insert point to a different block.
-    // Note: check getTerminator() on non-empty blocks; empty() is used as a fast path
-    B.SetInsertPoint(instrBlock);
-    if (instrBlock->empty() || instrBlock->getTerminator() == nullptr) {
+    // We terminate the current insert block (which might be a merge block from a specialized op).
+    if (B.GetInsertBlock()->getTerminator() == nullptr) {
         B.CreateBr(basicBlocks[ip + 1]);
     }
 }

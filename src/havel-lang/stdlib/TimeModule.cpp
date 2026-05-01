@@ -9,6 +9,8 @@
 
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
+#include "havel-lang/runtime/concurrency/Fiber.hpp"
+#include "havel-lang/runtime/concurrency/Scheduler.hpp"
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -114,9 +116,9 @@ void registerTimeModule(VMApi &api) {
         return Value(static_cast<int64_t>(time) * 1000);
       });
 
-  // time.sleep(ms) — blocking sleep
+  // time.sleep(ms) — non-blocking if in a goroutine
   api.registerFunction(
-      "time.sleep", [](const std::vector<Value> &args) {
+      "time.sleep", [&api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.sleep() requires milliseconds");
         int64_t ms = 0;
@@ -126,6 +128,15 @@ void registerTimeModule(VMApi &api) {
           ms = static_cast<int64_t>(args[0].asDouble());
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
+        
+        // Phase 3: Smart sleep
+        // If we are running in a goroutine, suspend instead of blocking the thread
+        if (api.vm.getScheduler() && api.vm.getScheduler()->current()) {
+            api.vm.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP), 
+                                   reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
+            return Value::makeNull();
+        }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));
         return Value::makeNull();
       });

@@ -2018,8 +2018,15 @@ bool success = ctx->hotkeyManager->AddHotkey(
       return;
     }
     case ExecutorMode::Scheduler: {
-      if (eventQueue) {
-        eventQueue->push([invoke]() { invoke(); });
+      // Phase 3: "Smart" scheduler mode spawns a real goroutine
+      // This allows the hotkey to run concurrently and use async operations (like sleep)
+      // without blocking the main event loop.
+      if (vm && eventQueue) {
+        eventQueue->push([vm, callbackId, hotkeyContext]() {
+          vm->spawnCallback(callbackId, {hotkeyContext});
+        });
+      } else if (vm) {
+        vm->spawnCallback(callbackId, {hotkeyContext});
       } else {
         invoke();
       }

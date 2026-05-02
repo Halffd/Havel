@@ -5,6 +5,7 @@
 // Host services (File, Process, Timer, Hotkey, Window, Clipboard, IO)
 // are exposed through HostBridge, NOT through stdlib.
 
+#ifndef HAVEL_PURE_VM
 #include "../../modules/ModuleRegistry.hpp"
 #include "../../modules/SingleFileMathModule.cpp"
 #include "../../modules/automation/AutomationModule.hpp"
@@ -14,6 +15,8 @@
 #include "../../modules/mouse/MouseModule.hpp"
 #include "../../modules/ui/UIModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
+#endif
+
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
@@ -30,7 +33,9 @@ void registerPhysicsModule(
 	compiler::VMApi &api); // PhysicsModule (constants only)
 void registerTimeModule(
 	compiler::VMApi &api); // TimeModule (timestamp ops only)
+#ifndef HAVEL_PURE_VM
 void registerHotkeyModule(compiler::VMApi &api); // HotkeyModule
+#endif
 void registerFsModule(compiler::VMApi &api); // FsModule
 void registerRandomModule(compiler::VMApi &api); // RandomModule
 void registerLogModule(compiler::VMApi &api); // LogModule
@@ -48,8 +53,10 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 	// Create VMApi from bridge's VM - store as shared to ensure lifetime
 	static auto api = std::make_shared<compiler::VMApi>(*bridge.context().vm);
 
+#ifndef HAVEL_PURE_VM
 	// Register all auto-registered single-file modules first
 	REGISTER_ALL_MODULES(*api);
+#endif
 
 	// Register PURE stdlib modules (no OS access)
 	stdlib::registerMathModule(*api); // MathModule
@@ -61,7 +68,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 	stdlib::registerRegexModule(*api); // RegexModule
 	stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
 	stdlib::registerTimeModule(*api); // TimeModule (timestamps)
+#ifndef HAVEL_PURE_VM
 	stdlib::registerHotkeyModule(*api); // HotkeyModule
+#endif
 	stdlib::registerFsModule(*api); // FsModule
 	stdlib::registerRandomModule(*api); // RandomModule
 	stdlib::registerLogModule(*api); // LogModule
@@ -72,6 +81,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 	stdlib::registerPackModule(*api); // PackModule
 	stdlib::registerBitModule(*api); // BitModule
 
+#ifndef HAVEL_PURE_VM
 	// Register config module (has OS dependencies - config file access)
 	modules::registerConfigModule(*api);
 
@@ -89,6 +99,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
 	// Register automation module (auto clicker, runner, key presser)
 	modules::registerAutomationModule(*api);
+#endif
 
 	// Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are
 	// initialized This ensures we use the existing WindowMonitor from

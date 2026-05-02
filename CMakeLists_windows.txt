@@ -1,0 +1,102 @@
+# CMakeLists_windows.txt - Slimmed down Havel build for Windows cross-compilation
+# Focus: Core VM + Pure StdLib only
+cmake_minimum_required(VERSION 3.16)
+project(HavelMinimal LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Define HAVEL_PURE_VM to exclude host-dependent code
+add_definitions(-DHAVEL_PURE_VM)
+add_definitions(-D_WIN32)
+
+# Include directories
+include_directories(src)
+include_directories(src/havel-lang)
+
+# Core VM Sources
+set(VM_SOURCES
+    src/havel-lang/compiler/vm/VM.cpp
+    src/havel-lang/compiler/vm/VMExecutionContext.cpp
+    src/havel-lang/compiler/vm/Closure.cpp
+    src/havel-lang/compiler/gc/GC.cpp
+    src/havel-lang/core/Value.cpp
+)
+
+# Compiler Sources (Bytecode)
+set(COMPILER_SOURCES
+    src/havel-lang/compiler/core/ByteCompiler.cpp
+    src/havel-lang/compiler/core/CompilerUtils.cpp
+    src/havel-lang/compiler/core/Pipeline.cpp
+    src/havel-lang/compiler/runtime/RuntimeSupport.cpp
+    src/havel-lang/compiler/runtime/DebugUtils.cpp
+)
+
+# Language Frontend Sources
+file(GLOB LEXER_SOURCES "src/havel-lang/lexer/*.cpp")
+file(GLOB PARSER_SOURCES "src/havel-lang/parser/*.cpp")
+file(GLOB AST_SOURCES "src/havel-lang/ast/*.cpp")
+file(GLOB SEMANTIC_SOURCES "src/havel-lang/semantic/*.cpp")
+
+# Runtime Sources
+set(RUNTIME_SOURCES
+    src/havel-lang/runtime/ModuleLoader.cpp
+    src/havel-lang/runtime/StdLibModules.cpp
+    src/havel-lang/runtime/RuntimeContext.cpp
+    src/havel-lang/runtime/TraitRegistry.cpp
+    src/havel-lang/runtime/HostAPI.cpp
+)
+
+# Portable StdLib Sources
+set(STDLIB_SOURCES
+    src/havel-lang/stdlib/MathModule.cpp
+    src/havel-lang/stdlib/StringModule.cpp
+    src/havel-lang/stdlib/ArrayModule.cpp
+    src/havel-lang/stdlib/ObjectModule.cpp
+    src/havel-lang/stdlib/TypeModule.cpp
+    src/havel-lang/stdlib/UtilityModule.cpp
+    src/havel-lang/stdlib/RegexModule.cpp
+    src/havel-lang/stdlib/PhysicsModule.cpp
+    src/havel-lang/stdlib/TimeModule.cpp
+    src/havel-lang/stdlib/FsModule.cpp
+    src/havel-lang/stdlib/RandomModule.cpp
+    src/havel-lang/stdlib/LogModule.cpp
+    src/havel-lang/stdlib/SysModule.cpp
+    src/havel-lang/stdlib/ShellModule.cpp
+    src/havel-lang/stdlib/PointerModule.cpp
+    src/havel-lang/stdlib/FormatModule.cpp
+    src/havel-lang/stdlib/PackModule.cpp
+    src/havel-lang/stdlib/BitModule.cpp
+)
+
+# FI Sources (optional)
+file(GLOB FFI_SOURCES "src/havel-lang/ffi/*.cpp")
+
+# Utilities
+set(UTIL_SOURCES
+    src/utils/Logger.cpp
+)
+
+# Create library
+add_library(havel_vm STATIC
+    ${VM_SOURCES}
+    ${COMPILER_SOURCES}
+    ${LEXER_SOURCES}
+    ${PARSER_SOURCES}
+    ${AST_SOURCES}
+    ${SEMANTIC_SOURCES}
+    ${RUNTIME_SOURCES}
+    ${STDLIB_SOURCES}
+    ${FFI_SOURCES}
+    ${UTIL_SOURCES}
+)
+
+# Target-specific compile options
+if(MSVC)
+    target_compile_options(havel_vm PRIVATE /W4)
+else()
+    target_compile_options(havel_vm PRIVATE -Wall -Wextra)
+endif()
+
+message(STATUS "Created slimmed-down Havel VM target: havel_vm")
+message(STATUS "Excluding: HostBridge, ConcurrencyBridge, EventQueue, JIT, OrcJIT")

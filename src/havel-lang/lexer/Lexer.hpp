@@ -278,9 +278,14 @@ bool isAtEnd() const;
   Token scanRegexLiteral();
   Token scanShellCommand(bool captureOutput = false);
   Token scanIdentifier();
-  Token scanHotkey();
+    Token scanHotkey();
 
-  // Error reporting
+    // Process escape sequence after consuming '\'. Returns decoded char(s).
+    // Sets hasInterpolation=false for \$ \{ \} (they produce literal chars, not interpolation triggers).
+    // On invalid escape, appends the raw backslash+char.
+    std::string processEscapeSequence(bool isFString, bool &suppressInterpolation);
+
+    // Error reporting
   void reportError(const std::string &message);
   void reportWarning(const std::string &message);
   std::string getSourceLine(size_t lineNum) const;

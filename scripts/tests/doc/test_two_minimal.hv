@@ -1,0 +1,10 @@
+class Two {
+    x, y
+
+    fn @(a, b) {
+        @x = a
+        @y = b
+    }
+}
+
+t = Two(10, 20)

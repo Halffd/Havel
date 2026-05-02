@@ -3732,11 +3732,44 @@ Parser::parseStructMembers() {
           methodName = "op_shift_left";
           advance();
         } else if (tokenVal == "=") {
-          methodName = "op_copy";
-          advance();
+            methodName = "op_copy";
+            advance();
+        } else if (tokenVal == "+=") {
+            methodName = "op_iadd";
+            advance();
+        } else if (tokenVal == "-=") {
+            methodName = "op_isub";
+            advance();
+        } else if (tokenVal == "*=") {
+            methodName = "op_imul";
+            advance();
+        } else if (tokenVal == "/=") {
+            methodName = "op_idiv";
+            advance();
+        } else if (tokenVal == "%=") {
+            methodName = "op_imod";
+            advance();
+        } else if (tokenVal == "**=") {
+            methodName = "op_ipow";
+            advance();
+        } else if (tokenVal == "&=") {
+            methodName = "op_iand";
+            advance();
+        } else if (tokenVal == "|=") {
+            methodName = "op_ior";
+            advance();
+        } else if (tokenVal == "^=") {
+            methodName = "op_ixor";
+            advance();
+        } else if (tokenVal == "<<=") {
+            methodName = "op_ilsh";
+            advance();
+        } else if (tokenVal == ">>=") {
+            methodName = "op_irsh";
+            advance();
         } else {
-          failAt(at(),
-                 "Expected operator symbol (+, -, *, /, ==, [], []=, etc.) after 'op'");
+            failAt(at(),
+                "Expected operator symbol (+, -, *, /, ==, [], []=, +=, -=, etc.) after 'op'");
         }
       } else {
         // After 'fn' - check for operator symbols or special syntax
@@ -3807,9 +3840,20 @@ Parser::parseStructMembers() {
 		else if (tokenVal == "~") { methodName = "op_bit_not"; isOp = true; }
 		else if (tokenVal == ">>") { methodName = "op_shift_right"; isOp = true; }
 		else if (tokenVal == "<<") { methodName = "op_shift_left"; isOp = true; }
-		else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+        else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+        else if (tokenVal == "+=") { methodName = "op_iadd"; isOp = true; }
+        else if (tokenVal == "-=") { methodName = "op_isub"; isOp = true; }
+        else if (tokenVal == "*=") { methodName = "op_imul"; isOp = true; }
+        else if (tokenVal == "/=") { methodName = "op_idiv"; isOp = true; }
+        else if (tokenVal == "%=") { methodName = "op_imod"; isOp = true; }
+        else if (tokenVal == "**=") { methodName = "op_ipow"; isOp = true; }
+        else if (tokenVal == "&=") { methodName = "op_iand"; isOp = true; }
+        else if (tokenVal == "|=") { methodName = "op_ior"; isOp = true; }
+        else if (tokenVal == "^=") { methodName = "op_ixor"; isOp = true; }
+        else if (tokenVal == "<<=") { methodName = "op_ilsh"; isOp = true; }
+        else if (tokenVal == ">>=") { methodName = "op_irsh"; isOp = true; }
 
-		if (isOp) {
+        if (isOp) {
 			advance();
 		} else {
 			// Regular method - expect identifier
@@ -3998,11 +4042,44 @@ Parser::parseClassMembers() {
           methodName = "op_shift_left";
           advance();
         } else if (tokenVal == "=") {
-          methodName = "op_copy";
-          advance();
+            methodName = "op_copy";
+            advance();
+        } else if (tokenVal == "+=") {
+            methodName = "op_iadd";
+            advance();
+        } else if (tokenVal == "-=") {
+            methodName = "op_isub";
+            advance();
+        } else if (tokenVal == "*=") {
+            methodName = "op_imul";
+            advance();
+        } else if (tokenVal == "/=") {
+            methodName = "op_idiv";
+            advance();
+        } else if (tokenVal == "%=") {
+            methodName = "op_imod";
+            advance();
+        } else if (tokenVal == "**=") {
+            methodName = "op_ipow";
+            advance();
+        } else if (tokenVal == "&=") {
+            methodName = "op_iand";
+            advance();
+        } else if (tokenVal == "|=") {
+            methodName = "op_ior";
+            advance();
+        } else if (tokenVal == "^=") {
+            methodName = "op_ixor";
+            advance();
+        } else if (tokenVal == "<<=") {
+            methodName = "op_ilsh";
+            advance();
+        } else if (tokenVal == ">>=") {
+            methodName = "op_irsh";
+            advance();
         } else {
-          failAt(at(),
-                 "Expected operator symbol (+, -, *, /, ==, [], []=, etc.) after 'op'");
+            failAt(at(),
+                "Expected operator symbol (+, -, *, /, ==, [], []=, +=, -=, etc.) after 'op'");
         }
       } else {
         // After 'fn' - check for operator symbols or special syntax
@@ -4073,9 +4150,20 @@ Parser::parseClassMembers() {
 		else if (tokenVal == "~") { methodName = "op_bit_not"; isOp = true; }
 		else if (tokenVal == ">>") { methodName = "op_shift_right"; isOp = true; }
 		else if (tokenVal == "<<") { methodName = "op_shift_left"; isOp = true; }
-		else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+        else if (tokenVal == "=") { methodName = "op_copy"; isOp = true; }
+        else if (tokenVal == "+=") { methodName = "op_iadd"; isOp = true; }
+        else if (tokenVal == "-=") { methodName = "op_isub"; isOp = true; }
+        else if (tokenVal == "*=") { methodName = "op_imul"; isOp = true; }
+        else if (tokenVal == "/=") { methodName = "op_idiv"; isOp = true; }
+        else if (tokenVal == "%=") { methodName = "op_imod"; isOp = true; }
+        else if (tokenVal == "**=") { methodName = "op_ipow"; isOp = true; }
+        else if (tokenVal == "&=") { methodName = "op_iand"; isOp = true; }
+        else if (tokenVal == "|=") { methodName = "op_ior"; isOp = true; }
+        else if (tokenVal == "^=") { methodName = "op_ixor"; isOp = true; }
+        else if (tokenVal == "<<=") { methodName = "op_ilsh"; isOp = true; }
+        else if (tokenVal == ">>=") { methodName = "op_irsh"; isOp = true; }
 
-		if (isOp) {
+        if (isOp) {
 			advance();
 		} else {
 			// Regular method - expect identifier

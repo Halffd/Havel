@@ -1,0 +1,14 @@
+class Fields {
+    a, b, c
+
+    fn @(x, y, z) {
+        @a = x
+        @b = y
+        @c = z
+    }
+}
+
+f = Fields(1, 2, 3)
+print(f.a)
+print(f.b)
+print(f.c)

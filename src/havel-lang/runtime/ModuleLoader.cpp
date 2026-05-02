@@ -1,9 +1,13 @@
 #include "ModuleLoader.hpp"
-#include "../compiler/runtime/HostBridge.hpp"
-#include <dlfcn.h>
 #include <filesystem>
 #include <iostream>
 #include <cstdlib>
+
+#ifndef _WIN32
+#include <dlfcn.h>
+#else
+#include <windows.h>
+#endif
 
 namespace havel {
 
@@ -174,6 +178,7 @@ ModuleLoader::loadNativeExtension(const std::string& path) {
         return it->second;
     }
 
+#ifndef _WIN32
     // dlopen the .so file
     void* handle = dlopen(path.c_str(), RTLD_LAZY);
     if (!handle) {
@@ -187,10 +192,24 @@ ModuleLoader::loadNativeExtension(const std::string& path) {
     if (init_fn) {
         init_fn();
     }
+#else
+    // Windows implementation (LoadLibrary)
+    HMODULE handle = LoadLibraryA(path.c_str());
+    if (!handle) {
+        std::cerr << "LoadLibrary failed: " << GetLastError() << std::endl;
+        return std::nullopt;
+    }
+
+    using InitFn = void (*)(void);
+    InitFn init_fn = reinterpret_cast<InitFn>(GetProcAddress(handle, "havel_module_init"));
+    if (init_fn) {
+        init_fn();
+    }
+#endif
 
     // Store handle
     NativeHandle nh;
-    nh.dlHandle = handle;
+    nh.dlHandle = static_cast<void*>(handle);
     nh.name = path;
     nativeHandles_[path] = nh;
 
@@ -200,7 +219,11 @@ ModuleLoader::loadNativeExtension(const std::string& path) {
 void ModuleLoader::unloadNativeExtensions() {
     for (auto& [name, handle] : nativeHandles_) {
         if (handle.dlHandle) {
+#ifndef _WIN32
             dlclose(handle.dlHandle);
+#else
+            FreeLibrary(static_cast<HMODULE>(handle.dlHandle));
+#endif
         }
     }
     nativeHandles_.clear();

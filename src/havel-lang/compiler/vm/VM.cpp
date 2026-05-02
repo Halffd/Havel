@@ -2390,13 +2390,13 @@ break;
 }
 
 if (!initMethodVal.isNull()) {
-std::vector<Value> ctor_args;
-ctor_args.reserve(args.size());
-ctor_args.push_back(Value::makeObjectId(instanceRef.id));
-for (size_t i = ctor_offset; i < args.size(); ++i) {
-ctor_args.push_back(args[i]);
-}
-(void)call(initMethodVal, ctor_args);
+            std::vector<Value> ctor_args;
+            ctor_args.reserve(args.size());
+            ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+            for (size_t i = ctor_offset; i < args.size(); ++i) {
+                ctor_args.push_back(args[i]);
+            }
+            (void)call(initMethodVal, ctor_args);
 } else {
 auto* proto = heap_.object(protoVal.asObjectId());
 auto fieldsVal = proto->get("__fields");
@@ -3760,12 +3760,12 @@ co->ip = 0;
         kwargs_obj = heap_.object(0);
       }
     }
-  }
-  
-  for (uint32_t i = 0; i < callee->param_count; i++) {
-    if (callee->variadic_param_index != UINT32_MAX &&
-        i == callee->variadic_param_index) {
-      // Variadic parameter: pack remaining args into array
+    }
+
+    for (uint32_t i = 0; i < callee->param_count; i++) {
+        if (callee->variadic_param_index != UINT32_MAX &&
+            i == callee->variadic_param_index) {
+            // Variadic parameter: pack remaining args into array
       auto arrRef = heap_.allocateArray();
       auto *arr = heap_.array(arrRef.id);
       for (size_t j = i; j < args.size(); j++) {
@@ -5352,37 +5352,41 @@ case OpCode::LENGTH: {
     }
 
     // 2. If not found in host prototype, and it's an object, check the object itself
+    //    (direct fields only — do NOT walk prototype chain here, step 3 handles that)
     bool isInstanceFunc = false;
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
-      Value val = getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
-      if (!val.isNull()) {
-        if (val.isHostFuncId()) {
-          host_func_idx = val.asHostFuncId();
-          found_host = true;
-        } else if (val.isFunctionObjId() || val.isClosureId()) {
-          vm_func = val;
-          isInstanceFunc = true; // User-defined function stored in object field
+        auto* instanceObj = heap_.object(receiver.asObjectId());
+        if (instanceObj) {
+            auto it = instanceObj->find(method_name);
+            if (it != instanceObj->end()) {
+                if (it->second.isHostFuncId()) {
+                    host_func_idx = it->second.asHostFuncId();
+                    found_host = true;
+                } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+                    vm_func = it->second;
+                    isInstanceFunc = true;
+                }
+            }
         }
-      }
     }
 
     // 3. Check __class prototype for class methods
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
-      auto* classProto = heap_.object(receiver.asObjectId());
-      // First try __class, then __parent chain
-      if (classProto) {
-        auto* classVal = classProto->get("__class");
-        if (classVal && classVal->isObjectId()) {
-          classProto = heap_.object(classVal->asObjectId());
+        auto* classProto = heap_.object(receiver.asObjectId());
+        // First try __class, then __parent chain
+        if (classProto) {
+            auto* classVal = classProto->get("__class");
+            if (classVal && classVal->isObjectId()) {
+                classProto = heap_.object(classVal->asObjectId());
+            }
         }
-      }
-      
-      while (classProto) {
-        auto* methodVal = classProto->get(method_name);
-        if (methodVal) {
-          if (methodVal->isHostFuncId()) {
-            host_func_idx = methodVal->asHostFuncId();
-            found_host = true;
+
+        while (classProto) {
+            auto* methodVal = classProto->get(method_name);
+            if (methodVal) {
+                if (methodVal->isHostFuncId()) {
+                    host_func_idx = methodVal->asHostFuncId();
+                    found_host = true;
             break;
           } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
             vm_func = *methodVal;
@@ -5399,8 +5403,8 @@ case OpCode::LENGTH: {
       }
     }
 
-    if (!found_host && vm_func.isNull()) {
-      pushStack(Value::makeNull());
+        if (!found_host && vm_func.isNull()) {
+            pushStack(Value::makeNull());
       break;
     }
 
@@ -5415,11 +5419,11 @@ case OpCode::LENGTH: {
     // (they're stored as values, not methods). For host functions, DO prepend.
     std::vector<Value> all_args;
     if (isInstanceFunc) {
-      all_args = args2;
+        all_args = args2;
     } else {
-      all_args.reserve(arg_count + 1);
-      all_args.push_back(recv);
-      all_args.insert(all_args.end(), args2.begin(), args2.end());
+        all_args.reserve(arg_count + 1);
+        all_args.push_back(recv);
+        all_args.insert(all_args.end(), args2.begin(), args2.end());
     }
 
     if (found_host) {
@@ -5944,8 +5948,16 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (container.isObjectId()) {
-      // _G globals mirror: resolve from live globals maps
-      if (container.asObjectId() == globals_mirror_object_id_) {
+        // Operator overloading: check for op_index method
+        {
+            Value opIndex = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
+            if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
+                pushStack(callFunction(opIndex, {container, index_or_key}));
+                break;
+            }
+        }
+        // _G globals mirror: resolve from live globals maps
+        if (container.asObjectId() == globals_mirror_object_id_) {
         auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
         if (!key) {
           COMPILER_THROW("OBJECT index expects string/number/bool key");
@@ -6058,8 +6070,17 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-	if (container.isObjectId()) {
-		auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+    if (container.isObjectId()) {
+        // Operator overloading: check for op_index_set method
+        {
+            Value opIndexSet = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index_set");
+            if (!opIndexSet.isNull() && (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() || opIndexSet.isHostFuncId())) {
+                callFunction(opIndexSet, {container, index_or_key, value});
+                pushStack(container);
+                break;
+            }
+        }
+        auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
 		if (!key) {
 			COMPILER_THROW("OBJECT index assignment expects valid key");
 		}
@@ -6448,16 +6469,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		COMPILER_THROW("OBJECT_GET unknown object id");
 	}
 
-	// Operator overloading: check for op_index method
-	{
-		Value opIndex = getHostObjectField(objRef, "op_index");
-		if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
-			pushStack(callFunction(opIndex, {object, key_value}));
-			break;
-		}
-	}
-
-	// Check for numeric index (obj[0], obj[-1])
+        // Check for numeric index (obj[0], obj[-1])
     if (key_value.isInt()) {
       int64_t index = key_value.asInt();
       auto keys = obj->getKeys();
@@ -6610,17 +6622,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		COMPILER_THROW("OBJECT_SET expects object container");
 	}
 
-	// Operator overloading: check for op_index_set method
-	{
-		Value opIndexSet = getHostObjectField(ObjectRef{object.asObjectId(), true}, "op_index_set");
-		if (!opIndexSet.isNull() && (opIndexSet.isFunctionObjId() || opIndexSet.isClosureId() || opIndexSet.isHostFuncId())) {
-			callFunction(opIndexSet, {object, key, value});
-			pushStack(object);
-			break;
-		}
-	}
-
-	// _G globals mirror: writing to _G also updates the globals map
+        // _G globals mirror: writing to _G also updates the globals map
   if (object.asObjectId() == globals_mirror_object_id_) {
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {

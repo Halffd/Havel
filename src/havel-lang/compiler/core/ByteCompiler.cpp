@@ -3037,17 +3037,11 @@ break;
         emitStoreIndexWithResult(*target_index);
         break;
       }
-      if (target_array) {
+    if (target_array) {
         // Array destructuring assignment: [a, b, c] = value
-        const auto &arrayLit =
-            static_cast<const ast::ArrayLiteral &>(*target_array);
+        // Value is already on the stack from the common RHS compilation above
+        const auto &arrayLit = static_cast<const ast::ArrayLiteral &>(*target_array);
 
-        // Compile the value first
-      if (rhs_is_missing) {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      } else {
-        compileExpression(*rhs_expr);
-      }
         uint32_t temp_slot = next_local_index;
         reserveLocalSlot(temp_slot);
         emit(OpCode::STORE_VAR, temp_slot);
@@ -3083,17 +3077,11 @@ break;
         }
         break;
       }
-      if (target_object) {
+    if (target_object) {
         // Object destructuring assignment: {key: val} = obj
-        const auto &objLit =
-            static_cast<const ast::ObjectLiteral &>(*target_object);
+        // Value is already on the stack from the common RHS compilation above
+        const auto &objLit = static_cast<const ast::ObjectLiteral &>(*target_object);
 
-        // Compile the value first
-      if (rhs_is_missing) {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      } else {
-        compileExpression(*rhs_expr);
-      }
         uint32_t temp_slot = next_local_index;
         reserveLocalSlot(temp_slot);
         emit(OpCode::STORE_VAR, temp_slot);
@@ -3129,73 +3117,63 @@ break;
         }
         break;
       }
-      if (target_at) {
+    if (target_at) {
         // @field assignment - store to self.field
+        // Value is already on the stack from the common RHS compilation above
         // Get field name from AtExpression
         std::string field_name;
         if (target_at->field && target_at->field->kind == ast::NodeType::Identifier) {
-          const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
-          field_name = field_id->symbol;
+            const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
+            field_name = field_id->symbol;
         } else {
-          COMPILER_THROW("@field assignment requires identifier");
-        }
-        // Compile value first
-        if (rhs_is_missing) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-        } else {
-          compileExpression(*rhs_expr);
+            COMPILER_THROW("@field assignment requires identifier");
         }
         // Store to self.field: OBJECT_SET expects [obj, value, key]
         // Use temp slots to arrange the stack correctly
         uint32_t temp_val = next_local_index;
         reserveLocalSlot(temp_val);
-        emit(OpCode::STORE_VAR, temp_val);  // pop value
+        emit(OpCode::STORE_VAR, temp_val); // pop value (already on stack)
         // Stack is now empty
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         uint32_t temp_key = next_local_index;
         reserveLocalSlot(temp_key);
-        emit(OpCode::STORE_VAR, temp_key);  // pop key
+        emit(OpCode::STORE_VAR, temp_key); // pop key
         emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0)); // [self]
-        emit(OpCode::LOAD_VAR, temp_val);  // [self, value]
-        emit(OpCode::LOAD_VAR, temp_key);  // [self, value, key]
+        emit(OpCode::LOAD_VAR, temp_val); // [self, value]
+        emit(OpCode::LOAD_VAR, temp_key); // [self, value, key]
         emit(OpCode::OBJECT_SET);
         break;
-      }
-      if (target_atat) {
+    }
+    if (target_atat) {
         // @@field assignment - store to class.field
+        // Value is already on the stack from the common RHS compilation above
         // Get field name from AtAtExpression
         std::string field_name;
         if (target_atat->field && target_atat->field->kind == ast::NodeType::Identifier) {
-          const auto *field_id = static_cast<const ast::Identifier *>(target_atat->field.get());
-          field_name = field_id->symbol;
+            const auto *field_id = static_cast<const ast::Identifier *>(target_atat->field.get());
+            field_name = field_id->symbol;
         } else {
-          COMPILER_THROW("@@field assignment requires identifier");
+            COMPILER_THROW("@@field assignment requires identifier");
         }
-        // Compile value first
-        if (rhs_is_missing) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-        } else {
-          compileExpression(*rhs_expr);
-        }
-        // Store to class.field: OBJECT_SET expects [obj, value, key]
+        // Stack: [value]
         // Load class object (stored as global with class name)
         { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
-        // Now stack has [class_obj], need [class_obj, value, key]
-        // Use temp slots to arrange the stack correctly
-        uint32_t temp_val = next_local_index;
-        reserveLocalSlot(temp_val);
-        emit(OpCode::STORE_VAR, temp_val);  // pop value
-        // Stack is now [class_obj]
-        // Save class obj to temp
+        // Stack: [value, class_obj]
         uint32_t temp_obj = next_local_index;
         reserveLocalSlot(temp_obj);
-        emit(OpCode::STORE_VAR, temp_obj);  // pop class_obj
-        // Stack is empty
+        emit(OpCode::STORE_VAR, temp_obj); // pop class_obj → stack: [value]
+        uint32_t temp_val = next_local_index;
+        reserveLocalSlot(temp_val);
+        emit(OpCode::STORE_VAR, temp_val); // pop value → stack: []
+        // Load key
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         uint32_t temp_key = next_local_index;
         reserveLocalSlot(temp_key);
-        emit(OpCode::STORE_VAR, temp_key);  // pop key
-        // Stack is empty, rebuild: [class_obj, value, key]
+        emit(OpCode::STORE_VAR, temp_key); // pop key → stack: []
+        // Rebuild: [class_obj, value, key]
+        emit(OpCode::LOAD_VAR, temp_obj); // [class_obj]
+        emit(OpCode::LOAD_VAR, temp_val); // [class_obj, value]
+        emit(OpCode::LOAD_VAR, temp_key); // [class_obj, value, key]
         emit(OpCode::LOAD_VAR, temp_obj);   // [class_obj]
         emit(OpCode::LOAD_VAR, temp_val);   // [class_obj, value]
         emit(OpCode::LOAD_VAR, temp_key);   // [class_obj, value, key]
@@ -3205,30 +3183,84 @@ break;
       COMPILER_THROW("Unsupported assignment target");
     }
 
-    auto emitCompound = [&](OpCode math_op) {
-      if (target_id) {
+auto emitCompound = [&](OpCode math_op) {
+    // Map math_op to in-place operator method name
+    std::string inplace_method;
+    if (math_op == OpCode::ADD) inplace_method = "op_iadd";
+    else if (math_op == OpCode::SUB) inplace_method = "op_isub";
+    else if (math_op == OpCode::MUL) inplace_method = "op_imul";
+    else if (math_op == OpCode::DIV) inplace_method = "op_idiv";
+    else if (math_op == OpCode::MOD) inplace_method = "op_imod";
+    else if (math_op == OpCode::POW) inplace_method = "op_ipow";
+    else if (math_op == OpCode::INT_DIV) inplace_method = "op_iidiv";
+    else if (math_op == OpCode::REMAINDER) inplace_method = "op_irem";
+    else if (math_op == OpCode::BIT_AND) inplace_method = "op_iand";
+    else if (math_op == OpCode::BIT_OR) inplace_method = "op_ior";
+    else if (math_op == OpCode::BIT_XOR) inplace_method = "op_ixor";
+    else if (math_op == OpCode::BIT_LSH) inplace_method = "op_ilsh";
+    else if (math_op == OpCode::BIT_RSH) inplace_method = "op_irsh";
+
+    if (target_id) {
         const auto *binding = bindingFor(*target_id);
         if (!binding) {
-          COMPILER_THROW(
-              "Missing lexical binding for assignment target: " +
-              target_id->symbol);
+            COMPILER_THROW(
+                "Missing lexical binding for assignment target: " +
+                target_id->symbol);
+        }
+        if (!inplace_method.empty()) {
+            // Try in-place operator first: value.op_iadd(rhs)
+            // Stack: [value, rhs]
+            emitLoadIdentifier(*binding);
+            if (rhs_is_missing) {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            } else {
+                compileExpression(*rhs_expr);
+            }
+            // CALL_METHOD pops arg_count args + receiver, pushes result
+            { uint32_t _sid = addStringConstant(inplace_method); emit(OpCode::CALL_METHOD, std::vector<Value>{ Value::makeStringValId(_sid), Value::makeInt(1) }); }
+
+            // JUMP_IF_NULL pops the value, so DUP first to preserve it
+            emit(OpCode::DUP);
+            uint32_t fallback_jump = emitJump(OpCode::JUMP_IF_NULL);
+
+            // op_iadd succeeded — the object mutated in place.
+            // Don't store the return value; the variable already holds the object.
+            // Just pop the result and leave the original value on the stack.
+            emit(OpCode::POP);
+            emitLoadIdentifier(*binding);
+            uint32_t end_jump = emitJump(OpCode::JUMP);
+
+            // Fallback: JUMP_IF_NULL popped the DUP'd null, stack is empty
+            // Do the desugared form: load + op + store
+            patchJump(fallback_jump, static_cast<uint32_t>(current_function->instructions.size()));
+            emitLoadIdentifier(*binding);
+            if (rhs_is_missing) {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            } else {
+                compileExpression(*rhs_expr);
+            }
+            emit(math_op);
+            emitStoreIdentifierWithResult(*binding);
+
+            patchJump(end_jump, static_cast<uint32_t>(current_function->instructions.size()));
+            return;
         }
         emitLoadIdentifier(*binding);
-      if (rhs_is_missing) {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      } else {
-        compileExpression(*rhs_expr);
-      }
+        if (rhs_is_missing) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        } else {
+            compileExpression(*rhs_expr);
+        }
         emit(math_op);
         emitStoreIdentifierWithResult(*binding);
         return;
-      }
-      if (target_member) {
+    }
+    if (target_member) {
         auto *property = dynamic_cast<const ast::Identifier *>(
             target_member->property.get());
         if (!target_member->object || !property) {
-          COMPILER_THROW(
-              "Member assignment expects identifier property target");
+            COMPILER_THROW(
+                "Member assignment expects identifier property target");
         }
         uint32_t temp_object = next_local_index;
         reserveLocalSlot(temp_object);
@@ -3237,11 +3269,11 @@ break;
         emit(OpCode::LOAD_VAR, temp_object);
         { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_GET);
-      if (rhs_is_missing) {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      } else {
-        compileExpression(*rhs_expr);
-      }
+        if (rhs_is_missing) {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        } else {
+            compileExpression(*rhs_expr);
+        }
         emit(math_op);
         uint32_t temp_result = next_local_index;
         reserveLocalSlot(temp_result);
@@ -3253,7 +3285,7 @@ break;
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
-      }
+    }
       if (target_index) {
         if (!target_index->object || !target_index->index) {
           COMPILER_THROW("Index assignment expects object and index");
@@ -3286,16 +3318,19 @@ break;
         emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
-      if (target_at) {
+    if (target_at) {
         // @field compound assignment
         // Get field name
         std::string field_name;
         if (target_at->field && target_at->field->kind == ast::NodeType::Identifier) {
-          const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
-          field_name = field_id->symbol;
+            const auto *field_id = static_cast<const ast::Identifier *>(target_at->field.get());
+            field_name = field_id->symbol;
         } else {
-          COMPILER_THROW("@field compound assignment requires identifier");
+            COMPILER_THROW("@field compound assignment requires identifier");
         }
+
+        // @field compound assignments always use desugared form (load+op+store)
+        // to avoid infinite recursion when inside op_iadd method bodies
         uint32_t temp_result = next_local_index;
         reserveLocalSlot(temp_result);
         // Load self.field
@@ -3303,9 +3338,9 @@ break;
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_GET);
         if (rhs_is_missing) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         } else {
-          compileExpression(*rhs_expr);
+            compileExpression(*rhs_expr);
         }
         emit(math_op);
         emit(OpCode::DUP);
@@ -3317,7 +3352,7 @@ break;
         emit(OpCode::OBJECT_SET);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
-      }
+    }
       if (target_atat) {
         // @@field compound assignment
         std::string field_name;

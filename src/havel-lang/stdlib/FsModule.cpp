@@ -13,6 +13,7 @@
 #include <vector>
 #include <mutex>
 #include <set>
+#ifndef _WIN32
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -22,6 +23,7 @@
 #include <cstdlib>
 #include <dirent.h>
 #include <fnmatch.h>
+#endif
 
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"

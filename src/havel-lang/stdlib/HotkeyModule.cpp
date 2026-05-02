@@ -1,3 +1,4 @@
+#ifndef HAVEL_PURE_VM
 #include "HotkeyModule.hpp"
 #include "../../core/HotkeyManager.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
@@ -431,3 +432,4 @@ Value HotkeyModule::createHotkeyContext(
 }
 
 } // namespace havel::stdlib
+#endif // HAVEL_PURE_VM

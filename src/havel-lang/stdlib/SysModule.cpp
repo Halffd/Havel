@@ -6,7 +6,18 @@
 #include <string>
 #include <vector>
 
+#ifndef _WIN32
 #include <unistd.h>
+#else
+#include <process.h>
+#include <windows.h>
+#define getpid _getpid
+#define getppid() (0)
+#endif
+
+#if defined(_WIN32) && !defined(environ)
+#define environ _environ
+#endif
 
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
@@ -85,6 +96,8 @@ void registerSysModule(VMApi &api) {
                        [&api](const std::vector<Value> &args) {
                          (void)args;
                          auto objRef = api.vm.createHostObject();
+#ifndef _WIN32
+                         extern char **environ;
                          if (environ) {
                            for (int i = 0; environ[i]; i++) {
                              std::string entry(environ[i]);
@@ -97,6 +110,7 @@ void registerSysModule(VMApi &api) {
                              }
                            }
                          }
+#endif
                          return Value::makeObjectId(objRef.id);
                        });
 
@@ -129,15 +143,21 @@ void registerSysModule(VMApi &api) {
                              code = static_cast<int>(args[0].asDouble());
                          }
                          std::exit(code);
-                         __builtin_unreachable();
+                         return Value::makeNull();
                        });
 
   api.registerFunction("sys.hostname",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
-                         char buf[256];
+                         char buf[256] = {0};
+#ifndef _WIN32
                          if (gethostname(buf, sizeof(buf)) != 0)
                            buf[0] = '\0';
+#else
+                         DWORD size = sizeof(buf);
+                         if (!GetComputerNameA(buf, &size))
+                             buf[0] = '\0';
+#endif
                          return makeStringId(std::string(buf), api);
                        });
 
@@ -147,11 +167,15 @@ void registerSysModule(VMApi &api) {
                          const char *user = std::getenv("USER");
                          if (!user)
                            user = std::getenv("LOGNAME");
+                         if (!user)
+                             user = std::getenv("USERNAME"); // Windows
+#ifndef _WIN32
                          if (!user) {
                            char *login = getlogin();
                            if (login)
                              user = login;
                          }
+#endif
                          return makeStringId(user ? std::string(user) : "",
                                              api);
                        });
@@ -160,6 +184,8 @@ void registerSysModule(VMApi &api) {
                        [&api](const std::vector<Value> &args) {
                          (void)args;
                          const char *home = std::getenv("HOME");
+                         if (!home)
+                             home = std::getenv("USERPROFILE"); // Windows
                          return makeStringId(home ? std::string(home) : "",
                                              api);
                        });
@@ -180,6 +206,8 @@ void registerSysModule(VMApi &api) {
                        [&api](const std::vector<Value> &args) {
                          (void)args;
                          const char *sh = std::getenv("SHELL");
+                         if (!sh)
+                             sh = std::getenv("ComSpec"); // Windows
                          return makeStringId(sh ? std::string(sh) : "", api);
                        });
 
@@ -193,6 +221,8 @@ void registerSysModule(VMApi &api) {
                            fscanf(f, "%lf", &uptime_secs);
                            fclose(f);
                          }
+#elif defined(_WIN32)
+                         uptime_secs = GetTickCount64() / 1000.0;
 #endif
                          return Value(uptime_secs);
                        });

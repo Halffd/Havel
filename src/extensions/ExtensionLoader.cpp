@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <unistd.h>
 
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>

@@ -1604,15 +1604,53 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
           std::move(left), std::move(right));
     }
 
-  // Member access
-case TokenType::Dot: {
-if (at().type == TokenType::Identifier || Lexer::KEYWORDS.count(at().value) > 0) {
-auto property = makeIdentifier(advance());
-return std::make_unique<ast::MemberExpression>(
-std::move(left), std::move(property));
-}
-failAt(at(), "Expected identifier after '.'");
-    }
+        // Member access
+        case TokenType::Dot: {
+            if (at().type == TokenType::Identifier || Lexer::KEYWORDS.count(at().value) > 0) {
+                auto property = makeIdentifier(advance());
+                return std::make_unique<ast::MemberExpression>(
+                    std::move(left), std::move(property));
+            }
+            // Operator method syntax: a.+(b), a.[](i), etc.
+            auto isOpToken = [](TokenType t) {
+                switch (t) {
+                case TokenType::Plus: case TokenType::Minus: case TokenType::Multiply:
+                case TokenType::Divide: case TokenType::Modulo: case TokenType::Power:
+                case TokenType::Equals: case TokenType::NotEquals:
+                case TokenType::Less: case TokenType::Greater: case TokenType::LessEquals: case TokenType::GreaterEquals:
+                case TokenType::And: case TokenType::Or: case TokenType::Not:
+                case TokenType::Tilde: case TokenType::Length: case TokenType::Pipe:
+                case TokenType::PlusAssign: case TokenType::MinusAssign:
+                case TokenType::MultiplyAssign: case TokenType::DivideAssign: case TokenType::ModuloAssign:
+                case TokenType::PowerAssign:
+                case TokenType::BitwiseAndAssign: case TokenType::BitwiseOrAssign: case TokenType::BitwiseXorAssign:
+                case TokenType::ShiftLeftAssign: case TokenType::ShiftRightAssign:
+                case TokenType::OpenBracket:
+                case TokenType::Backslash: case TokenType::DoubleBackslash: case TokenType::DoubleModulo:
+                case TokenType::BackslashAssign: case TokenType::DoubleModuloAssign:
+                case TokenType::Is: case TokenType::Matches:
+                    return true;
+                default:
+                    return false;
+                }
+            };
+            if (isOpToken(at().type)) {
+                std::string sym = advance().value;
+                // []= needs special handling: after [, check for ] then =
+                if (sym == "[" && at().type == TokenType::CloseBracket) {
+                    advance(); // consume ]
+                    sym = "[]";
+                    if (at().type == TokenType::Assign) {
+                        advance(); // consume =
+                        sym = "[]=";
+                    }
+                }
+                auto property = std::make_unique<ast::Identifier>(sym);
+                return std::make_unique<ast::MemberExpression>(
+                    std::move(left), std::move(property));
+            }
+            failAt(at(), "Expected identifier after '.'");
+        }
 
     // Function call
     case TokenType::OpenParen: {

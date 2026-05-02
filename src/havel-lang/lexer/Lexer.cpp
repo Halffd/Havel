@@ -398,6 +398,127 @@ if (isNegative) {
   return makeToken(number, TokenType::Number);
 }
 
+std::string Lexer::processEscapeSequence(bool isFString, bool &suppressInterpolation) {
+    suppressInterpolation = false;
+    if (isAtEnd()) return "\\";
+
+    char escaped = peek();
+    switch (escaped) {
+    case 'n': advance(); return "\n";
+    case 't': advance(); return "\t";
+    case 'r': advance(); return "\r";
+    case '\\': advance(); return "\\";
+    case '"': advance(); return "\"";
+    case '\'': advance(); return "'";
+    case '0': advance(); return std::string(1, '\0');
+    case '$': advance(); suppressInterpolation = true; return "$";
+    case '{': advance(); suppressInterpolation = true; return "{";
+    case '}': advance(); suppressInterpolation = true; return "}";
+    case 'x': {
+        advance(); // consume 'x'
+        if (!isAtEnd() && isHexDigit(peek())) {
+            char h = advance();
+            if (!isAtEnd() && isHexDigit(peek())) {
+                char l = advance();
+                int val = 0;
+                if (h >= '0' && h <= '9') val = h - '0';
+                else if (h >= 'a' && h <= 'f') val = 10 + h - 'a';
+                else if (h >= 'A' && h <= 'F') val = 10 + h - 'A';
+                if (l >= '0' && l <= '9') val = val * 16 + l - '0';
+                else if (l >= 'a' && l <= 'f') val = val * 16 + 10 + l - 'a';
+                else if (l >= 'A' && l <= 'F') val = val * 16 + 10 + l - 'A';
+                return std::string(1, static_cast<char>(val));
+            }
+            reportError("Invalid hex escape: \\x" + std::string(1, h) + " requires two hex digits");
+            return "\\x" + std::string(1, h);
+        }
+        reportError("Invalid hex escape: \\x requires two hex digits");
+        return "\\x";
+    }
+    case 'u': {
+        advance(); // consume 'u'
+        if (isAtEnd()) { reportError("Invalid unicode escape: \\u requires digits"); return "\\u"; }
+        if (peek() == '{') {
+            advance(); // consume '{'
+            std::string hexStr;
+            while (!isAtEnd() && peek() != '}') {
+                if (isHexDigit(peek())) {
+                    hexStr += advance();
+                } else {
+                    reportError("Invalid character in unicode escape: \\u{" + hexStr + std::string(1, peek()) + "...");
+                    while (!isAtEnd() && peek() != '}') advance();
+                    if (!isAtEnd()) advance(); // consume '}'
+                    return "\\u{" + hexStr + "}";
+                }
+                if (hexStr.size() > 8) break;
+            }
+            if (isAtEnd()) { reportError("Unterminated unicode escape: \\u{" + hexStr); return "\\u{" + hexStr; }
+            advance(); // consume '}'
+            if (hexStr.empty()) { reportError("Empty unicode escape: \\u{}"); return "\\u{}"; }
+            try {
+                uint32_t cp = static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
+                std::string result;
+                if (cp <= 0x7F) {
+                    result += static_cast<char>(cp);
+                } else if (cp <= 0x7FF) {
+                    result += static_cast<char>(0xC0 | (cp >> 6));
+                    result += static_cast<char>(0x80 | (cp & 0x3F));
+                } else if (cp <= 0xFFFF) {
+                    result += static_cast<char>(0xE0 | (cp >> 12));
+                    result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                    result += static_cast<char>(0x80 | (cp & 0x3F));
+                } else if (cp <= 0x10FFFF) {
+                    result += static_cast<char>(0xF0 | (cp >> 18));
+                    result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                    result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                    result += static_cast<char>(0x80 | (cp & 0x3F));
+                } else {
+                    reportError("Unicode code point out of range: \\u{" + hexStr + "}");
+                    return "\\u{" + hexStr + "}";
+                }
+                return result;
+            } catch (...) {
+                reportError("Invalid unicode escape: \\u{" + hexStr + "}");
+                return "\\u{" + hexStr + "}";
+            }
+        }
+        // \uNNNN format (exactly 4 hex digits)
+        std::string hexStr;
+        for (int i = 0; i < 4 && !isAtEnd(); ++i) {
+            if (isHexDigit(peek())) {
+                hexStr += advance();
+            } else {
+                reportError("Invalid unicode escape: \\u requires 4 hex digits");
+                return "\\u" + hexStr;
+            }
+        }
+        if (hexStr.size() != 4) { reportError("Invalid unicode escape: \\u requires 4 hex digits"); return "\\u" + hexStr; }
+        try {
+            uint32_t cp = static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
+            std::string result;
+            if (cp <= 0x7F) {
+                result += static_cast<char>(cp);
+            } else if (cp <= 0x7FF) {
+                result += static_cast<char>(0xC0 | (cp >> 6));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            } else {
+                result += static_cast<char>(0xE0 | (cp >> 12));
+                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+            return result;
+        } catch (...) {
+            reportError("Invalid unicode escape: \\u" + hexStr);
+            return "\\u" + hexStr;
+        }
+    }
+    default:
+        // Unknown escape: keep as-is (\X → \X)
+        advance();
+        return "\\" + std::string(1, escaped);
+    }
+}
+
 Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
     std::string value;
     std::string raw;
@@ -419,36 +540,13 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
     raw += c;
 
     if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
-      // Only process escape sequences in the outer string portion
-      advance(); // consume backslash
-      raw += peek();
-
-      char escaped = advance();
-      switch (escaped) {
-      case 'n':
-        value += '\n';
-        break;
-      case 't':
-        value += '\t';
-        break;
-      case 'r':
-        value += '\r';
-        break;
-      case '\\':
-        value += '\\';
-        break;
-      case '"':
-        value += '"';
-        break;
-      case '\'':
-        value += '\'';
-        break;
-      default:
-        value += '\\';
-        value += escaped;
-        break;
-      }
-} else if (c == '$' && braceDepth == 0) {
+        advance(); // consume backslash
+        raw += peek();
+        bool suppressInterp = false;
+        std::string decoded = processEscapeSequence(isFString, suppressInterp);
+        value += decoded;
+        if (suppressInterp) continue;
+    } else if (c == '$' && braceDepth == 0) {
         char next = peek();
         if (isAlpha(next) || next == '_' || next == '@') {
             hasInterpolation = true;
@@ -575,36 +673,13 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
     raw += c;
 
     if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
-      // Process escape sequences
-      advance(); // consume backslash
-      raw += peek();
-
-      char escaped = advance();
-      switch (escaped) {
-      case 'n':
-        value += '\n';
-        break;
-      case 't':
-        value += '\t';
-        break;
-      case 'r':
-        value += '\r';
-        break;
-      case '\\':
-        value += '\\';
-        break;
-      case '"':
-        value += '"';
-        break;
-      case '\'':
-        value += '\'';
-        break;
-      default:
-        value += '\\';
-        value += escaped;
-        break;
-      }
-} else if (c == '$' && braceDepth == 0) {
+        advance(); // consume backslash
+        raw += peek();
+        bool suppressInterp = false;
+        std::string decoded = processEscapeSequence(isFString, suppressInterp);
+        value += decoded;
+        if (suppressInterp) continue;
+    } else if (c == '$' && braceDepth == 0) {
         char next = peek();
         if (next == '{' || isAlpha(next) || next == '_' || next == '@') {
             hasInterpolation = true;
@@ -1900,34 +1975,35 @@ if (c == '%' && peek() == '=') {
 			// Exclude CloseBrace - after } we're at statement level (could be
 			// hotkey) Include statement starters that are followed by expressions
 			// (if, while, for, etc.)
-			if (prevType == TokenType::Number ||
-				prevType == TokenType::Identifier ||
-				prevType == TokenType::String ||
-				prevType == TokenType::InterpolatedString ||
-				prevType == TokenType::MultilineString ||
-				prevType == TokenType::RegexString ||
-				prevType == TokenType::CloseParen ||
-				prevType == TokenType::OpenParen ||
-				prevType == TokenType::CloseBracket ||
-				prevType == TokenType::Not ||
-				prevType == TokenType::Or ||
-				prevType == TokenType::And ||
-				prevType == TokenType::Assign ||
-				prevType == TokenType::If ||
-				prevType == TokenType::While ||
-				prevType == TokenType::For ||
-				prevType == TokenType::In ||
-				prevType == TokenType::Matches ||
-				prevType == TokenType::Tilde ||
-				prevType == TokenType::Comma ||
-				prevType == TokenType::BitwiseOr ||
-				prevType == TokenType::BitwiseXor ||
-				prevType == TokenType::BitwiseAnd ||
-		prevType == TokenType::ShiftLeft ||
-		prevType == TokenType::ShiftRight ||
-		prevType == TokenType::Minus ||
-		prevType == TokenType::Fn ||
-		prevType == TokenType::Op) {
+                if (prevType == TokenType::Number ||
+                    prevType == TokenType::Identifier ||
+                    prevType == TokenType::String ||
+                    prevType == TokenType::InterpolatedString ||
+                    prevType == TokenType::MultilineString ||
+                    prevType == TokenType::RegexString ||
+                    prevType == TokenType::CloseParen ||
+                    prevType == TokenType::OpenParen ||
+                    prevType == TokenType::CloseBracket ||
+                    prevType == TokenType::Not ||
+                    prevType == TokenType::Or ||
+                    prevType == TokenType::And ||
+                    prevType == TokenType::Assign ||
+                    prevType == TokenType::If ||
+                    prevType == TokenType::While ||
+                    prevType == TokenType::For ||
+                    prevType == TokenType::In ||
+                    prevType == TokenType::Matches ||
+                    prevType == TokenType::Tilde ||
+                    prevType == TokenType::Comma ||
+                    prevType == TokenType::Dot ||
+                    prevType == TokenType::BitwiseOr ||
+                    prevType == TokenType::BitwiseXor ||
+                    prevType == TokenType::BitwiseAnd ||
+                    prevType == TokenType::ShiftLeft ||
+                    prevType == TokenType::ShiftRight ||
+                    prevType == TokenType::Minus ||
+                    prevType == TokenType::Fn ||
+                    prevType == TokenType::Op) {
 		if (c == '^') {
 				tokens.push_back(makeToken("^", TokenType::BitwiseXor));
 				if (debug_lexer) {

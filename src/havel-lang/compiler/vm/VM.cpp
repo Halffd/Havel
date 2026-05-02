@@ -38,6 +38,26 @@
     throw std::runtime_error(msg); \
   } while (0)
 
+static std::string operatorSymbolToMethodName(const std::string &sym) {
+    static const std::unordered_map<std::string, std::string> map = {
+        {"+", "op_add"}, {"-", "op_sub"}, {"*", "op_mul"}, {"/", "op_div"},
+        {"%", "op_mod"}, {"**", "op_pow"}, {"\\", "op_backslash"},
+        {"\\\\", "op_double_backslash"}, {"%%", "op_double_modulo"},
+        {"==", "op_eq"}, {"!=", "op_ne"}, {"<", "op_lt"}, {">", "op_gt"},
+        {"<=", "op_le"}, {">=", "op_ge"}, {"and", "op_and"}, {"or", "op_or"},
+        {"!", "op_not"}, {"~", "op_bit_not"}, {"#", "op_length"}, {"|>", "op_pipe"},
+        {"+=", "op_iadd"}, {"-=", "op_isub"}, {"*=", "op_imul"}, {"/=", "op_idiv"},
+        {"%=", "op_imod"}, {"**=", "op_ipow"},
+        {"\\=", "op_backslash_assign"}, {"%%=", "op_double_modulo_assign"},
+        {"&=", "op_bit_and_assign"}, {"|=", "op_bit_or_assign"}, {"^=", "op_bit_xor_assign"},
+        {"<<=", "op_shift_left_assign"}, {">>=", "op_shift_right_assign"},
+        {"[]", "op_index"}, {"[]=", "op_index_set"},
+        {"is", "op_is"}, {"matches", "op_matches"},
+    };
+    auto it = map.find(sym);
+    return (it != map.end()) ? it->second : sym;
+}
+
 namespace havel::compiler {
 
 // ============================================================================
@@ -5263,8 +5283,9 @@ case OpCode::LENGTH: {
     uint32_t strIndex = instruction.operands[0].asStringValId();
     std::string method_name;
     if (current_chunk) {
-      method_name = current_chunk->getString(strIndex);
+        method_name = current_chunk->getString(strIndex);
     }
+    method_name = operatorSymbolToMethodName(method_name);
     uint32_t arg_count = instruction.operands[1].asInt();
 
     // Receiver is at stack top - arg_count positions down
@@ -8439,12 +8460,13 @@ case OpCode::INT_DIV: {
 
     std::string method_name;
     if (current_chunk) {
-      method_name = current_chunk->getString(strIndex);
+        method_name = current_chunk->getString(strIndex);
     }
+    method_name = operatorSymbolToMethodName(method_name);
 
     std::vector<Value> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
+        args[arg_count - 1 - i] = pop();
     }
     Value receiver = pop();
 

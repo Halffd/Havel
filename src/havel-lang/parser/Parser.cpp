@@ -1313,23 +1313,38 @@ case TokenType::BangOpenBrace: {
     return std::make_unique<ast::BacktickExpression>(token.value);
 
     // Concurrency Primitives
-    case TokenType::Thread:
-        if (at().type == TokenType::OpenParen || at().type == TokenType::Dot) {
-            return std::make_unique<ast::Identifier>(token.value);
-        }
-        return parseThreadExpression();
+case TokenType::Thread:
+    if (at().type == TokenType::OpenParen) {
+        return std::make_unique<ast::MemberExpression>(
+            std::make_unique<ast::Identifier>(token.value),
+            std::make_unique<ast::Identifier>("spawn"));
+    }
+    if (at().type == TokenType::Dot) {
+        return std::make_unique<ast::Identifier>(token.value);
+    }
+    return parseThreadExpression();
 
-    case TokenType::Interval:
-        if (at().type == TokenType::OpenParen || at().type == TokenType::Dot) {
-            return std::make_unique<ast::Identifier>(token.value);
-        }
-        return parseIntervalExpression();
+case TokenType::Interval:
+    if (at().type == TokenType::OpenParen) {
+        return std::make_unique<ast::MemberExpression>(
+            std::make_unique<ast::Identifier>(token.value),
+            std::make_unique<ast::Identifier>("start"));
+    }
+    if (at().type == TokenType::Dot) {
+        return std::make_unique<ast::Identifier>(token.value);
+    }
+    return parseIntervalExpression();
 
-    case TokenType::Timeout:
-        if (at().type == TokenType::OpenParen || at().type == TokenType::Dot) {
-            return std::make_unique<ast::Identifier>(token.value);
-        }
-        return parseTimeoutExpression();
+case TokenType::Timeout:
+    if (at().type == TokenType::OpenParen) {
+        return std::make_unique<ast::MemberExpression>(
+            std::make_unique<ast::Identifier>(token.value),
+            std::make_unique<ast::Identifier>("start"));
+    }
+    if (at().type == TokenType::Dot) {
+        return std::make_unique<ast::Identifier>(token.value);
+    }
+    return parseTimeoutExpression();
 
     case TokenType::Async:
         return std::make_unique<ast::Identifier>(token.value);

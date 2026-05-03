@@ -322,11 +322,9 @@ known_globals_.insert(name);
 }
 
 // Execute persistently (preserves globals between REPL lines)
+// executePersistent saves/restores current_chunk; storeReplChunk already
+// set it to this chunk, so after execution current_chunk points to sharedChunk.
 auto result = vm_->executePersistent(*sharedChunk, "__main__");
-
-// Restore current_chunk to this REPL line's chunk so toString can
-// resolve function names/string IDs from it
-vm_->setCurrentChunk(sharedChunk.get());
 
 if (!result.isNull()) {
 printValue(vm_->toString(result));

@@ -2373,14 +2373,17 @@ struct ObjectPattern : public Expression {
 
 // Array Pattern for destructuring ([a, b] or [x, ..rest])
 struct ArrayPattern : public Expression {
-  std::vector<std::unique_ptr<Expression>> elements;
-  std::unique_ptr<Expression> rest;  // for ..rest pattern
+std::vector<std::unique_ptr<Expression>> elements;
+std::unique_ptr<Expression> rest; // for ..rest pattern
+bool is_tuple_destructuring = false;
 
-  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {},
-               std::unique_ptr<Expression> restPat = nullptr)
-      : elements(std::move(elems)), rest(std::move(restPat)) {
-    kind = NodeType::ArrayPattern;
-  }
+ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {},
+std::unique_ptr<Expression> restPat = nullptr,
+bool isTuple = false)
+: elements(std::move(elems)), rest(std::move(restPat)),
+is_tuple_destructuring(isTuple) {
+kind = NodeType::ArrayPattern;
+}
 
   std::string toString() const override {
     return "ArrayPattern{" + std::to_string(elements.size()) + " elements" +

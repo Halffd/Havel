@@ -332,7 +332,6 @@ bool Parser::isObjectLiteral() const {
 firstToken.type == havel::TokenType::String ||
 firstToken.type == havel::TokenType::MultilineString ||
 firstToken.type == havel::TokenType::RegexString ||
-firstToken.type == havel::TokenType::RegexString ||
                      firstToken.type == havel::TokenType::Number ||
                      firstToken.type == havel::TokenType::Config ||
                      firstToken.type == havel::TokenType::Devices ||
@@ -633,7 +632,6 @@ setBoth(ModuloAssign, 10, 10);
       can_start[static_cast<size_t>(Number)] = true;
       can_start[static_cast<size_t>(String)] = true;
       can_start[static_cast<size_t>(MultilineString)] = true;
-can_start[static_cast<size_t>(RegexString)] = true;
 can_start[static_cast<size_t>(RegexString)] = true;
       can_start[static_cast<size_t>(InterpolatedString)] = true;
   can_start[static_cast<size_t>(InterpolatedBacktick)] = true;
@@ -8335,7 +8333,6 @@ Parser::parseObjectLiteral(bool unsorted) {
              t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
 t == havel::TokenType::String ||
 t == havel::TokenType::MultilineString ||
-t == havel::TokenType::RegexString ||
 t == havel::TokenType::RegexString ||
              t == havel::TokenType::Number;
     };

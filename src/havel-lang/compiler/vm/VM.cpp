@@ -1888,45 +1888,7 @@ void VM::registerDefaultHostFunctions() {
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-  // Async library functions
-  registerHostFunction("async.run", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) {
-      COMPILER_THROW("async.run requires a closure argument");
-    }
-    // Execute closure synchronously - full async isolation requires
-    // additional infrastructure (closure serialization, thread pools)
-    return this->call(args[0], {});
-  });
-
-  registerHostFunction("async.await", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) {
-      return Value::makeNull();
-    }
-    // For synchronous async.run, just return the value directly
-    return args[0];
-  });
-
-    registerHostFunction("async.sleep", 1, [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isNumber()) {
-            COMPILER_THROW("async.sleep(ms) expects numeric argument");
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(toInt(args[0])));
-        return Value::makeNull();
-    });
-
-    registerHostFunction("async.channel", 1, [this](const std::vector<Value> &args) {
-        return Value::makeNull();
-    });
-
-    registerHostFunction("async.send", 2, [this](const std::vector<Value> &args) {
-        return Value::makeNull();
-    });
-
-    registerHostFunction("async.receive", 1, [this](const std::vector<Value> &args) {
-        return Value::makeNull();
-    });
-
-  // app.restart() - restart the application
+// app.restart() - restart the application
   registerHostFunction("app.restart", 0, [this](const std::vector<Value> &) {
     if (restart_callback_) {
       restart_callback_();

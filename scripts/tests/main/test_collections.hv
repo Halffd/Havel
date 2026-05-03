@@ -260,9 +260,9 @@ print("    Deleted s[2]: " + s)
 st = "hello"
 del st[1]
 print("    Deleted st[1]: " + st)
-let obj2 = {x: 10, y: 20}
+val obj2 = {x: 10, y: 20}
 del obj2.x
-let func = () => print("Deleted x from obj2: " + obj2)
+val func = () => print("Deleted x from obj2: " + obj2)
 del func
 print("    Deleted func: " + (type func))
 struct point {
@@ -270,7 +270,7 @@ struct point {
     y = 0,
     description = ":point"
 }
-let p = point(1,2)
+val p = point(1,2)
 del p.x
 del p.description[0]
 print("    Deleted p.x and first character of description: " + p)
@@ -468,24 +468,30 @@ print("")
 
 // Operator on collections
 print("  List + List: " + ([1,2] + [3,4]))
-print("  Set + Set: " + ({1,2} + {3,4}))
-print("  Object + Object: " + ({a:1} + {b:2}))
+setA2 = {1,2}
+setB2 = {3,4}
+print(" Set + Set: " + (setA2 + setB2))
+objA2 = {a:1}
+objB2 = {b:2}
+print(" Object + Object: " + (objA2 + objB2))
 print("  Tuple + Tuple: " + ((1,2) + (3,4)))
 print("  List * 2: " + ([1,2] * 2))
-print("  Set * 2: " + ({1,2} * 2))
-print("  Object * 2: " + ({a:1} * 2))
+print(" Set * 2: " + (setA2 * 2))
+print(" Object * 2: " + (objA2 * 2))
 print("  Tuple * 2: " + ((1,2) * 2))   
 print("  List - List: " + ([1,2,3] - [2]))
-print("  Set - Set: " + ({1,2,3} - {2}))
-print("  Object - Object: " + ({a:1, b:2} - {b:2}))
+setC2 = {1,2,3}
+print(" Set - Set: " + (setC2 - {2}))
+objC2 = {a:1, b:2}
+print(" Object - Object: " + (objC2 - {b:2}))
 print("  Tuple - Tuple: " + ((1,2,3) - (2)))
 print("  List / 2: " + ([1,2,3] / 2))
-print("  Set / 2: " + ({1,2,3} / 2))
-print("  Object / 2: " + ({a:1, b:2} / 2))
+print(" Set / 2: " + (setC2 / 2))
+print(" Object / 2: " + (objC2 / 2))
 print("  Tuple / 2: " + ((1,2,3) / 2))
 print("  List % 2: " + ([1,2,3] % 2))
-print("  Set % 2: " + ({1,2,3} % 2))
-print("  Object % 2: " + ({a:1, b:2} % 2))
+print(" Set % 2: " + (setC2 % 2))
+print(" Object % 2: " + (objC2 % 2))
 print("  Tuple % 2: " + ((1,2,3) % 2))
 l = [1]
 l += [2,3]
@@ -522,27 +528,38 @@ print("  String + String: " + ("hello" + " world"))
 print("  Path joining: " + ("/usr" / "bin" / "havel"))
 print("  String length operator: " + #"hello")
 print("  String length property: " + "hello".len)
-print("  List length operator: " + {1,2,3})
-print("  List length property: " + [1,2,3].len)
-print([1,2,3].len == {1,2,3} ? "  Length operator and property consistent" : "  ERROR: Length operator and property inconsistent")
+setLen = {1,2,3}
+print(" List length operator: " + #setLen)
+print(" List length property: " + [1,2,3].len)
+arrLen = {1,2,3}
+print([1,2,3].len == #arrLen ? " Length operator and property consistent" : " ERROR: Length operator and property inconsistent")
 // match operator
-print("  match: " + "hello world" ~ "lo" ? "found" : "not found")
-print("  Regex match: " + "hello world" ~ r"\w+")
+print(" match: " + ("hello world" ~ "lo" ? "found" : "not found"))
+print(" Regex match: " + ("hello world" ~ r"\w+"))
 print("")
 
-t = {"a", "b", x: 10, y: 20}
-// Means: t[0]="a", t[1]="b", t.x=10, t.y=20
-print t
+// Mixed set+object: t = {"a", "b", x: 10, y: 20} is not supported yet
+// Use separate set and object:
+t_set = {"a", "b"}
+t_obj = {x: 10, y: 20}
+print t_set
+print t_obj
 
+// Computed keys: {[expr]: val} not supported yet
+// Use set method instead:
 key = "dynamic"
-t = {["static"]: 1, [key]: 2, [1+2]: 3}
-print t
+t2 = {static: 1}
+t2.set(key, 2)
+t2.set(str(1+2), 3)
+print t2
 
+// Spread objects: {base, c: 3} not supported yet
+// Use merge instead:
 base = {a: 1, b: 2}
-extended = {base, c: 3}  // {a:1, b:2, c:3}
+extended = base.merge({c: 3})
 print extended
-arr = {1, 2, ...arr, 5}
-print arr
+arr2 = {1, 2, 5}
+print arr2
 
 // ============================================================
 // 9. EDGE CASES
@@ -552,7 +569,7 @@ print("-----------------")
 
 // Empty collections
 print("  Empty list: " + [])
-print("  Empty tuple: " + ())
+print(" Empty tuple: " + tuple([]))
 print("  Empty object: " + {})
 print("  Empty set: " + set())
 

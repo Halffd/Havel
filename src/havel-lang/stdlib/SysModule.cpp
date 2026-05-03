@@ -15,10 +15,6 @@
 #define getppid() (0)
 #endif
 
-#if defined(_WIN32) && !defined(environ)
-#define environ _environ
-#endif
-
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 
@@ -97,10 +93,9 @@ void registerSysModule(VMApi &api) {
                          (void)args;
                          auto objRef = api.vm.createHostObject();
 #ifndef _WIN32
-                         extern char **environ;
-                         if (environ) {
-                           for (int i = 0; environ[i]; i++) {
-                             std::string entry(environ[i]);
+ if (::environ) {
+ for (int i = 0; ::environ[i]; i++) {
+ std::string entry(::environ[i]);
                              auto eq = entry.find('=');
                              if (eq != std::string::npos) {
                                std::string key = entry.substr(0, eq);

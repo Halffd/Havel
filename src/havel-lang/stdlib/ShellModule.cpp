@@ -8,9 +8,11 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 #ifndef _WIN32
@@ -107,9 +109,8 @@ static Value listEnvironment(VMApi &api) {
     FreeEnvironmentStringsA(envBlock);
   }
 #else
-  extern char **environ;
-  if (environ) {
-    for (char **cur = environ; *cur; ++cur) {
+ if (::environ) {
+ for (char **cur = ::environ; *cur; ++cur) {
       std::string entry(*cur);
       auto eqPos = entry.find('=');
       if (eqPos != std::string::npos) {
@@ -491,7 +492,7 @@ void registerShellModule(VMApi &api) {
     [&api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.sleep() requires a number (seconds)");
-      double secs = args[0].getDouble();  // assume numeric conversion exists
+double secs = args[0].asNumber();
       std::this_thread::sleep_for(std::chrono::duration<double>(secs));
       return Value::makeNull();
     });
@@ -502,9 +503,9 @@ void registerShellModule(VMApi &api) {
   api.registerFunction("shell.read",
     [&api](const std::vector<Value> &) {
       std::string line;
-      if (!std::getline(std::cin, line))
-        return Value::makeNull();
-      return makeStringId(line, api);
+if (!std::getline(std::cin, line))
+      return Value::makeNull();
+    return makeStringId(line, api);
     });
 
   // ----------------------------------------------------------------------
@@ -518,7 +519,7 @@ void registerShellModule(VMApi &api) {
       std::string text = valueToString(args[0], api);
       FILE *dest = stdout;
       if (args.size() >= 2) {
-        int64_t fd = args[1].getInt();
+        int64_t fd = args[1].asInt();
         if (fd == 2) dest = stderr;
       }
       fputs(text.c_str(), dest);
@@ -533,7 +534,7 @@ void registerShellModule(VMApi &api) {
     [&api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
-      int fd = static_cast<int>(args[0].getInt());
+      int fd = static_cast<int>(args[0].asInt());
       if (fd < 0 || fd > 2) return Value::makeBool(false);
 #ifdef _WIN32
       return Value::makeBool(_isatty(fd) != 0);
@@ -548,7 +549,7 @@ void registerShellModule(VMApi &api) {
   api.registerFunction("shell.exit",
     [&api](const std::vector<Value> &args) {
       int code = 0;
-      if (!args.empty()) code = static_cast<int>(args[0].getInt());
+      if (!args.empty()) code = static_cast<int>(args[0].asInt());
       std::exit(code);
       // unreachable
       return Value::makeNull();
@@ -565,7 +566,7 @@ void registerShellModule(VMApi &api) {
       auto parts = splitArgs(cmd);
       auto arr = api.makeArray();
       for (const auto &p : parts)
-        api.arrayPush(arr, makeStringId(p, api));
+        api.push(arr, makeStringId(p, api));
       return arr;
     });
 
@@ -677,7 +678,7 @@ void registerShellModule(VMApi &api) {
         return arr;  // empty if not a directory
 
       for (const auto &entry : fs::directory_iterator(p, ec)) {
-        api.arrayPush(arr, makeStringId(entry.path().filename().string(), api));
+        api.push(arr, makeStringId(entry.path().filename().string(), api));
       }
       return arr;
     });

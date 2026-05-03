@@ -1209,8 +1209,9 @@ struct MemberExpression : public Expression {
 // String Literal
 struct StringLiteral : public Expression {
   std::string value;
+  bool isRegex = false;  // true for r"..." regex string literals
 
-  StringLiteral(const std::string &val) : value(val) {
+  StringLiteral(const std::string &val, bool regex = false) : value(val), isRegex(regex) {
     kind = NodeType::StringLiteral;
   }
 

@@ -218,6 +218,7 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   // Tail call optimization state
   bool in_tail_position_ = false;
   bool emitted_tail_call_ = false;
+  int try_depth_ = 0; // >0 when inside a try block (suppress TAIL_CALL)
 
   // When block condition tracking - set to condition func index when
   // compiling hotkeys inside a when block, reset to nullopt otherwise

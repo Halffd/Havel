@@ -1888,7 +1888,16 @@ void VM::registerDefaultHostFunctions() {
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-// app.restart() - restart the application
+    registerHostFunction("async.await", 1, [this](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        return args[0];
+    });
+    registerHostFunction("await", 1, [this](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        return args[0];
+    });
+
+    // app.restart() - restart the application
   registerHostFunction("app.restart", 0, [this](const std::vector<Value> &) {
     if (restart_callback_) {
       restart_callback_();
@@ -2667,18 +2676,9 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
   setHostObjectField(class_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("class.get")));
   setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
-  setGlobal("class", Value::makeObjectId(class_obj.id));
+    setGlobal("class", Value::makeObjectId(class_obj.id));
 
-    auto async_obj = heap_.allocateObject();
-    setHostObjectField(async_obj, "run", Value::makeHostFuncId(getHostFunctionIndex("async.run")));
-    setHostObjectField(async_obj, "await", Value::makeHostFuncId(getHostFunctionIndex("async.await")));
-    setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
-    setHostObjectField(async_obj, "channel", Value::makeHostFuncId(getHostFunctionIndex("async.channel")));
-    setHostObjectField(async_obj, "send", Value::makeHostFuncId(getHostFunctionIndex("async.send")));
-    setHostObjectField(async_obj, "receive", Value::makeHostFuncId(getHostFunctionIndex("async.receive")));
-    setGlobal("async", Value::makeObjectId(async_obj.id));
-
-  // app global object with args and restart
+    // app global object with args and restart
   auto app_obj = heap_.allocateObject();
   setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
   setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));

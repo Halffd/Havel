@@ -437,52 +437,9 @@ std::string Lexer::processEscapeSequence(bool isFString, bool &suppressInterpola
     }
     case 'u': {
         advance(); // consume 'u'
-        if (isAtEnd()) { reportError("Invalid unicode escape: \\u requires digits"); return "\\u"; }
-        if (peek() == '{') {
-            advance(); // consume '{'
-            std::string hexStr;
-            while (!isAtEnd() && peek() != '}') {
-                if (isHexDigit(peek())) {
-                    hexStr += advance();
-                } else {
-                    reportError("Invalid character in unicode escape: \\u{" + hexStr + std::string(1, peek()) + "...");
-                    while (!isAtEnd() && peek() != '}') advance();
-                    if (!isAtEnd()) advance(); // consume '}'
-                    return "\\u{" + hexStr + "}";
-                }
-                if (hexStr.size() > 8) break;
-            }
-            if (isAtEnd()) { reportError("Unterminated unicode escape: \\u{" + hexStr); return "\\u{" + hexStr; }
-            advance(); // consume '}'
-            if (hexStr.empty()) { reportError("Empty unicode escape: \\u{}"); return "\\u{}"; }
-            try {
-                uint32_t cp = static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
-                std::string result;
-                if (cp <= 0x7F) {
-                    result += static_cast<char>(cp);
-                } else if (cp <= 0x7FF) {
-                    result += static_cast<char>(0xC0 | (cp >> 6));
-                    result += static_cast<char>(0x80 | (cp & 0x3F));
-                } else if (cp <= 0xFFFF) {
-                    result += static_cast<char>(0xE0 | (cp >> 12));
-                    result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                    result += static_cast<char>(0x80 | (cp & 0x3F));
-                } else if (cp <= 0x10FFFF) {
-                    result += static_cast<char>(0xF0 | (cp >> 18));
-                    result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-                    result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                    result += static_cast<char>(0x80 | (cp & 0x3F));
-                } else {
-                    reportError("Unicode code point out of range: \\u{" + hexStr + "}");
-                    return "\\u{" + hexStr + "}";
-                }
-                return result;
-            } catch (...) {
-                reportError("Invalid unicode escape: \\u{" + hexStr + "}");
-                return "\\u{" + hexStr + "}";
-            }
-        }
-        // \uNNNN format (exactly 4 hex digits)
+        if (isAtEnd()) { reportError("Invalid unicode escape: \\u requires 4 hex digits"); return "\\u"; }
+        if (peek() == '{') { reportError("\\u{...} is not supported; use \\UXXXXXXXX for full Unicode"); return "\\u{"; }
+        // \uXXXX format (exactly 4 hex digits)
         std::string hexStr;
         for (int i = 0; i < 4 && !isAtEnd(); ++i) {
             if (isHexDigit(peek())) {
@@ -814,7 +771,7 @@ Token Lexer::scanBacktick(bool isMultiline) {
       case '`':
         value += '`';
         break;
-      default:
+    default:
         value += '\\';
         value += escaped;
         break;

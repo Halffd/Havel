@@ -281,6 +281,10 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRING_VAL_ID), id));
   }
 
+  static Value makeRegexValId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::REGEX_VAL_ID), id));
+  }
+
   // Concurrency object value types
   static Value makeThreadId(uint32_t id) {
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::THREAD_ID), id));

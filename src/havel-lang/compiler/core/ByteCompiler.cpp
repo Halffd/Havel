@@ -2198,7 +2198,12 @@ case ast::NodeType::NumberLiteral: {
 
   case ast::NodeType::StringLiteral: {
     const auto &str = static_cast<const ast::StringLiteral &>(expression);
-    { uint32_t _sid = addStringConstant(str.value); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    uint32_t _sid = addStringConstant(str.value);
+    if (str.isRegex) {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeRegexValId(_sid)));
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+    }
     break;
   }
 

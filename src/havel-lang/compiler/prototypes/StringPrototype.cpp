@@ -322,25 +322,49 @@ void registerStringPrototype(VM& vm) {
   });
 
   // match: "hello".match(r"l+") -> 2 (first match index) or null
+  // Also: r"l+".match("hello") -> 2 (pattern as receiver)
   // Also returns array of all match groups when there are captures
   regProto("match", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
-    std::string s = extractString(vm, args[0]);
-    std::string pattern = extractStringArg(vm, args, 1, "");
 
-    // Check if pattern is a regex string
-    bool isRegex = !pattern.empty() && pattern.front() == '/' && pattern.size() > 2 && pattern.back() == '/';
+    std::string receiver = extractString(vm, args[0]);
+    std::string argument = extractStringArg(vm, args, 1, "");
+
+    // Detect if receiver looks like a regex pattern (contains regex metacharacters)
+    // If so, receiver is the pattern and argument is the text to search
+    // Otherwise, receiver is the text and argument is the pattern
+    bool receiverIsPattern = false;
+    static const std::string regexMetacharacters = ".^$|()[]{}*+?\\";
+    for (char c : receiver) {
+      if (regexMetacharacters.find(c) != std::string::npos) {
+        receiverIsPattern = true;
+        break;
+      }
+    }
+
+    std::string text, pattern;
+    if (receiverIsPattern) {
+      text = argument;
+      pattern = receiver;
+    } else {
+      text = receiver;
+      pattern = argument;
+    }
+
+    // Check if pattern is a regex string with /.../ delimiters
+    bool isRegexLiteral = !pattern.empty() && pattern.front() == '/' && pattern.size() > 2 && pattern.back() == '/';
     std::string regexPattern;
-    if (isRegex) {
+    if (isRegexLiteral) {
       regexPattern = pattern.substr(1, pattern.size() - 2);
     } else {
-      regexPattern = std::regex_replace(pattern, std::regex(R"([.^$|()\\[\]{}*+?])"), R"(\$&)");
+      // Escape regex metacharacters for plain string matching
+      regexPattern = std::regex_replace(pattern, std::regex(R"([.^$|()\[\]{}*+?])"), R"(\$&)");
     }
 
     try {
       std::regex re(regexPattern);
       std::smatch m;
-      if (std::regex_search(s, m, re)) {
+      if (std::regex_search(text, m, re)) {
         // If there are capture groups, return array of groups
         if (m.size() > 1) {
           std::vector<Value> groups;
@@ -354,7 +378,7 @@ void registerStringPrototype(VM& vm) {
       }
     } catch (const std::regex_error&) {
       // Fall back to plain string find
-      size_t pos = s.find(pattern);
+      size_t pos = text.find(pattern);
       if (pos != std::string::npos) return Value::makeInt(static_cast<int64_t>(pos));
     }
     return Value::makeNull();

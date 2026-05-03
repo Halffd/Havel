@@ -1,6 +1,7 @@
 #include "PrototypeRegistry.hpp"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace havel::compiler::prototypes {
 
@@ -40,11 +41,245 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
+  regIntProto("op_add", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() + b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av + bv);
+  });
+
+  regIntProto("op_sub", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() - b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av - bv);
+  });
+
+  regIntProto("op_mul", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() * b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av * bv);
+  });
+
+  regIntProto("op_div", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) {
+      if (b.asInt() == 0) return Value::makeDouble(std::numeric_limits<double>::infinity());
+      if (a.asInt() % b.asInt() == 0) return Value::makeInt(a.asInt() / b.asInt());
+      return Value::makeDouble(static_cast<double>(a.asInt()) / static_cast<double>(b.asInt()));
+    }
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av / bv);
+  });
+
+  regIntProto("op_mod", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() % b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(std::fmod(av, bv));
+  });
+
+  regIntProto("op_pow", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(std::pow(av, bv));
+  });
+
+  regIntProto("op_neg", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    auto a = args[0];
+    if (a.isInt()) return Value::makeInt(-a.asInt());
+    return Value::makeDouble(-(a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt())));
+  });
+
+  regIntProto("op_eq", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() == b.asInt());
+    if (a.isDouble() && b.isDouble()) return Value::makeBool(a.asDouble() == b.asDouble());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av == bv);
+  });
+
+  regIntProto("op_ne", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(true);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() != b.asInt());
+    if (a.isDouble() && b.isDouble()) return Value::makeBool(a.asDouble() != b.asDouble());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av != bv);
+  });
+
+  regIntProto("op_lt", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() < b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av < bv);
+  });
+
+  regIntProto("op_gt", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() > b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av > bv);
+  });
+
+  regIntProto("op_le", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() <= b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av <= bv);
+  });
+
+  regIntProto("op_ge", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() >= b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av >= bv);
+  });
+
   // Float methods
   auto regFloatProto = [&vm](const std::string& method, size_t arity, BytecodeHostFunction fn) {
     vm.registerHostFunction("float." + method, arity, std::move(fn));
     vm.registerPrototypeMethodByName("float", method, "float." + method);
   };
+
+  regFloatProto("op_add", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() + b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av + bv);
+  });
+
+  regFloatProto("op_sub", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() - b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av - bv);
+  });
+
+  regFloatProto("op_mul", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() * b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av * bv);
+  });
+
+  regFloatProto("op_div", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(av / bv);
+  });
+
+  regFloatProto("op_mod", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(std::fmod(av, bv));
+  });
+
+  regFloatProto("op_pow", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto a = args[0], b = args[1];
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeDouble(std::pow(av, bv));
+  });
+
+  regFloatProto("op_neg", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    auto a = args[0];
+    if (a.isInt()) return Value::makeInt(-a.asInt());
+    return Value::makeDouble(-(a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt())));
+  });
+
+  regFloatProto("op_eq", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() == b.asInt());
+    if (a.isDouble() && b.isDouble()) return Value::makeBool(a.asDouble() == b.asDouble());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av == bv);
+  });
+
+  regFloatProto("op_ne", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(true);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() != b.asInt());
+    if (a.isDouble() && b.isDouble()) return Value::makeBool(a.asDouble() != b.asDouble());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av != bv);
+  });
+
+  regFloatProto("op_lt", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() < b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av < bv);
+  });
+
+  regFloatProto("op_gt", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() > b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av > bv);
+  });
+
+  regFloatProto("op_le", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() <= b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av <= bv);
+  });
+
+  regFloatProto("op_ge", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    auto a = args[0], b = args[1];
+    if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() >= b.asInt());
+    double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
+    double bv = b.isDouble() ? b.asDouble() : static_cast<double>(b.asInt());
+    return Value::makeBool(av >= bv);
+  });
 
   regFloatProto("round", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();

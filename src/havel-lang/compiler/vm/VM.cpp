@@ -1632,7 +1632,7 @@ void VM::registerDefaultHostFunctions() {
     else if (value.isBool()) typeName = "bool";
     else if (value.isInt()) typeName = "int";
     else if (value.isDouble()) typeName = "float";
-    else if (value.isStringValId() || value.isStringId()) typeName = "string";
+    else if (value.isStringValId() || value.isStringId() || value.isRegexValId()) typeName = "string";
     else if (value.isArrayId()) typeName = "array";
     else if (value.isObjectId()) typeName = "object";
     else if (value.isSetId()) typeName = "set";
@@ -1657,7 +1657,7 @@ void VM::registerDefaultHostFunctions() {
     if (args.empty()) return Value::makeNull();
     const auto &value = args[0];
     // Check if value is iterable
-    if (value.isArrayId() || value.isStringId() || value.isStringValId() ||
+    if (value.isArrayId() || value.isStringId() || value.isStringValId() || value.isRegexValId() ||
         value.isObjectId() || value.isSetId() || value.isRangeId()) {
       uint32_t iterId = heap_.createIterator(value);
       return Value::makeIteratorId(iterId);
@@ -1707,7 +1707,7 @@ void VM::registerDefaultHostFunctions() {
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isIterable = value.isArrayId() || value.isStringId() ||
-                      value.isStringValId() || value.isObjectId() ||
+                      value.isStringValId() || value.isRegexValId() || value.isObjectId() ||
                       value.isSetId() || value.isRangeId() ||
                       value.isIteratorId();
     return Value::makeBool(isIterable);
@@ -1718,7 +1718,7 @@ void VM::registerDefaultHostFunctions() {
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isIndexable = value.isArrayId() || value.isStringId() ||
-                       value.isStringValId() || value.isObjectId() ||
+                       value.isStringValId() || value.isRegexValId() || value.isObjectId() ||
                        value.isSetId();
     return Value::makeBool(isIndexable);
   });
@@ -8634,6 +8634,12 @@ std::string VM::resolveStringKey(const Value &value) const {
       return current_chunk->getString(value.asStringValId());
     }
     return "<string:" + std::to_string(value.asStringValId()) + ">";
+  }
+  if (value.isRegexValId()) {
+    if (current_chunk) {
+      return current_chunk->getString(value.asRegexValId());
+    }
+    return "<regex:" + std::to_string(value.asRegexValId()) + ">";
   }
   if (value.isInt()) return std::to_string(value.asInt());
   if (value.isDouble()) {

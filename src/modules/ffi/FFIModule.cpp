@@ -44,9 +44,8 @@ static const char* FFI_MODULE_MARKER = "__ffi_module";
 
 static bool isFFIModuleObject(compiler::VMApi& api, const Value& val) {
     if (!val.isObjectId()) return false;
-    // Check if the object has the FFI module marker field
     auto marker = api.getField(val, FFI_MODULE_MARKER);
-    return marker && marker->isBool() && marker->asBool();
+    return marker.isBool() && marker.asBool();
 }
 
 static std::vector<Value> stripReceiver(compiler::VMApi& api, const std::vector<Value>& args) {
@@ -571,7 +570,7 @@ static Value ffi##name(compiler::VMApi& api, const std::vector<Value>& rawArgs) 
         return Value::makeNull(); \
     }
 
-static Value ffiGetI8(compiler::VMApi&std::vector<Value>& rawArgs) {
+static Value ffiGetI8(compiler::VMApi& api, const std::vector<Value>& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 1) return Value::makeNull();
     void* ptr = resolvePtr(args[0]);

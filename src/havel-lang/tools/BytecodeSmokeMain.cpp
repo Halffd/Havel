@@ -231,7 +231,6 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     // any.* dispatch functions for member access and array HOFs
     havel::compiler::VM *vm_ptr = nullptr;
     options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
-    std::unordered_map<std::string, std::deque<Value>> channels;
     std::unordered_map<std::string, Value> thread_callbacks;
     options.host_functions["any.get"] = [&](const std::vector<Value> &args) {
       if (args.size() < 2 || !vm_ptr) return Value::makeNull();
@@ -354,7 +353,6 @@ int runAsyncCase(const std::string &name, const std::string &source,
 	havel::compiler::VM *vm_ptr = nullptr;
     uint64_t next_task_id = 1;
     std::unordered_map<std::string, Value> task_results;
-    std::unordered_map<std::string, std::deque<Value>> channels;
     std::unordered_map<std::string, Value> thread_callbacks;
     std::unordered_map<std::string, bool> thread_running;
     std::unordered_map<std::string, bool> thread_paused;
@@ -366,73 +364,11 @@ int runAsyncCase(const std::string &name, const std::string &source,
 
     options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
 
-    options.host_functions["async.run"] =
-        [&](const std::vector<Value> &args) {
-          if (!vm_ptr) {
-            throw std::runtime_error("async.run vm unavailable");
-          }
-          // async.run(closure) compiles as any.run(async_obj, closure)
-          // so the closure is args[1]
-          if (args.size() < 2) {
-            throw std::runtime_error("async.run requires callback");
-          }
-          const auto &closure = args[1];
-
-          // Execute closure synchronously (smoke test is single-threaded)
-          if (closure.isClosureId() || closure.isFunctionObjId()) {
-            return vm_ptr->call(closure, {});
-          }
-          return Value::makeNull();
-        };
-    // any.run alias - async.run(x) compiles as any.run(x) via member dispatch
-    options.host_functions["any.run"] = options.host_functions["async.run"];
-    // any.await - just return the value (async.run already computed it)
-    options.host_functions["any.await"] = [&](const std::vector<Value> &args) {
-      if (args.empty() || !vm_ptr) return Value::makeNull();
-      return args[0];
+    options.host_functions["async.await"] = [&](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        return args[0];
     };
-    options.host_functions["async.await"] =
-        [&](const std::vector<Value> &args) {
-          if (args.empty()) {
-            throw std::runtime_error("async.await requires task id");
-          }
-          return args[0];
-        };
     options.host_functions["await"] = options.host_functions["async.await"];
-    options.host_functions["async.channel"] =
-        [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringValId()) {
-            throw std::runtime_error("async.channel requires name");
-          }
-          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
-          channels[name] = std::deque<Value>();
-          return Value(true);
-        };
-    options.host_functions["async.send"] =
-        [&](const std::vector<Value> &args) {
-          if (args.size() < 2 || !args[0].isStringValId()) {
-            throw std::runtime_error("async.send requires name + value");
-          }
-          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
-          channels[name].push_back(args[1]);
-          return Value(true);
-        };
-    options.host_functions["async.receive"] =
-        [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringValId()) {
-            throw std::runtime_error("async.receive requires name");
-          }
-          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
-          auto it = channels.find(name);
-          if (it == channels.end() || it->second.empty()) {
-            return Value::makeNull();
-          }
-          auto value = it->second.front();
-          it->second.pop_front();
-          return value;
-        };
-    options.host_functions["async.tryReceive"] =
-        options.host_functions["async.receive"];
 
     options.host_functions["thread"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty()) {
@@ -707,22 +643,6 @@ int runAsyncCase(const std::string &name, const std::string &source,
       return Value::makeNull();
     };
 
-    // Async/concurrency stubs for smoke tests
-    options.host_functions["any.run"] = [&](const std::vector<Value> &args) {
-      // any.run(obj, callback) - execute callback synchronously and return result
-      // Method calls pass the object as args[0], callback as args[1]
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      return vm_ptr->call(args[1], {});
-    };
-    options.host_functions["any.channel"] = [&](const std::vector<Value> &args) {
-      // any.channel(name) - create a channel object
-      if (!vm_ptr) return Value::makeNull();
-      auto obj = vm_ptr->createHostObject();
-      if (!args.empty() && args[0].isStringValId()) {
-        vm_ptr->setHostObjectField(obj, "name", args[0]);
-      }
-      return Value::makeObjectId(obj.id);
-    };
     options.host_functions["any.gc"] = [&](const std::vector<Value> &args) {
       // any.gc() - trigger garbage collection (stub - GC runs automatically)
       return Value::makeNull();
@@ -738,28 +658,6 @@ int runAsyncCase(const std::string &name, const std::string &source,
       vm_ptr->setHostObjectField(obj, "lastPauseNs", Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
       return Value::makeObjectId(obj.id);
     };
-
-    // Async stubs - member access on globals like async.run() gets routed to any.run
-    // NOTE: async.run is already defined above with proper task handling
-    options.host_functions["async.channel"] = options.host_functions["any.channel"];
-    options.host_functions["async.send"] = [&](const std::vector<Value> &args) {
-      // async.send(name, value) - send to first channel
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      channels.begin()->second.push_back(args[1]);
-      return Value(true);
-    };
-    options.host_functions["async.receive"] = [&](const std::vector<Value> &args) {
-      // async.receive(name) - receive from first channel
-      if (!vm_ptr) return Value::makeNull();
-      auto &queue = channels.begin()->second;
-      if (queue.empty()) return Value::makeNull();
-      auto value = queue.front();
-      queue.pop_front();
-      return value;
-    };
-    options.host_functions["async.tryReceive"] = options.host_functions["async.receive"];
-    options.host_functions["any.receive"] = options.host_functions["async.receive"];
-    options.host_functions["any.tryReceive"] = options.host_functions["async.tryReceive"];
 
     // Thread stubs - member access on thread objects
     options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
@@ -1171,26 +1069,7 @@ let nums = [1, 2, 3, 4]
 return nums.map((x) => x * 2).filter((x) => x > 4).reduce((a, b) => a + b, 0)
 )havel", 14, dump_bytecode, snapshot_dir);
 
-  failures += runAsyncCase("async-run-await-closure", R"havel(
-fn makeTask(seed) {
-    fn run() {
-        return seed + 1
-    }
-    return run
-}
-
-let task = async.run(makeTask(41))
-return await task
-)havel", 42, dump_bytecode, snapshot_dir);
-
-  failures += runAsyncCase("async-channel-closure-value", R"havel(
-async.channel("jobs")
-async.send("jobs", fn(x) { return x + 1 })
-let cb = async.receive("jobs")
-return cb(41)
-)havel", 42, dump_bytecode, snapshot_dir);
-
-  failures += runAsyncCase("thread-send", R"havel(
+    failures += runAsyncCase("thread-send", R"havel(
 let worker = thread(fn(msg) { return msg + 1 })
 worker.pause()
 worker.resume()

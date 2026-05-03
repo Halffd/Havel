@@ -330,23 +330,23 @@ void registerStringPrototype(VM& vm) {
     std::string receiver = extractString(vm, args[0]);
     std::string argument = extractStringArg(vm, args, 1, "");
 
-    // Detect if receiver looks like a regex pattern (contains regex metacharacters)
+    // Detect if receiver is a regex string literal using type tag
     // If so, receiver is the pattern and argument is the text to search
     // Otherwise, receiver is the text and argument is the pattern
-    bool receiverIsPattern = false;
-    static const std::string regexMetacharacters = ".^$|()[]{}*+?\\";
-    for (char c : receiver) {
-      if (regexMetacharacters.find(c) != std::string::npos) {
-        receiverIsPattern = true;
-        break;
-      }
-    }
+    bool receiverIsPattern = args[0].isRegexValId();
+    bool argumentIsPattern = args[1].isRegexValId();
 
     std::string text, pattern;
     if (receiverIsPattern) {
+      // r"pattern".match("text") - receiver is the regex pattern
       text = argument;
       pattern = receiver;
+    } else if (argumentIsPattern) {
+      // "text".match(r"pattern") - argument is the regex pattern
+      text = receiver;
+      pattern = argument;
     } else {
+      // Neither is marked as regex - treat receiver as text, argument as pattern
       text = receiver;
       pattern = argument;
     }

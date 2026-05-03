@@ -360,7 +360,7 @@ std::unordered_map<std::string, bool> timeout_running;
 
 options.vm_setup = [&](havel::compiler::VM &vm) {
     vm_ptr = &vm;
-        auto thread_obj = vm.createHostObject();
+    auto thread_obj = vm.createHostObject();
     vm.setHostObjectField(thread_obj, "spawn", Value::makeHostFuncId(vm.getHostFunctionIndex("thread")));
     vm.setGlobal("thread", Value::makeObjectId(thread_obj.id));
     auto interval_obj = vm.createHostObject();
@@ -369,7 +369,13 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
     auto timeout_obj = vm.createHostObject();
     vm.setHostObjectField(timeout_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("timeout")));
     vm.setGlobal("timeout", Value::makeObjectId(timeout_obj.id));
-    };
+
+    vm.registerPrototypeMethodByName("object", "send", "object.send");
+    vm.registerPrototypeMethodByName("object", "pause", "object.pause");
+    vm.registerPrototypeMethodByName("object", "resume", "object.resume");
+    vm.registerPrototypeMethodByName("object", "stop", "object.stop");
+    vm.registerPrototypeMethodByName("object", "running", "object.running");
+};
 
     options.host_functions["async.await"] = [&](const std::vector<Value> &args) {
         if (args.empty()) return Value::makeNull();
@@ -377,138 +383,201 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
     };
     options.host_functions["await"] = options.host_functions["async.await"];
 
-    options.host_functions["thread"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty()) {
+options.host_functions["thread"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty()) {
         throw std::runtime_error("thread requires callback");
-      }
-    std::string id = "thread-" + std::to_string(next_task_id++);
-    thread_callbacks[id] = args[0];
+    }
+    // When called via CALL_METHOD (thread.spawn(fn)), receiver is prepended
+    Value callback = args[0];
+    if (args.size() >= 2 && args[0].isObjectId()) {
+        callback = args[1];
+    }
+    int64_t tid = next_task_id++;
+    std::string id = "thread-" + std::to_string(tid);
+    thread_callbacks[id] = callback;
     thread_running[id] = true;
     thread_paused[id] = false;
     auto obj = vm_ptr->createHostObject();
     vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(thread_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
     vm_ptr->setHostObjectField(obj, "send", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.send")));
     vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.pause")));
     vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.resume")));
     vm_ptr->setHostObjectField(obj, "running", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.running")));
     return Value::makeObjectId(obj.id);
-    };
-    options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
-        return Value(false);
-      }
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to thread_callbacks key
-      (void)idv;
-      return Value(false);
-    };
-    options.host_functions["thread.pause"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to thread_paused key
-      (void)idv;
-      return Value(false);
-    };
-    options.host_functions["thread.resume"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to thread_paused key
-      (void)idv;
-      return Value(false);
-    };
-    options.host_functions["thread.stop"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to thread_running key
-      (void)idv;
-      return Value(false);
-    };
-    options.host_functions["thread.running"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to thread_running key
-      (void)idv;
-      return Value(false);
-    };
+};
 
-    options.host_functions["interval"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval requires delay + callback");
-    std::string id = "interval-" + std::to_string(next_task_id++);
+// thread.spawn(closure) — called by block-sugar "thread { ... }" via LOAD_GLOBAL + CALL
+// Args: [closure] (no receiver prepended since it's not CALL_METHOD)
+options.host_functions["thread.spawn"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty()) {
+        throw std::runtime_error("thread.spawn requires callback");
+    }
+    Value callback = args[0];
+    int64_t tid = next_task_id++;
+    std::string id = "thread-" + std::to_string(tid);
+    thread_callbacks[id] = callback;
+    thread_running[id] = true;
+    thread_paused[id] = false;
+    (void)vm_ptr->callFunction(thread_callbacks[id], {});
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
+    vm_ptr->setHostObjectField(obj, "send", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.send")));
+    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.pause")));
+    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.resume")));
+    vm_ptr->setHostObjectField(obj, "running", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.running")));
+    return Value::makeObjectId(obj.id);
+};
+
+options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
+        return Value::makeNull();
+    }
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value::makeNull();
+    std::string key = "thread-" + std::to_string(idv.asInt());
+    auto it = thread_callbacks.find(key);
+    if (it == thread_callbacks.end()) return Value::makeNull();
+    Value msg = args[1];
+    return vm_ptr->callFunction(it->second, {msg});
+};
+options.host_functions["thread.pause"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "thread-" + std::to_string(idv.asInt());
+    thread_paused[key] = true;
+    return Value(true);
+};
+options.host_functions["thread.resume"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "thread-" + std::to_string(idv.asInt());
+    thread_paused[key] = false;
+    return Value(true);
+};
+options.host_functions["thread.stop"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "thread-" + std::to_string(idv.asInt());
+    thread_running[key] = false;
+    return Value(true);
+};
+options.host_functions["thread.running"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "thread-" + std::to_string(idv.asInt());
+    auto it = thread_running.find(key);
+    return Value(it != thread_running.end() && it->second);
+};
+
+options.host_functions["interval"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty()) throw std::runtime_error("interval requires delay + callback");
+    // When called via CALL_METHOD (interval.start(delay, fn)), receiver is prepended
+    size_t cb_idx = 1;
+    size_t delay_idx = 1;
+    if (args.size() >= 3 && args[0].isObjectId()) {
+        cb_idx = 2;
+        delay_idx = 1;
+    }
+    if (args.size() <= cb_idx) throw std::runtime_error("interval requires delay + callback");
+    int64_t iid = next_task_id++;
+    std::string id = "interval-" + std::to_string(iid);
+    interval_callbacks[id] = args[cb_idx];
+    interval_running[id] = true;
+    interval_paused[id] = false;
+    (void)vm_ptr->callFunction(interval_callbacks[id], {});
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(iid));
+    return Value::makeObjectId(obj.id);
+};
+
+// interval.start(ms, closure) — called by block-sugar "interval N { ... }" via LOAD_GLOBAL + CALL
+// Args: [delay, closure] (no receiver prepended)
+options.host_functions["interval.start"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval.start requires delay + callback");
+    int64_t iid = next_task_id++;
+    std::string id = "interval-" + std::to_string(iid);
     interval_callbacks[id] = args[1];
     interval_running[id] = true;
     interval_paused[id] = false;
-    (void)vm_ptr->call(interval_callbacks[id], {});
+    (void)vm_ptr->callFunction(interval_callbacks[id], {});
     auto obj = vm_ptr->createHostObject();
     vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(interval_callbacks.size())));
-    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.pause")));
-    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.resume")));
-    vm_ptr->setHostObjectField(obj, "stop", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.stop")));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(iid));
     return Value::makeObjectId(obj.id);
-    };
-    options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to interval_paused key
-      (void)idv;
-      return Value(false);
-    };
-    options.host_functions["interval.resume"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to interval_paused/interval_running key
-      (void)idv;
-      return Value(false);
-    };
-    options.host_functions["interval.stop"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to interval_running key
-      (void)idv;
-      return Value(false);
-    };
+};
 
-    options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout requires delay + callback");
-    std::string id = "timeout-" + std::to_string(next_task_id++);
-    timeout_callbacks[id] = args[1];
+options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "interval-" + std::to_string(idv.asInt());
+    interval_paused[key] = true;
+    return Value(true);
+};
+options.host_functions["interval.resume"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "interval-" + std::to_string(idv.asInt());
+    interval_paused[key] = false;
+    return Value(true);
+};
+options.host_functions["interval.stop"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "interval-" + std::to_string(idv.asInt());
+    interval_running[key] = false;
+    return Value(true);
+};
+
+options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty()) throw std::runtime_error("timeout requires delay + callback");
+    // When called via CALL_METHOD (timeout.start(delay, fn)), receiver is prepended
+    size_t cb_idx = 1;
+    if (args.size() >= 3 && args[0].isObjectId()) {
+        cb_idx = 2;
+    }
+    if (args.size() <= cb_idx) throw std::runtime_error("timeout requires delay + callback");
+    int64_t tid = next_task_id++;
+    std::string id = "timeout-" + std::to_string(tid);
+    timeout_callbacks[id] = args[cb_idx];
     timeout_running[id] = true;
-    (void)vm_ptr->call(timeout_callbacks[id], {});
+    (void)vm_ptr->callFunction(timeout_callbacks[id], {});
     timeout_running[id] = false;
     auto obj = vm_ptr->createHostObject();
     vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(timeout_callbacks.size())));
-    vm_ptr->setHostObjectField(obj, "cancel", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("timeout.cancel")));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
     return Value::makeObjectId(obj.id);
-    };
-    options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!idv.isInt()) return Value(false);
-      // TODO: map id back to timeout_running key
-      (void)idv;
-      return Value(false);
-    };
+};
+options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto idv = vm_ptr->getHostObjectField(obj, "__id");
+    if (!idv.isInt()) return Value(false);
+    std::string key = "timeout-" + std::to_string(idv.asInt());
+    timeout_running[key] = false;
+    return Value(true);
+};
 
-    options.host_functions["object.send"] = options.host_functions["thread.send"];
+    options.host_functions["object.send"] = [&](const std::vector<Value> &args) {
+    return options.host_functions["thread.send"](args);
+};
     options.host_functions["object.pause"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
       auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
@@ -537,17 +606,28 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
       return Value(false);
     };
     options.host_functions["object.cancel"] = options.host_functions["timeout.cancel"];
-    options.host_functions["object.running"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
-      auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-      auto kind = vm_ptr->getHostObjectField(obj, "__kind");
-      auto idv = vm_ptr->getHostObjectField(obj, "__id");
-      if (!kind.isInt() || !idv.isInt()) return Value(false);
-      // TODO: map id back to running maps
-      (void)kind;
-      (void)idv;
-      return Value(false);
-    };
+options.host_functions["object.running"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
+    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+    auto kind = vm_ptr->getHostObjectField(obj, "__kind");
+    if (!kind.isInt()) return Value(false);
+    if (kind.asInt() == 0) return options.host_functions["thread.running"](args);
+    if (kind.asInt() == 1) {
+        auto idv = vm_ptr->getHostObjectField(obj, "__id");
+        if (!idv.isInt()) return Value(false);
+        std::string key = "interval-" + std::to_string(idv.asInt());
+        auto it = interval_running.find(key);
+        return Value(it != interval_running.end() && it->second);
+    }
+    if (kind.asInt() == 2) {
+        auto idv = vm_ptr->getHostObjectField(obj, "__id");
+        if (!idv.isInt()) return Value(false);
+        std::string key = "timeout-" + std::to_string(idv.asInt());
+        auto it = timeout_running.find(key);
+        return Value(it != timeout_running.end() && it->second);
+    }
+    return Value(false);
+};
     options.host_functions["any.send"] = options.host_functions["object.send"];
     options.host_functions["any.pause"] = options.host_functions["object.pause"];
     options.host_functions["any.resume"] = options.host_functions["object.resume"];
@@ -666,52 +746,7 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
       return Value::makeObjectId(obj.id);
     };
 
-    // Thread stubs - member access on thread objects
-    options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      auto cb = thread_callbacks.begin()->second;
-      return vm_ptr->callFunction(cb, {args[1]});
-    };
-    options.host_functions["thread.pause"] = [&](const std::vector<Value> &args) {
-      return Value::makeNull();
-    };
-    options.host_functions["thread.resume"] = [&](const std::vector<Value> &args) {
-      return Value::makeNull();
-    };
-    options.host_functions["thread.running"] = [&](const std::vector<Value> &args) {
-      return Value::makeBool(true);
-    };
-    options.host_functions["thread.stop"] = [&](const std::vector<Value> &args) {
-      return Value::makeNull();
-    };
 
-    // Interval/timeout stubs
-    options.host_functions["interval"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      auto obj = vm_ptr->createHostObject();
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(0));
-      return Value::makeObjectId(obj.id);
-    };
-    options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["interval.resume"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["interval.stop"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      auto obj = vm_ptr->createHostObject();
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(0));
-      return Value::makeObjectId(obj.id);
-    };
-    options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["object.send"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      return options.host_functions["thread.send"](args);
-    };
-    options.host_functions["object.pause"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["object.resume"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["object.stop"] = [&](const std::vector<Value> &args) { return Value::makeNull(); };
-    options.host_functions["object.running"] = [&](const std::vector<Value> &args) { return Value::makeBool(true); };
 
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);

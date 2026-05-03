@@ -435,18 +435,21 @@ int runAsyncCase(const std::string &name, const std::string &source,
         options.host_functions["async.receive"];
 
     options.host_functions["thread"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.empty()) {
+    if (!vm_ptr || args.empty()) {
         throw std::runtime_error("thread requires callback");
-      }
-      std::string id = "thread-" + std::to_string(next_task_id++);
-      thread_callbacks[id] = args[0];
-      thread_running[id] = true;
-      thread_paused[id] = false;
-      auto obj = vm_ptr->createHostObject();
-      // Kind: 0=thread, 1=interval, 2=timeout
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(thread_callbacks.size())));
-      return Value::makeObjectId(obj.id);
+    }
+    std::string id = "thread-" + std::to_string(next_task_id++);
+    thread_callbacks[id] = args[0];
+    thread_running[id] = true;
+    thread_paused[id] = false;
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(thread_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "send", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.send")));
+    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.pause")));
+    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.resume")));
+    vm_ptr->setHostObjectField(obj, "running", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.running")));
+    return Value::makeObjectId(obj.id);
     };
     options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
@@ -497,17 +500,19 @@ int runAsyncCase(const std::string &name, const std::string &source,
     };
 
     options.host_functions["interval"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval requires delay + callback");
-      std::string id = "interval-" + std::to_string(next_task_id++);
-      interval_callbacks[id] = args[1];
-      interval_running[id] = true;
-      interval_paused[id] = false;
-      (void)vm_ptr->call(interval_callbacks[id], {});
-      auto obj = vm_ptr->createHostObject();
-      // Kind: 0=thread, 1=interval, 2=timeout
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(interval_callbacks.size())));
-      return Value::makeObjectId(obj.id);
+    if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval requires delay + callback");
+    std::string id = "interval-" + std::to_string(next_task_id++);
+    interval_callbacks[id] = args[1];
+    interval_running[id] = true;
+    interval_paused[id] = false;
+    (void)vm_ptr->call(interval_callbacks[id], {});
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(interval_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.pause")));
+    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.resume")));
+    vm_ptr->setHostObjectField(obj, "stop", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.stop")));
+    return Value::makeObjectId(obj.id);
     };
     options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
@@ -538,17 +543,17 @@ int runAsyncCase(const std::string &name, const std::string &source,
     };
 
     options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout requires delay + callback");
-      std::string id = "timeout-" + std::to_string(next_task_id++);
-      timeout_callbacks[id] = args[1];
-      timeout_running[id] = true;
-      (void)vm_ptr->call(timeout_callbacks[id], {});
-      timeout_running[id] = false;
-      auto obj = vm_ptr->createHostObject();
-      // Kind: 0=thread, 1=interval, 2=timeout
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(timeout_callbacks.size())));
-      return Value::makeObjectId(obj.id);
+    if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout requires delay + callback");
+    std::string id = "timeout-" + std::to_string(next_task_id++);
+    timeout_callbacks[id] = args[1];
+    timeout_running[id] = true;
+    (void)vm_ptr->call(timeout_callbacks[id], {});
+    timeout_running[id] = false;
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(timeout_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "cancel", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("timeout.cancel")));
+    return Value::makeObjectId(obj.id);
     };
     options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);

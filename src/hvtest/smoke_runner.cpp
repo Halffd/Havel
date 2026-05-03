@@ -357,12 +357,31 @@ int runAsyncCase(const std::string &name, const std::string &source,
     std::unordered_map<std::string, Value> interval_callbacks;
     std::unordered_map<std::string, bool> interval_running;
     std::unordered_map<std::string, bool> interval_paused;
-    std::unordered_map<std::string, Value> timeout_callbacks;
-    std::unordered_map<std::string, bool> timeout_running;
+std::unordered_map<std::string, Value> timeout_callbacks;
+std::unordered_map<std::string, bool> timeout_running;
 
-    options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+options.vm_setup = [&](havel::compiler::VM &vm) {
+    vm_ptr = &vm;
+    auto async_obj = vm.createHostObject();
+    vm.setHostObjectField(async_obj, "run", Value::makeHostFuncId(vm.getHostFunctionIndex("async.run")));
+    vm.setHostObjectField(async_obj, "await", Value::makeHostFuncId(vm.getHostFunctionIndex("async.await")));
+    vm.setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(vm.getHostFunctionIndex("async.sleep")));
+    vm.setHostObjectField(async_obj, "channel", Value::makeHostFuncId(vm.getHostFunctionIndex("async.channel")));
+    vm.setHostObjectField(async_obj, "send", Value::makeHostFuncId(vm.getHostFunctionIndex("async.send")));
+    vm.setHostObjectField(async_obj, "receive", Value::makeHostFuncId(vm.getHostFunctionIndex("async.receive")));
+    vm.setGlobal("async", Value::makeObjectId(async_obj.id));
+    auto thread_obj = vm.createHostObject();
+    vm.setHostObjectField(thread_obj, "spawn", Value::makeHostFuncId(vm.getHostFunctionIndex("thread")));
+    vm.setGlobal("thread", Value::makeObjectId(thread_obj.id));
+    auto interval_obj = vm.createHostObject();
+    vm.setHostObjectField(interval_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("interval")));
+    vm.setGlobal("interval", Value::makeObjectId(interval_obj.id));
+    auto timeout_obj = vm.createHostObject();
+    vm.setHostObjectField(timeout_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("timeout")));
+    vm.setGlobal("timeout", Value::makeObjectId(timeout_obj.id));
+};
 
-    options.host_functions["async.run"] =
+options.host_functions["async.run"] =
         [&](const std::vector<Value> &args) {
           if (!vm_ptr) {
             throw std::runtime_error("async.run vm unavailable");
@@ -395,27 +414,33 @@ int runAsyncCase(const std::string &name, const std::string &source,
           return args[0];
         };
     options.host_functions["await"] = options.host_functions["async.await"];
-    options.host_functions["async.channel"] =
-        [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringValId()) {
-            throw std::runtime_error("async.channel requires name");
-          }
-          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
-          channels[name] = std::deque<Value>();
-          return Value(true);
-        };
-    options.host_functions["async.send"] =
-        [&](const std::vector<Value> &args) {
-          if (args.size() < 2 || !args[0].isStringValId()) {
-            throw std::runtime_error("async.send requires name + value");
-          }
-          const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
-          channels[name].push_back(args[1]);
-          return Value(true);
-        };
-    options.host_functions["async.receive"] =
-        [&](const std::vector<Value> &args) {
-          if (args.empty() || !args[0].isStringValId()) {
+options.host_functions["async.channel"] =
+[&](const std::vector<Value> &args) {
+    size_t start = 0;
+    if (!args.empty() && args[0].isObjectId()) start = 1;
+    if (args.size() <= start || !args[start].isStringValId()) {
+        throw std::runtime_error("async.channel requires name");
+    }
+    const auto &name = vm_ptr->getCurrentChunk()->getString(args[start].asStringValId());
+    channels[name] = std::deque<Value>();
+    return Value(true);
+};
+options.host_functions["async.send"] =
+[&](const std::vector<Value> &args) {
+    size_t start = 0;
+    if (!args.empty() && args[0].isObjectId()) start = 1;
+    if (args.size() <= start + 1 || !args[start].isStringValId()) {
+        throw std::runtime_error("async.send requires name + value");
+    }
+    const auto &name = vm_ptr->getCurrentChunk()->getString(args[start].asStringValId());
+    channels[name].push_back(args[start + 1]);
+    return Value(true);
+};
+options.host_functions["async.receive"] =
+[&](const std::vector<Value> &args) {
+    size_t start = 0;
+    if (!args.empty() && args[0].isObjectId()) start = 1;
+    if (args.size() <= start || !args[start].isStringValId()) {
             throw std::runtime_error("async.receive requires name");
           }
           const auto &name = vm_ptr->getCurrentChunk()->getString(args[0].asStringValId());
@@ -434,15 +459,18 @@ int runAsyncCase(const std::string &name, const std::string &source,
       if (!vm_ptr || args.empty()) {
         throw std::runtime_error("thread requires callback");
       }
-      std::string id = "thread-" + std::to_string(next_task_id++);
-      thread_callbacks[id] = args[0];
-      thread_running[id] = true;
-      thread_paused[id] = false;
-      auto obj = vm_ptr->createHostObject();
-      // Kind: 0=thread, 1=interval, 2=timeout
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(thread_callbacks.size())));
-      return Value::makeObjectId(obj.id);
+    std::string id = "thread-" + std::to_string(next_task_id++);
+    thread_callbacks[id] = args[0];
+    thread_running[id] = true;
+    thread_paused[id] = false;
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(thread_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "send", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.send")));
+    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.pause")));
+    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.resume")));
+    vm_ptr->setHostObjectField(obj, "running", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.running")));
+    return Value::makeObjectId(obj.id);
     };
     options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
@@ -493,17 +521,19 @@ int runAsyncCase(const std::string &name, const std::string &source,
     };
 
     options.host_functions["interval"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval requires delay + callback");
-      std::string id = "interval-" + std::to_string(next_task_id++);
-      interval_callbacks[id] = args[1];
-      interval_running[id] = true;
-      interval_paused[id] = false;
-      (void)vm_ptr->call(interval_callbacks[id], {});
-      auto obj = vm_ptr->createHostObject();
-      // Kind: 0=thread, 1=interval, 2=timeout
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(interval_callbacks.size())));
-      return Value::makeObjectId(obj.id);
+    if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval requires delay + callback");
+    std::string id = "interval-" + std::to_string(next_task_id++);
+    interval_callbacks[id] = args[1];
+    interval_running[id] = true;
+    interval_paused[id] = false;
+    (void)vm_ptr->call(interval_callbacks[id], {});
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(interval_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.pause")));
+    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.resume")));
+    vm_ptr->setHostObjectField(obj, "stop", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("interval.stop")));
+    return Value::makeObjectId(obj.id);
     };
     options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
@@ -534,17 +564,17 @@ int runAsyncCase(const std::string &name, const std::string &source,
     };
 
     options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
-      if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout requires delay + callback");
-      std::string id = "timeout-" + std::to_string(next_task_id++);
-      timeout_callbacks[id] = args[1];
-      timeout_running[id] = true;
-      (void)vm_ptr->call(timeout_callbacks[id], {});
-      timeout_running[id] = false;
-      auto obj = vm_ptr->createHostObject();
-      // Kind: 0=thread, 1=interval, 2=timeout
-      vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
-      vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(timeout_callbacks.size())));
-      return Value::makeObjectId(obj.id);
+    if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout requires delay + callback");
+    std::string id = "timeout-" + std::to_string(next_task_id++);
+    timeout_callbacks[id] = args[1];
+    timeout_running[id] = true;
+    (void)vm_ptr->call(timeout_callbacks[id], {});
+    timeout_running[id] = false;
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(static_cast<int64_t>(timeout_callbacks.size())));
+    vm_ptr->setHostObjectField(obj, "cancel", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("timeout.cancel")));
+    return Value::makeObjectId(obj.id);
     };
     options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
       if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
@@ -817,9 +847,9 @@ int runAsyncCase(const std::string &name, const std::string &source,
 }
 
 int runClosureCase(bool dump_bytecode, const std::string &snapshot_dir) {
-  const std::string source = R"havel(
+    const std::string source = R"havel(
 fn outer() {
-    let x = 1
+    val x = 1
     fn inner() {
         return x
     }
@@ -886,9 +916,9 @@ return missing_value
 }
 
 int runRuntimeLineErrorCase(bool dump_bytecode, const std::string &snapshot_dir) {
-  const std::string source = R"havel(
+    const std::string source = R"havel(
 fn bad() {
-    let x = 1
+    x = 1
     return x / 0
 }
 return bad()
@@ -956,18 +986,18 @@ return spin()
 int runHostRootLifetimeCase(bool dump_bytecode) {
   const std::string source = R"havel(
 fn make() {
-    let x = 41
+    x = 41
     fn inner() {
         return x + 1
     }
     return inner
 }
 
-let cb = make()
+cb = make()
 store_closure(cb)
 cb = 0
 gc_now()
-let loaded = load_closure()
+loaded = load_closure()
 return loaded()
 )havel";
 
@@ -1028,14 +1058,14 @@ return loaded()
 int runExternalCallbackInvocationCase(bool dump_bytecode) {
   const std::string source = R"havel(
 fn makeCallback(seed) {
-    let x = seed
+    x = seed
     fn cb() {
         return x + 2
     }
     return cb
 }
 
-let cb = makeCallback(40)
+cb = makeCallback(40)
 register_cb(cb)
 return trigger_cb()
 )havel";
@@ -1111,7 +1141,7 @@ fn add(a, b) {
     return a + b
 }
 
-let x = add(2, 3)
+x = add(2, 3)
 print(x)
 return x
 )havel", 5, dump_bytecode, snapshot_dir);
@@ -1121,7 +1151,7 @@ fn add(a, b) {
     return a + b
 }
 
-let f = add
+f = add
 return f(20, 22)
 )havel", 42, dump_bytecode, snapshot_dir);
 
@@ -1130,7 +1160,7 @@ fn outer(x) {
     fn doubleIt(value) {
         return value * 2
     }
-    let f = doubleIt
+    f = doubleIt
     return f(x)
 }
 
@@ -1146,19 +1176,19 @@ fn double(v) {
     return v * 2
 }
 
-let nums = [1, 2, 3]
-let out = nums.map(double)
+nums = [1, 2, 3]
+out = nums.map(double)
 return out[2]
 )havel", 6, dump_bytecode, snapshot_dir);
 
   failures += runCase("lambda-in-call", R"havel(
-let nums = [1, 2, 3]
-let out = nums.map((x) => x * 3)
+nums = [1, 2, 3]
+out = nums.map((x) => x * 3)
 return out[1]
 )havel", 6, dump_bytecode, snapshot_dir);
 
   failures += runCase("method-chaining-array-hof", R"havel(
-let nums = [1, 2, 3, 4]
+nums = [1, 2, 3, 4]
 return nums.map((x) => x * 2).filter((x) => x > 4).reduce((a, b) => a + b, 0)
 )havel", 14, dump_bytecode, snapshot_dir);
 
@@ -1170,19 +1200,19 @@ fn makeTask(seed) {
     return run
 }
 
-let task = async.run(makeTask(41))
+task = async.run(makeTask(41))
 return await task
 )havel", 42, dump_bytecode, snapshot_dir);
 
   failures += runAsyncCase("async-channel-closure-value", R"havel(
 async.channel("jobs")
 async.send("jobs", fn(x) { return x + 1 })
-let cb = async.receive("jobs")
+cb = async.receive("jobs")
 return cb(41)
 )havel", 42, dump_bytecode, snapshot_dir);
 
   failures += runAsyncCase("thread-send", R"havel(
-let worker = thread(fn(msg) { return msg + 1 })
+worker = thread(fn(msg) { return msg + 1 })
 worker.pause()
 worker.resume()
 worker.send(41)
@@ -1193,8 +1223,8 @@ return 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runAsyncCase("thread-block-sugar", R"havel(
-let value = 0
-let worker = thread {
+value = 0
+worker = thread {
     value += 1
 }
 worker.send(0)
@@ -1202,23 +1232,23 @@ return value
 )havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runAsyncCase("interval-timeout-controls", R"havel(
-let hits = 0
-let timer = interval(100, fn() { hits += 1 })
+hits = 0
+timer = interval(100, fn() { hits += 1 })
 timer.pause()
 timer.resume()
 timer.stop()
-let t = timeout(100, fn() { hits += 10 })
+t = timeout(100, fn() { hits += 10 })
 t.cancel()
 return hits
 )havel", 11, dump_bytecode, snapshot_dir);
 
   failures += runAsyncCase("interval-timeout-block-sugar", R"havel(
-let hits = 0
-let i = interval 100 {
+hits = 0
+i = interval 100 {
     hits += 1
 }
 i.stop()
-let t = timeout 10 {
+t = timeout 10 {
     hits += 10
 }
 t.cancel()
@@ -1227,32 +1257,32 @@ return hits
 
   failures += runCase("const-tuple-destructure", R"havel(
 const (a, b, c) = (5, 7, 9)
-let total = a + b + c
+total = a + b + c
 return total
 )havel", 21, dump_bytecode, snapshot_dir);
 
   failures += runCase("struct-vm-basic", R"havel(
 struct Point { x, y }
-let p = Point(10, 32)
+p = Point(10, 32)
 return struct.get(p, "y")
 )havel", 32, dump_bytecode, snapshot_dir);
 
   failures += runCase("closure-return", R"havel(
 fn makeGetter(v) {
-    let x = v
+    x = v
     fn get() {
         return x
     }
     return get
 }
 
-let getter = makeGetter(9)
+getter = makeGetter(9)
 return getter()
 )havel", 9, dump_bytecode, snapshot_dir);
 
   failures += runCase("closure-transitive", R"havel(
 fn outer() {
-    let x = 41
+    x = 41
     fn middle() {
         fn inner() {
             return x + 1
@@ -1262,7 +1292,7 @@ fn outer() {
     return middle()
 }
 
-let f = outer()
+f = outer()
 return f()
 )havel", 42, dump_bytecode, snapshot_dir);
 
@@ -1278,7 +1308,7 @@ return test()
 )havel", 42, dump_bytecode, snapshot_dir);
 
   failures += runCase("try-finally-runs", R"havel(
-let x = 0
+x = 0
 try {
     x = 1
 } finally {
@@ -1303,8 +1333,8 @@ try {
 )havel", 7, dump_bytecode, snapshot_dir);
 
   failures += runCase("iterable-hof-string-and-object", R"havel(
-let chars = "ab".map((c) => c)
-let keys = {a: 1, b: 2}.map((k) => k)
+chars = "ab".map((c) => c)
+keys = {a: 1, b: 2}.map((k) => k)
 if chars[0] == "a" {
     if keys.find("a") >= 0 {
         if keys.find("b") >= 0 {
@@ -1316,7 +1346,7 @@ return 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runCase("assignment-local", R"havel(
-let x = 1
+x = 1
 x = x + 4
 x += 5
 return x
@@ -1324,7 +1354,7 @@ return x
 
   failures += runCase("assignment-upvalue", R"havel(
 fn makeCounter(seed) {
-    let x = seed
+    x = seed
     fn next() {
         x += 1
         return x
@@ -1332,27 +1362,27 @@ fn makeCounter(seed) {
     return next
 }
 
-let c = makeCounter(40)
+c = makeCounter(40)
 c()
 return c()
 )havel", 42, dump_bytecode, snapshot_dir);
 
   failures += runCase("object-member-assignment", R"havel(
-let obj = {a: 1}
+obj = {a: 1}
 obj.a = 7
 obj.a += 2
 return obj.a
 )havel", 9, dump_bytecode, snapshot_dir);
 
   failures += runCase("index-assignment-array", R"havel(
-let arr = [1, 2]
+arr = [1, 2]
 arr[1] = 10
 arr[3] = 5
 return arr[1] + arr[3]
 )havel", 15, dump_bytecode, snapshot_dir);
 
   failures += runCase("set-create-and-assign", R"havel(
-let s = {1, 2}
+s = {1, 2}
 s[3] = true
 s[2] = false
 if s[1] {
@@ -1367,20 +1397,20 @@ return 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runCase("gc-allocation-stress", R"havel(
-let i = 0
+i = 0
 while i < 2000 {
-    let arr = [i, i + 1, i + 2]
-    let obj = {v: i}
-    let s = {i}
+    arr = [i, i + 1, i + 2]
+    obj = {v: i}
+    s = {i}
     i += 1
 }
 return i
 )havel", 2000, dump_bytecode, snapshot_dir);
 
   failures += runCase("system-gc-manual", R"havel(
-let i = 0
+i = 0
 while i < 256 {
-    let arr = [i, i + 1]
+    arr = [i, i + 1]
     i += 1
 }
 system.gc()
@@ -1388,14 +1418,14 @@ return i
 )havel", 256, dump_bytecode, snapshot_dir);
 
   failures += runCase("system-gc-stats", R"havel(
-let before = system.gcStats()
-let i = 0
+before = system.gcStats()
+i = 0
 while i < 64 {
-    let obj = {v: i}
+    obj = {v: i}
     i += 1
 }
 system.gc()
-let after = system.gcStats()
+after = system.gcStats()
 if after.collections >= before.collections {
     if after.heapSize >= 0 {
         if after.objectCount >= 0 {
@@ -1410,8 +1440,8 @@ return 0
 
   failures += runCase("member-compound-single-eval", R"havel(
 fn run() {
-    let hits = 0
-    let obj = {a: 1}
+    hits = 0
+    obj = {a: 1}
     fn getObj() {
         hits += 1
         return obj
@@ -1425,8 +1455,8 @@ return run()
 
   failures += runCase("index-compound-single-eval", R"havel(
 fn run() {
-    let hits = 0
-    let arr = [1, 2]
+    hits = 0
+    arr = [1, 2]
     fn getArr() {
         hits += 1
         return arr
@@ -1439,7 +1469,7 @@ return run()
 )havel", 15, dump_bytecode, snapshot_dir);
 
   failures += runCase("while-loop", R"havel(
-let i = 0
+i = 0
 while i < 1 {
     return 6
 }
@@ -1447,9 +1477,9 @@ return 0
 )havel", 6, dump_bytecode, snapshot_dir);
 
   failures += runCase("shadowing", R"havel(
-let x = 1
+x = 1
 if true {
-    let x = 2
+    val x = 2
     print(x)
 }
 return x

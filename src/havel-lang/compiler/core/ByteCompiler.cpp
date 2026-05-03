@@ -1190,47 +1190,72 @@ case ast::NodeType::LetDeclaration: {
     }
 
 if (let.pattern && (let.pattern->kind == ast::NodeType::ListPattern ||
-        let.pattern->kind == ast::NodeType::ArrayPattern)) {
-    const auto &pattern =
-        static_cast<const ast::ArrayPattern &>(*let.pattern);
-    if (!let.value) {
-        COMPILER_THROW("Tuple/array destructuring requires a value");
-    }
+let.pattern->kind == ast::NodeType::ArrayPattern)) {
+const auto &pattern =
+static_cast<const ast::ArrayPattern &>(*let.pattern);
+if (!let.value) {
+COMPILER_THROW("Tuple/array destructuring requires a value");
+}
 
-    // Compile value once
-    compileExpression(*let.value);
+compileExpression(*let.value);
 
-    // For comma-separated identifiers (let a, b = value), each variable
-    // gets the SAME value, not destructured from array
-    for (size_t i = 0; i < pattern.elements.size(); ++i) {
-        const auto *element_id = pattern.elements[i]
-            ? dynamic_cast<const ast::Identifier *>(
-                pattern.elements[i].get())
-            : nullptr;
-        if (!element_id) {
-            COMPILER_THROW("Tuple destructuring currently supports "
-                          "identifier elements only");
-        }
+if (pattern.is_tuple_destructuring) {
+uint32_t temp_slot = next_local_index;
+reserveLocalSlot(temp_slot);
+emit(OpCode::STORE_VAR, temp_slot);
 
-        bool isLast = (i == pattern.elements.size() - 1);
+for (size_t i = 0; i < pattern.elements.size(); ++i) {
+const auto *element_id = pattern.elements[i]
+? dynamic_cast<const ast::Identifier *>(
+pattern.elements[i].get())
+: nullptr;
+if (!element_id) {
+COMPILER_THROW("Tuple destructuring currently supports "
+"identifier elements only");
+}
 
-        // Duplicate value for all but last assignment
-        if (!isLast) {
-            emit(OpCode::DUP);
-        }
+emit(OpCode::LOAD_VAR, temp_slot);
+emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
+emit(OpCode::ARRAY_GET);
 
-        const uint32_t slot = declarationSlot(*element_id);
-        reserveLocalSlot(slot);
+const uint32_t slot = declarationSlot(*element_id);
+reserveLocalSlot(slot);
 
-        // Check if this is a global variable (top-level let)
-        if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
-            emit(OpCode::STORE_GLOBAL,
-                 std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
-        } else {
-            emit(OpCode::STORE_VAR, slot);
-        }
-    }
-    break;
+if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
+emit(OpCode::STORE_GLOBAL,
+std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
+} else {
+emit(OpCode::STORE_VAR, slot);
+}
+}
+} else {
+for (size_t i = 0; i < pattern.elements.size(); ++i) {
+const auto *element_id = pattern.elements[i]
+? dynamic_cast<const ast::Identifier *>(
+pattern.elements[i].get())
+: nullptr;
+if (!element_id) {
+COMPILER_THROW("Tuple destructuring currently supports "
+"identifier elements only");
+}
+
+bool isLast = (i == pattern.elements.size() - 1);
+if (!isLast) {
+emit(OpCode::DUP);
+}
+
+const uint32_t slot = declarationSlot(*element_id);
+reserveLocalSlot(slot);
+
+if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
+emit(OpCode::STORE_GLOBAL,
+std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
+} else {
+emit(OpCode::STORE_VAR, slot);
+}
+}
+}
+break;
 }
 
     if (let.pattern && let.pattern->kind == ast::NodeType::ObjectPattern) {
@@ -1826,7 +1851,9 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
                0) // finally_ip - patched later (0 if no finally)
        });
 
+  try_depth_++;
   compileStatement(*statement.tryBody);
+  try_depth_--;
   emit(OpCode::TRY_EXIT);
 
   // Finally block location (executed after try body on normal exit)
@@ -4258,16 +4285,16 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
-      if (in_tail_position_) {
-        emit(OpCode::TAIL_CALL, totalArgs);
-        emitted_tail_call_ = true;
-      } else {
-        emit(OpCode::CALL, totalArgs);
-      }
-      return;
-    }
+  if (in_tail_position_ && try_depth_ == 0) {
+    emit(OpCode::TAIL_CALL, totalArgs);
+    emitted_tail_call_ = true;
+  } else {
+    emit(OpCode::CALL, totalArgs);
+  }
+  return;
+}
 
-    if (binding->kind == ResolvedBindingKind::Global) {
+if (binding->kind == ResolvedBindingKind::Global) {
       // Global variable that might contain a function - load and call
       {
         uint32_t strId = addStringConstant(binding->name);
@@ -4311,17 +4338,17 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
-      if (in_tail_position_) {
-        emit(OpCode::TAIL_CALL, totalArgs);
-        emitted_tail_call_ = true;
-      } else {
-        emit(OpCode::CALL, totalArgs);
-      }
-      return;
-    }
+  if (in_tail_position_ && try_depth_ == 0) {
+    emit(OpCode::TAIL_CALL, totalArgs);
+    emitted_tail_call_ = true;
+  } else {
+    emit(OpCode::CALL, totalArgs);
   }
+  return;
+}
+}
 
-  // Dynamic language: compile callee expression and let runtime resolve
+// Dynamic language: compile callee expression and let runtime resolve
   compileExpression(*expression.callee);
 
   // Compile arguments, handling spread expressions
@@ -4369,7 +4396,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
 
   // TCO: Emit TAIL_CALL if in tail position and callee is a user-defined
   // function
-  if (in_tail_position_ &&
+  if (in_tail_position_ && try_depth_ == 0 &&
       expression.callee->kind == ast::NodeType::Identifier) {
     const auto &callee_id =
         static_cast<const ast::Identifier &>(*expression.callee);

@@ -1906,13 +1906,25 @@ void VM::registerDefaultHostFunctions() {
     return args[0];
   });
 
-  registerHostFunction("async.sleep", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isNumber()) {
-      COMPILER_THROW("async.sleep(ms) expects numeric argument");
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(toInt(args[0])));
-    return Value::makeNull();
-  });
+    registerHostFunction("async.sleep", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isNumber()) {
+            COMPILER_THROW("async.sleep(ms) expects numeric argument");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(toInt(args[0])));
+        return Value::makeNull();
+    });
+
+    registerHostFunction("async.channel", 1, [this](const std::vector<Value> &args) {
+        return Value::makeNull();
+    });
+
+    registerHostFunction("async.send", 2, [this](const std::vector<Value> &args) {
+        return Value::makeNull();
+    });
+
+    registerHostFunction("async.receive", 1, [this](const std::vector<Value> &args) {
+        return Value::makeNull();
+    });
 
   // app.restart() - restart the application
   registerHostFunction("app.restart", 0, [this](const std::vector<Value> &) {
@@ -2050,8 +2062,36 @@ void VM::registerDefaultHostFunctions() {
       return Value::makeBool(false);
     }
     
-    return Value::makeBool(threadObj->isRunning());
-  });
+        return Value::makeBool(threadObj->isRunning());
+    });
+
+    // thread.spawn(closure) - alias for thread(closure), used by ThreadExpression
+    registerHostFunction("thread.spawn", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+            COMPILER_THROW("thread.spawn requires a closure argument");
+        }
+        auto threadObj = std::make_shared<Thread>();
+        auto closure = args[0];
+        auto handler = [this, closure](const Thread::Message &msg) {
+            try {
+                Value arg;
+                if (std::holds_alternative<std::string>(msg)) {
+                    auto strRef = heap_.allocateString(std::get<std::string>(msg));
+                    arg = Value::makeStringId(strRef.id);
+                } else if (std::holds_alternative<int>(msg)) {
+                    arg = Value::makeInt(std::get<int>(msg));
+                } else if (std::holds_alternative<double>(msg)) {
+                    arg = Value::makeDouble(std::get<double>(msg));
+                }
+                this->call(closure, {arg});
+            } catch (const std::exception &e) {
+                ::havel::error("[thread] Exception: {}", e.what());
+            }
+        };
+        threadObj->start(std::move(handler));
+        auto threadRef = heap_.allocateThreadObj(threadObj);
+        return Value::makeThreadId(threadRef.id);
+    });
 
   // interval(ms, closure) - Create repeating timer
   registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
@@ -2119,9 +2159,31 @@ void VM::registerDefaultHostFunctions() {
       COMPILER_THROW("interval.stop: invalid interval reference");
     }
     
-    intervalObj->stop();
-    return Value::makeNull();
-  });
+        intervalObj->stop();
+        return Value::makeNull();
+    });
+
+    // interval.start(ms, closure) - alias for interval(ms, closure), used by IntervalExpression
+    registerHostFunction("interval.start", 2, [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !args[0].isNumber()) {
+            COMPILER_THROW("interval.start requires milliseconds and closure");
+        }
+        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+            COMPILER_THROW("interval.start requires a closure argument");
+        }
+        int ms = toInt(args[0]);
+        auto closure = args[1];
+        auto callback = [this, closure]() {
+            try {
+                this->call(closure, {});
+            } catch (const std::exception &e) {
+                ::havel::error("[interval] Exception: {}", e.what());
+            }
+        };
+        auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+        auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+        return Value::makeIntervalId(intervalRef.id);
+    });
 
   // timeout(ms, closure) - Create one-shot delayed execution
   registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
@@ -2159,37 +2221,71 @@ void VM::registerDefaultHostFunctions() {
       COMPILER_THROW("timeout.cancel: invalid timeout reference");
     }
     
-    timeoutObj->cancel();
-    return Value::makeNull();
-  });
-
-  // GC control
-  auto registerSystemGc = [this](const std::string &name) {
-    registerHostFunction(name, 0, [this](const std::vector<Value> &) {
-      runGarbageCollection();
-      return Value::makeNull();
+        timeoutObj->cancel();
+        return Value::makeNull();
     });
-  };
-  registerSystemGc("system.gc");
-  registerSystemGc("system_gc");
 
-  auto registerSystemGcStats = [this](const std::string &name) {
-    registerHostFunction(name, 0, [this](const std::vector<Value> &) {
-      const auto stats = gcStats();
-      const auto object_ref = createHostObject();
-      setHostObjectField(object_ref, "heapSize",
-                         Value::makeInt(static_cast<int64_t>(stats.heap_size)));
-      setHostObjectField(object_ref, "objectCount",
-                         Value::makeInt(static_cast<int64_t>(stats.object_count)));
-      setHostObjectField(object_ref, "collections",
-                         Value::makeInt(static_cast<int64_t>(stats.collections)));
-      setHostObjectField(object_ref, "lastPauseNs",
-                         Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-      return Value::makeObjectId(object_ref.id);
+    // timeout.start(ms, closure) - alias for timeout(ms, closure), used by TimeoutExpression
+    registerHostFunction("timeout.start", 2, [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !args[0].isNumber()) {
+            COMPILER_THROW("timeout.start requires milliseconds and closure");
+        }
+        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+            COMPILER_THROW("timeout.start requires a closure argument");
+        }
+        int ms = toInt(args[0]);
+        auto closure = args[1];
+        auto callback = [this, closure]() {
+            try {
+                this->call(closure, {});
+            } catch (const std::exception &e) {
+                ::havel::error("[timeout] Exception: {}", e.what());
+            }
+        };
+        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+        auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+        return Value::makeTimeoutId(timeoutRef.id);
     });
-  };
-  registerSystemGcStats("system.gcStats");
-  registerSystemGcStats("system_gcStats");
+
+    // GC control
+    // "system.gc" is called via method dispatch (system.gc()) which prepends
+    // the receiver, so it needs arity 1. The underscore alias "system_gc"
+    // is called directly without a receiver, so arity 0.
+    registerHostFunction("system.gc", 1, [this](const std::vector<Value> &) {
+        runGarbageCollection();
+        return Value::makeNull();
+    });
+    registerHostFunction("system_gc", 0, [this](const std::vector<Value> &) {
+        runGarbageCollection();
+        return Value::makeNull();
+    });
+
+    registerHostFunction("system.gcStats", 1, [this](const std::vector<Value> &) {
+        const auto stats = gcStats();
+        const auto object_ref = createHostObject();
+        setHostObjectField(object_ref, "heapSize",
+        Value::makeInt(static_cast<int64_t>(stats.heap_size)));
+        setHostObjectField(object_ref, "objectCount",
+        Value::makeInt(static_cast<int64_t>(stats.object_count)));
+        setHostObjectField(object_ref, "collections",
+        Value::makeInt(static_cast<int64_t>(stats.collections)));
+        setHostObjectField(object_ref, "lastPauseNs",
+        Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
+        return Value::makeObjectId(object_ref.id);
+    });
+    registerHostFunction("system_gcStats", 0, [this](const std::vector<Value> &) {
+        const auto stats = gcStats();
+        const auto object_ref = createHostObject();
+        setHostObjectField(object_ref, "heapSize",
+        Value::makeInt(static_cast<int64_t>(stats.heap_size)));
+        setHostObjectField(object_ref, "objectCount",
+        Value::makeInt(static_cast<int64_t>(stats.object_count)));
+        setHostObjectField(object_ref, "collections",
+        Value::makeInt(static_cast<int64_t>(stats.collections)));
+        setHostObjectField(object_ref, "lastPauseNs",
+        Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
+        return Value::makeObjectId(object_ref.id);
+    });
 
   // Struct operations (prototype-based)
   registerHostFunction(
@@ -2611,11 +2707,14 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
   setGlobal("class", Value::makeObjectId(class_obj.id));
 
-  auto async_obj = heap_.allocateObject();
-  setHostObjectField(async_obj, "run", Value::makeHostFuncId(getHostFunctionIndex("async.run")));
-  setHostObjectField(async_obj, "await", Value::makeHostFuncId(getHostFunctionIndex("async.await")));
-  setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
-  setGlobal("async", Value::makeObjectId(async_obj.id));
+    auto async_obj = heap_.allocateObject();
+    setHostObjectField(async_obj, "run", Value::makeHostFuncId(getHostFunctionIndex("async.run")));
+    setHostObjectField(async_obj, "await", Value::makeHostFuncId(getHostFunctionIndex("async.await")));
+    setHostObjectField(async_obj, "sleep", Value::makeHostFuncId(getHostFunctionIndex("async.sleep")));
+    setHostObjectField(async_obj, "channel", Value::makeHostFuncId(getHostFunctionIndex("async.channel")));
+    setHostObjectField(async_obj, "send", Value::makeHostFuncId(getHostFunctionIndex("async.send")));
+    setHostObjectField(async_obj, "receive", Value::makeHostFuncId(getHostFunctionIndex("async.receive")));
+    setGlobal("async", Value::makeObjectId(async_obj.id));
 
   // app global object with args and restart
   auto app_obj = heap_.allocateObject();
@@ -2638,12 +2737,21 @@ void VM::registerDefaultHostGlobals() {
   // Prototype methods are defined in src/havel-lang/compiler/prototypes/*.cpp
   // to keep VM.cpp focused on VM internals while maintaining direct access.
 
-  prototypes::registerStringPrototype(*this);
-  prototypes::registerArrayPrototype(*this);
-  prototypes::registerNumberPrototype(*this);
-  prototypes::registerBoolPrototype(*this);
-  prototypes::registerObjectPrototype(*this);
-  prototypes::registerSetPrototype(*this);
+    prototypes::registerStringPrototype(*this);
+    prototypes::registerArrayPrototype(*this);
+    prototypes::registerNumberPrototype(*this);
+    prototypes::registerBoolPrototype(*this);
+    prototypes::registerObjectPrototype(*this);
+    prototypes::registerSetPrototype(*this);
+
+    registerPrototypeMethodByName("thread", "send", "thread.send");
+    registerPrototypeMethodByName("thread", "pause", "thread.pause");
+    registerPrototypeMethodByName("thread", "resume", "thread.resume");
+    registerPrototypeMethodByName("thread", "running", "thread.running");
+    registerPrototypeMethodByName("interval", "pause", "interval.pause");
+    registerPrototypeMethodByName("interval", "resume", "interval.resume");
+    registerPrototypeMethodByName("interval", "stop", "interval.stop");
+    registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
 }
 
 Value VM::invokeHostFunction(const std::string &name,
@@ -3887,15 +3995,21 @@ COMPILER_THROW("TAIL_CALL expects function or closure as callee");
         std::to_string(args.size()) + ")");
   }
 
-  // TCO: Reuse current frame - update function, reset IP, adjust locals
-  auto &current_frame = currentFrame();
-  size_t old_base = current_frame.locals_base;
+    // TCO: Reuse current frame - update function, reset IP, adjust locals
+    auto &current_frame = currentFrame();
+    size_t old_base = current_frame.locals_base;
 
-  // Update frame to point to new function
-  current_frame.function = callee;
-  current_frame.ip = 0;
-  current_frame.closure_id = closure_id;
-  // Keep same locals base
+    // Close open upvalues for current frame before reusing it
+    // Otherwise closures capturing locals from this frame see corrupted data
+    // when the new function overwrites those local slots
+    closeFrameUpvalues(static_cast<uint32_t>(old_base),
+                       static_cast<uint32_t>(locals.size()));
+
+    // Update frame to point to new function
+    current_frame.function = callee;
+    current_frame.ip = 0;
+    current_frame.closure_id = closure_id;
+    // Keep same locals base
 
   // Resize locals if needed (reuse existing space)
   size_t new_locals_needed = old_base + callee->local_count;
@@ -4218,16 +4332,16 @@ case OpCode::ADD:
         case OpCode::ADD: pushStack(l + r); break;
         case OpCode::SUB: pushStack(l - r); break;
         case OpCode::MUL: pushStack(l * r); break;
-        case OpCode::DIV:
-            if (r == 0) throw ScriptThrow{Value("Division by zero")};
-            pushStack(static_cast<double>(l) / static_cast<double>(r));
-            break;
-case OpCode::INT_DIV:
-      if (r == 0) throw ScriptThrow{Value("Division by zero")};
-      pushStack(l / r);
-      break;
-    case OpCode::DIVMOD:
-      if (r == 0) throw ScriptThrow{Value("Division by zero")};
+            case OpCode::DIV:
+                if (r == 0) COMPILER_THROW("Division by zero");
+                pushStack(static_cast<double>(l) / static_cast<double>(r));
+                break;
+            case OpCode::INT_DIV:
+                if (r == 0) COMPILER_THROW("Division by zero");
+                pushStack(l / r);
+                break;
+            case OpCode::DIVMOD:
+                if (r == 0) COMPILER_THROW("Division by zero");
       {
         int64_t rem = l % r;
         if (rem != 0 && ((rem < 0) != (r < 0))) rem += r;
@@ -4239,12 +4353,12 @@ case OpCode::INT_DIV:
         pushStack(Value::makeArrayId(arrRef.id));
       }
       break;
-    case OpCode::REMAINDER:
-      if (r == 0) throw ScriptThrow{Value("Division by zero")};
-      pushStack(l % r); // C-style: sign follows dividend
-      break;
-    case OpCode::MOD:
-      if (r == 0) throw ScriptThrow{Value("Modulo by zero")};
+            case OpCode::REMAINDER:
+                if (r == 0) COMPILER_THROW("Division by zero");
+                pushStack(l % r); // C-style: sign follows dividend
+                break;
+            case OpCode::MOD:
+                if (r == 0) COMPILER_THROW("Modulo by zero");
       {
         int64_t result = l % r;
         if (result != 0 && ((result < 0) != (r < 0))) result += r;
@@ -4279,16 +4393,16 @@ case OpCode::INT_DIV:
     case OpCode::ADD:  pushStack(l + r); break;
     case OpCode::SUB:  pushStack(l - r); break;
     case OpCode::MUL:  pushStack(l * r); break;
-        case OpCode::DIV:
-            if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
-            pushStack(l / r);
-            break;
-case OpCode::INT_DIV:
-      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
-      pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
-      break;
-    case OpCode::DIVMOD:
-      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+            case OpCode::DIV:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
+                pushStack(l / r);
+                break;
+            case OpCode::INT_DIV:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
+                pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
+                break;
+            case OpCode::DIVMOD:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
       {
         int64_t il = static_cast<int64_t>(l);
         int64_t ir = static_cast<int64_t>(r);
@@ -4302,8 +4416,8 @@ case OpCode::INT_DIV:
         pushStack(Value::makeArrayId(arrRef.id));
       }
       break;
-    case OpCode::REMAINDER:
-      if (r == 0.0) throw ScriptThrow{Value("Division by zero")};
+            case OpCode::REMAINDER:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
       pushStack(static_cast<int64_t>(l) % static_cast<int64_t>(r)); // C-style
       break;
     case OpCode::MOD:
@@ -5322,7 +5436,13 @@ case OpCode::LENGTH: {
     } else if (receiver.isObjectId()) {
       type_name = "object";
     } else if (receiver.isSetId()) {
-      type_name = "set";
+        type_name = "set";
+    } else if (receiver.isThreadId()) {
+        type_name = "thread";
+    } else if (receiver.isIntervalId()) {
+        type_name = "interval";
+    } else if (receiver.isTimeoutId()) {
+        type_name = "timeout";
     } else {
       pushStack(Value::makeNull());
       break;
@@ -8231,29 +8351,29 @@ const auto &cell = closure->upvalues[upvalue_index];
             ? static_cast<double>(right.asInt())
             : right.asDouble();
         if (r == 0)
-            throw ScriptThrow{Value("Division by zero")};
+            COMPILER_THROW("Division by zero");
         push(l / r);
         break;
     }
 
-case OpCode::INT_DIV: {
-      Value right = pop();
-      Value left = pop();
-      int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
-      int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-      if (r == 0)
-        throw ScriptThrow{Value("Division by zero")};
-      push(l / r);
-      break;
+    case OpCode::INT_DIV: {
+        Value right = pop();
+        Value left = pop();
+        int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
+        int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
+        if (r == 0)
+            COMPILER_THROW("Division by zero");
+        push(l / r);
+        break;
     }
 
     case OpCode::DIVMOD: {
-      Value right = pop();
-      Value left = pop();
-      int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
-      int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-      if (r == 0)
-        throw ScriptThrow{Value("Division by zero")};
+        Value right = pop();
+        Value left = pop();
+        int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
+        int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
+        if (r == 0)
+            COMPILER_THROW("Division by zero");
       {
         int64_t rem = l % r;
         if (rem != 0 && ((rem < 0) != (r < 0))) rem += r;

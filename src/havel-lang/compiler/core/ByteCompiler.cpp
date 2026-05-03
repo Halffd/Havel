@@ -2591,8 +2591,11 @@ break;
     for (const auto &stmt : block.body) {
       if (stmt) {
         compileStatement(*stmt);
-        // Pop any values left on stack by statements
-        emit(OpCode::POP);
+        // Only ExpressionStatement leaves a value on the stack (when not in tail position).
+        // Other statements (If, While, For, etc.) do not leave values.
+        if (stmt->kind == ast::NodeType::ExpressionStatement) {
+          emit(OpCode::POP);
+        }
       }
     }
 

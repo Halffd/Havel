@@ -5424,10 +5424,13 @@ case OpCode::LENGTH: {
       }
     }
 
-        if (!found_host && vm_func.isNull()) {
+ if (!found_host && vm_func.isNull()) {
+            // Pop args and receiver before pushing null result
+            for (uint32_t i = 0; i < arg_count; ++i) popStack();
+            popStack(); // receiver
             pushStack(Value::makeNull());
-      break;
-    }
+            break;
+        }
 
     // Pop args and receiver
     std::vector<Value> args2(arg_count);

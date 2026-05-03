@@ -1460,6 +1460,27 @@ print("a", "b", delim="-")
 return 42
 )havel", 42, dump_bytecode, snapshot_dir);
 
+failures += runCase("tail-call-host-func", R"havel(
+fn add(a, b) { return a + b }
+return add(1, 2)
+)havel", 3, dump_bytecode, snapshot_dir);
+
+failures += runCase("tail-call-global-print", R"havel(
+x = 3
+print(x)
+return x
+)havel", 3, dump_bytecode, snapshot_dir);
+
+failures += runCase("method-call-on-int", R"havel(
+x = 1.+(2)
+return x
+)havel", 3, dump_bytecode, snapshot_dir);
+
+failures += runCase("tail-call-method-arg", R"havel(
+print(1.+(2))
+return 0
+)havel", 0, dump_bytecode, snapshot_dir);
+
   failures += runClosureCase(dump_bytecode, snapshot_dir);
   failures += runHostRootLifetimeCase(dump_bytecode);
   failures += runExternalCallbackInvocationCase(dump_bytecode);

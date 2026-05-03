@@ -93,7 +93,7 @@ static uint64_t getFeedbackMask(const Value& v) {
   if (v.isInt()) return TYPE_HINT_INT;
   if (v.isBool()) return TYPE_HINT_BOOL;
   if (v.isNull()) return TYPE_HINT_NULL;
-  if (v.isStringId() || v.isStringValId()) return TYPE_HINT_STRING;
+  if (v.isStringId() || v.isStringValId() || v.isRegexValId()) return TYPE_HINT_STRING;
   if (v.isArrayId()) return TYPE_HINT_ARRAY;
   if (v.isObjectId()) return TYPE_HINT_OBJECT;
   if (v.isFunctionObjId() || v.isClosureId() || v.isHostFuncId()) return TYPE_HINT_FUNCTION;
@@ -162,6 +162,12 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
       return current_chunk->getString(value.asStringValId());
     }
     return "<string:" + std::to_string(value.asStringValId()) + ">";
+  }
+  if (value.isRegexValId()) {
+    if (current_chunk) {
+      return "r\"" + current_chunk->getString(value.asRegexValId()) + "\"";
+    }
+    return "<regex:" + std::to_string(value.asRegexValId()) + ">";
   }
   if (value.isStringId()) {
     if (auto *s = heap_.string(value.asStringId())) {
@@ -398,11 +404,12 @@ bool VM::toBool(const Value &value) const {
 }
 
 std::optional<std::string> VM::valueAsString(const Value &value) const {
-  if (value.isStringValId()) {
+  if (value.isStringValId() || value.isRegexValId()) {
     if (!current_chunk) {
       return std::nullopt;
     }
-    return current_chunk->getString(value.asStringValId());
+    uint32_t id = value.isRegexValId() ? value.asRegexValId() : value.asStringValId();
+    return current_chunk->getString(id);
   }
   if (value.isStringId()) {
     if (auto *s = heap_.string(value.asStringId())) {
@@ -441,8 +448,8 @@ bool VM::valuesEqualDeep(
     auto r = valueAsString(right);
     return r.has_value() && (*l == *r);
   }
-  if (left.isStringValId() || left.isStringId() || right.isStringValId() ||
-      right.isStringId()) {
+  if (left.isStringValId() || left.isStringId() || left.isRegexValId() ||
+      right.isStringValId() || right.isStringId() || right.isRegexValId()) {
     return false;
   }
 
@@ -1179,7 +1186,7 @@ VM::getPrototypeMethod(const Value &value,
   // Determine type name (try both lowercase and capitalized)
   std::string typeName;
   std::string moduleName;
-  if (value.isStringValId() || value.isStringId()) {
+  if (value.isStringValId() || value.isStringId() || value.isRegexValId()) {
     typeName = "string";
     moduleName = "string";
   } else if (value.isArrayId()) {
@@ -1237,7 +1244,7 @@ VM::getPrototypeMethod(const Value &value,
 
 std::vector<std::string> VM::getPrototypeMethods(const Value &value) {
   std::string typeName;
-  if (value.isStringValId()) {
+  if (value.isStringValId() || value.isRegexValId()) {
     typeName = "String";
   } else if (value.isArrayId()) {
     typeName = "Array";
@@ -1356,7 +1363,7 @@ void VM::registerDefaultHostFunctions() {
       }
       // For string values, resolve them; for other types use heap-aware toString
       const auto &arg = args[i];
-      if (arg.isStringValId() || arg.isStringId()) {
+      if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
         std::cout << resolveStringKey(arg);
       } else {
         std::string s = toString(arg);
@@ -7882,7 +7889,7 @@ std::optional<int64_t> VM::parseDuration(const Value &value) const {
     return static_cast<int64_t>(value.asDouble());
   }
 
-  if (value.isStringValId() || value.isStringId()) {
+  if (value.isStringValId() || value.isStringId() || value.isRegexValId()) {
     const std::string duration_str = resolveStringKey(value);
 
     // Plain numeric strings are milliseconds.

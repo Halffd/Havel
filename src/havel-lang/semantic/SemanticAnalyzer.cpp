@@ -907,7 +907,7 @@ void SemanticAnalyzer::initializeKnownBuiltins() {
     // Async
     "spawn", "await", "channel", "yield",
     // Concurrency
-    "thread", "interval", "timeout", "async",
+    "thread", "interval", "timeout",
     // Exit
     "exit"};
 }

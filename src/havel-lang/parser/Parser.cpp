@@ -808,8 +808,10 @@ case TokenType::Number:
 
 case TokenType::String:
 case TokenType::MultilineString:
-case TokenType::RegexString:
-return std::make_unique<ast::StringLiteral>(token.value);
+return std::make_unique<ast::StringLiteral>(token.value, false);
+
+    case TokenType::RegexString:
+return std::make_unique<ast::StringLiteral>(token.value, true);
 
     case TokenType::CharLiteral:
       return std::make_unique<ast::CharLiteral>(token.value[0]);

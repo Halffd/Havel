@@ -1526,7 +1526,7 @@ void VM::registerDefaultHostFunctions() {
     if (!condition) {
       std::string msg = "Assertion failed";
       if (args.size() > 1 &&
-          (args[1].isStringValId() || args[1].isStringId())) {
+          (args[1].isStringValId() || args[1].isStringId() || args[1].isRegexValId())) {
         msg = resolveStringKey(args[1]);
       }
       COMPILER_THROW(msg);

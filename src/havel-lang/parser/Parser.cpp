@@ -329,8 +329,10 @@ bool Parser::isObjectLiteral() const {
   // Object keys can be: identifier, string, number, or certain keywords
   // followed by ':'
   bool couldBeKey = (firstToken.type == havel::TokenType::Identifier ||
-                     firstToken.type == havel::TokenType::String ||
-                     firstToken.type == havel::TokenType::MultilineString ||
+firstToken.type == havel::TokenType::String ||
+firstToken.type == havel::TokenType::MultilineString ||
+firstToken.type == havel::TokenType::RegexString ||
+firstToken.type == havel::TokenType::RegexString ||
                      firstToken.type == havel::TokenType::Number ||
                      firstToken.type == havel::TokenType::Config ||
                      firstToken.type == havel::TokenType::Devices ||
@@ -631,6 +633,8 @@ setBoth(ModuloAssign, 10, 10);
       can_start[static_cast<size_t>(Number)] = true;
       can_start[static_cast<size_t>(String)] = true;
       can_start[static_cast<size_t>(MultilineString)] = true;
+can_start[static_cast<size_t>(RegexString)] = true;
+can_start[static_cast<size_t>(RegexString)] = true;
       can_start[static_cast<size_t>(InterpolatedString)] = true;
   can_start[static_cast<size_t>(InterpolatedBacktick)] = true;
       can_start[static_cast<size_t>(Identifier)] = true;
@@ -653,8 +657,12 @@ setBoth(ModuloAssign, 10, 10);
         can_start[static_cast<size_t>(Hash)] = true;
         can_start[static_cast<size_t>(Backtick)] = true;
         can_start[static_cast<size_t>(DoubleOpenParen)] = true;
-can_start[static_cast<size_t>(Tilde)] = true;
-  can_start[static_cast<size_t>(BangOpenBrace)] = true;
+    can_start[static_cast<size_t>(Tilde)] = true;
+    can_start[static_cast<size_t>(BangOpenBrace)] = true;
+    can_start[static_cast<size_t>(Thread)] = true;
+    can_start[static_cast<size_t>(Interval)] = true;
+    can_start[static_cast<size_t>(Timeout)] = true;
+    can_start[static_cast<size_t>(Async)] = true;
   }
     
     void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
@@ -747,9 +755,10 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
   // This handles function calls without parentheses like: print "hello"
   // Also handles: print a ** 5 -> print(a ** 5)
     if (context.allowBraceSugar &&
-        (at().type == TokenType::String ||
-         at().type == TokenType::MultilineString ||
-         at().type == TokenType::Number ||
+(at().type == TokenType::String ||
+at().type == TokenType::MultilineString ||
+at().type == TokenType::RegexString ||
+at().type == TokenType::Number ||
          at().type == TokenType::Identifier ||
          at().type == TokenType::InterpolatedString ||
          at().type == TokenType::InterpolatedBacktick)) {
@@ -799,9 +808,10 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
 case TokenType::Number:
         return std::make_unique<ast::NumberLiteral>(parseNumberLiteral(token.value), hasDecimalPart(token.value));
 
-    case TokenType::String:
-    case TokenType::MultilineString:
-      return std::make_unique<ast::StringLiteral>(token.value);
+case TokenType::String:
+case TokenType::MultilineString:
+case TokenType::RegexString:
+return std::make_unique<ast::StringLiteral>(token.value);
 
     case TokenType::CharLiteral:
       return std::make_unique<ast::CharLiteral>(token.value[0]);
@@ -1106,8 +1116,9 @@ case TokenType::Number:
       
       // Check if it looks like a set literal
       bool couldBeSet = (nextTok.type == havel::TokenType::Identifier ||
-                    nextTok.type == havel::TokenType::String ||
-                    nextTok.type == havel::TokenType::MultilineString ||
+nextTok.type == havel::TokenType::String ||
+nextTok.type == havel::TokenType::MultilineString ||
+nextTok.type == havel::TokenType::RegexString ||
                     nextTok.type == havel::TokenType::Number ||
                     nextTok.type == havel::TokenType::OpenBracket ||
                     nextTok.type == havel::TokenType::OpenParen ||
@@ -1303,13 +1314,25 @@ case TokenType::BangOpenBrace: {
 
     // Concurrency Primitives
     case TokenType::Thread:
-      return parseThreadExpression();
+        if (at().type == TokenType::OpenParen || at().type == TokenType::Dot) {
+            return std::make_unique<ast::Identifier>(token.value);
+        }
+        return parseThreadExpression();
 
     case TokenType::Interval:
-      return parseIntervalExpression();
+        if (at().type == TokenType::OpenParen || at().type == TokenType::Dot) {
+            return std::make_unique<ast::Identifier>(token.value);
+        }
+        return parseIntervalExpression();
 
     case TokenType::Timeout:
-      return parseTimeoutExpression();
+        if (at().type == TokenType::OpenParen || at().type == TokenType::Dot) {
+            return std::make_unique<ast::Identifier>(token.value);
+        }
+        return parseTimeoutExpression();
+
+    case TokenType::Async:
+        return std::make_unique<ast::Identifier>(token.value);
 
     // Coroutines
     case TokenType::Yield:
@@ -2804,9 +2827,9 @@ case havel::TokenType::Struct:
     } else if (at().type == havel::TokenType::Identifier) {
       // Just an identifier - parse as primary expression (e.g., $ firefox)
       cmdExpr = parsePrimaryExpression();
-    } else if (at().type == havel::TokenType::String ||
-               at().type == havel::TokenType::MultilineString) {
-      // String literal for shell command
+} else if (at().type == havel::TokenType::String ||
+at().type == havel::TokenType::MultilineString ||
+at().type == havel::TokenType::RegexString) {
       cmdExpr = parsePrimaryExpression();
     } else {
       failAt(at(), "Shell command requires expression: $ firefox, $ (cmd), $! "
@@ -5674,8 +5697,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
         if (at().type != havel::TokenType::CloseParen) {
             failAt(at(), "Expected ')' to close tuple destructuring");
         }
-        advance(); // consume ')'
-        pattern = std::make_unique<havel::ast::ArrayPattern>(std::move(elements));
+    advance(); // consume ')'
+    pattern = std::make_unique<havel::ast::ArrayPattern>(std::move(elements), nullptr, true);
     } else if (at().type == havel::TokenType::OpenBrace) {
         // Object destructuring: let {x, y} = obj
         pattern = parseObjectPattern();
@@ -8310,7 +8333,10 @@ Parser::parseObjectLiteral(bool unsorted) {
              t == havel::TokenType::Del ||
              t == havel::TokenType::True || t == havel::TokenType::False ||
              t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
-             t == havel::TokenType::String || t == havel::TokenType::MultilineString ||
+t == havel::TokenType::String ||
+t == havel::TokenType::MultilineString ||
+t == havel::TokenType::RegexString ||
+t == havel::TokenType::RegexString ||
              t == havel::TokenType::Number;
     };
 

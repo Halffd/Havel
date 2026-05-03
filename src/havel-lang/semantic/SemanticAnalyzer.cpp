@@ -902,12 +902,14 @@ void SemanticAnalyzer::initializeKnownBuiltins() {
                     "exists",
                     // Time
                     "time", "date", "now",
-                    // Thread/sleep
-                    "sleep", "wait",
-                    // Async
-                    "spawn", "await", "channel", "yield",
-                    // Exit
-                    "exit"};
+    // Thread/sleep
+    "sleep", "wait",
+    // Async
+    "spawn", "await", "channel", "yield",
+    // Concurrency
+    "thread", "interval", "timeout", "async",
+    // Exit
+    "exit"};
 }
 
 bool SemanticAnalyzer::isKnownModuleFunction(const std::string &module,

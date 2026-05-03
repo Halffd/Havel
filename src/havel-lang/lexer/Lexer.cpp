@@ -10,7 +10,8 @@ namespace havel {
 // Static member definitions
 const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"let", TokenType::Let},
-    {"val", TokenType::Const}, // val - immutable binding
+    {"val", TokenType::Const},
+    {"const", TokenType::Const},
     {"if", TokenType::If},
     {"else", TokenType::Else},
     {"while", TokenType::While},

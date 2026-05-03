@@ -76,6 +76,7 @@ enum class ExtendedTag : uint64_t {
   INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
   TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
+  REGEX_VAL_ID = 0x11,      // Regex string literal (stores index into string pool)
 };
 
 // Bool payload values
@@ -389,6 +390,11 @@ public:
            extractExtendedTag(bits_) == ExtendedTag::STRING_VAL_ID;
   }
 
+  bool isRegexValId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+           extractExtendedTag(bits_) == ExtendedTag::REGEX_VAL_ID;
+  }
+
   bool isThreadId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::THREAD_ID;
@@ -496,6 +502,10 @@ public:
   }
 
   uint32_t asStringValId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asRegexValId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
   }
 

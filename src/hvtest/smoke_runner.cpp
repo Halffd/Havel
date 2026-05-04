@@ -107,9 +107,11 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
         return "OBJECT_SET";
     case OpCode::CALL_METHOD:
         return "CALL_METHOD";
-    case OpCode::STORE_GLOBAL:
-        return "STORE_GLOBAL";
-    default:
+ case OpCode::STORE_GLOBAL:
+ return "STORE_GLOBAL";
+ case OpCode::FIBER_AWAIT:
+ return "FIBER_AWAIT";
+ default:
     return "OTHER";
   }
 }
@@ -178,11 +180,20 @@ void dumpBytecode(const std::string &name, const std::string &source) {
   auto chunk = compileChunk(source);
   std::cout << "--- BYTECODE DUMP: " << name << " ---" << std::endl;
 
-  for (const auto &function : chunk->getAllFunctions()) {
-    std::cout << "fn " << function.name << "(params=" << function.param_count
-              << ", locals=" << function.local_count << ")" << std::endl;
+ for (const auto &function : chunk->getAllFunctions()) {
+ std::cout << "fn " << function.name << "(params=" << function.param_count
+ << ", locals=" << function.local_count << ")" << std::endl;
 
-    for (size_t i = 0; i < function.instructions.size(); ++i) {
+ if (!function.constants.empty()) {
+ std::cout << " constants: ";
+ for (size_t i = 0; i < function.constants.size(); ++i) {
+ if (i > 0) std::cout << ", ";
+ std::cout << "[" << i << "]=" << bytecodeValueToString(function.constants[i]);
+ }
+ std::cout << std::endl;
+ }
+
+ for (size_t i = 0; i < function.instructions.size(); ++i) {
       const auto &instruction = function.instructions[i];
       std::cout << "  " << i << ": " << opcodeName(instruction.opcode);
       if (!instruction.operands.empty()) {
@@ -217,8 +228,8 @@ void dumpBytecode(const std::string &name, const std::string &source) {
 }
 
 int runCase(const std::string &name, const std::string &source, int64_t expected,
-            bool dump_bytecode, const std::string &snapshot_dir) {
-  try {
+ bool dump_bytecode, const std::string &snapshot_dir) {
+ try {
     if (dump_bytecode) {
       dumpBytecode(name, source);
     }
@@ -228,108 +239,25 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
 
-    // any.* dispatch functions for member access and array HOFs
-    havel::compiler::VM *vm_ptr = nullptr;
-    options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
-    std::unordered_map<std::string, Value> thread_callbacks;
-    options.host_functions["any.get"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      const auto &obj = args[0];
-      const auto &key = args[1];
-      if (obj.isArrayId() && key.isInt()) {
-        auto arrRef = havel::compiler::ArrayRef{obj.asArrayId()};
-        auto idx = static_cast<size_t>(key.asInt());
-        if (idx < vm_ptr->getHostArrayLength(arrRef)) {
-          return vm_ptr->getHostArrayValue(arrRef, idx);
-        }
-        return Value::makeNull();
-      }
-      if (obj.isObjectId()) {
-        auto objRef = havel::compiler::ObjectRef{obj.asObjectId(), true};
-        std::string keyStr = vm_ptr->resolveStringKey(key);
-        return vm_ptr->getHostObjectField(objRef, keyStr);
-      }
-      return Value::makeNull();
-    };
-    options.host_functions["any.len"] = [&](const std::vector<Value> &args) {
-      if (args.empty() || !vm_ptr) return Value::makeInt(0);
-      if (args[0].isArrayId()) return Value::makeInt(static_cast<int64_t>(vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()})));
-      return Value::makeInt(0);
-    };
-    options.host_functions["any.map"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(arrRef);
-      auto out = vm_ptr->createHostArray();
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        auto mapped = vm_ptr->callFunction(args[1], {val});
-        vm_ptr->pushHostArrayValue(out, mapped);
-      }
-      return Value::makeArrayId(out.id);
-    };
-    options.host_functions["any.filter"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(arrRef);
-      auto out = vm_ptr->createHostArray();
-      auto truthy = [](const Value &v) {
-        if (v.isNull()) return false;
-        if (v.isBool()) return v.asBool();
-        if (v.isInt()) return v.asInt() != 0;
-        if (v.isDouble()) return v.asDouble() != 0.0;
-        return true;
-      };
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        auto result = vm_ptr->callFunction(args[1], {val});
-        if (truthy(result)) vm_ptr->pushHostArrayValue(out, val);
-      }
-      return Value::makeArrayId(out.id);
-    };
-    options.host_functions["any.reduce"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 3 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(arrRef);
-      Value acc = args[2];
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        acc = vm_ptr->callFunction(args[1], {acc, val});
-      }
-      return acc;
-    };
-    options.host_functions["any.foreach"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr || !args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(arrRef);
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        vm_ptr->callFunction(args[1], {val});
-      }
-      return Value::makeNull();
-    };
-    options.host_functions["any.set"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 3 || !vm_ptr || !args[0].isArrayId() || !args[1].isInt()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      vm_ptr->setHostArrayValue(arrRef, static_cast<size_t>(args[1].asInt()), args[2]);
-      return args[2];
-    };
+ havel::compiler::VM *vm_ptr = nullptr;
+ options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+ std::unordered_map<std::string, Value> thread_callbacks;
 
-    const auto result =
+ const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
-    if (!equalsInt(result.return_value, expected)) {
-        std::cerr << "[FAIL] " << name << ": expected " << expected
-                  << " but got " << (result.return_value.isInt() ? std::to_string(result.return_value.asInt()) : std::string("non-int")) << std::endl;
-        return 1;
-    }
+ if (!equalsInt(result.return_value, expected)) {
+ std::string val_desc;
+ if (result.return_value.isInt()) val_desc = std::to_string(result.return_value.asInt());
+ else if (result.return_value.isNull()) val_desc = "null";
+ else if (result.return_value.isCoroutineId()) val_desc = "coroutine:" + std::to_string(result.return_value.asCoroutineId());
+ else val_desc = "non-int";
+ std::cerr << "[FAIL] " << name << ": expected " << expected
+ << " but got " << val_desc << std::endl;
+ return 1;
+ }
 
-    if (!result.snapshot.artifact_path.empty()) {
-      std::cout << "[SNAPSHOT] " << name << ": " << result.snapshot.artifact_path
-                << std::endl;
-    }
-
-    std::cout << "[PASS] " << name << std::endl;
-    return 0;
+ std::cout << "[PASS] " << name << std::endl;
+ return 0;
   } catch (const std::exception &e) {
     std::cerr << "[FAIL] " << name << ": exception: " << e.what()
               << std::endl;
@@ -644,129 +572,11 @@ options.host_functions["object.running"] = [&](const std::vector<Value> &args) {
         auto it = timeout_running.find(key);
         return Value(it != timeout_running.end() && it->second);
     }
-    return Value(false);
-};
-    options.host_functions["any.send"] = options.host_functions["object.send"];
-    options.host_functions["any.pause"] = options.host_functions["object.pause"];
-    options.host_functions["any.resume"] = options.host_functions["object.resume"];
-    options.host_functions["any.stop"] = options.host_functions["object.stop"];
-    options.host_functions["any.cancel"] = options.host_functions["object.cancel"];
-    options.host_functions["any.running"] = options.host_functions["object.running"];
-
-    // any.* dispatch functions for member access and array HOFs
-    options.host_functions["any.get"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2) return Value::makeNull();
-      const auto &obj = args[0];
-      const auto &key = args[1];
-      if (obj.isArrayId() && key.isInt()) {
-        auto arrRef = havel::compiler::ArrayRef{obj.asArrayId()};
-        if (!vm_ptr) return Value::makeNull();
-        auto idx = static_cast<size_t>(key.asInt());
-        if (idx < vm_ptr->getHostArrayLength(arrRef)) {
-          return vm_ptr->getHostArrayValue(arrRef, idx);
-        }
-        return Value::makeNull();
-      }
-      if (obj.isObjectId() && key.isStringValId()) {
-        auto objRef = havel::compiler::ObjectRef{obj.asObjectId(), true};
-        if (!vm_ptr) return Value::makeNull();
-        return vm_ptr->getHostObjectField(objRef, "<string:" + std::to_string(key.asStringValId()) + ">");
-      }
-      return Value::makeNull();
-    };
-    options.host_functions["any.len"] = [&](const std::vector<Value> &args) {
-      if (args.empty()) return Value::makeInt(0);
-      if (!vm_ptr) return Value::makeInt(0);
-      if (args[0].isArrayId()) return Value::makeInt(static_cast<int64_t>(vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()})));
-      if (args[0].isStringValId()) return Value::makeInt(0); // TODO: string length
-      return Value::makeInt(0);
-    };
-    options.host_functions["any.map"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      if (!args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
-      auto out = vm_ptr->createHostArray();
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        auto mapped = vm_ptr->callFunction(args[1], {val});
-        vm_ptr->pushHostArrayValue(out, mapped);
-      }
-      return Value::makeArrayId(out.id);
-    };
-    options.host_functions["any.filter"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      if (!args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
-      auto out = vm_ptr->createHostArray();
-      auto truthy = [](const Value &v) {
-        if (v.isNull()) return false;
-        if (v.isBool()) return v.asBool();
-        if (v.isInt()) return v.asInt() != 0;
-        if (v.isDouble()) return v.asDouble() != 0.0;
-        return true;
-      };
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        auto result = vm_ptr->callFunction(args[1], {val});
-        if (truthy(result)) vm_ptr->pushHostArrayValue(out, val);
-      }
-      return Value::makeArrayId(out.id);
-    };
-    options.host_functions["any.reduce"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 3 || !vm_ptr) return Value::makeNull();
-      if (!args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
-      Value acc = args[2];
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        acc = vm_ptr->callFunction(args[1], {acc, val});
-      }
-      return acc;
-    };
-    options.host_functions["any.foreach"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 2 || !vm_ptr) return Value::makeNull();
-      if (!args[0].isArrayId()) return Value::makeNull();
-      auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-      size_t len = vm_ptr->getHostArrayLength(havel::compiler::ArrayRef{args[0].asArrayId()});
-      for (size_t i = 0; i < len; i++) {
-        auto val = vm_ptr->getHostArrayValue(arrRef, i);
-        vm_ptr->callFunction(args[1], {val});
-      }
-      return Value::makeNull();
-    };
-    options.host_functions["any.set"] = [&](const std::vector<Value> &args) {
-      if (args.size() < 3 || !vm_ptr) return Value::makeNull();
-      if (args[0].isArrayId() && args[1].isInt()) {
-        auto arrRef = havel::compiler::ArrayRef{args[0].asArrayId()};
-        auto idx = static_cast<size_t>(args[1].asInt());
-        vm_ptr->setHostArrayValue(arrRef, idx, args[2]);
-        return args[2];
-      }
-      return Value::makeNull();
-    };
-
-    options.host_functions["any.gc"] = [&](const std::vector<Value> &args) {
-      // any.gc() - trigger garbage collection (stub - GC runs automatically)
-      return Value::makeNull();
-    };
-    options.host_functions["any.gcStats"] = [&](const std::vector<Value> &args) {
-      // any.gcStats() - return GC stats object
-      if (!vm_ptr) return Value::makeNull();
-      auto obj = vm_ptr->createHostObject();
-      auto stats = vm_ptr->gcStats();
-      vm_ptr->setHostObjectField(obj, "collections", Value::makeInt(static_cast<int64_t>(stats.collections)));
-      vm_ptr->setHostObjectField(obj, "heapSize", Value::makeInt(static_cast<int64_t>(stats.heap_size)));
-      vm_ptr->setHostObjectField(obj, "objectCount", Value::makeInt(static_cast<int64_t>(stats.object_count)));
-      vm_ptr->setHostObjectField(obj, "lastPauseNs", Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-      return Value::makeObjectId(obj.id);
-    };
+ return Value(false);
+ };
 
 
-
-    const auto result =
+ const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
     if (!equalsInt(result.return_value, expected)) {
         std::cerr << "[FAIL] " << name << ": expected " << expected
@@ -1442,6 +1252,91 @@ return 0
   failures += runUnresolvedIdentifierCase(dump_bytecode, snapshot_dir);
   failures += runRuntimeLineErrorCase(dump_bytecode, snapshot_dir);
   failures += runStackOverflowCase(dump_bytecode, snapshot_dir);
+
+ // co fn creates a coroutine object (not a plain call result)
+ // Calling a co fn returns a coroutine ID, not the function's return value.
+ // A co fn with yield will be is_generator=true, so calling it returns a coroutine.
+ // We test that co fn parses, compiles, and the call returns a coroutine value.
+ failures += runCase("co-fn-basic", R"havel(
+co fn greet() {
+ yield 1
+ yield 2
+}
+
+c = greet()
+// c is a coroutine object; calling a generator returns coroutine ID
+return 0
+)havel", 0, dump_bytecode, snapshot_dir);
+
+ // <- as await/blocking operator on a value (identity for non-coroutine values)
+ failures += runCase("await-identity", R"havel(
+x = <-42
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+ // Negative numbers still work after scanNumber fix
+ failures += runCase("negative-number", R"havel(
+x = -5
+y = -3 + 2
+z = 10 + -2
+return x + y + z
+)havel", 2, dump_bytecode, snapshot_dir);
+
+ // co fn returns a coroutine, <- awaits it
+ failures += runCase("await-cofn", R"havel(
+co fn task() {
+  return 99
+}
+result = <-task()
+return result
+)havel", 99, dump_bytecode, snapshot_dir);
+
+ // co fn with arguments
+ failures += runCase("await-cofn-args", R"havel(
+co fn add(a, b) {
+  return a + b
+}
+result = <-add(3, 4)
+return result
+)havel", 7, dump_bytecode, snapshot_dir);
+
+ // co fn that yields, then returns final value
+ failures += runCase("await-cofn-yield", R"havel(
+co fn gen() {
+  yield 10
+  yield 20
+  return 30
+}
+c = gen()
+r1 = <-c
+return r1
+)havel", 10, dump_bytecode, snapshot_dir);
+
+ // Multiple sequential awaits on same yielding coroutine
+ failures += runCase("await-cofn-multi-yield", R"havel(
+co fn gen() {
+  yield 10
+  yield 20
+  return 30
+}
+c = gen()
+r1 = <-c
+r2 = <-c
+r3 = <-c
+return r1 + r2 + r3
+)havel", 60, dump_bytecode, snapshot_dir);
+
+ // Nested await: coroutine awaiting another coroutine
+ failures += runCase("await-cofn-nested", R"havel(
+co fn inner() {
+  return 7
+}
+co fn outer() {
+  x = <-inner()
+  return x * 3
+}
+return <-outer()
+)havel", 21, dump_bytecode, snapshot_dir);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

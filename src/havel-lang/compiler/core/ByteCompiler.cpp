@@ -2411,12 +2411,12 @@ for (const auto &entry : object.pairs) {
  // Check for spread
  if (entry.key == "__spread__") {
  // Stack: [obj] (from OBJECT_NEW / previous OBJECT_SET)
- // Need: [callee, obj, source] for CALL 2
- uint32_t strId = addStringConstant("any.extend");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- emit(OpCode::SWAP); // [callee, obj]
- compileExpression(*entry.value); // [callee, obj, source]
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+ // obj is the receiver, source is the arg for extend
+ compileExpression(*entry.value); // [obj, source]
+ uint32_t method_sid = addStringConstant("extend");
+ emit(OpCode::CALL_METHOD, std::vector<Value>{
+ Value::makeStringValId(method_sid),
+ Value(static_cast<uint32_t>(1))});
  } else if (entry.isComputedKey) {
         // Computed key: {[expr]: value}
         compileExpression(*entry.value);
@@ -2736,16 +2736,17 @@ break;
       COMPILER_THROW("Malformed binary expression");
     }
 
-    // Special handling for 'in' and 'not in' - compile as host function call
- if (binary.operator_ == ast::BinaryOperator::In ||
- binary.operator_ == ast::BinaryOperator::NotIn) {
- std::string fnName =
- binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
- uint32_t strId = addStringConstant(fnName);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- compileExpression(*binary.left); // value to check
- compileExpression(*binary.right); // container
- emit(OpCode::CALL, Value::makeInt(static_cast<int64_t>(2)));
+ // Special handling for 'in' and 'not in' - compile as CALL_METHOD "has"
+ if (binary.operator_ == ast::BinaryOperator::In || binary.operator_ == ast::BinaryOperator::NotIn) {
+ compileExpression(*binary.right); // container (receiver)
+ compileExpression(*binary.left); // value (arg)
+ uint32_t method_sid = addStringConstant("has");
+ emit(OpCode::CALL_METHOD, std::vector<Value>{
+ Value::makeStringValId(method_sid),
+ Value(static_cast<uint32_t>(1))});
+ if (binary.operator_ == ast::BinaryOperator::NotIn) {
+ emit(OpCode::NOT);
+ }
  } else if (binary.operator_ == ast::BinaryOperator::Matches ||
  binary.operator_ == ast::BinaryOperator::Tilde) {
  // Regex/string matching - compile as regex_search host function call
@@ -2871,33 +2872,35 @@ break;
         // Call with (1 + explicit_args) count
         emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
       }
-      // Identifier: | print, | upper, etc.
-      // Tap behavior: function receives value, we ensure pass-through
+ // Identifier: | print, | upper, etc.
+ // Tap behavior: function receives value, we ensure pass-through
  else if (stage->kind == ast::NodeType::Identifier) {
  const auto &ident = static_cast<const ast::Identifier &>(*stage);
- // Route through any.* dispatch for consistency
- {
- uint32_t strId = addStringConstant("any." + ident.symbol);
+
+ if (ident.symbol == "print" || ident.symbol == "log" ||
+ ident.symbol == "debug" || ident.symbol == "tap") {
+ // Global function call: print(value), log(value), etc.
+ uint32_t strId = addStringConstant(ident.symbol);
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- emit(OpCode::LOAD_VAR, pipe_temp); // Load piped value as arg
+ emit(OpCode::LOAD_VAR, pipe_temp);
  emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
 
-        // For tap functions (print), ensure value passes through
-        // If result is nil, restore the previous pipe value
-        if (ident.symbol == "print" || ident.symbol == "log" ||
-            ident.symbol == "debug" || ident.symbol == "tap") {
-          // Check if result is nil, if so restore pipe value
-          uint32_t result_temp = next_local_index;
-          reserveLocalSlot(result_temp);
-          emit(OpCode::STORE_VAR, result_temp);
-          emit(OpCode::LOAD_VAR, result_temp);
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull())); // nil
-          // If nil, use pipe value, else use result
-          // Simplified: just dup and check
-          emit(OpCode::LOAD_VAR, pipe_temp); // Default to pipe value
-        }
-      }
+ // Tap: if result is nil, restore pipe value
+ uint32_t result_temp = next_local_index;
+ reserveLocalSlot(result_temp);
+ emit(OpCode::STORE_VAR, result_temp);
+ emit(OpCode::LOAD_VAR, result_temp);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::LOAD_VAR, pipe_temp);
+ } else {
+ // Method call: value.upper(), value.len(), etc.
+ emit(OpCode::LOAD_VAR, pipe_temp);
+ uint32_t method_sid = addStringConstant(ident.symbol);
+ emit(OpCode::CALL_METHOD, std::vector<Value>{
+ Value::makeStringValId(method_sid),
+ Value(static_cast<uint32_t>(0))});
+ }
+ }
       // Member expression: | text.upper, | array.filter
       else if (stage->kind == ast::NodeType::MemberExpression) {
         const auto &member = static_cast<const ast::MemberExpression &>(*stage);

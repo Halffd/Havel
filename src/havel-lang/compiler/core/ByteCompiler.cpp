@@ -6205,14 +6205,25 @@ void ByteCompiler::compileYieldExpression(const ast::YieldExpression &expression
  emit(OpCode::YIELD);
  }
 
-void ByteCompiler::compileAwaitExpression(const ast::AwaitExpression &expression) {
+ void ByteCompiler::compileAwaitExpression(const ast::AwaitExpression &expression) {
  if (expression.argument) {
+ if (expression.argument->kind == ast::NodeType::CallExpression) {
+ auto &callExpr = static_cast<const ast::CallExpression &>(*expression.argument);
+ if (callExpr.callee && callExpr.callee->kind == ast::NodeType::Identifier) {
+ auto &ident = static_cast<const ast::Identifier &>(*callExpr.callee);
+ if (ident.symbol == "sleep" && callExpr.args.size() == 1) {
+ compileExpression(*callExpr.args[0]);
+ emit(OpCode::FIBER_SLEEP);
+ return;
+ }
+ }
+ }
  compileExpression(*expression.argument);
  } else {
  emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
  }
  emit(OpCode::FIBER_AWAIT);
-}
+ }
 
  void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
   // go func() -> async function call

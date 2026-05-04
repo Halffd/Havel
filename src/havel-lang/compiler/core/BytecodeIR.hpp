@@ -256,11 +256,12 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   TIMEOUT_START,    // Start one-shot timeout: timeout ms { ... }
   TIMEOUT_CANCEL,   // Cancel pending timeout
   
-  // Coroutines
-  YIELD,            // Yield from coroutine (optional value/delay)
+ // Coroutines
+ YIELD, // Yield from coroutine (optional value/delay)
  YIELD_RESUME, // Resume yielded coroutine
  GO_ASYNC, // Spawn async function call: go func()
  FIBER_AWAIT, // <- expr: await/blocking expression for fibers
+ FIBER_SLEEP, // <-sleep(ms): non-blocking sleep in coroutines
   
   // Channels
   CHANNEL_NEW,      // Create new channel: channel()

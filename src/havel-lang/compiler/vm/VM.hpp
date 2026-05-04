@@ -275,6 +275,7 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
   size_t max_call_depth_ = 1024;
+ size_t tail_call_depth_ = 0;
   bool profiling_enabled_ = false;
   std::array<uint64_t, 256> opcode_counts_{};
   uint64_t executed_instructions_ = 0;

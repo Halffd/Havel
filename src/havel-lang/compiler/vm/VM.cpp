@@ -3602,9 +3602,10 @@ Value VM::call(const Value &callee_value,
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args,
-                bool advance_caller_ip) {
+ bool advance_caller_ip) {
+ tail_call_depth_ = 0;
 
-  // Handle host function call directly
+ // Handle host function call directly
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
     if (host_func_idx >= host_function_names_.size()) {
@@ -3905,8 +3906,15 @@ co->ip = 0;
 }
 
 void VM::doTailCall(Value callee_value,
-std::vector<Value> args) {
-if (callee_value.isCoroutineId()) {
+ std::vector<Value> args) {
+ tail_call_depth_++;
+ if (frame_count_ + tail_call_depth_ >= max_call_depth_) {
+ tail_call_depth_ = 0;
+ COMPILER_THROW("Stack overflow: maximum call depth " +
+ std::to_string(max_call_depth_) + " reached");
+ }
+
+ if (callee_value.isCoroutineId()) {
 doCall(callee_value, std::move(args), false);
 return;
 }
@@ -4157,7 +4165,8 @@ void VM::ensureLocalIndex(uint32_t absolute_index) {
 }
 
 void VM::doReturn() {
-  if (frame_count_ == 0) {
+ tail_call_depth_ = 0;
+ if (frame_count_ == 0) {
     return;
   }
 

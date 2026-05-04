@@ -839,28 +839,43 @@ size_t VM::getHostArrayLength(ArrayRef array_ref) {
 }
 
 Value VM::execLengthOp(Value v) {
-    if (v.isObjectId()) {
-        Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_length");
-        if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
-            return callFunction(opMethod, {v});
-        }
-    }
-    if (v.isArrayId()) {
-        return Value::makeInt(static_cast<int64_t>(getHostArrayLength(ArrayRef{v.asArrayId()})));
-    } else if (v.isStringValId()) {
-        if (current_chunk) {
-            return Value::makeInt(static_cast<int64_t>(current_chunk->getString(v.asStringValId()).size()));
-        }
-        return Value::makeInt(0);
-    } else if (v.isStringId()) {
-        auto *s = heap_.string(v.asStringId());
-        return Value::makeInt(s ? static_cast<int64_t>(s->size()) : 0);
-    }
-    auto it = host_function_globals_.find("any.len");
-    if (it != host_function_globals_.end()) {
-        return callHostFunction(it->second, {v});
-    }
-    COMPILER_THROW("Length operator requires array, string, or object with op_length method");
+ if (v.isObjectId()) {
+ Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_length");
+ if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+ return callFunction(opMethod, {v});
+ }
+ // Try object.len prototype
+ auto typeIt = prototypes_.find("object");
+ if (typeIt != prototypes_.end()) {
+ auto methodIt = typeIt->second.find("len");
+ if (methodIt != typeIt->second.end()) {
+ auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
+ if (fnIt != host_functions.end()) return fnIt->second({v});
+ }
+ }
+ }
+ if (v.isArrayId()) {
+ return Value::makeInt(static_cast<int64_t>(getHostArrayLength(ArrayRef{v.asArrayId()})));
+ } else if (v.isStringValId()) {
+ if (current_chunk) {
+ return Value::makeInt(static_cast<int64_t>(current_chunk->getString(v.asStringValId()).size()));
+ }
+ return Value::makeInt(0);
+ } else if (v.isStringId()) {
+ auto *s = heap_.string(v.asStringId());
+ return Value::makeInt(s ? static_cast<int64_t>(s->size()) : 0);
+ } else if (v.isSetId()) {
+ // Try set.len prototype
+ auto typeIt = prototypes_.find("set");
+ if (typeIt != prototypes_.end()) {
+ auto methodIt = typeIt->second.find("len");
+ if (methodIt != typeIt->second.end()) {
+ auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
+ if (fnIt != host_functions.end()) return fnIt->second({v});
+ }
+ }
+ }
+ COMPILER_THROW("Length operator requires array, string, object, or set");
 }
 
 Value VM::getHostArrayValue(ArrayRef array_ref, size_t index) {
@@ -2730,29 +2745,11 @@ void VM::registerDefaultHostGlobals() {
 }
 
 Value VM::invokeHostFunction(const std::string &name,
-                                     uint32_t arg_count) {
-  auto it = host_functions.find(name);
-  if (it == host_functions.end()) {
-  // Check if this is an "any.*" function - delegate to "any.get"
-  static const std::string kAnyPrefix = "any.";
-  if (name.compare(0, kAnyPrefix.length(), kAnyPrefix) == 0) {
-    const std::string& methodName = name.substr(kAnyPrefix.length());
-    auto anyGetIt = host_functions.find("any.get");
-    if (anyGetIt != host_functions.end()) {
-      // Pass args directly to any.get, which has fallback for object methods
-      std::vector<Value> args;
-      args.reserve(arg_count);
-      for (uint32_t i = 0; i < arg_count; ++i) {
-        if (stack.empty())
-          COMPILER_THROW("Stack underflow");
-        args.push_back(stack.top());
-        stack.pop();
-      }
-      return anyGetIt->second(args);
-    }
-  }
-  COMPILER_THROW("Host function not found: " + name);
-  }
+ uint32_t arg_count) {
+ auto it = host_functions.find(name);
+ if (it == host_functions.end()) {
+ COMPILER_THROW("Host function not found: " + name);
+ }
 
 
   std::vector<Value> args(arg_count);

@@ -108,19 +108,23 @@ void registerArrayPrototype(VM& vm) {
     return Value::makeInt(-1);
   });
 
-	regProto("find", 2, [&vm](const std::vector<Value>& args) {
-		if (args.size() < 2) return Value::makeNull();
-		if (args[0].isArrayId() && (args[1].isFunctionObjId() || args[1].isClosureId())) {
-			auto* arr = vm.getHeap().array(args[0].asArrayId());
-			if (arr) {
-				for (const auto& v : *arr) {
-					auto predResult = vm.call(args[1], {v});
-					if (vm.toBoolPublic(predResult)) return v;
-				}
-			}
-		}
-		return Value::makeNull();
-	});
+ regProto("find", 2, [&vm](const std::vector<Value>& args) {
+  if (args.size() < 2) return Value::makeNull();
+  if (!args[0].isArrayId()) return Value::makeNull();
+  auto* arr = vm.getHeap().array(args[0].asArrayId());
+  if (!arr) return Value::makeNull();
+  if (args[1].isFunctionObjId() || args[1].isClosureId()) {
+   for (const auto& v : *arr) {
+    auto predResult = vm.call(args[1], {v});
+    if (vm.toBoolPublic(predResult)) return v;
+   }
+   return Value::makeNull();
+  }
+  for (size_t i = 0; i < arr->size(); ++i) {
+   if (vm.valuesEqualDeepPublic((*arr)[i], args[1])) return Value::makeInt(static_cast<int64_t>(i));
+  }
+  return Value::makeInt(-1);
+ });
 
 	regProto("findLast", 2, [&vm](const std::vector<Value>& args) {
 		if (args.size() < 2) return Value::makeNull();

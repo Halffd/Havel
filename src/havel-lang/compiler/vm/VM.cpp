@@ -714,14 +714,20 @@ void VM::processPendingCalls() {
 // Synchronous call for host functions - executes callback and returns result
 // Minimal state isolation: just save/restore stack size
 Value VM::callFunctionSync(const Value &fn,
-                                   const std::vector<Value> &args) {
-  size_t savedStackSize = stack.size();
-  size_t savedFrameCount = frame_count_;
+                               const std::vector<Value> &args) {
+    size_t savedStackSize = stack.size();
+    size_t savedFrameCount = frame_count_;
 
+    const BytecodeChunk *saved_chunk = current_chunk;
+    if (!current_chunk && main_chunk_) {
+        current_chunk = main_chunk_.get();
+    }
 
-  // Execute callback
-  doCall(fn, args, false);
-  runDispatchLoop(savedFrameCount);
+    // Execute callback
+    doCall(fn, args, false);
+    runDispatchLoop(savedFrameCount);
+
+    current_chunk = saved_chunk;
 
 
   // Get result from stack top
@@ -1939,7 +1945,7 @@ void VM::registerDefaultHostFunctions() {
           arg = Value::makeDouble(std::get<double>(msg));
         }
         
-        this->call(closure, {arg});
+        this->callFunction(closure, {arg});
       } catch (const std::exception &e) {
         ::havel::error("[thread] Exception: {}", e.what());
       }
@@ -2061,7 +2067,7 @@ void VM::registerDefaultHostFunctions() {
                 } else if (std::holds_alternative<double>(msg)) {
                     arg = Value::makeDouble(std::get<double>(msg));
                 }
-                this->call(closure, {arg});
+                this->callFunction(closure, {arg});
             } catch (const std::exception &e) {
                 ::havel::error("[thread] Exception: {}", e.what());
             }
@@ -2085,7 +2091,7 @@ void VM::registerDefaultHostFunctions() {
     
     auto callback = [this, closure]() {
       try {
-        this->call(closure, {});
+        this->callFunction(closure, {});
       } catch (const std::exception &e) {
         ::havel::error("[interval] Exception: {}", e.what());
       }
@@ -2153,7 +2159,7 @@ void VM::registerDefaultHostFunctions() {
         auto closure = args[1];
         auto callback = [this, closure]() {
             try {
-                this->call(closure, {});
+                this->callFunction(closure, {});
             } catch (const std::exception &e) {
                 ::havel::error("[interval] Exception: {}", e.what());
             }
@@ -2177,7 +2183,7 @@ void VM::registerDefaultHostFunctions() {
     
     auto callback = [this, closure]() {
       try {
-        this->call(closure, {});
+        this->callFunction(closure, {});
       } catch (const std::exception &e) {
         ::havel::error("[timeout] Exception: {}", e.what());
       }
@@ -2215,7 +2221,7 @@ void VM::registerDefaultHostFunctions() {
         auto closure = args[1];
         auto callback = [this, closure]() {
             try {
-                this->call(closure, {});
+                this->callFunction(closure, {});
             } catch (const std::exception &e) {
                 ::havel::error("[timeout] Exception: {}", e.what());
             }
@@ -2788,11 +2794,14 @@ Value VM::execute(const BytecodeChunk &chunk,
  frame_count_ = 0;
  heap_.reset();
 
- open_upvalues.clear();
- has_current_exception_ = false;
- current_exception_ = nullptr;
- registerDefaultHostGlobals();
- opcode_counts_.fill(0);
+    open_upvalues.clear();
+    has_current_exception_ = false;
+    current_exception_ = nullptr;
+    registerDefaultHostGlobals();
+    if (post_reset_setup_) {
+        post_reset_setup_(*this);
+    }
+    opcode_counts_.fill(0);
  executed_instructions_ = 0;
 
  if (frame_arena_.size() <= frame_count_) {
@@ -3787,16 +3796,12 @@ co->ip = 0;
   // Debug
   (void)callee_value;
 
-  // Allow fewer arguments than parameters (for default parameters)
-  // For variadic functions, allow MORE arguments than parameters
-  if (callee->variadic_param_index == UINT32_MAX &&
-      args.size() > callee->param_count) {
-    COMPILER_THROW("Argument count mismatch calling function index " +
-                             std::to_string(function_index) +
-                             " (expected at most " +
-                             std::to_string(callee->param_count) + ", got " +
-                             std::to_string(args.size()) + ")");
-  }
+    // Allow fewer arguments than parameters (for default parameters)
+    // For variadic functions, allow MORE arguments than parameters
+    // Silently drop excess args for non-variadic functions (callback-safe)
+    if (callee->variadic_param_index == UINT32_MAX && args.size() > callee->param_count) {
+        args.resize(callee->param_count);
+    }
 
   // For variadic functions, require at least as many args as non-variadic
   // params
@@ -5354,22 +5359,22 @@ case OpCode::LENGTH: {
     break;
   }
 
-	case OpCode::CALL_METHOD: {
-    // CALL_METHOD: operands are [method_name_string_index, arg_count]
-    // Dispatches based on receiver type without boxing.
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isStringValId() ||
-        !instruction.operands[1].isInt()) {
-      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
-    }
+case OpCode::CALL_METHOD: {
+        // CALL_METHOD: operands are [method_name_string_index, arg_count]
+        // Dispatches based on receiver type without boxing.
+        if (instruction.operands.size() != 2 ||
+            !instruction.operands[0].isStringValId() ||
+            !instruction.operands[1].isInt()) {
+            COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
+        }
 
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    std::string method_name;
-    if (current_chunk) {
-        method_name = current_chunk->getString(strIndex);
-    }
-    method_name = operatorSymbolToMethodName(method_name);
-    uint32_t arg_count = instruction.operands[1].asInt();
+        uint32_t strIndex = instruction.operands[0].asStringValId();
+        std::string method_name;
+        if (current_chunk) {
+            method_name = current_chunk->getString(strIndex);
+        }
+        method_name = operatorSymbolToMethodName(method_name);
+        uint32_t arg_count = instruction.operands[1].asInt();
 
     // Receiver is at stack top - arg_count positions down
     if (stack.size() < static_cast<size_t>(arg_count) + 1) {
@@ -5390,32 +5395,32 @@ case OpCode::LENGTH: {
       pushStack(*it);
     }
 
-    // Determine type name for dispatch
-    std::string type_name;
-    if (receiver.isStringValId() || receiver.isStringId()) {
-      type_name = "string";
-    } else if (receiver.isInt()) {
-      type_name = "int";
-    } else if (receiver.isDouble()) {
-      type_name = "float";
-    } else if (receiver.isBool()) {
-      type_name = "bool";
-    } else if (receiver.isArrayId()) {
-      type_name = "array";
-    } else if (receiver.isObjectId()) {
-      type_name = "object";
-    } else if (receiver.isSetId()) {
-        type_name = "set";
-    } else if (receiver.isThreadId()) {
-        type_name = "thread";
-    } else if (receiver.isIntervalId()) {
-        type_name = "interval";
-    } else if (receiver.isTimeoutId()) {
-        type_name = "timeout";
+        // Determine type name for dispatch
+        std::string type_name;
+        if (receiver.isStringValId() || receiver.isStringId()) {
+            type_name = "string";
+        } else if (receiver.isInt()) {
+            type_name = "int";
+        } else if (receiver.isDouble()) {
+            type_name = "float";
+        } else if (receiver.isBool()) {
+            type_name = "bool";
+        } else if (receiver.isArrayId()) {
+            type_name = "array";
+        } else if (receiver.isObjectId()) {
+            type_name = "object";
+        } else if (receiver.isSetId()) {
+            type_name = "set";
+        } else if (receiver.isThreadId()) {
+            type_name = "thread";
+        } else if (receiver.isIntervalId()) {
+            type_name = "interval";
+        } else if (receiver.isTimeoutId()) {
+            type_name = "timeout";
     } else {
-      pushStack(Value::makeNull());
-      break;
-    }
+            pushStack(Value::makeNull());
+            break;
+        }
 
     // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
     uint32_t host_func_idx = 0;
@@ -5513,13 +5518,13 @@ case OpCode::LENGTH: {
       }
     }
 
- if (!found_host && vm_func.isNull()) {
-            // Pop args and receiver before pushing null result
-            for (uint32_t i = 0; i < arg_count; ++i) popStack();
-            popStack(); // receiver
-            pushStack(Value::makeNull());
-            break;
-        }
+    if (!found_host && vm_func.isNull()) {
+        // Pop args and receiver before pushing null result
+        for (uint32_t i = 0; i < arg_count; ++i) popStack();
+        popStack(); // receiver
+        pushStack(Value::makeNull());
+        break;
+    }
 
     // Pop args and receiver
     std::vector<Value> args2(arg_count);
@@ -5540,19 +5545,21 @@ case OpCode::LENGTH: {
     }
 
     if (found_host) {
-      if (host_func_idx < host_function_names_.size()) {
-        auto fnIt = host_functions.find(host_function_names_[host_func_idx]);
-        if (fnIt != host_functions.end()) {
-          pushStack(fnIt->second(all_args));
+        if (host_func_idx < host_function_names_.size()) {
+            std::string resolved_name = host_function_names_[host_func_idx];
+            auto fnIt = host_functions.find(resolved_name);
+            if (fnIt != host_functions.end()) {
+                Value result = fnIt->second(all_args);
+                pushStack(result);
+            } else {
+                pushStack(Value::makeNull());
+            }
         } else {
-          pushStack(Value::makeNull());
+            pushStack(Value::makeNull());
         }
-      } else {
-        pushStack(Value::makeNull());
-      }
     } else {
-      // Call VM function
-      doCall(vm_func, all_args, true);
+        // Call VM function
+        doCall(vm_func, all_args, true);
     }
     break;
   }

@@ -118,23 +118,23 @@ std::string formatDiagnostic(const std::string &kind,
 }
 
 std::string enrichRuntimeError(const std::string &runtime_error,
-                               const std::string &compile_unit_name,
-                               const std::string &source) {
-  // Try to match "msg at line:col" format from VM_THROW
-  static const std::regex at_re(R"((.*) at ([0-9]+):([0-9]+))");
-  std::smatch match;
-  if (!std::regex_match(runtime_error, match, at_re) || match.size() < 4) {
-    return runtime_error;
-  }
+                                const std::string &compile_unit_name,
+                                const std::string &source) {
+    static const std::regex at_re(R"((.*) at ([0-9]+):([0-9]+))");
+    std::smatch match;
+    if (!std::regex_match(runtime_error, match, at_re) || match.size() < 4) {
+        return runtime_error;
+    }
 
-  const std::string message = match[1].str();
-  const size_t line = static_cast<size_t>(std::stoul(match[2].str()));
-  const size_t column = static_cast<size_t>(std::stoul(match[3].str()));
+    const std::string message = match[1].str();
+    const size_t line = static_cast<size_t>(std::stoul(match[2].str()));
+    const size_t column = static_cast<size_t>(std::stoul(match[3].str()));
 
-  std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
+    std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
+    std::string source_line = sourceLineAt(source, line);
 
-  return ::havel::ErrorPrinter::formatErrorFromFile(
-      "Runtime Error", message, file_path, line, column, 1);
+    return ::havel::ErrorPrinter::formatError(
+        "Runtime Error", message, file_path, line, column, 1, source_line);
 }
 
 std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
@@ -666,9 +666,9 @@ BytecodeSmokeResult runBytecodePipeline(
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
-        R"(Lexical resolution failed:\s*Unresolved identifier '([^']+)'\s*at\s*([0-9]+):([0-9]+))");
+        R"(Lexical resolution failed.*Unresolved identifier '([^']+)'\s*at\s*([0-9]+):([0-9]+))");
     static const std::regex duplicate_re(
-        R"(Lexical resolution failed:\s*Duplicate declaration:\s*'([^']+)'\s*already defined.*?at\s*([0-9]+):([0-9]+))");
+        R"(Lexical resolution failed.*Duplicate declaration:\s*'([^']+)'\s*already defined.*?at\s*([0-9]+):([0-9]+))");
     static const std::regex missing_binding_re(
         R"(Missing lexical binding for identifier:\s*(\S+)\s+at line\s*([0-9]+):([0-9]+))");
     std::smatch unresolved_match;
@@ -723,9 +723,11 @@ BytecodeSmokeResult runBytecodePipeline(
     vm->registerHostFunction(name, fn);
     // registerHostFunction already adds to globals
   }
-if (options.vm_setup) {
-  options.vm_setup(*vm);
-}
+    if (options.vm_setup) {
+        vm->setPostResetSetup([&setup = options.vm_setup](VM &vm) {
+            setup(vm);
+        });
+    }
 // Register protocols and impls from AST with VM
 for (const auto &stmt : program->body) {
   if (!stmt) continue;

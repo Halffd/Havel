@@ -667,7 +667,7 @@ void TimeoutExpression::accept(ASTVisitor &visitor) const {
 
 // YieldExpression accept method
 void YieldExpression::accept(ASTVisitor &visitor) const {
-  visitor.visitYieldExpression(*this);
+ visitor.visitYieldExpression(*this);
 }
 
 // GoStatement accept method

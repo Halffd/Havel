@@ -509,8 +509,11 @@ case TokenType::PlusAssign:
   case TokenType::BitwiseOrAssign:
   case TokenType::BitwiseXorAssign:
   case TokenType::ShiftLeftAssign:
-  case TokenType::ShiftRightAssign:
-    return 5; // Right-associative: 10 - 1 = 9, but use lower for safety
+ case TokenType::ShiftRightAssign:
+ return 5; // Right-associative: 10 - 1 = 9, but use lower for safety
+
+ case TokenType::LeftArrow:
+ return 5; // Right-associative (await-assign)
 
     case TokenType::Arrow:
       return 5;  // Low right binding power for arrow body expressions
@@ -561,6 +564,9 @@ setBoth(ModuloAssign, 10, 10);
     setBoth(BitwiseXorAssign, 10, 10);
     setBoth(ShiftLeftAssign, 10, 10);
     setBoth(ShiftRightAssign, 10, 10);
+
+ // LeftArrow (<- await-assign) - same precedence as assignment
+ setBoth(LeftArrow, 10, 10);
 
 // Nullish coalescing
       setBoth(Nullish, 20, 20);
@@ -661,6 +667,7 @@ can_start[static_cast<size_t>(RegexString)] = true;
     can_start[static_cast<size_t>(Interval)] = true;
     can_start[static_cast<size_t>(Timeout)] = true;
     can_start[static_cast<size_t>(Async)] = true;
+ can_start[static_cast<size_t>(LeftArrow)] = true;
   }
     
     void setBoth(TokenType t, uint8_t lbp, uint8_t rbp) {
@@ -1069,7 +1076,8 @@ return std::make_unique<ast::StringLiteral>(token.value, true);
                t == havel::TokenType::Timeout ||
                t == havel::TokenType::Thread ||
                t == havel::TokenType::Interval ||
-               t == havel::TokenType::Channel ||
+ t == havel::TokenType::Channel ||
+ t == havel::TokenType::Co ||
                t == havel::TokenType::On ||
                t == havel::TokenType::Off ||
                t == havel::TokenType::Go ||
@@ -1356,8 +1364,16 @@ case TokenType::Timeout:
     case TokenType::Channel:
       return parseChannelExpression();
 
-    case TokenType::Go:
-      return parseGoExpression();
+ case TokenType::Go:
+ return parseGoExpression();
+
+ case TokenType::LeftArrow: {
+ auto argument = parsePrattExpression(bp(BindingPower::Prefix));
+ auto awaitExpr = std::make_unique<havel::ast::AwaitExpression>(std::move(argument));
+ awaitExpr->line = token.line;
+ awaitExpr->column = token.column;
+ return awaitExpr;
+ }
 
     case TokenType::Hotkey:
       return parseHotkeyExpression(token);
@@ -1434,17 +1450,26 @@ case TokenType::Assign:
     case TokenType::BitwiseAndAssign:
     case TokenType::BitwiseOrAssign:
     case TokenType::BitwiseXorAssign:
-    case TokenType::ShiftLeftAssign:
-    case TokenType::ShiftRightAssign: {
-        auto right = parsePrattExpression(getRightBindingPower(token.type));
-        std::string op = token.value;
-        
-        // Check if left is an identifier and there might be more targets (comma-separated)
-        // This handles: a, b, c = value
-        // The comma case will collect targets and then hit '='
-        return std::make_unique<ast::AssignmentExpression>(
-            std::move(left), std::move(right), op, false);
-    }
+ case TokenType::ShiftLeftAssign:
+ case TokenType::ShiftRightAssign: {
+ auto right = parsePrattExpression(getRightBindingPower(token.type));
+ std::string op = token.value;
+
+ // Check if left is an identifier and there might be more targets (comma-separated)
+ // This handles: a, b, c = value
+ // The comma case will collect targets and then hit '='
+ return std::make_unique<ast::AssignmentExpression>(
+ std::move(left), std::move(right), op, false);
+ }
+
+ case TokenType::LeftArrow: {
+ auto right = parsePrattExpression(getRightBindingPower(token.type));
+ auto awaitExpr = std::make_unique<havel::ast::AwaitExpression>(std::move(right));
+ awaitExpr->line = token.line;
+ awaitExpr->column = token.column;
+ return std::make_unique<ast::AssignmentExpression>(
+ std::move(left), std::move(awaitExpr), "=", false);
+ }
 
 case TokenType::Plus: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
@@ -2651,13 +2676,23 @@ case havel::TokenType::Identifier: {
     return parseOnStatement();
   case havel::TokenType::Off:
     return parseOffModeStatement();
-  case havel::TokenType::Fn:
-if (at(1).type == havel::TokenType::OpenParen) {
-auto expr = parseLambdaExpression();
-if (at().type == havel::TokenType::Semicolon) advance();
-return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
-}
-return parseFunctionDeclaration();
+ case havel::TokenType::Fn:
+ if (at(1).type == havel::TokenType::OpenParen) {
+ auto expr = parseLambdaExpression();
+ if (at().type == havel::TokenType::Semicolon) advance();
+ return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+ }
+ return parseFunctionDeclaration();
+ case havel::TokenType::Co:
+ if (at(1).type == havel::TokenType::Fn) {
+ advance(); // consume 'co'
+ auto decl = parseFunctionDeclaration();
+ if (decl) {
+ static_cast<havel::ast::FunctionDeclaration*>(decl.get())->is_coroutine = true;
+ }
+ return decl;
+ }
+ failAt(at(), "Expected 'fn' after 'co'");
 case havel::TokenType::Struct:
 // struct.define(...) is a method call, struct Name { } is a declaration
     if (at(1).type == havel::TokenType::Dot) {
@@ -6690,14 +6725,14 @@ if (at().type == havel::TokenType::Assign ||
       at().type == havel::TokenType::BitwiseAndAssign ||
       at().type == havel::TokenType::BitwiseOrAssign ||
       at().type == havel::TokenType::BitwiseXorAssign ||
-      at().type == havel::TokenType::ShiftLeftAssign ||
-      at().type == havel::TokenType::ShiftRightAssign) {
-        auto opTok = advance(); // consume the operator
+ at().type == havel::TokenType::ShiftLeftAssign ||
+ at().type == havel::TokenType::ShiftRightAssign) {
+ auto opTok = advance(); // consume the operator
 
-        // Right-associative: a = b = c means a = (b = c)
-        auto value = parseAssignmentExpression();
+ // Right-associative: a = b = c means a = (b = c)
+ auto value = parseAssignmentExpression();
 
-        if (hasComma) {
+ if (hasComma) {
             // Multiple assignment: a, b, c = value
             if (opTok.value != "=") {
                 failAt(opTok, "Compound assignment operators not supported for multiple targets");
@@ -6723,12 +6758,33 @@ if (at().type == havel::TokenType::Assign ||
         return assign;
     }
 
-    // If we had comma but no assignment, that's an error
-    if (hasComma) {
-        failAt(at(), "Expected '=' after comma-separated targets");
-    }
+ // If we had comma but no assignment, that's an error
+ if (hasComma) {
+ failAt(at(), "Expected '=' after comma-separated targets");
+ }
 
-    return left;
+ // <- as await-assign: target <- expr means target = <-expr
+ if (at().type == havel::TokenType::LeftArrow) {
+ auto arrowTok = advance();
+ auto rhs = parseAssignmentExpression();
+ auto awaitExpr = std::make_unique<havel::ast::AwaitExpression>(std::move(rhs));
+ awaitExpr->line = arrowTok.line;
+ awaitExpr->column = arrowTok.column;
+
+ bool isGlobalScope = false;
+ if (left && left->kind == havel::ast::NodeType::Identifier) {
+ auto &ident = static_cast<havel::ast::Identifier &>(*left);
+ isGlobalScope = ident.isGlobalScope;
+ }
+
+ auto assign = std::make_unique<havel::ast::AssignmentExpression>(
+ std::move(left), std::move(awaitExpr), "=", isGlobalScope);
+ assign->line = arrowTok.line;
+ assign->column = arrowTok.column;
+ return assign;
+ }
+
+ return left;
 }
 
 // Parse cast expression: expr as Type
@@ -7155,15 +7211,24 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
   return left;
 }
 std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
-  if (at().type == havel::TokenType::Identifier && at().value == "await") {
-    auto awaitTok = advance();
-    auto argument = parseUnary();
-    auto awaitExpr =
-        std::make_unique<havel::ast::AwaitExpression>(std::move(argument));
-    awaitExpr->line = awaitTok.line;
-    awaitExpr->column = awaitTok.column;
-    return awaitExpr;
-  }
+ if (at().type == havel::TokenType::Identifier && at().value == "await") {
+ auto awaitTok = advance();
+ auto argument = parseUnary();
+ auto awaitExpr =
+ std::make_unique<havel::ast::AwaitExpression>(std::move(argument));
+ awaitExpr->line = awaitTok.line;
+ awaitExpr->column = awaitTok.column;
+ return awaitExpr;
+ }
+ if (at().type == havel::TokenType::LeftArrow) {
+ auto arrowTok = advance();
+ auto argument = parseUnary();
+ auto awaitExpr =
+ std::make_unique<havel::ast::AwaitExpression>(std::move(argument));
+ awaitExpr->line = arrowTok.line;
+ awaitExpr->column = arrowTok.column;
+ return awaitExpr;
+ }
 
   if (at().type == havel::TokenType::PlusPlus ||
       at().type == havel::TokenType::MinusMinus) {
@@ -7971,8 +8036,8 @@ return parsePostfixExpression(std::move(array));
     return parseIfExpression();
   }
 
-  default:
-    failAt(tk, "Unexpected token in expression: " + tk.value);
+ default:
+ failAt(tk, "Unexpected token in expression: " + tk.value);
   }
 }
 // Add these method declarations to Parser.h first, then implement in Parser.cpp

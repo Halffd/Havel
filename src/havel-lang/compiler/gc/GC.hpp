@@ -167,24 +167,25 @@ bool isClosed() const { return !is_open; }
               column(col), cause(nullptr) {}
     };
 
-struct Coroutine {
-enum State { Runnable, Waiting, Done };
+ struct Coroutine {
+ enum State { Runnable, Waiting, Done };
 
-uint32_t function_index = 0;
-uint32_t chunk_index = 0;
-uint32_t ip = 0;
-uint32_t closure_id = 0;
-std::vector<Value> stack;
-std::vector<Value> locals;
-size_t saved_frame_count = 0;
-std::vector<Value> saved_locals;
-uint32_t saved_coroutine_id = UINT32_MAX;
-State state = Runnable;
-std::vector<Value> yield_values;
-size_t parent_locals_size = 0;
+ uint32_t function_index = 0;
+ uint32_t chunk_index = 0;
+ uint32_t ip = 0;
+ uint32_t closure_id = 0;
+ std::vector<Value> stack;
+ std::vector<Value> locals;
+ size_t saved_frame_count = 0;
+ std::vector<Value> saved_locals;
+ uint32_t saved_coroutine_id = UINT32_MAX;
+ State state = Runnable;
+ std::vector<Value> yield_values;
+ size_t parent_locals_size = 0;
+ std::chrono::steady_clock::time_point resume_at_time{}; // Time-based resume for FIBER_SLEEP
 
-Coroutine() = default;
-};
+ Coroutine() = default;
+ };
 
     void reset();
 

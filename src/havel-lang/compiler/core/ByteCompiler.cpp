@@ -677,7 +677,7 @@ if (param->defaultValue.has_value()) {
   
   // Phase 3B-3: Detect if this function contains yield expressions
   if (function.body) {
-    current_function->is_generator = functionContainsYield(*function.body);
+    current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
   }
   
   leaveFunction();
@@ -3589,22 +3589,7 @@ case ast::NodeType::CallExpression:
     break;
   }
 
- case ast::NodeType::AwaitExpression: {
- const auto &await_expr =
- static_cast<const ast::AwaitExpression &>(expression);
- if (!await_expr.argument) {
- COMPILER_THROW("Await expression missing argument");
- }
- {
- uint32_t strId = addStringConstant("async.await");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- compileExpression(*await_expr.argument);
- emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
- break;
- }
-
-  case ast::NodeType::UpdateExpression: {
+ case ast::NodeType::UpdateExpression: {
     const auto &update_expr =
         static_cast<const ast::UpdateExpression &>(expression);
     if (!update_expr.argument) {
@@ -3872,9 +3857,13 @@ case ast::NodeType::UnaryExpression: {
     break;
 
   // Coroutines
-  case ast::NodeType::YieldExpression:
-    compileYieldExpression(static_cast<const ast::YieldExpression &>(expression));
-    break;
+ case ast::NodeType::YieldExpression:
+ compileYieldExpression(static_cast<const ast::YieldExpression &>(expression));
+ break;
+
+ case ast::NodeType::AwaitExpression:
+ compileAwaitExpression(static_cast<const ast::AwaitExpression &>(expression));
+ break;
 
   case ast::NodeType::GoExpression:
     compileGoExpression(static_cast<const ast::GoExpression &>(expression));
@@ -6213,10 +6202,19 @@ void ByteCompiler::compileYieldExpression(const ast::YieldExpression &expression
   
   // Yield is a VM-level coroutine operation, not a host function
   // Keep the YIELD opcode for now
-  emit(OpCode::YIELD);
+ emit(OpCode::YIELD);
+ }
+
+void ByteCompiler::compileAwaitExpression(const ast::AwaitExpression &expression) {
+ if (expression.argument) {
+ compileExpression(*expression.argument);
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
+ emit(OpCode::FIBER_AWAIT);
 }
 
-void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
+ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
   // go func() -> async function call
   // For now, just compile the call expression (go is a statement modifier)
   
@@ -6484,9 +6482,12 @@ void ByteCompiler::optimizeJumps() {
 }
 
 bool ByteCompiler::expressionContainsYield(const ast::Expression &expr) const {
-  switch (expr.kind) {
-    case ast::NodeType::YieldExpression:
-      return true;
+ switch (expr.kind) {
+ case ast::NodeType::YieldExpression:
+ return true;
+
+ case ast::NodeType::AwaitExpression:
+ return true;
 
     case ast::NodeType::BinaryExpression: {
       const auto &binary = static_cast<const ast::BinaryExpression &>(expr);

@@ -258,8 +258,9 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   
   // Coroutines
   YIELD,            // Yield from coroutine (optional value/delay)
-  YIELD_RESUME,     // Resume yielded coroutine
-  GO_ASYNC,         // Spawn async function call: go func()
+ YIELD_RESUME, // Resume yielded coroutine
+ GO_ASYNC, // Spawn async function call: go func()
+ FIBER_AWAIT, // <- expr: await/blocking expression for fibers
   
   // Channels
   CHANNEL_NEW,      // Create new channel: channel()

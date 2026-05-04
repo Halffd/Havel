@@ -463,14 +463,55 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  // reversed: "hello".reversed() -> "olleh"
-  regProto("reversed", 1, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeNull();
-    std::string s = extractString(vm, args[0]);
-    std::reverse(s.begin(), s.end());
-    auto ref = vm.getHeap().allocateString(std::move(s));
-    return Value::makeStringId(ref.id);
-  });
+    // reversed: "hello".reversed() -> "olleh"
+    regProto("reversed", 1, [&vm](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        std::string s = extractString(vm, args[0]);
+        std::reverse(s.begin(), s.end());
+        auto ref = vm.getHeap().allocateString(std::move(s));
+        return Value::makeStringId(ref.id);
+    });
+
+    // map: "ab".map((c) => c) -> ["a", "b"]
+    regProto("map", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeNull();
+        std::string s = extractString(vm, args[0]);
+        Value fn = args[1];
+        std::vector<Value> result;
+        result.reserve(s.size());
+        for (size_t i = 0; i < s.size(); ++i) {
+            auto ch = makeString(vm, std::string(1, s[i]));
+            Value mapped = vm.callFunction(fn, {ch});
+            result.push_back(mapped);
+        }
+        return makeArray(vm, result);
+    });
+
+    // filter: "hello".filter((c) => c != "l") -> "heo"
+    regProto("filter", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeNull();
+        std::string s = extractString(vm, args[0]);
+        Value fn = args[1];
+        std::string result;
+        for (size_t i = 0; i < s.size(); ++i) {
+            auto ch = makeString(vm, std::string(1, s[i]));
+            Value test = vm.callFunction(fn, {ch});
+            if (vm.toBoolPublic(test)) result += s[i];
+        }
+        return makeString(vm, std::move(result));
+    });
+
+    // each: "abc".each((c) => ...) -> null (side effects)
+    regProto("each", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeNull();
+        std::string s = extractString(vm, args[0]);
+        Value fn = args[1];
+        for (size_t i = 0; i < s.size(); ++i) {
+            auto ch = makeString(vm, std::string(1, s[i]));
+            vm.callFunction(fn, {ch});
+        }
+        return Value::makeNull();
+    });
 
   // format: printf-style string formatting
   // Positional: "%s is %d".format("Alice", 30)

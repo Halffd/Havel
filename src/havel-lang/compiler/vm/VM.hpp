@@ -240,11 +240,16 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   uint8_t suspension_reason_ = 0;              // Why is it suspending? (SuspensionReason enum value)
   void* suspension_context_ = nullptr;         // Context pointer (thread_id, channel*, etc)
 
-  // Phase 3B-7: Thread wait tracking
-  // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
-  // Used to unpark fibers when threads complete
-  std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
-  mutable std::shared_mutex thread_wait_mutex_;
+ // Phase 3B-7: Thread wait tracking
+ // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
+ // Used to unpark fibers when threads complete
+ std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
+ mutable std::shared_mutex thread_wait_mutex_;
+
+ // Thread/timeout/interval result storage for <- await
+ std::unordered_map<uint32_t, Value> thread_results_;
+ std::unordered_map<uint32_t, Value> timeout_results_;
+ std::unordered_map<uint32_t, Value> interval_results_;
 
 	// Phase 2A: Event queue reference for variable change notifications
 	class EventQueue* event_queue_ = nullptr;

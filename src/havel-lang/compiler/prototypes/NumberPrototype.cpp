@@ -507,6 +507,59 @@ void registerObjectPrototype(VM& vm) {
     }
     return Value::makeBool(true);
   });
+
+  // map: {a:1, b:2}.map((k) => k) -> ["a", "b"]
+  // Iterates keys, calls fn(key), returns array of results
+  regProto("map", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (!args[0].isObjectId()) return Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto arrRef = vm.getHeap().allocateArray();
+    auto* arr = vm.getHeap().array(arrRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      auto mapped = vm.call(args[1], {Value::makeStringId(kRef.id), val});
+      arr->push_back(mapped);
+    }
+    return Value::makeArrayId(arrRef.id);
+  });
+
+  // find: {a:1, b:2}.find("a") -> 0, .find("b") -> 1, .find("c") -> -1
+  regProto("find", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeInt(-1);
+    if (!args[0].isObjectId()) return Value::makeInt(-1);
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeInt(-1);
+    std::string key = extractStringArg(vm, args, 1, "");
+    int64_t idx = 0;
+    for (const auto& [k, v] : *obj) {
+      if (k == "__set_marker__" || k == "__proto__") continue;
+      if (k == key) return Value::makeInt(idx);
+      ++idx;
+    }
+    return Value::makeInt(-1);
+  });
+
+  // filter: {a:1, b:2}.filter((k, v) => v > 1) -> {b: 2}
+  regProto("filter", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (!args[0].isObjectId()) return Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      auto predResult = vm.call(args[1], {Value::makeStringId(kRef.id), val});
+      if (vm.toBoolPublic(predResult)) result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
 }
 
 void registerSetPrototype(VM& vm) {

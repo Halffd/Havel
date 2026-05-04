@@ -533,6 +533,8 @@ case OpCode::INT_DIV:
  return "GO_ASYNC";
  case OpCode::FIBER_AWAIT:
  return "FIBER_AWAIT";
+ case OpCode::FIBER_SLEEP:
+ return "FIBER_SLEEP";
   case OpCode::CHANNEL_NEW:
     return "CHANNEL_NEW";
   case OpCode::CHANNEL_SEND:

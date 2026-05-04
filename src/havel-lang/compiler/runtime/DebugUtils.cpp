@@ -650,6 +650,7 @@ case OpCode::INT_DIV: return "INT_DIV";
   case OpCode::YIELD_RESUME: return "YIELD_RESUME";
   case OpCode::GO_ASYNC: return "GO_ASYNC";
  case OpCode::FIBER_AWAIT: return "FIBER_AWAIT";
+ case OpCode::FIBER_SLEEP: return "FIBER_SLEEP";
 
   // Channels
   case OpCode::CHANNEL_NEW: return "CHANNEL_NEW";

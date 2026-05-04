@@ -558,7 +558,53 @@ void registerObjectPrototype(VM& vm) {
       auto predResult = vm.call(args[1], {Value::makeStringId(kRef.id), val});
       if (vm.toBoolPublic(predResult)) result->set(key, val);
     }
-    return Value::makeObjectId(resultRef.id);
+  return Value::makeObjectId(resultRef.id);
+ });
+
+  // extend: {a:1}.extend({b: 2}) -> {a:1, b:2} (mutate receiver)
+  regProto("extend", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (!args[0].isObjectId() || !args[1].isObjectId()) return Value::makeNull();
+    auto* target = vm.getHeap().object(args[0].asObjectId());
+    auto* source = vm.getHeap().object(args[1].asObjectId());
+    if (target && source) {
+      for (const auto& [key, val] : *source) {
+        if (key == "__set_marker__" || key == "__proto__") continue;
+        target->set(key, val);
+      }
+    }
+    return args[0];
+  });
+
+  // each: {a:1, b:2}.each((k, v) => ...) -> null
+  regProto("each", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (!args[0].isObjectId()) return Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      vm.call(args[1], {Value::makeStringId(kRef.id), val});
+    }
+    return Value::makeNull();
+  });
+
+  // reduce: {a:1, b:2}.reduce((acc, k, v) => ..., init) -> result
+  regProto("reduce", 3, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 3) return Value::makeNull();
+    if (!args[0].isObjectId()) return args.size() >= 3 ? args[2] : Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return args[2];
+    Value acc = args[2];
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      acc = vm.call(args[1], {acc, Value::makeStringId(kRef.id), val});
+    }
+    return acc;
   });
 }
 

@@ -1,5 +1,6 @@
 /* StringModule.cpp - VM-native stdlib module */
 #include "StringModule.hpp"
+#include <regex>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -179,7 +180,32 @@ void registerStringModule(VMApi &api) {
         return Value::makeBool(str.find(substr) != std::string::npos);
       });
 
-  // Register string object
+  api.registerFunction("replace", [&api](const std::vector<Value>& args) {
+ if (args.size() < 3)
+ throw std::runtime_error("replace() requires string, pattern, and replacement");
+ std::string s = api.toString(args[0]);
+ std::string pattern = api.toString(args[1]);
+ std::string replacement = api.toString(args[2]);
+
+ bool isRegex = !pattern.empty() && pattern.front() == '/' && pattern.size() > 2 && pattern.back() == '/';
+ if (isRegex) {
+ std::string regexPattern = pattern.substr(1, pattern.size() - 2);
+ try {
+ std::regex re(regexPattern);
+ std::string result = std::regex_replace(s, re, replacement);
+ return api.makeString(std::move(result));
+ } catch (const std::regex_error&) {
+ return Value::makeNull();
+ }
+ }
+
+ size_t pos = s.find(pattern);
+ if (pos == std::string::npos) return api.makeString(s);
+ s.replace(pos, pattern.size(), replacement);
+ return api.makeString(std::move(s));
+ });
+
+ // Register string object
   auto strObj = api.makeObject();
   api.setField(strObj, "len", api.makeFunctionRef("string.len"));
   api.setField(strObj, "lower", api.makeFunctionRef("string.lower"));

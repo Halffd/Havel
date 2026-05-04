@@ -7625,11 +7625,147 @@ locals.resize(finished.locals_base);
       COMPILER_THROW("GO_ASYNC expects a function");
     }
     
-    // TODO: Implement async function execution
-    // For now, push null
-    pushStack(Value::makeNull());
-    break;
-  }
+ // TODO: Implement async function execution
+ // For now, push null
+ pushStack(Value::makeNull());
+ break;
+ }
+
+ case OpCode::FIBER_AWAIT: {
+ // <- expr: evaluate expr, push resolved value.
+ // For coroutine IDs: run coroutine to completion, push return value.
+ // For non-awaitable values: push through (identity).
+ Value awaitable = popStack();
+
+ if (awaitable.isCoroutineId()) {
+ uint32_t coId = awaitable.asCoroutineId();
+ auto *co = heap_.coroutine(coId);
+
+ if (!co) {
+ pushStack(Value::makeNull());
+ break;
+ }
+
+ if (co->state == GCHeap::Coroutine::Done) {
+ Value result = co->stack.empty() ? Value::makeNull() : co->stack.back();
+ pushStack(result);
+ break;
+ }
+
+ // Coroutine is not done — run it to completion inline.
+ // Save entire VM state so we can restore after.
+ struct VMState {
+ std::stack<Value> stack;
+ std::vector<Value> locals;
+ size_t frame_count;
+ std::vector<CallFrame> frame_arena;
+ uint32_t current_coroutine_id;
+ };
+
+ VMState saved;
+ saved.stack = stack;
+ saved.locals = locals;
+ saved.frame_count = frame_count_;
+ saved.frame_arena = frame_arena_;
+ saved.current_coroutine_id = current_coroutine_id_;
+
+ // Set up coroutine for execution
+ current_coroutine_id_ = coId;
+ co->saved_coroutine_id = saved.current_coroutine_id;
+ co->saved_frame_count = frame_count_;
+ co->saved_locals = locals;
+ locals = co->locals;
+
+ const auto *chunk = current_chunk;
+ const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
+ if (!func) {
+ stack = saved.stack;
+ frame_count_ = saved.frame_count;
+ locals = saved.locals;
+ frame_arena_ = saved.frame_arena;
+ current_coroutine_id_ = saved.current_coroutine_id;
+ COMPILER_THROW("FIBER_AWAIT: function not found for coroutine");
+ }
+
+ if (frame_arena_.size() <= frame_count_) {
+ frame_arena_.push_back(CallFrame{func, co->ip, 0, co->closure_id});
+ } else {
+ frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, co->closure_id};
+ }
+ frame_count_++;
+ co->state = GCHeap::Coroutine::Runnable;
+
+ size_t caller_frame_count = saved.frame_count;
+ size_t max_steps = 1000000;
+ size_t steps = 0;
+
+ while (co->state != GCHeap::Coroutine::Done && steps < max_steps) {
+ // If frame count dropped back to caller level,
+ // the coroutine yielded — return the yield value
+ if (frame_count_ <= caller_frame_count && co->state != GCHeap::Coroutine::Done) {
+ // Coroutine yielded. The yield value is on the stack.
+ break;
+ }
+
+ if (frame_count_ <= caller_frame_count) {
+ break;
+ }
+
+ size_t afi = frame_count_ - 1;
+ const auto *cur_func = frame_arena_[afi].function;
+ uint32_t cur_ip = frame_arena_[afi].ip;
+
+ if (cur_ip >= cur_func->instructions.size()) {
+ executeInstruction(Instruction{OpCode::RETURN});
+ } else {
+ const auto &inst = cur_func->instructions[cur_ip];
+ executeInstruction(inst);
+ // Advance IP for next instruction (unless the instruction
+ // modified it, e.g. CALL, RETURN, JUMP)
+ if (afi < frame_count_ && frame_arena_[afi].ip == cur_ip) {
+ frame_arena_[afi].ip++;
+ }
+ }
+
+ processPendingCalls();
+ steps++;
+
+ if (suspension_requested_) {
+ suspension_requested_ = false;
+ break;
+ }
+ }
+
+ // Get return value
+ Value result;
+ if (co->state == GCHeap::Coroutine::Done && !stack.empty()) {
+ // doReturn() pushed the coroutine's return value on the stack
+ result = popStack();
+ } else if (co->state == GCHeap::Coroutine::Done) {
+ result = co->stack.empty() ? Value::makeNull() : co->stack.back();
+ } else if (co->state == GCHeap::Coroutine::Waiting && !stack.empty()) {
+ // Coroutine yielded — yield value is on the stack
+ result = popStack();
+ } else {
+ // Coroutine didn't finish (hit step limit or suspension)
+ result = awaitable;
+ }
+
+ // Restore caller VM state
+ stack = saved.stack;
+ frame_count_ = saved.frame_count;
+ locals = saved.locals;
+ frame_arena_ = saved.frame_arena;
+ current_coroutine_id_ = saved.current_coroutine_id;
+
+ pushStack(result);
+ break;
+ }
+
+ // Non-awaitable value: push through (identity for resolved values)
+ pushStack(awaitable);
+ break;
+ }
 
   // ============================================================================
   // CHANNELS

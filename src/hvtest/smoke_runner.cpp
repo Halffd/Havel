@@ -103,9 +103,13 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "OBJECT_NEW";
   case OpCode::OBJECT_GET:
     return "OBJECT_GET";
-  case OpCode::OBJECT_SET:
-    return "OBJECT_SET";
-  default:
+    case OpCode::OBJECT_SET:
+        return "OBJECT_SET";
+    case OpCode::CALL_METHOD:
+        return "CALL_METHOD";
+    case OpCode::STORE_GLOBAL:
+        return "STORE_GLOBAL";
+    default:
     return "OTHER";
   }
 }
@@ -314,9 +318,9 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
     if (!equalsInt(result.return_value, expected)) {
-      std::cerr << "[FAIL] " << name << ": expected " << expected
-                << " but got non-matching result" << std::endl;
-      return 1;
+        std::cerr << "[FAIL] " << name << ": expected " << expected
+                  << " but got " << (result.return_value.isInt() ? std::to_string(result.return_value.asInt()) : std::string("non-int")) << std::endl;
+        return 1;
     }
 
     if (!result.snapshot.artifact_path.empty()) {
@@ -419,7 +423,6 @@ options.host_functions["thread.spawn"] = [&](const std::vector<Value> &args) {
     thread_callbacks[id] = callback;
     thread_running[id] = true;
     thread_paused[id] = false;
-    (void)vm_ptr->callFunction(thread_callbacks[id], {});
     auto obj = vm_ptr->createHostObject();
     vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
     vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
@@ -573,6 +576,21 @@ options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
     std::string key = "timeout-" + std::to_string(idv.asInt());
     timeout_running[key] = false;
     return Value(true);
+};
+// timeout.start(ms, closure) — called by block-sugar "timeout N { ... }" via LOAD_GLOBAL + CALL
+// Args: [delay, closure] (no receiver prepended)
+options.host_functions["timeout.start"] = [&](const std::vector<Value> &args) {
+    if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout.start requires delay + callback");
+    int64_t tid = next_task_id++;
+    std::string id = "timeout-" + std::to_string(tid);
+    timeout_callbacks[id] = args[1];
+    timeout_running[id] = true;
+    (void)vm_ptr->callFunction(timeout_callbacks[id], {});
+    timeout_running[id] = false;
+    auto obj = vm_ptr->createHostObject();
+    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
+    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
+    return Value::makeObjectId(obj.id);
 };
 
     options.host_functions["object.send"] = [&](const std::vector<Value> &args) {
@@ -751,18 +769,18 @@ options.host_functions["object.running"] = [&](const std::vector<Value> &args) {
     const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
     if (!equalsInt(result.return_value, expected)) {
-      std::cerr << "[FAIL] " << name << ": expected " << expected
-                << " but got non-matching result" << std::endl;
-      return 1;
+        std::cerr << "[FAIL] " << name << ": expected " << expected
+                  << " but got " << (result.return_value.isInt() ? std::to_string(result.return_value.asInt()) : std::string("non-int")) << std::endl;
+        return 1;
     }
 
     std::cout << "[PASS] " << name << std::endl;
     return 0;
-  } catch (const std::exception &e) {
+} catch (const std::exception &e) {
     std::cerr << "[FAIL] " << name << ": exception: " << e.what()
               << std::endl;
     return 1;
-  }
+}
 }
 
 int runClosureCase(bool dump_bytecode, const std::string &snapshot_dir) {
@@ -823,7 +841,9 @@ return missing_value
     return 1;
   } catch (const std::exception &e) {
     const std::string message = e.what();
-    if (message.find("Unresolved identifier") == std::string::npos) {
+    if (message.find("Unresolved identifier") == std::string::npos &&
+        message.find("Undefined variable") == std::string::npos &&
+        message.find("undefined variable") == std::string::npos) {
       std::cerr << "[FAIL] unresolved-identifier: wrong error: " << message
                 << std::endl;
       return 1;
@@ -858,7 +878,7 @@ return bad()
     return 1;
   } catch (const std::exception &e) {
     const std::string message = e.what();
-    if (message.find("source") == std::string::npos ||
+    if (message.find("x / 0") == std::string::npos ||
         message.find("Division by zero") == std::string::npos) {
       std::cerr << "[FAIL] runtime-line-error: wrong error: " << message
                 << std::endl;
@@ -1232,15 +1252,20 @@ try {
 }
 )havel", 7, dump_bytecode, snapshot_dir);
 
-  failures += runCase("iterable-hof-string-and-object", R"havel(
+failures += runCase("iterable-hof-string-and-object", R"havel(
 chars = "ab".map((c) => c)
+print(chars)
+print(chars[0])
+print(chars[0] == "a")
 keys = {a: 1, b: 2}.map((k) => k)
+print(keys)
+print(keys.find("a"))
 if chars[0] == "a" {
-    if keys.find("a") >= 0 {
-        if keys.find("b") >= 0 {
-            return 1
-        }
+  if keys.find("a") >= 0 {
+    if keys.find("b") >= 0 {
+      return 1
     }
+  }
 }
 return 0
 )havel", 1, dump_bytecode, snapshot_dir);

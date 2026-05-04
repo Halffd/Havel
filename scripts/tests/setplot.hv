@@ -1,0 +1,58 @@
+use math
+from graph use Circle, Plot
+
+class SetPlot {
+    fn @(sets = []) {
+        @sets = sets
+        @plot = nil
+        return @
+    }
+    fn show() {
+        @plot = Plot();
+        for set in @sets {
+            for i, value in set {
+                circle = Circle(#sets, x=i, y=i).text(value)
+                @plot.add(circle)
+            }
+        }
+        @plot.display();
+    }
+}
+
+s1 = {1, 2, 3, 4}
+s2 = {3, 4, 5, 6}
+s3 = {4, 5, 6, 7}
+plot = SetPlot([s1, s2, s3]).show()
+inteersection = s1 & s2 & s3
+plot.add(Circle(#intersection, x=0, y=0).text("Intersection: " + str(intersection)))
+plot.display()
+union = s1 | s2 | s3
+plot.add(Circle(#union, x=0, y=-1).text("Union: " + str(union)))
+plot.display()
+difference = s1 - s2
+plot.add(Circle(#difference, x=0, y=-2).text("Difference (s1 - s2): " + str(difference)))
+plot.display()
+symmetric_difference = s1 ^ s2
+plot.add(Circle(#symmetric_difference, x=0, y=-3).text("Symmetric Difference: " + str(symmetric_difference)))
+plot.display()
+plot.showSubsets(s1, s2, s3)
+
+realNumbersSet = {-10.0 .. 11.9)}
+complexNumbersSet = {complex(x, y) | x in {-10 .. 11}, y in {-10 .. 11}}
+wholeNumbersSet = {0, 11, 12, 13, 14, 15}
+plot.add(Circle(#realNumbersSet, x=-1, y=0).text("Real Numbers"))
+plot.add(Circle(#complexNumbersSet, x=-1, y=-1).text("Complex Numbers"))
+plot.add(Circle(#wholeNumbersSet, x=-1, y=-2).text("Whole Numbers"))
+plot.display()
+
+use graph.VennDiagram
+venn = VennDiagram()
+venn.addSet(s1, label="Set 1")
+venn.addSet(s2, label="Set 2")
+venn.addSet(s3, label="Set 3")
+venn.display()
+venn.showSubsets(s1, s2, s3)
+venn.showIntersections(s1, s2, s3)
+venn.showUnions(s1, s2, s3)
+venn.showDifferences(s1, s2)
+venn.showSymmetricDifferences(s1, s2)

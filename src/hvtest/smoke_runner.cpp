@@ -111,6 +111,8 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
  return "STORE_GLOBAL";
  case OpCode::FIBER_AWAIT:
  return "FIBER_AWAIT";
+ case OpCode::FIBER_SLEEP:
+ return "FIBER_SLEEP";
  default:
     return "OTHER";
   }
@@ -309,11 +311,15 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
     vm.registerPrototypeMethodByName("object", "running", "object.running");
 };
 
-    options.host_functions["async.await"] = [&](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        return args[0];
-    };
-    options.host_functions["await"] = options.host_functions["async.await"];
+ options.host_functions["async.await"] = [&](const std::vector<Value> &args) {
+ if (args.empty()) return Value::makeNull();
+ return args[0];
+ };
+ options.host_functions["await"] = options.host_functions["async.await"];
+
+ options.host_functions["sleep"] = [&](const std::vector<Value> &args) {
+ return Value::makeNull();
+ };
 
 options.host_functions["thread"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty()) {
@@ -361,19 +367,21 @@ options.host_functions["thread.spawn"] = [&](const std::vector<Value> &args) {
     return Value::makeObjectId(obj.id);
 };
 
-options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
-        return Value::makeNull();
-    }
-    auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
-    auto idv = vm_ptr->getHostObjectField(obj, "__id");
-    if (!idv.isInt()) return Value::makeNull();
-    std::string key = "thread-" + std::to_string(idv.asInt());
-    auto it = thread_callbacks.find(key);
-    if (it == thread_callbacks.end()) return Value::makeNull();
-    Value msg = args[1];
-    return vm_ptr->callFunction(it->second, {msg});
-};
+ options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
+ if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
+ return Value::makeNull();
+ }
+ auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+ auto idv = vm_ptr->getHostObjectField(obj, "__id");
+ if (!idv.isInt()) return Value::makeNull();
+ std::string key = "thread-" + std::to_string(idv.asInt());
+ auto it = thread_callbacks.find(key);
+ if (it == thread_callbacks.end()) return Value::makeNull();
+ Value msg = args[1];
+ Value result = vm_ptr->callFunction(it->second, {msg});
+ vm_ptr->setHostObjectField(obj, "__await_result", result);
+ return result;
+ };
 options.host_functions["thread.pause"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
     auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
@@ -411,43 +419,44 @@ options.host_functions["thread.running"] = [&](const std::vector<Value> &args) {
     return Value(it != thread_running.end() && it->second);
 };
 
-options.host_functions["interval"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.empty()) throw std::runtime_error("interval requires delay + callback");
-    // When called via CALL_METHOD (interval.start(delay, fn)), receiver is prepended
-    size_t cb_idx = 1;
-    size_t delay_idx = 1;
-    if (args.size() >= 3 && args[0].isObjectId()) {
-        cb_idx = 2;
-        delay_idx = 1;
-    }
-    if (args.size() <= cb_idx) throw std::runtime_error("interval requires delay + callback");
-    int64_t iid = next_task_id++;
-    std::string id = "interval-" + std::to_string(iid);
-    interval_callbacks[id] = args[cb_idx];
-    interval_running[id] = true;
-    interval_paused[id] = false;
-    (void)vm_ptr->callFunction(interval_callbacks[id], {});
-    auto obj = vm_ptr->createHostObject();
-    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(iid));
-    return Value::makeObjectId(obj.id);
-};
+ options.host_functions["interval"] = [&](const std::vector<Value> &args) {
+ if (!vm_ptr || args.empty()) throw std::runtime_error("interval requires delay + callback");
+ size_t cb_idx = 1;
+ size_t delay_idx = 1;
+ if (args.size() >= 3 && args[0].isObjectId()) {
+ cb_idx = 2;
+ delay_idx = 1;
+ }
+ if (args.size() <= cb_idx) throw std::runtime_error("interval requires delay + callback");
+ int64_t iid = next_task_id++;
+ std::string id = "interval-" + std::to_string(iid);
+ interval_callbacks[id] = args[cb_idx];
+ interval_running[id] = true;
+ interval_paused[id] = false;
+ Value result = vm_ptr->callFunction(interval_callbacks[id], {});
+ auto obj = vm_ptr->createHostObject();
+ vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
+ vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(iid));
+ vm_ptr->setHostObjectField(obj, "__await_result", result);
+ return Value::makeObjectId(obj.id);
+ };
 
 // interval.start(ms, closure) — called by block-sugar "interval N { ... }" via LOAD_GLOBAL + CALL
 // Args: [delay, closure] (no receiver prepended)
-options.host_functions["interval.start"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval.start requires delay + callback");
-    int64_t iid = next_task_id++;
-    std::string id = "interval-" + std::to_string(iid);
-    interval_callbacks[id] = args[1];
-    interval_running[id] = true;
-    interval_paused[id] = false;
-    (void)vm_ptr->callFunction(interval_callbacks[id], {});
-    auto obj = vm_ptr->createHostObject();
-    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(iid));
-    return Value::makeObjectId(obj.id);
-};
+ options.host_functions["interval.start"] = [&](const std::vector<Value> &args) {
+ if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval.start requires delay + callback");
+ int64_t iid = next_task_id++;
+ std::string id = "interval-" + std::to_string(iid);
+ interval_callbacks[id] = args[1];
+ interval_running[id] = true;
+ interval_paused[id] = false;
+ Value result = vm_ptr->callFunction(interval_callbacks[id], {});
+ auto obj = vm_ptr->createHostObject();
+ vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(1));
+ vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(iid));
+ vm_ptr->setHostObjectField(obj, "__await_result", result);
+ return Value::makeObjectId(obj.id);
+ };
 
 options.host_functions["interval.pause"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
@@ -477,25 +486,25 @@ options.host_functions["interval.stop"] = [&](const std::vector<Value> &args) {
     return Value(true);
 };
 
-options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.empty()) throw std::runtime_error("timeout requires delay + callback");
-    // When called via CALL_METHOD (timeout.start(delay, fn)), receiver is prepended
-    size_t cb_idx = 1;
-    if (args.size() >= 3 && args[0].isObjectId()) {
-        cb_idx = 2;
-    }
-    if (args.size() <= cb_idx) throw std::runtime_error("timeout requires delay + callback");
-    int64_t tid = next_task_id++;
-    std::string id = "timeout-" + std::to_string(tid);
-    timeout_callbacks[id] = args[cb_idx];
-    timeout_running[id] = true;
-    (void)vm_ptr->callFunction(timeout_callbacks[id], {});
-    timeout_running[id] = false;
-    auto obj = vm_ptr->createHostObject();
-    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
-    return Value::makeObjectId(obj.id);
-};
+ options.host_functions["timeout"] = [&](const std::vector<Value> &args) {
+ if (!vm_ptr || args.empty()) throw std::runtime_error("timeout requires delay + callback");
+ size_t cb_idx = 1;
+ if (args.size() >= 3 && args[0].isObjectId()) {
+ cb_idx = 2;
+ }
+ if (args.size() <= cb_idx) throw std::runtime_error("timeout requires delay + callback");
+ int64_t tid = next_task_id++;
+ std::string id = "timeout-" + std::to_string(tid);
+ timeout_callbacks[id] = args[cb_idx];
+ timeout_running[id] = true;
+ Value result = vm_ptr->callFunction(timeout_callbacks[id], {});
+ timeout_running[id] = false;
+ auto obj = vm_ptr->createHostObject();
+ vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
+ vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
+ vm_ptr->setHostObjectField(obj, "__await_result", result);
+ return Value::makeObjectId(obj.id);
+ };
 options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
     auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
@@ -507,19 +516,20 @@ options.host_functions["timeout.cancel"] = [&](const std::vector<Value> &args) {
 };
 // timeout.start(ms, closure) — called by block-sugar "timeout N { ... }" via LOAD_GLOBAL + CALL
 // Args: [delay, closure] (no receiver prepended)
-options.host_functions["timeout.start"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout.start requires delay + callback");
-    int64_t tid = next_task_id++;
-    std::string id = "timeout-" + std::to_string(tid);
-    timeout_callbacks[id] = args[1];
-    timeout_running[id] = true;
-    (void)vm_ptr->callFunction(timeout_callbacks[id], {});
-    timeout_running[id] = false;
-    auto obj = vm_ptr->createHostObject();
-    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
-    return Value::makeObjectId(obj.id);
-};
+ options.host_functions["timeout.start"] = [&](const std::vector<Value> &args) {
+ if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout.start requires delay + callback");
+ int64_t tid = next_task_id++;
+ std::string id = "timeout-" + std::to_string(tid);
+ timeout_callbacks[id] = args[1];
+ timeout_running[id] = true;
+ Value result = vm_ptr->callFunction(timeout_callbacks[id], {});
+ timeout_running[id] = false;
+ auto obj = vm_ptr->createHostObject();
+ vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(2));
+ vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
+ vm_ptr->setHostObjectField(obj, "__await_result", result);
+ return Value::makeObjectId(obj.id);
+ };
 
     options.host_functions["object.send"] = [&](const std::vector<Value> &args) {
     return options.host_functions["thread.send"](args);
@@ -1329,14 +1339,40 @@ return r1 + r2 + r3
  // Nested await: coroutine awaiting another coroutine
  failures += runCase("await-cofn-nested", R"havel(
 co fn inner() {
-  return 7
+ return 7
 }
 co fn outer() {
-  x = <-inner()
-  return x * 3
+ x = <-inner()
+ return x * 3
 }
 return <-outer()
 )havel", 21, dump_bytecode, snapshot_dir);
+
+ failures += runCase("await-fiber-sleep", R"havel(
+co fn sleeper() {
+ <-sleep(1)
+ return 42
+}
+return <-sleeper()
+)havel", 42, dump_bytecode, snapshot_dir);
+
+ failures += runAsyncCase("await-thread-result", R"havel(
+worker = thread(fn(msg) { return msg + 1 })
+worker.send(41)
+return <-worker
+)havel", 42, dump_bytecode, snapshot_dir);
+
+ failures += runAsyncCase("await-timeout-result", R"havel(
+t = timeout(10, fn() { return 99 })
+return <-t
+)havel", 99, dump_bytecode, snapshot_dir);
+
+ failures += runAsyncCase("await-interval-result", R"havel(
+i = interval(10, fn() { return 7 })
+result = <-i
+i.stop()
+return result
+)havel", 7, dump_bytecode, snapshot_dir);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

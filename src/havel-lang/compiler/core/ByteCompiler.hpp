@@ -139,6 +139,7 @@ void optimizeJumps();  // Jump threading optimization
   void compileIntervalExpression(const ast::IntervalExpression &expression);
   void compileTimeoutExpression(const ast::TimeoutExpression &expression);
   void compileYieldExpression(const ast::YieldExpression &expression);
+ void compileAwaitExpression(const ast::AwaitExpression &expression);
   void compileGoStatement(const ast::GoStatement &statement);
   void compileGoExpression(const ast::GoExpression &expression);
   void compileDelTarget(const ast::Expression &target);

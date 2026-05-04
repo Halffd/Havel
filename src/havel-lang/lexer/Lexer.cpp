@@ -41,6 +41,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"sync", TokenType::Sync},
     {"async", TokenType::Async},
     {"channel", TokenType::Channel},
+ {"co", TokenType::Co},
     {"del", TokenType::Del},
     {"config", TokenType::Config},
     {"devices", TokenType::Devices},
@@ -359,17 +360,11 @@ void Lexer::skipComment() {
 }
 
 Token Lexer::scanNumber() {
-size_t start = position - 1;
-std::string number;
-number += source[start];
+ size_t start = position - 1;
+ std::string number;
+ number += source[start];
 
-bool isNegative = (start > 0 && source[start - 1] == '-');
-if (isNegative) {
-    number = "-" + number;
-    start--;
-}
-
-    if (peek() == 'x' || peek() == 'X') {
+ if (peek() == 'x' || peek() == 'X') {
         number += advance();
         while (!isAtEnd() && isHexDigit(peek())) number += advance();
         return makeToken(number, TokenType::Number);
@@ -1052,8 +1047,9 @@ prevType == TokenType::Not ||
         prevType == TokenType::BitwiseOr ||
         prevType == TokenType::BitwiseAnd ||
         prevType == TokenType::BitwiseXor ||
-			prevType == TokenType::ShiftLeft ||
-				prevType == TokenType::ShiftRight ||
+ prevType == TokenType::ShiftLeft ||
+ prevType == TokenType::ShiftRight ||
+ prevType == TokenType::LeftArrow ||
 				prevType == TokenType::Return ||
 				prevType == TokenType::Semicolon ||
 				prevType == TokenType::OpenBrace ||
@@ -1094,24 +1090,25 @@ prevType == TokenType::Not ||
 // Handle numbers (including negative numbers in certain contexts)
 // Only treat -digit as a negative number when NOT after an expression
 bool canBeNegativeNumber = (c == '-' && isDigit(peek()));
-if (canBeNegativeNumber && !tokens.empty()) {
-TokenType prevType = tokens.back().type;
-if (prevType == TokenType::Number ||
-prevType == TokenType::String ||
-prevType == TokenType::InterpolatedString ||
-prevType == TokenType::MultilineString ||
-prevType == TokenType::Identifier ||
-prevType == TokenType::True ||
-prevType == TokenType::False ||
-prevType == TokenType::Null ||
-prevType == TokenType::CloseParen ||
-prevType == TokenType::CloseBracket ||
-prevType == TokenType::CloseBrace ||
-prevType == TokenType::Length ||
-prevType == TokenType::PlusPlus ||
-prevType == TokenType::MinusMinus) {
-canBeNegativeNumber = false;
-}
+ if (canBeNegativeNumber && !tokens.empty()) {
+ TokenType prevType = tokens.back().type;
+ if (prevType == TokenType::Number ||
+ prevType == TokenType::String ||
+ prevType == TokenType::InterpolatedString ||
+ prevType == TokenType::MultilineString ||
+ prevType == TokenType::Identifier ||
+ prevType == TokenType::True ||
+ prevType == TokenType::False ||
+ prevType == TokenType::Null ||
+ prevType == TokenType::CloseParen ||
+ prevType == TokenType::CloseBracket ||
+ prevType == TokenType::CloseBrace ||
+ prevType == TokenType::Length ||
+ prevType == TokenType::PlusPlus ||
+ prevType == TokenType::MinusMinus ||
+ prevType == TokenType::LeftArrow) {
+ canBeNegativeNumber = false;
+ }
 }
 if (isDigit(c) || canBeNegativeNumber) {
             tokens.push_back(scanNumber());
@@ -1722,10 +1719,20 @@ if (c == '%' && peek() == '=') {
     if (debug_lexer) {
       havel::debug("LEX: {}", tokens.back().toString());
     }
-    continue;
-  }
+ continue;
+ }
 
-    // Handle single < and >
+ // Handle <- (left arrow / fiber await) - must check before single <
+ if (c == '<' && peek() == '-') {
+ advance(); // consume '-'
+ tokens.push_back(makeToken("<-", TokenType::LeftArrow));
+ if (debug_lexer) {
+ havel::debug("LEX: {}", tokens.back().toString());
+ }
+ continue;
+ }
+
+ // Handle single < and >
     if (c == '<') {
       tokens.push_back(makeToken("<", TokenType::Less));
       if (debug_lexer) {
@@ -1958,8 +1965,9 @@ if (c == '%' && peek() == '=') {
                     prevType == TokenType::BitwiseXor ||
                     prevType == TokenType::BitwiseAnd ||
                     prevType == TokenType::ShiftLeft ||
-                    prevType == TokenType::ShiftRight ||
-                    prevType == TokenType::Minus ||
+ prevType == TokenType::ShiftRight ||
+ prevType == TokenType::LeftArrow ||
+ prevType == TokenType::Minus ||
                     prevType == TokenType::Fn ||
                     prevType == TokenType::Op) {
 		if (c == '^') {

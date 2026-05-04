@@ -1937,41 +1937,43 @@ void VM::registerDefaultHostFunctions() {
   // Thread, Interval, and Timeout - Concurrency primitives
   // ========================================================================
 
-  // thread { closure } - Create and start a message-passing thread
-  registerHostFunction("thread", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
-      COMPILER_THROW("thread requires a closure argument");
-    }
-    
-    auto threadObj = std::make_shared<Thread>();
-    auto closure = args[0];
-    
-    // Create message handler that invokes the closure
-    auto handler = [this, closure](const Thread::Message &msg) {
-      try {
-        // Convert message to Value and call closure
-        Value arg;
-        if (std::holds_alternative<std::string>(msg)) {
-          auto strRef = heap_.allocateString(std::get<std::string>(msg));
-          arg = Value::makeStringId(strRef.id);
-        } else if (std::holds_alternative<int>(msg)) {
-          arg = Value::makeInt(std::get<int>(msg));
-        } else if (std::holds_alternative<double>(msg)) {
-          arg = Value::makeDouble(std::get<double>(msg));
-        }
-        
-        this->callFunction(closure, {arg});
-      } catch (const std::exception &e) {
-        ::havel::error("[thread] Exception: {}", e.what());
-      }
-    };
-    
-    threadObj->start(std::move(handler));
-    
-    // Store thread in GC heap and return wrapper object
-    auto threadRef = heap_.allocateThreadObj(threadObj);
-    return Value::makeThreadId(threadRef.id);
-  });
+ // thread { closure } - Create and start a message-passing thread
+ registerHostFunction("thread", 1, [this](const std::vector<Value> &args) {
+ if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+ COMPILER_THROW("thread requires a closure argument");
+ }
+
+ auto threadObj = std::make_shared<Thread>();
+ auto closure = args[0];
+ auto threadIdPtr = std::make_shared<uint32_t>(0);
+
+ // Create message handler that invokes the closure
+ auto handler = [this, closure, threadIdPtr](const Thread::Message &msg) {
+ try {
+ Value arg;
+ if (std::holds_alternative<std::string>(msg)) {
+ auto strRef = heap_.allocateString(std::get<std::string>(msg));
+ arg = Value::makeStringId(strRef.id);
+ } else if (std::holds_alternative<int>(msg)) {
+ arg = Value::makeInt(std::get<int>(msg));
+ } else if (std::holds_alternative<double>(msg)) {
+ arg = Value::makeDouble(std::get<double>(msg));
+ }
+
+ Value result = this->callFunction(closure, {arg});
+ thread_results_[*threadIdPtr] = result;
+ } catch (const std::exception &e) {
+ ::havel::error("[thread] Exception: {}", e.what());
+ }
+ };
+
+ threadObj->start(std::move(handler));
+
+ // Store thread in GC heap and return wrapper object
+ auto threadRef = heap_.allocateThreadObj(threadObj);
+ *threadIdPtr = threadRef.id;
+ return Value::makeThreadId(threadRef.id);
+ });
 
   // thread.send(thread, message) - Send message to thread
   registerHostFunction("thread.send", 2, [this](const std::vector<Value> &args) {
@@ -2093,29 +2095,32 @@ void VM::registerDefaultHostFunctions() {
     });
 
   // interval(ms, closure) - Create repeating timer
-  registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
-    if (args.size() < 2 || !args[0].isNumber()) {
-      COMPILER_THROW("interval requires milliseconds and closure");
-    }
-    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
-      COMPILER_THROW("interval requires a closure argument");
-    }
-    
-    int ms = toInt(args[0]);
-    auto closure = args[1];
-    
-    auto callback = [this, closure]() {
-      try {
-        this->callFunction(closure, {});
-      } catch (const std::exception &e) {
-        ::havel::error("[interval] Exception: {}", e.what());
-      }
-    };
-    
-    auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
-    auto intervalRef = heap_.allocateIntervalObj(intervalObj);
-    return Value::makeIntervalId(intervalRef.id);
-  });
+registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
+ if (args.size() < 2 || !args[0].isNumber()) {
+ COMPILER_THROW("interval requires milliseconds and closure");
+ }
+ if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+ COMPILER_THROW("interval requires a closure argument");
+ }
+
+ int ms = toInt(args[0]);
+ auto closure = args[1];
+ auto intervalIdPtr = std::make_shared<uint32_t>(0);
+
+ auto callback = [this, closure, intervalIdPtr]() {
+ try {
+ Value result = this->callFunction(closure, {});
+ interval_results_[*intervalIdPtr] = result;
+ } catch (const std::exception &e) {
+ ::havel::error("[interval] Exception: {}", e.what());
+ }
+ };
+
+ auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+ auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+ *intervalIdPtr = intervalRef.id;
+ return Value::makeIntervalId(intervalRef.id);
+ });
 
   // interval.pause(interval) - Pause interval
   registerHostFunction("interval.pause", 1, [this](const std::vector<Value> &args) {
@@ -2163,51 +2168,57 @@ void VM::registerDefaultHostFunctions() {
     });
 
     // interval.start(ms, closure) - alias for interval(ms, closure), used by IntervalExpression
-    registerHostFunction("interval.start", 2, [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isNumber()) {
-            COMPILER_THROW("interval.start requires milliseconds and closure");
-        }
-        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
-            COMPILER_THROW("interval.start requires a closure argument");
-        }
-        int ms = toInt(args[0]);
-        auto closure = args[1];
-        auto callback = [this, closure]() {
-            try {
-                this->callFunction(closure, {});
-            } catch (const std::exception &e) {
-                ::havel::error("[interval] Exception: {}", e.what());
-            }
-        };
-        auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
-        auto intervalRef = heap_.allocateIntervalObj(intervalObj);
-        return Value::makeIntervalId(intervalRef.id);
-    });
+registerHostFunction("interval.start", 2, [this](const std::vector<Value> &args) {
+ if (args.size() < 2 || !args[0].isNumber()) {
+ COMPILER_THROW("interval.start requires milliseconds and closure");
+ }
+ if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+ COMPILER_THROW("interval.start requires a closure argument");
+ }
+ int ms = toInt(args[0]);
+ auto closure = args[1];
+ auto intervalIdPtr = std::make_shared<uint32_t>(0);
+ auto callback = [this, closure, intervalIdPtr]() {
+ try {
+ Value result = this->callFunction(closure, {});
+ interval_results_[*intervalIdPtr] = result;
+ } catch (const std::exception &e) {
+ ::havel::error("[interval] Exception: {}", e.what());
+ }
+ };
+ auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+ auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+ *intervalIdPtr = intervalRef.id;
+ return Value::makeIntervalId(intervalRef.id);
+ });
 
   // timeout(ms, closure) - Create one-shot delayed execution
-  registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
-    if (args.size() < 2 || !args[0].isNumber()) {
-      COMPILER_THROW("timeout requires milliseconds and closure");
-    }
-    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
-      COMPILER_THROW("timeout requires a closure argument");
-    }
-    
-    int ms = toInt(args[0]);
-    auto closure = args[1];
-    
-    auto callback = [this, closure]() {
-      try {
-        this->callFunction(closure, {});
-      } catch (const std::exception &e) {
-        ::havel::error("[timeout] Exception: {}", e.what());
-      }
-    };
-    
-    auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
-    auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
-    return Value::makeTimeoutId(timeoutRef.id);
-  });
+registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
+ if (args.size() < 2 || !args[0].isNumber()) {
+ COMPILER_THROW("timeout requires milliseconds and closure");
+ }
+ if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+ COMPILER_THROW("timeout requires a closure argument");
+ }
+
+ int ms = toInt(args[0]);
+ auto closure = args[1];
+ auto timeoutIdPtr = std::make_shared<uint32_t>(0);
+
+ auto callback = [this, closure, timeoutIdPtr]() {
+ try {
+ Value result = this->callFunction(closure, {});
+ timeout_results_[*timeoutIdPtr] = result;
+ } catch (const std::exception &e) {
+ ::havel::error("[timeout] Exception: {}", e.what());
+ }
+ };
+
+ auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+ auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+ *timeoutIdPtr = timeoutRef.id;
+ return Value::makeTimeoutId(timeoutRef.id);
+ });
 
   // timeout.cancel(timeout) - Cancel timeout
   registerHostFunction("timeout.cancel", 1, [this](const std::vector<Value> &args) {
@@ -2224,27 +2235,30 @@ void VM::registerDefaultHostFunctions() {
         return Value::makeNull();
     });
 
-    // timeout.start(ms, closure) - alias for timeout(ms, closure), used by TimeoutExpression
-    registerHostFunction("timeout.start", 2, [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isNumber()) {
-            COMPILER_THROW("timeout.start requires milliseconds and closure");
-        }
-        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
-            COMPILER_THROW("timeout.start requires a closure argument");
-        }
-        int ms = toInt(args[0]);
-        auto closure = args[1];
-        auto callback = [this, closure]() {
-            try {
-                this->callFunction(closure, {});
-            } catch (const std::exception &e) {
-                ::havel::error("[timeout] Exception: {}", e.what());
-            }
-        };
-        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
-        auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
-        return Value::makeTimeoutId(timeoutRef.id);
-    });
+ // timeout.start(ms, closure) - alias for timeout(ms, closure), used by TimeoutExpression
+ registerHostFunction("timeout.start", 2, [this](const std::vector<Value> &args) {
+ if (args.size() < 2 || !args[0].isNumber()) {
+ COMPILER_THROW("timeout.start requires milliseconds and closure");
+ }
+ if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+ COMPILER_THROW("timeout.start requires a closure argument");
+ }
+ int ms = toInt(args[0]);
+ auto closure = args[1];
+ auto timeoutIdPtr = std::make_shared<uint32_t>(0);
+ auto callback = [this, closure, timeoutIdPtr]() {
+ try {
+ Value result = this->callFunction(closure, {});
+ timeout_results_[*timeoutIdPtr] = result;
+ } catch (const std::exception &e) {
+ ::havel::error("[timeout] Exception: {}", e.what());
+ }
+ };
+ auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+ auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+ *timeoutIdPtr = timeoutRef.id;
+ return Value::makeTimeoutId(timeoutRef.id);
+ });
 
     // GC control
     // "system.gc" is called via method dispatch (system.gc()) which prepends
@@ -3465,18 +3479,29 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       }
       continue;
     } catch (const std::runtime_error &e) {
-      // Enrich runtime errors with source location
+      // Convert runtime errors to script exceptions so they can be caught
+      // by script-level try/catch blocks
       std::string msg = e.what();
+      uint32_t line = 0;
+      uint32_t column = 0;
       if (frame_count_ > 0) {
         auto &frame = frame_arena_[frame_count_ - 1];
         if (frame.function &&
             frame.ip < frame.function->instruction_locations.size()) {
           const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+          line = loc.line;
+          column = loc.column;
           if (loc.line > 0) {
             msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
           }
         }
       }
+      // Try to handle as script exception first
+      Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
+      if (handleScriptThrow(exceptionValue)) {
+        continue;  // Exception was caught by script-level handler
+      }
+      // No script handler found - treat as uncaught runtime error
       throw std::runtime_error(msg);
     }
 
@@ -3501,11 +3526,22 @@ bool VM::handleScriptThrow(const Value &value) {
 
   while (frame_count_ > 0) {
     auto &frame = frame_arena_[frame_count_ - 1];
+    // Defensive check: ensure frame is valid
+    if (!frame.function) {
+      frame_count_--;
+      continue;
+    }
     if (!frame.try_stack.empty()) {
       const auto handler = frame.try_stack.back();
       frame.try_stack.pop_back();
 
-      while (stack.size() > handler.stack_depth) {
+      // Defensive check: ensure stack_depth is not larger than current stack
+      // If it is, something went wrong - reset to empty stack
+      size_t target_depth = handler.stack_depth;
+      if (target_depth > stack.size()) {
+        target_depth = 0;  // Reset to empty if corrupted
+      }
+      while (stack.size() > target_depth) {
         stack.pop();
       }
 
@@ -4155,12 +4191,24 @@ void VM::pushStack(Value value) { stack.push(std::move(value)); }
 
 uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
   size_t base = frame_count_ > 0 ? currentFrame().locals_base : 0;
-  return static_cast<uint32_t>(base + local_index);
+  size_t result = base + local_index;
+  // Defensive: check for overflow or excessive index
+  if (result > 1000000 || result > UINT32_MAX) {
+    COMPILER_THROW("Local variable index overflow: base=" + std::to_string(base) +
+                   ", local=" + std::to_string(local_index));
+  }
+  return static_cast<uint32_t>(result);
 }
 
 void VM::ensureLocalIndex(uint32_t absolute_index) {
   if (absolute_index >= locals.size()) {
-    locals.resize(static_cast<size_t>(absolute_index) + 1, nullptr);
+    // Defensive: prevent overflow when absolute_index is near UINT32_MAX
+    // Also prevent excessive resizing (sanity check: max 1M locals)
+    if (absolute_index > 1000000) {
+      COMPILER_THROW("Local variable index too large: " + std::to_string(absolute_index));
+    }
+    size_t new_size = static_cast<size_t>(absolute_index) + 1;
+    locals.resize(new_size, nullptr);
   }
 }
 
@@ -7632,9 +7680,6 @@ locals.resize(finished.locals_base);
  }
 
  case OpCode::FIBER_AWAIT: {
- // <- expr: evaluate expr, push resolved value.
- // For coroutine IDs: run coroutine to completion, push return value.
- // For non-awaitable values: push through (identity).
  Value awaitable = popStack();
 
  if (awaitable.isCoroutineId()) {
@@ -7652,8 +7697,6 @@ locals.resize(finished.locals_base);
  break;
  }
 
- // Coroutine is not done — run it to completion inline.
- // Save entire VM state so we can restore after.
  struct VMState {
  std::stack<Value> stack;
  std::vector<Value> locals;
@@ -7669,7 +7712,6 @@ locals.resize(finished.locals_base);
  saved.frame_arena = frame_arena_;
  saved.current_coroutine_id = current_coroutine_id_;
 
- // Set up coroutine for execution
  current_coroutine_id_ = coId;
  co->saved_coroutine_id = saved.current_coroutine_id;
  co->saved_frame_count = frame_count_;
@@ -7700,10 +7742,39 @@ locals.resize(finished.locals_base);
  size_t steps = 0;
 
  while (co->state != GCHeap::Coroutine::Done && steps < max_steps) {
- // If frame count dropped back to caller level,
- // the coroutine yielded — return the yield value
  if (frame_count_ <= caller_frame_count && co->state != GCHeap::Coroutine::Done) {
- // Coroutine yielded. The yield value is on the stack.
+ // Coroutine yielded or slept — check if it's a timed sleep
+ if (co->state == GCHeap::Coroutine::Waiting &&
+ co->resume_at_time > std::chrono::steady_clock::time_point{}) {
+ auto now = std::chrono::steady_clock::now();
+ if (co->resume_at_time > now) {
+ auto sleep_remaining = co->resume_at_time - now;
+ while (std::chrono::steady_clock::now() < co->resume_at_time) {
+ if (timer_check_func_) timer_check_func_();
+ auto rem = co->resume_at_time - std::chrono::steady_clock::now();
+ auto rem_ms = std::chrono::duration_cast<std::chrono::milliseconds>(rem);
+ if (rem_ms.count() > 0) {
+ std::this_thread::sleep_for(std::chrono::milliseconds(
+ std::min(static_cast<int64_t>(1), rem_ms.count())));
+ }
+ }
+ }
+ // Resume coroutine after sleep
+ co->state = GCHeap::Coroutine::Runnable;
+ locals = co->locals;
+ const auto *resume_chunk = current_chunk;
+ const auto *resume_func = resume_chunk ? resume_chunk->getFunction(co->function_index) : nullptr;
+ if (resume_func) {
+ if (frame_arena_.size() <= frame_count_) {
+ frame_arena_.push_back(CallFrame{resume_func, co->ip, 0, co->closure_id});
+ } else {
+ frame_arena_[frame_count_] = CallFrame{resume_func, co->ip, 0, co->closure_id};
+ }
+ frame_count_++;
+ pushStack(Value::makeNull());
+ }
+ continue;
+ }
  break;
  }
 
@@ -7720,8 +7791,6 @@ locals.resize(finished.locals_base);
  } else {
  const auto &inst = cur_func->instructions[cur_ip];
  executeInstruction(inst);
- // Advance IP for next instruction (unless the instruction
- // modified it, e.g. CALL, RETURN, JUMP)
  if (afi < frame_count_ && frame_arena_[afi].ip == cur_ip) {
  frame_arena_[afi].ip++;
  }
@@ -7736,22 +7805,17 @@ locals.resize(finished.locals_base);
  }
  }
 
- // Get return value
  Value result;
  if (co->state == GCHeap::Coroutine::Done && !stack.empty()) {
- // doReturn() pushed the coroutine's return value on the stack
  result = popStack();
  } else if (co->state == GCHeap::Coroutine::Done) {
  result = co->stack.empty() ? Value::makeNull() : co->stack.back();
  } else if (co->state == GCHeap::Coroutine::Waiting && !stack.empty()) {
- // Coroutine yielded — yield value is on the stack
  result = popStack();
  } else {
- // Coroutine didn't finish (hit step limit or suspension)
  result = awaitable;
  }
 
- // Restore caller VM state
  stack = saved.stack;
  frame_count_ = saved.frame_count;
  locals = saved.locals;
@@ -7762,8 +7826,119 @@ locals.resize(finished.locals_base);
  break;
  }
 
+ // <- thread_id: join the thread, return its result
+ if (awaitable.isThreadId()) {
+ uint32_t tid = awaitable.asThreadId();
+ auto *threadObj = heap_.thread(tid);
+ if (threadObj) {
+ threadObj->stop();
+ }
+ // Check if a result was stored for this thread
+ auto it = thread_results_.find(tid);
+ Value result = (it != thread_results_.end()) ? it->second : Value::makeNull();
+ if (it != thread_results_.end()) thread_results_.erase(it);
+ pushStack(result);
+ break;
+ }
+
+ // <- interval_id: wait for next tick, return callback result
+ if (awaitable.isIntervalId()) {
+ uint32_t iid = awaitable.asIntervalId();
+ // Wait for interval to produce a result by polling
+ // In a real async VM, this would suspend the fiber.
+ // For now, busy-wait with processPendingCalls
+ while (interval_results_.find(iid) == interval_results_.end()) {
+ if (timer_check_func_) timer_check_func_();
+ std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ }
+ auto it = interval_results_.find(iid);
+ Value result = it->second;
+ interval_results_.erase(it);
+ pushStack(result);
+ break;
+ }
+
+ // <- timeout_id: wait for timeout to fire, return callback result
+ if (awaitable.isTimeoutId()) {
+ uint32_t tid = awaitable.asTimeoutId();
+ auto *timeoutObj = heap_.timeout(tid);
+ if (timeoutObj) {
+ // The timeout is already scheduled. We need to wait for it.
+ // Since Timeout::cancel() joins the thread, we can call it
+ // to wait for completion. If it was already cancelled, this
+ // is a no-op.
+ timeoutObj->cancel();
+ }
+ auto it = timeout_results_.find(tid);
+ Value result = (it != timeout_results_.end()) ? it->second : Value::makeNull();
+ if (it != timeout_results_.end()) timeout_results_.erase(it);
+ pushStack(result);
+ break;
+ }
+
+ // <- object with __await_result field (simulated concurrency in tests)
+ if (awaitable.isObjectId()) {
+ auto objRef = ObjectRef{awaitable.asObjectId(), true};
+ Value result = getHostObjectField(objRef, "__await_result");
+ if (!result.isNull()) {
+ pushStack(result);
+ break;
+ }
+ }
+
  // Non-awaitable value: push through (identity for resolved values)
  pushStack(awaitable);
+ break;
+ }
+
+ case OpCode::FIBER_SLEEP: {
+ Value ms_val = popStack();
+ int ms = toInt(ms_val);
+
+ if (current_coroutine_id_ != UINT32_MAX) {
+ // Inside a coroutine: yield with a resume time
+ auto *co = heap_.coroutine(current_coroutine_id_);
+ if (co && frame_count_ > 0) {
+ co->ip = currentFrame().ip + 1;
+ co->locals = locals;
+ co->state = GCHeap::Coroutine::Waiting;
+ co->resume_at_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+
+ auto finished = frame_arena_[frame_count_ - 1];
+ frame_count_--;
+
+ closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+ static_cast<uint32_t>(locals.size()));
+ if (locals.size() >= finished.locals_base) {
+ locals.resize(finished.locals_base);
+ }
+
+ frame_count_ = co->saved_frame_count;
+ locals = co->saved_locals;
+ current_coroutine_id_ = co->saved_coroutine_id;
+
+ pushStack(Value::makeNull());
+
+ if (frame_count_ > 0) {
+ frame_arena_[frame_count_ - 1].ip++;
+ }
+ return;
+ }
+ }
+
+ // Main fiber: blocking sleep with timer processing
+ {
+ auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+ while (std::chrono::steady_clock::now() < deadline) {
+ if (timer_check_func_) timer_check_func_();
+ auto remaining = deadline - std::chrono::steady_clock::now();
+ auto sleep_ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+ if (sleep_ms.count() > 0) {
+ std::this_thread::sleep_for(std::chrono::milliseconds(std::min(static_cast<int64_t>(1), sleep_ms.count())));
+ }
+ }
+ }
+ pushStack(Value::makeNull());
  break;
  }
 

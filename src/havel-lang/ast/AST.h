@@ -182,8 +182,8 @@ enum class NodeType {
   TimeoutExpression,  // timeout 1000 { ... }
   
   // Coroutines
-  YieldExpression,    // yield or yield(ms) or yield value
-  GoStatement,        // go func()
+ YieldExpression, // yield or yield(ms) or yield value
+ GoStatement, // go func()
   GoExpression,       // go expr - as expression returning thread object
   ChannelExpression,  // channel()
 
@@ -662,10 +662,10 @@ struct YieldExpression : public Expression {
         kind = NodeType::YieldExpression;
     }
     std::string toString() const override { return "yield" + (value ? "(" + value->toString() + ")" : ""); }
-    void accept(ASTVisitor &visitor) const override;
-};
+ void accept(ASTVisitor &visitor) const override;
+ };
 
-struct GoStatement : public Statement {
+ struct GoStatement : public Statement {
     std::unique_ptr<Expression> call; // Must be a CallExpression
     GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) {
         kind = NodeType::GoStatement;
@@ -1992,19 +1992,20 @@ struct OnComboStatement : public Statement {
 
 // Function Declaration with optional return type annotation
 struct FunctionDeclaration : public Statement {
-  std::unique_ptr<Identifier> name;
-  std::vector<std::unique_ptr<FunctionParameter>> parameters;
-  std::unique_ptr<BlockStatement> body;
-  std::optional<std::unique_ptr<TypeAnnotation>>
-      returnType; // Optional return type annotation
+ std::unique_ptr<Identifier> name;
+ std::vector<std::unique_ptr<FunctionParameter>> parameters;
+ std::unique_ptr<BlockStatement> body;
+ std::optional<std::unique_ptr<TypeAnnotation>>
+ returnType; // Optional return type annotation
+ bool is_coroutine = false; // co fn - creates a fiber
 
-  FunctionDeclaration(
-      std::unique_ptr<Identifier> n,
-      std::vector<std::unique_ptr<FunctionParameter>> params,
-      std::unique_ptr<BlockStatement> bd,
-      std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt)
-      : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
-        returnType(std::move(returnAnn)) {
+ FunctionDeclaration(
+ std::unique_ptr<Identifier> n,
+ std::vector<std::unique_ptr<FunctionParameter>> params,
+ std::unique_ptr<BlockStatement> bd,
+ std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt)
+ : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
+ returnType(std::move(returnAnn)) {
     kind = NodeType::FunctionDeclaration;
   }
 
@@ -3148,8 +3149,8 @@ virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitThreadExpression(const ThreadExpression &node) = 0;
   virtual void visitIntervalExpression(const IntervalExpression &node) = 0;
   virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
-  virtual void visitYieldExpression(const YieldExpression &node) = 0;
-  virtual void visitGoStatement(const GoStatement &node) = 0;
+ virtual void visitYieldExpression(const YieldExpression &node) = 0;
+ virtual void visitGoStatement(const GoStatement &node) = 0;
   virtual void visitGoExpression(const GoExpression &node) = 0;
   virtual void visitChannelExpression(const ChannelExpression &node) = 0;
   virtual void visitOnModeStatement(const OnModeStatement &node) = 0;

@@ -181,15 +181,17 @@ enum class TokenType {
   Go, // go
   Sync,  // sync - synchronous hotkey modifier
   Async, // async - asynchronous hotkey modifier
-  Channel, // channel
-  Dsl,            // dsl
+ Channel, // channel
+ Co, // co - coroutine modifier
+ Dsl, // dsl
   Del,            // del - delete variable/element
   DoubleOpenParen,  // (( bitwise expression start
   DoubleCloseParen, // )) bitwise expression end
   BitwiseAnd,     // &  bitwise AND (single &)
   BitwiseXor,     // ^  bitwise XOR
   BitwiseOr,      // |  bitwise OR (single |, but distinct from Pipe)
-  ShiftLeft,      // << bitwise left shift
+ ShiftLeft, // << bitwise left shift
+ LeftArrow, // <- blocking expression / fiber await
  EOF_TOKEN
   };
 

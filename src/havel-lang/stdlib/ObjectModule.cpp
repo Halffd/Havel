@@ -64,10 +64,22 @@ void registerObjectModule(VMApi &api) {
     api.registerFunction("object.has", [&api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.has() requires object and key");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.has() first arg must be object");
-        if (!args[1].isStringId()) throw std::runtime_error("Object.has() second arg must be key string");
 
         std::string key = api.toString(args[1]);
         return Value::makeBool(api.hasField(args[0], key));
+    });
+
+    // Object.find(obj, key) - Find key index in object, returns index >= 0 or -1
+    api.registerFunction("object.find", [&api](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeInt(-1);
+        if (!args[0].isObjectId()) return Value::makeInt(-1);
+
+        std::string key = api.toString(args[1]);
+        auto keys = api.getObjectKeys(args[0]);
+        for (size_t i = 0; i < keys.size(); ++i) {
+            if (keys[i] == key) return Value::makeInt(static_cast<int64_t>(i));
+        }
+        return Value::makeInt(-1);
     });
 
     // Object.set(obj, key, value) - Set a value on an object
@@ -169,6 +181,7 @@ void registerObjectModule(VMApi &api) {
     api.setField(objModule, "values", api.makeFunctionRef("object.values"));
     api.setField(objModule, "entries", api.makeFunctionRef("object.entries"));
     api.setField(objModule, "has", api.makeFunctionRef("object.has"));
+    api.setField(objModule, "find", api.makeFunctionRef("object.find"));
     api.setField(objModule, "set", api.makeFunctionRef("object.set"));
     api.setField(objModule, "isEmpty", api.makeFunctionRef("object.isEmpty"));
     api.setField(objModule, "size", api.makeFunctionRef("object.size"));
@@ -179,6 +192,7 @@ void registerObjectModule(VMApi &api) {
     api.registerPrototypeMethodByName("object", "values", "object.values");
     api.registerPrototypeMethodByName("object", "entries", "object.entries");
     api.registerPrototypeMethodByName("object", "has", "object.has");
+    api.registerPrototypeMethodByName("object", "find", "object.find");
     api.registerPrototypeMethodByName("object", "set", "object.set");
     api.registerPrototypeMethodByName("object", "isEmpty", "object.isEmpty");
     api.registerPrototypeMethodByName("object", "size", "object.size");

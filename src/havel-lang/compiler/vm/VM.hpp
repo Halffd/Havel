@@ -860,14 +860,18 @@ void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
   const HostContext *hostContext() const { return context_; }
 
 private:
-  std::atomic<uint32_t> active_hotkey_executions_{0};
-  bool jit_tail_call_occurred_ = false;
+    std::atomic<uint32_t> active_hotkey_executions_{0};
+    bool jit_tail_call_occurred_ = false;
 
-  uint32_t app_args_array_id_ = 0;
-  std::function<void()> restart_callback_;
-  HotFunctionCallback hot_func_cb_;
-  JITCompiler* jit_compiler_ = nullptr;
-  uint32_t jit_active_closure_id_ = 0;
+    uint32_t app_args_array_id_ = 0;
+    std::function<void()> restart_callback_;
+    HotFunctionCallback hot_func_cb_;
+    JITCompiler* jit_compiler_ = nullptr;
+    uint32_t jit_active_closure_id_ = 0;
+    std::function<void(VM&)> post_reset_setup_;
+
+public:
+    void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
 
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }

@@ -2798,12 +2798,13 @@ Value VM::execute(const BytecodeChunk &chunk,
  COMPILER_THROW("Function not found: " + function_name);
  }
 
- while (!stack.empty()) {
- stack.pop();
- }
- locals.clear();
- frame_count_ = 0;
- heap_.reset();
+    while (!stack.empty()) {
+        stack.pop();
+    }
+    locals.clear();
+    frame_count_ = 0;
+
+    collectGarbage();
 
     open_upvalues.clear();
     has_current_exception_ = false;
@@ -4172,7 +4173,8 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
 }
 
 void VM::maybeCollectGarbage() {
-  heap_.maybeCollectGarbage(
+    if (gc_suspend_counter_ > 0) return;
+    heap_.maybeCollectGarbage(
       stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
       [this](uint32_t index) -> std::optional<Value> {
         if (index >= locals.size()) {
@@ -5629,7 +5631,7 @@ case OpCode::CALL_METHOD: {
     }
 
     // 2. If not found in host prototype, and it's an object, check the object itself
-    //    (direct fields only — do NOT walk prototype chain here, step 3 handles that)
+    // (direct fields only — do NOT walk prototype chain here, step 3 handles that)
     bool isInstanceFunc = false;
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
         auto* instanceObj = heap_.object(receiver.asObjectId());
@@ -6735,10 +6737,10 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 			break;
 		}
 
-	auto objRef = ObjectRef{object.asObjectId(), true};
-	auto *obj = heap_.object(objRef.id);
-	if (!obj) {
-		COMPILER_THROW("OBJECT_GET unknown object id");
+        auto objRef = ObjectRef{object.asObjectId(), true};
+        auto *obj = heap_.object(objRef.id);
+        if (!obj) {
+            COMPILER_THROW("OBJECT_GET unknown object id");
 	}
 
         // Check for numeric index (obj[0], obj[-1])

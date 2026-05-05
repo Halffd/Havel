@@ -40,7 +40,7 @@ void ConditionalHotkeyManager::ScheduleReevaluation() {
 }
 
 void ConditionalHotkeyManager::registerVarChangedHandler() {
-  // Phase 2G: Register to react to variable changes
+  
   // When a global variable changes, reevaluate all hotkey conditions
   // This enables event-driven hotkey condition checking
   if (eventQueue_) {
@@ -60,15 +60,12 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
     const std::string& key, const std::string& condition,
     std::function<void()> trueAction,
     std::function<void()> falseAction, int id, bool async) {
-  debug("Registering conditional hotkey - Key: '{}', Condition: '{}', ID: {}, Async: {}",
-        key, condition, id, async);
-
   if (id == 0) {
     static int nextId = 1000;
     id = nextId++;
   }
 
-  // Phase 2H: Try to compile condition if compiler is available
+  
   bool hasCompiledCondition = false;
   if (conditionCompiler_ && bytecodeVM_) {
     try {
@@ -88,7 +85,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
   auto action = [this, condition, trueAction, falseAction, async]() {
     if (EvaluateCondition(condition)) {
       if (trueAction) {
-        // Phase 2I/2J: Set context and execute hotkey action
+        
         // CRITICAL FIX: Handle exceptions to prevent crashes from blocking hotkey detection
         HotkeyActionContext::setContext({
           true,  // condition_result
@@ -101,7 +98,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
         try {
           // Execute the action with exception safety
           if (async && scheduler_) {
-            // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+            
             auto fiber = HotkeyActionWrapper::createActionFiber(
                 "hotkey_action_" + condition,
                 trueAction
@@ -130,7 +127,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
       }
     } else {
       if (falseAction) {
-        // Phase 2J: Set context for false action
+        
         HotkeyActionContext::setContext({
           false,  // condition_result
           "hotkey_fired_false",
@@ -141,7 +138,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
 
         try {
           if (async && scheduler_) {
-            // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+            
             auto fiber = HotkeyActionWrapper::createActionFiber(
                 "hotkey_action_false_" + condition,
                 falseAction
@@ -197,8 +194,6 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
     const std::string& key, std::function<bool()> condition,
     std::function<void()> trueAction,
     std::function<void()> falseAction, int id, bool async) {
-  debug("Registering function-based conditional hotkey - Key: '{}', ID: {}, Async: {}", key, id, async);
-
   if (id == 0) {
     static int nextId = 2000;  // Use different range for function-based hotkeys
     id = nextId++;
@@ -209,7 +204,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
     try {
       if (condition()) {  // Call the condition function directly
         if (trueAction) {
-          // Phase 2I/2J: Set context and execute hotkey action
+          
           HotkeyActionContext::setContext({
             true,  // condition_result
             "hotkey_fired",  // changed_variable
@@ -220,7 +215,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
 
           try {
             if (async && scheduler_) {
-              // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+              
               auto fiber = HotkeyActionWrapper::createActionFiber(
                   "hotkey_action_function",
                   trueAction
@@ -255,7 +250,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
 
           try {
             if (async && scheduler_) {
-              // Phase 2I Extended: wrap in Fiber and submit to Scheduler for true async
+              
               auto fiber = HotkeyActionWrapper::createActionFiber(
                   "hotkey_action_false_function",
                   falseAction

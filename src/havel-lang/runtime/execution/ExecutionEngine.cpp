@@ -1,7 +1,7 @@
 #include "ExecutionEngine.hpp"
 #include "../../../utils/Logger.hpp"
 #include "../concurrency/Fiber.hpp"
-#include "../concurrency/DependencyTracker.hpp"  // Phase 2E: For tracking dependencies
+#include "../concurrency/DependencyTracker.hpp"  
 #include <iostream>
 
 namespace havel::compiler {
@@ -12,18 +12,18 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
     throw std::invalid_argument("ExecutionEngine requires non-null VM, Scheduler, and EventQueue");
   }
   
-  // Phase 2A: Give VM reference to event queue for variable change notifications
+  
   vm_->setEventQueue(eq);
   
-  // Phase 2C: Initialize watcher registry
+  
   watcher_registry_ = std::make_unique<WatcherRegistry>();
   
-  // Phase 1: Register event handlers for unified event system
+  
   if (event_queue_) {
     event_queue_->onEvent(EventType::THREAD_COMPLETE, 
         [this](const Event& event) { onThreadComplete(event); });
     
-    // Phase 2A: Register handler for variable changes
+    
     event_queue_->onEvent(EventType::VAR_CHANGED,
         [this](const Event& event) { onVariableChanged(event); });
     
@@ -37,7 +37,7 @@ ExecutionEngine::~ExecutionEngine() {
 }
 
 // ============================================================================
-// PHASE 3: Main Loop Implementation
+
 // ============================================================================
 
 bool ExecutionEngine::executeFrame() {
@@ -72,12 +72,12 @@ bool ExecutionEngine::executeFrame() {
       vm_->loadFiberState(g->fiber);
     }
     
-    // STEP 3B: Phase 2I Integration - Handle hotkey action Fibers
+    
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
     VMExecutionResult result;
     if (g->fiber && g->fiber->current_function_id == 0xFFFFFFFF) {  // HOTKEY_ACTION_FUNCTION_ID
-      // Phase 2I: This is a hotkey action Fiber
+      
       // Get the registered callback and execute it
       if (debug_mode_) {
                 ::havel::debug("[ExecutionEngine] Executing hotkey action Fiber {}", g->fiber->id);
@@ -175,7 +175,7 @@ bool ExecutionEngine::executeFrame() {
 }
 
 bool ExecutionEngine::isDone() const {
-  // Phase 3: ExecutionEngine is done when no goroutines are runnable or suspended.
+  
   // This means all spawned goroutines have completed (are in Done state).
   if (!scheduler_) {
     return true;  // No scheduler = no goroutines = done
@@ -189,7 +189,7 @@ bool ExecutionEngine::isDone() const {
 }
 
 void ExecutionEngine::shutdown() {
-  // Phase 3: Graceful shutdown of ExecutionEngine
+  
   running_ = false;
   
   // Stop the scheduler which will clean up goroutines
@@ -246,7 +246,7 @@ void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& ms
 }
 
 // ============================================================================
-// PHASE 1: Event Handler for Thread Completion
+
 // ============================================================================
 
 void ExecutionEngine::onThreadComplete(const Event& event) {
@@ -270,7 +270,7 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
     }
     
     // Mark fiber as runnable (no longer suspended on thread.join())
-    // Note: In Phase 3B, the scheduler integration is still being developed
+    
     // For now, we directly manipulate fiber state
     waiting_fiber->state = FiberState::RUNNABLE;
   }
@@ -280,7 +280,7 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
 }
 
 // ============================================================================
-// PHASE 2A: Variable Change Event Handler
+
 // ============================================================================
 
 void ExecutionEngine::onVariableChanged(const Event& event) {
@@ -299,12 +299,12 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
                      var_name, watcher_registry_->getWatcherCount());
   }
   
-  // Phase 2C: Notify watcher registry and evaluate watchers that depend on this variable
+  
   // Returns list of fibers whose watchers fired (false→true edge)
   std::vector<Fiber*> fired_fibers = watcher_registry_->onVariableChanged(
       var_name,
       [this](uint32_t watcher_id) -> bool {
-        // Phase 2D: Re-evaluate condition for this watcher
+        
         return evaluateCondition(watcher_id);
       }
   );
@@ -321,7 +321,7 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
 }
 
 bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
-  // Phase 2E: Evaluate a condition bytecode for a watcher
+  
   // 
   // Called when a watched variable changes to check if condition now fires
   // 
@@ -335,7 +335,7 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
     return false;
   }
   
-  // Phase 2E: Get watcher's condition bytecode info
+  
   const auto* watcher = watcher_registry_->getWatcher(watcher_id);
   if (!watcher) {
     return false;

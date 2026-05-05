@@ -3,10 +3,8 @@
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "HotkeyConditionCompiler.hpp"
-#include "HotkeyActionWrapper.hpp"  // Phase 2I: For registering hotkey action callbacks
-#include "HotkeyActionContext.hpp"  // Phase 2J: For setting context before execution
-// NOTE: HotkeyActionWrapper.hpp brings in Fiber.hpp which has namespace ambiguities
-// We just allocate it with new and it works fine
+#include "HotkeyActionWrapper.hpp"
+#include "HotkeyActionContext.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "BrightnessManager.hpp"
 #include "ConfigManager.hpp"
@@ -221,7 +219,7 @@ hostBridge->install();
         }
     }
 
-// Phase 2G: Create Scheduler and ExecutionEngine for reactive watcher system
+
   scheduler = &compiler::Scheduler::instance();
   if (!scheduler) {
     throw std::runtime_error("Failed to create Scheduler");
@@ -244,15 +242,15 @@ hostBridge->install();
 	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
 	bytecodeVM->setScheduler(scheduler);
 
-  // Phase 2I: Register hotkey action callback with ExecutionEngine
+  
   // When a hotkey action Fiber is executed (function_id == 0xFFFFFFFF),
   // ExecutionEngine will call this callback to invoke the C++ hotkey action
   executionEngine->setHotkeyActionCallback([](uint32_t fiber_id) {
-    // Phase 2I: Get and execute the registered hotkey action callback
+    
     auto* callback = HotkeyActionWrapper::getCallback(fiber_id);
     if (callback && *callback) {
       try {
-        // Phase 2J: Context is already set by ConditionalHotkeyManager
+        
         // when scheduling the action Fiber. Just execute the callback.
         (*callback)();  // Execute the C++ hotkey action function
       } catch (const std::exception& e) {
@@ -264,24 +262,24 @@ hostBridge->install();
     // Note: Callback unregistration happens when Fiber is cleaned up
   });
 
-  // Phase 2G: Inject ExecutionEngine into HotkeyManager's managers
+  
   if (hotkeyManager) {
     hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
     hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
     hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
     
-    // Phase 2I: Inject Scheduler for Fiber-based hotkey actions
+    
     hotkeyManager->getConditionalHotkeyManager().setScheduler(scheduler);
     
-    // Phase 2H: Create and inject condition compiler
+    
     conditionCompiler = new HotkeyConditionCompiler();
     hotkeyManager->getConditionalHotkeyManager().setConditionCompiler(conditionCompiler);
     hotkeyManager->getConditionalHotkeyManager().setBytecodeVM(bytecodeVM.get());
     
-    // Phase 2I: Initialize action wrapper (static allocation - no storage needed)
+    
     // HotkeyActionWrapper uses static methods and doesn't need to be stored
     
-    // Phase 2J: Action context initialization happens via static methods (no include needed)
+    
     // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
     // from HotkeyActionContext.cpp static initialization if needed
     debug("Reactive hotkey system initialized");
@@ -340,13 +338,13 @@ void Havel::cleanup() noexcept {
     hotkeyManager.reset();
   }
 
-  // Phase 2H-2J: Clean up reactive hotkey components
+  
   if (conditionCompiler) {
     debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
     delete conditionCompiler;
     conditionCompiler = nullptr;
   }
-  // Phase 2I: HotkeyActionWrapper is not stored, uses static singleton pattern
+  
 
   // Destroy VM FIRST
   if (bytecodeVM) {

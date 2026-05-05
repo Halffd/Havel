@@ -1,4 +1,4 @@
-// Test Phase 1: threads
+
 fn task(name) {
   print("Task " + name + " started")
   run("ping -c 3 localhost") // Simulate some work by running a command that takes time (pinging localhost 3 times, should take around 3 seconds)
@@ -186,7 +186,7 @@ print("=== Phase 2 tests completed ===")
 
   print(rx.recv())
 }
-// Test Phase 3: VM-level coroutines (Lua-style)
+
 // This tests yield and coroutine state management
 
 print("=== Testing yield ===")

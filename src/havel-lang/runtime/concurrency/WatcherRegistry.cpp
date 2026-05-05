@@ -27,7 +27,7 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
         watcher_id = next_watcher_id_++;
     }
     
-    // Phase 2E: Create and store watcher with condition bytecode reference
+    
     watchers_.emplace(
         watcher_id,
         Watcher(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip));

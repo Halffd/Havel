@@ -281,7 +281,6 @@ inline compiler::Value makeObject(compiler::VMApi& api, const std::vector<Object
     } while(0)
 
 namespace detail {
-    // Helper for registering a single method
     inline void registerMethod(compiler::VMApi& api, compiler::Value& obj, 
                                const std::string& name, const std::string& funcName) {
         api.setField(obj, name, api.makeFunctionRef(funcName));

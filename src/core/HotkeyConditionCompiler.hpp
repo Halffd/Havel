@@ -78,7 +78,7 @@ public:
   size_t getCacheSize() const { return compiled_conditions_.size(); }
 
 private:
-  // Phase 2H: Cache compiled conditions to avoid recompilation
+  
   // Key: condition string, Value: compiled bytecode reference
   std::unordered_map<std::string, std::unique_ptr<CompiledCondition>> compiled_conditions_;
   

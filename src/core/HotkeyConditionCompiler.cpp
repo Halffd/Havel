@@ -16,14 +16,14 @@ HotkeyConditionCompiler::compileCondition(
     return nullptr;
   }
   
-  // Phase 2H: Check cache first
+  
   if (auto cached = getCached(condition_str)) {
     debug("HotkeyConditionCompiler: Cache hit for condition: {}", condition_str);
     return std::make_unique<CompiledCondition>(*cached);
   }
   
-  // Phase 2H: Try pattern-based compilation
-  // In Phase 2H+, this would use full parser/compiler pipeline
+  
+  
   // For now, we support simple pattern matching that can be compiled efficiently
   auto compiled = compilePatternCondition(vm, condition_str);
   
@@ -52,7 +52,7 @@ HotkeyConditionCompiler::compilePatternCondition(
     compiler::VM* vm,
     const std::string& condition_str) {
   
-  // Phase 2H: Simple pattern matching for common condition patterns
+  
   // This allows compilation of common conditions without full parser
   
   // Pattern 1: mode == 'X'
@@ -64,7 +64,7 @@ HotkeyConditionCompiler::compilePatternCondition(
     if (start != std::string::npos && end != std::string::npos && start < end) {
       std::string mode_name = condition_str.substr(start + 1, end - start - 1);
       
-      // Phase 2H Future: Emit bytecode like:
+      
       // LOAD_GLOBAL "current_mode"
       // CONST "<mode_name>"
       // EQ
@@ -95,9 +95,9 @@ HotkeyConditionCompiler::compilePatternCondition(
     return compiled;
   }
   
-  // Pattern 3: Complex boolean expressions (phase 2H+)
+  
   // For now, these remain as string patterns evaluated at runtime
-  // In Phase 2H+, we would:
+  
   // 1. Parse the string to AST
   // 2. Type-check the AST
   // 3. Compile to bytecode

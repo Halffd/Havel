@@ -755,7 +755,6 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
 
     // Execute __main__ function
     auto result = vm->execute(combinedChunk, "__main__");
-    debug("Bytecode execution completed successfully");
 
     bridge->shutdown();
     return 0;
@@ -897,7 +896,6 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
  });
  engine.initializeMinimal();
   engine.execute(combinedCode, "__main__", combinedNames);
-    debug("Bytecode execution completed successfully");
  engine.shutdown();
  return 0;
  } catch (const std::exception &e) {

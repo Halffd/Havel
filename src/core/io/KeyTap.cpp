@@ -20,8 +20,6 @@ void KeyTap::setup() {
     std::string keyDown = downPrefix + keyName;
     std::string keyUp = downPrefix + keyName + ":up";
     
-    debug("KeyTap: Registering keyDown='{}', keyUp='{}'", keyDown, keyUp);
-    
     // Register any-key callback to detect combos
     hotkeyManager->RegisterAnyKeyPressCallback([this](const std::string& key) {
         if (keyHeld && key != keyName) {

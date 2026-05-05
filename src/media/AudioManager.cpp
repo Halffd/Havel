@@ -853,11 +853,11 @@ bool AudioManager::initializePulse() {
             // cleanup
             return false;
         }
-        pa_threaded_mainloop_wait(pa_mainloop);
-    }
-    pa_threaded_mainloop_unlock(pa_
-    return true;
-}
+ pa_threaded_mainloop_wait(pa_mainloop);
+ }
+ pa_threaded_mainloop_unlock(pa_mainloop);
+ return true;
+ }
 #else
 bool AudioManager::initializePulse() { return false; }
 #endif

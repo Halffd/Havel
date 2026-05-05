@@ -1,4 +1,4 @@
-// Test Phase 1: OS threads via host functions
+
 // This tests thread_spawn, thread_join, thread_send, thread_receive
 
 fn task(name) {

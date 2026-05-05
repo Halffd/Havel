@@ -97,7 +97,7 @@ public:
   std::shared_ptr<ModeManager>& getModeManager() { return modeManager; }
   const std::shared_ptr<ModeManager>& getModeManager() const { return modeManager; }
 
-  // ConditionalHotkeyManager access (Phase 2G)
+  
   ConditionalHotkeyManager& getConditionalHotkeyManager() { return conditionalManager; }
   const ConditionalHotkeyManager& getConditionalHotkeyManager() const { return conditionalManager; }
 

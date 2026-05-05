@@ -5,10 +5,11 @@
 namespace havel::compiler::prototypes {
 
 void registerArrayPrototype(VM& vm) {
-  auto regProto = [&vm](const std::string& method, size_t arity, BytecodeHostFunction fn) {
-    vm.registerHostFunction("array." + method, arity, std::move(fn));
-    vm.registerPrototypeMethodByName("array", method, "array." + method);
-  };
+    fprintf(stderr, "DEBUG: registerArrayPrototype called\n");
+    auto regProto = [&vm](const std::string& method, size_t arity, BytecodeHostFunction fn) {
+        vm.registerHostFunction("array." + method, arity, std::move(fn));
+        vm.registerPrototypeMethodByName("array", method, "array." + method);
+    };
 
   // Helper for variable-arity methods (no strict arity check)
   auto regProtoVar = [&vm](const std::string& method, BytecodeHostFunction fn) {
@@ -37,16 +38,18 @@ void registerArrayPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("pop", 1, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeNull();
-    if (args[0].isArrayId()) {
-      auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr && !arr->frozen && !arr->empty()) {
-        auto val = arr->back(); arr->pop_back(); return val;
-      }
-    }
-    return Value::makeNull();
-  });
+ regProto("pop", 1, [&vm](const std::vector<Value>& args) {
+        if (args.empty()) { fprintf(stderr, "DEBUG pop: args empty\n"); return Value::makeNull(); }
+        fprintf(stderr, "DEBUG pop: isArrayId=%d\n", args[0].isArrayId());
+        if (args[0].isArrayId()) {
+            auto* arr = vm.getHeap().array(args[0].asArrayId());
+            fprintf(stderr, "DEBUG pop: arr=%p frozen=%d empty=%d size=%zu\n", (void*)arr, arr ? arr->frozen : -1, arr ? arr->empty() : -1, arr ? arr->size() : 0);
+            if (arr && !arr->frozen && !arr->empty()) {
+                auto val = arr->back(); arr->pop_back(); return val;
+            }
+        }
+        return Value::makeNull();
+    });
 
   regProto("unshift", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();

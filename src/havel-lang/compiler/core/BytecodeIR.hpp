@@ -385,7 +385,7 @@ struct Instruction {
       : opcode(op), operands(std::move(ops)) {}
 };
 
-// Reserved for Phase 2 closure capture support.
+
 struct UpvalueDescriptor {
   uint32_t index = 0;
   bool captures_local = false;
@@ -409,9 +409,9 @@ struct BytecodeFunction {
   std::vector<std::string> param_names;  // Parameter names
   std::string source_file;               // Source file path
   uint32_t source_line = 0;              // Definition line number
-  bool is_generator = false;             // Phase 3B-3: True if function contains yield
+  bool is_generator = false;             
   
-  // Phase 4: JIT Type Feedback & State
+  
   mutable std::vector<TypeFeedback> type_feedback;
   mutable uint32_t execution_count = 0;
   mutable bool jit_compiled = false;

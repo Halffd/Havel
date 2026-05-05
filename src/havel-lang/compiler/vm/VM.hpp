@@ -59,7 +59,7 @@ struct ScriptError final {
 // VM EXECUTION RESULT
 //
 // Result of executing a single bytecode instruction in a Fiber
-// Used by Phase 3 main loop (executeFrame) to determine fiber state
+
 // ============================================================================
 struct VMExecutionResult {
   enum Type : uint8_t {
@@ -235,14 +235,14 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
 
-  // Phase 3B-7: Suspension state for non-blocking fiber suspension
+  
   // When an operation needs to wait (thread.join, channel.recv, etc)
   // it sets these flags to signal the VM to suspend the current fiber
   bool suspension_requested_ = false;          // True if suspension needed
   uint8_t suspension_reason_ = 0;              // Why is it suspending? (SuspensionReason enum value)
   void* suspension_context_ = nullptr;         // Context pointer (thread_id, channel*, etc)
 
- // Phase 3B-7: Thread wait tracking
+ 
  // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
  // Used to unpark fibers when threads complete
  std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
@@ -253,13 +253,13 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
  std::unordered_map<uint32_t, Value> timeout_results_;
  std::unordered_map<uint32_t, Value> interval_results_;
 
-	// Phase 2A: Event queue reference for variable change notifications
+	
 	class EventQueue* event_queue_ = nullptr;
 
  WatcherRegistry* watcher_registry_ = nullptr;
  Scheduler* scheduler_ = nullptr;
 
- // Phase 2A: Helper to emit VAR_CHANGED events
+ 
  void emitVariableChanged(const std::string& var_name);
   
   // Prototype system - methods on types (String, Array, Object)
@@ -431,7 +431,7 @@ public:
     doTailCall(std::move(callee_value), std::move(args));
   }
   
-  // Phase 4: JIT Trampoline support
+  
   void setJitTailCall(bool occurred) { jit_tail_call_occurred_ = occurred; }
   bool hasJitTailCall() const { return jit_tail_call_occurred_; }
 
@@ -498,7 +498,7 @@ public:
                           const std::string &function_name,
                           const std::vector<Value> &args = {});
   
-  // ========== PHASE 2E: CONDITION EVALUATION ==========
+  
   // Evaluate a condition bytecode (for reactive watchers)
   // Executes condition code and returns result as boolean
   // Used by WatcherRegistry to re-evaluate conditions on variable changes
@@ -507,7 +507,7 @@ public:
   // @return Boolean result of condition evaluation
   bool evaluateConditionBytecode(uint32_t func_index, uint32_t ip = 0);
   
-  // ========== PHASE 3: SINGLE-STEP EXECUTION ==========
+  
   // Execute exactly one bytecode instruction in the current fiber
   // Returns immediately after one instruction (never blocks)
   // Used by main event loop for cooperative fiber scheduling
@@ -515,7 +515,7 @@ public:
   // @return VMExecutionResult indicating what happened
   VMExecutionResult executeOneStep(Fiber *current_fiber);
   
-  // ========== PHASE 3B-1: FIBER STATE SYNCHRONIZATION ==========
+  
   // Load fiber's state into VM's global execution state
   // Must be called before executeOneStep() to restore suspended fiber
   // @param fiber The Fiber to load (must have SUSPENDED or pending state)
@@ -526,7 +526,7 @@ public:
   // @param fiber The Fiber to save to (preserves IP for resumption)
   void saveFiberState(Fiber *fiber);
 
-  // ========== PHASE 3B-7: SUSPENSION CALLBACKS ==========
+  
   // Track which fiber is waiting on a specific thread
   // Called when a fiber is suspended waiting for THREAD_JOIN completion
   // @param thread_id The thread being waited on
@@ -581,7 +581,7 @@ public:
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
   
-  // Phase 3: Goroutine management
+  
   // Spawn a new goroutine (fiber) to execute a closure or function concurrently
   // @param callee The closure or function object to execute
   // @param args Arguments to pass to the function
@@ -596,7 +596,7 @@ public:
   void endHotkeyExecution();
   void garbageCollectionSafePoint(size_t work_budget = 0);
 
-  // Phase 3B-7: Suspension support
+  
   void requestSuspension(uint8_t reason, void* context = nullptr) {
     suspension_requested_ = true;
     suspension_reason_ = reason;
@@ -610,11 +610,11 @@ public:
   uint32_t getHostFunctionIndex(const std::string &name);
   void throwError(const std::string &msg);
   
-  // Phase 4 JIT: Hot function notification
+  
   using HotFunctionCallback = std::function<void(const BytecodeFunction&)>;
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
-  // Phase 4 JIT: Set JIT compiler pointer for dispatch
+  
   void setJITCompiler(JITCompiler* jit) { jit_compiler_ = jit; }
   JITCompiler* getJITCompiler() const { return jit_compiler_; }
 
@@ -636,7 +636,7 @@ public:
   GCHeap& getHeap() { return heap_; }
   const GCHeap& getHeap() const { return heap_; }
   
-	// Phase 2A: Event queue for variable change notifications
+	
 	void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
 
 	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }

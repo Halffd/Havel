@@ -1,4 +1,4 @@
-// Test Phase 3: Thread operations with generators
+
 print("=== Testing threads ===")
 
 // Test 1: Lambda thread

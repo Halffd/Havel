@@ -37,7 +37,7 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
     g->closure_id = closure_id;
     g->state = GoroutineState::Created;
     
-    // Phase 3B-1: Create a Fiber for this goroutine
+    
     // This is the actual execution context that will be loaded into the VM
     g->fiber = new Fiber(g->id, function_id, 0, name);
     if (closure_id > 0) {
@@ -85,7 +85,7 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 // ===== EXECUTION CONTROL =====
 
 Scheduler::Goroutine* Scheduler::pickNext() {
-    // Phase 3B-7: Check for expired timers in suspended goroutines
+    
     // This allows sleep() to be non-blocking for goroutines
     {
         std::lock_guard<std::mutex> lock(goroutines_mutex_);

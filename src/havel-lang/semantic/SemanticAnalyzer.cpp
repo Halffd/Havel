@@ -26,31 +26,31 @@ bool SemanticAnalyzer::analyze(const ast::Program &program, bool resetSymbols) {
     symbolTable_ = SymbolTable();
   }
 
-  // Phase 1: Register all type definitions
+  
   registerStructTypes(program);
   registerEnumTypes(program);
 
-  // Phase 2: Build symbol table
+  
   buildSymbolTable(program);
 
-  // Phase 3: Type checking
+  
   checkTypes(program);
 
-  // Phase 4: Semantic validation
+  
   validateAssignments(program);
   validateFunctionCalls(program);
   validateControlFlow(program);
   validateMemberAccess(program);
   validateInitialization(program);
 
-  // Phase 5: Optimization
+  
   optimizeConstants();
 
   return errors_.empty();
 }
 
 // ============================================================================
-// Phase 1: Type Registration
+
 // ============================================================================
 
 void SemanticAnalyzer::registerStructTypes(const ast::Program &program) {
@@ -138,7 +138,7 @@ void SemanticAnalyzer::registerTraitTypes(const ast::Program &program) {
 }
 
 // ============================================================================
-// Phase 2: Symbol Table Construction
+
 // ============================================================================
 
 void SemanticAnalyzer::buildSymbolTable(const ast::Program &program) {
@@ -548,7 +548,7 @@ void SemanticAnalyzer::visitExpression(const ast::Expression &expr) {
 }
 
 // ============================================================================
-// Phase 3: Type Checking
+
 // ============================================================================
 
 void SemanticAnalyzer::checkTypes(const ast::Program &program) {
@@ -586,7 +586,7 @@ SemanticAnalyzer::checkTypeCompatibility(const HavelType &expected,
 }
 
 // ============================================================================
-// Phase 4: Semantic Validation
+
 // ============================================================================
 
 void SemanticAnalyzer::validateAssignments(const ast::Program &program) {

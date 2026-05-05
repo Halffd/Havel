@@ -142,7 +142,7 @@ Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
     thread_id = next_thread_id_++;
   }
 
-  // Phase 3B-7: Spawn thread that pushes event when complete (not polling)
+  
   std::thread t([this, thread_id]() {
     // Thread is now running
     // TODO: Execute the Havel closure in a safe execution context
@@ -181,7 +181,7 @@ Value ConcurrencyBridge::threadJoin(const std::vector<Value> &args) {
 
   uint32_t thread_id = args[0].asThreadId();
 
-  // Phase 3B-7: Non-blocking join via event system
+  
   // If thread already completed, clean up and return
   // Otherwise, caller's fiber will be suspended via THREAD_JOIN opcode
   // and unparked when THREAD_COMPLETE event fires
@@ -428,7 +428,7 @@ void ConcurrencyBridge::checkTimers() {
 }
 
 // ============================================================================
-// PHASE 3B-7: THREAD COMPLETION TRACKING
+
 // ============================================================================
 
 bool ConcurrencyBridge::isThreadCompleted(uint32_t thread_id) {

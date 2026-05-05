@@ -2386,12 +2386,13 @@ if (op == OpCode::INT_DIV) {
             break;
         }
         case OpCode::LOAD_VAR: vstack.push_back(B.CreateLoad(i64, vlocals[instr.operands[0].asInt()])); break;
-        case OpCode::STORE_VAR: {
-            llvm::Value* v = vstack.back(); vstack.pop_back();
-            B.CreateStore(v, vlocals[instr.operands[0].asInt()]);
-            if (opcodeProducesHeapRef(instr.opcode)) emitWriteBarrier(v);
-            break;
-        }
+case OpCode::STORE_VAR:
+    case OpCode::STORE_IMMUT_VAR: {
+        llvm::Value* v = vstack.back(); vstack.pop_back();
+        B.CreateStore(v, vlocals[instr.operands[0].asInt()]);
+        if (opcodeProducesHeapRef(instr.opcode)) emitWriteBarrier(v);
+        break;
+    }
         case OpCode::POP: vstack.pop_back(); break;
         case OpCode::DUP: vstack.push_back(vstack.back()); break;
 
@@ -3611,7 +3612,8 @@ case OpCode::LENGTH: {
         vstack.push_back(B.CreateCall(fnGet, {vmArg, llvm::ConstantInt::get(i32, nameId)}));
         break;
     }
-    case OpCode::STORE_GLOBAL: {
+    case OpCode::STORE_GLOBAL:
+    case OpCode::STORE_IMMUT_GLOBAL: {
         uint32_t nameId = instr.operands[0].asInt();
         llvm::Value* v = vstack.back(); vstack.pop_back();
         llvm::Function* fnSet = module.getFunction("havel_vm_global_set");

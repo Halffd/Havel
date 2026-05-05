@@ -189,8 +189,10 @@ private:
   GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
-  std::unordered_map<std::string, Value> globals;
-  mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
+    std::unordered_map<std::string, Value> globals;
+    mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
+    std::unordered_set<std::string> immutable_globals_; // val-declared globals
+    std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices (per-frame)
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::vector<std::string> host_function_names_; // Index -> name mapping
   std::unordered_map<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
@@ -781,8 +783,8 @@ public:
   // Lightweight execution context for async/threaded execution
   // Shares: globals, heap, host_functions, prototypes, chunk
   // Isolated: stack, locals, frames, open_upvalues
-  struct VMExecutionContext {
-  private:
+struct VMExecutionContext {
+private:
     VM *parent_vm_ = nullptr;
     std::stack<Value> stack;
     std::vector<Value> locals;
@@ -790,6 +792,7 @@ public:
     size_t frame_count_ = 0;
     std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
         open_upvalues;
+    std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices
     bool has_current_exception_ = false;
     Value current_exception_ = nullptr;
     const BytecodeChunk *current_chunk = nullptr;

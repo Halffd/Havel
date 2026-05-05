@@ -1021,11 +1021,12 @@ return std::make_unique<ast::StringLiteral>(token.value, true);
     // This enables expressions like: mode == "work" && class == "code"
     case TokenType::Class:
     case TokenType::Struct:
-    case TokenType::Enum:
+case TokenType::Enum:
     case TokenType::Mode:
+    case TokenType::Val:
     case TokenType::Const:
     case TokenType::Let:
-      return makeIdentifier(token);
+        return makeIdentifier(token);
 
     case TokenType::True:
       return std::make_unique<ast::BooleanLiteral>(true);
@@ -1095,9 +1096,10 @@ return std::make_unique<ast::StringLiteral>(token.value, true);
                t == havel::TokenType::Return ||
                t == havel::TokenType::Ret ||
                t == havel::TokenType::Break ||
-               t == havel::TokenType::Continue ||
-               t == havel::TokenType::Let ||
-               t == havel::TokenType::Const ||
+t == havel::TokenType::Continue ||
+        t == havel::TokenType::Let ||
+        t == havel::TokenType::Val ||
+        t == havel::TokenType::Const ||
                t == havel::TokenType::Try ||
                t == havel::TokenType::Catch ||
                t == havel::TokenType::Finally ||
@@ -2295,9 +2297,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   switch (at().type) {
   case havel::TokenType::Colon:
     return parseSleepStatement();
-  case havel::TokenType::Let:
-  case havel::TokenType::Const:
-    return parseLetDeclaration();
+    case havel::TokenType::Let:
+    case havel::TokenType::Val:
+    case havel::TokenType::Const:
+        return parseLetDeclaration();
   case havel::TokenType::If:
     return parseIfStatement();
   case havel::TokenType::While:
@@ -2411,8 +2414,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // Check if followed by declaration keywords
     bool isDecorator = (at().type == havel::TokenType::Fn ||
                         at().type == havel::TokenType::Class ||
-                        at().type == havel::TokenType::Let ||
-                        at().type == havel::TokenType::Const);
+at().type == havel::TokenType::Let ||
+            at().type == havel::TokenType::Val ||
+            at().type == havel::TokenType::Const);
     position = savePos; // restore position
     if (isDecorator) {
       return parseDecoratorStatement();
@@ -2516,10 +2520,65 @@ case havel::TokenType::Identifier: {
         
         auto multiAssign = std::make_unique<havel::ast::MultipleAssignment>(
             std::move(targets), std::move(value));
-        return std::make_unique<havel::ast::ExpressionStatement>(std::move(multiAssign));
-    }
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(multiAssign));
+      }
 
-    // Sugar forms:
+      // Check for hotkey assignment: identifier = hotkey => action
+      // e.g., dhk = d => { print @id }
+      if (at(1).type == havel::TokenType::Assign &&
+          (at(2).type == havel::TokenType::Hotkey ||
+           (at(2).type == havel::TokenType::Identifier &&
+            at(3).type == havel::TokenType::Arrow))) {
+        auto target = makeIdentifier(advance()); // consume LHS identifier
+        advance(); // consume '='
+
+        // Parse the hotkey token
+        auto hotkeyToken = advance(); // consume hotkey/identifier
+        if (hotkeyToken.type == havel::TokenType::Identifier) {
+          hotkeyToken.type = havel::TokenType::Hotkey;
+        }
+
+        // Check for prefix condition
+        std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
+        if (at().type == havel::TokenType::When) {
+          advance();
+          prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+        } else if (at().type == havel::TokenType::If) {
+          advance();
+          prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+        }
+
+        if (at().type != havel::TokenType::Arrow) {
+          failAt(hotkeyToken, "Expected '=>' after hotkey in assignment");
+        }
+        advance(); // consume '=>'
+
+        std::unique_ptr<havel::ast::BlockStatement> action;
+        if (at().type == havel::TokenType::OpenBrace) {
+          action = parseBlockStatement(true);
+        } else {
+          auto expr = parseExpression();
+          action = std::make_unique<havel::ast::BlockStatement>();
+          action->body.push_back(
+              std::make_unique<havel::ast::ExpressionStatement>(std::move(expr)));
+        }
+
+        auto binding = std::make_unique<havel::ast::HotkeyBinding>();
+        binding->hotkeys.push_back(
+            std::make_unique<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+        binding->action = std::move(action);
+
+        if (prefixCondition) {
+          binding->conditionExpr = std::move(prefixCondition);
+        }
+
+        auto hkExpr = std::make_unique<havel::ast::HotkeyExpression>(std::move(binding));
+        auto assign = std::make_unique<havel::ast::AssignmentExpression>(
+            std::move(target), std::move(hkExpr), "=", false);
+        return std::make_unique<havel::ast::ExpressionStatement>(std::move(assign));
+      }
+
+      // Sugar forms:
     // thread { ... } -> thread(fn() { ... })
     // interval <ms> { ... } -> interval(<ms>, fn() { ... })
     // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })
@@ -2652,10 +2711,11 @@ case havel::TokenType::Identifier: {
   return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
     case havel::TokenType::Let:
-      reportWarning("'let' is deprecated, use 'val' or plain assignment");
-      [[fallthrough]];
+        reportWarning("'let' is deprecated, use 'val' or plain assignment");
+        [[fallthrough]];
+    case havel::TokenType::Val:
     case havel::TokenType::Const:
-      return parseLetDeclaration();
+        return parseLetDeclaration();
     case havel::TokenType::If:
     return parseIfStatement();
   case havel::TokenType::While:
@@ -4335,10 +4395,11 @@ Parser::parseClassMembers() {
 
     // Support optional val/const/let prefix for fields
     bool isConst = false;
-    if (at().type == havel::TokenType::Const ||
+    if (at().type == havel::TokenType::Val ||
+        at().type == havel::TokenType::Const ||
         at().type == havel::TokenType::Let) {
-      isConst = (at().type == havel::TokenType::Const);
-      advance(); // consume val/const/let
+        isConst = (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const);
+        advance(); // consume val/const/let
     }
 
     // Parse field name
@@ -5166,7 +5227,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     // Parse first iterator - allow keywords as variable names
     if (at().type != havel::TokenType::Identifier &&
         at().type != havel::TokenType::Let &&
-        at().type != havel::TokenType::Const &&
+        at().type != havel::TokenType::Val &&
         at().type != havel::TokenType::Const &&
         at().type != havel::TokenType::If &&
         at().type != havel::TokenType::For &&
@@ -5213,12 +5274,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     }
   } else {
     // Single or multiple iterators: for i, j in range (without parentheses)
-    // Allow keywords as iterator names
-    if (at().type != havel::TokenType::Identifier &&
-        at().type != havel::TokenType::Let &&
-        at().type != havel::TokenType::Const &&
-        at().type != havel::TokenType::Const &&
-        at().type != havel::TokenType::If &&
+        // Allow keywords as iterator names
+        if (at().type != havel::TokenType::Identifier &&
+            at().type != havel::TokenType::Let &&
+            at().type != havel::TokenType::Val &&
+            at().type != havel::TokenType::Const &&
+            at().type != havel::TokenType::If &&
+            at().type != havel::TokenType::For &&
         at().type != havel::TokenType::For &&
         at().type != havel::TokenType::While &&
         at().type != havel::TokenType::Match) {
@@ -5708,8 +5770,8 @@ Parser::parseOnKeyDownOrKeyUpStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
     bool isConst = false;
 
-    // Check if this is 'const' or 'let'
-    if (at().type == havel::TokenType::Const) {
+    // Check if this is 'val', 'const', or 'let'
+    if (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const) {
         isConst = true;
     }
     advance(); // consume "let" or "const"
@@ -7929,8 +7991,9 @@ return parsePostfixExpression(std::move(array));
              t == havel::TokenType::Ret ||
              t == havel::TokenType::Break ||
              t == havel::TokenType::Continue ||
-             t == havel::TokenType::Let ||
-             t == havel::TokenType::Const ||
+    t == havel::TokenType::Let ||
+        t == havel::TokenType::Val ||
+        t == havel::TokenType::Const ||
              t == havel::TokenType::Try ||
              t == havel::TokenType::Catch ||
              t == havel::TokenType::Finally ||
@@ -8407,7 +8470,7 @@ Parser::parseObjectLiteral(bool unsorted) {
              t == havel::TokenType::Switch || t == havel::TokenType::Do ||
              t == havel::TokenType::Return || t == havel::TokenType::Ret ||
              t == havel::TokenType::Break || t == havel::TokenType::Continue ||
-             t == havel::TokenType::Let || t == havel::TokenType::Const ||
+             t == havel::TokenType::Let || t == havel::TokenType::Val || t == havel::TokenType::Const ||
              t == havel::TokenType::Try || t == havel::TokenType::Catch ||
              t == havel::TokenType::Finally || t == havel::TokenType::Throw ||
              t == havel::TokenType::Del ||
@@ -9588,8 +9651,9 @@ Parser::parseKeyValueBlock() {
       at().type == havel::TokenType::Trait ||
       at().type == havel::TokenType::Prot ||
       at().type == havel::TokenType::Impl ||
-        at().type == havel::TokenType::Let ||
-        at().type == havel::TokenType::Const ||
+    at().type == havel::TokenType::Let ||
+            at().type == havel::TokenType::Val ||
+            at().type == havel::TokenType::Const ||
         at().type == havel::TokenType::In ||
         at().type == havel::TokenType::Loop ||
         at().type == havel::TokenType::When ||
@@ -9927,8 +9991,9 @@ void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
 bool Parser::atStatementStart() {
   // Common statement start tokens
   switch (at().type) {
-  case havel::TokenType::Let:
-  case havel::TokenType::Const:
+    case havel::TokenType::Let:
+    case havel::TokenType::Val:
+    case havel::TokenType::Const:
   case havel::TokenType::If:
   case havel::TokenType::While:
   case havel::TokenType::For:

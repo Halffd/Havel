@@ -11,14 +11,15 @@ int main(int argc, char* argv[]) {
         return launcher.run(argc, argv);
     }
 
-    // Check if running in pure mode (--run flag)
-    bool pureMode = false;
-    for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--run") {
-            pureMode = true;
-            break;
-        }
+  // Check if running in pure mode (--run or --eval flag)
+  bool pureMode = false;
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "--run" || a == "--eval" || a == "-E") {
+      pureMode = true;
+      break;
     }
+  }
 
     // Initialize config only if not in pure mode
     if (!pureMode) {

@@ -1,4 +1,5 @@
 #include "MPVController.hpp"
+#include "../utils/Logger.hpp"
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -24,12 +25,12 @@ MPVController::~MPVController() { Shutdown(); }
 bool MPVController::Initialize() {
   if (initialized)
     return true;
-  std::cout << "Initializing MPV controller" << std::endl;
+  debug("Initializing MPV controller");
   initialized = true;
   if (ConnectSocket()) {
-    std::cout << "Connected to MPV socket" << std::endl;
+    debug("Connected to MPV socket");
   } else {
-    std::cout << "MPV socket not open" << std::endl;
+    debug("MPV socket not open");
   }
   return true;
 }

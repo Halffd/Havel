@@ -1147,17 +1147,19 @@ case ast::NodeType::LetDeclaration: {
         }
 
         const auto *decl_binding = bindingFor(*identifier);
-        // Top-level `let` is emitted as global storage; nested `let` stays local.
+        // Top-level `let`/`val` is emitted as global storage; nested stays local.
         if (decl_binding && decl_binding->kind == ResolvedBindingKind::Global) {
             uint32_t slot = declarationSlot(*identifier);
             reserveLocalSlot(slot);
             // Keep both global and slot state in sync so root-block references
             // resolved as locals still observe initialized values.
             emit(OpCode::DUP);
-            emit(OpCode::STORE_GLOBAL,
-                 std::vector<Value>{Value::makeStringValId(addStringConstant(identifier->symbol))});
+            auto storeGlobalOp = let.isConst ? OpCode::STORE_IMMUT_GLOBAL : OpCode::STORE_GLOBAL;
+            emit(storeGlobalOp,
+                std::vector<Value>{Value::makeStringValId(addStringConstant(identifier->symbol))});
             uint32_t storeIp = current_function->instructions.size();
-            emit(OpCode::STORE_VAR, slot);
+            auto storeVarOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
+            emit(storeVarOp, slot);
             if (let.typeAnnotation) {
                 if (auto normalized =
                     normalizeTypeAnnotation(let.typeAnnotation->get());
@@ -1170,11 +1172,12 @@ case ast::NodeType::LetDeclaration: {
                     setTypeFeedbackHint(storeIp, hint);
                 }
             }
-        } else {
-            uint32_t slot = declarationSlot(*identifier);
-            reserveLocalSlot(slot);
-            uint32_t storeIp = current_function->instructions.size();
-            emit(OpCode::STORE_VAR, slot);
+    } else {
+        uint32_t slot = declarationSlot(*identifier);
+        reserveLocalSlot(slot);
+        uint32_t storeIp = current_function->instructions.size();
+        auto storeVarOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
+        emit(storeVarOp, slot);
             if (let.typeAnnotation) {
                 if (auto normalized =
                     normalizeTypeAnnotation(let.typeAnnotation->get());
@@ -1216,21 +1219,23 @@ COMPILER_THROW("Tuple destructuring currently supports "
 "identifier elements only");
 }
 
-emit(OpCode::LOAD_VAR, temp_slot);
-emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
-emit(OpCode::ARRAY_GET);
+        emit(OpCode::LOAD_VAR, temp_slot);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
+            emit(OpCode::ARRAY_GET);
 
-const uint32_t slot = declarationSlot(*element_id);
-reserveLocalSlot(slot);
+            const uint32_t slot = declarationSlot(*element_id);
+            reserveLocalSlot(slot);
 
-if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
-emit(OpCode::STORE_GLOBAL,
-std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
-} else {
-emit(OpCode::STORE_VAR, slot);
-}
-}
-} else {
+            if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
+                auto sgOp = let.isConst ? OpCode::STORE_IMMUT_GLOBAL : OpCode::STORE_GLOBAL;
+                emit(sgOp,
+                    std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
+            } else {
+                auto svOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
+                emit(svOp, slot);
+            }
+            }
+        } else {
 for (size_t i = 0; i < pattern.elements.size(); ++i) {
 const auto *element_id = pattern.elements[i]
 ? dynamic_cast<const ast::Identifier *>(
@@ -1249,16 +1254,18 @@ emit(OpCode::DUP);
 const uint32_t slot = declarationSlot(*element_id);
 reserveLocalSlot(slot);
 
-if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
-emit(OpCode::STORE_GLOBAL,
-std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
-} else {
-emit(OpCode::STORE_VAR, slot);
-}
-}
-}
-break;
-}
+        if (lexical_resolution_.global_variables.count(element_id->symbol) > 0) {
+                auto sgOp = let.isConst ? OpCode::STORE_IMMUT_GLOBAL : OpCode::STORE_GLOBAL;
+                emit(sgOp,
+                    std::vector<Value>{Value::makeStringValId(addStringConstant(element_id->symbol))});
+            } else {
+                auto svOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
+                emit(svOp, slot);
+            }
+            }
+        }
+        break;
+    }
 
     if (let.pattern && let.pattern->kind == ast::NodeType::ObjectPattern) {
       const auto &pattern =
@@ -1289,18 +1296,20 @@ break;
 
         // Check if this is a global variable (top-level let)
         if (lexical_resolution_.global_variables.count(alias->symbol) > 0) {
-          emit(OpCode::LOAD_VAR, temp_slot);
-          emit(OpCode::LOAD_CONST, loadStringConst(key));
-          emit(OpCode::OBJECT_GET);
-          emit(OpCode::STORE_GLOBAL,
-               std::vector<Value>{Value::makeStringValId(addStringConstant(alias->symbol))});
+            emit(OpCode::LOAD_VAR, temp_slot);
+            emit(OpCode::LOAD_CONST, loadStringConst(key));
+            emit(OpCode::OBJECT_GET);
+            auto sgOp = let.isConst ? OpCode::STORE_IMMUT_GLOBAL : OpCode::STORE_GLOBAL;
+            emit(sgOp,
+                std::vector<Value>{Value::makeStringValId(addStringConstant(alias->symbol))});
         } else {
-          const uint32_t slot = declarationSlot(*alias);
-          reserveLocalSlot(slot);
-          emit(OpCode::LOAD_VAR, temp_slot);
-          emit(OpCode::LOAD_CONST, loadStringConst(key));
-          emit(OpCode::OBJECT_GET);
-          emit(OpCode::STORE_VAR, slot);
+            const uint32_t slot = declarationSlot(*alias);
+            reserveLocalSlot(slot);
+            emit(OpCode::LOAD_VAR, temp_slot);
+            emit(OpCode::LOAD_CONST, loadStringConst(key));
+            emit(OpCode::OBJECT_GET);
+            auto svOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
+            emit(svOp, slot);
         }
       }
       break;
@@ -3915,6 +3924,13 @@ void ByteCompiler::compileCallExpression(
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
   bool hasKwargs = !expression.kwargs.empty();
 
+  // Arguments and callee sub-expressions must NOT inherit tail position.
+  // Only the outermost call itself may be a tail call. If inner calls
+  // (e.g., print(obj.method())) see in_tail_position_ they emit TAIL_CALL
+  // which destroys the frame before the outer call can consume the result.
+  bool saved_tail_position = in_tail_position_;
+  in_tail_position_ = false;
+
   // Handle super calls for prototype inheritance (@->method())
   if (expression.isSuperCall) {
     if (current_parent_class_name_.empty()) {
@@ -4287,6 +4303,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
+  in_tail_position_ = saved_tail_position;
   if (in_tail_position_ && try_depth_ == 0) {
     emit(OpCode::TAIL_CALL, totalArgs);
     emitted_tail_call_ = true;
@@ -4296,51 +4313,52 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
   return;
 }
 
-if (binding->kind == ResolvedBindingKind::Global) {
-      // Global variable that might contain a function - load and call
-      {
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-      }
+  if (binding->kind == ResolvedBindingKind::Global) {
+    // Global variable that might contain a function - load and call
+    {
+      uint32_t strId = addStringConstant(binding->name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
 
-      // Compile args, expanding spread
-      uint32_t totalArgs = 0;
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          totalArgs++;
-          continue;
-        }
-        if (arg->kind == ast::NodeType::SpreadExpression) {
-          const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
-          if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
-            const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
-            for (const auto &elem : arrLit.elements) {
-              if (elem) {
-                compileExpression(*elem);
-                totalArgs++;
-              }
+    // Compile args, expanding spread
+    uint32_t totalArgs = 0;
+    for (const auto &arg : expression.args) {
+      if (!arg) {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        totalArgs++;
+        continue;
+      }
+      if (arg->kind == ast::NodeType::SpreadExpression) {
+        const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+        if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+          const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+          for (const auto &elem : arrLit.elements) {
+            if (elem) {
+              compileExpression(*elem);
+              totalArgs++;
             }
-          } else {
-            compileExpression(*arg);
-            totalArgs++;
           }
         } else {
           compileExpression(*arg);
           totalArgs++;
         }
-      }
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          compileExpression(*kwarg.value);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::OBJECT_SET);
-        }
+      } else {
+        compileExpression(*arg);
         totalArgs++;
       }
+    }
+    if (hasKwargs) {
+      emit(OpCode::OBJECT_NEW);
+      for (const auto &kwarg : expression.kwargs) {
+        compileExpression(*kwarg.value);
+        { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+      }
+      totalArgs++;
+    }
 
-  if (in_tail_position_ && try_depth_ == 0) {
+    in_tail_position_ = saved_tail_position;
+    if (in_tail_position_ && try_depth_ == 0) {
     emit(OpCode::TAIL_CALL, totalArgs);
     emitted_tail_call_ = true;
   } else {
@@ -4398,6 +4416,7 @@ if (binding->kind == ResolvedBindingKind::Global) {
 
   // TCO: Emit TAIL_CALL if in tail position and callee is a user-defined
   // function
+  in_tail_position_ = saved_tail_position;
   if (in_tail_position_ && try_depth_ == 0 &&
       expression.callee->kind == ast::NodeType::Identifier) {
     const auto &callee_id =

@@ -58,7 +58,6 @@ Havel::Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
     initialize(isStartup);
     startPeriodicTimer();
     initialized = true;
-    info("Havel initialized successfully");
   } catch (const std::exception &e) {
     error("Failed to initialize Havel: " + std::string(e.what()));
     cleanup();
@@ -75,9 +74,9 @@ Havel::~Havel() {
 }
 
 void Havel::initialize(bool isStartup) {
-  info("Initializing HvC components...");
-  info("isStartup: " + std::to_string(isStartup));
-  info("GUI: " + std::to_string(guiMode));
+  debug("Initializing HvC components...");
+  debug("isStartup: " + std::to_string(isStartup));
+  debug("GUI: " + std::to_string(guiMode));
 
   // Initialize in dependency order
   io = std::make_shared<IO>();
@@ -127,10 +126,10 @@ void Havel::initialize(bool isStartup) {
   if (!networkManager) {
     throw std::runtime_error("Failed to create NetworkManager");
   }
-  info("NetworkManager initialized successfully");
+  debug("NetworkManager initialized successfully");
 
 #ifdef ENABLE_HAVEL_LANG
-  info("Initializing bytecode VM and HostBridge...");
+  debug("Initializing bytecode VM and HostBridge...");
 
   // Create host context
   hostContext = std::make_unique<HostContext>();
@@ -154,7 +153,7 @@ void Havel::initialize(bool isStartup) {
   // We'll trust the ConfigManager which should be updated by Launcher.
   
   if (useJIT) {
-    info("JIT compilation enabled");
+    debug("JIT compilation enabled");
     auto jit = std::make_unique<compiler::BytecodeOrcJIT>();
     
     // Check for debug JIT
@@ -286,7 +285,7 @@ hostBridge->install();
     // Phase 2J: Action context initialization happens via static methods (no include needed)
     // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
     // from HotkeyActionContext.cpp static initialization if needed
-    info("Reactive hotkey system initialized (Phases 2H, 2I, 2J with Scheduler integration)");
+    debug("Reactive hotkey system initialized");
     
     auto modeManager = hotkeyManager->getModeManager();
     if (modeManager) {
@@ -296,24 +295,18 @@ hostBridge->install();
     }
   }
 
-  info("Scheduler and ExecutionEngine initialized successfully");
+  debug("Scheduler and ExecutionEngine initialized");
 
   // Set HostBridge pointer on EventListener for timer checking
   if (io && io->GetEventListener()) {
-    io->GetEventListener()->setHostBridge(hostBridge.get());
-    // Phase 3: Set ExecutionEngine for goroutine scheduling in main loop
-    if (executionEngine) {
-      io->GetEventListener()->setExecutionEngine(executionEngine.get());
-      info("ExecutionEngine integrated into EventListener main loop");
-    }
-    // Phase 3: Set ExecutionEngine for goroutine scheduling in main loop
-    if (executionEngine) {
-      io->GetEventListener()->setExecutionEngine(executionEngine.get());
-      info("ExecutionEngine integrated into EventListener main loop");
-    }
+  io->GetEventListener()->setHostBridge(hostBridge.get());
+  if (executionEngine) {
+    io->GetEventListener()->setExecutionEngine(executionEngine.get());
+    debug("ExecutionEngine integrated into EventListener main loop");
   }
+}
 
-  info("Bytecode VM and HostBridge initialized successfully");
+  debug("Bytecode VM and HostBridge initialized successfully");
 #else
   info("Havel language disabled");
 #endif
@@ -460,9 +453,9 @@ void Havel::setupSignalHandling() {
       sigaction(SIGSEGV, &sa, nullptr);
       sigaction(SIGQUIT, &sa, nullptr);
 
-      info("Signal handling initialized - fallback handlers for REPL mode");
-    } else {
-      info("Signal handling initialized - EventListener manages signals");
+  debug("Signal handling initialized - fallback handlers for REPL mode");
+  } else {
+  debug("Signal handling initialized - EventListener manages signals");
     }
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to set up signal handling: " +

@@ -52,7 +52,7 @@ void WindowManager::LoadGroupsFromConfig() {
     }
   }
 
-  info("Loaded {} window groups from config", groups.size());
+  debug("Loaded {} window groups from config", groups.size());
 }
 
 // Initialize the static previousActiveWindow variable

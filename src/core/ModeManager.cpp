@@ -272,7 +272,7 @@ void ModeManager::registerVarChangedHandler() {
             update();
           });
         });
-    info("ModeManager: Registered VAR_CHANGED handler for reactive mode updates");
+    debug("ModeManager: Registered VAR_CHANGED handler for reactive mode updates");
   }
 }
 

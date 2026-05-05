@@ -28,16 +28,16 @@ AudioManager::AudioManager(AudioBackend backend) : currentBackend(backend) {
           backend == AudioBackend::PIPEWIRE ? "PIPEWIRE" :
           backend == AudioBackend::PULSE ? "PULSE" : "ALSA");
     
-    if (backend == AudioBackend::AUTO) {
-        if (initializePipeWire()) {
-            currentBackend = AudioBackend::PIPEWIRE;
-            info("Using PipeWire backend");
-        } else if (initializePulse()) {
-            currentBackend = AudioBackend::PULSE;
-            info("Using PulseAudio backend");
-        } else if (initializeAlsa()) {
-            currentBackend = AudioBackend::ALSA;
-            info("Using ALSA backend");
+  if (backend == AudioBackend::AUTO) {
+    if (initializePipeWire()) {
+      currentBackend = AudioBackend::PIPEWIRE;
+      debug("Using PipeWire backend");
+    } else if (initializePulse()) {
+      currentBackend = AudioBackend::PULSE;
+      debug("Using PulseAudio backend");
+    } else if (initializeAlsa()) {
+      currentBackend = AudioBackend::ALSA;
+      debug("Using ALSA backend");
         } else {
             error("Failed to initialize any audio backend");
             return;
@@ -758,7 +758,7 @@ bool AudioManager::initializePipeWire() {
     // Start the command processing thread
     startPipeWireCommandThread();
 
-    info("PipeWire initialized successfully");
+    debug("PipeWire initialized successfully");
     return true;
 }
 

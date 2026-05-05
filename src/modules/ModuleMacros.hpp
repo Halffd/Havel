@@ -60,14 +60,14 @@ inline thread_local ModuleRegistration* g_currentModule = nullptr;
 
 // End module registration (actually handled by scope guard)
 #define HAVEL_END_MODULE() \
-    do { \
-        if (havel::modules::g_currentModule) { \
-            info("{} module registered with {} functions", \
-                 havel::modules::g_currentModule->name, \
-                 havel::modules::g_currentModule->functionCount); \
-        } \
-        havel::modules::g_currentModule = nullptr; \
-    } while(0)
+do { \
+  if (havel::modules::g_currentModule) { \
+    debug("{} module registered with {} functions", \
+          havel::modules::g_currentModule->name, \
+          havel::modules::g_currentModule->functionCount); \
+  } \
+  havel::modules::g_currentModule = nullptr; \
+} while(0)
 
 namespace detail {
     // RAII guard for module registration

@@ -21,7 +21,7 @@ std::string ConditionalHotkeyManager::currentMode = "default";
 
 ConditionalHotkeyManager::ConditionalHotkeyManager(std::shared_ptr<IO> io)
     : io(io) {
-  info("Initializing ConditionalHotkeyManager (event-driven, no background thread)");
+  debug("Initializing ConditionalHotkeyManager (event-driven, no background thread)");
 }
 
 ConditionalHotkeyManager::~ConditionalHotkeyManager() {
@@ -52,7 +52,7 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
           debug("VAR_CHANGED event - reevaluating hotkey conditions");
           ScheduleReevaluation();
         });
-    info("ConditionalHotkeyManager: Registered VAR_CHANGED handler for reactive hotkey updates");
+    debug("ConditionalHotkeyManager: Registered VAR_CHANGED handler for reactive hotkey updates");
   }
 }
 

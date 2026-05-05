@@ -3954,33 +3954,88 @@ void VM::doTailCall(Value callee_value,
  std::to_string(max_call_depth_) + " reached");
  }
 
- if (callee_value.isCoroutineId()) {
-doCall(callee_value, std::move(args), false);
-return;
-}
+    if (callee_value.isCoroutineId()) {
+        doCall(callee_value, std::move(args), false);
+        return;
+    }
 
-	if (callee_value.isHostFuncId()) {
-		Value result = callHostFunction(callee_value, args);
-		pushStack(result);
-		this->doReturn();
-		return;
-	}
+    if (callee_value.isHostFuncId()) {
+        Value result = callHostFunction(callee_value, args);
+        pushStack(result);
+        this->doReturn();
+        return;
+    }
 
-uint32_t function_index = 0;
-uint32_t closure_id = 0;
-if (callee_value.isFunctionObjId()) {
-function_index = callee_value.asFunctionObjId();
-} else if (callee_value.isClosureId()) {
-closure_id = callee_value.asClosureId();
-auto *closure = heap_.closure(closure_id);
-if (!closure) {
-COMPILER_THROW("Closure not found: " +
-std::to_string(closure_id));
-}
-function_index = closure->function_index;
-} else {
-COMPILER_THROW("TAIL_CALL expects function or closure as callee");
-}
+    // Handle callable objects (Lua-style __call / op_call)
+    if (callee_value.isObjectId()) {
+        auto *obj = heap_.object(callee_value.asObjectId());
+        if (obj) {
+            Value callFn = Value::makeNull();
+            auto* search = obj;
+            while (search) {
+                auto* val = search->get("__call");
+                if (!val) val = search->get("op_call");
+                if (val) {
+                    callFn = *val;
+                    break;
+                }
+                auto* parentVal = search->get("__proto");
+                if (!parentVal) parentVal = search->get("__class");
+                if (!parentVal) parentVal = search->get("__parent");
+                if (parentVal && parentVal->isObjectId()) {
+                    search = heap_.object(parentVal->asObjectId());
+                } else {
+                    break;
+                }
+            }
+            if (!callFn.isNull() && (callFn.isFunctionObjId() || callFn.isClosureId() || callFn.isHostFuncId())) {
+                std::vector<Value> callArgs;
+                callArgs.push_back(callee_value);
+                callArgs.insert(callArgs.end(), args.begin(), args.end());
+                doCall(callFn, std::move(callArgs), false);
+                this->doReturn();
+                return;
+            }
+            // Handle bound method objects
+            auto fnIt = obj->find("fn");
+            auto selfIt = obj->find("self");
+            if (fnIt != obj->end() && selfIt != obj->end() &&
+                (fnIt->second.isHostFuncId() || fnIt->second.isFunctionObjId() || fnIt->second.isClosureId())) {
+                std::vector<Value> boundArgs;
+                boundArgs.push_back(selfIt->second);
+                boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+                doCall(fnIt->second, std::move(boundArgs), false);
+                this->doReturn();
+                return;
+            }
+        }
+        COMPILER_THROW("TAIL_CALL: object is not callable");
+    }
+
+    uint32_t function_index = 0;
+    uint32_t closure_id = 0;
+    if (callee_value.isFunctionObjId()) {
+        function_index = callee_value.asFunctionObjId();
+    } else if (callee_value.isClosureId()) {
+        closure_id = callee_value.asClosureId();
+        auto *closure = heap_.closure(closure_id);
+        if (!closure) {
+            COMPILER_THROW("Closure not found: " +
+                           std::to_string(closure_id));
+        }
+        function_index = closure->function_index;
+    } else {
+        std::string typeInfo = "unknown";
+        if (callee_value.isNull()) typeInfo = "null";
+        else if (callee_value.isInt()) typeInfo = "int";
+        else if (callee_value.isDouble()) typeInfo = "double";
+        else if (callee_value.isBool()) typeInfo = "bool";
+        else if (callee_value.isStringValId()) typeInfo = "string_val_id";
+        else if (callee_value.isStringId()) typeInfo = "string_id";
+        else if (callee_value.isArrayId()) typeInfo = "array_id";
+        else if (callee_value.isEnumId()) typeInfo = "enum_id";
+        COMPILER_THROW("TAIL_CALL expects function, closure, or callable object as callee (got " + typeInfo + ")");
+    }
 
   if (!current_chunk) {
     COMPILER_THROW("No chunk available for tail call");
@@ -5030,25 +5085,47 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
-  case OpCode::STORE_GLOBAL: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
-      COMPILER_THROW("STORE_GLOBAL expects string operand");
-    }
-    // Get the string from the function's string table
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    std::string name;
-    if (current_chunk) {
-      name = current_chunk->getString(strIndex);
-    } else {
-      name = "<unknown:" + std::to_string(strIndex) + ">";
-    }
-Value value = popStack();
+case OpCode::STORE_GLOBAL: {
+        if (instruction.operands.empty() ||
+            !instruction.operands[0].isStringValId()) {
+            COMPILER_THROW("STORE_GLOBAL expects string operand");
+        }
+        uint32_t strIndex = instruction.operands[0].asStringValId();
+        std::string name;
+        if (current_chunk) {
+            name = current_chunk->getString(strIndex);
+        } else {
+            name = "<unknown:" + std::to_string(strIndex) + ">";
+        }
+        Value value = popStack();
 
-	globals[name] = value;
-	emitVariableChanged(name);
-	break;
-}
+        if (immutable_globals_.count(name)) {
+            COMPILER_THROW("Cannot reassign val global: " + name);
+        }
+        globals[name] = value;
+        emitVariableChanged(name);
+        break;
+    }
+
+    case OpCode::STORE_IMMUT_GLOBAL: {
+        if (instruction.operands.empty() ||
+            !instruction.operands[0].isStringValId()) {
+            COMPILER_THROW("STORE_IMMUT_GLOBAL expects string operand");
+        }
+        uint32_t strIndex = instruction.operands[0].asStringValId();
+        std::string name;
+        if (current_chunk) {
+            name = current_chunk->getString(strIndex);
+        } else {
+            name = "<unknown:" + std::to_string(strIndex) + ">";
+        }
+        Value value = popStack();
+
+        immutable_globals_.insert(name);
+        globals[name] = value;
+        emitVariableChanged(name);
+        break;
+    }
 
   case OpCode::LOAD_VAR: {
     uint32_t var_index = instruction.operands[0].asInt();
@@ -5071,26 +5148,53 @@ Value value = popStack();
     break;
   }
 
-  case OpCode::STORE_VAR: {
-    uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value value = popStack();
+case OpCode::STORE_VAR: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = this->toAbsoluteLocal(var_index);
+        this->ensureLocalIndex(abs);
+        Value value = popStack();
 
-    // Record feedback
-    auto &frame = currentFrame();
-    if (frame.ip < frame.function->type_feedback.size()) {
-      auto &fb = frame.function->type_feedback[frame.ip];
-      fb.execution_count++;
-      fb.left_type_mask |= getFeedbackMask(value);
-      if (fb.execution_count == 1000 && hot_func_cb_) {
-        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
-      }
+        if (immutable_locals_.count(abs)) {
+            COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
+        }
+
+        // Record feedback
+        auto &frame = currentFrame();
+        if (frame.ip < frame.function->type_feedback.size()) {
+            auto &fb = frame.function->type_feedback[frame.ip];
+            fb.execution_count++;
+            fb.left_type_mask |= getFeedbackMask(value);
+            if (fb.execution_count == 1000 && hot_func_cb_) {
+                hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+            }
+        }
+
+        locals[abs] = value;
+        break;
     }
 
-    locals[abs] = value;
-    break;
-  }
+    case OpCode::STORE_IMMUT_VAR: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = this->toAbsoluteLocal(var_index);
+        this->ensureLocalIndex(abs);
+        Value value = popStack();
+
+        immutable_locals_.insert(abs);
+
+        // Record feedback
+        auto &frame = currentFrame();
+        if (frame.ip < frame.function->type_feedback.size()) {
+            auto &fb = frame.function->type_feedback[frame.ip];
+            fb.execution_count++;
+            fb.left_type_mask |= getFeedbackMask(value);
+            if (fb.execution_count == 1000 && hot_func_cb_) {
+                hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+            }
+        }
+
+        locals[abs] = value;
+        break;
+    }
 
     // Increment/Decrement local variable optimization
     case OpCode::INCLOCAL: {
@@ -6193,29 +6297,19 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       if (array->frozen) {
         COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
-      // Handle negative indices for ARRAY_SET
-      int64_t idx = *index;
-      if (idx < 0) {
-        size_t shift = static_cast<size_t>(-idx);
-        size_t old_size = array->size();
-        // Create a copy of the old data before resize
-        std::vector<Value> old_data(old_size);
-        for (size_t i = 0; i < old_size; i++) {
-          old_data[i] = (*array)[i];
-        }
-        array->resize(old_size + shift, Value::makeNull());
-        // Shift old data to the right by 'shift' positions
-        for (size_t i = 0; i < old_size; i++) {
-          (*array)[i + shift] = old_data[i];
-        }
-        (*array)[0] = value;
-        break;
-      }
-      const auto idx_size = static_cast<size_t>(idx);
-      if (idx_size >= array->size()) {
-        array->resize(idx_size + 1, Value::makeNull());
-      }
-      (*array)[idx_size] = value;
+  // Handle negative indices for ARRAY_SET: -1 = last element, -2 = second to last
+  int64_t idx = *index;
+  if (idx < 0) {
+    idx = static_cast<int64_t>(array->size()) + idx;
+    if (idx < 0) {
+      COMPILER_THROW("ARRAY_SET index out of bounds: " + std::to_string(*index));
+    }
+  }
+  const auto idx_size = static_cast<size_t>(idx);
+  if (idx_size >= array->size()) {
+    array->resize(idx_size + 1, Value::makeNull());
+  }
+  (*array)[idx_size] = value;
       break;
     }
 
@@ -8488,39 +8582,69 @@ void VM::VMExecutionContext::executeInstructionInContext(
     break;
   }
 
-  case OpCode::STORE_GLOBAL: {
-    // Get the string from the function's string table
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
-    std::string name;
-    if (current_chunk) {
-      name = current_chunk->getString(strIndex);
-    } else {
-      name = "<unknown:" + std::to_string(strIndex) + ">";
+    case OpCode::STORE_GLOBAL: {
+        // Get the string from the function's string table
+        uint32_t strIndex = instruction.operands[0].asStringValId();
+        std::string name;
+        if (current_chunk) {
+            name = current_chunk->getString(strIndex);
+        } else {
+            name = "<unknown:" + std::to_string(strIndex) + ">";
+        }
+        if (parent_vm_->immutable_globals_.count(name)) {
+            COMPILER_THROW("Cannot reassign val global: " + name);
+        }
+        Value value = pop();
+        parent_vm_->setGlobalThreadSafe(name, std::move(value));
+        parent_vm_->emitVariableChanged(name);
+        break;
     }
-	Value value = pop();
-	parent_vm_->setGlobalThreadSafe(name, std::move(value));
-	parent_vm_->emitVariableChanged(name);
-	break;
-	}
 
-  case OpCode::LOAD_VAR: {
-    uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = toAbsoluteLocal(var_index);
-    ensureLocalIndex(abs);
-    push(locals[abs]);
-    break;
-  }
+    case OpCode::STORE_IMMUT_GLOBAL: {
+        uint32_t strIndex = instruction.operands[0].asStringValId();
+        std::string name;
+        if (current_chunk) {
+            name = current_chunk->getString(strIndex);
+        } else {
+            name = "<unknown:" + std::to_string(strIndex) + ">";
+        }
+        Value value = pop();
+        parent_vm_->immutable_globals_.insert(name);
+        parent_vm_->setGlobalThreadSafe(name, std::move(value));
+        parent_vm_->emitVariableChanged(name);
+        break;
+    }
 
-  case OpCode::STORE_VAR: {
-    uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = toAbsoluteLocal(var_index);
-    ensureLocalIndex(abs);
-    locals[abs] = pop();
-    break;
-  }
+    case OpCode::LOAD_VAR: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = toAbsoluteLocal(var_index);
+        ensureLocalIndex(abs);
+        push(locals[abs]);
+        break;
+    }
 
-  case OpCode::LOAD_UPVALUE: {
+    case OpCode::STORE_VAR: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = toAbsoluteLocal(var_index);
+        ensureLocalIndex(abs);
+        if (immutable_locals_.count(abs)) {
+            COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
+        }
+        locals[abs] = pop();
+        break;
+    }
+
+    case OpCode::STORE_IMMUT_VAR: {
+        uint32_t var_index = instruction.operands[0].asInt();
+        uint32_t abs = toAbsoluteLocal(var_index);
+        ensureLocalIndex(abs);
+        Value value = pop();
+        immutable_locals_.insert(abs);
+        locals[abs] = value;
+        break;
+    }
+
+    case OpCode::LOAD_UPVALUE: {
     uint32_t upvalue_index = instruction.operands[0].asInt();
     uint32_t closure_id = currentFrame().closure_id;
     auto *closure = parent_vm_->heap_.closure(closure_id);
@@ -8689,8 +8813,10 @@ const auto &cell = closure->upvalues[upvalue_index];
       Value left = pop();
       int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
       int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-      if (r == 0)
-        throw ScriptThrow{Value("Division by zero")};
+        if (r == 0) {
+            auto ref = parent_vm_->heap_.allocateString("Division by zero");
+            throw ScriptThrow{Value::makeStringId(ref.id)};
+        }
       push(l % r); // C-style: sign follows dividend
       break;
     }

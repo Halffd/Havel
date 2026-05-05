@@ -165,7 +165,7 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     auto fsService = std::make_shared<host::FileSystemService>();
     registry.registerService<host::FileSystemService>(fsService);
 
-    info("ServiceRegistry initialized with {} services", registry.size());
+    debug("ServiceRegistry initialized with {} services", registry.size());
 }
 
 /**

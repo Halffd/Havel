@@ -134,7 +134,7 @@ const Mapping *Profile::FindMapping(const std::string &sourceKey) const {
 // MapManager Implementation
 // ============================================================================
 
-MapManager::MapManager(IO *io) : io(io) { havel::info("MapManager initialized"); }
+MapManager::MapManager(IO *io) : io(io) { havel::debug("MapManager initialized"); }
 
 MapManager::~MapManager() { ClearAllMappings(); }
 

@@ -415,8 +415,12 @@ case TokenType::Nullish:
       return 55;
 
     // 'not' as infix for 'not in' - slightly lower than 'in' so 'not' binds to 'in'
+    // Only return infix BP when followed by 'in', otherwise 'not' is prefix-only
     case TokenType::Not:
-      return 52;
+        if (at(1).type == TokenType::In) {
+            return 52;
+        }
+        return 0;
 
     // Comparison
     case TokenType::Less:
@@ -756,17 +760,22 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
     }
   }
   
-  // Implicit call sugar: expr "string" -> expr("string")
-  // This handles function calls without parentheses like: print "hello"
-  // Also handles: print a ** 5 -> print(a ** 5)
+    // Implicit call sugar: expr "string" -> expr("string")
+    // This handles function calls without parentheses like: print "hello"
+    // Also handles: print a ** 5 -> print(a ** 5)
+    // Also handles prefix operators: print @id, print !x, print #x
     if (context.allowBraceSugar &&
-(at().type == TokenType::String ||
-at().type == TokenType::MultilineString ||
-at().type == TokenType::RegexString ||
-at().type == TokenType::Number ||
+        (at().type == TokenType::String ||
+         at().type == TokenType::MultilineString ||
+         at().type == TokenType::RegexString ||
+         at().type == TokenType::Number ||
          at().type == TokenType::Identifier ||
          at().type == TokenType::InterpolatedString ||
-         at().type == TokenType::InterpolatedBacktick)) {
+         at().type == TokenType::InterpolatedBacktick ||
+         at().type == TokenType::At ||
+         at().type == TokenType::AtAt ||
+         at().type == TokenType::Not ||
+         at().type == TokenType::Length)) {
     Token arg_token = at();
     // Parse argument as full expression (with operators), but disable nested implicit calls
     // to prevent infinite recursion and ensure operators like ** bind tighter than the call
@@ -9157,16 +9166,20 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       }
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
                                                           std::move(args));
-    } else if ((at().type == havel::TokenType::String ||
-                at().type == havel::TokenType::MultilineString ||
-                at().type == havel::TokenType::Number ||
-                at().type == havel::TokenType::Identifier ||
-                at().type == havel::TokenType::InterpolatedString) &&
-               context.allowBraceSugar) {
-      // Implicit call: expression followed by a literal (e.g., variable
-      // "Hello")
-      // Only allowed when brace call sugar is enabled
-      auto arg = parsePrimaryExpression();
+} else if ((at().type == havel::TokenType::String ||
+               at().type == havel::TokenType::MultilineString ||
+               at().type == havel::TokenType::Number ||
+               at().type == havel::TokenType::Identifier ||
+               at().type == havel::TokenType::InterpolatedString ||
+               at().type == havel::TokenType::At ||
+               at().type == havel::TokenType::AtAt ||
+               at().type == havel::TokenType::Not ||
+               at().type == havel::TokenType::Length) &&
+              context.allowBraceSugar) {
+            // Implicit call: expression followed by a literal or prefix
+            // operator (e.g., print "Hello", print @id, print !x)
+            // Only allowed when brace call sugar is enabled
+            auto arg = parseUnary();
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(arg));
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),

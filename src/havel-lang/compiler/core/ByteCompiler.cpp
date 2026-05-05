@@ -430,14 +430,16 @@ void ByteCompiler::emit(OpCode op, Value operand) {
 }
 
 void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
-  if (!current_function) {
-    COMPILER_THROW(
-        "Attempted to emit bytecode without active function");
-  }
-  current_function->instructions.emplace_back(op, std::move(operands));
-  current_function->instruction_locations.push_back(
-      current_source_location_.value_or(SourceLocation{}));
-}
+ if (!current_function) {
+ COMPILER_THROW(
+ "Attempted to emit bytecode without active function");
+ }
+ current_function->instructions.emplace_back(op, std::move(operands));
+ current_function->instruction_locations.push_back(
+ current_source_location_.value_or(SourceLocation{}));
+ auto &instr = current_function->instructions.back();
+ instr.location = current_source_location_;
+ }
 
 uint32_t ByteCompiler::addConstant(const Value &value) {
   if (!current_function) {
@@ -5469,7 +5471,7 @@ void ByteCompiler::leaveFunction() {
   // Phase 4 JIT: Initialize type feedback for all instructions
   current_function->type_feedback.resize(current_function->instructions.size());
 
-  current_function->local_count = next_local_index;
+  current_function->local_count = std::max(next_local_index, current_function->param_count);
   if (current_function_slot_.has_value()) {
     const uint32_t slot = *current_function_slot_;
     if (slot >= compiled_functions.size()) {
@@ -5621,105 +5623,64 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
     }
 
-    leaveFunction();
-    
-    // Store hotkey_action to globals so it can be loaded at runtime
-    {
-      uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(
-               static_cast<uint32_t>(compiled_functions.size() - 1))));
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-    }
+  leaveFunction();
 
-    // Create a wrapper that injects the @ context
-    // This wrapper receives the hotkey context as first parameter and passes it
-    // to the action
-    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
-    enterFunction(std::move(hotkeyWrapperFn));
-    next_local_index = 1; // Account for the hotkey context parameter
+  uint32_t actionFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
 
-    // If there's a condition expression, compile and check it first
-    uint32_t skipActionJump = 0;
-    if (binding.conditionExpr) {
-      // Compile the condition expression
-      compileExpression(*binding.conditionExpr);
+  BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
+  enterFunction(std::move(hotkeyWrapperFn));
+  next_local_index = 1;
 
-      // If condition is false, skip the action
-      skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
-
-      // Pop the condition result (we don't need it anymore)
-      emit(OpCode::POP);
-    }
-
-    // Use the passed hotkey context (parameter 0)
-    emit(OpCode::LOAD_VAR, 0);
-
-    // Store hotkey context as 'this' so @field/@directive works in hotkey blocks
-    {
-      uint32_t strId = addStringConstant("this");
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-      // Reload 'this' for the CALL (STORE_GLOBAL consumes the value)
-      uint32_t strId2 = addStringConstant("this");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
-    }
-
-    // Call the action with @ context as parameter
-    {
-      uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
-    emit(OpCode::SWAP);
-    emit(OpCode::CALL, static_cast<uint32_t>(1)); // Call with 1 arg (@ context)
-
-    // Pop the result (action result)
+  uint32_t skipActionJump = 0;
+  if (binding.conditionExpr) {
+    compileExpression(*binding.conditionExpr);
+    skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
     emit(OpCode::POP);
+  }
 
-    // If we had a condition, patch the skip jump to here
-    if (binding.conditionExpr && skipActionJump > 0) {
-      patchJump(skipActionJump,
-                static_cast<uint32_t>(current_function->instructions.size()));
-    }
+  emit(OpCode::LOAD_VAR, 0);
 
-    leaveFunction();
-    
-    // Store hotkey_wrapper to globals so it can be loaded at runtime
-    {
-      uint32_t strId = addStringConstant("hotkey_wrapper");
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(
-               static_cast<uint32_t>(compiled_functions.size() - 1))));
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-    }
+  {
+    uint32_t strId = addStringConstant("this");
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    uint32_t strId2 = addStringConstant("this");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
+  }
 
-// Register the hotkey with the wrapper function
-    if (when_condition_func_index_.has_value()) {
-        // Inside a when block: register as conditional hotkey
-        uint32_t strId = addStringConstant("hotkey.register_conditional");
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-        compileExpression(*hotkeyExpr);
-        {
-            uint32_t wId = addStringConstant("hotkey_wrapper");
-            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(wId));
-        }
-        // Push the condition function reference from the enclosing when block
-        emit(OpCode::LOAD_CONST,
-            addConstant(Value::makeFunctionObjId(*when_condition_func_index_)));
-        // Call hotkey.register_conditional(key, wrapper, condition_func)
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
-    } else {
-        // Normal hotkey registration
-        uint32_t strId = addStringConstant("hotkey.register");
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-        compileExpression(*hotkeyExpr);
-        {
-            uint32_t wId = addStringConstant("hotkey_wrapper");
-            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(wId));
-        }
-        // Call hotkey.register with (hotkey_string, wrapper_function)
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-    }
-    emit(OpCode::POP);
+  emit(OpCode::LOAD_CONST,
+       addConstant(Value::makeFunctionObjId(actionFuncIndex)));
+  emit(OpCode::SWAP);
+  emit(OpCode::CALL, static_cast<uint32_t>(1));
+
+  emit(OpCode::POP);
+
+  if (binding.conditionExpr && skipActionJump > 0) {
+    patchJump(skipActionJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+  }
+
+  leaveFunction();
+
+  uint32_t wrapperFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+
+  if (when_condition_func_index_.has_value()) {
+    uint32_t strId = addStringConstant("hotkey.register_conditional");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    compileExpression(*hotkeyExpr);
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(*when_condition_func_index_)));
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+  } else {
+    uint32_t strId = addStringConstant("hotkey.register");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    compileExpression(*hotkeyExpr);
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+  }
+  emit(OpCode::POP);
   }
 }
 
@@ -5756,88 +5717,63 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
     }
 
-    leaveFunction();
+  leaveFunction();
 
-    // Store hotkey_action to globals
-    {
-      uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(
-               static_cast<uint32_t>(compiled_functions.size() - 1))));
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-    }
+  uint32_t actionFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
 
-    // Create wrapper
-    BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
-    enterFunction(std::move(hotkeyWrapperFn));
-    next_local_index = 1; // Account for the hotkey context parameter
+  BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
+  enterFunction(std::move(hotkeyWrapperFn));
+  next_local_index = 1;
 
-    uint32_t skipActionJump = 0;
-    if (binding.conditionExpr) {
-      compileExpression(*binding.conditionExpr);
-      skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
-      emit(OpCode::POP);
-    }
-
-    // Use the passed hotkey context (parameter 0)
-    emit(OpCode::LOAD_VAR, 0);
-
-    // Store as 'this' for @field/@directive access
-    {
-      uint32_t strId = addStringConstant("this");
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-      uint32_t strId2 = addStringConstant("this");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
-    }
-
-    // Call action with @ context
-    {
-      uint32_t strId = addStringConstant("hotkey_action");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
-    emit(OpCode::SWAP);
-    emit(OpCode::CALL, static_cast<uint32_t>(1));
+  uint32_t skipActionJump = 0;
+  if (binding.conditionExpr) {
+    compileExpression(*binding.conditionExpr);
+    skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
     emit(OpCode::POP);
+  }
 
-    if (binding.conditionExpr && skipActionJump > 0) {
-      patchJump(skipActionJump,
-                static_cast<uint32_t>(current_function->instructions.size()));
-    }
+  emit(OpCode::LOAD_VAR, 0);
 
-    leaveFunction();
+  {
+    uint32_t strId = addStringConstant("this");
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    uint32_t strId2 = addStringConstant("this");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
+  }
 
-    // Store wrapper to globals
-    {
-      uint32_t strId = addStringConstant("hotkey_wrapper");
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(
-               static_cast<uint32_t>(compiled_functions.size() - 1))));
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-    }
+  emit(OpCode::LOAD_CONST,
+       addConstant(Value::makeFunctionObjId(actionFuncIndex)));
+  emit(OpCode::SWAP);
+  emit(OpCode::CALL, static_cast<uint32_t>(1));
+  emit(OpCode::POP);
 
-// Register the hotkey - result (context object) stays on stack
-    if (when_condition_func_index_.has_value()) {
-        uint32_t strId = addStringConstant("hotkey.register_conditional");
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-        compileExpression(*hotkeyExpr);
-        {
-            uint32_t wId = addStringConstant("hotkey_wrapper");
-            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(wId));
-        }
-        emit(OpCode::LOAD_CONST,
-            addConstant(Value::makeFunctionObjId(*when_condition_func_index_)));
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
-    } else {
-        uint32_t strId = addStringConstant("hotkey.register");
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-        compileExpression(*hotkeyExpr);
-        {
-            uint32_t wId = addStringConstant("hotkey_wrapper");
-            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(wId));
-        }
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-    }
- // DON'T POP - leave context object on stack for assignment
+  if (binding.conditionExpr && skipActionJump > 0) {
+    patchJump(skipActionJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+  }
+
+  leaveFunction();
+
+  uint32_t wrapperFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+
+  if (when_condition_func_index_.has_value()) {
+    uint32_t strId = addStringConstant("hotkey.register_conditional");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    compileExpression(*hotkeyExpr);
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(*when_condition_func_index_)));
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+  } else {
+    uint32_t strId = addStringConstant("hotkey.register");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    compileExpression(*hotkeyExpr);
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+  }
+  // DON'T POP - leave context object on stack for assignment
   }
 }
 

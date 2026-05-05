@@ -430,26 +430,29 @@ std::string BytecodeDisassembler::disassembleFunction(
 }
 
 std::string BytecodeDisassembler::disassembleInstruction(
-    const Instruction& instr,
-    uint32_t index,
-    const Options& options) const {
-  (void)index;
-  std::stringstream ss;
+ const Instruction& instr, uint32_t index, const Options& options) const {
+ (void)index;
+ std::stringstream ss;
 
-  ss << "  " << std::left << std::setw(15) << opcodeToString(instr.opcode);
+ ss << " " << std::left << std::setw(15) << opcodeToString(instr.opcode);
 
-  for (const auto& operand : instr.operands) {
-    ss << " " << operandToString(operand);
-  }
+ for (const auto& operand : instr.operands) {
+ ss << " ";
+ if (operand.isStringValId()) {
+ ss << "str[" << operand.asStringValId() << "]=\"" << chunk_.getString(operand.asStringValId()) << "\"";
+ } else {
+ ss << operandToString(operand);
+ }
+ }
 
-  if (options.showSourceLocations && instr.location) {
-    ss << "  ; " << instr.location->line << ":" << instr.location->column;
-  }
+ if (options.showSourceLocations && instr.location) {
+ ss << " ; " << instr.location->line << ":" << instr.location->column;
+ }
 
-  return ss.str();
-}
+ return ss.str();
+ }
 
-std::string BytecodeDisassembler::disassembleConstantPool() const {
+ std::string BytecodeDisassembler::disassembleConstantPool() const {
   std::stringstream ss;
   ss << "=== Constant Pool ===\n";
   ss << "(Constants are now function-level)\n";

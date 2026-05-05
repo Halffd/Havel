@@ -758,7 +758,6 @@ bool AudioManager::initializePipeWire() {
     // Start the command processing thread
     startPipeWireCommandThread();
 
-    debug("PipeWire initialized successfully");
     return true;
 }
 
@@ -856,8 +855,7 @@ bool AudioManager::initializePulse() {
         }
         pa_threaded_mainloop_wait(pa_mainloop);
     }
-    pa_threaded_mainloop_unlock(pa_mainloop);
-    info("PulseAudio initialized successfully");
+    pa_threaded_mainloop_unlock(pa_
     return true;
 }
 #else
@@ -894,7 +892,6 @@ bool AudioManager::initializeAlsa() {
         snd_mixer_close(alsa_mixer);
         return false;
     }
-    info("ALSA initialized successfully");
     return true;
 }
 

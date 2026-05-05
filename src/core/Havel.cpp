@@ -126,7 +126,6 @@ void Havel::initialize(bool isStartup) {
   if (!networkManager) {
     throw std::runtime_error("Failed to create NetworkManager");
   }
-  debug("NetworkManager initialized successfully");
 
 #ifdef ENABLE_HAVEL_LANG
   debug("Initializing bytecode VM and HostBridge...");
@@ -295,8 +294,6 @@ hostBridge->install();
     }
   }
 
-  debug("Scheduler and ExecutionEngine initialized");
-
   // Set HostBridge pointer on EventListener for timer checking
   if (io && io->GetEventListener()) {
   io->GetEventListener()->setHostBridge(hostBridge.get());
@@ -305,14 +302,9 @@ hostBridge->install();
     debug("ExecutionEngine integrated into EventListener main loop");
   }
 }
-
-  debug("Bytecode VM and HostBridge initialized successfully");
 #else
   info("Havel language disabled");
 #endif
-
-  info("Havel initialized successfully");
-
   if (WindowManagerDetector::IsX11()) {
     Display *display = DisplayManager::GetDisplay();
     if (!display) {

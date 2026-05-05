@@ -226,7 +226,99 @@ private:
                         const HostContext *ctx);
   static Value
   handleWindowMoveObj(const std::vector<Value> &args,
-                      const HostContext *ctx);
+                                             const HostContext *ctx);
+  // Additional window operations
+  static Value
+  handleWindowRestore(const std::vector<Value> &args,
+                                             const HostContext *ctx);
+  static Value
+  handleWindowSnap(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+  static Value
+  handleWindowCenter(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+  static Value
+  handleWindowFullscreen(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value
+  handleWindowMoveResize(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value
+  handleWindowSetAlwaysOnTop(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value handleWindowPos(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+  static Value
+  handleWindowList(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+  static Value
+  handleWindowTitle(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value
+  handleWindowClass(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value handleWindowExe(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+  static Value handleWindowPid(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+  static Value handleWindowId(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+  static Value handleWindowArea(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value handleWindowEach(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value handleWindowSort(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  // Object-method variants for new operations
+  static Value
+  handleWindowRestoreObj(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value
+  handleWindowSnapObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value
+  handleWindowCenterObj(const std::vector<Value> &args,
+                                          const HostContext *ctx);
+  static Value
+  handleWindowFullscreenObj(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value
+  handleWindowMoveResizeObj(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value
+  handleWindowSetAlwaysOnTopObj(const std::vector<Value> &args,
+                                              const HostContext *ctx);
+  static Value
+  handleWindowPosObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value
+  handleWindowTitleObj(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+  static Value
+  handleWindowClassObj(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+  static Value
+  handleWindowExeObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value
+  handleWindowPidObj(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  // Group operations
+  static Value
+  handleGroupAdd(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+  static Value
+  handleGroupRemove(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+  static Value
+  handleGroupGet(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+  static Value
+  handleGroupList(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+  static Value
+  handleGroupFind(const std::vector<Value> &args,
+                                         const HostContext *ctx);
   // Clipboard operations
   static Value
   handleClipboardGet(const std::vector<Value> &args,
@@ -676,6 +768,21 @@ private:
   static Value
   handleGetMonitorsArea(const std::vector<Value> &args,
                         const HostContext *ctx);
+  static Value handleIsX11(const std::vector<Value> &args,
+                           const HostContext *ctx);
+  static Value handleIsWayland(const std::vector<Value> &args,
+                               const HostContext *ctx);
+  static Value handleIsWindows(const std::vector<Value> &args,
+                               const HostContext *ctx);
+  static Value handleProtocol(const std::vector<Value> &args,
+                              const HostContext *ctx);
+  static Value handleWm(const std::vector<Value> &args,
+                        const HostContext *ctx);
+  static Value handleDisplayNum(const std::vector<Value> &args,
+                                const HostContext *ctx);
+  static Value
+  handleMonitorsResolution(const std::vector<Value> &args,
+                           const HostContext *ctx);
 };
 
 /**

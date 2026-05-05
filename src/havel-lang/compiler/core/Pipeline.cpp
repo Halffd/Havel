@@ -562,20 +562,20 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
     for (size_t i = 0; i < function.instructions.size(); ++i) {
       out << "  " << i << ": "
           << opcodeName(function.instructions[i].opcode);
-      for (size_t j = 0; j < function.instructions[i].operands.size(); ++j) {
-        out << (j == 0 ? " " : ", ")
-            << formatValue(function.instructions[i].operands[j]);
-      }
-      if (i < function.instruction_locations.size()) {
-        const auto &location = function.instruction_locations[i];
-        out << "    @";
-        if (location.line == 0 && location.column == 0) {
-          out << "?";
-        } else {
-          out << location.line << ":" << location.column;
-        }
-      }
-      out << "\n";
+ for (size_t j = 0; j < function.instructions[i].operands.size(); ++j) {
+ const auto &op = function.instructions[i].operands[j];
+ out << (j == 0 ? " " : ", ");
+ if (op.isStringValId()) {
+ out << "str[" << op.asStringValId() << "]=\"" << chunk.getString(op.asStringValId()) << "\"";
+ } else {
+ out << formatValue(op);
+ }
+ }
+ if (function.instructions[i].location) {
+ const auto &loc = *function.instructions[i].location;
+ out << " @" << loc.line << ":" << loc.column;
+ }
+ out << "\n";
     }
 
     if (!function.constants.empty()) {

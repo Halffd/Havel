@@ -16,8 +16,6 @@ namespace modules {
 
 // Module implementation - all in one file
 REGISTER_MODULE("singleFileMath", [](compiler::VMApi& api) {
-    debug("Registering single-file math module...");
-    
     // Basic arithmetic
     api.registerFunction("math.add", [](const std::vector<compiler::Value>& args) {
         if (args.size() < 2) return compiler::Value::makeInt(0);
@@ -60,8 +58,6 @@ REGISTER_MODULE("singleFileMath", [](compiler::VMApi& api) {
 
 // Priority-ordered module example
 REGISTER_MODULE_PRIORITY("singleFileUtils", 100, [](compiler::VMApi& api) {
-    debug("Registering single-file utils module (priority 100)...");
-    
     api.registerFunction("utils.identity", [](const std::vector<compiler::Value>& args) {
         return args.empty() ? compiler::Value::makeNull() : args[0];
     });

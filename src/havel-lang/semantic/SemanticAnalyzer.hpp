@@ -149,21 +149,21 @@ public:
     TypeRegistry& getTypeRegistry() { return TypeRegistry::getInstance(); }
     
     // =========================================================================
-    // Phase 1: Type Registration
+    
     // =========================================================================
     void registerStructTypes(const ast::Program& program);
     void registerEnumTypes(const ast::Program& program);
     void registerTraitTypes(const ast::Program& program);
     
     // =========================================================================
-    // Phase 2: Symbol Table Construction
+    
     // =========================================================================
     void buildSymbolTable(const ast::Program& program);
     void visitStatement(const ast::Statement& stmt);
     void visitExpression(const ast::Expression& expr);
     
     // =========================================================================
-    // Phase 3: Type Checking
+    
     // =========================================================================
     void checkTypes(const ast::Program& program);
     std::shared_ptr<HavelType> inferType(const ast::Expression& expr);
@@ -173,7 +173,7 @@ public:
         size_t line, size_t column);
     
     // =========================================================================
-    // Phase 4: Semantic Validation
+    
     // =========================================================================
     void validateAssignments(const ast::Program& program);
     void validateFunctionCalls(const ast::Program& program);

@@ -255,7 +255,7 @@ void ModeManager::update(ExprEvaluator evaluator) {
 }
 
 void ModeManager::registerVarChangedHandler() {
-  // Phase 2G: Register to react to variable changes
+  
   // When a global variable changes, reevaluate all mode conditions
   // This enables event-driven mode condition checking
   if (eventQueue_) {

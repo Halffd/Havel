@@ -54,9 +54,6 @@ private:
     std::unordered_map<std::string, ModuleInfo> modules_;
 };
 
-/**
- * Helper macro for registering modules
- */
 #define REGISTER_HOST_MODULE(Name, InitFunc, Desc, AutoLoad) \
     namespace { \
         struct Name##ModuleRegistrar { \

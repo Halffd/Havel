@@ -2778,7 +2778,7 @@ bool success = ctx->hotkeyManager->AddHotkey(
       return;
     }
     case ExecutorMode::Scheduler: {
-      // Phase 3: "Smart" scheduler mode spawns a real goroutine
+      
       // This allows the hotkey to run concurrently and use async operations (like sleep)
       // without blocking the main event loop.
       if (vm && eventQueue) {

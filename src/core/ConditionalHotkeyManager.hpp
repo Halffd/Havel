@@ -25,7 +25,7 @@ namespace compiler {
 class EventQueue;
 class ExecutionEngine;
 class VM;
-class Scheduler;  // Phase 2I: Forward declaration for scheduler_ member
+class Scheduler;  
 }
 
 /**
@@ -50,7 +50,7 @@ struct ConditionalHotkey {
   bool monitoringEnabled = true;
   bool async = false;  // Execute action asynchronously via Scheduler/Fiber
 
-  // Phase 2F: Reactive watcher integration
+  
   uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
 };
 
@@ -113,13 +113,13 @@ public:
   // Set the event queue for scheduling reevaluation
   void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
   
-  // Phase 2G: Register for VAR_CHANGED events to trigger reactive hotkey reevaluation
+  
   void registerVarChangedHandler();
   
-  // Phase 2F: Set the execution engine for reactive watcher integration
+  
   // Allows hotkey conditions to be registered as watchers
   void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }  
-  // Phase 2H: Set condition compiler for bytecode-based conditions
+  
   void setConditionCompiler(class HotkeyConditionCompiler* compiler) { 
     conditionCompiler_ = compiler;
   }
@@ -155,7 +155,7 @@ public:
     conditionEvaluator = evaluator;
   }
 
-  // Set bytecode VM for condition compilation (Phase 2H)
+  
   void setBytecodeVM(compiler::VM* vm) { bytecodeVM_ = vm; }
 
   // Set gaming mode checker
@@ -169,7 +169,7 @@ public:
   // Set window monitor for efficient window info caching
   void setWindowMonitor(std::shared_ptr<WindowMonitor> monitor) { windowMonitor = monitor; }
 
-  // Phase 2I: Set scheduler for wrapping hotkey actions in Fibers
+  
   void setScheduler(class compiler::Scheduler* sched) { scheduler_ = sched; }
 
   // Debug options
@@ -190,16 +190,16 @@ private:
   // Event queue for scheduling reevaluation from any thread
   compiler::EventQueue* eventQueue_ = nullptr;
   
-  // Phase 2F: Execution engine for reactive watcher integration
+  
   compiler::ExecutionEngine* executionEngine_ = nullptr;
   
-  // Phase 2I: Scheduler for wrapping hotkey actions in Fibers
+  
   class compiler::Scheduler* scheduler_ = nullptr;
   
-  // Phase 2H: Condition compiler for bytecode-based conditions
+  
   class HotkeyConditionCompiler* conditionCompiler_ = nullptr;
   
-  // Phase 2H: VM pointer for compiler access (avoid calling through forward-declared ExecutionEngine)
+  
   class compiler::VM* bytecodeVM_ = nullptr;
 
   // Condition evaluation cache

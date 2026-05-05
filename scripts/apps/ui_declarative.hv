@@ -1,7 +1,7 @@
 // UI Declarative Syntax Demo - Havel UI Module
 // Run with: ./havel examples/ui_declarative.hv
 
-// Phase 1: Imperative API (existing)
+
 print("=== Imperative API ===")
 win = ui.window("My App", {width: 800, height: 600})
 btn = ui.btn("Click me!")
@@ -10,7 +10,7 @@ win.show()
 sleep(1000)
 win.close()
 
-// Phase 2: Declarative Syntax (NEW!)
+
 print("=== Declarative Syntax ===")
 
 ui {
@@ -32,7 +32,7 @@ ui {
   }
 }
 
-// Phase 3: Complex Layout Example
+
 print("=== Complex Layout ===")
 
 ui {

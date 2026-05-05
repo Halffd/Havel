@@ -84,18 +84,18 @@ public:
   void setDebugMode(bool enabled) { debug_mode_ = enabled; }
   bool getDebugMode() const { return debug_mode_; }
   
-  // ========== PHASE 2C: WATCHER REGISTRY ==========
+  
   WatcherRegistry* getWatcherRegistry() { return watcher_registry_.get(); }
   const WatcherRegistry* getWatcherRegistry() const { return watcher_registry_.get(); }
   
-  // ========== PHASE 3B-7: THREAD MANAGEMENT ==========
+  
   void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
   ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
   
   // ========== EVENT QUEUE ACCESS ==========
   EventQueue* getEventQueue() const { return event_queue_; }
   
-  // ========== PHASE 2I: HOTKEY ACTION SUPPORT ==========
+  
   /**
    * Set callback for executing hotkey actions (Phase 2I integration)
    * Called when a Fiber with function_id 0xFFFFFFFF is executed
@@ -111,12 +111,12 @@ private:
   VM* vm_;                    // Bytecode virtual machine
   Scheduler* scheduler_;      // Goroutine scheduler
   EventQueue* event_queue_;   // Event callback queue
-  ConcurrencyBridge* concurrency_bridge_ = nullptr;  // Thread management (Phase 3B-7)
+  ConcurrencyBridge* concurrency_bridge_ = nullptr;  
   
-  // Phase 2C: Watcher registry for reactive when statements
+  
   std::unique_ptr<WatcherRegistry> watcher_registry_;
   
-  // Phase 2I: Callback for executing hotkey actions
+  
   HotkeyActionCallback hotkey_action_callback_ = nullptr;
   
   // ========== STATE ==========
@@ -130,13 +130,13 @@ private:
   void handleReturned(Scheduler::Goroutine* g);
   void handleError(Scheduler::Goroutine* g, const std::string& msg);
   
-  // Phase 1: Event handler for thread completion (unified event system)
+  
   void onThreadComplete(const Event& event);
   
-  // Phase 2A: Event handler for variable changes
+  
   void onVariableChanged(const Event& event);
   
-  // Phase 2D: Condition evaluation for watchers
+  
   // Evaluates a condition bytecode for a specific watcher
   // Returns: condition result (true/false) on success, false if evaluation fails
   bool evaluateCondition(uint32_t watcher_id);

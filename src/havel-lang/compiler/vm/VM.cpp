@@ -2741,12 +2741,14 @@ void VM::registerDefaultHostGlobals() {
 }
 
 void VM::registerDefaultPrototypes() {
+    fprintf(stderr, "DEBUG: registerDefaultPrototypes called, prototypes_ size=%zu\n", prototypes_.size());
     prototypes::registerStringPrototype(*this);
     prototypes::registerArrayPrototype(*this);
     prototypes::registerNumberPrototype(*this);
     prototypes::registerBoolPrototype(*this);
     prototypes::registerObjectPrototype(*this);
     prototypes::registerSetPrototype(*this);
+    fprintf(stderr, "DEBUG: registerDefaultPrototypes done, prototypes_ size=%zu\n", prototypes_.size());
 
     registerPrototypeMethodByName("thread", "send", "thread.send");
     registerPrototypeMethodByName("thread", "pause", "thread.pause");
@@ -2918,11 +2920,11 @@ Value VM::execute(const BytecodeChunk &chunk,
  }
 
  // ============================================================================
- // PHASE 2E: CONDITION BYTECODE EVALUATION
+ 
 // ============================================================================
 
 bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
-  // Phase 2E: Evaluate a condition in the current execution context
+  
   // 
   // Used by WatcherRegistry::onVariableChanged() to re-evaluate
   // reactive conditions when watched variables change.
@@ -2949,7 +2951,7 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
     return false;
   }
   
-  // Phase 2D: Dependency tracking is already automatic via trackGlobalAccess()
+  
   // in VM::getGlobalThreadSafe(), so we don't need extra setup here
   
 // Save current stack state (conditions shouldn't consume/modify main stack)
@@ -2986,17 +2988,17 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
 }
 
 // ============================================================================
-// PHASE 3: VMExecutionResult implementation
+
 // ============================================================================
 
 VMExecutionResult::VMExecutionResult()
     : type(YIELD), result_value(nullptr) {}
 
 // ============================================================================
-// PHASE 3: Single-step execution (executeOneStep)
+
 // ============================================================================
 //
-// This is the core of the Phase 3 main loop. It executes exactly one bytecode
+
 // instruction in the current fiber, then returns control to the main loop.
 //
 // Key guarantee: No blocking. Always returns immediately after one instruction.
@@ -3013,7 +3015,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     return VMExecutionResult::Error("No current fiber");
   }
 
-  // TODO: Phase 3 Enhancement - Load Fiber state into VM state
+  
   // For now, execute from current VM state
   
   // Check if we have frames to execute
@@ -3063,7 +3065,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     // Process any pending callbacks that resulted from instruction
     processPendingCalls();
 
-    // Phase 3B-7: Check if suspension was requested (e.g., by THREAD_JOIN)
+    
     if (suspension_requested_) {
       suspension_requested_ = false;
       
@@ -3076,12 +3078,12 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       if (current_fiber) {
         current_fiber->suspend(reason, context);
         
-        // Phase 3B-7: Register fiber as waiting on thread
+        
         if (reason == SuspensionReason::THREAD_JOIN) {
           uint32_t thread_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context));
           registerThreadWait(thread_id, current_fiber);
           
-          // TODO: Phase 3B-7 Part 2
+          
           // Enqueue callback to check thread completion periodically
           // The callback should:
           // 1. Check if the thread with thread_id has completed
@@ -3102,7 +3104,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       }
     }
 
-    // Phase 3B-7: Check for suspension requested by host function
+    
     if (suspension_requested_) {
       return VMExecutionResult::Suspended();
     }
@@ -3152,7 +3154,7 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 }
 
 // ============================================================================
-// PHASE 3B-1: FIBER STATE SYNCHRONIZATION
+
 // ============================================================================
 
 /**
@@ -3287,7 +3289,7 @@ void VM::saveFiberState(Fiber *fiber) {
   // STEP 2: Save locals from VM's vector back to fiber's map
   fiber->locals.clear();
   for (size_t i = 0; i < locals.size(); ++i) {
-    // Use index as key for now (may be refined in Phase 3B-2)
+    
     std::string key = "_local_" + std::to_string(i);
     fiber->locals[key] = locals[i];
   }
@@ -3341,7 +3343,7 @@ void VM::saveFiberState(Fiber *fiber) {
 }
 
 // ============================================================================
-// PHASE 3B-7: THREAD WAIT TRACKING
+
 // ============================================================================
 
 void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
@@ -3746,13 +3748,13 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                               std::to_string(function_index));
   }
 
-// Phase 4 JIT: Track execution count and trigger JIT if hot
+
  callee->execution_count++;
  if (callee->execution_count == 1000 && hot_func_cb_) {
  hot_func_cb_(*callee);
  }
  
- // Phase 4 JIT: If function has been JIT-compiled, execute native code directly
+ 
  if (callee->jit_compiled && jit_compiler_) {
  uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
  try {
@@ -3766,7 +3768,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  }
  }
  
- // Phase 3B-4: Check if function is a generator (uses is_generator flag set during compilation)
+ 
   // If so, create a coroutine object and return it instead of executing
 if (callee->is_generator) {
 // Create coroutine object for this generator function
@@ -4328,7 +4330,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
     fb.left_type_mask |= getFeedbackMask(left);
     fb.right_type_mask |= getFeedbackMask(right);
 
-    // Phase 4 JIT: Trigger JIT if instruction is very hot
+    
     if (fb.execution_count == 1000 && hot_func_cb_) {
       hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
     }
@@ -5587,15 +5589,22 @@ case OpCode::CALL_METHOD: {
         }
 
     // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
-    uint32_t host_func_idx = 0;
-    bool found_host = false;
-    Value vm_func = Value::makeNull();
+        uint32_t host_func_idx = 0;
+        bool found_host = false;
+        Value vm_func = Value::makeNull();
 
-    // 1. Try host prototype (for primitives and built-in object methods)
-    auto typeIt = prototypes_.find(type_name);
-    if (typeIt != prototypes_.end()) {
-      auto methodIt = typeIt->second.find(method_name);
-      if (methodIt != typeIt->second.end()) {
+        fprintf(stderr, "DEBUG CALL_METHOD: method=%s type=%s receiver_isArray=%d\n", method_name.c_str(), type_name.c_str(), receiver.isArrayId());
+
+        // 1. Try host prototype (for primitives and built-in object methods)
+        fprintf(stderr, "DEBUG: prototypes_ size=%zu\n", prototypes_.size());
+        for (const auto& [k, v] : prototypes_) { fprintf(stderr, "DEBUG: prototype key=%s methods=%zu\n", k.c_str(), v.size()); }
+        auto typeIt = prototypes_.find(type_name);
+        fprintf(stderr, "DEBUG: looking for type=%s found=%d\n", type_name.c_str(), typeIt != prototypes_.end());
+        if (typeIt != prototypes_.end()) {
+            fprintf(stderr, "DEBUG: type has %zu methods\n", typeIt->second.size());
+            auto methodIt = typeIt->second.find(method_name);
+            fprintf(stderr, "DEBUG: prototype found for type=%s, method=%s found=%d\n", type_name.c_str(), method_name.c_str(), methodIt != typeIt->second.end());
+            if (methodIt != typeIt->second.end()) {
         host_func_idx = methodIt->second;
         found_host = true;
       }
@@ -7547,7 +7556,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     uint32_t thread_id = heap_.allocateThread();
     pushStack(Value::makeThreadId(thread_id));
     
-    // TODO: Actually spawn the thread with the function
+    
     // This would require a thread pool and async execution system
     break;
   }
@@ -9056,7 +9065,7 @@ const auto &cell = closure->upvalues[upvalue_index];
   }
 }
 
-void VM::setGlobalThreadSafe(const std::string &name, Value value) {
+vovalue) {
   std::unique_lock<std::shared_mutex> lock(globals_mutex_);
   globals[name] = std::move(value);
 }
@@ -9101,7 +9110,7 @@ std::string VM::resolveStringKey(const Value &value) const {
   if (value.isDouble()) {
     std::ostringstream out;
     out << value.asDouble();
-    return out.str();
+
   }
   if (value.isBool()) return value.asBool() ? "true" : "false";
   return value.toString();

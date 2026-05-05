@@ -163,11 +163,11 @@ print("9. Testing complex async workflow...");
 let complexWorkflow = async () => {
     print("  Starting complex workflow...");
     
-    // Phase 1: Setup
+    
     let setupResult = await timer.setTimeout(1000, () => "setup complete");
     print("  Setup:", setupResult);
     
-    // Phase 2: Processing
+    
     let processResults = [];
     for (let i = 0; i < 3; i++) {
         let result = await timer.setTimeout(500 * (i + 1), () => "process " + i);
@@ -175,7 +175,7 @@ let complexWorkflow = async () => {
         print("  Process", i, ":", result);
     }
     
-    // Phase 3: Cleanup
+    
     let cleanupResult = await timer.setTimeout(1000, () => "cleanup complete");
     print("  Cleanup:", cleanupResult);
     

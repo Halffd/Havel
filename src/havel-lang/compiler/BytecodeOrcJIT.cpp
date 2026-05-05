@@ -33,7 +33,7 @@ using namespace llvm::orc;
 namespace havel::compiler {
 
 // ============================================================================
-// NaN-boxing constants (Phase 4 refined)
+
 // ============================================================================
 static constexpr uint64_t QNAN             = 0x7FF8000000000000ULL;
 static constexpr uint64_t TAG_MASK         = 0x0007000000000000ULL;
@@ -233,7 +233,7 @@ uint64_t havel_vm_tail_call(void* vm_ptr, uint64_t* args, uint32_t count) {
     size_t saved_frame_count = vm->frameCountPublic();
     vm->doTailCallPublic(callee, std::move(valArgs));
     
-    // Phase 4: Signal JIT trampoline that a tail call occurred
+    
     vm->setJitTailCall(true);
     
     return Value::makeNull().rawBits();
@@ -2028,7 +2028,7 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
     auto func = reinterpret_cast<NativeFunc>(it->second);
 
     try {
-        // Phase 4: JIT Trampoline Loop
+        
         // This avoids C stack growth during deep JIT recursion by returning 
         // to this loop when a tail call is requested.
         void* current_vm_ptr = static_cast<void*>(vm);

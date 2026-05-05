@@ -70,7 +70,7 @@ public:
 
 private:
   // Thread-local storage for current context
-  // In Phase 3B multi-threaded scenario, each thread would have its own
+  
   thread_local static ContextData current_context_;
   thread_local static bool context_available_;
 };

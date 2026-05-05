@@ -1,4 +1,4 @@
-// Test Phase 2: Timer callbacks via host functions
+
 // This tests interval_start, interval_stop, timeout_start, timeout_cancel
 
 print("=== Testing interval_start ===")

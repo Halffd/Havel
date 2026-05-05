@@ -11,7 +11,7 @@ std::unordered_map<std::string, HotkeyActionStateSync::StateValue>
     HotkeyActionStateSync::state_;
 
 // ============================================================================
-// Phase 2J: HotkeyActionContext Implementation
+
 // ============================================================================
 
 void HotkeyActionContext::setContext(const ContextData& context) {
@@ -39,7 +39,7 @@ void HotkeyActionContext::clearContext() {
 }
 
 // ============================================================================
-// Phase 2J: HotkeyActionStateSync Implementation
+
 // ============================================================================
 
 void HotkeyActionStateSync::setState(const std::string& key, const StateValue& value) {

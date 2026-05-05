@@ -91,7 +91,7 @@ public:
     std::chrono::milliseconds totalTime{0}; // Total time spent in this mode
     int transitionCount = 0;                // Number of times entered this mode
     
-    // Phase 2F: Reactive watcher integration
+    
     uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
   };
 
@@ -136,14 +136,14 @@ public:
   // Check if signal is active
   bool isSignalActive(const std::string &signalName) const;
   
-  // Phase 2F: Set the execution engine for reactive watcher integration
+  
   // Allows mode conditions to be registered as watchers
   void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }
   
-  // Phase 2G: Set the event queue for reactive mode updates
+  
   void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
   
-  // Phase 2G: Register for VAR_CHANGED events to trigger reactive mode reevaluation
+  
   void registerVarChangedHandler();
 
 private:
@@ -154,10 +154,10 @@ private:
   std::string previousMode;
   mutable std::mutex modeMutex;
   
-  // Phase 2F: Execution engine for reactive watcher integration
+  
   compiler::ExecutionEngine* executionEngine_ = nullptr;
   
-  // Phase 2G: Event queue for reactive updates
+  
   compiler::EventQueue* eventQueue_ = nullptr;
 
   void triggerEnter(ModeDefinition &mode);

@@ -677,7 +677,7 @@ if (param->defaultValue.has_value()) {
     emit(OpCode::RETURN);
   }
   
-  // Phase 3B-3: Detect if this function contains yield expressions
+  
   if (function.body) {
     current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
   }
@@ -805,7 +805,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     emit(OpCode::RETURN);
   }
 
-  // Phase 3B-3: Detect if this lambda contains yield expressions
+  
   if (lambda.body) {
     // For lambda expressions, we need to check if the body contains yield
     // Note: lambda.body is a Statement, so we use statementContainsYield directly
@@ -963,7 +963,7 @@ void ByteCompiler::compileClassMethod(
     emit(OpCode::RETURN);
   }
 
-  // Phase 3B-3: Detect if this class method contains yield expressions
+  
   if (method.body) {
     current_function->is_generator = functionContainsYield(*method.body);
   }
@@ -5487,7 +5487,7 @@ void ByteCompiler::leaveFunction() {
   // Apply jump threading optimization
   optimizeJumps();
 
-  // Phase 4 JIT: Initialize type feedback for all instructions
+  
   current_function->type_feedback.resize(current_function->instructions.size());
 
   current_function->local_count = std::max(next_local_index, current_function->param_count);
@@ -5531,7 +5531,7 @@ void ByteCompiler::clearTailCallFlag() { emitted_tail_call_ = false; }
 // Non-hotkey statements are compiled into a body function registered with
 // when.register for reactive false->true edge execution.
 void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
-    // Phase 1: Compile condition expression into a separate function
+    
     BytecodeFunction conditionFn("when_condition");
     enterFunction(std::move(conditionFn));
 
@@ -5547,7 +5547,7 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
     uint32_t condition_func_index =
         static_cast<uint32_t>(compiled_functions.size() - 1);
 
-    // Phase 2: Separate hotkey statements from non-hotkey statements
+    
     // Hotkeys become conditional hotkeys (grabbed/ungrabbed based on condition)
     // Non-hotkey statements become the reactive body (executed on false->true)
     std::vector<const ast::Statement*> hotkeyStmts;
@@ -5564,7 +5564,7 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
         }
     }
 
-    // Phase 3: Compile non-hotkey body into a when_body function (if any)
+    
     if (!otherStmts.empty()) {
         BytecodeFunction bodyFn("when_body");
         enterFunction(std::move(bodyFn));
@@ -5593,7 +5593,7 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
         emit(OpCode::POP);
     }
 
-    // Phase 4: Compile hotkey statements as conditional hotkeys
+    
     // Set the condition func index so compileHotkeyBinding knows to use
     // hotkey.register_conditional instead of hotkey.register
     auto prevWhenCondition = when_condition_func_index_;
@@ -6272,7 +6272,7 @@ void ByteCompiler::compileDelTarget(const ast::Expression &target) {
  emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
 }
 
-// Phase 3B-3: Generator Detection Implementation
+
 bool ByteCompiler::functionContainsYield(const ast::BlockStatement &body) const {
   // BlockStatement stores statements in `body` field (vector of unique_ptr<Statement>)
   for (const auto &stmt : body.body) {
@@ -6383,7 +6383,7 @@ bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
       return wait.condition && expressionContainsYield(*wait.condition);
     }
     
-    // Phase 3B-3: FunctionDeclaration inside generators should recursively check if nested function contains yield
+    
     // Note: We check if the IMMEDIATE parent function contains yield, not nested ones
     // Nested functions are compiled separately and get their own is_generator flag
   case ast::NodeType::FunctionDeclaration:

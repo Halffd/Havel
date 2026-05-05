@@ -129,7 +129,7 @@ void registerTimeModule(VMApi &api) {
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
         
-        // Phase 3: Smart sleep
+        
         // If we are running in a goroutine, suspend instead of blocking the thread
         if (api.vm.getScheduler() && api.vm.getScheduler()->current()) {
             api.vm.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP), 

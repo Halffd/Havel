@@ -447,7 +447,7 @@ void EventListener::EventLoop() {
       hostBridge->checkTimers();
     }
 
-    // Phase 3: Execute one bytecode instruction in next runnable goroutine
+    
     // This is the core of the concurrent execution model
     // The ExecutionEngine coordinates with Scheduler and EventQueue
     bool workRemains = false;
@@ -784,7 +784,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
     break;
   }
   case ExecutorMode::Scheduler: {
-    // Phase 3: Single-threaded cooperative execution via EventQueue
+    
     if (executionEngine && executionEngine->getEventQueue()) {
       executionEngine->getEventQueue()->push([callback = callback_copy, hotkeyAlias = alias_copy, this]() {
         try {

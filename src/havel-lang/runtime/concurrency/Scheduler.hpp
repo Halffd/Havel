@@ -68,10 +68,10 @@ public:
     std::vector<Value> stack;          // VM operand stack
     std::vector<Value> locals;         // Local variable storage
     
-    // Phase 3B-1: Fiber reference for state synchronization
+    
     // When this goroutine is executing, its state is kept in sync between
     // the fiber and the VM's global execution state via load/save methods
-    class Fiber* fiber = nullptr;      // Ptr to independent Fiber state (Phase 3B-1)
+    class Fiber* fiber = nullptr;      
     
     // Goroutine state machine
     GoroutineState state;

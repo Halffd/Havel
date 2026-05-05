@@ -116,14 +116,14 @@ public:
      */
     size_t getWatcherCount() const { return watchers_.size(); }
 
-    // Phase 2E: Internal watcher structure
+    
     struct Watcher {
         WatcherId id;
         Fiber* fiber;
         std::unordered_set<std::string> dependencies;
         bool last_result;  // Last evaluated result (for edge detection)
         
-        // Phase 2E: Condition bytecode reference
+        
         uint32_t condition_func_id;  // Function ID in VM bytecode
         uint32_t condition_ip;       // Instruction pointer for condition
         

@@ -1,4 +1,4 @@
-// Test Phase 3: VM-level coroutines (Lua-style)
+
 // This tests yield and coroutine state management
 
 print("=== Testing yield ===")

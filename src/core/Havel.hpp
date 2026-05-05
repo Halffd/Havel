@@ -127,9 +127,9 @@ private:
 #endif
 
   
-  // Phase 2H-2J: Reactive hotkey system components
-  class HotkeyConditionCompiler *conditionCompiler = nullptr;    // Phase 2H
-  // Phase 2I: HotkeyActionWrapper is managed via static methods, not stored
+  
+  class HotkeyConditionCompiler *conditionCompiler = nullptr;    
+  
 
   // Host context (persistent for VM lifetime)
   std::unique_ptr<HostContext> hostContext;

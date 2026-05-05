@@ -372,8 +372,9 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   void maybeCollectGarbage();
   void collectGarbage();
   void stepGarbageCollection(size_t work_budget = 128);
-  void registerDefaultHostFunctions();
-  void registerDefaultHostGlobals();
+void registerDefaultHostFunctions();
+    void registerDefaultHostGlobals();
+    void registerDefaultPrototypes();
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:

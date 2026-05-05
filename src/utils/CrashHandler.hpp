@@ -35,7 +35,7 @@ struct CrashHandlerConfig {
     bool generate_core_dump = true;      // Create core dump on crash
     bool generate_crash_report = true;   // Write crash report file
     bool log_to_stderr = true;           // Print crash info to stderr
-    std::string crash_report_dir = ".";  // Directory for crash reports
+    std::string crash_report_dir = "/tmp";  // Directory for crash reports
     std::string app_name = "havel";      // Application name for reports
 };
 

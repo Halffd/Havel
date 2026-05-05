@@ -66,9 +66,14 @@ std::string captureStackTrace(int skip_frames) {
 }
 
 std::string generateCrashReport(const CrashReport& report) {
-    std::string filename = g_config.crash_report_dir + "/" + 
-                           g_config.app_name + "_crash_" + 
-                           report.timestamp + ".txt";
+    // Sanitize timestamp for filename (replace colons with dashes)
+    std::string safe_ts = report.timestamp;
+    for (auto& c : safe_ts) {
+        if (c == ':') c = '-';
+    }
+    std::string filename = g_config.crash_report_dir + "/" +
+        g_config.app_name + "_crash_" +
+        safe_ts + ".txt";
     
     std::ofstream file(filename);
     if (!file) {

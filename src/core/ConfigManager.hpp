@@ -101,10 +101,9 @@ public:
     }
 
   // Convenience setters for numeric types
-  template <typename T>
-  void Set(const std::string &key, const T &value, bool save = false) {
-    havel::debug("Set template called with type: {}", typeid(T).name());
-    config.set<T>(key, value);
+ template <typename T>
+ void Set(const std::string &key, const T &value, bool save = false) {
+ config.set<T>(key, value);
     if (save)
       RequestSave();
   }

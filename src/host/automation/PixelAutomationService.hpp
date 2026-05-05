@@ -97,19 +97,19 @@ public:
     // =========================================================================
 
     /// Find image on screen
-    ImageMatch findImage(const std::string& imagePath, const Region& region = Region());
+    ImageMatch findImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
 
     /// Find all occurrences of image on screen
-    std::vector<ImageMatch> findAllImages(const std::string& imagePath, const Region& region = Region());
+    std::vector<ImageMatch> findAllImages(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
 
     /// Check if image exists on screen
-    bool existsImage(const std::string& imagePath, const Region& region = Region());
+    bool existsImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
 
     /// Count occurrences of image on screen
-    int countImage(const std::string& imagePath, const Region& region = Region());
+    int countImage(const std::string& imagePath, const Region& region = Region(), float threshold = 0.9f);
 
     /// Wait for image to appear on screen
-    ImageMatch waitImage(const std::string& imagePath, const Region& region = Region(), int timeout = 5000);
+    ImageMatch waitImage(const std::string& imagePath, const Region& region = Region(), int timeout = 5000, float threshold = 0.9f);
 
     // =========================================================================
     // OCR (Optical Character Recognition)

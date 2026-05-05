@@ -1,19 +1,15 @@
-#include "havel-lang/runtime/HostAPI.hpp"
 /*
  * PixelModule.hpp
- * 
- * Pixel and image recognition module for Havel language.
+ *
+ * Pixel and image automation module for Havel bytecode VM.
+ * Exposes: pixel, findImage, waitImage, readText, etc.
  */
 #pragma once
 
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
-namespace havel {
+namespace havel::modules {
 
-class Environment;
+void registerPixelModule(compiler::VMApi& api);
 
-namespace modules {
-
-void registerModuleStub();
-
-} // namespace modules
-} // namespace havel
+} // namespace havel::modules

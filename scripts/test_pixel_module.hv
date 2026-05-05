@@ -1,0 +1,52 @@
+// Pixel module test
+// This script tests the pixel module API structure
+// Note: pixel.get/match/find etc. require PixelAutomationService (needs X11/Qt runtime)
+// In headless/test mode, these functions gracefully return null/false
+
+print("=== Pixel Module Test ===")
+print("")
+
+// Module exists and is an object
+print("pixel module exists: " + (pixel != null))
+print("pixel is object: " + (type(pixel) == "object"))
+print("")
+
+// Test method existence by calling with graceful fallback
+print("Testing pixel.get (headless = null):")
+result = pixel.get(0, 0)
+print("  pixel.get(0, 0) = " + result)
+
+print("Testing pixel.match (headless = null/false):")
+result = pixel.match(0, 0, "#FF0000")
+print("  pixel.match(0, 0, '#FF0000') = " + result)
+
+print("Testing pixel.wait (headless = false):")
+result = pixel.wait(0, 0, "#FF0000", 0, 100)
+print("  pixel.wait(0, 0, '#FF0000', 0, 100) = " + result)
+
+print("Testing pixel.findImage (headless = empty match):")
+result = pixel.findImage("/tmp/nonexistent.png")
+print("  pixel.findImage('/tmp/nonexistent.png') = " + result)
+
+print("Testing pixel.existsImage (headless = false):")
+result = pixel.existsImage("/tmp/nonexistent.png")
+print("  pixel.existsImage('/tmp/nonexistent.png') = " + result)
+
+print("Testing pixel.countImage (headless = 0):")
+result = pixel.countImage("/tmp/nonexistent.png")
+print("  pixel.countImage('/tmp/nonexistent.png') = " + result)
+
+print("Testing pixel.findAllImage (headless = empty array):")
+result = pixel.findAllImage("/tmp/nonexistent.png")
+print("  pixel.findAllImage('/tmp/nonexistent.png') = " + result)
+
+print("Testing pixel.readText (headless = empty string):")
+result = pixel.readText()
+print("  pixel.readText() = '" + result + "'")
+
+print("Testing pixel.capture (headless = false):")
+result = pixel.capture("/tmp/test_capture.png")
+print("  pixel.capture('/tmp/test_capture.png') = " + result)
+
+print("")
+print("=== Pixel Module Test Complete ===")

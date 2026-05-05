@@ -89,21 +89,21 @@ bool PixelAutomationService::waitPixel(int x, int y, const std::string& hexColor
     return waitPixel(x, y, Color::fromHex(hexColor), tolerance, timeout);
 }
 
-ImageMatch PixelAutomationService::findImage(const std::string& imagePath, const Region& region) {
+ImageMatch PixelAutomationService::findImage(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return ImageMatch();
-    
+
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
-    auto match = m_automation->findImage(imagePath, screenRegion);
-    
+    auto match = m_automation->findImage(imagePath, screenRegion, threshold);
+
     return ImageMatch(match.x, match.y, match.w, match.h, match.confidence);
 }
 
-std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string& imagePath, const Region& region) {
+std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return {};
-    
+
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
-    auto matches = m_automation->findAllImage(imagePath, screenRegion);
-    
+    auto matches = m_automation->findAllImage(imagePath, screenRegion, threshold);
+
     std::vector<ImageMatch> results;
     for (const auto& m : matches) {
         results.emplace_back(m.x, m.y, m.w, m.h, m.confidence);
@@ -111,26 +111,26 @@ std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string&
     return results;
 }
 
-bool PixelAutomationService::existsImage(const std::string& imagePath, const Region& region) {
+bool PixelAutomationService::existsImage(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return false;
-    
+
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
-    return m_automation->existsImage(imagePath, screenRegion);
+    return m_automation->existsImage(imagePath, screenRegion, threshold);
 }
 
-int PixelAutomationService::countImage(const std::string& imagePath, const Region& region) {
+int PixelAutomationService::countImage(const std::string& imagePath, const Region& region, float threshold) {
     if (!m_automation) return 0;
-    
+
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
-    return m_automation->countImage(imagePath, screenRegion);
+    return m_automation->countImage(imagePath, screenRegion, threshold);
 }
 
-ImageMatch PixelAutomationService::waitImage(const std::string& imagePath, const Region& region, int timeout) {
+ImageMatch PixelAutomationService::waitImage(const std::string& imagePath, const Region& region, int timeout, float threshold) {
     if (!m_automation) return ImageMatch();
-    
+
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
-    auto match = m_automation->waitImage(imagePath, screenRegion, timeout);
-    
+    auto match = m_automation->waitImage(imagePath, screenRegion, timeout, threshold);
+
     return ImageMatch(match.x, match.y, match.w, match.h, match.confidence);
 }
 

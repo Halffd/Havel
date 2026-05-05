@@ -9,6 +9,7 @@
 #include "../../modules/ModuleRegistry.hpp"
 #include "../../modules/SingleFileMathModule.cpp"
 #include "../../modules/automation/AutomationModule.hpp"
+#include "../../modules/automation/PixelModule.hpp"
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
 #include "../../modules/hotkey/HotkeyModule.hpp"
@@ -97,8 +98,11 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 	// Register UI module (user interface)
 	modules::registerUIModule(*api);
 
-	// Register automation module (auto clicker, runner, key presser)
-	modules::registerAutomationModule(*api);
+    // Register automation module (auto clicker, runner, key presser)
+    modules::registerAutomationModule(*api);
+
+    // Register pixel module (pixel, image search, OCR)
+    modules::registerPixelModule(*api);
 #endif
 
 	// Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are

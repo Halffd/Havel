@@ -1565,14 +1565,14 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // exit(code) - terminate the program with the given exit code
-  registerHostFunction("exit", 1, [](const std::vector<Value> &args) {
-    int exit_code = 0;
-    if (!args.empty() && args[0].isInt()) {
-      exit_code = static_cast<int>(args[0].asInt());
-    }
-    std::exit(exit_code);
-    return Value::makeNull();  // Never reached
-  });
+    registerHostFunction("exit", [](const std::vector<Value> &args) {
+        int exit_code = 0;
+        if (!args.empty() && args[0].isInt()) {
+            exit_code = static_cast<int>(args[0].asInt());
+        }
+        std::exit(exit_code);
+        return Value::makeNull(); // Never reached
+    });
 
   // Performance: clock_ns() - high-resolution clock in nanoseconds
   registerHostFunction("clock_ns", 0, [](const std::vector<Value> &) {
@@ -2735,12 +2735,12 @@ void VM::registerDefaultHostGlobals() {
     system_object_initializer_(this);
   }
 
-  // ========================================================================
-  // Primitive method dispatch tables (no boxing)
-  // ========================================================================
-  // Prototype methods are defined in src/havel-lang/compiler/prototypes/*.cpp
-  // to keep VM.cpp focused on VM internals while maintaining direct access.
+    if (prototypes_.empty()) {
+        registerDefaultPrototypes();
+    }
+}
 
+void VM::registerDefaultPrototypes() {
     prototypes::registerStringPrototype(*this);
     prototypes::registerArrayPrototype(*this);
     prototypes::registerNumberPrototype(*this);
@@ -2873,8 +2873,11 @@ Value VM::execute(const BytecodeChunk &chunk,
   }
   locals.clear();
   frame_count_ = 0;
-  // DON'T reset heap - preserves user globals
-  // DON'T call registerDefaultHostGlobals - already registered
+    // DON'T reset heap - preserves user globals
+    // Ensure prototype methods are registered (only needed if execute() was never called)
+    if (prototypes_.empty()) {
+        registerDefaultPrototypes();
+    }
   open_upvalues.clear();
   has_current_exception_ = false;
   current_exception_ = nullptr;
@@ -3777,7 +3780,7 @@ co->saved_locals = locals;
 // Generators should NOT copy parent's locals into their own locals.
 // The generator's locals are for its own variables only.
 // Upvalues are accessed through the closure, not through copied locals.
-co->locals.resize(callee->local_count, nullptr);
+ co->locals.resize(std::max(callee->local_count, callee->param_count), nullptr);
 
 // Close all open upvalues in the closure by copying their current values.
 // For generators, upvalues must be closed because the generator runs in its own
@@ -3853,9 +3856,10 @@ co->ip = 0;
     currentFrame().ip++;
   }
 
-  size_t base = locals.size();
-  size_t stack_depth = stack.size();  // Save current stack depth
-  locals.resize(base + callee->local_count, nullptr);
+ size_t base = locals.size();
+ size_t stack_depth = stack.size(); // Save current stack depth
+ size_t needed_locals = std::max(callee->local_count, callee->param_count);
+ locals.resize(base + needed_locals, nullptr);
   if (frame_arena_.size() <= frame_count_) {
     frame_arena_.push_back(CallFrame{callee, 0, base, closure_id, {}, stack_depth});
   } else {

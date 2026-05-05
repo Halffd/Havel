@@ -464,9 +464,11 @@ std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
   // Stack operations
   case OpCode::LOAD_CONST: return "LOAD_CONST";
   case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
-  case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
-  case OpCode::LOAD_VAR: return "LOAD_VAR";
-  case OpCode::STORE_VAR: return "STORE_VAR";
+case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
+    case OpCode::STORE_IMMUT_GLOBAL: return "STORE_IMMUT_GLOBAL";
+    case OpCode::LOAD_VAR: return "LOAD_VAR";
+    case OpCode::STORE_VAR: return "STORE_VAR";
+    case OpCode::STORE_IMMUT_VAR: return "STORE_IMMUT_VAR";
   case OpCode::LOAD_UPVALUE: return "LOAD_UPVALUE";
   case OpCode::STORE_UPVALUE: return "STORE_UPVALUE";
   case OpCode::POP: return "POP";

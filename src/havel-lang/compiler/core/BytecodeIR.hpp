@@ -55,14 +55,16 @@ class ByteCompiler;
 
 // Bytecode instruction format
 enum class OpCode : uint8_t {
-  // Stack operations
-  LOAD_CONST,
-  LOAD_GLOBAL,
-  STORE_GLOBAL, // Store to global variable by name
-  LOAD_VAR,
-  STORE_VAR,
-  LOAD_UPVALUE,
-  STORE_UPVALUE,
+    // Stack operations
+    LOAD_CONST,
+    LOAD_GLOBAL,
+    STORE_GLOBAL, // Store to global variable by name
+    STORE_IMMUT_GLOBAL, // Store to global and mark immutable (val)
+    LOAD_VAR,
+    STORE_VAR,
+    STORE_IMMUT_VAR, // Store to local and mark immutable (val)
+    LOAD_UPVALUE,
+    STORE_UPVALUE,
   POP,
   DUP,
   SWAP,

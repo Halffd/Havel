@@ -31,8 +31,10 @@ static std::string opcodeNameStr(OpCode opcode) {
     case OpCode::LOAD_CONST: return "LOAD_CONST";
     case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
     case OpCode::STORE_GLOBAL: return "STORE_GLOBAL";
+    case OpCode::STORE_IMMUT_GLOBAL: return "STORE_IMMUT_GLOBAL";
     case OpCode::LOAD_VAR: return "LOAD_VAR";
     case OpCode::STORE_VAR: return "STORE_VAR";
+    case OpCode::STORE_IMMUT_VAR: return "STORE_IMMUT_VAR";
     case OpCode::POP: return "POP";
     case OpCode::DUP: return "DUP";
     case OpCode::ADD: return "ADD";
@@ -268,14 +270,22 @@ void HostBridge::install() {
       };
 
 
- // Global type() function - returns type name string for any value
-  options_.host_functions["type"] =
-      [this](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        std::string typeName = getTypeName(args[0]);
-        auto ref = ctx_->vm->getHeap().allocateString(std::move(typeName));
-        return Value::makeStringId(ref.id);
-      };
+// Global type() function - returns type name string for any value
+options_.host_functions["type"] =
+[this](const std::vector<Value> &args) {
+if (args.empty()) return Value::makeNull();
+std::string typeName = getTypeName(args[0]);
+auto ref = ctx_->vm->getHeap().allocateString(std::move(typeName));
+return Value::makeStringId(ref.id);
+};
+
+// Global len() function - returns length of array/string/object/set
+options_.host_functions["len"] =
+[this](const std::vector<Value> &args) {
+if (args.empty()) return Value::makeInt(0);
+auto *vm = static_cast<VM *>(ctx_->vm);
+return vm->execLengthOp(args[0]);
+};
 
   // Global eval() function - compile and execute code at runtime
   // Note: eval is limited - it cannot call print() or other host functions

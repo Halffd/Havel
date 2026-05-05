@@ -39,8 +39,9 @@ public:
 };
 
 enum class TokenType {
-  Let,
-  Const, // const - immutable binding
+    Let,
+    Val,   // val - immutable binding
+    Const, // const - legacy alias for val
   If,
   Else,
   While,

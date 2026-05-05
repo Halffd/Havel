@@ -89,7 +89,6 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
     vm_->registerDefaultPrototypes();
 
   initialized = true;
-  info("REPL initialized successfully");
 }
 
 void REPL::attach(compiler::VM* existingVM,

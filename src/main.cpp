@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
             auto& config = havel::Configs::Get();
             config.EnsureConfigFile();
             config.Load();
-            havel::info("Config path: {}", config.getPath());
+            havel::debug("Config path: {}", config.getPath());
         } catch (const std::exception& e) {
             havel::error("Critical: Failed to initialize config: {}", e.what());
             return 1;

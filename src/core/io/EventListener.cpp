@@ -260,7 +260,6 @@ bool EventListener::SetupUinput() {
     error("Failed to initialize UinputDevice");
     return false;
   }
-  debug("UinputDevice initialized successfully");
   return true;
 }
 

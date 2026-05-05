@@ -363,17 +363,15 @@ void BrightnessManager::initializeWayland() {
     }
 
     // Wait for all outputs to be configured
-    debug("Waiting for output configuration...");
     if (wl_display_roundtrip(wl_display) == -1) {
       error("Failed to configure outputs");
       // Don't fail here, we might still be able to work without XDG output
     }
   } else {
-    debug("No Wayland outputs found");
+    error("No Wayland outputs found");
   }
 
   displayMethod = "wayland";
-  debug("Wayland backend initialized successfully");
 }
 #endif
 

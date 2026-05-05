@@ -2,7 +2,7 @@ x = ['a', '~', 'c', 0]
 f1 => {
    if #x < 1 return
    xv = x.pop()
-   send("xxxxxxxxxxx $xv")
+   send(f"xxxxx {xv}")
 }
 a => print "hello"
 b => {

@@ -646,8 +646,8 @@ public:
 	Scheduler* getScheduler() const { return scheduler_; }
   
     void setGlobal(std::string name, Value value) {
-            std::string key = name;
-            globals[std::move(name)] = std::move(value);
+        std::string key = name;
+        globals[std::move(name)] = std::move(value);
             emitVariableChanged(key);
         }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
@@ -880,9 +880,19 @@ private:
     JITCompiler* jit_compiler_ = nullptr;
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
+    int gc_suspend_counter_ = 0;
 
 public:
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
+
+    void suspendGC() { gc_suspend_counter_++; }
+    void resumeGC() {
+        if (--gc_suspend_counter_ <= 0) {
+            gc_suspend_counter_ = 0;
+            maybeCollectGarbage();
+        }
+    }
+    bool gcSuspended() const { return gc_suspend_counter_ > 0; }
 
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }

@@ -2,7 +2,6 @@
 #include "utils/Logger.hpp"
 #include <X11/XF86keysym.h>
 #include <algorithm>
-#include <iostream>
 
 // This file contains all the key mapping data extracted from IO.cpp
 // It populates the KeyMap with comprehensive mappings for evdev, X11, and Windows
@@ -160,11 +159,11 @@ std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
 
 // Helper to add all key mappings
 void KeyMap::Initialize() {
-    if (initialized) {
-        std::cout << "KeyMap::Initialize(): Already initialized, skipping." << std::endl;
-        return;
-    }
-    std::cout << "KeyMap::Initialize(): Starting initialization..." << std::endl;
+ if (initialized) {
+ ::havel::debug("KeyMap::Initialize(): Already initialized, skipping.");
+ return;
+ }
+ ::havel::debug("KeyMap::Initialize(): Starting initialization...");
     
     // Windows VK codes (for reference when WINDOWS is not defined)
     #ifndef WINDOWS
@@ -661,7 +660,7 @@ void KeyMap::Initialize() {
     AddKey("unknown", KEY_UNKNOWN, 0, 0);
     AddAlias("nosymbol", "unknown");
 
-    std::cout << "KeyMap::Initialize(): Completed initialization, total keys: " << nameToKey.size() << std::endl;
+    ::havel::debug("KeyMap::Initialize(): Completed initialization, total keys: {}", nameToKey.size());
     initialized = true;
 }
 

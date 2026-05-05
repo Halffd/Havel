@@ -211,15 +211,9 @@ std::vector<DisplayManager::MonitorInfo> DisplayManager::GetMonitorsX11() {
         monitor.id = screen_res->outputs[i];
         monitor.crtc_id = output_info->crtc;
 
-        monitors.push_back(monitor);
+ monitors.push_back(monitor);
 
-        // Debug logging
-        std::cout << "Found monitor: " << monitor.name << " (" << monitor.width
-                  << "x" << monitor.height << " at " << monitor.x << ","
-                  << monitor.y << ")" << (monitor.isPrimary ? " [PRIMARY]" : "")
-                  << std::endl;
-
-        XRRFreeCrtcInfo(crtc_info);
+ XRRFreeCrtcInfo(crtc_info);
       }
     }
     if (output_info) {

@@ -435,7 +435,7 @@ private:
 
     std::vector<Value> root_stack_snapshot_;
     std::vector<Value> root_locals_snapshot_;
-    std::unordered_map<std::string, Value> root_globals_snapshot_;
+    const std::unordered_map<std::string, Value>* root_globals_ptr_ = nullptr;
     std::vector<uint32_t> root_closures_snapshot_;
     std::function<std::optional<Value>(uint32_t)> open_local_reader_snapshot_;
 

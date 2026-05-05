@@ -84,7 +84,7 @@ void GCHeap::reset() {
 
     root_stack_snapshot_.clear();
     root_locals_snapshot_.clear();
-    root_globals_snapshot_.clear();
+    root_globals_ptr_ = nullptr;
     root_closures_snapshot_.clear();
     open_local_reader_snapshot_ = {};
 
@@ -566,7 +566,7 @@ void GCHeap::startIncrementalCollection(
 
     root_stack_snapshot_ = stack_values;
     root_locals_snapshot_ = locals;
-    root_globals_snapshot_ = globals;
+    root_globals_ptr_ = &globals;
     root_closures_snapshot_ = active_closure_ids;
     open_local_reader_snapshot_ = open_local_reader;
 
@@ -689,8 +689,10 @@ void GCHeap::markRoots() {
     for (const auto &value : root_locals_snapshot_) {
         markReference(value);
     }
-    for (const auto &[_, value] : root_globals_snapshot_) {
-        markReference(value);
+    if (root_globals_ptr_) {
+        for (const auto &[_, value] : *root_globals_ptr_) {
+            markReference(value);
+        }
     }
     for (const auto &[_, value] : external_roots_) {
         markReference(value);
@@ -776,8 +778,11 @@ void GCHeap::markStep(size_t &work_budget) {
     }
 
     if (mark_worklist_.empty()) {
-        gc_state_ = IncrementalState::SweepArrays;
-        snapshotSweepKeys();
+        markRoots();
+        if (mark_worklist_.empty()) {
+            gc_state_ = IncrementalState::SweepArrays;
+            snapshotSweepKeys();
+        }
     }
 }
 
@@ -875,8 +880,8 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_objects_.find(id) != old_objects_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-                if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
-                    objects_.erase(it);
+        if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
+            objects_.erase(it);
                     object_ages_.erase(id);
                     old_objects_.erase(id);
                     recovered_in_cycle_++;
@@ -1245,7 +1250,7 @@ void GCHeap::completeCollection() {
 
     root_stack_snapshot_.clear();
     root_locals_snapshot_.clear();
-    root_globals_snapshot_.clear();
+    root_globals_ptr_ = nullptr;
     root_closures_snapshot_.clear();
     open_local_reader_snapshot_ = {};
 

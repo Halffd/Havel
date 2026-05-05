@@ -268,7 +268,15 @@ private:
   static Value handleWindowEach(const std::vector<Value> &args,
                                          const HostContext *ctx);
   static Value handleWindowSort(const std::vector<Value> &args,
-                                         const HostContext *ctx);
+                                 const HostContext *ctx);
+  static Value handleWindowMap(const std::vector<Value> &args,
+                                const HostContext *ctx);
+  static Value handleWindowUnmap(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+  static Value handleWindowPin(const std::vector<Value> &args,
+                                const HostContext *ctx);
+  static Value handleWindowWait(const std::vector<Value> &args,
+                                 const HostContext *ctx);
   // Object-method variants for new operations
   static Value
   handleWindowRestoreObj(const std::vector<Value> &args,
@@ -302,7 +310,19 @@ private:
                                          const HostContext *ctx);
   static Value
   handleWindowPidObj(const std::vector<Value> &args,
-                                         const HostContext *ctx);
+                     const HostContext *ctx);
+  static Value
+  handleWindowMapObj(const std::vector<Value> &args,
+                     const HostContext *ctx);
+  static Value
+  handleWindowUnmapObj(const std::vector<Value> &args,
+                       const HostContext *ctx);
+  static Value
+  handleWindowPinObj(const std::vector<Value> &args,
+                     const HostContext *ctx);
+  static Value
+  handleWindowWaitObj(const std::vector<Value> &args,
+                      const HostContext *ctx);
   // Group operations
   static Value
   handleGroupAdd(const std::vector<Value> &args,
@@ -318,7 +338,10 @@ private:
                                          const HostContext *ctx);
   static Value
   handleGroupFind(const std::vector<Value> &args,
-                                         const HostContext *ctx);
+                  const HostContext *ctx);
+  static Value
+  handleGroupFindBy(const std::vector<Value> &args,
+                    const HostContext *ctx);
   // Clipboard operations
   static Value
   handleClipboardGet(const std::vector<Value> &args,

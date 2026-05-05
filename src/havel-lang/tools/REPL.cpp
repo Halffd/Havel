@@ -37,7 +37,6 @@ void replSignalHandler(int sig) {
     if (sig == SIGINT) {
         REPL::interrupted_.store(true);
         requestStopAll();
-        std::cout << "\n^C" << std::endl;
     } else if (sig == SIGQUIT) {
         panic("SIGQUIT received (Ctrl-\\)", true);
     }
@@ -79,10 +78,15 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   hostBridge_ = compiler::createHostBridge(*hostContext_);
   hostBridge_->install();
 
-  // Register HostBridge host functions with the VM
-  for (const auto& [name, fn] : hostBridge_->options().host_functions) {
-    vm_->registerHostFunction(name, fn);
-  }
+    // Register HostBridge host functions with the VM
+    for (const auto& [name, fn] : hostBridge_->options().host_functions) {
+        vm_->registerHostFunction(name, fn);
+    }
+
+    // Register prototype methods (array.push, string.len, etc.)
+    // These are normally registered inside registerDefaultHostGlobals() via execute(),
+    // but REPL uses executePersistent() which skips that, so we must do it explicitly.
+    vm_->registerDefaultPrototypes();
 
   initialized = true;
   info("REPL initialized successfully");
@@ -117,26 +121,28 @@ void REPL::setInputHandler(std::function<std::string(const std::string&)> handle
 }
 
 std::string REPL::readLine(const std::string& prompt) {
-  if (inputHandler_) {
-    return inputHandler_(prompt);
-  }
-  
+    if (inputHandler_) {
+        return inputHandler_(prompt);
+    }
+
 #ifdef HAVE_READLINE
-  char* line = readline(prompt.c_str());
-  if (line) {
-    std::string result(line);
-    free(line);
-    return result;
-  }
-  return "";  // EOF
+    char* line = readline(prompt.c_str());
+    if (line) {
+        std::string result(line);
+        free(line);
+        return result;
+    }
+    // readline returns NULL on EOF (Ctrl-D)
+    std::cin.setstate(std::ios::eofbit);
+    return "";
 #else
-  std::cout << prompt;
-  std::cout.flush();
-  std::string line;
-  if (!std::getline(std::cin, line)) {
-    return "";  // EOF
-  }
-  return line;
+    std::cout << prompt;
+    std::cout.flush();
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+        return ""; // EOF
+    }
+    return line;
 #endif
 }
 
@@ -176,9 +182,9 @@ bool REPL::isInputComplete(const std::string& input) const {
       continue;
     }
     
-    // Skip comments
-    if (c == '#' && (i == 0 || input[i-1] != '\\')) {
-      break;
+    // Skip // comments
+    if (c == '/' && i + 1 < input.size() && input[i+1] == '/') {
+        break;
     }
     
     switch (c) {
@@ -219,48 +225,66 @@ void REPL::printError(const std::string& error, int line, int column, int length
 }
 
 bool REPL::handleCommand(const std::string& input) {
-  if (input == "exit" || input == "quit" || input == ":q") {
-    return true;  // Exit signal
-  }
-  
-  if (input == "help" || input == "?") {
-    showHelp();
-    return false;
-  }
-  
-  if (input == "clear" || input == ":clear") {
+    if (input == "exit" || input == "quit" || input == ":q") {
+        return true; // Exit signal
+    }
+
+    if (input == "help" || input == "?") {
+        showHelp();
+        return false;
+    }
+
+    if (input == "clear" || input == ":clear") {
 #ifdef HAVE_READLINE
-    // Clear readline history
-    clear_history();
+        clear_history();
 #endif
-    std::cout << "\033[2J\033[H" << std::flush;
-    return false;
-  }
-  
-  return false;  // Not a command
+        std::cout << "\033[2J\033[H" << std::flush;
+        return false;
+    }
+
+    if (input == ":bytecode" || input == ":bc") {
+        config_.debugBytecode = !config_.debugBytecode;
+        std::cout << "Bytecode debug: " << (config_.debugBytecode ? "ON" : "OFF") << "\n";
+        return false;
+    }
+
+    if (input == ":globals") {
+        std::cout << "Known globals: ";
+        bool first = true;
+        for (const auto& g : known_globals_) {
+            if (!first) std::cout << ", ";
+            std::cout << g;
+            first = false;
+        }
+        std::cout << "\n";
+        return false;
+    }
+
+    return false; // Not a command
 }
 
 void REPL::showHelp() const {
-  std::cout << "Havel REPL Help\n";
-  std::cout << "===============\n\n";
-  std::cout << "Commands:\n";
-  std::cout << "  exit, quit, :q     - Exit REPL\n";
-  std::cout << "  help, ?            - Show this help\n";
-  std::cout << "  clear, :clear      - Clear screen\n";
-  std::cout << "\n";
-  std::cout << "Usage:\n";
-  std::cout << "  - Enter expressions directly: 1 + 2\n";
-  std::cout << "  - Define functions: fn add(a,b) { return a+b }\n";
-  std::cout << "  - Multi-line input is supported (brace matching)\n";
-  std::cout << "  - Comments start with #\n";
-  std::cout << "\n";
-  std::cout << "Examples:\n";
-  std::cout << "  havel> 1 + 2\n";
-  std::cout << "  => 3\n";
-  std::cout << "  havel> fn hello() { print(\"Hello, World!\") }\n";
-  std::cout << "  havel> hello()\n";
-  std::cout << "  Hello, World!\n";
-  std::cout << "\n";
+    std::cout << "Havel REPL Help\n";
+    std::cout << "===============\n\n";
+    std::cout << "Commands:\n";
+    std::cout << "  exit, quit, :q   - Exit REPL\n";
+    std::cout << "  help, ?          - Show this help\n";
+    std::cout << "  clear, :clear    - Clear screen\n";
+    std::cout << "  :bytecode, :bc   - Toggle bytecode debug output\n";
+    std::cout << "  :globals         - Show known global variables\n";
+    std::cout << "\n";
+    std::cout << "Keybindings:\n";
+    std::cout << "  Up/Down          - Navigate history\n";
+    std::cout << "  Ctrl-C           - Cancel input (twice to exit)\n";
+    std::cout << "  Ctrl-D           - Exit REPL\n";
+    std::cout << "\n";
+    std::cout << "Examples:\n";
+    std::cout << "  havel> 1 + 2\n";
+    std::cout << "  => 3\n";
+    std::cout << "  havel> fn add(a, b) { a + b }\n";
+    std::cout << "  havel> add(3, 4)\n";
+    std::cout << "  => 7\n";
+    std::cout << "\n";
 }
 
 bool REPL::execute(const std::string& code) {
@@ -349,34 +373,49 @@ bool REPL::executeFile(const std::string& filename) {
 }
 
 int REPL::run() {
-  if (!initialized) {
+    if (!initialized) {
         ::havel::error("REPL not initialized. Call initialize() first.");
-    return 1;
-  }
+        return 1;
+    }
 
-  setupSignalHandlers();
+    setupSignalHandlers();
 
-  std::cout << "Havel REPL (Bytecode VM)\n";
-  std::cout << "Type 'help' for commands, 'exit' to quit.\n";
-  std::cout << "Ctrl-C: stop threads/loops, clear input | Ctrl-D: exit | Ctrl-\\: panic\n\n";
+#ifdef HAVE_READLINE
+    rl_readline_name = "havel";
+    rl_catch_signals = 0;
+    rl_catch_sigwinch = 1;
+    stifle_history(500);
+    std::string historyFile = std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + "/.havel_history";
+    read_history(historyFile.c_str());
+#endif
+
+    std::cout << "Havel REPL (Bytecode VM)\n";
+    std::cout << "Type 'help' for commands, 'exit' to quit.\n\n";
 
   accumulatedInput.clear();
-  currentLine = 0;
+    currentLine = 0;
+    int consecutiveInterrupts = 0;
 
-  while (true) {
-    currentLine++;
+    while (true) {
+        currentLine++;
 
-    // Check for interrupt
-    if (interrupted_.load()) {
-      interrupted_.store(false);
-      if (!accumulatedInput.empty()) {
-        std::cout << "^C\nInput cleared. Press Ctrl-D to exit.\n";
-        accumulatedInput.clear();
-        continue;
-      }
-      std::cout << "^C\n";
-      continue;
-    }
+        // Check for interrupt
+        if (interrupted_.load()) {
+            interrupted_.store(false);
+            consecutiveInterrupts++;
+            if (!accumulatedInput.empty()) {
+                std::cout << "^C\nInput cleared. Press Ctrl-D to exit.\n";
+                accumulatedInput.clear();
+                continue;
+            }
+            if (consecutiveInterrupts >= 2) {
+                std::cout << "^C\nExiting...\n";
+                break;
+            }
+            std::cout << "^C\n(Press Ctrl-C again to exit, or Ctrl-D)\n";
+            continue;
+        }
+        consecutiveInterrupts = 0;
 
     // Determine prompt
     std::string prompt = accumulatedInput.empty()
@@ -448,12 +487,17 @@ int REPL::run() {
     // Reset for next input
     accumulatedInput.clear();
     
-  if (!success && config_.stopOnError) {
-    break;  // Stop on error
-  }
-}
+        if (!success && config_.stopOnError) {
+            break; // Stop on error
+        }
+    }
 
-return 0;
+#ifdef HAVE_READLINE
+    std::string historyFile = std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + "/.havel_history";
+    write_history(historyFile.c_str());
+#endif
+
+    return 0;
 }
 
 void REPL::setupSignalHandlers() {

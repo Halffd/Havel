@@ -256,7 +256,7 @@ void registerHelpModule(VMApi &api) {
     return helpFunc(api, args);
   });
   
-  info("Help module registered");
+  debug("Help module registered");
 }
 
 } // namespace havel::modules

@@ -75,7 +75,7 @@ bool UinputDevice::Setup() {
         return false;
     }
 
-    info("uinput device initialized (fd={})", uinputFd);
+    debug("uinput device initialized (fd={})", uinputFd);
     return true;
 }
 

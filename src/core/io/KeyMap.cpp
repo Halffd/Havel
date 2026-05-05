@@ -16,25 +16,22 @@ std::unordered_map<unsigned long, std::string> KeyMap::x11ToName;
 std::unordered_map<int, std::string> KeyMap::windowsToName;
 
 void KeyMap::AddKey(const std::string& name, int evdev, unsigned long x11, int windows) {
-if (nameToKey.find(name) != nameToKey.end()) {
-havel::warning("Duplicate key name '{}' found! Previous evdev: {}, New evdev: {}",
-               name, nameToKey[name].evdevCode, evdev);
-}
+  if (nameToKey.find(name) != nameToKey.end()) {
+    havel::debug("Duplicate key name '{}' found! Previous evdev: {}, New evdev: {}",
+                 name, nameToKey[name].evdevCode, evdev);
+  }
 
-if (evdev != 0 && evdevToName.find(evdev) != evdevToName.end()) {
-havel::warning("Duplicate evdev code {} found! Previous: {}, New: {}",
-               evdev, evdevToName[evdev], name);
-}
+  if (evdev != 0 && evdevToName.find(evdev) != evdevToName.end()) {
+    havel::debug("Duplicate evdev code {} found! Previous: {}, New: {}", evdev, evdevToName[evdev], name);
+  }
 
-if (x11 != 0 && x11ToName.find(x11) != x11ToName.end()) {
-havel::warning("Duplicate X11 code {} found! Previous: {}, New: {}",
-               x11, x11ToName[x11], name);
-}
+  if (x11 != 0 && x11ToName.find(x11) != x11ToName.end()) {
+    havel::debug("Duplicate X11 code {} found! Previous: {}, New: {}", x11, x11ToName[x11], name);
+  }
 
-if (windows != 0 && windowsToName.find(windows) != windowsToName.end()) {
-havel::warning("Duplicate Windows code {} found! Previous: {}, New: {}",
-               windows, windowsToName[windows], name);
-}
+  if (windows != 0 && windowsToName.find(windows) != windowsToName.end()) {
+    havel::debug("Duplicate Windows code {} found! Previous: {}, New: {}", windows, windowsToName[windows], name);
+  }
 
     KeyEntry entry = {name, {}, evdev, x11, windows};
     nameToKey[name] = entry;

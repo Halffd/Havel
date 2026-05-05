@@ -246,12 +246,18 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.outputAsmToFile = true;
       cfg.dumpIR = true;
 
-    } else if (arg == "--config" || arg == "-c") {
-      // Config file path
-      if (i + 1 < argc) {
-        Configs::SetPath(argv[++i]);
-      }
-    } else if (arg == "--run" || arg == "run") {
+  } else if (arg == "--config" || arg == "-c") {
+    // Config file path
+    if (i + 1 < argc) {
+      Configs::SetPath(argv[++i]);
+    }
+  } else if (arg == "--eval" || arg == "-E") {
+    if (i + 1 < argc) {
+      cfg.evalString = argv[++i];
+      if (cfg.mode == Mode::DAEMON) cfg.mode = Mode::SCRIPT_ONLY;
+      cfg.minimalMode = true;
+    }
+  } else if (arg == "--run" || arg == "run") {
       // Pure script execution - auto enables minimal mode
       cfg.mode = Mode::SCRIPT_ONLY;
       cfg.minimalMode = true;
@@ -534,9 +540,14 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
         if (!combinedNames.empty()) combinedNames += " + ";
         combinedNames += f;
       } else {
-        error("Cannot open script file: {}", f);
-        return 2;
+      error("Cannot open script file: {}", f);
+      return 2;
       }
+    }
+    if (!cfg.evalString.empty()) {
+      combinedCode += cfg.evalString + "\n";
+      if (!combinedNames.empty()) combinedNames += " + ";
+      combinedNames += "<eval>";
     }
 
     if (combinedCode.empty()) {
@@ -609,7 +620,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
        return 0;
     }
 
-    info("Running combined scripts: {}", combinedNames);
+    debug("Running combined scripts: {}", combinedNames);
 
     int dummy_argc = 1;
     char dummy_name[] = "havel-script";
@@ -644,8 +655,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       options.compile_unit_name = combinedNames;
       options.vm_override = bytecodeVM;
       options.debugBytecode = cfg.debugBytecode;
-      auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-      info("Execution successful");
+  auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+    debug("Execution successful");
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
       return 1;
@@ -744,7 +755,7 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
 
     // Execute __main__ function
     auto result = vm->execute(combinedChunk, "__main__");
-    info("Bytecode execution completed successfully");
+    debug("Bytecode execution completed successfully");
 
     bridge->shutdown();
     return 0;
@@ -785,6 +796,19 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       error("Cannot open script file: {}", f);
       return 2;
     }
+  }
+  if (!cfg.evalString.empty()) {
+    combinedCode += cfg.evalString + "\n";
+    if (!combinedNames.empty()) combinedNames += " + ";
+    combinedNames += "<eval>";
+  }
+
+  // Read from stdin if piped and no other source
+  if (combinedCode.empty() && !isatty(STDIN_FILENO)) {
+    std::ostringstream ss;
+    ss << std::cin.rdbuf();
+    combinedCode = ss.str();
+    combinedNames = "<stdin>";
   }
 
   if (combinedCode.empty()) return 0;
@@ -853,7 +877,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     return 0;
   }
 
-  info("Running Havel scripts (pure mode): {}", combinedNames);
+  debug("Running Havel scripts (pure mode): {}", combinedNames);
 
   // Set up signal handling ...
   struct sigaction sa;
@@ -872,8 +896,8 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
      .stopOnError = cfg.stopOnError
  });
  engine.initializeMinimal();
- engine.execute(combinedCode, "__main__", combinedNames);
- info("Bytecode execution completed successfully");
+  engine.execute(combinedCode, "__main__", combinedNames);
+    debug("Bytecode execution completed successfully");
  engine.shutdown();
  return 0;
  } catch (const std::exception &e) {
@@ -1025,8 +1049,9 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --debug-bytecode, -dbc  Enable bytecode debugging\n";
   std::cout << "  --diff              Compare bytecode with previous run "
                "(implies -dbc)\n";
-  std::cout << "  --error, -e         Stop on first error/warning\n";
-  std::cout << "  --minimal, -m       Minimal mode (no IO/hotkeys/GUI)\n";
+  std::cout << " --error, -e Stop on first error/warning\n";
+  std::cout << " --eval, -E CODE Run inline Havel code (minimal mode)\n";
+  std::cout << " --minimal, -m Minimal mode (no IO/hotkeys/GUI)\n";
   std::cout << "  --repl, -r          Start interactive REPL (full features)\n";
   std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, "
                "GUI, etc.)\n";
@@ -1069,8 +1094,9 @@ std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  havel --target aot script.hv         - Emit object (.o) + shared binary (.so)\n";
   std::cout << "  havel --target wasm script.hv        - Emit WebAssembly binary (.wasm)\n";
   std::cout << "  havel --target elf script.hv         - Emit standalone ELF executable\n";
-  std::cout << "  havel --minimal script.hv - Run script in MINIMAL mode\n";
-  std::cout << "  havel --repl --minimal    - Start REPL in MINIMAL mode\n";
+  std::cout << " havel --minimal script.hv - Run script in MINIMAL mode\n";
+  std::cout << " havel --eval 'print(1+2)' - Run inline code\n";
+  std::cout << " havel --repl --minimal - Start REPL in MINIMAL mode\n";
   std::cout << "\nFull mode (default):\n";
   std::cout << "  All features enabled: hotkeys, GUI, display, IO, etc.\n";
   std::cout << "  Use for normal automation and hotkey scripts.\n";

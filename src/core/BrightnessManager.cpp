@@ -151,14 +151,14 @@ void BrightnessManager::init() {
   if (!monitors.empty()) {
     primaryMonitor = monitors[0];
     for (string monitor : monitors) {
-      brightness[monitor] = getBrightness(monitor);
-      info("Brightness for " + monitor + ": " +
-           std::to_string(brightness[monitor]));
-      shadowLift[monitor] = 0.0;
-      gammaRGB[monitor] = {1.0, 1.0, 1.0};
-      temperature[monitor] = getTemperature(monitor);
-      info("Temperature for " + monitor + ": " +
-           std::to_string(temperature[monitor]));
+    brightness[monitor] = getBrightness(monitor);
+    debug("Brightness for " + monitor + ": " +
+        std::to_string(brightness[monitor]));
+    shadowLift[monitor] = 0.0;
+    gammaRGB[monitor] = {1.0, 1.0, 1.0};
+    temperature[monitor] = getTemperature(monitor);
+    debug("Temperature for " + monitor + ": " +
+        std::to_string(temperature[monitor]));
     }
     // Apply initial settings if auto-adjust is enabled
     if (dayNightSettings.autoAdjust) {

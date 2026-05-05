@@ -186,7 +186,7 @@ void registerConfigModule(VMApi &api) {
         return configKeys(api, args);
     });
 
-    info("Config module registered");
+    debug("Config module registered");
 }
 
 void autoLoadConfig(VMApi &api) {

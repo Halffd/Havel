@@ -75,11 +75,12 @@ bool useJIT = true;
     bool emitWasm = false;      // --target wasm: output .wasm
     bool emitBinary = false;    // --target aot: output native .so
     bool emitElf = false;       // --target elf/bin: output native ELF executable
-    std::string aotOutput;      // -o for AOT output path
-    std::string arch;           // --arch: target triple
+    std::string aotOutput; // -o for AOT output path
+    std::string arch; // --arch: target triple
     AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
+    std::string evalString; // --eval/-E: run inline code
 
-};
+  };
 
   LaunchConfig parseArgs(int argc, char *argv[]);
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);

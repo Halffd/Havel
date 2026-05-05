@@ -246,12 +246,16 @@ std::string opcodeName(OpCode opcode) {
     return "LOAD_CONST";
   case OpCode::LOAD_GLOBAL:
     return "LOAD_GLOBAL";
-  case OpCode::STORE_GLOBAL:
-    return "STORE_GLOBAL";
-  case OpCode::LOAD_VAR:
-    return "LOAD_VAR";
-  case OpCode::STORE_VAR:
-    return "STORE_VAR";
+case OpCode::STORE_GLOBAL:
+        return "STORE_GLOBAL";
+    case OpCode::STORE_IMMUT_GLOBAL:
+        return "STORE_IMMUT_GLOBAL";
+    case OpCode::LOAD_VAR:
+        return "LOAD_VAR";
+    case OpCode::STORE_VAR:
+        return "STORE_VAR";
+    case OpCode::STORE_IMMUT_VAR:
+        return "STORE_IMMUT_VAR";
   case OpCode::LOAD_UPVALUE:
     return "LOAD_UPVALUE";
   case OpCode::STORE_UPVALUE:
@@ -557,35 +561,74 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
   std::ostringstream out;
   for (const auto &function : chunk.getAllFunctions()) {
     out << "fn " << function.name << "(params=" << function.param_count
-        << ", locals=" << function.local_count << ")\n";
+        << ", locals=" << function.local_count << ")";
+    if (!function.param_names.empty()) {
+      out << " // params: ";
+      for (size_t p = 0; p < function.param_names.size(); ++p) {
+        if (p > 0) out << ", ";
+        out << function.param_names[p];
+        if (p < function.default_values.size() && function.default_values[p]) {
+          out << "=" << formatValue(*function.default_values[p]);
+        }
+      }
+    }
+    if (!function.upvalues.empty()) {
+      out << " // upvalues: " << function.upvalues.size();
+    }
+    if (function.is_generator) {
+      out << " // generator";
+    }
+    out << "\n";
+
+    // Collect try/catch block ranges
+    std::vector<std::pair<size_t, size_t>> tryBlocks;
+    for (size_t i = 0; i < function.instructions.size(); ++i) {
+      if (function.instructions[i].opcode == OpCode::TRY_ENTER) {
+        for (size_t j = i + 1; j < function.instructions.size(); ++j) {
+          if (function.instructions[j].opcode == OpCode::TRY_EXIT) {
+            tryBlocks.emplace_back(i, j);
+            break;
+          }
+        }
+      }
+    }
 
     for (size_t i = 0; i < function.instructions.size(); ++i) {
+      // Mark try/catch ranges
+      for (const auto &[try_start, try_end] : tryBlocks) {
+        if (i == try_start) out << "  ┌─ try ─\n";
+      }
+
       out << "  " << i << ": "
           << opcodeName(function.instructions[i].opcode);
- for (size_t j = 0; j < function.instructions[i].operands.size(); ++j) {
- const auto &op = function.instructions[i].operands[j];
- out << (j == 0 ? " " : ", ");
- if (op.isStringValId()) {
- out << "str[" << op.asStringValId() << "]=\"" << chunk.getString(op.asStringValId()) << "\"";
- } else {
- out << formatValue(op);
- }
- }
- if (function.instructions[i].location) {
- const auto &loc = *function.instructions[i].location;
- out << " @" << loc.line << ":" << loc.column;
- }
- out << "\n";
+      for (size_t j = 0; j < function.instructions[i].operands.size(); ++j) {
+        const auto &op = function.instructions[i].operands[j];
+        out << (j == 0 ? " " : ", ");
+        if (op.isStringValId()) {
+          out << "str[" << op.asStringValId() << "]=\"" << chunk.getString(op.asStringValId()) << "\"";
+        } else {
+          out << formatValue(op);
+        }
+      }
+      if (function.instructions[i].location) {
+        const auto &loc = *function.instructions[i].location;
+        out << " @" << loc.line << ":" << loc.column;
+      }
+      out << "\n";
+
+      for (const auto &[try_start, try_end] : tryBlocks) {
+        if (i == try_end) out << "  └─ end try ─\n";
+      }
     }
 
     if (!function.constants.empty()) {
-      out << "  constants:\n";
+      out << " constants:\n";
       for (size_t c = 0; c < function.constants.size(); ++c) {
         const auto &cv = function.constants[c];
         if (cv.isStringValId()) {
-          out << "    [" << c << "] \"" << chunk.getString(cv.asStringValId()) << "\"\n";
+          out << "  [" << c << "] \"" << chunk.getString(cv.asStringValId()) << "\"\n";
         } else {
-          out << "    [" << c << "] " << formatValue(cv) << "\n";
+          out << "  [" << c << "] " << formatValue(cv) << "\n";
         }
       }
     }

@@ -2751,6 +2751,8 @@ void VM::registerDefaultPrototypes() {
         prototypes::registerObjectPrototype(*this);
     if (prototypes_.find("set") == prototypes_.end())
         prototypes::registerSetPrototype(*this);
+    if (prototypes_.find("range") == prototypes_.end())
+        prototypes::registerRangePrototype(*this);
 
     registerPrototypeMethodByName("thread", "send", "thread.send");
     registerPrototypeMethodByName("thread", "pause", "thread.pause");
@@ -5573,7 +5575,9 @@ case OpCode::CALL_METHOD: {
             type_name = "interval";
         } else if (receiver.isTimeoutId()) {
             type_name = "timeout";
-    } else {
+        } else if (receiver.isRangeId()) {
+            type_name = "range";
+        } else {
             pushStack(Value::makeNull());
             break;
         }

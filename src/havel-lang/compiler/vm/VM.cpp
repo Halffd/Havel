@@ -2733,22 +2733,24 @@ void VM::registerDefaultHostGlobals() {
 
   if (system_object_initializer_) {
     system_object_initializer_(this);
-  }
-
-    if (prototypes_.empty()) {
-        registerDefaultPrototypes();
     }
+
+    registerDefaultPrototypes();
 }
 
 void VM::registerDefaultPrototypes() {
-    fprintf(stderr, "DEBUG: registerDefaultPrototypes called, prototypes_ size=%zu\n", prototypes_.size());
-    prototypes::registerStringPrototype(*this);
-    prototypes::registerArrayPrototype(*this);
-    prototypes::registerNumberPrototype(*this);
-    prototypes::registerBoolPrototype(*this);
-    prototypes::registerObjectPrototype(*this);
-    prototypes::registerSetPrototype(*this);
-    fprintf(stderr, "DEBUG: registerDefaultPrototypes done, prototypes_ size=%zu\n", prototypes_.size());
+    if (prototypes_.find("string") == prototypes_.end())
+        prototypes::registerStringPrototype(*this);
+    if (prototypes_.find("array") == prototypes_.end())
+        prototypes::registerArrayPrototype(*this);
+    if (prototypes_.find("number") == prototypes_.end())
+        prototypes::registerNumberPrototype(*this);
+    if (prototypes_.find("bool") == prototypes_.end())
+        prototypes::registerBoolPrototype(*this);
+    if (prototypes_.find("object") == prototypes_.end())
+        prototypes::registerObjectPrototype(*this);
+    if (prototypes_.find("set") == prototypes_.end())
+        prototypes::registerSetPrototype(*this);
 
     registerPrototypeMethodByName("thread", "send", "thread.send");
     registerPrototypeMethodByName("thread", "pause", "thread.pause");
@@ -2876,11 +2878,8 @@ Value VM::execute(const BytecodeChunk &chunk,
   }
   locals.clear();
   frame_count_ = 0;
-    // DON'T reset heap - preserves user globals
-    // Ensure prototype methods are registered (only needed if execute() was never called)
-    if (prototypes_.empty()) {
-        registerDefaultPrototypes();
-    }
+// DON'T reset heap - preserves user globals
+    registerDefaultPrototypes();
   open_upvalues.clear();
   has_current_exception_ = false;
   current_exception_ = nullptr;
@@ -3614,31 +3613,22 @@ std::string VM::buildStackTrace(size_t frame_count) const {
 }
 
 Value VM::call(const Value &callee_value,
-                       const std::vector<Value> &args) {
-  if (!current_chunk) {
-    COMPILER_THROW(
-        "VM::call requires an active bytecode chunk (run execute first)");
-  }
+ const std::vector<Value> &args) {
+ if (!current_chunk) {
+ COMPILER_THROW(
+ "VM::call requires an active bytecode chunk (run execute first)");
+ }
 
-  // Debug: check what type we received
-  std::string typeInfo = "unknown";
-  if (callee_value.isNull()) typeInfo = "null";
-  else if (callee_value.isInt()) typeInfo = "int";
-  else if (callee_value.isClosureId()) typeInfo = "closure_id";
-  else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
-  else if (callee_value.isObjectId()) typeInfo = "object_id";
-  else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+ const size_t base_depth = frame_count_;
+ doCall(callee_value, args, false);
+ runDispatchLoop(base_depth);
 
-  const size_t base_depth = frame_count_;
-  doCall(callee_value, args, false);
-  runDispatchLoop(base_depth);
-
-  if (stack.empty()) {
-    return nullptr;
-  }
-  Value result = stack.top();
-  stack.pop();
-  return result;
+ if (stack.empty()) {
+ return nullptr;
+ }
+ Value result = stack.top();
+ stack.pop();
+ return result;
 }
 
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
@@ -5588,22 +5578,15 @@ case OpCode::CALL_METHOD: {
             break;
         }
 
-    // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
+        // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
         uint32_t host_func_idx = 0;
         bool found_host = false;
         Value vm_func = Value::makeNull();
 
-        fprintf(stderr, "DEBUG CALL_METHOD: method=%s type=%s receiver_isArray=%d\n", method_name.c_str(), type_name.c_str(), receiver.isArrayId());
-
         // 1. Try host prototype (for primitives and built-in object methods)
-        fprintf(stderr, "DEBUG: prototypes_ size=%zu\n", prototypes_.size());
-        for (const auto& [k, v] : prototypes_) { fprintf(stderr, "DEBUG: prototype key=%s methods=%zu\n", k.c_str(), v.size()); }
         auto typeIt = prototypes_.find(type_name);
-        fprintf(stderr, "DEBUG: looking for type=%s found=%d\n", type_name.c_str(), typeIt != prototypes_.end());
         if (typeIt != prototypes_.end()) {
-            fprintf(stderr, "DEBUG: type has %zu methods\n", typeIt->second.size());
             auto methodIt = typeIt->second.find(method_name);
-            fprintf(stderr, "DEBUG: prototype found for type=%s, method=%s found=%d\n", type_name.c_str(), method_name.c_str(), methodIt != typeIt->second.end());
             if (methodIt != typeIt->second.end()) {
         host_func_idx = methodIt->second;
         found_host = true;
@@ -9065,9 +9048,9 @@ const auto &cell = closure->upvalues[upvalue_index];
   }
 }
 
-vovalue) {
-  std::unique_lock<std::shared_mutex> lock(globals_mutex_);
-  globals[name] = std::move(value);
+void VM::setGlobalThreadSafe(const std::string &name, Value value) {
+    std::unique_lock<std::shared_mutex> lock(globals_mutex_);
+    globals[name] = std::move(value);
 }
 
 std::optional<Value>

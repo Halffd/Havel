@@ -20,6 +20,8 @@
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
 #include "net/NetworkManager.hpp"
+#include "host/ServiceRegistry.hpp"
+#include "host/image/ImageService.hpp"
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
@@ -374,6 +376,12 @@ void Havel::cleanup() noexcept {
   }
   if (windowManager) {
     windowManager.reset();
+  }
+
+  // Release ImageService handles (prevents leak when scripts don't call image.release)
+  auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
+  if (imgSvc) {
+    imgSvc->releaseAll();
   }
 
   // Destroy IO LAST

@@ -1310,9 +1310,10 @@ reserveLocalSlot(slot);
             emit(OpCode::OBJECT_GET);
             auto svOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
             emit(svOp, slot);
-        }
-      }
-      break;
+            }
+            }
+            emit(OpCode::LOAD_VAR, temp_slot);
+            break;
     }
 
     COMPILER_THROW(
@@ -2782,11 +2783,11 @@ break;
             // right side
             uint32_t done = emitJump(OpCode::JUMP);
 
-            // Left was null - evaluate right side (the null was already popped by
-            // JUMP_IF_NULL)
-            patchJump(jumpToRight,
-                static_cast<uint32_t>(current_function->instructions.size()));
-            compileExpression(*binary.right);
+        // Left was null - pop the null left value, then evaluate right side
+        patchJump(jumpToRight,
+            static_cast<uint32_t>(current_function->instructions.size()));
+        emit(OpCode::POP);
+        compileExpression(*binary.right);
 
             // Done
             patchJump(done,
@@ -3119,13 +3120,14 @@ break;
                 emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
               }
             } else {
-              COMPILER_THROW(
-                  "Unsupported binding kind for destructuring");
+                    COMPILER_THROW(
+                        "Unsupported binding kind for destructuring");
+                }
             }
-          }
         }
+        emit(OpCode::LOAD_VAR, temp_slot);
         break;
-      }
+    }
     if (target_object) {
         // Object destructuring assignment: {key: val} = obj
         // Value is already on the stack from the common RHS compilation above
@@ -3161,11 +3163,12 @@ break;
             } else {
               COMPILER_THROW(
                   "Unsupported binding kind for destructuring");
+                }
             }
-          }
         }
+        emit(OpCode::LOAD_VAR, temp_slot);
         break;
-      }
+    }
     if (target_at) {
         // @field assignment - store to self.field
         // Value is already on the stack from the common RHS compilation above
@@ -4073,9 +4076,21 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
    return;
  }
 
- // Push namespace object as receiver
- uint32_t objSid = addStringConstant(objIdent->symbol);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+            // Push receiver: use local/upvalue binding if available, otherwise global
+            const auto *objBinding = bindingFor(*objIdent);
+            if (objBinding) {
+                if (objBinding->kind == ResolvedBindingKind::Local) {
+                    emit(OpCode::LOAD_VAR, effectiveSlot(objBinding->slot));
+                } else if (objBinding->kind == ResolvedBindingKind::Upvalue) {
+                    emit(OpCode::LOAD_UPVALUE, objBinding->slot);
+                } else {
+                    uint32_t objSid = addStringConstant(objIdent->symbol);
+                    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+                }
+            } else {
+                uint32_t objSid = addStringConstant(objIdent->symbol);
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+            }
 
  // Compile args
  uint32_t totalArgs = 0;

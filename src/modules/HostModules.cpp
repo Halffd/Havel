@@ -25,6 +25,7 @@
 #include "../host/async/AsyncService.hpp"
 #include "../host/timer/TimerService.hpp"
 #include "../host/media/MediaService.hpp"
+#include "../host/image/ImageService.hpp"
 #include "../host/filesystem/FileSystemService.hpp"
 #include "../host/network/NetworkService.hpp"
 #include "../host/app/AppService.hpp"
@@ -159,9 +160,25 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     auto asyncService = std::make_shared<host::AsyncService>();
     registry.registerService<host::AsyncService>(asyncService);
 
-    // File system service doesn't need constructor args (pure C++ with std::filesystem)
-    auto fsService = std::make_shared<host::FileSystemService>();
-    registry.registerService<host::FileSystemService>(fsService);
+  // File system service doesn't need constructor args (pure C++ with std::filesystem)
+  auto fsService = std::make_shared<host::FileSystemService>();
+  registry.registerService<host::FileSystemService>(fsService);
+
+  // Image service (OpenCV image processing, no deps)
+  try {
+    auto imageService = std::make_shared<host::ImageService>();
+    registry.registerService<host::ImageService>(imageService);
+  } catch (const std::exception& e) {
+    debug("initializeServiceRegistry: ImageService failed: {}", e.what());
+  }
+
+  // Media service (MPRIS/D-Bus, may fail if no DBus session)
+  try {
+    auto mediaService = std::make_shared<host::MediaService>();
+    registry.registerService<host::MediaService>(mediaService);
+  } catch (const std::exception& e) {
+    debug("initializeServiceRegistry: MediaService failed: {}", e.what());
+  }
 
     debug("ServiceRegistry initialized with {} services", registry.size());
 }

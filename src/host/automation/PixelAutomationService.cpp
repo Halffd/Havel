@@ -6,6 +6,8 @@
 #include "PixelAutomationService.hpp"
 #include "core/automation/PixelAutomation.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
+#include "host/screenshot/ScreenshotService.hpp"
+#include <cstring>
 #include <QApplication>
 #include <QGuiApplication>
 #include <QScreen>
@@ -148,16 +150,48 @@ std::string PixelAutomationService::readText(const Region& region, const std::st
 }
 
 bool PixelAutomationService::captureScreen(const std::string& filePath) {
-    // ScreenshotManager requires IO pointer - skip for now
-    (void)filePath;
-    return false;
+    auto& screenshot = ScreenshotService::getInstance();
+    auto rgba = screenshot.captureFullDesktop();
+    if (rgba.empty()) return false;
+
+    auto* app = QApplication::instance();
+    int w = 1920, h = 1080;
+    if (app) {
+        auto* screen = QGuiApplication::primaryScreen();
+        if (screen) {
+            QRect geo = screen->geometry();
+            w = geo.width();
+            h = geo.height();
+        }
+    }
+
+    cv::Mat img(h, w, CV_8UC4);
+    if (rgba.size() >= static_cast<size_t>(w * h * 4)) {
+        std::memcpy(img.data, rgba.data(), w * h * 4);
+    } else {
+        return false;
+    }
+
+    cv::Mat bgra;
+    cv::cvtColor(img, bgra, cv::COLOR_RGBA2BGRA);
+    return cv::imwrite(filePath, bgra);
 }
 
 bool PixelAutomationService::captureRegion(const Region& region, const std::string& filePath) {
-    // ScreenshotManager requires IO pointer - skip for now
-    (void)region;
-    (void)filePath;
-    return false;
+    auto& screenshot = ScreenshotService::getInstance();
+    auto rgba = screenshot.captureRegion(region.x, region.y, region.w, region.h);
+    if (rgba.empty()) return false;
+
+    cv::Mat img(region.h, region.w, CV_8UC4);
+    if (rgba.size() >= static_cast<size_t>(region.w * region.h * 4)) {
+        std::memcpy(img.data, rgba.data(), region.w * region.h * 4);
+    } else {
+        return false;
+    }
+
+    cv::Mat bgra;
+    cv::cvtColor(img, bgra, cv::COLOR_RGBA2BGRA);
+    return cv::imwrite(filePath, bgra);
 }
 
 } // namespace havel::host

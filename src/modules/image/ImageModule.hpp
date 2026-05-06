@@ -3,5 +3,5 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
 namespace havel::modules {
-void registerMediaModule(compiler::VMApi& api);
+void registerImageModule(compiler::VMApi& api);
 }

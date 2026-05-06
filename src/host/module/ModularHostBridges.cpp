@@ -2730,104 +2730,43 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   // Register closure as a callback - this pins it as a GC root
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
 
-  // Create hotkey context object using HotkeyModule
-  auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-      vm, hotkeyId, hotkeyStr, hotkeyStr, "",
-      "Hotkey registered via hotkey.register", callbackId);
+    // Create hotkey context object using HotkeyModule
+    auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
+        vm, hotkeyId, hotkeyStr, hotkeyStr, "",
+        "Hotkey registered via hotkey.register", callbackId);
 
-  // Get event queue and mode manager for thread-safe dispatch
-  auto *eventQueue = ctx->eventQueue;
-  auto *modeMgr = ctx->modeManager;
-  auto *hotkeyMgr = ctx->hotkeyManager;
+    auto *modeMgr = ctx->modeManager;
+    auto *hotkeyMgr = ctx->hotkeyManager;
 
-// Register hotkey with dispatch based on IO.Executor config mode
-auto *io = ctx->io;
-ExecutorMode execMode = io ? io->GetExecutorMode() : ExecutorMode::Scheduler;
-
-bool success = ctx->hotkeyManager->AddHotkey(
-  hotkeyStr, [vm, callbackId, hotkeyContext, eventQueue, io, execMode]() {
-    auto invoke = [vm, callbackId, hotkeyContext]() {
-      vm->beginHotkeyExecution();
-      try {
-        vm->invokeCallback(callbackId, {hotkeyContext});
-      } catch (...) {
+    bool success = ctx->hotkeyManager->AddHotkey(
+        hotkeyStr, [vm, callbackId, hotkeyContext]() {
+        vm->beginHotkeyExecution();
+        try {
+            vm->invokeCallback(callbackId, {hotkeyContext});
+        } catch (...) {
+            vm->endHotkeyExecution();
+            throw;
+        }
         vm->endHotkeyExecution();
-        throw;
-      }
-      vm->endHotkeyExecution();
-    };
-
-        switch (execMode) {
-        case ExecutorMode::Executor:
-        case ExecutorMode::Scheduler: {
-            if (eventQueue) {
-                eventQueue->push([invoke]() { invoke(); });
-            } else {
-                invoke();
-            }
-            return;
-        }
-        case ExecutorMode::Sync: {
-            invoke();
-            return;
-        }
-        case ExecutorMode::Thread: {
-            if (eventQueue) {
-                eventQueue->push([invoke]() { invoke(); });
-            } else {
-                invoke();
-            }
-            return;
-        }
-        }
     });
 
     // Register conditional hotkey (when/if mode conditions)
-    // This uses the Scheduler's event loop to evaluate conditions and trigger actions
-    if (eventQueue && modeMgr && hotkeyMgr) {
+    if (modeMgr && hotkeyMgr) {
         ctx->hotkeyManager->AddContextualHotkey(
             hotkeyStr,
-            // Condition: evaluated by checking current mode
             [modeMgr]() {
                 std::string mode = modeMgr->getCurrentMode();
                 return !mode.empty() && mode != "default";
             },
-            // True action: dispatch based on IO.Executor mode
-            [vm, callbackId, hotkeyContext, eventQueue, io, execMode]() {
-                auto invoke = [vm, callbackId, hotkeyContext]() {
-                    vm->beginHotkeyExecution();
-                    try {
-                        vm->invokeCallback(callbackId, {hotkeyContext});
-                    } catch (...) {
-                        vm->endHotkeyExecution();
-                        throw;
-                    }
+            [vm, callbackId, hotkeyContext]() {
+                vm->beginHotkeyExecution();
+                try {
+                    vm->invokeCallback(callbackId, {hotkeyContext});
+                } catch (...) {
                     vm->endHotkeyExecution();
-                };
-
-                switch (execMode) {
-                case ExecutorMode::Executor:
-                case ExecutorMode::Scheduler: {
-                    if (eventQueue) {
-                        eventQueue->push([invoke]() { invoke(); });
-                    } else {
-                        invoke();
-                    }
-                    return;
+                    throw;
                 }
-                case ExecutorMode::Sync: {
-                    invoke();
-                    return;
-                }
-                case ExecutorMode::Thread: {
-                    if (eventQueue) {
-                        eventQueue->push([invoke]() { invoke(); });
-                    } else {
-                        invoke();
-                    }
-                    return;
-                }
-                }
+                vm->endHotkeyExecution();
             });
     }
 
@@ -2869,10 +2808,6 @@ Value InputBridge::handleHotkeyRegisterConditional(
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Conditional hotkey via when block", callbackId);
 
-    auto *eventQueue = ctx->eventQueue;
-    auto *io = ctx->io;
-    ExecutorMode execMode = io ? io->GetExecutorMode() : ExecutorMode::Scheduler;
-
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
     auto makeInvoke = [vm, callbackId, hotkeyContext]() {
@@ -2886,29 +2821,9 @@ Value InputBridge::handleHotkeyRegisterConditional(
         vm->endHotkeyExecution();
     };
 
-    auto trueAction = [makeInvoke, eventQueue, execMode]() {
-        switch (execMode) {
-        case ExecutorMode::Executor:
-        case ExecutorMode::Scheduler:
-        case ExecutorMode::Thread: {
-            if (eventQueue) {
-                eventQueue->push([makeInvoke]() { makeInvoke(); });
-            } else {
-                makeInvoke();
-            }
-            return;
-        }
-        case ExecutorMode::Sync: {
-            makeInvoke();
-            return;
-        }
-        }
-    };
+    auto trueAction = makeInvoke;
 
-    auto falseAction = [vm, condCallbackId]() {
-        // When condition becomes false, ungrab is handled by
-        // ConditionalHotkeyManager automatically.
-        // Evaluate condition function to ensure clean state.
+    auto falseAction = []() {
     };
 
     auto conditionFn = [vm, condCallbackId]() -> bool {

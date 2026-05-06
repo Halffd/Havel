@@ -35,12 +35,12 @@ static std::vector<Value> stripReceiver(VMApi& api, const std::vector<Value>& ar
 }
 
 static std::shared_ptr<ImageService> getImageService() {
-    auto& registry = host::ServiceRegistry::instance();
-    auto svc = registry.get<ImageService>();
-    if (!svc) {
-        debug("ImageModule: ImageService not available");
-    }
-    return svc;
+  auto& registry = host::ServiceRegistry::instance();
+  auto svc = registry.get<ImageService>();
+  if (!svc) {
+    debug("ImageModule: ImageService not available");
+  }
+  return svc;
 }
 
 static int toInt(const Value& v, int def = 0) {

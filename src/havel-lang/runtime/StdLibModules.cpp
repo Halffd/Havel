@@ -13,7 +13,10 @@
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
 #include "../../modules/hotkey/HotkeyModule.hpp"
+#include "../../modules/image/ImageModule.hpp"
+#include "../../modules/media/MediaModule.hpp"
 #include "../../modules/mouse/MouseModule.hpp"
+#include "../../modules/screenshot/ScreenshotModule.hpp"
 #include "../../modules/ui/UIModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
 #endif
@@ -101,8 +104,17 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
     // Register automation module (auto clicker, runner, key presser)
     modules::registerAutomationModule(*api);
 
-    // Register pixel module (pixel, image search, OCR)
-    modules::registerPixelModule(*api);
+  // Register pixel module (pixel, image search, OCR)
+  modules::registerPixelModule(*api);
+
+  // Register image module (OpenCV image processing)
+  modules::registerImageModule(*api);
+
+  // Register media module (MPRIS/D-Bus media control)
+  modules::registerMediaModule(*api);
+
+  // Register screenshot module (screen capture)
+  modules::registerScreenshotModule(*api);
 #endif
 
 	// Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are

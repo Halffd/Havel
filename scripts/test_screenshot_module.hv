@@ -1,0 +1,40 @@
+// Screenshot module test
+// Requires X11/Qt runtime for actual captures
+
+print("=== Screenshot Module Test ===")
+
+print("screenshot module exists:")
+print(screenshot != null)
+
+// Monitor count
+mc = screenshot.monitorCount()
+print("monitor count:")
+print(mc)
+
+// Monitor geometry
+if mc > 0
+    geo = screenshot.monitorGeometry(0)
+    print("monitor 0 geometry:")
+    print(geo)
+end
+
+// Try capture (may fail in headless mode)
+print("Testing screenshot.capture...")
+result = screenshot.capture()
+print("capture result:")
+print(result)
+
+if result != null
+    print("width:")
+    print(result.width)
+    print("height:")
+    print(result.height)
+end
+
+// Capture region
+print("Testing screenshot.captureRegion...")
+region = screenshot.captureRegion(0, 0, 100, 100)
+print("captureRegion result:")
+print(region)
+
+print("=== Screenshot Module Test Complete ===")

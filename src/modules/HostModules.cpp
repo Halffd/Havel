@@ -71,39 +71,35 @@ namespace havel {
  * All services MUST be registered here - modules will fail if services are missing.
  */
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
-    if (!hostAPI) {
-        throw std::runtime_error("initializeServiceRegistry: hostAPI is null");
-    }
+ if (!hostAPI) {
+ debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
+ return;
+ }
 
-    auto& registry = host::ServiceRegistry::instance();
+ auto& registry = host::ServiceRegistry::instance();
 
-    // Register all services - explicit construction, no fallbacks
-    if (!hostAPI->GetIO()) {
-        throw std::runtime_error("initializeServiceRegistry: IO not available");
-    }
-    auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
-    registry.registerService<host::IOService>(ioService);
+ if (hostAPI->GetIO()) {
+ auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
+ registry.registerService<host::IOService>(ioService);
+ } else {
+ debug("initializeServiceRegistry: IO not available, skipping IO-dependent services");
+ }
 
-    // HotkeyManager is optional - only register HotkeyService if available
-    if (hostAPI->GetHotkeyManager()) {
-        auto hotkeyManager = hostAPI->GetHotkeyManager();
-        auto hotkeyService = std::make_shared<host::HotkeyService>(
-            std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
-        registry.registerService<host::HotkeyService>(hotkeyService);
-    }
+ if (hostAPI->GetHotkeyManager()) {
+ auto hotkeyManager = hostAPI->GetHotkeyManager();
+ auto hotkeyService = std::make_shared<host::HotkeyService>(
+ std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
+ registry.registerService<host::HotkeyService>(hotkeyService);
+ }
 
-    // WindowManager is required for window operations
-    if (!hostAPI->GetWindowManager()) {
-        throw std::runtime_error("initializeServiceRegistry: WindowManager not available");
-    }
-    auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
-    registry.registerService<host::WindowService>(windowService);
+ if (hostAPI->GetWindowManager()) {
+ auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
+ registry.registerService<host::WindowService>(windowService);
+ }
 
-    // ModeManager is optional - ModeService is created later in createHostBridgeDependencies()
-    // when VM is available because it needs VM* for callback management
-    if (hostAPI->GetModeManager()) {
-        // ModeService will be created in createHostBridgeDependencies()
-    }
+ if (hostAPI->GetModeManager()) {
+ // ModeService will be created in createHostBridgeDependencies()
+ }
 
     // ProcessManager is optional
     if (hostAPI->GetProcessManager()) {
@@ -153,11 +149,13 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     auto altTabService = std::make_shared<host::AltTabService>();
     registry.registerService<host::AltTabService>(altTabService);
 
-    // Automation service needs IO pointer
-    auto automationService = std::make_shared<host::AutomationService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
-    registry.registerService<host::AutomationService>(automationService);
+ // Automation service needs IO pointer
+ if (hostAPI->GetIO()) {
+ auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
+ registry.registerService<host::AutomationService>(automationService);
+ }
 
-    // Async service doesn't need constructor args (pure C++ with std::thread)
+ // Async service doesn't need constructor args (pure C++ with std::thread)
     auto asyncService = std::make_shared<host::AsyncService>();
     registry.registerService<host::AsyncService>(asyncService);
 

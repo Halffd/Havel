@@ -1,52 +1,57 @@
 // Pixel module test
-// This script tests the pixel module API structure
-// Note: pixel.get/match/find etc. require PixelAutomationService (needs X11/Qt runtime)
-// In headless/test mode, these functions gracefully return null/false
+// In headless/minimal mode, most pixel functions return null/false
+// In GUI mode with X11, they return real screen data
 
 print("=== Pixel Module Test ===")
-print("")
 
-// Module exists and is an object
-print("pixel module exists: " + (pixel != null))
-print("pixel is object: " + (type(pixel) == "object"))
-print("")
+print("pixel module exists:")
+print(pixel != null)
 
-// Test method existence by calling with graceful fallback
-print("Testing pixel.get (headless = null):")
-result = pixel.get(0, 0)
-print("  pixel.get(0, 0) = " + result)
+// Screen dimensions (null in headless)
+sw = pixel.screenWidth()
+sh = pixel.screenHeight()
+print("screenWidth:")
+print(sw)
+print("screenHeight:")
+print(sh)
 
-print("Testing pixel.match (headless = null/false):")
-result = pixel.match(0, 0, "#FF0000")
-print("  pixel.match(0, 0, '#FF0000') = " + result)
+// pixel.get (returns color object or null)
+c = pixel.get(0, 0)
+print("pixel.get(0,0):")
+print(c)
 
-print("Testing pixel.wait (headless = false):")
-result = pixel.wait(0, 0, "#FF0000", 0, 100)
-print("  pixel.wait(0, 0, '#FF0000', 0, 100) = " + result)
+if c != null {
+    print("  r:")
+    print(c.r)
+    print("  g:")
+    print(c.g)
+    print("  b:")
+    print(c.b)
+}
 
-print("Testing pixel.findImage (headless = empty match):")
-result = pixel.findImage("/tmp/nonexistent.png")
-print("  pixel.findImage('/tmp/nonexistent.png') = " + result)
+// pixel.match (returns bool)
+m = pixel.match(0, 0, "#FF0000", 10)
+print("pixel.match(0,0,#FF0000,10):")
+print(m)
 
-print("Testing pixel.existsImage (headless = false):")
-result = pixel.existsImage("/tmp/nonexistent.png")
-print("  pixel.existsImage('/tmp/nonexistent.png') = " + result)
+// pixel.capture (returns bool)
+cap = pixel.capture("/tmp/havel_pixel_test.png")
+print("pixel.capture result:")
+print(cap)
 
-print("Testing pixel.countImage (headless = 0):")
-result = pixel.countImage("/tmp/nonexistent.png")
-print("  pixel.countImage('/tmp/nonexistent.png') = " + result)
+// pixel.captureRegion
+capR = pixel.captureRegion(0, 0, 100, 100, "/tmp/havel_pixel_region.png")
+print("pixel.captureRegion result:")
+print(capR)
 
-print("Testing pixel.findAllImage (headless = empty array):")
-result = pixel.findAllImage("/tmp/nonexistent.png")
-print("  pixel.findAllImage('/tmp/nonexistent.png') = " + result)
+// pixel.findImage (returns match object or null)
+fi = pixel.findImage("/tmp/havel_pixel_test.png")
+print("pixel.findImage result:")
+print(fi)
 
-print("Testing pixel.readText (headless = empty string):")
-result = pixel.readText()
-print("  pixel.readText() = '" + result + "'")
+// pixel.readText (returns string or null)
+text = pixel.readText()
+print("pixel.readText result:")
+print(text)
 
-print("Testing pixel.capture (headless = false):")
-result = pixel.capture("/tmp/test_capture.png")
-print("  pixel.capture('/tmp/test_capture.png') = " + result)
-
-print("")
 print("=== Pixel Module Test Complete ===")

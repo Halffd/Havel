@@ -1,7 +1,9 @@
 /*
-* ImageService.cpp - Image processing service backed by OpenCV
-*/
+ * ImageService.cpp - Image processing service backed by OpenCV
+ */
 #include "ImageService.hpp"
+
+#ifdef HAVE_OPENCV
 
 #ifdef COUNT
 #undef COUNT
@@ -314,8 +316,48 @@ int64_t ImageService::matchTemplate(int64_t screenHandle, int64_t templHandle, f
 }
 
 void ImageService::releaseAll() {
-  std::lock_guard<std::mutex> lock(impl_->mtx);
-  impl_->images.clear();
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    impl_->images.clear();
 }
 
 } // namespace havel::host
+
+#else // !HAVE_OPENCV
+
+#include <stdexcept>
+
+namespace havel::host {
+
+struct ImageService::Impl {};
+
+ImageService::ImageService() : impl_(std::make_unique<Impl>()) {}
+ImageService::~ImageService() = default;
+
+int64_t ImageService::load(const std::string&) { return 0; }
+bool ImageService::save(int64_t, const std::string&) { return false; }
+void ImageService::release(int64_t) {}
+bool ImageService::isValid(int64_t) const { return false; }
+ImageInfo ImageService::info(int64_t) const { return {}; }
+int ImageService::width(int64_t) const { return 0; }
+int ImageService::height(int64_t) const { return 0; }
+int ImageService::channels(int64_t) const { return 0; }
+int64_t ImageService::resize(int64_t, int, int) { return 0; }
+int64_t ImageService::crop(int64_t, int, int, int, int) { return 0; }
+int64_t ImageService::rotate(int64_t, double) { return 0; }
+int64_t ImageService::blur(int64_t, int) { return 0; }
+int64_t ImageService::grayscale(int64_t) { return 0; }
+int64_t ImageService::edges(int64_t, double, double) { return 0; }
+int64_t ImageService::threshold(int64_t, double, double, int) { return 0; }
+int64_t ImageService::flip(int64_t, int) { return 0; }
+int64_t ImageService::blend(int64_t, int64_t, double) { return 0; }
+bool ImageService::getPixel(int64_t, int, int, int&, int&, int&, int&) { return false; }
+bool ImageService::setPixel(int64_t, int, int, int, int, int, int) { return false; }
+int64_t ImageService::create(int, int, int, int, int, int) { return 0; }
+int64_t ImageService::fromRGBA(const std::vector<uint8_t>&, int, int) { return 0; }
+std::vector<uint8_t> ImageService::toRGBA(int64_t) { return {}; }
+int64_t ImageService::matchTemplate(int64_t, int64_t, float, int&, int&, float&) { return -1; }
+void ImageService::releaseAll() {}
+
+} // namespace havel::host
+
+#endif // HAVE_OPENCV

@@ -56,6 +56,8 @@ public:
 
     int64_t matchTemplate(int64_t screen, int64_t templ, float threshold, int& outX, int& outY, float& outConf);
 
+  void releaseAll();
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

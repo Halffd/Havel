@@ -313,4 +313,9 @@ int64_t ImageService::matchTemplate(int64_t screenHandle, int64_t templHandle, f
     return 0;
 }
 
+void ImageService::releaseAll() {
+  std::lock_guard<std::mutex> lock(impl_->mtx);
+  impl_->images.clear();
+}
+
 } // namespace havel::host

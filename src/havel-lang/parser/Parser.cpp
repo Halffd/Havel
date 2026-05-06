@@ -3208,18 +3208,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
-  advance(); // consume "return"
-  std::unique_ptr<havel::ast::Expression> value = nullptr;
+    advance(); // consume "return"
+    std::unique_ptr<havel::ast::Expression> value = nullptr;
 
-  // Skip newlines before checking for return value
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-
-  // Return value is optional
-  if (at().type != havel::TokenType::Semicolon &&
-      at().type != havel::TokenType::CloseBrace &&
-      at().type != havel::TokenType::EOF_TOKEN) {
+    // Return value is optional — newline ends a bare return
+    if (at().type != havel::TokenType::Semicolon &&
+        at().type != havel::TokenType::CloseBrace &&
+        at().type != havel::TokenType::NewLine &&
+        at().type != havel::TokenType::EOF_TOKEN) {
     // Special case: "return @" means "return this" (builder pattern)
     if ((at().type == havel::TokenType::At ||
          at().type == havel::TokenType::Hotkey) &&

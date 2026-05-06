@@ -2797,15 +2797,25 @@ bool success = ctx->hotkeyManager->AddHotkey(
       return;
     }
     case ExecutorMode::Thread: {
-      std::thread([invoke]() {
-        try { invoke(); }
-        catch (const std::exception &e) {
-          ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
-        } catch (...) {
-          ::havel::error("[Hotkey:Thread] unknown exception");
+        if (io) {
+            auto *executor = io->GetHotkeyExecutor();
+            if (executor) {
+                executor->submitExecutionContext(*vm,
+                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
+                        ctx.invokeCallback(callbackId, {hotkeyContext});
+                    });
+                return;
+            }
         }
-      }).detach();
-      return;
+        std::thread([invoke]() {
+            try { invoke(); }
+        catch (const std::exception &e) {
+            ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
+        } catch (...) {
+            ::havel::error("[Hotkey:Thread] unknown exception");
+        }
+        }).detach();
+        return;
     }
     }
   });
@@ -2864,22 +2874,32 @@ bool success = ctx->hotkeyManager->AddHotkey(
     invoke();
     return;
   }
-  case ExecutorMode::Thread: {
-    std::thread([invoke]() {
-      try { invoke(); }
-      catch (const std::exception &e) {
-        ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
-      } catch (...) {
-        ::havel::error("[Hotkey:Thread] unknown exception");
-      }
-    }).detach();
-    return;
-  }
-  }
-});
-  }
+    case ExecutorMode::Thread: {
+        if (io) {
+            auto *executor = io->GetHotkeyExecutor();
+            if (executor) {
+                executor->submitExecutionContext(*vm,
+                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
+                        ctx.invokeCallback(callbackId, {hotkeyContext});
+                    });
+                return;
+            }
+        }
+        std::thread([invoke]() {
+        try { invoke(); }
+        catch (const std::exception &e) {
+            ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
+        } catch (...) {
+            ::havel::error("[Hotkey:Thread] unknown exception");
+        }
+        }).detach();
+        return;
+    }
+}
+    }); 
+    }
 
-  // Return hotkey context object on success, null on failure
+    // Return hotkey context object on success, null on failure
   // This allows: let hk = ^t => { ... }
 if (success) {
         return hotkeyContext;
@@ -2934,20 +2954,19 @@ Value InputBridge::handleHotkeyRegisterConditional(
         vm->endHotkeyExecution();
     };
 
-    auto trueAction = [makeInvoke, eventQueue, io, execMode]() {
+    auto trueAction = [makeInvoke, eventQueue, io, execMode, vm, callbackId, hotkeyContext]() {
         switch (execMode) {
-        case ExecutorMode::Executor: {
-            if (io) {
-                auto *executor = io->GetHotkeyExecutor();
-                if (executor) {
-                    // Can't capture makeInvoke's full closure into
-                    // submitExecutionContext easily; use eventQueue fallback
-                    if (eventQueue) {
-                        eventQueue->push([makeInvoke]() { makeInvoke(); });
-                        return;
-                    }
-                }
+    case ExecutorMode::Executor: {
+        if (io) {
+            auto *executor = io->GetHotkeyExecutor();
+            if (executor) {
+                executor->submitExecutionContext(*vm,
+                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
+                        ctx.invokeCallback(callbackId, {hotkeyContext});
+                    });
+                return;
             }
+        }
             if (eventQueue) {
                 eventQueue->push([makeInvoke]() { makeInvoke(); });
             } else {
@@ -2967,16 +2986,26 @@ Value InputBridge::handleHotkeyRegisterConditional(
             makeInvoke();
             return;
         }
-        case ExecutorMode::Thread: {
-            std::thread([makeInvoke]() {
-                try { makeInvoke(); }
-                catch (const std::exception &e) {
-                    ::havel::error(std::string("[CondHotkey:Thread] ") + e.what());
-                } catch (...) {
-                    ::havel::error("[CondHotkey:Thread] unknown exception");
-                }
-            }).detach();
-            return;
+    case ExecutorMode::Thread: {
+        if (io) {
+            auto *executor = io->GetHotkeyExecutor();
+            if (executor) {
+                executor->submitExecutionContext(*vm,
+                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
+                        ctx.invokeCallback(callbackId, {hotkeyContext});
+                    });
+                return;
+            }
+        }
+        std::thread([makeInvoke]() {
+        try { makeInvoke(); }
+        catch (const std::exception &e) {
+            ::havel::error(std::string("[CondHotkey:Thread] ") + e.what());
+        } catch (...) {
+            ::havel::error("[CondHotkey:Thread] unknown exception");
+        }
+        }).detach();
+        return;
         }
         }
     };

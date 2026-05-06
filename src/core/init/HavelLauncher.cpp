@@ -632,20 +632,32 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     havel::Havel havel_inst(false, combinedNames, false, true, args);
 
-    if (!havel_inst.isInitialized()) {
-      error("Failed to initialize havel::Havel");
-      return 1;
-    }
+ if (!havel_inst.isInitialized()) {
+ error("Failed to initialize havel::Havel");
+ return 1;
+ }
 
-    auto *bytecodeVM = havel_inst.getBytecodeVM();
-    auto *hostBridge = havel_inst.getHostBridge();
+ auto *bytecodeVM = havel_inst.getBytecodeVM();
+ auto *hostBridge = havel_inst.getHostBridge();
 
-    if (!bytecodeVM || !hostBridge) {
-      error("Bytecode VM not available");
-      return 1;
-    }
+ if (!bytecodeVM || !hostBridge) {
+ error("Bytecode VM not available");
+ return 1;
+ }
 
-    // Set up timer checks during script execution
+ auto *hkManager = havel_inst.getHotkeyManagerPtr();
+ auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
+ havel_inst.getIOPtr(),
+ hkManager,
+ Configs::Get(),
+ havel_inst.getWindowManagerPtr(),
+ nullptr, nullptr, nullptr, nullptr, nullptr,
+ nullptr, nullptr, nullptr, nullptr, nullptr,
+ hkManager ? hkManager->getModeManager().get() : nullptr,
+ std::vector<std::string>{}));
+ havel::initializeServiceRegistry(hostAPI);
+
+ // Set up timer checks during script execution
     bytecodeVM->setTimerCheckFunction([hostBridge]() {
       hostBridge->checkTimers();
     });
@@ -662,8 +674,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    auto *hkManager = havel_inst.getHotkeyManagerPtr();
-    if (hkManager) {
+ if (hkManager) {
       hkManager->printHotkeys();
       hkManager->updateAllConditionalHotkeys();
     }
@@ -888,14 +899,16 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
  try {
  havel::HavelEngine engine({
-     .debugBytecode = cfg.debugBytecode,
-     .debugLexer = cfg.debugLexer,
-     .debugParser = cfg.debugParser,
-     .debugAst = cfg.debugAst,
-     .stopOnError = cfg.stopOnError
+ .debugBytecode = cfg.debugBytecode,
+ .debugLexer = cfg.debugLexer,
+ .debugParser = cfg.debugParser,
+ .debugAst = cfg.debugAst,
+ .stopOnError = cfg.stopOnError
  });
+ auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
+ havel::initializeServiceRegistry(hostAPI);
  engine.initializeMinimal();
-  engine.execute(combinedCode, "__main__", combinedNames);
+ engine.execute(combinedCode, "__main__", combinedNames);
  engine.shutdown();
  return 0;
  } catch (const std::exception &e) {

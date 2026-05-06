@@ -404,11 +404,13 @@ case TokenType::Nullish:
     case TokenType::And:
       return 40;
 
-    // Equality
-    case TokenType::Equals:
-    case TokenType::NotEquals:
-    case TokenType::Is:
-      return 50;
+        // Equality
+        case TokenType::Equals:
+        case TokenType::NotEquals:
+        case TokenType::Is:
+        case TokenType::Tilde:
+        case TokenType::Matches:
+        return 50;
 
     // Membership (in / not in)
     case TokenType::In:
@@ -584,10 +586,12 @@ setBoth(ModuloAssign, 10, 10);
       // Logical AND
       setBoth(And, 40, 40);
       
-      // Equality
-      setBoth(Equals, 50, 50);
-      setBoth(NotEquals, 50, 50);
-      setBoth(Is, 50, 50);  // Identity comparison
+        // Equality
+        setBoth(Equals, 50, 50);
+        setBoth(NotEquals, 50, 50);
+        setBoth(Is, 50, 50); // Identity comparison
+        setBoth(Tilde, 50, 50); // Regex match (~)
+        setBoth(Matches, 50, 50); // Regex match (matches)
       
       // Relational
       setBoth(Less, 60, 60);
@@ -1548,13 +1552,20 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
           std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
     }
 
-    case TokenType::Is: {
-      auto right = parsePrattExpression(getRightBindingPower(token.type));
-      return std::make_unique<ast::BinaryExpression>(
-          std::move(left), ast::BinaryOperator::Is, std::move(right));
-    }
+        case TokenType::Is: {
+            auto right = parsePrattExpression(getRightBindingPower(token.type));
+            return std::make_unique<ast::BinaryExpression>(
+                std::move(left), ast::BinaryOperator::Is, std::move(right));
+        }
 
-    case TokenType::In: {
+        case TokenType::Tilde:
+        case TokenType::Matches: {
+            auto right = parsePrattExpression(getRightBindingPower(token.type));
+            return std::make_unique<ast::BinaryExpression>(
+                std::move(left), ast::BinaryOperator::Matches, std::move(right));
+        }
+
+        case TokenType::In: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::In, std::move(right));
@@ -7113,21 +7124,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
-  auto left = parseComparison();
+    auto left = parseComparison();
 
-  // Regex match: ~ /pattern/ or ~ "string"
-  if (at().type == havel::TokenType::Tilde) {
-    auto tildeTok = at();
-    advance();
-    auto right = parseRange();
-    auto bin = std::make_unique<havel::ast::BinaryExpression>(
-        std::move(left), havel::ast::BinaryOperator::Tilde, std::move(right));
-    bin->line = tildeTok.line;
-    bin->column = tildeTok.column;
-    left = std::move(bin);
-  }
-
-  while (at().type == havel::TokenType::Equals ||
+    while (at().type == havel::TokenType::Equals ||
          at().type == havel::TokenType::NotEquals) {
     auto opTok = at(); // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
@@ -7174,20 +7173,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
     left = std::move(bin);
   }
 
-  // Regex match operator: matches or ~
-  if (at().type == havel::TokenType::Matches ||
-      at().type == havel::TokenType::Tilde) {
-    auto matchesTok = at(); // Save location
-    advance();              // consume 'matches' or '~'
-    auto right = parseRange();
-    auto bin = std::make_unique<havel::ast::BinaryExpression>(
-        std::move(left), havel::ast::BinaryOperator::Matches, std::move(right));
-    bin->line = matchesTok.line;
-    bin->column = matchesTok.column;
-    left = std::move(bin);
-  }
-
-  // Comparison operators: < > <= >=
+    // Comparison operators: < > <= >=
   // Left-associative: a < b < c parses as ((a < b) < c)
   // Note: Python-style chaining (a < b && b < c) is NOT supported.
   // For Python semantics, use explicit: (a < b) && (b < c)

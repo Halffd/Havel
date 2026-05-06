@@ -905,9 +905,8 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
  .debugAst = cfg.debugAst,
  .stopOnError = cfg.stopOnError
  });
- auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
- havel::initializeServiceRegistry(hostAPI);
- engine.initializeMinimal();
+        auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
+        engine.initializeMinimal();
  engine.execute(combinedCode, "__main__", combinedNames);
  engine.shutdown();
  return 0;

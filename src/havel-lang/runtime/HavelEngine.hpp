@@ -40,13 +40,11 @@ public:
         initializeFull(hostAPI);
     }
 
-    void initializeFull(std::shared_ptr<IHostAPI> hostAPI) {
-        if (initialized_) return;
+  void initializeFull(std::shared_ptr<IHostAPI> hostAPI) {
+    if (initialized_) return;
 
-        host::ServiceRegistry::instance().clear();
-        if (hostAPI && hostAPI->GetIO()) {
-            initializeServiceRegistry(hostAPI);
-        }
+    host::ServiceRegistry::instance().clear();
+    initializeServiceRegistry(hostAPI);
 
         hostContext_ = std::make_unique<HostContext>(createHostContext(hostAPI));
 

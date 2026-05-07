@@ -17,6 +17,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
+#include <filesystem>
 #include <sstream>
 #include <unordered_set>
 #include <llvm/Transforms/Utils/Cloning.h>
@@ -1915,9 +1917,20 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
         addSym("havel_vm_begin_module", reinterpret_cast<void*>(&havel_vm_begin_module));
         addSym("havel_vm_end_module", reinterpret_cast<void*>(&havel_vm_end_module));
 
-        if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
+    if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         llvm::consumeError(std::move(err));
     }
+
+    // Phase 3 cache metadata: load persisted hash->symbol aliases.
+    const char* customCache = std::getenv("HAVEL_JIT_CACHE_INDEX");
+    if (customCache && *customCache) {
+        cache_index_path_ = customCache;
+    } else if (const char* home = std::getenv("HOME")) {
+        cache_index_path_ = std::string(home) + "/.cache/havel/jit_function_cache.idx";
+    } else {
+        cache_index_path_ = "/tmp/havel_jit_function_cache.idx";
+    }
+    loadCompileCacheIndex();
 }
 
 BytecodeOrcJIT::~BytecodeOrcJIT() = default;
@@ -1947,6 +1960,16 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
                 return;
             default:
                 break;
+        }
+    }
+
+    const uint64_t func_hash = computeFunctionHash(func);
+    auto cached = compile_cache_.find(func_hash);
+    if (cached != compile_cache_.end()) {
+        auto existing = fptrs_.find(cached->second.canonical_name);
+        if (existing != fptrs_.end()) {
+            fptrs_[func.name] = existing->second;
+            return;
         }
     }
 
@@ -2016,7 +2039,27 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     fptrs_[func.name] = reinterpret_cast<void*>((*sym).getValue());
+    compile_cache_[func_hash] = CachedFunction{func.name};
+    saveCompileCacheIndex();
     func.jit_compiled = true;
+}
+
+void BytecodeOrcJIT::compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level) {
+    const uint8_t saved = optimization_level_;
+    optimization_level_ = level > 3 ? 3 : level;
+    compileFunction(func);
+    optimization_level_ = saved;
+}
+
+void BytecodeOrcJIT::compileFunctionTier(const BytecodeFunction &func, uint8_t tier) {
+    // Tier mapping:
+    // tier 1 -> O0 (fast startup / baseline JIT)
+    // tier 2 -> O2 (optimizing background recompile)
+    if (tier <= 1) {
+        compileFunctionAtOptLevel(func, 0);
+        return;
+    }
+    compileFunctionAtOptLevel(func, 2);
 }
 
 Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
@@ -2081,6 +2124,97 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
 
 bool BytecodeOrcJIT::isCompiled(const std::string &func_name) const {
     return fptrs_.count(func_name) > 0;
+}
+
+uint64_t BytecodeOrcJIT::computeFunctionHash(const BytecodeFunction &func) const {
+    uint64_t seed = 1469598103934665603ULL;
+    auto mix = [&](uint64_t v) {
+        seed ^= v;
+        seed *= 1099511628211ULL;
+    };
+
+    mix(static_cast<uint64_t>(func.param_count));
+    mix(static_cast<uint64_t>(func.local_count));
+    mix(static_cast<uint64_t>(func.instructions.size()));
+    mix(static_cast<uint64_t>(func.constants.size()));
+
+    for (const auto &ins : func.instructions) {
+        mix(static_cast<uint64_t>(ins.opcode));
+        mix(static_cast<uint64_t>(ins.operands.size()));
+        for (const auto &op : ins.operands) {
+            switch (op.type) {
+                case Operand::Type::Int:
+                    mix(static_cast<uint64_t>(op.asInt()));
+                    break;
+                case Operand::Type::Double: {
+                    uint64_t bits = 0;
+                    double d = op.asDouble();
+                    std::memcpy(&bits, &d, sizeof(uint64_t));
+                    mix(bits);
+                    break;
+                }
+                case Operand::Type::String:
+                    for (char c : op.asString()) {
+                        mix(static_cast<uint64_t>(static_cast<unsigned char>(c)));
+                    }
+                    break;
+                case Operand::Type::Bool:
+                    mix(op.asBool() ? 1ULL : 0ULL);
+                    break;
+                default:
+                    mix(0ULL);
+                    break;
+            }
+        }
+    }
+
+    for (const auto &c : func.constants) {
+        mix(c.rawBits());
+    }
+    return seed;
+}
+
+void BytecodeOrcJIT::loadCompileCacheIndex() {
+    std::ifstream in(cache_index_path_);
+    if (!in.is_open()) {
+        return;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        auto pos = line.find(' ');
+        if (pos == std::string::npos || pos == 0 || pos + 1 >= line.size()) {
+            continue;
+        }
+        try {
+            uint64_t hash = static_cast<uint64_t>(std::stoull(line.substr(0, pos), nullptr, 16));
+            std::string name = line.substr(pos + 1);
+            compile_cache_[hash] = CachedFunction{name};
+        } catch (...) {
+            // Ignore malformed lines.
+        }
+    }
+}
+
+void BytecodeOrcJIT::saveCompileCacheIndex() const {
+    if (cache_index_path_.empty()) return;
+    try {
+        std::filesystem::path p(cache_index_path_);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path());
+        }
+    } catch (...) {
+        return;
+    }
+
+    std::ofstream out(cache_index_path_, std::ios::trunc);
+    if (!out.is_open()) {
+        return;
+    }
+    out << std::hex;
+    for (const auto& [hash, entry] : compile_cache_) {
+        out << hash << " " << entry.canonical_name << "\n";
+    }
 }
 
 void BytecodeOrcJIT::dumpAssembly(const std::string &filename) {

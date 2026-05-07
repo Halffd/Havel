@@ -67,6 +67,8 @@ public:
     void setDumpIR(bool enabled) { dump_ir_ = enabled; }
     void setDumpAsmToFile(bool enabled) { dump_asm_to_file_ = enabled; }
     void setOptimizationLevel(uint8_t level) { optimization_level_ = level > 3 ? 3 : level; }
+    void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
+    void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
 
     void dumpAssembly(const std::string &filename);
 
@@ -74,8 +76,14 @@ public:
     void translate(const BytecodeFunction &func, llvm::Module &module);
 
 private:
+    struct CachedFunction {
+        std::string canonical_name;
+    };
+
     std::unique_ptr<llvm::orc::LLJIT> lljit_;
     std::unordered_map<std::string, void*> fptrs_;
+    std::unordered_map<uint64_t, CachedFunction> compile_cache_;
+    std::string cache_index_path_;
     std::unique_ptr<llvm::TargetMachine> target_machine_;
     bool debug_jit_ = false;
     bool dump_ir_ = false;
@@ -85,6 +93,9 @@ private:
 
     void initTargetMachine();
     void runOptimizations(llvm::Module &module);
+    uint64_t computeFunctionHash(const BytecodeFunction &func) const;
+    void loadCompileCacheIndex();
+    void saveCompileCacheIndex() const;
 
     static void InitializeLLVM();
 };

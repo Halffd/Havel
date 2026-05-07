@@ -52,7 +52,7 @@ public:
                       const ExecutionPolicy &policy);
   ~HostBridge();
 
-  void install();
+  void install(bool eagerBridgeInstall = true);
   void clear();
   void shutdown();
 

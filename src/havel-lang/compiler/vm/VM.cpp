@@ -59,6 +59,13 @@ static std::string operatorSymbolToMethodName(const std::string &sym) {
 }
 
 namespace havel::compiler {
+namespace {
+static uint64_t envU64(const char* name, uint64_t fallback) {
+  const char* v = std::getenv(name);
+  if (!v || !*v) return fallback;
+  try { return static_cast<uint64_t>(std::stoull(v)); } catch (...) { return fallback; }
+}
+}
 
 // ============================================================================
 // ScriptError conversion to unified error system (TEMPORARILY DISABLED for Qt moc compatibility)
@@ -630,9 +637,17 @@ std::string VM::formatErrorWithContext(const std::string &message) const {
   return ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", message, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
 }
 
-VM::VM() { registerDefaultHostFunctions(); }
+VM::VM() {
+  tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
+  tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
+  tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
+  registerDefaultHostFunctions();
+}
 
 VM::VM(const ::havel::HostContext &ctx) {
+  tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
+  tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
+  tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
   // Store context for service access
   context_ = &ctx;
   registerDefaultHostFunctions();
@@ -641,6 +656,8 @@ VM::VM(const ::havel::HostContext &ctx) {
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
 
 VM::~VM() {
+  tier2_worker_running_.store(false);
+  if (tier2_worker_.joinable()) tier2_worker_.join();
   if (heap_.externalRootCount() > 0) {
         ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
   }
@@ -4361,6 +4378,39 @@ void VM::execBinaryOp(const Instruction &instruction) {
     fb.right_type_mask |= getFeedbackMask(right);
 
     
+    if (tiering_enabled_ && frame.function && jit_compiler_) {
+      const std::string fn_name = frame.function->name;
+      if (fb.execution_count >= tier1_threshold_ && !tier1_compiled_.count(fn_name)) {
+        tier1_compiled_.insert(fn_name);
+        jit_compiler_->compileFunctionTier(*frame.function, 1);
+      }
+      if (fb.execution_count >= tier2_threshold_ && !tier2_compiled_.count(fn_name)) {
+        tier2_compiled_.insert(fn_name);
+        {
+          std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+          tier2_queue_.push(*frame.function);
+        }
+        if (!tier2_worker_running_.exchange(true)) {
+          tier2_worker_ = std::thread([this]() {
+            while (tier2_worker_running_.load()) {
+              std::optional<BytecodeFunction> fn;
+              {
+                std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+                if (!tier2_queue_.empty()) {
+                  fn = tier2_queue_.front();
+                  tier2_queue_.pop();
+                }
+              }
+              if (fn.has_value() && jit_compiler_) {
+                jit_compiler_->compileFunctionTier(*fn, 2);
+              } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+              }
+            }
+          });
+        }
+      }
+    }
     if (fb.execution_count == 1000 && hot_func_cb_) {
       hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
     }

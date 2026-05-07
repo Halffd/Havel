@@ -1,0 +1,4 @@
+print("phase8 bootstrap start")
+rc = shell.exec("./build-debug/havel --run scripts/test_simple.hv")
+print("phase8 bootstrap rc")
+print(rc)

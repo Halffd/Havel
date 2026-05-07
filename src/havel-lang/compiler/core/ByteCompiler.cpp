@@ -1951,16 +1951,24 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
         emit(OpCode::IMPORT);
 
-        if (statement.isNamedImport && !statement.importNames.empty()) {
-            for (const auto &name : statement.importNames) {
-                emit(OpCode::DUP);
-                uint32_t key_sid = addStringConstant(name);
-                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
-                emit(OpCode::OBJECT_GET);
-                uint32_t global_sid = addStringConstant(name);
-                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+    if (statement.isNamedImport && !statement.importNames.empty()) {
+        for (size_t i = 0; i < statement.importNames.size(); ++i) {
+            const auto &name = statement.importNames[i];
+            const auto &alias = (i < statement.importAliases.size())
+                                    ? statement.importAliases[i]
+                                    : name;
+            if (name == "*" && statement.isWildcard) {
+                emit(OpCode::IMPORT_WILDCARD);
+                return;
             }
-            emit(OpCode::POP);
+            emit(OpCode::DUP);
+            uint32_t key_sid = addStringConstant(name);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
+            emit(OpCode::OBJECT_GET);
+            uint32_t global_sid = addStringConstant(alias);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+        }
+        emit(OpCode::POP);
         } else if (!statement.alias.empty()) {
             uint32_t alias_sid = addStringConstant(statement.alias);
             emit(OpCode::STORE_GLOBAL, Value::makeStringValId(alias_sid));
@@ -5290,12 +5298,17 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
-  case ast::NodeType::SpreadPattern: {
-    const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
-    if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
-    break;
-  }
-  
+case ast::NodeType::SpreadPattern: {
+      const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
+      if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
+      break;
+    }
+  case ast::NodeType::GoExpression: {
+      const auto &go_expr = static_cast<const ast::GoExpression &>(expression);
+      if (go_expr.call) collectLambdaExpressions(*go_expr.call, out);
+      break;
+    }
+
   default:
     break;
   }
@@ -5834,21 +5847,21 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
  { uint32_t _sid = addStringConstant(cmd.key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
  break;
- case ast::InputCommand::MouseClick:
- // io.mouseClick(cmd.text) - text contains button name
- {
- uint32_t strId = addStringConstant("io.mouseClick");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
- break;
- case ast::InputCommand::MouseMove:
- // io.mouseMove(x, y) - xExprStr and yExprStr contain coordinates
- {
- uint32_t strId = addStringConstant("io.mouseMove");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
+        case ast::InputCommand::MouseClick:
+            // io.click(cmd.text) - text contains button name
+            {
+                uint32_t strId = addStringConstant("io.click");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
+            { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+            break;
+        case ast::InputCommand::MouseMove:
+            // io.mouseMoveTo(x, y) - xExprStr and yExprStr contain coordinates
+            {
+                uint32_t strId = addStringConstant("io.mouseMoveTo");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
  { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));

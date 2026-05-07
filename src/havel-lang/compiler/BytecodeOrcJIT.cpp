@@ -3075,6 +3075,18 @@ case OpCode::INCLOCAL:
         break;
     }
 
+    case OpCode::IMPORT_WILDCARD: {
+        llvm::Value* exports = vstack.back(); vstack.pop_back();
+        llvm::Function* fnImportWildcard = module.getFunction("havel_vm_import_wildcard");
+        if (!fnImportWildcard) {
+            fnImportWildcard = llvm::Function::Create(
+                llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_import_wildcard", &module);
+        }
+        B.CreateCall(fnImportWildcard, {vmArg, exports});
+        break;
+    }
+
     // Class operations
     case OpCode::STRUCT_NEW: {
         // Operands: type_name_id, arg_count

@@ -505,6 +505,12 @@ class JITCompiler {
 public:
   virtual ~JITCompiler() = default;
   virtual void compileFunction(const BytecodeFunction &func) = 0;
+  // Tier-aware compilation contract:
+  // tier 1 = baseline/fast compile, tier 2 = optimizing/background compile.
+  virtual void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) {
+    (void)tier;
+    compileFunction(func);
+  }
   virtual Value executeCompiled(VM* vm, const std::string &func_name,
                                 const std::vector<Value> &args) = 0;
   virtual bool isCompiled(const std::string &func_name) const = 0;

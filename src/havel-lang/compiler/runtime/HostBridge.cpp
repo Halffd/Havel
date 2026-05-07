@@ -17,8 +17,10 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 
+#include <fstream>
 #include "../../../host/app/AppService.hpp"
 #include "../../../host/media/MediaService.hpp"
 #include "../../../host/network/NetworkService.hpp"
@@ -180,30 +182,47 @@ void HostBridge::initBridges() {
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
   browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
   toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);
+
+  // Lazy module registration hooks: module code is registered on first `use`.
+  moduleLoader_.registerBuiltin("io", [this](VM &) { ioBridge_->install(options_); },
+                                {"io", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("window", [this](VM &) { systemBridge_->install(options_); },
+                                {"window", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("ui", [this](VM &) { uiBridge_->install(options_); },
+                                {"ui", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("audio", [this](VM &) { audioBridge_->install(options_); },
+                                {"audio", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("browser", [this](VM &) { browserBridge_->install(options_); },
+                                {"browser", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("automation",
+                                [this](VM &) { automationBridge_->install(options_); },
+                                {"automation", "1.0", true, false, ""});
 }
 
-void HostBridge::install() {
+void HostBridge::install(bool eagerBridgeInstall) {
   options_.host_functions.reserve(64);
   vm_setup_callbacks_.reserve(16);
 
-  // Install all bridge modules (policy checks happen at call time if needed)
-  ioBridge_->install(options_);
-  systemBridge_->install(options_);
-  uiBridge_->install(options_);
-  inputBridge_->install(options_);
-  mediaBridge_->install(options_);
-  networkBridge_->install(options_);
-  audioBridge_->install(options_);
-  mpvBridge_->install(options_);
-  displayBridge_->install(options_);
-  configBridge_->install(options_);
-  modeBridge_->install(options_);
-  timerBridge_->install(options_);
-  appBridge_->install(options_);
-  concurrencyBridge_->install(options_);
-  automationBridge_->install(options_);
-  browserBridge_->install(options_);
-  toolsBridge_->install(options_);
+  if (eagerBridgeInstall) {
+    // Default/full mode: install all bridge modules eagerly.
+    ioBridge_->install(options_);
+    systemBridge_->install(options_);
+    uiBridge_->install(options_);
+    inputBridge_->install(options_);
+    mediaBridge_->install(options_);
+    networkBridge_->install(options_);
+    audioBridge_->install(options_);
+    mpvBridge_->install(options_);
+    displayBridge_->install(options_);
+    configBridge_->install(options_);
+    modeBridge_->install(options_);
+    timerBridge_->install(options_);
+    appBridge_->install(options_);
+    concurrencyBridge_->install(options_);
+    automationBridge_->install(options_);
+    browserBridge_->install(options_);
+    toolsBridge_->install(options_);
+  }
 
   // Setup dynamic window globals using existing WindowMonitor from
   // HotkeyManager This integrates window monitoring with bytecode VM without
@@ -214,7 +233,7 @@ void HostBridge::install() {
     ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
   }
 
-  // Create hotkey global object with list method (after InputBridge installs hotkey.list)
+  // Create hotkey global object if hotkey module is loaded.
   addVmSetup([this](VM &vm) {
     auto hotkeyObj = vm.createHostObject();
     if (vm.getHostFunctionIndex("hotkey.list") >= 0) {
@@ -686,6 +705,51 @@ return vm->execLengthOp(args[0]);
           return Value::makeStringId(ref.id);
         }
       };
+
+  options_.host_functions["compiler.build"] =
+      [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !ctx_ || !ctx_->vm) return Value::makeBool(false);
+        auto readStr = [&](const Value &v) -> std::string {
+          if (v.isStringValId() && ctx_->vm->getCurrentChunk()) {
+            return ctx_->vm->getCurrentChunk()->getString(v.asStringValId());
+          }
+          if (v.isStringId()) {
+            if (auto *s = ctx_->vm->getHeap().string(v.asStringId())) return *s;
+          }
+          return {};
+        };
+        const std::string inputPath = readStr(args[0]);
+        const std::string outputPath = readStr(args[1]);
+        if (inputPath.empty() || outputPath.empty()) return Value::makeBool(false);
+
+        std::ifstream in(inputPath);
+        if (!in.is_open()) return Value::makeBool(false);
+        std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        in.close();
+        if (source.empty()) return Value::makeBool(false);
+
+        try {
+          parser::Parser parser;
+          auto program = parser.produceAST(source);
+          if (!program || parser.hasErrors()) return Value::makeBool(false);
+
+          ByteCompiler byteCompiler;
+          auto chunk = byteCompiler.compile(*program);
+          if (!chunk) return Value::makeBool(false);
+
+          ValueSerializer serializer;
+          auto data = serializer.serializeChunk(*chunk);
+          std::ofstream out(outputPath, std::ios::binary);
+          if (!out.is_open()) return Value::makeBool(false);
+          out.write(reinterpret_cast<const char *>(data.data()),
+                    static_cast<std::streamsize>(data.size()));
+          out.close();
+          return Value::makeBool(true);
+        } catch (...) {
+          return Value::makeBool(false);
+        }
+      };
+  options_.host_functions["compiler_build"] = options_.host_functions["compiler.build"];
 
   // Global tokenize() function - lex source code and return token info
   options_.host_functions["tokenize"] =

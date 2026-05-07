@@ -55,6 +55,13 @@ void HostModuleLoader::registerBuiltin(const std::string &name,
   registry_[name] = info;
 }
 
+void HostModuleLoader::registerBuiltin(const std::string &name,
+                                       std::function<void(VM &)> initFn,
+                                       const ModuleInfo &info) {
+  registry_[name] = info;
+  builtinInitFns_[name] = std::move(initFn);
+}
+
 void HostModuleLoader::registerStdlib(const std::string &name,
                                       std::function<void(VM &)> initFn,
                                       const ModuleInfo &info) {
@@ -92,10 +99,10 @@ bool HostModuleLoader::loadModule(const std::string &name, VM &vm) {
 }
 
 bool HostModuleLoader::loadBuiltin(const std::string &name, VM &vm) {
-  (void)name;
-  (void)vm;
-  // Built-in modules provided by HostBridge
-  // HostBridge registers functions during install()
+  auto initIt = builtinInitFns_.find(name);
+  if (initIt != builtinInitFns_.end()) {
+    initIt->second(vm);
+  }
   loadedModules_[name] = true;
   return true;
 }

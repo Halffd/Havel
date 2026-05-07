@@ -19,6 +19,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <queue>
 
 namespace havel::compiler {
 
@@ -878,6 +881,15 @@ private:
     std::function<void()> restart_callback_;
     HotFunctionCallback hot_func_cb_;
     JITCompiler* jit_compiler_ = nullptr;
+    bool tiering_enabled_ = false;
+    uint64_t tier1_threshold_ = 1000;
+    uint64_t tier2_threshold_ = 10000;
+    std::unordered_set<std::string> tier1_compiled_;
+    std::unordered_set<std::string> tier2_compiled_;
+    std::mutex tier2_queue_mutex_;
+    std::queue<BytecodeFunction> tier2_queue_;
+    std::thread tier2_worker_;
+    std::atomic<bool> tier2_worker_running_{false};
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;

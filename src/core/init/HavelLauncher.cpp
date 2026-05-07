@@ -696,8 +696,6 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
                                                   const std::vector<std::string> &hvcFiles) {
   // Load and execute .hvc bytecode files directly
-  std::string combinedNames;
-  havel::compiler::BytecodeChunk combinedChunk;
 
   for (const auto& f : hvcFiles) {
     std::ifstream file(f, std::ios::binary | std::ios::ate);
@@ -722,35 +720,6 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
       return 2;
     }
 
-    if (!combinedNames.empty()) combinedNames += " + ";
-    combinedNames += f;
-
-    // Merge functions from this chunk into combined chunk
-    for (const auto& func : chunk->getAllFunctions()) {
-      havel::compiler::BytecodeFunction copy(func.name, func.param_count, func.local_count);
-      copy.instructions = func.instructions;
-      copy.constants = func.constants;
-      copy.upvalues = func.upvalues;
-      copy.default_values = func.default_values;
-      copy.variadic_param_index = func.variadic_param_index;
-      copy.param_names = func.param_names;
-      copy.is_generator = func.is_generator;
-      combinedChunk.addFunction(std::move(copy));
-    }
-  }
-
-  if (combinedChunk.getFunctionCount() == 0) {
-    error("No functions found in bytecode files");
-    return 2;
-  }
-
-  info("Loaded {} functions from {} bytecode file(s)", combinedChunk.getFunctionCount(), hvcFiles.size());
-  if (cfg.debugBytecode) {
-    info("Bytecode loaded successfully");
-  }
-
-  // Set up VM and execute
-  try {
     havel::HostContext ctx;
     havel::compiler::VM tempVm;
     ctx.vm = &tempVm;
@@ -764,15 +733,29 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
       vm->registerHostFunction(name, fn);
     }
 
-    // Execute __main__ function
-    auto result = vm->execute(combinedChunk, "__main__");
+    info("Loaded bytecode file: {} ({} function(s))", f, chunk->getFunctionCount());
+    if (cfg.debugBytecode) {
+      info("Bytecode loaded successfully: {}", f);
+    }
+
+    // Execute __main__ function from this chunk directly to keep string/constant tables valid
+    try {
+      auto result = vm->execute(*chunk, "__main__");
+      (void)result;
+    } catch (const std::exception &e) {
+      error("Bytecode error in {}: {}", f, e.what());
+      bridge->shutdown();
+      return 1;
+    } catch (...) {
+      error("Unknown bytecode error in {}", f);
+      bridge->shutdown();
+      return 1;
+    }
 
     bridge->shutdown();
-    return 0;
-  } catch (const std::exception &e) {
-    error("Bytecode error: {}", e.what());
-    return 1;
   }
+
+  return 0;
 }
 
 int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
@@ -903,9 +886,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
  .debugLexer = cfg.debugLexer,
  .debugParser = cfg.debugParser,
  .debugAst = cfg.debugAst,
- .stopOnError = cfg.stopOnError
+ .stopOnError = cfg.stopOnError,
+ .leanMinimalStartup = true
  });
-        auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
         engine.initializeMinimal();
  engine.execute(combinedCode, "__main__", combinedNames);
  engine.shutdown();

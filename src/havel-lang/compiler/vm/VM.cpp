@@ -3674,27 +3674,29 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     }
 
     co->saved_coroutine_id = current_coroutine_id_;
-    current_coroutine_id_ = coId;
+      current_coroutine_id_ = coId;
 
-    co->saved_frame_count = frame_count_;
-    co->saved_locals = locals;
+      co->saved_frame_count = frame_count_;
+      co->saved_locals = locals;
 
-    // Push a frame for coroutine execution on the existing stack
-    const auto *chunk = current_chunk;
-    const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
-    if (!func) {
-      COMPILER_THROW("Function not found for coroutine");
-    }
+      // Push a frame for coroutine execution on the existing stack
+      const auto *chunk = current_chunk;
+      const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
+      if (!func) {
+        COMPILER_THROW("Function not found for coroutine");
+      }
 
-    // Restore coroutine's locals for execution
-    locals = co->locals;
+      // Restore coroutine's locals for execution
+      locals = co->locals;
 
-    if (frame_arena_.size() <= frame_count_) {
-      frame_arena_.push_back(CallFrame{func, co->ip, 0, co->closure_id});
-    } else {
-      frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, co->closure_id};
-    }
-    frame_count_++;
+      size_t coroutine_stack_depth = stack.size();
+      if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{func, co->ip, 0, co->closure_id});
+      } else {
+        frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, co->closure_id};
+      }
+      frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
+      frame_count_++;
 
     co->state = GCHeap::Coroutine::Runnable;
     return;
@@ -3853,14 +3855,22 @@ co->ip = 0;
 
  size_t base = locals.size();
  size_t stack_depth = stack.size(); // Save current stack depth
- size_t needed_locals = std::max(callee->local_count, callee->param_count);
- locals.resize(base + needed_locals, nullptr);
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{callee, 0, base, closure_id, {}, stack_depth});
-  } else {
-    frame_arena_[frame_count_] = CallFrame{callee, 0, base, closure_id, {}, stack_depth};
-  }
-  frame_count_++;
+        size_t needed_locals = std::max(callee->local_count, callee->param_count);
+        locals.resize(base + needed_locals, nullptr);
+        {
+            CallFrame cf;
+            cf.function = callee;
+            cf.ip = 0;
+            cf.locals_base = base;
+            cf.closure_id = closure_id;
+            cf.stack_depth = static_cast<uint32_t>(stack_depth);
+            if (frame_arena_.size() <= frame_count_) {
+                frame_arena_.push_back(std::move(cf));
+            } else {
+                frame_arena_[frame_count_] = std::move(cf);
+            }
+        }
+        frame_count_++;
 
   // Initialize parameter slots: provided args first, then defaults
   // Handle variadic parameters: pack extra args into array
@@ -4268,42 +4278,42 @@ void VM::ensureLocalIndex(uint32_t absolute_index) {
 }
 
 void VM::doReturn() {
- tail_call_depth_ = 0;
- if (frame_count_ == 0) {
-    return;
-  }
-
-  Value ret = nullptr;
-  if (!stack.empty()) {
-    ret = popStack();
-  }
-
-  auto finished = frame_arena_[frame_count_ - 1];
-  frame_count_--;
-
-  closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
-                     static_cast<uint32_t>(locals.size()));
-
-  if (locals.size() >= finished.locals_base) {
-    locals.resize(finished.locals_base);
-  }
-
-  // Restore expression stack to the depth at call time, preserving return value
-  while (stack.size() > finished.stack_depth) {
-    popStack();
-  }
-
-  if (current_coroutine_id_ != 0) {
-    auto *co = heap_.coroutine(current_coroutine_id_);
-    if (co) {
-      co->state = GCHeap::Coroutine::Done;
-      frame_count_ = co->saved_frame_count;
-      locals = co->saved_locals;
-      current_coroutine_id_ = co->saved_coroutine_id;
+    tail_call_depth_ = 0;
+    if (frame_count_ == 0) {
+        return;
     }
-  }
 
-  pushStack(ret);
+    Value ret = nullptr;
+    if (!stack.empty()) {
+        ret = popStack();
+    }
+
+    auto finished = frame_arena_[frame_count_ - 1];
+    frame_count_--;
+
+    closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                       static_cast<uint32_t>(locals.size()));
+
+    if (locals.size() >= finished.locals_base) {
+        locals.resize(finished.locals_base);
+    }
+
+    // Restore expression stack to the depth at call time, preserving return value
+    while (stack.size() > finished.stack_depth) {
+        popStack();
+    }
+
+    if (current_coroutine_id_ != 0) {
+        auto *co = heap_.coroutine(current_coroutine_id_);
+        if (co) {
+            co->state = GCHeap::Coroutine::Done;
+            frame_count_ = co->saved_frame_count;
+            locals = co->saved_locals;
+            current_coroutine_id_ = co->saved_coroutine_id;
+        }
+    }
+
+    pushStack(ret);
 }
 
 // ============================================================================
@@ -5096,6 +5106,10 @@ case OpCode::STORE_GLOBAL: {
         Value value = popStack();
 
         if (immutable_globals_.count(name)) {
+            auto existing = globals.find(name);
+            if (existing != globals.end() && existing->second == value) {
+                break;
+            }
             COMPILER_THROW("Cannot reassign val global: " + name);
         }
         globals[name] = value;
@@ -5500,12 +5514,12 @@ case OpCode::LENGTH: {
     break;
   }
 
-  case OpCode::TAIL_CALL: {
-    // Tail call optimization: reuse current frame instead of pushing new one
-    uint32_t arg_count = instruction.operands[0].asInt();
-    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-      COMPILER_THROW("Stack underflow during TAIL_CALL");
-    }
+case OpCode::TAIL_CALL: {
+        // Tail call optimization: reuse current frame instead of pushing new one
+        uint32_t arg_count = instruction.operands[0].asInt();
+        if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+            COMPILER_THROW("Stack underflow during TAIL_CALL");
+        }
 
     std::vector<Value> args(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
@@ -5536,7 +5550,7 @@ case OpCode::CALL_METHOD: {
 
     // Receiver is at stack top - arg_count positions down
     if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-      COMPILER_THROW("Stack underflow during CALL_METHOD");
+        COMPILER_THROW("Stack underflow during CALL_METHOD (stack=" + std::to_string(stack.size()) + " need=" + std::to_string(arg_count + 1) + " method=" + method_name + ")");
     }
 
     // Peek at receiver (don't pop yet)
@@ -5582,10 +5596,11 @@ case OpCode::CALL_METHOD: {
             break;
         }
 
-        // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
-        uint32_t host_func_idx = 0;
-        bool found_host = false;
-        Value vm_func = Value::makeNull();
+ // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
+ uint32_t host_func_idx = 0;
+ bool found_host = false;
+ bool found_via_module = false;
+ Value vm_func = Value::makeNull();
 
         // 1. Try host prototype (for primitives and built-in object methods)
         auto typeIt = prototypes_.find(type_name);
@@ -5610,10 +5625,11 @@ case OpCode::CALL_METHOD: {
           if (modObj) {
             auto *val = modObj->get(method_name);
             if (val) {
-              if (val->isHostFuncId()) {
-                host_func_idx = val->asHostFuncId();
-                found_host = true;
-                // Cache in prototypes_ for future lookups
+ if (val->isHostFuncId()) {
+ host_func_idx = val->asHostFuncId();
+ found_host = true;
+ found_via_module = true;
+ // Cache in prototypes_ for future lookups
                 prototypes_[type_name][method_name] = host_func_idx;
                 break;
               } else if (val->isFunctionObjId() || val->isClosureId()) {
@@ -5634,10 +5650,18 @@ case OpCode::CALL_METHOD: {
         if (instanceObj) {
             auto it = instanceObj->find(method_name);
             if (it != instanceObj->end()) {
-                if (it->second.isHostFuncId()) {
-                    host_func_idx = it->second.asHostFuncId();
-                    found_host = true;
-                } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+        if (it->second.isHostFuncId()) {
+            host_func_idx = it->second.asHostFuncId();
+            found_host = true;
+            if (receiver.isObjectId()) {
+                for (const auto& g : globals) {
+                    if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
+                        found_via_module = true;
+                        break;
+                    }
+                }
+            }
+                    } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
                     vm_func = it->second;
                     isInstanceFunc = true;
                 }
@@ -5689,16 +5713,17 @@ case OpCode::CALL_METHOD: {
     // Pop args and receiver
     std::vector<Value> args2(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-      args2[arg_count - 1 - i] = popStack();
+        args2[arg_count - 1 - i] = popStack();
     }
     Value recv = popStack();
 
-    // Prepare args: for user-defined instance functions, DON'T prepend receiver
-    // (they're stored as values, not methods). For host functions, DO prepend.
-    std::vector<Value> all_args;
-    if (isInstanceFunc) {
-        all_args = args2;
-    } else {
+ // Prepare args: for user-defined instance functions, DON'T prepend receiver
+ // (they're stored as values, not methods). For host functions, DO prepend.
+ // For module object lookups (step 1.5), DON'T prepend receiver either.
+ std::vector<Value> all_args;
+ if (isInstanceFunc || found_via_module) {
+ all_args = args2;
+ } else {
         all_args.reserve(arg_count + 1);
         all_args.push_back(recv);
         all_args.insert(all_args.end(), args2.begin(), args2.end());
@@ -5706,23 +5731,23 @@ case OpCode::CALL_METHOD: {
 
     if (found_host) {
         if (host_func_idx < host_function_names_.size()) {
-            std::string resolved_name = host_function_names_[host_func_idx];
-            auto fnIt = host_functions.find(resolved_name);
-            if (fnIt != host_functions.end()) {
-                Value result = fnIt->second(all_args);
-                pushStack(result);
-            } else {
+        std::string resolved_name = host_function_names_[host_func_idx];
+        auto fnIt = host_functions.find(resolved_name);
+        if (fnIt != host_functions.end()) {
+            Value result = fnIt->second(all_args);
+            pushStack(result);
+        } else {
                 pushStack(Value::makeNull());
             }
         } else {
             pushStack(Value::makeNull());
         }
     } else {
-        // Call VM function
-        doCall(vm_func, all_args, true);
+    // Call VM function
+            doCall(vm_func, all_args, true);
+        }
+        break;
     }
-    break;
-  }
 
   case OpCode::CALL_SUPER: {
     // CALL_SUPER: operands are [method_name, arg_count]
@@ -6585,38 +6610,50 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         break;
       }
       
-      // Then check for prototype methods
-      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
-      if (key) {
-        auto method = getPrototypeMethod(object, *key);
-        if (method) {
-          // Create a bound method object: {fn: HostFuncId, self: ArrayId}
-          auto boundObj = heap_.allocateObject();
-          auto *obj = heap_.object(boundObj.id);
-          if (obj) {
-            (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-            (*obj)["self"] = Value::makeArrayId(object.asArrayId());
-          }
-          pushStack(Value::makeObjectId(boundObj.id));
-          break;
+        // Then check for prototype methods
+        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        if (key) {
+            if (*key == "len" && array) {
+                pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
+                break;
+            }
+            auto method = getPrototypeMethod(object, *key);
+            if (method) {
+                // Create a bound method object: {fn: HostFuncId, self: ArrayId}
+                auto boundObj = heap_.allocateObject();
+                auto *obj = heap_.object(boundObj.id);
+                if (obj) {
+                    (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
+                    (*obj)["self"] = Value::makeArrayId(object.asArrayId());
+                }
+                pushStack(Value::makeObjectId(boundObj.id));
+                break;
+            }
         }
-      }
-      pushStack(Value::makeNull());
-      break;
+        pushStack(Value::makeNull());
+        break;
     }
 
     // Handle strings - look up prototype methods
     if (object.isStringId() || object.isStringValId()) {
-      // Promote StringValId to StringId if needed
-      Value stringVal = object;
-      if (object.isStringValId() && current_chunk) {
-        std::string s = current_chunk->getString(object.asStringValId());
-        auto strRef = heap_.allocateString(s);
-        stringVal = Value::makeStringId(strRef.id);
-      }
-      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
-      if (key) {
-        auto method = getPrototypeMethod(stringVal, *key);
+        // Promote StringValId to StringId if needed
+        Value stringVal = object;
+        std::string actualStr;
+        if (object.isStringValId() && current_chunk) {
+            actualStr = current_chunk->getString(object.asStringValId());
+            auto strRef = heap_.allocateString(actualStr);
+            stringVal = Value::makeStringId(strRef.id);
+        } else if (object.isStringId()) {
+            auto *s = heap_.string(object.asStringId());
+            if (s) actualStr = *s;
+        }
+        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        if (key) {
+            if (*key == "len") {
+                pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
+                break;
+            }
+            auto method = getPrototypeMethod(stringVal, *key);
         if (method) {
           auto boundObj = heap_.allocateObject();
           auto *obj = heap_.object(boundObj.id);
@@ -6762,7 +6799,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 
     auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
     if (!key) {
-      COMPILER_THROW("OBJECT_GET expects string/number/bool key");
+        COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
 
     Value found_val = Value::makeNull();
@@ -6799,17 +6836,23 @@ auto *parent_closure = heap_.closure(parent_closure_id);
           pushStack(found_val);
        }
     } else {
-       // Check built-in prototype methods (for strings, arrays, etc.)
-       auto method = getPrototypeMethod(object, *key);
-       if (method) {
-         auto boundObj = heap_.allocateObject();
-         auto *bObj = heap_.object(boundObj.id);
-         (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-         (*bObj)["self"] = object;
-         pushStack(Value::makeObjectId(boundObj.id));
-       } else {
-         pushStack(Value::makeNull());
-       }
+        // Built-in .len property returns key count for objects
+        if (*key == "len") {
+            auto keys = obj->getKeys();
+            pushStack(Value::makeInt(static_cast<int64_t>(keys.size())));
+        } else {
+            // Check built-in prototype methods (for strings, arrays, etc.)
+            auto method = getPrototypeMethod(object, *key);
+            if (method) {
+                auto boundObj = heap_.allocateObject();
+                auto *bObj = heap_.object(boundObj.id);
+                (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
+                (*bObj)["self"] = object;
+                pushStack(Value::makeObjectId(boundObj.id));
+            } else {
+                pushStack(Value::makeNull());
+            }
+        }
     }
     break;
   }
@@ -7510,23 +7553,40 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     break;
   }
 
-        case OpCode::IMPORT: {
-            Value path_val = popStack();
-            std::string path;
-            if (path_val.isStringValId() && current_chunk) {
-                path = current_chunk->getString(path_val.asStringValId());
-            } else if (path_val.isStringId()) {
-                if (auto *s = heap_.string(path_val.asStringId())) path = *s;
-            }
-
-            if (path.empty()) {
-                COMPILER_THROW("IMPORT expects valid string path");
-            }
-
-            Value exports = loadModule(path);
-            pushStack(exports);
-            break;
+    case OpCode::IMPORT: {
+        Value path_val = popStack();
+        std::string path;
+        if (path_val.isStringValId() && current_chunk) {
+            path = current_chunk->getString(path_val.asStringValId());
+        } else if (path_val.isStringId()) {
+            if (auto *s = heap_.string(path_val.asStringId())) path = *s;
         }
+
+        if (path.empty()) {
+            COMPILER_THROW("IMPORT expects valid string path");
+        }
+
+        Value exports = loadModule(path);
+        pushStack(exports);
+        break;
+    }
+
+    case OpCode::IMPORT_WILDCARD: {
+        Value exports = popStack();
+        if (!exports.isObjectId()) {
+            COMPILER_THROW("IMPORT_WILDCARD expects module object");
+        }
+        auto *obj = heap_.object(exports.asObjectId());
+        if (!obj) {
+            COMPILER_THROW("IMPORT_WILDCARD: null module object");
+        }
+        for (const auto& [name, value] : *obj) {
+            if (name.empty() || name[0] == '_') continue;
+            globals[name] = value;
+            emitVariableChanged(name);
+        }
+        break;
+    }
 
   // ============================================================================
   // CONCURRENCY PRIMITIVES
@@ -7716,50 +7776,73 @@ locals.resize(finished.locals_base);
     break;
   }
 
-  case OpCode::YIELD_RESUME: {
-    // Resume yielded coroutine
-    Value coroutine_val = popStack();
-    
-    if (!coroutine_val.isCoroutineId()) {
-      COMPILER_THROW("YIELD_RESUME expects a coroutine");
+    case OpCode::YIELD_RESUME: {
+        // Resume yielded coroutine
+        Value coroutine_val = popStack();
+
+        if (!coroutine_val.isCoroutineId()) {
+            COMPILER_THROW("YIELD_RESUME expects a coroutine");
+        }
+
+        uint32_t coroutine_id = coroutine_val.asCoroutineId();
+        auto *co = heap_.coroutine(coroutine_id);
+
+        if (!co) {
+            COMPILER_THROW("YIELD_RESUME: coroutine not found");
+        }
+
+        if (co->state == GCHeap::Coroutine::Done) {
+            pushStack(Value::makeNull());
+            break;
+        }
+
+        // Save current caller's state into the coroutine so it can be
+        // restored when the coroutine yields or finishes
+        co->saved_coroutine_id = current_coroutine_id_;
+        co->saved_frame_count = frame_count_;
+        co->saved_locals = locals;
+        co->parent_locals_size = locals.size();
+
+        // Save current stack (excluding the coroutine value we already popped)
+        co->stack.clear();
+        {
+            std::vector<Value> tmp;
+            while (!stack.empty()) {
+                tmp.push_back(stack.top());
+                stack.pop();
+            }
+            for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                co->stack.push_back(*it);
+            }
+        }
+
+        // Switch to the coroutine
+        current_coroutine_id_ = coroutine_id;
+
+        // Restore coroutine's stack
+        stack = std::stack<Value>();
+        for (auto it = co->stack.rbegin(); it != co->stack.rend(); ++it) {
+            stack.push(*it);
+        }
+
+        // Restore coroutine's locals
+        locals = co->locals;
+
+        // Restore coroutine's instruction pointer
+        currentFrame().ip = co->ip;
+
+        // Set state to Runnable
+        co->state = GCHeap::Coroutine::Runnable;
+
+        // Push yield values from last yield (these become the "send" values
+        // passed to the coroutine on resume — currently empty for generators)
+        for (const auto &val : co->yield_values) {
+            pushStack(val);
+        }
+        co->yield_values.clear();
+
+        break;
     }
-    
-    uint32_t coroutine_id = coroutine_val.asCoroutineId();
-    auto *co = heap_.coroutine(coroutine_id);
-    
-    if (!co) {
-      COMPILER_THROW("YIELD_RESUME: coroutine not found");
-    }
-    
-    if (co->state == GCHeap::Coroutine::Done) {
-      COMPILER_THROW("YIELD_RESUME: coroutine already done");
-    }
-    
-    // Restore coroutine state
-    current_coroutine_id_ = coroutine_id;
-    
-    // Restore stack
-    stack = std::stack<Value>();
-    for (auto it = co->stack.rbegin(); it != co->stack.rend(); ++it) {
-      stack.push(*it);
-    }
-    
-    // Restore locals
-    locals = co->locals;
-    
-    // Restore instruction pointer
-    currentFrame().ip = co->ip;
-    
-    // Set state to Runnable
-    co->state = GCHeap::Coroutine::Runnable;
-    
-    // Push yield values from last yield
-    for (const auto &val : co->yield_values) {
-      pushStack(val);
-    }
-    
-    break;
-  }
 
   case OpCode::GO_ASYNC: {
     // Spawn async function call
@@ -7825,12 +7908,23 @@ locals.resize(finished.locals_base);
  COMPILER_THROW("FIBER_AWAIT: function not found for coroutine");
  }
 
- if (frame_arena_.size() <= frame_count_) {
- frame_arena_.push_back(CallFrame{func, co->ip, 0, co->closure_id});
- } else {
- frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, co->closure_id};
- }
- frame_count_++;
+        uint32_t coroutine_stack_depth = static_cast<uint32_t>(stack.size());
+        if (frame_arena_.size() <= frame_count_) {
+            CallFrame cf;
+            cf.function = func;
+            cf.ip = co->ip;
+            cf.locals_base = 0;
+            cf.closure_id = co->closure_id;
+            cf.stack_depth = coroutine_stack_depth;
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_].function = func;
+            frame_arena_[frame_count_].ip = co->ip;
+            frame_arena_[frame_count_].locals_base = 0;
+            frame_arena_[frame_count_].closure_id = co->closure_id;
+            frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
+        }
+        frame_count_++;
  co->state = GCHeap::Coroutine::Runnable;
 
  size_t caller_frame_count = saved.frame_count;
@@ -7860,13 +7954,24 @@ locals.resize(finished.locals_base);
  locals = co->locals;
  const auto *resume_chunk = current_chunk;
  const auto *resume_func = resume_chunk ? resume_chunk->getFunction(co->function_index) : nullptr;
- if (resume_func) {
- if (frame_arena_.size() <= frame_count_) {
- frame_arena_.push_back(CallFrame{resume_func, co->ip, 0, co->closure_id});
- } else {
- frame_arena_[frame_count_] = CallFrame{resume_func, co->ip, 0, co->closure_id};
- }
- frame_count_++;
+        if (resume_func) {
+            uint32_t resume_stack_depth = static_cast<uint32_t>(stack.size());
+            if (frame_arena_.size() <= frame_count_) {
+                CallFrame cf;
+                cf.function = resume_func;
+                cf.ip = co->ip;
+                cf.locals_base = 0;
+                cf.closure_id = co->closure_id;
+                cf.stack_depth = resume_stack_depth;
+                frame_arena_.push_back(std::move(cf));
+            } else {
+                frame_arena_[frame_count_].function = resume_func;
+                frame_arena_[frame_count_].ip = co->ip;
+                frame_arena_[frame_count_].locals_base = 0;
+                frame_arena_[frame_count_].closure_id = co->closure_id;
+                frame_arena_[frame_count_].stack_depth = resume_stack_depth;
+            }
+            frame_count_++;
  pushStack(Value::makeNull());
  }
  continue;
@@ -8403,12 +8508,23 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
   }
 
   // Set up initial frame
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{func, 0, 0, closure_id});
-  } else {
-    frame_arena_[frame_count_] = CallFrame{func, 0, 0, closure_id};
-  }
-  frame_count_++;
+        uint32_t callback_stack_depth = static_cast<uint32_t>(stack.size());
+        if (frame_arena_.size() <= frame_count_) {
+            CallFrame cf;
+            cf.function = func;
+            cf.ip = 0;
+            cf.locals_base = 0;
+            cf.closure_id = closure_id;
+            cf.stack_depth = callback_stack_depth;
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_].function = func;
+            frame_arena_[frame_count_].ip = 0;
+            frame_arena_[frame_count_].locals_base = 0;
+            frame_arena_[frame_count_].closure_id = closure_id;
+            frame_arena_[frame_count_].stack_depth = callback_stack_depth;
+        }
+        frame_count_++;
 
   // Set up arguments
   for (size_t i = 0; i < args.size() && i < func->param_count; ++i) {
@@ -8928,14 +9044,25 @@ const auto &cell = closure->upvalues[upvalue_index];
     // Advance caller IP
     currentFrame().ip++;
 
-    size_t base = locals.size();
-    locals.resize(base + callee->local_count, nullptr);
-    if (frame_arena_.size() <= frame_count_) {
-      frame_arena_.push_back(CallFrame{callee, 0, base, new_closure_id});
-    } else {
-      frame_arena_[frame_count_] = CallFrame{callee, 0, base, new_closure_id};
-    }
-    frame_count_++;
+        size_t base = locals.size();
+        locals.resize(base + callee->local_count, nullptr);
+        uint32_t sd = static_cast<uint32_t>(stack.size());
+        if (frame_arena_.size() <= frame_count_) {
+            CallFrame cf;
+            cf.function = callee;
+            cf.ip = 0;
+            cf.locals_base = base;
+            cf.closure_id = new_closure_id;
+            cf.stack_depth = sd;
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_].function = callee;
+            frame_arena_[frame_count_].ip = 0;
+            frame_arena_[frame_count_].locals_base = base;
+            frame_arena_[frame_count_].closure_id = new_closure_id;
+            frame_arena_[frame_count_].stack_depth = sd;
+        }
+        frame_count_++;
 
     // Set up parameters
     for (uint32_t i = 0; i < callee->param_count && i < args.size(); ++i) {
@@ -9260,6 +9387,7 @@ Value VM::loadModule(const std::string& path) {
     // Execute the module in a sandboxed globals context
     // Save current globals state
     globals_stack_.push_back(globals);
+    auto saved_immutable_globals = immutable_globals_;
     auto old_mirror_id = globals_mirror_object_id_;
     Value old_g = globals["_G"];
 
@@ -9308,6 +9436,7 @@ Value VM::loadModule(const std::string& path) {
         globals_stack_.pop_back();
         globals["_G"] = old_g;
         globals_mirror_object_id_ = old_mirror_id;
+        immutable_globals_ = saved_immutable_globals;
         stack = std::move(saved_stack);
         locals = std::move(saved_locals);
         frame_count_ = saved_frame_count;
@@ -9349,6 +9478,7 @@ Value VM::loadModule(const std::string& path) {
         globals_stack_.pop_back();
         globals["_G"] = old_g;
         globals_mirror_object_id_ = old_mirror_id;
+        immutable_globals_ = saved_immutable_globals;
         stack = std::move(saved_stack);
         locals = std::move(saved_locals);
         frame_count_ = saved_frame_count;
@@ -9386,7 +9516,7 @@ Value VM::loadModule(const std::string& path) {
         auto moduleGlobals = globals;
         auto wrapperName = "$module_fn_" + canonicalKey + "_" + name;
         registerHostFunction(wrapperName,
-        [this, funcIdx, moduleChunk, paramCount, moduleGlobals](const std::vector<Value>& args) -> Value {
+        [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName](const std::vector<Value>& args) -> Value {
             std::vector<Value> callArgs = args;
             if (callArgs.size() > paramCount && paramCount > 0) {
                 callArgs.erase(callArgs.begin());
@@ -9407,12 +9537,21 @@ Value VM::loadModule(const std::string& path) {
             }
             size_t base = locals.size();
             locals.resize(base + callee->local_count, nullptr);
-            if (frame_arena_.size() <= frame_count_) {
-                frame_arena_.push_back(CallFrame{callee, 0, base, 0});
-            } else {
-                frame_arena_[frame_count_] = CallFrame{callee, 0, base, 0};
-            }
-            frame_count_++;
+        uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
+        if (frame_arena_.size() <= frame_count_) {
+            CallFrame cf;
+            cf.function = callee;
+            cf.ip = 0;
+            cf.locals_base = base;
+            cf.stack_depth = frame_stack_depth;
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_].function = callee;
+            frame_arena_[frame_count_].ip = 0;
+            frame_arena_[frame_count_].locals_base = base;
+            frame_arena_[frame_count_].stack_depth = frame_stack_depth;
+        }
+        frame_count_++;
             for (uint32_t i = 0; i < callee->param_count; i++) {
                 if (i < callArgs.size()) {
                     Value argVal = callArgs[i];
@@ -9453,6 +9592,7 @@ Value VM::loadModule(const std::string& path) {
     globals_stack_.pop_back();
     globals["_G"] = old_g;
     globals_mirror_object_id_ = old_mirror_id;
+    immutable_globals_ = saved_immutable_globals;
     stack = std::move(saved_stack);
     locals = std::move(saved_locals);
     frame_count_ = saved_frame_count;

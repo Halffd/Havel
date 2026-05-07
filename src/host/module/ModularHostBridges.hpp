@@ -63,9 +63,23 @@ public:
                                  const HostContext *ctx);
     static Value handleMouseDown(const std::vector<Value> &args,
                                const HostContext *ctx);
-    static Value handleMouseUp(const std::vector<Value> &args,
-                             const HostContext *ctx);
-};
+ static Value handleMouseUp(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleMousePos(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleMouseSetSpeed(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleMouseSetAccel(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleMouseSetDPI(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleSuspend(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleKeyDown(const std::vector<Value> &args,
+  const HostContext *ctx);
+ static Value handleKeyUp(const std::vector<Value> &args,
+  const HostContext *ctx);
+ };
 /**
  * SystemBridge - File system and process control
  */

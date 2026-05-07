@@ -501,8 +501,10 @@ case OpCode::INT_DIV:
     return "LOAD_CLASS_PROTO";
   case OpCode::CALL_SUPER:
     return "CALL_SUPER";
-  case OpCode::IMPORT:
-    return "IMPORT";
+    case OpCode::IMPORT:
+        return "IMPORT";
+    case OpCode::IMPORT_WILDCARD:
+        return "IMPORT_WILDCARD";
   case OpCode::STRUCT_NEW:
     return "STRUCT_NEW";
   case OpCode::STRUCT_GET:
@@ -685,17 +687,25 @@ BytecodeSmokeResult runBytecodePipeline(
     COMPILER_THROW(
         "Bytecode pipeline failed: parser returned null AST");
   }
-  if (parser.hasErrors()) {
-    std::string allErrors;
-    for (const auto &err : parser.getErrors()) {
-      allErrors += formatDiagnostic(
-          "ParseError", err.message, options.compile_unit_name, source,
-          err.line, err.column, 1, "");
+    if (parser.hasErrors()) {
+      std::string allErrors;
+      for (const auto &err : parser.getErrors()) {
+        if (err.severity != ErrorSeverity::Error) continue;
+        allErrors += formatDiagnostic(
+            "ParseError", err.message, options.compile_unit_name, source,
+            err.line, err.column, 1, "");
+      }
+      COMPILER_THROW(allErrors);
     }
-    COMPILER_THROW(allErrors);
-  }
+    for (const auto &err : parser.getErrors()) {
+      if (err.severity == ErrorSeverity::Warning) {
+        std::cerr << formatDiagnostic(
+            "Warning", err.message, options.compile_unit_name, source,
+            err.line, err.column, 1, "") << std::endl;
+      }
+    }
 
-	ByteCompiler compiler;
+ByteCompiler compiler;
 	BytecodeSmokeResult result;
   std::unique_ptr<BytecodeChunk> chunk;
   try {

@@ -235,7 +235,8 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   CLASS_SET_FIELD, // Set field with prototype chain lookup
   LOAD_CLASS_PROTO, // Load parent class reference
   CALL_SUPER,       // Call method from parent class
-  IMPORT,           // Runtime module import (path -> module object)
+    IMPORT, // Runtime module import (path -> module object)
+    IMPORT_WILDCARD, // Import all exports from module object as globals
 
   // Struct intrinsics (bypass generic CALL path)
   STRUCT_NEW,       // Create struct instance: typeNameId + arg_count

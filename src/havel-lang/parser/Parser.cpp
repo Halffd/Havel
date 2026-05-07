@@ -6475,12 +6475,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
             return nullptr;
         }
 
-        auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
+    auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
     stmt->isNamedImport = true;
     for (auto& [name, alias] : importNames) {
-      stmt->importNames.push_back(name);
+        stmt->importNames.push_back(name);
+        stmt->importAliases.push_back(alias);
     }
-    stmt->alias = importNames.empty() ? "" : importNames[0].second;
     return stmt;
   }
 

@@ -50,7 +50,7 @@ match wm {
 }
 kdewl = kde && wl
 if !xfce {
-  if len(process.find("xfce4-session")) > 0 {
+  if process.find("xfce4-session") > 0 {
     xfce = true
   }
 }
@@ -74,6 +74,6 @@ print(f"CPU: {cpu}")
 print(f"RAM: {ram / 1024/1024/1024} GB")
 print(f"GPU: {gpu}")
 print(f"Motherboard: {motherboard}")
-print("monitors: type(display.getMonitors()): " + type(display.getMonitors()))
-monitors = display.getMonitors()
-area = display.getMonitorsArea()
+// display module not available in script mode
+// monitors = display.getMonitors()
+// area = display.getMonitorsArea()

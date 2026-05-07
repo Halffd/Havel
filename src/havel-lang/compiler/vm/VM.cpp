@@ -1151,7 +1151,7 @@ void VM::setHostObjectSealed(ObjectRef, bool) {
 
 // Function calling
 Value VM::callHostFunction(const Value &fn,
-                                   const std::vector<Value> &args) {
+                                    const std::vector<Value> &args) {
   if (fn.isHostFuncId()) {
     uint32_t host_func_idx = fn.asHostFuncId();
     if (host_func_idx >= host_function_names_.size()) {
@@ -1163,7 +1163,10 @@ Value VM::callHostFunction(const Value &fn,
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
-    return it->second(args);
+    fprintf(stderr, "[VM] Calling host function: %s with %zu args\n", name.c_str(), args.size());
+    Value result = it->second(args);
+    fprintf(stderr, "[VM] Host function %s returned, type=%d\n", name.c_str(), (int)result.which());
+    return result;
   }
   return Value::makeNull();
 }

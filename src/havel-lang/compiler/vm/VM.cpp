@@ -4303,13 +4303,19 @@ void VM::doReturn() {
         popStack();
     }
 
-    if (current_coroutine_id_ != 0) {
+    if (current_coroutine_id_ != 0 && current_coroutine_id_ != UINT32_MAX) {
         auto *co = heap_.coroutine(current_coroutine_id_);
         if (co) {
             co->state = GCHeap::Coroutine::Done;
             frame_count_ = co->saved_frame_count;
             locals = co->saved_locals;
             current_coroutine_id_ = co->saved_coroutine_id;
+
+            // Restore caller's stack
+            stack = std::stack<Value>();
+            for (auto it = co->saved_stack.rbegin(); it != co->saved_stack.rend(); ++it) {
+                stack.push(*it);
+            }
         }
     }
 
@@ -7730,51 +7736,61 @@ auto *parent_closure = heap_.closure(parent_closure_id);
   // COROUTINES
   // ============================================================================
 
-  case OpCode::YIELD: {
-    // Phase 3B-2: Suspend a coroutine on yield
-    Value yield_value = Value::makeNull();
-    if (!stack.empty()) {
-      yield_value = popStack();
-    }
-    
-    if (current_coroutine_id_ != UINT32_MAX) {
-      auto *co = heap_.coroutine(current_coroutine_id_);
-      if (co && frame_count_ > 0) {
-        // Save coroutine state
-        co->ip = currentFrame().ip + 1;  // Next instruction
-        co->locals = locals;
-        co->state = GCHeap::Coroutine::Waiting;
-        
-        // Pop the coroutine's frame
-        auto finished = frame_arena_[frame_count_ - 1];
-        frame_count_--;
-        
-        closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
-                           static_cast<uint32_t>(locals.size()));
-        if (locals.size() >= finished.locals_base) {
-locals.resize(finished.locals_base);
-  }
-
-  frame_count_ = co->saved_frame_count;
-  locals = co->saved_locals;
-  current_coroutine_id_ = co->saved_coroutine_id;
-
-  pushStack(yield_value);
-        
-        // Increment the caller's IP since we popped the coroutine frame
-        // The normal IP increment doesn't happen when frame_count changes
-        if (frame_count_ > 0) {
-          frame_arena_[frame_count_ - 1].ip++;
+    case OpCode::YIELD: {
+        // Phase 3B-2: Suspend a coroutine on yield
+        Value yield_value = Value::makeNull();
+        if (!stack.empty()) {
+            yield_value = popStack();
         }
-        
-        return;
-      }
-    }
-    
-    // Non-coroutine yield
-    pushStack(yield_value);
-    break;
-  }
+
+        if (current_coroutine_id_ != UINT32_MAX) {
+            auto *co = heap_.coroutine(current_coroutine_id_);
+            if (co) {
+                // Save coroutine state
+                co->ip = currentFrame().ip + 1; // Next instruction
+                co->locals = locals;
+
+                // Save coroutine's current stack
+                co->stack.clear();
+                {
+                    std::vector<Value> tmp;
+                    while (!stack.empty()) {
+                        tmp.push_back(stack.top());
+                        stack.pop();
+                    }
+                    for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                        co->stack.push_back(*it);
+                    }
+                }
+
+                co->state = GCHeap::Coroutine::Waiting;
+
+                // Restore caller's execution state
+                frame_count_ = co->saved_frame_count;
+                locals = co->saved_locals;
+                current_coroutine_id_ = co->saved_coroutine_id;
+
+                // Restore caller's stack
+                stack = std::stack<Value>();
+                for (auto it = co->saved_stack.rbegin(); it != co->saved_stack.rend(); ++it) {
+                    stack.push(*it);
+                }
+
+                pushStack(yield_value);
+
+                // Increment the caller's IP since we're resuming from YIELD_RESUME
+                if (frame_count_ > 0) {
+                    frame_arena_[frame_count_ - 1].ip++;
+                }
+
+                return;
+            }
+        }
+
+        // Non-coroutine yield
+        pushStack(yield_value);
+        break;
+}
 
     case OpCode::YIELD_RESUME: {
         // Resume yielded coroutine
@@ -7804,7 +7820,7 @@ locals.resize(finished.locals_base);
         co->parent_locals_size = locals.size();
 
         // Save current stack (excluding the coroutine value we already popped)
-        co->stack.clear();
+        co->saved_stack.clear();
         {
             std::vector<Value> tmp;
             while (!stack.empty()) {
@@ -7812,7 +7828,7 @@ locals.resize(finished.locals_base);
                 stack.pop();
             }
             for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-                co->stack.push_back(*it);
+                co->saved_stack.push_back(*it);
             }
         }
 

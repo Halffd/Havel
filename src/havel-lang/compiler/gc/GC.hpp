@@ -177,6 +177,7 @@ bool isClosed() const { return !is_open; }
         std::vector<Value> stack;
         std::vector<Value> locals;
         size_t saved_frame_count = 0;
+        uint32_t saved_ip = 0;
         std::vector<Value> saved_locals;
         std::vector<Value> saved_stack;
         uint32_t saved_coroutine_id = UINT32_MAX;

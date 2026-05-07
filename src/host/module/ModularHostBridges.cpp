@@ -168,9 +168,48 @@ void IOBridge::install(PipelineOptions &options) {
     options.host_functions["io.mouseDown"] = [ctx = ctx_](const auto &args) {
         return handleMouseDown(args, ctx);
     };
-    options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
-        return handleMouseUp(args, ctx);
-    };
+ options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
+ return handleMouseUp(args, ctx);
+ };
+ options.host_functions["mouse.click"] = [ctx = ctx_](const auto &args) {
+ return handleMouseClick(args, ctx);
+ };
+ options.host_functions["mouse.down"] = [ctx = ctx_](const auto &args) {
+ return handleMouseDown(args, ctx);
+ };
+ options.host_functions["mouse.up"] = [ctx = ctx_](const auto &args) {
+ return handleMouseUp(args, ctx);
+ };
+ options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
+ return handleMouseMoveTo(args, ctx);
+ };
+ options.host_functions["mouse.moveRel"] = [ctx = ctx_](const auto &args) {
+ return handleMouseMoveRel(args, ctx);
+ };
+ options.host_functions["mouse.scroll"] = [ctx = ctx_](const auto &args) {
+ return handleMouseScroll(args, ctx);
+ };
+ options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
+ return handleMousePos(args, ctx);
+ };
+ options.host_functions["mouse.setSpeed"] = [ctx = ctx_](const auto &args) {
+ return handleMouseSetSpeed(args, ctx);
+ };
+ options.host_functions["mouse.setAccel"] = [ctx = ctx_](const auto &args) {
+ return handleMouseSetAccel(args, ctx);
+ };
+ options.host_functions["mouse.setDPI"] = [ctx = ctx_](const auto &args) {
+ return handleMouseSetDPI(args, ctx);
+ };
+ options.host_functions["keyDown"] = [ctx = ctx_](const auto &args) {
+ return handleKeyDown(args, ctx);
+ };
+ options.host_functions["keyUp"] = [ctx = ctx_](const auto &args) {
+ return handleKeyUp(args, ctx);
+ };
+ options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
+ return handleSuspend(args, ctx);
+ };
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -371,9 +410,87 @@ Value IOBridge::handleMouseUp(const std::vector<Value> &args,
         button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
     }
 
-    ::havel::host::MouseService::release(button);
-    return Value::makeBool(true);
-}
+ ::havel::host::MouseService::release(button);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleMousePos(const std::vector<Value> &,
+ const HostContext *ctx) {
+ auto [x, y] = ::havel::host::MouseService::pos();
+ auto *vm = static_cast<VM *>(ctx->vm);
+ if (!vm) return Value::makeBool(false);
+ auto obj = vm->createHostObject();
+ vm->setHostObjectField(obj, "x", Value::makeInt(x));
+ vm->setHostObjectField(obj, "y", Value::makeInt(y));
+ return Value::makeObjectId(obj.id);
+ }
+
+Value IOBridge::handleMouseSetSpeed(const std::vector<Value> &args,
+ const HostContext *) {
+ if (args.empty()) return Value::makeBool(false);
+ int speed = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+ args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 5;
+ ::havel::host::MouseService::setSpeed(speed);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleMouseSetAccel(const std::vector<Value> &args,
+ const HostContext *) {
+ if (args.empty()) return Value::makeBool(false);
+ float accel = args[0].isDouble() ? static_cast<float>(args[0].asDouble()) :
+ args[0].isInt() ? static_cast<float>(args[0].asInt()) : 1.0f;
+ ::havel::host::MouseService::setAccel(accel);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleMouseSetDPI(const std::vector<Value> &args,
+ const HostContext *) {
+ if (args.empty()) return Value::makeBool(false);
+ int dpi = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+ args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 800;
+ ::havel::host::MouseService::setDPI(dpi);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleKeyDown(const std::vector<Value> &args,
+ const HostContext *ctx) {
+ if (args.empty() || !ctx->io) return Value::makeBool(false);
+ std::string key;
+ if (args[0].isStringValId() || args[0].isStringId()) {
+ auto *vm = static_cast<VM *>(ctx->vm);
+ key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ } else {
+ return Value::makeBool(false);
+ }
+ ::havel::host::IOService ioService(ctx->io);
+ return Value::makeBool(ioService.keyDown(key));
+ }
+
+Value IOBridge::handleKeyUp(const std::vector<Value> &args,
+ const HostContext *ctx) {
+ if (args.empty() || !ctx->io) return Value::makeBool(false);
+ std::string key;
+ if (args[0].isStringValId() || args[0].isStringId()) {
+ auto *vm = static_cast<VM *>(ctx->vm);
+ key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ } else {
+ return Value::makeBool(false);
+ }
+ ::havel::host::IOService ioService(ctx->io);
+ return Value::makeBool(ioService.keyUp(key));
+ }
+
+Value IOBridge::handleSuspend(const std::vector<Value> &,
+ const HostContext *ctx) {
+ if (!ctx->io) return Value::makeBool(false);
+ ::havel::host::IOService ioService(ctx->io);
+ if (ioService.isSuspended()) {
+ ioService.resume();
+ return Value::makeBool(false);
+ }
+ ioService.suspend();
+ return Value::makeBool(true);
+ }
 
 // ============================================================================
 // SystemBridge Implementation
@@ -438,6 +555,80 @@ void SystemBridge::install(PipelineOptions &options) {
         extensionObj, "addSearchPath",
         Value::makeHostFuncId(vm->getHostFunctionIndex("extension.addSearchPath")));
     vm->setGlobal("extension", Value::makeObjectId(extensionObj.id));
+
+ // Mouse object
+ auto mouseObj = vm->createHostObject();
+ vm->setHostObjectField(
+ mouseObj, "click",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.click")));
+ vm->setHostObjectField(
+ mouseObj, "down",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.down")));
+ vm->setHostObjectField(
+ mouseObj, "up",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.up")));
+ vm->setHostObjectField(
+ mouseObj, "move",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.move")));
+ vm->setHostObjectField(
+ mouseObj, "moveRel",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.moveRel")));
+ vm->setHostObjectField(
+ mouseObj, "scroll",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+ vm->setHostObjectField(
+ mouseObj, "pos",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.pos")));
+ vm->setHostObjectField(
+ mouseObj, "setSpeed",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setSpeed")));
+ vm->setHostObjectField(
+ mouseObj, "setAccel",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setAccel")));
+ vm->setHostObjectField(
+ mouseObj, "setDPI",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
+ vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
+
+ // IO object
+ auto ioObj = vm->createHostObject();
+ vm->setHostObjectField(
+ ioObj, "send",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.send")));
+ vm->setHostObjectField(
+ ioObj, "sendKey",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendKey")));
+ vm->setHostObjectField(
+ ioObj, "sendText",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendText")));
+ vm->setHostObjectField(
+ ioObj, "wait",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.wait")));
+ vm->setHostObjectField(
+ ioObj, "click",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.click")));
+ vm->setHostObjectField(
+ ioObj, "mouseMoveTo",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveTo")));
+ vm->setHostObjectField(
+ ioObj, "mouseMoveRel",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveRel")));
+ vm->setHostObjectField(
+ ioObj, "mouseScroll",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseScroll")));
+ vm->setHostObjectField(
+ ioObj, "mouseDown",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseDown")));
+ vm->setHostObjectField(
+ ioObj, "mouseUp",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseUp")));
+ vm->setHostObjectField(
+ ioObj, "suspend",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("suspend")));
+ vm->setHostObjectField(
+ ioObj, "getClipboard",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.getClipboard")));
+ vm->setGlobal("io", Value::makeObjectId(ioObj.id));
   };
 
   // File operations

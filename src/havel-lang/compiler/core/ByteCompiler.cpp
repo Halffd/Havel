@@ -3,6 +3,7 @@
 #include "havel-lang/errors/ErrorSystem.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -2756,6 +2757,79 @@ break;
       COMPILER_THROW("Malformed binary expression");
     }
 
+    // Constant folding for literal binary expressions.
+    auto emitFoldedLiteral = [&](const ast::Expression &lhs, const ast::Expression &rhs,
+                                 ast::BinaryOperator op) -> bool {
+      if (lhs.kind == ast::NodeType::NumberLiteral && rhs.kind == ast::NodeType::NumberLiteral) {
+        const auto &l = static_cast<const ast::NumberLiteral &>(lhs);
+        const auto &r = static_cast<const ast::NumberLiteral &>(rhs);
+        const double lv = l.value;
+        const double rv = r.value;
+        switch (op) {
+        case ast::BinaryOperator::Add:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv + rv))); return true;
+        case ast::BinaryOperator::Sub:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv - rv))); return true;
+        case ast::BinaryOperator::Mul:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv * rv))); return true;
+        case ast::BinaryOperator::Div:
+          if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv / rv))); return true; }
+          return false;
+        case ast::BinaryOperator::Mod:
+          if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(std::fmod(lv, rv)))); return true; }
+          return false;
+        case ast::BinaryOperator::Less:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv < rv))); return true;
+        case ast::BinaryOperator::LessEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv <= rv))); return true;
+        case ast::BinaryOperator::Greater:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv > rv))); return true;
+        case ast::BinaryOperator::GreaterEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv >= rv))); return true;
+        case ast::BinaryOperator::Equal:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv == rv))); return true;
+        case ast::BinaryOperator::NotEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv != rv))); return true;
+        default:
+          return false;
+        }
+      }
+      if (lhs.kind == ast::NodeType::StringLiteral && rhs.kind == ast::NodeType::StringLiteral) {
+        const auto &l = static_cast<const ast::StringLiteral &>(lhs);
+        const auto &r = static_cast<const ast::StringLiteral &>(rhs);
+        switch (op) {
+        case ast::BinaryOperator::Add: {
+          const uint32_t sid = addStringConstant(l.value + r.value);
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
+          return true;
+        }
+        case ast::BinaryOperator::Equal:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value == r.value))); return true;
+        case ast::BinaryOperator::NotEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value != r.value))); return true;
+        default:
+          return false;
+        }
+      }
+      if (lhs.kind == ast::NodeType::BooleanLiteral && rhs.kind == ast::NodeType::BooleanLiteral) {
+        const auto &l = static_cast<const ast::BooleanLiteral &>(lhs);
+        const auto &r = static_cast<const ast::BooleanLiteral &>(rhs);
+        switch (op) {
+        case ast::BinaryOperator::And:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value && r.value))); return true;
+        case ast::BinaryOperator::Or:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value || r.value))); return true;
+        case ast::BinaryOperator::Equal:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value == r.value))); return true;
+        case ast::BinaryOperator::NotEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value != r.value))); return true;
+        default:
+          return false;
+        }
+      }
+      return false;
+    };
+
  // Special handling for 'in' and 'not in' - compile as CALL_METHOD "has"
  if (binary.operator_ == ast::BinaryOperator::In || binary.operator_ == ast::BinaryOperator::NotIn) {
  compileExpression(*binary.right); // container (receiver)
@@ -2807,6 +2881,9 @@ break;
  compileExpression(*binary.right);
  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
     } else {
+      if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
+        break;
+      }
       compileExpression(*binary.left);
       compileExpression(*binary.right);
       emit(toBytecodeOperator(binary.operator_));

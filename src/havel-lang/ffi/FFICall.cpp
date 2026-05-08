@@ -5,7 +5,9 @@
 #include "FFIAccessors.hpp"
 #include "../core/Value.hpp"
 #include <regex>
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 #include <cstring>
 #include <sstream>
 
@@ -46,6 +48,7 @@ ffi_type* FFICall::to_ffi_type(std::shared_ptr<FFIType> type) {
 }
 
 void* FFICall::load_library(const std::string& path) {
+#ifndef _WIN32
     int flags = RTLD_NOW;
 #ifdef __APPLE__
     flags |= RTLD_FIRST;
@@ -58,11 +61,17 @@ void* FFICall::load_library(const std::string& path) {
         libraries_[handle] = path;
     }
     return handle;
+#else
+    (void)path;
+    return nullptr;
+#endif
 }
 
 void FFICall::unload_library(void* handle) {
     if (handle) {
+#ifndef _WIN32
         dlclose(handle);
+#endif
         libraries_.erase(handle);
     }
 }
@@ -70,6 +79,7 @@ void FFICall::unload_library(void* handle) {
 void* FFICall::get_symbol(void* handle, const std::string& name) {
     if (!handle) return nullptr;
 
+#ifndef _WIN32
     void* sym = dlsym(handle, name.c_str());
     char* error = dlerror();
     if (error) {
@@ -77,6 +87,10 @@ void* FFICall::get_symbol(void* handle, const std::string& name) {
         return nullptr;
     }
     return sym;
+#else
+    (void)name;
+    return nullptr;
+#endif
 }
 
 static void closure_callback(ffi_cif* cif, void* ret, void** args, void* user_data) {

@@ -758,6 +758,16 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
   return 0;
 }
 
+// Helper: Check if AST contains any hotkey bindings
+static bool hasHotkeyBindings(const havel::ast::Program& program) {
+  for (const auto& stmt : program.body) {
+    if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding) {
+      return true;
+    }
+  }
+  return false;
+}
+
 int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
                                               char *argv[]) {
   // Check if we have .hvc bytecode files
@@ -806,20 +816,35 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
   if (combinedCode.empty()) return 0;
 
-  // LINT-ONLY MODE: Parse and type-check ONLY, no execution
+  // Parse script to check for hotkey bindings
+  havel::parser::Parser parser{{
+    .lexer = cfg.debugLexer,
+    .parser = cfg.debugParser,
+    .ast = cfg.debugAst
+  }};
+  std::unique_ptr<havel::ast::Program> program;
+  try {
+    program = parser.produceAST(combinedCode);
+  } catch (const std::exception& e) {
+    // Parser aborted
+  }
+
+  if (parser.hasErrors() || !program) {
+    error("Failed to parse script");
+    return 1;
+  }
+
+  // If hotkeys found, switch to SCRIPT mode (with full IO/event loop)
+  if (hasHotkeyBindings(*program)) {
+    debug("Hotkey bindings detected - starting full IO/event loop");
+    LaunchConfig fullCfg = cfg;
+    fullCfg.mode = Mode::SCRIPT;
+    return runScript(fullCfg, argc, argv);
+  }
+
+  // LINT-ONLY MODE: type-check only, no execution
   if (cfg.lintOnly) {
-    havel::parser::Parser parser{{
-      .lexer = cfg.debugLexer,
-      .parser = cfg.debugParser,
-      .ast = cfg.debugAst
-    }};
     std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
-    std::unique_ptr<havel::ast::Program> program;
-    try {
-      program = parser.produceAST(combinedCode);
-    } catch (const std::exception& e) {
-      // Parser aborted — still print what we collected
-    }
     if (parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
         std::string sourceLine;

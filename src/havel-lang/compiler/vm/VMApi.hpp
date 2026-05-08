@@ -2,6 +2,7 @@
 
 #include "../core/BytecodeIR.hpp"
 #include "VM.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -190,6 +191,11 @@ struct VMApi {
 
   bool hasScheduler() const {
     return vm.getScheduler() != nullptr;
+  }
+
+  bool isInGoroutine() const {
+    auto *sched = vm.getScheduler();
+    return sched && sched->current() != nullptr;
   }
 
   // Image helpers

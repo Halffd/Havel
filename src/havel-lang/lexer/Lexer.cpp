@@ -1071,8 +1071,9 @@ prevType == TokenType::Not ||
       }
 
 
-        // If followed by identifier, '(', '[', string, or number
-        if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
+        // If followed by '[', '"', or '\'' → length operator (array access #[0], string char)
+        // In expression context only.  #identifier is always a hotkey modifier.
+        if (peek() == '[' || peek() == '"' || peek() == '\'') {
             // In expression context, treat as length operator
             // In statement context, treat as hotkey modifier
                 if (inExpressionContext) {

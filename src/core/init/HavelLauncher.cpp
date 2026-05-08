@@ -104,6 +104,51 @@ collectKnownGlobals(const havel::compiler::VM *vm) {
   return globals;
 }
 
+#ifdef HAVEL_ENABLE_LLVM
+static std::string normalizeTargetOS(std::string os) {
+  std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (os == "win") return "windows";
+  if (os == "mac" || os == "darwin") return "macos";
+  return os;
+}
+
+static std::string mapTargetTripleForOS(const std::string &requestedOS,
+                                        const std::string &fallbackTriple) {
+  std::string os = normalizeTargetOS(requestedOS);
+  if (os.empty() || os == "native") return fallbackTriple;
+  llvm::Triple hostTriple(fallbackTriple);
+  std::string arch = hostTriple.getArchName().str();
+  if (arch.empty()) arch = "x86_64";
+  if (os == "linux") return arch + "-pc-linux-gnu";
+  if (os == "windows") return arch + "-pc-windows-msvc";
+  if (os == "macos") return arch + "-apple-darwin";
+  if (os == "wasm") return "wasm32-unknown-unknown";
+  return fallbackTriple;
+}
+
+static std::string sharedLibraryExtensionForOS(const std::string &requestedOS) {
+  const std::string os = normalizeTargetOS(requestedOS);
+  if (os == "windows") return ".dll";
+  if (os == "macos") return ".dylib";
+  return ".so";
+}
+
+static void appendLinkLibraries(std::string &linkCmd,
+                                const std::vector<std::string> &libs) {
+  for (const auto &lib : libs) {
+    if (lib.empty()) continue;
+    if (lib.rfind("-l", 0) == 0 || lib.rfind("-L", 0) == 0 ||
+        lib.rfind("/", 0) == 0 || lib.rfind(".", 0) == 0) {
+      linkCmd += " " + lib;
+    } else {
+      linkCmd += " -l" + lib;
+    }
+  }
+}
+#endif
+
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
@@ -120,6 +165,12 @@ int HavelLauncher::run(int argc, char *argv[]) {
     Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DumpIR", cfg.dumpIR ? "true" : "false");
     Configs::Get().Set("Compiler.OutputAsm", cfg.outputAsmToFile ? "true" : "false");
+    Configs::Get().Set("Compiler.JITWarnings", cfg.aotWarnings ? "true" : "false");
+#ifdef HAVEL_ENABLE_LLVM
+    Configs::Get().Set("Compiler.JITTargetOS", normalizeTargetOS(cfg.targetOS));
+#else
+    Configs::Get().Set("Compiler.JITTargetOS", cfg.targetOS);
+#endif
 
 
     if (cfg.buildOnly) {
@@ -245,6 +296,31 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "-S") {
       cfg.outputAsmToFile = true;
       cfg.dumpIR = true;
+    } else if (arg == "--os") {
+      if (i + 1 >= argc) {
+        error("--os requires one of: native, linux, windows, macos, wasm");
+      } else {
+        cfg.targetOS = argv[++i];
+      }
+    } else if (arg == "--aot-warnings") {
+      cfg.aotWarnings = true;
+    } else if (arg == "--no-aot-warnings") {
+      cfg.aotWarnings = false;
+    } else if (arg == "--link-lib") {
+      if (i + 1 >= argc) {
+        error("--link-lib requires a library name or linker flag");
+      } else {
+        cfg.linkLibs.push_back(argv[++i]);
+      }
+    } else if (arg == "--full-aot") {
+      cfg.fullAot = true;
+      cfg.buildOnly = true;
+      cfg.target = Target::AOT;
+      cfg.emitLLVM = true;
+      cfg.emitAsm = true;
+      cfg.emitObj = true;
+      cfg.emitBinary = true;
+      cfg.emitElf = true;
 
   } else if (arg == "--config" || arg == "-c") {
     // Config file path
@@ -1085,6 +1161,11 @@ std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
 std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
 std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
 std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
+std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
+std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
+std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
+std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
 std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
 std::cout << " --syntax <type> Assembly syntax: att|intel\n";
 std::cout << " --no-jit Disable JIT compilation\n";
@@ -1110,6 +1191,7 @@ std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  havel --target ir script.hv          - Emit LLVM IR (.ll)\n";
   std::cout << "  havel --target asm script.hv         - Emit native assembly (.s)\n";
   std::cout << "  havel --target aot script.hv         - Emit object (.o) + shared binary (.so)\n";
+  std::cout << "  havel --full-aot --os windows script.hv - Emit full AOT set for Windows\n";
   std::cout << "  havel --target wasm script.hv        - Emit WebAssembly binary (.wasm)\n";
   std::cout << "  havel --target elf script.hv         - Emit standalone ELF executable\n";
   std::cout << " havel --minimal script.hv - Run script in MINIMAL mode\n";
@@ -1459,7 +1541,24 @@ info("Compilation successful, {} functions", chunk->getFunctionCount());
 if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary || cfg.emitElf) {
     // Import LLVM JIT for translation
     havel::compiler::BytecodeOrcJIT jit;
-    jit.setDumpIR(true);
+    jit.setShowWarnings(cfg.aotWarnings);
+    jit.setFullAOT(cfg.fullAot);
+    jit.setLinkedLibraries(cfg.linkLibs);
+    if (cfg.emitLLVM || cfg.debugJIT) {
+        jit.setDumpIR(true);
+    }
+    const std::string normalizedOS = normalizeTargetOS(cfg.targetOS);
+    if (normalizedOS == "linux") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Linux);
+    } else if (normalizedOS == "windows") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Windows);
+    } else if (normalizedOS == "macos") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::MacOS);
+    } else if (normalizedOS == "wasm") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Wasm);
+    } else {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Native);
+    }
 
     // Generate LLVM IR for each function
     llvm::LLVMContext ctx;
@@ -1473,7 +1572,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
     }
 
     // Verify module
-    std::string verifyErr;
     if (llvm::verifyModule(*module, &llvm::errs())) {
         error("LLVM IR verification failed");
         return 1;
@@ -1500,13 +1598,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
         info("LLVM IR written to: {}", llPath);
     }
 
-    if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary) {
+    if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
         // Initialize target for native code gen
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::InitializeNativeTargetAsmParser();
 
-        std::string targetTripleStr = cfg.arch.empty() ? llvm::sys::getDefaultTargetTriple() : cfg.arch;
+        std::string targetTripleStr = cfg.arch.empty()
+            ? mapTargetTripleForOS(cfg.targetOS, llvm::sys::getDefaultTargetTriple())
+            : cfg.arch;
         llvm::Triple targetTriple(targetTripleStr);
         module->setTargetTriple(targetTriple);
 
@@ -1539,8 +1639,11 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                 return 1;
             }
             llvm::legacy::PassManager pm;
-            targetMachine->addPassesToEmitFile(pm, out, nullptr,
-                llvm::CodeGenFileType::AssemblyFile);
+            if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                llvm::CodeGenFileType::AssemblyFile)) {
+                error("Target '{}' cannot emit assembly", targetTripleStr);
+                return 1;
+            }
             pm.run(*module);
             info("Assembly written to: {}", asmPath);
         }
@@ -1554,16 +1657,27 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                 return 1;
             }
             llvm::legacy::PassManager pm;
-            targetMachine->addPassesToEmitFile(pm, out, nullptr,
-                llvm::CodeGenFileType::ObjectFile);
+            if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                llvm::CodeGenFileType::ObjectFile)) {
+                error("Target '{}' cannot emit object files", targetTripleStr);
+                return 1;
+            }
             pm.run(*module);
             info("Object file written to: {}", nativeObjPath);
         }
 
         if (cfg.emitBinary) {
-            std::string soPath = aotOutput + ".so";
-            std::string linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath +
-                                  "\" -o \"" + soPath + "\"";
+            const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
+            std::string soPath = aotOutput + shExt;
+            std::string linkCmd;
+            if (normalizeTargetOS(cfg.targetOS) == "windows") {
+                linkCmd = "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
+                linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            } else {
+                linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            }
+            appendLinkLibraries(linkCmd, jit.linkedLibraries());
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
                 error("Failed to link native shared binary with command: {}", linkCmd);
@@ -1573,7 +1687,8 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
         }
 
         if (cfg.emitElf) {
-            std::string binPath = aotOutput;
+            const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
+            std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
             std::string stubPath = aotOutput + "_stub.cpp";
             {
                 std::ofstream stub(stubPath);
@@ -1603,23 +1718,27 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                      << "    return 0;\n"
                      << "}\n";
             }
-            
-            std::string exePath = std::filesystem::canonical("/proc/self/exe").string();
-            std::string libDir = std::filesystem::path(exePath).parent_path().string();
-            
-            // Link against havel_lang and system dependencies
-            std::string linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\" "
-                                  "-L\"" + libDir + "\" -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui "
-                                  "-lX11 -lXtst -lXrandr -lXinerama -lXi -lXcomposite -lXfixes -lpthread -ldl -lstdc++ -lm "
-                                  "$(pkg-config --libs alsa libpulse libpipewire-0.3 dbus-1 libpcre2-8 libpcre2-16 opencv4 Qt6Core Qt6Widgets Qt6Gui tesseract lept)";
-            
+
+            std::string linkCmd;
+            if (targetWindows) {
+                linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
+            } else {
+                linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
+                std::string exePath = Env::executable();
+                if (!exePath.empty()) {
+                    std::string libDir = std::filesystem::path(exePath).parent_path().string();
+                    linkCmd += " -L\"" + libDir + "\"";
+                }
+                linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+            }
+            appendLinkLibraries(linkCmd, jit.linkedLibraries());
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
-                error("Failed to link native ELF binary with command: {}", linkCmd);
+                error("Failed to link native AOT executable with command: {}", linkCmd);
                 std::filesystem::remove(stubPath);
                 return 1;
             }
-            info("Native ELF binary written to: {}", binPath);
+            info("Native AOT executable written to: {}", binPath);
             std::filesystem::remove(stubPath);
         }
     }
@@ -1650,8 +1769,11 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             return 1;
         }
         llvm::legacy::PassManager pm;
-        targetMachine->addPassesToEmitFile(pm, out, nullptr,
-            llvm::CodeGenFileType::ObjectFile);
+        if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+            llvm::CodeGenFileType::ObjectFile)) {
+            error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
+            return 1;
+        }
         pm.run(*module);
         info("WebAssembly binary written to: {}", wasmPath);
     }

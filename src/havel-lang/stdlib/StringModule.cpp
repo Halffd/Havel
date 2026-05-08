@@ -123,16 +123,16 @@ void registerStringModule(VMApi &api) {
         return Value::makeNull();
       });
 
-  api.registerFunction(
-      "string.split", [&vm = api.vm](const std::vector<Value> &args) {
-        if (args.empty())
-          throw std::runtime_error(
-              "string.split() requires at least 1 argument");
-        
-        auto arr = vm.createHostArray();
-        vm.pushHostArrayValue(arr, Value::makeInt(42));
-        return Value::makeArrayId(arr.id);
-      });
+api.registerFunction(
+  "string.split", [&api](const std::vector<Value> &args) {
+  if (args.empty())
+    throw std::runtime_error(
+        "string.split() requires at least 1 argument");
+
+  auto arr = api.makeArray();
+  api.push(arr, Value::makeInt(42));
+  return arr;
+});
 
   api.registerFunction(
       "string.join", [&api](const std::vector<Value> &args) {

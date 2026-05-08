@@ -14,7 +14,6 @@
 #endif
 
 #include "havel-lang/core/Value.hpp"
-#include "havel-lang/compiler/vm/VM.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #endif
@@ -24,27 +23,18 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
-static std::string valueToString(const Value &v, VMApi &api) {
-  return api.vm.resolveStringKey(v);
-}
-
-static Value makeStringId(const std::string &s, VMApi &api) {
-  auto strRef = api.vm.getHeap().allocateString(s);
-  return Value::makeStringId(strRef.id);
-}
-
 void registerSysModule(VMApi &api) {
   api.registerFunction("sys.platform",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
 #if defined(__linux__)
-                         return makeStringId("linux", api);
+                         return api.makeString("linux");
 #elif defined(__APPLE__)
-                         return makeStringId("macos", api);
+                         return api.makeString("macos");
 #elif defined(_WIN32)
-                         return makeStringId("windows", api);
+                         return api.makeString("windows");
 #else
-                         return makeStringId("unknown", api);
+                         return api.makeString("unknown");
 #endif
                        });
 
@@ -52,71 +42,70 @@ void registerSysModule(VMApi &api) {
                        [&api](const std::vector<Value> &args) {
                          (void)args;
 #if defined(__x86_64__) || defined(_M_X64)
-                         return makeStringId("x86_64", api);
+                         return api.makeString("x86_64");
 #elif defined(__aarch64__) || defined(_M_ARM64)
-                         return makeStringId("aarch64", api);
+                         return api.makeString("aarch64");
 #elif defined(__i386__) || defined(_M_IX86)
-                         return makeStringId("x86", api);
+                         return api.makeString("x86");
 #elif defined(__arm__)
-                         return makeStringId("arm", api);
+                         return api.makeString("arm");
 #else
-                         return makeStringId("unknown", api);
+                         return api.makeString("unknown");
 #endif
                        });
 
   api.registerFunction("sys.version",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
-                         return makeStringId("0.1.0", api);
+                         return api.makeString("0.1.0");
                        });
 
   api.registerFunction("sys.argv",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
-                         auto arrRef = api.vm.createHostArray();
-                         (void)arrRef;
-                         return Value::makeArrayId(arrRef.id);
+  auto arr = api.makeArray();
+  (void)arr;
+  return arr;
                        });
 
   api.registerFunction("sys.env",
                        [&api](const std::vector<Value> &args) {
                          if (args.empty())
                            return Value::makeNull();
-                         std::string name = valueToString(args[0], api);
+                         std::string name = api.resolveString(args[0]);
                          const char *val = std::getenv(name.c_str());
                          if (!val)
                            return Value::makeNull();
-                         return makeStringId(val, api);
+                         return api.makeString(val);
                        });
 
   api.registerFunction("sys.envAll",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
-                         auto objRef = api.vm.createHostObject();
+  auto obj = api.makeObject();
 #ifndef _WIN32
-        extern char **environ;
-        if (::environ) {
-          for (int i = 0; ::environ[i]; i++) {
-            std::string entry(::environ[i]);
-                             auto eq = entry.find('=');
-                             if (eq != std::string::npos) {
-                               std::string key = entry.substr(0, eq);
-                               std::string val = entry.substr(eq + 1);
-                               api.vm.setHostObjectField(
-                                  objRef, key, makeStringId(val, api));
-                             }
-                           }
-                         }
+  extern char **environ;
+  if (::environ) {
+    for (int i = 0; ::environ[i]; i++) {
+      std::string entry(::environ[i]);
+      auto eq = entry.find('=');
+      if (eq != std::string::npos) {
+        std::string key = entry.substr(0, eq);
+        std::string val = entry.substr(eq + 1);
+        api.setField(obj, key, api.makeString(val));
+      }
+    }
+  }
 #endif
-                         return Value::makeObjectId(objRef.id);
-                       });
+  return obj;
+});
 
   api.registerFunction("sys.cwd",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
-                         return makeStringId(
-                             std::filesystem::current_path().string(), api);
-                       });
+  return api.makeString(
+      std::filesystem::current_path().string());
+});
 
   api.registerFunction("sys.pid",
                        [](const std::vector<Value> &args) {
@@ -175,14 +164,14 @@ void registerSysModule(VMApi &api) {
                          char buf[256];
                          if (gethostname(buf, sizeof(buf)) != 0)
                            buf[0] = '\0';
-                         return makeStringId(std::string(buf), api);
+                         return api.makeString(std::string(buf));
 #else
                          char buf[256];
                          DWORD size = static_cast<DWORD>(sizeof(buf));
                          if (!GetComputerNameA(buf, &size)) {
                            buf[0] = '\0';
                          }
-                         return makeStringId(std::string(buf), api);
+                         return api.makeString(std::string(buf));
 #endif
                        });
 
@@ -202,9 +191,8 @@ void registerSysModule(VMApi &api) {
                          if (!user)
                            user = std::getenv("USERNAME");
 #endif
-                         return makeStringId(user ? std::string(user) : "",
-                                             api);
-                       });
+  return api.makeString(user ? std::string(user) : "");
+});
 
   api.registerFunction("sys.home",
                        [&api](const std::vector<Value> &args) {
@@ -212,9 +200,8 @@ void registerSysModule(VMApi &api) {
                          const char *home = std::getenv("HOME");
                          if (!home)
                            home = std::getenv("USERPROFILE");
-                         return makeStringId(home ? std::string(home) : "",
-                                             api);
-                       });
+  return api.makeString(home ? std::string(home) : "");
+});
 
   api.registerFunction("sys.tmpdir",
                        [&api](const std::vector<Value> &args) {
@@ -223,9 +210,9 @@ void registerSysModule(VMApi &api) {
                          const char *tmp = std::getenv("TEMP");
                          if (!tmp)
                            tmp = std::getenv("TMP");
-                         return makeStringId(tmp ? std::string(tmp) : "C:\\Windows\\Temp", api);
+                         return api.makeString(tmp ? std::string(tmp) : "C:\\Windows\\Temp");
 #else
-                         return makeStringId("/tmp", api);
+                         return api.makeString("/tmp");
 #endif
                        });
 
@@ -239,7 +226,7 @@ void registerSysModule(VMApi &api) {
 #else
                          const char *sh = std::getenv("SHELL");
 #endif
-                         return makeStringId(sh ? std::string(sh) : "", api);
+                         return api.makeString(sh ? std::string(sh) : "");
                        });
 
   api.registerFunction("sys.uptime",
@@ -260,9 +247,9 @@ void registerSysModule(VMApi &api) {
                        [&api](const std::vector<Value> &args) {
                          (void)args;
 #ifdef HAVEL_ENABLE_LLVM
-                         return makeStringId(havel::compiler::BytecodeOrcJIT::lastError(), api);
+                         return api.makeString(havel::compiler::BytecodeOrcJIT::lastError());
 #else
-                         return makeStringId("", api);
+                         return api.makeString("");
 #endif
                        });
 

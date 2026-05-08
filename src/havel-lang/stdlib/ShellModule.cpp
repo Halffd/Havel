@@ -107,9 +107,9 @@ static Value listEnvironment(VMApi &api) {
     FreeEnvironmentStringsA(envBlock);
   }
 #else
- extern char **environ;
- if (environ) {
- for (char **cur = environ; *cur; ++cur) {
+        extern char **environ;
+        if (::environ) {
+          for (char **cur = ::environ; *cur; ++cur) {
       std::string entry(*cur);
       auto eqPos = entry.find('=');
       if (eqPos != std::string::npos) {

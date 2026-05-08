@@ -235,7 +235,7 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
     std::unordered_map<uint32_t, uint64_t> backedge_counters_;
 
     // Coroutine support (Lua-style coroutines)
-  uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
+uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (UINT32_MAX = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
 
   

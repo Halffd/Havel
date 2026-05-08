@@ -8,7 +8,6 @@
 #include <thread>
 
 #include "havel-lang/core/Value.hpp"
-#include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 
@@ -16,16 +15,6 @@ using havel::compiler::Value;
 using havel::compiler::VMApi;
 
 namespace havel::stdlib {
-
-// Helper: extract string from Value using VM's resolveStringKey
-static std::string valueToString(const Value &v, VMApi &api) {
-  return api.vm.resolveStringKey(v);
-}
-
-// Helper: create String from std::string using VMApi
-static Value makeString(const std::string &s, VMApi &api) {
-  return api.makeString(s);
-}
 
 // Helper: get current tm struct
 static std::tm getLocalTm() {
@@ -89,12 +78,12 @@ void registerTimeModule(VMApi &api) {
         std::time_t time = timestamp / 1000;
         std::string fmt = "%Y-%m-%d %H:%M:%S";
         if (args.size() > 1) {
-          fmt = valueToString(args[1], api);
+          fmt = api.resolveString(args[1]);
         }
         std::tm *tm = std::localtime(&time);
         char buf[256];
         std::strftime(buf, sizeof(buf), fmt.c_str(), tm);
-        return makeString(buf, api);
+        return api.makeString(buf);
       });
 
   // time.parse(datestr, format?) — parse date string to millisecond
@@ -103,10 +92,10 @@ void registerTimeModule(VMApi &api) {
       "time.parse", [&api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.parse() requires date string");
-        std::string datestr = valueToString(args[0], api);
+        std::string datestr = api.resolveString(args[0]);
         std::string fmt = "%Y-%m-%d %H:%M:%S";
         if (args.size() > 1) {
-          fmt = valueToString(args[1], api);
+          fmt = api.resolveString(args[1]);
         }
         std::tm tm = {};
 #ifndef _WIN32
@@ -138,8 +127,8 @@ void registerTimeModule(VMApi &api) {
         
         
         // If we are running in a goroutine, suspend instead of blocking the thread
-        if (api.vm.getScheduler() && api.vm.getScheduler()->current()) {
-            api.vm.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP), 
+  if (api.isInGoroutine()) {
+    api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
                                    reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
             return Value::makeNull();
         }
@@ -203,7 +192,7 @@ void registerTimeModule(VMApi &api) {
     auto tm = getLocalTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
-    return makeString(buf, api);
+    return api.makeString(buf);
   });
 
   // time.time() — current time as "HH:MM:SS" string
@@ -212,7 +201,7 @@ void registerTimeModule(VMApi &api) {
     auto tm = getLocalTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
-    return makeString(buf, api);
+    return api.makeString(buf);
   });
 
   // Build namespace object

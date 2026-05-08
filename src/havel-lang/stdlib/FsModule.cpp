@@ -13,6 +13,7 @@
 #include <vector>
 #include <mutex>
 #include <set>
+
 #ifndef _WIN32
 #include <sys/inotify.h>
 #include <sys/stat.h>
@@ -62,16 +63,17 @@ static Value createFileObject(const fs::path &path, VMApi &api) {
     vm.setHostObjectField(objRef, "size",
         Value::makeInt(ec ? 0 : static_cast<int64_t>(fsize)));
 
-    auto ctime = fs::last_write_time(path, ec);
+    auto lwt = fs::last_write_time(path, ec);
     if (!ec) {
         auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(
-            std::chrono::file_clock::to_sys(ctime));
+            std::chrono::file_clock::to_sys(lwt));
         vm.setHostObjectField(objRef, "modified",
             Value::makeInt(static_cast<int64_t>(sctp.time_since_epoch().count())));
     } else {
         vm.setHostObjectField(objRef, "modified", Value::makeInt(0));
     }
 
+#ifndef _WIN32
     struct stat st;
     if (::stat(path.c_str(), &st) == 0) {
         vm.setHostObjectField(objRef, "access",
@@ -85,6 +87,7 @@ static Value createFileObject(const fs::path &path, VMApi &api) {
         vm.setHostObjectField(objRef, "birthDate", Value::makeInt(0));
         vm.setHostObjectField(objRef, "permissions", Value::makeInt(0));
     }
+#endif
 
     auto isDir = fs::is_directory(path, ec);
     vm.setHostObjectField(objRef, "isDir", Value::makeBool(isDir));
@@ -99,6 +102,7 @@ static Value createStatObject(const fs::path &path, VMApi &api) {
     auto &vm = api.vm;
     auto objRef = vm.createHostObject();
 
+#ifndef _WIN32
     struct stat st;
     if (::stat(path.c_str(), &st) != 0) {
         if (::lstat(path.c_str(), &st) != 0) {
@@ -144,6 +148,7 @@ static Value createStatObject(const fs::path &path, VMApi &api) {
     } else {
         vm.setHostObjectField(objRef, "birthDate", Value::makeInt(static_cast<int64_t>(st.st_ctime)));
     }
+#endif
 
     return Value::makeObjectId(objRef.id);
 }
@@ -159,7 +164,12 @@ static void walkDir(const fs::path &dir, std::vector<fs::path> &results, VMApi &
 }
 
 static bool globMatch(const std::string &pattern, const std::string &name) {
+#ifndef _WIN32
     return fnmatch(pattern.c_str(), name.c_str(), FNM_PATHNAME | FNM_PERIOD) == 0;
+#else
+    (void)pattern; (void)name;
+    return false;
+#endif
 }
 
 static void globSearch(const fs::path &dir, const std::string &pattern,
@@ -447,7 +457,7 @@ void registerFsModule(VMApi &api) {
             std::error_code ec;
             bool recursive = args.size() > 1 && api.vm.toBoolPublic(args[1]);
             if (recursive) {
-                auto count = fs::remove_all(path, ec);
+                fs::remove_all(path, ec);
                 return Value::makeBool(!ec);
             }
             return Value::makeBool(fs::remove(path, ec));
@@ -499,8 +509,13 @@ void registerFsModule(VMApi &api) {
             } else if (args[1].isDouble()) {
                 mode = static_cast<int>(args[1].asDouble());
             }
+#ifndef _WIN32
             int ret = ::chmod(path.c_str(), static_cast<mode_t>(mode));
             return Value::makeBool(ret == 0);
+#else
+            (void)path; (void)mode;
+            return Value::makeBool(false);
+#endif
         });
 
     // fs.walk (recursive directory walk, returns flat array of paths)
@@ -575,6 +590,7 @@ void registerFsModule(VMApi &api) {
     // fs.watch (inotify-based directory watcher)
     api.registerFunction(
         "fs.watch", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.size() < 2)
                 return Value::makeNull();
             std::string path = valueToString(args[0], api);
@@ -603,11 +619,16 @@ void registerFsModule(VMApi &api) {
                     return Value::makeBool(true);
                 });
             return watchObj;
+#else
+            (void)args;
+            return Value::makeNull();
+#endif
         });
 
     // fs._watchClose (close watch handle)
     api.registerFunction(
         "fs._watchClose", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto fdVal = api.vm.getHostObjectField(
@@ -618,11 +639,16 @@ void registerFsModule(VMApi &api) {
                                    : static_cast<int>(fdVal.asDouble());
             close(fd);
             return Value::makeBool(true);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // fs.watchTree (recursive directory watcher)
     api.registerFunction(
         "fs.watchTree", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.size() < 2)
                 return Value::makeNull();
             std::string path = valueToString(args[0], api);
@@ -648,11 +674,16 @@ void registerFsModule(VMApi &api) {
             api.setField(watchObj, "callback", callback);
             api.setField(watchObj, "close", api.makeFunctionRef("fs._watchClose"));
             return watchObj;
+#else
+            (void)args;
+            return Value::makeNull();
+#endif
         });
 
     // fs.open (file handle: r, w, w+, a)
     api.registerFunction(
         "fs.open", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty())
                 return Value::makeNull();
             std::string path = valueToString(args[0], api);
@@ -696,11 +727,16 @@ void registerFsModule(VMApi &api) {
             api.setField(handleObj, "close", api.makeFunctionRef("fs._handleClose"));
             api.setField(handleObj, "remove", api.makeFunctionRef("fs._handleRemove"));
             return handleObj;
+#else
+            (void)args;
+            return Value::makeNull();
+#endif
         });
 
     // File handle: read(n)
     api.registerFunction(
         "fs._handleRead", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeNull();
             auto *handle = getHandle(args[0], api);
@@ -723,11 +759,16 @@ void registerFsModule(VMApi &api) {
             if (bytesRead < 0)
                 return Value::makeNull();
             return makeStringId(std::string(buf.data(), bytesRead), api);
+#else
+            (void)args;
+            return Value::makeNull();
+#endif
         });
 
     // File handle: write(data)
     api.registerFunction(
         "fs._handleWrite", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.size() < 2 || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -736,6 +777,10 @@ void registerFsModule(VMApi &api) {
             std::string data = valueToString(args[1], api);
             ssize_t written = ::write(handle->fd, data.c_str(), data.size());
             return Value::makeBool(written >= 0);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // File handle: prepend(data)
@@ -766,6 +811,7 @@ void registerFsModule(VMApi &api) {
     // File handle: append(data)
     api.registerFunction(
         "fs._handleAppend", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.size() < 2 || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -775,11 +821,16 @@ void registerFsModule(VMApi &api) {
             ::lseek(handle->fd, 0, SEEK_END);
             ssize_t written = ::write(handle->fd, data.c_str(), data.size());
             return Value::makeBool(written >= 0);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // File handle: seek(position)
     api.registerFunction(
         "fs._handleSeek", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -792,11 +843,16 @@ void registerFsModule(VMApi &api) {
             }
             handle->pos = ::lseek(handle->fd, pos, SEEK_SET);
             return Value::makeBool(true);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // File handle: clear()
     api.registerFunction(
         "fs._handleClear", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -806,22 +862,32 @@ void registerFsModule(VMApi &api) {
                 return Value::makeBool(false);
             ::lseek(handle->fd, 0, SEEK_SET);
             return Value::makeBool(true);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // File handle: flush()
     api.registerFunction(
         "fs._handleFlush", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
             if (!handle || !handle->open)
                 return Value::makeBool(false);
             return Value::makeBool(::fsync(handle->fd) == 0);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // File handle: close()
     api.registerFunction(
         "fs._handleClose", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -835,11 +901,16 @@ void registerFsModule(VMApi &api) {
             vm.setHostObjectField(ObjectRef{args[0].asObjectId(), true},
                 "__handle_ptr", Value::makeInt(0));
             return Value::makeBool(true);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // File handle: remove() (close and delete file)
     api.registerFunction(
         "fs._handleRemove", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -854,6 +925,10 @@ void registerFsModule(VMApi &api) {
             delete handle;
             std::error_code ec;
             return Value::makeBool(fs::remove(path, ec));
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // fs.atomicWrite (write to temp then rename)
@@ -880,6 +955,7 @@ void registerFsModule(VMApi &api) {
     // fs.tempFile (create temporary file, returns {path, fd})
     api.registerFunction(
         "fs.tempFile", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             std::string tmpl = "/tmp/havel_XXXXXX";
             if (!args.empty()) {
                 tmpl = valueToString(args[0], api);
@@ -902,11 +978,16 @@ void registerFsModule(VMApi &api) {
             api.setField(obj, "__handle_ptr",
                 api.makeNumber(reinterpret_cast<intptr_t>(handle)));
             return obj;
+#else
+            (void)args;
+            return Value::makeNull();
+#endif
         });
 
     // fs.lock (advisory file lock via flock)
     api.registerFunction(
         "fs.lock", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = valueToString(args[0], api);
@@ -922,11 +1003,16 @@ void registerFsModule(VMApi &api) {
             getLockedFiles().insert(path);
             ::close(fd);
             return Value::makeBool(true);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // fs.tryLock (non-blocking advisory file lock)
     api.registerFunction(
         "fs.tryLock", [&api](const std::vector<Value> &args) {
+#ifndef _WIN32
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = valueToString(args[0], api);
@@ -942,6 +1028,10 @@ void registerFsModule(VMApi &api) {
             getLockedFiles().insert(path);
             ::close(fd);
             return Value::makeBool(true);
+#else
+            (void)args;
+            return Value::makeBool(false);
+#endif
         });
 
     // fs.isLocked

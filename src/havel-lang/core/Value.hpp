@@ -193,9 +193,13 @@ public:
 
   Value(int i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
   Value(int64_t i) : bits_(makeIntRaw(i)) {}
+#ifndef _WIN32
   Value(long long i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
+#endif
   Value(unsigned int i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
+#ifndef _WIN32
   Value(unsigned long long i) : bits_(makeIntRaw(static_cast<int64_t>(i))) {}
+#endif
 
   Value(double d) {
     std::memcpy(&bits_, &d, sizeof(double));

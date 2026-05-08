@@ -12,7 +12,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
 #ifndef _WIN32
@@ -68,7 +67,6 @@ static std::string getPlatform() {
 #ifdef _WIN32
   return "windows";
 #elif __APPLE__
-  #include <TargetConditionals.h>
   #if TARGET_OS_MAC
     return "macos";
   #else
@@ -109,8 +107,9 @@ static Value listEnvironment(VMApi &api) {
     FreeEnvironmentStringsA(envBlock);
   }
 #else
- if (::environ) {
- for (char **cur = ::environ; *cur; ++cur) {
+ extern char **environ;
+ if (environ) {
+ for (char **cur = environ; *cur; ++cur) {
       std::string entry(*cur);
       auto eqPos = entry.find('=');
       if (eqPos != std::string::npos) {
@@ -705,7 +704,7 @@ if (!std::getline(std::cin, line))
         delete[] buf;
         return Value::makeNull();
       }
-      close(fd);  // we only want the filename
+      ::close(fd);  // we only want the filename
       std::string result(buf);
       delete[] buf;
       return makeStringId(result, api);

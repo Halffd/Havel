@@ -109,9 +109,16 @@ void registerTimeModule(VMApi &api) {
           fmt = valueToString(args[1], api);
         }
         std::tm tm = {};
+#ifndef _WIN32
         char *result = strptime(datestr.c_str(), fmt.c_str(), &tm);
         if (!result)
           return Value::makeNull();
+#else
+        std::istringstream ss(datestr);
+        ss >> std::get_time(&tm, fmt.c_str());
+        if (ss.fail())
+          return Value::makeNull();
+#endif
         std::time_t time = std::mktime(&tm);
         return Value(static_cast<int64_t>(time) * 1000);
       });

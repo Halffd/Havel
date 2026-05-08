@@ -5,7 +5,11 @@
 #include "FFIAccessors.hpp"
 #include "../core/Value.hpp"
 #include <regex>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #include <cstring>
 #include <sstream>
 
@@ -46,6 +50,7 @@ ffi_type* FFICall::to_ffi_type(std::shared_ptr<FFIType> type) {
 }
 
 void* FFICall::load_library(const std::string& path) {
+#ifndef _WIN32
     int flags = RTLD_NOW;
 #ifdef __APPLE__
     flags |= RTLD_FIRST;
@@ -58,11 +63,33 @@ void* FFICall::load_library(const std::string& path) {
         libraries_[handle] = path;
     }
     return handle;
+#else
+    HMODULE handle = LoadLibraryA(path.c_str());
+    if (!handle) {
+        // Keep parity with POSIX behavior: try alternate name if not provided.
+        if (path.find(".dll") == std::string::npos) {
+            std::string altPath = path + ".dll";
+            handle = LoadLibraryA(altPath.c_str());
+        }
+    }
+    if (!handle) {
+        DWORD err = GetLastError();
+        ::havel::error("FFICall: failed to load {} (Win32 error {})", path, static_cast<unsigned long>(err));
+        return nullptr;
+    }
+    void* rawHandle = reinterpret_cast<void*>(handle);
+    libraries_[rawHandle] = path;
+    return rawHandle;
+#endif
 }
 
 void FFICall::unload_library(void* handle) {
     if (handle) {
+#ifndef _WIN32
         dlclose(handle);
+#else
+        FreeLibrary(reinterpret_cast<HMODULE>(handle));
+#endif
         libraries_.erase(handle);
     }
 }
@@ -70,6 +97,7 @@ void FFICall::unload_library(void* handle) {
 void* FFICall::get_symbol(void* handle, const std::string& name) {
     if (!handle) return nullptr;
 
+#ifndef _WIN32
     void* sym = dlsym(handle, name.c_str());
     char* error = dlerror();
     if (error) {
@@ -77,6 +105,16 @@ void* FFICall::get_symbol(void* handle, const std::string& name) {
         return nullptr;
     }
     return sym;
+#else
+    FARPROC sym = GetProcAddress(reinterpret_cast<HMODULE>(handle), name.c_str());
+    if (!sym) {
+        DWORD err = GetLastError();
+        ::havel::error("FFICall: failed to find symbol {} (Win32 error {})", name,
+                       static_cast<unsigned long>(err));
+        return nullptr;
+    }
+    return reinterpret_cast<void*>(sym);
+#endif
 }
 
 static void closure_callback(ffi_cif* cif, void* ret, void** args, void* user_data) {

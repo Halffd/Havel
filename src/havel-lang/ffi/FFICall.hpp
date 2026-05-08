@@ -6,7 +6,10 @@
 #include <vector>
 #include <functional>
 #include <mutex>
+#include <unordered_map>
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 #include "../core/Value.hpp"
 
 #ifdef HAVE_LIBFFI
@@ -48,9 +51,11 @@ public:
         std::function<Value(const std::vector<Value>&)>* fn = nullptr;
         std::shared_ptr<FFIType> return_type;
         std::vector<std::shared_ptr<FFIType>> param_types;
+#ifdef HAVE_LIBFFI
         ffi_cif* cif = nullptr;
         std::vector<ffi_type*>* param_types_ffi = nullptr;
         ffi_closure* closure = nullptr;
+#endif
     };
 
     struct CifKey {
@@ -83,7 +88,9 @@ private:
     static std::mutex callback_mutex_;
     static std::unordered_map<void*, std::unique_ptr<CallbackData>> callbacks_;
     static std::mutex cif_mutex_;
+#ifdef HAVE_LIBFFI
     static std::unordered_map<CifKey, std::shared_ptr<ffi_cif>, CifKeyHash> cif_cache_;
+#endif
 
     static CifKey make_cif_key(void* fn_ptr,
                                const std::vector<std::shared_ptr<FFIType>>& param_types,
@@ -91,11 +98,13 @@ private:
                                bool variadic,
                                const std::vector<std::shared_ptr<FFIType>>& variadic_types);
 
+#ifdef HAVE_LIBFFI
     static std::shared_ptr<ffi_cif> get_or_create_cif(void* fn_ptr,
                                                        const std::vector<std::shared_ptr<FFIType>>& param_types,
                                                        std::shared_ptr<FFIType> return_type,
                                                        bool variadic,
                                                        const std::vector<std::shared_ptr<FFIType>>& variadic_types);
+#endif
 };
 
 struct FFIDeclaration {

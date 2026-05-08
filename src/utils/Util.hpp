@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#ifndef _WIN32
 #include <execinfo.h>
+#endif
 #include <functional>
 #include <initializer_list>
 #include <iostream>

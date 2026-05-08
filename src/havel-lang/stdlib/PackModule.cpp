@@ -133,13 +133,13 @@ static double getFloatArg(const Value &v) {
 }
 
 void registerPackModule(VMApi &api) {
-    api.registerFunction("pack", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("pack() requires a format string");
-        const auto &fmtVal = args[0];
-        if (!fmtVal.isStringValId() && !fmtVal.isStringId())
-            throw std::runtime_error("pack(): first argument must be a format string");
-        std::string fmt = api.toString(fmtVal);
+  api.registerFunction("pack.pack", [&api](const std::vector<Value> &args) {
+    if (args.empty())
+      throw std::runtime_error("pack.pack() requires a format string");
+    const auto &fmtVal = args[0];
+    if (!fmtVal.isStringValId() && !fmtVal.isStringId())
+      throw std::runtime_error("pack.pack(): first argument must be a format string");
+    std::string fmt = api.toString(fmtVal);
         FormatIter fi(fmt);
         std::vector<uint8_t> out;
         size_t argIdx = 1;
@@ -156,7 +156,7 @@ void registerPackModule(VMApi &api) {
 
             for (int i = 0; i < count; ++i) {
                 if (argIdx >= args.size())
-                    throw std::runtime_error("pack(): not enough arguments for format");
+                    throw std::runtime_error("pack.pack(): not enough arguments for format");
 
                 const auto &val = args[argIdx++];
 
@@ -235,8 +235,8 @@ void registerPackModule(VMApi &api) {
                     break;
                 }
                 default:
-                    throw std::runtime_error(
-                        std::string("pack(): unknown format specifier '") + c + "'");
+        throw std::runtime_error(
+            std::string("pack.pack(): unknown format specifier '") + c + "'");
                 }
             }
         }
@@ -247,15 +247,15 @@ void registerPackModule(VMApi &api) {
         return arr;
     });
 
-    api.registerFunction("unpack", [&api](const std::vector<Value> &args) {
-        if (args.size() < 2)
-            throw std::runtime_error("unpack() requires a format string and byte array");
-        const auto &fmtVal = args[0];
-        const auto &dataVal = args[1];
-        if (!fmtVal.isStringValId() && !fmtVal.isStringId())
-            throw std::runtime_error("unpack(): first argument must be a format string");
-        if (!dataVal.isArrayId())
-            throw std::runtime_error("unpack(): second argument must be a byte array");
+  api.registerFunction("pack.unpack", [&api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("pack.unpack() requires a format string and byte array");
+    const auto &fmtVal = args[0];
+    const auto &dataVal = args[1];
+    if (!fmtVal.isStringValId() && !fmtVal.isStringId())
+      throw std::runtime_error("pack.unpack(): first argument must be a format string");
+    if (!dataVal.isArrayId())
+      throw std::runtime_error("pack.unpack(): second argument must be a byte array");
 
         std::string fmt = api.toString(fmtVal);
         uint32_t dataLen = api.length(dataVal);
@@ -288,7 +288,7 @@ void registerPackModule(VMApi &api) {
                 switch (c) {
                 case 'i': case 's': {
                     if (offset + 1 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     int8_t v = static_cast<int8_t>(readU8(raw.data() + offset));
                     api.push(result, Value(static_cast<int64_t>(v)));
                     offset += 1;
@@ -296,14 +296,14 @@ void registerPackModule(VMApi &api) {
                 }
                 case 'u': {
                     if (offset + 1 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     api.push(result, Value(static_cast<int64_t>(readU8(raw.data() + offset))));
                     offset += 1;
                     break;
                 }
                 case 'I': {
                     if (offset + 2 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     int16_t v = static_cast<int16_t>(readU16(raw.data() + offset, fi.endian));
                     api.push(result, Value(static_cast<int64_t>(v)));
                     offset += 2;
@@ -311,14 +311,14 @@ void registerPackModule(VMApi &api) {
                 }
                 case 'U': {
                     if (offset + 2 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     api.push(result, Value(static_cast<int64_t>(readU16(raw.data() + offset, fi.endian))));
                     offset += 2;
                     break;
                 }
                 case 'l': {
                     if (offset + 4 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     int32_t v = static_cast<int32_t>(readU32(raw.data() + offset, fi.endian));
                     api.push(result, Value(static_cast<int64_t>(v)));
                     offset += 4;
@@ -326,14 +326,14 @@ void registerPackModule(VMApi &api) {
                 }
                 case 'L': {
                     if (offset + 4 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     api.push(result, Value(static_cast<int64_t>(readU32(raw.data() + offset, fi.endian))));
                     offset += 4;
                     break;
                 }
                 case 'q': {
                     if (offset + 8 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     int64_t v = static_cast<int64_t>(readU64(raw.data() + offset, fi.endian));
                     api.push(result, Value(v));
                     offset += 8;
@@ -341,28 +341,28 @@ void registerPackModule(VMApi &api) {
                 }
                 case 'Q': {
                     if (offset + 8 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     api.push(result, Value(static_cast<int64_t>(readU64(raw.data() + offset, fi.endian))));
                     offset += 8;
                     break;
                 }
                 case 'f': {
                     if (offset + 4 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     api.push(result, Value(static_cast<double>(readF32(raw.data() + offset, fi.endian))));
                     offset += 4;
                     break;
                 }
                 case 'd': {
                     if (offset + 8 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow at offset");
+                        throw std::runtime_error("pack.unpack(): data underflow at offset");
                     api.push(result, Value(readF64(raw.data() + offset, fi.endian)));
                     offset += 8;
                     break;
                 }
                 case 'c': {
                     if (offset + count > raw.size())
-                        throw std::runtime_error("unpack(): data underflow for c format");
+                        throw std::runtime_error("pack.unpack(): data underflow for c format");
                     std::string s(raw.data() + offset, raw.data() + offset + count);
                     api.push(result, api.makeString(std::move(s)));
                     offset += count;
@@ -371,21 +371,26 @@ void registerPackModule(VMApi &api) {
                 }
                 case 'p': {
                     if (offset + 8 > raw.size())
-                        throw std::runtime_error("unpack(): data underflow for pointer");
+                        throw std::runtime_error("pack.unpack(): data underflow for pointer");
                     uint64_t addr = readU64(raw.data() + offset, fi.endian);
                     api.push(result, Value::makePtr(reinterpret_cast<void *>(addr)));
                     offset += 8;
                     break;
                 }
                 default:
-                    throw std::runtime_error(
-                        std::string("unpack(): unknown format specifier '") + c + "'");
+      throw std::runtime_error(
+          std::string("pack.unpack(): unknown format specifier '") + c + "'");
                 }
             }
         }
 
-        return result;
-    });
+    return result;
+  });
+
+  auto packObj = api.makeObject();
+  api.setField(packObj, "pack", api.makeFunctionRef("pack.pack"));
+  api.setField(packObj, "unpack", api.makeFunctionRef("pack.unpack"));
+  api.setGlobal("pack", packObj);
 }
 
 } // namespace havel::stdlib

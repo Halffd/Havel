@@ -8,6 +8,9 @@
 
 #ifndef _WIN32
 #include <unistd.h>
+#else
+#include <windows.h>
+#include <tlhelp32.h>
 #endif
 
 #include "havel-lang/core/Value.hpp"
@@ -118,7 +121,7 @@ void registerSysModule(VMApi &api) {
 #ifndef _WIN32
                          return Value(static_cast<int64_t>(getpid()));
 #else
-                         return Value(static_cast<int64_t>(0));
+                         return Value(static_cast<int64_t>(GetCurrentProcessId()));
 #endif
                        });
 
@@ -128,7 +131,24 @@ void registerSysModule(VMApi &api) {
 #ifndef _WIN32
                          return Value(static_cast<int64_t>(getppid()));
 #else
-                         return Value(static_cast<int64_t>(0));
+                         // Best-effort parent PID on Windows via ToolHelp snapshot.
+                         DWORD current = GetCurrentProcessId();
+                         DWORD parent = 0;
+                         HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+                         if (snapshot != INVALID_HANDLE_VALUE) {
+                           PROCESSENTRY32 pe{};
+                           pe.dwSize = sizeof(pe);
+                           if (Process32First(snapshot, &pe)) {
+                             do {
+                               if (pe.th32ProcessID == current) {
+                                 parent = pe.th32ParentProcessID;
+                                 break;
+                               }
+                             } while (Process32Next(snapshot, &pe));
+                           }
+                           CloseHandle(snapshot);
+                         }
+                         return Value(static_cast<int64_t>(parent));
 #endif
                        });
 
@@ -154,7 +174,12 @@ void registerSysModule(VMApi &api) {
                            buf[0] = '\0';
                          return makeStringId(std::string(buf), api);
 #else
-                         return makeStringId("", api);
+                         char buf[256];
+                         DWORD size = static_cast<DWORD>(sizeof(buf));
+                         if (!GetComputerNameA(buf, &size)) {
+                           buf[0] = '\0';
+                         }
+                         return makeStringId(std::string(buf), api);
 #endif
                        });
 
@@ -170,6 +195,9 @@ void registerSysModule(VMApi &api) {
                            if (login)
                              user = login;
                          }
+#else
+                         if (!user)
+                           user = std::getenv("USERNAME");
 #endif
                          return makeStringId(user ? std::string(user) : "",
                                              api);
@@ -179,6 +207,8 @@ void registerSysModule(VMApi &api) {
                        [&api](const std::vector<Value> &args) {
                          (void)args;
                          const char *home = std::getenv("HOME");
+                         if (!home)
+                           home = std::getenv("USERPROFILE");
                          return makeStringId(home ? std::string(home) : "",
                                              api);
                        });
@@ -186,13 +216,26 @@ void registerSysModule(VMApi &api) {
   api.registerFunction("sys.tmpdir",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
+#ifdef _WIN32
+                         const char *tmp = std::getenv("TEMP");
+                         if (!tmp)
+                           tmp = std::getenv("TMP");
+                         return makeStringId(tmp ? std::string(tmp) : "C:\\Windows\\Temp", api);
+#else
                          return makeStringId("/tmp", api);
+#endif
                        });
 
   api.registerFunction("sys.shell",
                        [&api](const std::vector<Value> &args) {
                          (void)args;
+#ifdef _WIN32
+                         const char *sh = std::getenv("ComSpec");
+                         if (!sh)
+                           sh = "cmd.exe";
+#else
                          const char *sh = std::getenv("SHELL");
+#endif
                          return makeStringId(sh ? std::string(sh) : "", api);
                        });
 

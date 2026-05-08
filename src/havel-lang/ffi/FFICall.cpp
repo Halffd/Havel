@@ -5,7 +5,9 @@
 #include "FFIAccessors.hpp"
 #include "../core/Value.hpp"
 #include <regex>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #endif
 #include <cstring>
@@ -62,8 +64,22 @@ void* FFICall::load_library(const std::string& path) {
     }
     return handle;
 #else
-    (void)path;
-    return nullptr;
+    HMODULE handle = LoadLibraryA(path.c_str());
+    if (!handle) {
+        // Keep parity with POSIX behavior: try alternate name if not provided.
+        if (path.find(".dll") == std::string::npos) {
+            std::string altPath = path + ".dll";
+            handle = LoadLibraryA(altPath.c_str());
+        }
+    }
+    if (!handle) {
+        DWORD err = GetLastError();
+        ::havel::error("FFICall: failed to load {} (Win32 error {})", path, static_cast<unsigned long>(err));
+        return nullptr;
+    }
+    void* rawHandle = reinterpret_cast<void*>(handle);
+    libraries_[rawHandle] = path;
+    return rawHandle;
 #endif
 }
 
@@ -71,6 +87,8 @@ void FFICall::unload_library(void* handle) {
     if (handle) {
 #ifndef _WIN32
         dlclose(handle);
+#else
+        FreeLibrary(reinterpret_cast<HMODULE>(handle));
 #endif
         libraries_.erase(handle);
     }
@@ -88,8 +106,14 @@ void* FFICall::get_symbol(void* handle, const std::string& name) {
     }
     return sym;
 #else
-    (void)name;
-    return nullptr;
+    FARPROC sym = GetProcAddress(reinterpret_cast<HMODULE>(handle), name.c_str());
+    if (!sym) {
+        DWORD err = GetLastError();
+        ::havel::error("FFICall: failed to find symbol {} (Win32 error {})", name,
+                       static_cast<unsigned long>(err));
+        return nullptr;
+    }
+    return reinterpret_cast<void*>(sym);
 #endif
 }
 

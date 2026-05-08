@@ -186,7 +186,7 @@ void HostBridge::initBridges() {
   // Lazy module registration hooks: module code is registered on first `use`.
   moduleLoader_.registerBuiltin("io", [this](VM &) { ioBridge_->install(options_); },
                                 {"io", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("window", [this](VM &) { systemBridge_->install(options_); },
+  moduleLoader_.registerBuiltin("window", [this](VM &) { uiBridge_->install(options_); },
                                 {"window", "1.0", true, false, ""});
   moduleLoader_.registerBuiltin("ui", [this](VM &) { uiBridge_->install(options_); },
                                 {"ui", "1.0", true, false, ""});

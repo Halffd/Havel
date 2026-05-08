@@ -2282,16 +2282,16 @@ registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
     // "system.gc" is called via method dispatch (system.gc()) which prepends
     // the receiver, so it needs arity 1. The underscore alias "system_gc"
     // is called directly without a receiver, so arity 0.
-    registerHostFunction("system.gc", 1, [this](const std::vector<Value> &) {
-        runGarbageCollection();
-        return Value::makeNull();
-    });
-    registerHostFunction("system_gc", 0, [this](const std::vector<Value> &) {
-        runGarbageCollection();
-        return Value::makeNull();
-    });
+registerHostFunction("system.gc", 0, [this](const std::vector<Value> &) {
+  runGarbageCollection();
+  return Value::makeNull();
+});
+registerHostFunction("system_gc", 0, [this](const std::vector<Value> &) {
+  runGarbageCollection();
+  return Value::makeNull();
+});
 
-    registerHostFunction("system.gcStats", 1, [this](const std::vector<Value> &) {
+registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         const auto stats = gcStats();
         const auto object_ref = createHostObject();
         setHostObjectField(object_ref, "heapSize",

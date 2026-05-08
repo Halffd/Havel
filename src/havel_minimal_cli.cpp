@@ -7,6 +7,9 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 // Helper to read file content
 std::string readFile(const std::string& path) {

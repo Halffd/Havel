@@ -1,0 +1,62 @@
+// test_http_module.hv - HTTP module smoke test
+
+print("=== HTTP Module Tests ===")
+
+// Test 1: http.isOnline
+online = http.isOnline()
+print("isOnline: " + str(online))
+
+// Test 2: http.get
+r = http.get("https://httpbin.org/get", { timeout: 5000 })
+print("GET status: " + str(r.status))
+print("GET ok: " + str(r.ok))
+print("GET body length: " + str(r.body.len))
+
+// Test 3: http.post
+r2 = http.post("https://httpbin.org/post", "{\"msg\":\"hello\"}", {
+  timeout: 5000,
+  headers: { "Content-Type": "application/json" }
+})
+print("POST status: " + str(r2.status))
+print("POST ok: " + str(r2.ok))
+
+// Test 4: http.put
+r3 = http.put("https://httpbin.org/put", "{\"update\":true}", {
+  timeout: 5000,
+  headers: { "Content-Type": "application/json" }
+})
+print("PUT status: " + str(r3.status))
+
+// Test 5: http.patch
+r4 = http.patch("https://httpbin.org/patch", "{\"patched\":true}", {
+  timeout: 5000
+})
+print("PATCH status: " + str(r4.status))
+
+// Test 6: http.del
+r5 = http.del("https://httpbin.org/delete", { timeout: 5000 })
+print("DELETE status: " + str(r5.status))
+
+// Test 7: http.head
+r6 = http.head("https://httpbin.org/get", { timeout: 5000 })
+print("HEAD status: " + str(r6.status))
+
+// Test 8: http.urlEncode
+encoded = http.urlEncode("hello world & foo=bar")
+print("urlEncode: " + str(encoded))
+
+// Test 9: http.urlDecode
+decoded = http.urlDecode("hello+world+%26+foo%3Dbar")
+print("urlDecode: " + str(decoded))
+
+// Test 10: http.download
+dlOk = http.download("https://httpbin.org/bytes/100", "/tmp/havel_test_dl.bin", 5000)
+print("download: " + str(dlOk))
+
+// Test 11: response object fields
+r7 = http.get("https://httpbin.org/get", { timeout: 5000 })
+print("response.status: " + str(r7.status))
+print("response.ok: " + str(r7.ok))
+print("response.error: " + str(r7.error))
+
+print("=== HTTP Module Tests Complete ===")

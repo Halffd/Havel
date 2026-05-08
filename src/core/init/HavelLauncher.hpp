@@ -75,8 +75,12 @@ bool useJIT = true;
     bool emitWasm = false;      // --target wasm: output .wasm
     bool emitBinary = false;    // --target aot: output native .so
     bool emitElf = false;       // --target elf/bin: output native ELF executable
+    bool fullAot = false;       // --full-aot: emit all native artifacts
+    bool aotWarnings = true;    // --aot-warnings / --no-aot-warnings
     std::string aotOutput; // -o for AOT output path
     std::string arch; // --arch: target triple
+    std::string targetOS; // --os: linux|windows|macos|wasm|native
+    std::vector<std::string> linkLibs; // --link-lib repeated
     AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
     std::string evalString; // --eval/-E: run inline code
 

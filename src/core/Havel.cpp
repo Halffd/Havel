@@ -24,6 +24,8 @@
 #include "host/image/ImageService.hpp"
 #include <csignal>
 #include <cstdlib>
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -168,6 +170,22 @@ void Havel::initialize(bool isStartup) {
     // Check for IR dumping
     if (Configs::Get().Get<bool>("Compiler.DumpIR", false)) {
       jit->setDumpIR(true);
+    }
+
+    jit->setShowWarnings(Configs::Get().Get<bool>("Compiler.JITWarnings", true));
+    std::string jitTargetOS = Configs::Get().Get<std::string>("Compiler.JITTargetOS", "");
+    std::transform(jitTargetOS.begin(), jitTargetOS.end(), jitTargetOS.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (jitTargetOS == "linux") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Linux);
+    } else if (jitTargetOS == "windows" || jitTargetOS == "win") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Windows);
+    } else if (jitTargetOS == "macos" || jitTargetOS == "darwin" || jitTargetOS == "mac") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::MacOS);
+    } else if (jitTargetOS == "wasm") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Wasm);
+    } else {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Native);
     }
 
     // Hook up to VM

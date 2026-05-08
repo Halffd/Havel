@@ -31,7 +31,12 @@ set(COMPILER_SOURCES
     src/havel-lang/compiler/core/Pipeline.cpp
     src/havel-lang/compiler/runtime/RuntimeSupport.cpp
     src/havel-lang/compiler/runtime/DebugUtils.cpp
+    src/havel-lang/compiler/runtime/EventQueue.cpp
+    src/havel-lang/compiler/semantic/LexicalResolver.cpp
 )
+
+# Prototypes
+file(GLOB PROTOTYPE_SOURCES "src/havel-lang/compiler/prototypes/*.cpp")
 
 # Language Frontend Sources
 file(GLOB LEXER_SOURCES "src/havel-lang/lexer/*.cpp")
@@ -46,6 +51,12 @@ set(RUNTIME_SOURCES
     src/havel-lang/runtime/RuntimeContext.cpp
     src/havel-lang/runtime/TraitRegistry.cpp
     src/havel-lang/runtime/HostAPI.cpp
+    src/havel-lang/runtime/concurrency/Scheduler.cpp
+    src/havel-lang/runtime/concurrency/WatcherRegistry.cpp
+    src/havel-lang/runtime/concurrency/DependencyTracker.cpp
+    src/havel-lang/runtime/concurrency/Thread.cpp
+    src/havel-lang/runtime/concurrency/Fiber.cpp
+    src/host/module/ModuleLoader.cpp
 )
 
 # Portable StdLib Sources
@@ -68,6 +79,7 @@ set(STDLIB_SOURCES
     src/havel-lang/stdlib/FormatModule.cpp
     src/havel-lang/stdlib/PackModule.cpp
     src/havel-lang/stdlib/BitModule.cpp
+    src/havel-lang/stdlib/HotkeyModule.cpp
 )
 
 # FI Sources (optional)
@@ -77,12 +89,14 @@ file(GLOB FFI_SOURCES "src/havel-lang/ffi/*.cpp")
 set(UTIL_SOURCES
     src/utils/Logger.cpp
     src/utils/Util.cpp
+    src/havel-lang/utils/ErrorPrinter.cpp
 )
 
 # Create library
 add_library(havel_vm STATIC
     ${VM_SOURCES}
     ${COMPILER_SOURCES}
+    ${PROTOTYPE_SOURCES}
     ${LEXER_SOURCES}
     ${PARSER_SOURCES}
     ${AST_SOURCES}
@@ -92,6 +106,10 @@ add_library(havel_vm STATIC
     ${FFI_SOURCES}
     ${UTIL_SOURCES}
 )
+
+# Minimal CLI
+add_executable(havel_vm_cli src/havel_minimal_cli.cpp)
+target_link_libraries(havel_vm_cli havel_vm)
 
 # Target-specific compile options
 if(MSVC)

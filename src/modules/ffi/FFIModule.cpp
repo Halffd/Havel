@@ -4,7 +4,6 @@
 #include "havel-lang/ffi/FFITypes.hpp"
 #include "havel-lang/ffi/FFIAccessors.hpp"
 #include "havel-lang/core/Value.hpp"
-#include "modules/ModuleRegistry.hpp"
 #include "../../utils/Logger.hpp"
 #include <cstring>
 #include <cerrno>
@@ -931,20 +930,11 @@ void registerFFIModule(compiler::VMApi& api) {
 
 } // namespace havel::modules::ffi
 
-namespace havel::modules {
-
-REGISTER_MODULE("ffi", [](compiler::VMApi& api) {
-    ffi::registerFFIModule(api);
-});
-
-} // namespace havel::modules
-
 #else // !HAVE_LIBFFI
 
 namespace havel::modules::ffi {
 
 void registerFFIModule(compiler::VMApi&) {
-    // FFI not available - no-op
 }
 
 } // namespace havel::modules::ffi

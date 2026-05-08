@@ -19,7 +19,6 @@
  */
 #include "PixelModule.hpp"
 #include "modules/ModuleMacros.hpp"
-#include "modules/ModuleRegistry.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/automation/PixelAutomationService.hpp"
 #include "utils/Logger.hpp"

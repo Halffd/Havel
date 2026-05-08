@@ -164,20 +164,42 @@ void registerBitModule(VMApi &api) {
         return Value(static_cast<int64_t>((v >> pos) & mask));
     });
 
-    api.registerFunction("bit.setfield", [&api](const std::vector<Value> &args) {
-        if (args.size() < 4)
-            throw std::runtime_error("bit.setfield() requires value, position, width, and newval");
-        uint64_t v = static_cast<uint64_t>(getInt(args[0]));
-        int pos = static_cast<int>(getInt(args[1]));
-        int w = static_cast<int>(getInt(args[2]));
-        uint64_t nv = static_cast<uint64_t>(getInt(args[3]));
-        if (pos < 0 || pos >= 64 || w <= 0 || pos + w > 64)
-            throw std::runtime_error("bit.setfield(): position or width out of range");
-        uint64_t mask = (w >= 64) ? ~uint64_t(0) : (uint64_t(1) << w) - 1;
-        v &= ~(mask << pos);
-        v |= (nv & mask) << pos;
-        return Value(static_cast<int64_t>(v));
-    });
+	api.registerFunction("bit.setfield", [&api](const std::vector<Value> &args) {
+		if (args.size() < 4)
+			throw std::runtime_error("bit.setfield() requires value, position, width, and newval");
+		uint64_t v = static_cast<uint64_t>(getInt(args[0]));
+		int pos = static_cast<int>(getInt(args[1]));
+		int w = static_cast<int>(getInt(args[2]));
+		uint64_t nv = static_cast<uint64_t>(getInt(args[3]));
+		if (pos < 0 || pos >= 64 || w <= 0 || pos + w > 64)
+			throw std::runtime_error("bit.setfield(): position or width out of range");
+		uint64_t mask = (w >= 64) ? ~uint64_t(0) : (uint64_t(1) << w) - 1;
+		v &= ~(mask << pos);
+		v |= (nv & mask) << pos;
+		return Value(static_cast<int64_t>(v));
+	});
+
+	auto bitObj = api.makeObject();
+	api.setField(bitObj, "and", api.makeFunctionRef("bit.and"));
+	api.setField(bitObj, "or", api.makeFunctionRef("bit.or"));
+	api.setField(bitObj, "xor", api.makeFunctionRef("bit.xor"));
+	api.setField(bitObj, "not", api.makeFunctionRef("bit.not"));
+	api.setField(bitObj, "lshift", api.makeFunctionRef("bit.lshift"));
+	api.setField(bitObj, "rshift", api.makeFunctionRef("bit.rshift"));
+	api.setField(bitObj, "arshift", api.makeFunctionRef("bit.arshift"));
+	api.setField(bitObj, "test", api.makeFunctionRef("bit.test"));
+	api.setField(bitObj, "set", api.makeFunctionRef("bit.set"));
+	api.setField(bitObj, "clear", api.makeFunctionRef("bit.clear"));
+	api.setField(bitObj, "toggle", api.makeFunctionRef("bit.toggle"));
+	api.setField(bitObj, "lsb", api.makeFunctionRef("bit.lsb"));
+	api.setField(bitObj, "msb", api.makeFunctionRef("bit.msb"));
+	api.setField(bitObj, "count", api.makeFunctionRef("bit.count"));
+	api.setField(bitObj, "parity", api.makeFunctionRef("bit.parity"));
+	api.setField(bitObj, "rol", api.makeFunctionRef("bit.rol"));
+	api.setField(bitObj, "ror", api.makeFunctionRef("bit.ror"));
+	api.setField(bitObj, "getfield", api.makeFunctionRef("bit.getfield"));
+	api.setField(bitObj, "setfield", api.makeFunctionRef("bit.setfield"));
+	api.setGlobal("bit", bitObj);
 }
 
 } // namespace havel::stdlib

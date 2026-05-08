@@ -3192,11 +3192,7 @@ Value AsyncBridge::handleSleep(const std::vector<Value> &args,
   if (ms < 0) {
     throw std::runtime_error("sleep() milliseconds must be non-negative");
   }
-  if (ctx->asyncService) {
-    ctx->asyncService->sleep(static_cast<int>(ms));
-  } else {
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-  }
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   return Value::makeNull();
 }
 
@@ -3282,14 +3278,9 @@ AsyncBridge::handleAsyncAwait(const std::vector<Value> &args,
       }
       return it->second.result;
     }
-  }
+}
 
-  if (ctx && ctx->asyncService) {
-    bool completed = ctx->asyncService->await(taskId);
-    return Value::makeBool(completed);
-  }
-
-  return Value::makeBool(false);
+	return Value::makeBool(false);
 }
 
 Value
@@ -3315,10 +3306,6 @@ AsyncBridge::handleAsyncCancel(const std::vector<Value> &args,
     }
   }
 
-  if (ctx && ctx->asyncService) {
-    bool cancelled = ctx->asyncService->cancel(taskId);
-    return Value::makeBool(cancelled);
-  }
 
   return Value::makeBool(false);
 }
@@ -3344,10 +3331,6 @@ AsyncBridge::handleAsyncIsRunning(const std::vector<Value> &args,
     }
   }
 
-  if (ctx && ctx->asyncService) {
-    bool running = ctx->asyncService->isRunning(taskId);
-    return Value::makeBool(running);
-  }
 
   return Value::makeBool(false);
 }
@@ -3372,9 +3355,6 @@ AsyncBridge::handleChannelCreate(const std::vector<Value> &args,
     channel.closed = false;
   }
 
-  if (ctx && ctx->asyncService) {
-    (void)ctx->asyncService->createChannel(name);
-  }
   return Value::makeBool(true);
 }
 
@@ -3400,9 +3380,6 @@ AsyncBridge::handleChannelSend(const std::vector<Value> &args,
     it->second.queue.push_back(args[1]);
   }
 
-  if (ctx && ctx->asyncService) {
-    (void)ctx->asyncService->send(name, toString(args[1]));
-  }
   return Value::makeBool(true);
 }
 
@@ -3481,9 +3458,6 @@ AsyncBridge::handleChannelClose(const std::vector<Value> &args,
     it->second.queue.clear();
   }
 
-  if (ctx && ctx->asyncService) {
-    (void)ctx->asyncService->closeChannel(name);
-  }
   return Value::makeBool(true);
 }
 
@@ -3630,35 +3604,29 @@ AsyncBridge::handleIntervalCreate(const std::vector<Value> &args,
     g_timers[id] = timer;
   }
 
-  if (ctx->asyncService) {
-    std::string task_id =
-        ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
-          auto *vm_local = static_cast<VM *>(ctx->vm);
-          while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            bool should_run = false;
-            {
-              std::lock_guard<std::mutex> lock(g_async_mutex);
-              auto it = g_timers.find(id);
-              if (it == g_timers.end() || !it->second.running) {
-                break;
-              }
-              should_run = !it->second.paused;
-            }
-            if (!should_run || !vm_local) {
-              continue;
-            }
-            std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-            try {
-              (void)vm_local->invokeCallback(callback, {});
-            } catch (...) {
-              // Keep timer alive; script side can stop it explicitly.
-            }
-          }
-        });
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_timers[id].task_id = task_id;
-  }
+  std::thread([ctx, id, callback, delay_ms]() {
+    auto *vm_local = static_cast<VM *>(ctx->vm);
+    while (true) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      bool should_run = false;
+      {
+        std::lock_guard<std::mutex> lock(g_async_mutex);
+        auto it = g_timers.find(id);
+        if (it == g_timers.end() || !it->second.running) {
+          break;
+        }
+        should_run = !it->second.paused;
+      }
+      if (!should_run || !vm_local) {
+        continue;
+      }
+      std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+      try {
+        (void)vm_local->invokeCallback(callback, {});
+      } catch (...) {
+      }
+    }
+  }).detach();
 
   return Value::makeObjectId(makeHandleObject(vm, "interval", id).id);
 }
@@ -3705,9 +3673,6 @@ AsyncBridge::handleIntervalStop(const std::vector<Value> &args,
   if (it == g_timers.end())
     return Value::makeBool(false);
   it->second.running = false;
-  if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
-    (void)ctx->asyncService->cancel(it->second.task_id);
-  }
   if (vm) {
     vm->releaseCallback(it->second.callback);
   }
@@ -3744,31 +3709,6 @@ AsyncBridge::handleTimeoutCreate(const std::vector<Value> &args,
                                .task_id = ""};
   }
 
-  if (ctx->asyncService) {
-    std::string task_id = ctx->asyncService->spawn([ctx, id, callback,
-                                                    delay_ms]() {
-      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-      auto *vm_local = static_cast<VM *>(ctx->vm);
-      bool should_run = false;
-      {
-        std::lock_guard<std::mutex> lock(g_async_mutex);
-        auto it = g_timers.find(id);
-        if (it != g_timers.end() && it->second.running && !it->second.paused) {
-          should_run = true;
-          it->second.running = false;
-        }
-      }
-      if (should_run && vm_local) {
-        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-        try {
-          (void)vm_local->invokeCallback(callback, {});
-        } catch (...) {
-        }
-      }
-    });
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_timers[id].task_id = task_id;
-  }
 
   return Value::makeObjectId(makeHandleObject(vm, "timeout", id).id);
 }
@@ -3785,9 +3725,6 @@ AsyncBridge::handleTimeoutCancel(const std::vector<Value> &args,
   if (it == g_timers.end())
     return Value::makeBool(false);
   it->second.running = false;
-  if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
-    (void)ctx->asyncService->cancel(it->second.task_id);
-  }
   if (vm) {
     vm->releaseCallback(it->second.callback);
   }
@@ -3872,189 +3809,8 @@ Value AutomationBridge::handleAutomationStopAll(
 // ============================================================================
 
 void BrowserBridge::install(PipelineOptions &options) {
-  options.host_functions["browser.connect"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserConnect(args, ctx);
-  };
-  options.host_functions["browser.connectFirefox"] =
-      [ctx = ctx_](const auto &args) {
-        return handleBrowserConnectFirefox(args, ctx);
-      };
-  options.host_functions["browser.disconnect"] = [ctx =
-                                                      ctx_](const auto &args) {
-    return handleBrowserDisconnect(args, ctx);
-  };
-  options.host_functions["browser.isConnected"] = [ctx =
-                                                       ctx_](const auto &args) {
-    return handleBrowserIsConnected(args, ctx);
-  };
-  options.host_functions["browser.open"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserOpen(args, ctx);
-  };
-  options.host_functions["browser.newTab"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserNewTab(args, ctx);
-  };
-  options.host_functions["browser.goto"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserGoto(args, ctx);
-  };
-  options.host_functions["browser.back"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserBack(args, ctx);
-  };
-  options.host_functions["browser.forward"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserForward(args, ctx);
-  };
-  options.host_functions["browser.reload"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserReload(args, ctx);
-  };
-  options.host_functions["browser.listTabs"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserListTabs(args, ctx);
-  };
-}
-
-Value
-BrowserBridge::handleBrowserConnect(const std::vector<Value> &args,
-                                    const HostContext *ctx) {
-  (void)ctx;
-  std::string browserUrl = "http://localhost:9222";
-  if (!args.empty()) {
-    if (false) { // TODO: string support
-      // browserUrl = ...; // TODO: get string from Value
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.connect(browserUrl));
-}
-
-Value BrowserBridge::handleBrowserConnectFirefox(
-    const std::vector<Value> &args, const HostContext *ctx) {
-  (void)ctx;
-  int port = 2828;
-  if (!args.empty()) {
-    if (auto *v = (args[0].isInt() ? &args[0] : nullptr)) {
-      port = static_cast<int>(v->asInt());
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.connectFirefox(port));
-}
-
-Value
-BrowserBridge::handleBrowserDisconnect(const std::vector<Value> &args,
-                                       const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  browser.disconnect();
-  return Value::makeBool(true);
-}
-
-Value
-BrowserBridge::handleBrowserIsConnected(const std::vector<Value> &args,
-                                        const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.isConnected());
-}
-
-Value
-BrowserBridge::handleBrowserOpen(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty()) {
-    throw std::runtime_error("browser.open() requires a URL");
-  }
-  const std::string *url = nullptr;
-  if (!url) {
-    throw std::runtime_error("browser.open() requires a string URL");
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.open(*url));
-}
-
-Value
-BrowserBridge::handleBrowserNewTab(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
-  (void)ctx;
-  std::string url;
-  if (!args.empty()) {
-    if (false) { // TODO: string support
-      // url = ...; // TODO: get string from Value
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.newTab(url));
-}
-
-Value
-BrowserBridge::handleBrowserGoto(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty()) {
-    throw std::runtime_error("browser.goto() requires a URL");
-  }
-  const std::string *url = nullptr;
-  if (!url) {
-    throw std::runtime_error("browser.goto() requires a string URL");
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.gotoUrl(*url));
-}
-
-Value
-BrowserBridge::handleBrowserBack(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.back());
-}
-
-Value
-BrowserBridge::handleBrowserForward(const std::vector<Value> &args,
-                                    const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.forward());
-}
-
-Value
-BrowserBridge::handleBrowserReload(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
-  (void)ctx;
-  bool ignoreCache = false;
-  if (!args.empty()) {
-    if (auto *b = (args[0].isBool() ? &args[0] : nullptr)) {
-      ignoreCache = b->asBool();
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.reload(ignoreCache));
-}
-
-Value
-BrowserBridge::handleBrowserListTabs(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  (void)args;
-  ::havel::host::BrowserService browser;
-  auto tabs = browser.listTabs();
-  auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) {
-    return Value::makeNull();
-  }
-  auto arr = vm->createHostArray();
-  for (const auto &tab : tabs) {
-    auto tabObj = vm->createHostObject();
-    vm->setHostObjectField(tabObj, "id",
-                           Value::makeInt(static_cast<int64_t>(tab.id)));
-    // TODO: string pool integration - for now return null for strings
-    (void)tab.title; (void)tab.url; (void)tab.type;
-    vm->setHostObjectField(tabObj, "title", Value::makeNull());
-    vm->setHostObjectField(tabObj, "url", Value::makeNull());
-    vm->setHostObjectField(tabObj, "type", Value::makeNull());
-    vm->pushHostArrayValue(arr, Value::makeObjectId(tabObj.id));
-  }
-  return Value::makeArrayId(arr.id);
+  // Browser functionality is now provided by stdlib::registerBrowserModule
+  // in StdLibModules.cpp. No host_functions registered here.
 }
 
 // ============================================================================
@@ -4459,155 +4215,11 @@ Value MediaBridge::handleMediaGetAvailablePlayers(
 // ============================================================================
 
 void NetworkBridge::install(PipelineOptions &options) {
-  // HTTP module (aliases for network.*)
-  options.host_functions["http.get"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkGet(args, ctx);
-  };
-  options.host_functions["http.post"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkPost(args, ctx);
-  };
-  options.host_functions["http.download"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkDownload(args, ctx);
-  };
-
-  // Legacy network.* names
-  options.host_functions["network.get"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkGet(args, ctx);
-  };
-  options.host_functions["network.post"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkPost(args, ctx);
-  };
-  options.host_functions["network.isOnline"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkIsOnline(args, ctx);
-  };
-  options.host_functions["network.getExternalIp"] =
-      [ctx = ctx_](const auto &args) {
-        return handleNetworkGetExternalIp(args, ctx);
-      };
+  // HTTP functionality is now provided by stdlib::registerHttpModule
+  // in StdLibModules.cpp. No host_functions registered here.
 }
 
-Value
-NetworkBridge::handleNetworkGet(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty()) {
-    throw std::runtime_error("http.get() requires a URL");
-  }
 
-  // Try to get string from variant
-  std::string url;
-  if (args[0].isStringValId()) {
-    url = args[0].toString();
-  } else {
-    throw std::runtime_error(
-        "http.get() requires a string URL");
-  }
-
-  int timeout_ms = 30000;
-  if (args.size() > 1 && args[1].isInt()) {
-    timeout_ms = static_cast<int>(args[1].asInt());
-  }
-  try {
-    ::havel::host::NetworkService net;
-    auto response = net.get(url, timeout_ms);
-    if (response.success) {
-      // TODO: string pool integration - for now return null
-      (void)response;
-      return Value::makeNull();
-    } else {
-      return Value::makeNull();
-    }
-  } catch (const std::exception &e) {
-    throw std::runtime_error(std::string("http.get() failed: ") + e.what());
-  }
-}
-
-Value
-NetworkBridge::handleNetworkPost(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)ctx;
-  if (args.size() < 2) {
-    throw std::runtime_error("network.post() requires URL and data");
-  }
-  const std::string *url = nullptr;
-  const std::string *data = nullptr;
-  if (!url || !data) {
-    throw std::runtime_error("network.post() requires string arguments");
-  }
-  std::string content_type = "application/json";
-  if (args.size() > 2 && args[2].isStringValId()) {
-    content_type = args[2].toString();
-  }
-  int timeout_ms = 30000;
-  if (args.size() > 3 && args[3].isInt()) {
-    timeout_ms = static_cast<int>(args[3].asInt());
-  }
-  try {
-    ::havel::host::NetworkService net;
-    auto response = net.post(*url, *data, content_type, timeout_ms);
-    if (response.success) {
-      // TODO: string pool integration - for now return null
-      (void)response;
-      return Value::makeNull();
-    } else {
-      return Value::makeNull();
-    }
-  } catch (...) {
-    return Value::makeNull();
-  }
-}
-
-Value
-NetworkBridge::handleNetworkIsOnline(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  try {
-    ::havel::host::NetworkService net;
-    return Value::makeBool(net.isOnline());
-  } catch (...) {
-    return Value::makeBool(false);
-  }
-}
-
-Value NetworkBridge::handleNetworkGetExternalIp(
-    const std::vector<Value> &args, const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  try {
-    ::havel::host::NetworkService net;
-    // TODO: string pool integration - for now return null
-    (void)net;
-    return Value::makeNull();
-  } catch (...) {
-    return Value::makeNull();
-  }
-}
-
-Value
-NetworkBridge::handleNetworkDownload(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  (void)ctx;
-  if (args.size() < 2) {
-    throw std::runtime_error("http.download() requires URL and path");
-  }
-  const std::string *url = nullptr;
-  const std::string *path = nullptr;
-  if (!url || !path) {
-    throw std::runtime_error("http.download() requires string URL and path");
-  }
-  int timeout_ms = 30000;
-  if (args.size() > 2 && args[2].isInt()) {
-    timeout_ms = static_cast<int>(args[2].asInt());
-  }
-  try {
-    ::havel::host::NetworkService net;
-    bool success = net.download(*url, *path, timeout_ms);
-    return Value::makeBool(success);
-  } catch (...) {
-    return Value::makeBool(false);
-  }
-}
 
 // ============================================================================
 // AudioBridge Implementation
@@ -5860,15 +5472,9 @@ Value TimerBridge::handleAfter(const std::vector<Value> &args,
 
   int64_t delay_ms = args[0].asInt();
 
-  // Simple implementation: just sleep
-  // For callback support, use: sleep(delay_ms); callback()
-  if (ctx && ctx->asyncService) {
-    ctx->asyncService->sleep(static_cast<int>(delay_ms));
-  } else {
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-  }
+	std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
-  return Value::makeNull();
+	return Value::makeNull();
 }
 
 Value TimerBridge::handleEvery(const std::vector<Value> &args,

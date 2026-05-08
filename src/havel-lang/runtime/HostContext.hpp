@@ -48,10 +48,7 @@ class MPVController;
 namespace net {
 class NetworkManager;
 }
-namespace host {
-class AsyncService;
-}
-class WindowMonitor; // Forward declaration for window monitoring
+class WindowMonitor;
 
 /**
  * Capability - Base interface for pluggable host functionality
@@ -106,7 +103,6 @@ struct HostContext {
   class FileManager *fileManager = nullptr;
   class ProcessManager *processManager = nullptr;
   class net::NetworkManager *networkManager = nullptr;
-  class host::AsyncService *asyncService = nullptr;
   class WindowMonitor *windowMonitor =
       nullptr; // Window monitoring for dynamic variables
   class MPVController *mpvController = nullptr; // MPV media player controller

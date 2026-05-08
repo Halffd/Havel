@@ -589,36 +589,6 @@ public:
 
 private:
   const HostContext *ctx_;
-  static Value
-  handleBrowserConnect(const std::vector<Value> &args,
-                       const HostContext *ctx);
-  static Value
-  handleBrowserConnectFirefox(const std::vector<Value> &args,
-                              const HostContext *ctx);
-  static Value
-  handleBrowserDisconnect(const std::vector<Value> &args,
-                          const HostContext *ctx);
-  static Value
-  handleBrowserIsConnected(const std::vector<Value> &args,
-                           const HostContext *ctx);
-  static Value handleBrowserOpen(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-  static Value
-  handleBrowserNewTab(const std::vector<Value> &args,
-                      const HostContext *ctx);
-  static Value handleBrowserGoto(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-  static Value handleBrowserBack(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-  static Value
-  handleBrowserForward(const std::vector<Value> &args,
-                       const HostContext *ctx);
-  static Value
-  handleBrowserReload(const std::vector<Value> &args,
-                      const HostContext *ctx);
-  static Value
-  handleBrowserListTabs(const std::vector<Value> &args,
-                        const HostContext *ctx);
 };
 
 /**
@@ -679,19 +649,6 @@ public:
 
 private:
   const HostContext *ctx_;
-  static Value handleNetworkGet(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value handleNetworkPost(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-  static Value
-  handleNetworkDownload(const std::vector<Value> &args,
-                        const HostContext *ctx);
-  static Value
-  handleNetworkIsOnline(const std::vector<Value> &args,
-                        const HostContext *ctx);
-  static Value
-  handleNetworkGetExternalIp(const std::vector<Value> &args,
-                             const HostContext *ctx);
 };
 
 /**

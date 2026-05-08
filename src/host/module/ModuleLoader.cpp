@@ -35,7 +35,7 @@ HostModuleLoader::HostModuleLoader(const HostContext &ctx)
   registerBuiltin("textchunker", {"textchunker", "1.0", true, false, ""});
   registerBuiltin("mapmanager", {"mapmanager", "1.0", true, false, ""});
   registerBuiltin("alttab", {"alttab", "1.0", true, false, ""});
-  registerBuiltin("async", {"async", "1.0", true, false, ""});
+
   registerBuiltin("ui", {"ui", "1.0", true, false, ""});
 }
 

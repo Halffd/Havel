@@ -18,7 +18,6 @@
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/app/AppService.hpp"
-#include "host/async/AsyncService.hpp"
 #include "host/audio/AudioService.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "host/automation/AutomationService.hpp"

@@ -4403,9 +4403,10 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
-  in_tail_position_ = saved_tail_position;
+in_tail_position_ = saved_tail_position;
   if (in_tail_position_ && try_depth_ == 0) {
     emit(OpCode::TAIL_CALL, totalArgs);
+    emit(OpCode::RETURN);
     emitted_tail_call_ = true;
   } else {
     emit(OpCode::CALL, totalArgs);
@@ -4413,7 +4414,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
   return;
 }
 
-  if (binding->kind == ResolvedBindingKind::Global) {
+if (binding->kind == ResolvedBindingKind::Global) {
     // Global variable that might contain a function - load and call
     {
       uint32_t strId = addStringConstant(binding->name);
@@ -4458,8 +4459,9 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
     }
 
     in_tail_position_ = saved_tail_position;
-    if (in_tail_position_ && try_depth_ == 0) {
+if (in_tail_position_ && try_depth_ == 0) {
     emit(OpCode::TAIL_CALL, totalArgs);
+    emit(OpCode::RETURN);
     emitted_tail_call_ = true;
   } else {
     emit(OpCode::CALL, totalArgs);
@@ -4517,19 +4519,20 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
   // TCO: Emit TAIL_CALL if in tail position and callee is a user-defined
   // function
   in_tail_position_ = saved_tail_position;
-  if (in_tail_position_ && try_depth_ == 0 &&
-      expression.callee->kind == ast::NodeType::Identifier) {
-    const auto &callee_id =
-        static_cast<const ast::Identifier &>(*expression.callee);
-    const auto *binding = bindingFor(callee_id);
-    if (binding && (binding->kind == ResolvedBindingKind::Local ||
-                    binding->kind == ResolvedBindingKind::Upvalue ||
-                    binding->kind == ResolvedBindingKind::Global)) {
-      emit(OpCode::TAIL_CALL, actualArgCount);
-      emitted_tail_call_ = true;
-      return;
+if (in_tail_position_ && try_depth_ == 0 &&
+        expression.callee->kind == ast::NodeType::Identifier) {
+      const auto &callee_id =
+          static_cast<const ast::Identifier &>(*expression.callee);
+      const auto *binding = bindingFor(callee_id);
+      if (binding && (binding->kind == ResolvedBindingKind::Local ||
+                      binding->kind == ResolvedBindingKind::Upvalue ||
+                      binding->kind == ResolvedBindingKind::Global)) {
+        emit(OpCode::TAIL_CALL, actualArgCount);
+        emit(OpCode::RETURN);
+        emitted_tail_call_ = true;
+        return;
+      }
     }
-  }
 
   emit(OpCode::CALL, actualArgCount);
 }

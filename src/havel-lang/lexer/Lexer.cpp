@@ -973,6 +973,18 @@ Token Lexer::scanHotkey() {
     return makeToken(hotkey, TokenType::Hotkey);
   }
 
+  // Accept pure alphanumeric key names (Esc, Return, Delete, Tab, Space,
+  // Backspace, etc.) that don't match the modifier or F-key patterns above
+  if (!hotkey.empty()) {
+    bool allAlphaNumeric =
+        std::all_of(hotkey.begin(), hotkey.end(), [](unsigned char ch) {
+          return std::isalnum(ch);
+        });
+    if (allAlphaNumeric) {
+      return makeToken(hotkey, TokenType::Hotkey);
+    }
+  }
+
   // Fallback: not a recognizable hotkey, rewind and treat as identifier
   position -= (hotkey.size() - 1);
   return scanIdentifier();

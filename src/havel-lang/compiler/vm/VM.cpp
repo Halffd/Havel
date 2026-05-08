@@ -3697,6 +3697,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
         co->saved_ip = currentFrame().ip + 1; // past CALL
         co->saved_locals = locals;
 
+        fprintf(stderr, "[CALL-RESUME] co=%u saved_co_id=%u saved_fc=%zu saved_ip=%u cur_co=%u\n",
+                coId, co->saved_coroutine_id, co->saved_frame_count, co->saved_ip, current_coroutine_id_);
+
         // Save caller's stack
         co->saved_stack.clear();
         {
@@ -4323,8 +4326,8 @@ void VM::doReturn() {
     frame_count_--;
 
     if (current_coroutine_id_ != 0 && current_coroutine_id_ != UINT32_MAX) {
-        fprintf(stderr, "[doReturn] co=%u ret_is_null=%d frame_count=%zu stack_size=%zu finished_stack_depth=%zu\n",
-                current_coroutine_id_, (int)ret.isNull(), frame_count_, stack.size(), finished.stack_depth);
+        fprintf(stderr, "[doReturn] co=%u ret_is_null=%d frame_count=%zu stack_size=%zu finished_stack_depth=%zu finished_locals_base=%zu locals_size=%zu\n",
+                current_coroutine_id_, (int)ret.isNull(), frame_count_, stack.size(), finished.stack_depth, finished.locals_base, locals.size());
     }
 
     closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
@@ -4339,24 +4342,28 @@ void VM::doReturn() {
         popStack();
     }
 
-        if (current_coroutine_id_ != 0 && current_coroutine_id_ != UINT32_MAX) {
-            auto *co = heap_.coroutine(current_coroutine_id_);
-            if (co) {
-                co->state = GCHeap::Coroutine::Done;
-                frame_count_ = co->saved_frame_count;
-                locals = co->saved_locals;
-                current_coroutine_id_ = co->saved_coroutine_id;
+    if (current_coroutine_id_ != 0 && current_coroutine_id_ != UINT32_MAX) {
+        auto *co = heap_.coroutine(current_coroutine_id_);
+        if (co) {
+            fprintf(stderr, "[doReturn-coro] co=%u saved_fc=%zu saved_stack_size=%zu saved_ip=%u saved_co=%u\n",
+                    current_coroutine_id_, co->saved_frame_count, co->saved_stack.size(), co->saved_ip, co->saved_coroutine_id);
+            co->state = GCHeap::Coroutine::Done;
+            frame_count_ = co->saved_frame_count;
+            locals = co->saved_locals;
+            current_coroutine_id_ = co->saved_coroutine_id;
 
-                // Restore caller's IP (saved before YIELD_RESUME overwrote it)
-                currentFrame().ip = co->saved_ip;
+            // Restore caller's IP (saved before YIELD_RESUME overwrote it)
+            currentFrame().ip = co->saved_ip;
 
             // Restore caller's stack (saved_stack[0]=bottom, [N-1]=top)
             stack = std::stack<Value>();
             for (auto it = co->saved_stack.begin(); it != co->saved_stack.end(); ++it) {
                 stack.push(*it);
             }
-            }
+
+            fprintf(stderr, "[doReturn-coro] after restore: stack_size=%zu ret_is_null=%d\n", stack.size(), (int)ret.isNull());
         }
+    }
 
     pushStack(ret);
 }

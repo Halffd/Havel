@@ -252,7 +252,9 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
  if (result.return_value.isInt()) val_desc = std::to_string(result.return_value.asInt());
  else if (result.return_value.isNull()) val_desc = "null";
  else if (result.return_value.isCoroutineId()) val_desc = "coroutine:" + std::to_string(result.return_value.asCoroutineId());
- else val_desc = "non-int";
+ else if (result.return_value.isDouble()) val_desc = "double:" + std::to_string(result.return_value.asDouble());
+else if (result.return_value.isBool()) val_desc = "bool:" + std::to_string(result.return_value.asBool());
+else val_desc = "non-int";
  std::cerr << "[FAIL] " << name << ": expected " << expected
  << " but got " << val_desc << std::endl;
  return 1;
@@ -1284,8 +1286,8 @@ x = <-42
 return x
 )havel", 42, dump_bytecode, snapshot_dir);
 
- // Negative numbers still work after scanNumber fix
- failures += runCase("negative-number", R"havel(
+  // Negative numbers still work after scanNumber fix
+  failures += runCase("negative-number", R"havel(
 x = -5
 y = -3 + 2
 z = 10 + -2

@@ -39,6 +39,10 @@ void registerPointerModule(compiler::VMApi &api);
 void registerFormatModule(compiler::VMApi &api);
 void registerPackModule(compiler::VMApi &api);
 void registerBitModule(compiler::VMApi &api);
+#ifndef HAVEL_PURE_VM
+void registerHttpModule(compiler::VMApi &api);
+void registerBrowserModule(compiler::VMApi &api);
+#endif
 } // namespace havel::stdlib
 
 namespace havel {
@@ -67,7 +71,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerBitModule(*api);
 
 #ifndef HAVEL_PURE_VM
-modules::registerConfigModule(*api);
+  stdlib::registerHttpModule(*api);
+  stdlib::registerBrowserModule(*api);
+  modules::registerConfigModule(*api);
 modules::registerWindowMonitorModule(*api);
 modules::registerHelpModule(*api);
 modules::registerMouseModule(*api);
@@ -85,24 +91,22 @@ void registerPureStdLib(compiler::VM &vm) {
 	static auto api = std::make_shared<compiler::VMApi>(vm);
 
 	// Register PURE stdlib modules (no OS access)
-	stdlib::registerMathModule(*api); // MathModule
-	stdlib::registerStringModule(*api); // StringModule
-	stdlib::registerArrayModule(*api); // ArrayModule
-	stdlib::registerObjectModule(*api); // ObjectModule
-	stdlib::registerTypeModule(*api); // TypeModule
-	stdlib::registerUtilityModule(*api); // UtilityModule
-	stdlib::registerRegexModule(*api); // RegexModule
-	stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
-	stdlib::registerTimeModule(*api); // TimeModule (timestamps)
-	stdlib::registerFsModule(*api); // FsModule
-	stdlib::registerRandomModule(*api); // RandomModule
-	stdlib::registerLogModule(*api); // LogModule
-	stdlib::registerSysModule(*api); // SysModule
-	stdlib::registerShellModule(*api); // ShellModule
-	stdlib::registerPointerModule(*api); // PointerModule
-	stdlib::registerFormatModule(*api); // FormatModule
-	stdlib::registerPackModule(*api); // PackModule
-	stdlib::registerBitModule(*api); // BitModule
+  stdlib::registerMathModule(*api);
+  stdlib::registerStringModule(*api);
+  stdlib::registerObjectModule(*api);
+  stdlib::registerTypeModule(*api);
+  stdlib::registerRegexModule(*api);
+  stdlib::registerPhysicsModule(*api);
+  stdlib::registerTimeModule(*api);
+  stdlib::registerFsModule(*api);
+  stdlib::registerRandomModule(*api);
+  stdlib::registerLogModule(*api);
+  stdlib::registerSysModule(*api);
+  stdlib::registerShellModule(*api);
+  stdlib::registerPointerModule(*api);
+  stdlib::registerFormatModule(*api);
+  stdlib::registerPackModule(*api);
+  stdlib::registerBitModule(*api);
 }
 
 } // namespace havel

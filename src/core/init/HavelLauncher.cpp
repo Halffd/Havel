@@ -1,6 +1,7 @@
 #include "../Havel.hpp"
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
+#include "core/HotkeyManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"

@@ -85,6 +85,8 @@ public:
     bool showWarnings() const { return show_warnings_; }
     bool fullAOT() const { return full_aot_; }
     const std::vector<std::string>& linkedLibraries() const { return linked_libraries_; }
+    // Global JIT diagnostics state for script/runtime introspection.
+    static void setLastError(std::string err);
     static std::string lastError();
     static void clearLastError();
     void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
@@ -118,7 +120,6 @@ private:
     static std::string last_error_;
 
     std::string resolveTargetTriple() const;
-    static void setLastError(std::string err);
     void initTargetMachine();
     void runOptimizations(llvm::Module &module);
     uint64_t computeFunctionHash(const BytecodeFunction &func) const;

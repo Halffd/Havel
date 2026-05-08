@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::string scriptPath = argv[1];
+    std::cout << "Reading script: " << scriptPath << std::endl;
     std::string source = readFile(scriptPath);
     if (source.empty()) {
         std::cerr << "Failed to read file: " << scriptPath << std::endl;
@@ -29,12 +30,16 @@ int main(int argc, char* argv[]) {
     }
 
     try {
+        std::cout << "Creating host context..." << std::endl;
         // Create a minimal host context
         havel::HostContext ctx;
+        
+        std::cout << "Initializing VM..." << std::endl;
         // We need a VM to register stdlib
         havel::compiler::VM vm(ctx);
         ctx.vm = &vm;
 
+        std::cout << "Registering stdlib..." << std::endl;
         // Register pure stdlib
         havel::registerPureStdLib(vm);
 
@@ -53,15 +58,19 @@ int main(int argc, char* argv[]) {
             return havel::compiler::Value::makeNull();
         };
 
+        std::cout << "Running pipeline..." << std::endl;
         auto result = havel::compiler::runBytecodePipeline(source, "__main__", options);
         
+        std::cout << "Execution finished." << std::endl;
         if (result.return_value.isNumber()) {
-            // Success exit code 0 if return value is 0
+            std::cout << "Return number: " << result.return_value.asNumber() << std::endl;
             return static_cast<int>(result.return_value.asNumber());
+        } else if (!result.return_value.isNull()) {
+             std::cout << "Return value: " << result.return_value.toString() << std::endl;
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "Caught exception: " << e.what() << std::endl;
         return 1;
     }
 

@@ -15,6 +15,9 @@
 
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
+#ifdef HAVEL_ENABLE_LLVM
+#include "havel-lang/compiler/BytecodeOrcJIT.h"
+#endif
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -253,6 +256,25 @@ void registerSysModule(VMApi &api) {
                          return Value(uptime_secs);
                        });
 
+  api.registerFunction("jit.last_error",
+                       [&api](const std::vector<Value> &args) {
+                         (void)args;
+#ifdef HAVEL_ENABLE_LLVM
+                         return makeStringId(havel::compiler::BytecodeOrcJIT::lastError(), api);
+#else
+                         return makeStringId("", api);
+#endif
+                       });
+
+  api.registerFunction("jit.clear_error",
+                       [](const std::vector<Value> &args) {
+                         (void)args;
+#ifdef HAVEL_ENABLE_LLVM
+                         havel::compiler::BytecodeOrcJIT::clearLastError();
+#endif
+                         return Value::makeNull();
+                       });
+
   auto sysObj = api.makeObject();
   api.setField(sysObj, "platform", api.makeFunctionRef("sys.platform"));
   api.setField(sysObj, "arch", api.makeFunctionRef("sys.arch"));
@@ -271,6 +293,11 @@ void registerSysModule(VMApi &api) {
   api.setField(sysObj, "shell", api.makeFunctionRef("sys.shell"));
   api.setField(sysObj, "uptime", api.makeFunctionRef("sys.uptime"));
   api.setGlobal("sys", sysObj);
+
+  auto jitObj = api.makeObject();
+  api.setField(jitObj, "last_error", api.makeFunctionRef("jit.last_error"));
+  api.setField(jitObj, "clear_error", api.makeFunctionRef("jit.clear_error"));
+  api.setGlobal("jit", jitObj);
 }
 
 } // namespace havel::stdlib

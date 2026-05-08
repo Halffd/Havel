@@ -2763,21 +2763,27 @@ break;
       if (lhs.kind == ast::NodeType::NumberLiteral && rhs.kind == ast::NodeType::NumberLiteral) {
         const auto &l = static_cast<const ast::NumberLiteral &>(lhs);
         const auto &r = static_cast<const ast::NumberLiteral &>(rhs);
-        const double lv = l.value;
-        const double rv = r.value;
-        switch (op) {
-        case ast::BinaryOperator::Add:
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv + rv))); return true;
-        case ast::BinaryOperator::Sub:
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv - rv))); return true;
-        case ast::BinaryOperator::Mul:
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv * rv))); return true;
-        case ast::BinaryOperator::Div:
-          if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(lv / rv))); return true; }
-          return false;
-        case ast::BinaryOperator::Mod:
-          if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(Value::makeDouble(std::fmod(lv, rv)))); return true; }
-          return false;
+    const double lv = l.value;
+    const double rv = r.value;
+    auto intResult = [&](double v) -> Value {
+      if (!l.was_written_as_float && !r.was_written_as_float && isIntegerLiteral(v)) {
+        return Value::makeInt(static_cast<int64_t>(v));
+      }
+      return Value::makeDouble(v);
+    };
+    switch (op) {
+    case ast::BinaryOperator::Add:
+      emit(OpCode::LOAD_CONST, addConstant(intResult(lv + rv))); return true;
+    case ast::BinaryOperator::Sub:
+      emit(OpCode::LOAD_CONST, addConstant(intResult(lv - rv))); return true;
+    case ast::BinaryOperator::Mul:
+      emit(OpCode::LOAD_CONST, addConstant(intResult(lv * rv))); return true;
+    case ast::BinaryOperator::Div:
+      if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(intResult(lv / rv))); return true; }
+      return false;
+    case ast::BinaryOperator::Mod:
+      if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(intResult(std::fmod(lv, rv)))); return true; }
+      return false;
         case ast::BinaryOperator::Less:
           emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv < rv))); return true;
         case ast::BinaryOperator::LessEqual:

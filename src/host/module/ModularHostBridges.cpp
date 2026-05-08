@@ -776,25 +776,23 @@ SystemBridge::handleFileDelete(const std::vector<Value> &args,
 Value
 SystemBridge::handleProcessExecute(const std::vector<Value> &args,
                                    const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("execute() requires a command");
   }
-  const std::string *command = nullptr;
-  if (!command) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  std::string command;
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    command = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("execute() requires a string command");
   }
-  std::ostringstream output;
-  FILE *pipe = popen(command->c_str(), "r");
-  if (!pipe) {
-    throw std::runtime_error("Failed to execute command: " + *command);
-  }
-  char buffer[128];
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    output << buffer;
-  }
-  pclose(pipe);
-  return Value::makeNull();
+
+  auto result = ::havel::Launcher::runSync(command);
+  auto outRef = vm->getHeap().allocateString(result.stdout);
+  return Value::makeStringId(outRef.id);
 }
 
 Value

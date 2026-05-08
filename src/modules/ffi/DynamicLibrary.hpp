@@ -8,7 +8,11 @@
 
 #include <string>
 #include <stdexcept>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
 namespace havel::modules::ffi {
 
@@ -55,6 +59,18 @@ public:
      * @throws std::runtime_error if library cannot be loaded
      */
     static DynamicLibrary open(const std::string& path) {
+#ifdef _WIN32
+        HMODULE handle = LoadLibraryA(path.c_str());
+        if (!handle && path.find(".dll") == std::string::npos) {
+            std::string altPath = path + ".dll";
+            handle = LoadLibraryA(altPath.c_str());
+        }
+        if (!handle) {
+            throw std::runtime_error("Failed to load library (Win32 error " +
+                                     std::to_string(static_cast<unsigned long>(GetLastError())) + ")");
+        }
+        return DynamicLibrary(reinterpret_cast<void*>(handle), path);
+#else
         void* handle = dlopen(path.c_str(), RTLD_LAZY);
         if (!handle) {
             // Try with lib prefix if not already present
@@ -67,6 +83,7 @@ public:
             throw std::runtime_error(std::string("Failed to load library: ") + dlerror());
         }
         return DynamicLibrary(handle, path);
+#endif
     }
 
     /**
@@ -76,11 +93,20 @@ public:
      * @throws std::runtime_error if symbol not found
      */
     void* symbol(const std::string& name) {
+#ifdef _WIN32
+        FARPROC sym = GetProcAddress(reinterpret_cast<HMODULE>(handle), name.c_str());
+        if (!sym) {
+            throw std::runtime_error("Symbol not found: " + name + " (Win32 error " +
+                                     std::to_string(static_cast<unsigned long>(GetLastError())) + ")");
+        }
+        return reinterpret_cast<void*>(sym);
+#else
         void* sym = dlsym(handle, name.c_str());
         if (!sym) {
             throw std::runtime_error(std::string("Symbol not found: ") + name + " - " + dlerror());
         }
         return sym;
+#endif
     }
 
     /**
@@ -96,7 +122,11 @@ public:
 private:
     void close() {
         if (handle) {
+#ifdef _WIN32
+            FreeLibrary(reinterpret_cast<HMODULE>(handle));
+#else
             dlclose(handle);
+#endif
             handle = nullptr;
         }
     }

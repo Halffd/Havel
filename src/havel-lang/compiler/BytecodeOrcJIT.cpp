@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cctype>
 #include <fstream>
 #include <functional>
 #include <filesystem>
@@ -1771,6 +1772,25 @@ void BytecodeOrcJIT::InitializeLLVM() {
 
 BytecodeOrcJIT::BytecodeOrcJIT() {
     InitializeLLVM();
+    if (const char* osEnv = std::getenv("HAVEL_JIT_TARGET_OS")) {
+        std::string os = osEnv;
+        std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (os == "linux") target_os_ = TargetOS::Linux;
+        else if (os == "windows" || os == "win") target_os_ = TargetOS::Windows;
+        else if (os == "macos" || os == "darwin" || os == "mac") target_os_ = TargetOS::MacOS;
+        else if (os == "wasm" || os == "webassembly") target_os_ = TargetOS::Wasm;
+    }
+    if (const char* warnEnv = std::getenv("HAVEL_JIT_WARNINGS")) {
+        std::string v = warnEnv;
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (v == "0" || v == "false" || v == "off") {
+            show_warnings_ = false;
+        }
+    }
     initTargetMachine();
     if (const char* optEnv = std::getenv("HAVEL_JIT_OPT_LEVEL")) {
         int parsed = std::atoi(optEnv);
@@ -1781,6 +1801,9 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
 
     auto jit_or_err = LLJITBuilder().create();
     if (!jit_or_err) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: failed to create LLJIT instance");
+        }
         llvm::consumeError(jit_or_err.takeError());
         return;
     }
@@ -1918,6 +1941,9 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
         addSym("havel_vm_end_module", reinterpret_cast<void*>(&havel_vm_end_module));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: failed to define bridge symbols in JIT dylib");
+        }
         llvm::consumeError(std::move(err));
     }
 
@@ -1935,12 +1961,49 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
 
 BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 
+void BytecodeOrcJIT::setTargetOS(TargetOS os) {
+    target_os_ = os;
+    initTargetMachine();
+}
+
+std::string BytecodeOrcJIT::resolveTargetTriple() const {
+    const std::string hostTriple = llvm::sys::getDefaultTargetTriple();
+    if (target_os_ == TargetOS::Native) {
+        return hostTriple;
+    }
+
+    llvm::Triple host(hostTriple);
+    std::string arch = host.getArchName().str();
+    if (arch.empty()) {
+        arch = "x86_64";
+    }
+
+    switch (target_os_) {
+        case TargetOS::Linux:
+            return arch + "-pc-linux-gnu";
+        case TargetOS::Windows:
+            return arch + "-pc-windows-msvc";
+        case TargetOS::MacOS:
+            return arch + "-apple-darwin";
+        case TargetOS::Wasm:
+            return "wasm32-unknown-unknown";
+        case TargetOS::Native:
+        default:
+            return hostTriple;
+    }
+}
+
 void BytecodeOrcJIT::initTargetMachine() {
-    auto target_triple_str = llvm::sys::getDefaultTargetTriple();
+    auto target_triple_str = resolveTargetTriple();
     llvm::Triple target_triple(target_triple_str);
     std::string error;
     auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
     if (!target) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: cannot resolve target '{}': {}",
+                             target_triple_str, error);
+        }
+        target_machine_.reset();
         return;
     }
     llvm::TargetOptions opt;
@@ -2028,12 +2091,18 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     if (auto err = lljit_->addIRModule(ThreadSafeModule(std::move(module), std::move(context)))) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: failed to add IR module for '{}'", func.name);
+        }
         llvm::consumeError(std::move(err));
         return;
     }
 
     auto sym = lljit_->lookup(func.name);
     if (!sym) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: symbol lookup failed for '{}'", func.name);
+        }
         llvm::consumeError(sym.takeError());
         return;
     }

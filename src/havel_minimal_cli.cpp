@@ -15,11 +15,6 @@ std::string readFile(const std::string& path) {
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
-namespace havel {
-    // We'll implement a minimal version of this for testing if needed
-    // or just use the one from StdLibModules if we can mock HostBridge
-}
-
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "Usage: havel_vm <script.hv>" << std::endl;
@@ -34,14 +29,25 @@ int main(int argc, char* argv[]) {
     }
 
     try {
+        // Create a minimal host context
+        havel::HostContext ctx;
+        // We need a VM to register stdlib
+        havel::compiler::VM vm(ctx);
+        ctx.vm = &vm;
+
+        // Register pure stdlib
+        havel::registerPureStdLib(vm);
+
         // Minimal pipeline options
         havel::compiler::PipelineOptions options;
         options.compile_unit_name = scriptPath;
+        options.vm_override = &vm;
         
-        // Setup simple host functions if needed
+        // Setup simple host functions
         options.host_functions["print"] = [](const std::vector<havel::compiler::Value>& args) {
-            for (const auto& arg : args) {
-                std::cout << arg.toString() << " ";
+            for (size_t i = 0; i < args.size(); ++i) {
+                std::cout << args[i].toString();
+                if (i < args.size() - 1) std::cout << " ";
             }
             std::cout << std::endl;
             return havel::compiler::Value::makeNull();
@@ -50,9 +56,8 @@ int main(int argc, char* argv[]) {
         auto result = havel::compiler::runBytecodePipeline(source, "__main__", options);
         
         if (result.return_value.isNumber()) {
-            std::cout << "Exit code: " << result.return_value.asNumber() << std::endl;
-        } else if (!result.return_value.isNull()) {
-            std::cout << "Return value: " << result.return_value.toString() << std::endl;
+            // Success exit code 0 if return value is 0
+            return static_cast<int>(result.return_value.asNumber());
         }
 
     } catch (const std::exception& e) {

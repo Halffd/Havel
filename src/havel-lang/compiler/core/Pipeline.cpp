@@ -652,7 +652,7 @@ BytecodeSmokeResult runBytecodePipeline(
         sanitizeFileStem(options.compile_unit_name) + ".snapshot.txt";
     const std::filesystem::path artifact_path =
         std::filesystem::path(options.snapshot_dir) / artifact_name;
-    std::ofstream out(artifact_path, std::ios::trunc);
+    std::ofstream out(artifact_path.string(), std::ios::trunc);
     if (!out.is_open()) {
       COMPILER_THROW("Failed to open snapshot artifact: " +
                                artifact_path.string());

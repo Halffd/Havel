@@ -43,6 +43,10 @@ struct VMApi {
     return vm.toString(value);
   }
 
+  std::string resolveString(const Value &value) const {
+    return vm.resolveStringKey(value);
+  }
+
   // Global scope
   void setGlobal(const std::string &name, Value value) {
     vm.setGlobal(name, std::move(value));
@@ -177,6 +181,15 @@ struct VMApi {
 
   uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {}) {
     return vm.spawnGoroutine(callee, args);
+  }
+
+  // Scheduler / suspension
+  void requestSuspension(uint8_t reason, void *context = nullptr) {
+    vm.requestSuspension(reason, context);
+  }
+
+  bool hasScheduler() const {
+    return vm.getScheduler() != nullptr;
   }
 
   // Image helpers

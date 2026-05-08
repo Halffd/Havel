@@ -22,7 +22,6 @@
 #include "../host/browser/BrowserService.hpp"
 #include "../host/io/MapManagerService.hpp"
 #include "../host/window/AltTabService.hpp"
-#include "../host/async/AsyncService.hpp"
 #include "../host/timer/TimerService.hpp"
 #include "../host/media/MediaService.hpp"
 #include "../host/image/ImageService.hpp"
@@ -53,8 +52,7 @@ namespace havel::modules {
     void registerHotkeyModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerModeModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerBrowserModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerFFIModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerProcessModule(Environment&, std::shared_ptr<IHostAPI>);
+        void registerProcessModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerShellExecutorModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerRuntimeModule(Environment&, std::shared_ptr<IHostAPI>);
     void registerConfigModule(Environment&, std::shared_ptr<IHostAPI>);
@@ -156,9 +154,7 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
  registry.registerService<host::AutomationService>(automationService);
  }
 
- // Async service doesn't need constructor args (pure C++ with std::thread)
-    auto asyncService = std::make_shared<host::AsyncService>();
-    registry.registerService<host::AsyncService>(asyncService);
+
 
   // File system service doesn't need constructor args (pure C++ with std::filesystem)
   auto fsService = std::make_shared<host::FileSystemService>();

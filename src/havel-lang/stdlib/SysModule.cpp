@@ -94,10 +94,10 @@ void registerSysModule(VMApi &api) {
                          (void)args;
                          auto objRef = api.vm.createHostObject();
 #ifndef _WIN32
-                         extern char **environ;
-                         if (environ) {
-                           for (int i = 0; environ[i]; i++) {
-                             std::string entry(environ[i]);
+        extern char **environ;
+        if (::environ) {
+          for (int i = 0; ::environ[i]; i++) {
+            std::string entry(::environ[i]);
                              auto eq = entry.find('=');
                              if (eq != std::string::npos) {
                                std::string key = entry.substr(0, eq);

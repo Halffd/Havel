@@ -5,6 +5,7 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/TargetParser/TargetParser.h>
@@ -16,6 +17,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cctype>
 #include <fstream>
 #include <functional>
 #include <filesystem>
@@ -33,6 +35,37 @@
 using namespace llvm::orc;
 
 namespace havel::compiler {
+
+std::mutex BytecodeOrcJIT::last_error_mutex_;
+std::string BytecodeOrcJIT::last_error_;
+
+void BytecodeOrcJIT::setLastError(std::string err) {
+    std::lock_guard<std::mutex> lock(last_error_mutex_);
+    last_error_ = std::move(err);
+}
+
+std::string BytecodeOrcJIT::lastError() {
+    std::lock_guard<std::mutex> lock(last_error_mutex_);
+    return last_error_;
+}
+
+void BytecodeOrcJIT::clearLastError() {
+    std::lock_guard<std::mutex> lock(last_error_mutex_);
+    last_error_.clear();
+}
+
+namespace {
+
+void reportLLVMError(const std::string& stage, llvm::Error err, bool showWarnings) {
+    if (!err) return;
+    std::string details = llvm::toString(std::move(err));
+    BytecodeOrcJIT::setLastError(stage + ": " + details);
+    if (showWarnings) {
+        ::havel::warning("BytecodeOrcJIT [{}]: {}", stage, details);
+    }
+}
+
+} // namespace
 
 // ============================================================================
 
@@ -1771,6 +1804,25 @@ void BytecodeOrcJIT::InitializeLLVM() {
 
 BytecodeOrcJIT::BytecodeOrcJIT() {
     InitializeLLVM();
+    if (const char* osEnv = std::getenv("HAVEL_JIT_TARGET_OS")) {
+        std::string os = osEnv;
+        std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (os == "linux") target_os_ = TargetOS::Linux;
+        else if (os == "windows" || os == "win") target_os_ = TargetOS::Windows;
+        else if (os == "macos" || os == "darwin" || os == "mac") target_os_ = TargetOS::MacOS;
+        else if (os == "wasm" || os == "webassembly") target_os_ = TargetOS::Wasm;
+    }
+    if (const char* warnEnv = std::getenv("HAVEL_JIT_WARNINGS")) {
+        std::string v = warnEnv;
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (v == "0" || v == "false" || v == "off") {
+            show_warnings_ = false;
+        }
+    }
     initTargetMachine();
     if (const char* optEnv = std::getenv("HAVEL_JIT_OPT_LEVEL")) {
         int parsed = std::atoi(optEnv);
@@ -1781,7 +1833,7 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
 
     auto jit_or_err = LLJITBuilder().create();
     if (!jit_or_err) {
-        llvm::consumeError(jit_or_err.takeError());
+        reportLLVMError("create", jit_or_err.takeError(), show_warnings_);
         return;
     }
     lljit_ = std::move(*jit_or_err);
@@ -1918,7 +1970,7 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
         addSym("havel_vm_end_module", reinterpret_cast<void*>(&havel_vm_end_module));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
-        llvm::consumeError(std::move(err));
+        reportLLVMError("define-symbols", std::move(err), show_warnings_);
     }
 
     // Phase 3 cache metadata: load persisted hash->symbol aliases.
@@ -1935,12 +1987,49 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
 
 BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 
+void BytecodeOrcJIT::setTargetOS(TargetOS os) {
+    target_os_ = os;
+    initTargetMachine();
+}
+
+std::string BytecodeOrcJIT::resolveTargetTriple() const {
+    const std::string hostTriple = llvm::sys::getDefaultTargetTriple();
+    if (target_os_ == TargetOS::Native) {
+        return hostTriple;
+    }
+
+    llvm::Triple host(hostTriple);
+    std::string arch = host.getArchName().str();
+    if (arch.empty()) {
+        arch = "x86_64";
+    }
+
+    switch (target_os_) {
+        case TargetOS::Linux:
+            return arch + "-pc-linux-gnu";
+        case TargetOS::Windows:
+            return arch + "-pc-windows-msvc";
+        case TargetOS::MacOS:
+            return arch + "-apple-darwin";
+        case TargetOS::Wasm:
+            return "wasm32-unknown-unknown";
+        case TargetOS::Native:
+        default:
+            return hostTriple;
+    }
+}
+
 void BytecodeOrcJIT::initTargetMachine() {
-    auto target_triple_str = llvm::sys::getDefaultTargetTriple();
+    auto target_triple_str = resolveTargetTriple();
     llvm::Triple target_triple(target_triple_str);
     std::string error;
     auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
     if (!target) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: cannot resolve target '{}': {}",
+                             target_triple_str, error);
+        }
+        target_machine_.reset();
         return;
     }
     llvm::TargetOptions opt;
@@ -1950,6 +2039,15 @@ void BytecodeOrcJIT::initTargetMachine() {
 }
 
 void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
+    if (!lljit_) {
+        setLastError("compile:" + func.name + ": JIT is not initialized");
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: compile requested for '{}' but JIT is not initialized",
+                             func.name);
+        }
+        return;
+    }
+
     // Coroutines are currently interpreter-only: JIT frame suspension/resume
     // semantics are not preserved for YIELD/GO_ASYNC paths yet.
     for (const auto& instr : func.instructions) {
@@ -2028,13 +2126,13 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     if (auto err = lljit_->addIRModule(ThreadSafeModule(std::move(module), std::move(context)))) {
-        llvm::consumeError(std::move(err));
+        reportLLVMError("add-module:" + func.name, std::move(err), show_warnings_);
         return;
     }
 
     auto sym = lljit_->lookup(func.name);
     if (!sym) {
-        llvm::consumeError(sym.takeError());
+        reportLLVMError("lookup:" + func.name, sym.takeError(), show_warnings_);
         return;
     }
 
@@ -2114,9 +2212,17 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
         // TRY_ENTER handlers in active VM frames.
         throw;
     } catch (const std::exception& e) {
+        setLastError("runtime:" + func_name + ": " + std::string(e.what()));
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT runtime exception in '{}': {}", func_name, e.what());
+        }
         vm->throwError(std::string("JIT exception in ") + func_name + ": " + e.what());
         return Value::makeNull();
     } catch (...) {
+        setLastError("runtime:" + func_name + ": unknown exception");
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT runtime exception in '{}': unknown exception", func_name);
+        }
         vm->throwError(std::string("Unknown JIT exception in ") + func_name);
         return Value::makeNull();
     }

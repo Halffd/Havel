@@ -81,4 +81,28 @@ modules::ffi::registerFFIModule(*api);
 #endif
 }
 
+void registerPureStdLib(compiler::VM &vm) {
+	static auto api = std::make_shared<compiler::VMApi>(vm);
+
+	// Register PURE stdlib modules (no OS access)
+	stdlib::registerMathModule(*api); // MathModule
+	stdlib::registerStringModule(*api); // StringModule
+	stdlib::registerArrayModule(*api); // ArrayModule
+	stdlib::registerObjectModule(*api); // ObjectModule
+	stdlib::registerTypeModule(*api); // TypeModule
+	stdlib::registerUtilityModule(*api); // UtilityModule
+	stdlib::registerRegexModule(*api); // RegexModule
+	stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
+	stdlib::registerTimeModule(*api); // TimeModule (timestamps)
+	stdlib::registerFsModule(*api); // FsModule
+	stdlib::registerRandomModule(*api); // RandomModule
+	stdlib::registerLogModule(*api); // LogModule
+	stdlib::registerSysModule(*api); // SysModule
+	stdlib::registerShellModule(*api); // ShellModule
+	stdlib::registerPointerModule(*api); // PointerModule
+	stdlib::registerFormatModule(*api); // FormatModule
+	stdlib::registerPackModule(*api); // PackModule
+	stdlib::registerBitModule(*api); // BitModule
+}
+
 } // namespace havel

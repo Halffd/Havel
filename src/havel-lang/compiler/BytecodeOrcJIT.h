@@ -10,6 +10,7 @@
 #include "core/Value.hpp"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -84,6 +85,8 @@ public:
     bool showWarnings() const { return show_warnings_; }
     bool fullAOT() const { return full_aot_; }
     const std::vector<std::string>& linkedLibraries() const { return linked_libraries_; }
+    static std::string lastError();
+    static void clearLastError();
     void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
     void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
 
@@ -111,8 +114,11 @@ private:
     std::vector<std::string> linked_libraries_;
     bool full_aot_ = false;
     std::string last_asm_;
+    static std::mutex last_error_mutex_;
+    static std::string last_error_;
 
     std::string resolveTargetTriple() const;
+    static void setLastError(std::string err);
     void initTargetMachine();
     void runOptimizations(llvm::Module &module);
     uint64_t computeFunctionHash(const BytecodeFunction &func) const;

@@ -1023,7 +1023,7 @@ std::vector<Token> Lexer::tokenize() {
                 if (debug_lexer) {
                     havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {}", line, column, static_cast<int>(prevType));
                 }
-                inExpressionContext = (prevType == TokenType::Number ||
+inExpressionContext = (prevType == TokenType::Number ||
 prevType == TokenType::String || prevType == TokenType::InterpolatedString || prevType == TokenType::MultilineString || prevType == TokenType::RegexString ||
 prevType == TokenType::Identifier ||
           prevType == TokenType::True || prevType == TokenType::False ||
@@ -1031,13 +1031,14 @@ prevType == TokenType::Identifier ||
  prevType == TokenType::CloseParen ||
  prevType == TokenType::CloseBracket ||
  prevType == TokenType::CloseBrace ||
+ prevType == TokenType::OpenBrace ||
  prevType == TokenType::OpenBracket ||
  prevType == TokenType::OpenParen ||
  prevType == TokenType::Not ||
           prevType == TokenType::Or || prevType == TokenType::And ||
           prevType == TokenType::Assign ||
           prevType == TokenType::If || prevType == TokenType::While ||
-          prevType == TokenType::For || prevType == TokenType::In ||
+          prevType == TokenType::For || prevType == TokenType::In || prevType == TokenType::Fn ||
           prevType == TokenType::Matches ||
           prevType == TokenType::Tilde ||
           prevType == TokenType::Comma ||
@@ -1064,7 +1065,10 @@ prevType == TokenType::Not ||
         prevType == TokenType::BitwiseXor ||
  prevType == TokenType::ShiftLeft ||
  prevType == TokenType::ShiftRight ||
-  prevType == TokenType::LeftArrow);
+   prevType == TokenType::LeftArrow ||
+   prevType == TokenType::Return ||
+   prevType == TokenType::Semicolon ||
+   prevType == TokenType::NewLine);
       }
 
 

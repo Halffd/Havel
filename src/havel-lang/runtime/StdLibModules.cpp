@@ -33,6 +33,7 @@ void registerHotkeyModule(compiler::VMApi &api);
 void registerFsModule(compiler::VMApi &api);
 void registerRandomModule(compiler::VMApi &api);
 void registerLogModule(compiler::VMApi &api);
+void registerDebugModule(compiler::VMApi &api);
 void registerSysModule(compiler::VMApi &api);
 void registerShellModule(compiler::VMApi &api);
 void registerPointerModule(compiler::VMApi &api);
@@ -63,6 +64,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerFsModule(*api);
   stdlib::registerRandomModule(*api);
   stdlib::registerLogModule(*api);
+  stdlib::registerDebugModule(*api);
   stdlib::registerSysModule(*api);
   stdlib::registerShellModule(*api);
   stdlib::registerPointerModule(*api);
@@ -101,6 +103,7 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerFsModule(*api);
   stdlib::registerRandomModule(*api);
   stdlib::registerLogModule(*api);
+  stdlib::registerDebugModule(*api);
   stdlib::registerSysModule(*api);
   stdlib::registerShellModule(*api);
   stdlib::registerPointerModule(*api);

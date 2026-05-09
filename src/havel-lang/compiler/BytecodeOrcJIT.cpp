@@ -205,7 +205,15 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
 }
 
 void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
-    ::havel::debug("[JIT] Deoptimizing in {} for types: 0x{:x} op 0x{:x}", func, l, r);
+    // Track deopt count per function to detect bad type assumptions
+    static thread_local std::unordered_map<std::string, uint32_t> deopt_counts;
+    auto& count = deopt_counts[func];
+    count++;
+    if (count == 1) {
+        ::havel::warn("[JIT] First deopt in '{}' for types: l=0x{:x} r=0x{:x} — consider recompilation", func, l, r);
+    } else if (count == 100) {
+        ::havel::warn("[JIT] {} deopts in '{}' — type specialization unstable, needs generic path", count, func);
+    }
 }
 
 // JIT helper for function calls - delegates to VM
@@ -2432,10 +2440,25 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     };
 
 auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, llvm::Value* left, llvm::Value* right) -> llvm::Value* {
-    // Check for AOT type hint - if we know the type at compile time, use direct path
-    uint64_t type_hint = (fb && fb->has_aot_hint) ? fb->aot_type_hint : 0;
+    // Check for AOT type hint first, then fall back to runtime type feedback
+    uint64_t type_hint = 0;
+    if (fb && fb->has_aot_hint) {
+        type_hint = fb->aot_type_hint;
+    } else if (fb && fb->execution_count >= 100) {
+        // Runtime feedback: if interpreter has seen only one type, specialize
+        // (still uses guarded paths below for the speculative case)
+        uint64_t combined = fb->left_type_mask | fb->right_type_mask;
+        if (combined == TYPE_HINT_INT) {
+            type_hint = TYPE_HINT_INT;
+        } else if (combined == TYPE_HINT_NUMBER) {
+            type_hint = TYPE_HINT_NUMBER;
+        } else if (combined == (TYPE_HINT_INT | TYPE_HINT_NUMBER)) {
+            type_hint = TYPE_HINT_NUMBER; // mixed int/double → use double path
+        }
+        // If mixed or polymorphic, type_hint stays 0 → fall through to guarded path
+    }
     
-    // If AOT hint says both operands are int, use direct integer path
+    // If type hint says both operands are int, use direct integer path
     if ((type_hint & TYPE_HINT_INT) && !(type_hint & TYPE_HINT_NUMBER)) {
         // Pure integer operation - no runtime check needed
         llvm::Value *lIv = unboxInt(left);
@@ -2674,7 +2697,7 @@ case OpCode::INCLOCAL:
             break;
         }
 
-      // Comparisons — use semantic bridge functions for correct NaN-boxed dispatch
+      // Comparisons — use type feedback to specialize or fall back to bridge
       case OpCode::EQ:
       case OpCode::NEQ:
       case OpCode::LT:
@@ -2683,22 +2706,99 @@ case OpCode::INCLOCAL:
       case OpCode::GTE: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();
-        const char* fname = nullptr;
-        switch (instr.opcode) {
-          case OpCode::EQ:  fname = "havel_vm_eq";  break;
-          case OpCode::NEQ: fname = "havel_vm_neq"; break;
-          case OpCode::LT:  fname = "havel_vm_lt";  break;
-          case OpCode::LTE: fname = "havel_vm_lte"; break;
-          case OpCode::GT:  fname = "havel_vm_gt";  break;
-          case OpCode::GTE: fname = "havel_vm_gte"; break;
+        
+        // Check if feedback says both sides are always int
+        bool bothAlwaysInt = false;
+        if (fb && fb->execution_count >= 100) {
+            uint64_t combined = fb->left_type_mask | fb->right_type_mask;
+            bothAlwaysInt = (combined == TYPE_HINT_INT);
         }
-        llvm::Function* fnComp = module.getFunction(fname);
-        if (!fnComp) {
-            fnComp = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                llvm::Function::ExternalLinkage, fname, &module);
+        if (fb && fb->has_aot_hint && (fb->aot_type_hint & TYPE_HINT_INT) && !(fb->aot_type_hint & TYPE_HINT_NUMBER)) {
+            bothAlwaysInt = true;
         }
-        vstack.push_back(B.CreateCall(fnComp, {vmArg, l, r}));
+        
+        // NaN-boxed bool constants
+        uint64_t boolTrueBits = QNAN | (2ULL << 48) | 1ULL;
+        uint64_t boolFalseBits = QNAN | (2ULL << 48);
+        
+        if (bothAlwaysInt) {
+            // Fast path: inline integer comparison with guard
+            std::string pfx = "cmp" + std::to_string(ip) + "_";
+            llvm::BasicBlock *intCmpBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
+            llvm::BasicBlock *slowBB = llvm::BasicBlock::Create(ctx, pfx+"slow", f);
+            llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
+            
+            llvm::Value* bothInt = B.CreateAnd(isInt48Loc(l), isInt48Loc(r));
+            B.CreateCondBr(bothInt, intCmpBB, slowBB);
+            
+            // Integer fast path
+            B.SetInsertPoint(intCmpBB);
+            llvm::Value* lI = unboxInt(l);
+            llvm::Value* rI = unboxInt(r);
+            llvm::Value* cmpResult = nullptr;
+            switch (instr.opcode) {
+                case OpCode::EQ:  cmpResult = B.CreateICmpEQ(lI, rI);  break;
+                case OpCode::NEQ: cmpResult = B.CreateICmpNE(lI, rI);  break;
+                case OpCode::LT:  cmpResult = B.CreateICmpSLT(lI, rI); break;
+                case OpCode::LTE: cmpResult = B.CreateICmpSLE(lI, rI); break;
+                case OpCode::GT:  cmpResult = B.CreateICmpSGT(lI, rI); break;
+                case OpCode::GTE: cmpResult = B.CreateICmpSGE(lI, rI); break;
+                default: cmpResult = B.CreateICmpEQ(lI, rI); break;
+            }
+            llvm::Value* intResult = B.CreateSelect(cmpResult,
+                llvm::ConstantInt::get(i64, boolTrueBits),
+                llvm::ConstantInt::get(i64, boolFalseBits));
+            auto* intExitBB = B.GetInsertBlock();
+            B.CreateBr(mergeBB);
+            
+            // Slow path: bridge function
+            B.SetInsertPoint(slowBB);
+            const char* fname = nullptr;
+            switch (instr.opcode) {
+                case OpCode::EQ:  fname = "havel_vm_eq";  break;
+                case OpCode::NEQ: fname = "havel_vm_neq"; break;
+                case OpCode::LT:  fname = "havel_vm_lt";  break;
+                case OpCode::LTE: fname = "havel_vm_lte"; break;
+                case OpCode::GT:  fname = "havel_vm_gt";  break;
+                case OpCode::GTE: fname = "havel_vm_gte"; break;
+                default: fname = "havel_vm_eq"; break;
+            }
+            llvm::Function* fnComp = module.getFunction(fname);
+            if (!fnComp) {
+                fnComp = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, fname, &module);
+            }
+            llvm::Value* slowResult = B.CreateCall(fnComp, {vmArg, l, r});
+            auto* slowExitBB = B.GetInsertBlock();
+            B.CreateBr(mergeBB);
+            
+            // Merge
+            B.SetInsertPoint(mergeBB);
+            llvm::PHINode* phi = B.CreatePHI(i64, 2);
+            phi->addIncoming(intResult, intExitBB);
+            phi->addIncoming(slowResult, slowExitBB);
+            vstack.push_back(phi);
+        } else {
+            // No feedback or polymorphic: use bridge
+            const char* fname = nullptr;
+            switch (instr.opcode) {
+              case OpCode::EQ:  fname = "havel_vm_eq";  break;
+              case OpCode::NEQ: fname = "havel_vm_neq"; break;
+              case OpCode::LT:  fname = "havel_vm_lt";  break;
+              case OpCode::LTE: fname = "havel_vm_lte"; break;
+              case OpCode::GT:  fname = "havel_vm_gt";  break;
+              case OpCode::GTE: fname = "havel_vm_gte"; break;
+              default: fname = "havel_vm_eq"; break;
+            }
+            llvm::Function* fnComp = module.getFunction(fname);
+            if (!fnComp) {
+                fnComp = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, fname, &module);
+            }
+            vstack.push_back(B.CreateCall(fnComp, {vmArg, l, r}));
+        }
         break;
       }
     // CLOSURE - operand: func_index

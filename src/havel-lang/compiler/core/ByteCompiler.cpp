@@ -2881,27 +2881,35 @@ break;
       return false;
     };
 
- // Special handling for 'in' and 'not in' - compile as CALL_METHOD "has"
- if (binary.operator_ == ast::BinaryOperator::In || binary.operator_ == ast::BinaryOperator::NotIn) {
- compileExpression(*binary.right); // container (receiver)
- compileExpression(*binary.left); // value (arg)
- uint32_t method_sid = addStringConstant("has");
- emit(OpCode::CALL_METHOD, std::vector<Value>{
- Value::makeStringValId(method_sid),
- Value(static_cast<uint32_t>(1))});
- if (binary.operator_ == ast::BinaryOperator::NotIn) {
- emit(OpCode::NOT);
- }
- } else if (binary.operator_ == ast::BinaryOperator::Matches ||
- binary.operator_ == ast::BinaryOperator::Tilde) {
- // Regex/string matching - compile as regex_search host function call
- uint32_t strId = addStringConstant("regex_search");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- compileExpression(*binary.left); // string to match
- compileExpression(*binary.right); // pattern
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
- } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
+        // Special handling for 'in' and 'not in' - compile as CALL_METHOD "has"
+        if (binary.operator_ == ast::BinaryOperator::In || binary.operator_ == ast::BinaryOperator::NotIn) {
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.right); // container (receiver)
+            compileExpression(*binary.left); // value (arg)
+            in_tail_position_ = saved_tail;
+            uint32_t method_sid = addStringConstant("has");
+            emit(OpCode::CALL_METHOD, std::vector<Value>{
+                Value::makeStringValId(method_sid),
+                Value(static_cast<uint32_t>(1))});
+            if (binary.operator_ == ast::BinaryOperator::NotIn) {
+                emit(OpCode::NOT);
+            }
+        } else if (binary.operator_ == ast::BinaryOperator::Matches ||
+                   binary.operator_ == ast::BinaryOperator::Tilde) {
+            // Regex/string matching - compile as regex_search host function call
+            uint32_t strId = addStringConstant("regex_search");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.left); // string to match
+            compileExpression(*binary.right); // pattern
+            in_tail_position_ = saved_tail;
+            emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
             // Nullish coalescing: left ?? right
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
             // Evaluate left side
             compileExpression(*binary.left);
 
@@ -2916,48 +2924,58 @@ break;
             // right side
             uint32_t done = emitJump(OpCode::JUMP);
 
-        // Left was null - pop the null left value, then evaluate right side
-        patchJump(jumpToRight,
-            static_cast<uint32_t>(current_function->instructions.size()));
-        emit(OpCode::POP);
-        compileExpression(*binary.right);
+            // Left was null - pop the null left value, then evaluate right side
+            patchJump(jumpToRight,
+                static_cast<uint32_t>(current_function->instructions.size()));
+            emit(OpCode::POP);
+            compileExpression(*binary.right);
+            in_tail_position_ = saved_tail;
 
             // Done
             patchJump(done,
                 static_cast<uint32_t>(current_function->instructions.size()));
- } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
- uint32_t strId = addStringConstant("config.append");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- compileExpression(*binary.left);
- compileExpression(*binary.right);
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-    } else {
-      if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
+        } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
+            uint32_t strId = addStringConstant("config.append");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        } else {
+            if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
+                break;
+            }
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            in_tail_position_ = saved_tail;
+            emit(toBytecodeOperator(binary.operator_));
+    }
+    break;
+  }
+
+    case ast::NodeType::RangeExpression: {
+        const auto &range = static_cast<const ast::RangeExpression &>(expression);
+        if (!range.start || !range.end) {
+            COMPILER_THROW("Malformed range expression");
+        }
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*range.start);
+        compileExpression(*range.end);
+        if (range.step) {
+            compileExpression(*range.step);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::RANGE_STEP_NEW);
+        } else {
+            in_tail_position_ = saved_tail;
+            emit(OpCode::RANGE_NEW);
+        }
         break;
-      }
-      compileExpression(*binary.left);
-      compileExpression(*binary.right);
-      emit(toBytecodeOperator(binary.operator_));
     }
-    break;
-  }
-
-  case ast::NodeType::RangeExpression: {
-    const auto &range = static_cast<const ast::RangeExpression &>(expression);
-    if (!range.start || !range.end) {
-      COMPILER_THROW("Malformed range expression");
-    }
-    compileExpression(*range.start);
-    compileExpression(*range.end);
-
-    if (range.step) {
-      compileExpression(*range.step);
-      emit(OpCode::RANGE_STEP_NEW);
-    } else {
-      emit(OpCode::RANGE_NEW);
-    }
-    break;
-  }
 
   case ast::NodeType::PipelineExpression: {
     const auto &pipeline =
@@ -3917,66 +3935,76 @@ if (update_expr.isPrefix) {
   }
 
 case ast::NodeType::UnaryExpression: {
-    const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
-    if (!unary.operand) {
-        COMPILER_THROW("Unary expression missing operand");
+        const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
+        if (!unary.operand) {
+            COMPILER_THROW("Unary expression missing operand");
+        }
+
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        switch (unary.operator_) {
+        case ast::UnaryExpression::UnaryOperator::Not:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::NOT);
+            break;
+        case ast::UnaryExpression::UnaryOperator::BitwiseNot:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::BIT_NOT);
+            break;
+        case ast::UnaryExpression::UnaryOperator::Minus:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::NEGATE);
+            break;
+        case ast::UnaryExpression::UnaryOperator::Plus:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            break;
+        case ast::UnaryExpression::UnaryOperator::Length: {
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::LENGTH);
+        }
+        break;
+        default:
+            in_tail_position_ = saved_tail;
+            COMPILER_THROW("Unsupported unary operator");
+        }
+        break;
     }
 
-    // Apply unary operator
-    switch (unary.operator_) {
-    case ast::UnaryExpression::UnaryOperator::Not:
-        compileExpression(*unary.operand);
-        emit(OpCode::NOT);
+    case ast::NodeType::TernaryExpression: {
+        const auto &ternary =
+            static_cast<const ast::TernaryExpression &>(expression);
+        if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
+            COMPILER_THROW("Ternary expression missing components");
+        }
+
+        // Condition is never in tail position (it's consumed by the branch)
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*ternary.condition);
+        in_tail_position_ = saved_tail;
+
+        // Jump to false branch if condition is false
+        uint32_t false_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+        // Compile true branch (inherits tail position from outer context)
+        compileExpression(*ternary.trueValue);
+        uint32_t end_jump = emitJump(OpCode::JUMP);
+
+        // Patch false jump and compile false branch
+        patchJump(false_jump,
+            static_cast<uint32_t>(current_function->instructions.size()));
+        compileExpression(*ternary.falseValue);
+
+        // Patch end jump
+        patchJump(end_jump,
+            static_cast<uint32_t>(current_function->instructions.size()));
         break;
-    case ast::UnaryExpression::UnaryOperator::BitwiseNot:
-        compileExpression(*unary.operand);
-        emit(OpCode::BIT_NOT);
-        break;
-    case ast::UnaryExpression::UnaryOperator::Minus:
-        compileExpression(*unary.operand);
-        emit(OpCode::NEGATE);
-        break;
-    case ast::UnaryExpression::UnaryOperator::Plus:
-        compileExpression(*unary.operand);
-        break;
-	case ast::UnaryExpression::UnaryOperator::Length: {
-		compileExpression(*unary.operand);
-		emit(OpCode::LENGTH);
-	}
- break;
-    default:
-      COMPILER_THROW("Unsupported unary operator");
     }
-    break;
-  }
-
-  case ast::NodeType::TernaryExpression: {
-    const auto &ternary =
-        static_cast<const ast::TernaryExpression &>(expression);
-    if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
-      COMPILER_THROW("Ternary expression missing components");
-    }
-
-    // Compile condition
-    compileExpression(*ternary.condition);
-
-    // Jump to false branch if condition is false
-    uint32_t false_jump = emitJump(OpCode::JUMP_IF_FALSE);
-
-    // Compile true branch
-    compileExpression(*ternary.trueValue);
-    uint32_t end_jump = emitJump(OpCode::JUMP);
-
-    // Patch false jump and compile false branch
-    patchJump(false_jump,
-              static_cast<uint32_t>(current_function->instructions.size()));
-    compileExpression(*ternary.falseValue);
-
-    // Patch end jump
-    patchJump(end_jump,
-              static_cast<uint32_t>(current_function->instructions.size()));
-    break;
-  }
 
   case ast::NodeType::GetInputExpression: {
     const auto &getInput = static_cast<const ast::GetInputExpression &>(expression);

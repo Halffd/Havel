@@ -5334,6 +5334,18 @@ case OpCode::STORE_VAR: {
         uint32_t abs = this->toAbsoluteLocal(var_index);
         this->ensureLocalIndex(abs);
         Value& val = locals[abs];
+        // Record feedback - INCLOCAL is a loop counter hot spot
+        {
+            auto &frame = currentFrame();
+            if (frame.ip < frame.function->type_feedback.size()) {
+                auto &fb = frame.function->type_feedback[frame.ip];
+                fb.execution_count++;
+                fb.left_type_mask |= getFeedbackMask(val);
+                if (fb.execution_count == 1000 && hot_func_cb_) {
+                    hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+                }
+            }
+        }
         if (val.isInt()) {
             val = Value::makeInt(val.asInt() + 1);
             pushStack(val);
@@ -5351,6 +5363,17 @@ case OpCode::STORE_VAR: {
         uint32_t abs = this->toAbsoluteLocal(var_index);
         this->ensureLocalIndex(abs);
         Value& val = locals[abs];
+        {
+            auto &frame = currentFrame();
+            if (frame.ip < frame.function->type_feedback.size()) {
+                auto &fb = frame.function->type_feedback[frame.ip];
+                fb.execution_count++;
+                fb.left_type_mask |= getFeedbackMask(val);
+                if (fb.execution_count == 1000 && hot_func_cb_) {
+                    hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+                }
+            }
+        }
         if (val.isInt()) {
             val = Value::makeInt(val.asInt() - 1);
             pushStack(val);
@@ -5368,6 +5391,14 @@ case OpCode::STORE_VAR: {
         uint32_t abs = this->toAbsoluteLocal(var_index);
         this->ensureLocalIndex(abs);
         Value old = locals[abs];
+        {
+            auto &frame = currentFrame();
+            if (frame.ip < frame.function->type_feedback.size()) {
+                auto &fb = frame.function->type_feedback[frame.ip];
+                fb.execution_count++;
+                fb.left_type_mask |= getFeedbackMask(old);
+            }
+        }
         pushStack(old);  // Push old value first
         if (old.isInt()) {
             locals[abs] = Value::makeInt(old.asInt() + 1);
@@ -5384,6 +5415,14 @@ case OpCode::STORE_VAR: {
         uint32_t abs = this->toAbsoluteLocal(var_index);
         this->ensureLocalIndex(abs);
         Value old = locals[abs];
+        {
+            auto &frame = currentFrame();
+            if (frame.ip < frame.function->type_feedback.size()) {
+                auto &fb = frame.function->type_feedback[frame.ip];
+                fb.execution_count++;
+                fb.left_type_mask |= getFeedbackMask(old);
+            }
+        }
         pushStack(old);  // Push old value first
         if (old.isInt()) {
             locals[abs] = Value::makeInt(old.asInt() - 1);
@@ -5718,24 +5757,52 @@ case OpCode::CALL_METHOD: {
             break;
         }
 
- // Look up method: 1. Host prototype, 2. Object instance, 3. Object prototype chain
- uint32_t host_func_idx = 0;
- bool found_host = false;
- bool found_via_module = false;
- Value vm_func = Value::makeNull();
+        // Look up method: 0. Object instance field, 1. Host prototype, 2. Object prototype chain
+        uint32_t host_func_idx = 0;
+        bool found_host = false;
+        bool found_via_module = false;
+        bool isInstanceFunc = false;
+        Value vm_func = Value::makeNull();
+
+        // 0. If receiver is an object, check for direct callable field FIRST.
+        // Namespace objects like `process` have host function fields (e.g. `find`)
+        // that must take priority over prototype methods (e.g. `object.find`).
+        if (receiver.isObjectId()) {
+            auto* instanceObj = heap_.object(receiver.asObjectId());
+            if (instanceObj) {
+                auto it = instanceObj->find(method_name);
+                if (it != instanceObj->end()) {
+                    if (it->second.isHostFuncId()) {
+                        host_func_idx = it->second.asHostFuncId();
+                        found_host = true;
+                        for (const auto& g : globals) {
+                            if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
+                                found_via_module = true;
+                                break;
+                            }
+                        }
+                    } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+                        vm_func = it->second;
+                        isInstanceFunc = true;
+                    }
+                }
+            }
+        }
 
         // 1. Try host prototype (for primitives and built-in object methods)
+        if (!found_host && vm_func.isNull()) {
         auto typeIt = prototypes_.find(type_name);
         if (typeIt != prototypes_.end()) {
             auto methodIt = typeIt->second.find(method_name);
             if (methodIt != typeIt->second.end()) {
-        host_func_idx = methodIt->second;
-        found_host = true;
-      }
-    }
+                host_func_idx = methodIt->second;
+                found_host = true;
+            }
+        }
+        }
 
-    // 1.5 Try module object for monkey-patched methods
-    if (!found_host && vm_func.isNull()) {
+        // 1.5 Try module object for monkey-patched methods
+        if (!found_host && vm_func.isNull()) {
       // Generate capitalized version (e.g., "string" -> "String")
       std::string capName = type_name;
       if (!capName.empty()) capName[0] = static_cast<char>(std::toupper(capName[0]));
@@ -5764,32 +5831,9 @@ case OpCode::CALL_METHOD: {
       }
     }
 
-    // 2. If not found in host prototype, and it's an object, check the object itself
-    // (direct fields only — do NOT walk prototype chain here, step 3 handles that)
-    bool isInstanceFunc = false;
-    if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
-        auto* instanceObj = heap_.object(receiver.asObjectId());
-        if (instanceObj) {
-            auto it = instanceObj->find(method_name);
-            if (it != instanceObj->end()) {
-        if (it->second.isHostFuncId()) {
-            host_func_idx = it->second.asHostFuncId();
-            found_host = true;
-            if (receiver.isObjectId()) {
-                for (const auto& g : globals) {
-                    if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
-                        found_via_module = true;
-                        break;
-                    }
-                }
-            }
-                    } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
-                    vm_func = it->second;
-                    isInstanceFunc = true;
-                }
-            }
-        }
-    }
+        // 2. (Moved to step 0 above — instance field check now happens before
+        //    prototype table lookup so that namespace objects like `process.find`
+        //    are not shadowed by `object.find` prototype method.)
 
     // 3. Check __class prototype for class methods
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
@@ -8665,15 +8709,27 @@ void VM::throwError(const std::string &msg) {
 }
 
 std::string VM::resolveStringKey(const Value &value) const {
-  if (value.isStringValId() && current_chunk) {
-    return current_chunk->getString(value.asStringValId());
-  }
-  if (value.isStringId()) {
-    if (auto *s = heap_.string(value.asStringId())) {
-      return *s;
+    if (value.isStringValId()) {
+        uint32_t id = value.asStringValId();
+        if (current_chunk) {
+            auto& strs = current_chunk->getAllStrings();
+            if (id < strs.size()) {
+                return strs[id];
+            }
+        }
+        if (main_chunk_) {
+            auto& strs = main_chunk_->getAllStrings();
+            if (id < strs.size()) {
+                return strs[id];
+            }
+        }
     }
-  }
-  return const_cast<VM*>(this)->toString(value);
+    if (value.isStringId()) {
+        if (auto *s = heap_.string(value.asStringId())) {
+            return *s;
+        }
+    }
+    return const_cast<VM*>(this)->toString(value);
 }
 
 Value VM::loadModule(const std::string& path) {

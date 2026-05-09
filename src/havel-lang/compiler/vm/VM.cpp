@@ -32,6 +32,7 @@
 
 #include "VMApi.hpp"
 #include "../../stdlib/ShellModule.hpp"
+#include "../../../core/ConfigManager.hpp"
 
 // Helper macro for throwing runtime errors
 // Reports to unified ErrorReporter before throwing
@@ -2779,6 +2780,89 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(interval_obj, "pause", Value::makeHostFuncId(getHostFunctionIndex("interval.pause")));
   setHostObjectField(interval_obj, "resume", Value::makeHostFuncId(getHostFunctionIndex("interval.resume")));
   setGlobal("interval", Value::makeObjectId(interval_obj.id));
+
+  // Register config global objects (config, conf, cfg)
+  auto config_obj = heap_.allocateObject();
+  registerHostFunction("config.get", [this](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeNull();
+      std::string key = resolveStringKey(args[0]);
+      VMApi api{*this};
+      if (args.size() > 1) {
+          if (args[1].isBool()) return Value::makeBool(Configs::Get().Get<bool>(key, args[1].asBool()));
+          if (args[1].isInt()) return Value::makeInt(Configs::Get().Get<int64_t>(key, args[1].asInt()));
+          if (args[1].isDouble()) return Value::makeDouble(Configs::Get().Get<double>(key, args[1].asDouble()));
+          return api.makeString(Configs::Get().Get<std::string>(key, resolveStringKey(args[1])));
+      }
+      return api.makeString(Configs::Get().Get<std::string>(key, ""));
+  });
+  registerHostFunction("config.set", [this](const std::vector<Value>& args) {
+      if (args.size() < 2) return Value::makeBool(false);
+      std::string key = resolveStringKey(args[0]);
+      bool save = args.size() > 2 && args[2].isBool() && args[2].asBool();
+      
+      if (args[1].isBool()) Configs::Get().Set(key, args[1].asBool(), save);
+      else if (args[1].isInt()) Configs::Get().Set(key, args[1].asInt(), save);
+      else if (args[1].isDouble()) Configs::Get().Set(key, args[1].asDouble(), save);
+      else Configs::Get().Set(key, resolveStringKey(args[1]), save);
+
+      // Update 'conf' mirror if it exists
+      auto conf_val = getGlobalThreadSafe("conf").value_or(Value::makeNull());
+      if (conf_val.isObjectId()) {
+          setHostObjectField(ObjectRef{conf_val.asObjectId(), true}, key, args[1]);
+          // Also handle nested paths like General.Terminal
+          auto dot = key.find('.');
+          if (dot != std::string::npos) {
+              std::string section = key.substr(0, dot);
+              std::string subkey = key.substr(dot + 1);
+              Value sect_val = getHostObjectField(ObjectRef{conf_val.asObjectId(), true}, section);
+              if (sect_val.isObjectId()) {
+                  setHostObjectField(ObjectRef{sect_val.asObjectId(), true}, subkey, args[1]);
+              }
+          }
+      }
+      return Value::makeBool(true);
+  });
+  registerHostFunction("config.save", [](const std::vector<Value>& args) {
+      (void)args;
+      Configs::Get().Save();
+      return Value::makeBool(true);
+  });
+  registerHostFunction("config.load", [this](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeBool(false);
+      Configs::Get().Load(resolveStringKey(args[0]));
+      // Re-populate 'conf' mirror
+      auto conf_val = getGlobalThreadSafe("conf").value_or(Value::makeNull());
+      VMApi api{*this};
+      if (conf_val.isObjectId()) {
+          auto conf_obj = ObjectRef{conf_val.asObjectId(), true};
+          for (const auto& k : Configs::Get().GetAllKeys()) {
+              setHostObjectField(conf_obj, k, api.makeString(Configs::Get().Get<std::string>(k, "")));
+              auto dot = k.find('.');
+              if (dot != std::string::npos) {
+                  std::string section = k.substr(0, dot);
+                  std::string subkey = k.substr(dot + 1);
+                  Value sect_val = getHostObjectField(conf_obj, section);
+                  if (!sect_val.isObjectId()) {
+                      auto new_sect = heap_.allocateObject();
+                      setHostObjectField(conf_obj, section, Value::makeObjectId(new_sect.id));
+                      sect_val = Value::makeObjectId(new_sect.id);
+                  }
+                  setHostObjectField(ObjectRef{sect_val.asObjectId(), true}, subkey, api.makeString(Configs::Get().Get<std::string>(k, "")));
+              }
+          }
+      }
+      return Value::makeBool(true);
+  });
+
+  setHostObjectField(config_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("config.get")));
+  setHostObjectField(config_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("config.set")));
+  setHostObjectField(config_obj, "save", Value::makeHostFuncId(getHostFunctionIndex("config.save")));
+  setHostObjectField(config_obj, "load", Value::makeHostFuncId(getHostFunctionIndex("config.load")));
+  setGlobal("config", Value::makeObjectId(config_obj.id));
+  setGlobal("cfg", Value::makeObjectId(config_obj.id)); // Alias cfg to config
+
+  auto conf_obj = heap_.allocateObject();
+  setGlobal("conf", Value::makeObjectId(conf_obj.id));
 
   // Register default window globals
   setGlobal("title", Value::makeNull());

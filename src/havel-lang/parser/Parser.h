@@ -142,6 +142,7 @@ private:
         false; // Inside hotkey block (bare expressions are input)
     bool allowBraceSugar = true; // Allow expr { ... } as call sugar
     bool inMatchExpression = false; // Inside match expression (disable arrow functions)
+    bool inConfigContext = false; // Inside config block (bare identifiers are strings)
   };
 
   ParserContext context;
@@ -266,7 +267,7 @@ private:
   std::vector<ast::EnumVariantDef> parseEnumVariants();
 
   std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>
-  parseKeyValueBlock();
+  parseKeyValueBlock(bool configContext = false);
   ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);
   std::unique_ptr<ast::Expression> parseLogicalOr();
   std::unique_ptr<ast::Expression> parseNullishCoalescing();

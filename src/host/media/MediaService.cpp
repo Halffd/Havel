@@ -13,7 +13,6 @@ struct MediaService::Impl {
   DBusConnection *connection = nullptr;
   std::string active_player;
 
-  // Auto-cleanup for DBus message
   struct DBusMessageDeleter {
     void operator()(DBusMessage *message) {
       if (message)
@@ -21,6 +20,138 @@ struct MediaService::Impl {
     }
   };
   using DBusMessagePtr = std::unique_ptr<DBusMessage, DBusMessageDeleter>;
+
+  int64_t get_int64_property(const std::string &property_name) {
+    if (active_player.empty()) {
+      find_active_player();
+      if (active_player.empty()) {
+        throw std::runtime_error("No active media player found");
+      }
+    }
+
+    DBusMessagePtr msg(dbus_message_new_method_call(
+        active_player.c_str(), "/org/mpris/MediaPlayer2",
+        "org.freedesktop.DBus.Properties", "Get"));
+
+    if (!msg)
+      throw std::runtime_error("Failed to create DBus message");
+
+    const char *interface_name = "org.mpris.MediaPlayer2.Player";
+
+    dbus_message_append_args(msg.get(), DBUS_TYPE_STRING, &interface_name,
+                             DBUS_TYPE_STRING, &property_name,
+                             DBUS_TYPE_INVALID);
+
+    DBusError error;
+    dbus_error_init(&error);
+
+    DBusMessagePtr reply(dbus_connection_send_with_reply_and_block(
+        connection, msg.get(), 1000, &error));
+
+    if (dbus_error_is_set(&error)) {
+      std::string err_msg = error.message;
+      dbus_error_free(&error);
+      throw std::runtime_error("DBus error: " + err_msg);
+    }
+
+    DBusMessageIter iter, variant_iter;
+    if (!dbus_message_iter_init(reply.get(), &iter)) {
+      throw std::runtime_error("Reply has no arguments");
+    }
+
+    dbus_message_iter_recurse(&iter, &variant_iter);
+
+    int64_t value = 0;
+    if (dbus_message_iter_get_arg_type(&variant_iter) == DBUS_TYPE_INT64) {
+      dbus_message_iter_get_basic(&variant_iter, &value);
+    }
+
+    return value;
+  }
+
+  void set_int64_property(const std::string &property_name, int64_t value) {
+    if (active_player.empty()) {
+      find_active_player();
+      if (active_player.empty()) {
+        throw std::runtime_error("No active media player found");
+      }
+    }
+
+    DBusMessagePtr msg(dbus_message_new_method_call(
+        active_player.c_str(), "/org/mpris/MediaPlayer2",
+        "org.freedesktop.DBus.Properties", "Set"));
+
+    if (!msg)
+      throw std::runtime_error("Failed to create DBus message");
+
+    const char *interface_name = "org.mpris.MediaPlayer2.Player";
+
+    DBusMessageIter args_iter, variant;
+    dbus_message_iter_init_append(msg.get(), &args_iter);
+    dbus_message_iter_append_basic(&args_iter, DBUS_TYPE_STRING, &interface_name);
+    dbus_message_iter_append_basic(&args_iter, DBUS_TYPE_STRING, &property_name);
+
+    dbus_message_iter_open_container(&args_iter, DBUS_TYPE_VARIANT, "x", &variant);
+    dbus_message_iter_append_basic(&variant, DBUS_TYPE_INT64, &value);
+    dbus_message_iter_close_container(&args_iter, &variant);
+
+    DBusError error;
+    dbus_error_init(&error);
+
+    dbus_connection_send_with_reply_and_block(connection, msg.get(), 1000,
+                                               &error);
+
+    if (dbus_error_is_set(&error)) {
+      std::string err_msg = error.message;
+      dbus_error_free(&error);
+
+      if (err_msg.find("org.freedesktop.DBus.Error.ServiceUnknown") !=
+          std::string::npos) {
+        active_player = "";
+        set_int64_property(property_name, value);
+      } else {
+        throw std::runtime_error("DBus error: " + err_msg);
+      }
+    }
+  }
+
+  void seek(int64_t offset) {
+    if (active_player.empty()) {
+      find_active_player();
+      if (active_player.empty()) {
+        throw std::runtime_error("No active media player found");
+      }
+    }
+
+    DBusMessagePtr msg(dbus_message_new_method_call(
+        active_player.c_str(), "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player", "Seek"));
+
+    if (!msg)
+      throw std::runtime_error("Failed to create DBus message");
+
+    dbus_message_append_args(msg.get(), DBUS_TYPE_INT64, &offset,
+                             DBUS_TYPE_INVALID);
+
+    DBusError error;
+    dbus_error_init(&error);
+
+    dbus_connection_send_with_reply_and_block(connection, msg.get(), 1000,
+                                               &error);
+
+    if (dbus_error_is_set(&error)) {
+      std::string err_msg = error.message;
+      dbus_error_free(&error);
+
+      if (err_msg.find("org.freedesktop.DBus.Error.ServiceUnknown") !=
+          std::string::npos) {
+        active_player = "";
+        seek(offset);
+      } else {
+        throw std::runtime_error("DBus error: " + err_msg);
+      }
+    }
+  }
 
   Impl() {
     DBusError error;
@@ -300,13 +431,13 @@ void MediaService::setVolume(double volume) {
 }
 
 int64_t MediaService::getPosition() const {
-  // TODO: Implement position retrieval
-  return 0;
+  return impl_->get_int64_property("Position");
 }
 
 void MediaService::setPosition(int64_t position) {
-  // TODO: Implement position setting
-  (void)position;
+  int64_t current = getPosition();
+  int64_t offset = position - current;
+  impl_->seek(offset);
 }
 
 std::vector<std::string> MediaService::getAvailablePlayers() const {

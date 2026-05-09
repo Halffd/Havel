@@ -26,26 +26,45 @@ void ModeService::setMode(const std::string& modeName) {
 }
 
 void ModeService::defineMode(const std::string& name,
-                              compiler::CallbackId conditionId,
-                              compiler::CallbackId enterId,
-                              compiler::CallbackId exitId) {
-    (void)conditionId;  // ModeManager uses AST expressions for conditions, not callbacks
-    if (!m_vm || !m_manager) return;
-    
-    // Create mode definition with callbacks that invoke through VM
-    havel::ModeManager::ModeDefinition mode;
-    mode.name = name;
-    // Note: conditionExpr is for AST expressions, not callbacks
-    // Condition handling is done through mode.tick() checking CallbackId
-    
-    // Enter callback - invokes through VM
-    if (enterId != compiler::INVALID_CALLBACK_ID) {
-        mode.onEnter = [vm = m_vm, id = enterId]() {
-            try {
-                vm->invokeCallback(id);
-            } catch (...) {
-                // Callback failed, ignore
-            }
+                             compiler::CallbackId conditionId,
+                             compiler::CallbackId enterId,
+                             compiler::CallbackId exitId) {
+  if (!m_vm || !m_manager) return;
+
+  havel::ModeManager::ModeDefinition mode;
+  mode.name = name;
+
+  if (conditionId != compiler::INVALID_CALLBACK_ID) {
+    mode.conditionCallback = [vm = m_vm, id = conditionId]() -> bool {
+      try {
+        auto result = vm->invokeCallback(id);
+        return result.asBool();
+      } catch (...) {
+        return false;
+      }
+    };
+  }
+
+  if (enterId != compiler::INVALID_CALLBACK_ID) {
+    mode.onEnter = [vm = m_vm, id = enterId]() {
+      try {
+        vm->invokeCallback(id);
+      } catch (...) {
+      }
+    };
+  }
+
+  if (exitId != compiler::INVALID_CALLBACK_ID) {
+    mode.onExit = [vm = m_vm, id = exitId]() {
+      try {
+        vm->invokeCallback(id);
+      } catch (...) {
+      }
+    };
+  }
+
+  m_manager->defineMode(std::move(mode));
+}
         };
     }
 

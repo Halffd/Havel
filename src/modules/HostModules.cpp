@@ -1,6 +1,6 @@
 // HostModules.cpp
-// Register all host modules
-// Simple, explicit registration
+// Service registry initialization for host modules
+// Module registration is done via StdLibModules.cpp using VMApi
 
 #include "havel-lang/runtime/ModuleLoader.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
@@ -27,40 +27,8 @@
 #include "../host/image/ImageService.hpp"
 #include "../host/filesystem/FileSystemService.hpp"
 #include "../host/network/NetworkService.hpp"
+#include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
-
-// Module registration functions (from .cpp files, no headers needed)
-namespace havel::modules {
-    void registerWindowQueryModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerBrightnessModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerAudioModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerScreenshotModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerClipboardModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerPixelModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerAutomationModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerLauncherModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerMediaModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerHelpModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerFileManagerModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerSystemModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerDetectorModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerGUIModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerAltTabModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerMapManagerModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerIOModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerInputModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerHotkeyModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerModeModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerBrowserModule(Environment&, std::shared_ptr<IHostAPI>);
-        void registerProcessModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerShellExecutorModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerRuntimeModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerConfigModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerConcurrencyModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerHTTPModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerTimerModule(Environment&, std::shared_ptr<IHostAPI>);
-    void registerAppModule(Environment&, std::shared_ptr<IHostAPI>);
-}
 
 namespace havel {
 
@@ -77,10 +45,11 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
 
  auto& registry = host::ServiceRegistry::instance();
 
- if (hostAPI->GetIO()) {
- auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
- registry.registerService<host::IOService>(ioService);
- } else {
+  if (hostAPI->GetIO()) {
+    auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
+    registry.registerService<host::IOService>(ioService);
+    host::MouseService::setIO(hostAPI->GetIO());
+  } else {
  debug("initializeServiceRegistry: IO not available, skipping IO-dependent services");
  }
 
@@ -96,9 +65,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
  registry.registerService<host::WindowService>(windowService);
  }
 
- if (hostAPI->GetModeManager()) {
- // ModeService will be created in createHostBridgeDependencies()
- }
+  if (hostAPI->GetModeManager()) {
+    auto modeService = std::make_shared<host::ModeService>(nullptr, hostAPI->GetModeManager());
+    registry.registerService<host::ModeService>(modeService);
+  }
 
     // ProcessManager is optional
     if (hostAPI->GetProcessManager()) {
@@ -148,6 +118,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     auto altTabService = std::make_shared<host::AltTabService>();
     registry.registerService<host::AltTabService>(altTabService);
 
+  // Timer service (tracking/management)
+  auto timerService = std::make_shared<host::TimerService>();
+  registry.registerService<host::TimerService>(timerService);
+
  // Automation service needs IO pointer
  if (hostAPI->GetIO()) {
  auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
@@ -174,6 +148,22 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     registry.registerService<host::MediaService>(mediaService);
   } catch (const std::exception& e) {
     debug("initializeServiceRegistry: MediaService failed: {}", e.what());
+  }
+
+  // App service (system info, env, clipboard helpers)
+  try {
+    auto appService = std::make_shared<host::AppService>();
+    registry.registerService<host::AppService>(appService);
+  } catch (const std::exception& e) {
+    debug("initializeServiceRegistry: AppService failed: {}", e.what());
+  }
+
+  // Network service (HTTP via curl)
+  try {
+    auto networkService = std::make_shared<host::NetworkService>();
+    registry.registerService<host::NetworkService>(networkService);
+  } catch (const std::exception& e) {
+    debug("initializeServiceRegistry: NetworkService failed: {}", e.what());
   }
 
     debug("ServiceRegistry initialized with {} services", registry.size());

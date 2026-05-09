@@ -91,11 +91,11 @@ bool IOService::suspend() {
 }
 
 bool IOService::resume() {
-    if (!m_io) return false;
-    if (m_io->isSuspended) {
-        return m_io->Suspend();
-    }
-    return true;
+  if (!m_io) return false;
+  if (m_io->isSuspended) {
+    return m_io->Resume();
+  }
+  return true;
 }
 
 bool IOService::isSuspended() const {

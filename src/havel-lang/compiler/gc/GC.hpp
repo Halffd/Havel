@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -444,6 +445,7 @@ private:
     std::vector<uint32_t> sweep_keys_;
     size_t sweep_index_ = 0;
     IncrementalState sweep_phase_ = IncrementalState::Idle;
+    std::recursive_mutex mutex_;
 };
 
 }

@@ -53,12 +53,10 @@ public:
         hostContext_->vm = vm_.get();
 
         hostBridge_ = compiler::createHostBridge(*hostContext_);
-        vm_->suspendGC();
-        if (!leanStartup) {
-            registerStdLibWithVM(*hostBridge_);
-        }
-        vm_->resumeGC();
-        hostBridge_->install(!leanStartup);
+  vm_->suspendGC();
+  registerStdLibWithVM(*hostBridge_);
+  vm_->resumeGC();
+  hostBridge_->install(!leanStartup);
 
         for (const auto& [name, fn] : hostBridge_->options().host_functions) {
             vm_->registerHostFunction(name, fn);

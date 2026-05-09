@@ -2737,7 +2737,19 @@ void VM::registerDefaultHostGlobals() {
   auto system_obj = heap_.allocateObject();
   setHostObjectField(system_obj, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
   setHostObjectField(system_obj, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
-  setGlobal("system", Value::makeObjectId(system_obj.id));
+  auto sysIt = globals.find("system");
+  if (sysIt != globals.end() && sysIt->second.isObjectId()) {
+    ObjectRef existingRef{sysIt->second.asObjectId(), true};
+    auto* existingObj = heap_.object(existingRef.id);
+    if (existingObj) {
+      setHostObjectField(existingRef, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
+      setHostObjectField(existingRef, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
+    } else {
+      setGlobal("system", Value::makeObjectId(system_obj.id));
+    }
+  } else {
+    setGlobal("system", Value::makeObjectId(system_obj.id));
+  }
 
   auto struct_obj = heap_.allocateObject();
   setHostObjectField(struct_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("struct.define")));

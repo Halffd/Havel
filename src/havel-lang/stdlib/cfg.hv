@@ -1,0 +1,10 @@
+// cfg.hv - compatibility wrapper for config system
+// Aliases the global 'config' object and provides module-style exports
+
+load = config.load
+save = config.save
+get = config.get
+set = config.set
+
+// Also export as a namespace for 'cfg.load' usage
+cfg = config

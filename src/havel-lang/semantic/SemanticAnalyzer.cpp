@@ -902,7 +902,7 @@ void SemanticAnalyzer::initializeKnownModules() {
                                 "getHistory", "clearHistory", "getCount"};
 
   // Timer module
-  knownModules_["timer"] = {"setTimeout", "setInterval", "clear"};
+  knownModules_["timer"] = {"setTimeout", "setInterval", "clear", "activeCount", "clearAll"};
 
   // App module
   knownModules_["app"] = {"enableReload", "disableReload", "toggleReload",

@@ -2,14 +2,22 @@
 // Register all standard library modules with VM
 
 #ifndef HAVEL_PURE_VM
+#include "../../modules/alttab/AltTabModule.hpp"
+#include "../../modules/app/AppModule.hpp"
+#include "../../modules/audio/AudioModule.hpp"
 #include "../../modules/automation/AutomationModule.hpp"
 #include "../../modules/automation/PixelModule.hpp"
+#include "../../modules/brightness/BrightnessModule.hpp"
+#include "../../modules/clipboard/ClipboardModule.hpp"
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/ffi/FFIModule.hpp"
+#include "../../modules/filesystem/FileManagerModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
-#include "../../modules/hotkey/HotkeyModule.hpp"
 #include "../../modules/image/ImageModule.hpp"
+#include "../../modules/io/IOModule.hpp"
+#include "../../modules/mapmanager/MapManagerModule.hpp"
 #include "../../modules/media/MediaModule.hpp"
+#include "../../modules/mode/ModeModule.hpp"
 #include "../../modules/mouse/MouseModule.hpp"
 #include "../../modules/screenshot/ScreenshotModule.hpp"
 #include "../../modules/ui/UIModule.hpp"
@@ -27,6 +35,7 @@ void registerTypeModule(const compiler::VMApi &api);
 void registerRegexModule(const compiler::VMApi &api);
 void registerPhysicsModule(const compiler::VMApi &api);
 void registerTimeModule(const compiler::VMApi &api);
+void registerTimerModule(const compiler::VMApi &api);
 #ifndef HAVEL_PURE_VM
 void registerHotkeyModule(const compiler::VMApi &api);
 #endif
@@ -58,6 +67,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerRegexModule(api);
   stdlib::registerPhysicsModule(api);
   stdlib::registerTimeModule(api);
+  stdlib::registerTimerModule(api);
 #ifndef HAVEL_PURE_VM
   stdlib::registerHotkeyModule(api);
 #endif
@@ -85,6 +95,15 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   modules::registerImageModule(api);
   modules::registerMediaModule(api);
   modules::registerScreenshotModule(api);
+  modules::registerAltTabModule(api);
+  modules::registerAppModule(api);
+  modules::registerAudioModule(api);
+  modules::registerBrightnessModule(api);
+  modules::registerFileManagerModule(api);
+  modules::registerIOModule(api);
+  modules::registerMapManagerModule(api);
+  modules::registerModeModule(api);
+  modules::registerClipboardModule(api);
   modules::ffi::registerFFIModule(api);
 #endif
 }
@@ -100,6 +119,7 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerRegexModule(api);
   stdlib::registerPhysicsModule(api);
   stdlib::registerTimeModule(api);
+  stdlib::registerTimerModule(api);
   stdlib::registerFsModule(api);
   stdlib::registerRandomModule(api);
   stdlib::registerLogModule(api);

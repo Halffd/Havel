@@ -2,7 +2,7 @@ x = ['a', '~', 'c', 0]
 f1 => {
    if #x < 1 return
    xv = x.pop()
-   send(f"xxxxx {xv}")
+   io.send(f"xxxxx {xv}")
 }
 a => print "hello"
 b => {
@@ -31,7 +31,7 @@ c => {
       sleep(100)
     }
 }
-!d => send "#d"
+!d => io.send("#d")
 RShift => {
   print 'zoom'
   while z > 0 {
@@ -46,13 +46,12 @@ dhk=d => {
   print @alias
   print @key
   @disable()
-  print @status
-  print d
+  print "hotkey disabled"
 }
 e => {
   exit(0)
 }
 f => {
-  run("firefox")
+  shell.run("firefox")
 }
 print dhk

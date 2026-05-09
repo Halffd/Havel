@@ -2928,14 +2928,14 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
 
     bool success = ctx->hotkeyManager->AddHotkey(
         hotkeyStr, [vm, callbackId, hotkeyContext]() {
-        auto execCtx = vm->createExecutionContext();
+        vm->beginHotkeyExecution();
         try {
-            execCtx.invokeCallback(callbackId, {hotkeyContext});
-        } catch (const std::exception &e) {
-            ::havel::error("[Hotkey] Execution failed: {}", e.what());
+            vm->invokeCallback(callbackId, {hotkeyContext});
         } catch (...) {
-            ::havel::error("[Hotkey] Execution failed with unknown error");
+            vm->endHotkeyExecution();
+            throw;
         }
+        vm->endHotkeyExecution();
     });
 
     // Register conditional hotkey (when/if mode conditions)
@@ -2947,20 +2947,20 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 return !mode.empty() && mode != "default";
             },
             [vm, callbackId, hotkeyContext]() {
-                auto execCtx = vm->createExecutionContext();
+                vm->beginHotkeyExecution();
                 try {
-                    execCtx.invokeCallback(callbackId, {hotkeyContext});
-                } catch (const std::exception &e) {
-                    ::havel::error("[Hotkey] Conditional execution failed: {}", e.what());
+                    vm->invokeCallback(callbackId, {hotkeyContext});
                 } catch (...) {
-                    ::havel::error("[Hotkey] Conditional execution failed with unknown error");
+                    vm->endHotkeyExecution();
+                    throw;
                 }
+                vm->endHotkeyExecution();
             });
     }
 
     // Return hotkey context object on success, null on failure
   // This allows: let hk = ^t => { ... }
-    if (success) {
+if (success) {
         return hotkeyContext;
     }
     return Value::makeNull();
@@ -2999,14 +2999,14 @@ Value InputBridge::handleHotkeyRegisterConditional(
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
     auto makeInvoke = [vm, callbackId, hotkeyContext]() {
-        auto execCtx = vm->createExecutionContext();
+        vm->beginHotkeyExecution();
         try {
-            execCtx.invokeCallback(callbackId, {hotkeyContext});
-        } catch (const std::exception &e) {
-            ::havel::error("[Hotkey] Contextual execution failed: {}", e.what());
+            vm->invokeCallback(callbackId, {hotkeyContext});
         } catch (...) {
-            ::havel::error("[Hotkey] Contextual execution failed with unknown error");
+            vm->endHotkeyExecution();
+            throw;
         }
+        vm->endHotkeyExecution();
     };
 
     auto trueAction = makeInvoke;
@@ -3015,9 +3015,8 @@ Value InputBridge::handleHotkeyRegisterConditional(
     };
 
     auto conditionFn = [vm, condCallbackId]() -> bool {
-        auto execCtx = vm->createExecutionContext();
         try {
-            Value result = execCtx.invokeCallback(condCallbackId, {});
+            Value result = vm->invokeCallback(condCallbackId, {});
             return result.asBool();
         } catch (...) {
             return false;

@@ -14,7 +14,6 @@ constexpr size_t kMaxIterationsPerStep = 100000;
 }
 
 void GCHeap::reset() {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     closures_.clear();
     arrays_.clear();
     objects_.clear();
@@ -95,7 +94,6 @@ void GCHeap::reset() {
 }
 
 ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_closure_id_++;
     closures_.emplace(id, std::move(closure));
     closure_ages_[id] = 0;
@@ -104,26 +102,22 @@ ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
 }
 
 StringRef GCHeap::allocateString(std::string value) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_string_id_++;
     strings_.emplace(id, std::move(value));
     return StringRef{.id = id};
 }
 
 std::string *GCHeap::string(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
 const std::string *GCHeap::string(uint32_t id) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
 ArrayRef GCHeap::allocateArray() {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_array_id_++;
     arrays_[id] = {};
     array_ages_[id] = 0;
@@ -132,7 +126,6 @@ ArrayRef GCHeap::allocateArray() {
 }
 
 ObjectRef GCHeap::allocateObject(bool sorted) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_object_id_++;
     ObjectEntry entry;
     entry.sorted = sorted;
@@ -143,7 +136,6 @@ ObjectRef GCHeap::allocateObject(bool sorted) {
 }
 
 SetRef GCHeap::allocateSet() {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_set_id_++;
     sets_[id] = {};
     set_ages_[id] = 0;
@@ -152,7 +144,6 @@ SetRef GCHeap::allocateSet() {
 }
 
 RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_range_id_++;
     Range range;
     range.start = start;
@@ -165,14 +156,12 @@ RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
 ErrorRef GCHeap::allocateError(const std::string &errorType,
     const std::string &message,
     const std::string &stackTrace, uint32_t line, uint32_t column) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_error_id_++;
     errors_[id] = ErrorObject(errorType, message, stackTrace, line, column);
     return ErrorRef{.id = id};
 }
 
 IteratorRef GCHeap::allocateIterator(const Value &iterable) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_iterator_id_++;
     Iterator iter;
     iter.iterable = iterable;
@@ -206,21 +195,18 @@ uint32_t GCHeap::createIterator(const Value &iterable) {
 
 uint32_t GCHeap::registerEnumType(const std::string &name,
     const std::vector<std::string> &variants) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     uint32_t id = static_cast<uint32_t>(enumTypes_.size());
     enumTypes_.push_back(EnumType{name, variants});
     return id;
 }
 
 EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_array_id_++;
     enums_[id] = {tag, std::vector<Value>(payloadCount, Value::makeNull())};
     return EnumRef{.id = id, .tag = tag, .typeId = typeId};
 }
 
 Value GCHeap::iteratorNext(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto *iter = iterator(id);
     if (!iter) {
         auto resultObj = allocateObject();
@@ -341,37 +327,31 @@ bool GCHeap::isCollectionInProgress() const {
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ArrayEntry *GCHeap::array(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = arrays_.find(id);
     return it == arrays_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ArrayEntry *GCHeap::array(uint32_t id) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = arrays_.find(id);
     return it == arrays_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = objects_.find(id);
     return it == objects_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ObjectEntry *GCHeap::object(uint32_t id) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = objects_.find(id);
     return it == objects_.end() ? nullptr : &it->second;
 }
@@ -417,19 +397,16 @@ const GCHeap::ErrorObject *GCHeap::error(uint32_t id) const {
 }
 
 uint64_t GCHeap::pinExternalRoot(const Value &value) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint64_t id = next_external_root_id_++;
     external_roots_[id] = value;
     return id;
 }
 
 bool GCHeap::unpinExternalRoot(uint64_t root_id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return external_roots_.erase(root_id) > 0;
 }
 
 std::optional<Value> GCHeap::externalRoot(uint64_t root_id) const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = external_roots_.find(root_id);
     if (it == external_roots_.end()) {
         return std::nullopt;
@@ -438,7 +415,6 @@ std::optional<Value> GCHeap::externalRoot(uint64_t root_id) const {
 }
 
 GCHeap::Stats GCHeap::stats() const {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
     uint64_t heap_size = 0;
     for (const auto &[_, array] : arrays_) {
         heap_size += sizeof(array) +
@@ -494,7 +470,7 @@ void GCHeap::maybeCollectGarbage(
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
     allocations_since_last_++;
 
     if (allocations_since_last_ >= allocation_budget_) {
@@ -513,7 +489,7 @@ void GCHeap::collectGarbage(
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
     startIncrementalCollection(stack_values, locals, globals, active_closure_ids, open_local_reader);
 
     size_t iterations = 0;
@@ -547,7 +523,7 @@ void GCHeap::stepGarbageCollection(
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
     size_t work_budget) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
     if (work_budget == 0) {
         return;
     }

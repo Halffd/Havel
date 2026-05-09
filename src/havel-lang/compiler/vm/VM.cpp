@@ -8601,10 +8601,6 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
         frame_count_++;
 
   // Set up arguments
-  uint32_t needed_locals = func->local_count;
-  if (locals.size() < needed_locals) {
-    locals.resize(needed_locals, nullptr);
-  }
   for (size_t i = 0; i < args.size() && i < func->param_count; ++i) {
     locals[i] = args[i];
   }
@@ -8616,12 +8612,6 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
     const auto *function = frame_arena_[active_frame_idx].function;
     uint32_t ip = frame_arena_[active_frame_idx].ip;
     size_t entry_frame_count = frame_count_;
-
-    // Handle implicit return if IP reaches end of function instructions
-    if (ip >= function->instructions.size()) {
-      doReturn();
-      continue;
-    }
 
     const auto &instruction = function->instructions[ip];
 
@@ -9019,6 +9009,75 @@ const auto &cell = closure->upvalues[upvalue_index];
       break;
     }
 
+  case OpCode::EQ: {
+    Value right = pop();
+    Value left = pop();
+    if (left.isInt() && right.isInt()) {
+      push(left.asInt() == right.asInt());
+    } else if (left.isStringValId() && right.isStringValId()) {
+      // TODO: string pool lookup
+      std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
+      std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
+      push(l == r);
+    } else {
+      // For other types, only equal if same type and both are null
+      if (left.isNull() && right.isNull()) {
+        push(true);
+      } else {
+        push(false);
+      }
+    }
+    break;
+  }
+
+  case OpCode::LT: {
+    Value right = pop();
+    Value left = pop();
+    if (left.isInt() && right.isInt()) {
+      push(left.asInt() < right.asInt());
+    } else {
+      double l = left.isInt()
+                     ? static_cast<double>(left.asInt())
+                     : left.asDouble();
+      double r = right.isInt()
+                     ? static_cast<double>(right.asInt())
+                     : right.asDouble();
+      push(l < r);
+    }
+    break;
+  }
+
+  case OpCode::GT: {
+    Value right = pop();
+    Value left = pop();
+    if (left.isInt() && right.isInt()) {
+      push(left.asInt() > right.asInt());
+    } else {
+      double l = left.isInt()
+                     ? static_cast<double>(left.asInt())
+                     : left.asDouble();
+      double r = right.isInt()
+                     ? static_cast<double>(right.asInt())
+                     : right.asDouble();
+      push(l > r);
+    }
+    break;
+  }
+
+ case OpCode::JUMP: {
+ uint32_t target = instruction.operands[0].asInt();
+ currentFrame().ip = target;
+ break;
+ }
+
+  case OpCode::JUMP_IF_FALSE: {
+    uint32_t target = instruction.operands[0].asInt();
+    Value condition = pop();
+    if (!parent_vm_->isTruthy(condition)) {
+      currentFrame().ip = target;
+    }
+    break;
+  }
 
   case OpCode::CALL: {
     uint32_t arg_count = instruction.operands[0].asInt();
@@ -9030,22 +9089,9 @@ const auto &cell = closure->upvalues[upvalue_index];
 
     // Handle host function call
     if (callee_value.isHostFuncId()) {
-      uint32_t host_func_idx = callee_value.asHostFuncId();
-      if (host_func_idx >= parent_vm_->host_function_names_.size()) {
-        COMPILER_THROW("Host function index out of range: " +
-                                 std::to_string(host_func_idx));
-      }
-      const std::string &name = parent_vm_->host_function_names_[host_func_idx];
-      auto it = parent_vm_->host_functions.find(name);
-      if (it == parent_vm_->host_functions.end()) {
-        COMPILER_THROW("Host function not found: " + name);
-      }
-      
-      // Host functions in context execution need a HostContext
-      // Note: This uses the parent VM for some services but execution state is isolated
-      Value result = it->second(args); 
-      push(result);
-      break;
+      // TODO: host func name lookup
+      (void)callee_value.asHostFuncId();
+      COMPILER_THROW("Host function call in execution context not yet supported with NaN boxing");
     }
 
     // Handle VM function/closure call
@@ -9169,19 +9215,15 @@ const auto &cell = closure->upvalues[upvalue_index];
     }
     Value receiver = pop();
 
-    // Determine type name for dispatch
+    // Try prototype dispatch
     std::string type_name;
     if (receiver.isStringValId() || receiver.isStringId()) type_name = "string";
     else if (receiver.isInt()) type_name = "int";
     else if (receiver.isDouble()) type_name = "float";
     else if (receiver.isBool()) type_name = "bool";
     else if (receiver.isArrayId()) type_name = "array";
-    else if (receiver.isObjectId()) type_name = "object";
     else { push(Value::makeNull()); break; }
 
-    bool found = false;
-
-    // 1. Try prototype dispatch (primitives and built-in object methods)
     auto typeIt = parent_vm_->prototypes_.find(type_name);
     if (typeIt != parent_vm_->prototypes_.end()) {
       auto methodIt = typeIt->second.find(method_name);
@@ -9190,359 +9232,19 @@ const auto &cell = closure->upvalues[upvalue_index];
         all_args.reserve(arg_count + 1);
         all_args.push_back(receiver);
         all_args.insert(all_args.end(), args.begin(), args.end());
-        doCallInContext(methodIt->second, std::move(all_args));
-        found = true;
+        uint32_t func_idx = methodIt->second;
+        if (func_idx < parent_vm_->host_function_names_.size()) {
+          auto fnIt = parent_vm_->host_functions.find(parent_vm_->host_function_names_[func_idx]);
+          if (fnIt != parent_vm_->host_functions.end()) {
+            push(fnIt->second(all_args));
+            break;
+          }
+        }
       }
     }
-
-    // 2. Try module object for monkey-patched methods (e.g. Hotkey.disable)
-    if (!found) {
-        std::string capName = type_name;
-        if (!capName.empty()) capName[0] = static_cast<char>(std::toupper(capName[0]));
-        
-        // For objects, also try "Hotkey" specifically as it's common in this context
-        std::vector<std::string> try_modules = {type_name, capName};
-        if (receiver.isObjectId()) try_modules.push_back("Hotkey");
-
-        for (const auto &modName : try_modules) {
-            auto modVal = parent_vm_->getGlobalThreadSafe(modName);
-            if (modVal && modVal->isObjectId()) {
-                auto *modObj = parent_vm_->heap_.object(modVal->asObjectId());
-                if (modObj) {
-                    auto *val = modObj->get(method_name);
-                    if (val) {
-                        std::vector<Value> all_args;
-                        all_args.reserve(arg_count + 1);
-                        all_args.push_back(receiver);
-                        all_args.insert(all_args.end(), args.begin(), args.end());
-                        doCallInContext(*val, std::move(all_args));
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!found) push(Value::makeNull());
+    push(Value::makeNull());
     break;
   }
-
-    case OpCode::SWAP: {
-        Value b = pop();
-        Value a = pop();
-        push(b);
-        push(a);
-        break;
-    }
-
-    case OpCode::LENGTH: {
-        Value val = pop();
-        if (val.isArrayId()) {
-            auto *arr = parent_vm_->heap_.array(val.asArrayId());
-            push(Value::makeInt(arr ? static_cast<int64_t>(arr->size()) : 0));
-        } else if (val.isObjectId()) {
-            auto *obj = parent_vm_->heap_.object(val.asObjectId());
-            push(Value::makeInt(obj ? static_cast<int64_t>(obj->data.size()) : 0));
-        } else if (val.isStringId()) {
-            auto *s = parent_vm_->heap_.string(val.asStringId());
-            push(Value::makeInt(s ? static_cast<int64_t>(s->size()) : 0));
-        } else if (val.isStringValId()) {
-            push(Value::makeInt(static_cast<int64_t>(parent_vm_->resolveStringKey(val).size())));
-        } else {
-            push(Value::makeInt(0));
-        }
-        break;
-    }
-
-    case OpCode::STRING_CONCAT: {
-        Value right = pop();
-        Value left = pop();
-        std::string l = parent_vm_->toString(left);
-        std::string r = parent_vm_->toString(right);
-        auto ref = parent_vm_->createRuntimeString(l + r);
-        push(Value::makeStringId(ref.id));
-        break;
-    }
-
-    case OpCode::TO_STRING: {
-        Value val = pop();
-        auto ref = parent_vm_->createRuntimeString(parent_vm_->toString(val));
-        push(Value::makeStringId(ref.id));
-        break;
-    }
-
-    case OpCode::IS_NULL: {
-        push(Value::makeBool(pop().isNull()));
-        break;
-    }
-
-    case OpCode::NOT: {
-        push(Value::makeBool(!pop().asBool()));
-        break;
-    }
-
-    case OpCode::NEGATE: {
-        Value val = pop();
-        if (val.isInt()) push(Value::makeInt(-val.asInt()));
-        else if (val.isDouble()) push(Value::makeDouble(-val.asDouble()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::IS: {
-        Value right = pop();
-        Value left = pop();
-        push(Value::makeBool(left.rawBits() == right.rawBits()));
-        break;
-    }
-
-    case OpCode::MOD: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) {
-            int64_t r = right.asInt();
-            if (r == 0) COMPILER_THROW("Division by zero");
-            push(Value::makeInt(left.asInt() % r));
-        } else {
-            push(Value::makeNull());
-        }
-        break;
-    }
-
-    case OpCode::BIT_AND: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeInt(left.asInt() & right.asInt()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::BIT_OR: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeInt(left.asInt() | right.asInt()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::BIT_XOR: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeInt(left.asInt() ^ right.asInt()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::BIT_LSH: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeInt(left.asInt() << right.asInt()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::BIT_RSH: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeInt(left.asInt() >> right.asInt()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::BIT_NOT: {
-        Value val = pop();
-        if (val.isInt()) push(Value::makeInt(~val.asInt()));
-        else push(Value::makeNull());
-        break;
-    }
-
-    case OpCode::LT: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeBool(left.asInt() < right.asInt()));
-        else if ((left.isInt() || left.isDouble()) && (right.isInt() || right.isDouble())) {
-            double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
-            double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
-            push(Value::makeBool(l < r));
-        } else push(Value::makeBool(false));
-        break;
-    }
-
-    case OpCode::LTE: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeBool(left.asInt() <= right.asInt()));
-        else if ((left.isInt() || left.isDouble()) && (right.isInt() || right.isDouble())) {
-            double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
-            double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
-            push(Value::makeBool(l <= r));
-        } else push(Value::makeBool(false));
-        break;
-    }
-
-    case OpCode::GT: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeBool(left.asInt() > right.asInt()));
-        else if ((left.isInt() || left.isDouble()) && (right.isInt() || right.isDouble())) {
-            double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
-            double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
-            push(Value::makeBool(l > r));
-        } else push(Value::makeBool(false));
-        break;
-    }
-
-    case OpCode::GTE: {
-        Value right = pop();
-        Value left = pop();
-        if (left.isInt() && right.isInt()) push(Value::makeBool(left.asInt() >= right.asInt()));
-        else if ((left.isInt() || left.isDouble()) && (right.isInt() || right.isDouble())) {
-            double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
-            double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
-            push(Value::makeBool(l >= r));
-        } else push(Value::makeBool(false));
-        break;
-    }
-
-    case OpCode::EQ: {
-        Value right = pop();
-        Value left = pop();
-        push(Value::makeBool(left == right));
-        break;
-    }
-
-    case OpCode::NEQ: {
-        Value right = pop();
-        Value left = pop();
-        push(Value::makeBool(!(left == right)));
-        break;
-    }
-
-    case OpCode::JUMP: {
-        uint32_t offset = instruction.operands[0].asInt();
-        currentFrame().ip = offset;
-        return; // Don't advance IP
-    }
-
-    case OpCode::JUMP_IF_FALSE: {
-        uint32_t offset = instruction.operands[0].asInt();
-        if (!pop().asBool()) {
-            currentFrame().ip = offset;
-            return; // Don't advance IP
-        }
-        break;
-    }
-
-    case OpCode::JUMP_IF_TRUE: {
-        uint32_t offset = instruction.operands[0].asInt();
-        if (pop().asBool()) {
-            currentFrame().ip = offset;
-            return; // Don't advance IP
-        }
-        break;
-    }
-
-    case OpCode::JUMP_IF_NULL: {
-        uint32_t offset = instruction.operands[0].asInt();
-        Value val = pop();
-        if (val.isNull()) {
-            currentFrame().ip = offset;
-            return; // Don't advance IP
-        }
-        push(val); // Put it back if not null
-        break;
-    }
-
-    case OpCode::PRINT: {
-        Value val = pop();
-        ::havel::info("[VM] {}", parent_vm_->toString(val));
-        break;
-    }
-
-    case OpCode::ARRAY_NEW: {
-        push(Value::makeArrayId(parent_vm_->createHostArray().id));
-        break;
-    }
-
-    case OpCode::ARRAY_PUSH: {
-        Value val = pop();
-        Value arrVal = pop();
-        if (arrVal.isArrayId()) {
-            auto *arr = parent_vm_->heap_.array(arrVal.asArrayId());
-            if (arr) arr->push_back(val);
-        }
-        push(arrVal);
-        break;
-    }
-
-    case OpCode::ARRAY_GET: {
-        Value index = pop();
-        Value arrVal = pop();
-        if (arrVal.isArrayId() && index.isInt()) {
-            auto *arr = parent_vm_->heap_.array(arrVal.asArrayId());
-            if (arr && index.asInt() >= 0 && index.asInt() < static_cast<int64_t>(arr->size())) {
-                push((*arr)[index.asInt()]);
-            } else {
-                push(Value::makeNull());
-            }
-        } else {
-            push(Value::makeNull());
-        }
-        break;
-    }
-
-    case OpCode::ARRAY_SET: {
-        Value val = pop();
-        Value index = pop();
-        Value arrVal = pop();
-        if (arrVal.isArrayId() && index.isInt()) {
-            auto *arr = parent_vm_->heap_.array(arrVal.asArrayId());
-            if (arr && index.asInt() >= 0 && index.asInt() < static_cast<int64_t>(arr->size())) {
-                (*arr)[index.asInt()] = val;
-            }
-        }
-        push(arrVal);
-        break;
-    }
-
-    case OpCode::OBJECT_NEW: {
-        push(Value::makeObjectId(parent_vm_->createHostObject().id));
-        break;
-    }
-
-    case OpCode::OBJECT_GET: {
-        Value key = pop();
-        Value objVal = pop();
-        if (objVal.isObjectId()) {
-            auto *obj = parent_vm_->heap_.object(objVal.asObjectId());
-            std::string keyStr = parent_vm_->toString(key);
-            if (obj) {
-                auto *val = obj->get(keyStr);
-                push(val ? *val : Value::makeNull());
-            } else {
-                push(Value::makeNull());
-            }
-        } else {
-            push(Value::makeNull());
-        }
-        break;
-    }
-
-    case OpCode::OBJECT_SET: {
-        Value val = pop();
-        Value key = pop();
-        Value objVal = pop();
-        if (objVal.isObjectId()) {
-            auto *obj = parent_vm_->heap_.object(objVal.asObjectId());
-            std::string keyStr = parent_vm_->toString(key);
-            if (obj) {
-                (*obj)[keyStr] = val;
-            }
-        }
-        push(objVal);
-        break;
-    }
 
   default:
     COMPILER_THROW(parent_vm_->formatErrorWithContext(
@@ -10055,103 +9757,6 @@ Value VM::runInContext(const std::string& source, Value context) {
   globals_mirror_object_id_ = old_mirror_id;
 
   return exec_result;
-}
-
-void VM::VMExecutionContext::doCallInContext(Value callee_value,
-                                             std::vector<Value> args) {
-    // Handle host function call
-    if (callee_value.isHostFuncId()) {
-        uint32_t host_func_idx = callee_value.asHostFuncId();
-        if (host_func_idx >= parent_vm_->host_function_names_.size()) {
-            COMPILER_THROW("Host function index out of range: " +
-                                     std::to_string(host_func_idx));
-        }
-        const std::string &name = parent_vm_->host_function_names_[host_func_idx];
-        auto it = parent_vm_->host_functions.find(name);
-        if (it == parent_vm_->host_functions.end()) {
-            COMPILER_THROW("Host function not found: " + name);
-        }
-        
-        Value result = it->second(args); 
-        stack.push(result);
-        return;
-    }
-
-    // Handle VM function/closure call
-    uint32_t function_index = 0;
-    uint32_t new_closure_id = 0;
-    if (callee_value.isFunctionObjId()) {
-        function_index = callee_value.asFunctionObjId();
-    } else if (callee_value.isClosureId()) {
-        new_closure_id = callee_value.asClosureId();
-        auto *closure = parent_vm_->heap_.closure(new_closure_id);
-        if (!closure) {
-            COMPILER_THROW("Closure not found");
-        }
-        function_index = closure->function_index;
-    } else {
-        COMPILER_THROW("CALL expects function or closure");
-    }
-
-    const auto *callee = current_chunk->getFunction(function_index);
-    if (!callee) {
-        COMPILER_THROW("Function not found");
-    }
-
-    // Advance caller IP if we are inside a frame
-    if (frame_count_ > 0) {
-        frame_arena_[frame_count_ - 1].ip++;
-    }
-
-    size_t base = locals.size();
-    locals.resize(base + callee->local_count, nullptr);
-    uint32_t sd = static_cast<uint32_t>(stack.size());
-    if (frame_arena_.size() <= frame_count_) {
-        CallFrame cf;
-        cf.function = callee;
-        cf.ip = 0;
-        cf.locals_base = base;
-        cf.closure_id = new_closure_id;
-        cf.stack_depth = sd;
-        frame_arena_.push_back(std::move(cf));
-    } else {
-        frame_arena_[frame_count_].function = callee;
-        frame_arena_[frame_count_].ip = 0;
-        frame_arena_[frame_count_].locals_base = base;
-        frame_arena_[frame_count_].closure_id = new_closure_id;
-        frame_arena_[frame_count_].stack_depth = sd;
-    }
-    frame_count_++;
-
-    // Set up parameters
-    for (uint32_t i = 0; i < callee->param_count && i < args.size(); ++i) {
-        locals[base + i] = std::move(args[i]);
-    }
-}
-
-void VM::VMExecutionContext::doReturn() {
-    if (frame_count_ == 0) return;
-    CallFrame &finished = frame_arena_[frame_count_ - 1];
-    
-    // Close upvalues
-    for (auto it = open_upvalues.begin(); it != open_upvalues.end(); ) {
-        uint32_t index = it->first;
-        if (index >= finished.locals_base) {
-            it->second->close(locals[index]);
-            it = open_upvalues.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    frame_count_--;
-    if (locals.size() > finished.locals_base) {
-        locals.resize(finished.locals_base);
-    }
-    while (stack.size() > finished.stack_depth) {
-        if (!stack.empty()) stack.pop();
-        else break;
-    }
 }
 
 } // namespace havel::compiler

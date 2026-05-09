@@ -214,7 +214,7 @@ void HostBridge::install(bool eagerBridgeInstall) {
     audioBridge_->install(options_);
     mpvBridge_->install(options_);
     displayBridge_->install(options_);
-    configBridge_->install(options_);
+    // configBridge_->install(options_); // Disabled in favor of ConfigModule.cpp
     modeBridge_->install(options_);
     timerBridge_->install(options_);
     appBridge_->install(options_);

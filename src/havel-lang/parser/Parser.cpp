@@ -2225,7 +2225,8 @@ Parser::produceAST(const std::string &sourceCode) {
 
     // Error throttle - stop after too many errors
     if (errors.size() > 100) {
-      throw std::runtime_error("Too many parse errors, aborting");
+      std::string firstError = errors.empty() ? "" : ": " + errors[0].message;
+      throw std::runtime_error("Too many parse errors, aborting" + firstError);
     }
 
     iterations++;

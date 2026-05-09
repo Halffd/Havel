@@ -20,7 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <iostream>
+// ... existing code ...
 #include <mutex>
 #include <optional>
 #include <regex>
@@ -244,8 +244,8 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     result += "]";
     return result;
   }
-if (value.isObjectId()) {
-auto *obj = heap_.object(value.asObjectId());
+  if (value.isObjectId()) {
+    auto *obj = heap_.object(value.asObjectId());
 if (!obj) return "{}";
 if (visitedIds.count(value.asObjectId())) return "{...}";
 visitedIds.insert(value.asObjectId());
@@ -1126,6 +1126,13 @@ Value VM::iteratorNext(IteratorRef iterRef) {
 
 // Object helpers
 std::vector<std::string> VM::getHostObjectKeys(ObjectRef object_ref) {
+  if (object_ref.id == globals_mirror_object_id_) {
+    std::vector<std::string> keys;
+    for (const auto &pair : globals) {
+      keys.push_back(pair.first);
+    }
+    return keys;
+  }
   auto *object = heap_.object(object_ref.id);
   if (!object)
     return {};
@@ -3109,10 +3116,6 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     // Get and execute instruction
     const auto &instruction = function->instructions[ip];
 
-    if (debug_mode) {
-            ::havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
-    }
-
     // Track for profiling
     if (profiling_enabled_) {
       opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
@@ -3311,11 +3314,6 @@ void VM::loadFiberState(Fiber *fiber) {
     // This was saved during the previous suspension
     frame_arena_[frame_count_ - 1].ip = fiber->ip;
   }
-
-  if (debug_mode) {
-        ::havel::debug("[VM] Loaded fiber {} state: {} frames, {} stack items",
-                     fiber->id, frame_count_, stack.size());
-  }
 }
 
 /**
@@ -3395,11 +3393,6 @@ void VM::saveFiberState(Fiber *fiber) {
   // STEP 5: Update fiber state if needed
   // Don't change the suspended_reason - that was set when suspension occurred
   // Just ensure the fiber's state reflects current execution point
-
-  if (debug_mode) {
-        ::havel::debug("[VM] Saved fiber {} state: {} frames, {} stack items",
-                     fiber->id, frame_count_, stack.size());
-  }
 }
 
 // ============================================================================
@@ -3413,10 +3406,6 @@ void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
   
   std::unique_lock<std::shared_mutex> lock(thread_wait_mutex_);
   thread_wait_map_[thread_id] = fiber;
-  
-  if (debug_mode) {
-        ::havel::debug("[VM] Registered fiber {} waiting on thread {}", fiber->id, thread_id);
-  }
 }
 
 // ============================================================================
@@ -3456,10 +3445,6 @@ Fiber* VM::getThreadWaitingFiber(uint32_t thread_id) const {
 void VM::unregisterThreadWait(uint32_t thread_id) {
   std::unique_lock<std::shared_mutex> lock(thread_wait_mutex_);
   thread_wait_map_.erase(thread_id);
-  
-  if (debug_mode) {
-        ::havel::debug("[VM] Unregistered thread wait for thread {}", thread_id);
-  }
 }
 
 std::vector<uint32_t> VM::getWaitingThreadIds() const {
@@ -3502,11 +3487,6 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     }
 
     const auto &instruction = function->instructions[ip];
-
-
-        if (debug_mode) {
-            ::havel::debug("IP: {} OP: {}", ip, static_cast<int>(instruction.opcode));
-        }
 
     try {
       if (profiling_enabled_) {
@@ -3706,6 +3686,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                                std::to_string(host_func_idx));
     }
     const std::string &name = host_function_names_[host_func_idx];
+// ... existing code ...
     auto it = host_functions.find(name);
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
@@ -5692,30 +5673,28 @@ case OpCode::TAIL_CALL: {
     break;
   }
 
-case OpCode::CALL_METHOD: {
-        // CALL_METHOD: operands are [method_name_string_index, arg_count]
-        // Dispatches based on receiver type without boxing.
-        if (instruction.operands.size() != 2 ||
-            !instruction.operands[0].isStringValId() ||
-            !instruction.operands[1].isInt()) {
-            COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
-        }
+  case OpCode::CALL_METHOD: {
+    // Dispatches based on receiver type without boxing.
+    if (instruction.operands.size() != 2 ||
+        !instruction.operands[0].isStringValId() ||
+        !instruction.operands[1].isInt()) {
+      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
+    }
 
-        uint32_t strIndex = instruction.operands[0].asStringValId();
-        std::string method_name;
-        if (current_chunk) {
-            method_name = current_chunk->getString(strIndex);
-        }
-        method_name = operatorSymbolToMethodName(method_name);
-        uint32_t arg_count = instruction.operands[1].asInt();
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    std::string method_name;
+    if (current_chunk) {
+      method_name = current_chunk->getString(strIndex);
+    }
+    method_name = operatorSymbolToMethodName(method_name);
+    uint32_t arg_count = instruction.operands[1].asInt();
 
     // Receiver is at stack top - arg_count positions down
     if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-        COMPILER_THROW("Stack underflow during CALL_METHOD (stack=" + std::to_string(stack.size()) + " need=" + std::to_string(arg_count + 1) + " method=" + method_name + ")");
+      COMPILER_THROW("Stack underflow during CALL_METHOD (stack=" + std::to_string(stack.size()) + " need=" + std::to_string(arg_count + 1) + " method=" + method_name + ")");
     }
 
     // Peek at receiver (don't pop yet)
-    // std::stack doesn't have end(), so we use a temp vector approach
     std::vector<Value> temp_args;
     temp_args.reserve(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
@@ -5728,85 +5707,86 @@ case OpCode::CALL_METHOD: {
       pushStack(*it);
     }
 
-        // Determine type name for dispatch
-        std::string type_name;
-        if (receiver.isStringValId() || receiver.isStringId()) {
-            type_name = "string";
-        } else if (receiver.isInt()) {
-            type_name = "int";
-        } else if (receiver.isDouble()) {
-            type_name = "float";
-        } else if (receiver.isBool()) {
-            type_name = "bool";
-        } else if (receiver.isArrayId()) {
-            type_name = "array";
-        } else if (receiver.isObjectId()) {
-            type_name = "object";
-        } else if (receiver.isSetId()) {
-            type_name = "set";
-        } else if (receiver.isThreadId()) {
-            type_name = "thread";
-        } else if (receiver.isIntervalId()) {
-            type_name = "interval";
-        } else if (receiver.isTimeoutId()) {
-            type_name = "timeout";
-        } else if (receiver.isRangeId()) {
-            type_name = "range";
-        } else {
-            pushStack(Value::makeNull());
-            break;
-        }
+    // Determine type name for dispatch
+    std::string type_name;
+    if (receiver.isStringValId() || receiver.isStringId()) {
+      type_name = "string";
+    } else if (receiver.isInt()) {
+      type_name = "int";
+    } else if (receiver.isDouble()) {
+      type_name = "float";
+    } else if (receiver.isBool()) {
+      type_name = "bool";
+    } else if (receiver.isArrayId()) {
+      type_name = "array";
+    } else if (receiver.isObjectId()) {
+      type_name = "object";
+    } else if (receiver.isSetId()) {
+      type_name = "set";
+    } else if (receiver.isThreadId()) {
+      type_name = "thread";
+    } else if (receiver.isIntervalId()) {
+      type_name = "interval";
+    } else if (receiver.isTimeoutId()) {
+      type_name = "timeout";
+    } else if (receiver.isRangeId()) {
+      type_name = "range";
+    } else {
+      pushStack(Value::makeNull());
+      break;
+    }
 
-        // Look up method: 0. Object instance field, 1. Host prototype, 2. Object prototype chain
-        uint32_t host_func_idx = 0;
-        bool found_host = false;
-        bool found_via_module = false;
-        bool isInstanceFunc = false;
-        Value vm_func = Value::makeNull();
+    // Look up method: 0. Object instance field, 1. Host prototype, 2. Module monkey-patch, 3. Class prototype chain
+    uint32_t host_func_idx = 0;
+    bool found_host = false;
+    bool found_via_module = false;
+    bool isInstanceFunc = false;
+    Value vm_func = Value::makeNull();
 
-        // 0. If receiver is an object, check for direct callable field FIRST.
-        // Namespace objects like `process` have host function fields (e.g. `find`)
-        // that must take priority over prototype methods (e.g. `object.find`).
-        if (receiver.isObjectId()) {
-            auto* instanceObj = heap_.object(receiver.asObjectId());
-            if (instanceObj) {
-                auto it = instanceObj->find(method_name);
-                if (it != instanceObj->end()) {
-                    if (it->second.isHostFuncId()) {
-                        host_func_idx = it->second.asHostFuncId();
-                        found_host = true;
-                        for (const auto& g : globals) {
-                            if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
-                                found_via_module = true;
-                                break;
-                            }
-                        }
-                    } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
-                        vm_func = it->second;
-                        isInstanceFunc = true;
-                    }
-                }
+    // 0. If receiver is an object, check for direct callable field FIRST.
+    // Namespace objects like `process` have host function fields (e.g. `find`)
+    // that must take priority over prototype methods (e.g. `object.find`).
+    if (receiver.isObjectId()) {
+      auto *instanceObj = heap_.object(receiver.asObjectId());
+      if (instanceObj) {
+        auto it = instanceObj->find(method_name);
+        if (it != instanceObj->end()) {
+          if (it->second.isHostFuncId()) {
+            host_func_idx = it->second.asHostFuncId();
+            found_host = true;
+            // Set found_via_module if the object is in globals (likely a module/namespace)
+            for (const auto &g : globals) {
+              if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
+                found_via_module = true;
+                break;
+              }
             }
+          } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+            vm_func = it->second;
+            isInstanceFunc = true;
+          }
         }
+      }
+    }
 
-        // 1. Try host prototype (for primitives and built-in object methods)
-        if (!found_host && vm_func.isNull()) {
-        auto typeIt = prototypes_.find(type_name);
-        if (typeIt != prototypes_.end()) {
-            auto methodIt = typeIt->second.find(method_name);
-            if (methodIt != typeIt->second.end()) {
-                host_func_idx = methodIt->second;
-                found_host = true;
-            }
+    // 1. Try host prototype (for primitives and built-in object methods)
+    if (!found_host && vm_func.isNull()) {
+      auto typeIt = prototypes_.find(type_name);
+      if (typeIt != prototypes_.end()) {
+        auto methodIt = typeIt->second.find(method_name);
+        if (methodIt != typeIt->second.end()) {
+          host_func_idx = methodIt->second;
+          found_host = true;
         }
-        }
+      }
+    }
 
-        // 1.5 Try module object for monkey-patched methods
-        if (!found_host && vm_func.isNull()) {
+    // 1.5 Try module object for monkey-patched methods
+    if (!found_host && vm_func.isNull()) {
       // Generate capitalized version (e.g., "string" -> "String")
       std::string capName = type_name;
       if (!capName.empty()) capName[0] = static_cast<char>(std::toupper(capName[0]));
-      
+
       for (const auto &modName : {type_name, capName}) {
         auto modIt = globals.find(modName);
         if (modIt != globals.end() && modIt->second.isObjectId()) {
@@ -5814,12 +5794,10 @@ case OpCode::CALL_METHOD: {
           if (modObj) {
             auto *val = modObj->get(method_name);
             if (val) {
- if (val->isHostFuncId()) {
- host_func_idx = val->asHostFuncId();
- found_host = true;
- found_via_module = true;
- // Cache in prototypes_ for future lookups
-                prototypes_[type_name][method_name] = host_func_idx;
+              if (val->isHostFuncId()) {
+                host_func_idx = val->asHostFuncId();
+                found_host = true;
+                // Monkey-patched methods in prototypes SHOULD receive 'self', so found_via_module stays false.
                 break;
               } else if (val->isFunctionObjId() || val->isClosureId()) {
                 vm_func = *val;
@@ -5831,27 +5809,22 @@ case OpCode::CALL_METHOD: {
       }
     }
 
-        // 2. (Moved to step 0 above — instance field check now happens before
-        //    prototype table lookup so that namespace objects like `process.find`
-        //    are not shadowed by `object.find` prototype method.)
-
     // 3. Check __class prototype for class methods
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
-        auto* classProto = heap_.object(receiver.asObjectId());
-        // First try __class, then __parent chain
-        if (classProto) {
-            auto* classVal = classProto->get("__class");
-            if (classVal && classVal->isObjectId()) {
-                classProto = heap_.object(classVal->asObjectId());
-            }
+      auto *classProto = heap_.object(receiver.asObjectId());
+      if (classProto) {
+        auto *classVal = classProto->get("__class");
+        if (classVal && classVal->isObjectId()) {
+          classProto = heap_.object(classVal->asObjectId());
         }
+      }
 
-        while (classProto) {
-            auto* methodVal = classProto->get(method_name);
-            if (methodVal) {
-                if (methodVal->isHostFuncId()) {
-                    host_func_idx = methodVal->asHostFuncId();
-                    found_host = true;
+      while (classProto) {
+        auto *methodVal = classProto->get(method_name);
+        if (methodVal) {
+          if (methodVal->isHostFuncId()) {
+            host_func_idx = methodVal->asHostFuncId();
+            found_host = true;
             break;
           } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
             vm_func = *methodVal;
@@ -5859,7 +5832,7 @@ case OpCode::CALL_METHOD: {
           }
         }
         // Check parent class
-        auto* parentVal = classProto->get("__parent");
+        auto *parentVal = classProto->get("__parent");
         if (parentVal && parentVal->isObjectId()) {
           classProto = heap_.object(parentVal->asObjectId());
         } else {
@@ -5869,51 +5842,52 @@ case OpCode::CALL_METHOD: {
     }
 
     if (!found_host && vm_func.isNull()) {
-        // Pop args and receiver before pushing null result
-        for (uint32_t i = 0; i < arg_count; ++i) popStack();
-        popStack(); // receiver
-        pushStack(Value::makeNull());
-        break;
+      // Pop args and receiver before pushing null result
+      for (uint32_t i = 0; i < arg_count; ++i) popStack();
+      popStack(); // receiver
+      pushStack(Value::makeNull());
+      break;
     }
 
     // Pop args and receiver
     std::vector<Value> args2(arg_count);
     for (uint32_t i = 0; i < arg_count; ++i) {
-        args2[arg_count - 1 - i] = popStack();
+      args2[arg_count - 1 - i] = popStack();
     }
     Value recv = popStack();
 
- // Prepare args: for user-defined instance functions, DON'T prepend receiver
- // (they're stored as values, not methods). For host functions, DO prepend.
- // For module object lookups (step 1.5), DON'T prepend receiver either.
- std::vector<Value> all_args;
- if (isInstanceFunc || found_via_module) {
- all_args = args2;
- } else {
-        all_args.reserve(arg_count + 1);
-        all_args.push_back(recv);
-        all_args.insert(all_args.end(), args2.begin(), args2.end());
+    // Prepare args
+    std::vector<Value> all_args;
+    if (isInstanceFunc || found_via_module) {
+      all_args = args2;
+    } else {
+      all_args.reserve(arg_count + 1);
+      all_args.push_back(recv);
+      all_args.insert(all_args.end(), args2.begin(), args2.end());
     }
 
     if (found_host) {
-        if (host_func_idx < host_function_names_.size()) {
+      if (host_func_idx < host_function_names_.size()) {
         std::string resolved_name = host_function_names_[host_func_idx];
         auto fnIt = host_functions.find(resolved_name);
         if (fnIt != host_functions.end()) {
-            Value result = fnIt->second(all_args);
-            pushStack(result);
+          Value result = fnIt->second(all_args);
+          pushStack(result);
+          if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
+            currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
+          }
         } else {
-                pushStack(Value::makeNull());
-            }
-        } else {
-            pushStack(Value::makeNull());
+          pushStack(Value::makeNull());
         }
+      } else {
+        pushStack(Value::makeNull());
+      }
     } else {
-    // Call VM function
-            doCall(vm_func, all_args, true);
-        }
-        break;
+      // Call VM function
+      doCall(vm_func, all_args, true);
     }
+    break;
+  }
 
   case OpCode::CALL_SUPER: {
     // CALL_SUPER: operands are [method_name, arg_count]
@@ -8711,7 +8685,11 @@ void VM::throwError(const std::string &msg) {
 std::string VM::resolveStringKey(const Value &value) const {
     if (value.isStringValId()) {
         uint32_t id = value.asStringValId();
-        if (current_chunk) {
+        fprintf(stderr, "[DBG resolveStringKey] StringValId=%u current_chunk=%p main_chunk_=%p (raw ptr=%p)\n",
+                id, (const void*)current_chunk, (const void*)main_chunk_.get(),
+                main_chunk_ ? (const void*)main_chunk_.get() : nullptr);
+        fflush(stderr);
+        if (current_chunk && current_chunk == main_chunk_.get()) {
             auto& strs = current_chunk->getAllStrings();
             if (id < strs.size()) {
                 return strs[id];

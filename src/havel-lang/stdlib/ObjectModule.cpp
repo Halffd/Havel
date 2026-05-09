@@ -4,6 +4,7 @@
 #include <string>
 #include <stdexcept>
 #include <algorithm>
+#include <iostream>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -14,17 +15,22 @@ namespace havel::stdlib {
 void registerObjectModule(VMApi &api) {
     // Object.keys(obj) - Get all keys of an object
     api.registerFunction("object.keys", [&api](const std::vector<Value>& args) {
-        if (args.empty()) throw std::runtime_error("Object.keys() requires object");
-        if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
+        try {
+            if (args.empty()) throw std::runtime_error("Object.keys() requires object");
+            if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
 
-        auto keys = api.getObjectKeys(args[0]);
-        auto result = api.makeArray();
-        for (const auto& key : keys) {
-            if (key != "__set_marker__" && key != "__proto__") {
-                api.push(result, api.makeString(key));
+            auto keys = api.getObjectKeys(args[0]);
+            auto result = api.makeArray();
+            for (const auto& key : keys) {
+                if (key != "__set_marker__" && key != "__proto__") {
+                    api.push(result, api.makeString(key));
+                }
             }
+            return result;
+        } catch (const std::exception& e) {
+            std::cerr << "[ObjectModule] Error in object.keys: " << e.what() << std::endl;
+            throw;
         }
-        return result;
     });
 
     // Object.values(obj) - Get all values of an object

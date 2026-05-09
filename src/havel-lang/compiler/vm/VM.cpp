@@ -9025,4 +9025,16 @@ Value VM::runInContext(const std::string& source, Value context) {
   return exec_result;
 }
 
+void VM::setGlobalThreadSafe(const std::string &name, Value value) {
+  std::unique_lock lock(globals_mutex_);
+  globals[name] = std::move(value);
+}
+
+std::optional<Value> VM::getGlobalThreadSafe(const std::string &name) const {
+  std::shared_lock lock(globals_mutex_);
+  auto it = globals.find(name);
+  if (it != globals.end()) return it->second;
+  return std::nullopt;
+}
+
 } // namespace havel::compiler

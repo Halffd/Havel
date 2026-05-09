@@ -2360,8 +2360,8 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     llvm::Type *i64 = llvm::Type::getInt64Ty(ctx);
     llvm::Type *f64 = llvm::Type::getDoubleTy(ctx);
     llvm::Type *voidT = llvm::Type::getVoidTy(ctx);
-    llvm::Type *i8p = llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(ctx));
-    llvm::Type *i64p = llvm::PointerType::getUnqual(i64);
+    llvm::Type *i8p = llvm::PointerType::get(ctx, 0);
+    llvm::Type *i64p = llvm::PointerType::get(ctx, 0);
 
     std::vector<llvm::Type*> paramTypes = {i8p, i64p, i32};
     llvm::FunctionType *funcType = llvm::FunctionType::get(i64, paramTypes, false);
@@ -2387,7 +2387,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     llvm::Value *frame = B.CreateAlloca(frameType, nullptr, "gc_frame");
 
     llvm::Function *fn_reg = module.getFunction("havel_gc_register_roots");
-    if (!fn_reg) fn_reg = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, llvm::PointerType::getUnqual(frameType), i64p, i32}, false), llvm::Function::ExternalLinkage, "havel_gc_register_roots", &module);
+    if (!fn_reg) fn_reg = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, llvm::PointerType::get(ctx, 0), i64p, i32}, false), llvm::Function::ExternalLinkage, "havel_gc_register_roots", &module);
     B.CreateCall(fn_reg, {vmArg, frame, B.CreateInBoundsGEP(i64, argsArg, llvm::ConstantInt::get(i32, 0)), llvm::ConstantInt::get(i32, func.local_count)});
 
     std::vector<llvm::Value*> vlocals;
@@ -3683,7 +3683,7 @@ case OpCode::LENGTH: {
         }
         llvm::Value* mallocSize = llvm::ConstantInt::get(i64, argCount * sizeof(uint64_t));
         llvm::Value* argsArrayI8 = B.CreateCall(fnMalloc, {mallocSize});
-        llvm::Value* argsArray = B.CreatePointerCast(argsArrayI8, llvm::PointerType::getUnqual(llvm::ArrayType::get(i64, argCount)), "tail_args");
+        llvm::Value* argsArray = B.CreatePointerCast(argsArrayI8, llvm::PointerType::get(ctx, 0), "tail_args");
         for (uint32_t i = 0; i < argCount; ++i) {
             llvm::Value* arg = vstack.back(); vstack.pop_back();
             B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
@@ -3695,7 +3695,7 @@ case OpCode::LENGTH: {
 
         // Unregister GC roots before tail call
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
         B.CreateCall(fn_unreg, {frame});
 
         // Call havel_vm_tail_call which handles frame reuse
@@ -3729,7 +3729,7 @@ case OpCode::LENGTH: {
         llvm::Value* lb = B.CreateCall(fnLocalsBase, {vmArg});
         B.CreateCall(fnClose, {vmArg, lb});
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
         B.CreateCall(fn_unreg, {frame});
         B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
         break;
@@ -3740,7 +3740,7 @@ case OpCode::LENGTH: {
         llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
         if (!fnTryEnter) {
             fnTryEnter = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType), i32, i32, i32}, false),
+                llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0), i32, i32, i32}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
         }
         B.CreateCall(fnTryEnter, {frame,
@@ -3754,7 +3754,7 @@ case OpCode::LENGTH: {
         llvm::Function* fnTryExit = module.getFunction("havel_vm_try_exit");
         if (!fnTryExit) {
             fnTryExit = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+                llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_try_exit", &module);
         }
         B.CreateCall(fnTryExit, {frame});
@@ -3796,9 +3796,9 @@ case OpCode::LENGTH: {
             fnFindHandler = llvm::Function::Create(
                 llvm::FunctionType::get(
                     i32,
-                    {llvm::PointerType::getUnqual(frameType),
-                     llvm::PointerType::getUnqual(i32),
-                     llvm::PointerType::getUnqual(i32)},
+                    {llvm::PointerType::get(ctx, 0),
+                     llvm::PointerType::get(ctx, 0),
+                     llvm::PointerType::get(ctx, 0)},
                     false),
                 llvm::Function::ExternalLinkage, "havel_vm_try_find_throw_target", &module);
         }
@@ -4318,7 +4318,7 @@ if (B.GetInsertBlock()->getTerminator() == nullptr) {
     llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
     if (!fn_unreg) {
         fn_unreg = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+            llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false),
             llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
     }
     B.CreateCall(fn_unreg, {frame});

@@ -349,6 +349,12 @@ hostBridge->install();
 void Havel::cleanup() noexcept {
   debug("Havel::cleanup() - starting cleanup");
 
+  // Force save config before everything else
+  try {
+    Configs::Get().ForceSave();
+    debug("Havel::cleanup() - config saved");
+  } catch (...) {}
+
   // Stop timer first
   stopPeriodicTimer();
 

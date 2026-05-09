@@ -1,0 +1,8 @@
+use cfg
+cfg.load("scripts/havel/havel.cfg")
+val DOLOG = false
+print("type of cfg: " + type(cfg))
+print("cfg.Debug: " + cfg.Debug)
+print("type of cfg.Debug: " + type(cfg.Debug))
+cfg.Debug.VerboseKeyLogging = DOLOG
+print("done")

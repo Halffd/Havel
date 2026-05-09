@@ -13,7 +13,7 @@ if _xtst == 0 { _xtst = ffi.open("libXtst.so") }
 
 _XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
 _XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
-_XDefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_XDefaultRootWindow = ffi.sym(_xlib, "XDefaultRootWindow")
 _XQueryKeymap = ffi.sym(_xlib, "XQueryKeymap")
 _XKeysymToKeycode = ffi.sym(_xlib, "XKeysymToKeycode")
 _XStringToKeysym = ffi.sym(_xlib, "XStringToKeysym")

@@ -59,7 +59,7 @@ other = !any([hypr, kde, kdewl, i3, compiz, cinnamon, gnome, wf, xfce, xfcewl])
 hardware = system.hardware()
 print("hardware: " + hardware)
 [cpu, gpu, ram, motherboard, storage] = [hardware.cpu, hardware.gpu, hardware.ram, hardware.motherboard, hardware.storage]
-storageCount = #storage
+storageCount = storage.len()
 totalStorage = storage.reduce((acc, s) => acc + s.size, 0)
 print("storageCount: " + storageCount)
 print("totalStorage: " + totalStorage)

@@ -537,11 +537,29 @@ bool VM::valuesEqualDeep(
   if (left.isFunctionObjId() && right.isFunctionObjId()) {
     return left.asFunctionObjId() == right.asFunctionObjId();
   }
-  if (left.isHostFuncId() && right.isHostFuncId()) {
-    return left.asHostFuncId() == right.asHostFuncId();
-  }
+    if (left.isHostFuncId() && right.isHostFuncId()) {
+      return left.asHostFuncId() == right.asHostFuncId();
+    }
 
-  return false;
+    if (left.isSetId() && right.isSetId()) {
+      const auto *lset = heap_.set(left.asSetId());
+      const auto *rset = heap_.set(right.asSetId());
+      if (!lset || !rset) return false;
+      if (lset->size() != rset->size()) return false;
+      for (const auto &elem : *lset) {
+        bool found = false;
+        for (const auto &r_elem : *rset) {
+          if (valuesEqualDeep(elem.second, r_elem.second, visited_array_pairs, visited_object_pairs)) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) return false;
+      }
+      return true;
+    }
+
+    return false;
 }
 
 std::optional<int64_t> indexFromValue(const Value &value) {
@@ -4535,6 +4553,142 @@ case OpCode::ADD:
           pushStack(static_cast<int64_t>(
               std::pow(static_cast<double>(l), static_cast<double>(r))));
           break;
+        case OpCode::EQ: pushStack(l == r); break;
+        case OpCode::NEQ: pushStack(l != r); break;
+        case OpCode::LT: pushStack(l < r); break;
+        case OpCode::LTE: pushStack(l <= r); break;
+        case OpCode::GT: pushStack(l > r); break;
+        case OpCode::GTE: pushStack(l >= r); break;
+        case OpCode::BIT_AND: pushStack(l & r); break;
+        case OpCode::BIT_OR: pushStack(l | r); break;
+        case OpCode::BIT_XOR: pushStack(l ^ r); break;
+        case OpCode::BIT_LSH: pushStack(l << r); break;
+        case OpCode::BIT_RSH: pushStack(l >> r); break;
+        default: COMPILER_THROW("Unsupported integer operation");
+    }
+    return;
+  }
+
+  if ((left.isInt() || left.isDouble()) &&
+      (right.isInt() || right.isDouble())) {
+    double l = left.isInt() ? static_cast<double>(left.asInt()) : left.asDouble();
+    double r = right.isInt() ? static_cast<double>(right.asInt()) : right.asDouble();
+    switch (instruction.opcode) {
+    case OpCode::ADD:  pushStack(l + r); break;
+    case OpCode::SUB:  pushStack(l - r); break;
+    case OpCode::MUL:  pushStack(l * r); break;
+            case OpCode::DIV:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
+                pushStack(l / r);
+                break;
+            case OpCode::INT_DIV:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
+                pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
+                break;
+            case OpCode::DIVMOD:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
+      {
+        int64_t il = static_cast<int64_t>(l);
+        int64_t ir = static_cast<int64_t>(r);
+        int64_t rem = il % ir;
+        if (rem != 0 && ((rem < 0) != (ir < 0))) rem += ir;
+        int64_t quot = (il - rem) / ir;
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        arr->push_back(Value(quot));
+        arr->push_back(Value(rem));
+        pushStack(Value::makeArrayId(arrRef.id));
+      }
+      break;
+            case OpCode::REMAINDER:
+                if (r == 0.0) COMPILER_THROW("Division by zero");
+      pushStack(static_cast<int64_t>(l) % static_cast<int64_t>(r)); // C-style
+      break;
+    case OpCode::MOD:
+      if (r == 0.0) COMPILER_THROW("Modulo by zero");
+      {
+        double m = std::fmod(l, r);
+        if (m != 0.0 && ((m < 0.0) != (r < 0.0))) m += r;
+        pushStack(m); // Python-style: sign follows divisor
+      }
+      break;
+    case OpCode::POW:  pushStack(std::pow(l, r)); break;
+    case OpCode::EQ:   pushStack(l == r); break;
+    case OpCode::NEQ:  pushStack(l != r); break;
+    case OpCode::LT:   pushStack(l < r); break;
+    case OpCode::LTE:  pushStack(l <= r); break;
+    case OpCode::GT:   pushStack(l > r); break;
+        case OpCode::GTE: pushStack(l >= r); break;
+        case OpCode::BIT_AND: pushStack(static_cast<int64_t>(l) & static_cast<int64_t>(r)); break;
+        case OpCode::BIT_OR: pushStack(static_cast<int64_t>(l) | static_cast<int64_t>(r)); break;
+        case OpCode::BIT_XOR: pushStack(static_cast<int64_t>(l) ^ static_cast<int64_t>(r)); break;
+        case OpCode::BIT_LSH: pushStack(static_cast<int64_t>(l) << static_cast<int64_t>(r)); break;
+        case OpCode::BIT_RSH: pushStack(static_cast<int64_t>(l) >> static_cast<int64_t>(r)); break;
+        default: COMPILER_THROW("Unsupported floating point operation");
+    }
+    return;
+  }
+
+  // Handle string operations (StringValId = compile-time constant, StringId = runtime string)
+  if (left.isStringValId() || left.isStringId() || right.isStringValId() || right.isStringId()) {
+    // Resolve left operand to actual string
+    std::string l;
+    if (left.isStringValId()) {
+      // Try to resolve from current chunk's string table
+      if (current_chunk) {
+        l = current_chunk->getString(left.asStringValId());
+      } else {
+        l = "<string:" + std::to_string(left.asStringValId()) + ">";
+      }
+    } else if (left.isStringId()) {
+      if (auto *s = heap_.string(left.asStringId())) {
+        l = *s;
+      } else {
+        l = "<string:" + std::to_string(left.asStringId()) + ">";
+      }
+    } else {
+      l = toString(left);
+    }
+
+    // Resolve right operand to actual string
+    std::string r;
+    if (right.isStringValId()) {
+      if (current_chunk) {
+        r = current_chunk->getString(right.asStringValId());
+      } else {
+        r = "<string:" + std::to_string(right.asStringValId()) + ">";
+      }
+    } else if (right.isStringId()) {
+      if (auto *s = heap_.string(right.asStringId())) {
+        r = *s;
+      } else {
+        r = "<string:" + std::to_string(right.asStringId()) + ">";
+      }
+    } else {
+      r = toString(right);
+    }
+
+    switch (instruction.opcode) {
+    case OpCode::ADD: {
+      std::string result = l + r;
+      auto strRef = heap_.allocateString(std::move(result));
+      pushStack(Value::makeStringId(strRef.id));
+      break;
+    }
+    case OpCode::MUL: {
+      // string * int → repeat
+      if (right.isInt()) {
+        int count = static_cast<int>(right.asInt());
+        if (count < 0) count = 0;
+        std::string result;
+        for (int i = 0; i < count; i++) result += l;
+        auto strRef = heap_.allocateString(std::move(result));
+        pushStack(Value::makeStringId(strRef.id));
+      } else {
+        COMPILER_THROW("Invalid string operation");
+        }
+        break;
+      }
       case OpCode::EQ: pushStack(l == r); break;
       case OpCode::NEQ: pushStack(l != r); break;
       case OpCode::LT: pushStack(l < r); break;
@@ -6640,10 +6794,32 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-  if (!object.isObjectId()) {
-    pushStack(Value::makeNull());
-    break;
-  }
+    if (object.isSetId()) {
+      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+      if (key && *key == "len") {
+        auto *set = heap_.set(object.asSetId());
+        pushStack(Value::makeInt(set ? static_cast<int64_t>(set->size()) : 0));
+      } else if (key) {
+        auto method = getPrototypeMethod(object, *key);
+        if (method) {
+          auto boundObj = heap_.allocateObject();
+          auto *bObj = heap_.object(boundObj.id);
+          (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
+          (*bObj)["self"] = object;
+          pushStack(Value::makeObjectId(boundObj.id));
+        } else {
+          pushStack(Value::makeNull());
+        }
+      } else {
+        pushStack(Value::makeNull());
+      }
+      break;
+    }
+
+    if (!object.isObjectId()) {
+      pushStack(Value::makeNull());
+      break;
+    }
 
 	// _G globals mirror: delegate property access to the live globals maps
 	if (object.asObjectId() == globals_mirror_object_id_) {

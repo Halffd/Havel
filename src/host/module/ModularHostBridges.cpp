@@ -2923,14 +2923,23 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Hotkey registered via hotkey.register", callbackId);
 
+    auto contextRoot = std::make_shared<VM::GCRoot>(*vm, hotkeyContext);
+
     auto *modeMgr = ctx->modeManager;
     auto *hotkeyMgr = ctx->hotkeyManager;
 
     bool success = ctx->hotkeyManager->AddHotkey(
-        hotkeyStr, [vm, callbackId, hotkeyContext]() {
+        hotkeyStr, [vm, callbackId, contextRoot]() {
         vm->beginHotkeyExecution();
         try {
-            vm->invokeCallback(callbackId, {hotkeyContext});
+            auto valOpt = contextRoot->get();
+            if (valOpt) {
+                if (vm->getScheduler()) {
+                    vm->spawnCallback(callbackId, {*valOpt});
+                } else {
+                    vm->invokeCallback(callbackId, {*valOpt});
+                }
+            }
         } catch (const std::exception &e) {
             ::havel::error("[Hotkey] Execution failed: {}", e.what());
         } catch (...) {
@@ -2947,10 +2956,17 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 std::string mode = modeMgr->getCurrentMode();
                 return !mode.empty() && mode != "default";
             },
-            [vm, callbackId, hotkeyContext]() {
+            [vm, callbackId, contextRoot]() {
                 vm->beginHotkeyExecution();
                 try {
-                    vm->invokeCallback(callbackId, {hotkeyContext});
+                    auto valOpt = contextRoot->get();
+                    if (valOpt) {
+                        if (vm->getScheduler()) {
+                            vm->spawnCallback(callbackId, {*valOpt});
+                        } else {
+                            vm->invokeCallback(callbackId, {*valOpt});
+                        }
+                    }
                 } catch (const std::exception &e) {
                     ::havel::error("[Hotkey] Execution failed: {}", e.what());
                 } catch (...) {
@@ -2998,12 +3014,21 @@ Value InputBridge::handleHotkeyRegisterConditional(
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Conditional hotkey via when block", callbackId);
 
+    auto contextRoot = std::make_shared<VM::GCRoot>(*vm, hotkeyContext);
+
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
-    auto makeInvoke = [vm, callbackId, hotkeyContext]() {
+    auto makeInvoke = [vm, callbackId, contextRoot]() {
         vm->beginHotkeyExecution();
         try {
-            vm->invokeCallback(callbackId, {hotkeyContext});
+            auto valOpt = contextRoot->get();
+            if (valOpt) {
+                if (vm->getScheduler()) {
+                    vm->spawnCallback(callbackId, {*valOpt});
+                } else {
+                    vm->invokeCallback(callbackId, {*valOpt});
+                }
+            }
         } catch (...) {
             vm->endHotkeyExecution();
             throw;

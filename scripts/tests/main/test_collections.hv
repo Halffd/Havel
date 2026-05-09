@@ -224,8 +224,8 @@ print("  omitBy(v>1): " + omitBy)
 
 // Sorting
 unsorted = {z:1, a:2, m:3}
-print("  sortKey: " + unsorted.sortKey((a,b) => a < b))
-print("  sortVal: " + unsorted.sortVal((a,b) => a - b))
+print(" sorted: " + unsorted.sorted())
+print(" sortVal: " + unsorted.sortVal((a,b) => a - b))
 
 // Object equality
 print("  eq same: " + ({a:1, b:2} == {a:1, b:2}))

@@ -448,16 +448,17 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("sortVal", 2, [&vm](const std::vector<Value>& args) {
+regProto("sortVal", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isObjectId() && (args[1].isFunctionObjId() || args[1].isClosureId())) {
-      auto* obj = vm.getHeap().object(args[0].asObjectId());
-      if (obj) {
-        std::vector<std::pair<std::string, Value>> entries(obj->begin(), obj->end());
-        std::sort(entries.begin(), entries.end(), [&vm, &args](const auto& a, const auto& b) {
-          auto result = vm.call(args[1], {a.second, b.second});
-          return result.isInt() && result.asInt() < 0;
-        });
+        auto* obj = vm.getHeap().object(args[0].asObjectId());
+        if (obj) {
+            std::vector<std::pair<std::string, Value>> entries(obj->begin(), obj->end());
+            std::sort(entries.begin(), entries.end(), [&vm, &args](const auto& a, const auto& b) {
+                auto result = vm.call(args[1], {a.second, b.second});
+                if (result.isBool()) return result.asBool();
+                return result.isInt() && result.asInt() < 0;
+            });
         auto resultRef = vm.getHeap().allocateObject();
         auto* result = vm.getHeap().object(resultRef.id);
         for (const auto& [key, val] : entries) result->set(key, val);
@@ -467,20 +468,21 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("sortKey", 2, [&vm](const std::vector<Value>& args) {
+regProto("sortKey", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isObjectId() && (args[1].isFunctionObjId() || args[1].isClosureId())) {
-      auto* obj = vm.getHeap().object(args[0].asObjectId());
-      if (obj) {
-        std::vector<std::pair<std::string, Value>> entries(obj->begin(), obj->end());
-        std::sort(entries.begin(), entries.end(), [&vm, &args](const auto& a, const auto& b) {
-          auto keyARef = vm.getHeap().allocateString(a.first);
-          auto keyA = Value::makeStringId(keyARef.id);
-          auto keyBRef = vm.getHeap().allocateString(b.first);
-          auto keyB = Value::makeStringId(keyBRef.id);
-          auto result = vm.call(args[1], {keyA, keyB});
-          return result.isInt() && result.asInt() < 0;
-        });
+        auto* obj = vm.getHeap().object(args[0].asObjectId());
+        if (obj) {
+            std::vector<std::pair<std::string, Value>> entries(obj->begin(), obj->end());
+            std::sort(entries.begin(), entries.end(), [&vm, &args](const auto& a, const auto& b) {
+                auto keyARef = vm.getHeap().allocateString(a.first);
+                auto keyA = Value::makeStringId(keyARef.id);
+                auto keyBRef = vm.getHeap().allocateString(b.first);
+                auto keyB = Value::makeStringId(keyBRef.id);
+                auto result = vm.call(args[1], {keyA, keyB});
+                if (result.isBool()) return result.asBool();
+                return result.isInt() && result.asInt() < 0;
+            });
         auto resultRef = vm.getHeap().allocateObject();
         auto* result = vm.getHeap().object(resultRef.id);
         for (const auto& [key, val] : entries) result->set(key, val);
@@ -882,18 +884,18 @@ void registerObjectPrototype(VM& vm) {
       if (dotPos == std::string::npos) {
         result->set(key, val);
       } else {
-        std::string topKey = key.substr(0, dotPos);
-        std::string subKey = key.substr(dotPos + 1);
-        Value existing = result->get(topKey);
-        if (!existing.isObjectId()) {
-          auto innerRef = vm.getHeap().allocateObject();
-          result->set(topKey, Value::makeObjectId(innerRef.id));
-          auto* inner = vm.getHeap().object(innerRef.id);
-          inner->set(subKey, val);
-        } else {
-          auto* inner = vm.getHeap().object(existing.asObjectId());
-          if (inner) inner->set(subKey, val);
-        }
+			std::string topKey = key.substr(0, dotPos);
+			std::string subKey = key.substr(dotPos + 1);
+			Value* existingPtr = result->get(topKey);
+			if (!existingPtr || !existingPtr->isObjectId()) {
+				auto innerRef = vm.getHeap().allocateObject();
+				result->set(topKey, Value::makeObjectId(innerRef.id));
+				auto* inner = vm.getHeap().object(innerRef.id);
+				inner->set(subKey, val);
+			} else {
+				auto* inner = vm.getHeap().object(existingPtr->asObjectId());
+				if (inner) inner->set(subKey, val);
+			}
       }
     }
     return Value::makeObjectId(resultRef.id);

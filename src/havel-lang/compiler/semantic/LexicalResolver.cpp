@@ -106,6 +106,24 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                 top_level_functions_.insert(fn.name->symbol);
             }
     }
+  } else if (statement->kind == ast::NodeType::UseStatement) {
+    const auto &use = static_cast<const ast::UseStatement &>(*statement);
+    if (!use.isFileImport) {
+      for (const auto &module : use.moduleNames) {
+        global_variables_.insert(module);
+      }
+    } else {
+      if (use.isNamedImport) {
+        for (size_t i = 0; i < use.importNames.size(); ++i) {
+          const auto &alias = (i < use.importAliases.size())
+                                  ? use.importAliases[i]
+                                  : use.importNames[i];
+          global_variables_.insert(alias);
+        }
+      } else if (!use.alias.empty()) {
+        global_variables_.insert(use.alias);
+      }
+    }
   }
   }
 
@@ -927,6 +945,50 @@ case ast::NodeType::ImplDeclaration: {
     }
     break;
   }
+
+  case ast::NodeType::ModesBlock: {
+    const auto &modes = static_cast<const ast::ModesBlock &>(statement);
+    for (const auto &mode : modes.modes) {
+      if (mode.condition) resolveExpression(*mode.condition);
+      if (mode.enterBlock) resolveStatement(*mode.enterBlock);
+      if (mode.exitBlock) resolveStatement(*mode.exitBlock);
+      if (mode.onEnterFromBlock) resolveStatement(*mode.onEnterFromBlock);
+      if (mode.onExitToBlock) resolveStatement(*mode.onExitToBlock);
+      if (mode.onCloseBlock) resolveStatement(*mode.onCloseBlock);
+      if (mode.onMinimizeBlock) resolveStatement(*mode.onMinimizeBlock);
+      if (mode.onMaximizeBlock) resolveStatement(*mode.onMaximizeBlock);
+      if (mode.onOpenBlock) resolveStatement(*mode.onOpenBlock);
+    }
+    break;
+  }
+
+  case ast::NodeType::ConfigBlock: {
+    const auto &config = static_cast<const ast::ConfigBlock &>(statement);
+    for (const auto &pair : config.pairs) {
+      if (pair.second) resolveExpression(*pair.second);
+    }
+    break;
+  }
+
+  case ast::NodeType::DevicesBlock: {
+    const auto &devices = static_cast<const ast::DevicesBlock &>(statement);
+    for (const auto &pair : devices.pairs) {
+      if (pair.second) resolveExpression(*pair.second);
+    }
+    break;
+  }
+
+  case ast::NodeType::ConfigSection: {
+    const auto &section = static_cast<const ast::ConfigSection &>(statement);
+    for (const auto &pair : section.pairs) {
+      if (pair.second) resolveExpression(*pair.second);
+    }
+    break;
+  }
+
+  case ast::NodeType::UseStatement:
+    // Global imports already handled in first pass of resolve()
+    break;
 
   default:
     break;

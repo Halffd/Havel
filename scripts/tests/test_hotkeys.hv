@@ -55,3 +55,4 @@ f => {
   shell.run("firefox")
 }
 print dhk
+#Esc => print 'Win+Esc pressed'

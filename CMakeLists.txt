@@ -1015,6 +1015,7 @@ ${COMMON_LIBS}
 $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 $<$<BOOL:${HAVE_LIBFFI}>:ffi>
 dl
+havel_core
 )
 
     # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow

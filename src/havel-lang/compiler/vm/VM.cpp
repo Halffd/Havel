@@ -28,6 +28,11 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <queue>
+
+#include "VMApi.hpp"
+#include "../../stdlib/ShellModule.hpp"
+#include "../../../core/ConfigManager.hpp"
 
 // Helper macro for throwing runtime errors
 // Reports to unified ErrorReporter before throwing
@@ -1552,7 +1557,9 @@ void VM::registerDefaultHostFunctions() {
           auto chunk = std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
           
           if (chunk > 0) {
+            execution_mutex_.lock();
             std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+            execution_mutex_.unlock();
           }
           
           // Check timers during sleep
@@ -2774,7 +2781,11 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
   setGlobal("app", Value::makeObjectId(app_obj.id));
 
-  // Register default window globals
+  // Note: shell, interval, config modules are registered via registerStdLibWithVM()
+  // called during VM initialization - do NOT register them here as this function
+  // is called on every execute() invocation
+
+  // Register default window globals (these need to be reset per execution)
   setGlobal("title", Value::makeNull());
   setGlobal("exe", Value::makeNull());
   setGlobal("pid", Value::makeInt(0));
@@ -3663,6 +3674,7 @@ std::string VM::buildStackTrace(size_t frame_count) const {
 
 Value VM::call(const Value &callee_value,
  const std::vector<Value> &args) {
+ std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
  if (!current_chunk) {
  COMPILER_THROW(
  "VM::call requires an active bytecode chunk (run execute first)");
@@ -4273,7 +4285,9 @@ void VM::stepGarbageCollection(size_t work_budget) {
 }
 
 void VM::beginHotkeyExecution() {
+  execution_mutex_.lock();
   active_hotkey_executions_.fetch_add(1, std::memory_order_relaxed);
+  suspendGC();
 }
 
 void VM::endHotkeyExecution() {
@@ -4281,8 +4295,9 @@ void VM::endHotkeyExecution() {
       active_hotkey_executions_.fetch_sub(1, std::memory_order_acq_rel);
   if (previous <= 1) {
     active_hotkey_executions_.store(0, std::memory_order_release);
-    garbageCollectionSafePoint();
+    resumeGC();
   }
+  execution_mutex_.unlock();
 }
 
 void VM::garbageCollectionSafePoint(size_t work_budget) {
@@ -8573,836 +8588,31 @@ std::optional<int64_t> VM::parseDuration(const Value &value) const {
     }
   }
 
-  return std::nullopt;
+return std::nullopt;
 }
 
-// ============================================================================
-// Execution Context System - Isolated execution with shared globals
-// ============================================================================
-
-VM::VMExecutionContext VM::createExecutionContext() {
-  VMExecutionContext ctx;
-  ctx.parent_vm_ = this;
-  ctx.current_chunk = current_chunk;
-  return ctx;
+void VM::emitVariableChanged(const std::string& var_name) {
+  if (!event_queue_) return;
+  uint32_t var_hash = std::hash<std::string>{}(var_name);
+  Event change_event(EventType::VAR_CHANGED, var_hash);
+  change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
+event_queue_->push(change_event);
 }
 
-Value
-VM::VMExecutionContext::invokeCallback(CallbackId id,
-                                       const std::vector<Value> &args) {
-  if (!parent_vm_) {
-    COMPILER_THROW(
-        "VMExecutionContext::invokeCallback called on invalid context");
-  }
-  if (id == INVALID_CALLBACK_ID) {
-    COMPILER_THROW("invokeCallback called with invalid callback ID");
-  }
-
-  // Get the closure from parent's external roots
-  auto closureValue = parent_vm_->externalRootValue(id);
-  if (!closureValue.has_value()) {
-    COMPILER_THROW(
-        "invokeCallback: callback not found (may have been released)");
-  }
-
-  // Clear any previous state
-  while (!stack.empty())
-    stack.pop();
-  locals.clear();
-  frame_count_ = 0;
-  open_upvalues.clear();
-  has_current_exception_ = false;
-  current_exception_ = nullptr;
-
-  // Determine function index from closure
-  uint32_t function_index = 0;
-  uint32_t closure_id = 0;
-  if (closureValue->isClosureId()) {
-    closure_id = closureValue->asClosureId();
-    auto *closure = parent_vm_->heap_.closure(closure_id);
-    if (!closure) {
-      COMPILER_THROW("Closure not found: " +
-                               std::to_string(closure_id));
-    }
-    function_index = closure->function_index;
-  } else if (closureValue->isFunctionObjId()) {
-    function_index = closureValue->asFunctionObjId();
-  } else {
-    COMPILER_THROW("Callback must be a closure or function");
-  }
-
-  const auto *func = current_chunk->getFunction(function_index);
-  if (!func) {
-    COMPILER_THROW("Function index not found: " +
-                             std::to_string(function_index));
-  }
-
-  // Set up initial frame
-        uint32_t callback_stack_depth = static_cast<uint32_t>(stack.size());
-        if (frame_arena_.size() <= frame_count_) {
-            CallFrame cf;
-            cf.function = func;
-            cf.ip = 0;
-            cf.locals_base = 0;
-            cf.closure_id = closure_id;
-            cf.stack_depth = callback_stack_depth;
-            frame_arena_.push_back(std::move(cf));
-        } else {
-            frame_arena_[frame_count_].function = func;
-            frame_arena_[frame_count_].ip = 0;
-            frame_arena_[frame_count_].locals_base = 0;
-            frame_arena_[frame_count_].closure_id = closure_id;
-            frame_arena_[frame_count_].stack_depth = callback_stack_depth;
-        }
-        frame_count_++;
-
-  // Set up arguments
-  for (size_t i = 0; i < args.size() && i < func->param_count; ++i) {
-    locals[i] = args[i];
-  }
-
-  // Execute dispatch loop with isolated state
-  const size_t stop_frame_depth = 0;
-  while (frame_count_ > stop_frame_depth) {
-    size_t active_frame_idx = frame_count_ - 1;
-    const auto *function = frame_arena_[active_frame_idx].function;
-    uint32_t ip = frame_arena_[active_frame_idx].ip;
-    size_t entry_frame_count = frame_count_;
-
-    const auto &instruction = function->instructions[ip];
-
-    try {
-      executeInstructionInContext(instruction);
-    } catch (const ScriptThrow &thrown) {
-      // Handle exception
-      has_current_exception_ = true;
-      current_exception_ = thrown.value;
-
-      bool handled = false;
-      while (frame_count_ > 0) {
-        auto &frame = frame_arena_[frame_count_ - 1];
-        if (!frame.try_stack.empty()) {
-          const auto handler = frame.try_stack.back();
-          frame.try_stack.pop_back();
-
-          while (stack.size() > handler.stack_depth) {
-            stack.pop();
-          }
-
-          frame.ip = handler.catch_ip;
-          handled = true;
-          break;
-        }
-
-        auto finished = frame;
-        frame_count_--;
-
-        for (auto it = open_upvalues.begin(); it != open_upvalues.end();) {
-          if (it->first >= finished.locals_base && it->first < locals.size()) {
-            it->second->closed_value = locals[it->first];
-            it->second->is_open = false;
-            it = open_upvalues.erase(it);
-          } else {
-            ++it;
-          }
-        }
-
-        if (locals.size() >= finished.locals_base) {
-          locals.resize(finished.locals_base);
-        }
-      }
-
-      if (!handled) {
-        COMPILER_THROW("Uncaught exception: " +
-                                 parent_vm_->toString(thrown.value));
-      }
-      continue;
-    }
-
-    if (frame_count_ > stop_frame_depth) {
-      active_frame_idx = frame_count_ - 1;
-      if (frame_count_ == entry_frame_count &&
-          frame_arena_[active_frame_idx].ip == ip) {
-        frame_arena_[active_frame_idx].ip++;
-      }
-    }
-  }
-
-  if (stack.empty()) {
-    return nullptr;
-  }
-  Value result = stack.top();
-  stack.pop();
-  return result;
-}
-
-void VM::VMExecutionContext::executeInstructionInContext(
-    const Instruction &instruction) {
-  // Helper lambdas that operate on THIS context's state (not parent VM)
-  auto pop = [this]() -> Value {
-    if (stack.empty()) {
-      COMPILER_THROW("Stack underflow");
-    }
-    Value value = stack.top();
-    stack.pop();
-    return value;
-  };
-
-  auto push = [this](Value value) { stack.push(std::move(value)); };
-
-  auto toAbsoluteLocal = [this](uint32_t local_index) -> uint32_t {
-    return static_cast<uint32_t>(frame_arena_[frame_count_ - 1].locals_base +
-                                 local_index);
-  };
-
-  auto ensureLocalIndex = [this](uint32_t absolute_index) {
-    if (absolute_index >= locals.size()) {
-      locals.resize(static_cast<size_t>(absolute_index) + 1, nullptr);
-    }
-  };
-
-  auto currentFrame = [this]() -> CallFrame & {
-    if (frame_count_ == 0) {
-      COMPILER_THROW("No active call frame");
-    }
-    return frame_arena_[frame_count_ - 1];
-  };
-
-  auto getConstant = [this](uint32_t index) -> Value {
-    return frame_arena_[frame_count_ - 1].function->constants[index];
-  };
-
-  auto doReturn = [this, &pop, &push]() {
-    if (frame_count_ == 0) {
-      return;
-    }
-
-    Value ret = nullptr;
-    if (!stack.empty()) {
-      ret = pop();
-    }
-
-    auto finished = frame_arena_[frame_count_ - 1];
-    frame_count_--;
-
-    // Close upvalues
-    for (auto it = open_upvalues.begin(); it != open_upvalues.end();) {
-      if (it->first >= finished.locals_base && it->first < locals.size()) {
-        it->second->closed_value = locals[it->first];
-        it->second->is_open = false;
-        it = open_upvalues.erase(it);
-      } else {
-        ++it;
-      }
-    }
-
-    if (locals.size() >= finished.locals_base) {
-      locals.resize(finished.locals_base);
-    }
-
-    push(ret);
-  };
-
-  switch (instruction.opcode) {
-  case OpCode::LOAD_CONST: {
-    uint32_t const_index = instruction.operands[0].asInt();
-    push(getConstant(const_index));
-    break;
-  }
-
-  case OpCode::LOAD_GLOBAL: {
-    // Get the string from the function's string table
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    const auto* func = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
-    std::string name;
-    if (current_chunk) {
-      name = current_chunk->getString(strIndex);
-    } else {
-      name = "<unknown:" + std::to_string(strIndex) + ">";
-    }
-    // Thread-safe access to parent's globals
-    auto value = parent_vm_->getGlobalThreadSafe(name);
-    push(value.value_or(nullptr));
-    break;
-  }
-
-    case OpCode::STORE_GLOBAL: {
-        // Get the string from the function's string table
-        uint32_t strIndex = instruction.operands[0].asStringValId();
-        std::string name;
-        if (current_chunk) {
-            name = current_chunk->getString(strIndex);
-        } else {
-            name = "<unknown:" + std::to_string(strIndex) + ">";
-        }
-        if (parent_vm_->immutable_globals_.count(name)) {
-            COMPILER_THROW("Cannot reassign val global: " + name);
-        }
-        Value value = pop();
-        parent_vm_->setGlobalThreadSafe(name, std::move(value));
-        parent_vm_->emitVariableChanged(name);
-        break;
-    }
-
-    case OpCode::STORE_IMMUT_GLOBAL: {
-        uint32_t strIndex = instruction.operands[0].asStringValId();
-        std::string name;
-        if (current_chunk) {
-            name = current_chunk->getString(strIndex);
-        } else {
-            name = "<unknown:" + std::to_string(strIndex) + ">";
-        }
-        Value value = pop();
-        parent_vm_->immutable_globals_.insert(name);
-        parent_vm_->setGlobalThreadSafe(name, std::move(value));
-        parent_vm_->emitVariableChanged(name);
-        break;
-    }
-
-    case OpCode::LOAD_VAR: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = toAbsoluteLocal(var_index);
-        ensureLocalIndex(abs);
-        push(locals[abs]);
-        break;
-    }
-
-    case OpCode::STORE_VAR: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = toAbsoluteLocal(var_index);
-        ensureLocalIndex(abs);
-        if (immutable_locals_.count(abs)) {
-            COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
-        }
-        locals[abs] = pop();
-        break;
-    }
-
-    case OpCode::STORE_IMMUT_VAR: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = toAbsoluteLocal(var_index);
-        ensureLocalIndex(abs);
-        Value value = pop();
-        immutable_locals_.insert(abs);
-        locals[abs] = value;
-        break;
-    }
-
-    case OpCode::LOAD_UPVALUE: {
-    uint32_t upvalue_index = instruction.operands[0].asInt();
-    uint32_t closure_id = currentFrame().closure_id;
-    auto *closure = parent_vm_->heap_.closure(closure_id);
-    if (!closure || upvalue_index >= closure->upvalues.size() ||
-        !closure->upvalues[upvalue_index]) {
-      COMPILER_THROW("LOAD_UPVALUE error");
-    }
-const auto &cell = closure->upvalues[upvalue_index];
-        if (cell->is_open) {
-          uint32_t abs_index = cell->locals_base + cell->open_index;
-          ensureLocalIndex(abs_index);
-          push(locals[abs_index]);
-    } else {
-      push(cell->closed_value);
-    }
-    break;
-  }
-
-  case OpCode::STORE_UPVALUE: {
-    uint32_t upvalue_index = instruction.operands[0].asInt();
-    uint32_t closure_id = currentFrame().closure_id;
-    auto *closure = parent_vm_->heap_.closure(closure_id);
-    if (!closure || upvalue_index >= closure->upvalues.size() ||
-        !closure->upvalues[upvalue_index]) {
-      COMPILER_THROW("STORE_UPVALUE error");
-    }
-    auto &cell = closure->upvalues[upvalue_index];
-    Value value = pop();
-    if (cell->is_open) {
-      uint32_t abs_index = cell->locals_base + cell->open_index;
-      ensureLocalIndex(abs_index);
-      locals[abs_index] = value;
-    } else {
-      cell->closed_value = value;
-    }
-    break;
-  }
-
-  case OpCode::POP: {
-    pop();
-    break;
-  }
-
-  case OpCode::DUP: {
-    Value value = pop();
-    push(value);
-    push(value);
-    break;
-  }
-
-  case OpCode::PUSH_NULL: {
-    push(nullptr);
-    break;
-  }
-
-  case OpCode::ADD: {
-    Value right = pop();
-    Value left = pop();
-    if (left.isInt() && right.isInt()) {
-      push(left.asInt() + right.asInt());
-    } else if ((left.isInt() || left.isDouble()) &&
-               (right.isInt() || right.isDouble())) {
-      double l = left.isInt()
-                     ? static_cast<double>(left.asInt())
-                     : left.asDouble();
-      double r = right.isInt()
-                     ? static_cast<double>(right.asInt())
-                     : right.asDouble();
-      push(l + r);
-    } else if (left.isStringValId() && right.isStringValId()) {
-      // TODO: string pool lookup
-      std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
-      std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
-      // TODO: string pool integration for concatenation
-      (void)l;
-      (void)r;
-      push(Value::makeNull());
-    } else {
-      COMPILER_THROW("Type mismatch in ADD");
-    }
-    break;
-  }
-
-  case OpCode::SUB: {
-    Value right = pop();
-    Value left = pop();
-    if (left.isInt() && right.isInt()) {
-      push(left.asInt() - right.asInt());
-    } else {
-      double l = left.isInt()
-                     ? static_cast<double>(left.asInt())
-                     : left.asDouble();
-      double r = right.isInt()
-                     ? static_cast<double>(right.asInt())
-                     : right.asDouble();
-      push(l - r);
-    }
-    break;
-  }
-
-  case OpCode::MUL: {
-    Value right = pop();
-    Value left = pop();
-    if (left.isInt() && right.isInt()) {
-      push(left.asInt() * right.asInt());
-    } else {
-      double l = left.isInt()
-                     ? static_cast<double>(left.asInt())
-                     : left.asDouble();
-      double r = right.isInt()
-                     ? static_cast<double>(right.asInt())
-                     : right.asDouble();
-      push(l * r);
-    }
-    break;
-  }
-
-    case OpCode::DIV: {
-        Value right = pop();
-        Value left = pop();
-        double l = left.isInt()
-            ? static_cast<double>(left.asInt())
-            : left.asDouble();
-        double r = right.isInt()
-            ? static_cast<double>(right.asInt())
-            : right.asDouble();
-        if (r == 0)
-            COMPILER_THROW("Division by zero");
-        push(l / r);
-        break;
-    }
-
-    case OpCode::INT_DIV: {
-        Value right = pop();
-        Value left = pop();
-        int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
-        int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-        if (r == 0)
-            COMPILER_THROW("Division by zero");
-        push(l / r);
-        break;
-    }
-
-    case OpCode::DIVMOD: {
-        Value right = pop();
-        Value left = pop();
-        int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
-        int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-        if (r == 0)
-            COMPILER_THROW("Division by zero");
-      {
-        int64_t rem = l % r;
-        if (rem != 0 && ((rem < 0) != (r < 0))) rem += r;
-        int64_t quot = (l - rem) / r;
-        auto arrRef = parent_vm_->heap_.allocateArray();
-        auto *arr = parent_vm_->heap_.array(arrRef.id);
-        arr->push_back(Value(quot));
-        arr->push_back(Value(rem));
-        push(Value::makeArrayId(arrRef.id));
-      }
-      break;
-    }
-
-    case OpCode::REMAINDER: {
-      Value right = pop();
-      Value left = pop();
-      int64_t l = left.isInt() ? left.asInt() : static_cast<int64_t>(left.asDouble());
-      int64_t r = right.isInt() ? right.asInt() : static_cast<int64_t>(right.asDouble());
-        if (r == 0) {
-            auto ref = parent_vm_->heap_.allocateString("Division by zero");
-            throw ScriptThrow{Value::makeStringId(ref.id)};
-        }
-      push(l % r); // C-style: sign follows dividend
-      break;
-    }
-
-  case OpCode::EQ: {
-    Value right = pop();
-    Value left = pop();
-    if (left.isInt() && right.isInt()) {
-      push(left.asInt() == right.asInt());
-    } else if (left.isStringValId() && right.isStringValId()) {
-      // TODO: string pool lookup
-      std::string l = "<string:" + std::to_string(left.asStringValId()) + ">";
-      std::string r = "<string:" + std::to_string(right.asStringValId()) + ">";
-      push(l == r);
-    } else {
-      // For other types, only equal if same type and both are null
-      if (left.isNull() && right.isNull()) {
-        push(true);
-      } else {
-        push(false);
-      }
-    }
-    break;
-  }
-
-  case OpCode::LT: {
-    Value right = pop();
-    Value left = pop();
-    if (left.isInt() && right.isInt()) {
-      push(left.asInt() < right.asInt());
-    } else {
-      double l = left.isInt()
-                     ? static_cast<double>(left.asInt())
-                     : left.asDouble();
-      double r = right.isInt()
-                     ? static_cast<double>(right.asInt())
-                     : right.asDouble();
-      push(l < r);
-    }
-    break;
-  }
-
-  case OpCode::GT: {
-    Value right = pop();
-    Value left = pop();
-    if (left.isInt() && right.isInt()) {
-      push(left.asInt() > right.asInt());
-    } else {
-      double l = left.isInt()
-                     ? static_cast<double>(left.asInt())
-                     : left.asDouble();
-      double r = right.isInt()
-                     ? static_cast<double>(right.asInt())
-                     : right.asDouble();
-      push(l > r);
-    }
-    break;
-  }
-
- case OpCode::JUMP: {
- uint32_t target = instruction.operands[0].asInt();
- currentFrame().ip = target;
- break;
- }
-
-  case OpCode::JUMP_IF_FALSE: {
-    uint32_t target = instruction.operands[0].asInt();
-    Value condition = pop();
-    if (!parent_vm_->isTruthy(condition)) {
-      currentFrame().ip = target;
-    }
-    break;
-  }
-
-  case OpCode::CALL: {
-    uint32_t arg_count = instruction.operands[0].asInt();
-    std::vector<Value> args(arg_count);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = pop();
-    }
-    Value callee_value = pop();
-
-    // Handle host function call
-    if (callee_value.isHostFuncId()) {
-      // TODO: host func name lookup
-      (void)callee_value.asHostFuncId();
-      COMPILER_THROW("Host function call in execution context not yet supported with NaN boxing");
-    }
-
-    // Handle VM function/closure call
-    uint32_t function_index = 0;
-    uint32_t new_closure_id = 0;
-    if (callee_value.isFunctionObjId()) {
-      function_index = callee_value.asFunctionObjId();
-    } else if (callee_value.isClosureId()) {
-      new_closure_id = callee_value.asClosureId();
-      auto *closure = parent_vm_->heap_.closure(new_closure_id);
-      if (!closure) {
-        COMPILER_THROW("Closure not found");
-      }
-      function_index = closure->function_index;
-    } else {
-      COMPILER_THROW("CALL expects function or closure");
-    }
-
-    const auto *callee = current_chunk->getFunction(function_index);
-    if (!callee) {
-      COMPILER_THROW("Function not found");
-    }
-
-    // Advance caller IP
-    currentFrame().ip++;
-
-        size_t base = locals.size();
-        locals.resize(base + callee->local_count, nullptr);
-        uint32_t sd = static_cast<uint32_t>(stack.size());
-        if (frame_arena_.size() <= frame_count_) {
-            CallFrame cf;
-            cf.function = callee;
-            cf.ip = 0;
-            cf.locals_base = base;
-            cf.closure_id = new_closure_id;
-            cf.stack_depth = sd;
-            frame_arena_.push_back(std::move(cf));
-        } else {
-            frame_arena_[frame_count_].function = callee;
-            frame_arena_[frame_count_].ip = 0;
-            frame_arena_[frame_count_].locals_base = base;
-            frame_arena_[frame_count_].closure_id = new_closure_id;
-            frame_arena_[frame_count_].stack_depth = sd;
-        }
-        frame_count_++;
-
-    // Set up parameters
-    for (uint32_t i = 0; i < callee->param_count && i < args.size(); ++i) {
-      locals[base + i] = std::move(args[i]);
-    }
-    break;
-  }
-
-  case OpCode::RETURN: {
-    doReturn();
-    break;
-  }
-
-  case OpCode::CLOSURE: {
-    uint32_t function_index = instruction.operands[0].asInt();
-    const auto *target = current_chunk->getFunction(function_index);
-    if (!target) {
-      COMPILER_THROW("CLOSURE references unknown function index");
-    }
-
-    // Capture upvalues
-    std::vector<std::shared_ptr<GCHeap::UpvalueCell>> upvalues;
-    upvalues.reserve(target->upvalues.size());
-    for (const auto &descriptor : target->upvalues) {
-      if (descriptor.captures_local) {
-        uint32_t rel_index = descriptor.index;
-        uint32_t abs = toAbsoluteLocal(rel_index);
-        ensureLocalIndex(abs);
-        auto open_it = open_upvalues.find(abs);
-        if (open_it == open_upvalues.end()) {
-          auto cell = std::make_shared<GCHeap::UpvalueCell>();
-          cell->is_open = true;
-          cell->open_index = rel_index;
-          cell->locals_base = currentFrame().locals_base;
-          open_upvalues.emplace(abs, cell);
-          upvalues.push_back(std::move(cell));
-        } else {
-          upvalues.push_back(open_it->second);
-        }
-      } else {
-        uint32_t parent_closure_id = currentFrame().closure_id;
-        if (parent_closure_id != 0) {
-          auto *parent_closure = parent_vm_->heap_.closure(parent_closure_id);
-          if (parent_closure &&
-              descriptor.index < parent_closure->upvalues.size()) {
-            upvalues.push_back(parent_closure->upvalues[descriptor.index]);
-          }
-        }
-      }
-    }
-
-    push(Value::makeClosureId(parent_vm_->heap_.allocateClosure(GCHeap::RuntimeClosure{
-        .function_index = function_index, .upvalues = std::move(upvalues)}).id));
-    break;
-  }
-
-	case OpCode::CALL_METHOD: {
-    // Delegate to parent VM's method dispatch
-    if (instruction.operands.size() != 2 ||
-        !instruction.operands[0].isStringValId() ||
-        !instruction.operands[1].isInt()) {
-      COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
-    }
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    uint32_t arg_count = static_cast<uint32_t>(instruction.operands[1].asInt());
-
-    std::string method_name;
-    if (current_chunk) {
-        method_name = current_chunk->getString(strIndex);
-    }
-    method_name = operatorSymbolToMethodName(method_name);
-
-    std::vector<Value> args(arg_count);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-        args[arg_count - 1 - i] = pop();
-    }
-    Value receiver = pop();
-
-    // Try prototype dispatch
-    std::string type_name;
-    if (receiver.isStringValId() || receiver.isStringId()) type_name = "string";
-    else if (receiver.isInt()) type_name = "int";
-    else if (receiver.isDouble()) type_name = "float";
-    else if (receiver.isBool()) type_name = "bool";
-    else if (receiver.isArrayId()) type_name = "array";
-    else { push(Value::makeNull()); break; }
-
-    auto typeIt = parent_vm_->prototypes_.find(type_name);
-    if (typeIt != parent_vm_->prototypes_.end()) {
-      auto methodIt = typeIt->second.find(method_name);
-      if (methodIt != typeIt->second.end()) {
-        std::vector<Value> all_args;
-        all_args.reserve(arg_count + 1);
-        all_args.push_back(receiver);
-        all_args.insert(all_args.end(), args.begin(), args.end());
-        uint32_t func_idx = methodIt->second;
-        if (func_idx < parent_vm_->host_function_names_.size()) {
-          auto fnIt = parent_vm_->host_functions.find(parent_vm_->host_function_names_[func_idx]);
-          if (fnIt != parent_vm_->host_functions.end()) {
-            push(fnIt->second(all_args));
-            break;
-          }
-        }
-      }
-    }
-    push(Value::makeNull());
-    break;
-  }
-
-  default:
-    COMPILER_THROW(parent_vm_->formatErrorWithContext(
-        "Unsupported opcode in execution context: " +
-        std::to_string(static_cast<int>(instruction.opcode))));
-  }
-}
-
-void VM::setGlobalThreadSafe(const std::string &name, Value value) {
-    std::unique_lock<std::shared_mutex> lock(globals_mutex_);
-    globals[name] = std::move(value);
-}
-
-std::optional<Value>
-VM::getGlobalThreadSafe(const std::string &name) const {
-  // Phase 2D: Track global accesses for dependency tracking
-  trackGlobalAccess(name);
-  
-  std::shared_lock<std::shared_mutex> lock(globals_mutex_);
-  auto it = globals.find(name);
-  if (it != globals.end()) {
-    return it->second;
-  }
-  auto hostIt = host_function_globals_.find(name);
-  if (hostIt != host_function_globals_.end()) {
-    return hostIt->second;
-  }
-  return std::nullopt;
+void VM::throwError(const std::string &msg) {
+  COMPILER_THROW(msg);
 }
 
 std::string VM::resolveStringKey(const Value &value) const {
+  if (value.isStringValId() && current_chunk) {
+    return current_chunk->getString(value.asStringValId());
+  }
   if (value.isStringId()) {
     if (auto *s = heap_.string(value.asStringId())) {
       return *s;
     }
-    return "<string:" + std::to_string(value.asStringId()) + ">";
   }
-  if (value.isStringValId()) {
-    if (current_chunk) {
-      return current_chunk->getString(value.asStringValId());
-    }
-    return "<string:" + std::to_string(value.asStringValId()) + ">";
-  }
-  if (value.isRegexValId()) {
-    if (current_chunk) {
-      return current_chunk->getString(value.asRegexValId());
-    }
-    return "<regex:" + std::to_string(value.asRegexValId()) + ">";
-  }
-  if (value.isInt()) return std::to_string(value.asInt());
-  if (value.isDouble()) {
-    std::ostringstream out;
-    out << value.asDouble();
-
-  }
-  if (value.isBool()) return value.asBool() ? "true" : "false";
-  return value.toString();
-}
-
-// ============================================================================
-// PHASE 2A: Variable Change Event Emission
-// ============================================================================
-
-void VM::emitVariableChanged(const std::string& var_name) {
- if (watcher_registry_) {
- auto fired_fibers = watcher_registry_->onVariableChanged(
- var_name,
- [this](uint32_t watcher_id) -> bool {
- const auto* watcher = watcher_registry_->getWatcher(watcher_id);
- if (!watcher) return false;
- auto tracker = std::make_shared<DependencyTracker>();
- DependencyTrackerScope scope(tracker);
- bool result = evaluateConditionBytecode(
- watcher->condition_func_id, watcher->condition_ip);
- auto new_deps = tracker->getGlobalDependencies();
- watcher_registry_->updateDependencies(watcher_id, new_deps);
- return result;
- }
- );
- for (Fiber* fiber : fired_fibers) {
- if (fiber && current_chunk && fiber->current_function_id < current_chunk->getFunctionCount()) {
- try {
- Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
- call(body_func, {});
- } catch (...) {
- }
- }
- }
- }
-
- if (!event_queue_) {
- return;
- }
-
- uint32_t var_hash = std::hash<std::string>{}(var_name);
- Event change_event(EventType::VAR_CHANGED, var_hash);
- change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
- event_queue_->push(change_event);
-}
-
- void VM::throwError(const std::string &msg) {
-  COMPILER_THROW(msg);
+  return const_cast<VM*>(this)->toString(value);
 }
 
 Value VM::loadModule(const std::string& path) {

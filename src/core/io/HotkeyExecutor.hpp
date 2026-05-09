@@ -32,8 +32,6 @@ public:
   // Callback types
   using SimpleCallback = std::function<void()>;
   using VMCallback = std::function<void(havel::compiler::VM &)>;
-  using ExecutionContextCallback =
-      std::function<void(havel::compiler::VM::VMExecutionContext &)>;
 
   // Create executor with `workers` threads and `maxQueue` capacity.
   HotkeyExecutor(size_t workers = 16, size_t maxQueue = 8192)
@@ -48,25 +46,11 @@ public:
     return submitInternal([cb = std::move(cb)]() mutable { cb(); }, timeoutMs);
   }
 
-  // Submit a callback with VM context access (legacy - prefer execution
-  // context)
+  // Submit a callback with VM context access
   SubmitResult submitVM(havel::compiler::VM &vm, VMCallback cb,
                         int timeoutMs = 90000) {
     return submitInternal([cb = std::move(cb), &vm]() mutable { cb(vm); },
                           timeoutMs);
-  }
-
-  // Submit a callback with isolated execution context (RECOMMENDED for hotkeys)
-  // This ensures thread-safe execution with isolated stack/locals
-  SubmitResult submitExecutionContext(havel::compiler::VM &vm,
-                                      ExecutionContextCallback cb,
-                                      int timeoutMs = 90000) {
-    return submitInternal(
-        [cb = std::move(cb), &vm]() mutable {
-          auto ctx = vm.createExecutionContext();
-          cb(ctx);
-        },
-        timeoutMs);
   }
 
 private:

@@ -149,27 +149,35 @@ Value configKeys(VMApi &api, const std::vector<Value> &args) {
 }
 
 void registerConfigModule(VMApi &api) {
-    api.registerFunction("config.get", [&api](const std::vector<Value> &args) {
+    auto configObj = api.makeObject();
+
+    auto registerConfigFn = [&](const std::string &name, auto func) {
+        api.registerFunction("config." + name, func);
+        api.registerFunction("cfg." + name, func);
+        api.setField(configObj, name, api.makeFunctionRef("config." + name));
+    };
+
+    registerConfigFn("get", [&api](const std::vector<Value> &args) {
         return configGet(api, args);
     });
 
-    api.registerFunction("config.set", [&api](const std::vector<Value> &args) {
+    registerConfigFn("set", [&api](const std::vector<Value> &args) {
         return configSet(api, args);
     });
 
-    api.registerFunction("config.save", [](const std::vector<Value> &args) {
+    registerConfigFn("save", [](const std::vector<Value> &args) {
         return configSave(args);
     });
 
-    api.registerFunction("config.getAll", [&api](const std::vector<Value> &args) {
+    registerConfigFn("getAll", [&api](const std::vector<Value> &args) {
         return configGetAll(api, args);
     });
 
-    api.registerFunction("config.load", [](const std::vector<Value> &args) {
+    registerConfigFn("load", [](const std::vector<Value> &args) {
         return configLoad(args);
     });
 
-    api.registerFunction("config.has", [&api](const std::vector<Value> &args) {
+    registerConfigFn("has", [&api](const std::vector<Value> &args) {
         if (args.empty()) {
             throw std::runtime_error("config.has() requires 1 argument: key");
         }
@@ -182,26 +190,61 @@ void registerConfigModule(VMApi &api) {
         return Value::makeBool(false);
     });
 
-    api.registerFunction("config.keys", [&api](const std::vector<Value> &args) {
+    registerConfigFn("keys", [&api](const std::vector<Value> &args) {
         return configKeys(api, args);
     });
 
+    // Register aliases
+    api.setGlobal("config", configObj);
+    api.setGlobal("cfg", configObj);
+    api.setGlobal("conf", configObj);
+
     debug("Config module registered");
+}
+
+static void setNestedField(VMApi &api, Value obj, const std::string &key, Value value) {
+    size_t dotPos = key.find('.');
+    if (dotPos == std::string::npos) {
+        api.setField(obj, key, std::move(value));
+        return;
+    }
+
+    std::string head = key.substr(0, dotPos);
+    std::string tail = key.substr(dotPos + 1);
+
+    Value subObj;
+    if (api.hasField(obj, head)) {
+        subObj = api.getField(obj, head);
+        if (!subObj.isObjectId()) {
+            subObj = api.makeObject();
+            api.setField(obj, head, subObj);
+        }
+    } else {
+        subObj = api.makeObject();
+        api.setField(obj, head, subObj);
+    }
+
+    setNestedField(api, subObj, tail, std::move(value));
 }
 
 void autoLoadConfig(VMApi &api) {
     auto &config = Configs::Get();
     auto keys = config.GetAllKeys();
 
-    auto confObj = api.makeObject();
-    for (const auto &key : keys) {
-        std::string value = config.Get<std::string>(key, "");
-        api.setField(confObj, key, stringToValue(api, value));
+    Value confObj = api.getField(Value::makeObjectId(api.vm.globals_mirror_object_id_), "conf");
+    if (confObj.isNull()) {
+        confObj = api.makeObject();
+        api.setGlobal("conf", confObj);
+        api.setGlobal("config", confObj);
+        api.setGlobal("cfg", confObj);
     }
 
-    api.setGlobal("conf", confObj);
+    for (const auto &key : keys) {
+        std::string value = config.Get<std::string>(key, "");
+        setNestedField(api, confObj, key, stringToValue(api, value));
+    }
 
-    debug("Config auto-loaded to global conf object with {} keys", keys.size());
+    debug("Config auto-loaded with {} keys (including nested)", keys.size());
 }
 
 } // namespace havel::modules

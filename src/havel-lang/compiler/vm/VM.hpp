@@ -783,53 +783,7 @@ public:
   // Execution Context System - Isolated execution with shared globals
   // ============================================================================
 
-  // Lightweight execution context for async/threaded execution
-  // Shares: globals, heap, host_functions, prototypes, chunk
-  // Isolated: stack, locals, frames, open_upvalues
-struct VMExecutionContext {
-private:
-    VM *parent_vm_ = nullptr;
-    std::stack<Value> stack;
-    std::vector<Value> locals;
-    std::vector<CallFrame> frame_arena_;
-    size_t frame_count_ = 0;
-    std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
-        open_upvalues;
-    std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices
-    bool has_current_exception_ = false;
-    Value current_exception_ = nullptr;
-    const BytecodeChunk *current_chunk = nullptr;
-
-    friend class VM;
-
-  public:
-    VMExecutionContext() = default;
-    ~VMExecutionContext() = default;
-
-    // Non-copyable (contains unique execution state)
-    VMExecutionContext(const VMExecutionContext &) = delete;
-    VMExecutionContext &operator=(const VMExecutionContext &) = delete;
-
-    // Movable
-    VMExecutionContext(VMExecutionContext &&) = default;
-    VMExecutionContext &operator=(VMExecutionContext &&) = default;
-
-    // Execute a callback in this isolated context
-    Value invokeCallback(CallbackId id,
-                                 const std::vector<Value> &args = {});
-
-    // Internal: execute single instruction in this context
-    void executeInstructionInContext(const Instruction &instruction);
-
-    // Check if context is valid (has parent VM)
-    bool isValid() const { return parent_vm_ != nullptr; }
-  };
-
-  // Create a lightweight execution context that shares globals/heap but has
-  // isolated stack This is the CORRECT way to execute hotkeys from threads
-  VMExecutionContext createExecutionContext();
-
-  // Thread-safe global variable access
+// Thread-safe global variable access
   void setGlobalThreadSafe(const std::string &name, Value value);
   std::optional<Value>
   getGlobalThreadSafe(const std::string &name) const;
@@ -875,6 +829,7 @@ void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
 
 private:
     std::atomic<uint32_t> active_hotkey_executions_{0};
+    mutable std::recursive_mutex execution_mutex_; // Main VM execution lock
     bool jit_tail_call_occurred_ = false;
 
     uint32_t app_args_array_id_ = 0;

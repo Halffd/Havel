@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
+#include <map>
 
 namespace havel::compiler::prototypes {
 
@@ -606,6 +608,309 @@ void registerObjectPrototype(VM& vm) {
     }
     return acc;
   });
+
+  auto regProtoVar = [&vm](const std::string& method, BytecodeHostFunction fn) {
+    vm.registerHostFunction("object." + method, std::move(fn));
+    vm.registerPrototypeMethodByName("object", method, "object." + method);
+  };
+
+  regProto("clone", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("isEmpty", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(true);
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    return Value::makeBool(!obj || obj->size() == 0);
+  });
+
+  regProto("freeze", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    return args[0];
+  });
+
+  regProto("invert", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      std::string valStr = vm.toString(val);
+      result->set(valStr, [&vm, &key]() -> Value {
+        auto kRef = vm.getHeap().allocateString(key);
+        return Value::makeStringId(kRef.id);
+      }());
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProtoVar("pick", [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    if (args.size() >= 2 && args[1].isArrayId()) {
+      auto* keys = vm.getHeap().array(args[1].asArrayId());
+      if (keys) {
+        for (const auto& kv : *keys) {
+          std::string keyStr = extractStringArg(vm, {kv}, 0, "");
+          auto it = obj->find(keyStr);
+          if (it != obj->end()) result->set(keyStr, it->second);
+        }
+      }
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProtoVar("omit", [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    std::set<std::string> omitKeys;
+    if (args.size() >= 2 && args[1].isArrayId()) {
+      auto* keys = vm.getHeap().array(args[1].asArrayId());
+      if (keys) {
+        for (const auto& kv : *keys) {
+          omitKeys.insert(extractStringArg(vm, {kv}, 0, ""));
+        }
+      }
+    }
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      if (omitKeys.count(key)) continue;
+      result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("defaults", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isObjectId() || !args[1].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    auto* defs = vm.getHeap().object(args[1].asObjectId());
+    if (!obj || !defs) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *defs) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      if (obj->find(key) == obj->end()) result->set(key, val);
+    }
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProtoVar("rename", [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    std::map<std::string, std::string> renameMap;
+    if (args.size() >= 2 && args[1].isObjectId()) {
+      auto* mapping = vm.getHeap().object(args[1].asObjectId());
+      if (mapping) {
+        for (const auto& [k, v] : *mapping) {
+          if (k == "__set_marker__" || k == "__proto__") continue;
+          renameMap[k] = extractStringArg(vm, {v}, 0, "");
+        }
+      }
+    }
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      std::string outKey = renameMap.count(key) ? renameMap[key] : key;
+      result->set(outKey, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProtoVar("pickBy", [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      auto predResult = vm.call(args[1], {Value::makeStringId(kRef.id), val});
+      if (vm.toBoolPublic(predResult)) result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProtoVar("omitBy", [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      auto predResult = vm.call(args[1], {Value::makeStringId(kRef.id), val});
+      if (!vm.toBoolPublic(predResult)) result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("includes", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeBool(false);
+    std::string key = extractStringArg(vm, args, 1, "");
+    return Value::makeBool(obj->find(key) != obj->end());
+  });
+
+  regProtoVar("count", [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeInt(0);
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeInt(0);
+    if (args.size() >= 2 && (args[1].isFunctionObjId() || args[1].isClosureId())) {
+      int64_t c = 0;
+      for (const auto& [key, val] : *obj) {
+        if (key == "__set_marker__" || key == "__proto__") continue;
+        auto kRef = vm.getHeap().allocateString(key);
+        auto r = vm.call(args[1], {Value::makeStringId(kRef.id), val});
+        if (vm.toBoolPublic(r)) ++c;
+      }
+      return Value::makeInt(c);
+    }
+    return Value::makeInt(static_cast<int64_t>(obj->size()));
+  });
+
+  regProto("sorted", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    std::vector<std::string> keys;
+    for (const auto& [k, v] : *obj) {
+      if (k != "__set_marker__" && k != "__proto__") keys.push_back(k);
+    }
+    std::sort(keys.begin(), keys.end());
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& key : keys) {
+      auto it = obj->find(key);
+      if (it != obj->end()) result->set(key, it->second);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("unique", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    return args[0];
+  });
+
+  regProto("reversed", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    std::vector<std::pair<std::string, Value>> entries(obj->begin(), obj->end());
+    std::reverse(entries.begin(), entries.end());
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : entries) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("foreach", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeNull();
+    if (!(args[1].isFunctionObjId() || args[1].isClosureId())) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto kRef = vm.getHeap().allocateString(key);
+      vm.call(args[1], {Value::makeStringId(kRef.id), val});
+    }
+    return Value::makeNull();
+  });
+
+  regProto("flatten", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      if (val.isObjectId()) {
+        auto* inner = vm.getHeap().object(val.asObjectId());
+        if (inner) {
+          for (const auto& [ik, iv] : *inner) {
+            if (ik == "__set_marker__" || ik == "__proto__") continue;
+            result->set(key + "." + ik, iv);
+          }
+          continue;
+        }
+      }
+      result->set(key, val);
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("unflatten", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
+    auto* obj = vm.getHeap().object(args[0].asObjectId());
+    if (!obj) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateObject();
+    auto* result = vm.getHeap().object(resultRef.id);
+    for (const auto& [key, val] : *obj) {
+      if (key == "__set_marker__" || key == "__proto__") continue;
+      auto dotPos = key.find('.');
+      if (dotPos == std::string::npos) {
+        result->set(key, val);
+      } else {
+        std::string topKey = key.substr(0, dotPos);
+        std::string subKey = key.substr(dotPos + 1);
+        Value existing = result->get(topKey);
+        if (!existing.isObjectId()) {
+          auto innerRef = vm.getHeap().allocateObject();
+          result->set(topKey, Value::makeObjectId(innerRef.id));
+          auto* inner = vm.getHeap().object(innerRef.id);
+          inner->set(subKey, val);
+        } else {
+          auto* inner = vm.getHeap().object(existing.asObjectId());
+          if (inner) inner->set(subKey, val);
+        }
+      }
+    }
+    return Value::makeObjectId(resultRef.id);
+  });
+
+  regProto("assign", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isObjectId() || !args[1].isObjectId()) return Value::makeNull();
+    auto* target = vm.getHeap().object(args[0].asObjectId());
+    auto* source = vm.getHeap().object(args[1].asObjectId());
+    if (target && source) {
+      for (const auto& [key, val] : *source) {
+        if (key == "__set_marker__" || key == "__proto__") continue;
+        target->set(key, val);
+      }
+    }
+    return args[0];
+  });
 }
 
 void registerSetPrototype(VM& vm) {
@@ -772,20 +1077,280 @@ void registerSetPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  // isSubsetOf: {1,2,3}.isSubsetOf({1,2,3,4}) -> true
-  regProto("isSubsetOf", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2) return Value::makeBool(false);
-    if (args[0].isSetId() && args[1].isSetId()) {
-      auto* s1 = vm.getHeap().set(args[0].asSetId());
-      auto* s2 = vm.getHeap().set(args[1].asSetId());
-      if (s1 && s2) {
-        for (const auto& [k, v] : *s1) {
-          if (s2->find(k) == s2->end()) return Value::makeBool(false);
+    regProto("isSubsetOf", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeBool(false);
+        if (args[0].isSetId() && args[1].isSetId()) {
+            auto* s1 = vm.getHeap().set(args[0].asSetId());
+            auto* s2 = vm.getHeap().set(args[1].asSetId());
+            if (s1 && s2) {
+                for (const auto& [k, v] : *s1) {
+                    if (s2->find(k) == s2->end()) return Value::makeBool(false);
+                }
+                return Value::makeBool(true);
+            }
         }
-        return Value::makeBool(true);
+        return Value::makeBool(false);
+    });
+
+    auto setKeyFromValue = [&vm](const Value& v) -> std::string {
+        if (v.isInt()) return std::to_string(v.asInt());
+        if (v.isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asStringValId());
+        if (v.isStringId() && vm.getHeap().string(v.asStringId())) return *vm.getHeap().string(v.asStringId());
+        return vm.toString(v);
+    };
+
+    auto valueFromKey = [&vm](const std::string& key) -> Value {
+        try { return Value::makeInt(std::stoll(key)); }
+        catch (...) { auto ref = vm.getHeap().allocateString(key); return Value::makeStringId(ref.id); }
+    };
+
+  regProto("includes", 2, [&vm, &setKeyFromValue](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        std::string key = setKeyFromValue(args[1]);
+                return Value::makeBool(set->find(key) != set->end());
+            }
+        }
+        return Value::makeBool(false);
+    });
+
+    regProto("clone", 1, [&vm](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        if (args[0].isSetId()) {
+            auto* s = vm.getHeap().set(args[0].asSetId());
+            if (s) {
+                auto resultRef = vm.getHeap().allocateSet();
+                auto* result = vm.getHeap().set(resultRef.id);
+                for (const auto& [k, v] : *s) (*result)[k] = v;
+                return Value::makeSetId(resultRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+  regProto("foreach", 2, [&vm, &valueFromKey](const std::vector<Value>& args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        for (const auto& [k, v] : *set) {
+          vm.call(args[1], {valueFromKey(k)});
+        }
       }
     }
-    return Value::makeBool(false);
+    return Value::makeNull();
+  });
+
+  regProto("each", 2, [&vm, &valueFromKey](const std::vector<Value>& args) {
+    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        for (const auto& [k, v] : *set) {
+          vm.call(args[1], {valueFromKey(k)});
+        }
+      }
+    }
+    return Value::makeNull();
+  });
+
+    regProto("sorted", 1, [&vm, &valueFromKey](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        if (args[0].isSetId()) {
+            auto* s = vm.getHeap().set(args[0].asSetId());
+            if (s) {
+                std::vector<Value> vals;
+                for (const auto& [k, v] : *s) vals.push_back(valueFromKey(k));
+                std::sort(vals.begin(), vals.end(), [](const Value& a, const Value& b) {
+                    if (a.isInt() && b.isInt()) return a.asInt() < b.asInt();
+                    if (a.isDouble() && b.isDouble()) return a.asDouble() < b.asDouble();
+                    return false;
+                });
+                auto arrRef = vm.getHeap().allocateArray();
+                auto* arr = vm.getHeap().array(arrRef.id);
+                for (const auto& v : vals) arr->push_back(v);
+                return Value::makeArrayId(arrRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+    regProto("unique", 1, [&vm, &valueFromKey](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        if (args[0].isSetId()) {
+            auto* s = vm.getHeap().set(args[0].asSetId());
+            if (s) {
+                auto resultRef = vm.getHeap().allocateArray();
+                auto* arr = vm.getHeap().array(resultRef.id);
+                for (const auto& [k, v] : *s) arr->push_back(valueFromKey(k));
+                return Value::makeArrayId(resultRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+    regProto("reversed", 1, [&vm, &valueFromKey](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        if (args[0].isSetId()) {
+            auto* s = vm.getHeap().set(args[0].asSetId());
+            if (s) {
+                std::vector<Value> vals;
+                for (const auto& [k, v] : *s) vals.push_back(valueFromKey(k));
+                auto arrRef = vm.getHeap().allocateArray();
+                auto* arr = vm.getHeap().array(arrRef.id);
+                for (auto it = vals.rbegin(); it != vals.rend(); ++it) arr->push_back(*it);
+                return Value::makeArrayId(arrRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+    regProto("isSupersetOf", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeBool(false);
+        if (args[0].isSetId() && args[1].isSetId()) {
+            auto* s1 = vm.getHeap().set(args[0].asSetId());
+            auto* s2 = vm.getHeap().set(args[1].asSetId());
+            if (s1 && s2) {
+                for (const auto& [k, v] : *s2) {
+                    if (s1->find(k) == s1->end()) return Value::makeBool(false);
+                }
+                return Value::makeBool(true);
+            }
+        }
+        return Value::makeBool(false);
+    });
+
+    regProto("symmetricDifference", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeNull();
+        if (args[0].isSetId() && args[1].isSetId()) {
+            auto* s1 = vm.getHeap().set(args[0].asSetId());
+            auto* s2 = vm.getHeap().set(args[1].asSetId());
+            if (s1 && s2) {
+                auto resultRef = vm.getHeap().allocateSet();
+                auto* result = vm.getHeap().set(resultRef.id);
+                for (const auto& [k, v] : *s1) { if (s2->find(k) == s2->end()) (*result)[k] = v; }
+                for (const auto& [k, v] : *s2) { if (s1->find(k) == s1->end()) (*result)[k] = v; }
+                return Value::makeSetId(resultRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+    regProto("cartesianProduct", 2, [&vm, &valueFromKey](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeNull();
+        if (args[0].isSetId() && args[1].isSetId()) {
+            auto* s1 = vm.getHeap().set(args[0].asSetId());
+            auto* s2 = vm.getHeap().set(args[1].asSetId());
+            if (s1 && s2) {
+                auto resultRef = vm.getHeap().allocateArray();
+                auto* result = vm.getHeap().array(resultRef.id);
+                for (const auto& [k1, v1] : *s1) {
+                    for (const auto& [k2, v2] : *s2) {
+                        auto pairRef = vm.getHeap().allocateArray();
+                        auto* pair = vm.getHeap().array(pairRef.id);
+                        pair->push_back(valueFromKey(k1));
+                        pair->push_back(valueFromKey(k2));
+                        result->push_back(Value::makeArrayId(pairRef.id));
+                    }
+                }
+                return Value::makeArrayId(resultRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+    regProto("powerSet", 1, [&vm](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        if (args[0].isSetId()) {
+            auto* s = vm.getHeap().set(args[0].asSetId());
+            if (s) {
+                std::vector<std::string> keys;
+                for (const auto& [k, v] : *s) keys.push_back(k);
+                auto n = keys.size();
+                auto resultRef = vm.getHeap().allocateArray();
+                auto* result = vm.getHeap().array(resultRef.id);
+                uint64_t total = (n > 63) ? (1ULL << 63) : (1ULL << n);
+                for (uint64_t mask = 0; mask < total; ++mask) {
+                    auto subsetRef = vm.getHeap().allocateSet();
+                    auto* subset = vm.getHeap().set(subsetRef.id);
+                    for (size_t i = 0; i < n; ++i) {
+                        if (mask & (1ULL << i)) (*subset)[keys[i]] = Value::makeBool(true);
+                    }
+                    result->push_back(Value::makeSetId(subsetRef.id));
+                }
+                return Value::makeArrayId(resultRef.id);
+            }
+        }
+        return Value::makeNull();
+    });
+
+    regProto("toSet", 1, [&vm](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        if (args[0].isSetId()) return args[0];
+        return Value::makeNull();
+    });
+
+  regProto("discard", 2, [&vm, &setKeyFromValue](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    if (args[0].isSetId()) {
+      auto* set = vm.getHeap().set(args[0].asSetId());
+      if (set) {
+        std::string key = setKeyFromValue(args[1]);
+        set->erase(key);
+        return args[0];
+      }
+    }
+    return Value::makeNull();
+  });
+
+  regProto("list", 1, [&vm, &valueFromKey](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isSetId()) return Value::makeNull();
+    auto* s = vm.getHeap().set(args[0].asSetId());
+    if (!s) return Value::makeNull();
+    auto arrRef = vm.getHeap().allocateArray();
+    auto* arr = vm.getHeap().array(arrRef.id);
+    for (const auto& [k, v] : *s) arr->push_back(valueFromKey(k));
+    return Value::makeArrayId(arrRef.id);
+  });
+
+  regProto("union", 2, [&vm, &setKeyFromValue](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isSetId() || !args[1].isSetId()) return Value::makeNull();
+    auto* s1 = vm.getHeap().set(args[0].asSetId());
+    auto* s2 = vm.getHeap().set(args[1].asSetId());
+    if (!s1 || !s2) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateSet();
+    auto* result = vm.getHeap().set(resultRef.id);
+    for (const auto& [k, v] : *s1) (*result)[k] = v;
+    for (const auto& [k, v] : *s2) (*result)[k] = v;
+    return Value::makeSetId(resultRef.id);
+  });
+
+  regProto("intersection", 2, [&vm, &valueFromKey](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isSetId() || !args[1].isSetId()) return Value::makeNull();
+    auto* s1 = vm.getHeap().set(args[0].asSetId());
+    auto* s2 = vm.getHeap().set(args[1].asSetId());
+    if (!s1 || !s2) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateSet();
+    auto* result = vm.getHeap().set(resultRef.id);
+    for (const auto& [k, v] : *s1) {
+      if (s2->find(k) != s2->end()) (*result)[k] = v;
+    }
+    return Value::makeSetId(resultRef.id);
+  });
+
+  regProto("difference", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2 || !args[0].isSetId() || !args[1].isSetId()) return Value::makeNull();
+    auto* s1 = vm.getHeap().set(args[0].asSetId());
+    auto* s2 = vm.getHeap().set(args[1].asSetId());
+    if (!s1 || !s2) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateSet();
+    auto* result = vm.getHeap().set(resultRef.id);
+    for (const auto& [k, v] : *s1) {
+      if (s2->find(k) == s2->end()) (*result)[k] = v;
+    }
+    return Value::makeSetId(resultRef.id);
   });
 }
 

@@ -41,11 +41,12 @@ public:
         bool loop = false
     );
     
-    // Task control
-    TaskPtr getTask(const std::string& name) const;
-    bool hasTask(const std::string& name) const;
-    void removeTask(const std::string& name);
-    void stopAll();
+  // Task control
+  TaskPtr getTask(const std::string& name) const;
+  bool hasTask(const std::string& name) const;
+  void removeTask(const std::string& name);
+  void stopAll();
+  std::vector<std::string> getTaskNames() const;
     
     // Helper to create timed actions
     template<typename F>

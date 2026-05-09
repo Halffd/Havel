@@ -166,9 +166,10 @@ std::string PixelAutomationService::readText(const Region& region) {
 }
 
 std::string PixelAutomationService::readText(const Region& region, const std::string& ocrEngine) {
-    // For now, ignore ocrEngine parameter and use default
-    (void)ocrEngine;
-    return readText(region);
+  if (!m_automation) return "";
+
+  havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
+  return m_automation->readText(screenRegion, ocrEngine);
 }
 
 bool PixelAutomationService::captureScreen(const std::string& filePath) {

@@ -49,67 +49,67 @@ void registerBrowserModule(compiler::VMApi &api);
 namespace havel {
 
 void registerStdLibWithVM(compiler::HostBridge &bridge) {
-  static auto api = std::make_shared<compiler::VMApi>(*bridge.context().vm);
+  compiler::VMApi api(*bridge.context().vm);
 
-  stdlib::registerMathModule(*api);
-  stdlib::registerStringModule(*api);
-  stdlib::registerObjectModule(*api);
-  stdlib::registerTypeModule(*api);
-  stdlib::registerRegexModule(*api);
-  stdlib::registerPhysicsModule(*api);
-  stdlib::registerTimeModule(*api);
+  stdlib::registerMathModule(api);
+  stdlib::registerStringModule(api);
+  stdlib::registerObjectModule(api);
+  stdlib::registerTypeModule(api);
+  stdlib::registerRegexModule(api);
+  stdlib::registerPhysicsModule(api);
+  stdlib::registerTimeModule(api);
 #ifndef HAVEL_PURE_VM
-  stdlib::registerHotkeyModule(*api);
+  stdlib::registerHotkeyModule(api);
 #endif
-  stdlib::registerFsModule(*api);
-  stdlib::registerRandomModule(*api);
-  stdlib::registerLogModule(*api);
-  stdlib::registerDebugModule(*api);
-  stdlib::registerSysModule(*api);
-  stdlib::registerShellModule(*api);
-  stdlib::registerPointerModule(*api);
-  stdlib::registerFormatModule(*api);
-  stdlib::registerPackModule(*api);
-  stdlib::registerBitModule(*api);
+  stdlib::registerFsModule(api);
+  stdlib::registerRandomModule(api);
+  stdlib::registerLogModule(api);
+  stdlib::registerDebugModule(api);
+  stdlib::registerSysModule(api);
+  stdlib::registerShellModule(api);
+  stdlib::registerPointerModule(api);
+  stdlib::registerFormatModule(api);
+  stdlib::registerPackModule(api);
+  stdlib::registerBitModule(api);
 
 #ifndef HAVEL_PURE_VM
-  stdlib::registerHttpModule(*api);
-  stdlib::registerBrowserModule(*api);
-  modules::registerConfigModule(*api);
-modules::registerWindowMonitorModule(*api);
-modules::registerHelpModule(*api);
-modules::registerMouseModule(*api);
-modules::registerUIModule(*api);
-modules::registerAutomationModule(*api);
-modules::registerPixelModule(*api);
-modules::registerImageModule(*api);
-modules::registerMediaModule(*api);
-modules::registerScreenshotModule(*api);
-modules::ffi::registerFFIModule(*api);
+  stdlib::registerHttpModule(api);
+  stdlib::registerBrowserModule(api);
+  modules::registerConfigModule(api);
+  modules::registerWindowMonitorModule(api);
+  modules::registerHelpModule(api);
+  modules::registerMouseModule(api);
+  modules::registerUIModule(api);
+  modules::registerAutomationModule(api);
+  modules::registerPixelModule(api);
+  modules::registerImageModule(api);
+  modules::registerMediaModule(api);
+  modules::registerScreenshotModule(api);
+  modules::ffi::registerFFIModule(api);
 #endif
 }
 
 void registerPureStdLib(compiler::VM &vm) {
-	static auto api = std::make_shared<compiler::VMApi>(vm);
+  compiler::VMApi api(vm);
 
-	// Register PURE stdlib modules (no OS access)
-  stdlib::registerMathModule(*api);
-  stdlib::registerStringModule(*api);
-  stdlib::registerObjectModule(*api);
-  stdlib::registerTypeModule(*api);
-  stdlib::registerRegexModule(*api);
-  stdlib::registerPhysicsModule(*api);
-  stdlib::registerTimeModule(*api);
-  stdlib::registerFsModule(*api);
-  stdlib::registerRandomModule(*api);
-  stdlib::registerLogModule(*api);
-  stdlib::registerDebugModule(*api);
-  stdlib::registerSysModule(*api);
-  stdlib::registerShellModule(*api);
-  stdlib::registerPointerModule(*api);
-  stdlib::registerFormatModule(*api);
-  stdlib::registerPackModule(*api);
-  stdlib::registerBitModule(*api);
+  // Register PURE stdlib modules (no OS access)
+  stdlib::registerMathModule(api);
+  stdlib::registerStringModule(api);
+  stdlib::registerObjectModule(api);
+  stdlib::registerTypeModule(api);
+  stdlib::registerRegexModule(api);
+  stdlib::registerPhysicsModule(api);
+  stdlib::registerTimeModule(api);
+  stdlib::registerFsModule(api);
+  stdlib::registerRandomModule(api);
+  stdlib::registerLogModule(api);
+  stdlib::registerDebugModule(api);
+  stdlib::registerSysModule(api);
+  stdlib::registerShellModule(api);
+  stdlib::registerPointerModule(api);
+  stdlib::registerFormatModule(api);
+  stdlib::registerPackModule(api);
+  stdlib::registerBitModule(api);
 }
 
 } // namespace havel

@@ -6986,7 +6986,35 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 (*bObj)["self"] = object;
                 pushStack(Value::makeObjectId(boundObj.id));
             } else {
-                pushStack(Value::makeNull());
+                // Autovivification: if object has __vivify, auto-create sub-object
+                auto* vivify = obj->get("__vivify");
+                if (vivify && !vivify->isNull() && !vivify->isBool()) {
+                    // Create a new sub-object with same __vivify marker
+                    auto subRef = heap_.allocateObject();
+                    auto *subObj = heap_.object(subRef.id);
+                    (*subObj)["__vivify"] = *vivify;
+                    // Also propagate __autosave_root if present
+                    auto* autoSaveRoot = obj->get("__autosave_root");
+                    if (autoSaveRoot) {
+                        (*subObj)["__autosave_root"] = *autoSaveRoot;
+                    }
+                    // Propagate __cfg_path for nested path tracking
+                    auto* parentPath = obj->get("__cfg_path");
+                    std::string childPath;
+                    if (parentPath && parentPath->isStringValId()) {
+                        auto* parentStr = heap_.string(parentPath->asStringValId());
+                        childPath = parentStr ? (*parentStr + "." + *key) : *key;
+                    } else {
+                        childPath = *key;
+                    }
+                    auto pathRef = heap_.allocateString(childPath);
+                    (*subObj)["__cfg_path"] = Value::makeStringValId(pathRef.id);
+                    // Store sub-object on parent so it persists
+                    obj->set(*key, Value::makeObjectId(subRef.id));
+                    pushStack(Value::makeObjectId(subRef.id));
+                } else {
+                    pushStack(Value::makeNull());
+                }
             }
         }
     }
@@ -7087,7 +7115,40 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!obj) {
       COMPILER_THROW("OBJECT_SET unknown object id");
     }
-    obj->set(*keyStr, std::move(value));
+    obj->set(*keyStr, value);
+
+    // Auto-save: if object has __autosave_root, persist to config store
+    auto* autoSaveRoot = obj->get("__autosave_root");
+    if (autoSaveRoot && !autoSaveRoot->isNull()) {
+        auto* cfgPathVal = obj->get("__cfg_path");
+        if (cfgPathVal && cfgPathVal->isStringValId()) {
+            auto* pathStr = heap_.string(cfgPathVal->asStringValId());
+            if (pathStr) {
+                std::string fullKey = *pathStr + "." + *keyStr;
+                // Resolve value to string for config storage
+                std::string valStr;
+                if (value.isBool()) valStr = value.asBool() ? "true" : "false";
+                else if (value.isInt()) valStr = std::to_string(value.asInt());
+                else if (value.isDouble()) valStr = std::to_string(value.asDouble());
+                else if (value.isStringValId()) {
+                    auto* s = heap_.string(value.asStringValId());
+                    valStr = s ? *s : "";
+                } else if (value.isStringId()) {
+                    auto* s = heap_.string(value.asStringId());
+                    valStr = s ? *s : "";
+                } else {
+                    valStr = "";
+                }
+                
+                if (!valStr.empty() || value.isBool() || value.isInt() || value.isDouble()) {
+                    auto &config = Configs::Get();
+                    config.Set(fullKey, valStr, true);
+                    // havel::debug("VM Auto-save: {} = {}", fullKey, valStr);
+                }
+            }
+        }
+    }
+
     pushStack(object); // Return the object for chaining
     break;
   }

@@ -1025,7 +1025,9 @@ std::vector<Token> Lexer::tokenize() {
         }
         isStatementStart = (prevType == TokenType::NewLine ||
                             prevType == TokenType::Semicolon ||
-                            prevType == TokenType::Arrow);
+                            prevType == TokenType::Arrow ||
+                            prevType == TokenType::OpenBrace ||
+                            prevType == TokenType::CloseBrace);
       }
 
       // Hotkey modifier detection: # at statement start OR followed by modifier keys
@@ -1033,18 +1035,33 @@ std::vector<Token> Lexer::tokenize() {
       bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
       
       if (isStatementStart || (hasModifierPrefix && hasKeyName)) {
-        tokens.push_back(scanHotkey());
-        if (debug_lexer) {
-          havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
+        // Look ahead to see if it's actually followed by '=>' (a hotkey binding)
+        size_t look = position;
+        while (look < source.length() && isHotkeyChar(source[look])) {
+          look++;
         }
-        continue;
+        while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) {
+          look++;
+        }
+        bool hasArrow = (look + 1 < source.length() && source[look] == '=' && source[look+1] == '>');
+        
+        if (hasArrow) {
+          tokens.push_back(scanHotkey());
+          if (debug_lexer) {
+            havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
+          }
+          continue;
+        }
       }
 
-      // Default: '#' in expression context → length operator
-      auto lenToken = makeToken("#", TokenType::Length);
-      tokens.push_back(lenToken);
+      // If it's not a hotkey, it's the length operator
+      tokens.push_back(makeToken("#", TokenType::Length));
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
       continue;
     }
+
 
     // Handle numbers (including negative numbers in certain contexts)
 // Only treat -digit as a negative number when NOT after an expression

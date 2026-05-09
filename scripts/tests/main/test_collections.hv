@@ -148,6 +148,7 @@ print("  created: " + obj)
 // Basic operations
 print("  len: " + obj.len)
 print(" len(): " + obj.len())
+print("  obj before has: " + obj)
 print("  has(name): " + obj.has("name"))
 print("  get(age): " + obj.get("age"))
 print("  keys: " + obj.keys())

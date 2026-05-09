@@ -1,0 +1,4 @@
+obj = { name: "Alice" }
+println("Object created")
+keys = obj.keys()
+println("Keys: {keys}")

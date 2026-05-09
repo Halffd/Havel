@@ -1019,13 +1019,13 @@ std::vector<Token> Lexer::tokenize() {
       bool isStatementStart = tokens.empty();
       if (!isStatementStart) {
         TokenType prevType = tokens.back().type;
-        havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {} value: '{}'", 
-                     line, column, static_cast<int>(prevType), tokens.back().value);
+        if (debug_lexer) {
+          havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {} value: '{}'", 
+                       line, column, static_cast<int>(prevType), tokens.back().value);
+        }
         isStatementStart = (prevType == TokenType::NewLine ||
                             prevType == TokenType::Semicolon ||
                             prevType == TokenType::Arrow);
-      } else if (debug_lexer) {
-        havel::debug("[DEBUG] # char at line {} col {} - appears to be at statement start", line, column);
       }
 
       // Hotkey modifier detection: # at statement start OR followed by modifier keys
@@ -1043,9 +1043,6 @@ std::vector<Token> Lexer::tokenize() {
       // Default: '#' in expression context → length operator
       auto lenToken = makeToken("#", TokenType::Length);
       tokens.push_back(lenToken);
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
       continue;
     }
 

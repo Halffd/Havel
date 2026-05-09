@@ -821,6 +821,9 @@ private:
     // Internal: execute single instruction in this context
     void executeInstructionInContext(const Instruction &instruction);
 
+    // Dispatch a call in this context
+    void doCallInContext(Value callee_value, std::vector<Value> args);
+
     // Check if context is valid (has parent VM)
     bool isValid() const { return parent_vm_ != nullptr; }
   };

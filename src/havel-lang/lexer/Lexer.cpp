@@ -1020,6 +1020,9 @@ std::vector<Token> Lexer::tokenize() {
             bool inExpressionContext = false;
             if (!tokens.empty()) {
                 TokenType prevType = tokens.back().type;
+                if (debug_lexer) {
+                    havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {}", line, column, static_cast<int>(prevType));
+                }
                 inExpressionContext = (prevType == TokenType::Number ||
 prevType == TokenType::String || prevType == TokenType::InterpolatedString || prevType == TokenType::MultilineString || prevType == TokenType::RegexString ||
 prevType == TokenType::Identifier ||
@@ -1072,32 +1075,22 @@ prevType == TokenType::Not ||
 
 
         // If followed by '[', '"', or '\'' → length operator (array access #[0], string char)
-        // In expression context only.  #identifier is always a hotkey modifier.
-        if (peek() == '[' || peek() == '"' || peek() == '\'') {
-            // In expression context, treat as length operator
-            // In statement context, treat as hotkey modifier
-                if (inExpressionContext) {
-                    auto lenToken = makeToken("#", TokenType::Length);
-                    tokens.push_back(lenToken);
-                if (debug_lexer) {
-                    havel::debug("LEX: {}", tokens.back().toString());
-                }
-                continue;
+        // In expression context, #identifier is also a length operator (e.g. #x, #arr)
+        if (inExpressionContext) {
+            auto lenToken = makeToken("#", TokenType::Length);
+            tokens.push_back(lenToken);
+            if (debug_lexer) {
+                havel::debug("LEX: {}", tokens.back().toString());
+            }
+            continue;
         }
-        // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
+
+        // Not in expression context: '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
         tokens.push_back(scanHotkey());
         if (debug_lexer) {
             havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
-      }
-
-      // If not followed by identifier-starting char, scan as hotkey
-      tokens.push_back(scanHotkey());
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
     }
 
 // Handle numbers (including negative numbers in certain contexts)

@@ -4,7 +4,6 @@
 #include <string>
 #include <stdexcept>
 #include <algorithm>
-#include <iostream>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -15,22 +14,17 @@ namespace havel::stdlib {
 void registerObjectModule(const VMApi &api) {
     // Object.keys(obj) - Get all keys of an object
     api.registerFunction("object.keys", [api](const std::vector<Value>& args) {
-        try {
-            if (args.empty()) throw std::runtime_error("Object.keys() requires object");
-            if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
+        if (args.empty()) throw std::runtime_error("Object.keys() requires object");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
 
-            auto keys = api.getObjectKeys(args[0]);
-            auto result = api.makeArray();
-            for (const auto& key : keys) {
-                if (key != "__set_marker__" && key != "__proto__") {
-                    api.push(result, api.makeString(key));
-                }
+        auto keys = api.getObjectKeys(args[0]);
+        auto result = api.makeArray();
+        for (const auto& key : keys) {
+            if (key != "__set_marker__" && key != "__proto__") {
+                api.push(result, api.makeString(key));
             }
-            return result;
-        } catch (const std::exception& e) {
-            std::cerr << "[ObjectModule] Error in object.keys: " << e.what() << std::endl;
-            throw;
         }
+        return result;
     });
 
     // Object.values(obj) - Get all values of an object
@@ -92,11 +86,21 @@ void registerObjectModule(const VMApi &api) {
     api.registerFunction("object.set", [api](const std::vector<Value>& args) {
         if (args.size() < 3) throw std::runtime_error("Object.set() requires object, key, and value");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.set() first arg must be object");
-        if (!args[1].isStringId()) throw std::runtime_error("Object.set() second arg must be key string");
+        if (!args[1].isStringId() && !args[1].isStringValId()) throw std::runtime_error("Object.set() second arg must be key string");
 
         std::string key = api.toString(args[1]);
         api.setField(args[0], key, args[2]);
         return args[0];
+    });
+
+    // Object.delete(obj, key) - Delete a value from an object
+    api.registerFunction("object.delete", [api](const std::vector<Value>& args) {
+        if (args.size() < 2) throw std::runtime_error("Object.delete() requires object and key");
+        if (!args[0].isObjectId()) throw std::runtime_error("Object.delete() first arg must be object");
+        if (!args[1].isStringId() && !args[1].isStringValId()) throw std::runtime_error("Object.delete() second arg must be key string");
+
+        std::string key = api.toString(args[1]);
+        return Value::makeBool(api.deleteField(args[0], key));
     });
 
     // Object.isEmpty(obj) - Check if object has no user keys
@@ -151,11 +155,11 @@ void registerObjectModule(const VMApi &api) {
         return result;
     });
 
-    // object.filter(obj, func) - Filter object fields
+    // object.filter(obj, func) - Filter object keys
     api.registerFunction("object.filter", [api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.filter() requires object and function");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.filter() first arg must be object");
-
+        
         auto keys = api.getObjectKeys(args[0]);
         auto result = api.makeObject();
         for (const auto& key : keys) {
@@ -168,44 +172,17 @@ void registerObjectModule(const VMApi &api) {
         return result;
     });
 
-    // object.each(obj, func) - Iterate over object fields
-    api.registerFunction("object.each", [api](const std::vector<Value>& args) {
-        if (args.size() < 2) throw std::runtime_error("Object.each() requires object and function");
-        if (!args[0].isObjectId()) throw std::runtime_error("Object.each() first arg must be object");
-        
-        auto keys = api.getObjectKeys(args[0]);
-        for (const auto& key : keys) {
-            if (key == "__set_marker__" || key == "__proto__") continue;
-            api.invoke(args[1], {api.getField(args[0], key), api.makeString(key)});
-        }
-        return Value::makeNull();
-    });
-    
-    // Register object object
-    auto objModule = api.makeObject();
-    api.setField(objModule, "keys", api.makeFunctionRef("object.keys"));
-    api.setField(objModule, "values", api.makeFunctionRef("object.values"));
-    api.setField(objModule, "entries", api.makeFunctionRef("object.entries"));
-    api.setField(objModule, "has", api.makeFunctionRef("object.has"));
-    api.setField(objModule, "find", api.makeFunctionRef("object.find"));
-    api.setField(objModule, "set", api.makeFunctionRef("object.set"));
-    api.setField(objModule, "isEmpty", api.makeFunctionRef("object.isEmpty"));
-    api.setField(objModule, "size", api.makeFunctionRef("object.size"));
-    api.setGlobal("Object", objModule);
-    
-    // Register prototype methods
+    // Prototype methods for all objects
     api.registerPrototypeMethodByName("object", "keys", "object.keys");
     api.registerPrototypeMethodByName("object", "values", "object.values");
     api.registerPrototypeMethodByName("object", "entries", "object.entries");
     api.registerPrototypeMethodByName("object", "has", "object.has");
-    api.registerPrototypeMethodByName("object", "find", "object.find");
-    api.registerPrototypeMethodByName("object", "set", "object.set");
-    api.registerPrototypeMethodByName("object", "isEmpty", "object.isEmpty");
     api.registerPrototypeMethodByName("object", "size", "object.size");
-    api.registerPrototypeMethodByName("object", "len", "object.len");
+    api.registerPrototypeMethodByName("object", "isEmpty", "object.isEmpty");
     api.registerPrototypeMethodByName("object", "map", "object.map");
     api.registerPrototypeMethodByName("object", "filter", "object.filter");
-    api.registerPrototypeMethodByName("object", "each", "object.each");
+    api.registerPrototypeMethodByName("object", "set", "object.set");
+    api.registerPrototypeMethodByName("object", "delete", "object.delete");
 }
 
 } // namespace havel::stdlib

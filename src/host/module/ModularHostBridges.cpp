@@ -2931,9 +2931,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         vm->beginHotkeyExecution();
         try {
             vm->invokeCallback(callbackId, {hotkeyContext});
+        } catch (const std::exception &e) {
+            ::havel::error("[Hotkey] Execution failed: {}", e.what());
         } catch (...) {
-            vm->endHotkeyExecution();
-            throw;
+            ::havel::error("[Hotkey] Execution failed: unknown error");
         }
         vm->endHotkeyExecution();
     });
@@ -2950,9 +2951,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 vm->beginHotkeyExecution();
                 try {
                     vm->invokeCallback(callbackId, {hotkeyContext});
+                } catch (const std::exception &e) {
+                    ::havel::error("[Hotkey] Execution failed: {}", e.what());
                 } catch (...) {
-                    vm->endHotkeyExecution();
-                    throw;
+                    ::havel::error("[Hotkey] Execution failed: unknown error");
                 }
                 vm->endHotkeyExecution();
             });

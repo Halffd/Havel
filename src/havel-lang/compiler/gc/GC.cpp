@@ -94,6 +94,7 @@ void GCHeap::reset() {
 }
 
 ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_closure_id_++;
     closures_.emplace(id, std::move(closure));
     closure_ages_[id] = 0;
@@ -102,22 +103,26 @@ ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
 }
 
 StringRef GCHeap::allocateString(std::string value) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_string_id_++;
     strings_.emplace(id, std::move(value));
     return StringRef{.id = id};
 }
 
 std::string *GCHeap::string(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
 const std::string *GCHeap::string(uint32_t id) const {
+    std::lock_guard<std::recursive_mutex> lock(const_cast<std::recursive_mutex&>(mutex_));
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
 ArrayRef GCHeap::allocateArray() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_array_id_++;
     arrays_[id] = {};
     array_ages_[id] = 0;
@@ -126,6 +131,7 @@ ArrayRef GCHeap::allocateArray() {
 }
 
 ObjectRef GCHeap::allocateObject(bool sorted) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_object_id_++;
     ObjectEntry entry;
     entry.sorted = sorted;
@@ -136,6 +142,7 @@ ObjectRef GCHeap::allocateObject(bool sorted) {
 }
 
 SetRef GCHeap::allocateSet() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_set_id_++;
     sets_[id] = {};
     set_ages_[id] = 0;
@@ -327,16 +334,19 @@ bool GCHeap::isCollectionInProgress() const {
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
+    std::lock_guard<std::recursive_mutex> lock(const_cast<std::recursive_mutex&>(mutex_));
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ArrayEntry *GCHeap::array(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = arrays_.find(id);
     return it == arrays_.end() ? nullptr : &it->second;
 }
@@ -347,6 +357,7 @@ const GCHeap::ArrayEntry *GCHeap::array(uint32_t id) const {
 }
 
 GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = objects_.find(id);
     return it == objects_.end() ? nullptr : &it->second;
 }

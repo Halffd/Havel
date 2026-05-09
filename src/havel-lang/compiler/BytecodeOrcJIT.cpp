@@ -2248,28 +2248,11 @@ uint64_t BytecodeOrcJIT::computeFunctionHash(const BytecodeFunction &func) const
         mix(static_cast<uint64_t>(ins.opcode));
         mix(static_cast<uint64_t>(ins.operands.size()));
         for (const auto &op : ins.operands) {
-            switch (op.type) {
-                case Operand::Type::Int:
-                    mix(static_cast<uint64_t>(op.asInt()));
-                    break;
-                case Operand::Type::Double: {
-                    uint64_t bits = 0;
-                    double d = op.asDouble();
-                    std::memcpy(&bits, &d, sizeof(uint64_t));
-                    mix(bits);
-                    break;
+            mix(op.rawBits());
+            if (op.isStringValId()) {
+                for (char c : op.toString()) {
+                    mix(static_cast<uint64_t>(static_cast<unsigned char>(c)));
                 }
-                case Operand::Type::String:
-                    for (char c : op.asString()) {
-                        mix(static_cast<uint64_t>(static_cast<unsigned char>(c)));
-                    }
-                    break;
-                case Operand::Type::Bool:
-                    mix(op.asBool() ? 1ULL : 0ULL);
-                    break;
-                default:
-                    mix(0ULL);
-                    break;
             }
         }
     }

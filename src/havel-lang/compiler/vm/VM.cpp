@@ -2783,10 +2783,28 @@ void VM::registerDefaultHostGlobals() {
     setGlobal("class", Value::makeObjectId(class_obj.id));
 
     // app global object with args and restart
-  auto app_obj = heap_.allocateObject();
-  setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
-  setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
-  setGlobal("app", Value::makeObjectId(app_obj.id));
+  // Merge with existing app object if AppModule already registered one
+  {
+    auto appIt = globals.find("app");
+    if (appIt != globals.end() && appIt->second.isObjectId()) {
+      ObjectRef existingRef{appIt->second.asObjectId(), true};
+      auto* existingObj = heap_.object(existingRef.id);
+      if (existingObj) {
+        setHostObjectField(existingRef, "args", Value::makeArrayId(app_args_array_id_));
+        setHostObjectField(existingRef, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+      } else {
+        auto app_obj = heap_.allocateObject();
+        setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+        setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+        setGlobal("app", Value::makeObjectId(app_obj.id));
+      }
+    } else {
+      auto app_obj = heap_.allocateObject();
+      setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+      setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+      setGlobal("app", Value::makeObjectId(app_obj.id));
+    }
+  }
 
   // Note: shell, interval, config modules are registered via registerStdLibWithVM()
   // called during VM initialization - do NOT register them here as this function

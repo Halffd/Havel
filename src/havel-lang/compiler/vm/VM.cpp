@@ -2805,21 +2805,32 @@ void VM::registerDefaultHostGlobals() {
       else if (args[1].isDouble()) Configs::Get().Set(key, args[1].asDouble(), save);
       else Configs::Get().Set(key, resolveStringKey(args[1]), save);
 
-      // Update 'conf' mirror if it exists
-      auto conf_val = getGlobalThreadSafe("conf").value_or(Value::makeNull());
-      if (conf_val.isObjectId()) {
-          setHostObjectField(ObjectRef{conf_val.asObjectId(), true}, key, args[1]);
-          // Also handle nested paths like General.Terminal
-          auto dot = key.find('.');
-          if (dot != std::string::npos) {
-              std::string section = key.substr(0, dot);
-              std::string subkey = key.substr(dot + 1);
-              Value sect_val = getHostObjectField(ObjectRef{conf_val.asObjectId(), true}, section);
-              if (sect_val.isObjectId()) {
+      // Update 'conf' and 'cfg' mirrors
+      auto updateMirror = [this, &key, &args](const std::string& mirrorName) {
+          auto mirror_val = getGlobalThreadSafe(mirrorName).value_or(Value::makeNull());
+          if (mirror_val.isObjectId()) {
+              auto mirror_obj = ObjectRef{mirror_val.asObjectId(), true};
+              setHostObjectField(mirror_obj, key, args[1]);
+              
+              // Handle nested paths like General.Terminal
+              size_t dot = key.find('.');
+              if (dot != std::string::npos) {
+                  std::string section = key.substr(0, dot);
+                  std::string subkey = key.substr(dot + 1);
+                  Value sect_val = getHostObjectField(mirror_obj, section);
+                  if (!sect_val.isObjectId()) {
+                      auto new_sect = heap_.allocateObject();
+                      setHostObjectField(mirror_obj, section, Value::makeObjectId(new_sect.id));
+                      sect_val = Value::makeObjectId(new_sect.id);
+                  }
                   setHostObjectField(ObjectRef{sect_val.asObjectId(), true}, subkey, args[1]);
               }
           }
-      }
+      };
+      updateMirror("conf");
+      updateMirror("cfg");
+      updateMirror("config");
+      
       return Value::makeBool(true);
   });
   registerHostFunction("config.save", [](const std::vector<Value>& args) {
@@ -2830,27 +2841,36 @@ void VM::registerDefaultHostGlobals() {
   registerHostFunction("config.load", [this](const std::vector<Value>& args) {
       if (args.empty()) return Value::makeBool(false);
       Configs::Get().Load(resolveStringKey(args[0]));
-      // Re-populate 'conf' mirror
-      auto conf_val = getGlobalThreadSafe("conf").value_or(Value::makeNull());
-      VMApi api{*this};
-      if (conf_val.isObjectId()) {
-          auto conf_obj = ObjectRef{conf_val.asObjectId(), true};
-          for (const auto& k : Configs::Get().GetAllKeys()) {
-              setHostObjectField(conf_obj, k, api.makeString(Configs::Get().Get<std::string>(k, "")));
-              auto dot = k.find('.');
-              if (dot != std::string::npos) {
-                  std::string section = k.substr(0, dot);
-                  std::string subkey = k.substr(dot + 1);
-                  Value sect_val = getHostObjectField(conf_obj, section);
-                  if (!sect_val.isObjectId()) {
-                      auto new_sect = heap_.allocateObject();
-                      setHostObjectField(conf_obj, section, Value::makeObjectId(new_sect.id));
-                      sect_val = Value::makeObjectId(new_sect.id);
+      
+      // Re-populate mirrors
+      auto populateMirror = [this](const std::string& mirrorName) {
+          auto mirror_val = getGlobalThreadSafe(mirrorName).value_or(Value::makeNull());
+          VMApi api{*this};
+          if (mirror_val.isObjectId()) {
+              auto mirror_obj = ObjectRef{mirror_val.asObjectId(), true};
+              for (const auto& k : Configs::Get().GetAllKeys()) {
+                  Value val = api.makeString(Configs::Get().Get<std::string>(k, ""));
+                  setHostObjectField(mirror_obj, k, val);
+                  
+                  size_t dot = k.find('.');
+                  if (dot != std::string::npos) {
+                      std::string section = k.substr(0, dot);
+                      std::string subkey = k.substr(dot + 1);
+                      Value sect_val = getHostObjectField(mirror_obj, section);
+                      if (!sect_val.isObjectId()) {
+                          auto new_sect = heap_.allocateObject();
+                          setHostObjectField(mirror_obj, section, Value::makeObjectId(new_sect.id));
+                          sect_val = Value::makeObjectId(new_sect.id);
+                      }
+                      setHostObjectField(ObjectRef{sect_val.asObjectId(), true}, subkey, val);
                   }
-                  setHostObjectField(ObjectRef{sect_val.asObjectId(), true}, subkey, api.makeString(Configs::Get().Get<std::string>(k, "")));
               }
           }
-      }
+      };
+      populateMirror("conf");
+      populateMirror("cfg");
+      populateMirror("config");
+      
       return Value::makeBool(true);
   });
 

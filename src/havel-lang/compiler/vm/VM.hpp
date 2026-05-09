@@ -821,20 +821,6 @@ private:
     // Internal: execute single instruction in this context
     void executeInstructionInContext(const Instruction &instruction);
 
-    // Dispatch a call in this context
-    void doCallInContext(Value callee_value, std::vector<Value> args);
-
-    // Helpers for instruction execution
-    void push(Value val) { stack.push(val); }
-    Value pop() {
-        if (stack.empty()) return Value::makeNull();
-        Value val = stack.top();
-        stack.pop();
-        return val;
-    }
-    CallFrame& currentFrame() { return frame_arena_[frame_count_ - 1]; }
-    void doReturn();
-
     // Check if context is valid (has parent VM)
     bool isValid() const { return parent_vm_ != nullptr; }
   };

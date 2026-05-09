@@ -3,6 +3,6 @@
 
 namespace havel::stdlib {
 
-void registerPackModule(compiler::VMApi &api);
+void registerPackModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

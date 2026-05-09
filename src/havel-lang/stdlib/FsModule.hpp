@@ -8,6 +8,6 @@
 namespace havel::stdlib {
 
 // Register fs module with VMApi (stable API layer)
-void registerFsModule(compiler::VMApi &api);
+void registerFsModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

@@ -79,8 +79,8 @@ static std::string intToBase(int64_t val, int base, const std::string &prefix) {
     return prefix + digits;
 }
 
-void registerFormatModule(VMApi &api) {
-	api.registerFunction("fmt.hex", [&api](const std::vector<Value> &args) {
+void registerFormatModule(const VMApi &api) {
+	api.registerFunction("fmt.hex", [api](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("hex() requires a value");
 		const auto &v = args[0];
@@ -109,7 +109,7 @@ void registerFormatModule(VMApi &api) {
 		throw std::runtime_error("hex() expects a number, pointer, or array");
 	});
 
-	api.registerFunction("fmt.oct", [&api](const std::vector<Value> &args) {
+	api.registerFunction("fmt.oct", [api](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("oct() requires a value");
 		const auto &v = args[0];
@@ -132,7 +132,7 @@ void registerFormatModule(VMApi &api) {
 		throw std::runtime_error("oct() expects a number or array");
 	});
 
-	api.registerFunction("fmt.bin", [&api](const std::vector<Value> &args) {
+	api.registerFunction("fmt.bin", [api](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("bin() requires a value");
 		const auto &v = args[0];
@@ -155,7 +155,7 @@ void registerFormatModule(VMApi &api) {
 		throw std::runtime_error("bin() expects a number or array");
 	});
 
-	api.registerFunction("fmt.b64", [&api](const std::vector<Value> &args) {
+	api.registerFunction("fmt.b64", [api](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("b64() requires a string or array");
 		const auto &v = args[0];
@@ -182,7 +182,7 @@ void registerFormatModule(VMApi &api) {
 		throw std::runtime_error("b64() expects a string or byte array");
 	});
 
-	api.registerFunction("fmt.b64decode", [&api](const std::vector<Value> &args) {
+	api.registerFunction("fmt.b64decode", [api](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("b64decode() requires a string");
 		const auto &v = args[0];
@@ -196,7 +196,7 @@ void registerFormatModule(VMApi &api) {
 		return arr;
 	});
 
-	api.registerFunction("fmt.format", [&api](const std::vector<Value> &args) {
+	api.registerFunction("fmt.format", [api](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("format() requires a format string");
 		const auto &fmtVal = args[0];

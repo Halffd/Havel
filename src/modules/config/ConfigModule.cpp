@@ -17,11 +17,11 @@ namespace havel::modules {
 using compiler::Value;
 using compiler::VMApi;
 
-static std::string valueToString(VMApi &api, const Value &v) {
+static std::string valueToString(const VMApi &api, const Value &v) {
     return api.toString(v);
 }
 
-static Value stringToValue(VMApi &api, const std::string &s) {
+static Value stringToValue(const VMApi &api, const std::string &s) {
     if (s == "true") return Value::makeBool(true);
     if (s == "false") return Value::makeBool(false);
 
@@ -40,9 +40,9 @@ static Value stringToValue(VMApi &api, const std::string &s) {
     return api.makeString(s);
 }
 
-static void setNestedField(VMApi &api, Value obj, const std::string &key, Value value);
+static void setNestedField(const VMApi &api, Value obj, const std::string &key, Value value);
 
-static std::vector<Value> getActualArgs(VMApi &api, const std::vector<Value> &args) {
+static std::vector<Value> getActualArgs(const VMApi &api, const std::vector<Value> &args) {
     if (args.empty()) return args;
     if (args[0].isObjectId()) {
         try {
@@ -58,7 +58,7 @@ static std::vector<Value> getActualArgs(VMApi &api, const std::vector<Value> &ar
     return args;
 }
 
-Value configGet(VMApi &api, const std::vector<Value> &args) {
+Value configGet(const VMApi &api, const std::vector<Value> &args) {
     auto actual = getActualArgs(api, args);
     if (actual.empty()) throw std::runtime_error("config.get() requires key");
     std::string key = valueToString(api, actual[0]);
@@ -66,7 +66,7 @@ Value configGet(VMApi &api, const std::vector<Value> &args) {
     return stringToValue(api, Configs::Get().Get<std::string>(key, defaultVal));
 }
 
-Value configSet(VMApi &api, const std::vector<Value> &args) {
+Value configSet(const VMApi &api, const std::vector<Value> &args) {
     auto actual = getActualArgs(api, args);
     if (actual.size() < 2) throw std::runtime_error("config.set() requires key, value");
     Configs::Get().Set(valueToString(api, actual[0]), valueToString(api, actual[1]), true);
@@ -79,7 +79,7 @@ Value configSave(const std::vector<Value> &args) {
     return Value::makeBool(true);
 }
 
-Value configKeys(VMApi &api, const std::vector<Value> &args) {
+Value configKeys(const VMApi &api, const std::vector<Value> &args) {
     (void)args;
     auto keys = Configs::Get().GetAllKeys();
     auto arr = api.makeArray();
@@ -87,9 +87,9 @@ Value configKeys(VMApi &api, const std::vector<Value> &args) {
     return arr;
 }
 
-void registerConfigModule(VMApi &api) {
+void registerConfigModule(const VMApi &api) {
     auto configObj = api.makeObject();
-    compiler::VM* vm = &api.vm;
+    compiler::VM* vm = &api.vm();
 
     auto registerFn = [&](const std::string &name, auto func) {
         std::string fullName = "config." + name;
@@ -160,7 +160,7 @@ void registerConfigModule(VMApi &api) {
     }
 }
 
-static void setNestedField(VMApi &api, Value obj, const std::string &key, Value value) {
+static void setNestedField(const VMApi &api, Value obj, const std::string &key, Value value) {
     size_t dot = key.find('.');
     if (dot == std::string::npos) { api.setField(obj, key, std::move(value)); return; }
     std::string head = key.substr(0, dot), tail = key.substr(dot + 1);
@@ -173,5 +173,5 @@ static void setNestedField(VMApi &api, Value obj, const std::string &key, Value 
     setNestedField(api, sub, tail, std::move(value));
 }
 
-void autoLoadConfig(VMApi &api) { (void)api; }
+void autoLoadConfig(const VMApi &api) { (void)api; }
 } // namespace havel::modules

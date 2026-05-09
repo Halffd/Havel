@@ -282,7 +282,7 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   // Host context for service access (non-owning)
   const HostContext *context_ = nullptr;
 
-  const BytecodeChunk *current_chunk = nullptr;
+const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
   size_t max_call_depth_ = 1024;
  size_t tail_call_depth_ = 0;

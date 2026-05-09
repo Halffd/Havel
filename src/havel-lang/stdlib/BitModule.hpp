@@ -3,6 +3,6 @@
 
 namespace havel::stdlib {
 
-void registerBitModule(compiler::VMApi &api);
+void registerBitModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

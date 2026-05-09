@@ -185,7 +185,7 @@ static std::string findBrowserPath() {
   return "";
 }
 
-static Value makeTabObj(const json &tab, VMApi &api) {
+static Value makeTabObj(const json &tab, const VMApi &api) {
   auto obj = api.makeObject();
   std::string id, title, url, type, wsUrl;
   if (tab.contains("id") && tab["id"].is_string()) id = tab["id"].get<std::string>();
@@ -202,8 +202,8 @@ static Value makeTabObj(const json &tab, VMApi &api) {
   return obj;
 }
 
-void registerBrowserModule(VMApi &api) {
-  api.registerFunction("browser.connect", [&api](const std::vector<Value> &args) {
+void registerBrowserModule(const VMApi &api) {
+  api.registerFunction("browser.connect", [api](const std::vector<Value> &args) {
     auto &st = cdpState();
     std::lock_guard<std::mutex> lock(st.mutex);
     st.browserUrl = "http://localhost:9222";
@@ -233,21 +233,21 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(cdpState().connected);
   });
 
-  api.registerFunction("browser.goto", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.goto", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.goto requires a url");
     std::string url = api.toString(args[0]);
     std::string response = sendCdp("Page.navigate", "{\"url\":\"" + url + "\"}");
     return Value::makeBool(!response.empty() && response.find("\"errorText\"") == std::string::npos);
   });
 
-  api.registerFunction("browser.open", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.open", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.open requires a url");
     std::string url = api.toString(args[0]);
     std::string response = sendCdp("Target.createTarget", "{\"url\":\"" + url + "\",\"newWindow\":true}");
     return Value::makeBool(!response.empty() && response.find("\"targetId\"") != std::string::npos);
   });
 
-  api.registerFunction("browser.newTab", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.newTab", [api](const std::vector<Value> &args) {
     std::string url;
     if (!args.empty()) url = api.toString(args[0]);
     std::string response = sendCdp("Target.createTarget", "{\"url\":\"" + url + "\",\"newWindow\":true}");
@@ -272,7 +272,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(!response.empty());
   });
 
-  api.registerFunction("browser.listTabs", [&api](const std::vector<Value> &) {
+  api.registerFunction("browser.listTabs", [api](const std::vector<Value> &) {
     auto tabs = getTabs(true);
     auto arr = api.makeArray();
     for (auto &tab : tabs) {
@@ -281,7 +281,7 @@ void registerBrowserModule(VMApi &api) {
     return arr;
   });
 
-  api.registerFunction("browser.activate", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.activate", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.activate requires a tab id or index");
     auto &st = cdpState();
     int idx = 0;
@@ -310,7 +310,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(true);
   });
 
-  api.registerFunction("browser.closeTab", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.closeTab", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.closeTab requires a tab id");
     std::string targetId;
     if (args[0].isStringId()) {
@@ -340,7 +340,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(allOk);
   });
 
-  api.registerFunction("browser.eval", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.eval", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.eval requires javascript code");
     std::string js = escapeJs(api.toString(args[0]));
     std::string fullJs = "JSON.stringify(" + js + ")";
@@ -360,7 +360,7 @@ void registerBrowserModule(VMApi &api) {
     return api.makeString(response);
   });
 
-  api.registerFunction("browser.click", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.click", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.click requires a selector");
     std::string sel = escapeJs(api.toString(args[0]));
     std::string js = "(function(){try{var el=document.querySelector('" + sel +
@@ -371,7 +371,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(!response.empty() && response.find("\"success\":true") != std::string::npos);
   });
 
-  api.registerFunction("browser.type", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.type", [api](const std::vector<Value> &args) {
     if (args.size() < 2) throw std::runtime_error("browser.type requires selector and text");
     std::string sel = escapeJs(api.toString(args[0]));
     std::string text = escapeJs(api.toString(args[1]));
@@ -384,7 +384,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(!response.empty() && response.find("true") != std::string::npos);
   });
 
-  api.registerFunction("browser.focus", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.focus", [api](const std::vector<Value> &args) {
     if (args.empty()) throw std::runtime_error("browser.focus requires a selector");
     std::string sel = escapeJs(api.toString(args[0]));
     std::string js = "(function(){var el=document.querySelector('" + sel +
@@ -394,7 +394,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(!response.empty() && response.find("true") != std::string::npos);
   });
 
-  api.registerFunction("browser.screenshot", [&api](const std::vector<Value> &args) {
+  api.registerFunction("browser.screenshot", [api](const std::vector<Value> &args) {
     std::string path = "screenshot.png";
     if (!args.empty()) path = api.toString(args[0]);
     std::string response = sendCdp("Page.captureScreenshot", "{\"format\":\"png\"}");
@@ -462,7 +462,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeBool(!response.empty());
   });
 
-  api.registerFunction("browser.getUrl", [&api](const std::vector<Value> &) {
+  api.registerFunction("browser.getUrl", [api](const std::vector<Value> &) {
     std::string js = "window.location.href";
     std::string response = sendCdp("Runtime.evaluate",
       "{\"expression\":\"" + js + "\",\"returnByValue\":true}");
@@ -477,7 +477,7 @@ void registerBrowserModule(VMApi &api) {
     return api.makeString("");
   });
 
-  api.registerFunction("browser.getTitle", [&api](const std::vector<Value> &) {
+  api.registerFunction("browser.getTitle", [api](const std::vector<Value> &) {
     std::string js = "document.title";
     std::string response = sendCdp("Runtime.evaluate",
       "{\"expression\":\"" + js + "\",\"returnByValue\":true}");
@@ -492,7 +492,7 @@ void registerBrowserModule(VMApi &api) {
     return api.makeString("");
   });
 
-  api.registerFunction("browser.listWindows", [&api](const std::vector<Value> &) {
+  api.registerFunction("browser.listWindows", [api](const std::vector<Value> &) {
     auto tabs = getTabs();
     auto arr = api.makeArray();
     std::set<std::string> seen;
@@ -540,7 +540,7 @@ void registerBrowserModule(VMApi &api) {
     return Value::makeInt(cdpState().cdpPort);
   });
 
-  api.registerFunction("browser.getVersion", [&api](const std::vector<Value> &) {
+  api.registerFunction("browser.getVersion", [api](const std::vector<Value> &) {
     std::string response = httpGet(cdpState().browserUrl + "/json/version");
     if (response.empty()) return api.makeString("");
     try {
@@ -551,7 +551,7 @@ void registerBrowserModule(VMApi &api) {
     }
   });
 
-  api.registerFunction("browser.findPath", [&api](const std::vector<Value> &) {
+  api.registerFunction("browser.findPath", [api](const std::vector<Value> &) {
     return api.makeString(findBrowserPath());
   });
 

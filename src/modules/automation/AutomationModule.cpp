@@ -28,7 +28,7 @@ static std::string generateTaskName(const std::string& prefix) {
   return prefix + "_" + std::to_string(++g_taskCounter);
 }
 
-void registerAutomationModule(VMApi &api) {
+void registerAutomationModule(const VMApi &api) {
   HAVEL_BEGIN_MODULE("Automation");
   // autoClicker(button, interval) - Create and start auto clicker
   HAVEL_REGISTER_FUNCTION(api, "autoClicker", [](const auto& args) {

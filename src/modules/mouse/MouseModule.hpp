@@ -7,6 +7,6 @@
 namespace havel::modules {
 
 // Register mouse module with VM
-void registerMouseModule(compiler::VMApi &api);
+void registerMouseModule(const compiler::VMApi &api);
 
 } // namespace havel::modules

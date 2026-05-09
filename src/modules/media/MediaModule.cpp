@@ -31,13 +31,13 @@ using host::MediaService;
 
 static const char* MEDIA_MODULE_MARKER = "__media_module";
 
-static bool isMediaModuleObject(VMApi& api, const Value& val) {
+static bool isMediaModuleObject(const VMApi& api, const Value& val) {
     if (!val.isObjectId()) return false;
     auto marker = api.getField(val, MEDIA_MODULE_MARKER);
     return marker.isBool() && marker.asBool();
 }
 
-static std::vector<Value> stripReceiver(VMApi& api, const std::vector<Value>& args) {
+static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Value>& args) {
     if (!args.empty() && isMediaModuleObject(api, args[0])) {
         return std::vector<Value>(args.begin() + 1, args.end());
     }
@@ -53,7 +53,7 @@ static std::shared_ptr<MediaService> getMediaService() {
     return svc;
 }
 
-static std::string toString(VMApi& api, const Value& v) {
+static std::string toString(const VMApi& api, const Value& v) {
     if (v.isStringId() || v.isStringValId()) return api.toString(v);
     if (v.isNull()) return "";
     if (v.isInt()) return std::to_string(v.asInt());
@@ -68,10 +68,10 @@ static double toDouble(const Value& v, double def = 0.0) {
     return def;
 }
 
-void registerMediaModule(VMApi& api) {
+void registerMediaModule(const VMApi& api) {
     HAVEL_BEGIN_MODULE("Media");
 
-    HAVEL_REGISTER_FUNCTION(api, "media.playPause", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.playPause", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeNull();
@@ -81,7 +81,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.play", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.play", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeNull();
@@ -91,7 +91,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.pause", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.pause", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeNull();
@@ -101,7 +101,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.stop", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.stop", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeNull();
@@ -111,7 +111,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.next", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.next", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeNull();
@@ -121,7 +121,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.previous", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.previous", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeNull();
@@ -131,7 +131,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.getVolume", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.getVolume", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeDouble(0.0);
@@ -143,7 +143,7 @@ void registerMediaModule(VMApi& api) {
         }
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.setVolume", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.setVolume", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeNull();
         auto svc = getMediaService();
@@ -155,7 +155,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.getActivePlayer", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.getActivePlayer", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return api.makeString("");
@@ -167,7 +167,7 @@ void registerMediaModule(VMApi& api) {
         }
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.setActivePlayer", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.setActivePlayer", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeNull();
         auto svc = getMediaService();
@@ -179,7 +179,7 @@ void registerMediaModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.getAvailablePlayers", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.getAvailablePlayers", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return api.makeArray();
@@ -196,7 +196,7 @@ void registerMediaModule(VMApi& api) {
         }
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.hasPlayer", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.hasPlayer", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeBool(false);

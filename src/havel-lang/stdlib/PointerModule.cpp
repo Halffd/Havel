@@ -41,7 +41,7 @@ static Value typedWrite(const std::vector<Value> &args) {
     return Value::makeNull();
 }
 
-void registerPointerModule(VMApi &api) {
+void registerPointerModule(const VMApi &api) {
 	api.registerFunction("ptr.create", [](const std::vector<Value> &args) {
 		if (args.empty())
 			throw std::runtime_error("ptr() requires a value");

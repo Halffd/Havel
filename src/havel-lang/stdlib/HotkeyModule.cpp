@@ -412,7 +412,7 @@ static Value hotkey_remove(const std::vector<Value> &args,
   return Value::makeBool(false);
 }
 
-void registerHotkeyModule(VMApi &api) {
+void registerHotkeyModule(const VMApi &api) {
   // Create hotkey prototype object (not used for method registration)
   auto hotkeyPrototype = api.makeObject();
 

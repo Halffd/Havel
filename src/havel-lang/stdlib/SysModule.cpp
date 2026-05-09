@@ -79,9 +79,9 @@ static std::string readFileField(const std::string& path, const std::string& pre
   return "";
 }
 
-void registerSysModule(VMApi &api) {
+void registerSysModule(const VMApi &api) {
   api.registerFunction("sys.platform",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
 #if defined(__linux__)
                          return api.makeString("linux");
@@ -95,7 +95,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.arch",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
 #if defined(__x86_64__) || defined(_M_X64)
                          return api.makeString("x86_64");
@@ -111,13 +111,13 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.version",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
                          return api.makeString("0.1.0");
                        });
 
   api.registerFunction("sys.argv",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
   auto arr = api.makeArray();
   (void)arr;
@@ -125,7 +125,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.env",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          if (args.empty())
                            return Value::makeNull();
                          std::string name = api.resolveString(args[0]);
@@ -136,7 +136,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.envAll",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
   auto obj = api.makeObject();
 #ifndef _WIN32
@@ -157,7 +157,7 @@ void registerSysModule(VMApi &api) {
 });
 
   api.registerFunction("sys.cwd",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
   return api.makeString(
       std::filesystem::current_path().string());
@@ -214,7 +214,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.hostname",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
 #ifndef _WIN32
                          char buf[256];
@@ -232,7 +232,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.username",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
                          const char *user = std::getenv("USER");
                          if (!user)
@@ -251,7 +251,7 @@ void registerSysModule(VMApi &api) {
 });
 
   api.registerFunction("sys.home",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
                          const char *home = std::getenv("HOME");
                          if (!home)
@@ -260,7 +260,7 @@ void registerSysModule(VMApi &api) {
 });
 
   api.registerFunction("sys.tmpdir",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
 #ifdef _WIN32
                          const char *tmp = std::getenv("TEMP");
@@ -273,7 +273,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("sys.shell",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
 #ifdef _WIN32
                          const char *sh = std::getenv("ComSpec");
@@ -300,7 +300,7 @@ void registerSysModule(VMApi &api) {
                        });
 
   api.registerFunction("jit.last_error",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          (void)args;
 #ifdef HAVEL_ENABLE_LLVM
                          return api.makeString(havel::compiler::BytecodeOrcJIT::lastError());
@@ -345,7 +345,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // system.detect — detect OS, display protocol, window manager, etc.
   // ========================================================================
-  api.registerFunction("system.detect", [&api](const std::vector<Value>&) {
+  api.registerFunction("system.detect", [api](const std::vector<Value>&) {
     auto obj = api.makeObject();
 
     std::string os = "Unknown";
@@ -469,7 +469,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // system.hardware — detect CPU, GPU, RAM, storage, etc.
   // ========================================================================
-  api.registerFunction("system.hardware", [&api](const std::vector<Value>&) {
+  api.registerFunction("system.hardware", [api](const std::vector<Value>&) {
     auto obj = api.makeObject();
 
     std::string cpu;
@@ -637,7 +637,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // process.find — find PIDs by name
   // ========================================================================
-  api.registerFunction("process.find", [&api](const std::vector<Value>& args) {
+  api.registerFunction("process.find", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("process.find() requires a process name");
     std::string name = api.resolveString(args[0]);
@@ -666,7 +666,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // process.exists — check if process is running (by name or PID)
   // ========================================================================
-  api.registerFunction("process.exists", [&api](const std::vector<Value>& args) {
+  api.registerFunction("process.exists", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("process.exists() requires a process name or PID");
 #ifndef _WIN32
@@ -685,7 +685,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // process.kill — send signal to PID
   // ========================================================================
-  api.registerFunction("process.kill", [&api](const std::vector<Value>& args) {
+  api.registerFunction("process.kill", [api](const std::vector<Value>& args) {
     if (args.size() < 2)
       throw std::runtime_error("process.kill() requires PID and signal");
     if (!args[0].isInt())
@@ -730,7 +730,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // process.run — run command and return {pid, exitCode, success, stdout, stderr, error}
   // ========================================================================
-  api.registerFunction("process.run", [&api](const std::vector<Value>& args) {
+  api.registerFunction("process.run", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("process.run() requires a command");
     std::string cmd = api.resolveString(args[0]);
@@ -757,7 +757,7 @@ void registerSysModule(VMApi &api) {
   // ========================================================================
   // process.runDetached — run command without waiting
   // ========================================================================
-  api.registerFunction("process.runDetached", [&api](const std::vector<Value>& args) {
+  api.registerFunction("process.runDetached", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("process.runDetached() requires a command");
     std::string cmd = api.resolveString(args[0]);

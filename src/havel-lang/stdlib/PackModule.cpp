@@ -132,8 +132,8 @@ static double getFloatArg(const Value &v) {
     throw std::runtime_error("pack: expected float value");
 }
 
-void registerPackModule(VMApi &api) {
-  api.registerFunction("pack.pack", [&api](const std::vector<Value> &args) {
+void registerPackModule(const VMApi &api) {
+  api.registerFunction("pack.pack", [api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("pack.pack() requires a format string");
     const auto &fmtVal = args[0];
@@ -247,7 +247,7 @@ void registerPackModule(VMApi &api) {
         return arr;
     });
 
-  api.registerFunction("pack.unpack", [&api](const std::vector<Value> &args) {
+  api.registerFunction("pack.unpack", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("pack.unpack() requires a format string and byte array");
     const auto &fmtVal = args[0];

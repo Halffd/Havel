@@ -158,7 +158,7 @@ static const ModuleDoc moduleDocs[] = {
 };
 
 // help() - Show general help or specific module/function help
-static Value helpFunc(VMApi &api, const std::vector<Value> &args) {
+static Value helpFunc(const VMApi &api, const std::vector<Value> &args) {
   std::ostringstream oss;
   
   if (args.empty()) {
@@ -250,9 +250,9 @@ static Value helpFunc(VMApi &api, const std::vector<Value> &args) {
 }
 
 // Register help module with VM
-void registerHelpModule(VMApi &api) {
+void registerHelpModule(const VMApi &api) {
   // help() function
-  api.registerFunction("help", [&api](const std::vector<Value> &args) {
+  api.registerFunction("help", [api](const std::vector<Value> &args) {
     return helpFunc(api, args);
   });
   

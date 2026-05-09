@@ -35,7 +35,7 @@ namespace fs = std::filesystem;
 
 namespace havel::stdlib {
 
-static Value createFileObject(const fs::path &path, VMApi &api) {
+static Value createFileObject(const fs::path &path, const VMApi &api) {
   auto obj = api.makeObject();
 
   api.setField(obj, "name", api.makeString(path.filename().string()));
@@ -86,7 +86,7 @@ static Value createFileObject(const fs::path &path, VMApi &api) {
   return obj;
 }
 
-static Value createStatObject(const fs::path &path, VMApi &api) {
+static Value createStatObject(const fs::path &path, const VMApi &api) {
   auto obj = api.makeObject();
 
 #ifndef _WIN32
@@ -140,7 +140,7 @@ static Value createStatObject(const fs::path &path, VMApi &api) {
   return obj;
 }
 
-static void walkDir(const fs::path &dir, std::vector<fs::path> &results, VMApi &api) {
+static void walkDir(const fs::path &dir, std::vector<fs::path> &results, const VMApi &api) {
     std::error_code ec;
     for (const auto &entry : fs::directory_iterator(dir, ec)) {
         results.push_back(entry.path());
@@ -186,7 +186,7 @@ static std::set<FileHandle *> &getFileHandles() {
     return handles;
 }
 
-static FileHandle *getHandle(const Value &v, VMApi &api) {
+static FileHandle *getHandle(const Value &v, const VMApi &api) {
   if (!v.isObjectId()) return nullptr;
   if (!api.hasField(v, "__handle_ptr")) return nullptr;
   auto ptrVal = api.getField(v, "__handle_ptr");
@@ -204,10 +204,10 @@ static std::mutex &getFileLockMutex() {
     return mtx;
 }
 
-void registerFsModule(VMApi &api) {
+void registerFsModule(const VMApi &api) {
     // fs.exists
     api.registerFunction(
-        "fs.exists", [&api](const std::vector<Value> &args) {
+        "fs.exists", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -216,7 +216,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.isDir
     api.registerFunction(
-        "fs.isDir", [&api](const std::vector<Value> &args) {
+        "fs.isDir", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -226,7 +226,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.isFile
     api.registerFunction(
-        "fs.isFile", [&api](const std::vector<Value> &args) {
+        "fs.isFile", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -236,7 +236,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.isSymlink
     api.registerFunction(
-        "fs.isSymlink", [&api](const std::vector<Value> &args) {
+        "fs.isSymlink", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -246,7 +246,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.size
     api.registerFunction(
-        "fs.size", [&api](const std::vector<Value> &args) {
+        "fs.size", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeInt(-1);
             std::string path = api.resolveString(args[0]);
@@ -259,7 +259,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.read
     api.registerFunction(
-        "fs.read", [&api](const std::vector<Value> &args) {
+        "fs.read", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -274,7 +274,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.readDir
     api.registerFunction(
-        "fs.readDir", [&api](const std::vector<Value> &args) {
+        "fs.readDir", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -289,7 +289,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.readLines
     api.registerFunction(
-        "fs.readLines", [&api](const std::vector<Value> &args) {
+        "fs.readLines", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -306,7 +306,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.write
     api.registerFunction(
-        "fs.write", [&api](const std::vector<Value> &args) {
+        "fs.write", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -320,7 +320,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.append
     api.registerFunction(
-        "fs.append", [&api](const std::vector<Value> &args) {
+        "fs.append", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -334,7 +334,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.touch
     api.registerFunction(
-        "fs.touch", [&api](const std::vector<Value> &args) {
+        "fs.touch", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -346,7 +346,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.mkdir
     api.registerFunction(
-        "fs.mkdir", [&api](const std::vector<Value> &args) {
+        "fs.mkdir", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -356,7 +356,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.mkdirAll
     api.registerFunction(
-        "fs.mkdirAll", [&api](const std::vector<Value> &args) {
+        "fs.mkdirAll", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -367,7 +367,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.delete (legacy name)
     api.registerFunction(
-        "fs.delete", [&api](const std::vector<Value> &args) {
+        "fs.delete", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -377,7 +377,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.rm (same as delete, more conventional)
     api.registerFunction(
-        "fs.rm", [&api](const std::vector<Value> &args) {
+        "fs.rm", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -387,7 +387,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.copy
     api.registerFunction(
-        "fs.copy", [&api](const std::vector<Value> &args) {
+        "fs.copy", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string src = api.resolveString(args[0]);
@@ -399,7 +399,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.copyDir (recursive directory copy)
     api.registerFunction(
-        "fs.copyDir", [&api](const std::vector<Value> &args) {
+        "fs.copyDir", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string src = api.resolveString(args[0]);
@@ -411,7 +411,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.move
     api.registerFunction(
-        "fs.move", [&api](const std::vector<Value> &args) {
+        "fs.move", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string src = api.resolveString(args[0]);
@@ -423,7 +423,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.rename (same as move, explicit name)
     api.registerFunction(
-        "fs.rename", [&api](const std::vector<Value> &args) {
+        "fs.rename", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string src = api.resolveString(args[0]);
@@ -435,7 +435,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.rmdir (directory removal, recursive if second arg is true)
     api.registerFunction(
-        "fs.rmdir", [&api](const std::vector<Value> &args) {
+        "fs.rmdir", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -450,7 +450,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.stat (detailed file metadata)
     api.registerFunction(
-        "fs.stat", [&api](const std::vector<Value> &args) {
+        "fs.stat", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -459,7 +459,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.symlink (create symbolic link)
     api.registerFunction(
-        "fs.symlink", [&api](const std::vector<Value> &args) {
+        "fs.symlink", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string target = api.resolveString(args[0]);
@@ -471,7 +471,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.readlink (read symbolic link target)
     api.registerFunction(
-        "fs.readlink", [&api](const std::vector<Value> &args) {
+        "fs.readlink", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -484,7 +484,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.chmod
     api.registerFunction(
-        "fs.chmod", [&api](const std::vector<Value> &args) {
+        "fs.chmod", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -505,7 +505,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.walk (recursive directory walk, returns flat array of paths)
     api.registerFunction(
-        "fs.walk", [&api](const std::vector<Value> &args) {
+        "fs.walk", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string path = api.resolveString(args[0]);
@@ -523,7 +523,7 @@ void registerFsModule(VMApi &api) {
 
 // fs.traverse (same as walk but returns FileObjects instead of strings)
   api.registerFunction(
-  "fs.traverse", [&api](const std::vector<Value> &args) {
+  "fs.traverse", [api](const std::vector<Value> &args) {
   if (args.empty())
     return Value::makeNull();
   std::string path = api.resolveString(args[0]);
@@ -542,7 +542,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.glob (pattern matching with * and **)
     api.registerFunction(
-        "fs.glob", [&api](const std::vector<Value> &args) {
+        "fs.glob", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeNull();
             std::string pattern = api.resolveString(args[0]);
@@ -574,7 +574,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.watch (inotify-based directory watcher)
     api.registerFunction(
-        "fs.watch", [&api](const std::vector<Value> &args) {
+        "fs.watch", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.size() < 2)
                 return Value::makeNull();
@@ -611,7 +611,7 @@ void registerFsModule(VMApi &api) {
 
     // fs._watchClose (close watch handle)
     api.registerFunction(
-        "fs._watchClose", [&api](const std::vector<Value> &args) {
+        "fs._watchClose", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -630,7 +630,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.watchTree (recursive directory watcher)
     api.registerFunction(
-        "fs.watchTree", [&api](const std::vector<Value> &args) {
+        "fs.watchTree", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.size() < 2)
                 return Value::makeNull();
@@ -665,7 +665,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.open (file handle: r, w, w+, a)
     api.registerFunction(
-        "fs.open", [&api](const std::vector<Value> &args) {
+        "fs.open", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty())
                 return Value::makeNull();
@@ -718,7 +718,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: read(n)
     api.registerFunction(
-        "fs._handleRead", [&api](const std::vector<Value> &args) {
+        "fs._handleRead", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeNull();
@@ -750,7 +750,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: write(data)
     api.registerFunction(
-        "fs._handleWrite", [&api](const std::vector<Value> &args) {
+        "fs._handleWrite", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.size() < 2 || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -768,7 +768,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: prepend(data)
     api.registerFunction(
-        "fs._handlePrepend", [&api](const std::vector<Value> &args) {
+        "fs._handlePrepend", [api](const std::vector<Value> &args) {
             if (args.size() < 2 || !args[0].isObjectId())
                 return Value::makeBool(false);
             auto *handle = getHandle(args[0], api);
@@ -792,7 +792,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: append(data)
     api.registerFunction(
-        "fs._handleAppend", [&api](const std::vector<Value> &args) {
+        "fs._handleAppend", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.size() < 2 || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -811,7 +811,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: seek(position)
     api.registerFunction(
-        "fs._handleSeek", [&api](const std::vector<Value> &args) {
+        "fs._handleSeek", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -833,7 +833,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: clear()
     api.registerFunction(
-        "fs._handleClear", [&api](const std::vector<Value> &args) {
+        "fs._handleClear", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -852,7 +852,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: flush()
     api.registerFunction(
-        "fs._handleFlush", [&api](const std::vector<Value> &args) {
+        "fs._handleFlush", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -868,7 +868,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: close()
     api.registerFunction(
-        "fs._handleClose", [&api](const std::vector<Value> &args) {
+        "fs._handleClose", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -889,7 +889,7 @@ void registerFsModule(VMApi &api) {
 
     // File handle: remove() (close and delete file)
     api.registerFunction(
-        "fs._handleRemove", [&api](const std::vector<Value> &args) {
+        "fs._handleRemove", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty() || !args[0].isObjectId())
                 return Value::makeBool(false);
@@ -913,7 +913,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.atomicWrite (write to temp then rename)
     api.registerFunction(
-        "fs.atomicWrite", [&api](const std::vector<Value> &args) {
+        "fs.atomicWrite", [api](const std::vector<Value> &args) {
             if (args.size() < 2)
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);
@@ -934,7 +934,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.tempFile (create temporary file, returns {path, fd})
     api.registerFunction(
-        "fs.tempFile", [&api](const std::vector<Value> &args) {
+        "fs.tempFile", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             std::string tmpl = "/tmp/havel_XXXXXX";
             if (!args.empty()) {
@@ -966,7 +966,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.lock (advisory file lock via flock)
     api.registerFunction(
-        "fs.lock", [&api](const std::vector<Value> &args) {
+        "fs.lock", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty())
                 return Value::makeBool(false);
@@ -991,7 +991,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.tryLock (non-blocking advisory file lock)
     api.registerFunction(
-        "fs.tryLock", [&api](const std::vector<Value> &args) {
+        "fs.tryLock", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
             if (args.empty())
                 return Value::makeBool(false);
@@ -1016,7 +1016,7 @@ void registerFsModule(VMApi &api) {
 
     // fs.isLocked
     api.registerFunction(
-        "fs.isLocked", [&api](const std::vector<Value> &args) {
+        "fs.isLocked", [api](const std::vector<Value> &args) {
             if (args.empty())
                 return Value::makeBool(false);
             std::string path = api.resolveString(args[0]);

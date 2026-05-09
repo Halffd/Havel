@@ -14,7 +14,7 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
-static std::string valueToString(const Value &v, VMApi &api) {
+static std::string valueToString(const Value &v, const VMApi &api) {
     if (v.isNull()) return "null";
     if (v.isBool()) return v.asBool() ? "true" : "false";
     if (v.isInt()) return std::to_string(v.asInt());
@@ -38,7 +38,7 @@ static std::string valueToString(const Value &v, VMApi &api) {
     return "?";
 }
 
-static std::string formatMessage(const std::vector<Value> &args, VMApi &api) {
+static std::string formatMessage(const std::vector<Value> &args, const VMApi &api) {
     std::ostringstream ss;
     for (size_t i = 0; i < args.size(); ++i) {
         if (i > 0) ss << " ";
@@ -55,34 +55,34 @@ static std::string getTimestamp() {
     return ss.str();
 }
 
-void registerLogModule(VMApi &api) {
+void registerLogModule(const VMApi &api) {
     auto &logger = havel::Logger::getInstance();
 
-    api.registerFunction("log.info", [&api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.info", [api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
         ::havel::info("{}", msg);
         return Value::makeNull();
     });
 
-    api.registerFunction("log.error", [&api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.error", [api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
         ::havel::error("{}", msg);
         return Value::makeNull();
     });
 
-    api.registerFunction("log.warn", [&api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.warn", [api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
         havel::warn("{}", msg);
         return Value::makeNull();
     });
 
-    api.registerFunction("log.debug", [&api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.debug", [api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
         ::havel::debug("{}", msg);
         return Value::makeNull();
     });
 
-    api.registerFunction("log.critical", [&api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.critical", [api](const std::vector<Value> &args) -> Value {
         std::string msg = formatMessage(args, api);
         havel::critical("{}", msg);
         return Value::makeNull();
@@ -124,7 +124,7 @@ void registerLogModule(VMApi &api) {
         return arrId;
     });
 
-    api.registerFunction("log.log", [&api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.log", [api](const std::vector<Value> &args) -> Value {
         if (args.empty()) {
             throw std::runtime_error("log.log() requires at least a target");
         }
@@ -173,7 +173,7 @@ void registerLogModule(VMApi &api) {
     api.setGlobal("log", logObj);
 }
 
-void registerDebugModule(VMApi &api) {
+void registerDebugModule(const VMApi &api) {
     api.registerFunction("debug.toggleVerboseConditionLogging", [](const std::vector<Value> &) -> Value {
         bool current = Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false);
         Configs::Get().Set("Debug.VerboseConditionLogging", !current, true);

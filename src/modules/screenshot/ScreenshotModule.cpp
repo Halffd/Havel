@@ -19,7 +19,7 @@ static host::ScreenshotService* getService() {
 }
 
 // Helper: Convert RGBA vector to VM array of objects with r,g,b,a fields
-static Value rgbaToVmArray(VMApi &api, const std::vector<uint8_t> &rgba, int width, int height) {
+static Value rgbaToVmArray(const VMApi &api, const std::vector<uint8_t> &rgba, int width, int height) {
   auto result = api.makeObject();
   
   // Store dimensions
@@ -55,7 +55,7 @@ static int toInt(const Value &v) {
 // ============================================================================
 
 // screenshot.capture() -> image object
-static Value screenshotCapture(VMApi &api, const std::vector<Value> &args) {
+static Value screenshotCapture(const VMApi &api, const std::vector<Value> &args) {
   auto service = getService();
   if (!service) {
     return api.makeNull();
@@ -70,7 +70,7 @@ static Value screenshotCapture(VMApi &api, const std::vector<Value> &args) {
 }
 
 // screenshot.captureMonitor(monitorIndex) -> image object
-static Value screenshotCaptureMonitor(VMApi &api, const std::vector<Value> &args) {
+static Value screenshotCaptureMonitor(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeNull();
   }
@@ -91,7 +91,7 @@ static Value screenshotCaptureMonitor(VMApi &api, const std::vector<Value> &args
 }
 
 // screenshot.captureActiveWindow() -> image object
-static Value screenshotCaptureActiveWindow(VMApi &api, const std::vector<Value> &args) {
+static Value screenshotCaptureActiveWindow(const VMApi &api, const std::vector<Value> &args) {
   auto service = getService();
   if (!service) {
     return api.makeNull();
@@ -105,7 +105,7 @@ static Value screenshotCaptureActiveWindow(VMApi &api, const std::vector<Value> 
 }
 
 // screenshot.captureRegion(x, y, width, height) -> image object
-static Value screenshotCaptureRegion(VMApi &api, const std::vector<Value> &args) {
+static Value screenshotCaptureRegion(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 4) {
     return api.makeNull();
   }
@@ -125,7 +125,7 @@ static Value screenshotCaptureRegion(VMApi &api, const std::vector<Value> &args)
 }
 
 // screenshot.monitorCount() -> int
-static Value screenshotMonitorCount(VMApi &api, const std::vector<Value> &args) {
+static Value screenshotMonitorCount(const VMApi &api, const std::vector<Value> &args) {
   auto service = getService();
   if (!service) {
     return Value::makeInt(0);
@@ -134,7 +134,7 @@ static Value screenshotMonitorCount(VMApi &api, const std::vector<Value> &args) 
 }
 
 // screenshot.monitorGeometry(index) -> {x, y, width, height}
-static Value screenshotMonitorGeometry(VMApi &api, const std::vector<Value> &args) {
+static Value screenshotMonitorGeometry(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeNull();
   }
@@ -162,34 +162,34 @@ static Value screenshotMonitorGeometry(VMApi &api, const std::vector<Value> &arg
 // Register Screenshot Module
 // ============================================================================
 
-void registerScreenshotModule(compiler::VMApi &api) {
+void registerScreenshotModule(const compiler::VMApi &api) {
   api.registerFunction("screenshot.capture",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return screenshotCapture(api, args);
                        });
   
   api.registerFunction("screenshot.captureMonitor",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return screenshotCaptureMonitor(api, args);
                        });
   
   api.registerFunction("screenshot.captureActiveWindow",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return screenshotCaptureActiveWindow(api, args);
                        });
   
   api.registerFunction("screenshot.captureRegion",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return screenshotCaptureRegion(api, args);
                        });
   
   api.registerFunction("screenshot.monitorCount",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return screenshotMonitorCount(api, args);
                        });
   
   api.registerFunction("screenshot.monitorGeometry",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return screenshotMonitorGeometry(api, args);
                        });
   

@@ -7,7 +7,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Register math module with VMApi (stable API layer)
-void registerMathModule(VMApi &api) {
+void registerMathModule(const VMApi &api) {
   // Helper: convert Value to double
   auto toNum = [](const Value &v) -> double {
     if (v.isInt())

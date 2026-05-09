@@ -81,6 +81,10 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
   vm->setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
   vm->setHostObjectField(contextObj, "enabled", Value::makeBool(enabled));
 
+  // Set type name for prototype lookup
+  auto typeStr = vm->createRuntimeString("Hotkey");
+  vm->setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
+
   return Value::makeObjectId(contextObj.id);
 }
 

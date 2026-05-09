@@ -875,6 +875,7 @@ void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
 
 private:
     std::atomic<uint32_t> active_hotkey_executions_{0};
+    mutable std::recursive_mutex execution_mutex_; // Main VM execution lock
     bool jit_tail_call_occurred_ = false;
 
     uint32_t app_args_array_id_ = 0;

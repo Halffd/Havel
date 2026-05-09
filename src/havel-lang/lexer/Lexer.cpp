@@ -1064,13 +1064,7 @@ prevType == TokenType::Not ||
         prevType == TokenType::BitwiseXor ||
  prevType == TokenType::ShiftLeft ||
  prevType == TokenType::ShiftRight ||
- prevType == TokenType::LeftArrow ||
-				prevType == TokenType::Return ||
-				prevType == TokenType::Semicolon ||
-				prevType == TokenType::OpenBrace ||
-				prevType == TokenType::NewLine ||
-				prevType == TokenType::Fn ||
-				prevType == TokenType::Op);
+  prevType == TokenType::LeftArrow);
       }
 
 

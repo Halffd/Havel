@@ -10,9 +10,9 @@ namespace havel { class WindowMonitor; }
 namespace havel::modules {
 
 // Register window monitor module with VM
-void registerWindowMonitorModule(compiler::VMApi &api);
+void registerWindowMonitorModule(const compiler::VMApi &api);
 
 // Setup dynamic window globals with existing WindowMonitor
-void setupDynamicWindowGlobals(compiler::VMApi &api, WindowMonitor *monitor);
+void setupDynamicWindowGlobals(const compiler::VMApi &api, WindowMonitor *monitor);
 
 } // namespace havel::modules

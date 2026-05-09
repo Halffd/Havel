@@ -34,7 +34,7 @@ static int64_t getTimestampMs(const std::vector<Value> &args) {
   throw std::runtime_error("time: timestamp must be numeric");
 }
 
-void registerTimeModule(VMApi &api) {
+void registerTimeModule(const VMApi &api) {
   // time.now() — current epoch in milliseconds
   api.registerFunction("time.now",
                        [](const std::vector<Value> &args) {
@@ -73,7 +73,7 @@ void registerTimeModule(VMApi &api) {
 
   // time.format(timestamp, format?) — format timestamp as string
   api.registerFunction(
-      "time.format", [&api](const std::vector<Value> &args) {
+      "time.format", [api](const std::vector<Value> &args) {
         int64_t timestamp = getTimestampMs(args);
         std::time_t time = timestamp / 1000;
         std::string fmt = "%Y-%m-%d %H:%M:%S";
@@ -89,7 +89,7 @@ void registerTimeModule(VMApi &api) {
   // time.parse(datestr, format?) — parse date string to millisecond
   // timestamp
   api.registerFunction(
-      "time.parse", [&api](const std::vector<Value> &args) {
+      "time.parse", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.parse() requires date string");
         std::string datestr = api.resolveString(args[0]);
@@ -114,7 +114,7 @@ void registerTimeModule(VMApi &api) {
 
   // time.sleep(ms) — non-blocking if in a goroutine
   api.registerFunction(
-      "time.sleep", [&api](const std::vector<Value> &args) {
+      "time.sleep", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.sleep() requires milliseconds");
         int64_t ms = 0;
@@ -187,7 +187,7 @@ void registerTimeModule(VMApi &api) {
   });
 
   // time.date() — current date as "YYYY-MM-DD" string
-  api.registerFunction("time.date", [&api](const std::vector<Value> &args) {
+  api.registerFunction("time.date", [api](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     char buf[32];
@@ -196,7 +196,7 @@ void registerTimeModule(VMApi &api) {
   });
 
   // time.time() — current time as "HH:MM:SS" string
-  api.registerFunction("time.time", [&api](const std::vector<Value> &args) {
+  api.registerFunction("time.time", [api](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     char buf[32];

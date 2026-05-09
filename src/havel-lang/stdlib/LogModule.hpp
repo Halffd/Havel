@@ -3,7 +3,7 @@
 
 namespace havel::stdlib {
 
-void registerLogModule(compiler::VMApi &api);
-void registerDebugModule(compiler::VMApi &api);
+void registerLogModule(const compiler::VMApi &api);
+void registerDebugModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

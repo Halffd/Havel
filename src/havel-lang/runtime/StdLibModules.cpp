@@ -20,29 +20,29 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
 namespace havel::stdlib {
-void registerMathModule(compiler::VMApi &api);
-void registerStringModule(compiler::VMApi &api);
-void registerObjectModule(compiler::VMApi &api);
-void registerTypeModule(compiler::VMApi &api);
-void registerRegexModule(compiler::VMApi &api);
-void registerPhysicsModule(compiler::VMApi &api);
-void registerTimeModule(compiler::VMApi &api);
+void registerMathModule(const compiler::VMApi &api);
+void registerStringModule(const compiler::VMApi &api);
+void registerObjectModule(const compiler::VMApi &api);
+void registerTypeModule(const compiler::VMApi &api);
+void registerRegexModule(const compiler::VMApi &api);
+void registerPhysicsModule(const compiler::VMApi &api);
+void registerTimeModule(const compiler::VMApi &api);
 #ifndef HAVEL_PURE_VM
-void registerHotkeyModule(compiler::VMApi &api);
+void registerHotkeyModule(const compiler::VMApi &api);
 #endif
-void registerFsModule(compiler::VMApi &api);
-void registerRandomModule(compiler::VMApi &api);
-void registerLogModule(compiler::VMApi &api);
-void registerDebugModule(compiler::VMApi &api);
-void registerSysModule(compiler::VMApi &api);
-void registerShellModule(compiler::VMApi &api);
-void registerPointerModule(compiler::VMApi &api);
-void registerFormatModule(compiler::VMApi &api);
-void registerPackModule(compiler::VMApi &api);
-void registerBitModule(compiler::VMApi &api);
+void registerFsModule(const compiler::VMApi &api);
+void registerRandomModule(const compiler::VMApi &api);
+void registerLogModule(const compiler::VMApi &api);
+void registerDebugModule(const compiler::VMApi &api);
+void registerSysModule(const compiler::VMApi &api);
+void registerShellModule(const compiler::VMApi &api);
+void registerPointerModule(const compiler::VMApi &api);
+void registerFormatModule(const compiler::VMApi &api);
+void registerPackModule(const compiler::VMApi &api);
+void registerBitModule(const compiler::VMApi &api);
 #ifndef HAVEL_PURE_VM
-void registerHttpModule(compiler::VMApi &api);
-void registerBrowserModule(compiler::VMApi &api);
+void registerHttpModule(const compiler::VMApi &api);
+void registerBrowserModule(const compiler::VMApi &api);
 #endif
 } // namespace havel::stdlib
 

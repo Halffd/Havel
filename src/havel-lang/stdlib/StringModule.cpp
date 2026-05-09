@@ -8,7 +8,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Register string module with VMApi (stable API layer)
-void registerStringModule(VMApi &api) {
+void registerStringModule(const VMApi &api) {
   // Helper: convert string to lowercase
   auto toLower = [](const std::string &s) -> std::string {
     std::string result = s;
@@ -36,7 +36,7 @@ void registerStringModule(VMApi &api) {
 
   // Register string functions via VMApi
   api.registerFunction(
-      "string.len", [&api](const std::vector<Value> &args) {
+      "string.len", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("string.len() requires 1 argument");
         return Value(static_cast<int64_t>(api.toString(args[0]).length()));
@@ -72,7 +72,7 @@ void registerStringModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "string.sub", [&api](const std::vector<Value> &args) {
+      "string.sub", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error(
               "string.sub() requires at least 2 arguments");
@@ -95,7 +95,7 @@ void registerStringModule(VMApi &api) {
       });
 
   api.registerFunction("string.find",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          if (args.size() < 2)
                            throw std::runtime_error(
                                "string.find() requires at least 2 arguments");
@@ -106,7 +106,7 @@ void registerStringModule(VMApi &api) {
                        });
 
   api.registerFunction(
-      "string.replace", [&api](const std::vector<Value> &args) {
+      "string.replace", [api](const std::vector<Value> &args) {
         if (args.size() < 3)
           throw std::runtime_error("string.replace() requires 3 arguments");
         std::string str = api.toString(args[0]);
@@ -124,7 +124,7 @@ void registerStringModule(VMApi &api) {
       });
 
 api.registerFunction(
-  "string.split", [&api](const std::vector<Value> &args) {
+  "string.split", [api](const std::vector<Value> &args) {
   if (args.empty())
     throw std::runtime_error(
         "string.split() requires at least 1 argument");
@@ -135,7 +135,7 @@ api.registerFunction(
 });
 
   api.registerFunction(
-      "string.join", [&api](const std::vector<Value> &args) {
+      "string.join", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error(
               "string.join() requires at least 1 argument");
@@ -151,7 +151,7 @@ api.registerFunction(
       });
 
   api.registerFunction(
-      "string.startswith", [&api](const std::vector<Value> &args) {
+      "string.startswith", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("string.startswith() requires 2 arguments");
         std::string str = api.toString(args[0]);
@@ -160,7 +160,7 @@ api.registerFunction(
       });
 
   api.registerFunction(
-      "string.endswith", [&api](const std::vector<Value> &args) {
+      "string.endswith", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("string.endswith() requires 2 arguments");
         std::string str = api.toString(args[0]);
@@ -172,7 +172,7 @@ api.registerFunction(
       });
 
   api.registerFunction(
-      "string.includes", [&api](const std::vector<Value> &args) {
+      "string.includes", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("string.includes() requires 2 arguments");
         std::string str = api.toString(args[0]);
@@ -180,7 +180,7 @@ api.registerFunction(
         return Value::makeBool(str.find(substr) != std::string::npos);
       });
 
-  api.registerFunction("replace", [&api](const std::vector<Value>& args) {
+  api.registerFunction("replace", [api](const std::vector<Value>& args) {
  if (args.size() < 3)
  throw std::runtime_error("replace() requires string, pattern, and replacement");
  std::string s = api.toString(args[0]);

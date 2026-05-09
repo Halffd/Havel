@@ -9,6 +9,6 @@
 
 namespace havel::modules {
 
-void registerTextChunkerModule(compiler::VMApi &api);
+void registerTextChunkerModule(const compiler::VMApi &api);
 
 } // namespace havel::modules

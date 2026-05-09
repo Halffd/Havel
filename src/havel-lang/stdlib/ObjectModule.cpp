@@ -12,9 +12,9 @@ using havel::compiler::ObjectRef;
 
 namespace havel::stdlib {
 
-void registerObjectModule(VMApi &api) {
+void registerObjectModule(const VMApi &api) {
     // Object.keys(obj) - Get all keys of an object
-    api.registerFunction("object.keys", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.keys", [api](const std::vector<Value>& args) {
         try {
             if (args.empty()) throw std::runtime_error("Object.keys() requires object");
             if (!args[0].isObjectId()) throw std::runtime_error("Object.keys() arg must be object");
@@ -34,7 +34,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.values(obj) - Get all values of an object
-    api.registerFunction("object.values", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.values", [api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.values() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.values() arg must be object");
 
@@ -49,7 +49,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.entries(obj) - Get all entries of an object as [key, value] pairs
-    api.registerFunction("object.entries", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.entries", [api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.entries() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.entries() arg must be object");
 
@@ -67,7 +67,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.has(obj, key) - Check if object has a key
-    api.registerFunction("object.has", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.has", [api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.has() requires object and key");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.has() first arg must be object");
 
@@ -76,7 +76,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.find(obj, key) - Find key index in object, returns index >= 0 or -1
-    api.registerFunction("object.find", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.find", [api](const std::vector<Value>& args) {
         if (args.size() < 2) return Value::makeInt(-1);
         if (!args[0].isObjectId()) return Value::makeInt(-1);
 
@@ -89,7 +89,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.set(obj, key, value) - Set a value on an object
-    api.registerFunction("object.set", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.set", [api](const std::vector<Value>& args) {
         if (args.size() < 3) throw std::runtime_error("Object.set() requires object, key, and value");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.set() first arg must be object");
         if (!args[1].isStringId()) throw std::runtime_error("Object.set() second arg must be key string");
@@ -100,7 +100,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.isEmpty(obj) - Check if object has no user keys
-    api.registerFunction("object.isEmpty", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.isEmpty", [api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.isEmpty() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.isEmpty() arg must be object");
 
@@ -112,7 +112,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // Object.size(obj) - Get number of keys in object
-    api.registerFunction("object.size", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.size", [api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("Object.size() requires object");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.size() arg must be object");
 
@@ -125,7 +125,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // object.len(obj) - Alias for size
-    api.registerFunction("object.len", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.len", [api](const std::vector<Value>& args) {
         if (args.empty()) throw std::runtime_error("object.len() requires object");
         if (!args[0].isObjectId()) return Value::makeInt(0);
         auto keys = api.getObjectKeys(args[0]);
@@ -137,7 +137,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // object.map(obj, func) - Map object values
-    api.registerFunction("object.map", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.map", [api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.map() requires object and function");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.map() first arg must be object");
         
@@ -152,7 +152,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // object.filter(obj, func) - Filter object fields
-    api.registerFunction("object.filter", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.filter", [api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.filter() requires object and function");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.filter() first arg must be object");
 
@@ -169,7 +169,7 @@ void registerObjectModule(VMApi &api) {
     });
 
     // object.each(obj, func) - Iterate over object fields
-    api.registerFunction("object.each", [&api](const std::vector<Value>& args) {
+    api.registerFunction("object.each", [api](const std::vector<Value>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.each() requires object and function");
         if (!args[0].isObjectId()) throw std::runtime_error("Object.each() first arg must be object");
         

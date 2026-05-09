@@ -54,7 +54,7 @@ struct HttpRequestOpts {
     std::unordered_map<std::string, std::string> headers;
 };
 
-static HttpRequestOpts parseOpts(const Value &opts, VMApi &api) {
+static HttpRequestOpts parseOpts(const Value &opts, const VMApi &api) {
     HttpRequestOpts o;
     if (!opts.isObjectId()) return o;
 
@@ -83,7 +83,7 @@ static HttpRequestOpts parseOpts(const Value &opts, VMApi &api) {
 
 static Value makeResponseObj(int status, const std::string &body,
                               const std::unordered_map<std::string, std::string> &headers,
-                              const std::string &error, VMApi &api) {
+                              const std::string &error, const VMApi &api) {
     auto obj = api.makeObject();
 
     api.setField(obj, "status", Value::makeInt(status));
@@ -101,7 +101,7 @@ static Value makeResponseObj(int status, const std::string &body,
 }
 
 static Value doRequest(const std::string &method, const std::string &url,
-                        const std::string &data, const HttpRequestOpts &opts, VMApi &api) {
+                        const std::string &data, const HttpRequestOpts &opts, const VMApi &api) {
     ensureCurl();
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -182,8 +182,8 @@ static Value doRequest(const std::string &method, const std::string &url,
     return makeResponseObj(statusCode, responseBody, responseHeaders, error, api);
 }
 
-void registerHttpModule(VMApi &api) {
-    api.registerFunction("http.get", [&api](const std::vector<Value> &args) {
+void registerHttpModule(const VMApi &api) {
+    api.registerFunction("http.get", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.get requires a url");
         std::string url = api.toString(args[0]);
         HttpRequestOpts opts;
@@ -191,7 +191,7 @@ void registerHttpModule(VMApi &api) {
         return doRequest("GET", url, "", opts, api);
     });
 
-    api.registerFunction("http.post", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.post", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.post requires a url");
         std::string url = api.toString(args[0]);
         std::string data;
@@ -201,7 +201,7 @@ void registerHttpModule(VMApi &api) {
         return doRequest("POST", url, data, opts, api);
     });
 
-    api.registerFunction("http.put", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.put", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.put requires a url");
         std::string url = api.toString(args[0]);
         std::string data;
@@ -211,7 +211,7 @@ void registerHttpModule(VMApi &api) {
         return doRequest("PUT", url, data, opts, api);
     });
 
-    api.registerFunction("http.del", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.del", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.del requires a url");
         std::string url = api.toString(args[0]);
         HttpRequestOpts opts;
@@ -219,7 +219,7 @@ void registerHttpModule(VMApi &api) {
         return doRequest("DELETE", url, "", opts, api);
     });
 
-    api.registerFunction("http.patch", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.patch", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.patch requires a url");
         std::string url = api.toString(args[0]);
         std::string data;
@@ -229,7 +229,7 @@ void registerHttpModule(VMApi &api) {
         return doRequest("PATCH", url, data, opts, api);
     });
 
-    api.registerFunction("http.head", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.head", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.head requires a url");
         std::string url = api.toString(args[0]);
         HttpRequestOpts opts;
@@ -237,7 +237,7 @@ void registerHttpModule(VMApi &api) {
         return doRequest("HEAD", url, "", opts, api);
     });
 
-    api.registerFunction("http.download", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.download", [api](const std::vector<Value> &args) {
         if (args.size() < 2) throw std::runtime_error("http.download requires url and path");
         std::string url = api.toString(args[0]);
         std::string path = api.toString(args[1]);
@@ -277,7 +277,7 @@ void registerHttpModule(VMApi &api) {
         return Value::makeBool(true);
     });
 
-    api.registerFunction("http.upload", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.upload", [api](const std::vector<Value> &args) {
         if (args.size() < 2) throw std::runtime_error("http.upload requires url and file path");
         std::string url = api.toString(args[0]);
         std::string filePath = api.toString(args[1]);
@@ -352,7 +352,7 @@ void registerHttpModule(VMApi &api) {
         return makeResponseObj(statusCode, responseBody, responseHeaders, error, api);
     });
 
-    api.registerFunction("http.urlEncode", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.urlEncode", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.urlEncode requires a string");
         std::string str = api.toString(args[0]);
         std::ostringstream oss;
@@ -368,7 +368,7 @@ void registerHttpModule(VMApi &api) {
         return api.makeString(oss.str());
     });
 
-    api.registerFunction("http.urlDecode", [&api](const std::vector<Value> &args) {
+    api.registerFunction("http.urlDecode", [api](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("http.urlDecode requires a string");
         std::string str = api.toString(args[0]);
         std::ostringstream oss;

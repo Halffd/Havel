@@ -206,7 +206,7 @@ clipboardDetectMethod(const std::vector<Value> &args) {
 }
 
 // clipboard.out() -> object with type, content, size, mimeType, files
-static Value clipboardOut(VMApi &api,
+static Value clipboardOut(const VMApi &api,
                                   const std::vector<Value> &args) {
   (void)args;
   host::ClipboardInfo info = getClipboard().getInfo();
@@ -311,7 +311,7 @@ clipboardHistoryClear(const std::vector<Value> &args) {
 
 // clipboard.history.getAll() -> array
 static Value
-clipboardHistoryGetAll(VMApi &api, const std::vector<Value> &args) {
+clipboardHistoryGetAll(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
   const auto &history = getHistoryClipboard().getHistory();
   auto arr = api.makeArray();
@@ -334,7 +334,7 @@ clipboardHistoryLast(const std::vector<Value> &args) {
 
 // clipboard.history.recent(count) -> array
 static Value
-clipboardHistoryRecent(VMApi &api, const std::vector<Value> &args) {
+clipboardHistoryRecent(const VMApi &api, const std::vector<Value> &args) {
   int count = 10;
   if (args.size() > 0) {
     count = toInt(args[0]);
@@ -369,7 +369,7 @@ clipboardHistoryGetMaxSize(const std::vector<Value> &args) {
 
 // clipboard.history.filter(pattern) -> array
 static Value
-clipboardHistoryFilter(VMApi &api, const std::vector<Value> &args) {
+clipboardHistoryFilter(const VMApi &api, const std::vector<Value> &args) {
   std::string pattern = "";
   if (args.size() > 0) {
     pattern = toString(args[0]);
@@ -400,7 +400,7 @@ clipboardHistoryFind(const std::vector<Value> &args) {
 
 // clipboard.history.getRange(start, end) -> array
 static Value
-clipboardHistoryGetRange(VMApi &api, const std::vector<Value> &args) {
+clipboardHistoryGetRange(const VMApi &api, const std::vector<Value> &args) {
   int start = 0;
   int end = 10;
   if (args.size() > 0) {
@@ -442,7 +442,7 @@ clipboardHistoryRemove(const std::vector<Value> &args) {
 
 // clipboard.history.search(pattern) -> array (case-insensitive)
 static Value
-clipboardHistorySearch(VMApi &api, const std::vector<Value> &args) {
+clipboardHistorySearch(const VMApi &api, const std::vector<Value> &args) {
   std::string pattern = "";
   if (args.size() > 0) {
     pattern = toString(args[0]);
@@ -468,7 +468,7 @@ clipboardHistorySearch(VMApi &api, const std::vector<Value> &args) {
 
 // clipboard.history.unique() -> array (remove duplicates)
 static Value
-clipboardHistoryUnique(VMApi &api, const std::vector<Value> &args) {
+clipboardHistoryUnique(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
   auto history = getHistoryClipboard().getHistory();
   auto arr = api.makeArray();
@@ -485,7 +485,7 @@ clipboardHistoryUnique(VMApi &api, const std::vector<Value> &args) {
 
 // clipboard.history.stats() -> object with statistics
 static Value
-clipboardHistoryStats(VMApi &api, const std::vector<Value> &args) {
+clipboardHistoryStats(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
   auto history = getHistoryClipboard().getHistory();
 
@@ -565,7 +565,7 @@ clipboardMonitorGetInterval(const std::vector<Value> &args) {
 
 // clipboard.monitor.onChange(callback) - sets callback for changes
 static Value
-clipboardMonitorOnChange(VMApi &api, const std::vector<Value> &args) {
+clipboardMonitorOnChange(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return Value::makeBool(false);
   }
@@ -585,7 +585,7 @@ clipboardMonitorOnChange(VMApi &api, const std::vector<Value> &args) {
 // Register Clipboard Module
 // ============================================================================
 
-void registerClipboardModule(compiler::VMApi &api) {
+void registerClipboardModule(const compiler::VMApi &api) {
   // Basic clipboard functions
   api.registerFunction("clipboard.get",
                        [](const std::vector<Value> &args) {
@@ -623,7 +623,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.out",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardOut(api, args);
                        });
 
@@ -649,7 +649,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.history.getAll",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistoryGetAll(api, args);
                        });
 
@@ -659,7 +659,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.history.recent",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistoryRecent(api, args);
                        });
 
@@ -674,7 +674,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.history.filter",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistoryFilter(api, args);
                        });
 
@@ -684,7 +684,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.history.getRange",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistoryGetRange(api, args);
                        });
 
@@ -694,17 +694,17 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.history.search",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistorySearch(api, args);
                        });
 
   api.registerFunction("clipboard.history.unique",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistoryUnique(api, args);
                        });
 
   api.registerFunction("clipboard.history.stats",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardHistoryStats(api, args);
                        });
 
@@ -735,7 +735,7 @@ void registerClipboardModule(compiler::VMApi &api) {
                        });
 
   api.registerFunction("clipboard.monitor.onChange",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMonitorOnChange(api, args);
                        });
 

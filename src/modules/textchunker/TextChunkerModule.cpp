@@ -43,7 +43,7 @@ static int toInt(const Value &v) {
 // ============================================================================
 
 // textChunker.split(text, delimiter) -> array
-static Value textChunkerSplit(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerSplit(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 2) {
     return api.makeArray();
   }
@@ -78,7 +78,7 @@ static Value textChunkerSplit(VMApi &api, const std::vector<Value> &args) {
 }
 
 // textChunker.lines(text) -> array (split by newlines)
-static Value textChunkerLines(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerLines(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeArray();
   }
@@ -96,7 +96,7 @@ static Value textChunkerLines(VMApi &api, const std::vector<Value> &args) {
 }
 
 // textChunker.words(text) -> array (split by whitespace)
-static Value textChunkerWords(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerWords(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeArray();
   }
@@ -118,7 +118,7 @@ static Value textChunkerWords(VMApi &api, const std::vector<Value> &args) {
 // ============================================================================
 
 // textChunker.chars(text, count) -> array of character chunks
-static Value textChunkerChars(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerChars(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 2) {
     return api.makeArray();
   }
@@ -138,7 +138,7 @@ static Value textChunkerChars(VMApi &api, const std::vector<Value> &args) {
 }
 
 // textChunker.fixed(text, size) -> array of fixed-size chunks
-static Value textChunkerFixed(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerFixed(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 2) {
     return api.makeArray();
   }
@@ -162,7 +162,7 @@ static Value textChunkerFixed(VMApi &api, const std::vector<Value> &args) {
 // ============================================================================
 
 // textChunker.sentences(text) -> array (split by sentence endings)
-static Value textChunkerSentences(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerSentences(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeArray();
   }
@@ -192,7 +192,7 @@ static Value textChunkerSentences(VMApi &api, const std::vector<Value> &args) {
 }
 
 // textChunker.paragraphs(text) -> array (split by blank lines)
-static Value textChunkerParagraphs(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerParagraphs(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeArray();
   }
@@ -230,7 +230,7 @@ static Value textChunkerParagraphs(VMApi &api, const std::vector<Value> &args) {
 // ============================================================================
 
 // textChunker.tokens(text, maxTokens, overlap) -> array
-static Value textChunkerTokens(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerTokens(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 2) {
     return api.makeArray();
   }
@@ -264,7 +264,7 @@ static Value textChunkerTokens(VMApi &api, const std::vector<Value> &args) {
 }
 
 // textChunker.window(text, size, step) -> array of sliding windows
-static Value textChunkerWindow(VMApi &api, const std::vector<Value> &args) {
+static Value textChunkerWindow(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 2) {
     return api.makeArray();
   }
@@ -290,53 +290,53 @@ static Value textChunkerWindow(VMApi &api, const std::vector<Value> &args) {
 // Register TextChunker Module
 // ============================================================================
 
-void registerTextChunkerModule(compiler::VMApi &api) {
+void registerTextChunkerModule(const compiler::VMApi &api) {
   // Basic splitting
   api.registerFunction("textChunker.split",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerSplit(api, args);
                        });
   
   api.registerFunction("textChunker.lines",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerLines(api, args);
                        });
   
   api.registerFunction("textChunker.words",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerWords(api, args);
                        });
   
   // Size-based
   api.registerFunction("textChunker.chars",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerChars(api, args);
                        });
   
   api.registerFunction("textChunker.fixed",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerFixed(api, args);
                        });
   
   // Smart chunking
   api.registerFunction("textChunker.sentences",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerSentences(api, args);
                        });
   
   api.registerFunction("textChunker.paragraphs",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerParagraphs(api, args);
                        });
   
   // LLM token chunking
   api.registerFunction("textChunker.tokens",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerTokens(api, args);
                        });
   
   api.registerFunction("textChunker.window",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return textChunkerWindow(api, args);
                        });
   

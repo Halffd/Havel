@@ -7,6 +7,6 @@
 
 namespace havel::stdlib {
 
-void registerTypeModule(compiler::VMApi &api);
+void registerTypeModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

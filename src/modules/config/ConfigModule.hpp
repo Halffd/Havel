@@ -6,14 +6,14 @@
 
 namespace havel::modules {
 
-void registerConfigModule(compiler::VMApi &api);
-void autoLoadConfig(compiler::VMApi &api);
+void registerConfigModule(const compiler::VMApi &api);
+void autoLoadConfig(const compiler::VMApi &api);
 
-compiler::Value configGet(compiler::VMApi &api, const std::vector<compiler::Value> &args);
-compiler::Value configSet(compiler::VMApi &api, const std::vector<compiler::Value> &args);
+compiler::Value configGet(const compiler::VMApi &api, const std::vector<compiler::Value> &args);
+compiler::Value configSet(const compiler::VMApi &api, const std::vector<compiler::Value> &args);
 compiler::Value configSave(const std::vector<compiler::Value> &args);
-compiler::Value configGetAll(compiler::VMApi &api, const std::vector<compiler::Value> &args);
+compiler::Value configGetAll(const compiler::VMApi &api, const std::vector<compiler::Value> &args);
 compiler::Value configLoad(const std::vector<compiler::Value> &args);
-compiler::Value configKeys(compiler::VMApi &api, const std::vector<compiler::Value> &args);
+compiler::Value configKeys(const compiler::VMApi &api, const std::vector<compiler::Value> &args);
 
 } // namespace havel::modules

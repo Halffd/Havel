@@ -7,6 +7,6 @@
 namespace havel::modules {
 
 // Register help module with VM
-void registerHelpModule(compiler::VMApi &api);
+void registerHelpModule(const compiler::VMApi &api);
 
 } // namespace havel::modules

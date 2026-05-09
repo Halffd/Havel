@@ -7,7 +7,7 @@
  * - Simplify common VM API operations
  * 
  * USAGE EXAMPLE:
- *   void registerMyModule(VMApi& api) {
+ *   void registerMyModule(const VMApi& api) {
  *     HAVEL_BEGIN_MODULE("MyModule");
  *     
  *     // Register simple function
@@ -220,7 +220,7 @@ inline std::string toString(const compiler::Value &v) {
 }
 
 // Convert string to Value
-inline compiler::Value fromString(compiler::VMApi& api, const std::string &s) {
+inline compiler::Value fromString(const compiler::VMApi& api, const std::string &s) {
   // Try boolean
   if (s == "true") return compiler::Value::makeBool(true);
   if (s == "false") return compiler::Value::makeBool(false);
@@ -244,7 +244,7 @@ inline compiler::Value fromString(compiler::VMApi& api, const std::string &s) {
 }
 
 // Create array from vector of values
-inline compiler::Value makeArray(compiler::VMApi& api, const std::vector<compiler::Value>& values) {
+inline compiler::Value makeArray(const compiler::VMApi& api, const std::vector<compiler::Value>& values) {
     auto arr = api.makeArray();
     for (const auto& v : values) {
         api.push(arr, v);
@@ -254,7 +254,7 @@ inline compiler::Value makeArray(compiler::VMApi& api, const std::vector<compile
 
 // Create object from key-value pairs
 using ObjectField = std::pair<std::string, compiler::Value>;
-inline compiler::Value makeObject(compiler::VMApi& api, const std::vector<ObjectField>& fields) {
+inline compiler::Value makeObject(const compiler::VMApi& api, const std::vector<ObjectField>& fields) {
     auto obj = api.makeObject();
     for (const auto& [key, value] : fields) {
         api.setField(obj, key, value);
@@ -281,14 +281,14 @@ inline compiler::Value makeObject(compiler::VMApi& api, const std::vector<Object
     } while(0)
 
 namespace detail {
-    inline void registerMethod(compiler::VMApi& api, compiler::Value& obj, 
+    inline void registerMethod(const compiler::VMApi& api, compiler::Value& obj, 
                                const std::string& name, const std::string& funcName) {
         api.setField(obj, name, api.makeFunctionRef(funcName));
     }
     
     // Variadic template for multiple methods
     template<typename... Pairs>
-    void registerMethodsImpl(compiler::VMApi& api, compiler::Value& obj, Pairs... pairs) {
+    void registerMethodsImpl(const compiler::VMApi& api, compiler::Value& obj, Pairs... pairs) {
         // This would need more sophisticated implementation
         // For now, users should call registerMethod multiple times
         (void)api; (void)obj; 

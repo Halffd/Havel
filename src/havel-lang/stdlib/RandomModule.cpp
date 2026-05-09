@@ -106,7 +106,7 @@ static int64_t toInt(const Value &v) {
 }
 
 // Register random module with VMApi (stable API layer)
-void registerRandomModule(VMApi &api) {
+void registerRandomModule(const VMApi &api) {
 
   // Seed on first use from entropy source
   if (!g_seeded)
@@ -279,7 +279,7 @@ void registerRandomModule(VMApi &api) {
 
   // ─── Array operations ──────────────────────────────────────────
   api.registerFunction(
-      "random.choice", [&api](const std::vector<Value> &args) {
+      "random.choice", [api](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isArrayId())
           throw std::runtime_error("random.choice() requires an array");
         size_t len = api.length(args[0]);
@@ -291,7 +291,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.choices", [&api](const std::vector<Value> &args) {
+      "random.choices", [api](const std::vector<Value> &args) {
         if (args.size() < 2 || !args[0].isArrayId())
           throw std::runtime_error(
               "random.choices() requires array and k");
@@ -314,7 +314,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.sample", [&api](const std::vector<Value> &args) {
+      "random.sample", [api](const std::vector<Value> &args) {
         if (args.size() < 2 || !args[0].isArrayId())
           throw std::runtime_error(
               "random.sample() requires array and k");
@@ -340,7 +340,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.shuffle", [&api](const std::vector<Value> &args) {
+      "random.shuffle", [api](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isArrayId())
           throw std::runtime_error("random.shuffle() requires an array");
         size_t len = api.length(args[0]);
@@ -358,7 +358,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.shuffled", [&api](const std::vector<Value> &args) {
+      "random.shuffled", [api](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isArrayId())
           throw std::runtime_error(
               "random.shuffled() requires an array");
@@ -379,7 +379,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.permutation", [&api](const std::vector<Value> &args) {
+      "random.permutation", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error(
               "random.permutation() requires n");
@@ -404,7 +404,7 @@ void registerRandomModule(VMApi &api) {
 
   // ─── Weighted random ───────────────────────────────────────────
   api.registerFunction(
-      "random.weighted", [&api](const std::vector<Value> &args) {
+      "random.weighted", [api](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isArrayId())
           throw std::runtime_error(
               "random.weighted() requires weights array");
@@ -434,7 +434,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.weightedChoice", [&api](const std::vector<Value> &args) {
+      "random.weightedChoice", [api](const std::vector<Value> &args) {
         if (args.size() < 2 || !args[0].isArrayId() ||
             !args[1].isArrayId())
           throw std::runtime_error(
@@ -482,7 +482,7 @@ void registerRandomModule(VMApi &api) {
       });
 
   api.registerFunction(
-      "random.bytes", [&api](const std::vector<Value> &args) {
+      "random.bytes", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error(
               "random.bytes() requires count");

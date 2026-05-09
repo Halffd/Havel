@@ -11,7 +11,7 @@ class VMApi;
 
 namespace stdlib {
 
-void registerRandomModule(compiler::VMApi &api);
+void registerRandomModule(const compiler::VMApi &api);
 
 } // namespace stdlib
 } // namespace havel

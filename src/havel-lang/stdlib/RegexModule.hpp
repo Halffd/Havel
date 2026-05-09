@@ -5,6 +5,6 @@
 
 namespace havel::stdlib {
 
-void registerRegexModule(compiler::VMApi &api);
+void registerRegexModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

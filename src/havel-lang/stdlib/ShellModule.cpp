@@ -76,7 +76,7 @@ static std::string getPlatform() {
 }
 
 // Enumerate environment variables into an object (name → value)
-static Value listEnvironment(VMApi &api) {
+static Value listEnvironment(const VMApi &api) {
   auto envObj = api.makeObject();
 
 #ifdef _WIN32
@@ -155,12 +155,12 @@ static std::vector<std::string> splitArgs(const std::string& cmd) {
 }
 
 // Register all functions and create the global "shell" object
-void registerShellModule(VMApi &api) {
+void registerShellModule(const VMApi &api) {
   // ----------------------------------------------------------------------
   // shell.run – execute command via system shell (returns exit code)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.run",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.run() requires a command string");
       std::string cmd = api.resolveString(args[0]);
@@ -172,7 +172,7 @@ void registerShellModule(VMApi &api) {
   // shell.exec – capture stdout of command (returns object {stdout, stderr, exitCode})
   // ----------------------------------------------------------------------
   api.registerFunction("shell.exec",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.exec() requires a command string");
       std::string cmd = api.resolveString(args[0]);
@@ -205,7 +205,7 @@ void registerShellModule(VMApi &api) {
   // shell.which – locate executable in PATH
   // ----------------------------------------------------------------------
   api.registerFunction("shell.which",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeNull();
       std::string name = api.resolveString(args[0]);
@@ -246,7 +246,7 @@ void registerShellModule(VMApi &api) {
   // shell.env – get / set a single environment variable
   // ----------------------------------------------------------------------
   api.registerFunction("shell.env",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeNull();
       std::string name = api.resolveString(args[0]);
@@ -273,7 +273,7 @@ void registerShellModule(VMApi &api) {
   // shell.cwd – current working directory
   // ----------------------------------------------------------------------
   api.registerFunction("shell.cwd",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
       return api.makeString(fs::current_path().string());
     });
 
@@ -281,7 +281,7 @@ void registerShellModule(VMApi &api) {
   // shell.getenv – get environment variable (readonly, returns null if missing)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.getenv",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeNull();
       std::string name = api.resolveString(args[0]);
@@ -295,7 +295,7 @@ void registerShellModule(VMApi &api) {
   // shell.cd – change directory
   // ----------------------------------------------------------------------
   api.registerFunction("shell.cd",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       std::string path = api.resolveString(args[0]);
@@ -310,7 +310,7 @@ void registerShellModule(VMApi &api) {
   // shell.escape – shell‑safe quoting
   // ----------------------------------------------------------------------
   api.registerFunction("shell.escape",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
 #ifdef _WIN32
         return api.makeString("\"\"");
@@ -348,7 +348,7 @@ void registerShellModule(VMApi &api) {
   // shell.platform – returns OS identifier (e.g. "linux", "windows", "macos")
   // ----------------------------------------------------------------------
   api.registerFunction("shell.platform",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
       return api.makeString(getPlatform());
     });
 
@@ -356,7 +356,7 @@ void registerShellModule(VMApi &api) {
   // shell.pid – current process ID
   // ----------------------------------------------------------------------
   api.registerFunction("shell.pid",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
 #ifdef _WIN32
       return Value::makeInt(static_cast<int64_t>(GetCurrentProcessId()));
 #else
@@ -368,7 +368,7 @@ void registerShellModule(VMApi &api) {
   // shell.home – user home directory path
   // ----------------------------------------------------------------------
   api.registerFunction("shell.home",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
       std::string home;
 #ifdef _WIN32
       const char *drive = std::getenv("HOMEDRIVE");
@@ -393,7 +393,7 @@ void registerShellModule(VMApi &api) {
   // shell.tmpdir – system temporary directory
   // ----------------------------------------------------------------------
   api.registerFunction("shell.tmpdir",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
 #ifdef _WIN32
       char buf[MAX_PATH];
       DWORD len = GetTempPathA(MAX_PATH, buf);
@@ -417,7 +417,7 @@ void registerShellModule(VMApi &api) {
   // shell.hostname – system host name
   // ----------------------------------------------------------------------
   api.registerFunction("shell.hostname",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
       char buf[256];
 #ifdef _WIN32
       DWORD size = sizeof(buf);
@@ -434,7 +434,7 @@ void registerShellModule(VMApi &api) {
   // shell.user – current user name
   // ----------------------------------------------------------------------
   api.registerFunction("shell.user",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
 #ifdef _WIN32
       char buf[256];
       DWORD size = sizeof(buf);
@@ -456,7 +456,7 @@ void registerShellModule(VMApi &api) {
   // shell.shell – path to the default system shell
   // ----------------------------------------------------------------------
   api.registerFunction("shell.shell",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
       std::string shell;
 #ifdef _WIN32
       const char *comspec = std::getenv("ComSpec");
@@ -476,7 +476,7 @@ void registerShellModule(VMApi &api) {
   // shell.sleep – suspend execution for given seconds (fractional)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.sleep",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.sleep() requires a number (seconds)");
 double secs = args[0].asNumber();
@@ -488,7 +488,7 @@ double secs = args[0].asNumber();
   // shell.read – read line from stdin
   // ----------------------------------------------------------------------
   api.registerFunction("shell.read",
-    [&api](const std::vector<Value> &) {
+    [api](const std::vector<Value> &) {
       std::string line;
 if (!std::getline(std::cin, line))
       return Value::makeNull();
@@ -500,7 +500,7 @@ if (!std::getline(std::cin, line))
   //   shell.write(text) or shell.write(text, fd) where fd: 1=stdout, 2=stderr
   // ----------------------------------------------------------------------
   api.registerFunction("shell.write",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.write() requires a string");
       std::string text = api.resolveString(args[0]);
@@ -518,7 +518,7 @@ if (!std::getline(std::cin, line))
   // shell.isatty – check if a file descriptor is a terminal (0=stdin, 1=stdout, 2=stderr)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.isatty",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       int fd = static_cast<int>(args[0].asInt());
@@ -534,7 +534,7 @@ if (!std::getline(std::cin, line))
   // shell.exit – terminate the program with a status code
   // ----------------------------------------------------------------------
   api.registerFunction("shell.exit",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       int code = 0;
       if (!args.empty()) code = static_cast<int>(args[0].asInt());
       std::exit(code);
@@ -546,7 +546,7 @@ if (!std::getline(std::cin, line))
   // shell.splitArgs – split a command string into a list of arguments
   // ----------------------------------------------------------------------
   api.registerFunction("shell.splitArgs",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return api.makeArray();  // empty array
       std::string cmd = api.resolveString(args[0]);
@@ -563,7 +563,7 @@ if (!std::getline(std::cin, line))
 
   // shell.exists(path)
   api.registerFunction("shell.exists",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty()) return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
       return Value::makeBool(fs::exists(p));
@@ -571,7 +571,7 @@ if (!std::getline(std::cin, line))
 
   // shell.isFile(path)
   api.registerFunction("shell.isFile",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty()) return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
       return Value::makeBool(fs::exists(p) && fs::is_regular_file(p));
@@ -579,7 +579,7 @@ if (!std::getline(std::cin, line))
 
   // shell.isDir(path)
   api.registerFunction("shell.isDir",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty()) return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
       return Value::makeBool(fs::exists(p) && fs::is_directory(p));
@@ -587,7 +587,7 @@ if (!std::getline(std::cin, line))
 
   // shell.mkdir(path) – create single directory (non‑recursive)
   api.registerFunction("shell.mkdir",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
@@ -598,7 +598,7 @@ if (!std::getline(std::cin, line))
 
   // shell.mkdirs(path) – create directory and all missing parents
   api.registerFunction("shell.mkdirs",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
@@ -609,7 +609,7 @@ if (!std::getline(std::cin, line))
 
   // shell.remove(path) – delete a file or empty directory
   api.registerFunction("shell.remove",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
@@ -620,7 +620,7 @@ if (!std::getline(std::cin, line))
 
   // shell.removeAll(path) – delete a file or directory recursively
   api.registerFunction("shell.removeAll",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       std::string p = api.resolveString(args[0]);
@@ -631,7 +631,7 @@ if (!std::getline(std::cin, line))
 
   // shell.copy(src, dst) – copy file; if dst is a directory, file is copied inside it
   api.registerFunction("shell.copy",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.size() < 2)
         throw std::runtime_error("shell.copy() requires source and destination");
       std::string src = api.resolveString(args[0]);
@@ -643,7 +643,7 @@ if (!std::getline(std::cin, line))
 
   // shell.move(src, dst) – move/rename a file or directory
   api.registerFunction("shell.move",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.size() < 2)
         throw std::runtime_error("shell.move() requires source and destination");
       std::string src = api.resolveString(args[0]);
@@ -655,7 +655,7 @@ if (!std::getline(std::cin, line))
 
   // shell.listDir(path) – returns array of filenames inside directory
   api.registerFunction("shell.listDir",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.listDir() requires a directory path");
       std::string p = api.resolveString(args[0]);
@@ -672,7 +672,7 @@ if (!std::getline(std::cin, line))
 
   // shell.tmpfile() – create a temporary file and return its path
   api.registerFunction("shell.tmpfile",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
 #ifdef _WIN32
       char tmpPath[MAX_PATH];
       if (GetTempPathA(MAX_PATH, tmpPath) == 0) return Value::makeNull();
@@ -701,13 +701,13 @@ if (!std::getline(std::cin, line))
 
   // shell.envList() – returns an object containing all environment variables
   api.registerFunction("shell.envList",
-    [&api](const std::vector<Value>&) {
+    [api](const std::vector<Value>&) {
       return listEnvironment(api);
     });
 
   // shell.open(path) – open a file/URL with the default system handler
   api.registerFunction("shell.open",
-    [&api](const std::vector<Value> &args) {
+    [api](const std::vector<Value> &args) {
       if (args.empty())
         throw std::runtime_error("shell.open() requires a path or URL");
       std::string path = api.resolveString(args[0]);

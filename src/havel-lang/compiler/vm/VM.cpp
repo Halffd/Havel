@@ -5150,7 +5150,7 @@ void VM::execJumpIfTrue(const Instruction &instruction) {
 // ============================================================================
 
 void VM::executeInstruction(const Instruction &instruction) {
-  switch (instruction.opcode) {
+    switch (instruction.opcode) {
   case OpCode::LOAD_CONST: {
     uint32_t const_index = instruction.operands[0].asInt();
     pushStack(getConstant(const_index));
@@ -8685,11 +8685,7 @@ void VM::throwError(const std::string &msg) {
 std::string VM::resolveStringKey(const Value &value) const {
     if (value.isStringValId()) {
         uint32_t id = value.asStringValId();
-        fprintf(stderr, "[DBG resolveStringKey] StringValId=%u current_chunk=%p main_chunk_=%p (raw ptr=%p)\n",
-                id, (const void*)current_chunk, (const void*)main_chunk_.get(),
-                main_chunk_ ? (const void*)main_chunk_.get() : nullptr);
-        fflush(stderr);
-        if (current_chunk && current_chunk == main_chunk_.get()) {
+        if (current_chunk) {
             auto& strs = current_chunk->getAllStrings();
             if (id < strs.size()) {
                 return strs[id];

@@ -3,6 +3,6 @@
 
 namespace havel::stdlib {
 
-void registerPhysicsModule(compiler::VMApi &api);
+void registerPhysicsModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

@@ -3,6 +3,7 @@
  */
 #include "LogModule.hpp"
 #include "../../utils/Logger.hpp"
+#include "core/ConfigManager.hpp"
 #include <sstream>
 #include <chrono>
 #include <iomanip>
@@ -170,6 +171,25 @@ void registerLogModule(VMApi &api) {
     api.setField(logObj, "history", api.makeFunctionRef("log.history"));
     api.setField(logObj, "log", api.makeFunctionRef("log.log"));
     api.setGlobal("log", logObj);
+}
+
+void registerDebugModule(VMApi &api) {
+    api.registerFunction("debug.toggleVerboseConditionLogging", [](const std::vector<Value> &) -> Value {
+        bool current = Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false);
+        Configs::Get().Set("Debug.VerboseConditionLogging", !current, true);
+        return Value::makeBool(!current);
+    });
+
+    api.registerFunction("debug.toggleVerboseKeyLogging", [](const std::vector<Value> &) -> Value {
+        bool current = Configs::Get().Get<bool>("Debug.VerboseKeyLogging", false);
+        Configs::Get().Set("Debug.VerboseKeyLogging", !current, true);
+        return Value::makeBool(!current);
+    });
+
+    auto debugObj = api.makeObject();
+    api.setField(debugObj, "toggleVerboseConditionLogging", api.makeFunctionRef("debug.toggleVerboseConditionLogging"));
+    api.setField(debugObj, "toggleVerboseKeyLogging", api.makeFunctionRef("debug.toggleVerboseKeyLogging"));
+    api.setGlobal("debug", debugObj);
 }
 
 } // namespace havel::stdlib

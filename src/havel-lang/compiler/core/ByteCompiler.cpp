@@ -1511,6 +1511,51 @@ case ast::NodeType::TryExpression:
     break;
   }
 
+  case ast::NodeType::ConfigSection: {
+    // Config section: SectionName { key = value; ... }
+    // Compile to: SectionName({ key: value, ... })
+    const auto &section = static_cast<const ast::ConfigSection &>(statement);
+
+    // Load the section name as a global (it's the function being called)
+    uint32_t nameId = addStringConstant(section.name);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameId));
+
+    // Create the object literal from pairs
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &pair : section.pairs) {
+      compileExpression(*pair.second);
+      uint32_t keyId = addStringConstant(pair.first);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(keyId)));
+      emit(OpCode::OBJECT_SET);
+    }
+
+    // Call it
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+    emit(OpCode::POP); // Discard result
+    break;
+  }
+
+  case ast::NodeType::DevicesBlock: {
+    // Devices block: devices { ... }
+    // Compile to: devices({ ... })
+    const auto &devicesBlock = static_cast<const ast::DevicesBlock &>(statement);
+
+    uint32_t nameId = addStringConstant("devices");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameId));
+
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &pair : devicesBlock.pairs) {
+      compileExpression(*pair.second);
+      uint32_t keyId = addStringConstant(pair.first);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(keyId)));
+      emit(OpCode::OBJECT_SET);
+    }
+
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+    emit(OpCode::POP);
+    break;
+  }
+
   case ast::NodeType::WhenBlockStatement:
     compileWhenBlock(static_cast<const ast::WhenBlock &>(statement));
     break;

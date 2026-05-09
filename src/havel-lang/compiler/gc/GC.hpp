@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <mutex>
 
 namespace havel::compiler {
 
@@ -309,7 +310,10 @@ bool isClosed() const { return !is_open; }
         const std::vector<uint32_t> &active_closure_ids,
         const std::function<std::optional<Value>(uint32_t)> &open_local_reader);
 
+    std::recursive_mutex& getMutex() { return mutex_; }
+
 private:
+    mutable std::recursive_mutex mutex_;
     enum class Generation : uint8_t {
         Young,
         Old,

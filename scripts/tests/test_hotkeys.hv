@@ -14,16 +14,32 @@ b => {
        return
     print e
   }
+  interval 500 {
+    print("hello", z)
+  }
 }
+z = 0
 c => {
     if 1 > 0 {
        print 1 > 0
     } else  {
        print 0
     }
+    loop {
+      z++
+      print z
+      sleep(100)
+    }
 }
 !d => send "#d"
-RShift => print 'zoom'
+RShift => {
+  print 'zoom'
+  while z > 0 {
+    z -= 3
+    print f"-{z}"
+    sleep(80)
+  }
+}
 // dhk  assigned below
 dhk=d => {
   print @id

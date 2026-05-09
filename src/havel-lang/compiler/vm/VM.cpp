@@ -8601,6 +8601,10 @@ VM::VMExecutionContext::invokeCallback(CallbackId id,
         frame_count_++;
 
   // Set up arguments
+  uint32_t needed_locals = func->local_count;
+  if (locals.size() < needed_locals) {
+    locals.resize(needed_locals, nullptr);
+  }
   for (size_t i = 0; i < args.size() && i < func->param_count; ++i) {
     locals[i] = args[i];
   }
@@ -9065,16 +9069,16 @@ const auto &cell = closure->upvalues[upvalue_index];
   }
 
  case OpCode::JUMP: {
- uint32_t target = instruction.operands[0].asInt();
- currentFrame().ip = target;
- break;
+ uint32_t offset = instruction.operands[0].asInt();
+ currentFrame().ip = offset;
+ return; // Don't advance IP
  }
 
   case OpCode::JUMP_IF_FALSE: {
-    uint32_t target = instruction.operands[0].asInt();
-    Value condition = pop();
-    if (!parent_vm_->isTruthy(condition)) {
-      currentFrame().ip = target;
+    uint32_t offset = instruction.operands[0].asInt();
+    if (!pop().asBool()) {
+      currentFrame().ip = offset;
+      return; // Don't advance IP
     }
     break;
   }
@@ -9089,9 +9093,22 @@ const auto &cell = closure->upvalues[upvalue_index];
 
     // Handle host function call
     if (callee_value.isHostFuncId()) {
-      // TODO: host func name lookup
-      (void)callee_value.asHostFuncId();
-      COMPILER_THROW("Host function call in execution context not yet supported with NaN boxing");
+      uint32_t host_func_idx = callee_value.asHostFuncId();
+      if (host_func_idx >= parent_vm_->host_function_names_.size()) {
+        COMPILER_THROW("Host function index out of range: " +
+                                 std::to_string(host_func_idx));
+      }
+      const std::string &name = parent_vm_->host_function_names_[host_func_idx];
+      auto it = parent_vm_->host_functions.find(name);
+      if (it == parent_vm_->host_functions.end()) {
+        COMPILER_THROW("Host function not found: " + name);
+      }
+      
+      // Host functions in context execution need a HostContext
+      // Note: This uses the parent VM for some services but execution state is isolated
+      Value result = it->second(args); 
+      push(result);
+      break;
     }
 
     // Handle VM function/closure call
@@ -9232,14 +9249,8 @@ const auto &cell = closure->upvalues[upvalue_index];
         all_args.reserve(arg_count + 1);
         all_args.push_back(receiver);
         all_args.insert(all_args.end(), args.begin(), args.end());
-        uint32_t func_idx = methodIt->second;
-        if (func_idx < parent_vm_->host_function_names_.size()) {
-          auto fnIt = parent_vm_->host_functions.find(parent_vm_->host_function_names_[func_idx]);
-          if (fnIt != parent_vm_->host_functions.end()) {
-            push(fnIt->second(all_args));
-            break;
-          }
-        }
+        doCallInContext(methodIt->second, std::move(all_args));
+        break;
       }
     }
     push(Value::makeNull());
@@ -9757,6 +9768,78 @@ Value VM::runInContext(const std::string& source, Value context) {
   globals_mirror_object_id_ = old_mirror_id;
 
   return exec_result;
+}
+
+void VM::VMExecutionContext::doCallInContext(Value callee_value,
+                                             std::vector<Value> args) {
+    // Handle host function call
+    if (callee_value.isHostFuncId()) {
+        uint32_t host_func_idx = callee_value.asHostFuncId();
+        if (host_func_idx >= parent_vm_->host_function_names_.size()) {
+            COMPILER_THROW("Host function index out of range: " +
+                                     std::to_string(host_func_idx));
+        }
+        const std::string &name = parent_vm_->host_function_names_[host_func_idx];
+        auto it = parent_vm_->host_functions.find(name);
+        if (it == parent_vm_->host_functions.end()) {
+            COMPILER_THROW("Host function not found: " + name);
+        }
+        
+        Value result = it->second(args); 
+        stack.push(result);
+        return;
+    }
+
+    // Handle VM function/closure call
+    uint32_t function_index = 0;
+    uint32_t new_closure_id = 0;
+    if (callee_value.isFunctionObjId()) {
+        function_index = callee_value.asFunctionObjId();
+    } else if (callee_value.isClosureId()) {
+        new_closure_id = callee_value.asClosureId();
+        auto *closure = parent_vm_->heap_.closure(new_closure_id);
+        if (!closure) {
+            COMPILER_THROW("Closure not found");
+        }
+        function_index = closure->function_index;
+    } else {
+        COMPILER_THROW("CALL expects function or closure");
+    }
+
+    const auto *callee = current_chunk->getFunction(function_index);
+    if (!callee) {
+        COMPILER_THROW("Function not found");
+    }
+
+    // Advance caller IP if we are inside a frame
+    if (frame_count_ > 0) {
+        frame_arena_[frame_count_ - 1].ip++;
+    }
+
+    size_t base = locals.size();
+    locals.resize(base + callee->local_count, nullptr);
+    uint32_t sd = static_cast<uint32_t>(stack.size());
+    if (frame_arena_.size() <= frame_count_) {
+        CallFrame cf;
+        cf.function = callee;
+        cf.ip = 0;
+        cf.locals_base = base;
+        cf.closure_id = new_closure_id;
+        cf.stack_depth = sd;
+        frame_arena_.push_back(std::move(cf));
+    } else {
+        frame_arena_[frame_count_].function = callee;
+        frame_arena_[frame_count_].ip = 0;
+        frame_arena_[frame_count_].locals_base = base;
+        frame_arena_[frame_count_].closure_id = new_closure_id;
+        frame_arena_[frame_count_].stack_depth = sd;
+    }
+    frame_count_++;
+
+    // Set up parameters
+    for (uint32_t i = 0; i < callee->param_count && i < args.size(); ++i) {
+        locals[base + i] = std::move(args[i]);
+    }
 }
 
 } // namespace havel::compiler

@@ -2,7 +2,7 @@ Esc => {
     print("exiting")
     exit(0)
 }
-let count = 0
+count = 0
 F1 => {
     print("f1 pressed")
     interval 1000 {
@@ -40,14 +40,14 @@ go fn() {
   }
 }
 fn recorder() {
-    let i = 0
+    i = 0
     loop {
         screenshot.full(f"/tmp/screenshot{i}.png")
         sleep(1000)
     }
 }
 go recorder()
-let n = 0
+n = 0
 while true {
    n += 1
 }

@@ -1014,84 +1014,42 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-// Handle # as length operator or hotkey modifier
-        if (c == '#') {
-        // Determine if we're in expression context or statement context
-            bool inExpressionContext = false;
-            if (!tokens.empty()) {
-                TokenType prevType = tokens.back().type;
-                if (debug_lexer) {
-                    havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {}", line, column, static_cast<int>(prevType));
-                }
-inExpressionContext = (prevType == TokenType::Number ||
-prevType == TokenType::String || prevType == TokenType::InterpolatedString || prevType == TokenType::MultilineString || prevType == TokenType::RegexString ||
-prevType == TokenType::Identifier ||
-          prevType == TokenType::True || prevType == TokenType::False ||
-          prevType == TokenType::Null ||
- prevType == TokenType::CloseParen ||
- prevType == TokenType::CloseBracket ||
- prevType == TokenType::CloseBrace ||
- prevType == TokenType::OpenBrace ||
- prevType == TokenType::OpenBracket ||
- prevType == TokenType::OpenParen ||
- prevType == TokenType::Not ||
-          prevType == TokenType::Or || prevType == TokenType::And ||
-          prevType == TokenType::Assign ||
-          prevType == TokenType::If || prevType == TokenType::While ||
-          prevType == TokenType::For || prevType == TokenType::In || prevType == TokenType::Fn ||
-          prevType == TokenType::Matches ||
-          prevType == TokenType::Tilde ||
-          prevType == TokenType::Comma ||
-          prevType == TokenType::Dot ||
-          prevType == TokenType::Arrow || prevType == TokenType::ReturnType ||
-          prevType == TokenType::Plus || prevType == TokenType::Minus ||
-          prevType == TokenType::Multiply || prevType == TokenType::Divide ||
-          prevType == TokenType::Modulo || prevType == TokenType::Power ||
-          prevType == TokenType::Backslash ||
-          prevType == TokenType::Equals || prevType == TokenType::NotEquals ||
-          prevType == TokenType::Less || prevType == TokenType::Greater ||
-          prevType == TokenType::LessEquals || prevType == TokenType::GreaterEquals ||
-          prevType == TokenType::PlusAssign || prevType == TokenType::MinusAssign ||
-          prevType == TokenType::MultiplyAssign || prevType == TokenType::DivideAssign ||
-          prevType == TokenType::Question || prevType == TokenType::Colon ||
-          prevType == TokenType::ColonColon ||
-          prevType == TokenType::PlusPlus || prevType == TokenType::MinusMinus ||
-prevType == TokenType::Not ||
-        prevType == TokenType::Nullish || prevType == TokenType::Pipe ||
-        prevType == TokenType::Matches || prevType == TokenType::Tilde ||
-        prevType == TokenType::DoubleCloseParen ||
-        prevType == TokenType::BitwiseOr ||
-        prevType == TokenType::BitwiseAnd ||
-        prevType == TokenType::BitwiseXor ||
- prevType == TokenType::ShiftLeft ||
- prevType == TokenType::ShiftRight ||
-   prevType == TokenType::LeftArrow ||
-   prevType == TokenType::Return ||
-   prevType == TokenType::Semicolon ||
-   prevType == TokenType::NewLine);
+    // Handle # as length operator or hotkey modifier
+    if (c == '#') {
+      bool isStatementStart = tokens.empty();
+      if (!isStatementStart) {
+        TokenType prevType = tokens.back().type;
+        havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {} value: '{}'", 
+                     line, column, static_cast<int>(prevType), tokens.back().value);
+        isStatementStart = (prevType == TokenType::NewLine ||
+                            prevType == TokenType::Semicolon ||
+                            prevType == TokenType::Arrow);
+      } else if (debug_lexer) {
+        havel::debug("[DEBUG] # char at line {} col {} - appears to be at statement start", line, column);
       }
 
-
-        // If followed by '[', '"', or '\'' → length operator (array access #[0], string char)
-        // In expression context, #identifier is also a length operator (e.g. #x, #arr)
-        if (inExpressionContext) {
-            auto lenToken = makeToken("#", TokenType::Length);
-            tokens.push_back(lenToken);
-            if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
-            }
-            continue;
-        }
-
-        // Not in expression context: '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
+      // Hotkey modifier detection: # at statement start OR followed by modifier keys
+      bool hasModifierPrefix = (!isAtEnd() && (peek() == '!' || peek() == '&' || peek() == '^'));
+      bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
+      
+      if (isStatementStart || (hasModifierPrefix && hasKeyName)) {
         tokens.push_back(scanHotkey());
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
         }
         continue;
+      }
+
+      // Default: '#' in expression context → length operator
+      auto lenToken = makeToken("#", TokenType::Length);
+      tokens.push_back(lenToken);
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
+      continue;
     }
 
-// Handle numbers (including negative numbers in certain contexts)
+    // Handle numbers (including negative numbers in certain contexts)
 // Only treat -digit as a negative number when NOT after an expression
 bool canBeNegativeNumber = (c == '-' && isDigit(peek()));
  if (canBeNegativeNumber && !tokens.empty()) {

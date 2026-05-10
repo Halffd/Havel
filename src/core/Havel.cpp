@@ -271,8 +271,9 @@ hostBridge->install();
 
 
 if (hotkeyManager) {
-    hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
-    hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
+ hotkeyManager->setEventQueue(eventQueue);
+ hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
+ hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
     hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
     
     

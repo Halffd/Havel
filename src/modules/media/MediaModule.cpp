@@ -196,7 +196,31 @@ void registerMediaModule(const VMApi& api) {
         }
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "media.hasPlayer", [api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "media.getPosition", [api](const auto& rawArgs) {
+ auto args = stripReceiver(api, rawArgs);
+ auto svc = getMediaService();
+ if (!svc) return Value::makeInt(0);
+ try {
+ return Value::makeInt(svc->getPosition());
+ } catch (const std::exception& e) {
+ debug("media.getPosition error: {}", e.what());
+ return Value::makeInt(0);
+ }
+ });
+
+ HAVEL_REGISTER_FUNCTION(api, "media.setPosition", [api](const auto& rawArgs) {
+ auto args = stripReceiver(api, rawArgs);
+ if (args.size() < 1) return Value::makeNull();
+ auto svc = getMediaService();
+ if (!svc) return Value::makeNull();
+ int64_t pos = 0;
+ if (args[0].isInt()) pos = args[0].asInt();
+ else if (args[0].isDouble()) pos = static_cast<int64_t>(args[0].asDouble());
+ try { svc->setPosition(pos); } catch (const std::exception& e) { debug("media.setPosition error: {}", e.what()); }
+ return Value::makeNull();
+ });
+
+ HAVEL_REGISTER_FUNCTION(api, "media.hasPlayer", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getMediaService();
         if (!svc) return Value::makeBool(false);
@@ -222,6 +246,8 @@ void registerMediaModule(const VMApi& api) {
     api.setField(mediaObj, "setActivePlayer", api.makeFunctionRef("media.setActivePlayer"));
     api.setField(mediaObj, "getAvailablePlayers", api.makeFunctionRef("media.getAvailablePlayers"));
     api.setField(mediaObj, "hasPlayer", api.makeFunctionRef("media.hasPlayer"));
+ api.setField(mediaObj, "getPosition", api.makeFunctionRef("media.getPosition"));
+ api.setField(mediaObj, "setPosition", api.makeFunctionRef("media.setPosition"));
 
     HAVEL_END_MODULE();
 }

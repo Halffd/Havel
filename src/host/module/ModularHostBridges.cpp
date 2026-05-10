@@ -2934,7 +2934,8 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         try {
             auto valOpt = contextRoot->get();
             if (valOpt) {
-                if (vm->getScheduler()) {
+                auto closureOpt = vm->externalRootValue(callbackId);
+                if (vm->getScheduler() && closureOpt && closureOpt->isClosureId()) {
                     vm->spawnCallback(callbackId, {*valOpt});
                 } else {
                     vm->invokeCallback(callbackId, {*valOpt});
@@ -2961,7 +2962,8 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 try {
                     auto valOpt = contextRoot->get();
                     if (valOpt) {
-                        if (vm->getScheduler()) {
+                        auto closureOpt = vm->externalRootValue(callbackId);
+                        if (vm->getScheduler() && closureOpt && closureOpt->isClosureId()) {
                             vm->spawnCallback(callbackId, {*valOpt});
                         } else {
                             vm->invokeCallback(callbackId, {*valOpt});
@@ -3023,7 +3025,8 @@ Value InputBridge::handleHotkeyRegisterConditional(
         try {
             auto valOpt = contextRoot->get();
             if (valOpt) {
-                if (vm->getScheduler()) {
+                auto closureOpt = vm->externalRootValue(callbackId);
+                if (vm->getScheduler() && closureOpt && closureOpt->isClosureId()) {
                     vm->spawnCallback(callbackId, {*valOpt});
                 } else {
                     vm->invokeCallback(callbackId, {*valOpt});

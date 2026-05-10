@@ -341,7 +341,7 @@ hostBridge->install();
       auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
       std::this_thread::sleep_for(std::chrono::seconds(s));
       debug("AutoExit enabled - exiting after {} seconds", s);
-      std::exit(0);
+      this->exit();
     }).detach();
   }
 }

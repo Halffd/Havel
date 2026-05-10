@@ -864,6 +864,7 @@ public:
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }
   void setRestartCallback(std::function<void()> cb) { restart_callback_ = std::move(cb); }
+  std::recursive_mutex& getExecutionMutex() const { return execution_mutex_; }
 };
 
 } // namespace havel::compiler

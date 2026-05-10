@@ -106,7 +106,8 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
             );
             if (fiber) {
               // Schedule the fiber for execution by the ExecutionEngine
-              scheduler_->addActionFiber(fiber);
+              // Hotkey fibers get priority for responsive execution
+              scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
               debug("Scheduled async hotkey action for condition: {}", condition);
             } else {
               error("Failed to create Fiber for async hotkey action, falling back to sync");
@@ -145,7 +146,8 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
             );
             if (fiber) {
               // Schedule the fiber for execution by the ExecutionEngine
-              scheduler_->addActionFiber(fiber);
+              // Hotkey fibers get priority for responsive execution
+              scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
               debug("Scheduled async hotkey false action for condition: {}", condition);
             } else {
               error("Failed to create Fiber for async hotkey false action, falling back to sync");
@@ -223,7 +225,8 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
               );
               if (fiber) {
                 // Schedule the fiber for execution by the ExecutionEngine
-                scheduler_->addActionFiber(fiber);
+                // Hotkey fibers get priority for responsive execution
+                scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
                 debug("Scheduled async hotkey action for function condition");
               } else {
                 error("Failed to create Fiber for async hotkey action, falling back to sync");
@@ -259,7 +262,8 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
               );
               if (fiber) {
                 // Schedule the fiber for execution by the ExecutionEngine
-                scheduler_->addActionFiber(fiber);
+                // Hotkey fibers get priority for responsive execution
+                scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
                 debug("Scheduled async hotkey false action for function condition");
               } else {
                 error("Failed to create Fiber for async hotkey false action, falling back to sync");

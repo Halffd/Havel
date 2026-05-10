@@ -141,8 +141,7 @@ fn wm() {
 // Monitor enumeration via XRandR FFI
 // ============================================================
 
-_xrr = ffi.open("libXrandr.so.3")
-if _xrr == 0 { _xrr = ffi.open("libXrandr.so.2") }
+_xrr = ffi.open("libXrandr.so.2")
 if _xrr == 0 { _xrr = ffi.open("libXrandr.so") }
 
 _XRRGetScreenResourcesCurrent = 0

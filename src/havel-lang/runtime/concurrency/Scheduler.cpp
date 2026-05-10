@@ -256,7 +256,7 @@ void Scheduler::addActionFiber(Fiber* fiber) {
 	}
 	{
 		std::lock_guard<std::mutex> lock(runnable_mutex_);
-		runnable_.push_back(goroutines_[g_id].get());
+		runnable_.push_front(goroutines_[g_id].get());
 	}
 }
 

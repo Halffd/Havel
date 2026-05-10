@@ -85,28 +85,15 @@ public:
   bool getDebugMode() const { return debug_mode_; }
   
   
-  WatcherRegistry* getWatcherRegistry() { return watcher_registry_.get(); }
-  const WatcherRegistry* getWatcherRegistry() const { return watcher_registry_.get(); }
-  
-  
-  void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
-  ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
-  
-  // ========== EVENT QUEUE ACCESS ==========
-  EventQueue* getEventQueue() const { return event_queue_; }
-  VM* getVM() const { return vm_; }
-  Scheduler* getScheduler() const { return scheduler_; }
-  
-  
-  /**
-   * Set callback for executing hotkey actions (Phase 2I integration)
-   * Called when a Fiber with function_id 0xFFFFFFFF is executed
-   * @param callback Function to execute hotkey action by Fiber ID
-   */
-  using HotkeyActionCallback = std::function<void(uint32_t fiber_id)>;
-  void setHotkeyActionCallback(HotkeyActionCallback callback) {
-    hotkey_action_callback_ = callback;
-  }
+	WatcherRegistry* getWatcherRegistry() { return watcher_registry_.get(); }
+	const WatcherRegistry* getWatcherRegistry() const { return watcher_registry_.get(); }
+
+	void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
+	ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
+
+	EventQueue* getEventQueue() const { return event_queue_; }
+	VM* getVM() const { return vm_; }
+	Scheduler* getScheduler() const { return scheduler_; }
 
 private:
   // ========== CORE COMPONENTS ==========
@@ -116,12 +103,9 @@ private:
   ConcurrencyBridge* concurrency_bridge_ = nullptr;  
   
   
-  std::unique_ptr<WatcherRegistry> watcher_registry_;
-  
-  
-  HotkeyActionCallback hotkey_action_callback_ = nullptr;
-  
-  // ========== STATE ==========
+	std::unique_ptr<WatcherRegistry> watcher_registry_;
+
+	// ========== STATE ==========
   bool running_ = false;
   Stats stats_;
   bool debug_mode_ = false;

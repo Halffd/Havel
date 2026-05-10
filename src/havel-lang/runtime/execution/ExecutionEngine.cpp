@@ -1,7 +1,8 @@
 #include "ExecutionEngine.hpp"
 #include "../../../utils/Logger.hpp"
+#include "../../../core/HotkeyActionWrapper.hpp"
 #include "../concurrency/Fiber.hpp"
-#include "../concurrency/DependencyTracker.hpp"  
+#include "../concurrency/DependencyTracker.hpp"
 #include <iostream>
 
 namespace havel::compiler {
@@ -84,35 +85,36 @@ bool ExecutionEngine::executeFrame() {
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
     VMExecutionResult result;
-    if (g->fiber && g->fiber->current_function_id == 0xFFFFFFFF) {  // HOTKEY_ACTION_FUNCTION_ID
-      
-      // Get the registered callback and execute it
-      if (debug_mode_) {
-                ::havel::debug("[ExecutionEngine] Executing hotkey action Fiber {}", g->fiber->id);
-      }
-      
-      // Call the registered hotkey action callback if available
-      if (hotkey_action_callback_) {
-        ::havel::debug("[ExecutionEngine] Executing hotkey action callback for fiber {}", g->fiber->id);
-        try {
-          hotkey_action_callback_(g->fiber->id);  // Execute the hotkey action
-        } catch (const std::exception& e) {
-          // Handle exceptions from hotkey actions
-          if (debug_mode_) {
-                    ::havel::debug("[ExecutionEngine] Exception in hotkey action: {}", e.what());
-          }
-          g->fiber->had_error = true;
-          g->fiber->error_message = std::string("Hotkey action error: ") + e.what();
-          result.type = VMExecutionResult::ERROR;
-          result.error_message = g->fiber->error_message;
-        }
-      } else {
-        ::havel::debug("[ExecutionEngine] No hotkey_action_callback_ set!");
-      }
-      
-      // Mark hotkey action Fiber as completed
-      result.type = VMExecutionResult::RETURNED;
-      g->fiber->state = FiberState::DONE;
+		if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+
+			if (debug_mode_) {
+				::havel::debug("[ExecutionEngine] Executing hotkey action Fiber {}", g->fiber->id);
+			}
+
+			auto* action = HotkeyActionWrapper::getCallback(g->fiber->id);
+			if (action && *action) {
+				if (debug_mode_) {
+					::havel::debug("[ExecutionEngine] Found hotkey callback for fiber {}", g->fiber->id);
+				}
+				try {
+					(*action)();
+				} catch (const std::exception& e) {
+					if (debug_mode_) {
+						::havel::debug("[ExecutionEngine] Exception in hotkey action: {}", e.what());
+					}
+					g->fiber->had_error = true;
+					g->fiber->error_message = std::string("Hotkey action error: ") + e.what();
+					result.type = VMExecutionResult::ERROR;
+					result.error_message = g->fiber->error_message;
+				}
+			} else {
+				::havel::debug("[ExecutionEngine] No callback registered for hotkey fiber {}", g->fiber->id);
+			}
+
+ if (result.type != VMExecutionResult::ERROR) {
+ result.type = VMExecutionResult::RETURNED;
+ }
+ g->fiber->state = FiberState::DONE;
     } else {
       // STEP 4: Execute one instruction in this goroutine
       // This is non-blocking - always returns immediately
@@ -174,9 +176,9 @@ bool ExecutionEngine::executeFrame() {
         break;
     }
     
-    stats_.frames_executed++;
-    vm_->garbageCollectionSafePoint();
-    return true;  // Work remains
+	stats_.frames_executed++;
+	vm_->garbageCollectionSafePoint();
+	return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
     
   } catch (const std::exception& e) {
         ::havel::error("[ExecutionEngine] Exception in executeFrame: {}", e.what());
@@ -233,23 +235,39 @@ void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
 }
 
 void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Goroutine completed execution");
-  }
-  // Mark goroutine DONE
-  if (g) {
-    g->state = Scheduler::GoroutineState::Done;
-  }
+ if (debug_mode_) {
+ ::havel::debug("[ExecutionEngine] Goroutine completed execution");
+ }
+ if (g) {
+ g->state = Scheduler::GoroutineState::Done;
+ if (g->fiber) {
+ g->fiber->state = FiberState::DONE;
+ }
+ if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+ HotkeyActionWrapper::unregisterCallback(g->fiber->id);
+ }
+ }
+ if (scheduler_->current() == g) {
+ scheduler_->clearCurrent();
+ }
 }
 
 void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Goroutine error: {}", msg);
-  }
-  // Mark goroutine DONE with error
-  if (g) {
-    g->state = Scheduler::GoroutineState::Done;
-  }
+ if (debug_mode_) {
+ ::havel::debug("[ExecutionEngine] Goroutine error: {}", msg);
+ }
+ if (g) {
+ g->state = Scheduler::GoroutineState::Done;
+ if (g->fiber) {
+ g->fiber->state = FiberState::DONE;
+ }
+ if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+ HotkeyActionWrapper::unregisterCallback(g->fiber->id);
+ }
+ }
+ if (scheduler_->current() == g) {
+ scheduler_->clearCurrent();
+ }
 }
 
 // ============================================================================

@@ -200,8 +200,9 @@ public:
 	// Attach a Fiber to a goroutine by ID
 	void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 
-  void yield(Goroutine* g);
-    // Add a pre-created Action Fiber to the scheduler
+	void yield(Goroutine* g);
+	void clearCurrent();
+	// Add a pre-created Action Fiber to the scheduler
     void addActionFiber(Fiber* fiber);
 
     // Check if there are runnable fibers
@@ -215,9 +216,13 @@ private:
   std::atomic<bool> running_{false};
   std::atomic<bool> shutdown_{false};
 
-  // Goroutine storage and queues
-  std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
-  mutable std::mutex goroutines_mutex_;
+	// LOCK ORDERING: runnable_mutex_ must NEVER be acquired while holding
+	// goroutines_mutex_. If both are needed, acquire runnable_mutex_ first,
+	// or release goroutines_mutex_ before calling yield()/unpark()/addActionFiber().
+
+	// Goroutine storage and queues
+	std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
+	mutable std::mutex goroutines_mutex_;
   uint32_t next_goroutine_id_ = 1;
 
   // Runnable queue (ready to execute)

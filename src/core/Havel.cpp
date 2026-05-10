@@ -269,28 +269,8 @@ hostBridge->install();
 	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
 	bytecodeVM->setScheduler(scheduler);
 
-  
-  // When a hotkey action Fiber is executed (function_id == 0xFFFFFFFF),
-  // ExecutionEngine will call this callback to invoke the C++ hotkey action
-  executionEngine->setHotkeyActionCallback([](uint32_t fiber_id) {
-    
-    auto* callback = HotkeyActionWrapper::getCallback(fiber_id);
-    if (callback && *callback) {
-      try {
-        
-        // when scheduling the action Fiber. Just execute the callback.
-        (*callback)();  // Execute the C++ hotkey action function
-      } catch (const std::exception& e) {
-        error("Exception in hotkey action (Fiber " + std::to_string(fiber_id) + "): " + e.what());
-      }
-    } else {
-      warn("No callback registered for hotkey action Fiber " + std::to_string(fiber_id));
-    }
-    // Note: Callback unregistration happens when Fiber is cleaned up
-  });
 
-  
-  if (hotkeyManager) {
+if (hotkeyManager) {
     hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
     hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
     hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();

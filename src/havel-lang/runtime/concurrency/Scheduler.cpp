@@ -87,31 +87,52 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 
 // ===== EXECUTION CONTROL =====
 Scheduler::Goroutine* Scheduler::pickNext() {
-    std::lock_guard<std::mutex> lock(runnable_mutex_);
+    Goroutine* result = nullptr;
 
-    while (!runnable_.empty()) {
-        auto* g = runnable_.front();
-        runnable_.pop_front();
+    {
+        std::lock_guard<std::mutex> lock(runnable_mutex_);
+        ::havel::debug("[Scheduler::pickNext] runnable_ size: {}", runnable_.size());
 
-        if (!g) {
-            continue;
+        while (!runnable_.empty()) {
+            auto* g = runnable_.front();
+            runnable_.pop_front();
+
+            if (!g) {
+                continue;
+            }
+
+ if (g->state == GoroutineState::Done) {
+ ::havel::debug("[Scheduler::pickNext] Skipping Done goroutine {}", g->id);
+ continue;
+ }
+
+ if (g->fiber && g->fiber->state == FiberState::DONE) {
+ ::havel::debug("[Scheduler::pickNext] Skipping fiber DONE goroutine {}", g->id);
+ g->state = GoroutineState::Done;
+ continue;
+ }
+
+ if (g->state != GoroutineState::Runnable && g->state != GoroutineState::Created) {
+ ::havel::debug("[Scheduler::pickNext] Skipping non-Runnable goroutine {} (state={})", g->id, static_cast<int>(g->state));
+ continue;
+ }
+
+            result = g;
+            ::havel::debug("[Scheduler::pickNext] Picked goroutine {} (state={}, fiber_id={}, fiber_state={})", 
+                g->id, static_cast<int>(g->state), g->fiber ? g->fiber->id : 0, 
+                g->fiber ? static_cast<int>(g->fiber->state) : -1);
+            break;
         }
-
-        if (g->state == GoroutineState::Done) {
-            continue;
-        }
-
-        if (g->fiber && g->fiber->state == FiberState::DONE) {
-            g->state = GoroutineState::Done;
-            continue;
-        }
-
-        g->state = GoroutineState::Running;
-        current_ = g;
-        return g;
     }
 
-    return nullptr;
+    if (result) {
+        result->state = GoroutineState::Running;
+        current_ = result;
+    } else {
+        ::havel::debug("[Scheduler::pickNext] No runnable goroutine found");
+    }
+
+    return result;
 }
 
 void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
@@ -216,10 +237,22 @@ void Scheduler::attachFiber(uint32_t goroutine_id, Fiber* fiber) {
 	}
 }
 void Scheduler::yield(Goroutine* g) {
-    g->state = GoroutineState::Runnable;
+ if (!g) return;
+ if (g->state == GoroutineState::Done) return;
+ if (g->fiber && g->fiber->state == FiberState::DONE) {
+ g->state = GoroutineState::Done;
+ return;
+ }
+ ::havel::debug("[Scheduler::yield] Goroutine {} yielded, adding back to runnable (fiber_state={})",
+ g->id, g->fiber ? static_cast<int>(g->fiber->state) : -1);
+ g->state = GoroutineState::Runnable;
 
-    std::lock_guard<std::mutex> lock(runnable_mutex_);
-    runnable_.push_back(g);
+ std::lock_guard<std::mutex> lock(runnable_mutex_);
+ runnable_.push_back(g);
+}
+
+void Scheduler::clearCurrent() {
+	current_ = nullptr;
 }
 void Scheduler::addActionFiber(Fiber* fiber) {
     if (!fiber) return;
@@ -251,7 +284,18 @@ void Scheduler::addActionFiber(Fiber* fiber) {
 
 bool Scheduler::hasRunnableFibers() const {
     std::lock_guard<std::mutex> lock(runnable_mutex_);
-    return !runnable_.empty();
+    if (runnable_.empty()) return false;
+    for (const auto* g : runnable_) {
+        if (g && g->state != GoroutineState::Done) {
+            if (g->fiber && g->fiber->state == FiberState::DONE) {
+                continue;
+            }
+            ::havel::debug("[Scheduler::hasRunnableFibers] Found runnable goroutine {} (state={}, fiber_state={})",
+                g->id, static_cast<int>(g->state), g->fiber ? static_cast<int>(g->fiber->state) : -1);
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace havel::compiler

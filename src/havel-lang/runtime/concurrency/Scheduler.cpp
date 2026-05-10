@@ -41,7 +41,9 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
     // This is the actual execution context that will be loaded into the VM
     g->fiber = new Fiber(g->id, function_id, 0, name);
     if (closure_id > 0) {
-        g->fiber->currentFrame().closure_id = closure_id;
+        auto& frame = g->fiber->currentFrame();
+        frame.closure_id = closure_id;
+        frame.arg_count = static_cast<uint32_t>(args.size());
     }
     
     // Store arguments in locals

@@ -2,29 +2,64 @@
 #include "../../../utils/Logger.hpp"
 #include <algorithm>
 #include <iostream>
+#include <cstring>
 
 namespace havel::compiler {
 
+EventQueue::EventQueue() {
+    wakeupFd_ = eventfd(0, EFD_NONBLOCK);
+    if (wakeupFd_ < 0) {
+        ::havel::error("[EventQueue] Failed to create wakeup eventfd: {}", strerror(errno));
+    }
+}
+
+EventQueue::~EventQueue() {
+    if (wakeupFd_ >= 0) {
+        close(wakeupFd_);
+        wakeupFd_ = -1;
+    }
+}
+
 void EventQueue::push(const Event& event) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    events_.push(event);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        events_.push(event);
+    }
+    signalWakeup();
 }
 
 void EventQueue::push(Callback cb) {
     if (!cb) {
-        return;  // Ignore null callbacks
+        return;
     }
-    
-    // DEPRECATED: Backward compatibility shim for legacy callback-based code
-    // Store callback as a new shared_ptr on the heap
-    // Will be deleted in processAll() after execution
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    auto cb_ptr = new Callback(std::move(cb));
-    Event legacy_event(EventType::LEGACY_CALLBACK);
-    legacy_event.ptr = cb_ptr;  // Store raw pointer to heap allocation
-    
-    events_.push(legacy_event);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto cb_ptr = new Callback(std::move(cb));
+        Event legacy_event(EventType::LEGACY_CALLBACK);
+        legacy_event.ptr = cb_ptr;
+        events_.push(legacy_event);
+    }
+    signalWakeup();
+}
+
+void EventQueue::signalWakeup() {
+    if (wakeupFd_ >= 0) {
+        uint64_t val = 1;
+        ssize_t ret = write(wakeupFd_, &val, sizeof(val));
+        if (ret < 0 && errno != EAGAIN) {
+            ::havel::error("[EventQueue] wakeup write failed: {}", strerror(errno));
+        }
+    }
+}
+
+void EventQueue::drainWakeup() {
+    if (wakeupFd_ >= 0) {
+        uint64_t val;
+        while (read(wakeupFd_, &val, sizeof(val)) == sizeof(val)) {
+            // drain all pending signals
+        }
+    }
 }
 
 void EventQueue::onEvent(EventType type, EventHandler handler) {
@@ -35,11 +70,11 @@ void EventQueue::onEvent(EventType type, EventHandler handler) {
 }
 
 void EventQueue::processAll() {
-    // Drain queue - note we check queue.empty() in the loop
-    // to avoid holding mutex during handler execution
+    drainWakeup();
+
     while (true) {
-        Event event(EventType::THREAD_COMPLETE);  // Temporary default
-        
+        Event event(EventType::THREAD_COMPLETE);
+
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (events_.empty()) {
@@ -48,28 +83,21 @@ void EventQueue::processAll() {
             event = std::move(events_.front());
             events_.pop();
         }
-        
-        // Dispatch to handler without holding mutex
-        // This allows worker threads to enqueue while we process
+
         try {
             if (event.type == EventType::LEGACY_CALLBACK) {
-                // Special handling for legacy callbacks
                 Callback* cb = static_cast<Callback*>(event.ptr);
                 if (cb) {
                     (*cb)();
-                    delete cb;  // Free the heap allocation
+                    delete cb;
                 }
             } else {
-                // Normal event dispatch
                 auto handler_it = handlers_.find(static_cast<uint8_t>(event.type));
                 if (handler_it != handlers_.end() && handler_it->second) {
                     handler_it->second(event);
                 }
-                // If no handler registered, event is silently dropped
-                // (enables late binding of handlers)
             }
         } catch (const std::exception& e) {
-            // Log but don't crash - keep processing remaining events
             ::havel::error("[EventQueue] Handler exception: {}", e.what());
         } catch (...) {
             ::havel::error("[EventQueue] Handler unknown exception");
@@ -93,4 +121,4 @@ void EventQueue::clear() {
     std::swap(events_, empty);
 }
 
-}  // namespace havel::compiler
+} // namespace havel::compiler

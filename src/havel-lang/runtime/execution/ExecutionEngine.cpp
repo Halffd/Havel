@@ -46,9 +46,10 @@ bool ExecutionEngine::executeFrame() {
     return false;
   }
 
-  try {
-::havel::debug("[ExecutionEngine] Entering executeFrame");
-::havel::debug("[ExecutionEngine] executeFrame using scheduler instance: {}", (void*)scheduler_);
+ try {
+ if (debug_mode_) {
+ ::havel::debug("[ExecutionEngine] Entering executeFrame");
+ }
     // STEP 1: Process all pending events
     // Events include: thread completions, timer fires, variable changes, etc.
     // Event handlers (registered in constructor) process each event

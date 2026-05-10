@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <unordered_map>
 #include <memory>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 namespace havel::compiler {
 
@@ -72,12 +74,11 @@ struct Event {
 class EventQueue {
 public:
     using EventHandler = std::function<void(const Event&)>;
-    using Callback = std::function<void()>;  // Legacy callback type
-    
-    EventQueue() = default;
-    ~EventQueue() = default;
-    
-    // Non-copyable
+    using Callback = std::function<void()>; // Legacy callback type
+
+    EventQueue();
+    ~EventQueue();
+
     EventQueue(const EventQueue&) = delete;
     EventQueue& operator=(const EventQueue&) = delete;
     
@@ -148,10 +149,16 @@ public:
     size_t getEventsCount(){
         return events_.size();
     }
+
+    int wakeupFd() const { return wakeupFd_; }
+
+    void drainWakeup();
 private:
     std::queue<Event> events_;
-    std::unordered_map<uint8_t, EventHandler> handlers_;  // EventType -> Handler
+    std::unordered_map<uint8_t, EventHandler> handlers_; // EventType -> Handler
     mutable std::mutex mutex_;
+    int wakeupFd_ = -1;
+    void signalWakeup();
 };
 
 }  // namespace havel::compiler

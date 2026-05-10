@@ -5,6 +5,7 @@
 #include "utils/Logger.hpp"
 #include "window/WindowMonitor.hpp"
 #include "../havel-lang/compiler/runtime/EventQueue.hpp"
+#include "../havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "HotkeyConditionCompiler.hpp"
 #include "HotkeyActionWrapper.hpp"
 #include "HotkeyActionContext.hpp"
@@ -104,9 +105,8 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
                 trueAction
             );
             if (fiber) {
-              // Schedule the fiber for execution
-              // Note: The fiber will be executed by the ExecutionEngine
-              // which will call the registered callback
+              // Schedule the fiber for execution by the ExecutionEngine
+              scheduler_->addActionFiber(fiber);
               debug("Scheduled async hotkey action for condition: {}", condition);
             } else {
               error("Failed to create Fiber for async hotkey action, falling back to sync");
@@ -144,7 +144,8 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
                 falseAction
             );
             if (fiber) {
-              // Schedule the fiber for execution
+              // Schedule the fiber for execution by the ExecutionEngine
+              scheduler_->addActionFiber(fiber);
               debug("Scheduled async hotkey false action for condition: {}", condition);
             } else {
               error("Failed to create Fiber for async hotkey false action, falling back to sync");
@@ -221,7 +222,8 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
                   trueAction
               );
               if (fiber) {
-                // Schedule the fiber for execution
+                // Schedule the fiber for execution by the ExecutionEngine
+                scheduler_->addActionFiber(fiber);
                 debug("Scheduled async hotkey action for function condition");
               } else {
                 error("Failed to create Fiber for async hotkey action, falling back to sync");
@@ -256,7 +258,8 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
                   falseAction
               );
               if (fiber) {
-                // Schedule the fiber for execution
+                // Schedule the fiber for execution by the ExecutionEngine
+                scheduler_->addActionFiber(fiber);
                 debug("Scheduled async hotkey false action for function condition");
               } else {
                 error("Failed to create Fiber for async hotkey false action, falling back to sync");

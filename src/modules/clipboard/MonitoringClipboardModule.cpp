@@ -2,6 +2,7 @@
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/clipboard/MonitoringClipboard.hpp"
+#include "compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 
 namespace havel::modules {
@@ -81,18 +82,32 @@ void registerMonitoringClipboardModule(const VMApi& api) {
         catch (const std::exception& e) { debug("clipboard.getMonitorInterval error: {}", e.what()); return Value::makeInt(0); }
     });
 
-    HAVEL_REGISTER_FUNCTION(api, "clipboard.onClipboardChanged", [api](const auto& rawArgs) {
-        auto args = stripMonitorReceiver(api, rawArgs);
-        auto svc = getMonitorService();
-        if (!svc) return Value::makeBool(false);
-        try {
-            svc->onClipboardChanged([](const std::string& content) {
-                debug("clipboard changed: {:.80}{}", content.size() > 80 ? "..." : "", content.size() > 80 ? "" : "");
-                (void)content;
-            });
-            return Value::makeBool(true);
-        } catch (const std::exception& e) { debug("clipboard.onClipboardChanged error: {}", e.what()); return Value::makeBool(false); }
-    });
+  HAVEL_REGISTER_FUNCTION(api, "clipboard.onClipboardChanged", [api](const auto& rawArgs) {
+    auto args = stripMonitorReceiver(api, rawArgs);
+    auto svc = getMonitorService();
+    if (!svc) return Value::makeBool(false);
+    if (args.empty()) return Value::makeBool(false);
+
+    auto callbackId = api.registerCallback(args[0]);
+    if (callbackId == 0) return Value::makeBool(false);
+
+    try {
+      auto* vm = &api.vm();
+      svc->onClipboardChanged([vm, callbackId](const std::string& content) {
+        auto* sched = vm->getScheduler();
+        if (!sched) {
+          debug("clipboard.onClipboardChanged: no scheduler, dropping callback");
+          return;
+        }
+        std::string captured_content = content;
+        sched->deferToVM([vm, callbackId, captured_content]() {
+          auto strVal = vm->createRuntimeString(std::move(captured_content));
+          vm->spawnCallback(callbackId, {Value::makeStringId(strVal.id)});
+        });
+      });
+      return Value::makeBool(true);
+    } catch (const std::exception& e) { debug("clipboard.onClipboardChanged error: {}", e.what()); return Value::makeBool(false); }
+  });
 
     HAVEL_REGISTER_FUNCTION(api, "clipboard.getLastChangeTime", [api](const auto& rawArgs) {
         auto args = stripMonitorReceiver(api, rawArgs);

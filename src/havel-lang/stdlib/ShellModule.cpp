@@ -25,6 +25,7 @@
 #endif
 
 #include "havel-lang/core/Value.hpp"
+#include "havel-lang/runtime/concurrency/Fiber.hpp"
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -489,13 +490,21 @@ void registerShellModule(const VMApi &api) {
   // shell.sleep – suspend execution for given seconds (fractional)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.sleep",
-    [api](const std::vector<Value> &args) {
-      if (args.empty())
-        throw std::runtime_error("shell.sleep() requires a number (seconds)");
-double secs = args[0].asNumber();
-      std::this_thread::sleep_for(std::chrono::duration<double>(secs));
-      return Value::makeNull();
-    });
+  [api](const std::vector<Value> &args) {
+  if (args.empty())
+  throw std::runtime_error("shell.sleep() requires a number (seconds)");
+  double secs = args[0].asNumber();
+  int64_t ms = static_cast<int64_t>(secs * 1000.0);
+
+  if (api.isInGoroutine()) {
+  api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
+  reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
+  return Value::makeNull();
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  return Value::makeNull();
+  });
 
   // ----------------------------------------------------------------------
   // shell.read – read line from stdin

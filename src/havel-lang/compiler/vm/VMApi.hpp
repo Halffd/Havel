@@ -187,10 +187,20 @@ struct VMApi {
         return vm().getScheduler() != nullptr;
     }
 
-    bool isInGoroutine() const {
-        auto *sched = vm().getScheduler();
-        return sched && sched->current() != nullptr;
+  bool isInGoroutine() const {
+    auto *sched = vm().getScheduler();
+    return sched && sched->current() != nullptr;
+  }
+
+  template<typename F>
+  void deferToVM(F&& fn) const {
+    auto *sched = vm().getScheduler();
+    if (!sched) {
+      fn();
+      return;
     }
+    sched->deferToVM(std::forward<F>(fn));
+  }
 
     VMImage createImage(int width, int height, int stride, PixelFormat format,
                         const uint8_t *data) const {

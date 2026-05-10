@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <functional>
 
 #include "../../core/Value.hpp"
 
@@ -241,6 +242,17 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   // Check if there are runnable fibers
   bool hasRunnableFibers() const;
 
+  // ===== Deferred VM Callbacks =====
+  // Thread-safe queue for callbacks from non-VM threads (e.g. monitoring thread).
+  // The VM thread drains these via drainDeferredCallbacks() each tick.
+  // Each deferred action is a lambda that runs on the VM thread (safe to access VM internals).
+
+  using DeferredAction = std::function<void()>;
+
+  void deferToVM(DeferredAction fn);
+
+  size_t drainDeferredCallbacks();
+
 private:
   Scheduler();
   ~Scheduler();
@@ -267,6 +279,10 @@ private:
   // Legacy compatibility: single runnable queue (for older code)
   mutable std::mutex runnable_mutex_;
   std::deque<Goroutine*> runnable_;
+
+  // Deferred actions: thread-safe queue for cross-thread VM scheduling
+  std::deque<DeferredAction> deferred_actions_;
+  mutable std::mutex deferred_mutex_;
 
   // Current goroutine (the one VM is executing)
   Goroutine* current_ = nullptr;

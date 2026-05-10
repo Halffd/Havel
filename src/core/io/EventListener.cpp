@@ -466,13 +466,8 @@ void EventListener::EventLoop() {
         }
 
     struct timeval timeout;
-    if (workRemains) {
-      timeout.tv_sec = 0;
-      timeout.tv_usec = 0;
-    } else {
-      timeout.tv_sec = 1;
-      timeout.tv_usec = 0;
-    }
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10000;  // Always check for events every 10ms
 
     int ret = select(maxFd + 1, &readfds, nullptr, nullptr, &timeout);
 

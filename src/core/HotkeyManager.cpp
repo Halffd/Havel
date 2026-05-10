@@ -915,39 +915,20 @@ namespace havel
     }
     case ExecutorMode::Scheduler:
     {
-      if (eventQueue_)
+      debug("Executing hotkey '{}' immediately in Scheduler mode", alias);
+      try
       {
-        debug("Scheduling hotkey '{}' using EventQueue", alias);
-        eventQueue_->push([callback = std::move(callback), hotkeyAlias = alias]()
-                          {
- try {
- callback();
- } catch (const std::exception &e) {
- error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
- } catch (...) {
- error("Hotkey '{}' threw unknown exception", hotkeyAlias);
- } });
-        return;
+        callback();
       }
-      if (auto *executor = io->GetHotkeyExecutor())
+      catch (const std::exception &e)
       {
-        debug("Scheduling hotkey '{}' using Executor (Scheduler fallback)", alias);
-        auto result = executor->submit([callback = std::move(callback), hotkeyAlias = alias]()
-                                       {
- try {
- callback();
- } catch (const std::exception &e) {
- error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
- } catch (...) {
- error("Hotkey '{}' threw unknown exception", hotkeyAlias);
- } });
-        if (!result.accepted)
-        {
-          warn("Hotkey task queue full, dropping callback: {}", alias);
-        }
-        return;
+        error("Hotkey '{}' threw: {}", alias, e.what());
       }
-      break;
+      catch (...)
+      {
+        error("Hotkey '{}' threw unknown exception", alias);
+      }
+return;
     }
     case ExecutorMode::Sync:
     {

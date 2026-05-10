@@ -18,7 +18,7 @@
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <unistd.h>
-
+#include <sys/signalfd.h>
 namespace havel {
 
 std::string EventListener::GetActiveInputsString() const {
@@ -425,36 +425,16 @@ void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
 }
 
 void EventListener::EventLoop() {
-  // Signal handling is now set up in Start() before the thread spawns
-  // No need to call SetupSignalHandling() here
-
-  while (running.load() && !shutdown.load()) {
-    // Check for signal from atomic flag (set by traditional async handlers)
-    int signalFlag = SignalHandler::GetSignalFlag();
-    if (signalFlag == SIGINT || signalFlag == SIGTERM) {
-      debug("Shutdown signal detected via atomic flag: {}", signalFlag);
-      RequestShutdownFromSignal(signalFlag);
-      break;
-    } else if (signalFlag != 0) {
-      // Non-shutdown signals (SIGCHLD, SIGALRM, etc.) — clear the flag and
-      // continue. The signalfd path in HandleSignal handles these properly.
-      SignalHandler::ClearSignalFlag();
-    }
-
-    // Check for expired timers (single-threaded VM timer queue)
-    // This must be done in the main event loop thread to avoid VM reentrancy issues
-    bool workRemains = false;
-    debug("ExecutionEngine: {}", (void*) executionEngine);
-    if (executionEngine) {
-      auto* vm = executionEngine->getVM();
-      
- if (hostBridge) {
- hostBridge->checkTimers();
- }
- workRemains = executionEngine->executeFrame();
- } else if (hostBridge) {
- hostBridge->checkTimers();
- }
+    while (running.load() && !shutdown.load()) {
+        bool workRemains = false;
+        if (executionEngine) {
+            if (hostBridge) {
+                hostBridge->checkTimers();
+            }
+            workRemains = executionEngine->executeFrame();
+        } else if (hostBridge) {
+            hostBridge->checkTimers();
+        }
 
     fd_set readfds;
     FD_ZERO(&readfds);
@@ -462,25 +442,31 @@ void EventListener::EventLoop() {
     int maxFd = shutdownFd;
     FD_SET(shutdownFd, &readfds);
 
-    // Add signal fd if available
-    int signalFdToUse = signalHandler ? signalHandler->GetSignalFd() : -1;
-    if (signalFdToUse >= 0) {
-      FD_SET(signalFdToUse, &readfds);
-      if (signalFdToUse > maxFd) {
-        maxFd = signalFdToUse;
-      }
+    int signalFd = signalHandler ? signalHandler->GetSignalFd() : -1;
+    if (signalFd >= 0) {
+      FD_SET(signalFd, &readfds);
+      if (signalFd > maxFd) maxFd = signalFd;
     }
 
-    for (const auto &device : devices) {
-      FD_SET(device.fd, &readfds);
-      if (device.fd > maxFd) {
-        maxFd = device.fd;
-      }
-    }
+        for (const auto &device : devices) {
+            FD_SET(device.fd, &readfds);
+            if (device.fd > maxFd) maxFd = device.fd;
+        }
+
+        int eventQueueWakeupFd = -1;
+        if (executionEngine) {
+            auto* eq = executionEngine->getEventQueue();
+            if (eq) {
+                eventQueueWakeupFd = eq->wakeupFd();
+                if (eventQueueWakeupFd >= 0) {
+                    FD_SET(eventQueueWakeupFd, &readfds);
+                    if (eventQueueWakeupFd > maxFd) maxFd = eventQueueWakeupFd;
+                }
+            }
+        }
 
     struct timeval timeout;
     if (workRemains) {
-      // Don't block if there is work to do in the VM
       timeout.tv_sec = 0;
       timeout.tv_usec = 0;
     } else {
@@ -491,15 +477,14 @@ void EventListener::EventLoop() {
     int ret = select(maxFd + 1, &readfds, nullptr, nullptr, &timeout);
 
     if (ret < 0) {
-      if (errno == EINTR)
-        continue;
+      if (errno == EINTR) continue;
       error("select() failed: {}", strerror(errno));
       break;
     }
 
-    if (ret == 0)
-      continue;
+    if (ret == 0) continue;
 
+    // Shutdown signal from eventfd
     if (FD_ISSET(shutdownFd, &readfds)) {
       if (asyncSignalRequested != 0) {
         SignalSafeShutdown(asyncSignalRequested, false);
@@ -508,26 +493,38 @@ void EventListener::EventLoop() {
       break;
     }
 
-    // Check for signal
-    if (signalFdToUse >= 0 && FD_ISSET(signalFdToUse, &readfds)) {
-      ProcessSignal();
-      continue;
+    // Process signalfd signals (SIGINT, SIGTERM, etc.)
+    if (signalFd >= 0 && FD_ISSET(signalFd, &readfds)) {
+      struct signalfd_siginfo fdsi;
+      ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
+      if (s == sizeof(fdsi)) {
+        if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
+          debug("Received shutdown signal {}", fdsi.ssi_signo);
+          RequestShutdownFromSignal(fdsi.ssi_signo);
+          break;
+        }
+        // Ignore other signals (SIGCHLD, etc.)
+        }
+        continue;
     }
 
-    // Process events from all devices
+    // EventQueue wakeup — new callbacks/events pending
+    if (eventQueueWakeupFd >= 0 && FD_ISSET(eventQueueWakeupFd, &readfds)) {
+        // processAll() is called at the top of next iteration via executeFrame()
+        // Just drain the eventfd so select() doesn't spin
+        uint64_t val;
+        while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+    }
+
+    // Process input devices
     for (const auto &device : devices) {
-      if (!FD_ISSET(device.fd, &readfds))
-        continue;
+      if (!FD_ISSET(device.fd, &readfds)) continue;
 
       struct input_event ev;
       ssize_t n = read(device.fd, &ev, sizeof(ev));
+      if (n != sizeof(ev)) continue;
 
-      if (n != sizeof(ev))
-        continue;
-
-      // Route based on event type AND code
       if (ev.type == EV_KEY) {
-        // Check if it's a mouse button
         if (ev.code >= BTN_MOUSE && ev.code < BTN_JOYSTICK) {
           ProcessMouseEvent(ev);
         } else {
@@ -547,11 +544,9 @@ void EventListener::EventLoop() {
   while (pendingCallbacks.load() > 0) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - shutdownStart);
-
     if (elapsed > maxShutdownTime) {
-      error("Shutdown timeout: {} callbacks still pending",
-            pendingCallbacks.load());
-      break; // Force quit
+      error("Shutdown timeout: {} callbacks still pending", pendingCallbacks.load());
+      break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
@@ -758,6 +753,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
 
   switch (executorMode_) {
   case ExecutorMode::Executor: {
+    debug("Submitting callback to hotkey executor: {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
     if (hotkeyExecutor) {
       auto result = hotkeyExecutor->submit(
         [callback = callback_copy, hotkeyAlias = alias_copy, this]() {
@@ -785,7 +781,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
     break;
   }
   case ExecutorMode::Scheduler: {
-    
+    debug("Scheduling callback {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
     if (executionEngine && executionEngine->getEventQueue()) {
       executionEngine->getEventQueue()->push([callback = callback_copy, hotkeyAlias = alias_copy, this]() {
         try {
@@ -831,6 +827,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
     break;
   }
   case ExecutorMode::Sync: {
+    debug("Executing hotkey callback synchronously: {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
     try {
       callback_copy();
     } catch (const std::exception &e) {
@@ -847,6 +844,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   case ExecutorMode::Thread:
     break;
   }
+  debug("No hotkey executor available, running in thread: {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
 
   // Thread mode (or fallback when no executor available)
   pendingCallbacks++;
@@ -2170,9 +2168,13 @@ void EventListener::RegisterGestureHotkey(
 }
 
 void EventListener::SetupSignalHandling() {
-  if (signalHandler) {
-    signalHandler->SetupSignalfd();
-  }
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGTERM);
+  sigaddset(&mask, SIGHUP);
+  sigprocmask(SIG_BLOCK, &mask, nullptr);
+  signalHandler->SetupSignalfd();
 }
 
 void EventListener::ProcessSignal() {

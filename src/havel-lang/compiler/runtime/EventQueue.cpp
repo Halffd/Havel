@@ -11,6 +11,7 @@ EventQueue::EventQueue() {
     if (wakeupFd_ < 0) {
         ::havel::error("[EventQueue] Failed to create wakeup eventfd: {}", strerror(errno));
     }
+    initCallbackWorkers(2); // Start 2 worker threads for callbacks
 }
 
 EventQueue::~EventQueue() {
@@ -18,6 +19,7 @@ EventQueue::~EventQueue() {
         close(wakeupFd_);
         wakeupFd_ = -1;
     }
+    shutdownWorkers();
 }
 
 void EventQueue::push(const Event& event) {
@@ -88,7 +90,12 @@ void EventQueue::processAll() {
             if (event.type == EventType::LEGACY_CALLBACK) {
                 Callback* cb = static_cast<Callback*>(event.ptr);
                 if (cb) {
-                    (*cb)();
+                    // Queue callback to worker thread pool instead of executing synchronously
+                    {
+                        std::lock_guard<std::mutex> cb_lock(callback_mutex_);
+                        callback_queue_.push(*cb);
+                    }
+                    callback_cv_.notify_one();
                     delete cb;
                 }
             } else {
@@ -119,6 +126,59 @@ void EventQueue::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::queue<Event> empty;
     std::swap(events_, empty);
+}
+
+void EventQueue::initCallbackWorkers(size_t pool_size) {
+    for (size_t i = 0; i < pool_size; ++i) {
+        callback_workers_.emplace_back([this]() { callbackWorkerLoop(); });
+    }
+}
+
+void EventQueue::callbackWorkerLoop() {
+    while (true) {
+        Callback cb;
+        
+        {
+            std::unique_lock<std::mutex> lock(callback_mutex_);
+            callback_cv_.wait(lock, [this]() {
+                return shutdown_workers_ || !callback_queue_.empty();
+            });
+            
+            if (shutdown_workers_ && callback_queue_.empty()) {
+                return;
+            }
+            
+            if (!callback_queue_.empty()) {
+                cb = std::move(callback_queue_.front());
+                callback_queue_.pop();
+            } else {
+                continue;
+            }
+        }
+        
+        // Execute callback outside the lock
+        try {
+            cb();
+        } catch (const std::exception& e) {
+            ::havel::error("[EventQueue] Callback execution exception: {}", e.what());
+        } catch (...) {
+            ::havel::error("[EventQueue] Callback execution unknown exception");
+        }
+    }
+}
+
+void EventQueue::shutdownWorkers() {
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        shutdown_workers_ = true;
+    }
+    callback_cv_.notify_all();
+    
+    for (auto& worker : callback_workers_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
 }
 
 } // namespace havel::compiler

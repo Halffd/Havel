@@ -142,12 +142,28 @@ namespace havel
   bool HotkeyManager::AddHotkey(const std::string &key,
                                 std::function<void()> callback)
   {
+    auto callback_copy = callback;
+
     {
       std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
       simpleHotkeys[key] = callback;
       simpleHotkeyEnabled[key] = true;
     }
-    return io->Hotkey(key, std::move(callback));
+
+    // Use AddHotkey which returns HotKey with id
+    HotKey hk = io->AddHotkey(key, std::move(callback), 0);
+    if (!hk.success) {
+      return false;
+    }
+
+    // Also store in g_registeredHotkeys so handleHotkeyList works
+    hk.callback = std::move(callback_copy);
+    {
+      std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+      RegisteredHotkeys()[hk.id] = hk;
+    }
+
+    return true;
   }
 
   bool HotkeyManager::AddHotkey(const std::string &key,

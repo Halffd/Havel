@@ -218,6 +218,24 @@ void Scheduler::yield(Goroutine* g) {
 	runnable_.push_back(g);
 }
 
+void Scheduler::yieldCurrentAndCheckTimers() {
+	Goroutine* g = current_;
+	if (!g) return;
+	if (g->state == GoroutineState::Done) return;
+	if (g->fiber && g->fiber->state == FiberState::DONE) {
+		g->state = GoroutineState::Done;
+		clearCurrent();
+		return;
+	}
+	g->state = GoroutineState::Runnable;
+
+	{
+		std::lock_guard<std::mutex> lock(runnable_mutex_);
+		runnable_.push_back(g);
+	}
+	clearCurrent();
+}
+
 void Scheduler::clearCurrent() {
 	current_ = nullptr;
 }

@@ -58,7 +58,7 @@ void* FFICall::load_library(const std::string& path) {
 
     void* handle = dlopen(path.c_str(), flags);
     if (!handle) {
-        ::havel::error("FFICall: failed to load {}: {}", path, dlerror());
+        ::havel::debug("FFICall: failed to load {}: {}", path, dlerror());
     } else {
         libraries_[handle] = path;
     }

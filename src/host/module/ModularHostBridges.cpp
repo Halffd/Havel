@@ -2924,14 +2924,12 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Hotkey registered via hotkey.register", callbackId);
 
-    auto contextRoot = std::make_shared<VM::GCRoot>(*vm, hotkeyContext);
-
     auto *modeMgr = ctx->modeManager;
     auto *hotkeyMgr = ctx->hotkeyManager;
 
     bool success = ctx->hotkeyManager->AddHotkey(
-        hotkeyStr, [vm, callbackId, contextRoot]() {
-            auto action = [vm, callbackId, contextRoot]() {
+        hotkeyStr, [vm, callbackId, hotkeyContext]() {
+            auto action = [vm, callbackId, hotkeyContext]() {
                 // DON'T call beginHotkeyExecution here.
                 // It acquires a mutex which blocks the main thread
                 // and might conflict with the VM dispatch loop if
@@ -2939,12 +2937,9 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 // The fiber executes in the VM context, let the VM handle it.
 
                 try {
-                    auto valOpt = contextRoot->get();
-                    if (valOpt) {
-                        auto closureOpt = vm->externalRootValue(callbackId);
-                        if (closureOpt && closureOpt->isClosureId()) {
-                            vm->invokeCallback(callbackId, {*valOpt});
-                        }
+                    auto closureOpt = vm->externalRootValue(callbackId);
+                    if (closureOpt && closureOpt->isClosureId()) {
+                        vm->invokeCallback(callbackId, {hotkeyContext});
                     }
                 } catch (const std::exception &e) {
                     ::havel::error("[Hotkey] Execution failed: {}", e.what());
@@ -2975,16 +2970,13 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 std::string mode = modeMgr->getCurrentMode();
                 return !mode.empty() && mode != "default";
             },
-            [vm, callbackId, contextRoot]() {
-                auto action = [vm, callbackId, contextRoot]() {
+            [vm, callbackId, hotkeyContext]() {
+                auto action = [vm, callbackId, hotkeyContext]() {
                     vm->beginHotkeyExecution();
                     try {
-                        auto valOpt = contextRoot->get();
-                        if (valOpt) {
-                            auto closureOpt = vm->externalRootValue(callbackId);
-                            if (closureOpt && closureOpt->isClosureId()) {
-                                vm->invokeCallback(callbackId, {*valOpt});
-                            }
+                        auto closureOpt = vm->externalRootValue(callbackId);
+                        if (closureOpt && closureOpt->isClosureId()) {
+                            vm->invokeCallback(callbackId, {hotkeyContext});
                         }
                     } catch (const std::exception &e) {
                         ::havel::error("[Hotkey] Execution failed: {}", e.what());
@@ -3044,20 +3036,15 @@ Value InputBridge::handleHotkeyRegisterConditional(
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Conditional hotkey via when block", callbackId);
 
-    auto contextRoot = std::make_shared<VM::GCRoot>(*vm, hotkeyContext);
-
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
-    auto makeInvoke = [vm, callbackId, contextRoot]() {
-        auto action = [vm, callbackId, contextRoot]() {
+    auto makeInvoke = [vm, callbackId, hotkeyContext]() {
+        auto action = [vm, callbackId, hotkeyContext]() {
             vm->beginHotkeyExecution();
             try {
-                auto valOpt = contextRoot->get();
-                if (valOpt) {
-                    auto closureOpt = vm->externalRootValue(callbackId);
-                    if (closureOpt && closureOpt->isClosureId()) {
-                        vm->invokeCallback(callbackId, {*valOpt});
-                    }
+                auto closureOpt = vm->externalRootValue(callbackId);
+                if (closureOpt && closureOpt->isClosureId()) {
+                    vm->invokeCallback(callbackId, {hotkeyContext});
                 }
             } catch (const std::exception &e) {
                 ::havel::error("[Hotkey] Execution failed: {}", e.what());

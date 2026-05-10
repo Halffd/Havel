@@ -59,9 +59,6 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
                           CallbackId callback, bool enabled = true) {
 
   auto contextObj = vm->createHostObject();
-  
-  // Root the object so GC doesn't collect it while we allocate strings
-  vm->pushStackPublic(Value::makeObjectId(contextObj.id));
 
   // Store context data in our registry
   {
@@ -88,7 +85,6 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
   auto typeStr = vm->createRuntimeString("Hotkey");
   vm->setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
 
-  vm->popStackPublic();
   return Value::makeObjectId(contextObj.id);
 }
 

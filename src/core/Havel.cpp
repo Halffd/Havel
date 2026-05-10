@@ -360,11 +360,23 @@ void Havel::cleanup() noexcept {
   }
   
 
-  // Destroy VM FIRST
-  if (bytecodeVM) {
-    debug("Havel::cleanup() - destroying VM");
-    bytecodeVM.reset();
-  }
+ // Stop ExecutionEngine and Scheduler BEFORE destroying VM
+ if (executionEngine) {
+ debug("Havel::cleanup() - shutting down ExecutionEngine");
+ executionEngine->shutdown();
+ executionEngine.reset();
+ }
+ auto& scheduler = compiler::Scheduler::instance();
+ if (scheduler.isRunning()) {
+ debug("Havel::cleanup() - stopping Scheduler");
+ scheduler.stop();
+ }
+
+ // Destroy VM
+ if (bytecodeVM) {
+ debug("Havel::cleanup() - destroying VM");
+ bytecodeVM.reset();
+ }
 
   // Destroy HostBridge
   if (hostBridge) {

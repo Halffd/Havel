@@ -15,6 +15,19 @@ namespace havel::compiler {
 using ::havel::core::Value;
 
 /**
+ * FiberPriority - Execution priority for scheduler
+ *
+ * Hotkeys get immediate execution (prepended to front of hotkey queue)
+ * Normal fibers run FIFO after hotkeys
+ * Background fibers run when nothing else is pending
+ */
+enum class FiberPriority : uint8_t {
+    HOTKEY = 0,     // Immediate execution (keyboard/mouse interrupts)
+    NORMAL = 1,     // Standard cooperative tasks
+    BACKGROUND = 2  // Low-priority background work
+};
+
+/**
  * Scheduler - Cooperative Goroutine Scheduler for Havel VM
  *
  * DIFFERS from traditional M:N (Go) scheduler:
@@ -28,8 +41,12 @@ using ::havel::core::Value;
  * - VM executes ONE instruction, then yields back to scheduler
  * - Scheduler parks goroutines on channel/timer/thread waits
  * - Event queue wakes parked goroutines via unpark()
+ *
+ * Priority queues:
+ * - hotkey_queue_: Prepended for immediate interrupt-style execution
+ * - runnable_queue_: Standard FIFO for normal cooperative tasks
+ * - background_queue_: Only runs when higher priority queues empty
  */
-
 class Scheduler {
 public:
   enum class GoroutineState {
@@ -84,15 +101,25 @@ public:
 
     // Timing information
     std::chrono::steady_clock::time_point created_time;
-    
-    // Metadata
-    uint32_t parent_id;                // Parent goroutine ID (if spawned by another)
+    uint64_t instructions_executed = 0;
+static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
+	static constexpr uint64_t HOTKEY_MAX_INSTRUCTIONS = 1000;
+	uint64_t max_instructions_per_tick = DEFAULT_MAX_INSTRUCTIONS;
 
-    explicit Goroutine(uint32_t id_, const std::string& name_ = "")
-        : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
-          state(GoroutineState::Created), suspension_reason(SuspensionReason::None),
-          waiting_for_channel(0), waiting_for_thread(0),
-          created_time(std::chrono::steady_clock::now()), parent_id(0) {}
+	// Metadata
+	uint32_t parent_id; // Parent goroutine ID (if spawned by another)
+
+	// Execution priority (controls scheduler queue selection)
+	FiberPriority priority = FiberPriority::NORMAL;
+
+	explicit Goroutine(uint32_t id_, const std::string& name_ = "",
+		FiberPriority prio = FiberPriority::NORMAL)
+	: id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
+	state(GoroutineState::Created), suspension_reason(SuspensionReason::None),
+	waiting_for_channel(0), waiting_for_thread(0),
+	created_time(std::chrono::steady_clock::now()), parent_id(0),
+	max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
+	priority(prio) {}
 
     ~Goroutine(); // Defined in .cpp to avoid Fiber dependency
   };
@@ -106,16 +133,19 @@ public:
   // ===== Goroutine Lifecycle =====
 
   /**
-   * Spawn a new goroutine to execute bytecode
-   *
-   * @param function_id Index of function to execute (into bytecode chunk)
-   * @param args Arguments to pass (stored in locals[])
-   * @param closure_id Optional closure context for upvalues
-   * @param name Optional name for debugging
-   * @return Goroutine ID (for tracking and .join())
+   * Spawn a new goroutine with priority
    */
   uint32_t spawn(uint32_t function_id, const std::vector<Value>& args,
-                 uint32_t closure_id = 0, const std::string& name = "");
+                 uint32_t closure_id = 0, const std::string& name = "",
+                 FiberPriority priority = FiberPriority::NORMAL);
+
+  /**
+   * Spawn a hotkey goroutine (prepended for immediate execution)
+   */
+  uint32_t spawnHotkey(uint32_t function_id, const std::vector<Value>& args,
+                       uint32_t closure_id = 0, const std::string& name = "") {
+    return spawn(function_id, args, closure_id, name, FiberPriority::HOTKEY);
+  }
 
   /**
    * Get the currently executing goroutine
@@ -139,6 +169,7 @@ public:
    * Pick the next runnable goroutine
    *
    * Called by VM at start of each cycle to decide what to run next.
+   * Priority: hotkey > normal > background
    * - Returns nullptr if no runnable goroutines (all sleeping/suspended)
    * - Does NOT modify state (VM must set Running)
    *
@@ -191,24 +222,24 @@ public:
    */
   void waitAll();
 
-	// ===== Diagnostics =====
+  // ===== Diagnostics =====
 
-	size_t goroutineCount() const;
-	size_t runnableCount() const;
-	size_t suspendedCount() const;
+  size_t goroutineCount() const;
+  size_t runnableCount() const;
+  size_t suspendedCount() const;
 
-	// Attach a Fiber to a goroutine by ID
-	void attachFiber(uint32_t goroutine_id, Fiber* fiber);
+  // Attach a Fiber to a goroutine by ID
+  void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 
-	void yield(Goroutine* g);
-	// Yield current goroutine and allow other goroutines to run
-	void yieldCurrentAndCheckTimers();
-	void clearCurrent();
-	// Add a pre-created Action Fiber to the scheduler
-    void addActionFiber(Fiber* fiber);
+  void yield(Goroutine* g);
+  // Yield current goroutine and allow other goroutines to run
+  void yieldCurrentAndCheckTimers();
+  void clearCurrent();
+  // Add a pre-created Action Fiber to the scheduler with priority
+  void addActionFiber(Fiber* fiber, FiberPriority priority = FiberPriority::NORMAL);
 
-    // Check if there are runnable fibers
-    bool hasRunnableFibers() const;
+  // Check if there are runnable fibers
+  bool hasRunnableFibers() const;
 
 private:
   Scheduler();
@@ -218,18 +249,24 @@ private:
   std::atomic<bool> running_{false};
   std::atomic<bool> shutdown_{false};
 
-	// LOCK ORDERING: runnable_mutex_ must NEVER be acquired while holding
-	// goroutines_mutex_. If both are needed, acquire runnable_mutex_ first,
-	// or release goroutines_mutex_ before calling yield()/unpark()/addActionFiber().
+  // LOCK ORDERING: priority_mutex_ must NEVER be acquired while holding
+  // goroutines_mutex_. If both are needed, acquire priority_mutex_ first,
+  // or release goroutines_mutex_ before calling yield()/unpark()/addActionFiber().
 
-	// Goroutine storage and queues
-	std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
-	mutable std::mutex goroutines_mutex_;
+  // Goroutine storage and queues
+  std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
+  mutable std::mutex goroutines_mutex_;
   uint32_t next_goroutine_id_ = 1;
 
-  // Runnable queue (ready to execute)
-  std::deque<Goroutine*> runnable_;
+  // Priority queues: hotkey fibers are prepended (immediate), normal/fg fibers use FIFO
+  std::deque<Goroutine*> hotkey_queue_;    // HOTKEY priority (prepended)
+  std::deque<Goroutine*> runnable_queue_;  // NORMAL priority (FIFO)
+  std::deque<Goroutine*> background_queue_; // BACKGROUND priority
+  mutable std::mutex priority_mutex_;
+
+  // Legacy compatibility: single runnable queue (for older code)
   mutable std::mutex runnable_mutex_;
+  std::deque<Goroutine*> runnable_;
 
   // Current goroutine (the one VM is executing)
   Goroutine* current_ = nullptr;

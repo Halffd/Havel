@@ -90,8 +90,9 @@ public:
   void setConditionalHotkeysEnabled(bool enabled);
   void setMode(const std::string& mode);  // Set current mode for conditional hotkeys
   std::string getMode() const;  // Get current mode
-  void setEventQueue(compiler::EventQueue* eq);
-  std::mutex &getHotkeyMutex();
+ void setEventQueue(compiler::EventQueue* eq);
+ compiler::EventQueue* getEventQueue() const { return eventQueue_; }
+ std::mutex &getHotkeyMutex();
 
   // ModeManager access
   std::shared_ptr<ModeManager>& getModeManager() { return modeManager; }
@@ -172,9 +173,10 @@ private:
   std::chrono::steady_clock::time_point lastWheelUpTime{};
   std::chrono::steady_clock::time_point lastWheelDownTime{};
 
-  MouseGestureEngine mouseGestureEngine;
-  std::unordered_set<int> registeredGestureHotkeys;
-  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
+ MouseGestureEngine mouseGestureEngine;
+ std::unordered_set<int> registeredGestureHotkeys;
+ std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
+ compiler::EventQueue* eventQueue_ = nullptr;
 };
 
 } // namespace havel

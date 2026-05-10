@@ -108,14 +108,15 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
 }
 
 void HotkeyManager::setEventQueue(compiler::EventQueue* eq) {
-  conditionalManager.setEventQueue(eq);
+ eventQueue_ = eq;
+ conditionalManager.setEventQueue(eq);
 
-  // Register handler for hotkey trigger events
-  if (eq) {
-    eq->onEvent(compiler::EventType::HOTKEY_TRIGGER, [this](const compiler::Event& event) {
-      handleHotkeyTrigger(event.data1);
-    });
-  }
+ // Register handler for hotkey trigger events
+ if (eq) {
+ eq->onEvent(compiler::EventType::HOTKEY_TRIGGER, [this](const compiler::Event& event) {
+ handleHotkeyTrigger(event.data1);
+ });
+ }
 }
 
 HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
@@ -726,25 +727,36 @@ void HotkeyManager::executeHotkey(const HotKey &hotkey) const {
     // Fallback to Thread if no executor
     break;
   }
-  case ExecutorMode::Scheduler: {
-    // For C++ callbacks not going through VM, submit to executor or detach
-    if (auto *executor = io->GetHotkeyExecutor()) {
-      auto result = executor->submit([callback = std::move(callback), hotkeyAlias = alias]() {
-        try {
-          callback();
-        } catch (const std::exception &e) {
-          error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
-        } catch (...) {
-          error("Hotkey '{}' threw unknown exception", hotkeyAlias);
-        }
-      });
-      if (!result.accepted) {
-        warn("Hotkey task queue full, dropping callback: {}", alias);
-      }
-      return;
-    }
-    break;
-  }
+ case ExecutorMode::Scheduler: {
+ if (eventQueue_) {
+ eventQueue_->push([callback = std::move(callback), hotkeyAlias = alias]() {
+ try {
+ callback();
+ } catch (const std::exception &e) {
+ error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
+ } catch (...) {
+ error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+ }
+ });
+ return;
+ }
+ if (auto *executor = io->GetHotkeyExecutor()) {
+ auto result = executor->submit([callback = std::move(callback), hotkeyAlias = alias]() {
+ try {
+ callback();
+ } catch (const std::exception &e) {
+ error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
+ } catch (...) {
+ error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+ }
+ });
+ if (!result.accepted) {
+ warn("Hotkey task queue full, dropping callback: {}", alias);
+ }
+ return;
+ }
+ break;
+ }
   case ExecutorMode::Sync: {
     try {
       callback();

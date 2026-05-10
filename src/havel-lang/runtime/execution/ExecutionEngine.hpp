@@ -94,6 +94,7 @@ public:
   
   // ========== EVENT QUEUE ACCESS ==========
   EventQueue* getEventQueue() const { return event_queue_; }
+  VM* getVM() const { return vm_; }
   
   
   /**

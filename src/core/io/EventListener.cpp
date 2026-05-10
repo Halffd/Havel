@@ -443,16 +443,20 @@ void EventListener::EventLoop() {
 
     // Check for expired timers (single-threaded VM timer queue)
     // This must be done in the main event loop thread to avoid VM reentrancy issues
-    if (hostBridge) {
-      hostBridge->checkTimers();
-    }
-
-    
-    // This is the core of the concurrent execution model
-    // The ExecutionEngine coordinates with Scheduler and EventQueue
     bool workRemains = false;
     if (executionEngine) {
-      workRemains = executionEngine->executeFrame();
+      auto* vm = executionEngine->getVM();
+      if (vm) {
+        std::lock_guard<std::recursive_mutex> lock(vm->getExecutionMutex());
+        if (hostBridge) {
+          hostBridge->checkTimers();
+        }
+        workRemains = executionEngine->executeFrame();
+      } else if (hostBridge) {
+        hostBridge->checkTimers();
+      }
+    } else if (hostBridge) {
+      hostBridge->checkTimers();
     }
 
     fd_set readfds;

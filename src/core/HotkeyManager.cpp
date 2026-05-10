@@ -142,14 +142,13 @@ namespace havel
   bool HotkeyManager::AddHotkey(const std::string &key,
                                 std::function<void()> callback)
   {
-    auto callback_copy = callback;
-
     HotKey hk = io->AddHotkey(key, std::move(callback), 0);
     if (!hk.success) {
       return false;
     }
 
-    hk.callback = std::move(callback_copy);
+    // hk.callback is already set by io->AddHotkey() with proper wrapping
+    // Do NOT overwrite it - that loses the wrapped callback!
     {
       std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
       RegisteredHotkeys()[hk.id] = hk;

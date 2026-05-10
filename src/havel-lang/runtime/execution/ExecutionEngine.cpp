@@ -8,7 +8,7 @@
 namespace havel::compiler {
 
 ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
-    : vm_(vm), scheduler_(sched), event_queue_(eq), running_(false) {
+    : vm_(vm), scheduler_(sched), event_queue_(eq), running_(true) {
   if (!vm || !sched || !eq) {
     throw std::invalid_argument("ExecutionEngine requires non-null VM, Scheduler, and EventQueue");
   }

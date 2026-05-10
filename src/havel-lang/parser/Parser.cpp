@@ -4022,6 +4022,12 @@ Parser::parseStructMembers() {
 		} else {
 			failAt(at(), "Expected ']' after '[' in index method");
 		}
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "repr") {
+		advance();
+		methodName = "op_repr";
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "code") {
+		advance();
+		methodName = "op_code";
 	} else {
 		// Check for operator symbols
 	bool isOp = false;
@@ -4332,6 +4338,12 @@ Parser::parseClassMembers() {
 		} else {
 			failAt(at(), "Expected ']' after '[' in index method");
 		}
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "repr") {
+		advance();
+		methodName = "op_repr";
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "code") {
+		advance();
+		methodName = "op_code";
 	} else {
 		// Check for operator symbols
 		bool isOp = false;

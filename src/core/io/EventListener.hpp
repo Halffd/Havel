@@ -4,6 +4,7 @@
 #include "UinputDevice.hpp"           // Include UinputDevice
 #include "core/CallbackTypes.hpp"     // Include callback types
 #include "../MouseGestureTypes.hpp" // Include mouse gesture types
+#include "core/HotkeyManager.hpp"  // Include HotkeyManager
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -60,6 +61,7 @@ public:
   
   
   void setExecutionEngine(havel::compiler::ExecutionEngine *executionEngine);
+  void setHotkeyManager(HotkeyManager *manager);
   
   std::map<int, bool> evdevKeyState;
 
@@ -245,6 +247,7 @@ private:
   
   
   havel::compiler::ExecutionEngine *executionEngine = nullptr;
+  HotkeyManager *hotkeyManager = nullptr;
 
   // Device info
   struct DeviceInfo {
@@ -263,7 +266,6 @@ private:
   void ProcessMouseEvent(const input_event &ev);
 
   // Hotkey evaluation helpers (legacy; kept for compatibility)
-  void ExecuteHotkeyCallback(const HotKey &hotkey);
   bool EvaluateHotkeys(int evdevCode, bool down, bool repeat);
   bool EvaluateCombo(const HotKey &hotkey);
   bool EvaluateWheelCombo(const HotKey &hotkey, int wheelDirection);

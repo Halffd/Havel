@@ -144,19 +144,11 @@ namespace havel
   {
     auto callback_copy = callback;
 
-    {
-      std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-      simpleHotkeys[key] = callback;
-      simpleHotkeyEnabled[key] = true;
-    }
-
-    // Use AddHotkey which returns HotKey with id
     HotKey hk = io->AddHotkey(key, std::move(callback), 0);
     if (!hk.success) {
       return false;
     }
 
-    // Also store in g_registeredHotkeys so handleHotkeyList works
     hk.callback = std::move(callback_copy);
     {
       std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
@@ -169,12 +161,25 @@ namespace havel
   bool HotkeyManager::AddHotkey(const std::string &key,
                                 std::function<void()> callback, int id)
   {
-    {
-      std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-      simpleHotkeys[key] = callback;
-      simpleHotkeyEnabled[key] = true;
+    auto callback_copy = callback;
+
+    bool success = io->Hotkey(key, std::move(callback), "", id);
+    if (!success) {
+      return false;
     }
-    return io->Hotkey(key, std::move(callback), "", id);
+
+    HotKey hk;
+    hk.callback = std::move(callback_copy);
+    hk.alias = key;
+    hk.enabled = true;
+    hk.evdev = true;
+    hk.id = id;
+    {
+      std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+      RegisteredHotkeys()[id] = hk;
+    }
+
+    return true;
   }
 
   bool HotkeyManager::AddHotkey(const std::string &key,
@@ -186,12 +191,6 @@ namespace havel
 
   bool HotkeyManager::RemoveHotkey(const std::string &key)
   {
-    {
-      std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-      simpleHotkeys.erase(key);
-      simpleHotkeyEnabled.erase(key);
-    }
-
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
     auto &hotkeys = RegisteredHotkeys();
     for (auto it = hotkeys.begin(); it != hotkeys.end(); ++it)
@@ -243,43 +242,6 @@ namespace havel
       return true;
     }
     return false;
-  }
-
-  void HotkeyManager::HandleKeyEvent(const std::string &key)
-  {
-    std::function<void()> callback;
-    {
-      std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-      auto enabled = simpleHotkeyEnabled.find(key);
-      auto it = simpleHotkeys.find(key);
-      if (it == simpleHotkeys.end() || enabled == simpleHotkeyEnabled.end() ||
-          !enabled->second)
-      {
-        return;
-      }
-      callback = it->second;
-    }
-
-    try
-    {
-      callback();
-    }
-    catch (const std::exception &e)
-    {
-      error("Error executing hotkey callback for '{}': {}", key, e.what());
-    }
-  }
-
-  void HotkeyManager::EnableHotkey(const std::string &key)
-  {
-    std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-    simpleHotkeyEnabled[key] = true;
-  }
-
-  void HotkeyManager::DisableHotkey(const std::string &key)
-  {
-    std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-    simpleHotkeyEnabled[key] = false;
   }
 
   int HotkeyManager::AddContextualHotkey(const std::string &key,
@@ -335,10 +297,6 @@ namespace havel
       }
     }
     hotkeys.clear();
-
-    std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
-    simpleHotkeys.clear();
-    simpleHotkeyEnabled.clear();
   }
 
   std::vector<HotkeyManager::HotkeyInfo> HotkeyManager::getHotkeyList() const
@@ -377,6 +335,42 @@ namespace havel
                                            hotkey.currentlyGrabbed});
     }
     return list;
+  }
+
+  void HotkeyManager::EnableHotkey(const std::string &key)
+  {
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    auto &hotkeys = RegisteredHotkeys();
+    for (auto &[id, h] : hotkeys)
+    {
+      if (h.alias == key)
+      {
+        h.enabled = true;
+        if (h.grab && !h.evdev)
+        {
+          GrabHotkey(id);
+        }
+        return;
+      }
+    }
+  }
+
+  void HotkeyManager::DisableHotkey(const std::string &key)
+  {
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    auto &hotkeys = RegisteredHotkeys();
+    for (auto &[id, h] : hotkeys)
+    {
+      if (h.alias == key)
+      {
+        h.enabled = false;
+        if (h.grab && !h.evdev)
+        {
+          UngrabHotkey(id);
+        }
+        return;
+      }
+    }
   }
 
   void HotkeyManager::printHotkeys() const

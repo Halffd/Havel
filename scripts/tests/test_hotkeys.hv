@@ -59,3 +59,5 @@ f => {
 }
 print dhk
 #Esc => print 'Win+Esc pressed'
+hs = hotkey.list()
+print #hs

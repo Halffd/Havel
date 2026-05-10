@@ -122,20 +122,34 @@ bool ExecutionEngine::executeFrame() {
       result = vm_->executeOneStep(g->fiber);
     }
     
-    // STEP 5: Save VM state back to fiber
+// STEP 5: Save VM state back to fiber
     // This persists any progress made by the instruction
     // Preserves IP for resumption on next iteration
     if (g->fiber) {
-      vm_->saveFiberState(g->fiber);
+        vm_->saveFiberState(g->fiber);
     }
-    
+
     stats_.instructions_executed++;
-    
+    g->instructions_executed++;
+
+    // Time slice enforcement: auto-yield when goroutine exceeds instruction budget
+    // Prevents a single goroutine from monopolizing the scheduler
+    // Hotkeys get a smaller budget to prevent infinite loops from blocking UI
+    bool budget_exceeded = (g->instructions_executed >= g->max_instructions_per_tick);
+
     // STEP 6: Handle execution result
     switch (result.type) {
       case VMExecutionResult::YIELD:
         // Instruction completed normally, goroutine yields
         // Return it to scheduler's runnable queue
+        if (budget_exceeded) {
+            // Time slice expired - yield and reset budget for next run
+            g->instructions_executed = 0;
+            if (debug_mode_) {
+                ::havel::debug("[ExecutionEngine] Goroutine {} time slice expired ({} instructions), yielding",
+                    g->id, g->max_instructions_per_tick);
+            }
+        }
         handleYield(g);
         break;
         

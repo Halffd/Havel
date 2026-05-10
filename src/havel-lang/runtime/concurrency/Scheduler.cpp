@@ -29,8 +29,8 @@ Scheduler::Goroutine::~Goroutine() {
 }
 
 uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
-	uint32_t closure_id, const std::string& name) {
-	auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name);
+	uint32_t closure_id, const std::string& name, FiberPriority priority) {
+	auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
 	g->function_id = function_id;
 	g->closure_id = closure_id;
 	g->state = GoroutineState::Created;
@@ -56,8 +56,14 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
 	}
 
 	{
-		std::lock_guard<std::mutex> lock(runnable_mutex_);
-		runnable_.push_back(goroutines_[g_id].get());
+		std::lock_guard<std::mutex> lock(priority_mutex_);
+		if (priority == FiberPriority::HOTKEY) {
+			hotkey_queue_.push_front(goroutines_[g_id].get());
+		} else if (priority == FiberPriority::BACKGROUND) {
+			background_queue_.push_back(goroutines_[g_id].get());
+		} else {
+			runnable_queue_.push_back(goroutines_[g_id].get());
+		}
 	}
 
 	return g_id;
@@ -80,31 +86,62 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	Goroutine* result = nullptr;
 
 	{
-		std::lock_guard<std::mutex> lock(runnable_mutex_);
+		std::lock_guard<std::mutex> lock(priority_mutex_);
 
-		while (!runnable_.empty()) {
-			auto* g = runnable_.front();
-			runnable_.pop_front();
+		// Priority order: hotkey → normal → background
+		// Hotkey queue: immediate execution (keyboard/mouse interrupts)
+		while (!hotkey_queue_.empty()) {
+			auto* g = hotkey_queue_.front();
+			hotkey_queue_.pop_front();
 
-			if (!g) {
-				continue;
-			}
-
-			if (g->state == GoroutineState::Done) {
-				continue;
-			}
-
+			if (!g) continue;
+			if (g->state == GoroutineState::Done) continue;
 			if (g->fiber && g->fiber->state == FiberState::DONE) {
 				g->state = GoroutineState::Done;
 				continue;
 			}
-
-			if (g->state != GoroutineState::Runnable && g->state != GoroutineState::Created) {
-				continue;
+			if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+				result = g;
+				break;
 			}
+		}
 
-			result = g;
-			break;
+		// Normal queue: standard cooperative tasks
+		if (!result) {
+			while (!runnable_queue_.empty()) {
+				auto* g = runnable_queue_.front();
+				runnable_queue_.pop_front();
+
+				if (!g) continue;
+				if (g->state == GoroutineState::Done) continue;
+				if (g->fiber && g->fiber->state == FiberState::DONE) {
+					g->state = GoroutineState::Done;
+					continue;
+				}
+				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+					result = g;
+					break;
+				}
+			}
+		}
+
+		// Background queue: low-priority work
+		if (!result) {
+			while (!background_queue_.empty()) {
+				auto* g = background_queue_.front();
+				background_queue_.pop_front();
+
+				if (!g) continue;
+				if (g->state == GoroutineState::Done) continue;
+				if (g->fiber && g->fiber->state == FiberState::DONE) {
+					g->state = GoroutineState::Done;
+					continue;
+				}
+				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+					result = g;
+					break;
+				}
+			}
 		}
 	}
 
@@ -134,8 +171,14 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 	g->suspension_reason = SuspensionReason::None;
 
 	{
-		std::lock_guard<std::mutex> lock(runnable_mutex_);
-		runnable_.push_back(g);
+		std::lock_guard<std::mutex> lock(priority_mutex_);
+		if (g->priority == FiberPriority::HOTKEY) {
+			hotkey_queue_.push_back(g);
+		} else if (g->priority == FiberPriority::BACKGROUND) {
+			background_queue_.push_back(g);
+		} else {
+			runnable_queue_.push_back(g);
+		}
 	}
 }
 
@@ -182,8 +225,8 @@ size_t Scheduler::goroutineCount() const {
 }
 
 size_t Scheduler::runnableCount() const {
-	std::lock_guard<std::mutex> lock(runnable_mutex_);
-	return runnable_.size();
+	std::lock_guard<std::mutex> lock(priority_mutex_);
+	return hotkey_queue_.size() + runnable_queue_.size() + background_queue_.size();
 }
 
 size_t Scheduler::suspendedCount() const {
@@ -214,8 +257,14 @@ void Scheduler::yield(Goroutine* g) {
 	}
 	g->state = GoroutineState::Runnable;
 
-	std::lock_guard<std::mutex> lock(runnable_mutex_);
-	runnable_.push_back(g);
+	std::lock_guard<std::mutex> lock(priority_mutex_);
+	if (g->priority == FiberPriority::HOTKEY) {
+		hotkey_queue_.push_back(g);
+	} else if (g->priority == FiberPriority::BACKGROUND) {
+		background_queue_.push_back(g);
+	} else {
+		runnable_queue_.push_back(g);
+	}
 }
 
 void Scheduler::yieldCurrentAndCheckTimers() {
@@ -230,8 +279,14 @@ void Scheduler::yieldCurrentAndCheckTimers() {
 	g->state = GoroutineState::Runnable;
 
 	{
-		std::lock_guard<std::mutex> lock(runnable_mutex_);
-		runnable_.push_back(g);
+		std::lock_guard<std::mutex> lock(priority_mutex_);
+		if (g->priority == FiberPriority::HOTKEY) {
+			hotkey_queue_.push_back(g);
+		} else if (g->priority == FiberPriority::BACKGROUND) {
+			background_queue_.push_back(g);
+		} else {
+			runnable_queue_.push_back(g);
+		}
 	}
 	clearCurrent();
 }
@@ -240,10 +295,10 @@ void Scheduler::clearCurrent() {
 	current_ = nullptr;
 }
 
-void Scheduler::addActionFiber(Fiber* fiber) {
+void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 	if (!fiber) return;
 
-	auto g = std::make_unique<Scheduler::Goroutine>(fiber->id, fiber->name);
+	auto g = std::make_unique<Scheduler::Goroutine>(fiber->id, fiber->name, priority);
 
 	g->function_id = fiber->current_function_id;
 	g->state = GoroutineState::Runnable;
@@ -255,22 +310,23 @@ void Scheduler::addActionFiber(Fiber* fiber) {
 		goroutines_[g_id] = std::move(g);
 	}
 	{
-		std::lock_guard<std::mutex> lock(runnable_mutex_);
-		runnable_.push_front(goroutines_[g_id].get());
+		std::lock_guard<std::mutex> lock(priority_mutex_);
+		// Hotkey fibers are prepended for immediate execution
+		if (priority == FiberPriority::HOTKEY) {
+			hotkey_queue_.push_front(goroutines_[g_id].get());
+		} else if (priority == FiberPriority::BACKGROUND) {
+			background_queue_.push_back(goroutines_[g_id].get());
+		} else {
+			runnable_queue_.push_back(goroutines_[g_id].get());
+		}
 	}
 }
 
 bool Scheduler::hasRunnableFibers() const {
-	std::lock_guard<std::mutex> lock(runnable_mutex_);
-	if (runnable_.empty()) return false;
-	for (const auto* g : runnable_) {
-		if (g && g->state != GoroutineState::Done) {
-			if (g->fiber && g->fiber->state == FiberState::DONE) {
-				continue;
-			}
-			return true;
-		}
-	}
+	std::lock_guard<std::mutex> lock(priority_mutex_);
+	if (!hotkey_queue_.empty()) return true;
+	if (!runnable_queue_.empty()) return true;
+	if (!background_queue_.empty()) return true;
 	return false;
 }
 

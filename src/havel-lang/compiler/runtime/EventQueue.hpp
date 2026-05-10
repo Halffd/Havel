@@ -145,7 +145,9 @@ public:
      * Discards any pending events without executing handlers.
      */
     void clear();
-
+    size_t getEventsCount(){
+        return events_.size();
+    }
 private:
     std::queue<Event> events_;
     std::unordered_map<uint8_t, EventHandler> handlers_;  // EventType -> Handler

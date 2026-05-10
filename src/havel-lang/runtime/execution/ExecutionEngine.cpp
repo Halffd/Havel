@@ -46,11 +46,17 @@ bool ExecutionEngine::executeFrame() {
   }
 
   try {
+::havel::debug("[ExecutionEngine] Entering executeFrame");
+::havel::debug("[ExecutionEngine] executeFrame using scheduler instance: {}", (void*)scheduler_);
     // STEP 1: Process all pending events
     // Events include: thread completions, timer fires, variable changes, etc.
     // Event handlers (registered in constructor) process each event
     if (event_queue_) {
       event_queue_->processAll();
+      size_t processed = event_queue_->getEventsCount();
+      if (processed > 0) {
+        ::havel::debug("[ExecutionEngine] Processed {} events from event_queue_", processed);
+      }
     }
     vm_->garbageCollectionSafePoint();
     
@@ -64,6 +70,8 @@ bool ExecutionEngine::executeFrame() {
       }
       return false;
     }
+    
+    ::havel::debug("[ExecutionEngine] Picked goroutine {} (fiber {})", g->id, g->fiber ? g->fiber->id : 0);
     
     // STEP 3: Load fiber state into VM's global execution state
     // This synchronizes the VM with the fiber's suspended state
@@ -85,6 +93,7 @@ bool ExecutionEngine::executeFrame() {
       
       // Call the registered hotkey action callback if available
       if (hotkey_action_callback_) {
+        ::havel::debug("[ExecutionEngine] Executing hotkey action callback for fiber {}", g->fiber->id);
         try {
           hotkey_action_callback_(g->fiber->id);  // Execute the hotkey action
         } catch (const std::exception& e) {
@@ -97,6 +106,8 @@ bool ExecutionEngine::executeFrame() {
           result.type = VMExecutionResult::ERROR;
           result.error_message = g->fiber->error_message;
         }
+      } else {
+        ::havel::debug("[ExecutionEngine] No hotkey_action_callback_ set!");
       }
       
       // Mark hotkey action Fiber as completed
@@ -206,15 +217,11 @@ void ExecutionEngine::shutdown() {
 // ============================================================================
 // RESULT HANDLERS
 // ============================================================================
-
 void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
   if (debug_mode_) {
         ::havel::debug("[ExecutionEngine] Goroutine yielded, returning to runnable queue");
   }
-  // Return goroutine to scheduler's runnable queue
-  if (g) {
-    scheduler_->unpark(g);
-  }
+  scheduler_->yield(g);
 }
 
 void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {

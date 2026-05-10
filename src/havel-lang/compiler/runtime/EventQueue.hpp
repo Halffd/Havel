@@ -2,6 +2,8 @@
 
 #include <queue>
 #include <mutex>
+#include <thread>
+#include <condition_variable>
 #include <functional>
 #include <cstdint>
 #include <unordered_map>
@@ -153,12 +155,29 @@ public:
     int wakeupFd() const { return wakeupFd_; }
 
     void drainWakeup();
+    
+    /**
+     * Shutdown callback worker threads gracefully
+     * Should be called during application shutdown
+     */
+    void shutdownWorkers();
+    
 private:
     std::queue<Event> events_;
     std::unordered_map<uint8_t, EventHandler> handlers_; // EventType -> Handler
     mutable std::mutex mutex_;
     int wakeupFd_ = -1;
     void signalWakeup();
+    
+    // Worker thread pool for executing callbacks asynchronously
+    std::vector<std::thread> callback_workers_;
+    std::queue<Callback> callback_queue_;
+    std::mutex callback_mutex_;
+    std::condition_variable callback_cv_;
+    bool shutdown_workers_ = false;
+    
+    void initCallbackWorkers(size_t pool_size = 2);
+    void callbackWorkerLoop();
 };
 
 }  // namespace havel::compiler

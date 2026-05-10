@@ -323,11 +323,34 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 }
 
 bool Scheduler::hasRunnableFibers() const {
-	std::lock_guard<std::mutex> lock(priority_mutex_);
-	if (!hotkey_queue_.empty()) return true;
-	if (!runnable_queue_.empty()) return true;
-	if (!background_queue_.empty()) return true;
-	return false;
+  std::lock_guard<std::mutex> lock(priority_mutex_);
+  if (!hotkey_queue_.empty()) return true;
+  if (!runnable_queue_.empty()) return true;
+  if (!background_queue_.empty()) return true;
+  return false;
+}
+
+void Scheduler::deferToVM(DeferredAction fn) {
+  std::lock_guard<std::mutex> lock(deferred_mutex_);
+  deferred_actions_.push_back(std::move(fn));
+}
+
+size_t Scheduler::drainDeferredCallbacks() {
+  std::deque<DeferredAction> acts;
+  {
+    std::lock_guard<std::mutex> lock(deferred_mutex_);
+    acts = std::move(deferred_actions_);
+  }
+
+  for (auto& fn : acts) {
+    try {
+      fn();
+    } catch (const std::exception& e) {
+      ::havel::debug("Scheduler: deferred action threw: {}", e.what());
+    }
+  }
+
+  return acts.size();
 }
 
 } // namespace havel::compiler

@@ -61,7 +61,15 @@ bool ExecutionEngine::executeFrame() {
       }
     }
     vm_->garbageCollectionSafePoint();
-    
+
+    // STEP 1.5: Drain deferred callbacks from non-VM threads
+    // These are queued via scheduler->deferToVM() and must run on the VM thread
+    // (e.g. clipboard change callbacks, external event callbacks)
+    size_t deferred = scheduler_->drainDeferredCallbacks();
+    if (deferred > 0 && debug_mode_) {
+      ::havel::debug("[ExecutionEngine] Drained {} deferred callbacks", deferred);
+    }
+
     // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
     Scheduler::Goroutine* g = scheduler_->pickNext();

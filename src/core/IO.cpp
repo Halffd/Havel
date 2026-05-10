@@ -506,6 +506,10 @@ debug("Hotkey executor mode: {} (config: IO.Executor={})", static_cast<int>(exec
         eventListener = std::make_unique<EventListener>();
         eventListener->SetupUinput();
 
+        if (hotkeyManager) {
+          eventListener->setHotkeyManager(hotkeyManager.get());
+        }
+
         // Initialize MouseController
         mouseController =
             std::make_unique<MouseController>(eventListener.get());

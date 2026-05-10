@@ -424,6 +424,10 @@ void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
   executionEngine = ee;
 }
 
+void EventListener::setHotkeyManager(HotkeyManager *manager) {
+  hotkeyManager = manager;
+}
+
 void EventListener::EventLoop() {
     while (running.load() && !shutdown.load()) {
         bool workRemains = false;
@@ -727,139 +731,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
 
   SendUinputEvent(EV_KEY, mappedCode, ev.value);
 }
-void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
-  if (!hotkey.callback)
-    return;
 
-  // Prevent double execution of the same hotkey
-  {
-    std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-    if (executingHotkeys.find(hotkey.alias) != executingHotkeys.end()) {
-      debug("Hotkey '{}' already executing, skipping", hotkey.alias);
-      return;
-    }
-    executingHotkeys.insert(hotkey.alias);
-  }
-
-  // Create a copy of the callback and metadata BEFORE releasing locks
-  // This prevents deadlock where callback tries to acquire locks we hold
-  auto callback_copy = hotkey.callback;
-  std::string alias_copy = hotkey.alias;
-
-  switch (executorMode_) {
-  case ExecutorMode::Executor: {
-    debug("Submitting callback to hotkey executor: {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
-    if (hotkeyExecutor) {
-      auto result = hotkeyExecutor->submit(
-        [callback = callback_copy, hotkeyAlias = alias_copy, this]() {
-          try {
-            callback();
-          } catch (const std::exception &e) {
-            error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
-          } catch (...) {
-            error("Hotkey '{}' threw unknown exception", hotkeyAlias);
-          }
-          {
-            std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-            executingHotkeys.erase(hotkeyAlias);
-          }
-        });
-      if (!result.accepted) {
-        warn("Hotkey task queue full, dropping callback: {}", alias_copy);
-        {
-          std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-          executingHotkeys.erase(alias_copy);
-        }
-      }
-      return;
-    }
-    break;
-  }
-  case ExecutorMode::Scheduler: {
-    debug("Scheduling callback {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
-    if (executionEngine && executionEngine->getEventQueue()) {
-      executionEngine->getEventQueue()->push([callback = callback_copy, hotkeyAlias = alias_copy, this]() {
-        try {
-          callback();
-        } catch (const std::exception &e) {
-          error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
-        } catch (...) {
-          error("Hotkey '{}' threw unknown exception", hotkeyAlias);
-        }
-        {
-          std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-          executingHotkeys.erase(hotkeyAlias);
-        }
-      });
-      return;
-    }
-    
-    // Fallback if engine not available
-    if (hotkeyExecutor) {
-      auto result = hotkeyExecutor->submit(
-        [callback = callback_copy, hotkeyAlias = alias_copy, this]() {
-          try {
-            callback();
-          } catch (const std::exception &e) {
-            error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
-          } catch (...) {
-            error("Hotkey '{}' threw unknown exception", hotkeyAlias);
-          }
-          {
-            std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-            executingHotkeys.erase(hotkeyAlias);
-          }
-        });
-      if (!result.accepted) {
-        warn("Hotkey task queue full, dropping callback: {}", alias_copy);
-        {
-          std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-          executingHotkeys.erase(alias_copy);
-        }
-      }
-      return;
-    }
-    break;
-  }
-  case ExecutorMode::Sync: {
-    debug("Executing hotkey callback synchronously: {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
-    try {
-      callback_copy();
-    } catch (const std::exception &e) {
-      error("Hotkey '{}' threw: {}", alias_copy, e.what());
-    } catch (...) {
-      error("Hotkey '{}' threw unknown exception", alias_copy);
-    }
-    {
-      std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-      executingHotkeys.erase(alias_copy);
-    }
-    return;
-  }
-  case ExecutorMode::Thread:
-    break;
-  }
-  debug("No hotkey executor available, running in thread: {} {} key: {} mod: {} id: {} grab: {}", hotkey.alias, hotkey.callback ? "has_callback" : "no_callback", hotkey.key, hotkey.modifiers, hotkey.id, hotkey.grab);
-
-  // Thread mode (or fallback when no executor available)
-  pendingCallbacks++;
-
-  std::thread([callback = callback_copy, alias = alias_copy, this]() {
-    try {
-      if (running.load() && !shutdown.load()) {
-        callback();
-      }
-    } catch (const std::exception &e) {
-      error("Hotkey '{}' exception: {}", alias, e.what());
-    }
-    pendingCallbacks--;
-
-    {
-      std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-      executingHotkeys.erase(alias);
-    }
-  }).detach();
-}
 bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
                                        int wheelDirection) {
   auto now = std::chrono::steady_clock::now();
@@ -1165,7 +1037,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
           const auto &hotkey = hotkeyIt->second;
           if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
-            ExecuteHotkeyCallback(hotkey);
+            if (hotkeyManager) {
+              hotkeyManager->handleHotkeyTrigger(hotkeyId);
+            }
             break;
           }
         }
@@ -1325,7 +1199,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         }
 
         if (found) {
-          ExecuteHotkeyCallback(hotkeyCopy); // Use existing method
+          if (hotkeyManager) {
+            hotkeyManager->handleHotkeyTrigger(hotkeyCopy.id);
+          }
         }
       }
 
@@ -1809,7 +1685,9 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     }
 
     if (found) {
-      ExecuteHotkeyCallback(hotkeyCopy); // Use existing method
+      if (hotkeyManager) {
+        hotkeyManager->handleHotkeyTrigger(hotkeyCopy.id);
+      }
     }
   }
 
@@ -2067,7 +1945,9 @@ void EventListener::ProcessMouseGesture(int dx, int dy) {
 
     const auto &hotkey = hotkeyIt->second;
     if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
-      ExecuteHotkeyCallback(hotkey);
+      if (hotkeyManager) {
+        hotkeyManager->handleHotkeyTrigger(hotkeyId);
+      }
       break;
     }
   }

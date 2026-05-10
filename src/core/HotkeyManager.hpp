@@ -59,9 +59,9 @@ public:
   bool AddHotkey(const std::string &key, const std::string &action);
   bool RemoveHotkey(const std::string &key);
   bool RemoveHotkey(int id);  // Remove by id
-  void HandleKeyEvent(const std::string &key);
   void EnableHotkey(const std::string &key);
   void DisableHotkey(const std::string &key);
+  void handleHotkeyTrigger(int hotkeyId);
   bool GrabHotkey(int id);      // Grab hotkey by id
   bool UngrabHotkey(int id);    // Ungrab hotkey by id
 
@@ -131,9 +131,6 @@ private:
   std::shared_ptr<IO> io;  // Shared ownership to ensure IO stays alive
   ConditionalHotkeyManager conditionalManager;
   std::shared_ptr<ModeManager> modeManager;  // Shared ownership for mode management
-  std::unordered_map<std::string, std::function<void()>> simpleHotkeys;
-  std::unordered_map<std::string, bool> simpleHotkeyEnabled;
-  mutable std::mutex simpleHotkeysMutex;
   std::vector<AnyKeyPressCallback> anyKeyCallbacks;
   mutable std::mutex anyKeyCallbacksMutex;
   bool inputCallbacksInitialized = false;
@@ -161,7 +158,6 @@ private:
   bool evaluateCombo(const HotKey &hotkey) const;
   bool evaluateWheelCombo(const HotKey &hotkey, int wheelDirection) const;
   void executeHotkey(const HotKey &hotkey) const;
-  void handleHotkeyTrigger(int hotkeyId);
 
   mutable std::shared_mutex stateMutex;
   std::unordered_map<int, ActiveInput> activeInputs;

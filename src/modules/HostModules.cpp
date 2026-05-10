@@ -13,6 +13,7 @@
 #include "../host/mode/ModeService.hpp"
 #include "../host/process/ProcessService.hpp"
 #include "../host/clipboard/ClipboardService.hpp"
+#include "../host/clipboard/MonitoringClipboard.hpp"
 #include "../host/audio/AudioService.hpp"
 #include "../host/brightness/BrightnessService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
@@ -79,6 +80,9 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     // Clipboard service doesn't need constructor args
     auto clipboardService = std::make_shared<host::ClipboardService>();
     registry.registerService<host::ClipboardService>(clipboardService);
+
+    auto monitoringClipboard = std::make_shared<host::MonitoringClipboard>();
+    registry.registerService<host::MonitoringClipboard>(monitoringClipboard);
 
     // AudioManager is optional
     if (hostAPI->GetAudioManager()) {

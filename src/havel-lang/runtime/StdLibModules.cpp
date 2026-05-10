@@ -9,6 +9,8 @@
 #include "../../modules/automation/PixelModule.hpp"
 #include "../../modules/brightness/BrightnessModule.hpp"
 #include "../../modules/clipboard/ClipboardModule.hpp"
+#include "../../modules/clipboard/HistoryClipboardModule.hpp"
+#include "../../modules/clipboard/MonitoringClipboardModule.hpp"
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/ffi/FFIModule.hpp"
 #include "../../modules/filesystem/FileManagerModule.hpp"
@@ -104,6 +106,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   modules::registerMapManagerModule(api);
   modules::registerModeModule(api);
   modules::registerClipboardModule(api);
+  modules::registerHistoryClipboardModule(api);
+  modules::registerMonitoringClipboardModule(api);
   modules::ffi::registerFFIModule(api);
 #endif
 }

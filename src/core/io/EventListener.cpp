@@ -444,19 +444,26 @@ void EventListener::EventLoop() {
     // Check for expired timers (single-threaded VM timer queue)
     // This must be done in the main event loop thread to avoid VM reentrancy issues
     bool workRemains = false;
+    debug("ExecutionEngine: {}", (void*) executionEngine);
     if (executionEngine) {
       auto* vm = executionEngine->getVM();
-      if (vm) {
-        std::lock_guard<std::recursive_mutex> lock(vm->getExecutionMutex());
-        if (hostBridge) {
-          hostBridge->checkTimers();
-        }
-        workRemains = executionEngine->executeFrame();
-      } else if (hostBridge) {
+      
+      if (hostBridge) {
         hostBridge->checkTimers();
       }
+      debug("VM chunk: {}", (void*) vm->current_chunk);
+      workRemains = executionEngine->executeFrame();
+      
+      // Ensure we don't block if fibers are waiting
+      auto* scheduler = executionEngine->getScheduler();
+      debug("Scheduler: {}", (void*) scheduler);
+      debug("Work remains after executeFrame: {}", workRemains);
+      debug("Scheduler has runnable fibers: {}", scheduler ? scheduler->hasRunnableFibers() : false);
+      if (scheduler && !workRemains && scheduler->hasRunnableFibers()) {
+        workRemains = true;
+      }
     } else if (hostBridge) {
-      hostBridge->checkTimers();
+        hostBridge->checkTimers();
     }
 
     fd_set readfds;

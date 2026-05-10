@@ -1,5 +1,6 @@
 #include "Scheduler.hpp"
 #include "Fiber.hpp"
+#include "../../../utils/Logger.hpp"
 #include <algorithm>
 #include <thread>
 
@@ -85,39 +86,32 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 }
 
 // ===== EXECUTION CONTROL =====
-
 Scheduler::Goroutine* Scheduler::pickNext() {
-    
-    // This allows sleep() to be non-blocking for goroutines
-    {
-        std::lock_guard<std::mutex> lock(goroutines_mutex_);
-        auto now = std::chrono::steady_clock::now();
-        for (auto& [id, g] : goroutines_) {
-            if (g->state == GoroutineState::Suspended && 
-                g->suspension_reason == SuspensionReason::SleepWait &&
-                g->resume_at_time <= now) {
-                // Wake it up
-                // Note: unpark() handles state transition and adding to runnable_
-                unpark(g.get());
-            }
+    std::lock_guard<std::mutex> lock(runnable_mutex_);
+
+    while (!runnable_.empty()) {
+        auto* g = runnable_.front();
+        runnable_.pop_front();
+
+        if (!g) {
+            continue;
         }
+
+        if (g->state == GoroutineState::Done) {
+            continue;
+        }
+
+        if (g->fiber && g->fiber->state == FiberState::DONE) {
+            g->state = GoroutineState::Done;
+            continue;
+        }
+
+        g->state = GoroutineState::Running;
+        current_ = g;
+        return g;
     }
 
-    std::lock_guard<std::mutex> lock(runnable_mutex_);
-    
-    if (runnable_.empty()) {
-        return nullptr;  // No runnable goroutines (all sleeping/suspended)
-    }
-    
-    // FIFO - take from front
-    Scheduler::Goroutine* g = runnable_.front();
-    runnable_.pop_front();
-    
-    // Mark as running (but don't execute - VM does that)
-    g->state = GoroutineState::Running;
-    current_ = g;
-    
-    return g;
+    return nullptr;
 }
 
 void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
@@ -220,6 +214,44 @@ void Scheduler::attachFiber(uint32_t goroutine_id, Fiber* fiber) {
 	if (it != goroutines_.end()) {
 		it->second->fiber = fiber;
 	}
+}
+void Scheduler::yield(Goroutine* g) {
+    g->state = GoroutineState::Runnable;
+
+    std::lock_guard<std::mutex> lock(runnable_mutex_);
+    runnable_.push_back(g);
+}
+void Scheduler::addActionFiber(Fiber* fiber) {
+    if (!fiber) return;
+    
+    ::havel::debug("[Scheduler] Adding action Fiber {} with name '{}'", fiber->id, fiber->name);
+    ::havel::debug("[Scheduler] addActionFiber called on instance: {}", (void*)this);
+
+    // Create a goroutine wrapper
+    auto g = std::make_unique<Scheduler::Goroutine>(fiber->id, fiber->name);
+    
+    // Set the state
+    g->function_id = fiber->current_function_id; 
+    g->state = GoroutineState::Runnable;
+    g->fiber = fiber;
+    
+    // Add to goroutines map and runnable queue
+    uint32_t g_id = g->id;
+    {
+        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        goroutines_[g_id] = std::move(g);
+        ::havel::debug("[Scheduler] Fiber {} added to goroutines map", g_id);
+    }
+    {
+        std::lock_guard<std::mutex> lock(runnable_mutex_);
+        runnable_.push_back(goroutines_[g_id].get());
+        ::havel::debug("[Scheduler] Fiber {} added to runnable queue (runnable count: {})", g_id, runnable_.size());
+    }
+}
+
+bool Scheduler::hasRunnableFibers() const {
+    std::lock_guard<std::mutex> lock(runnable_mutex_);
+    return !runnable_.empty();
 }
 
 } // namespace havel::compiler

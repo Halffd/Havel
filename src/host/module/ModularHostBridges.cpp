@@ -9,6 +9,7 @@
 #include "core/DisplayManager.hpp"
 #include "core/HardwareDetector.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/HotkeyActionWrapper.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
@@ -2930,24 +2931,41 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
 
     bool success = ctx->hotkeyManager->AddHotkey(
         hotkeyStr, [vm, callbackId, contextRoot]() {
-        vm->beginHotkeyExecution();
-        try {
-            auto valOpt = contextRoot->get();
-            if (valOpt) {
-                auto closureOpt = vm->externalRootValue(callbackId);
-                if (vm->getScheduler() && closureOpt && closureOpt->isClosureId()) {
-                    vm->spawnCallback(callbackId, {*valOpt});
-                } else {
-                    vm->invokeCallback(callbackId, {*valOpt});
+            auto action = [vm, callbackId, contextRoot]() {
+                // DON'T call beginHotkeyExecution here.
+                // It acquires a mutex which blocks the main thread
+                // and might conflict with the VM dispatch loop if
+                // executed in the same thread.
+                // The fiber executes in the VM context, let the VM handle it.
+
+                try {
+                    auto valOpt = contextRoot->get();
+                    if (valOpt) {
+                        auto closureOpt = vm->externalRootValue(callbackId);
+                        if (closureOpt && closureOpt->isClosureId()) {
+                            vm->invokeCallback(callbackId, {*valOpt});
+                        }
+                    }
+                } catch (const std::exception &e) {
+                    ::havel::error("[Hotkey] Execution failed: {}", e.what());
+                } catch (...) {
+                    ::havel::error("[Hotkey] Execution failed: unknown error");
                 }
+            };
+
+            auto* fiber = HotkeyActionWrapper::createActionFiber(
+                "hotkey_action",
+                action
+            );
+            if (fiber) {
+                // IMPORTANT: We need to use scheduler directly if available
+                // Otherwise this hotkey might be ignored if not scheduled.
+                // The Scheduler should handle adding to runnable queue
+                vm->getScheduler()->addActionFiber(fiber);
+            } else {
+                ::havel::error("[Hotkey] Failed to create action fiber");
             }
-        } catch (const std::exception &e) {
-            ::havel::error("[Hotkey] Execution failed: {}", e.what());
-        } catch (...) {
-            ::havel::error("[Hotkey] Execution failed: unknown error");
-        }
-        vm->endHotkeyExecution();
-    });
+        });
 
     // Register conditional hotkey (when/if mode conditions)
     if (modeMgr && hotkeyMgr) {
@@ -2958,23 +2976,33 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 return !mode.empty() && mode != "default";
             },
             [vm, callbackId, contextRoot]() {
-                vm->beginHotkeyExecution();
-                try {
-                    auto valOpt = contextRoot->get();
-                    if (valOpt) {
-                        auto closureOpt = vm->externalRootValue(callbackId);
-                        if (vm->getScheduler() && closureOpt && closureOpt->isClosureId()) {
-                            vm->spawnCallback(callbackId, {*valOpt});
-                        } else {
-                            vm->invokeCallback(callbackId, {*valOpt});
+                auto action = [vm, callbackId, contextRoot]() {
+                    vm->beginHotkeyExecution();
+                    try {
+                        auto valOpt = contextRoot->get();
+                        if (valOpt) {
+                            auto closureOpt = vm->externalRootValue(callbackId);
+                            if (closureOpt && closureOpt->isClosureId()) {
+                                vm->invokeCallback(callbackId, {*valOpt});
+                            }
                         }
+                    } catch (const std::exception &e) {
+                        ::havel::error("[Hotkey] Execution failed: {}", e.what());
+                    } catch (...) {
+                        ::havel::error("[Hotkey] Execution failed: unknown error");
                     }
-                } catch (const std::exception &e) {
-                    ::havel::error("[Hotkey] Execution failed: {}", e.what());
-                } catch (...) {
-                    ::havel::error("[Hotkey] Execution failed: unknown error");
+                    vm->endHotkeyExecution();
+                };
+
+                auto* fiber = HotkeyActionWrapper::createActionFiber(
+                    "hotkey_action",
+                    action
+                );
+                if (fiber) {
+                    vm->getScheduler()->addActionFiber(fiber);
+                } else {
+                    ::havel::error("[Hotkey] Failed to create action fiber");
                 }
-                vm->endHotkeyExecution();
             });
     }
 
@@ -3021,22 +3049,33 @@ Value InputBridge::handleHotkeyRegisterConditional(
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
     auto makeInvoke = [vm, callbackId, contextRoot]() {
-        vm->beginHotkeyExecution();
-        try {
-            auto valOpt = contextRoot->get();
-            if (valOpt) {
-                auto closureOpt = vm->externalRootValue(callbackId);
-                if (vm->getScheduler() && closureOpt && closureOpt->isClosureId()) {
-                    vm->spawnCallback(callbackId, {*valOpt});
-                } else {
-                    vm->invokeCallback(callbackId, {*valOpt});
+        auto action = [vm, callbackId, contextRoot]() {
+            vm->beginHotkeyExecution();
+            try {
+                auto valOpt = contextRoot->get();
+                if (valOpt) {
+                    auto closureOpt = vm->externalRootValue(callbackId);
+                    if (closureOpt && closureOpt->isClosureId()) {
+                        vm->invokeCallback(callbackId, {*valOpt});
+                    }
                 }
+            } catch (const std::exception &e) {
+                ::havel::error("[Hotkey] Execution failed: {}", e.what());
+            } catch (...) {
+                ::havel::error("[Hotkey] Execution failed: unknown error");
             }
-        } catch (...) {
             vm->endHotkeyExecution();
-            throw;
+        };
+
+        auto* fiber = HotkeyActionWrapper::createActionFiber(
+            "hotkey_action",
+            action
+        );
+        if (fiber) {
+            vm->getScheduler()->addActionFiber(fiber);
+        } else {
+            ::havel::error("[Hotkey] Failed to create action fiber");
         }
-        vm->endHotkeyExecution();
     };
 
     auto trueAction = makeInvoke;

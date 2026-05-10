@@ -200,6 +200,13 @@ public:
 	// Attach a Fiber to a goroutine by ID
 	void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 
+  void yield(Goroutine* g);
+    // Add a pre-created Action Fiber to the scheduler
+    void addActionFiber(Fiber* fiber);
+
+    // Check if there are runnable fibers
+    bool hasRunnableFibers() const;
+
 private:
   Scheduler();
   ~Scheduler();

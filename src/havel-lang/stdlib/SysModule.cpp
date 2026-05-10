@@ -731,6 +731,9 @@ void registerSysModule(const VMApi &api) {
   // process.run — run command and return {pid, exitCode, success, stdout, stderr, error}
   // ========================================================================
   api.registerFunction("process.run", [api](const std::vector<Value>& args) {
+    if (api.vm().getScheduler()) {
+      api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+    }
     if (args.empty())
       throw std::runtime_error("process.run() requires a command");
     std::string cmd = api.resolveString(args[0]);
@@ -743,6 +746,10 @@ void registerSysModule(const VMApi &api) {
       char buf[4096];
       while (fgets(buf, sizeof(buf), pipe)) stdoutStr += buf;
       exitCode = pclose(pipe) / 256;
+    }
+
+    if (api.vm().getScheduler()) {
+      api.vm().getScheduler()->yieldCurrentAndCheckTimers();
     }
 
     api.setField(obj, "pid", Value::makeInt(0));

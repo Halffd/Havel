@@ -161,10 +161,16 @@ void registerShellModule(const VMApi &api) {
   // ----------------------------------------------------------------------
   api.registerFunction("shell.run",
     [api](const std::vector<Value> &args) {
+      if (api.vm().getScheduler()) {
+        api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+      }
       if (args.empty())
         throw std::runtime_error("shell.run() requires a command string");
       std::string cmd = api.resolveString(args[0]);
       int ret = std::system(cmd.c_str());
+      if (api.vm().getScheduler()) {
+        api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+      }
       return Value(static_cast<int64_t>(ret));
     });
 
@@ -173,6 +179,9 @@ void registerShellModule(const VMApi &api) {
   // ----------------------------------------------------------------------
   api.registerFunction("shell.exec",
     [api](const std::vector<Value> &args) {
+      if (api.vm().getScheduler()) {
+        api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+      }
       if (args.empty())
         throw std::runtime_error("shell.exec() requires a command string");
       std::string cmd = api.resolveString(args[0]);
@@ -192,6 +201,10 @@ void registerShellModule(const VMApi &api) {
   while (fgets(buf, sizeof(buf), pipe))
     stdout_str += buf;
   int exitCode = closePipe(pipe);
+
+  if (api.vm().getScheduler()) {
+    api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+  }
 
   auto result = api.makeObject();
   api.setField(result, "stdout", api.makeString(stdout_str));

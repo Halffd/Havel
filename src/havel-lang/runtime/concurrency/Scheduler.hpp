@@ -201,6 +201,8 @@ public:
 	void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 
 	void yield(Goroutine* g);
+	// Yield current goroutine and allow other goroutines to run
+	void yieldCurrentAndCheckTimers();
 	void clearCurrent();
 	// Add a pre-created Action Fiber to the scheduler
     void addActionFiber(Fiber* fiber);

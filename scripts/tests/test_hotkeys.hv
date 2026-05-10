@@ -4,6 +4,9 @@ f1 => {
    xv = x.pop()
    io.send(f"xxxxx {xv}")
 }
+hotkey.register("p", fn() {
+    print("pressed P")
+})
 a => print "hello"
 b => {
   try {

@@ -60,7 +60,8 @@ bool ExecutionEngine::executeFrame() {
         ::havel::debug("[ExecutionEngine] Processed {} events from event_queue_", processed);
       }
     }
-    vm_->garbageCollectionSafePoint();
+        vm_->garbageCollectionSafePoint();
+        vm_->drainFinalizers();
 
     // STEP 1.5: Drain deferred callbacks from non-VM threads
     // These are queued via scheduler->deferToVM() and must run on the VM thread
@@ -70,9 +71,12 @@ bool ExecutionEngine::executeFrame() {
       ::havel::debug("[ExecutionEngine] Drained {} deferred callbacks", deferred);
     }
 
-    // STEP 2: Pick next runnable goroutine
-    // The scheduler maintains a queue of RUNNABLE goroutines
-    Scheduler::Goroutine* g = scheduler_->pickNext();
+	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
+	scheduler_->wakeSleepingGoroutines();
+
+	// STEP 2: Pick next runnable goroutine
+	// The scheduler maintains a queue of RUNNABLE goroutines
+	Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
       // No runnable goroutine - idle
       if (debug_mode_) {

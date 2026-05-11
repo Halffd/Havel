@@ -310,6 +310,8 @@ bool isClosed() const { return !is_open; }
         const std::vector<uint32_t> &active_closure_ids,
         const std::function<std::optional<Value>(uint32_t)> &open_local_reader);
 
+    std::vector<std::pair<uint32_t, ObjectEntry>> drainFinalizers();
+
 private:
     enum class Generation : uint8_t {
         Young,
@@ -446,6 +448,10 @@ private:
     size_t sweep_index_ = 0;
     IncrementalState sweep_phase_ = IncrementalState::Idle;
     std::recursive_mutex mutex_;
+
+    std::vector<std::pair<uint32_t, ObjectEntry>> finalizer_queue_;
+    bool hasFinalizers() const { return !finalizer_queue_.empty(); }
+    std::vector<std::pair<uint32_t, ObjectEntry>> drainFinalizerQueue();
 };
 
 }

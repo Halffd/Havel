@@ -832,19 +832,28 @@ uint32_t VM::getHostFunctionIndex(const std::string &name) {
 
 ObjectRef VM::createHostObject() {
   ObjectRef ref = heap_.allocateObject();
+  Value root = Value::makeObjectId(ref.id);
+  stack.push(root);
   maybeCollectGarbage();
+  stack.pop();
   return ref;
 }
 
 ArrayRef VM::createHostArray() {
   ArrayRef ref = heap_.allocateArray();
+  Value root = Value::makeArrayId(ref.id);
+  stack.push(root);
   maybeCollectGarbage();
+  stack.pop();
   return ref;
 }
 
 StringRef VM::createRuntimeString(std::string value) {
   StringRef ref = heap_.allocateString(std::move(value));
+  Value root = Value::makeStringId(ref.id);
+  stack.push(root);
   maybeCollectGarbage();
+  stack.pop();
   return ref;
 }
 
@@ -1441,9 +1450,51 @@ void VM::registerDefaultHostFunctions() {
     }
     std::cout << end;
     return Value::makeNull();
-  });
+    });
 
-  // fmt(format_string, ...) - Python-style string formatting
+    registerHostFunction("repr", [this](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("repr() requires an argument");
+        const auto &arg = args[0];
+        if (arg.isObjectId()) {
+            Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_repr");
+            if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+                Value result = callFunctionSync(opMethod, {arg});
+                if (result.isStringValId() && current_chunk) {
+                    return result;
+                } else if (result.isStringId()) {
+                    return result;
+                }
+            }
+        }
+        return Value::makeStringId(heap_.allocateString(toString(arg)).id);
+    });
+
+    registerHostFunction("copy", [this](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("copy() requires an argument");
+        const auto &arg = args[0];
+        if (arg.isObjectId()) {
+            Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_copy");
+            if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+                return callFunctionSync(opMethod, {arg});
+            }
+        }
+        return arg;
+    });
+
+    registerHostFunction("code", [this](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("code() requires an argument");
+        const auto &arg = args[0];
+        if (arg.isObjectId()) {
+            Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_code");
+            if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+                Value result = callFunctionSync(opMethod, {arg});
+                return result;
+            }
+        }
+        return Value::makeStringId(heap_.allocateString(toString(arg)).id);
+    });
+
+    // fmt(format_string, ...) - Python-style string formatting
   registerHostFunction("fmt", [this](const std::vector<Value> &args) {
     if (args.empty()) {
       COMPILER_THROW("fmt() requires at least a format string");
@@ -4256,13 +4307,26 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
 void VM::maybeCollectGarbage() {
     if (gc_suspend_counter_ > 0) return;
     heap_.maybeCollectGarbage(
-      stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
-      [this](uint32_t index) -> std::optional<Value> {
-        if (index >= locals.size()) {
-          return std::nullopt;
+        stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+        [this](uint32_t index) -> std::optional<Value> {
+            if (index >= locals.size()) {
+                return std::nullopt;
+            }
+            return locals[index];
+        });
+}
+
+void VM::drainFinalizers() {
+    auto finalizers = heap_.drainFinalizers();
+    for (auto &[objId, entry] : finalizers) {
+        auto *val = entry.get("op_destructor");
+        if (val && (val->isFunctionObjId() || val->isClosureId() || val->isHostFuncId())) {
+            try {
+                callFunctionSync(*val, {Value::makeObjectId(objId)});
+            } catch (...) {
+            }
         }
-        return locals[index];
-      });
+    }
 }
 
 void VM::collectGarbage() {
@@ -5546,11 +5610,20 @@ break;
     execLogicalOp(instruction.opcode);
     break;
 
-    case OpCode::NOT: {
-      Value v = popStack();
-      pushStack(!isTruthy(v));
-      break;
-    }
+        case OpCode::NOT: {
+            Value v = popStack();
+            if (v.isObjectId()) {
+                Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_not");
+                if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
+                    pushStack(callFunction(opMethod, {v}));
+                } else {
+                    pushStack(!isTruthy(v));
+                }
+            } else {
+                pushStack(!isTruthy(v));
+            }
+            break;
+        }
 
 	case OpCode::BIT_NOT: {
 		Value v = popStack();
@@ -8532,12 +8605,51 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
 }
 
 uint32_t VM::spawnCallback(CallbackId id, const std::vector<Value> &args) {
-  auto closure = externalRootValue(id);
-  if (!closure) {
-    ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
-    return 0;
-  }
-  return spawnGoroutine(*closure, args);
+    auto closure = externalRootValue(id);
+    if (!closure) {
+        ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
+        return 0;
+    }
+    return spawnGoroutine(*closure, args);
+}
+
+uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args) {
+    if (!scheduler_) {
+        ::havel::warn("[VM] spawnCallback: No scheduler available");
+        return 0;
+    }
+
+    auto closure = externalRootValue(id);
+    if (!closure) {
+        ::havel::warn("[VM] spawnCallback: Callback {} not found", id);
+        return 0;
+    }
+
+    uint32_t function_index = 0;
+    uint32_t closure_id = 0;
+
+    if (closure->isFunctionObjId()) {
+        function_index = closure->asFunctionObjId();
+    } else if (closure->isClosureId()) {
+        closure_id = closure->asClosureId();
+        auto *closure_obj = heap_.closure(closure_id);
+        if (!closure_obj) {
+            ::havel::warn("[VM] spawnCallback: Closure {} not found", closure_id);
+            return 0;
+        }
+        function_index = closure_obj->function_index;
+    } else {
+        ::havel::warn("[VM] spawnCallback: Callback is not a function or closure");
+        return 0;
+    }
+
+    uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "hotkey-callback", priority);
+
+    if (event_queue_) {
+        event_queue_->push(Event(EventType::HOTKEY_TRIGGER, gid));
+    }
+
+    return gid;
 }
 
 void VM::releaseCallback(CallbackId id) {

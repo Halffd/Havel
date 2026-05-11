@@ -323,11 +323,39 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 }
 
 bool Scheduler::hasRunnableFibers() const {
-  std::lock_guard<std::mutex> lock(priority_mutex_);
-  if (!hotkey_queue_.empty()) return true;
-  if (!runnable_queue_.empty()) return true;
-  if (!background_queue_.empty()) return true;
-  return false;
+    std::lock_guard<std::mutex> lock(priority_mutex_);
+    if (!hotkey_queue_.empty()) return true;
+    if (!runnable_queue_.empty()) return true;
+    if (!background_queue_.empty()) return true;
+    return false;
+}
+
+size_t Scheduler::wakeSleepingGoroutines() {
+    auto now = std::chrono::steady_clock::now();
+    size_t woken = 0;
+
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+        if (g->state != GoroutineState::Suspended) continue;
+        if (g->suspension_reason != SuspensionReason::SleepWait) continue;
+        if (g->resume_at_time == std::chrono::steady_clock::time_point{}) continue;
+        if (now < g->resume_at_time) continue;
+
+        g->state = GoroutineState::Runnable;
+        g->suspension_reason = SuspensionReason::None;
+        woken++;
+
+        std::lock_guard<std::mutex> plock(priority_mutex_);
+        if (g->priority == FiberPriority::HOTKEY) {
+            hotkey_queue_.push_back(g.get());
+        } else if (g->priority == FiberPriority::BACKGROUND) {
+            background_queue_.push_back(g.get());
+        } else {
+            runnable_queue_.push_back(g.get());
+        }
+    }
+
+    return woken;
 }
 
 void Scheduler::deferToVM(DeferredAction fn) {

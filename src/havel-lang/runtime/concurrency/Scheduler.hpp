@@ -239,8 +239,11 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   // Add a pre-created Action Fiber to the scheduler with priority
   void addActionFiber(Fiber* fiber, FiberPriority priority = FiberPriority::NORMAL);
 
-  // Check if there are runnable fibers
-  bool hasRunnableFibers() const;
+    // Check if there are runnable fibers
+    bool hasRunnableFibers() const;
+
+    // Wake sleeping goroutines whose resume_at_time has passed
+    size_t wakeSleepingGoroutines();
 
   // ===== Deferred VM Callbacks =====
   // Thread-safe queue for callbacks from non-VM threads (e.g. monitoring thread).

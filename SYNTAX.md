@@ -1,184 +1,99 @@
 # Havel Language Syntax Reference
 
-This document describes the complete syntax of the Havel scripting language, derived from the lexer, parser, and AST implementation.
+Derived from the lexer, parser, and AST implementation source code.
 
 ## Lexical Structure
-
-### Block Syntax
-
-Havel supports two block styles:
-
-1. **Brace blocks** (most common): `{ body }`
-2. **Colon-indented blocks**: `:` followed by indented lines (Python-style), dedent ends the block
-3. **Double-colon blocks**: `::` for hotkey context blocks
-
-Most examples in this document use brace syntax. Both styles are semantically equivalent.
 
 ### Comments
 
 ```
-// single-line comment
+// single-line comment — the only comment syntax
 ```
 
-No block/multi-line comments exist. `#` is NOT a comment character (it's used for hotkey prefixes and the `#` length operator).
+No block/multi-line comments. `#` is NOT a comment character (used for hotkey prefixes and the `#` length operator).
+
+### Block Syntax
+
+Three block styles, all semantically equivalent:
+
+1. **Brace blocks**: `{ body }`
+2. **Colon-indented**: `:` followed by indented lines; dedent (column < base indentation) ends the block
+3. **Double-colon**: `::` for hotkey context blocks
 
 ### Identifiers
 
-Identifiers start with a letter or underscore, followed by letters, digits, or underscores. Some keywords are contextually allowed as identifiers in expression positions: `class`, `struct`, `enum`, `mode`, `val`, `const`, `let`.
+Start with a letter or underscore, followed by letters, digits, or underscores.
+
+These keywords are contextually allowed as identifiers in expression positions: `class`, `struct`, `enum`, `mode`, `val`, `const`, `let`.
 
 ### Number Literals
 
 ```
-42          // decimal
-0xFF        // hexadecimal (0x or 0X prefix)
-0o77        // octal (0o or 0O prefix)
-0b1010      // binary (0b or 0B prefix)
-3.14        // floating point
-1_000_000   // underscores for readability (digit separator)
+42              // decimal
+0xFF            // hexadecimal (0x or 0X prefix)
+0o77            // octal (0o or 0O prefix)
+0b1010          // binary (0b or 0B prefix)
+3.14            // floating point
+1_000_000       // underscores as digit separators
 ```
 
 ### String Literals
 
 ```
-"double-quoted string"
-'single-quoted string'
-f"interpolated {variable} string"
-`backtick command`       // shell command expression
+"double-quoted string"       // regular string
+'single-quoted string'       // regular string (equivalent)
+f"interpolated {variable}"   // f-string interpolation (${expr} or {expr})
+`backtick command`            // backtick interpolated string — shell command expression
+'c'                           // char literal (single character)
+/hello/                       // regex literal
+"""multi-line string"""       // triple-quoted multi-line string
 ```
 
-String interpolation uses `{expr}` inside `f"..."` strings. The `$var` shorthand also interpolates.
+Interpolated strings use `${expression}` or bare `{expression}` inside f-strings and backtick strings.
 
-### Booleans and Null
-
-```
-true
-false
-null
-```
-
-## Operators
-
-### Arithmetic
-
-| Operator | Meaning |
-|----------|---------|
-| `+` | Addition / string concatenation |
-| `-` | Subtraction |
-| `*` | Multiplication |
-| `/` | Division |
-| `%` | Modulo |
-| `**` | Exponentiation (right-associative) |
-| `%%` | Integer division |
-| `\` | Floor division |
-
-### Comparison
-
-| Operator | Meaning |
-|----------|---------|
-| `==` | Equal |
-| `!=` | Not equal |
-| `<` | Less than |
-| `>` | Greater than |
-| `<=` | Less than or equal |
-| `>=` | Greater than or equal |
-
-### Logical
-
-| Operator | Meaning |
-|----------|---------|
-| `and` | Logical AND |
-| `or` | Logical OR |
-| `not` | Logical NOT (prefix) |
-
-### Bitwise
-
-Bitwise operations use `(( ))` block syntax in DSL context, or standard operators:
-
-| Operator | Meaning |
-|----------|---------|
-| `&` | Bitwise AND |
-| `\|` | Bitwise OR |
-| `^` | Bitwise XOR |
-| `~` | Bitwise NOT |
-| `<<` | Left shift |
-| `>>` | Right shift |
-
-### Assignment
-
-All arithmetic/bitwise operators have compound assignment forms:
+### Operators
 
 ```
-=   +=  -=  *=  /=  %=  **=  \=  %%=
-&=  |=  ^=  <<=  >>=
+Arithmetic:     +  -  *  /  %  **  //  %%
+Comparison:     ==  !=  <  >  <=  >=
+Logical:        and  or  not
+Nullish:        ??  ?.  ?:
+Pipe:           |>  <|
+Range:          ..  ..=
+Assignment:     =  +=  -=  *=  /=  %=
+Arrow:          ->  <-  =>
+Bitwise:        &  |  ^  ~  <<  >>   (inside (( )) blocks only)
+Misc:           ::  @  @@  #  !  $  $!
 ```
 
-Assignment is right-associative.
+### Reserved Keywords
 
-### Special Operators
+These cannot be used as variable names: `fn`, `if`, `else`, `while`, `for`, `in`, `loop`, `break`, `continue`, `return`, `throw`, `try`, `catch`, `finally`, `match`, `mode`, `map`, `repeat`, `struct`, `class`, `enum`, `trait`, `prot`, `impl`, `import`, `use`, `from`, `val`, `const`, `let`, `and`, `or`, `not`, `is`, `matches`, `null`, `true`, `false`, `on`, `off`, `when`, `co`, `await`, `channel`, `select`, `where`, `pool`, `config`, `devices`, `modes`, `hotkey`, `dsl`, `shell`, `go`, `init`.
 
-| Operator | Meaning | Associativity |
-|----------|---------|---------------|
-| `??` | Nullish coalescing | Right |
-| `?.` | Optional chaining | Left |
-| `?` | Ternary conditional | Right |
-| `->` | Arrow (type annotation / lambda body) | Right |
-| `<-` | Blocking expression (fiber wait) | Right |
-| `..` | Range (exclusive) | Left |
-| `..=` | Range (inclusive) | Left |
-| `#` | Length operator (prefix) | - |
-| `@` | Self reference (replaces `this`) | - |
-| `@@` | Static reference (replaces `static`) | - |
-| `::` | Global scope resolution | - |
-
-### Unary
-
-| Operator | Meaning |
-|----------|---------|
-| `-` | Negation |
-| `not` | Logical NOT |
-| `~` | Bitwise NOT |
-| `#` | Length / count |
-| `++` | Pre-increment |
-| `--` | Pre-decrement |
-
-### Update (Postfix)
-
-| Operator | Meaning |
-|----------|---------|
-| `++` | Post-increment |
-| `--` | Post-decrement |
+`select`, `where`, and `pool` are lexer keywords with no parser implementation (reserved for future use).
 
 ## Declarations
 
-### Variable Declaration
+### Variables
 
 ```
-name = expr                // mutable variable (python-style)
-val name = expr            // immutable binding (preferred)
-const name = expr          // immutable binding (legacy alias for val)
-let name = expr            // block-scoped mutable variable
+name = expr                    // mutable variable
+val name = expr                // immutable binding (preferred)
+const name = expr              // immutable binding (legacy alias for val)
+let name = expr                // mutable (emits deprecation warning)
 ```
 
-Upper-case names conventionally indicate constants:
+Uppercase names conventionally indicate immutability:
 
 ```
-PI = 3.14159
-MAX_RETRIES = 3
+MAX_RETRIES = 10
 ```
 
 ### Destructuring
 
 ```
-[a, b, c] = [1, 2, 3]                    // array destructuring
-{key: k, value: v} = {key: "a", value: 1}  // object destructuring
-[a, ...rest] = [1, 2, 3, 4]              // rest element
-```
-
-### Multiple Assignment
-
-```
-a, b = b, a          // swap
-x, y = 1, 2          // parallel assignment
+[a, b] = arr                   // array destructuring
+(a, b) = tuple                 // tuple destructuring
 ```
 
 ## Functions
@@ -187,80 +102,55 @@ x, y = 1, 2          // parallel assignment
 
 ```
 fn name(params) { body }
-fn name(params) -> expr           // expression body
-fn name(params) -> Type { body }  // with return type annotation
+fn name(params) -> ReturnType { body }
 ```
 
-### Parameters
+Parentheses are optional for zero-parameter functions:
 
 ```
-fn f(x, y)              // positional
-fn f(x: Type)           // with type annotation
-fn f(x = default)       // with default value
-fn f(...args)           // variadic (rest parameter)
+fn greet { print("hello") }
 ```
 
-### Error-Throwing Variant
-
-A `?` suffix on the function name creates an error-throwing variant:
+### Lambda / Arrow Functions
 
 ```
-fn parse?(input) { ... }   // throws on error instead of returning null
-```
-
-### Decorators
-
-```
-[async] fn f() { }        // async function
-[const] fn f() { }        // pure/constant function
-[pure] fn f() { }         // pure function
-[inline] fn f() { }       // inline hint
-[noinline] fn f() { }     // no-inline hint
-[gpu] fn f() { }          // GPU kernel
-[entry] fn f() { }        // entry point
-```
-
-Multiple decorators:
-
-```
-[async]
-[pure]
-fn f() { }
-```
-
-### Lambda
-
-```
-fn(params) { body }          // block lambda
-fn(params) -> expr           // expression lambda
-fn { body }                   // no-param block lambda
+x => x * 2                     // single-expression lambda
+(x, y) => x + y                // multi-parameter lambda
+(x) => {                        // block-body lambda
+  let result = x * 2
+  result
+}
 ```
 
 ### Implicit Return
 
-Functions return the last expression value. No `return` keyword needed for the final expression. Use `return` or `ret` for early exits:
+Functions return the last expression's value. No explicit `return` keyword needed for the common case.
+
+### Decorators
 
 ```
-fn abs(x) {
-    if x < 0 { return -x }
-    x
-}
+[async] fn foo() { }           // async function
+[const] fn bar() { }           // const function
+[pure] fn baz() { }            // pure function
+[gpu] fn compute() { }         // GPU function
+[inline] fn fast() { }         // inline hint
+[noinline] fn slow() { }       // noinline hint
+[entry] fn main() { }          // entry point
 ```
 
-### Self Reference
+### Error-Throwing Variants
 
-`@` refers to the current instance (replaces `this`):
-
-```
-fn init(self, x) {
-    @x = x
-}
-```
-
-`@@` refers to static members (replaces `static`):
+A `?` suffix on a function name declares an error-throwing variant:
 
 ```
-@@counter = 0
+fn parse?(s) { }               // throws on error instead of returning null
+```
+
+### Go Blocks
+
+```
+go { expression }              // concurrent block — runs expression in a new thread
+go lambda()                    // runs lambda in a new thread
 ```
 
 ## Control Flow
@@ -270,739 +160,580 @@ fn init(self, x) {
 ```
 if condition { body }
 if condition { body } else { body }
-if condition { body } else if condition2 { body } else { body }
+if condition { body } else if condition2 { body2 } else { body3 }
 ```
 
-Conditions do NOT use parentheses. Braces are required for block bodies.
+`if` is also an expression:
+
+```
+result = if x > 0 { "positive" } else { "non-positive" }
+```
+
+Brace-call sugar is disabled during condition parsing, so `if f(x) { ... }` always parses `{ ... }` as the body, not as a brace-call argument to `f`.
 
 ### While
 
 ```
 while condition { body }
-do { body } while condition
-```
-
-### For
-
-```
-for item in collection { body }
-for (key, value) in dict { body }
-for i in 0..10 { body }            // range (exclusive end)
-for i in 0..=10 { body }           // range (inclusive end)
 ```
 
 ### Loop
 
 ```
-loop { body }          // infinite loop (break to exit)
+loop { body }                  // infinite loop — use break to exit
 ```
+
+### For
+
+```
+for x in collection { body }
+for (key, value) in collection { body }
+```
+
+Multiple iterators use parenthesized form. Keywords (`let`, `val`, `const`, `if`, `for`, `while`, `match`) are allowed as iterator names.
 
 ### Repeat
 
 ```
-repeat 5 { body }      // execute body 5 times
-repeat count_expr statement   // inline form
+repeat countExpr { body }
+repeat countExpr statement     // single inline statement
 ```
 
-### Break and Continue
+Brace-call sugar is disabled during count expression parsing.
+
+### Break / Continue
 
 ```
 break
-break value            // break with value (in loop expressions)
+break value                    // break with value (for loop expressions)
 continue
 ```
+
+### When
+
+```
+when condition { statements }
+```
+
+The condition inherits into inner statements. This is NOT pattern matching — it's a conditional context block.
 
 ### Match
 
 ```
 match expr {
-    pattern1 => body1
-    pattern2, pattern3 => body2
-    _ => default_body
-}
-
-match expr1, expr2 {         // multiple discriminants
-    (a, b) => body
+  pattern => body,
+  pattern => body,
 }
 ```
 
-Match supports patterns:
-- Literal values: `1`, `"hello"`
-- Variable bindings: `x`
-- Wildcard: `_`
-- Range: `0..10`
-- Destructuring: `{key: k}`, `[a, b, ...rest]`
-- Or patterns: `pattern1 | pattern2`
-- Enum variants: `Some(x)`
-
-### Switch (C-style)
+Multiple discriminants (comma-separated):
 
 ```
-switch expr {
-    case value1: body1
-    case value2: body2
-    default: default_body
+match expr1, expr2 {
+  (pattern1, pattern2) => body,
 }
+```
+
+`=>` separates pattern from body. During match parsing, `=>` is not parsed as an arrow function.
+
+### Switch
+
+```
+switch (expr) {
+  case value:
+    body
+  case value2:
+    body
+}
+```
+
+C-style switch with explicit `case` labels.
+
+### Try / Catch / Finally
+
+```
+try { body }
+try { body } catch e { handler }
+try { body } catch (e) { handler }
+try { body } finally { cleanup }
+try { body } catch e { handler } finally { cleanup }
+```
+
+Catch supports both `catch e { }` and `catch (e) { }` forms.
+
+### Throw
+
+```
+throw expr
 ```
 
 ## Types
 
-### Type Annotations
+### Struct
 
 ```
-x: Int
-name: String
-items: Array
-data: Map
-fn f(x: Int) -> String { }
-```
+struct Name {
+  field1
+  field2: Type
+  field3: Type = defaultValue
 
-### Union Types
-
-```
-Int | String
-Int | null
-```
-
-### Record Types
-
-```
-{ name: String, age: Int }
-```
-
-### Function Types
-
-```
-(Int, String) -> Bool
-```
-
-### Type Declaration
-
-```
-type AliasName = OriginalType
-```
-
-## Struct
-
-```
-struct Point {
-    x: Int
-    y: Int
-
-    fn magnitude(self) {
-        (@x ** 2 + @y ** 2) ** 0.5
-    }
+  fn method(params) { body }
+  op +(other) { body }            // operator overload
 }
 ```
 
-Structs have value semantics. Fields and methods coexist in the body.
+Fields: `name [: type] [= default]`. Methods use `fn`/`op` keywords.
 
-## Class
+### Class
 
 ```
-class Animal {
-    name: String
+class Name {
+  @@classField = value            // @@ prefix = class-level (static)
+  @instanceField = value          // @ prefix = instance-level
 
-    fn init(self, name) {
-        @name = name
-    }
+  @@fn classMethod() { }          // static method
+  @fn instanceMethod() { }        // instance method
+  init(params) { }                // constructor
 
-    fn speak(self) {
-        print("{@name} speaks")
-    }
-}
-
-class Dog : Animal {
-    fn speak(self) {
-        print("{@name} barks")
-    }
+  op [](index) { }                // operator overload
 }
 ```
 
-Inheritance uses `:` syntax. `self` is explicit in method signatures. Instance fields use `@` prefix.
-
-## Enum
+Inheritance:
 
 ```
-enum Color {
-    Red
-    Green
-    Blue
-}
-
-enum Option {
-    Some(value)
-    None
-}
-
-enum Shape {
-    Circle { radius: Float }
-    Rectangle { width: Float, height: Float }
+class Child : Parent {
+  // ...
 }
 ```
 
-Variants can be simple, tuple-like with a payload type, or struct-like with named fields.
+Class members: `@@` static, `@` instance; `fn` methods, `op` operator overloads, `init` constructor; fields with `val`/`const`/`let`.
 
-## Protocols and Traits
-
-### Protocol Declaration
+### Enum
 
 ```
-prot Drawable {
-    fn draw()
-    fn resize(w, h)
+enum Name {
+  Variant1
+  Variant2(payload)
+  Variant3 = 0
+  Variant4(payload) = 1
 }
 ```
 
-### Trait Declaration
+Optional parenthesized payload type, optional integer default value. Variants are newline or comma separated.
+
+### Trait
 
 ```
-trait Serializable {
-    fn serialize() -> String
+trait Name {
+  fn method(params) -> ReturnType
+  fn methodWithDefault(params) { body }
 }
 ```
 
-### Implementation
+Optional return type annotation, optional default body.
+
+### Protocol
 
 ```
-impl Drawable for Shape {
-    fn draw(self) {
-        // ...
-    }
+prot Name {
+  fn method(params) -> ReturnType
+  op +(other)                     // operator method name
 }
 ```
 
-## Concurrency
+Supports operator method names: `+`, `-`, `*`, `/`, `<`, `>`, `[]`.
 
-### Fibers (Coroutines)
+### Impl
 
 ```
-co fn producer(ch) {
-    for i in 0..10 {
-        ch <- i
-    }
-}
-
-co fn consumer(ch) {
-    loop {
-        val = <-ch
-        print(val)
-    }
+impl TraitName for TypeName {
+  fn method(params) { body }
 }
 ```
 
-- `co fn` declares a coroutine/fiber function
-- `<-` is the blocking expression operator (send into / receive from channel)
+Only `fn` function declarations allowed in impl body.
 
-### Threads
+## Operator Overloading
+
+Operator methods map to syntactic operators:
+
+| Operator | Method      | Notes                    |
+|----------|-------------|--------------------------|
+| `+`      | `op_add`    |                          |
+| `-`      | `op_sub`    |                          |
+| `*`      | `op_mul`    |                          |
+| `/`      | `op_div`    |                          |
+| `%`      | `op_mod`    |                          |
+| `**`     | `op_pow`    |                          |
+| `==`     | `op_eq`     |                          |
+| `!=`     | `op_neq`    |                          |
+| `<`      | `op_lt`     |                          |
+| `>`      | `op_gt`     |                          |
+| `<=`     | `op_lte`    |                          |
+| `>=`     | `op_gte`    |                          |
+| `!`      | `op_not`    |                          |
+| `-@`     | `op_negate` | unary minus              |
+| `#`      | `op_length` | `#obj` → obj.op_length() |
+| `""`     | `op_toString` | string coercion        |
+| `()`     | `op_call`   | callable objects         |
+| `[]`     | `op_index`  | subscript access         |
+| `[]=`    | `op_index_set` | subscript assignment  |
+| `repr`   | `op_repr`   | debug representation     |
+| `code`   | `op_code`   |                          |
+| `@()`    | `init`      | constructor              |
+| `-@()`   | `op_destructor` | destructor           |
+| `&`      | `op_bitand` | bitwise (( )) only       |
+| `\|`     | `op_bitor`  | bitwise (( )) only       |
+| `^`      | `op_bitxor` | bitwise (( )) only       |
+| `<<`     | `op_shl`    | bitwise (( )) only       |
+| `>>`     | `op_shr`    | bitwise (( )) only       |
+
+## Expressions
+
+### Operator Precedence (low to high)
+
+| Precedence | Operators | Associativity |
+|-----------|-----------|---------------|
+| 0 | Prefix unary | — |
+| 10 | `=` `+=` `-=` `*=` `/=` `%=` | right |
+| 15 | `? :` ternary | right |
+| 20 | `??` nullish coalesce | right |
+| 25 | `or` | left |
+| 30 | `and` | left |
+| 35 | `\|>` `<|` pipe | left |
+| 50 | `is` `matches` | left |
+| 52 | `not in` | left |
+| 55 | `in` | left |
+| 60 | `==` `!=` `<` `>` `<=` `>=` | left |
+| 65 | `..` `..=` range | right |
+| 70 | `+` `-` | left |
+| 80 | `*` `/` `%` `//` `%%` | left |
+| 90 | `**` power | right |
+| 100 | Postfix `?` `++` `--` | — |
+| 110 | `.` `.?` `?.` member access | left |
+
+Comparison operators are left-associative (NOT Python-style chaining).
+
+Right-associative operators: all assignments, `**`, `??`, `?`, `->`, `<-`, `..`/`..=`.
+
+### Member Access
 
 ```
-thread {
-    // concurrent block
-}
+obj.field                       // dot access
+obj?.field                      // null-safe access
+obj.method()                    // method call
+obj?.method?()                  // null-safe + error-throwing variant
 ```
 
-### Go (Fiber Launch)
+### Scope Resolution
 
 ```
-go expr          // launch expression as fiber
+::name                          // global scope lookup
 ```
 
-### Yield
+`::` forces lookup in the global scope.
+
+### Function Calls
 
 ```
-yield expr       // yield value from fiber/generator
+f(args)                         // parenthesized call
+f arg                           // paren-free call (single argument)
+f { body }                      // brace-call sugar (block as first argument)
+```
+
+### Slice Expression
+
+```
+arr[start:end:step]             // desugars to arr.slice(start, end, step)
+```
+
+`::` inside brackets is treated as two colons for slice syntax.
+
+### Range
+
+```
+1..10                           // exclusive range (1 to 9)
+1..=10                          // inclusive range (1 to 10)
+```
+
+### Nullish Coalescing
+
+```
+value ?? default                // value if not null, else default
+```
+
+### Ternary
+
+```
+condition ? then_expr : else_expr
+```
+
+### Await / Fiber Receive
+
+```
+await expr                      // unary prefix — wait for fiber/channel value
+<- expr                         // left arrow — equivalent to await (blocking expression)
+```
+
+Both produce an `AwaitExpression` node.
+
+### Channel
+
+```
+channel()                       // create a new channel
+```
+
+### Shell Commands
+
+```
+$ (expr)                        // run command without capturing output
+$! (expr)                       // run command and capture output
+$! variable                     // capture into variable
+$! [array]                      // capture into array
+```
+
+`$` runs without capture, `$!` captures output.
+
+### Object Literals
+
+```
+{ key: value, key2: value2 }            // sorted object
+!{ key: value, key2: value2 }           // unsorted object (insertion-order)
+```
+
+`!{ }` is the unsorted/insertion-order object literal. Parsed as `BangOpenBrace` single token or `Not` + `OpenBrace`.
+
+### Array Literals
+
+```
+[1, 2, 3]                      // array
+[]                              // empty array
+```
+
+### Set Literals
+
+```
+:{1, 2, 3}                     // set literal
+```
+
+### Pipelines
+
+```
+expr |> function               // pipe left into function: function(expr)
+expr <| function               // pipe right from function: function(expr)
+```
+
+### LINQ-style (desugared)
+
+```
+from x in numbers where x > 2 select x * 2
+// desugars to: numbers |> filter(x => x > 2) |> map(x => x * 2)
+```
+
+## Bitwise Operations
+
+Bitwise operators are only available inside `(( ))` double-parenthesis blocks:
+
+```
+(( a | b ))                     // bitwise OR
+(( a & b ))                     // bitwise AND
+(( a ^ b ))                     // bitwise XOR
+(( ~a ))                        // bitwise NOT
+(( a << 4 ))                    // left shift
+(( a >> 2 ))                    // right shift
+```
+
+Outside `(( ))`, `|` is the pipe-right operator, `&` is unused, and `~` is the tilde/home operator.
+
+## Hotkey Syntax
+
+### Hotkey Registration
+
+```
+F1 => { body }                  // simple hotkey
+^+F1 => { body }                // Ctrl+Shift+F1
+^C => { body }                  // Ctrl+C
+```
+
+Modifier prefixes: `^` = Ctrl, `+` = Shift, `!` = Alt, `#` = Super/Win.
+
+NOT allowed: `hotkey "Ctrl+Shift+F1" { }` or `hotkey.register()` syntax — use the `=>` arrow form only.
+
+### On/Off Key Events
+
+```
+on keydown keylist { body }
+on keyup keylist { body }
+off keydown keylist
+off keyup keylist
+```
+
+## DSL Input Commands
+
+Inside `dsl { }` blocks (where `inInputContext = true`):
+
+```
+:500                            // sleep 500ms
+"text"                          // send text string
+{Enter}                         // send keystroke
+lmb                             // left mouse button click
+rmb                             // right mouse button click
+mmb                             // middle mouse button click
+w(10, 20)                       // move mouse to (10, 20)
+ws(10, 20)                      // scroll mouse at (10, 20)
+```
+
+## Modules
+
+### Import / Use
+
+```
+use module                      // import module by name
+use { fn1, fn2 } from "path"   // import specific bindings from path
+import a, b from "path"        // import a and b from path
+import { a, b as alias } from "path"  // import with aliases
+import * from "path"           // wildcard import
+import Name as alias           // import with alias
+import Name from "path" as alias      // import from path with alias
+```
+
+### Module System
+
+Python-style modules: every top-level function, variable, and class is exported. No `export` keyword. Prefix with `_` to indicate private by convention (not enforced).
+
+Consumer: `use mymodule` or `use { fn } from "mymodule"`.
+
+## Coroutines / Fibers
+
+### Coroutine Function
+
+```
+co fn name(params) { body }    // declares a coroutine/fiber function
 ```
 
 ### Channels
 
 ```
-ch = channel()   // create channel
+ch = channel()                  // create channel
+ch.send(value)                  // send to channel
+<- ch                           // blocking receive from channel
 ```
 
-### Interval and Timeout
+### Await
 
 ```
-interval 500 {
-    // execute every 500ms
-}
-
-timeout 3000 {
-    // execute after 3000ms
-}
+result = await fiberValue       // wait for fiber to complete
+result = <- channelValue        // blocking wait for value
 ```
 
-Interval and timeout objects support `.stop()` and `.cancel()` respectively.
+`<-` is the "blocking expression operator for fibers" — unified wait-for-value.
 
-## Collections
+## Built-in Operators and Methods
 
-### Arrays
-
-```
-[1, 2, 3]                      // literal
-[1, 2, ...rest]                 // spread
-[]                              // empty
-arr[0]                          // index access
-arr[1:3]                        // slice
-arr[-1]                         // negative index
-#arr                            // length
-```
-
-### Sets
+### Length Operator
 
 ```
-{1, 2, 3}                       // set literal (when not in object context)
+#collection                     // calls op_length — returns length of string, array, etc.
 ```
 
-### Objects
+### String Interpolation
 
 ```
-{ key: value }                  // object literal
-{ shorthand }                   // shorthand property
-{ [computed]: value }           // computed key
-{ ...other }                    // spread
-obj.field                       // member access
-obj["key"]                      // index access
+"Hello {name}!"                 // bare brace interpolation in strings
+f"Value: ${x}"                  // f-string interpolation
+`cmd {arg}`                     // backtick interpolation (shell command)
 ```
 
-### Tuples
+Do NOT use `+`, commas, dot, or newlines for string concatenation. Use `{var}` or `$var` interpolation only.
+
+### Self / Instance Reference
 
 ```
-(1, "hello", true)              // tuple literal
+@                               // refers to self/current instance (ruby-style @)
+@@                              // class-level reference
 ```
 
-## Hotkeys
+Do NOT use `this` — use `@`.
 
-### Basic Syntax
-
-```
-F1 => { action }
-Ctrl+V => print "pasted"
-^+C => { copy() }               // ^ is Ctrl alias
-```
-
-### With Conditions
+### Static Methods
 
 ```
-F2 when mode gaming => { ... }
-Ctrl+A when title "Firefox" && class "Navigator" => { ... }
+@@fn method() { }               // class-level (static) method
 ```
 
-Conditions: `mode`, `title`, `class`, `process`, joined by `&&`.
+Do NOT use `static` keyword — use `@@` prefix.
 
-### Multi-Hotkey
+## Pattern Matching (in match expressions)
 
-```
-F1 & F2 => { ... }             // both keys simultaneously
-```
+Patterns in `match` blocks support:
 
-### Dynamic Hotkey Assignment
+- Literal patterns: `1`, `"hello"`, `true`
+- Variable patterns: `x` (binds the value)
+- Wildcard: `_`
+- Type patterns: `type Name`
+- Destructuring patterns: `[a, b]`, `(a, b)`
+- Enum variant patterns: `Variant(payload)`
 
-```
-dhk = F3 => { print @key }     // assigns hotkey to variable
-```
+## Type Annotations
 
-### Disabling
-
-```
-!d => { ... }                  // disabled by default
-@disable()                      // disable from inside handler
-```
-
-### Special Keys
+Type annotations are optional throughout:
 
 ```
-#Esc => { ... }                // Win+Esc
-RShift => { ... }              // right shift
+fn name(x: Int, y: String) -> Bool { }
+val name: Type = value
+struct S { field: Type }
 ```
 
-## Import and Use
+Type annotations are parsed but not enforced at runtime in the current implementation.
 
-### Import
+## Special Syntax
 
-```
-import "module"                  // import module
-import { fn1, fn2 } from "mod"  // named imports
-```
-
-### Use
-
-```
-use module                       // use module (python-style)
-use { fn1, fn2 } from "module"  // named use
-```
-
-## Error Handling
-
-### Try / Catch
-
-```
-try {
-    risky()
-} catch e {
-    print("caught: {e}")
-} finally {
-    cleanup()
-}
-```
-
-### Throw
-
-```
-throw "error message"
-throw ErrorType("details")
-```
-
-## Special Blocks
-
-### Config Block
+### Config
 
 ```
 config {
-    IO.Executor = Scheduler
-    General {
-        Terminal = konsole
-        GamingApps = steam_app_default,retroarch
-    }
-    Debug.ForceMinimal = 0
+  key: value
 }
 ```
 
-### Mode Block
-
-```
-mode gaming {
-    condition = true
-    priority 5
-    on enter { print("entered gaming") }
-    on exit { print("left gaming") }
-    on reload { print("reloaded") }
-}
-```
-
-### Devices Block
+### Devices
 
 ```
 devices {
-    // device definitions
+  // device declarations
 }
 ```
 
-### Modes Block
+### Modes
 
 ```
 modes {
-    // mode definitions
+  // mode declarations
 }
 ```
 
-### UI Block
+## Syntax That Will Be Rejected
 
-```
-ui {
-    window("Title") {
-        button("Click me") {
-            onClick => { print("clicked") }
-        }
-    }
-}
-```
+The compiler will error on these patterns — do NOT use them:
 
-UI blocks desugar to method calls: `ui.window("Title")`, `ui.button("Click me")`, with event handlers attached.
+| Pattern | Error | Use Instead |
+|---------|-------|-------------|
+| Semicolons in conditions/loops | syntax error | Newline or no separator |
+| `let` for immutable binding | deprecation warning | `val` |
+| `const` keyword | works but legacy | `val` |
+| `export` keyword | syntax error | Not needed — all top-level is exported |
+| `hotkey "Ctrl+Shift+F1" {}` | syntax error | `^+F1 => { }` |
+| `hotkey.register()` | syntax error | `F1 => { }` (only in loops/objects) |
+| Explicit `return` | works but unidiomatic | Implicit return (last expression) |
+| `this` keyword | syntax error | `@` (ruby-style) |
+| `static` keyword | syntax error | `@@` prefix |
+| `#` comments | syntax error | `//` comments |
+| String concatenation with `+`/`,`/`.`/newline | syntax error | `{var}` or `$var` interpolation |
 
-### With Block
+## Parser Safety Limits
 
-```
-with resource {
-    // resource is available in scope
-}
-```
-
-### Signal Definition
-
-```
-signal name = condition_expr
-signal name: condition_expr
-```
-
-Signals define named conditions that can be evaluated at runtime.
-
-### Group Definition
-
-```
-group name {
-    modes: [mode1, mode2, mode3]
-}
-```
-
-Groups organize modes into logical collections.
-
-### Modes Block (Legacy)
-
-```
-modes {
-    mode_name {
-        // mode definition
-    }
-}
-```
-
-## When Block
-
-```
-when condition {
-    // executes when condition becomes true
-}
-```
-
-`when` is distinct from `if` — it represents a reactive/watched condition (used in hotkey and mode contexts).
-
-## Event Handlers
-
-```
-on enter { ... }         // mode enter
-on exit { ... }          // mode exit
-on reload { ... }        // configuration reload
-on start { ... }         // application start
-on message { ... }       // message received
-on keydown { ... }       // key press
-on keyup { ... }         // key release
-on tap { ... }           // tap event
-on combo { ... }         // key combo
-```
-
-Mode activation from top level:
-
-```
-on mode_name { ... }     // activate mode_name
-off mode_name { ... }    // deactivate mode_name
-```
-
-## Shell Commands
-
-### Backtick Expressions
-
-```
-`ls -la`               // execute shell command, returns output
-```
-
-### Shell Command Statement
-
-```
-shell "ls -la"
-```
-
-## Pipeline Expression
-
-```
-data | filter | map(fn(x) { x * 2 })
-data |> filter |> map(fn(x) { x * 2 })
-```
-
-Both `|` and `|>` pipe operators are supported.
-
-## Config Append
-
-```
-config >> value          // append value to config
-```
-
-## Operator Overloading
-
-Inside `class` or `struct` bodies, use `op` instead of `fn` to define operator methods:
-
-```
-class Vec2 {
-    x: Float
-    y: Float
-
-    fn init(self, x, y) {
-        @x = x
-        @y = y
-    }
-
-    op + (other) {
-        Vec2(@x + other.x, @y + other.y)
-    }
-    op == (other) {
-        @x == other.x and @y == other.y
-    }
-    op [] (index) {
-        if index == 0 { @x } else { @y }
-    }
-}
-```
-
-### Operator Method Name Mapping
-
-| Operator | Method Name |
-|----------|-------------|
-| `+` | `op_add` |
-| `-` | `op_sub` |
-| `*` | `op_mul` |
-| `/` | `op_div` |
-| `%` | `op_mod` |
-| `**` | `op_pow` |
-| `==` | `op_eq` |
-| `!=` | `op_ne` |
-| `<` | `op_lt` |
-| `>` | `op_gt` |
-| `<=` | `op_le` |
-| `>=` | `op_ge` |
-| `[]` | `op_index` |
-| `[]=` | `op_index_set` |
-| `()` | `op_call` |
-| `\|>` | `op_pipe_right` |
-| `\|` | `op_bit_or` |
-| `&` | `op_bit_and` |
-| `^` | `op_bit_xor` |
-| `~` | `op_bit_not` |
-| `>>` | `op_shift_right` |
-| `<<` | `op_shift_left` |
-| `=` | `op_copy` |
-| `+=` | `op_iadd` |
-| `-=` | `op_isub` |
-| `*=` | `op_imul` |
-
-## Cast Expression
-
-```
-expr as Type
-```
-
-## Sleep
-
-```
-sleep(1000)            // sleep milliseconds
-```
-
-## Delete
-
-```
-del obj.field          // delete object property
-```
-
-## Operator Precedence (High to Low)
-
-1. Postfix: `++`, `--`, `.`, `?.`, `[]`, `()`
-2. Unary: `-`, `not`, `~`, `#`, `++`, `--`
-3. Exponentiation: `**` (right-associative)
-4. Multiplicative: `*`, `/`, `%`, `\`, `%%`
-5. Additive: `+`, `-`
-6. Shift: `<<`, `>>`
-7. Bitwise AND: `&`
-8. Bitwise XOR: `^`
-9. Bitwise OR: `|`
-10. Comparison: `<`, `>`, `<=`, `>=`
-11. Equality: `==`, `!=`
-12. Logical AND: `and`
-13. Logical OR: `or`
-14. Nullish coalescing: `??` (right-associative)
-15. Ternary: `?` (right-associative)
-16. Arrow: `->`, `<-` (right-associative)
-17. Range: `..`, `..=`
-18. Assignment: `=`, `+=`, `-=`, etc. (right-associative)
-
-## Reserved Keywords
-
-```
-let val const if else while do switch for in
-loop break continue match case default fn op
-return ret try catch finally throw thread interval
-timeout yield go sync async channel co del
-config devices modes signal group struct class
-enum trait prot impl this on off when mode
-repeat pool select where
-```
-
-`match`, `mode`, `map` are reserved and cannot be used as variable names.
-
-## DSL Mode
-
-DSL (Domain-Specific Language) mode is activated inside `dsl { }` blocks. In DSL context:
-- Custom operator syntax becomes available
-- `(( ))` blocks denote bitwise operations
-- Input context flag is set (`inInputContext = true`)
-
-## Built-in Functions and Modules
-
-### Global Functions
-
-- `print(expr, ...)` / `print(expr)` — output to stdout
-- `len(collection)` / `#collection` — length
-- `type(value)` — type name string
-- `exit(code)` — exit process
-- `rand()` — random number
-- `sleep(ms)` — sleep
-
-### Standard Library Modules
-
-| Module | Key Functions |
-|--------|--------------|
-| `math` | `abs`, `ceil`, `floor`, `round`, `sqrt`, `sin`, `cos`, `tan`, `min`, `max`, `PI`, `E` |
-| `string` | `len`, `upper`, `lower`, `trim`, `split`, `replace`, `contains`, `starts_with`, `ends_with`, `slice` |
-| `array` | `push`, `pop`, `shift`, `unshift`, `map`, `filter`, `reduce`, `sort`, `reverse`, `join`, `slice`, `find`, `includes` |
-| `time` | `now`, `epoch`, `date`, `time`, `year`, `month`, `day`, `hour`, `minute`, `second` |
-| `sys` | `platform`, `arch`, `cwd`, `pid`, `env`, `detect`, `hardware`, `gc` |
-| `shell` | `run`, `cwd`, `getenv`, `escape`, `exec` |
-| `fs` | `read`, `write`, `exists`, `mkdir`, `rm`, `ls`, `cp`, `mv`, `stat` |
-| `io` | `send`, `read`, `write` |
-| `log` | `log`, `info`, `warn`, `error`, `debug` |
-| `timer` | `setTimeout`, `setInterval`, `clear`, `activeCount`, `clearAll` |
-| `cfg` | configuration access |
-| `parser` | `csv`, parsing utilities |
-| `object` | `keys`, `values`, `entries`, `merge`, `flatten`, `unflatten`, `delete` |
-| `type` | type introspection |
-| `process` | process management |
-| `filemanager` | file management operations |
-
-### Host Modules (when available)
-
-| Module | Key Functions |
-|--------|--------------|
-| `hotkey` | global hotkey registration |
-| `window` | window manipulation, focus, move, resize |
-| `audio` | volume control, playback |
-| `brightness` | screen brightness |
-| `browser` | browser control |
-| `clipboard` | clipboard get/set |
-| `io` | input/output, mouse events |
-| `ocr` | text recognition |
-| `media` | media playback control |
-| `screenshot` | screen capture |
-| `alttab` | alt-tab window switching |
-| `app` | application management |
-| `mapmanager` | keyboard mapping |
-| `mode` | mode management |
-| `http` | HTTP requests |
-| `pixel` | pixel automation |
-
-## Module System
-
-Havel uses Python-style modules:
-- Every top-level function, variable, and class is exported
-- No `export` keyword
-- Prefix with `_` to indicate private by convention (not enforced)
-- `use mymodule` or `use { fn } from "mymodule"` to consume
-
-## Syntax Pitfalls
-
-These patterns will cause compiler errors:
-
-| Wrong | Right | Reason |
-|-------|-------|--------|
-| `if (cond) { }` | `if cond { }` | No parens around conditions |
-| `for (i in x) { }` | `for i in x { }` | No parens around for |
-| `let x = 5` (top-level) | `x = 5` or `val x = 5` | `let` is block-scoped; use `val` for immutable |
-| `const X = 5` | `X = 5` or `val X = 5` | `const` is legacy alias |
-| `this.field` | `@field` | `this` is not used; use `@` |
-| `static method` | `@@method` | `static` is not used; use `@@` |
-| `# comment` | `// comment` | `#` is length operator, not comment |
-| `export fn f()` | `fn f()` | No `export` keyword |
-| `hotkey "Ctrl+F1" {}` | `Ctrl+F1 => { }` | Use arrow hotkey syntax |
-| `return x` (last line) | `x` | Use implicit return for final expression |
-| `"a" + "b"` | `"a{b}"` or `f"a{b}"` | String concatenation uses interpolation |
-
-## File Extension
-
-Havel source files use the `.hv` extension.
+- Maximum tokens per parse: 5,000,000
+- Maximum parse depth: 512
+- `ProgressGuard` RAII checks token count
+- `DepthGuard` RAII checks recursion depth

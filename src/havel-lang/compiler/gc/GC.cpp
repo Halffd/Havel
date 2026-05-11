@@ -891,8 +891,15 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_objects_.find(id) != old_objects_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-        if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
-            objects_.erase(it);
+            if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
+                auto *obj = object(id);
+                if (obj) {
+                    auto it = obj->find("op_destructor");
+                    if (it != obj->end() && (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId())) {
+                        finalizer_queue_.push_back({id, std::move(*obj)});
+                    }
+                }
+                objects_.erase(it);
                     object_ages_.erase(id);
                     old_objects_.erase(id);
                     recovered_in_cycle_++;
@@ -1417,6 +1424,17 @@ GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) {
 const GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) const {
     auto it = coroutines_.find(id);
     return it == coroutines_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizers() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto result = std::move(finalizer_queue_);
+    finalizer_queue_.clear();
+    return result;
+}
+
+std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizerQueue() {
+    return drainFinalizers();
 }
 
 }

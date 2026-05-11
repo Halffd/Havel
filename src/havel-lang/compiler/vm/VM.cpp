@@ -1245,17 +1245,17 @@ void VM::registerPrototypeMethod(const std::string &typeName,
 }
 
 void VM::registerPrototypeMethodByName(const std::string &typeName,
-                                       const std::string &methodName,
-                                       const std::string &funcName) {
-  // Find the function index by name
-  for (size_t i = 0; i < host_function_names_.size(); ++i) {
-    if (host_function_names_[i] == funcName) {
-      prototypes_[typeName][methodName] = static_cast<uint32_t>(i);
-      return;
+                                         const std::string &methodName,
+                                         const std::string &funcName) {
+    // Find the function index by name
+    for (size_t i = 0; i < host_function_names_.size(); ++i) {
+        if (host_function_names_[i] == funcName) {
+        prototypes_[typeName][methodName] = static_cast<uint32_t>(i);
+        return;
+        }
     }
-  }
-  // Not found - register with 0 (will be null)
-  prototypes_[typeName][methodName] = 0;
+    // Not found - register with 0 (will be null)
+    prototypes_[typeName][methodName] = 0;
 }
 
 std::optional<uint32_t>
@@ -2879,20 +2879,13 @@ void VM::registerDefaultHostGlobals() {
 }
 
 void VM::registerDefaultPrototypes() {
-    if (prototypes_.find("string") == prototypes_.end())
-        prototypes::registerStringPrototype(*this);
-    if (prototypes_.find("array") == prototypes_.end())
-        prototypes::registerArrayPrototype(*this);
-    if (prototypes_.find("number") == prototypes_.end())
-        prototypes::registerNumberPrototype(*this);
-    if (prototypes_.find("bool") == prototypes_.end())
-        prototypes::registerBoolPrototype(*this);
-    if (prototypes_.find("object") == prototypes_.end())
-        prototypes::registerObjectPrototype(*this);
-    if (prototypes_.find("set") == prototypes_.end())
-        prototypes::registerSetPrototype(*this);
-    if (prototypes_.find("range") == prototypes_.end())
-        prototypes::registerRangePrototype(*this);
+  prototypes::registerStringPrototype(*this);
+  prototypes::registerArrayPrototype(*this);
+  prototypes::registerNumberPrototype(*this);
+  prototypes::registerBoolPrototype(*this);
+  prototypes::registerObjectPrototype(*this);
+  prototypes::registerSetPrototype(*this);
+  prototypes::registerRangePrototype(*this);
 
     registerPrototypeMethodByName("thread", "send", "thread.send");
     registerPrototypeMethodByName("thread", "pause", "thread.pause");
@@ -3792,27 +3785,27 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       return;
     }
 
-        co->saved_coroutine_id = current_coroutine_id_;
-        current_coroutine_id_ = coId;
-
-        co->saved_frame_count = frame_count_;
-        co->saved_ip = currentFrame().ip + 1; // past CALL
-co->saved_locals = locals;
-
-// Save caller's stack
-        co->saved_stack.clear();
-        {
-            std::vector<Value> tmp;
-            while (!stack.empty()) {
-                tmp.push_back(stack.top());
-                stack.pop();
+            {
+                GCHeap::CallerFrame cf;
+                cf.coroutine_id = current_coroutine_id_;
+                cf.frame_count = frame_count_;
+                cf.ip = currentFrame().ip + 1;
+                cf.locals = locals;
+                {
+                    std::vector<Value> tmp;
+                    while (!stack.empty()) {
+                        tmp.push_back(stack.top());
+                        stack.pop();
+                    }
+                    for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                        cf.stack.push_back(*it);
+                    }
+                }
+                co->caller_stack.push_back(std::move(cf));
             }
-            for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-                co->saved_stack.push_back(*it);
-            }
-        }
+            current_coroutine_id_ = coId;
 
-      // Push a frame for coroutine execution on the existing stack
+            // Push a frame for coroutine execution on the existing stack
       const auto *chunk = current_chunk;
       const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
       if (!func) {
@@ -3904,8 +3897,15 @@ auto *co = heap_.coroutine(coId);
 co->state = GCHeap::Coroutine::Runnable;
 co->closure_id = closure_id;
 
-// Save the caller's locals so nested generators can access outer frames' values
-co->saved_locals = locals;
+            // Save the caller's locals so nested generators can access outer frames' values
+            {
+                GCHeap::CallerFrame cf;
+                cf.coroutine_id = current_coroutine_id_;
+                cf.frame_count = frame_count_;
+                cf.ip = 0;
+                cf.locals = locals;
+                co->caller_stack.push_back(std::move(cf));
+            }
 
 // Generators should NOT copy parent's locals into their own locals.
 // The generator's locals are for its own variables only.
@@ -3915,8 +3915,8 @@ co->saved_locals = locals;
 // Close all open upvalues in the closure by copying their current values.
 // For generators, upvalues must be closed because the generator runs in its own
 // isolated locals context and can't access outer frames' locals directly.
-// Special case for nested generators: if the upvalue points to an outer frame,
-// use the caller coroutine's saved_locals to access the value.
+                    // Special case for nested generators: if the upvalue points to an outer frame,
+                    // use the caller coroutine's caller_stack locals to access the value.
 if (closure_id != 0) {
     auto *closure = heap_.closure(closure_id);
     if (closure) {
@@ -3924,14 +3924,13 @@ if (closure_id != 0) {
             if (cell && cell->is_open) {
                 uint32_t abs_index = cell->locals_base + cell->open_index;
                 
-                std::vector<Value>* target_locals = &locals;
-                if (current_coroutine_id_ != UINT32_MAX) {
-                    auto* caller_co = heap_.coroutine(current_coroutine_id_);
-                    // If we're in a generator and the upvalue points outside our locals, use saved_locals
-                    if (caller_co && abs_index >= locals.size()) {
-                        target_locals = &caller_co->saved_locals;
-                    }
-                }
+                        std::vector<Value>* target_locals = &locals;
+                        if (current_coroutine_id_ != UINT32_MAX) {
+                            auto* caller_co = heap_.coroutine(current_coroutine_id_);
+                            if (caller_co && abs_index >= locals.size() && !caller_co->caller_stack.empty()) {
+                                target_locals = &caller_co->caller_stack.back().locals;
+                            }
+                        }
                 
                 if (abs_index < target_locals->size()) {
                     cell->closed_value = (*target_locals)[abs_index];
@@ -4452,24 +4451,27 @@ while (stack.size() > finished.stack_depth) {
     popStack();
 }
 
-if (current_coroutine_id_ != UINT32_MAX) {
-    auto *co = heap_.coroutine(current_coroutine_id_);
-    if (co) {
-        co->state = GCHeap::Coroutine::Done;
-        frame_count_ = co->saved_frame_count;
-        locals = co->saved_locals;
-        current_coroutine_id_ = co->saved_coroutine_id;
+            if (current_coroutine_id_ != UINT32_MAX) {
+                auto *co = heap_.coroutine(current_coroutine_id_);
+                if (co) {
+                    co->state = GCHeap::Coroutine::Done;
+                    if (!co->caller_stack.empty()) {
+                        auto &caller = co->caller_stack.back();
+                        frame_count_ = caller.frame_count;
+                        locals = caller.locals;
+                        current_coroutine_id_ = caller.coroutine_id;
 
-        // Restore caller's IP (saved before YIELD_RESUME overwrote it)
-        currentFrame().ip = co->saved_ip;
+                        currentFrame().ip = caller.ip;
 
-        // Restore caller's stack (saved_stack[0]=bottom, [N-1]=top)
-        stack = std::stack<Value>();
-        for (auto it = co->saved_stack.begin(); it != co->saved_stack.end(); ++it) {
-            stack.push(*it);
-        }
-    }
-}
+                        stack = std::stack<Value>();
+                        for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
+                            stack.push(*it);
+                        }
+
+                        co->caller_stack.pop_back();
+                    }
+                }
+            }
 
     pushStack(ret);
 }
@@ -5870,16 +5872,16 @@ case OpCode::TAIL_CALL: {
       }
     }
 
-    // 1. Try host prototype (for primitives and built-in object methods)
-    if (!found_host && vm_func.isNull()) {
-      auto typeIt = prototypes_.find(type_name);
-      if (typeIt != prototypes_.end()) {
-        auto methodIt = typeIt->second.find(method_name);
-        if (methodIt != typeIt->second.end()) {
-          host_func_idx = methodIt->second;
-          found_host = true;
-        }
+            // 1. Try host prototype (for primitives and built-in object methods)
+            if (!found_host && vm_func.isNull()) {
+                auto typeIt = prototypes_.find(type_name);
+                if (typeIt != prototypes_.end()) {
+                    auto methodIt = typeIt->second.find(method_name);
+                    if (methodIt != typeIt->second.end()) {
+        host_func_idx = methodIt->second;
+        found_host = true;
       }
+                }
     }
 
     // 1.5 Try module object for monkey-patched methods
@@ -8052,48 +8054,48 @@ auto *parent_closure = heap_.closure(parent_closure_id);
             yield_value = popStack();
         }
 
-        if (current_coroutine_id_ != UINT32_MAX) {
-            auto *co = heap_.coroutine(current_coroutine_id_);
-            if (co) {
-                co->ip = currentFrame().ip + 1;
-                co->locals = locals;
+            if (current_coroutine_id_ != UINT32_MAX) {
+                auto *co = heap_.coroutine(current_coroutine_id_);
+                if (co) {
+                    co->ip = currentFrame().ip + 1;
+                    co->locals = locals;
 
-                // Save coroutine's current stack
-                co->stack.clear();
-                {
-                    std::vector<Value> tmp;
-                    while (!stack.empty()) {
-                        tmp.push_back(stack.top());
-                        stack.pop();
+                    // Save coroutine's current stack
+                    co->stack.clear();
+                    {
+                        std::vector<Value> tmp;
+                        while (!stack.empty()) {
+                            tmp.push_back(stack.top());
+                            stack.pop();
+                        }
+                        for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                            co->stack.push_back(*it);
+                        }
                     }
-                    for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-                        co->stack.push_back(*it);
+
+                    co->state = GCHeap::Coroutine::Waiting;
+
+                    // Pop caller frame from the coroutine's caller stack
+                    if (!co->caller_stack.empty()) {
+                        auto &caller = co->caller_stack.back();
+                        frame_count_ = caller.frame_count;
+                        locals = caller.locals;
+                        current_coroutine_id_ = caller.coroutine_id;
+
+                        currentFrame().ip = caller.ip;
+
+                        stack = std::stack<Value>();
+                        for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
+                            stack.push(*it);
+                        }
+
+                        co->caller_stack.pop_back();
                     }
+
+                    pushStack(yield_value);
+                    return;
                 }
-
-                co->state = GCHeap::Coroutine::Waiting;
-
-        // Restore caller's execution state
-        frame_count_ = co->saved_frame_count;
-        locals = co->saved_locals;
-        uint32_t yielding_co_id = current_coroutine_id_;
-        current_coroutine_id_ = co->saved_coroutine_id;
-
-
-        // Restore caller's IP (saved before YIELD_RESUME overwrote it)
-        currentFrame().ip = co->saved_ip;
-
-        // Restore caller's stack (saved_stack[0]=bottom, [N-1]=top)
-        stack = std::stack<Value>();
-        for (auto it = co->saved_stack.begin(); it != co->saved_stack.end(); ++it) {
-            stack.push(*it);
-        }
-
-pushStack(yield_value);
-
-return;
             }
-        }
 
         // Non-coroutine yield
         pushStack(yield_value);
@@ -8120,26 +8122,26 @@ return;
             break;
         }
 
-        // Save current caller's state into the coroutine so it can be
-        // restored when the coroutine yields or finishes
-        co->saved_coroutine_id = current_coroutine_id_;
-        co->saved_frame_count = frame_count_;
-        co->saved_ip = currentFrame().ip + 1; // past YIELD_RESUME
-        co->saved_locals = locals;
-        co->parent_locals_size = locals.size();
-
-        // Save current stack (excluding the coroutine value we already popped)
-        co->saved_stack.clear();
-        {
-            std::vector<Value> tmp;
-            while (!stack.empty()) {
-                tmp.push_back(stack.top());
-                stack.pop();
+            // Push current caller's state onto the coroutine's caller stack
+            {
+                GCHeap::CallerFrame cf;
+                cf.coroutine_id = current_coroutine_id_;
+                cf.frame_count = frame_count_;
+                cf.ip = currentFrame().ip + 1;
+                cf.locals = locals;
+                {
+                    std::vector<Value> tmp;
+                    while (!stack.empty()) {
+                        tmp.push_back(stack.top());
+                        stack.pop();
+                    }
+                    for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                        cf.stack.push_back(*it);
+                    }
+                }
+                co->caller_stack.push_back(std::move(cf));
             }
-            for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-                co->saved_stack.push_back(*it);
-            }
-        }
+            co->parent_locals_size = locals.size();
 
         // Switch to the coroutine
         current_coroutine_id_ = coroutine_id;
@@ -8216,11 +8218,16 @@ return;
  saved.frame_arena = frame_arena_;
  saved.current_coroutine_id = current_coroutine_id_;
 
- current_coroutine_id_ = coId;
- co->saved_coroutine_id = saved.current_coroutine_id;
- co->saved_frame_count = frame_count_;
- co->saved_locals = locals;
- locals = co->locals;
+            current_coroutine_id_ = coId;
+            {
+                GCHeap::CallerFrame cf;
+                cf.coroutine_id = saved.current_coroutine_id;
+                cf.frame_count = frame_count_;
+                cf.ip = 0;
+                cf.locals = locals;
+                co->caller_stack.push_back(std::move(cf));
+            }
+            locals = co->locals;
 
  const auto *chunk = current_chunk;
  const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
@@ -8439,12 +8446,14 @@ return;
  locals.resize(finished.locals_base);
  }
 
-                frame_count_ = co->saved_frame_count;
-                locals = co->saved_locals;
-                current_coroutine_id_ = co->saved_coroutine_id;
-
-                // Restore caller's IP (saved before YIELD_RESUME overwrote it)
-                currentFrame().ip = co->saved_ip;
+                    if (!co->caller_stack.empty()) {
+                        auto &caller = co->caller_stack.back();
+                        frame_count_ = caller.frame_count;
+                        locals = caller.locals;
+                        current_coroutine_id_ = caller.coroutine_id;
+                        currentFrame().ip = caller.ip;
+                        co->caller_stack.pop_back();
+                    }
 
                 pushStack(Value::makeNull());
 

@@ -2928,16 +2928,11 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
 
     bool success = ctx->hotkeyManager->AddHotkey(
         hotkeyStr, [vm, callbackId, hotkeyContext]() {
-        vm->beginHotkeyExecution();
-        try {
-            vm->invokeCallback(callbackId, {hotkeyContext});
-        } catch (const std::exception &e) {
-            ::havel::error("[Hotkey] Execution failed: {}", e.what());
-        } catch (...) {
-            ::havel::error("[Hotkey] Execution failed: unknown error");
-        }
-        vm->endHotkeyExecution();
-    });
+            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+            if (gid == 0) {
+                ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
+            }
+        });
 
     // Register conditional hotkey (when/if mode conditions)
     if (modeMgr && hotkeyMgr) {
@@ -2947,17 +2942,12 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 std::string mode = modeMgr->getCurrentMode();
                 return !mode.empty() && mode != "default";
             },
-            [vm, callbackId, hotkeyContext]() {
-                vm->beginHotkeyExecution();
-                try {
-                    vm->invokeCallback(callbackId, {hotkeyContext});
-                } catch (const std::exception &e) {
-                    ::havel::error("[Hotkey] Execution failed: {}", e.what());
-                } catch (...) {
-                    ::havel::error("[Hotkey] Execution failed: unknown error");
-                }
-                vm->endHotkeyExecution();
-            });
+        [vm, callbackId, hotkeyContext]() {
+            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+            if (gid == 0) {
+                ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
+            }
+        });
     }
 
     // Return hotkey context object on success, null on failure
@@ -3000,18 +2990,14 @@ Value InputBridge::handleHotkeyRegisterConditional(
 
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
-    auto makeInvoke = [vm, callbackId, hotkeyContext]() {
-        vm->beginHotkeyExecution();
-        try {
-            vm->invokeCallback(callbackId, {hotkeyContext});
-        } catch (...) {
-            vm->endHotkeyExecution();
-            throw;
+    auto makeSpawn = [vm, callbackId, hotkeyContext]() {
+        uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+        if (gid == 0) {
+            ::havel::error("[Hotkey] Conditional hotkey: failed to spawn goroutine for callback {}", callbackId);
         }
-        vm->endHotkeyExecution();
     };
 
-    auto trueAction = makeInvoke;
+    auto trueAction = makeSpawn;
 
     auto falseAction = []() {
     };

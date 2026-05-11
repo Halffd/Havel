@@ -29,6 +29,7 @@ namespace havel::compiler {
 class Fiber;
 class Scheduler;
 class WatcherRegistry;
+enum class FiberPriority : uint8_t;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
@@ -374,10 +375,11 @@ const BytecodeChunk *current_chunk = nullptr;
 
   std::vector<Value> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
-  void maybeCollectGarbage();
-  void collectGarbage();
-  void stepGarbageCollection(size_t work_budget = 128);
-void registerDefaultHostFunctions();
+    void maybeCollectGarbage();
+    void collectGarbage();
+    void stepGarbageCollection(size_t work_budget = 128);
+    void drainFinalizers();
+    void registerDefaultHostFunctions();
     void registerDefaultHostGlobals();
     void registerDefaultPrototypes();
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
@@ -591,8 +593,11 @@ public:
   // @return Goroutine ID
   uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {});
 
-  // Spawn a goroutine from a registered callback
-  uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
+    // Spawn a goroutine from a registered callback
+    uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
+
+    // Spawn a goroutine from a registered callback with explicit priority
+    uint32_t spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args = {});
 
   // Hotkey execution state (atomic)
   void beginHotkeyExecution();

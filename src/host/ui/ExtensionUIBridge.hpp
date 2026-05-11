@@ -99,9 +99,13 @@ public:
   // Style application
   void applyStyle(std::shared_ptr<ui::UIElement> element, const std::string& key, const ui::PropValue& value) override;
 
-  // Extension specific
-  bool loadExtension();
-  bool isExtensionLoaded() const;
+ // Canvas drawing
+void canvasFlush(std::shared_ptr<ui::UIElement> canvas) override;
+void canvasClear(std::shared_ptr<ui::UIElement> canvas) override;
+
+ // Extension specific
+bool loadExtension();
+bool isExtensionLoaded() const;
 
 private:
   std::string extensionName_;

@@ -21,6 +21,8 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -84,6 +86,7 @@ public:
   std::shared_ptr<ui::UIElement> col();
   std::shared_ptr<ui::UIElement> grid(int cols = 2);
   std::shared_ptr<ui::UIElement> scroll();
+  std::shared_ptr<ui::UIElement> canvas(int width = 800, int height = 600);
 
   // Menu elements
   std::shared_ptr<ui::UIElement> menu(const std::string &title);
@@ -133,6 +136,10 @@ public:
   void applyStyle(std::shared_ptr<ui::UIElement> element,
                   const std::string &key, const ui::PropValue &value);
 
+  // Canvas drawing
+  void canvasFlush(std::shared_ptr<ui::UIElement> canvas);
+  void canvasClear(std::shared_ptr<ui::UIElement> canvas);
+
 private:
   // Qt widget creation for each element type
   QWidget *createWidget(ui::UIElement *element);
@@ -156,6 +163,7 @@ private:
   QWidget *createCol(ui::UIElement *element);
   QWidget *createGrid(ui::UIElement *element);
   QWidget *createScroll(ui::UIElement *element);
+  QWidget *createCanvas(ui::UIElement *element);
 
   // Menu creation
   void buildMenu(QMenuBar *menuBar, ui::UIElement *menuElement);

@@ -751,13 +751,30 @@ GtkWidget* GtkBackend::getWidget(const std::string &id) const {
 }
 
 void GtkBackend::destroyWidget(const std::string &id) {
-    auto it = widgets_.find(id);
-    if (it != widgets_.end()) {
-        if (it->second && GTK_IS_WIDGET(it->second)) {
-            gtk_widget_unparent(it->second);
-        }
-        widgets_.erase(it);
-    }
+auto it = widgets_.find(id);
+if (it != widgets_.end()) {
+if (it->second && GTK_IS_WIDGET(it->second)) {
+gtk_widget_unparent(it->second);
+}
+widgets_.erase(it);
+}
+}
+
+void GtkBackend::canvasFlush(std::shared_ptr<ui::UIElement> canvas) {
+if (canvas) {
+auto it = widgets_.find(std::to_string(canvas->id));
+if (it != widgets_.end() && it->second && GTK_IS_WIDGET(it->second)) {
+gtk_widget_queue_draw(it->second);
+}
+}
+}
+
+void GtkBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
+if (canvas) {
+canvas->canvasCommands.clear();
+canvas->canvasCommands.push_back({ui::CanvasCmdType::CLEAR, {}});
+canvasFlush(canvas);
+}
 }
 
 } // namespace havel::host

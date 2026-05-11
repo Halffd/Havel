@@ -907,8 +907,20 @@ void ImGuiBackend::drawSpacer(int size) {
 }
 
 void ImGuiBackend::drawSpinner() {
-    // ImGui doesn't have a built-in spinner, but we can use a rotating indicator
-    ImGui::Text("Loading...");
+ImGui::Text("Loading...");
+}
+
+void ImGuiBackend::canvasFlush(std::shared_ptr<ui::UIElement> canvas) {
+if (canvas) {
+canvas->canvasCommands.clear();
+}
+}
+
+void ImGuiBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
+if (canvas) {
+canvas->canvasCommands.clear();
+canvas->canvasCommands.push_back({ui::CanvasCmdType::CLEAR, {}});
+}
 }
 
 } // namespace havel::host

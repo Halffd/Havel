@@ -394,7 +394,7 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeBool(false);
   });
 
-  regProto("get", 2, [&vm](const std::vector<Value>& args) {
+  vm.registerHostFunction("object.get", [&vm](const std::vector<Value>& args) -> Value {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isObjectId()) {
       auto* obj = vm.getHeap().object(args[0].asObjectId());
@@ -402,10 +402,12 @@ void registerObjectPrototype(VM& vm) {
         std::string key = extractStringArg(vm, args, 1, "");
         auto it = obj->find(key);
         if (it != obj->end()) return it->second;
+        if (args.size() >= 3) return args[2];
       }
     }
     return Value::makeNull();
   });
+  vm.registerPrototypeMethodByName("object", "get", "object.get");
 
   regProto("set", 3, [&vm](const std::vector<Value>& args) {
     if (args.size() < 3) return Value::makeNull();
@@ -420,33 +422,44 @@ void registerObjectPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("delete", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2) return Value::makeBool(false);
-    if (args[0].isObjectId()) {
-      auto* obj = vm.getHeap().object(args[0].asObjectId());
-      if (obj) {
-        std::string key = extractStringArg(vm, args, 1, "");
-        return Value::makeBool(obj->erase(key) > 0);
-      }
-    }
-    return Value::makeBool(false);
-  });
+    regProto("delete", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeBool(false);
+        if (args[0].isObjectId()) {
+            auto* obj = vm.getHeap().object(args[0].asObjectId());
+            if (obj) {
+                std::string key = extractStringArg(vm, args, 1, "");
+                return Value::makeBool(obj->erase(key) > 0);
+            }
+        }
+        return Value::makeBool(false);
+});
 
-  regProto("merge", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2) return Value::makeNull();
-    if (args[0].isObjectId() && args[1].isObjectId()) {
-      auto* obj1 = vm.getHeap().object(args[0].asObjectId());
-      auto* obj2 = vm.getHeap().object(args[1].asObjectId());
-      if (obj1 && obj2) {
-        auto resultRef = vm.getHeap().allocateObject();
-        auto* result = vm.getHeap().object(resultRef.id);
-        for (const auto& [key, val] : *obj1) result->set(key, val);
-        for (const auto& [key, val] : *obj2) result->set(key, val);
-        return Value::makeObjectId(resultRef.id);
-      }
-    }
-    return Value::makeNull();
-  });
+auto mergeFn = [&vm](const std::vector<Value>& args) -> Value {
+  if (args.size() < 2) return Value::makeNull();
+  if (args[0].isObjectId() && args[1].isObjectId()) {
+            auto* obj1 = vm.getHeap().object(args[0].asObjectId());
+            auto* obj2 = vm.getHeap().object(args[1].asObjectId());
+            bool has_merger = args.size() >= 3 && (args[2].isFunctionObjId() || args[2].isClosureId());
+            if (obj1 && obj2) {
+                auto resultRef = vm.getHeap().allocateObject();
+                auto* result = vm.getHeap().object(resultRef.id);
+                for (const auto& [key, val] : *obj1) result->set(key, val);
+                for (const auto& [key, val] : *obj2) {
+                    if (has_merger && result->get(key)) {
+                        auto keyRef = vm.getHeap().allocateString(key);
+                        auto merged = vm.call(args[2], {Value::makeStringId(keyRef.id), result->get(key), val});
+                        result->set(key, merged);
+                    } else {
+                        result->set(key, val);
+                    }
+                }
+                return Value::makeObjectId(resultRef.id);
+            }
+        }
+        return Value::makeNull();
+    };
+    vm.registerHostFunction("object.merge", mergeFn);
+    vm.registerPrototypeMethodByName("object", "merge", "object.merge");
 
 regProto("sortVal", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();

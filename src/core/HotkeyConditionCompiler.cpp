@@ -1,6 +1,7 @@
 #include "HotkeyConditionCompiler.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 
 #include <sstream>
 
@@ -18,7 +19,7 @@ HotkeyConditionCompiler::compileCondition(
   
   
   if (auto cached = getCached(condition_str)) {
-    debug("HotkeyConditionCompiler: Cache hit for condition: {}", condition_str);
+    if (debugging::debug_hotkeys) debug("HotkeyConditionCompiler: Cache hit for condition: {}", condition_str);
     return std::make_unique<CompiledCondition>(*cached);
   }
   
@@ -28,7 +29,7 @@ HotkeyConditionCompiler::compileCondition(
   auto compiled = compilePatternCondition(vm, condition_str);
   
   if (compiled) {
-    debug("HotkeyConditionCompiler: Successfully compiled condition: {}", condition_str);
+    if (debugging::debug_hotkeys) debug("HotkeyConditionCompiler: Successfully compiled condition: {}", condition_str);
     // Cache the result
     compiled_conditions_[condition_str] = std::make_unique<CompiledCondition>(*compiled);
     return compiled;
@@ -76,7 +77,7 @@ HotkeyConditionCompiler::compilePatternCondition(
       compiled->function_id = 0;  // Special ID for pattern-based condition
       compiled->instruction_ptr = 0;
       
-      debug("HotkeyConditionCompiler: Recognized 'mode == X' pattern: {}", condition_str);
+      if (debugging::debug_hotkeys) debug("HotkeyConditionCompiler: Recognized 'mode == X' pattern: {}", condition_str);
       return compiled;
     }
   }
@@ -85,7 +86,7 @@ HotkeyConditionCompiler::compilePatternCondition(
   if (condition_str.find("window.exe") != std::string::npos ||
       condition_str.find("window.title") != std::string::npos) {
     
-    debug("HotkeyConditionCompiler: Recognized window pattern: {}", condition_str);
+    if (debugging::debug_hotkeys) debug("HotkeyConditionCompiler: Recognized window pattern: {}", condition_str);
     
     auto compiled = std::make_unique<CompiledCondition>();
     compiled->original_source = condition_str;

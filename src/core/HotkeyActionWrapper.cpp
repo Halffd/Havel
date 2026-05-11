@@ -1,5 +1,6 @@
 #include "HotkeyActionWrapper.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <unordered_map>
 #include <memory>
 
@@ -41,7 +42,7 @@ compiler::Fiber* HotkeyActionWrapper::createActionFiber(
   // Store the action callback for later execution
   registerCallback(fiber_id, action);
   
-  debug("HotkeyActionWrapper: Created action Fiber '{}' with ID {}", fiber_name, fiber_id);
+  if (debugging::debug_hotkeys) debug("HotkeyActionWrapper: Created action Fiber '{}' with ID {}", fiber_name, fiber_id);
   
   // Return raw pointer (Fiber ownership is transferred to Scheduler)
   return fiber.release();
@@ -57,12 +58,12 @@ HotkeyActionWrapper::ActionCallback* HotkeyActionWrapper::getCallback(uint32_t f
 
 void HotkeyActionWrapper::registerCallback(uint32_t fiber_id, ActionCallback callback) {
   action_callbacks_[fiber_id] = callback;
-  debug("HotkeyActionWrapper: Registered callback for Fiber {}", fiber_id);
+  if (debugging::debug_hotkeys) debug("HotkeyActionWrapper: Registered callback for Fiber {}", fiber_id);
 }
 
 void HotkeyActionWrapper::unregisterCallback(uint32_t fiber_id) {
   action_callbacks_.erase(fiber_id);
-  debug("HotkeyActionWrapper: Unregistered callback for Fiber {}", fiber_id);
+  if (debugging::debug_hotkeys) debug("HotkeyActionWrapper: Unregistered callback for Fiber {}", fiber_id);
 }
 
 void HotkeyActionWrapper::clearAll() {

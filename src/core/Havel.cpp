@@ -23,6 +23,7 @@
 #include "io/EventListener.hpp"
 #include "io/KeyTap.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
@@ -79,13 +80,13 @@ Havel::~Havel() {
   if (instance == this) {
     instance = nullptr;
   }
-  debug("Havel destroyed");
+  if (debugging::debug_io) debug("Havel destroyed");
 }
 
 void Havel::initialize(bool isStartup) {
-  debug("Initializing HvC components...");
-  debug("isStartup: " + std::to_string(isStartup));
-  debug("GUI: " + std::to_string(guiMode));
+  if (debugging::debug_io) debug("Initializing HvC components...");
+  if (debugging::debug_io) debug("isStartup: " + std::to_string(isStartup));
+  if (debugging::debug_io) debug("GUI: " + std::to_string(guiMode));
 
   // Initialize in dependency order
   io = std::make_shared<IO>();
@@ -137,7 +138,7 @@ void Havel::initialize(bool isStartup) {
   }
 
 #ifdef ENABLE_HAVEL_LANG
-  debug("Initializing bytecode VM and HostBridge...");
+  if (debugging::debug_io) debug("Initializing bytecode VM and HostBridge...");
 
   // Create host context
   hostContext = std::make_unique<HostContext>();
@@ -161,7 +162,7 @@ void Havel::initialize(bool isStartup) {
   // We'll trust the ConfigManager which should be updated by Launcher.
   
   if (useJIT) {
-    debug("JIT compilation enabled");
+    if (debugging::debug_io) debug("JIT compilation enabled");
     auto jit = std::make_unique<compiler::BytecodeOrcJIT>();
     
     // Check for debug JIT
@@ -290,7 +291,7 @@ if (hotkeyManager) {
     
     // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
     // from HotkeyActionContext.cpp static initialization if needed
-    debug("Reactive hotkey system initialized");
+    if (debugging::debug_io) debug("Reactive hotkey system initialized");
     
     auto modeManager = hotkeyManager->getModeManager();
     if (modeManager) {
@@ -305,7 +306,7 @@ if (hotkeyManager) {
   io->GetEventListener()->setHostBridge(hostBridge.get());
   if (executionEngine) {
     io->GetEventListener()->setExecutionEngine(executionEngine.get());
-    debug("ExecutionEngine integrated into EventListener main loop");
+    if (debugging::debug_io) debug("ExecutionEngine integrated into EventListener main loop");
   }
 }
 #else
@@ -321,19 +322,19 @@ if (hotkeyManager) {
     std::thread([this]() {
       auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
       std::this_thread::sleep_for(std::chrono::seconds(s));
-      debug("AutoExit enabled - exiting after {} seconds", s);
+      if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", s);
       this->exit();
     }).detach();
   }
 }
 
 void Havel::cleanup() noexcept {
-  debug("Havel::cleanup() - starting cleanup");
+  if (debugging::debug_io) debug("Havel::cleanup() - starting cleanup");
 
   // Force save config before everything else
   try {
     Configs::Get().ForceSave();
-    debug("Havel::cleanup() - config saved");
+    if (debugging::debug_io) debug("Havel::cleanup() - config saved");
   } catch (...) {}
 
   // Stop timer first
@@ -341,20 +342,20 @@ void Havel::cleanup() noexcept {
 
   // Stop EventListener FIRST
   if (io && io->GetEventListener()) {
-    debug("Havel::cleanup() - stopping EventListener");
+    if (debugging::debug_io) debug("Havel::cleanup() - stopping EventListener");
     io->GetEventListener()->Stop();
   }
 
   // Destroy hotkeyManager
   if (hotkeyManager) {
-    debug("Havel::cleanup() - destroying HotkeyManager");
+    if (debugging::debug_io) debug("Havel::cleanup() - destroying HotkeyManager");
     hotkeyManager->cleanup();
     hotkeyManager.reset();
   }
 
   
   if (conditionCompiler) {
-    debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
+    if (debugging::debug_io) debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
     delete conditionCompiler;
     conditionCompiler = nullptr;
   }
@@ -362,25 +363,25 @@ void Havel::cleanup() noexcept {
 
  // Stop ExecutionEngine and Scheduler BEFORE destroying VM
  if (executionEngine) {
- debug("Havel::cleanup() - shutting down ExecutionEngine");
+ if (debugging::debug_io) debug("Havel::cleanup() - shutting down ExecutionEngine");
  executionEngine->shutdown();
  executionEngine.reset();
  }
  auto& scheduler = compiler::Scheduler::instance();
  if (scheduler.isRunning()) {
- debug("Havel::cleanup() - stopping Scheduler");
+ if (debugging::debug_io) debug("Havel::cleanup() - stopping Scheduler");
  scheduler.stop();
  }
 
  // Destroy VM
  if (bytecodeVM) {
- debug("Havel::cleanup() - destroying VM");
+ if (debugging::debug_io) debug("Havel::cleanup() - destroying VM");
  bytecodeVM.reset();
  }
 
   // Destroy HostBridge
   if (hostBridge) {
-    debug("Havel::cleanup() - destroying HostBridge");
+    if (debugging::debug_io) debug("Havel::cleanup() - destroying HostBridge");
     hostBridge->shutdown();
     hostBridge.reset();
   }
@@ -414,7 +415,7 @@ void Havel::cleanup() noexcept {
     io.reset();
   }
 
-  debug("Havel::cleanup() - cleanup complete");
+  if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
 }
 
 void Havel::exit() {
@@ -475,9 +476,9 @@ void Havel::setupSignalHandling() {
       sigaction(SIGSEGV, &sa, nullptr);
       sigaction(SIGQUIT, &sa, nullptr);
 
-  debug("Signal handling initialized - fallback handlers for REPL mode");
+  if (debugging::debug_io) debug("Signal handling initialized - fallback handlers for REPL mode");
   } else {
-  debug("Signal handling initialized - EventListener manages signals");
+  if (debugging::debug_io) debug("Signal handling initialized - EventListener manages signals");
     }
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to set up signal handling: " +

@@ -6,6 +6,7 @@
 #include "../../utils/DebugFlags.hpp"
 #include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/stdlib/HotkeyModule.hpp"
+#include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HardwareDetector.hpp"
@@ -2999,21 +3000,32 @@ Value InputBridge::handleHotkeyRegisterConditional(
     auto falseAction = []() {
     };
 
-    auto conditionFn = [vm, condCallbackId]() -> bool {
-        try {
-            Value result = vm->invokeCallback(condCallbackId, {});
-            return result.asBool();
-        } catch (...) {
-            return false;
-        }
-    };
+ auto conditionFn = [vm, condCallbackId]() -> bool {
+ try {
+ Value result = vm->invokeCallback(condCallbackId, {});
+ return result.asBool();
+ } catch (...) {
+ return false;
+ }
+ };
 
-    condMgr.AddConditionalHotkey(hotkeyStr, conditionFn, trueAction,
-                                  falseAction, 0, true);
+ int condHkId = condMgr.AddConditionalHotkey(hotkeyStr, conditionFn, trueAction,
+ falseAction, 0, true);
 
-    // Also register as a regular hotkey (will be grabbed/ungrabbed
-    // by the conditional manager)
-    ctx->hotkeyManager->AddHotkey(hotkeyStr, trueAction);
+ {
+ auto tracker = std::make_shared<compiler::DependencyTracker>();
+ compiler::DependencyTrackerScope scope(tracker);
+ try {
+ vm->invokeCallback(condCallbackId, {});
+ } catch (...) {}
+ auto deps = tracker->getGlobalDependencies();
+ auto* ch = condMgr.FindHotkey(condHkId);
+ if (ch) {
+ ch->dependencies = std::move(deps);
+ }
+ }
+
+ ctx->hotkeyManager->AddHotkey(hotkeyStr, trueAction);
 
     return hotkeyContext;
 }

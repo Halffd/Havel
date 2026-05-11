@@ -1,6 +1,9 @@
 #pragma once
 
+#include "utils/DebugFlags.hpp"
+
 namespace havel::debugging {
+
 // Parser/AST debugging
 inline bool debug_ast = false;
 inline bool debug_parser = false;
@@ -12,8 +15,4 @@ inline bool debug_interpreter = false;
 inline bool debug_gc = false;
 inline bool debug_engine = false;
 
-// System debugging
-inline bool debug_hotkeys = false;
-inline bool debug_io = false;
-inline bool debug_evdev = false;
 }

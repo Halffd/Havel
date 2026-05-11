@@ -1,0 +1,69 @@
+// Test the pure-Havel lexer implementation
+use lexer
+
+// --- Test basic tokenization ---
+
+// Simple arithmetic
+tokens = lexer.tokenize("1 + 2 * 3")
+assert tokens.len > 0
+assert tokens[0].type == "Number"
+assert tokens[0].value == "1"
+assert tokens[1].type == "Plus"
+
+// Identifiers
+tokens = lexer.tokenize("foo bar baz")
+assert tokens[0].type == "Identifier"
+assert tokens[0].value == "foo"
+assert tokens[1].type == "Identifier"
+assert tokens[1].value == "bar"
+
+// Keywords
+tokens = lexer.tokenize("if x else y")
+assert tokens[0].type == "If"
+assert tokens[2].type == "Else"
+
+// String literals
+tokens = lexer.tokenize('"hello"')
+assert tokens[0].type == "String"
+assert tokens[0].value == '"hello"'
+
+// Function keyword
+tokens = lexer.tokenize("fn add(a, b) a + b")
+assert tokens[0].type == "Fn"
+
+// Hotkey syntax
+tokens = lexer.tokenize("F1 => { print(1) }")
+// Should recognize F1 as hotkey token in hotkey context
+assert tokens.len > 0
+
+// Multi-char operators
+tokens = lexer.tokenize("x == 1 && y != 2")
+assert tokens.len > 0
+
+// Number formats
+tokens = lexer.tokenize("0xFF 0b1010 0o77")
+assert tokens[0].type == "Number"
+assert tokens[0].value == "0xFF"
+
+// Arrow
+tokens = lexer.tokenize("x => x + 1")
+assert tokens.len > 0
+
+// Complex expression
+source = """
+fn fib(n)
+  if n <= 1 { n }
+  else { fib(n-1) + fib(n-2) }
+
+val result = fib(10)
+print(result)
+"""
+
+tokens = lexer.tokenize(source)
+assert tokens.len > 10
+
+// Check no errors on valid code
+result = lexer.tokenizeWithErrors(source)
+assert result.errors.len == 0
+
+print("all lexer tests passed")

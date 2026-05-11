@@ -168,6 +168,14 @@ bool isClosed() const { return !is_open; }
               column(col), cause(nullptr) {}
     };
 
+    struct CallerFrame {
+        uint32_t coroutine_id = UINT32_MAX;
+        size_t frame_count = 0;
+        uint32_t ip = 0;
+        std::vector<Value> locals;
+        std::vector<Value> stack;
+    };
+
     struct Coroutine {
         enum State { Runnable, Waiting, Done };
 
@@ -177,15 +185,11 @@ bool isClosed() const { return !is_open; }
         uint32_t closure_id = 0;
         std::vector<Value> stack;
         std::vector<Value> locals;
-        size_t saved_frame_count = 0;
-        uint32_t saved_ip = 0;
-        std::vector<Value> saved_locals;
-        std::vector<Value> saved_stack;
-        uint32_t saved_coroutine_id = UINT32_MAX;
+        std::vector<CallerFrame> caller_stack;
         State state = Runnable;
         std::vector<Value> yield_values;
         size_t parent_locals_size = 0;
-        std::chrono::steady_clock::time_point resume_at_time{}; // Time-based resume for FIBER_SLEEP
+        std::chrono::steady_clock::time_point resume_at_time{};
 
         Coroutine() = default;
     };

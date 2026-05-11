@@ -8,6 +8,7 @@
 #include <queue>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -48,10 +49,9 @@ struct ConditionalHotkey {
   bool currentlyGrabbed = false;
   bool lastConditionResult = false;
   bool monitoringEnabled = true;
-  bool async = false;  // Execute action asynchronously via Scheduler/Fiber
+  bool async = false; // Execute action asynchronously via Scheduler/Fiber
 
-  
-  uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
+  std::unordered_set<std::string> dependencies; // Global variables the condition depends on
 };
 
 // Stores the state of conditional hotkeys before suspension
@@ -100,6 +100,9 @@ public:
 
   // Evaluate all conditional hotkeys (called from main event loop)
   void UpdateAllConditionalHotkeys();
+
+  // Evaluate only hotkeys that depend on the given variable
+  void UpdateConditionalHotkeysForVariable(const std::string& var_name);
 
   // Force update all hotkeys (immediate, bypasses cache)
   void ForceUpdateAllConditionalHotkeys();

@@ -1878,14 +1878,25 @@ case ast::NodeType::ImplDeclaration: {
     break;
   }
 
-  case ast::NodeType::ConditionalHotkey: {
-    // Conditional hotkey: hotkey if condition => { ... }
-    const auto &condHk = static_cast<const ast::ConditionalHotkey &>(statement);
-    if (condHk.binding) {
-      compileHotkeyBinding(*condHk.binding);
-    }
-    break;
-  }
+case ast::NodeType::ConditionalHotkey: {
+            const auto &condHk = static_cast<const ast::ConditionalHotkey &>(statement);
+            if (condHk.binding && condHk.condition) {
+                BytecodeFunction conditionFn("condhotkey_condition");
+                enterFunction(std::move(conditionFn));
+                compileExpression(*condHk.condition);
+                emit(OpCode::RETURN);
+                leaveFunction();
+
+                uint32_t condFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+                auto prevWhenCondition = when_condition_func_index_;
+                when_condition_func_index_ = condFuncIndex;
+                compileHotkeyBinding(*condHk.binding);
+                when_condition_func_index_ = prevWhenCondition;
+            } else if (condHk.binding) {
+                compileHotkeyBinding(*condHk.binding);
+            }
+            break;
+        }
 
   default:
     COMPILER_THROW("Unsupported statement in bytecode compiler: " +

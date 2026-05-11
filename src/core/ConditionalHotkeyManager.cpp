@@ -42,19 +42,23 @@ void ConditionalHotkeyManager::ScheduleReevaluation() {
 }
 
 void ConditionalHotkeyManager::registerVarChangedHandler() {
-  
-  // When a global variable changes, reevaluate all hotkey conditions
-  // This enables event-driven hotkey condition checking
   if (eventQueue_) {
-    // Register handler for VAR_CHANGED events
-    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED, 
-        [this](const compiler::Event& event) {
-          // Reevaluate hotkey conditions when variables change
-          // This allows "mode == 'gaming'" or similar conditions to react immediately
-          if (debugging::debug_hotkeys) debug("VAR_CHANGED event - reevaluating hotkey conditions");
+    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
+      [this](const compiler::Event& event) {
+        std::string var_name;
+        if (event.ptr) {
+          var_name = static_cast<const char*>(event.ptr);
+        }
+        if (debugging::debug_hotkeys) debug("VAR_CHANGED event for '{}' - reevaluating conditional hotkeys", var_name);
+        if (!var_name.empty()) {
+          eventQueue_->push([this, var_name]() {
+            UpdateConditionalHotkeysForVariable(var_name);
+          });
+        } else {
           ScheduleReevaluation();
-        });
-    if (debugging::debug_hotkeys) debug("ConditionalHotkeyManager: Registered VAR_CHANGED handler for reactive hotkey updates");
+        }
+      });
+    if (debugging::debug_hotkeys) debug("ConditionalHotkeyManager: Registered VAR_CHANGED handler with variable filtering");
   }
 }
 
@@ -367,6 +371,52 @@ ConditionalHotkey* ConditionalHotkeyManager::FindHotkey(int id) {
 
 void ConditionalHotkeyManager::UpdateAllConditionalHotkeys() {
   BatchUpdateConditionalHotkeys();
+}
+
+void ConditionalHotkeyManager::UpdateConditionalHotkeysForVariable(const std::string& var_name) {
+  if (!enabled) {
+    return;
+  }
+
+  std::vector<int> toGrab;
+  std::vector<int> toUngrab;
+
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+    for (auto& ch : conditionalHotkeys) {
+      if (!ch.monitoringEnabled) continue;
+
+      bool depends = ch.dependencies.empty() ||
+                     ch.dependencies.count(var_name) > 0;
+      if (!depends) continue;
+
+      bool shouldGrab = false;
+      if (std::holds_alternative<std::string>(ch.condition)) {
+        shouldGrab = EvaluateCondition(std::get<std::string>(ch.condition));
+      } else if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
+        const auto& func = std::get<std::function<bool()>>(ch.condition);
+        if (func) shouldGrab = func();
+      }
+
+      if (shouldGrab && !ch.currentlyGrabbed) {
+        toGrab.push_back(ch.id);
+        ch.currentlyGrabbed = true;
+        ch.lastConditionResult = true;
+      } else if (!shouldGrab && ch.currentlyGrabbed) {
+        toUngrab.push_back(ch.id);
+        ch.currentlyGrabbed = false;
+        ch.lastConditionResult = false;
+      }
+    }
+  }
+
+  for (int id : toGrab) {
+    io->GrabHotkey(id);
+  }
+  for (int id : toUngrab) {
+    io->UngrabHotkey(id);
+  }
 }
 
 void ConditionalHotkeyManager::ForceUpdateAllConditionalHotkeys() {

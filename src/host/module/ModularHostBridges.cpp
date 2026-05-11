@@ -1054,12 +1054,12 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   };
 
     vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
-    ::havel::debug("[SystemDetect] set os field");
-  vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
-  vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
-  vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
-  vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
-    ::havel::debug("[SystemDetect] all fields set, returning");
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] set os field");
+    vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
+    vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
+    vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
+    vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] all fields set, returning");
 
   // Linux-specific fields (always set, even if empty)
   vm->setHostObjectField(obj, "displayProtocol",

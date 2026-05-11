@@ -7,6 +7,7 @@
 #include "MouseController.hpp"
 #include "EventListener.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -251,7 +252,7 @@ bool MouseController::Scroll(double dy, double dx) {
     return false;
   }
 
-  debug("MouseController::Scroll dy={} dx={} scrollSpeed={}", dy, dx,
+  if (debugging::debug_io) debug("MouseController::Scroll dy={} dx={} scrollSpeed={}", dy, dx,
         scrollSpeed);
   // Apply scroll speed and accumulate
   if (dy != 0.0) {

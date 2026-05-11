@@ -1,6 +1,7 @@
 #include "BrowserModule.hpp"
 #include "../process/Launcher.hpp"
 #include "../utils/Logger.hpp"
+#include "../utils/DebugFlags.hpp"
 #include <curl/curl.h>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -159,7 +160,7 @@ std::string BrowserModule::sendCdpCommandWebSocket(const std::string &wsUrl,
   std::string message = "{\"id\":" + std::to_string(msgId) + ",\"method\":\"" +
                         method + "\",\"params\":" + params + "}";
 
-  debug("CDP WebSocket: Sending to {}: {}", wsUrl, message);
+  if (debugging::debug_io) debug("CDP WebSocket: Sending to {}: {}", wsUrl, message);
 
   // Write message to temp file to avoid shell injection
   std::string tempFile = "/tmp/cdp_msg_" + std::to_string(msgId) + ".json";
@@ -182,7 +183,7 @@ std::string BrowserModule::sendCdpCommandWebSocket(const std::string &wsUrl,
   std::remove(tempFile.c_str());
 
   if (result.success && !result.stdout.empty()) {
-    debug("CDP WebSocket: Received: {}", result.stdout);
+    if (debugging::debug_io) debug("CDP WebSocket: Received: {}", result.stdout);
     return result.stdout;
   }
 

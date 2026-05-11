@@ -4,6 +4,7 @@
 #include "ConfigManager.hpp"
 #include "io/KeyMap.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -434,14 +435,14 @@ namespace havel
     // Stop EventListener FIRST to prevent callbacks during cleanup
     if (io && io->GetEventListener())
     {
-      debug("HotkeyManager::cleanup() - stopping EventListener");
+      if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - stopping EventListener");
       io->GetEventListener()->Stop();
     }
 
     // Clear callbacks in IO to prevent dangling this pointers
     if (io)
     {
-      debug("HotkeyManager::cleanup() - clearing IO callbacks");
+      if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - clearing IO callbacks");
       io->SetAnyKeyPressCallback(nullptr);
       io->SetInputEventCallback(nullptr);
       io->SetInputBlockCallback(nullptr);
@@ -449,14 +450,14 @@ namespace havel
     inputCallbacksInitialized = false;
 
     // Stop ConditionalHotkeyManager update loop BEFORE disabling
-    debug("HotkeyManager::cleanup() - stopping ConditionalHotkeyManager");
+    if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - stopping ConditionalHotkeyManager");
     conditionalManager.Cleanup();
 
     // Original cleanup
     conditionalHotkeysEnabled = false;
     conditionalManager.SetEnabled(false);
 
-    debug("HotkeyManager::cleanup() - cleanup complete");
+    if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - cleanup complete");
   }
 
   void HotkeyManager::toggleFakeDesktopOverlay()
@@ -887,7 +888,7 @@ namespace havel
     {
       if (auto *executor = io->GetHotkeyExecutor())
       {
-        debug("Executing hotkey '{}' using Executor", alias);
+        if (debugging::debug_hotkeys) debug("Executing hotkey '{}' using Executor", alias);
         auto result = executor->submit([callback = std::move(callback), hotkeyAlias = alias]()
                                        {
         try {
@@ -908,7 +909,7 @@ namespace havel
     }
     case ExecutorMode::Scheduler:
     {
-      debug("Executing hotkey '{}' immediately in Scheduler mode", alias);
+      if (debugging::debug_hotkeys) debug("Executing hotkey '{}' immediately in Scheduler mode", alias);
       try
       {
         callback();
@@ -925,7 +926,7 @@ return;
     }
     case ExecutorMode::Sync:
     {
-      debug("Executing hotkey '{}' synchronously", alias);
+      if (debugging::debug_hotkeys) debug("Executing hotkey '{}' synchronously", alias);
       try
       {
         callback();
@@ -943,7 +944,7 @@ return;
     case ExecutorMode::Thread:
       break;
     }
-    debug("Executing hotkey '{}' using Thread (no Executor available)", alias);
+    if (debugging::debug_hotkeys) debug("Executing hotkey '{}' using Thread (no Executor available)", alias);
     // Thread mode (or fallback when no executor available)
     std::thread([callback = std::move(callback), hotkeyAlias = alias]()
                 {

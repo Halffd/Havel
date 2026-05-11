@@ -18,6 +18,7 @@
 #include "havel-lang/utils/ErrorPrinter.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -704,7 +705,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
        return 0;
     }
 
-    debug("Running combined scripts: {}", combinedNames);
+    if (debugging::debug_io) debug("Running combined scripts: {}", combinedNames);
 
     int dummy_argc = 1;
     char dummy_name[] = "havel-script";
@@ -752,7 +753,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       options.vm_override = bytecodeVM;
       options.debugBytecode = cfg.debugBytecode;
   auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-    debug("Execution successful");
+    if (debugging::debug_io) debug("Execution successful");
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
       return 1;
@@ -920,7 +921,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
   // If hotkeys found, switch to SCRIPT mode (with full IO/event loop)
   if (hasHotkeyBindings(*program)) {
-    debug("Hotkey bindings detected - starting full IO/event loop");
+    if (debugging::debug_io) debug("Hotkey bindings detected - starting full IO/event loop");
     LaunchConfig fullCfg = cfg;
     fullCfg.mode = Mode::SCRIPT;
     return runScript(fullCfg, argc, argv);
@@ -979,7 +980,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     return 0;
   }
 
-  debug("Running Havel scripts (pure mode): {}", combinedNames);
+  if (debugging::debug_io) debug("Running Havel scripts (pure mode): {}", combinedNames);
 
   // Set up signal handling ...
   struct sigaction sa;

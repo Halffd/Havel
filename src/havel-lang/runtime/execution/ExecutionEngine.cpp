@@ -1,6 +1,7 @@
 #include "ExecutionEngine.hpp"
 #include "../../../utils/Logger.hpp"
 #include "../../../core/HotkeyActionWrapper.hpp"
+#include "../../common/Debug.hpp"
 #include "../concurrency/Fiber.hpp"
 #include "../concurrency/DependencyTracker.hpp"
 #include <iostream>
@@ -47,18 +48,18 @@ bool ExecutionEngine::executeFrame() {
   }
 
  try {
- if (debug_mode_) {
- ::havel::debug("[ExecutionEngine] Entering executeFrame");
- }
+        if (debug_mode_) {
+            std::cerr << "[ExecutionEngine] Entering executeFrame\n";
+        }
     // STEP 1: Process all pending events
     // Events include: thread completions, timer fires, variable changes, etc.
     // Event handlers (registered in constructor) process each event
     if (event_queue_) {
       event_queue_->processAll();
-      size_t processed = event_queue_->getEventsCount();
-      if (processed > 0) {
-        ::havel::debug("[ExecutionEngine] Processed {} events from event_queue_", processed);
-      }
+        size_t processed = event_queue_->getEventsCount();
+            if (processed > 0 && debug_mode_) {
+                std::cerr << "[ExecutionEngine] Processed " << processed << " events from event_queue_\n";
+            }
     }
         vm_->garbageCollectionSafePoint();
         vm_->drainFinalizers();
@@ -67,9 +68,9 @@ bool ExecutionEngine::executeFrame() {
     // These are queued via scheduler->deferToVM() and must run on the VM thread
     // (e.g. clipboard change callbacks, external event callbacks)
     size_t deferred = scheduler_->drainDeferredCallbacks();
-    if (deferred > 0 && debug_mode_) {
-      ::havel::debug("[ExecutionEngine] Drained {} deferred callbacks", deferred);
-    }
+            if (deferred > 0 && debug_mode_) {
+                std::cerr << "[ExecutionEngine] Drained " << deferred << " deferred callbacks\n";
+            }
 
 	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
 	scheduler_->wakeSleepingGoroutines();
@@ -79,13 +80,15 @@ bool ExecutionEngine::executeFrame() {
 	Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
       // No runnable goroutine - idle
-      if (debug_mode_) {
-            ::havel::debug("[ExecutionEngine] No runnable goroutines, idle");
-      }
+            if (debug_mode_) {
+                std::cerr << "[ExecutionEngine] No runnable goroutines, idle\n";
+            }
       return false;
     }
     
-    ::havel::debug("[ExecutionEngine] Picked goroutine {} (fiber {})", g->id, g->fiber ? g->fiber->id : 0);
+            if (debug_mode_) {
+                std::cerr << "[ExecutionEngine] Picked goroutine " << g->id << " (fiber " << (g->fiber ? g->fiber->id : 0) << ")\n";
+            }
     
     // STEP 3: Load fiber state into VM's global execution state
     // This synchronizes the VM with the fiber's suspended state
@@ -100,28 +103,30 @@ bool ExecutionEngine::executeFrame() {
     VMExecutionResult result;
 		if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
 
-			if (debug_mode_) {
-				::havel::debug("[ExecutionEngine] Executing hotkey action Fiber {}", g->fiber->id);
-			}
+            if (debug_mode_) {
+                std::cerr << "[ExecutionEngine] Executing hotkey action Fiber " << g->fiber->id << "\n";
+            }
 
 			auto* action = HotkeyActionWrapper::getCallback(g->fiber->id);
 			if (action && *action) {
-				if (debug_mode_) {
-					::havel::debug("[ExecutionEngine] Found hotkey callback for fiber {}", g->fiber->id);
-				}
+                if (debug_mode_) {
+                    std::cerr << "[ExecutionEngine] Found hotkey callback for fiber " << g->fiber->id << "\n";
+                }
 				try {
 					(*action)();
 				} catch (const std::exception& e) {
-					if (debug_mode_) {
-						::havel::debug("[ExecutionEngine] Exception in hotkey action: {}", e.what());
-					}
+                    if (debug_mode_) {
+                        std::cerr << "[ExecutionEngine] Exception in hotkey action: " << e.what() << "\n";
+                    }
 					g->fiber->had_error = true;
 					g->fiber->error_message = std::string("Hotkey action error: ") + e.what();
 					result.type = VMExecutionResult::ERROR;
 					result.error_message = g->fiber->error_message;
 				}
-			} else {
-				::havel::debug("[ExecutionEngine] No callback registered for hotkey fiber {}", g->fiber->id);
+        } else {
+                if (debug_mode_) {
+                    std::cerr << "[ExecutionEngine] No callback registered for hotkey fiber " << g->fiber->id << "\n";
+                }
 			}
 
  if (result.type != VMExecutionResult::ERROR) {
@@ -157,10 +162,10 @@ bool ExecutionEngine::executeFrame() {
         if (budget_exceeded) {
             // Time slice expired - yield and reset budget for next run
             g->instructions_executed = 0;
-            if (debug_mode_) {
-                ::havel::debug("[ExecutionEngine] Goroutine {} time slice expired ({} instructions), yielding",
-                    g->id, g->max_instructions_per_tick);
-            }
+                if (debug_mode_) {
+                    std::cerr << "[ExecutionEngine] Goroutine " << g->id << " time slice expired ("
+                              << g->max_instructions_per_tick << " instructions), yielding\n";
+                }
         }
         handleYield(g);
         break;
@@ -247,24 +252,24 @@ void ExecutionEngine::shutdown() {
 // RESULT HANDLERS
 // ============================================================================
 void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Goroutine yielded, returning to runnable queue");
-  }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Goroutine yielded, returning to runnable queue\n";
+    }
   scheduler_->yield(g);
 }
 
 void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Goroutine suspended, waiting for external event");
-  }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Goroutine suspended, waiting for external event\n";
+    }
   // Goroutine is already marked SUSPENDED by the suspension operation
   // EventQueue will unpark it when the waiting condition is met
 }
 
 void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
- if (debug_mode_) {
- ::havel::debug("[ExecutionEngine] Goroutine completed execution");
- }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
+    }
  if (g) {
  g->state = Scheduler::GoroutineState::Done;
  if (g->fiber) {
@@ -280,9 +285,9 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
 }
 
 void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
- if (debug_mode_) {
- ::havel::debug("[ExecutionEngine] Goroutine error: {}", msg);
- }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Goroutine error: " << msg << "\n";
+    }
  if (g) {
  g->state = Scheduler::GoroutineState::Done;
  if (g->fiber) {
@@ -309,17 +314,17 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
     return;
   }
 
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Thread {} completed (event-driven)", thread_id);
-  }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Thread " << thread_id << " completed (event-driven)\n";
+    }
 
   // Get the fiber that was waiting on this thread
   Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
   
   if (waiting_fiber) {
-    if (debug_mode_) {
-                    ::havel::debug("[ExecutionEngine] Unparking fiber waiting on thread {}", thread_id);
-    }
+        if (debug_mode_) {
+            std::cerr << "[ExecutionEngine] Unparking fiber waiting on thread " << thread_id << "\n";
+        }
     
     // Mark fiber as runnable (no longer suspended on thread.join())
     
@@ -346,10 +351,10 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
   
   const std::string var_name = static_cast<const char*>(event.ptr);
   
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Variable '{}' changed, checking {} watchers",
-                     var_name, watcher_registry_->getWatcherCount());
-  }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Variable '" << var_name << "' changed, checking "
+                  << watcher_registry_->getWatcherCount() << " watchers\n";
+    }
   
   
   // Returns list of fibers whose watchers fired (false→true edge)
@@ -364,9 +369,9 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
   // Resume all fibers whose watchers fired
   for (Fiber* fiber : fired_fibers) {
     if (fiber && scheduler_) {
-      if (debug_mode_) {
-                    ::havel::debug("[ExecutionEngine] Resuming fiber for fired watcher");
-      }
+            if (debug_mode_) {
+                std::cerr << "[ExecutionEngine] Resuming fiber for fired watcher\n";
+            }
       fiber->state = FiberState::RUNNABLE;
     }
   }
@@ -404,10 +409,10 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
       watcher->condition_ip
   );
   
-  if (debug_mode_) {
-        ::havel::debug("[ExecutionEngine::evaluateCondition] Watcher {} condition evaluated to: {}",
-                     watcher_id, result ? "true" : "false");
-  }
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine::evaluateCondition] Watcher " << watcher_id
+                  << " condition evaluated to: " << (result ? "true" : "false") << "\n";
+    }
   
   return result;
 }

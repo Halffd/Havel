@@ -285,6 +285,7 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
 
 const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
+    bool host_globals_registered_ = false;
   size_t max_call_depth_ = 1024;
  size_t tail_call_depth_ = 0;
   bool profiling_enabled_ = false;

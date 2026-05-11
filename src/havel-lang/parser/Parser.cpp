@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include "../utils/Logger.hpp"
+#include "../common/Debug.hpp"
 #include <iostream>
 #include <sstream>
 
@@ -1961,10 +1962,12 @@ start = parsePrattExpression(0);
           std::move(left), ast::BinaryOperator::BitwiseShiftRight, std::move(right));
     }
 
-case TokenType::Arrow: {
-      // Arrow function: identifier => body
-        havel::debug("Arrow: left={}, at={}, Arrow.type={}",
-                     left->toString(), at().toString(), static_cast<int>(TokenType::Arrow));
+    case TokenType::Arrow: {
+        // Arrow function: identifier => body
+        if (debug.parser) {
+            havel::debug("Arrow: left={}, at={}, Arrow.type={}",
+                left->toString(), at().toString(), static_cast<int>(TokenType::Arrow));
+        }
       if (context.inMatchExpression) {
         return nullptr;
       }

@@ -347,9 +347,22 @@ void ExtensionUIBridge::setValue(std::shared_ptr<ui::UIElement> element, const s
 }
 
 void ExtensionUIBridge::applyStyle(std::shared_ptr<ui::UIElement> element, const std::string& key, const ui::PropValue& value) {
-  if (element) {
-    element->set(key, value);
-  }
+if (element) {
+element->set(key, value);
+}
+}
+
+void ExtensionUIBridge::canvasFlush(std::shared_ptr<ui::UIElement> canvas) {
+if (canvas) {
+canvas->canvasCommands.clear();
+}
+}
+
+void ExtensionUIBridge::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
+if (canvas) {
+canvas->canvasCommands.clear();
+canvas->canvasCommands.push_back({ui::CanvasCmdType::CLEAR, {}});
+}
 }
 
 } // namespace host

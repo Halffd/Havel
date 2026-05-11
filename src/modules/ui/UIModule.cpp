@@ -6,6 +6,7 @@
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "host/ui/UIManager.hpp"
 
+#include <stdexcept>
 #include <unordered_map>
 
 namespace havel::modules {
@@ -13,8 +14,11 @@ namespace havel::modules {
 using compiler::Value;
 using compiler::VMApi;
 
-static host::UIBackend *getUIBackend() {
-  return host::UIManager::instance().backend();
+static host::UIBackend *requireUIBackend(const VMApi &api) {
+    (void)api;
+    auto *b = host::UIManager::instance().backend();
+    if (!b) throw std::runtime_error("UI backend not available (no Qt/GTK/ImGui backend loaded)");
+    return b;
 }
 
 static std::unordered_map<ui::ElementId, std::shared_ptr<ui::UIElement>>
@@ -90,7 +94,7 @@ static void attachElementToObject(const VMApi &api, Value obj,
 
 static Value uiWindow(const VMApi &api, const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Window");
-  auto elem = getUIBackend()->window(title);
+  auto elem = requireUIBackend(api)->window(title);
 
   if (args.size() > 1 && args[1].isObjectId()) {
     auto widthVal = api.getField(args[1], "width");
@@ -119,7 +123,7 @@ static Value uiWindow(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiBtn(const VMApi &api, const std::vector<Value> &args) {
   std::string label = getStringArg(api, args, 0, "Button");
-  auto elem = getUIBackend()->btn(label);
+  auto elem = requireUIBackend(api)->btn(label);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -127,7 +131,7 @@ static Value uiBtn(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiText(const VMApi &api, const std::vector<Value> &args) {
   std::string content = getStringArg(api, args, 0, "");
-  auto elem = getUIBackend()->text(content);
+  auto elem = requireUIBackend(api)->text(content);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -135,7 +139,7 @@ static Value uiText(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiLabel(const VMApi &api, const std::vector<Value> &args) {
   std::string content = getStringArg(api, args, 0, "");
-  auto elem = getUIBackend()->label(content);
+  auto elem = requireUIBackend(api)->label(content);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -143,7 +147,7 @@ static Value uiLabel(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiInput(const VMApi &api, const std::vector<Value> &args) {
   std::string placeholder = getStringArg(api, args, 0, "");
-  auto elem = getUIBackend()->input(placeholder);
+  auto elem = requireUIBackend(api)->input(placeholder);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "value", api.makeFunctionRef("ui.input.value"));
@@ -152,7 +156,7 @@ static Value uiInput(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiTextarea(const VMApi &api, const std::vector<Value> &args) {
   std::string placeholder = getStringArg(api, args, 0, "");
-  auto elem = getUIBackend()->textarea(placeholder);
+  auto elem = requireUIBackend(api)->textarea(placeholder);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "value", api.makeFunctionRef("ui.textarea.value"));
@@ -162,7 +166,7 @@ static Value uiTextarea(const VMApi &api, const std::vector<Value> &args) {
 static Value uiCheckbox(const VMApi &api, const std::vector<Value> &args) {
   std::string label = getStringArg(api, args, 0, "");
   bool checked = args.size() > 1 ? toBool(args[1]) : false;
-  auto elem = getUIBackend()->checkbox(label, checked);
+  auto elem = requireUIBackend(api)->checkbox(label, checked);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -172,7 +176,7 @@ static Value uiSlider(const VMApi &api, const std::vector<Value> &args) {
   int min = getIntArg(args, 0, 0);
   int max = getIntArg(args, 1, 100);
   int value = getIntArg(args, 2, 0);
-  auto elem = getUIBackend()->slider(min, max, value);
+  auto elem = requireUIBackend(api)->slider(min, max, value);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -186,7 +190,7 @@ static Value uiDropdown(const VMApi &api, const std::vector<Value> &args) {
       options.push_back(api.toString(api.getAt(args[0], i)));
     }
   }
-  auto elem = getUIBackend()->dropdown(options);
+  auto elem = requireUIBackend(api)->dropdown(options);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -194,7 +198,7 @@ static Value uiDropdown(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiImage(const VMApi &api, const std::vector<Value> &args) {
   std::string path = getStringArg(api, args, 0, "");
-  auto elem = getUIBackend()->image(path);
+  auto elem = requireUIBackend(api)->image(path);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -202,7 +206,7 @@ static Value uiImage(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiDivider(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
-  auto elem = getUIBackend()->divider();
+  auto elem = requireUIBackend(api)->divider();
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -210,7 +214,7 @@ static Value uiDivider(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiSpacer(const VMApi &api, const std::vector<Value> &args) {
   int size = getIntArg(args, 0, 10);
-  auto elem = getUIBackend()->spacer(size);
+  auto elem = requireUIBackend(api)->spacer(size);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -219,7 +223,7 @@ static Value uiSpacer(const VMApi &api, const std::vector<Value> &args) {
 static Value uiProgress(const VMApi &api, const std::vector<Value> &args) {
   int value = getIntArg(args, 0, 0);
   int max = getIntArg(args, 1, 100);
-  auto elem = getUIBackend()->progress(value, max);
+  auto elem = requireUIBackend(api)->progress(value, max);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -227,7 +231,7 @@ static Value uiProgress(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiSpinner(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
-  auto elem = getUIBackend()->spinner();
+  auto elem = requireUIBackend(api)->spinner();
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -239,7 +243,7 @@ static Value uiSpinner(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiMenu(const VMApi &api, const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Menu");
-  auto elem = getUIBackend()->menu(title);
+  auto elem = requireUIBackend(api)->menu(title);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "add", api.makeFunctionRef("ui.element.add"));
@@ -249,7 +253,7 @@ static Value uiMenu(const VMApi &api, const std::vector<Value> &args) {
 static Value uiMenuItem(const VMApi &api, const std::vector<Value> &args) {
   std::string label = getStringArg(api, args, 0, "Item");
   std::string shortcut = getStringArg(api, args, 1, "");
-  auto elem = getUIBackend()->menuItem(label, shortcut);
+  auto elem = requireUIBackend(api)->menuItem(label, shortcut);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -257,7 +261,7 @@ static Value uiMenuItem(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiMenuSeparator(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
-  auto elem = getUIBackend()->menuSeparator();
+  auto elem = requireUIBackend(api)->menuSeparator();
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -268,7 +272,7 @@ static Value uiMenuSeparator(const VMApi &api, const std::vector<Value> &args) {
 // ============================================================================
 
 static Value uiRow(const VMApi &api, const std::vector<Value> &args) {
-  auto elem = getUIBackend()->row();
+  auto elem = requireUIBackend(api)->row();
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "add", api.makeFunctionRef("ui.element.add"));
@@ -276,7 +280,7 @@ static Value uiRow(const VMApi &api, const std::vector<Value> &args) {
 }
 
 static Value uiCol(const VMApi &api, const std::vector<Value> &args) {
-  auto elem = getUIBackend()->col();
+  auto elem = requireUIBackend(api)->col();
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "add", api.makeFunctionRef("ui.element.add"));
@@ -285,7 +289,7 @@ static Value uiCol(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiGrid(const VMApi &api, const std::vector<Value> &args) {
   int cols = getIntArg(args, 0, 2);
-  auto elem = getUIBackend()->grid(cols);
+  auto elem = requireUIBackend(api)->grid(cols);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "add", api.makeFunctionRef("ui.element.add"));
@@ -295,7 +299,7 @@ static Value uiGrid(const VMApi &api, const std::vector<Value> &args) {
 static Value uiTable(const VMApi &api, const std::vector<Value> &args) {
   int rows = getIntArg(args, 0, 3);
   int cols = getIntArg(args, 1, 2);
-  auto elem = getUIBackend()->table(rows, cols);
+  auto elem = requireUIBackend(api)->table(rows, cols);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   return obj;
@@ -306,7 +310,7 @@ static Value uiFlex(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() > 0 && !args[0].isArrayId()) {
     direction = getStringArg(api, args, 0, "row");
   }
-  auto elem = getUIBackend()->flex(direction);
+  auto elem = requireUIBackend(api)->flex(direction);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "add", api.makeFunctionRef("ui.element.add"));
@@ -314,7 +318,7 @@ static Value uiFlex(const VMApi &api, const std::vector<Value> &args) {
 }
 
 static Value uiScroll(const VMApi &api, const std::vector<Value> &args) {
-  auto elem = getUIBackend()->scroll();
+  auto elem = requireUIBackend(api)->scroll();
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
   api.setField(obj, "add", api.makeFunctionRef("ui.element.add"));
@@ -324,9 +328,27 @@ static Value uiScroll(const VMApi &api, const std::vector<Value> &args) {
 static Value uiCanvas(const VMApi &api, const std::vector<Value> &args) {
   int width = getIntArg(args, 0, 800);
   int height = getIntArg(args, 1, 600);
-  auto elem = getUIBackend()->canvas(width, height);
+  auto elem = requireUIBackend(api)->canvas(width, height);
   auto obj = api.makeObject();
   attachElementToObject(api, obj, elem);
+  api.setField(obj, "line", api.makeFunctionRef("ui.canvas.line"));
+  api.setField(obj, "rect", api.makeFunctionRef("ui.canvas.rect"));
+  api.setField(obj, "fillRect", api.makeFunctionRef("ui.canvas.fillRect"));
+  api.setField(obj, "circle", api.makeFunctionRef("ui.canvas.circle"));
+  api.setField(obj, "fillCircle", api.makeFunctionRef("ui.canvas.fillCircle"));
+  api.setField(obj, "arc", api.makeFunctionRef("ui.canvas.arc"));
+  api.setField(obj, "text", api.makeFunctionRef("ui.canvas.text"));
+  api.setField(obj, "moveTo", api.makeFunctionRef("ui.canvas.moveTo"));
+  api.setField(obj, "lineTo", api.makeFunctionRef("ui.canvas.lineTo"));
+  api.setField(obj, "bezier", api.makeFunctionRef("ui.canvas.bezier"));
+  api.setField(obj, "image", api.makeFunctionRef("ui.canvas.image"));
+  api.setField(obj, "setColor", api.makeFunctionRef("ui.canvas.setColor"));
+  api.setField(obj, "setStroke", api.makeFunctionRef("ui.canvas.setStroke"));
+  api.setField(obj, "setFill", api.makeFunctionRef("ui.canvas.setFill"));
+  api.setField(obj, "setLineWidth", api.makeFunctionRef("ui.canvas.setLineWidth"));
+  api.setField(obj, "setFont", api.makeFunctionRef("ui.canvas.setFont"));
+  api.setField(obj, "clear", api.makeFunctionRef("ui.canvas.clear"));
+  api.setField(obj, "flush", api.makeFunctionRef("ui.canvas.flush"));
   return obj;
 }
 
@@ -351,47 +373,38 @@ static Value uiElementShow(const VMApi &api, const std::vector<Value> &args) {
   if (args.empty())
     return Value::makeNull();
 
-  auto elem = getElementFromObject(api, args[0]);
-  if (elem) {
-    auto *backend = getUIBackend();
-    if (backend) {
-      backend->realize(elem);
-      backend->show(elem);
+    auto elem = getElementFromObject(api, args[0]);
+    if (elem) {
+        requireUIBackend(api)->realize(elem);
+        requireUIBackend(api)->show(elem);
     }
-  }
 
-  return args[0];
+    return args[0];
 }
 
 static Value uiElementHide(const VMApi &api, const std::vector<Value> &args) {
-  if (args.empty())
-    return Value::makeNull();
+    if (args.empty())
+        return Value::makeNull();
 
-  auto elem = getElementFromObject(api, args[0]);
-  if (elem) {
-    auto *backend = getUIBackend();
-    if (backend) {
-      backend->hide(elem);
+    auto elem = getElementFromObject(api, args[0]);
+    if (elem) {
+        requireUIBackend(api)->hide(elem);
     }
-  }
 
-  return args[0];
+    return args[0];
 }
 
 static Value uiElementClose(const VMApi &api, const std::vector<Value> &args) {
-  if (args.empty())
-    return Value::makeNull();
+    if (args.empty())
+        return Value::makeNull();
 
-  auto elem = getElementFromObject(api, args[0]);
-  if (elem) {
-    auto *backend = getUIBackend();
-    if (backend) {
-      backend->close(elem);
+    auto elem = getElementFromObject(api, args[0]);
+    if (elem) {
+        requireUIBackend(api)->close(elem);
+        elementRegistry().erase(elem->id);
     }
-    elementRegistry().erase(elem->id);
-  }
 
-  return args[0];
+    return args[0];
 }
 
 static Value uiElementSetTitle(const VMApi &api,
@@ -434,6 +447,192 @@ static Value uiElementSetPos(const VMApi &api, const std::vector<Value> &args) {
 }
 
 // ============================================================================
+// Canvas Drawing Methods
+// ============================================================================
+
+static Value uiCanvasLine(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasLine(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                     getIntArg(args, 3, 0), getIntArg(args, 4, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasRect(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasRect(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                     getIntArg(args, 3, 0), getIntArg(args, 4, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasFillRect(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasFillRect(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                         getIntArg(args, 3, 0), getIntArg(args, 4, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasCircle(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasCircle(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                       getIntArg(args, 3, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasFillCircle(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasFillCircle(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                           getIntArg(args, 3, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasArc(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    double start = 0.0, span = 360.0;
+    if (args.size() > 4 && args[4].isDouble()) start = args[4].asDouble();
+    if (args.size() > 5 && args[5].isDouble()) span = args[5].asDouble();
+    elem->canvasArc(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                    getIntArg(args, 3, 0), start, span);
+  }
+  return args[0];
+}
+
+static Value uiCanvasText(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasDrawText(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                         getStringArg(api, args, 3, ""));
+  }
+  return args[0];
+}
+
+static Value uiCanvasMoveTo(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasMoveTo(getIntArg(args, 1, 0), getIntArg(args, 2, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasLineTo(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasLineTo(getIntArg(args, 1, 0), getIntArg(args, 2, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasBezier(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasBezier(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                       getIntArg(args, 3, 0), getIntArg(args, 4, 0),
+                       getIntArg(args, 5, 0), getIntArg(args, 6, 0));
+  }
+  return args[0];
+}
+
+static Value uiCanvasImage(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasDrawImage(getIntArg(args, 1, 0), getIntArg(args, 2, 0),
+                          getIntArg(args, 3, 0), getIntArg(args, 4, 0),
+                          getStringArg(api, args, 5, ""));
+  }
+  return args[0];
+}
+
+static Value uiCanvasSetColor(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasSetColor(getStringArg(api, args, 1, "black"));
+  }
+  return args[0];
+}
+
+static Value uiCanvasSetStroke(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasSetStroke(getStringArg(api, args, 1, "black"));
+  }
+  return args[0];
+}
+
+static Value uiCanvasSetFill(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasSetFill(getStringArg(api, args, 1, "transparent"));
+  }
+  return args[0];
+}
+
+static Value uiCanvasSetLineWidth(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    double w = 1.0;
+    if (args.size() > 1) {
+      if (args[1].isDouble()) w = args[1].asDouble();
+      else if (args[1].isInt()) w = static_cast<double>(args[1].asInt());
+    }
+    elem->canvasSetLineWidth(w);
+  }
+  return args[0];
+}
+
+static Value uiCanvasSetFont(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  auto elem = getElementFromObject(api, args[0]);
+  if (elem) {
+    elem->canvasSetFont(getStringArg(api, args, 1, "sans-serif"),
+                        getIntArg(args, 2, 12));
+  }
+  return args[0];
+}
+
+static Value uiCanvasClear(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+    auto elem = getElementFromObject(api, args[0]);
+    if (elem) {
+        requireUIBackend(api)->canvasClear(elem);
+    }
+  return args[0];
+}
+
+static Value uiCanvasFlush(const VMApi &api, const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+    auto elem = getElementFromObject(api, args[0]);
+    if (elem) {
+        requireUIBackend(api)->canvasFlush(elem);
+    }
+  return args[0];
+}
+
+// ============================================================================
 // Generic event handler: elem.on("click", callback)
 // ============================================================================
 
@@ -463,15 +662,12 @@ static Value uiElementStyle(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 3)
     return args.empty() ? Value::makeNull() : args[0];
 
-  auto elem = getElementFromObject(api, args[0]);
-  if (elem) {
-    std::string key = getStringArg(api, args, 1, "");
-    std::string value = getStringArg(api, args, 2, "");
-    auto *backend = getUIBackend();
-    if (backend) {
-      backend->applyStyle(elem, key, ui::PropValue{value});
+    auto elem = getElementFromObject(api, args[0]);
+    if (elem) {
+        std::string key = getStringArg(api, args, 1, "");
+        std::string value = getStringArg(api, args, 2, "");
+        requireUIBackend(api)->applyStyle(elem, key, ui::PropValue{value});
     }
-  }
 
   return args[0];
 }
@@ -484,40 +680,36 @@ static Value uiInputValue(const VMApi &api, const std::vector<Value> &args) {
   if (args.empty())
     return Value::makeNull();
 
-  auto elem = getElementFromObject(api, args[0]);
-  if (!elem)
-    return Value::makeNull();
+    auto elem = getElementFromObject(api, args[0]);
+    if (!elem)
+        return Value::makeNull();
 
-  auto *backend = getUIBackend();
-  if (!backend)
-    return Value::makeNull();
+    auto *backend = requireUIBackend(api);
 
-  if (args.size() == 1) {
-    return api.makeString(backend->getValue(elem));
-  } else {
-    backend->setValue(elem, getStringArg(api, args, 1, ""));
-    return args[0];
-  }
+    if (args.size() == 1) {
+        return api.makeString(backend->getValue(elem));
+    } else {
+        backend->setValue(elem, getStringArg(api, args, 1, ""));
+        return args[0];
+    }
 }
 
 static Value uiTextareaValue(const VMApi &api, const std::vector<Value> &args) {
-  if (args.empty())
-    return Value::makeNull();
+    if (args.empty())
+        return Value::makeNull();
 
-  auto elem = getElementFromObject(api, args[0]);
-  if (!elem)
-    return Value::makeNull();
+    auto elem = getElementFromObject(api, args[0]);
+    if (!elem)
+        return Value::makeNull();
 
-  auto *backend = getUIBackend();
-  if (!backend)
-    return Value::makeNull();
+    auto *backend = requireUIBackend(api);
 
-  if (args.size() == 1) {
-    return api.makeString(backend->getValue(elem));
-  } else {
-    backend->setValue(elem, getStringArg(api, args, 1, ""));
-    return args[0];
-  }
+    if (args.size() == 1) {
+        return api.makeString(backend->getValue(elem));
+    } else {
+        backend->setValue(elem, getStringArg(api, args, 1, ""));
+        return args[0];
+    }
 }
 
 // ============================================================================
@@ -526,32 +718,32 @@ static Value uiTextareaValue(const VMApi &api, const std::vector<Value> &args) {
 
 static Value uiAlert(const VMApi &api, const std::vector<Value> &args) {
   std::string message = getStringArg(api, args, 0, "");
-  getUIBackend()->alert(message);
+  requireUIBackend(api)->alert(message);
   return Value::makeBool(true);
 }
 
 static Value uiConfirm(const VMApi &api, const std::vector<Value> &args) {
   std::string message = getStringArg(api, args, 0, "");
-  bool result = getUIBackend()->confirm(message);
+  bool result = requireUIBackend(api)->confirm(message);
   return Value::makeBool(result);
 }
 
 static Value uiFilePicker(const VMApi &api, const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Select file");
-  std::string result = getUIBackend()->filePicker(title);
+  std::string result = requireUIBackend(api)->filePicker(title);
   return api.makeString(result);
 }
 
 static Value uiDirPicker(const VMApi &api, const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Select directory");
-  std::string result = getUIBackend()->dirPicker(title);
+  std::string result = requireUIBackend(api)->dirPicker(title);
   return api.makeString(result);
 }
 
 static Value uiNotify(const VMApi &api, const std::vector<Value> &args) {
   std::string message = getStringArg(api, args, 0, "");
   std::string type = getStringArg(api, args, 1, "info");
-  getUIBackend()->notify(message, type);
+  requireUIBackend(api)->notify(message, type);
   return Value::makeBool(true);
 }
 
@@ -562,25 +754,25 @@ static Value uiNotify(const VMApi &api, const std::vector<Value> &args) {
 static Value uiTrayIcon(const VMApi &api, const std::vector<Value> &args) {
   std::string iconPath = getStringArg(api, args, 0, "");
   std::string tooltip = getStringArg(api, args, 1, "");
-  getUIBackend()->trayIcon(iconPath, tooltip);
+  requireUIBackend(api)->trayIcon(iconPath, tooltip);
   return Value::makeBool(true);
 }
 
-static Value uiTrayShow(const std::vector<Value> &args) {
-  (void)args;
-  getUIBackend()->trayShow();
-  return Value::makeBool(true);
+static Value uiTrayShow(const VMApi &api, const std::vector<Value> &args) {
+    (void)args;
+    requireUIBackend(api)->trayShow();
+    return Value::makeBool(true);
 }
 
-static Value uiTrayHide(const std::vector<Value> &args) {
-  (void)args;
-  getUIBackend()->trayHide();
-  return Value::makeBool(true);
+static Value uiTrayHide(const VMApi &api, const std::vector<Value> &args) {
+    (void)args;
+    requireUIBackend(api)->trayHide();
+    return Value::makeBool(true);
 }
 
 static Value uiTrayMenu(const VMApi &api, const std::vector<Value> &args) {
   auto elem = args.empty() ? nullptr : getElementFromObject(api, args[0]);
-  getUIBackend()->trayMenu(elem);
+  requireUIBackend(api)->trayMenu(elem);
   return Value::makeBool(true);
 }
 
@@ -588,7 +780,7 @@ static Value uiTrayNotify(const VMApi &api, const std::vector<Value> &args) {
   std::string title = getStringArg(api, args, 0, "Notification");
   std::string message = getStringArg(api, args, 1, "");
   std::string iconType = getStringArg(api, args, 2, "info");
-  getUIBackend()->trayNotify(title, message, iconType);
+  requireUIBackend(api)->trayNotify(title, message, iconType);
   return Value::makeBool(true);
 }
 
@@ -740,9 +932,83 @@ void registerUIModule(const compiler::VMApi &api) {
                        });
 
   api.registerFunction("ui.canvas",
-                       [api](const std::vector<Value> &args) {
-                         return uiCanvas(api, args);
-                       });
+  [api](const std::vector<Value> &args) {
+    return uiCanvas(api, args);
+  });
+
+  // Canvas drawing methods
+  api.registerFunction("ui.canvas.line",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasLine(api, args);
+  });
+  api.registerFunction("ui.canvas.rect",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasRect(api, args);
+  });
+  api.registerFunction("ui.canvas.fillRect",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasFillRect(api, args);
+  });
+  api.registerFunction("ui.canvas.circle",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasCircle(api, args);
+  });
+  api.registerFunction("ui.canvas.fillCircle",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasFillCircle(api, args);
+  });
+  api.registerFunction("ui.canvas.arc",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasArc(api, args);
+  });
+  api.registerFunction("ui.canvas.text",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasText(api, args);
+  });
+  api.registerFunction("ui.canvas.moveTo",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasMoveTo(api, args);
+  });
+  api.registerFunction("ui.canvas.lineTo",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasLineTo(api, args);
+  });
+  api.registerFunction("ui.canvas.bezier",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasBezier(api, args);
+  });
+  api.registerFunction("ui.canvas.image",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasImage(api, args);
+  });
+  api.registerFunction("ui.canvas.setColor",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasSetColor(api, args);
+  });
+  api.registerFunction("ui.canvas.setStroke",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasSetStroke(api, args);
+  });
+  api.registerFunction("ui.canvas.setFill",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasSetFill(api, args);
+  });
+  api.registerFunction("ui.canvas.setLineWidth",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasSetLineWidth(api, args);
+  });
+  api.registerFunction("ui.canvas.setFont",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasSetFont(api, args);
+  });
+  api.registerFunction("ui.canvas.clear",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasClear(api, args);
+  });
+  api.registerFunction("ui.canvas.flush",
+  [api](const std::vector<Value> &args) {
+    return uiCanvasFlush(api, args);
+  });
 
   // Element methods
   api.registerFunction("ui.element.add",
@@ -835,15 +1101,15 @@ void registerUIModule(const compiler::VMApi &api) {
                          return uiTrayIcon(api, args);
                        });
 
-  api.registerFunction("ui.trayShow",
-                       [](const std::vector<Value> &args) {
-                         return uiTrayShow(args);
-                       });
+    api.registerFunction("ui.trayShow",
+        [api](const std::vector<Value> &args) {
+            return uiTrayShow(api, args);
+        });
 
-  api.registerFunction("ui.trayHide",
-                       [](const std::vector<Value> &args) {
-                         return uiTrayHide(args);
-                       });
+    api.registerFunction("ui.trayHide",
+        [api](const std::vector<Value> &args) {
+            return uiTrayHide(api, args);
+        });
 
   api.registerFunction("ui.trayMenu",
                        [api](const std::vector<Value> &args) {

@@ -1,0 +1,41 @@
+// Test 4-level coroutine nesting — debug
+
+fn leaf() {
+    yield "L1"
+    yield "L2"
+    yield "L3"
+}
+
+fn d3() {
+    x = leaf()
+    yield x()
+    yield x()
+    yield "D3"
+    yield x()
+}
+
+fn d2() {
+    x = d3()
+    yield x()
+    yield "D2"
+    yield x()
+}
+
+fn d1() {
+    x = d2()
+    yield x()
+    yield x()
+    yield x()
+    yield "D1"
+}
+
+g = d1()
+print(g())
+print(g())
+print(g())
+print(g())
+print(g())
+print(g())
+print(g())
+print(g())
+print(g())

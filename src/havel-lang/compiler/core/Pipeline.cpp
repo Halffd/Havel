@@ -716,10 +716,10 @@ ByteCompiler compiler;
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
-    if (options.debugBytecode) {
-            ::havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
-    }
-    result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
+ if (options.debugBytecode) {
+ std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
+ }
+ result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -764,9 +764,9 @@ ByteCompiler compiler;
     chunk = compiler.takeCurrentChunk();
     if (chunk && !chunk->getAllFunctions().empty()) {
       result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
-      if (options.debugBytecode) {
-        ::havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
-    }
+ if (options.debugBytecode) {
+ std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
+ }
     } else {
       result.snapshot.bytecode = "<no bytecode generated>";
     }

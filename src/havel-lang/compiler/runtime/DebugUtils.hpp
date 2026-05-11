@@ -13,22 +13,23 @@ namespace havel::compiler {
 // ============================================================================
 class DebugInfo {
 public:
-  struct FunctionDebugInfo {
-    std::string name;
-    uint32_t startLine = 0;
-    uint32_t endLine = 0;
-    std::vector<SourceLocation> instructionLocations;
-    std::vector<std::string> localNames;
-    std::unordered_map<uint32_t, std::string> slotNames;
-  };
+    struct VariableInfo {
+        std::string name;
+        uint32_t slot = 0;
+        uint32_t startLine = 0;
+        uint32_t endLine = 0;
+        bool isConst = false;
+    };
 
-  struct VariableInfo {
-    std::string name;
-    uint32_t slot = 0;
-    uint32_t startLine = 0;
-    uint32_t endLine = 0;
-    bool isConst = false;
-  };
+    struct FunctionDebugInfo {
+        std::string name;
+        uint32_t startLine = 0;
+        uint32_t endLine = 0;
+        std::vector<SourceLocation> instructionLocations;
+        std::vector<std::string> localNames;
+        std::unordered_map<uint32_t, std::string> slotNames;
+        std::vector<VariableInfo> variables;
+    };
 
   DebugInfo() = default;
   explicit DebugInfo(std::string sourceFilename);

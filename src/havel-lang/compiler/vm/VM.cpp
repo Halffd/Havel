@@ -2956,6 +2956,7 @@ Value VM::execute(const BytecodeChunk &chunk,
     has_current_exception_ = false;
     current_exception_ = nullptr;
     registerDefaultHostGlobals();
+    host_globals_registered_ = true;
     if (post_reset_setup_) {
         post_reset_setup_(*this);
     }
@@ -3021,6 +3022,10 @@ Value VM::execute(const BytecodeChunk &chunk,
   locals.clear();
   frame_count_ = 0;
 // DON'T reset heap - preserves user globals
+    if (!host_globals_registered_) {
+        registerDefaultHostGlobals();
+        host_globals_registered_ = true;
+    }
     registerDefaultPrototypes();
   open_upvalues.clear();
   has_current_exception_ = false;

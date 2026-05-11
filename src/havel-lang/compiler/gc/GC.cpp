@@ -1,8 +1,10 @@
 #include "GC.hpp"
 
 #include <chrono>
+#include <iostream>
 #include <limits>
 #include "utils/Logger.hpp"
+#include "common/Debug.hpp"
 
 namespace havel::compiler {
 
@@ -607,10 +609,11 @@ void GCHeap::startIncrementalCollection(
     gc_state_ = IncrementalState::Mark;
     markRoots();
 
-    ::havel::debug("[GC] Started {} collection (budget: {}, objects: {})",
-        current_collection_full_ ? "full" : "minor",
-        allocation_budget_,
-        arrays_.size() + objects_.size() + sets_.size() + closures_.size());
+    if (debugging::debug_gc)
+        std::cerr << "[GC] Started " << (current_collection_full_ ? "full" : "minor")
+                  << " collection (budget: " << allocation_budget_
+                  << ", objects: " << (arrays_.size() + objects_.size() + sets_.size() + closures_.size())
+                  << ")\n";
 }
 
 void GCHeap::markReference(const Value &value) {
@@ -1282,8 +1285,9 @@ void GCHeap::completeCollection() {
         minor_collections_since_full_++;
     }
 
-    ::havel::debug("[GC] Collection complete: recovered {} objects, new budget: {}",
-        recovered_in_cycle_, allocation_budget_);
+    if (debugging::debug_gc)
+        std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_
+                  << " objects, new budget: " << allocation_budget_ << "\n";
 }
 
 void GCHeap::ageOrPromoteArray(uint32_t id) {

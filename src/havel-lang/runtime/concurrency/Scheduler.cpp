@@ -374,7 +374,7 @@ size_t Scheduler::drainDeferredCallbacks() {
     try {
       fn();
     } catch (const std::exception& e) {
-      ::havel::debug("Scheduler: deferred action threw: {}", e.what());
+        ::havel::warn("Scheduler: deferred action threw: {}", e.what());
     }
   }
 

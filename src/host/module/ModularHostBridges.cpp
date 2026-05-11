@@ -3,6 +3,7 @@
  */
 #include "ModularHostBridges.hpp"
 #include "../../utils/Logger.hpp"
+#include "../../utils/DebugFlags.hpp"
 #include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/stdlib/HotkeyModule.hpp"
 #include "core/ConfigManager.hpp"
@@ -1030,24 +1031,20 @@ SystemBridge::handleMediaPlay(const std::vector<Value> &args,
 
 Value
 SystemBridge::handleSystemDetect(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)args;
-::havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
-               ctx ? static_cast<const void*>(ctx->vm) : nullptr);
+                                  const HostContext *ctx) {
+    (void)args;
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
+        ctx ? static_cast<const void*>(ctx->vm) : nullptr);
 
     if (!ctx || !ctx->vm) {
-        ::havel::debug("[SystemDetect] ctx or vm is null, returning empty string");
-    return Value::makeNull();
-  }
+        return Value::makeNull();
+    }
 
     auto *vm = static_cast<compiler::VM *>(ctx->vm);
-    ::havel::debug("[SystemDetect] vm={}, creating object", static_cast<void*>(vm));
     auto obj = vm->createHostObject();
-    ::havel::debug("[SystemDetect] object created, setting fields");
 
-    // Use HardwareDetector for system detection
     auto sysInfo = ::havel::HardwareDetector::detectSystem();
-    ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
 
   // Allocate strings on heap for non-empty values
   auto makeStr = [vm](const std::string &s) -> Value {

@@ -232,6 +232,12 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         } else if (arg == "--debug-engine" || arg == "-de") {
             debugging::debug_engine = true;
             cfg.debugEngine = true;
+        } else if (arg == "--debug-io" || arg == "-dio") {
+            debugging::debug_io = true;
+            cfg.debugIo = true;
+        } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
+            debugging::debug_hotkeys = true;
+            cfg.debugHotkeys = true;
  } else if (arg == "--diff" || arg == "-diff") {
  cfg.diffBytecode = true;
  cfg.debugBytecode = true;
@@ -1144,7 +1150,9 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 void havel::init::HavelLauncher::showHelp() {
 std::cout << " --debug-bytecode, -dbc Enable bytecode debugging\n";
     std::cout << " --debug-gc, -dgc       Enable GC debugging\n";
-    std::cout << " --debug-engine, -de    Enable engine debugging\n";
+std::cout << " --debug-engine, -de Enable engine debugging\n";
+std::cout << " --debug-io, -dio Enable IO debugging\n";
+std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
   std::cout << "  --diff              Compare bytecode with previous run "
                "(implies -dbc)\n";
   std::cout << " --error, -e Stop on first error/warning\n";
@@ -1212,7 +1220,9 @@ std::cout << " --no-jit Disable JIT compilation\n";
 std::cout << "\nDebugging flags:\n";
     std::cout << " --debug-bytecode Print bytecode to console\n";
     std::cout << " --debug-gc       Print GC collection info\n";
-    std::cout << " --debug-engine   Print engine scheduling info\n";
+std::cout << " --debug-engine Print engine scheduling info\n";
+std::cout << " --debug-io Print IO subsystem info\n";
+std::cout << " --debug-hotkeys Print hotkey registration info\n";
     std::cout << " --diff Compare bytecode with previous run\n";
   std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
 }

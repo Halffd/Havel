@@ -5122,52 +5122,44 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
   auto condition = parseExpression();
   context.allowBraceSugar = prevAllow;
 
-    std::unique_ptr<havel::ast::Statement> consequence;
+  std::unique_ptr<havel::ast::Statement> consequence;
 
-    // Consume optional colon after condition (colon-if syntax: `if cond: stmt`)
-    if (at().type == havel::TokenType::Colon) {
-        advance();
-        // Skip newlines after colon to support multi-line colon-if
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
-    }
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
 
-    // Block form or inline form
-    if (at().type == havel::TokenType::OpenBrace) {
-        consequence = parseBlockStatement();
-    } else {
-        // Inline form - single statement (don't skip newlines)
-        consequence = parseInlineStatement();
-    }
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    consequence = parseBlockStatement();
+  } else {
+    consequence = parseInlineStatement();
+  }
 
-    // Skip newlines before checking for else
+  // Skip newlines before checking for else
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
+  std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+  if (at().type == havel::TokenType::Else) {
+    advance(); // consume "else"
+
+    // Skip newlines before else body
     while (at().type == havel::TokenType::NewLine) {
-        advance();
-    }
-
-    std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-    if (at().type == havel::TokenType::Else) {
-        advance(); // consume "else"
-
-    // Consume optional colon after else (colon-else syntax: `else: stmt`)
-    if (at().type == havel::TokenType::Colon) {
-        advance();
-        // Skip newlines after colon to support multi-line colon-else
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
+      advance();
     }
 
     if (at().type == havel::TokenType::If) {
-            alternative = parseIfStatement();
-        } else if (at().type == havel::TokenType::OpenBrace) {
-            alternative = parseBlockStatement();
-        } else {
-            // Inline else - single statement (don't skip newlines)
-            alternative = parseInlineStatement();
-        }
+      alternative = parseIfStatement();
+    } else if (at().type == havel::TokenType::OpenBrace ||
+               at().type == havel::TokenType::Colon) {
+      alternative = parseBlockStatement();
+    } else {
+      alternative = parseInlineStatement();
     }
+  }
 
   return std::make_unique<havel::ast::IfStatement>(
       std::move(condition), std::move(consequence), std::move(alternative));
@@ -5181,26 +5173,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
   auto condition = parseExpression();
   context.allowBraceSugar = prevAllow;
 
-    std::unique_ptr<havel::ast::Statement> body;
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
 
-    // Consume optional colon (colon-while syntax: `while cond: stmt`)
-    if (at().type == havel::TokenType::Colon) {
-        advance();
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
-    }
+  std::unique_ptr<havel::ast::Statement> body;
 
-    // Block form or inline form
-    if (at().type == havel::TokenType::OpenBrace) {
-        body = parseBlockStatement();
-    } else {
-        // Inline form - single statement (don't skip newlines)
-        body = parseInlineStatement();
-    }
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
 
-    return std::make_unique<havel::ast::WhileStatement>(std::move(condition),
-                                                        std::move(body));
+  return std::make_unique<havel::ast::WhileStatement>(std::move(condition),
+                                             std::move(body));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
@@ -5415,25 +5404,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     advance();
   }
 
-    // Consume optional colon (colon-for syntax: `for x in list: stmt`)
-    if (at().type == havel::TokenType::Colon) {
-        advance();
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
-    }
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
 
-    std::unique_ptr<havel::ast::Statement> body;
+  std::unique_ptr<havel::ast::Statement> body;
 
-    // Block form or inline form
-    if (at().type == havel::TokenType::OpenBrace) {
-        body = parseBlockStatement();
-    } else {
-        // Inline form - single statement (don't skip newlines)
-        body = parseInlineStatement();
-    }
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
 
-    auto stmt = std::make_unique<havel::ast::ForStatement>(
+  auto stmt = std::make_unique<havel::ast::ForStatement>(
       std::move(iterators), std::move(iterable), std::move(body));
   return stmt;
 }
@@ -5512,23 +5498,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
 
   std::unique_ptr<havel::ast::Statement> body;
 
-    // Consume optional colon (colon-loop syntax: `loop: stmt`)
-    if (at().type == havel::TokenType::Colon) {
-        advance();
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
-    }
+  std::unique_ptr<havel::ast::Statement> body;
 
-    // Block form or inline form
-    if (at().type == havel::TokenType::OpenBrace) {
-        body = parseBlockStatement();
-    } else {
-        // Inline form - single statement (don't skip newlines)
-        body = parseInlineStatement();
-    }
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
 
-    auto loopStmt = std::make_unique<havel::ast::LoopStatement>(
+  auto loopStmt = std::make_unique<havel::ast::LoopStatement>(
       std::move(body), std::move(condition));
   loopStmt->countExpr = std::move(countExpr);
   return loopStmt;
@@ -6222,25 +6202,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
     advance();
   }
 
-    // Consume optional colon (colon-repeat syntax: `repeat 3: stmt`)
-    if (at().type == havel::TokenType::Colon) {
-        advance();
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
-    }
+  std::unique_ptr<havel::ast::Statement> body;
 
-    std::unique_ptr<havel::ast::Statement> body;
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
+    body = parseBlockStatement();
+  } else {
+    body = parseInlineStatement();
+  }
 
-    // Block form or inline form
-    if (at().type == havel::TokenType::OpenBrace) {
-        body = parseBlockStatement();
-    } else {
-        // Inline form - single statement (don't skip newlines)
-        body = parseInlineStatement();
-    }
-
-    return std::make_unique<ast::RepeatStatement>(std::move(countExpr),
+  return std::make_unique<ast::RepeatStatement>(std::move(countExpr),
                                                   std::move(body));
 }
 

@@ -1,0 +1,12 @@
+fn outer():
+  x = 10
+  fn middle():
+    y = 20
+    fn inner():
+      x + y
+    inner
+  middle
+
+m = outer()
+inner_fn = m()
+print(inner_fn())

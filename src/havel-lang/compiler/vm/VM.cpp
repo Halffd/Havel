@@ -6441,11 +6441,35 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       }
     }
 
-    if (container.isArrayId()) {
-      auto index = indexFromValue(index_or_key);
-      if (!index) {
-        COMPILER_THROW("ARRAY_GET expects integer index");
-      }
+        if (container.isStringId() || container.isStringValId()) {
+            auto index = indexFromValue(index_or_key);
+            if (!index) {
+                COMPILER_THROW("STRING_GET expects integer index");
+            }
+            std::string s;
+            if (container.isStringId()) {
+                auto *sp = heap_.string(container.asStringId());
+                if (sp) s = *sp;
+            } else if (container.isStringValId() && current_chunk) {
+                s = current_chunk->getString(container.asStringValId());
+            }
+            int64_t sz = static_cast<int64_t>(s.size());
+            int64_t idx = *index;
+            if (idx < 0) idx = sz + idx;
+            if (idx < 0 || idx >= sz) {
+                pushStack(Value::makeNull());
+            } else {
+                auto ref = heap_.allocateString(s.substr(static_cast<size_t>(idx), 1));
+                pushStack(Value::makeStringId(ref.id));
+            }
+            break;
+        }
+
+        if (container.isArrayId()) {
+            auto index = indexFromValue(index_or_key);
+            if (!index) {
+                COMPILER_THROW("ARRAY_GET expects integer index");
+            }
       auto *array = heap_.array(container.asArrayId());
       if (!array) {
         COMPILER_THROW("ARRAY_GET unknown array id");

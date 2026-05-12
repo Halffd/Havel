@@ -666,610 +666,610 @@ fn Lexer(source):
     EXPRESSION_TOKENS.has(lastTokenType())
 
 // --- Main scan loop ---
-fn _scan():
-    while pos < src.len:
-      skipWhitespace()
-      if pos >= src.len: break
+  fn _scan():
+      while pos < src.len:
+        skipWhitespace()
+        if pos >= src.len: break
 
-      c = current()
-      startLine = line
-      startCol = col
+        c = current()
+        startLine = line
+        startCol = col
 
-      // Newline
-      if c == "\n":
-        addToken("NewLine", "\n")
-        advance()
-        continue
-
-      // Comments
-      if c == "/" and peek(1) == "/":
-        if peek(2) == "*":
-          skipBlockComment()
-        else:
-          skipLineComment()
-        continue
-
-      // Block comment
-      if c == "/" and peek(1) == "*":
-        skipBlockComment()
-        continue
-
-      // String prefix: r"..." f"..." F"..."
-      if (c == "r" or c == "R") and (peek(1) == "\"" or peek(1) == "'"):
-        isRegex = true
-        advance() // r/R
-        quote = current()
-        scanString(quote, false, true)
-        continue
-
-      if (c == "f" or c == "F") and (peek(1) == "\"" or peek(1) == "'"):
-        if peek(2) == peek(1):
-          // f"""...""" multiline f-string
-          advance() // f/F
-          scanMultilineString(peek(0), true)
+        // Newline
+        if c == "\n":
+          addToken("NewLine", "\n")
+          advance()
           continue
-        advance() // f/F
-        quote = current()
-        scanString(quote, true, false)
-        continue
 
-      // Multiline strings """ or '''
-      if (c == "\"" or c == "'") and peek(1) == c and peek(2) == c:
-        scanMultilineString(c, false)
-        continue
+        // Comments
+        if c == "/" and peek(1) == "/":
+          if peek(2) == "*":
+            skipBlockComment()
+          else:
+            skipLineComment()
+          continue
 
-      // Regular strings
-      if c == "\"" or c == "'":
-        scanString(c, false, false)
-        continue
+        // Block comment
+        if c == "/" and peek(1) == "*":
+          skipBlockComment()
+          continue
 
-      // Backtick strings
-      if c == "`":
-        scanBacktick()
-        continue
+        // String prefix: r"..." f"..." F"..."
+        if (c == "r" or c == "R") and (peek(1) == "\"" or peek(1) == "'"):
+          isRegex = true
+          advance() // r/R
+          quote = current()
+          scanString(quote, false, true)
+          continue
 
-      // Numbers
-      if isDigit(c):
-        scanNumber()
-        continue
+        if (c == "f" or c == "F") and (peek(1) == "\"" or peek(1) == "'"):
+          if peek(2) == peek(1):
+            // f"""...""" multiline f-string
+            advance() // f/F
+            scanMultilineString(peek(0), true)
+            continue
+          advance() // f/F
+          quote = current()
+          scanString(quote, true, false)
+          continue
 
-      // Identifiers and keywords
-      if isAlpha(c):
-        scanIdentifier()
-        continue
+        // Multiline strings """ or '''
+        if (c == "\"" or c == "'") and peek(1) == c and peek(2) == c:
+          scanMultilineString(c, false)
+          continue
 
-      // --- Operators and punctuation ---
+        // Regular strings
+        if c == "\"" or c == "'":
+          scanString(c, false, false)
+          continue
 
-      // $ and $!
-      if c == "$":
-        advance()
-        if current() == "!":
+        // Backtick strings
+        if c == "`":
+          scanBacktick()
+          continue
+
+        // Numbers
+        if isDigit(c):
+          scanNumber()
+          continue
+
+        // Identifiers and keywords
+        if isAlpha(c):
+          scanIdentifier()
+          continue
+
+        // --- Operators and punctuation ---
+
+        // $ and $!
+        if c == "$":
           advance()
-          addToken("ShellCommandCapture", "$!")
-        else:
-          addToken("ShellCommand", "$")
-        continue
-
-      // :: (before single :)
-      if c == ":" and peek(1) == ":":
-        advance(); advance()
-        addToken("ColonColon", "::")
-        continue
-
-      // : (but not :{ which is set literal — parser handles that)
-      if c == ":":
-        advance()
-        addToken("Colon", ":")
-        continue
-
-      // ... (spread) before ..= before ..
-      if c == "." and peek(1) == "." and peek(2) == ".":
-        advance(); advance(); advance()
-        addToken("Spread", "...")
-        continue
-
-      // ..= (inclusive range) before ..
-      if c == "." and peek(1) == "." and peek(2) == "=":
-        advance(); advance(); advance()
-        addToken("DotDotEquals", "..=")
-        continue
-
-      // .. (range)
-      if c == "." and peek(1) == ".":
-        advance(); advance()
-        addToken("DotDot", "..")
-        continue
-
-      // . (dot)
-      if c == ".":
-        advance()
-        addToken("Dot", ".")
-        continue
-
-      // => (arrow) before = before ==
-      if c == "=" and peek(1) == ">":
-        advance(); advance()
-        addToken("Arrow", "=>")
-        continue
-
-      // == (equals) before =
-      if c == "=" and peek(1) == "=":
-        advance(); advance()
-        addToken("Equals", "==")
-        continue
-
-      // = (assign)
-      if c == "=":
-        advance()
-        addToken("Assign", "=")
-        continue
-
-      // != (not equals) before !
-      if c == "!" and peek(1) == "=":
-        advance(); advance()
-        addToken("NotEquals", "!=")
-        continue
-
-      // !{ (bang open brace — unsorted object)
-      if c == "!" and peek(1) == "{":
-        advance(); advance()
-        addToken("BangOpenBrace", "!{")
-        continue
-
-      // ! (not or hotkey alt modifier)
-      if c == "!":
-        if afterExpression():
-          advance()
-          addToken("Not", "!")
-        else:
-          // Could be hotkey modifier — scan as hotkey
-          advance()
-          s = "!"
-          while current() != null and current() != "\n" and current() != "{" and current() != "(":
-            if current() == "=" and peek(1) == ">":
-              break
-            s = s + current()
+          if current() == "!":
             advance()
-          // If just "!" without hotkey pattern, treat as Not
-          if s == "!":
+            addToken("ShellCommandCapture", "$!")
+          else:
+            addToken("ShellCommand", "$")
+          continue
+
+        // :: (before single :)
+        if c == ":" and peek(1) == ":":
+          advance(); advance()
+          addToken("ColonColon", "::")
+          continue
+
+        // : (but not :{ which is set literal — parser handles that)
+        if c == ":":
+          advance()
+          addToken("Colon", ":")
+          continue
+
+        // ... (spread) before ..= before ..
+        if c == "." and peek(1) == "." and peek(2) == ".":
+          advance(); advance(); advance()
+          addToken("Spread", "...")
+          continue
+
+        // ..= (inclusive range) before ..
+        if c == "." and peek(1) == "." and peek(2) == "=":
+          advance(); advance(); advance()
+          addToken("DotDotEquals", "..=")
+          continue
+
+        // .. (range)
+        if c == "." and peek(1) == ".":
+          advance(); advance()
+          addToken("DotDot", "..")
+          continue
+
+        // . (dot)
+        if c == ".":
+          advance()
+          addToken("Dot", ".")
+          continue
+
+        // => (arrow) before = before ==
+        if c == "=" and peek(1) == ">":
+          advance(); advance()
+          addToken("Arrow", "=>")
+          continue
+
+        // == (equals) before =
+        if c == "=" and peek(1) == "=":
+          advance(); advance()
+          addToken("Equals", "==")
+          continue
+
+        // = (assign)
+        if c == "=":
+          advance()
+          addToken("Assign", "=")
+          continue
+
+        // != (not equals) before !
+        if c == "!" and peek(1) == "=":
+          advance(); advance()
+          addToken("NotEquals", "!=")
+          continue
+
+        // !{ (bang open brace — unsorted object)
+        if c == "!" and peek(1) == "{":
+          advance(); advance()
+          addToken("BangOpenBrace", "!{")
+          continue
+
+        // ! (not or hotkey alt modifier)
+        if c == "!":
+          if afterExpression():
+            advance()
             addToken("Not", "!")
           else:
-            addToken("Hotkey", s)
-        continue
+            // Could be hotkey modifier — scan as hotkey
+            advance()
+            s = "!"
+            while current() != null and current() != "\n" and current() != "{" and current() != "(":
+              if current() == "=" and peek(1) == ">":
+                break
+              s = s + current()
+              advance()
+            // If just "!" without hotkey pattern, treat as Not
+            if s == "!":
+              addToken("Not", "!")
+            else:
+              addToken("Hotkey", s)
+          continue
 
-      // <= (less equals) before <- before <<
-      if c == "<" and peek(1) == "=":
-        advance(); advance()
-        addToken("LessEquals", "<=")
-        continue
-
-      // <- (left arrow / fiber await)
-      if c == "<" and peek(1) == "-":
-        advance(); advance()
-        addToken("LeftArrow", "<-")
-        continue
-
-      // <<= (shift left assign) before <<
-      if c == "<" and peek(1) == "<" and peek(2) == "=":
-        advance(); advance(); advance()
-        addToken("ShiftLeftAssign", "<<=")
-        continue
-
-      // << (shift left)
-      if c == "<" and peek(1) == "<":
-        advance(); advance()
-        addToken("ShiftLeft", "<<")
-        continue
-
-      // < (less)
-      if c == "<":
-        advance()
-        addToken("Less", "<")
-        continue
-
-      // >= (greater equals) before >> before >
-      if c == ">" and peek(1) == "=":
-        advance(); advance()
-        addToken("GreaterEquals", ">=")
-        continue
-
-      // >>= (shift right assign) before >>
-      if c == ">" and peek(1) == ">" and peek(2) == "=":
-        advance(); advance(); advance()
-        addToken("ShiftRightAssign", ">>=")
-        continue
-
-      // >> (shift right)
-      if c == ">" and peek(1) == ">":
-        advance(); advance()
-        addToken("ShiftRight", ">>")
-        continue
-
-      // > (greater)
-      if c == ">":
-        advance()
-        addToken("Greater", ">")
-        continue
-
-      // -> (return type arrow)
-      if c == "-" and peek(1) == ">":
-        advance(); advance()
-        addToken("ReturnType", "->")
-        continue
-
-      // -= (minus assign) before -- before -
-      if c == "-" and peek(1) == "=":
-        advance(); advance()
-        addToken("MinusAssign", "-=")
-        continue
-
-      // -- (decrement) before -
-      if c == "-" and peek(1) == "-":
-        advance(); advance()
-        addToken("MinusMinus", "--")
-        continue
-
-      // - (minus)
-      if c == "-":
-        advance()
-        addToken("Minus", "-")
-        continue
-
-      // ++ (increment) before +
-      if c == "+" and peek(1) == "+":
-        advance(); advance()
-        addToken("PlusPlus", "++")
-        continue
-
-      // += (plus assign) before +
-      if c == "+" and peek(1) == "=":
-        advance(); advance()
-        addToken("PlusAssign", "+=")
-        continue
-
-      // + (plus)
-      if c == "+":
-        advance()
-        addToken("Plus", "+")
-        continue
-
-      // **= (power assign) before ** before *
-      if c == "*" and peek(1) == "*" and peek(2) == "=":
-        advance(); advance(); advance()
-        addToken("PowerAssign", "**=")
-        continue
-
-      // ** (power) before *
-      if c == "*" and peek(1) == "*":
-        advance(); advance()
-        addToken("Power", "**")
-        continue
-
-      // *= (multiply assign) before *
-      if c == "*" and peek(1) == "=":
-        advance(); advance()
-        addToken("MultiplyAssign", "*=")
-        continue
-
-      // * (multiply)
-      if c == "*":
-        advance()
-        addToken("Multiply", "*")
-        continue
-
-      // / division or regex — context sensitive
-      if c == "/":
-        if peek(1) == "=":
+        // <= (less equals) before <- before <<
+        if c == "<" and peek(1) == "=":
           advance(); advance()
-          addToken("DivideAssign", "/=")
+          addToken("LessEquals", "<=")
           continue
-        // Regex context: after operators, punctuation, newlines, keywords
-        if !afterExpression():
-          scanRegexLiteral()
-          continue
-        advance()
-        addToken("Divide", "/")
-        continue
 
-      // %%= before %%
-      if c == "%" and peek(1) == "%" and peek(2) == "=":
-        advance(); advance(); advance()
-        addToken("DoubleModuloAssign", "%%=")
-        continue
-
-      // %% (double modulo)
-      if c == "%" and peek(1) == "%":
-        advance(); advance()
-        addToken("DoubleModulo", "%%")
-        continue
-
-      // %= (modulo assign)
-      if c == "%" and peek(1) == "=":
-        advance(); advance()
-        addToken("ModuloAssign", "%=")
-        continue
-
-      // % (modulo)
-      if c == "%":
-        advance()
-        addToken("Modulo", "%")
-        continue
-
-      // \\= before \\
-      if c == "\\" and peek(1) == "\\" and peek(2) == "=":
-        advance(); advance(); advance()
-        addToken("BackslashAssign", "\\=")
-        continue
-
-      // \\ (double backslash / divmod)
-      if c == "\\" and peek(1) == "\\":
-        advance(); advance()
-        addToken("DoubleBackslash", "\\\\")
-        continue
-
-      // \= (backslash assign)
-      if c == "\\" and peek(1) == "=":
-        advance(); advance()
-        addToken("BackslashAssign", "\\=")
-        continue
-
-      // \ (backslash / integer division)
-      if c == "\\":
-        advance()
-        addToken("Backslash", "\\")
-        continue
-
-      // ?? (nullish coalescing)
-      if c == "?" and peek(1) == "?":
-        advance(); advance()
-        addToken("Nullish", "??")
-        continue
-
-      // ?. (optional chaining)
-      if c == "?" and peek(1) == ".":
-        advance(); advance()
-        addToken("QuestionDot", "?.")
-        continue
-
-      // ? (question / ternary)
-      if c == "?":
-        advance()
-        addToken("Question", "?")
-        continue
-
-      // && (logical and) before &=
-      if c == "&" and peek(1) == "&":
-        advance(); advance()
-        addToken("And", "&&")
-        continue
-
-      // &= (bitwise and assign)
-      if c == "&" and peek(1) == "=":
-        advance(); advance()
-        addToken("BitwiseAndAssign", "&=")
-        continue
-
-      // & (bitwise and or hotkey combo)
-      if c == "&":
-        if inBitwiseExpr:
-          advance()
-          addToken("BitwiseAnd", "&")
-        else if afterExpression():
-          advance()
-          addToken("BitwiseAnd", "&")
-        else:
-          // Hotkey combo — scan as hotkey
-          s = "&"
-          advance()
-          while current() != null and current() != "\n" and current() != "{":
-            if current() == "=" and peek(1) == ">":
-              break
-            s = s + current()
-            advance()
-          addToken("Hotkey", s)
-        continue
-
-      // || (logical or) before |= before |>
-      if c == "|" and peek(1) == "|":
-        advance(); advance()
-        addToken("Or", "||")
-        continue
-
-      // |= (bitwise or assign)
-      if c == "|" and peek(1) == "=":
-        advance(); advance()
-        addToken("BitwiseOrAssign", "|=")
-        continue
-
-      // |> (pipe right)
-      if c == "|" and peek(1) == ">":
-        advance(); advance()
-        addToken("PipeRight", "|>")
-        continue
-
-      // | (pipe or bitwise or)
-      if c == "|":
-        if inBitwiseExpr:
-          advance()
-          addToken("BitwiseOr", "|")
-        else if afterExpression():
-          advance()
-          addToken("BitwiseOr", "|")
-        else:
-          advance()
-          addToken("Pipe", "|")
-        continue
-
-      // ^= (bitwise xor assign)
-      if c == "^" and peek(1) == "=":
-        advance(); advance()
-        addToken("BitwiseXorAssign", "^=")
-        continue
-
-      // ^ (bitwise xor or hotkey ctrl modifier)
-      if c == "^":
-        if inBitwiseExpr:
-          advance()
-          addToken("BitwiseXor", "^")
-        else if afterExpression():
-          advance()
-          addToken("BitwiseXor", "^")
-        else:
-          // Hotkey modifier — scan as hotkey
-          s = "^"
-          advance()
-          while current() != null and current() != "\n" and current() != "{":
-            if current() == "=" and peek(1) == ">":
-              break
-            s = s + current()
-            advance()
-          addToken("Hotkey", s)
-        continue
-
-      // (( (double open paren — bitwise expr start)
-      if c == "(" and peek(1) == "(":
-        // Disambiguation: after expression tokens, these are two separate parens
-        if !afterExpression():
+        // <- (left arrow / fiber await)
+        if c == "<" and peek(1) == "-":
           advance(); advance()
-          inBitwiseExpr = true
-          parenDepth = 0
-          addToken("DoubleOpenParen", "((")
+          addToken("LeftArrow", "<-")
           continue
-        // Fall through to single paren
 
-      // ( (open paren)
-      if c == "(":
-        advance()
-        parenDepth = parenDepth + 1
-        addToken("OpenParen", "(")
-        continue
+        // <<= (shift left assign) before <<
+        if c == "<" and peek(1) == "<" and peek(2) == "=":
+          advance(); advance(); advance()
+          addToken("ShiftLeftAssign", "<<=")
+          continue
 
-      // )) (double close paren — bitwise expr end)
-      if c == ")" and peek(1) == ")" and inBitwiseExpr:
-        advance(); advance()
-        inBitwiseExpr = false
-        addToken("DoubleCloseParen", "))")
-        continue
+        // << (shift left)
+        if c == "<" and peek(1) == "<":
+          advance(); advance()
+          addToken("ShiftLeft", "<<")
+          continue
 
-      // ) (close paren)
-      if c == ")":
-        advance()
-        if parenDepth > 0: parenDepth = parenDepth - 1
-        addToken("CloseParen", ")")
-        continue
-
-      // [ (open bracket)
-      if c == "[":
-        advance()
-        addToken("OpenBracket", "[")
-        continue
-
-      // ] (close bracket)
-      if c == "]":
-        advance()
-        addToken("CloseBracket", "]")
-        continue
-
-      // { (open brace)
-      if c == "{":
-        advance()
-        addToken("OpenBrace", "{")
-        continue
-
-      // } (close brace)
-      if c == "}":
-        advance()
-        addToken("CloseBrace", "}")
-        continue
-
-      // , (comma)
-      if c == ",":
-        advance()
-        addToken("Comma", ",")
-        continue
-
-      // ; (semicolon)
-      if c == ";":
-        advance()
-        addToken("Semicolon", ";")
-        continue
-
-      // @-> (super arrow) before @@ before @
-      if c == "@" and peek(1) == "-" and peek(2) == ">":
-        advance(); advance(); advance()
-        addToken("SuperArrow", "@->")
-        continue
-
-      // @@ (class marker)
-      if c == "@" and peek(1) == "@":
-        advance(); advance()
-        addToken("AtAt", "@@")
-        continue
-
-      // @ (at / self reference or hotkey modifier)
-      if c == "@":
-        if afterExpression():
+        // < (less)
+        if c == "<":
           advance()
-          addToken("At", "@")
-        else:
-          // Could be hotkey — check ahead
+          addToken("Less", "<")
+          continue
+
+        // >= (greater equals) before >> before >
+        if c == ">" and peek(1) == "=":
+          advance(); advance()
+          addToken("GreaterEquals", ">=")
+          continue
+
+        // >>= (shift right assign) before >>
+        if c == ">" and peek(1) == ">" and peek(2) == "=":
+          advance(); advance(); advance()
+          addToken("ShiftRightAssign", ">>=")
+          continue
+
+        // >> (shift right)
+        if c == ">" and peek(1) == ">":
+          advance(); advance()
+          addToken("ShiftRight", ">>")
+          continue
+
+        // > (greater)
+        if c == ">":
           advance()
-          s = "@"
-          while current() != null and isAlphaNum(current()):
-            s = s + current()
+          addToken("Greater", ">")
+          continue
+
+        // -> (return type arrow)
+        if c == "-" and peek(1) == ">":
+          advance(); advance()
+          addToken("ReturnType", "->")
+          continue
+
+        // -= (minus assign) before -- before -
+        if c == "-" and peek(1) == "=":
+          advance(); advance()
+          addToken("MinusAssign", "-=")
+          continue
+
+        // -- (decrement) before -
+        if c == "-" and peek(1) == "-":
+          advance(); advance()
+          addToken("MinusMinus", "--")
+          continue
+
+        // - (minus)
+        if c == "-":
+          advance()
+          addToken("Minus", "-")
+          continue
+
+        // ++ (increment) before +
+        if c == "+" and peek(1) == "+":
+          advance(); advance()
+          addToken("PlusPlus", "++")
+          continue
+
+        // += (plus assign) before +
+        if c == "+" and peek(1) == "=":
+          advance(); advance()
+          addToken("PlusAssign", "+=")
+          continue
+
+        // + (plus)
+        if c == "+":
+          advance()
+          addToken("Plus", "+")
+          continue
+
+        // **= (power assign) before ** before *
+        if c == "*" and peek(1) == "*" and peek(2) == "=":
+          advance(); advance(); advance()
+          addToken("PowerAssign", "**=")
+          continue
+
+        // ** (power) before *
+        if c == "*" and peek(1) == "*":
+          advance(); advance()
+          addToken("Power", "**")
+          continue
+
+        // *= (multiply assign) before *
+        if c == "*" and peek(1) == "=":
+          advance(); advance()
+          addToken("MultiplyAssign", "*=")
+          continue
+
+        // * (multiply)
+        if c == "*":
+          advance()
+          addToken("Multiply", "*")
+          continue
+
+        // / division or regex — context sensitive
+        if c == "/":
+          if peek(1) == "=":
+            advance(); advance()
+            addToken("DivideAssign", "/=")
+            continue
+          // Regex context: after operators, punctuation, newlines, keywords
+          if !afterExpression():
+            scanRegexLiteral()
+            continue
+          advance()
+          addToken("Divide", "/")
+          continue
+
+        // %%= before %%
+        if c == "%" and peek(1) == "%" and peek(2) == "=":
+          advance(); advance(); advance()
+          addToken("DoubleModuloAssign", "%%=")
+          continue
+
+        // %% (double modulo)
+        if c == "%" and peek(1) == "%":
+          advance(); advance()
+          addToken("DoubleModulo", "%%")
+          continue
+
+        // %= (modulo assign)
+        if c == "%" and peek(1) == "=":
+          advance(); advance()
+          addToken("ModuloAssign", "%=")
+          continue
+
+        // % (modulo)
+        if c == "%":
+          advance()
+          addToken("Modulo", "%")
+          continue
+
+        // \\= before \\
+        if c == "\\" and peek(1) == "\\" and peek(2) == "=":
+          advance(); advance(); advance()
+          addToken("BackslashAssign", "\\=")
+          continue
+
+        // \\ (double backslash / divmod)
+        if c == "\\" and peek(1) == "\\":
+          advance(); advance()
+          addToken("DoubleBackslash", "\\\\")
+          continue
+
+        // \= (backslash assign)
+        if c == "\\" and peek(1) == "=":
+          advance(); advance()
+          addToken("BackslashAssign", "\\=")
+          continue
+
+        // \ (backslash / integer division)
+        if c == "\\":
+          advance()
+          addToken("Backslash", "\\")
+          continue
+
+        // ?? (nullish coalescing)
+        if c == "?" and peek(1) == "?":
+          advance(); advance()
+          addToken("Nullish", "??")
+          continue
+
+        // ?. (optional chaining)
+        if c == "?" and peek(1) == ".":
+          advance(); advance()
+          addToken("QuestionDot", "?.")
+          continue
+
+        // ? (question / ternary)
+        if c == "?":
+          advance()
+          addToken("Question", "?")
+          continue
+
+        // && (logical and) before &=
+        if c == "&" and peek(1) == "&":
+          advance(); advance()
+          addToken("And", "&&")
+          continue
+
+        // &= (bitwise and assign)
+        if c == "&" and peek(1) == "=":
+          advance(); advance()
+          addToken("BitwiseAndAssign", "&=")
+          continue
+
+        // & (bitwise and or hotkey combo)
+        if c == "&":
+          if inBitwiseExpr:
             advance()
-          // If followed by => or & or : -> hotkey
-          if current() == "=" and peek(1) == ">":
-            addToken("Hotkey", s)
-          else if current() == "&" or current() == ":":
-            addToken("Hotkey", s)
+            addToken("BitwiseAnd", "&")
+          else if afterExpression():
+            advance()
+            addToken("BitwiseAnd", "&")
           else:
-            addToken("At", "@")
-        continue
-
-      // # (length operator or hotkey super/win modifier)
-      if c == "#":
-        if afterExpression():
-          advance()
-          addToken("Length", "#")
-        else:
-          // Could be hotkey modifier
-          advance()
-          s = "#"
-          while current() != null and current() != "\n" and current() != "{":
-            if current() == "=" and peek(1) == ">":
-              break
-            s = s + current()
+            // Hotkey combo — scan as hotkey
+            s = "&"
             advance()
-          // If just "#" with nothing after, it's the length operator
-          if s == "#":
+            while current() != null and current() != "\n" and current() != "{":
+              if current() == "=" and peek(1) == ">":
+                break
+              s = s + current()
+              advance()
+            addToken("Hotkey", s)
+          continue
+
+        // || (logical or) before |= before |>
+        if c == "|" and peek(1) == "|":
+          advance(); advance()
+          addToken("Or", "||")
+          continue
+
+        // |= (bitwise or assign)
+        if c == "|" and peek(1) == "=":
+          advance(); advance()
+          addToken("BitwiseOrAssign", "|=")
+          continue
+
+        // |> (pipe right)
+        if c == "|" and peek(1) == ">":
+          advance(); advance()
+          addToken("PipeRight", "|>")
+          continue
+
+        // | (pipe or bitwise or)
+        if c == "|":
+          if inBitwiseExpr:
+            advance()
+            addToken("BitwiseOr", "|")
+          else if afterExpression():
+            advance()
+            addToken("BitwiseOr", "|")
+          else:
+            advance()
+            addToken("Pipe", "|")
+          continue
+
+        // ^= (bitwise xor assign)
+        if c == "^" and peek(1) == "=":
+          advance(); advance()
+          addToken("BitwiseXorAssign", "^=")
+          continue
+
+        // ^ (bitwise xor or hotkey ctrl modifier)
+        if c == "^":
+          if inBitwiseExpr:
+            advance()
+            addToken("BitwiseXor", "^")
+          else if afterExpression():
+            advance()
+            addToken("BitwiseXor", "^")
+          else:
+            // Hotkey modifier — scan as hotkey
+            s = "^"
+            advance()
+            while current() != null and current() != "\n" and current() != "{":
+              if current() == "=" and peek(1) == ">":
+                break
+              s = s + current()
+              advance()
+            addToken("Hotkey", s)
+          continue
+
+        // (( (double open paren — bitwise expr start)
+        if c == "(" and peek(1) == "(":
+          // Disambiguation: after expression tokens, these are two separate parens
+          if !afterExpression():
+            advance(); advance()
+            inBitwiseExpr = true
+            parenDepth = 0
+            addToken("DoubleOpenParen", "((")
+            continue
+          // Fall through to single paren
+
+        // ( (open paren)
+        if c == "(":
+          advance()
+          parenDepth = parenDepth + 1
+          addToken("OpenParen", "(")
+          continue
+
+        // )) (double close paren — bitwise expr end)
+        if c == ")" and peek(1) == ")" and inBitwiseExpr:
+          advance(); advance()
+          inBitwiseExpr = false
+          addToken("DoubleCloseParen", "))")
+          continue
+
+        // ) (close paren)
+        if c == ")":
+          advance()
+          if parenDepth > 0: parenDepth = parenDepth - 1
+          addToken("CloseParen", ")")
+          continue
+
+        // [ (open bracket)
+        if c == "[":
+          advance()
+          addToken("OpenBracket", "[")
+          continue
+
+        // ] (close bracket)
+        if c == "]":
+          advance()
+          addToken("CloseBracket", "]")
+          continue
+
+        // { (open brace)
+        if c == "{":
+          advance()
+          addToken("OpenBrace", "{")
+          continue
+
+        // } (close brace)
+        if c == "}":
+          advance()
+          addToken("CloseBrace", "}")
+          continue
+
+        // , (comma)
+        if c == ",":
+          advance()
+          addToken("Comma", ",")
+          continue
+
+        // ; (semicolon)
+        if c == ";":
+          advance()
+          addToken("Semicolon", ";")
+          continue
+
+        // @-> (super arrow) before @@ before @
+        if c == "@" and peek(1) == "-" and peek(2) == ">":
+          advance(); advance(); advance()
+          addToken("SuperArrow", "@->")
+          continue
+
+        // @@ (class marker)
+        if c == "@" and peek(1) == "@":
+          advance(); advance()
+          addToken("AtAt", "@@")
+          continue
+
+        // @ (at / self reference or hotkey modifier)
+        if c == "@":
+          if afterExpression():
+            advance()
+            addToken("At", "@")
+          else:
+            // Could be hotkey — check ahead
+            advance()
+            s = "@"
+            while current() != null and isAlphaNum(current()):
+              s = s + current()
+              advance()
+            // If followed by => or & or : -> hotkey
+            if current() == "=" and peek(1) == ">":
+              addToken("Hotkey", s)
+            else if current() == "&" or current() == ":":
+              addToken("Hotkey", s)
+            else:
+              addToken("At", "@")
+          continue
+
+        // # (length operator or hotkey super/win modifier)
+        if c == "#":
+          if afterExpression():
+            advance()
             addToken("Length", "#")
           else:
-            addToken("Hotkey", s)
-        continue
-
-      // ~ (tilde / bitwise not)
-      if c == "~":
-        advance()
-        addToken("Tilde", "~")
-        continue
-
-      // _ (underscore — standalone is wildcard)
-      if c == "_":
-        // Check if it's a standalone _ or part of an identifier
-        if !isAlphaNum(peek(1)):
-          advance()
-          addToken("Underscore", "_")
+            // Could be hotkey modifier
+            advance()
+            s = "#"
+            while current() != null and current() != "\n" and current() != "{":
+              if current() == "=" and peek(1) == ">":
+                break
+              s = s + current()
+              advance()
+            // If just "#" with nothing after, it's the length operator
+            if s == "#":
+              addToken("Length", "#")
+            else:
+              addToken("Hotkey", s)
           continue
-        // Otherwise fall through to identifier
-        scanIdentifier()
-        continue
 
-      // Skip any unrecognized character
-      advance()
+        // ~ (tilde / bitwise not)
+        if c == "~":
+          advance()
+          addToken("Tilde", "~")
+          continue
+
+        // _ (underscore — standalone is wildcard)
+        if c == "_":
+          // Check if it's a standalone _ or part of an identifier
+          if !isAlphaNum(peek(1)):
+            advance()
+            addToken("Underscore", "_")
+            continue
+          // Otherwise fall through to identifier
+          scanIdentifier()
+          continue
+
+        // Skip any unrecognized character
+        advance()
 
   addToken("EOF", "")
-  {tokens: tokens, errors: errors}
+    {tokens: tokens, errors: errors}
 
   {run: _scan, errors: errors}
 

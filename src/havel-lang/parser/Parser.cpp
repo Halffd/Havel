@@ -5498,8 +5498,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
 
   std::unique_ptr<havel::ast::Statement> body;
 
-  std::unique_ptr<havel::ast::Statement> body;
-
   // Block form ({ or : with indented block) or inline form (single statement)
   if (at().type == havel::TokenType::OpenBrace ||
       at().type == havel::TokenType::Colon) {

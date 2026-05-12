@@ -2359,11 +2359,27 @@ return parseSwitchStatement();
     return parseThrowStatement();
   case havel::TokenType::Del:
     return parseDelStatement();
-  default:
-    // Expression statement (including assignments, function calls, etc.)
-    auto expr = parseExpression();
-    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
-  }
+    default:
+        // Expression statement (including assignments, function calls, etc.)
+        auto expr = parseExpression();
+        // Handle multiple ; -separated statements on same line (e.g. advance(); advance())
+        if (at().type == havel::TokenType::Semicolon) {
+            auto block = std::make_unique<havel::ast::BlockStatement>();
+            block->body.push_back(std::make_unique<havel::ast::ExpressionStatement>(std::move(expr)));
+            while (at().type == havel::TokenType::Semicolon) {
+                advance(); // skip ;
+                // Stop at newline or EOF
+                if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::EOF_TOKEN) break;
+                // Stop at keywords that belong to parent constructs
+                if (at().type == havel::TokenType::Else || at().type == havel::TokenType::Catch || at().type == havel::TokenType::Finally) break;
+                auto next = parseInlineStatement();
+                if (next) block->body.push_back(std::move(next));
+                else break;
+            }
+            return block;
+        }
+        return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {

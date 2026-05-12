@@ -5170,6 +5170,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
     // Consume optional colon (colon-while syntax: `while cond: stmt`)
     if (at().type == havel::TokenType::Colon) {
         advance();
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
     }
 
     // Block form or inline form
@@ -5181,7 +5184,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
     }
 
     return std::make_unique<havel::ast::WhileStatement>(std::move(condition),
-std::move(body));
+                                                        std::move(body));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
@@ -5399,6 +5402,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     // Consume optional colon (colon-for syntax: `for x in list: stmt`)
     if (at().type == havel::TokenType::Colon) {
         advance();
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
     }
 
     std::unique_ptr<havel::ast::Statement> body;
@@ -5493,6 +5499,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     // Consume optional colon (colon-loop syntax: `loop: stmt`)
     if (at().type == havel::TokenType::Colon) {
         advance();
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
     }
 
     // Block form or inline form
@@ -6200,6 +6209,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
     // Consume optional colon (colon-repeat syntax: `repeat 3: stmt`)
     if (at().type == havel::TokenType::Colon) {
         advance();
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
     }
 
     std::unique_ptr<havel::ast::Statement> body;

@@ -176,14 +176,15 @@ private:
     size_t stack_depth = 0;
   };
 
-  struct CallFrame {
-    const BytecodeFunction *function = nullptr;
-    size_t ip = 0;
-    size_t locals_base = 0;
-    uint32_t closure_id = 0;
-    std::vector<TryHandler> try_stack;
-    size_t stack_depth = 0;  // Expression stack depth at call time
-  };
+ struct CallFrame {
+  const BytecodeFunction *function = nullptr;
+  const BytecodeChunk *chunk = nullptr;
+  size_t ip = 0;
+  size_t locals_base = 0;
+  uint32_t closure_id = 0;
+  std::vector<TryHandler> try_stack;
+  size_t stack_depth = 0; // Expression stack depth at call time
+};
   public:
 
   std::stack<Value> stack;
@@ -423,14 +424,14 @@ public:
     if (base >= locals.size()) return nullptr;
     return &locals[base]; 
   }
-  void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
-    if (frame_count_ >= frame_arena_.size()) {
-      frame_arena_.push_back(CallFrame{function, ip, locals_base, closure_id, {}});
-    } else {
-      frame_arena_[frame_count_] = CallFrame{function, ip, locals_base, closure_id, {}};
+    void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
+        if (frame_count_ >= frame_arena_.size()) {
+            frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, {}});
+        } else {
+            frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, {}};
+        }
+        frame_count_++;
     }
-    frame_count_++;
-  }
   size_t currentLocalsSizePublic() const { return locals.size(); }
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>& openUpvaluesPublic() { return open_upvalues; }
   void doTailCallPublic(Value callee_value, std::vector<Value> args) {

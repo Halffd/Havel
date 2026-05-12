@@ -1,12 +1,11 @@
-fn Lexer(source):
-  src = source
-  fn current():
-    if true {
-      src.sub(0, 1)
-    } else {
-      null
-    }
-  {run: current}
+fn outer():
+  src = "hello"
+  fn inner():
+    if src.len > 3:
+      src.sub(0, 3)
+    else:
+      src
+  {run: inner}
 
-lx = Lexer("abc")
-print(lx.run())
+o = outer()
+print(o.run())

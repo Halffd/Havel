@@ -5134,12 +5134,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
     if (at().type == havel::TokenType::Else) {
         advance(); // consume "else"
 
-        // Consume optional colon after else (colon-else syntax: `else: stmt`)
-        if (at().type == havel::TokenType::Colon) {
+    // Consume optional colon after else (colon-else syntax: `else: stmt`)
+    if (at().type == havel::TokenType::Colon) {
+        advance();
+        // Skip newlines after colon to support multi-line colon-else
+        while (at().type == havel::TokenType::NewLine) {
             advance();
         }
+    }
 
-        if (at().type == havel::TokenType::If) {
+    if (at().type == havel::TokenType::If) {
             alternative = parseIfStatement();
         } else if (at().type == havel::TokenType::OpenBrace) {
             alternative = parseBlockStatement();

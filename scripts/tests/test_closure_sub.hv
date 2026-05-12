@@ -1,0 +1,12 @@
+fn Lexer(source):
+  src = source
+  fn current():
+    if true {
+      src.sub(0, 1)
+    } else {
+      null
+    }
+  {run: current}
+
+lx = Lexer("abc")
+print(lx.run())

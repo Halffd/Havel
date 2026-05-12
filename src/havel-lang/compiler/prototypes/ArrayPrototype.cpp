@@ -311,7 +311,7 @@ regProto("each", 2, foreachFn);
     return Value::makeNull();
   });
 
-  regProto("slice", 4, [&vm](const std::vector<Value>& args) {
+    regProtoVar("slice", [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());

@@ -914,10 +914,13 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     // Parser aborted
   }
 
-  if (parser.hasErrors() || !program) {
-    error("Failed to parse script");
-    return 1;
-  }
+    if (parser.hasErrors() || !program) {
+        for (const auto& err : parser.getErrors()) {
+            std::cerr << "Parse error: " << err.message << " at line " << err.line << " col " << err.column << std::endl;
+        }
+        error("Failed to parse script");
+        return 1;
+    }
 
   // If hotkeys found, switch to SCRIPT mode (with full IO/event loop)
   if (hasHotkeyBindings(*program)) {

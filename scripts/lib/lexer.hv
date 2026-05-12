@@ -352,7 +352,7 @@ fn Lexer(source):
     startCol = col
     advance() // opening quote
 
-    val s = ""
+    s = ""
     isInterpolated = false
 
     if isFString:
@@ -457,13 +457,13 @@ fn Lexer(source):
       if current() == "\\":
         advance()
         c = current()
-        if c == "n": s = s + "\n"; advance()
-        else if c == "t": s = s + "\t"; advance()
-        else if c == "r": s = s + "\r"; advance()
-        else if c == "\\": s = s + "\\"; advance()
-        else if c == quote: s = s + quote; advance()
-        else if c == "0": s = s + "\0"; advance()
-        else: s = s + "\\" + c; advance()
+      if c == "n" { s = s + "\n"; advance() }
+      else if c == "t" { s = s + "\t"; advance() }
+      else if c == "r" { s = s + "\r"; advance() }
+      else if c == "\\" { s = s + "\\"; advance() }
+      else if c == quote { s = s + quote; advance() }
+      else if c == "0" { s = s + "\0"; advance() }
+      else { s = s + "\\" + c; advance() }
       else if current() == "$" and isFString:
         isInterpolated = true
         s = s + "$"
@@ -509,12 +509,12 @@ fn Lexer(source):
       if current() == "\\":
         advance()
         c = current()
-        if c == "n": s = s + "\n"; advance()
-        else if c == "t": s = s + "\t"; advance()
-        else if c == "r": s = s + "\r"; advance()
-        else if c == "\\": s = s + "\\"; advance()
-        else if c == "`": s = s + "`"; advance()
-        else: s = s + "\\" + c; advance()
+      if c == "n" { s = s + "\n"; advance() }
+      else if c == "t" { s = s + "\t"; advance() }
+      else if c == "r" { s = s + "\r"; advance() }
+      else if c == "\\" { s = s + "\\"; advance() }
+      else if c == "`" { s = s + "`"; advance() }
+      else { s = s + "\\" + c; advance() }
       else if current() == "{" and isTriple:
         isInterpolated = true
         s = s + "{"
@@ -586,7 +586,8 @@ fn Lexer(source):
 
     // float: digit followed by . followed by digit
     if current() == "." and isDigit(peek(1)):
-      s = s + "."; advance()
+      s = s + "."
+      advance()
       while isDigit(current()):
         s = s + current()
         advance()
@@ -613,11 +614,13 @@ fn Lexer(source):
     advance() // opening /
     s = ""
     while pos < src.len and current() != "/":
-      if current() == "\\":
-        s = s + current(); advance()
-        if current() != null:
-          s = s + current(); advance()
-      else:
+    if current() == "\\":
+      s = s + current()
+      advance()
+      if current() != null:
+        s = s + current()
+        advance()
+    else:
         s = s + current()
         advance()
 
@@ -662,8 +665,8 @@ fn Lexer(source):
   fn afterExpression():
     EXPRESSION_TOKENS.has(lastTokenType())
 
-  // --- Main tokenize loop ---
-  fn tokenize():
+// --- Main scan loop ---
+fn _scan():
     while pos < src.len:
       skipWhitespace()
       if pos >= src.len: break
@@ -1265,28 +1268,25 @@ fn Lexer(source):
       // Skip any unrecognized character
       advance()
 
-    addToken("EOF", "")
-    {tokens: tokens, errors: errors}
+  addToken("EOF", "")
+  {tokens: tokens, errors: errors}
 
-  {tokenize: tokenize, errors: errors}
-
-// --- Public API ---
+  {run: _scan, errors: errors}
 
 fn tokenize(source):
-  lexer = Lexer(source)
-  lexer.tokenize()
+  lx = Lexer(source)
+  result = lx.run()
+  result.tokens
 
 fn tokenizeWithErrors(source):
-  lexer = Lexer(source)
-  result = lexer.tokenize()
-  {tokens: result.tokens, errors: lexer.errors}
+  lx = Lexer(source)
+  result = lx.run()
+  {tokens: result.tokens, errors: lx.errors}
 
-// Pretty-print tokens
 fn printTokens(tokens):
   for t in tokens:
     typeStr = t.type
     valStr = t.value
-    // Truncate long values
     if valStr.len > 40:
       valStr = valStr.sub(0, 37) + "..."
     print("{typeStr.padStart(24)} {valStr}")

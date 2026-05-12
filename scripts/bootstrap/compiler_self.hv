@@ -1,34 +1,28 @@
-// Phase 9 bootstrap compiler (Havel side, compiled to bytecode)
+fn compile_file(input_path, output_path):
+    ok = compiler_build(input_path, output_path)
+    if !ok:
+        print("compile_file failed")
+        print(input_path)
+        false
+    else:
+        true
 
-compile_file = fn(input_path, output_path) {
-  ok = compiler_build(input_path, output_path)
-  if !ok {
-    print("compile_file failed")
-    print(input_path)
-    return false
-  }
-  return true
-}
+fn compile_batch(pairs):
+    i = 0
+    while i < pairs.len:
+        pair = pairs[i]
+        if pair.len < 2:
+            print("invalid batch pair")
+            false
+        else:
+            ok = compile_file(pair[0], pair[1])
+            if !ok: false
+            else:
+                i = i + 1
+                continue
+    true
 
-compile_batch = fn(pairs) {
-  // pairs: [ [in, out], [in, out], ... ]
-  i = 0
-  while i < len(pairs) {
-    pair = pairs[i]
-    if len(pair) < 2 {
-      print("invalid batch pair")
-      return false
-    }
-    ok = compile_file(pair[0], pair[1])
-    if !ok { return false }
-    i = i + 1
-  }
-  return true
-}
-
-main = fn() {
-  // Deterministic smoke target for self-bootstrap
-  return compile_file("scripts/test_simple.hv", "/tmp/phase9_simple_from_compiler_self.hvc")
-}
+fn main():
+    compile_file("scripts/test_simple.hv", "/tmp/phase9_simple_from_compiler_self.hvc")
 
 print(main())

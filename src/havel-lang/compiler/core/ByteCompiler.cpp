@@ -1122,16 +1122,17 @@ void ByteCompiler::collectParameterPatternSlots(
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
   auto source_scope = atNode(statement);
   switch (statement.kind) {
-  case ast::NodeType::ExpressionStatement: {
-    const auto &expr_stmt =
-        static_cast<const ast::ExpressionStatement &>(statement);
-    if (expr_stmt.expression) {
-      compileExpression(*expr_stmt.expression);
-      // TCO: Don't POP if in tail position (value is return value)
-      // Also don't POP after yield expression - yield value is returned to caller
-      bool is_yield = expr_stmt.expression->kind == ast::NodeType::YieldExpression;
-      if (!in_tail_position_ && !is_yield) {
-        emit(OpCode::POP);
+        case ast::NodeType::ExpressionStatement: {
+            const auto &expr_stmt =
+                static_cast<const ast::ExpressionStatement &>(statement);
+            if (expr_stmt.expression) {
+                bool tail_before = in_tail_position_;
+                compileExpression(*expr_stmt.expression);
+                // TCO: Don't POP if in tail position (value is return value)
+                // Also don't POP after yield expression - yield value is returned to caller
+                bool is_yield = expr_stmt.expression->kind == ast::NodeType::YieldExpression;
+                if (!in_tail_position_ && !is_yield) {
+                    emit(OpCode::POP);
       }
     }
     break;
@@ -4134,9 +4135,10 @@ void ByteCompiler::compileCallExpression(
       }
       compileExpression(*arg);
     }
-    // CALL with self + explicit args
-    emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
-    return;
+		// CALL with self + explicit args
+		emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
+		in_tail_position_ = saved_tail_position;
+		return;
   }
 
 if (expression.callee->kind == ast::NodeType::Identifier) {
@@ -4157,10 +4159,11 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 compileExpression(*arg);
                 ++totalArgs;
             }
-            emit(OpCode::STRUCT_NEW,
-                 std::vector<Value>{Value::makeStringValId(type_sid),
-                                    Value(totalArgs)});
-            return;
+		emit(OpCode::STRUCT_NEW,
+		     std::vector<Value>{Value::makeStringValId(type_sid),
+		                        Value(totalArgs)});
+		in_tail_position_ = saved_tail_position;
+		return;
         }
         if (binding && binding->kind == ResolvedBindingKind::Global &&
             top_level_class_names_.find(callee_id.symbol) !=
@@ -4181,6 +4184,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 totalArgs++;
             }
             emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
             return;
         }
         bool isHostFunc = binding && binding->kind == ResolvedBindingKind::HostFunction;
@@ -4204,11 +4208,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 }
                 totalArgs++;
             }
- emit(OpCode::CALL, Value(totalArgs));
- return;
- }
- }
- // Check for member call
+            emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
+            return;
+        }
+        }
+        // Check for member call
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
     const auto &member =
         static_cast<const ast::MemberExpression &>(*expression.callee);
@@ -4234,8 +4239,9 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
      COMPILER_THROW("struct.get requires literal string field name");
    }
    uint32_t field_sid = addStringConstant(fieldLit->value);
-   emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
-   return;
+            emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
+            in_tail_position_ = saved_tail_position;
+            return;
  }
  if (objIdent->symbol == "struct" && property->symbol == "set" &&
      expression.args.size() == 3) {
@@ -4247,8 +4253,9 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
    }
    compileExpression(*expression.args[2]); // value
    uint32_t field_sid = addStringConstant(fieldLit->value);
-   emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
-   return;
+            emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
+            in_tail_position_ = saved_tail_position;
+            return;
  }
 
             // Push receiver: use local/upvalue binding if available, otherwise global
@@ -4306,12 +4313,13 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  totalArgs++;
  }
 
- // Call method
- uint32_t method_sid = addStringConstant(property->symbol);
- emit(OpCode::CALL_METHOD, std::vector<Value>{
- Value::makeStringValId(method_sid),
- Value(totalArgs)});
- return;
+            // Call method
+            uint32_t method_sid = addStringConstant(property->symbol);
+            emit(OpCode::CALL_METHOD, std::vector<Value>{
+                Value::makeStringValId(method_sid),
+                Value(totalArgs)});
+            in_tail_position_ = saved_tail_position;
+            return;
  }
  // Fall through to instance-style call for non-identifier objects
 
@@ -4368,11 +4376,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         Value::makeStringValId(method_sid),
         Value(totalArgs)});
         
-    if (member.isOptional) {
-      patchJump(opt_jump,
-                static_cast<uint32_t>(current_function->instructions.size()));
-    }
-    return;
+            if (member.isOptional) {
+                patchJump(opt_jump,
+                    static_cast<uint32_t>(current_function->instructions.size()));
+            }
+            in_tail_position_ = saved_tail_position;
+            return;
   }
 
   if (expression.callee->kind == ast::NodeType::Identifier) {
@@ -4380,31 +4389,32 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
  if (!binding) {
- // Unknown identifier — try as global function call (runtime will throw if not found)
- uint32_t strId = addStringConstant(callee_id.symbol);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- uint32_t totalArgs = 0;
- for (const auto &arg : expression.args) {
- if (!arg) {
- emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
- totalArgs++;
- continue;
- }
- compileExpression(*arg);
- totalArgs++;
- }
- if (hasKwargs) {
- emit(OpCode::OBJECT_NEW);
- for (const auto &kwarg : expression.kwargs) {
- emit(OpCode::DUP);
- { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- compileExpression(*kwarg.value);
- emit(OpCode::OBJECT_SET);
- }
- totalArgs++;
- }
- emit(OpCode::CALL, Value(totalArgs));
- return;
+            // Unknown identifier — try as global function call (runtime will throw if not found)
+            uint32_t strId = addStringConstant(callee_id.symbol);
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            uint32_t totalArgs = 0;
+            for (const auto &arg : expression.args) {
+                if (!arg) {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                    totalArgs++;
+                    continue;
+                }
+                compileExpression(*arg);
+                totalArgs++;
+            }
+            if (hasKwargs) {
+                emit(OpCode::OBJECT_NEW);
+                for (const auto &kwarg : expression.kwargs) {
+                    emit(OpCode::DUP);
+                    { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                    compileExpression(*kwarg.value);
+                    emit(OpCode::OBJECT_SET);
+                }
+                totalArgs++;
+            }
+            emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
+            return;
  }
 
  if (binding->kind == ResolvedBindingKind::HostFunction) {
@@ -4446,11 +4456,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  }
  totalArgs++;
  }
- emit(OpCode::CALL, Value(totalArgs));
- return;
- }
+            emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
+            return;
+        }
 
-    if (binding->kind == ResolvedBindingKind::Function) {
+        if (binding->kind == ResolvedBindingKind::Function) {
       // User-defined function - load as FunctionObject and call
       uint32_t fn_index = top_level_function_indices_by_name_[binding->name];
       uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));

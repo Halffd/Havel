@@ -19,6 +19,7 @@ class BytecodeChunk;
 // ============================================================================
 struct CallFrame {
   const BytecodeFunction* function = nullptr;
+  const BytecodeChunk* chunk = nullptr;
   size_t ip = 0;
   size_t localsBase = 0;
   uint32_t closureId = 0;

@@ -2957,12 +2957,12 @@ Value VM::execute(const BytecodeChunk &chunk,
  executed_instructions_ = 0;
 
  if (frame_arena_.size() <= frame_count_) {
- frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
- } else {
- frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
- }
- frame_count_++;
- locals.resize(entry->local_count);
+        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0};
+    }
+    frame_count_++;
+    locals.resize(entry->local_count);
 
  if (!args.empty()) {
  if (args.size() != entry->param_count) {
@@ -3024,30 +3024,30 @@ Value VM::execute(const BytecodeChunk &chunk,
   has_current_exception_ = false;
   current_exception_ = nullptr;
 
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
-  } else {
-    frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
-  }
-  frame_count_++;
-  locals.resize(entry->local_count);
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0};
+    }
+    frame_count_++;
+    locals.resize(entry->local_count);
 
-  if (!args.empty()) {
-    if (args.size() != entry->param_count) {
-      COMPILER_THROW("Argument count mismatch for entry function '" +
-                               function_name + "' (expected " +
-                               std::to_string(entry->param_count) + ", got " +
-                               std::to_string(args.size()) + ")");
+    if (!args.empty()) {
+        if (args.size() != entry->param_count) {
+            COMPILER_THROW("Argument count mismatch for entry function '" +
+                           function_name + "' (expected " +
+                           std::to_string(entry->param_count) + ", got " +
+                           std::to_string(args.size()) + ")");
+        }
+
+        for (uint32_t i = 0; i < entry->param_count; ++i) {
+            locals[i] = args[i];
+        }
     }
 
-    for (uint32_t i = 0; i < entry->param_count; ++i) {
-      locals[i] = args[i];
-    }
-  }
+    runDispatchLoop(0);
 
- runDispatchLoop(0);
-
- current_chunk = saved_chunk;
+    current_chunk = saved_chunk;
 
  if (stack.empty()) {
  return nullptr;
@@ -3816,11 +3816,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       locals = co->locals;
 
       size_t coroutine_stack_depth = stack.size();
-      if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{func, co->ip, 0, co->closure_id});
-      } else {
-        frame_arena_[frame_count_] = CallFrame{func, co->ip, 0, co->closure_id};
-      }
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{func, current_chunk, co->ip, 0, co->closure_id});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{func, current_chunk, co->ip, 0, co->closure_id};
+    }
       frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
       frame_count_++;
 
@@ -3830,43 +3830,50 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
-  if (callee_value.isFunctionObjId()) {
-    function_index = callee_value.asFunctionObjId();
-  } else if (callee_value.isClosureId()) {
-    closure_id = callee_value.asClosureId();
-    auto *closure = heap_.closure(closure_id);
-    if (!closure) {
-      COMPILER_THROW("Closure not found: " +
-                               std::to_string(closure_id));
+    const BytecodeChunk *resolve_chunk = current_chunk;
+    if (callee_value.isFunctionObjId()) {
+        function_index = callee_value.asFunctionObjId();
+    } else if (callee_value.isClosureId()) {
+        closure_id = callee_value.asClosureId();
+        auto *closure = heap_.closure(closure_id);
+        if (!closure) {
+            COMPILER_THROW("Closure not found: " +
+                           std::to_string(closure_id));
+        }
+            function_index = closure->function_index;
+            if (closure->chunk) {
+                resolve_chunk = closure->chunk;
+            }
+        } else {
+            // Debug: identify what type the value actually is
+        std::string typeInfo = "unknown";
+        if (callee_value.isNull()) typeInfo = "null";
+        else if (callee_value.isInt()) typeInfo = "int";
+        else if (callee_value.isDouble()) typeInfo = "double";
+        else if (callee_value.isBool()) typeInfo = "bool";
+        else if (callee_value.isStringValId()) typeInfo = "string_val_id";
+        else if (callee_value.isStringId()) typeInfo = "string_id";
+        else if (callee_value.isObjectId()) typeInfo = "object_id";
+        else if (callee_value.isArrayId()) typeInfo = "array_id";
+        else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+        else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+        else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
+        else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
+        COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ")");
     }
-    function_index = closure->function_index;
-  } else {
-    // Debug: identify what type the value actually is
-    std::string typeInfo = "unknown";
-    if (callee_value.isNull()) typeInfo = "null";
-    else if (callee_value.isInt()) typeInfo = "int";
-    else if (callee_value.isDouble()) typeInfo = "double";
-    else if (callee_value.isBool()) typeInfo = "bool";
-    else if (callee_value.isStringValId()) typeInfo = "string_val_id";
-    else if (callee_value.isStringId()) typeInfo = "string_id";
-    else if (callee_value.isObjectId()) typeInfo = "object_id";
-    else if (callee_value.isArrayId()) typeInfo = "array_id";
-    else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-    else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
-    else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
-    else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
-    COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ")");
-  }
 
-  if (!current_chunk) {
-    COMPILER_THROW("No chunk available for function call");
-  }
-  
-  const auto *callee = current_chunk->getFunction(function_index);
-  if (!callee) {
-    COMPILER_THROW("Function index not found: " +
-                              std::to_string(function_index));
-  }
+    if (!resolve_chunk) {
+        COMPILER_THROW("No chunk available for function call");
+    }
+
+    const auto *callee = resolve_chunk->getFunction(function_index);
+    if (!callee) {
+        std::cerr << "[DEBUG] Function index not found: " << function_index
+                  << " chunk has " << resolve_chunk->getFunctionCount() << " functions"
+                  << " resolve_chunk=" << (void*)resolve_chunk << std::endl;
+        COMPILER_THROW("Function index not found: " +
+                       std::to_string(function_index));
+    }
 
 
  callee->execution_count++;
@@ -3980,29 +3987,32 @@ co->ip = 0;
                              ", got " + std::to_string(args.size()) + ")");
   }
 
-  // Advance caller IP now so RETURN resumes at the next instruction.
-  if (advance_caller_ip && frame_count_ > 0) {
-    currentFrame().ip++;
-  }
+    // Advance caller IP now so RETURN resumes at the next instruction.
+    if (advance_caller_ip && frame_count_ > 0) {
+        currentFrame().ip++;
+    }
 
- size_t base = locals.size();
- size_t stack_depth = stack.size(); // Save current stack depth
-        size_t needed_locals = std::max(callee->local_count, callee->param_count);
-        locals.resize(base + needed_locals, nullptr);
-        {
-            CallFrame cf;
-            cf.function = callee;
-            cf.ip = 0;
-            cf.locals_base = base;
-            cf.closure_id = closure_id;
-            cf.stack_depth = static_cast<uint32_t>(stack_depth);
-            if (frame_arena_.size() <= frame_count_) {
-                frame_arena_.push_back(std::move(cf));
-            } else {
-                frame_arena_[frame_count_] = std::move(cf);
-            }
+    current_chunk = resolve_chunk;
+
+    size_t base = locals.size();
+    size_t stack_depth = stack.size(); // Save current stack depth
+    size_t needed_locals = std::max(callee->local_count, callee->param_count);
+    locals.resize(base + needed_locals, nullptr);
+    {
+        CallFrame cf;
+        cf.function = callee;
+        cf.chunk = resolve_chunk;
+        cf.ip = 0;
+        cf.locals_base = base;
+        cf.closure_id = closure_id;
+        cf.stack_depth = static_cast<uint32_t>(stack_depth);
+        if (frame_arena_.size() <= frame_count_) {
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_] = std::move(cf);
         }
-        frame_count_++;
+    }
+    frame_count_++;
 
   // Initialize parameter slots: provided args first, then defaults
   // Handle variadic parameters: pack extra args into array
@@ -4149,6 +4159,7 @@ void VM::doTailCall(Value callee_value,
         COMPILER_THROW("TAIL_CALL: object is not callable");
     }
 
+    const BytecodeChunk *resolve_chunk = current_chunk;
     uint32_t function_index = 0;
     uint32_t closure_id = 0;
     if (callee_value.isFunctionObjId()) {
@@ -4161,6 +4172,9 @@ void VM::doTailCall(Value callee_value,
                            std::to_string(closure_id));
         }
         function_index = closure->function_index;
+        if (closure->chunk) {
+            resolve_chunk = closure->chunk;
+        }
     } else {
         std::string typeInfo = "unknown";
         if (callee_value.isNull()) typeInfo = "null";
@@ -4174,14 +4188,14 @@ void VM::doTailCall(Value callee_value,
         COMPILER_THROW("TAIL_CALL expects function, closure, or callable object as callee (got " + typeInfo + ")");
     }
 
-  if (!current_chunk) {
-    COMPILER_THROW("No chunk available for tail call");
-  }
+    if (!resolve_chunk) {
+        COMPILER_THROW("No chunk available for tail call");
+    }
 
-  const auto *callee = current_chunk->getFunction(function_index);
-  if (!callee) {
-    COMPILER_THROW("Function index not found: " +
-                             std::to_string(function_index));
+    const auto *callee = resolve_chunk->getFunction(function_index);
+    if (!callee) {
+        COMPILER_THROW("Function index not found: " +
+                       std::to_string(function_index));
   }
 
   // Allow fewer arguments than parameters (for default parameters)
@@ -4218,8 +4232,10 @@ void VM::doTailCall(Value callee_value,
 
     // Update frame to point to new function
     current_frame.function = callee;
+    current_frame.chunk = resolve_chunk;
     current_frame.ip = 0;
     current_frame.closure_id = closure_id;
+    current_chunk = resolve_chunk;
     // Keep same locals base
 
   // Resize locals if needed (reuse existing space)
@@ -4439,8 +4455,13 @@ void VM::doReturn() {
     auto finished = frame_arena_[frame_count_ - 1];
     frame_count_--;
 
-closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
-                    static_cast<uint32_t>(locals.size()));
+    // Restore current_chunk from parent frame
+    if (frame_count_ > 0) {
+        current_chunk = frame_arena_[frame_count_ - 1].chunk;
+    }
+
+    closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                       static_cast<uint32_t>(locals.size()));
 
 if (locals.size() >= finished.locals_base) {
     locals.resize(finished.locals_base);
@@ -5259,11 +5280,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     // Get the string from the function's string table
     uint32_t strIndex = instruction.operands[0].asStringValId();
     const auto* func = currentFrame().function;
-    std::string name;
-    if (current_chunk) {
-      name = current_chunk->getString(strIndex);
-    } else {
-      name = "<unknown:" + std::to_string(strIndex) + ">";
+        std::string name;
+        if (current_chunk) {
+            name = current_chunk->getString(strIndex);
+        } else {
+            name = "<unknown:" + std::to_string(strIndex) + ">";
     }
 
     
@@ -6207,9 +6228,11 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       }
     }
 
-    pushStack(Value::makeClosureId(heap_.allocateClosure(
-        GCHeap::RuntimeClosure{.function_index = closure.function_index,
-                               .upvalues = std::move(closure.upvalues)}).id));
+        pushStack(Value::makeClosureId(heap_.allocateClosure(
+            GCHeap::RuntimeClosure{.function_index = closure.function_index,
+                                    .chunk_index = 0,
+                                    .chunk = current_chunk,
+                                    .upvalues = std::move(closure.upvalues)}).id));
     // Disable GC to test if it's causing corruption
     // maybeCollectGarbage();
     break;
@@ -8265,20 +8288,22 @@ auto *parent_closure = heap_.closure(parent_closure_id);
  }
 
         uint32_t coroutine_stack_depth = static_cast<uint32_t>(stack.size());
-        if (frame_arena_.size() <= frame_count_) {
-            CallFrame cf;
-            cf.function = func;
-            cf.ip = co->ip;
-            cf.locals_base = 0;
-            cf.closure_id = co->closure_id;
-            cf.stack_depth = coroutine_stack_depth;
-            frame_arena_.push_back(std::move(cf));
-        } else {
-            frame_arena_[frame_count_].function = func;
-            frame_arena_[frame_count_].ip = co->ip;
-            frame_arena_[frame_count_].locals_base = 0;
-            frame_arena_[frame_count_].closure_id = co->closure_id;
-            frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
+    if (frame_arena_.size() <= frame_count_) {
+        CallFrame cf;
+        cf.function = func;
+        cf.chunk = current_chunk;
+        cf.ip = co->ip;
+        cf.locals_base = 0;
+        cf.closure_id = co->closure_id;
+        cf.stack_depth = coroutine_stack_depth;
+        frame_arena_.push_back(std::move(cf));
+    } else {
+        frame_arena_[frame_count_].function = func;
+        frame_arena_[frame_count_].chunk = current_chunk;
+        frame_arena_[frame_count_].ip = co->ip;
+        frame_arena_[frame_count_].locals_base = 0;
+        frame_arena_[frame_count_].closure_id = co->closure_id;
+        frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
         }
         frame_count_++;
  co->state = GCHeap::Coroutine::Runnable;
@@ -8312,17 +8337,19 @@ auto *parent_closure = heap_.closure(parent_closure_id);
  const auto *resume_func = resume_chunk ? resume_chunk->getFunction(co->function_index) : nullptr;
         if (resume_func) {
             uint32_t resume_stack_depth = static_cast<uint32_t>(stack.size());
-            if (frame_arena_.size() <= frame_count_) {
-                CallFrame cf;
-                cf.function = resume_func;
-                cf.ip = co->ip;
-                cf.locals_base = 0;
-                cf.closure_id = co->closure_id;
-                cf.stack_depth = resume_stack_depth;
-                frame_arena_.push_back(std::move(cf));
-            } else {
-                frame_arena_[frame_count_].function = resume_func;
-                frame_arena_[frame_count_].ip = co->ip;
+        if (frame_arena_.size() <= frame_count_) {
+            CallFrame cf;
+            cf.function = resume_func;
+            cf.chunk = resume_chunk;
+            cf.ip = co->ip;
+            cf.locals_base = 0;
+            cf.closure_id = co->closure_id;
+            cf.stack_depth = resume_stack_depth;
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_].function = resume_func;
+            frame_arena_[frame_count_].chunk = resume_chunk;
+            frame_arena_[frame_count_].ip = co->ip;
                 frame_arena_[frame_count_].locals_base = 0;
                 frame_arena_[frame_count_].closure_id = co->closure_id;
                 frame_arena_[frame_count_].stack_depth = resume_stack_depth;
@@ -9061,9 +9088,9 @@ Value VM::loadModule(const std::string& path) {
     current_exception_ = nullptr;
 
     if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
+        frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0});
     } else {
-        frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
+        frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0};
     }
     frame_count_++;
     locals.resize(entry->local_count);
@@ -9145,12 +9172,14 @@ Value VM::loadModule(const std::string& path) {
         if (frame_arena_.size() <= frame_count_) {
             CallFrame cf;
             cf.function = callee;
+            cf.chunk = moduleChunk.get();
             cf.ip = 0;
             cf.locals_base = base;
             cf.stack_depth = frame_stack_depth;
             frame_arena_.push_back(std::move(cf));
         } else {
             frame_arena_[frame_count_].function = callee;
+            frame_arena_[frame_count_].chunk = moduleChunk.get();
             frame_arena_[frame_count_].ip = 0;
             frame_arena_[frame_count_].locals_base = base;
             frame_arena_[frame_count_].stack_depth = frame_stack_depth;

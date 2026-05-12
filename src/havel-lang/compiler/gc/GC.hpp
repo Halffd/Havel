@@ -45,6 +45,7 @@ bool isClosed() const { return !is_open; }
     struct RuntimeClosure {
         uint32_t function_index = 0;
         uint32_t chunk_index = 0;
+        const BytecodeChunk* chunk = nullptr;
         std::vector<std::shared_ptr<UpvalueCell>> upvalues;
     };
 

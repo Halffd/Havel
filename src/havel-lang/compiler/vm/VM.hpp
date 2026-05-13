@@ -607,9 +607,6 @@ public:
     // Spawn a goroutine from a registered callback with explicit priority
     uint32_t spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args = {});
 
-  // Hotkey execution state (atomic)
-  void beginHotkeyExecution();
-  void endHotkeyExecution();
   void garbageCollectionSafePoint(size_t work_budget = 0);
 
   

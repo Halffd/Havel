@@ -3934,11 +3934,16 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
         COMPILER_THROW("No chunk available for function call");
     }
 
-    const auto *callee = resolve_chunk->getFunction(function_index);
-    if (!callee) {
-        COMPILER_THROW("Function index not found: " +
-                       std::to_string(function_index));
-    }
+ const auto *callee = resolve_chunk->getFunction(function_index);
+ if (!callee) {
+ std::cerr << "[DEBUG doCall] function_index=" << function_index << " resolve_chunk=" << resolve_chunk << " is_closure=" << callee_value.isClosureId() << " func_count=" << resolve_chunk->getFunctionCount() << std::endl;
+ for (uint32_t i = 0; i < resolve_chunk->getFunctionCount(); i++) {
+ auto* f = resolve_chunk->getFunction(i);
+ if (f) std::cerr << "  fn[" << i << "]=" << f->name << std::endl;
+ }
+ COMPILER_THROW("Function index not found: " +
+ std::to_string(function_index));
+ }
 
 
  callee->execution_count++;
@@ -4454,22 +4459,6 @@ void VM::stepGarbageCollection(size_t work_budget) {
         return locals[index];
       },
       work_budget);
-}
-
-void VM::beginHotkeyExecution() {
-  execution_mutex_.lock();
-  active_hotkey_executions_.fetch_add(1, std::memory_order_relaxed);
-  suspendGC();
-}
-
-void VM::endHotkeyExecution() {
-  const uint32_t previous =
-      active_hotkey_executions_.fetch_sub(1, std::memory_order_acq_rel);
-  if (previous <= 1) {
-    active_hotkey_executions_.store(0, std::memory_order_release);
-    resumeGC();
-  }
-  execution_mutex_.unlock();
 }
 
 void VM::garbageCollectionSafePoint(size_t work_budget) {
@@ -9052,10 +9041,17 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
                                   const std::unordered_map<std::string, Value>& moduleGlobals,
                                   const std::string& canonicalKey,
                                   const std::string& fieldPath) {
-    if (value.isFunctionObjId() && chunk) {
-        uint32_t funcIdx = value.asFunctionObjId();
-        const auto* moduleFunc = chunk->getFunction(funcIdx);
-        uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+ if (value.isFunctionObjId() && chunk) {
+ uint32_t funcIdx = value.asFunctionObjId();
+ const auto* moduleFunc = chunk->getFunction(funcIdx);
+ if (!moduleFunc) {
+ std::cerr << "[DEBUG deepWrap] funcIdx=" << funcIdx << " chunk=" << chunk.get() << " funcCount=" << chunk->getFunctionCount() << " fieldPath=" << fieldPath << std::endl;
+ for (uint32_t i = 0; i < chunk->getFunctionCount(); i++) {
+ auto* f = chunk->getFunction(i);
+ if (f) std::cerr << "  fn[" << i << "]=" << f->name << std::endl;
+ }
+ }
+ uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
         auto moduleChunk = chunk;
         auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
         registerHostFunction(wrapperName,

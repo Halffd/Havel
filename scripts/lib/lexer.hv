@@ -1265,10 +1265,10 @@ fn Lexer(source):
           scanIdentifier()
           continue
 
-        // Skip any unrecognized character
-        advance()
+    // Skip any unrecognized character
+    advance()
 
-  addToken("EOF", "")
+    addToken("EOF", "")
     {tokens: tokens, errors: errors}
 
   {run: _scan, errors: errors}

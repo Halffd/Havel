@@ -1,6 +1,8 @@
 #include "smoke_runner.hpp"
 #include "script_runner.hpp"
 
+namespace havel::test { void run_scheduler_tests(); }
+
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -68,6 +70,7 @@ int main(int argc, char **argv) {
 	bool mode_cpp = false;
 	bool mode_list = false;
 	bool mode_all = false;
+	bool mode_scheduler = false;
 	bool verbose = false;
 	int timeout = 30;
 	std::string havel_bin;
@@ -84,6 +87,7 @@ int main(int argc, char **argv) {
 		else if (arg == "--cpp") { mode_cpp = true; }
 		else if (arg == "--list") { mode_list = true; }
 		else if (arg == "--all") { mode_all = true; }
+		else if (arg == "--scheduler") { mode_scheduler = true; }
 		else if (arg == "--verbose") { verbose = true; }
 		else if (arg == "--timeout" && i + 1 < argc) { timeout = std::atoi(argv[++i]); }
 		else if (arg == "--havel" && i + 1 < argc) { havel_bin = argv[++i]; }
@@ -111,6 +115,11 @@ int main(int argc, char **argv) {
 	if (mode_list) {
 		auto dirs = hvtest::list_test_dirs(scripts_root);
 		return hvtest::list_scripts(dirs);
+	}
+
+	if (mode_scheduler) {
+		havel::test::run_scheduler_tests();
+		return 0;
 	}
 
 	if (!single_files.empty()) {

@@ -523,15 +523,25 @@ public:
   VMExecutionResult executeOneStep(Fiber *current_fiber);
   
   
-  // Load fiber's state into VM's global execution state
-  // Must be called before executeOneStep() to restore suspended fiber
-  // @param fiber The Fiber to load (must have SUSPENDED or pending state)
-  void loadFiberState(Fiber *fiber);
-  
-  // Save VM's current execution state back to fiber
-  // Must be called after executeOneStep() to persist execution progress
-  // @param fiber The Fiber to save to (preserves IP for resumption)
-  void saveFiberState(Fiber *fiber);
+    // Load fiber's state into VM's global execution state
+    // Must be called before executeOneStep() to restore suspended fiber
+    // @param fiber The Fiber to load (must have SUSPENDED or pending state)
+    void loadFiberState(Fiber *fiber);
+
+    // Save VM's current execution state back to fiber
+    // Must be called after executeOneStep() to persist execution progress
+    // @param fiber The Fiber to save to (preserves IP for resumption)
+    void saveFiberState(Fiber *fiber);
+
+    // Initialize a newly-spawned goroutine for first execution
+    // Sets up the initial call frame, resolves chunk from closure if needed,
+    // and copies arguments into locals
+    // @param function_id Bytecode function index to execute
+    // @param closure_id Closure context (0 for plain functions)
+    // @param args Arguments to pass to the function
+    // @return true if initialization succeeded, false if function not found
+    bool startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+                            const std::vector<Value> &args);
 
   
   // Track which fiber is waiting on a specific thread

@@ -91,23 +91,23 @@ bool ExecutionEngine::executeFrame() {
             }
     
     // STEP 3: Load fiber state into VM's global execution state
-    // For newly-created goroutines, use startGoroutineCall which sets up
-    // the initial call frame properly. For resuming goroutines,
-    // use loadFiberState which restores the suspended state.
+    // For newly-created goroutines, use startGoroutineCall which resolves
+    // the correct chunk (from closure if needed) and sets up the call frame.
+    // For resuming goroutines, use loadFiberState which restores suspended state.
     if (g->state == Scheduler::GoroutineState::Created) {
         bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
         if (!ok) {
-            g->state = Scheduler::GoroutineState::Done;
             handleReturned(g);
             stats_.goroutines_completed++;
             stats_.frames_executed++;
             return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
         }
+        g->state = Scheduler::GoroutineState::Runnable;
     } else if (g->fiber) {
         vm_->loadFiberState(g->fiber);
     }
-    
-    
+
+
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
     VMExecutionResult result;

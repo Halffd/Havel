@@ -1,0 +1,8 @@
+fn showArgs(a, b):
+  "a=" + str(a) + " b=" + str(b)
+
+obj = {myAdd: showArgs}
+
+f = obj.myAdd
+r = f("hello", "world")
+print(r)

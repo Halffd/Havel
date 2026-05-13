@@ -8769,7 +8769,12 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
         return 0;
     }
 
+    ::havel::debug("[VM] spawnCallback: id={} priority={} func={} closure={} args={}", 
+                  id, (int)priority, function_index, closure_id, args.size());
+
     uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "hotkey-callback", priority);
+
+    ::havel::debug("[VM] spawnCallback: created gid={} for callback id={}", gid, id);
 
     if (event_queue_) {
         event_queue_->push(Event(EventType::HOTKEY_TRIGGER, gid));

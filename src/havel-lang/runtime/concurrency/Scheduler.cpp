@@ -91,6 +91,12 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 Scheduler::Goroutine* Scheduler::pickNext() {
 	Goroutine* result = nullptr;
 
+    size_t hotkey_count = hotkey_queue_.size();
+    size_t runnable_count = runnable_queue_.size();
+    size_t bg_count = background_queue_.size();
+    ::havel::debug("[Scheduler] pickNext: queues hotkey={} runnable={} background={}", 
+                  hotkey_count, runnable_count, bg_count);
+
 	{
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 
@@ -108,6 +114,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 			}
 			if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 				result = g;
+                ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state);
 				break;
 			}
 		}
@@ -126,6 +133,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 				}
 				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 					result = g;
+                    ::havel::debug("[Scheduler] pickNext: selected RUNNABLE gid={} state={}", g->id, (int)g->state);
 					break;
 				}
 			}
@@ -145,6 +153,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 				}
 				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 					result = g;
+                    ::havel::debug("[Scheduler] pickNext: selected BACKGROUND gid={} state={}", g->id, (int)g->state);
 					break;
 				}
 			}
@@ -154,7 +163,9 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	if (result) {
 		result->state = GoroutineState::Running;
 		current_ = result;
-	}
+	} else {
+        ::havel::debug("[Scheduler] pickNext: no runnable goroutines");
+    }
 
 	return result;
 }

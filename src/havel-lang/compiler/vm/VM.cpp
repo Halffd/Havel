@@ -3467,6 +3467,70 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 }
 
+bool VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+                            const std::vector<Value> &args) {
+    // Clear VM state for fresh goroutine context
+    while (!stack.empty()) stack.pop();
+    locals.clear();
+    frame_count_ = 0;
+
+    // Resolve chunk: closures carry their defining chunk
+    const BytecodeChunk *resolve_chunk = current_chunk;
+    if (closure_id > 0) {
+        auto *closure = heap_.closure(closure_id);
+        if (closure && closure->chunk) {
+            resolve_chunk = closure->chunk;
+        }
+    }
+
+    if (!resolve_chunk) {
+        ::havel::error("[VM] startGoroutineCall: no chunk available for function {}", function_id);
+        return false;
+    }
+
+    const auto *func = resolve_chunk->getFunction(function_id);
+    if (!func) {
+        ::havel::error("[VM] startGoroutineCall: function {} not found in chunk ({} functions)",
+                       function_id, resolve_chunk->getFunctionCount());
+        return false;
+    }
+
+    current_chunk = resolve_chunk;
+
+    // Push args onto VM stack
+    for (const auto &arg : args) {
+        stack.push(arg);
+    }
+
+    // Set up locals with room for params + locals
+    size_t needed = std::max(func->local_count, func->param_count);
+    locals.resize(needed, nullptr);
+
+    // Copy args into local slots
+    for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
+        locals[i] = args[i];
+    }
+
+    // Set up the initial call frame
+    size_t stack_depth = stack.size();
+    CallFrame cf;
+    cf.function = func;
+    cf.chunk = resolve_chunk;
+    cf.ip = 0;
+    cf.locals_base = 0;
+    cf.closure_id = closure_id;
+    cf.stack_depth = static_cast<uint32_t>(stack_depth);
+
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(std::move(cf));
+    } else {
+        frame_arena_[frame_count_] = std::move(cf);
+    }
+    frame_count_++;
+
+    return true;
+}
+
 // ============================================================================
 
 // ============================================================================
@@ -3868,9 +3932,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
     const auto *callee = resolve_chunk->getFunction(function_index);
     if (!callee) {
-        std::cerr << "[DEBUG] Function index not found: " << function_index
-                  << " chunk has " << resolve_chunk->getFunctionCount() << " functions"
-                  << " resolve_chunk=" << (void*)resolve_chunk << std::endl;
         COMPILER_THROW("Function index not found: " +
                        std::to_string(function_index));
     }

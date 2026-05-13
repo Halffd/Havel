@@ -6218,27 +6218,38 @@ std::unique_ptr<havel::ast::BlockStatement>
 Parser::parseBlockStatement(bool inputContext) {
   auto block = std::make_unique<havel::ast::BlockStatement>();
 
-  // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
-  if (at().type == havel::TokenType::Colon) {
-    // Colon block: consume ':' and parse indented statements
-    size_t colonColumn = at().column; // Track colon's column for dedent detection
-    advance(); // consume ':'
-    
-    // Skip newline after colon
-    while (at().type == havel::TokenType::NewLine) {
-      advance();
-    }
-    
-    // Save and set input context
-    bool savedInputContext = context.inInputContext;
-    context.inInputContext = inputContext;
-    
-    // Track the first statement's column as base indentation for dedent detection
-    // Skip any leading newlines first
-    while (at().type == havel::TokenType::NewLine) {
-      advance();
-    }
-    size_t baseIndentation = at().column;
+    // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
+    if (at().type == havel::TokenType::Colon) {
+        // Colon block: consume ':' and parse indented statements
+        // Find the indent of the header line (the line containing the colon)
+        // by scanning backwards to the first token on the same line
+        size_t colonLine = at().line;
+        size_t headerIndent = at().column; // fallback: colon's own column
+        for (size_t i = position; i > 0; --i) {
+            if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+                headerIndent = tokens[i].column;
+            } else {
+                break;
+            }
+        }
+        advance(); // consume ':'
+
+        // Skip newline after colon
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+
+        // Save and set input context
+        bool savedInputContext = context.inInputContext;
+        context.inInputContext = inputContext;
+
+        // Base indentation = header line indent + 1
+        // Anything at column > headerIndent is inside the block
+        // Skip any leading newlines first
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        size_t baseIndentation = headerIndent + 1;
     
     // Parse statements until we hit a dedent (token at lower column than base)
     while (notEOF()) {

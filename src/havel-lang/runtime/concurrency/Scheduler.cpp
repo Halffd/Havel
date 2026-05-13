@@ -29,13 +29,16 @@ Scheduler::Goroutine::~Goroutine() {
 }
 
 uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
-	uint32_t closure_id, const std::string& name, FiberPriority priority) {
-	auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
-	g->function_id = function_id;
-	g->closure_id = closure_id;
-	g->state = GoroutineState::Created;
+ 	uint32_t closure_id, const std::string& name, FiberPriority priority) {
+ 	auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
+ 	g->function_id = function_id;
+ 	g->closure_id = closure_id;
+ 	g->state = GoroutineState::Created;
 
-	g->fiber = new Fiber(g->id, function_id, 0, name);
+    ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}", 
+                  g->id, name, function_id, closure_id, (int)priority);
+
+ 	g->fiber = new Fiber(g->id, function_id, 0, name);
 	if (closure_id > 0) {
 		auto& frame = g->fiber->currentFrame();
 		frame.closure_id = closure_id;
@@ -59,10 +62,13 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 		if (priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(goroutines_[g_id].get());
+            ::havel::debug("[Scheduler] Added gid={} to HOTKEY queue (front)", g_id);
 		} else if (priority == FiberPriority::BACKGROUND) {
 			background_queue_.push_back(goroutines_[g_id].get());
+            ::havel::debug("[Scheduler] Added gid={} to BACKGROUND queue", g_id);
 		} else {
 			runnable_queue_.push_back(goroutines_[g_id].get());
+            ::havel::debug("[Scheduler] Added gid={} to RUNNABLE queue", g_id);
 		}
 	}
 

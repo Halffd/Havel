@@ -1,0 +1,14 @@
+use { Lexer } from "lib/lexer"
+print("Lexer type: " + type(Lexer))
+a = Lexer("1")
+print("a type: " + type(a))
+print("a value: " + a)
+lx = a
+print("lx type: " + type(lx))
+if lx != null:
+  print("lx.run type: " + type(lx.run))
+  result = lx.run()
+  print("got result")
+  print(type(result))
+else:
+  print("lx is null, Lexer returned nothing")

@@ -1,0 +1,18 @@
+use { Lexer } from "lib/lexer"
+
+lx = Lexer("1 + 2")
+print("got lexer")
+print(type(lx))
+print(type(lx.run))
+result = lx.run()
+print("got result")
+print(type(result))
+if result != null:
+  print("tokens: " + type(result.tokens))
+  print("errors: " + type(result.errors))
+  if result.tokens != null:
+    print("token count: " + result.tokens.len)
+    for t in result.tokens:
+      print(t.type + " '" + t.value + "'")
+else:
+  print("result is null")

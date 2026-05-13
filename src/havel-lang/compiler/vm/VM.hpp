@@ -162,13 +162,8 @@ public:
   };
 
 private:
-  struct RuntimeClosure {
-    uint32_t function_index = 0;
-    uint32_t chunk_index = 0;  // NEW: track which chunk this closure belongs to
-    std::vector<std::shared_ptr<GCHeap::UpvalueCell>> upvalues;
-  };
 
-  struct TryHandler {
+ struct TryHandler {
     uint32_t catch_ip = 0;
     uint32_t finally_ip = 0; // 0 if no finally block
     uint32_t finally_return_ip =
@@ -176,14 +171,15 @@ private:
     size_t stack_depth = 0;
   };
 
- struct CallFrame {
-  const BytecodeFunction *function = nullptr;
-  const BytecodeChunk *chunk = nullptr;
-  size_t ip = 0;
-  size_t locals_base = 0;
-  uint32_t closure_id = 0;
-  std::vector<TryHandler> try_stack;
-  size_t stack_depth = 0; // Expression stack depth at call time
+struct CallFrame {
+    const BytecodeFunction *function = nullptr;
+    const BytecodeChunk *chunk = nullptr;
+    size_t ip = 0;
+    size_t locals_base = 0;
+    uint32_t closure_id = 0;
+    bool owns_globals = false;
+    std::vector<TryHandler> try_stack;
+    size_t stack_depth = 0; // Expression stack depth at call time
 };
   public:
 
@@ -819,6 +815,11 @@ public:
 
     Value runInContext(const std::string& source, Value context);
 
+    Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
+    Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
+                                   const std::unordered_map<std::string, Value>& moduleGlobals,
+                                   const std::string& canonicalKey,
+                                   const std::string& fieldPath);
     Value loadModule(const std::string& path);
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
@@ -829,10 +830,12 @@ public:
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
   void setCurrentChunkPublic(const BytecodeChunk* chunk) { current_chunk = chunk; }
  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
-void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
-  main_chunk_ = std::move(chunk);
-  current_chunk = main_chunk_.get();
-}
+ void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+ main_chunk_ = std::move(chunk);
+ current_chunk = main_chunk_.get();
+ }
+ const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
+ std::unordered_map<std::string, Value>& getGlobals() { return globals; }
 void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
   repl_chunks_.push_back(chunk);
   current_chunk = chunk.get();

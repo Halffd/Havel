@@ -971,9 +971,15 @@ uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
         return Value::makeNull().rawBits();
     const auto* target = chunk->getFunction(func_index);
 
-    GCHeap::RuntimeClosure closure;
-    closure.function_index = func_index;
-    closure.upvalues.reserve(target->upvalues.size());
+ GCHeap::RuntimeClosure closure;
+ closure.function_index = func_index;
+ closure.chunk = chunk;
+ closure.upvalues.reserve(target->upvalues.size());
+
+ auto& mainChunk = vm->getMainChunk();
+ if (mainChunk && chunk != mainChunk.get()) {
+     closure.module_globals = std::make_shared<std::unordered_map<std::string, Value>>(vm->getGlobals());
+ }
 
     for (const auto& descriptor : target->upvalues) {
         if (descriptor.captures_local) {
@@ -998,8 +1004,8 @@ uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
         }
     }
 
-    auto ref = vm->getHeap().allocateClosure(std::move(closure));
-    return Value::makeClosureId(ref.id).rawBits();
+ auto ref = vm->getHeap().allocateClosure(std::move(closure));
+ return Value::makeClosureId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_array_del(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {

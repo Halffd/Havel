@@ -1,0 +1,23 @@
+use {outer, deep_outer} from "lib/test_module_closure"
+
+i = outer()
+r1 = i()
+
+d = deep_outer()
+d2 = d()
+r2 = d2()
+
+print(r1)
+print(r2)
+
+if r1 == 42 {
+  print("PASS outer")
+} else {
+  print("FAIL outer")
+}
+
+if r2 == 42 {
+  print("PASS deep")
+} else {
+  print("FAIL deep")
+}

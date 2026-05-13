@@ -26,6 +26,27 @@ namespace havel
     return g_registeredHotkeysMutex;
   }
 
+  void HotkeyManager::triggerForTest(const std::string &alias) {
+    auto &hotkeys = RegisteredHotkeys();
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    for (auto &[id, hotkey] : hotkeys) {
+      if (hotkey.enabled && hotkey.alias == alias && hotkey.callback) {
+        executeHotkey(hotkey);
+        return;
+      }
+    }
+  }
+
+  void HotkeyManager::getQueueStatsForTest(size_t &total, size_t &enabled) const {
+    auto &hotkeys = RegisteredHotkeys();
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    total = hotkeys.size();
+    enabled = 0;
+    for (auto &[id, hotkey] : hotkeys) {
+      if (hotkey.enabled) enabled++;
+    }
+  }
+
   HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
       : io(io),
         conditionalManager(io),

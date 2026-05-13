@@ -94,6 +94,13 @@ public:
  compiler::EventQueue* getEventQueue() const { return eventQueue_; }
  std::mutex &getHotkeyMutex();
 
+  // Test harness: programmatically trigger a hotkey by alias
+  // Implementation in .cpp to avoid incomplete type issues
+  void triggerForTest(const std::string &alias);
+
+  // Test harness: get current queue sizes
+  void getQueueStatsForTest(size_t &total, size_t &enabled) const;
+
   // ModeManager access
   std::shared_ptr<ModeManager>& getModeManager() { return modeManager; }
   const std::shared_ptr<ModeManager>& getModeManager() const { return modeManager; }

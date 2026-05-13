@@ -62,13 +62,13 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 		if (priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(goroutines_[g_id].get());
-            ::havel::debug("[Scheduler] Added gid={} to HOTKEY queue (front)", g_id);
+            ::havel::debug("[Scheduler] [PUSH FRONT] gid={} name='{}' priority=HOTKEY", g_id, name);
 		} else if (priority == FiberPriority::BACKGROUND) {
 			background_queue_.push_back(goroutines_[g_id].get());
-            ::havel::debug("[Scheduler] Added gid={} to BACKGROUND queue", g_id);
+            ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=BACKGROUND", g_id, name);
 		} else {
 			runnable_queue_.push_back(goroutines_[g_id].get());
-            ::havel::debug("[Scheduler] Added gid={} to RUNNABLE queue", g_id);
+            ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=NORMAL", g_id, name);
 		}
 	}
 
@@ -163,8 +163,10 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	if (result) {
 		result->state = GoroutineState::Running;
 		current_ = result;
+        ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
+                      result->id, result->name, (int)result->state);
 	} else {
-        ::havel::debug("[Scheduler] pickNext: no runnable goroutines");
+        ::havel::debug("[Scheduler] [IDLE] no runnable goroutines");
     }
 
 	return result;
@@ -175,6 +177,8 @@ void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
 
 	g->state = GoroutineState::Suspended;
 	g->suspension_reason = reason;
+    ::havel::debug("[Scheduler] [YIELD] gid={} name='{}' reason={}", 
+                  g->id, g->name, (int)reason);
 }
 
 void Scheduler::unpark(Scheduler::Goroutine* g) {
@@ -191,10 +195,13 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_back(g);
+            ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to HOTKEY queue", g->id, g->name);
 		} else if (g->priority == FiberPriority::BACKGROUND) {
 			background_queue_.push_back(g);
+            ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to BACKGROUND queue", g->id, g->name);
 		} else {
 			runnable_queue_.push_back(g);
+            ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to RUNNABLE queue", g->id, g->name);
 		}
 	}
 }

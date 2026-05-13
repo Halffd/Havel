@@ -1129,50 +1129,11 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-          // Inside a function - declare as local variable.
-          // If we're inside a closure, declare in the outermost
-          // enclosing non-closure function so the binding is visible
-          // both in the closure and in the surrounding scope.
-          size_t target_fn = function_stack_.size() - 1;
-          while (target_fn > 0) {
-            const auto &ctx = function_stack_[target_fn];
-            if (ctx.owner && ctx.owner->kind == ast::NodeType::LambdaExpression) {
-              // This is a closure — skip to enclosing function
-              if (target_fn == 0) break;
-              target_fn--;
-            } else {
-              break;
-            }
-          }
-          auto &target_ctx = function_stack_[target_fn];
-          if (target_ctx.scopes.empty()) {
-            beginScope();
-            // beginScope was called on the wrong context, we need to
-            // manually ensure the target has a scope
-          }
-          if (target_ctx.scopes.empty()) {
-            target_ctx.scopes.emplace_back();
-          }
-          auto &scope = target_ctx.scopes.back();
-          auto existing = scope.find(ident.symbol);
-          if (existing == scope.end()) {
-            uint32_t slot = target_ctx.next_slot++;
-            scope[ident.symbol] =
-                FunctionContext::LocalSymbol{.slot = slot, .is_const = false};
-            if (result_.declaration_slots.find(&ident) == result_.declaration_slots.end()) {
-              result_.declaration_slots[&ident] = slot;
-            }
-            ResolvedBinding newBinding;
-            newBinding.kind = ResolvedBindingKind::Local;
-            newBinding.slot = slot;
-            newBinding.name = ident.symbol;
-            newBinding.is_const = false;
-            noteIdentifierBinding(ident, newBinding);
-          } else {
-            noteIdentifierBinding(ident, ResolvedBinding{
-                ResolvedBindingKind::Local, existing->second.slot, 0,
-                ident.symbol, existing->second.is_const});
-          }
+            // Inside a function - declare as local in the current function.
+            // Variables that need to be shared with enclosing scopes will
+            // be resolved as upvalues via resolveIdentifier when accessed
+            // from nested functions.
+            declareLocal(ident.symbol, &ident, false);
         }
       } else {
         noteIdentifierBinding(ident, *binding);

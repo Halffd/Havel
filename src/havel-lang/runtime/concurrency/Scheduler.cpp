@@ -249,8 +249,21 @@ size_t Scheduler::goroutineCount() const {
 }
 
 size_t Scheduler::runnableCount() const {
-	std::lock_guard<std::mutex> lock(priority_mutex_);
-	return hotkey_queue_.size() + runnable_queue_.size() + background_queue_.size();
+  std::lock_guard<std::mutex> lock(priority_mutex_);
+  size_t count = 0;
+  for (auto* g : hotkey_queue_) {
+    if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
+      count++;
+  }
+  for (auto* g : runnable_queue_) {
+    if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
+      count++;
+  }
+  for (auto* g : background_queue_) {
+    if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
+      count++;
+  }
+  return count;
 }
 
 size_t Scheduler::suspendedCount() const {
@@ -347,11 +360,20 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 }
 
 bool Scheduler::hasRunnableFibers() const {
-    std::lock_guard<std::mutex> lock(priority_mutex_);
-    if (!hotkey_queue_.empty()) return true;
-    if (!runnable_queue_.empty()) return true;
-    if (!background_queue_.empty()) return true;
-    return false;
+  std::lock_guard<std::mutex> lock(priority_mutex_);
+  for (auto* g : hotkey_queue_) {
+    if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
+      return true;
+  }
+  for (auto* g : runnable_queue_) {
+    if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
+      return true;
+  }
+  for (auto* g : background_queue_) {
+    if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
+      return true;
+  }
+  return false;
 }
 
 size_t Scheduler::wakeSleepingGoroutines() {

@@ -909,14 +909,16 @@ namespace havel
     }
     case ExecutorMode::Scheduler:
     {
-      if (debugging::debug_hotkeys) debug("Executing hotkey '{}' in Scheduler mode", alias);
+      debug("[HotkeyManager] executeHotkey '{}' mode=Scheduler", alias);
       // Use HotkeyExecutor for async execution (runs callback in thread pool)
       // The callback itself calls vm->spawnCallback() to create a VM goroutine
       if (auto *executor = io->GetHotkeyExecutor()) {
+        debug("[HotkeyManager] Submitting callback for '{}' to executor", alias);
         auto result = executor->submit([callback = std::move(callback), alias]() {
           try {
-            if (debugging::debug_hotkeys) debug("Scheduler: executing hotkey '{}' via executor", alias);
+            debug("[HotkeyManager] EXECUTOR: executing callback for '{}'", alias);
             callback();
+            debug("[HotkeyManager] EXECUTOR: callback for '{}' completed", alias);
           } catch (const std::exception &e) {
             error("Hotkey '{}' threw: {}", alias, e.what());
           } catch (...) {

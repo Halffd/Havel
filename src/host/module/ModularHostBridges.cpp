@@ -2926,7 +2926,9 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
 
     bool success = ctx->hotkeyManager->AddHotkey(
         hotkeyStr, [vm, callbackId, hotkeyContext]() {
+            ::havel::debug("[ModularHostBridges] HOTKEY CALLBACK invoked for callbackId={}", callbackId);
             uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+            ::havel::debug("[ModularHostBridges] spawnCallback returned gid={}", gid);
             if (gid == 0) {
                 ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
             }

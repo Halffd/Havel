@@ -1381,13 +1381,25 @@ reserveLocalSlot(slot);
     compileWaitStatement(static_cast<const ast::WaitStatement &>(statement));
     break;
 
-  case ast::NodeType::BreakStatement:
-    emit(OpCode::JUMP, 0); // Will be patched later
-    break;
+case ast::NodeType::BreakStatement: {
+if (loop_stack_.empty()) {
+COMPILER_THROW("break outside of loop");
+}
+emit(OpCode::JUMP, 0);
+loop_stack_.back().break_jumps.push_back(
+static_cast<uint32_t>(current_function->instructions.size()) - 1);
+break;
+}
 
-  case ast::NodeType::ContinueStatement:
-    emit(OpCode::JUMP, 0); // Will be patched later
-    break;
+case ast::NodeType::ContinueStatement: {
+if (loop_stack_.empty()) {
+COMPILER_THROW("continue outside of loop");
+}
+emit(OpCode::JUMP, 0);
+loop_stack_.back().continue_jumps.push_back(
+static_cast<uint32_t>(current_function->instructions.size()) - 1);
+break;
+}
 
   case ast::NodeType::SleepStatement: {
     const auto &sleep = static_cast<const ast::SleepStatement &>(statement);
@@ -4709,55 +4721,73 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
 }
 
 void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
-  if (!statement.condition || !statement.body) {
-    COMPILER_THROW("Malformed while statement");
-  }
+    if (!statement.condition || !statement.body) {
+        COMPILER_THROW("Malformed while statement");
+    }
 
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
 
-  compileExpression(*statement.condition);
-  uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    loop_stack_.push_back({loop_start, {}, {}});
 
-  // Disable tail position so body's last expression result gets POPped
-  bool saved_tail = in_tail_position_;
-  in_tail_position_ = false;
-  compileStatement(*statement.body);
-  in_tail_position_ = saved_tail;
-  emit(OpCode::JUMP, loop_start);
+    compileExpression(*statement.condition);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
-  uint32_t loop_end =
-      static_cast<uint32_t>(current_function->instructions.size());
-  patchJump(end_jump, loop_end);
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileStatement(*statement.body);
+    in_tail_position_ = saved_tail;
+    emit(OpCode::JUMP, loop_start);
+
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, loop_end);
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, loop_start);
+    }
 }
 
 void ByteCompiler::compileDoWhileStatement(
     const ast::DoWhileStatement &statement) {
-  if (!statement.condition || !statement.body) {
-    COMPILER_THROW("Malformed do-while statement");
-  }
+    if (!statement.condition || !statement.body) {
+        COMPILER_THROW("Malformed do-while statement");
+    }
 
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
 
-  // Execute body first (do-while always executes at least once)
-  // Disable tail position so body's last expression result gets POPped
-  bool saved_tail = in_tail_position_;
-  in_tail_position_ = false;
-  compileStatement(*statement.body);
-  in_tail_position_ = saved_tail;
+    loop_stack_.push_back({loop_start, {}, {}});
 
-  // Then check condition
-  compileExpression(*statement.condition);
-  uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileStatement(*statement.body);
+    in_tail_position_ = saved_tail;
 
-  // Jump back to loop start
-  emit(OpCode::JUMP, loop_start);
+    uint32_t continue_target =
+        static_cast<uint32_t>(current_function->instructions.size());
+    compileExpression(*statement.condition);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
-  // Patch end jump
-  uint32_t loop_end =
-      static_cast<uint32_t>(current_function->instructions.size());
-  patchJump(end_jump, loop_end);
+    emit(OpCode::JUMP, loop_start);
+
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, loop_end);
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, continue_target);
+    }
 }
 
 void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
@@ -4792,23 +4822,25 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   reserveLocalSlot(iterVarSlot);
   emit(OpCode::STORE_VAR, iterVarSlot);
 
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
 
-  // Call iterator.next()
-  emit(OpCode::LOAD_VAR, iterVarSlot);
-  emit(OpCode::ITER_NEXT);
+    loop_stack_.push_back({loop_start, {}, {}});
 
-  // Store result in temp
-  uint32_t resultSlot = next_local_index++;
-  reserveLocalSlot(resultSlot);
-  emit(OpCode::STORE_VAR, resultSlot);
+    // Call iterator.next()
+    emit(OpCode::LOAD_VAR, iterVarSlot);
+    emit(OpCode::ITER_NEXT);
 
-  // Check result.done - if true, exit loop
-  emit(OpCode::LOAD_VAR, resultSlot);
-  { uint32_t _sid = addStringConstant("done"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-  emit(OpCode::OBJECT_GET);
-  uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
+    // Store result in temp
+    uint32_t resultSlot = next_local_index++;
+    reserveLocalSlot(resultSlot);
+    emit(OpCode::STORE_VAR, resultSlot);
+
+    // Check result.done - if true, exit loop
+    emit(OpCode::LOAD_VAR, resultSlot);
+    { uint32_t _sid = addStringConstant("done"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::OBJECT_GET);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
 
   // Iterator returns {first, second, done}:
   // - Arrays: first=index, second=value
@@ -4901,22 +4933,28 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     patchJump(rangeEndJump, static_cast<uint32_t>(current_function->instructions.size()));
   }
 
-  // Execute body
-  // Disable tail position so body's last expression result gets POPped
-  {
-    bool saved_tail = in_tail_position_;
-    in_tail_position_ = false;
-    compileStatement(*statement.body);
-    in_tail_position_ = saved_tail;
-  }
+// Execute body
+    {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+    }
 
-  // Jump back to loop start
-  emit(OpCode::JUMP, loop_start);
+    emit(OpCode::JUMP, loop_start);
 
-  // Patch end jump
-  uint32_t loop_end =
-      static_cast<uint32_t>(current_function->instructions.size());
-  patchJump(end_jump, loop_end);
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, loop_end);
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, loop_start);
+    }
 }
 
 void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
@@ -4924,73 +4962,111 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
     COMPILER_THROW("Malformed loop statement: body is null");
   }
 
-  // Check if this is a count-based loop: loop 5 { ... }
-  if (statement.countExpr) {
-    // Compile count expression
-    compileExpression(*statement.countExpr);
+    // Check if this is a count-based loop: loop 5 { ... }
+    if (statement.countExpr) {
+        compileExpression(*statement.countExpr);
 
-    // Store count in temp variable
-    uint32_t countSlot = next_local_index++;
-    reserveLocalSlot(countSlot);
-    emit(OpCode::STORE_VAR, countSlot);
+        uint32_t countSlot = next_local_index++;
+        reserveLocalSlot(countSlot);
+        emit(OpCode::STORE_VAR, countSlot);
 
-    // Create counter variable starting at 0
-    uint32_t counterSlot = next_local_index++;
-    reserveLocalSlot(counterSlot);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
-    emit(OpCode::STORE_VAR, counterSlot);
+        uint32_t counterSlot = next_local_index++;
+        reserveLocalSlot(counterSlot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
+        emit(OpCode::STORE_VAR, counterSlot);
 
+        uint32_t loop_start =
+            static_cast<uint32_t>(current_function->instructions.size());
+
+        loop_stack_.push_back({loop_start, {}, {}});
+
+        emit(OpCode::LOAD_VAR, counterSlot);
+        emit(OpCode::LOAD_VAR, countSlot);
+        emit(OpCode::LT);
+        uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+
+        emit(OpCode::LOAD_VAR, counterSlot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
+        emit(OpCode::ADD);
+        emit(OpCode::STORE_VAR, counterSlot);
+
+        emit(OpCode::JUMP, loop_start);
+
+        uint32_t loop_end =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(end_jump, loop_end);
+
+        auto info = std::move(loop_stack_.back());
+        loop_stack_.pop_back();
+        for (uint32_t bj : info.break_jumps) {
+            patchJump(bj, loop_end);
+        }
+        for (uint32_t cj : info.continue_jumps) {
+            patchJump(cj, loop_start);
+        }
+        return;
+    }
+
+    // Check if this is a condition-based loop: loop while condition { ... }
+    if (statement.condition) {
+        uint32_t loop_start =
+            static_cast<uint32_t>(current_function->instructions.size());
+
+        loop_stack_.push_back({loop_start, {}, {}});
+
+        compileExpression(*statement.condition);
+        uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+
+        emit(OpCode::JUMP, loop_start);
+
+        uint32_t loop_end =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(end_jump, loop_end);
+
+        auto info = std::move(loop_stack_.back());
+        loop_stack_.pop_back();
+        for (uint32_t bj : info.break_jumps) {
+            patchJump(bj, loop_end);
+        }
+        for (uint32_t cj : info.continue_jumps) {
+            patchJump(cj, loop_start);
+        }
+        return;
+    }
+
+    // Infinite loop: loop { ... }
     uint32_t loop_start =
         static_cast<uint32_t>(current_function->instructions.size());
 
-    // Check if counter < count
-    emit(OpCode::LOAD_VAR, counterSlot);
-    emit(OpCode::LOAD_VAR, countSlot);
-    emit(OpCode::LT);
-    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    loop_stack_.push_back({loop_start, {}, {}});
 
-    // Execute body
-    compileStatement(*statement.body);
+    {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+    }
 
-    // Increment counter
-    emit(OpCode::LOAD_VAR, counterSlot);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
-    emit(OpCode::ADD);
-    emit(OpCode::STORE_VAR, counterSlot);
-
-    // Jump back to loop start
     emit(OpCode::JUMP, loop_start);
 
-    // Patch end jump
-    uint32_t loop_end =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(end_jump, loop_end);
-    return;
-  }
-
-  // Check if this is a condition-based loop: loop while condition { ... }
-  if (statement.condition) {
-    uint32_t loop_start =
-        static_cast<uint32_t>(current_function->instructions.size());
-
-    compileExpression(*statement.condition);
-    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
-
-    compileStatement(*statement.body);
-    emit(OpCode::JUMP, loop_start);
-
-    uint32_t loop_end =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(end_jump, loop_end);
-    return;
-  }
-
-  // Infinite loop: loop { ... }
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
-
-  compileStatement(*statement.body);
-  emit(OpCode::JUMP, loop_start);
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, static_cast<uint32_t>(current_function->instructions.size()));
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, loop_start);
+    }
 }
 
 void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {

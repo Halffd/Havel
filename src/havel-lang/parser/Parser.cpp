@@ -6250,7 +6250,6 @@ while (at().type == havel::TokenType::NewLine) {
         advance();
     }
     size_t baseIndentation = headerIndent + 1;
-    std::cerr << "[PBS] colonLine=" << colonLine << " headerIndent=" << headerIndent << " baseIndent=" << baseIndentation << " first='" << at().value << "' col=" << at().column << std::endl;
     
     // Parse statements until we hit a dedent (token at lower column than base)
     while (notEOF()) {
@@ -6270,10 +6269,8 @@ while (at().type == havel::TokenType::NewLine) {
         // Note: we use < not <= because statements at same column as base are still in the block
         // Only strictly lower column indicates dedent
         if (at().column < baseIndentation) {
-            std::cerr << "[PBS] dedent: '" << at().value << "' col=" << at().column << " < base=" << baseIndentation << std::endl;
             break;
         }
-        std::cerr << "[PBS] consuming: '" << at().value << "' col=" << at().column << " line=" << at().line << " type=" << static_cast<int>(at().type) << " >= base=" << baseIndentation << std::endl;
 
       size_t beforePos = position;
       auto stmt = parseStatement();

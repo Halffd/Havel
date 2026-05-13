@@ -3934,19 +3934,14 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
         COMPILER_THROW("No chunk available for function call");
     }
 
- const auto *callee = resolve_chunk->getFunction(function_index);
- if (!callee) {
- std::cerr << "[DEBUG doCall] function_index=" << function_index << " resolve_chunk=" << resolve_chunk << " is_closure=" << callee_value.isClosureId() << " func_count=" << resolve_chunk->getFunctionCount() << std::endl;
- for (uint32_t i = 0; i < resolve_chunk->getFunctionCount(); i++) {
- auto* f = resolve_chunk->getFunction(i);
- if (f) std::cerr << "  fn[" << i << "]=" << f->name << std::endl;
- }
- COMPILER_THROW("Function index not found: " +
- std::to_string(function_index));
- }
+const auto *callee = resolve_chunk->getFunction(function_index);
+if (!callee) {
+    COMPILER_THROW("Function index not found: " +
+        std::to_string(function_index));
+}
 
 
- callee->execution_count++;
+callee->execution_count++;
  if (callee->execution_count == 1000 && hot_func_cb_) {
  hot_func_cb_(*callee);
  }
@@ -6315,10 +6310,10 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       }
     }
 
- std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
- if (main_chunk_ && current_chunk != main_chunk_.get()) {
-     closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
- }
+  std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
+  if (current_chunk != main_chunk_.get()) {
+    closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+  }
  pushStack(Value::makeClosureId(heap_.allocateClosure(
      GCHeap::RuntimeClosure{.function_index = closure.function_index,
                             .chunk_index = 0,
@@ -7220,17 +7215,18 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       }
     }
 
-    if (!found_val.isNull()) {
-       if (found_val.isFunctionObjId() || found_val.isClosureId() || found_val.isHostFuncId()) {
-          // Bind method
-          auto boundObj = heap_.allocateObject();
-          auto *bObj = heap_.object(boundObj.id);
-          (*bObj)["fn"] = found_val;
-          (*bObj)["self"] = object;
-          pushStack(Value::makeObjectId(boundObj.id));
-       } else {
-          pushStack(found_val);
-       }
+        if (!found_val.isNull()) {
+            if (found_val.isHostFuncId()) {
+                pushStack(found_val);
+            } else if (found_val.isFunctionObjId() || found_val.isClosureId()) {
+                auto boundObj = heap_.allocateObject();
+                auto *bObj = heap_.object(boundObj.id);
+                (*bObj)["fn"] = found_val;
+                (*bObj)["self"] = object;
+                pushStack(Value::makeObjectId(boundObj.id));
+            } else {
+                pushStack(found_val);
+            }
     } else {
         // Built-in .len property returns key count for objects
         if (*key == "len") {
@@ -9041,21 +9037,16 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
                                   const std::unordered_map<std::string, Value>& moduleGlobals,
                                   const std::string& canonicalKey,
                                   const std::string& fieldPath) {
- if (value.isFunctionObjId() && chunk) {
- uint32_t funcIdx = value.asFunctionObjId();
- const auto* moduleFunc = chunk->getFunction(funcIdx);
- if (!moduleFunc) {
- std::cerr << "[DEBUG deepWrap] funcIdx=" << funcIdx << " chunk=" << chunk.get() << " funcCount=" << chunk->getFunctionCount() << " fieldPath=" << fieldPath << std::endl;
- for (uint32_t i = 0; i < chunk->getFunctionCount(); i++) {
- auto* f = chunk->getFunction(i);
- if (f) std::cerr << "  fn[" << i << "]=" << f->name << std::endl;
- }
- }
- uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
-        auto moduleChunk = chunk;
-        auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
-        registerHostFunction(wrapperName,
-            [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName](const std::vector<Value>& args) -> Value {
+    if (value.isFunctionObjId() && chunk) {
+        uint32_t funcIdx = value.asFunctionObjId();
+        const auto* moduleFunc = chunk->getFunction(funcIdx);
+        uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+    auto moduleChunk = chunk;
+    auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+    std::string fnCapturedKey = canonicalKey;
+    std::string fnCapturedField = fieldPath;
+    registerHostFunction(wrapperName,
+        [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
                 std::vector<Value> callArgs = args;
                 if (callArgs.size() > paramCount && paramCount > 0) {
                     callArgs.erase(callArgs.begin());
@@ -9106,10 +9097,11 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
                         locals[base + i] = Value::makeNull();
                     }
                 }
-                runDispatchLoop(frame_count_ - 1);
-                Value result = popStack();
-                result = deepMaterializeStrings(result, current_chunk);
-                globals = std::move(savedGlobals);
+            runDispatchLoop(frame_count_ - 1);
+            Value result = popStack();
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+                                              moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
+            globals = std::move(savedGlobals);
                 globals_mirror_object_id_ = savedMirrorId;
                 globals["_G"] = savedG;
                 current_chunk = savedChunk;
@@ -9119,27 +9111,114 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
         return Value::makeHostFuncId(hostIdx);
     }
 
-    if (value.isObjectId()) {
-        auto* obj = heap_.object(value.asObjectId());
-        if (!obj) return value;
-        for (auto& [k, v] : *obj) {
-            v = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
-                                         fieldPath.empty() ? k : (fieldPath + "." + k));
-        }
-        return value;
-    }
+  if (value.isClosureId() && chunk) {
+    uint32_t closureId = value.asClosureId();
+    auto* rc = heap_.closure(closureId);
+    if (!rc || !rc->chunk) return value;
+    if (rc->chunk != chunk.get()) return value;
 
-    if (value.isArrayId()) {
-        auto* arr = heap_.array(value.asArrayId());
-        if (!arr) return value;
-        for (size_t i = 0; i < arr->size(); i++) {
-            (*arr)[i] = deepWrapModuleFunctions((*arr)[i], chunk, moduleGlobals, canonicalKey,
-                                                 fieldPath + "[" + std::to_string(i) + "]");
-        }
-        return value;
-    }
+    uint32_t funcIdx = rc->function_index;
+    auto moduleChunk = chunk;
+    auto closureGlobals = rc->module_globals
+        ? rc->module_globals
+        : std::make_shared<std::unordered_map<std::string, Value>>(moduleGlobals);
+    auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
+    std::string capturedKey = canonicalKey;
+    std::string capturedField = fieldPath;
+    registerHostFunction(wrapperName,
+        [this, closureId, funcIdx, moduleChunk, closureGlobals, wrapperName, capturedKey, capturedField](const std::vector<Value>& args) -> Value {
+            auto* rc2 = heap_.closure(closureId);
+            if (!rc2 || !rc2->chunk) return Value::makeNull();
 
+            auto* savedChunk = current_chunk;
+            auto savedGlobals = globals;
+            auto savedMirrorId = globals_mirror_object_id_;
+            Value savedG = globals["_G"];
+            globals = *closureGlobals;
+            current_chunk = moduleChunk.get();
+
+            const auto* callee = moduleChunk->getFunction(funcIdx);
+            if (!callee) {
+                globals = std::move(savedGlobals);
+                globals_mirror_object_id_ = savedMirrorId;
+                globals["_G"] = savedG;
+                current_chunk = savedChunk;
+                return Value::makeNull();
+            }
+
+            size_t base = locals.size();
+            locals.resize(base + callee->local_count, nullptr);
+            uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
+            if (frame_arena_.size() <= frame_count_) {
+                CallFrame cf;
+                cf.function = callee;
+                cf.chunk = moduleChunk.get();
+                cf.ip = 0;
+                cf.locals_base = base;
+                cf.closure_id = closureId;
+                cf.stack_depth = frame_stack_depth;
+                cf.owns_globals = true;
+                frame_arena_.push_back(std::move(cf));
+            } else {
+                frame_arena_[frame_count_].function = callee;
+                frame_arena_[frame_count_].chunk = moduleChunk.get();
+                frame_arena_[frame_count_].ip = 0;
+                frame_arena_[frame_count_].locals_base = base;
+                frame_arena_[frame_count_].closure_id = closureId;
+                frame_arena_[frame_count_].stack_depth = frame_stack_depth;
+                frame_arena_[frame_count_].owns_globals = true;
+            }
+            frame_count_++;
+
+            for (uint32_t i = 0; i < callee->param_count; i++) {
+                if (i < args.size()) {
+                    Value argVal = args[i];
+                    if (argVal.isStringValId() && savedChunk) {
+                        auto strRef = heap_.allocateString(
+                            savedChunk->getString(argVal.asStringValId()));
+                        argVal = Value::makeStringId(strRef.id);
+                    }
+                    locals[base + i] = std::move(argVal);
+                } else {
+                    locals[base + i] = Value::makeNull();
+                }
+            }
+
+            runDispatchLoop(frame_count_ - 1);
+            Value result = popStack();
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+                                              moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+            globals = std::move(savedGlobals);
+            globals_mirror_object_id_ = savedMirrorId;
+            globals["_G"] = savedG;
+            current_chunk = savedChunk;
+            return result;
+        });
+    uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+    return Value::makeHostFuncId(hostIdx);
+  }
+
+  if (value.isObjectId()) {
+    auto* obj = heap_.object(value.asObjectId());
+    if (!obj) return value;
+    for (auto& [k, v] : *obj) {
+      v = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
+                                    fieldPath.empty() ? k : (fieldPath + "." + k));
+    }
     return value;
+  }
+
+  if (value.isArrayId()) {
+    auto* arr = heap_.array(value.asArrayId());
+    if (!arr) return value;
+    for (size_t i = 0; i < arr->size(); i++) {
+      (*arr)[i] = deepWrapModuleFunctions((*arr)[i], chunk, moduleGlobals, canonicalKey,
+                                            fieldPath + "[" + std::to_string(i) + "]");
+    }
+    return value;
+  }
+
+  return value;
 }
 
 Value VM::loadModule(const std::string& path) {
@@ -9183,8 +9262,8 @@ Value VM::loadModule(const std::string& path) {
                     (*obj)[localName] = value;
                 }
             }
-            Value exports = Value::makeObjectId(exportsObj.id);
-            moduleLoader_.putCache(path, exports);
+Value exports = Value::makeObjectId(exportsObj.id);
+    moduleLoader_.putCache(path, exports);
             return exports;
         }
         COMPILER_THROW("Module not found: " + path);
@@ -9365,7 +9444,7 @@ Value VM::loadModule(const std::string& path) {
     // restoring the caller's chunk. StringValId and FunctionObjId are
     // indices into the *module's* chunk — they'd resolve against the
     // caller's chunk after restore, producing garbage.
-    auto exportsObj = createHostObject();
+auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
     auto moduleGlobalsSnapshot = globals;
     for (const auto& [name, value] : globals) {
@@ -9373,7 +9452,7 @@ Value VM::loadModule(const std::string& path) {
             if (host_function_globals_.count(name) == 0 || !value.isHostFuncId()) {
                 Value materialized = deepMaterializeStrings(value, current_chunk);
                 materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
-                                                        canonicalKey, name);
+                    canonicalKey, name);
                 (*obj)[name] = materialized;
             }
         }

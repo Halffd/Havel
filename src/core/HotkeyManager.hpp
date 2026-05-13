@@ -127,16 +127,11 @@ public:
 static std::unordered_map<int, HotKey> &RegisteredHotkeys();
   static std::mutex &RegisteredHotkeysMutex();
 
-  // Test harness: programmatically trigger a hotkey by alias
-  // Implementation in .cpp to avoid incomplete type issues
-  void triggerForTest(const std::string &alias);
-
-  // Test harness: get current queue sizes
-  void getQueueStatsForTest(size_t &total, size_t &enabled) const;
-
-  // Internal: track registered hotkey callbacks for test triggering
-  // Maps alias -> callback function
-  std::unordered_map<std::string, std::function<void()>> testCallbacks_;
+// Internal: track registered hotkey callbacks for test triggering
+// Maps alias -> callback function
+std::unordered_map<std::string, std::function<void()>> testCallbacks_;
+std::vector<ConditionalHotkey>* activeConditionalHotkeys = nullptr;
+bool conditionalHotkeysEnabled = true;
 
 private:
   void initializeInputCallbacks();
@@ -185,7 +180,7 @@ private:
  MouseGestureEngine mouseGestureEngine;
  std::unordered_set<int> registeredGestureHotkeys;
  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
- compiler::EventQueue* eventQueue_ = nullptr;
+    compiler::EventQueue* eventQueue_ = nullptr;
 };
 
 } // namespace havel

@@ -3234,19 +3234,26 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
   if (at().type != havel::TokenType::CloseParen) {
     failAt(at(), "Expected ')' after parameter list");
   }
-  advance(); // consume ')'
+    advance(); // consume ')'
 
-  // Check for return type annotation (-> Type)
-  std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-  if (at().type == havel::TokenType::ReturnType) {
-    advance(); // consume '->'
-    returnType = parseTypeAnnotation();
-  }
+    // Check for return type annotation (-> Type)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    if (at().type == havel::TokenType::ReturnType) {
+        advance(); // consume '->'
+        returnType = parseTypeAnnotation();
+    }
 
-  auto body = parseBlockStatement();
+    std::cerr << "[DEBUG parseFunctionDeclaration] before parseBlockStatement: at() type="
+              << static_cast<int>(at().type) << " value='" << at().value
+              << "' line=" << at().line << " col=" << at().column << std::endl;
+
+    auto body = parseBlockStatement();
+
+    std::cerr << "[DEBUG parseFunctionDeclaration] after parseBlockStatement: body has "
+              << (body ? body->body.size() : 0) << " statements" << std::endl;
 
   return std::make_unique<havel::ast::FunctionDeclaration>(
       std::move(name), std::move(params), std::move(body),
@@ -6225,7 +6232,7 @@ Parser::parseBlockStatement(bool inputContext) {
         // by scanning backwards to the first token on the same line
         size_t colonLine = at().line;
         size_t headerIndent = at().column; // fallback: colon's own column
-        for (size_t i = position; i > 0; --i) {
+        for (size_t i = position + 1; i-- > 0; ) {
             if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
                 headerIndent = tokens[i].column;
             } else {
@@ -6238,6 +6245,10 @@ Parser::parseBlockStatement(bool inputContext) {
         while (at().type == havel::TokenType::NewLine) {
             advance();
         }
+
+        std::cerr << "[DEBUG parseBlockStatement] after skip newlines: at() type="
+                  << static_cast<int>(at().type) << " value='" << at().value
+                  << "' line=" << at().line << " col=" << at().column << std::endl;
 
         // Save and set input context
         bool savedInputContext = context.inInputContext;

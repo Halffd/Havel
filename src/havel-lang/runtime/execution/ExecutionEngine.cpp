@@ -75,14 +75,11 @@ bool ExecutionEngine::executeFrame() {
 	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
 	scheduler_->wakeSleepingGoroutines();
 
-	// STEP 2: Pick next runnable goroutine
-	// The scheduler maintains a queue of RUNNABLE goroutines
-	Scheduler::Goroutine* g = scheduler_->pickNext();
+// STEP 2: Pick next runnable goroutine
+    // The scheduler maintains a queue of RUNNABLE goroutines
+    Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
       // No runnable goroutine - idle
-            if (debug_mode_) {
-                std::cerr << "[ExecutionEngine] No runnable goroutines, idle\n";
-            }
       return false;
     }
     

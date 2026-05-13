@@ -909,20 +909,27 @@ namespace havel
     }
     case ExecutorMode::Scheduler:
     {
-      if (debugging::debug_hotkeys) debug("Executing hotkey '{}' immediately in Scheduler mode", alias);
-      try
-      {
-        callback();
+      if (debugging::debug_hotkeys) debug("Executing hotkey '{}' in Scheduler mode", alias);
+      // Use HotkeyExecutor for async execution (runs callback in thread pool)
+      // The callback itself calls vm->spawnCallback() to create a VM goroutine
+      if (auto *executor = io->GetHotkeyExecutor()) {
+        auto result = executor->submit([callback = std::move(callback), alias]() {
+          try {
+            if (debugging::debug_hotkeys) debug("Scheduler: executing hotkey '{}' via executor", alias);
+            callback();
+          } catch (const std::exception &e) {
+            error("Hotkey '{}' threw: {}", alias, e.what());
+          } catch (...) {
+            error("Hotkey '{}' threw unknown exception", alias);
+          }
+        }, 5000);
+        if (!result.accepted) {
+          warn("Hotkey task queue full, dropping callback: {}", alias);
+        }
+        return;
       }
-      catch (const std::exception &e)
-      {
-        error("Hotkey '{}' threw: {}", alias, e.what());
-      }
-      catch (...)
-      {
-        error("Hotkey '{}' threw unknown exception", alias);
-      }
-return;
+      // Fallback to Thread mode if no executor
+      break;
     }
     case ExecutorMode::Sync:
     {

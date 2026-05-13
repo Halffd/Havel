@@ -1381,15 +1381,15 @@ reserveLocalSlot(slot);
     compileWaitStatement(static_cast<const ast::WaitStatement &>(statement));
     break;
 
-case ast::NodeType::BreakStatement: {
-if (loop_stack_.empty()) {
-COMPILER_THROW("break outside of loop");
-}
-emit(OpCode::JUMP, 0);
-loop_stack_.back().break_jumps.push_back(
-static_cast<uint32_t>(current_function->instructions.size()) - 1);
-break;
-}
+    case ast::NodeType::BreakStatement: {
+        if (loop_stack_.empty()) {
+            COMPILER_THROW("break outside of loop");
+        }
+        emit(OpCode::JUMP, 0);
+        loop_stack_.back().break_jumps.push_back(
+            static_cast<uint32_t>(current_function->instructions.size()) - 1);
+        break;
+    }
 
 case ast::NodeType::ContinueStatement: {
 if (loop_stack_.empty()) {
@@ -4651,12 +4651,12 @@ if (in_tail_position_ && try_depth_ == 0 &&
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
-  if (!statement.condition || !statement.consequence) {
-    COMPILER_THROW("Malformed if statement");
-  }
+    if (!statement.condition || !statement.consequence) {
+        COMPILER_THROW("Malformed if statement");
+    }
 
-  compileExpression(*statement.condition);
-  uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    compileExpression(*statement.condition);
+    uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
   bool was_tail = in_tail_position_;
   bool consequence_was_tail = false;
@@ -4678,11 +4678,11 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
     emit(OpCode::RETURN);
   }
 
-  if (statement.alternative) {
-    uint32_t end_jump = emitJump(OpCode::JUMP);
-    uint32_t else_target =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(else_jump, else_target);
+    if (statement.alternative) {
+        uint32_t end_jump = emitJump(OpCode::JUMP);
+        uint32_t else_target =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(else_jump, else_target);
 
     bool alternative_was_tail = false;
     if (was_tail) {
@@ -4700,9 +4700,9 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
       emit(OpCode::RETURN);
     }
 
-    uint32_t end_target =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(end_jump, end_target);
+        uint32_t end_target =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(end_jump, end_target);
 
     // TCO: Only set tail call flag if BOTH branches emitted tail calls
     if (was_tail && consequence_was_tail && alternative_was_tail) {

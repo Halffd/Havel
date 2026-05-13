@@ -3246,14 +3246,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
         returnType = parseTypeAnnotation();
     }
 
-    std::cerr << "[DEBUG parseFunctionDeclaration] before parseBlockStatement: at() type="
-              << static_cast<int>(at().type) << " value='" << at().value
-              << "' line=" << at().line << " col=" << at().column << std::endl;
-
     auto body = parseBlockStatement();
-
-    std::cerr << "[DEBUG parseFunctionDeclaration] after parseBlockStatement: body has "
-              << (body ? body->body.size() : 0) << " statements" << std::endl;
 
   return std::make_unique<havel::ast::FunctionDeclaration>(
       std::move(name), std::move(params), std::move(body),
@@ -6242,25 +6235,22 @@ Parser::parseBlockStatement(bool inputContext) {
         advance(); // consume ':'
 
         // Skip newline after colon
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
+while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
 
-        std::cerr << "[DEBUG parseBlockStatement] after skip newlines: at() type="
-                  << static_cast<int>(at().type) << " value='" << at().value
-                  << "' line=" << at().line << " col=" << at().column << std::endl;
-
-        // Save and set input context
+    // Save and set input context
         bool savedInputContext = context.inInputContext;
         context.inInputContext = inputContext;
 
-        // Base indentation = header line indent + 1
-        // Anything at column > headerIndent is inside the block
-        // Skip any leading newlines first
-        while (at().type == havel::TokenType::NewLine) {
-            advance();
-        }
-        size_t baseIndentation = headerIndent + 1;
+    // Base indentation = header line indent + 1
+    // Anything at column > headerIndent is inside the block
+    // Skip any leading newlines first
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    size_t baseIndentation = headerIndent + 1;
+    std::cerr << "[PBS] colonLine=" << colonLine << " headerIndent=" << headerIndent << " baseIndent=" << baseIndentation << " first='" << at().value << "' col=" << at().column << std::endl;
     
     // Parse statements until we hit a dedent (token at lower column than base)
     while (notEOF()) {
@@ -6279,9 +6269,10 @@ Parser::parseBlockStatement(bool inputContext) {
       // Check if we're back at base indentation or lower (dedent)
       // Note: we use < not <= because statements at same column as base are still in the block
       // Only strictly lower column indicates dedent
-      if (at().column < baseIndentation) {
-        break;
-      }
+        if (at().column < baseIndentation) {
+            std::cerr << "[PBS] dedent: '" << at().value << "' col=" << at().column << " < base=" << baseIndentation << std::endl;
+            break;
+        }
 
       size_t beforePos = position;
       auto stmt = parseStatement();

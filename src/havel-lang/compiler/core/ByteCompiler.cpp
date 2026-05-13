@@ -5201,6 +5201,59 @@ void ByteCompiler::collectFunctionDeclarations(
     break;
   }
 
+  case ast::NodeType::ForStatement: {
+    const auto &for_stmt = static_cast<const ast::ForStatement &>(statement);
+    if (for_stmt.body) {
+      collectFunctionDeclarations(*for_stmt.body, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::LoopStatement: {
+    const auto &loop_stmt = static_cast<const ast::LoopStatement &>(statement);
+    if (loop_stmt.body) {
+      collectFunctionDeclarations(*loop_stmt.body, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::DoWhileStatement: {
+    const auto &do_while = static_cast<const ast::DoWhileStatement &>(statement);
+    if (do_while.body) {
+      collectFunctionDeclarations(*do_while.body, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
+    for (const auto &case_node : switch_stmt.cases) {
+      if (case_node && case_node->body) {
+        collectFunctionDeclarations(*case_node->body, out);
+      }
+    }
+    break;
+  }
+
+  case ast::NodeType::OnModeStatement: {
+    const auto &on_mode = static_cast<const ast::OnModeStatement &>(statement);
+    if (on_mode.body) {
+      collectFunctionDeclarations(*on_mode.body, out);
+    }
+    if (on_mode.alternative) {
+      collectFunctionDeclarations(*on_mode.alternative, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::OffModeStatement: {
+    const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
+    if (off_mode.body) {
+      collectFunctionDeclarations(*off_mode.body, out);
+    }
+    break;
+  }
+
   default:
     break;
   }
@@ -5338,18 +5391,78 @@ void ByteCompiler::collectLambdaExpressions(
     }
       break;
     }
- case ast::NodeType::DecoratorStatement: {
-        const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
-        if (dec.target) {
-            collectLambdaExpressions(*dec.target, out);
-        }
-        for (const auto &deco : dec.decorators) {
-            if (deco) {
-                collectLambdaExpressions(*deco, out);
-            }
-        }
-        break;
+case ast::NodeType::DecoratorStatement: {
+    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+    if (dec.target) {
+      collectLambdaExpressions(*dec.target, out);
     }
+    for (const auto &deco : dec.decorators) {
+      if (deco) {
+        collectLambdaExpressions(*deco, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::TryExpression: {
+    const auto &try_expr = static_cast<const ast::TryExpression &>(statement);
+    if (try_expr.tryBody) {
+      collectLambdaExpressions(*try_expr.tryBody, out);
+    }
+    if (try_expr.catchBody) {
+      collectLambdaExpressions(*try_expr.catchBody, out);
+    }
+    if (try_expr.finallyBlock) {
+      collectLambdaExpressions(*try_expr.finallyBlock, out);
+    }
+    break;
+  }
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
+    if (switch_stmt.expression) {
+      collectLambdaExpressions(*switch_stmt.expression, out);
+    }
+    for (const auto &case_node : switch_stmt.cases) {
+      if (case_node) {
+        if (case_node->test) {
+          collectLambdaExpressions(*case_node->test, out);
+        }
+        if (case_node->body) {
+          collectLambdaExpressions(*case_node->body, out);
+        }
+      }
+    }
+    break;
+  }
+  case ast::NodeType::ImplDeclaration: {
+    const auto &impl = static_cast<const ast::ImplDeclaration &>(statement);
+    for (const auto &method : impl.funcs) {
+      if (method && method->body) {
+        for (const auto &nested : method->body->body) {
+          if (nested) {
+            collectLambdaExpressions(*nested, out);
+          }
+        }
+      }
+    }
+    break;
+  }
+  case ast::NodeType::OnModeStatement: {
+    const auto &on_mode = static_cast<const ast::OnModeStatement &>(statement);
+    if (on_mode.body) {
+      collectLambdaExpressions(*on_mode.body, out);
+    }
+    if (on_mode.alternative) {
+      collectLambdaExpressions(*on_mode.alternative, out);
+    }
+    break;
+  }
+  case ast::NodeType::OffModeStatement: {
+    const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
+    if (off_mode.body) {
+      collectLambdaExpressions(*off_mode.body, out);
+    }
+    break;
+  }
   default:
     break;
   }

@@ -579,21 +579,22 @@ if (isAtEnd()) {
         line = savedLine;
         column = savedColumn;
         std::string value = raw.substr(1);
+        raw = std::string(1, quote) + raw + std::string(1, quote);
         return makeToken(value, TokenType::String, raw);
     }
 
-  // Consume closing quote
-  advance();
+    advance(); // consume closing quote
 
-  TokenType type;
-  if (isRegexString) {
-    type = TokenType::RegexString;
-  } else if (hasInterpolation) {
-    type = TokenType::InterpolatedString;
-  } else {
-    type = TokenType::String;
-  }
-  return makeToken(value, type, raw);
+    TokenType type;
+    if (isRegexString) {
+        type = TokenType::RegexString;
+    } else if (hasInterpolation) {
+        type = TokenType::InterpolatedString;
+    } else {
+        type = TokenType::String;
+    }
+    raw = std::string(1, quote) + raw + std::string(1, quote);
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanMultilineString(bool isFString, char quote) {
@@ -707,14 +708,15 @@ if (isAtEnd()) {
         return makeToken(value, TokenType::MultilineString, raw);
     }
 
-  // Consume closing triple-quote
-  advance();
-  advance();
-  advance();
+    // Consume closing triple-quote
+    advance();
+    advance();
+    advance();
 
-  TokenType type = hasInterpolation ? TokenType::InterpolatedString
-                                    : TokenType::MultilineString;
-  return makeToken(value, type, raw);
+    TokenType type = hasInterpolation ? TokenType::InterpolatedString
+                                      : TokenType::MultilineString;
+    raw = std::string(3, quote) + raw + std::string(3, quote);
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanBacktick(bool isMultiline) {
@@ -815,17 +817,19 @@ Token Lexer::scanBacktick(bool isMultiline) {
     return makeToken(value, TokenType::Backtick, raw);
   }
 
-  if (isMultiline) {
-    advance();
-    advance();
-    advance();
-  } else {
-    advance();
-  }
+    if (isMultiline) {
+        advance();
+        advance();
+        advance();
+        raw = "```" + raw + "```";
+    } else {
+        advance();
+        raw = "`" + raw + "`";
+    }
 
-  TokenType type = hasInterpolation ? TokenType::InterpolatedBacktick
-                                         : TokenType::Backtick;
-  return makeToken(value, type, raw);
+    TokenType type = hasInterpolation ? TokenType::InterpolatedBacktick
+                                      : TokenType::Backtick;
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanRegexLiteral() {

@@ -3035,9 +3035,21 @@ Value InputBridge::handleHotkeyRegisterConditional(
 Value
 InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  return Value::makeBool(false);
+  if (!ctx || !ctx->hotkeyManager) {
+    return Value::makeBool(false);
+  }
+
+  if (args.empty() || !args[0].isStringValId()) {
+    return Value::makeBool(false);
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string alias = vm->resolveStringKey(args[0]);
+
+  ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
+  ctx->hotkeyManager->triggerForTest(alias);
+
+  return Value::makeBool(true);
 }
 
 Value

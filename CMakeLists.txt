@@ -840,6 +840,7 @@ if(ENABLE_HAVEL_LANG)
 set(HVTEST_SOURCES
   src/hvtest/main.cpp
   src/hvtest/smoke_runner.cpp
+  src/hvtest/test_scheduler_rig.cpp
   src/utils/Logger.cpp
 )
 

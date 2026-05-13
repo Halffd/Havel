@@ -5114,55 +5114,64 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
       std::move(finallyBlock));
 }
 
-std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
-  advance(); // consume "if"
+std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn) {
+    size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
+    advance(); // consume "if"
 
-  bool prevAllow = context.allowBraceSugar;
-  context.allowBraceSugar = false;
-  auto condition = parseExpression();
-  context.allowBraceSugar = prevAllow;
+    bool prevAllow = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    auto condition = parseExpression();
+    context.allowBraceSugar = prevAllow;
 
-  std::unique_ptr<havel::ast::Statement> consequence;
+    std::unique_ptr<havel::ast::Statement> consequence;
 
-  // Skip newlines before body
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-
-  // Block form ({ or : with indented block) or inline form (single statement)
-  if (at().type == havel::TokenType::OpenBrace ||
-      at().type == havel::TokenType::Colon) {
-    consequence = parseBlockStatement();
-  } else {
-    consequence = parseInlineStatement();
-  }
-
-  // Skip newlines before checking for else
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-
-  std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-  if (at().type == havel::TokenType::Else) {
-    advance(); // consume "else"
-
-    // Skip newlines before else body
+    // Skip newlines before body
     while (at().type == havel::TokenType::NewLine) {
-      advance();
+        advance();
     }
 
-    if (at().type == havel::TokenType::If) {
-      alternative = parseIfStatement();
-    } else if (at().type == havel::TokenType::OpenBrace ||
-               at().type == havel::TokenType::Colon) {
-      alternative = parseBlockStatement();
+    // Block form ({ or : with indented block) or inline form (single statement)
+    if (at().type == havel::TokenType::OpenBrace ||
+        at().type == havel::TokenType::Colon) {
+        consequence = parseBlockStatement();
     } else {
-      alternative = parseInlineStatement();
+        consequence = parseInlineStatement();
     }
-  }
 
-  return std::make_unique<havel::ast::IfStatement>(
-      std::move(condition), std::move(consequence), std::move(alternative));
+    // Skip newlines before checking for else
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+
+    std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+    if (at().type == havel::TokenType::Else) {
+        // Indentation-sensitive else: only attach else if it's at the same
+        // indent level or deeper than this if. If the else is at a shallower
+        // indent, it belongs to an outer if statement.
+        if (at().column >= ifColumn) {
+            size_t elseCol = at().column;
+            advance(); // consume "else"
+
+            // Skip newlines before else body
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+
+            if (at().type == havel::TokenType::If) {
+                // For "else if", pass the else column as the effective indent
+                // so nested else matching uses the chain's indent level
+                alternative = parseIfStatement(elseCol);
+            } else if (at().type == havel::TokenType::OpenBrace ||
+                       at().type == havel::TokenType::Colon) {
+                alternative = parseBlockStatement();
+            } else {
+                alternative = parseInlineStatement();
+            }
+        }
+    }
+
+    return std::make_unique<havel::ast::IfStatement>(
+        std::move(condition), std::move(consequence), std::move(alternative));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {

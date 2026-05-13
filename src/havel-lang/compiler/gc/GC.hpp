@@ -42,12 +42,13 @@ is_open = false;
 bool isClosed() const { return !is_open; }
 };
 
-    struct RuntimeClosure {
-        uint32_t function_index = 0;
-        uint32_t chunk_index = 0;
-        const BytecodeChunk* chunk = nullptr;
-        std::vector<std::shared_ptr<UpvalueCell>> upvalues;
-    };
+struct RuntimeClosure {
+    uint32_t function_index = 0;
+    uint32_t chunk_index = 0;
+    const BytecodeChunk* chunk = nullptr;
+    std::shared_ptr<std::unordered_map<std::string, Value>> module_globals;
+    std::vector<std::shared_ptr<UpvalueCell>> upvalues;
+};
 
     struct ObjectEntry {
         std::unordered_map<std::string, Value> data;

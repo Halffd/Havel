@@ -9085,39 +9085,22 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
                         frame_arena_[frame_count_].stack_depth = frame_stack_depth;
                     }
                     frame_count_++;
-                    for (uint32_t i = 0; i < callee->param_count; i++) {
-                        if (i < callArgs.size()) {
-                            Value argVal = callArgs[i];
-                            if (argVal.isStringValId() && savedChunk) {
-                                auto strRef = heap_.allocateString(
-                                    savedChunk->getString(argVal.asStringValId()));
-                                argVal = Value::makeStringId(strRef.id);
-                            }
-                            locals[base + i] = std::move(argVal);
-                        } else {
-                            locals[base + i] = Value::makeNull();
-                        }
-                    }
-                    std::cerr << "[MOD_WRAP] " << wrapperName << " base=" << base << " local_count=" << callee->local_count << " param_count=" << callee->param_count << " callArgs=" << callArgs.size() << " locals_size_before=" << savedLocalsSize << " frame_count=" << frame_count_ << "\n";
-                    for (uint32_t i = 0; i < callee->param_count && i < callArgs.size(); i++) {
-                        std::cerr << "  locals[" << (base+i) << "] type=" << (locals[base+i].isStringId() ? "string" : locals[base+i].isArrayId() ? "array" : locals[base+i].isObjectId() ? "object" : locals[base+i].isNumber() ? "number" : "other") << "\n";
-                    }
-                    size_t before_dispatch = locals.size();
-                    runDispatchLoop(frame_count_ - 1);
-                    std::cerr << "[MOD_WRAP] " << wrapperName << " after dispatch locals.size()=" << locals.size() << " before=" << before_dispatch << " savedLocalsSize=" << savedLocalsSize << " frame_count=" << frame_count_ << "\n";
-                    // Check if any of the original param locals were corrupted
-                    // (they shouldn't be — doReturn should restore locals_base correctly)
-                    if (locals.size() > base) {
-                        for (uint32_t i = 0; i < callee->param_count && (base + i) < locals.size(); i++) {
-                            auto& lv = locals[base + i];
-                            std::cerr << "  POST locals[" << (base+i) << "] type=" << (lv.isStringId() ? "string" : lv.isArrayId() ? "array" : lv.isObjectId() ? "object" : lv.isNumber() ? "number" : lv.isNull() ? "null" : "other") << "\n";
-                        }
-                    }
-                    Value result = popStack();
-                    // Restore locals to pre-call size
-                    if (locals.size() > savedLocalsSize) {
-                        locals.resize(savedLocalsSize);
-                    }
+        for (uint32_t i = 0; i < callee->param_count; i++) {
+            if (i < callArgs.size()) {
+                Value argVal = callArgs[i];
+                if (savedChunk) {
+                    argVal = deepMaterializeStrings(argVal, savedChunk);
+                }
+                locals[base + i] = std::move(argVal);
+            } else {
+                locals[base + i] = Value::makeNull();
+            }
+        }
+        runDispatchLoop(frame_count_ - 1);
+        Value result = popStack();
+        if (locals.size() > savedLocalsSize) {
+            locals.resize(savedLocalsSize);
+        }
                     result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
                         moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
                     globals = std::move(savedGlobals);
@@ -9189,24 +9172,22 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
             }
             frame_count_++;
 
-            for (uint32_t i = 0; i < callee->param_count; i++) {
-                if (i < args.size()) {
-                    Value argVal = args[i];
-                    if (argVal.isStringValId() && savedChunk) {
-                        auto strRef = heap_.allocateString(
-                            savedChunk->getString(argVal.asStringValId()));
-                        argVal = Value::makeStringId(strRef.id);
-                    }
-                    locals[base + i] = std::move(argVal);
-                } else {
-                    locals[base + i] = Value::makeNull();
+        for (uint32_t i = 0; i < callee->param_count; i++) {
+            if (i < args.size()) {
+                Value argVal = args[i];
+                if (savedChunk) {
+                    argVal = deepMaterializeStrings(argVal, savedChunk);
                 }
+                locals[base + i] = std::move(argVal);
+            } else {
+                locals[base + i] = Value::makeNull();
             }
+        }
 
-            runDispatchLoop(frame_count_ - 1);
-            Value result = popStack();
-            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
-                                              moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+        runDispatchLoop(frame_count_ - 1);
+        Value result = popStack();
+        result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+            moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
             globals = std::move(savedGlobals);
             globals_mirror_object_id_ = savedMirrorId;
             globals["_G"] = savedG;

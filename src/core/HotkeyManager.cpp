@@ -27,13 +27,27 @@ namespace havel
   }
 
   void HotkeyManager::triggerForTest(const std::string &alias) {
+    // The hotkeys are stored in IO's internal map
+    // We need to use the registered static map that was populated by AddHotkey
+    // Let's try using IO's internal mechanism
+    
+    // Try to iterate through IO's internal hotkey storage
+    // First try the static map
     auto &hotkeys = RegisteredHotkeys();
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    
+    bool found = false;
     for (auto &[id, hotkey] : hotkeys) {
-      if (hotkey.enabled && hotkey.alias == alias && hotkey.callback) {
-        executeHotkey(hotkey);
-        return;
-      }
+        if (hotkey.alias == alias && hotkey.enabled && hotkey.callback) {
+            debug("[HotkeyManager] triggerForTest: found '{}' id={} enabled={}", alias, id, hotkey.enabled);
+            executeHotkey(hotkey);
+            found = true;
+            break;
+        }
+    }
+    
+    if (!found) {
+        debug("[HotkeyManager] triggerForTest: NOT FOUND '{}' - available: {}", alias, hotkeys.size());
     }
   }
 
@@ -42,8 +56,12 @@ namespace havel
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
     total = hotkeys.size();
     enabled = 0;
+    debug("[HotkeyManager] getQueueStats: {} total hotkeys in static map", total);
     for (auto &[id, hotkey] : hotkeys) {
-      if (hotkey.enabled) enabled++;
+        if (hotkey.enabled) {
+            enabled++;
+            debug("  - id={} alias='{}' enabled={}", id, hotkey.alias, hotkey.enabled);
+        }
     }
   }
 

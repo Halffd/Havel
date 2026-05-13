@@ -2927,6 +2927,12 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
     bool success = ctx->hotkeyManager->AddHotkey(
         hotkeyStr, [vm, callbackId, hotkeyContext]() {
             ::havel::debug("[ModularHostBridges] HOTKEY CALLBACK invoked for callbackId={}", callbackId);
+            auto &hotkeys = ::havel::HotkeyManager::RegisteredHotkeys();
+            auto &mutex = ::havel::HotkeyManager::RegisteredHotkeysMutex();
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                ::havel::debug("[ModularHostBridges] Registered hotkeys count: {}", hotkeys.size());
+            }
             uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
             ::havel::debug("[ModularHostBridges] spawnCallback returned gid={}", gid);
             if (gid == 0) {

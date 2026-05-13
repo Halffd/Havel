@@ -124,13 +124,19 @@ public:
 
   bool HandleInputEvent(const InputEvent &event);
 
-  static std::unordered_map<int, HotKey> &RegisteredHotkeys();
+static std::unordered_map<int, HotKey> &RegisteredHotkeys();
   static std::mutex &RegisteredHotkeysMutex();
 
-  bool conditionalHotkeysEnabled = true;
-  std::vector<ConditionalHotkey> *activeConditionalHotkeys;
+  // Test harness: programmatically trigger a hotkey by alias
+  // Implementation in .cpp to avoid incomplete type issues
+  void triggerForTest(const std::string &alias);
 
-  // Note: setInterpreter removed - interpreter no longer available
+  // Test harness: get current queue sizes
+  void getQueueStatsForTest(size_t &total, size_t &enabled) const;
+
+  // Internal: track registered hotkey callbacks for test triggering
+  // Maps alias -> callback function
+  std::unordered_map<std::string, std::function<void()>> testCallbacks_;
 
 private:
   void initializeInputCallbacks();

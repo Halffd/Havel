@@ -1,0 +1,9 @@
+fn _helper(kind, line, col):
+  {kind: kind, line: line, col: col}
+
+fn TestInner(a, b, c, d, e):
+  n = _helper("TestInner", d, e)
+  n.a = a
+  n.b = b
+  n.c = c
+  n

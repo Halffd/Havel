@@ -4842,23 +4842,99 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     emit(OpCode::OBJECT_GET);
     uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
 
-  // Iterator returns {first, second, done}:
-  // - Arrays: first=index, second=value
-  // - Objects: first=key, second=value
-  // - Strings: first=index, second=char
-  
-  if (multiVar && iterSlots.size() >= 2) {
-    // Multi-variable: store first and second directly
-    emit(OpCode::LOAD_VAR, resultSlot);
-    { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    emit(OpCode::OBJECT_GET);
-    emit(OpCode::STORE_VAR, iterSlots[0]);
-    
-    emit(OpCode::LOAD_VAR, resultSlot);
-    { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    emit(OpCode::OBJECT_GET);
-    emit(OpCode::STORE_VAR, iterSlots[1]);
-  } else {
+ // Iterator returns {first, second, done}:
+ // - Arrays: first=index, second=value
+ // - Objects: first=key, second=value
+ // - Strings: first=index, second=char
+
+ if (multiVar && iterSlots.size() >= 2) {
+ // Multi-variable iteration:
+ // - Arrays/strings/ranges: destructure the element (second)
+ //   e.g. for a, b in [[1,2],[3,4]] -> a=1, b=2
+ // - Objects/sets: key-value (first=key, second=value)
+
+ // Check if it's an array (has "push")
+ emit(OpCode::LOAD_VAR, iterableSlot);
+ { uint32_t _sid = addStringConstant("push"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ uint32_t isArrayJump = emitJump(OpCode::JUMP_IF_NULL);
+
+ // Array: destructure second (the element) into slots
+ // Load second, then ARRAY_GET for each slot
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ // Store the element in a temp slot for reuse
+ uint32_t elemSlot = next_local_index++;
+ reserveLocalSlot(elemSlot);
+ emit(OpCode::STORE_VAR, elemSlot);
+ for (size_t i = 0; i < iterSlots.size(); i++) {
+ emit(OpCode::LOAD_VAR, elemSlot);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
+ emit(OpCode::ARRAY_GET);
+ emit(OpCode::STORE_VAR, iterSlots[i]);
+ }
+ uint32_t arrEndJump = emitJump(OpCode::JUMP);
+
+ // Check if it's a string (has "upper")
+ patchJump(isArrayJump, static_cast<uint32_t>(current_function->instructions.size()));
+ emit(OpCode::LOAD_VAR, iterableSlot);
+ { uint32_t _sid = addStringConstant("upper"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ uint32_t isStringJump = emitJump(OpCode::JUMP_IF_NULL);
+
+ // String: destructure second (the char) — only 1 var makes sense
+ // but if someone writes for a, b in "str", a=char, b=null
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ emit(OpCode::STORE_VAR, iterSlots[0]);
+ for (size_t i = 1; i < iterSlots.size(); i++) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::STORE_VAR, iterSlots[i]);
+ }
+ uint32_t strEndJump = emitJump(OpCode::JUMP);
+
+ // Check if it's a range (has "step")
+ patchJump(isStringJump, static_cast<uint32_t>(current_function->instructions.size()));
+ emit(OpCode::LOAD_VAR, iterableSlot);
+ { uint32_t _sid = addStringConstant("step"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ uint32_t isRangeJump = emitJump(OpCode::JUMP_IF_NULL);
+
+ // Range: destructure second (the value) — only 1 var makes sense
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ emit(OpCode::STORE_VAR, iterSlots[0]);
+ for (size_t i = 1; i < iterSlots.size(); i++) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::STORE_VAR, iterSlots[i]);
+ }
+ uint32_t rangeEndJump = emitJump(OpCode::JUMP);
+
+ // Object/set: first=key, second=value
+ patchJump(isRangeJump, static_cast<uint32_t>(current_function->instructions.size()));
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ emit(OpCode::STORE_VAR, iterSlots[0]);
+
+ if (iterSlots.size() >= 2) {
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ emit(OpCode::STORE_VAR, iterSlots[1]);
+ }
+ for (size_t i = 2; i < iterSlots.size(); i++) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::STORE_VAR, iterSlots[i]);
+ }
+
+ patchJump(arrEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+ patchJump(strEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+ patchJump(rangeEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+ } else {
     // Single variable: 
     // - Arrays/strings/ranges: store second (value/char/element)
     // - Objects/sets: store first (key/element)

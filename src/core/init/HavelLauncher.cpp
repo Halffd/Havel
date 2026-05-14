@@ -454,7 +454,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   // Check for debug flags
   if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
     cfg.minimalMode = true;
-    info("Debug.ForceMinimal is set - forcing minimal mode");
+    debug("Debug.ForceMinimal is set - forcing minimal mode");
   }
   // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 

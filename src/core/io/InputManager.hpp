@@ -10,9 +10,10 @@
 #include <unordered_map>
 #include <vector>
 
+class HotkeyExecutor;
+
 namespace havel {
 
-class HotkeyExecutor;
 struct HotKey;
 
 class InputManager {
@@ -39,8 +40,8 @@ public:
     uint32_t GetModifiers() const;
     std::pair<int, int> GetMousePosition() const;
 
-    void SetKeyCallback(InputBackend::KeyCallback cb);
-    void SetMouseCallback(InputBackend::MouseCallback cb);
+void SetKeyCallback(std::function<void(const KeyEvent &)> cb);
+  void SetMouseCallback(std::function<void(const MouseEvent &)> cb);
 
     void RegisterHotkey(int id, uint32_t code, uint32_t modifiers, HotkeyCallback cb);
     void UnregisterHotkey(int id);

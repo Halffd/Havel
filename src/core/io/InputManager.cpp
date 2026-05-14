@@ -113,16 +113,16 @@ std::pair<int, int> InputManager::GetMousePosition() const {
     return backend_ ? backend_->GetMousePosition() : std::make_pair(0, 0);
 }
 
-void InputManager::SetKeyCallback(InputBackend::KeyCallback cb) {
-    if (backend_) {
-        backend_->SetKeyCallback(std::move(cb));
-    }
+void InputManager::SetKeyCallback(std::function<void(const KeyEvent &)> cb) {
+  if (backend_) {
+    backend_->SetKeyCallback(std::move(cb));
+  }
 }
 
-void InputManager::SetMouseCallback(InputBackend::MouseCallback cb) {
-    if (backend_) {
-        backend_->SetMouseCallback(std::move(cb));
-    }
+void InputManager::SetMouseCallback(std::function<void(const MouseEvent &)> cb) {
+  if (backend_) {
+    backend_->SetMouseCallback(std::move(cb));
+  }
 }
 
 void InputManager::RegisterHotkey(int id, uint32_t code, uint32_t modifiers, HotkeyCallback cb) {

@@ -633,8 +633,65 @@ return Value::makeBool(false);
       (*result)[key] = Value::makeBool(true);
     }
     return Value::makeSetId(resultRef.id);
+    });
+
+  regProto("sum", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr) return Value::makeNull();
+    double total = 0;
+    for (const auto& v : *arr) {
+      if (v.isInt()) total += v.asInt();
+      else if (v.isDouble()) total += v.asDouble();
+    }
+    return Value(total);
   });
 
-}
+  regProto("avg", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) return Value::makeNull();
+    double total = 0;
+    size_t count = 0;
+    for (const auto& v : *arr) {
+      if (v.isInt()) { total += v.asInt(); ++count; }
+      else if (v.isDouble()) { total += v.asDouble(); ++count; }
+    }
+    return count > 0 ? Value(total / static_cast<double>(count)) : Value::makeNull();
+  });
+
+  regProto("max", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) return Value::makeNull();
+    double maxVal = std::numeric_limits<double>::lowest();
+    bool hasValue = false;
+    for (const auto& v : *arr) {
+      double num = 0;
+      if (v.isInt()) num = v.asInt();
+      else if (v.isDouble()) num = v.asDouble();
+      else continue;
+      if (!hasValue || num > maxVal) { maxVal = num; hasValue = true; }
+    }
+    return hasValue ? Value(maxVal) : Value::makeNull();
+  });
+
+  regProto("min", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) return Value::makeNull();
+    double minVal = std::numeric_limits<double>::max();
+    bool hasValue = false;
+    for (const auto& v : *arr) {
+      double num = 0;
+      if (v.isInt()) num = v.asInt();
+      else if (v.isDouble()) num = v.asDouble();
+      else continue;
+      if (!hasValue || num < minVal) { minVal = num; hasValue = true; }
+    }
+    return hasValue ? Value(minVal) : Value::makeNull();
+  });
+
+  }
 
 } // namespace havel::compiler::prototypes

@@ -3,6 +3,7 @@
 known_pairs = [[14, 10], [8, 6], [32, 20]]
 print("Known pairs: " + str(known_pairs))
 target_value = 3
+print("Target value: " + str(target_value))
 
 fn estimate_simple_ratio(pairs, input_value) {
   first_in = pairs[0][0]
@@ -59,3 +60,26 @@ for in_val, out_val in known_pairs {
   compound = compound * out_val / in_val
 }
 print("Compound: " + str(compound))
+
+fn estimate(p, t) {    
+    th = 1.2
+    p * {"fp32": 4, "fp16": 2, "int8": 1, "int4": 0.5}.get(t) * th
+}
+fn max_params(vram_gb, precision) {
+    bytes = {"fp32": 4, "fp16": 2, "int8": 1, "int4": 0.5}
+    overhead = 1.2
+    vram_gb / (bytes[precision] * overhead)
+}
+for i in ["fp32", "fp16", "int8", "int4"] {
+    for p in [1, 2, 3, 4, 8, 14, 45, 64, 144] {
+        print("P: " + i + ", N: " + str(p) + ", Estimate: " + str(estimate(p, i)))
+    }
+}
+vram = sys.hardware().gpu.vram
+b = max_params(vram, "fp16")
+try {
+    print("Max params for fp16: " + str(b))
+    run(f"ollama run --model qwen3:$b --prompt 'What is 2+2?'")
+} catch (e) {
+    print("Error calculating max params: " + str(e))
+}

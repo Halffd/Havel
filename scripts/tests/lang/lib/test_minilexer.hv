@@ -1,0 +1,37 @@
+KEYWORDS = {
+    "let": "Let",
+    "val": "Val",
+    "if": "If",
+    "fn": "Fn",
+}
+
+fn Lexer(source):
+    src = source
+    pos = 0
+    tokens = []
+
+    fn current():
+        if pos < src.len: src.sub(pos, 1)
+        else: null
+
+    fn advance():
+        c = current()
+        if c != null: pos = pos + 1
+        c
+
+    fn addToken(ttype, value):
+        tokens.push({type: ttype, value: value})
+
+    fn _scan():
+        if pos < src.len:
+            addToken("Number", current())
+            advance()
+        addToken("EOF", "")
+        {tokens: tokens}
+
+    {run: _scan}
+
+fn tokenize(source):
+    lx = Lexer(source)
+    result = lx.run()
+    result.tokens

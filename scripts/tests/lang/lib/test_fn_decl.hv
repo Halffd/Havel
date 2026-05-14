@@ -1,0 +1,9 @@
+fn _node(kind, line, col):
+  {kind: kind, line: line, col: col}
+
+fn FnDeclaration(name, params, body, line, col):
+  n = _node("FnDeclaration", line, col)
+  n.name = name
+  n.params = params
+  n.body = body
+  n

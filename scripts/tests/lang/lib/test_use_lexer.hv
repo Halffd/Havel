@@ -1,0 +1,1 @@
+use { tokenize } from "lexer"; tokens = tokenize("1 + 2"); print(#tokens); print(tokens[0].type)

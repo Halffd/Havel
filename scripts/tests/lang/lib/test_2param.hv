@@ -1,0 +1,5 @@
+fn Test2(a, b):
+  n = {kind: "Test2"}
+  n.a = a
+  n.b = b
+  n

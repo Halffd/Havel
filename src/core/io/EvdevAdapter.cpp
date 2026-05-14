@@ -988,7 +988,7 @@ void EvdevAdapter::SendSync() {
     }
 }
 
-std::unique_ptr<InputBackend> havel::CreateEvdevAdapter() {
+std::unique_ptr<InputBackend> CreateEvdevAdapter() {
     return std::make_unique<EvdevAdapter>();
 }
 

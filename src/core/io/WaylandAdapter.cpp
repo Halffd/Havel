@@ -139,7 +139,7 @@ private:
     int32_t mouseY_ = 0;
 };
 
-std::unique_ptr<InputBackend> havel::CreateWaylandAdapter() {
+std::unique_ptr<InputBackend> CreateWaylandAdapter() {
     return std::make_unique<WaylandAdapter>();
 }
 

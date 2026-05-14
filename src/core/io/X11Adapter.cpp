@@ -813,7 +813,7 @@ void X11Adapter::UngrabButton(unsigned int button, unsigned int modifiers) {
     XUngrabButton(display_, button, modifiers, root_);
 }
 
-std::unique_ptr<InputBackend> havel::CreateX11Adapter() {
+std::unique_ptr<InputBackend> CreateX11Adapter() {
     return std::make_unique<X11Adapter>();
 }
 #endif

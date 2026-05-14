@@ -680,11 +680,8 @@ unsigned int WindowsAdapter::EvdevToVk(uint32_t evdev) const {
 }
 #endif
 
-std::unique_ptr<InputBackend> havel::CreateWindowsAdapter() {
+std::unique_ptr<InputBackend> CreateWindowsAdapter() {
     return std::make_unique<WindowsAdapter>();
 }
-
-}
-#endif
 
 }

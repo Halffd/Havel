@@ -1,2 +1,0 @@
-let Point = struct.define("Point", ["x", "y"])
-print("Point type id: " + str(Point))

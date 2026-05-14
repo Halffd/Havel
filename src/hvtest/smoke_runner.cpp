@@ -1369,12 +1369,461 @@ t = timeout(10, fn() { return 99 })
 return <-t
 )havel", 99, dump_bytecode, snapshot_dir);
 
- failures += runAsyncCase("await-interval-result", R"havel(
+  failures += runAsyncCase("await-interval-result", R"havel(
 i = interval(10, fn() { return 7 })
 result = <-i
 i.stop()
 return result
 )havel", 7, dump_bytecode, snapshot_dir);
+
+  // --- Arithmetic ---
+  failures += runCase("arithmetic-sub", R"havel(
+return 100 - 58
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-mul", R"havel(
+return 6 * 7
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-div", R"havel(
+return 126 / 3
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-mod", R"havel(
+return 43 % 10
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-pow", R"havel(
+return 2 ** 5
+)havel", 32, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-negate", R"havel(
+x = 10
+return -x + 52
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-compound-sub", R"havel(
+x = 50
+x -= 8
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-compound-mul", R"havel(
+x = 6
+x *= 7
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("arithmetic-compound-div", R"havel(
+    x = 84
+    x /= 2
+    return int(x)
+  )havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- Comparison ---
+  failures += runCase("comparison-eq-neq", R"havel(
+a = (10 == 10)
+b = (10 != 9)
+if a { if b { return 1 } }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("comparison-lt-gt", R"havel(
+a = (5 < 10)
+b = (10 > 5)
+if a { if b { return 1 } }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("comparison-lte-gte", R"havel(
+a = (5 <= 5)
+b = (10 >= 10)
+c = (5 <= 4)
+if a { if b { if !c { return 1 } } }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- Boolean logic ---
+  failures += runCase("logic-and", R"havel(
+if true && true { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("logic-or", R"havel(
+if false || true { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("logic-not", R"havel(
+if !false { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("logic-and-eval", R"havel(
+    x = 0
+    fn side() { x += 1; 1 }
+    result = false && side()
+    x
+  )havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("logic-or-eval", R"havel(
+    x = 0
+    fn side() { x += 1; 1 }
+    result = true || side()
+    x
+  )havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- Bitwise ---
+  failures += runCase("bitwise-and", R"havel(
+return 0xFF & 0x0F
+)havel", 15, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-or", R"havel(
+return 0xF0 | 0x0F
+)havel", 255, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-xor", R"havel(
+return 0xFF ^ 0x0F
+)havel", 240, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-lsh", R"havel(
+return 1 << 8
+)havel", 256, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-rsh", R"havel(
+return 256 >> 4
+)havel", 16, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-xor-negate", R"havel(
+    x = 5
+    return x ^ (-1)
+  )havel", -6, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-compound-and", R"havel(
+x = 0xFF
+x &= 0x0F
+return x
+)havel", 15, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-compound-or", R"havel(
+x = 0xF0
+x |= 0x0F
+return x
+)havel", 255, dump_bytecode, snapshot_dir);
+
+  failures += runCase("bitwise-compound-xor", R"havel(
+x = 0xFF
+x ^= 0x0F
+return x
+)havel", 240, dump_bytecode, snapshot_dir);
+
+  // --- For loop ---
+  failures += runCase("for-loop-range", R"havel(
+    sum = 0
+    for i in 1..5 { sum += i }
+    return sum
+  )havel", 15, dump_bytecode, snapshot_dir);
+
+  failures += runCase("for-loop-array", R"havel(
+sum = 0
+for v in [10, 20, 30] { sum += v }
+return sum
+)havel", 60, dump_bytecode, snapshot_dir);
+
+  failures += runCase("for-loop-destructure-obj", R"havel(
+    sum = 0
+    for i, v in {a: 10, b: 20, c: 30} { sum += v }
+    return sum
+  )havel", 60, dump_bytecode, snapshot_dir);
+
+  failures += runCase("for-loop-break", R"havel(
+sum = 0
+for i in 1..100 {
+  if i > 5 { break }
+  sum += i
+}
+return sum
+)havel", 15, dump_bytecode, snapshot_dir);
+
+  failures += runCase("for-loop-continue", R"havel(
+sum = 0
+for i in 1..10 {
+  if i % 2 == 0 { continue }
+  sum += i
+}
+return sum
+)havel", 25, dump_bytecode, snapshot_dir);
+
+  // --- Loop / do-while ---
+  failures += runCase("loop-with-break", R"havel(
+i = 0
+loop {
+  i += 1
+  if i >= 5 { break }
+}
+return i
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("do-while", R"havel(
+i = 0
+do {
+  i += 1
+} while i < 5
+return i
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  // --- Ternary / if-expression ---
+  failures += runCase("ternary-expression", R"havel(
+x = true ? 42 : 0
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("ternary-nested", R"havel(
+x = 1
+result = x > 0 ? x * 10 : -x
+return result
+)havel", 10, dump_bytecode, snapshot_dir);
+
+  // --- String operations ---
+  failures += runCase("string-len", R"havel(
+return #"hello"
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-concat", R"havel(
+s = "hello" + " " + "world"
+return #s
+)havel", 11, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-index", R"havel(
+s = "hello"
+return s[0] == "h" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-slice", R"havel(
+s = "hello world"
+sub = s[0:5]
+return #sub
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-forin", R"havel(
+count = 0
+for c in "abc" { count += 1 }
+return count
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-prototype-upper", R"havel(
+s = "hello".upper()
+return s == "HELLO" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-prototype-split", R"havel(
+parts = "a,b,c".split(",")
+return parts.len
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-interpolation", R"havel(
+    x = 42
+    s = f"x={x}"
+    return #s
+  )havel", 4, dump_bytecode, snapshot_dir);
+
+  // --- Null coalescing ---
+  failures += runCase("null-coalescing", R"havel(
+x = null ?? 42
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("null-coalescing-non-null", R"havel(
+x = 10 ?? 42
+return x
+)havel", 10, dump_bytecode, snapshot_dir);
+
+  // --- val (immutable) ---
+  failures += runCase("val-binding", R"havel(
+val x = 42
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- Type conversions ---
+  failures += runCase("type-int-str", R"havel(
+s = str(42)
+return #s
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("type-typeof", R"havel(
+t = type(42)
+return t == "int" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- Class ---
+  failures += runCase("class-basic", R"havel(
+    class Counter {
+      count
+      fn @(start) { @count = start }
+      fn increment() { @count++ }
+      fn current() { @count }
+    }
+    c = Counter(0)
+    c.increment()
+    c.increment()
+    c.increment()
+    return c.current()
+  )havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("class-constructor", R"havel(
+class Vec2 {
+  x, y
+  fn @(x, y) { @x = x; @y = y }
+  fn sum() { return @x + @y }
+}
+v = Vec2(20, 22)
+return v.sum()
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- Enum ---
+  // --- Spread ---
+  failures += runCase("spread-in-array", R"havel(
+base = [1, 2]
+merged = [...base, 3, 4]
+return merged[3]
+)havel", 4, dump_bytecode, snapshot_dir);
+
+  // --- Multiple assignment ---
+  // --- Array prototype methods ---
+  failures += runCase("array-push-pop", R"havel(
+arr = [1, 2]
+arr.push(3)
+arr.pop()
+arr.push(4)
+return arr[2]
+)havel", 4, dump_bytecode, snapshot_dir);
+
+  failures += runCase("array-find-indexOf", R"havel(
+arr = [10, 20, 30]
+idx = arr.indexOf(20)
+return idx
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("array-includes-has", R"havel(
+arr = [10, 20, 30]
+if arr.has(20) {
+  if !arr.has(99) { return 1 }
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("array-join", R"havel(
+arr = [1, 2, 3]
+s = arr.join("-")
+return #s
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("array-reverse-sort", R"havel(
+arr = [3, 1, 2]
+arr.sort((a, b) => a - b)
+return arr[0]
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- Object operations ---
+  failures += runCase("object-keys-values", R"havel(
+obj = {a: 1, b: 2, c: 3}
+k = obj.keys()
+return k.len
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("object-has-delete", R"havel(
+obj = {x: 10, y: 20}
+if obj.has("x") {
+  obj.delete("y")
+  if !obj.has("y") { return 1 }
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- Set operations ---
+  failures += runCase("set-union-intersection", R"havel(
+    a = {1, 2, 3}
+    b = {2, 3, 4}
+    u = a.union(b)
+    i = a.intersection(b)
+    return u.len * 10 + i.len
+  )havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- Range ---
+  failures += runCase("range-has", R"havel(
+r = 1..5
+if r.has(3) {
+  if !r.has(10) { return 1 }
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- Increment / decrement ---
+  failures += runCase("increment-local", R"havel(
+x = 40
+x++
+return x
+)havel", 41, dump_bytecode, snapshot_dir);
+
+  failures += runCase("decrement-local", R"havel(
+x = 43
+x--
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- del operator ---
+  failures += runCase("del-object-key", R"havel(
+obj = {a: 1, b: 2, c: 3}
+del obj.b
+return obj.keys().len
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("del-array-index", R"havel(
+arr = [10, 20, 30]
+del arr[1]
+return arr.len
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  // --- Nested data structures ---
+  failures += runCase("nested-array-access", R"havel(
+m = [[1, 2], [3, 4]]
+return m[1][0]
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("nested-object-access", R"havel(
+    obj = {inner: {value: 42}}
+    return obj.inner.value
+  )havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- Recursive function ---
+  failures += runCase("recursive-factorial", R"havel(
+fn fact(n) {
+  if n <= 1 { return 1 }
+  return n * fact(n - 1)
+}
+return fact(5)
+)havel", 120, dump_bytecode, snapshot_dir);
+
+  // --- Fibonacci ---
+  failures += runCase("fibonacci", R"havel(
+fn fib(n) {
+  if n <= 1 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+return fib(10)
+)havel", 55, dump_bytecode, snapshot_dir);
+
+  // --- Default parameters ---
+  failures += runCase("default-params", R"havel(
+fn add(a, b = 10) { return a + b }
+return add(32)
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // --- String repetition ---
+  failures += runCase("string-repeat", R"havel(
+s = "ha" * 3
+return #s
+)havel", 6, dump_bytecode, snapshot_dir);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

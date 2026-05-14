@@ -4361,7 +4361,9 @@ void VM::doTailCall(Value callee_value,
   }
 
   // Clear remaining locals from old function
-  for (size_t i = old_base + args.size(); i < new_locals_needed; i++) {
+  // Start after callee's params (which may include defaults set above),
+  // not after the provided args count
+  for (size_t i = old_base + callee->param_count; i < new_locals_needed; i++) {
     locals[i] = nullptr;
   }
 }

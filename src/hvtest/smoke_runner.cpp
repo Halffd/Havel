@@ -1530,13 +1530,19 @@ for v in [10, 20, 30] { sum += v }
 return sum
 )havel", 60, dump_bytecode, snapshot_dir);
 
-  failures += runCase("for-loop-destructure-obj", R"havel(
-    sum = 0
-    for i, v in {a: 10, b: 20, c: 30} { sum += v }
-    return sum
-  )havel", 60, dump_bytecode, snapshot_dir);
+failures += runCase("for-loop-destructure-obj", R"havel(
+sum = 0
+for i, v in {a: 10, b: 20, c: 30} { sum += v }
+return sum
+)havel", 60, dump_bytecode, snapshot_dir);
 
-  failures += runCase("for-loop-break", R"havel(
+failures += runCase("for-loop-destructure-array", R"havel(
+sum = 0
+for i, v in [10, 20, 30] { sum += v }
+return sum
+)havel", 60, dump_bytecode, snapshot_dir);
+
+failures += runCase("for-loop-break", R"havel(
 sum = 0
 for i in 1..100 {
   if i > 5 { break }

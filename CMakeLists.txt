@@ -861,7 +861,7 @@ target_include_directories(hvtest PRIVATE
 )
 
 target_link_libraries(hvtest PRIVATE
- havel_lang
+  havel_lang
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -991,6 +991,7 @@ if(ENABLE_HAVEL_LANG)
     # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
     list(APPEND HAVEL_LANG_LIB_SOURCES
         ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
     )
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
     

@@ -112,28 +112,5 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 #endif
 }
 
-void registerPureStdLib(compiler::VM &vm) {
-  compiler::VMApi api(vm);
-
-  // Register PURE stdlib modules (no OS access)
-  stdlib::registerMathModule(api);
-  stdlib::registerStringModule(api);
-  stdlib::registerObjectModule(api);
-  stdlib::registerTypeModule(api);
-  stdlib::registerRegexModule(api);
-  stdlib::registerPhysicsModule(api);
-  stdlib::registerTimeModule(api);
-  stdlib::registerTimerModule(api);
-  stdlib::registerFsModule(api);
-  stdlib::registerRandomModule(api);
-  stdlib::registerLogModule(api);
-  stdlib::registerDebugModule(api);
-  stdlib::registerSysModule(api);
-  stdlib::registerShellModule(api);
-  stdlib::registerPointerModule(api);
-  stdlib::registerFormatModule(api);
-  stdlib::registerPackModule(api);
-  stdlib::registerBitModule(api);
-}
 
 } // namespace havel

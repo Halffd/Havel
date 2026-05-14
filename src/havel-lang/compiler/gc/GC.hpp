@@ -138,11 +138,12 @@ struct RuntimeClosure {
         void assign(typename std::vector<Value>::iterator first, typename std::vector<Value>::iterator last) { if (!frozen) data.assign(first, last); }
     };
 
-    struct Iterator {
-        Value iterable;
-        size_t index = 0;
-        std::vector<std::string> keys;
-    };
+struct Iterator {
+    Value iterable;
+    size_t index = 0;
+    size_t codepoint_index = 0;
+    std::vector<std::string> keys;
+};
 
     struct Range {
         int64_t start = 0;

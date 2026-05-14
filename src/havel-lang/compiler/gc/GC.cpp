@@ -240,27 +240,32 @@ Value GCHeap::iteratorNext(uint32_t id) {
             first = Value::makeInt(iter->index);
             second = (*arr)[iter->index++];
         }
-    } else if (iter->iterable.isStringValId()) {
-        if (iter->index >= 256) {
+        } else if (iter->iterable.isStringValId()) {
             done = true;
             first = Value::makeNull();
             second = Value::makeNull();
-        } else {
-            first = Value::makeInt(iter->index);
-            second = Value::makeInt(iter->index++);
-        }
-    } else if (iter->iterable.isStringId()) {
-        auto *s = string(iter->iterable.asStringId());
-        if (!s || iter->index >= s->size()) {
-            done = true;
-            first = Value::makeNull();
-            second = Value::makeNull();
-        } else {
-            first = Value::makeInt(iter->index);
-            char c = (*s)[iter->index++];
-            auto charStrRef = allocateString(std::string(1, c));
-            second = Value::makeStringId(charStrRef.id);
-        }
+        } else if (iter->iterable.isStringId()) {
+            auto *s = string(iter->iterable.asStringId());
+            if (!s || iter->index >= s->size()) {
+                done = true;
+                first = Value::makeNull();
+                second = Value::makeNull();
+            } else {
+                size_t bytePos = iter->index;
+                unsigned char c = static_cast<unsigned char>((*s)[bytePos]);
+                size_t cpLen = 1;
+                if (c < 0x80) { cpLen = 1; }
+                else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+                else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+                else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+                if (bytePos + cpLen > s->size()) { cpLen = 1; }
+                std::string ch = s->substr(bytePos, cpLen);
+                auto charStrRef = allocateString(std::move(ch));
+                iter->codepoint_index++;
+                iter->index = bytePos + cpLen;
+                first = Value::makeInt(iter->codepoint_index - 1);
+                second = Value::makeStringId(charStrRef.id);
+            }
     } else if (iter->iterable.isObjectId()) {
         if (iter->index >= iter->keys.size()) {
             done = true;

@@ -431,11 +431,11 @@ void ByteCompiler::emit(OpCode op, Value operand) {
 }
 
 void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
- if (!current_function) {
- COMPILER_THROW(
- "Attempted to emit bytecode without active function");
- }
- current_function->instructions.emplace_back(op, std::move(operands));
+    if (!current_function) {
+        COMPILER_THROW(
+            "Attempted to emit bytecode without active function");
+    }
+    current_function->instructions.emplace_back(op, std::move(operands));
  current_function->instruction_locations.push_back(
  current_source_location_.value_or(SourceLocation{}));
  auto &instr = current_function->instructions.back();
@@ -503,9 +503,9 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     COMPILER_THROW("Function declaration missing name");
-  }
+    }
 
-  auto index_it = function_indices_by_node_.find(&function);
+    auto index_it = function_indices_by_node_.find(&function);
   if (index_it == function_indices_by_node_.end()) {
     COMPILER_THROW("Missing function index for declaration: " +
                              function.name->symbol);
@@ -681,9 +681,9 @@ if (param->defaultValue.has_value()) {
   
   if (function.body) {
     current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
-  }
-  
-  leaveFunction();
+}
+
+    leaveFunction();
 }
 
 void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
@@ -5966,9 +5966,8 @@ void ByteCompiler::reserveLocalSlot(uint32_t slot) {
 }
 
 void ByteCompiler::enterFunction(BytecodeFunction &&function,
-                                 std::optional<uint32_t> slot) {
-  // Support nested functions by saving current function context
-  if (current_function) {
+                                      std::optional<uint32_t> slot) {
+    if (current_function) {
     // Save current function state for nesting
     saved_functions_.push_back(
         std::make_pair(std::move(current_function), current_function_slot_));
@@ -5982,9 +5981,9 @@ void ByteCompiler::enterFunction(BytecodeFunction &&function,
 void ByteCompiler::leaveFunction() {
   if (!current_function) {
     COMPILER_THROW("No active function to close");
-  }
+    }
 
-  // Apply jump threading optimization
+    // Apply jump threading optimization
   optimizeJumps();
 
   

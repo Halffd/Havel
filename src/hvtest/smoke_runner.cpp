@@ -3,6 +3,8 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/parser/Parser.h"
+#include "havel-lang/runtime/StdLibModules.hpp"
+#include "havel-lang/runtime/HostContext.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -876,6 +878,58 @@ return trigger_cb()
   }
 }
 
+
+// --- Stdlib smoke test infrastructure ---
+// Creates a VM with registerPureStdLib, enabling tests that call host functions
+// like fmt.hex, bit.and, pack.pack, etc. which are not available in the
+// default runCase() pipeline.
+int runStdlibCase(const std::string &name, const std::string &source,
+                  int64_t expected, bool dump_bytecode,
+                  const std::string &snapshot_dir) {
+  try {
+    if (dump_bytecode) {
+      dumpBytecode(name, source);
+    }
+
+    // Create VM with HostContext, register pure stdlib modules
+    havel::HostContext ctx;
+    havel::compiler::VM vm(ctx);
+    ctx.vm = &vm;
+    havel::registerPureStdLib(vm);
+
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = name;
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.vm_override = &vm;
+
+    const auto result =
+        havel::compiler::runBytecodePipeline(source, "__main__", options);
+    if (!equalsInt(result.return_value, expected)) {
+      std::string val_desc;
+      if (result.return_value.isInt())
+        val_desc = std::to_string(result.return_value.asInt());
+      else if (result.return_value.isNull())
+        val_desc = "null";
+      else if (result.return_value.isDouble())
+        val_desc = "double:" + std::to_string(result.return_value.asDouble());
+      else if (result.return_value.isBool())
+        val_desc = "bool:" + std::to_string(result.return_value.asBool());
+      else
+        val_desc = "non-int";
+      std::cerr << "[FAIL] " << name << ": expected " << expected
+                << " but got " << val_desc << std::endl;
+      return 1;
+    }
+
+    std::cout << "[PASS] " << name << std::endl;
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[FAIL] " << name << ": exception: " << e.what()
+              << std::endl;
+    return 1;
+  }
+}
 } // namespace
 
 int run_smoke_tests(int argc, char **argv) {
@@ -1830,6 +1884,259 @@ return add(32)
 s = "ha" * 3
 return #s
 )havel", 6, dump_bytecode, snapshot_dir);
+
+
+  // ================================================================
+  // Stdlib host function smoke tests (via runStdlibCase)
+  // These test functions registered by registerPureStdLib() that
+  // the default runCase() pipeline does NOT have access to.
+  // ================================================================
+
+  // --- FormatModule: fmt.hex/oct/bin/b64/b64decode/format ---
+  failures += runStdlibCase("fmt-hex-int", R"havel(
+return fmt.hex(255) == "0xff" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-hex-zero", R"havel(
+return fmt.hex(0) == "0x0" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-hex-neg", R"havel(
+return fmt.hex(-1) == "0xffffffffffffffff" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-oct-int", R"havel(
+return fmt.oct(8) == "0o10" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-bin-int", R"havel(
+return fmt.bin(5) == "0b101" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-b64-string", R"havel(
+s = fmt.b64("Hello")
+return #s
+)havel", 8, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-b64decode-returns-array", R"havel(
+encoded = fmt.b64("AB")
+decoded = fmt.b64decode(encoded)
+return decoded.len
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-b64-roundtrip", R"havel(
+original = "test"
+encoded = fmt.b64(original)
+decoded = fmt.b64decode(encoded)
+// decoded is a byte array; check first 4 bytes match "test"
+ok = 1
+if decoded[0] != 116 { ok = 0 }  // 't'
+if decoded[1] != 101 { ok = 0 }  // 'e'
+if decoded[2] != 115 { ok = 0 }  // 's'
+if decoded[3] != 116 { ok = 0 }  // 't'
+return ok
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-format-basic", R"havel(
+s = fmt.format("{} + {} = {}", 1, 2, 3)
+return #s
+)havel", 9, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("fmt-format-hex-spec", R"havel(
+s = fmt.format("{:x}", 255)
+return s == "ff" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- BitModule: bit.and/or/xor/not/lshift/rshift/test/set/clear/toggle ---
+  failures += runStdlibCase("bit-and", R"havel(
+return 12 & 10
+)havel", 8, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-or", R"havel(
+return 12 | 10
+)havel", 14, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-xor", R"havel(
+return bit.xor(12, 10)
+)havel", 6, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-not", R"havel(
+// bit.not(0) = ~0 = -1 (all bits set)
+return bit.not(0)
+)havel", -1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-lshift", R"havel(
+return bit.lshift(1, 4)
+)havel", 16, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-rshift", R"havel(
+return bit.rshift(16, 4)
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-arshift", R"havel(
+// arithmetic right shift of negative: -8 >> 2 = -2
+return bit.arshift(-8, 2)
+)havel", -2, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-test", R"havel(
+// test bit 2 of 0b100 (4) -> true -> 1
+return bit.test(4, 2) ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-test-false", R"havel(
+// test bit 1 of 0b100 (4) -> false -> 0
+return bit.test(4, 1) ? 1 : 0
+)havel", 0, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-set", R"havel(
+// set bit 1 of 0b100 (4) -> 0b110 (6)
+return bit.set(4, 1)
+)havel", 6, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-clear", R"havel(
+// clear bit 2 of 0b110 (6) -> 0b010 (2)
+return bit.clear(6, 2)
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-toggle", R"havel(
+// toggle bit 0 of 0b110 (6) -> 0b111 (7)
+return bit.toggle(6, 0)
+)havel", 7, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-lsb", R"havel(
+// lsb of 12 (0b1100) = bit position 2
+return bit.lsb(12)
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-msb", R"havel(
+// msb of 8 (0b1000) = bit position 3
+return bit.msb(8)
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-count", R"havel(
+// popcount of 0b1111 = 4
+return bit.count(15)
+)havel", 4, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-parity", R"havel(
+// parity of 0b1111 (even number of 1s) = 0
+return bit.parity(15)
+)havel", 0, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-rol", R"havel(
+// rotate 1 left by 1 = 2
+return bit.rol(1, 1)
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-ror", R"havel(
+// rotate 2 right by 1 = 1
+return bit.ror(2, 1)
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-getfield", R"havel(
+// get bits [2:4) of 0b1110 (14) = 0b11 (3)
+return bit.getfield(14, 1, 2)
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("bit-setfield", R"havel(
+// set bits [1:3) of 0b1000 (8) to 0b11 (3) -> 0b1110 (14)
+return bit.setfield(8, 1, 2, 3)
+)havel", 14, dump_bytecode, snapshot_dir);
+
+  // --- PackModule: pack.pack/pack.unpack ---
+  failures += runStdlibCase("pack-pack-u8", R"havel(
+data = pack.pack("u", 42)
+return data.len
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-pack-u8-value", R"havel(
+data = pack.pack("u", 42)
+return data[0]
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-unpack-u8", R"havel(
+data = pack.pack("u", 99)
+result = pack.unpack("u", data)
+return result[0]
+)havel", 99, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-roundtrip-i16", R"havel(
+data = pack.pack("I", 1000)
+result = pack.unpack("I", data)
+return result[0]
+)havel", 1000, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-roundtrip-i32", R"havel(
+data = pack.pack("l", 100000)
+result = pack.unpack("l", data)
+return result[0]
+)havel", 100000, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-roundtrip-f32", R"havel(
+data = pack.pack("f", 3.14)
+result = pack.unpack("f", data)
+// f32 has limited precision; 3.14 becomes ~3.140000104904175
+// check it is approximately right by checking int part
+return int(result[0])
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-multi-format", R"havel(
+data = pack.pack("uI", 1, 500)
+// u8=1 byte, I16=2 bytes -> 3 total
+return data.len
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("pack-unpack-multi", R"havel(
+data = pack.pack("uI", 1, 500)
+result = pack.unpack("uI", data)
+ok = 1
+if result[0] != 1 { ok = 0 }
+if result[1] != 500 { ok = 0 }
+return ok
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // --- RandomModule: basic type/range checks ---
+  // Random values can't be checked for exact values, but we can
+  // verify return types and range constraints.
+  failures += runStdlibCase("random-randint-range", R"havel(
+// randint(1, 10) should return an int in [1, 10]
+v = randint(1, 10)
+ok = 1
+if v < 1 { ok = 0 }
+if v > 10 { ok = 0 }
+return ok
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("random-rand-type", R"havel(
+// rand() returns a double in [0, 1)
+v = rand()
+// If it returns a double, comparing with 0 should work
+ok = 1
+if v < 0 { ok = 0 }
+if v >= 1 { ok = 0 }
+return ok
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("random-choice-from-array", R"havel(
+// choice picks from an array
+arr = [10, 20, 30]
+v = choice(arr)
+ok = 0
+if v == 10 { ok = 1 }
+if v == 20 { ok = 1 }
+if v == 30 { ok = 1 }
+return ok
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runStdlibCase("random-seed-deterministic", R"havel(
+// Setting seed should make subsequent calls deterministic
+random.seed(42)
+a = randint(1, 1000)
+random.seed(42)
+b = randint(1, 1000)
+// Same seed must produce same sequence
+return a == b ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

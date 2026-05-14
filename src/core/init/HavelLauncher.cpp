@@ -377,47 +377,51 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
-} else if (arg == "--output" || arg == "-o") {
-    if (i + 1 < argc) {
-        cfg.outputPath = argv[++i];
-    }
-} else if (arg == "--emit-llvm") {
-    cfg.target = Target::IR;
-    cfg.emitLLVM = true;
-    cfg.buildOnly = true;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cfg.scriptFiles.push_back(argv[++i]);
-    }
-} else if (arg == "--emit-asm") {
-    cfg.target = Target::ASM;
-    cfg.emitAsm = true;
-    cfg.buildOnly = true;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cfg.scriptFiles.push_back(argv[++i]);
-    }
-} else if (arg == "--emit-obj") {
-    cfg.target = Target::AOT;
-    cfg.emitObj = true;
-    cfg.buildOnly = true;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cfg.scriptFiles.push_back(argv[++i]);
-    }
-} else if (arg == "--arch") {
-    if (i + 1 < argc) {
-        cfg.arch = argv[++i];
-    }
-} else if (arg == "--syntax") {
-    if (i + 1 < argc) {
-        std::string syntax = argv[++i];
-        if (syntax == "intel") {
-            cfg.asmSyntax = AsmSyntax::INTEL;
-        } else if (syntax == "att") {
-            cfg.asmSyntax = AsmSyntax::ATT;
-        } else {
-            error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
-        }
-    }
-} else if (arg == "--help" || arg == "-h") {
+	} else if (arg == "--output" || arg == "-o") {
+		if (i + 1 < argc) {
+			cfg.outputPath = argv[++i];
+		}
+	} else if (arg == "--emit-llvm") {
+		cfg.target = Target::IR;
+		cfg.emitLLVM = true;
+		cfg.buildOnly = true;
+		if (i + 1 < argc && argv[i + 1][0] != '-') {
+			cfg.scriptFiles.push_back(argv[++i]);
+		}
+	} else if (arg == "--emit-asm") {
+		cfg.target = Target::ASM;
+		cfg.emitAsm = true;
+		cfg.buildOnly = true;
+		if (i + 1 < argc && argv[i + 1][0] != '-') {
+			cfg.scriptFiles.push_back(argv[++i]);
+		}
+	} else if (arg == "--emit-obj") {
+		cfg.target = Target::AOT;
+		cfg.emitObj = true;
+		cfg.buildOnly = true;
+		if (i + 1 < argc && argv[i + 1][0] != '-') {
+			cfg.scriptFiles.push_back(argv[++i]);
+		}
+	} else if (arg == "--arch") {
+		if (i + 1 < argc) {
+			cfg.arch = argv[++i];
+		}
+	} else if (arg == "--syntax") {
+		if (i + 1 < argc) {
+			std::string syntax = argv[++i];
+			if (syntax == "intel") {
+				cfg.asmSyntax = AsmSyntax::INTEL;
+			} else if (syntax == "att") {
+				cfg.asmSyntax = AsmSyntax::ATT;
+			} else {
+				error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
+			}
+		}
+	} else if (arg == "--input" || arg == "-i") {
+		if (i + 1 < argc) {
+			cfg.inputBackend = argv[++i];
+		}
+	} else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
     } else if (arg == "lexer") {
@@ -451,12 +455,21 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
   }
-  // Check for debug flags
-  if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
-    cfg.minimalMode = true;
-    debug("Debug.ForceMinimal is set - forcing minimal mode");
-  }
-  // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
+	// Check for debug flags
+	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
+		cfg.minimalMode = true;
+		debug("Debug.ForceMinimal is set - forcing minimal mode");
+	}
+
+	// Resolve input backend: CLI arg > config > auto-detect
+	if (cfg.inputBackend.empty()) {
+		cfg.inputBackend = Configs::Get().Get<std::string>("Input.Backend", "auto");
+	}
+	if (cfg.inputBackend == "auto") {
+		cfg.inputBackend = ""; // Will be resolved by auto-detection
+	}
+
+	// Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
   return cfg;
 }
@@ -1171,23 +1184,24 @@ std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
   std::cout
       << "  --test, -t          Run all .hv scripts in a directory\n";
   std::cout << "  --lint              Check syntax and compilation errors\n";
-std::cout << " --build Compile to .hvc bytecode file\n";
-std::cout << " --output, -o PATH Set output path for --build\n";
-std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
-std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
-std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
-std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
-std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
-std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
-std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
-std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
-std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
-std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
-std::cout << " --syntax <type> Assembly syntax: att|intel\n";
-std::cout << " --no-jit Disable JIT compilation\n";
-  std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
-  std::cout << "  -S                  Output compiled IR and Assembly to files\n";
-  std::cout << "  --help, -h          Show this help\n";
+	std::cout << " --build Compile to .hvc bytecode file\n";
+	std::cout << " --output, -o PATH Set output path for --build\n";
+	std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
+	std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
+	std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
+	std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
+	std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
+	std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
+	std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
+	std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+	std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
+	std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
+	std::cout << " --syntax <type> Assembly syntax: att|intel\n";
+	std::cout << " --no-jit Disable JIT compilation\n";
+	std::cout << " --debug-jit, -djt Print LLVM IR and Assembly to console\n";
+	std::cout << " -S Output compiled IR and Assembly to files\n";
+	std::cout << " --input, -i TYPE Set input backend (evdev, x11, wayland, auto)\n";
+	std::cout << " --help, -h Show this help\n";
 
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";

@@ -1,4 +1,8 @@
 #include "InputBackend.hpp"
+#include "EvdevAdapter.hpp"
+#include "X11Adapter.hpp"
+#include "WaylandAdapter.hpp"
+#include "WindowsAdapter.hpp"
 #include "utils/Logger.hpp"
 
 #ifdef __linux__
@@ -38,20 +42,16 @@ InputBackendType InputBackend::DetectBestBackend() {
 std::unique_ptr<InputBackend> InputBackend::Create(InputBackendType type) {
   switch (type) {
   case InputBackendType::Evdev:
-    warn("EvdevAdapter not available (adapter excluded from build)");
-    return nullptr;
+    return CreateEvdevAdapter();
 
   case InputBackendType::X11:
-    warn("X11Adapter not available (adapter excluded from build)");
-    return nullptr;
+    return CreateX11Adapter();
 
   case InputBackendType::Wayland:
-    warn("WaylandAdapter not available (adapter excluded from build)");
-    return nullptr;
+    return CreateWaylandAdapter();
 
   case InputBackendType::Windows:
-    warn("WindowsAdapter not available (adapter excluded from build)");
-    return nullptr;
+    return CreateWindowsAdapter();
 
   default:
     return nullptr;

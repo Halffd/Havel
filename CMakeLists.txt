@@ -332,9 +332,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/ai/ocr/*.cpp"
 )
 
-# Exclude incomplete input backend adapters (API mismatches, not yet compilable)
-list(FILTER CORE_SOURCES EXCLUDE REGEX
-  "src/core/io/EvdevAdapter\\.cpp$|src/core/io/InputManager\\.cpp$|src/core/io/WaylandAdapter\\.cpp$|src/core/io/WindowsAdapter\\.cpp$|src/core/io/X11Adapter\\.cpp$")
+# Input backend adapters - re-enabled after API fixes
 
 # GUI sources (conditionally included based on backend)
 file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
@@ -557,17 +555,18 @@ if(UI_BACKEND STREQUAL "AUTO")
 endif()
 
 set(COMMON_LIBS
-    # System libraries
-    ${PCRE2_8_LIBRARIES}
-    ${PCRE2_16_LIBRARIES}
-    ${X11_LIBRARIES}
-    ${XI_LIBRARIES}
-    ${XTEST_LIB}
-    ${XRANDR_LIB}
-    ${XINERAMA_LIB}
-    ${XCOMPOSITE_LIBRARIES}
-    Xfixes
-    ${PULSEAUDIO_LIBRARIES}
+# System libraries
+${PCRE2_8_LIBRARIES}
+${PCRE2_16_LIBRARIES}
+${X11_LIBRARIES}
+${XI_LIBRARIES}
+${XTEST_LIB}
+${XRANDR_LIB}
+${XINERAMA_LIB}
+${XCOMPOSITE_LIBRARIES}
+Xfixes
+${WAYLAND_LIBRARIES}
+${PULSEAUDIO_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}
     ${ALSA_LIBRARIES}
     Threads::Threads

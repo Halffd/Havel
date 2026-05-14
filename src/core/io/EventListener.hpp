@@ -223,7 +223,8 @@ void SetExecutorMode(ExecutorMode mode) {
   void RequestShutdownFromSignal(int sig);
 
 private:
-  friend class SignalHandler;
+	friend class IO;
+	friend class SignalHandler;
   void HandleSignal(int sig);
   void SignalSafeShutdown(int sig, bool exitAfter = false);
   // Signal handling members

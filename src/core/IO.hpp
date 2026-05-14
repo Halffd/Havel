@@ -135,16 +135,7 @@ inline HotkeyEventType ParseHotkeyEventType(const std::string &str) {
   return HotkeyEventType::Both;
 };
 
-struct ModifierState {
-  bool leftCtrl = false;
-  bool rightCtrl = false;
-  bool leftShift = false;
-  bool rightShift = false;
-  bool leftAlt = false;
-  bool rightAlt = false;
-  bool leftMeta = false;
-  bool rightMeta = false;
-};
+
 
 // Event batching structures for optimization
 struct KeyToken {
@@ -247,15 +238,10 @@ public:
         return importManager;
     }
 
-    // InputBackend access (new adapter pattern)
-    InputBackend *GetInputBackend() { return inputBackend.get(); }
-    InputBackendType GetInputBackendType() const { return inputBackendType; }
-    void SetInputBackend(const std::string &backendName);
-
-    // InputBackend access (new adapter pattern)
-    InputBackend *GetInputBackend() { return inputBackend.get(); }
-    InputBackendType GetInputBackendType() const { return inputBackendType; }
-    void SetInputBackend(const std::string &backendName);
+ // InputBackend access (new adapter pattern)
+  InputBackend *GetInputBackend() { return inputBackend.get(); }
+  InputBackendType GetInputBackendType() const { return inputBackendType; }
+  void SetInputBackend(const std::string &backendName);
 
     // Backend device management
     std::vector<std::string> ListDevices();

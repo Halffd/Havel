@@ -332,6 +332,10 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/ai/ocr/*.cpp"
 )
 
+# Exclude incomplete input backend adapters (API mismatches, not yet compilable)
+list(FILTER CORE_SOURCES EXCLUDE REGEX
+  "src/core/io/EvdevAdapter\\.cpp$|src/core/io/InputManager\\.cpp$|src/core/io/WaylandAdapter\\.cpp$|src/core/io/WindowsAdapter\\.cpp$|src/core/io/X11Adapter\\.cpp$")
+
 # GUI sources (conditionally included based on backend)
 file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
 

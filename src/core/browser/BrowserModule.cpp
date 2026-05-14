@@ -453,7 +453,7 @@ std::string BrowserModule::getActiveTabTitle() const {
   return tab.title.empty() ? "Unknown" : tab.title;
 }
 
-std::string BrowserModule::getActiveTabdebug() const {
+std::string BrowserModule::getActiveTabInfo() const {
   BrowserTab tab = getActiveTab();
   if (tab.title.empty()) {
     return "No active tab selected";
@@ -790,8 +790,8 @@ bool BrowserModule::screenshot(const std::string &path) {
 
 // === Window Control ===
 
-BrowserWindow BrowserModule::getWindowdebug() {
-  BrowserWindow window = {0, 0, 0, 0, 0, false, false, false};
+BrowserWindow BrowserModule::getWindowInfo() {
+  BrowserWindow window = {0, 0, 0, 0, 0, false, false, false, ""};
 
   if (!connected || currentTabId < 0)
     return window;

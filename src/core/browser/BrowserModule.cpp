@@ -52,7 +52,7 @@ bool BrowserModule::connect(const std::string &url) {
 
   if (!response.empty() && response != "[]") {
     connected = true;
-    info("BrowserModule: Connected to browser at {}", browserUrl);
+    debug("BrowserModule: Connected to browser at {}", browserUrl);
 
     // Parse and cache tabs immediately
     // Chrome returns string IDs, so we use index-based IDs (0, 1, 2, ...)
@@ -62,11 +62,11 @@ bool BrowserModule::connect(const std::string &url) {
     int focusedTabId = findFocusedTab();
     if (focusedTabId >= 0) {
       currentTabId = focusedTabId;
-      info("BrowserModule: Using focused tab {} - {}", currentTabId,
+      debug("BrowserModule: Using focused tab {} - {}", currentTabId,
            cachedTabs[currentTabId].title);
     } else {
       currentTabId = 0; // Fallback to first tab
-      info("BrowserModule: No focused tab found, using first tab: {}",
+      debug("BrowserModule: No focused tab found, using first tab: {}",
            cachedTabs.empty() ? "N/A" : cachedTabs[0].title);
     }
 
@@ -82,7 +82,6 @@ void BrowserModule::disconnect() {
   connected = false;
   currentTabId = -1;
   browserUrl.clear();
-  info("BrowserModule: Disconnected");
 }
 
 std::string BrowserModule::httpGet(const std::string &url) {
@@ -280,7 +279,7 @@ bool BrowserModule::newTab(const std::string &url) {
       size_t end = response.find('"', start + 1);
       if (start != std::string::npos && end != std::string::npos) {
         currentTabId = std::stoi(response.substr(start + 1, end - start - 1));
-        info("BrowserModule: Created new tab with ID {}", currentTabId);
+        debug("BrowserModule: Created new tab with ID {}", currentTabId);
         return true;
       }
     }
@@ -302,7 +301,7 @@ bool BrowserModule::gotoUrl(const std::string &url) {
   if (!response.empty() &&
       (response.find("\"frameId\"") != std::string::npos ||
        response.find("\"errorText\"") == std::string::npos)) {
-    info("BrowserModule: Navigated to {}", url);
+    debug("BrowserModule: Navigated to {}", url);
     return true;
   }
 
@@ -454,7 +453,7 @@ std::string BrowserModule::getActiveTabTitle() const {
   return tab.title.empty() ? "Unknown" : tab.title;
 }
 
-std::string BrowserModule::getActiveTabInfo() const {
+std::string BrowserModule::getActiveTabdebug() const {
   BrowserTab tab = getActiveTab();
   if (tab.title.empty()) {
     return "No active tab selected";
@@ -472,7 +471,7 @@ bool BrowserModule::activate(int tabId) {
 
   if (!response.empty()) {
     currentTabId = tabId;
-    info("BrowserModule: Activated tab {}", tabId);
+    debug("BrowserModule: Activated tab {}", tabId);
     return true;
   }
 
@@ -491,7 +490,7 @@ bool BrowserModule::closeTab(int tabId) {
       "Target.closeTarget", "{\"targetId\":" + std::to_string(targetId) + "}");
 
   if (!response.empty() && response.find("\"success\"") != std::string::npos) {
-    info("BrowserModule: Closed tab {}", targetId);
+    debug("BrowserModule: Closed tab {}", targetId);
     if (targetId == currentTabId) {
       currentTabId = -1;
     }
@@ -625,7 +624,7 @@ bool BrowserModule::setZoom(double level) {
                      "{\"scaleFactor\":" + std::to_string(level) + "}");
 
   if (!response.empty()) {
-    info("BrowserModule: Set zoom to {}x", level);
+    debug("BrowserModule: Set zoom to {}x", level);
     return true;
   }
 
@@ -777,7 +776,7 @@ bool BrowserModule::screenshot(const std::string &path) {
             // For now, just indicate success
             file << base64;
             file.close();
-            info("BrowserModule: Screenshot saved to {}", savePath);
+            debug("BrowserModule: Screenshot saved to {}", savePath);
             return true;
           }
         }
@@ -791,7 +790,7 @@ bool BrowserModule::screenshot(const std::string &path) {
 
 // === Window Control ===
 
-BrowserWindow BrowserModule::getWindowInfo() {
+BrowserWindow BrowserModule::getWindowdebug() {
   BrowserWindow window = {0, 0, 0, 0, 0, false, false, false};
 
   if (!connected || currentTabId < 0)
@@ -862,7 +861,7 @@ bool BrowserModule::connectFirefox(int port) {
 
     if (res == CURLE_OK) {
       connected = true;
-      info("BrowserModule: Connected to Firefox on port {}", port);
+      debug("BrowserModule: Connected to Firefox on port {}", port);
       return true;
     }
   }
@@ -1104,7 +1103,7 @@ bool BrowserModule::setWindowSize(int windowId, int width, int height) {
                          ",\"height\":" + std::to_string(height) + "}}");
 
   if (!response.empty()) {
-    info("BrowserModule: Set window {} size to {}x{}", targetId, width, height);
+    debug("BrowserModule: Set window {} size to {}x{}", targetId, width, height);
     return true;
   }
 
@@ -1127,7 +1126,7 @@ bool BrowserModule::setWindowPosition(int windowId, int x, int y) {
                          ",\"top\":" + std::to_string(y) + "}}");
 
   if (!response.empty()) {
-    info("BrowserModule: Set window {} position to ({}, {})", targetId, x, y);
+    debug("BrowserModule: Set window {} position to ({}, {})", targetId, x, y);
     return true;
   }
 
@@ -1149,7 +1148,7 @@ bool BrowserModule::maximizeWindow(int windowId) {
                          ",\"bounds\":{\"windowState\":\"maximized\"}}");
 
   if (!response.empty()) {
-    info("BrowserModule: Maximized window {}", targetId);
+    debug("BrowserModule: Maximized window {}", targetId);
     return true;
   }
 
@@ -1171,7 +1170,7 @@ bool BrowserModule::minimizeWindow(int windowId) {
                          ",\"bounds\":{\"windowState\":\"minimized\"}}");
 
   if (!response.empty()) {
-    info("BrowserModule: Minimized window {}", targetId);
+    debug("BrowserModule: Minimized window {}", targetId);
     return true;
   }
 
@@ -1193,7 +1192,7 @@ bool BrowserModule::fullscreenWindow(int windowId) {
                          ",\"bounds\":{\"windowState\":\"fullscreen\"}}");
 
   if (!response.empty()) {
-    info("BrowserModule: Fullscreened window {}", targetId);
+    debug("BrowserModule: Fullscreened window {}", targetId);
     return true;
   }
 

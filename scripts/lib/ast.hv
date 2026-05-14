@@ -455,12 +455,17 @@ fn _fmtVal(v):
   result
 
 fn prettyPrint(node, depth):
-  if node == null:
-    print(_indent(depth) + "null")
-    return
+    if node == null:
+        print(_indent(depth) + "null")
+        return
 
-  prefix = _indent(depth)
-  k = node.kind
+    if type(node) == "array":
+        for s in node:
+            prettyPrint(s, depth)
+        return
+
+    prefix = _indent(depth)
+    k = node.kind
 
   if k == "Program":
     print(prefix + "Program:")

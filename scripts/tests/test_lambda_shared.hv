@@ -1,0 +1,9 @@
+// Test: variable shared between outer scope and lambda
+fn test_shared_upvalue() {
+    count = 0
+    [1, 2, 3].foreach(fn(x) {
+        count = count + x
+    })
+    print(count)
+}
+test_shared_upvalue()

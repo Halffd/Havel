@@ -1080,10 +1080,18 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         assignment.target->kind == ast::NodeType::Identifier) {
       const auto &ident =
           static_cast<const ast::Identifier &>(*assignment.target);
-      auto binding = resolveIdentifier(ident.symbol);
+    auto binding = resolveIdentifier(ident.symbol);
 
-      // Explicit global override (::x = ...) must never create a local.
-      if (assignment.isGlobalScope || ident.isGlobalScope) {
+        // DEBUG: trace assignment resolution for key identifiers
+        if (ident.symbol == "nextTok" || ident.symbol == "lookahead" || ident.symbol == "isObject" || ident.symbol == "setLook") {
+            std::cerr << "[LEX_DBG] assign '" << ident.symbol << "' fstack=" << function_stack_.size()
+                      << " binding=" << (binding ? std::to_string(static_cast<int>(binding->kind)) : "none")
+                      << " gvars=" << global_variables_.count(ident.symbol)
+                      << " insideFn=" << (function_stack_.size() > 1) << "\n";
+        }
+
+        // Explicit global override (::x = ...) must never create a local.
+        if (assignment.isGlobalScope || ident.isGlobalScope) {
         global_variables_.insert(ident.symbol);
         noteIdentifierBinding(
             ident, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, ident.symbol, false});
@@ -1114,9 +1122,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             shouldDeclareLocal = true;
         }
 
-      if (shouldDeclareLocal) {
-        // Implicit declaration on first assignment
-        bool isGlobalScope = !insideFunction;
+        if (shouldDeclareLocal) {
+            // Implicit declaration on first assignment
+            bool isGlobalScope = !insideFunction;
+            if (ident.symbol == "nextTok" || ident.symbol == "lookahead" || ident.symbol == "isObject" || ident.symbol == "setLook") {
+                std::cerr << "[LEX_DBG] '" << ident.symbol << "' shouldDeclareLocal=true isGlobal=" << isGlobalScope << "\n";
+            }
 
         if (isGlobalScope) {
           // At top-level program scope - declare as global variable

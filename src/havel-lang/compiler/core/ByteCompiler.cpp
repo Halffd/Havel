@@ -431,11 +431,14 @@ void ByteCompiler::emit(OpCode op, Value operand) {
 }
 
 void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
-  if (!current_function) {
-    COMPILER_THROW(
-        "Attempted to emit bytecode without active function");
-  }
-  current_function->instructions.emplace_back(op, std::move(operands));
+if (!current_function) {
+COMPILER_THROW(
+"Attempted to emit bytecode without active function");
+}
+if (false && current_function->name == "Parser" && current_function->instructions.size() < 600) {
+std::cerr << "EMIT_P[" << current_function->instructions.size() << "]:" << static_cast<int>(op) << "\n";
+}
+current_function->instructions.emplace_back(op, std::move(operands));
   current_function->instruction_locations.push_back(
       current_source_location_.value_or(SourceLocation{}));
   auto &instr = current_function->instructions.back();
@@ -503,7 +506,10 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     COMPILER_THROW("Function declaration missing name");
-    }
+  }
+  if (function.name->symbol == "disambiguateBrace") {
+    std::cerr << "COMPILE_FN disambiguateBrace current_function=" << (current_function ? current_function->name : "(null)") << " saved_depth=" << saved_functions_.size() << "\n";
+  }
 
     auto index_it = function_indices_by_node_.find(&function);
   if (index_it == function_indices_by_node_.end()) {
@@ -617,16 +623,19 @@ if (param->defaultValue.has_value()) {
     }
   }
 
-  if (function.body) {
-    // Compile all statements except the last
-    const auto &stmts = function.body->body;
-    if (!stmts.empty()) {
-      // Compile all but last statement normally (not in tail position)
-      for (size_t i = 0; i < stmts.size() - 1; i++) {
-        if (stmts[i]) {
-          compileStatement(*stmts[i]);
-        }
-      }
+if (function.body) {
+// Compile all statements except the last
+const auto &stmts = function.body->body;
+if (!stmts.empty()) {
+// Compile all but last statement normally (not in tail position)
+for (size_t i = 0; i < stmts.size() - 1; i++) {
+if (stmts[i]) {
+if (false && current_function && current_function->name == "Parser") {
+std::cerr << "BSTMT Parser[" << current_function->instructions.size() << "] i=" << i << " type=" << static_cast<int>(stmts[i]->kind) << "\n";
+}
+compileStatement(*stmts[i]);
+}
+}
     }
 
     // Last statement: if it's an expression statement, return its value
@@ -1119,10 +1128,13 @@ void ByteCompiler::collectParameterPatternSlots(
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
   auto source_scope = atNode(statement);
   switch (statement.kind) {
-        case ast::NodeType::ExpressionStatement: {
-            const auto &expr_stmt =
-                static_cast<const ast::ExpressionStatement &>(statement);
-            if (expr_stmt.expression) {
+case ast::NodeType::ExpressionStatement: {
+const auto &expr_stmt =
+static_cast<const ast::ExpressionStatement &>(statement);
+if (false && current_function && current_function->name == "Parser") {
+std::cerr << "EXPR_STMT Parser[" << current_function->instructions.size() << "] expr_type=" << static_cast<int>(expr_stmt.expression ? expr_stmt.expression->kind : ast::NodeType::Program) << "\n";
+}
+if (expr_stmt.expression) {
                 bool tail_before = in_tail_position_;
                 compileExpression(*expr_stmt.expression);
                 // TCO: Don't POP if in tail position (value is return value)
@@ -2717,34 +2729,37 @@ break;
                                id.symbol);
     }
 
-    switch (binding->kind) {
-    case ResolvedBindingKind::Local:
-      emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
-      break;
-    case ResolvedBindingKind::Upvalue:
-      emit(OpCode::LOAD_UPVALUE, binding->slot);
-      break;
-    case ResolvedBindingKind::Function:
-      // User-defined function - load as FunctionObject
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(
-               top_level_function_indices_by_name_[binding->name])));
-      break;
-    case ResolvedBindingKind::HostFunction:
-      // Host function - load as global, runtime will dispatch
-      {
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-      }
-      break;
-    case ResolvedBindingKind::Global:
-      // Global variable - runtime will decide
-      {
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-      }
-      break;
+  if (current_function && current_function->name == "Parser" && (binding->kind == ResolvedBindingKind::Global || binding->kind == ResolvedBindingKind::HostFunction)) {
+    std::cerr << "PARSER_GLOBAL_REF[" << current_function->instructions.size() << "] name=" << id.symbol << " kind=" << static_cast<int>(binding->kind) << "\n";
+  }
+  switch (binding->kind) {
+  case ResolvedBindingKind::Local:
+    emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
+    break;
+  case ResolvedBindingKind::Upvalue:
+    emit(OpCode::LOAD_UPVALUE, binding->slot);
+    break;
+  case ResolvedBindingKind::Function:
+    // User-defined function - load as FunctionObject
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(
+             top_level_function_indices_by_name_[binding->name])));
+    break;
+  case ResolvedBindingKind::HostFunction:
+    // Host function - load as global, runtime will dispatch
+    {
+      uint32_t strId = addStringConstant(binding->name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
+    break;
+  case ResolvedBindingKind::Global:
+    // Global variable - runtime will decide
+    {
+      uint32_t strId = addStringConstant(binding->name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
+    break;
+  }
     break;
   }
 

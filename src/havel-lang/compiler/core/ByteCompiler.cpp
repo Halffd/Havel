@@ -4859,21 +4859,26 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
  emit(OpCode::OBJECT_GET);
  uint32_t isArrayJump = emitJump(OpCode::JUMP_IF_NULL);
 
- // Array: destructure second (the element) into slots
- // Load second, then ARRAY_GET for each slot
- emit(OpCode::LOAD_VAR, resultSlot);
- { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- emit(OpCode::OBJECT_GET);
- // Store the element in a temp slot for reuse
- uint32_t elemSlot = next_local_index++;
- reserveLocalSlot(elemSlot);
- emit(OpCode::STORE_VAR, elemSlot);
- for (size_t i = 0; i < iterSlots.size(); i++) {
- emit(OpCode::LOAD_VAR, elemSlot);
- emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(i))));
- emit(OpCode::ARRAY_GET);
- emit(OpCode::STORE_VAR, iterSlots[i]);
- }
+        // Array: first=index, second=value (consistent with string/range/object paths)
+        if (iterSlots.size() >= 2) {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[1]);
+            for (size_t i = 2; i < iterSlots.size(); i++) {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                emit(OpCode::STORE_VAR, iterSlots[i]);
+            }
+        } else {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+        }
  uint32_t arrEndJump = emitJump(OpCode::JUMP);
 
  // Check if it's a string (has "upper")

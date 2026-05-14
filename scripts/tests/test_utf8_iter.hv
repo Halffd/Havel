@@ -1,0 +1,5 @@
+// Test UTF-8 string iteration
+s = "café"
+for c in s
+    print(c)
+end

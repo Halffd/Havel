@@ -1070,27 +1070,37 @@ bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
 
 // Iterator helpers
 IteratorRef VM::createIterator(const Value &iterable) {
-  IteratorRef ref;
+    IteratorRef ref;
 
-  // _G globals mirror: iterate the live globals maps, not the stale heap snapshot
-  if (iterable.isObjectId() && iterable.asObjectId() == globals_mirror_object_id_) {
-    ref.id = heap_.createIterator(iterable);
-    auto *iter = heap_.iterator(ref.id);
-    if (iter) {
-      iter->keys.clear();
-      std::set<std::string> seen;
-      for (const auto& [name, _] : globals) {
-        if (seen.insert(name).second) iter->keys.push_back(name);
-      }
-      for (const auto& [name, _] : host_function_globals_) {
-        if (seen.insert(name).second) iter->keys.push_back(name);
-      }
+    // _G globals mirror: iterate the live globals maps, not the stale heap snapshot
+    if (iterable.isObjectId() && iterable.asObjectId() == globals_mirror_object_id_) {
+        ref.id = heap_.createIterator(iterable);
+        auto *iter = heap_.iterator(ref.id);
+        if (iter) {
+            iter->keys.clear();
+            std::set<std::string> seen;
+            for (const auto& [name, _] : globals) {
+                if (seen.insert(name).second) iter->keys.push_back(name);
+            }
+            for (const auto& [name, _] : host_function_globals_) {
+                if (seen.insert(name).second) iter->keys.push_back(name);
+            }
+        }
+        return ref;
     }
-    return ref;
-  }
 
-  ref.id = heap_.createIterator(iterable);
-  return ref;
+    // Materialize StringValId to heap StringId so iterator can resolve characters
+    Value effective = iterable;
+    if (iterable.isStringValId()) {
+        if (current_chunk) {
+            const std::string &src = current_chunk->getString(iterable.asStringValId());
+            auto strRef = heap_.allocateString(src);
+            effective = Value::makeStringId(strRef.id);
+        }
+    }
+
+    ref.id = heap_.createIterator(effective);
+    return ref;
 }
 
 Value VM::iteratorNext(IteratorRef iterRef) {
@@ -6563,13 +6573,47 @@ auto *parent_closure = heap_.closure(parent_closure_id);
             } else if (container.isStringValId() && current_chunk) {
                 s = current_chunk->getString(container.asStringValId());
             }
-            int64_t sz = static_cast<int64_t>(s.size());
+            int64_t numCodepoints = 0;
+            size_t bytePos = 0;
+            while (bytePos < s.size()) {
+                unsigned char c = static_cast<unsigned char>(s[bytePos]);
+                size_t cpLen = 1;
+                if (c < 0x80) { cpLen = 1; }
+                else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+                else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+                else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+                if (bytePos + cpLen > s.size()) { cpLen = 1; }
+                numCodepoints++;
+                bytePos += cpLen;
+            }
             int64_t idx = *index;
-            if (idx < 0) idx = sz + idx;
-            if (idx < 0 || idx >= sz) {
+            if (idx < 0) idx = numCodepoints + idx;
+            if (idx < 0 || idx >= numCodepoints) {
                 pushStack(Value::makeNull());
             } else {
-                auto ref = heap_.allocateString(s.substr(static_cast<size_t>(idx), 1));
+                size_t targetByte = 0;
+                int64_t cpIdx = 0;
+                while (cpIdx < idx && targetByte < s.size()) {
+                    unsigned char c = static_cast<unsigned char>(s[targetByte]);
+                    size_t cpLen = 1;
+                    if (c < 0x80) { cpLen = 1; }
+                    else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+                    else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+                    else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+                    if (targetByte + cpLen > s.size()) { cpLen = 1; }
+                    targetByte += cpLen;
+                    cpIdx++;
+                }
+                size_t cpLen = 1;
+                if (targetByte < s.size()) {
+                    unsigned char c = static_cast<unsigned char>(s[targetByte]);
+                    if (c < 0x80) { cpLen = 1; }
+                    else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+                    else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+                    else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+                    if (targetByte + cpLen > s.size()) { cpLen = 1; }
+                }
+                auto ref = heap_.allocateString(s.substr(targetByte, cpLen));
                 pushStack(Value::makeStringId(ref.id));
             }
             break;

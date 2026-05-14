@@ -431,16 +431,16 @@ void ByteCompiler::emit(OpCode op, Value operand) {
 }
 
 void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
-    if (!current_function) {
-        COMPILER_THROW(
-            "Attempted to emit bytecode without active function");
-    }
-    current_function->instructions.emplace_back(op, std::move(operands));
- current_function->instruction_locations.push_back(
- current_source_location_.value_or(SourceLocation{}));
- auto &instr = current_function->instructions.back();
- instr.location = current_source_location_;
- }
+  if (!current_function) {
+    COMPILER_THROW(
+        "Attempted to emit bytecode without active function");
+  }
+  current_function->instructions.emplace_back(op, std::move(operands));
+  current_function->instruction_locations.push_back(
+      current_source_location_.value_or(SourceLocation{}));
+  auto &instr = current_function->instructions.back();
+  instr.location = current_source_location_;
+}
 
 uint32_t ByteCompiler::addConstant(const Value &value) {
   if (!current_function) {
@@ -627,40 +627,21 @@ if (param->defaultValue.has_value()) {
           compileStatement(*stmts[i]);
         }
       }
+    }
 
-      // Last statement: if it's an expression statement, return its value
-      // (Rust-like implicit return)
-      const auto &lastStmt = stmts.back();
-      if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
-        const auto &exprStmt =
-            static_cast<const ast::ExpressionStatement &>(*lastStmt);
-        if (exprStmt.expression) {
-          // TCO: Enter tail position for the last expression
-          enterTailPosition();
-          clearTailCallFlag();
-          compileExpression(*exprStmt.expression);
-          exitTailPosition();
-          // TCO: Only emit RETURN if we didn't emit TAIL_CALL
-          if (!wasTailCall()) {
-            emit(OpCode::RETURN);
-          }
-        } else {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          emit(OpCode::RETURN);
-        }
-      } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
-        // Last statement is an explicit return - compile with tail position
+    // Last statement: if it's an expression statement, return its value
+    // (Rust-like implicit return)
+    const auto &lastStmt = stmts.back();
+    if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+      const auto &exprStmt =
+          static_cast<const ast::ExpressionStatement &>(*lastStmt);
+      if (exprStmt.expression) {
+        // TCO: Enter tail position for the last expression
         enterTailPosition();
-        compileStatement(*lastStmt);
+        clearTailCallFlag();
+        compileExpression(*exprStmt.expression);
         exitTailPosition();
-      } else if (lastStmt) {
-        // Last statement is not an expression or return - compile in tail
-        // position and add implicit return
-        enterTailPosition();
-        compileStatement(*lastStmt);
-        exitTailPosition();
-        // Only emit RETURN if the statement didn't already return (via tail
-        // call branches)
+        // TCO: Only emit RETURN if we didn't emit TAIL_CALL
         if (!wasTailCall()) {
           emit(OpCode::RETURN);
         }
@@ -668,12 +649,28 @@ if (param->defaultValue.has_value()) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::RETURN);
       }
+    } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
+      // Last statement is an explicit return - compile with tail position
+      enterTailPosition();
+      compileStatement(*lastStmt);
+      exitTailPosition();
+    } else if (lastStmt) {
+      // Last statement is not an expression or return - compile in tail
+      // position and add implicit return
+      enterTailPosition();
+      compileStatement(*lastStmt);
+      exitTailPosition();
+      // Only emit RETURN if the statement didn't already return (via tail
+      // call branches)
+      if (!wasTailCall()) {
+        emit(OpCode::RETURN);
+      }
     } else {
-      // Empty function body
       emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       emit(OpCode::RETURN);
     }
   } else {
+    // Empty function body
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }

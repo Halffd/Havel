@@ -1170,7 +1170,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (valueVal.isNull())
             continue;
 
@@ -1211,7 +1211,7 @@ return vm->execLengthOp(args[0]);
       if (doneVal.isBool() && doneVal.asBool())
         break;
 
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
       if (valueVal.isNull())
         continue;
 
@@ -1247,7 +1247,7 @@ return vm->execLengthOp(args[0]);
       if (doneVal.isBool() && doneVal.asBool())
         break;
 
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
       if (!valueVal.isNull()) {
         ctx_->vm->setHostObjectField(result, std::to_string(0),
                                      valueVal);
@@ -1277,7 +1277,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto pairVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto pairVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           // Expect pairs like [key, value] or {key: ..., value: ...}
           if (pairVal.isArrayId()) {
             auto arr = ArrayRef{pairVal.asArrayId()};
@@ -1313,7 +1313,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (valueVal.isInt()) {
             total += valueVal.asInt();
           } else if (valueVal.isDouble()) {
@@ -1346,7 +1346,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           double num = 0;
           if (valueVal.isInt()) {
             num = valueVal.asInt();
@@ -1387,7 +1387,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           double num = 0;
           if (valueVal.isInt()) {
             num = valueVal.asInt();
@@ -1427,7 +1427,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (!valueVal.isNull()) {
             elements.push_back(valueVal);
           }
@@ -1493,7 +1493,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (valueVal.isNull())
             continue;
 
@@ -1549,7 +1549,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (!valueVal.isNull()) {
             ctx_->vm->pushHostArrayValue(result, valueVal);
           }
@@ -1567,7 +1567,7 @@ return vm->execLengthOp(args[0]);
           if (doneVal.isBool() && doneVal.asBool())
             break;
 
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (!valueVal.isNull()) {
             ctx_->vm->pushHostArrayValue(result, valueVal);
           }
@@ -1598,7 +1598,7 @@ return vm->execLengthOp(args[0]);
             break;
 
           auto keyVal = ctx_->vm->getHostObjectField(resultObjRef, "key");
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (!keyVal.isNull() &&
               !valueVal.isNull()) {
             ctx_->vm->setHostObjectField(result, keyVal.toString(),
@@ -1619,7 +1619,7 @@ return vm->execLengthOp(args[0]);
             break;
 
           auto keyVal = ctx_->vm->getHostObjectField(resultObjRef, "key");
-          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
           if (!keyVal.isNull() &&
               !valueVal.isNull()) {
             ctx_->vm->setHostObjectField(result, keyVal.toString(),
@@ -1807,7 +1807,7 @@ return vm->execLengthOp(args[0]);
       }
 
       // Get value
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
 
       // Call predicate with value
       std::vector<Value> predArgs;
@@ -1857,7 +1857,7 @@ return vm->execLengthOp(args[0]);
       }
 
       // Get value
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
       found_any = true;
 
       // Call predicate with value

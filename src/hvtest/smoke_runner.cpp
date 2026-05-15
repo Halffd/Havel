@@ -1949,15 +1949,15 @@ return s == "ff" ? 1 : 0
 
   // --- BitModule: bit.and/or/xor/not/lshift/rshift/test/set/clear/toggle ---
   failures += runStdlibCase("bit-and", R"havel(
-return 12 & 10
+    return 12 & 10
 )havel", 8, dump_bytecode, snapshot_dir);
 
-  failures += runStdlibCase("bit-or", R"havel(
-return 12 | 10
+    failures += runStdlibCase("bit-or", R"havel(
+    return 12 | 10
 )havel", 14, dump_bytecode, snapshot_dir);
 
-  failures += runStdlibCase("bit-xor", R"havel(
-return bit.xor(12, 10)
+    failures += runStdlibCase("bit-xor", R"havel(
+    return bit.xor(12, 10)
 )havel", 6, dump_bytecode, snapshot_dir);
 
   failures += runStdlibCase("bit-not", R"havel(
@@ -2061,14 +2061,14 @@ return result[0]
 )havel", 99, dump_bytecode, snapshot_dir);
 
   failures += runStdlibCase("pack-roundtrip-i16", R"havel(
-data = pack.pack("I", 1000)
-result = pack.unpack("I", data)
+    data = pack.pack("I", 1000)
+    result = pack.unpack("I", data)
 return result[0]
 )havel", 1000, dump_bytecode, snapshot_dir);
 
   failures += runStdlibCase("pack-roundtrip-i32", R"havel(
-data = pack.pack("l", 100000)
-result = pack.unpack("l", data)
+    data = pack.pack("l", 100000)
+    result = pack.unpack("l", data)
 return result[0]
 )havel", 100000, dump_bytecode, snapshot_dir);
 
@@ -2081,14 +2081,14 @@ return int(result[0])
 )havel", 3, dump_bytecode, snapshot_dir);
 
   failures += runStdlibCase("pack-multi-format", R"havel(
-data = pack.pack("uI", 1, 500)
-// u8=1 byte, I16=2 bytes -> 3 total
+    data = pack.pack("uI", 1, 500)
+    // u8=1 byte, I16=2 bytes -> 3 total
 return data.len
 )havel", 3, dump_bytecode, snapshot_dir);
 
   failures += runStdlibCase("pack-unpack-multi", R"havel(
-data = pack.pack("uI", 1, 500)
-result = pack.unpack("uI", data)
+    data = pack.pack("uI", 1, 500)
+    result = pack.unpack("uI", data)
 ok = 1
 if result[0] != 1 { ok = 0 }
 if result[1] != 500 { ok = 0 }
@@ -2699,7 +2699,7 @@ return isBoolean(v) ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
 
-  if (failures != 0) {
+if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"
               << std::endl;
     return 1;

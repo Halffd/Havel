@@ -1,0 +1,208 @@
+// stress test: classes, instances, and methods
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+// 1. many independent instances
+class Box {
+  value
+  fn @(n) {
+    @value = n
+  }
+  fn getVal() {
+    @value
+  }
+  fn setVal(n) {
+    @value = n
+  }
+  fn doubleVal() {
+    @value * 2
+  }
+}
+
+boxes = []
+for i in 0..19 {
+  b = Box(i * 10)
+  boxes.push(b)
+}
+check("box-0", boxes[0].getVal(), 0)
+check("box-5", boxes[5].getVal(), 50)
+check("box-19", boxes[19].getVal(), 190)
+
+// 2. mutate each instance independently
+for i in 0..19 {
+  boxes[i].setVal(i * 100)
+}
+check("mutate-0", boxes[0].getVal(), 0)
+check("mutate-5", boxes[5].getVal(), 500)
+check("mutate-19", boxes[19].getVal(), 1900)
+
+// 3. computed methods
+check("double-5", boxes[5].doubleVal(), 1000)
+
+// 4. class with array field, many pushes
+class Collector {
+  items
+  fn @() {
+    @items = []
+  }
+  fn addItem(n) {
+    @items.push(n)
+  }
+  fn itemCount() {
+    #(@items)
+  }
+  fn itemSum() {
+    @items.sum()
+  }
+}
+
+col = Collector()
+for i in 0..99 {
+  col.addItem(i)
+}
+check("collector-count", col.itemCount(), 100)
+check("collector-sum", col.itemSum(), 4950)
+
+// 5. class with object field
+class Registry {
+  data
+  fn @() {
+    @data = {}
+  }
+  fn registerItem(k, v) {
+    @data[k] = v
+  }
+  fn lookupItem(k) {
+    @data[k]
+  }
+  fn keyCount() {
+    #(@data.keys())
+  }
+}
+
+reg = Registry()
+for i in 0..49 {
+  reg.registerItem(i, i * i)
+}
+check("reg-10", reg.lookupItem(10), 100)
+check("reg-count", reg.keyCount(), 50)
+
+// 6. class method with multiple operations
+class ChainCalc {
+  value
+  fn @(n) {
+    @value = n
+  }
+  fn addThenDouble(n) {
+    @value += n
+    @value * 2
+  }
+  fn computeTriple() {
+    @value * 3
+  }
+}
+
+cc = ChainCalc(10)
+check("chain-add-double", cc.addThenDouble(5), 30)
+check("chain-after", cc.computeTriple(), 45)
+
+// 7. nested class instances
+class Inner {
+  x
+  fn @(n) {
+    @x = n
+  }
+  fn getX() {
+    @x
+  }
+}
+
+class Outer {
+  inner
+  fn @(n) {
+    @inner = Inner(n)
+  }
+  fn getInnerX() {
+    @inner.getX()
+  }
+  fn setInnerX(n) {
+    @inner.x = n
+  }
+}
+
+outer = Outer(42)
+check("nested-inner", outer.getInnerX(), 42)
+outer.setInnerX(99)
+check("nested-mutate", outer.getInnerX(), 99)
+
+// 8. class with counter
+class StepCounter {
+  steps
+  total
+  fn @() {
+    @steps = 0
+    @total = 0
+  }
+  fn addStep(n) {
+    @steps += 1
+    @total += n
+  }
+  fn getSteps() {
+    @steps
+  }
+  fn getTotal() {
+    @total
+  }
+}
+
+sc = StepCounter()
+for i in 0..9 {
+  sc.addStep(i * 10)
+}
+check("steps-count", sc.getSteps(), 10)
+check("steps-total", sc.getTotal(), 450)
+
+// 9. factory producing class instances
+fn makeBox(n) {
+  Box(n * n)
+}
+
+factory_boxes = []
+for i in 0..9 {
+  b = makeBox(i)
+  factory_boxes.push(b)
+}
+check("factory-sq-3", factory_boxes[3].getVal(), 9)
+check("factory-sq-7", factory_boxes[7].getVal(), 49)
+
+// 10. class instance in object
+class TaggedItem {
+  tag
+  value
+  fn @(t, v) {
+    @tag = t
+    @value = v
+  }
+  fn getTag() {
+    @tag
+  }
+  fn getVal() {
+    @value
+  }
+}
+
+obj = {a: TaggedItem("x", 1), b: TaggedItem("y", 2)}
+check("obj-class-a", obj.a.getTag(), "x")
+check("obj-class-b", obj.b.getVal(), 2)
+
+print(f"stress-classes: {pass} passed, {fail} failed")
+exit(fail)

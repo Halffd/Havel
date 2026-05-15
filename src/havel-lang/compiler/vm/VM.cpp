@@ -1151,7 +1151,7 @@ void VM::setHostObjectSealed(ObjectRef, bool) {
 
 // Function calling
 Value VM::callHostFunction(const Value &fn,
-                                   const std::vector<Value> &args) {
+                                    const std::vector<Value> &args) {
   if (fn.isHostFuncId()) {
     uint32_t host_func_idx = fn.asHostFuncId();
     if (host_func_idx >= host_function_names_.size()) {
@@ -1163,7 +1163,10 @@ Value VM::callHostFunction(const Value &fn,
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
-    return it->second(args);
+    fprintf(stderr, "[VM] Calling host function: %s with %zu args\n", name.c_str(), args.size());
+    Value result = it->second(args);
+    fprintf(stderr, "[VM] Host function %s returned: %s\n", name.c_str(), result.toString().c_str());
+    return result;
   }
   return Value::makeNull();
 }
@@ -2779,6 +2782,7 @@ Value VM::invokeHostFunction(const std::string &name,
       stack.pop();
     }
 
+  fprintf(stderr, "[invokeHost] calling '%s' with %u args\n", name.c_str(), arg_count);
   return it->second(args);
 }
 
@@ -3650,6 +3654,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       COMPILER_THROW("Host function not found: " + name);
     }
     Value result = it->second(args); // Call and get result
+    fprintf(stderr, "[doCall] host %s result: %s\n", name.c_str(), result.toString().c_str());
     pushStack(result); // Push result to stack
     return;
   }
@@ -5140,13 +5145,14 @@ case OpCode::STORE_GLOBAL: {
 
     pushStack(value);
     break;
-  }
+    }
 
-case OpCode::STORE_VAR: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value value = popStack();
+    case OpCode::STORE_VAR: {
+            uint32_t var_index = instruction.operands[0].asInt();
+            uint32_t abs = this->toAbsoluteLocal(var_index);
+            this->ensureLocalIndex(abs);
+            Value value = popStack();
+            fprintf(stderr, "[STORE_VAR] index=%u, value=%s\n", var_index, value.toString().c_str());
 
         if (immutable_locals_.count(abs)) {
             COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));

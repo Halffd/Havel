@@ -1,6 +1,7 @@
 // havel_state.cpp - C API state management
 #include "havel.h"
 #include "../compiler/vm/VM.hpp"
+#include "../compiler/core/Pipeline.hpp"
 #include "../core/Value.hpp"
 #ifdef HAVE_LIBFFI
 #include "../ffi/FFITypes.hpp"
@@ -35,6 +36,7 @@ struct HavelState {
     uint32_t next_array_id = 1;
     uint32_t next_table_id = 1;
     uint32_t next_string_id = 1;
+    void* user_data = nullptr;
 };
 
 static const char* HAVEL_VERSION = "0.1.0";
@@ -47,6 +49,14 @@ HavelState* havel_newstate() {
 
 void havel_close(HavelState* H) {
     if (H) delete H;
+}
+
+void* havel_getuserdata(HavelState* H) {
+    return H ? H->user_data : nullptr;
+}
+
+void havel_setuserdata(HavelState* H, void* data) {
+    if (H) H->user_data = data;
 }
 
 HavelState* havel_newthread(HavelState* parent) {
@@ -133,9 +143,49 @@ void havel_pushstring(HavelState* H, const char* s) {
 }
 
 void havel_pushcfunction(HavelState* H, HavelCFunction fn, const char* name) {
-    (void)H;
-    (void)fn;
-    (void)name;
+    if (!H || !H->vm || !fn || !name) return;
+    try {
+        auto hostFn = [fn, H](const std::vector<havel::core::Value>& args) -> havel::core::Value {
+            H->stack.clear();
+            for (const auto& arg : args) {
+                H->stack.push_back(arg);
+            }
+            int result = fn(H);
+            if (result == HAVEL_ERR) return havel::core::Value::makeNull();
+            if (!H->stack.empty()) {
+                havel::core::Value ret = H->stack.back();
+                H->stack.pop_back();
+                return ret;
+            }
+            return havel::core::Value::makeNull();
+        };
+        H->vm->registerHostFunction(name, hostFn);
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+    }
+}
+
+void havel_pushcfunction_with_ctx(HavelState* H, HavelCFunctionWithCtx fn, void* ctx, const char* name) {
+    if (!H || !H->vm || !fn || !name) return;
+    try {
+        auto hostFn = [fn, ctx, H](const std::vector<havel::core::Value>& args) -> havel::core::Value {
+            H->stack.clear();
+            for (const auto& arg : args) {
+                H->stack.push_back(arg);
+            }
+            int result = fn(H, ctx);
+            if (result == HAVEL_ERR) return havel::core::Value::makeNull();
+            if (!H->stack.empty()) {
+                havel::core::Value ret = H->stack.back();
+                H->stack.pop_back();
+                return ret;
+            }
+            return havel::core::Value::makeNull();
+        };
+        H->vm->registerHostFunction(name, hostFn);
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+    }
 }
 
 void havel_pushobject(HavelState* H) {
@@ -220,11 +270,19 @@ const char* havel_tostring(HavelState* H, int idx) {
     int i = idx >= 0 ? idx : t + idx;
     if (i < 0 || i >= t) return "";
     const auto& v = H->stack[i];
+    if (H->vm) {
+        buf = H->vm->resolveStringKey(v);
+        return buf.c_str();
+    }
     if (v.isStringValId()) {
         auto it = H->strings.find(v.asStringValId());
         if (it != H->strings.end()) return it->second.c_str();
     }
-    buf = "<value>";
+    if (v.isStringId()) {
+        auto it = H->strings.find(v.asStringId());
+        if (it != H->strings.end()) return it->second.c_str();
+    }
+    buf = v.toString();
     return buf.c_str();
 }
 
@@ -438,14 +496,40 @@ void havel_gc(HavelState* H, int what) {
 
 int havel_loadstring(HavelState* H, const char* s, const char* name) {
     if (!H || !s) return HAVEL_ERR;
-    H->last_error = "loadstring not fully implemented - needs full parser integration";
-    return HAVEL_ERR;
+    if (!H->vm) return HAVEL_ERR;
+  try {
+    std::string unitName = name ? name : "entry";
+    havel::compiler::PipelineOptions opts;
+    opts.compile_unit_name = unitName;
+    opts.vm_override = H->vm.get();
+    auto result = havel::compiler::runBytecodePipeline(s, "__main__", opts);
+    H->stack.push_back(result.return_value);
+        return HAVEL_OK;
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        return HAVEL_ERR;
+    }
 }
 
 int havel_loadfile(HavelState* H, const char* filename) {
-    (void)H;
-    (void)filename;
-    return HAVEL_ERR;
+    if (!H || !filename) return HAVEL_ERR;
+    try {
+        std::FILE* f = std::fopen(filename, "rb");
+        if (!f) {
+            H->last_error = "cannot open file";
+            return HAVEL_ERR;
+        }
+        std::fseek(f, 0, SEEK_END);
+        long len = std::ftell(f);
+        std::fseek(f, 0, SEEK_SET);
+        std::string source(len, '\0');
+        std::fread(&source[0], 1, len, f);
+        std::fclose(f);
+        return havel_loadstring(H, source.c_str(), filename);
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        return HAVEL_ERR;
+    }
 }
 
 void havel_require(HavelState* H, const char* name) {

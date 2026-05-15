@@ -2408,58 +2408,75 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return nullptr;
   }
 
-  // Context-sensitive decorator detection:
-  // [decorator] or [decorator(args)] at statement start = decorator
-  // Must be followed by a declaration (fn, class, etc.)
-  // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
-  // Distinguish from [a, b, c] = ... array destructuring by lookahead:
-  // Decorator: [identifier] followed by declaration
-  // Array: [expression, ...] or [pattern] = value
-  // Pattern: [a, b] (comma indicates array, not decorator)
-  if (at().type == havel::TokenType::OpenBracket &&
-      at(1).type == havel::TokenType::Identifier &&
-      (at(2).type == havel::TokenType::CloseBracket ||
-       at(2).type == havel::TokenType::OpenParen)) {
-    // Lookahead to find what comes after the [...] decorator
-    // Save position and scan forward
-    size_t savePos = position;
-    advance(); // consume '['
-    // Only single identifier allowed in decorator brackets
-    // If we see comma, it's array destructuring not decorator
-    if (at().type == havel::TokenType::Identifier) {
-      advance(); // consume identifier
-      // Check for decorator arguments: [decorator(args)]
-      if (at().type == havel::TokenType::OpenParen) {
-        // Skip over parenthesized arguments
-        advance(); // consume '('
-        int parenDepth = 1;
-        while (notEOF() && parenDepth > 0) {
-          if (at().type == havel::TokenType::OpenParen) parenDepth++;
-          else if (at().type == havel::TokenType::CloseParen) parenDepth--;
-          advance();
+    // Context-sensitive decorator detection:
+    // [decorator] or [decorator(args)] at statement start = decorator
+    // Must be followed by a declaration (fn, class, etc.)
+    // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
+    // Distinguish from [a, b, c] = ... array destructuring by lookahead:
+    // Decorator: [identifier] followed by declaration
+    // Array: [expression, ...] or [pattern] = value
+    // Pattern: [a, b] (comma indicates array, not decorator)
+    if (at().type == havel::TokenType::OpenBracket &&
+        at(1).type == havel::TokenType::Identifier &&
+        (at(2).type == havel::TokenType::CloseBracket ||
+         at(2).type == havel::TokenType::OpenParen)) {
+        // Lookahead to find what comes after the [...] decorator(s)
+        // Save position and scan forward, consuming all stacked decorator brackets
+        size_t savePos = position;
+
+        bool isDecorator = false;
+        for (;;) {
+            advance(); // consume '['
+            // Only single identifier allowed in decorator brackets
+            // If we see comma, it's array destructuring not decorator
+            if (at().type == havel::TokenType::Identifier) {
+                advance(); // consume identifier
+                // Check for decorator arguments: [decorator(args)]
+                if (at().type == havel::TokenType::OpenParen) {
+                    // Skip over parenthesized arguments
+                    advance(); // consume '('
+                    int parenDepth = 1;
+                    while (notEOF() && parenDepth > 0) {
+                        if (at().type == havel::TokenType::OpenParen) parenDepth++;
+                        else if (at().type == havel::TokenType::CloseParen) parenDepth--;
+                        advance();
+                    }
+                }
+            }
+            // Expect closing bracket
+            if (at().type == havel::TokenType::CloseBracket) {
+                advance(); // consume ']'
+            } else {
+                // Not a valid decorator bracket, restore and fall through
+                break;
+            }
+            // Skip newlines between stacked decorators
+            while (at().type == havel::TokenType::NewLine) advance();
+            // Check if followed by declaration keywords
+            if (at().type == havel::TokenType::Fn ||
+                at().type == havel::TokenType::Class ||
+                at().type == havel::TokenType::Let ||
+                at().type == havel::TokenType::Val ||
+                at().type == havel::TokenType::Const) {
+                isDecorator = true;
+                break;
+            }
+            // Check if next token is another [deco] bracket group (stacked decorator)
+            if (at().type == havel::TokenType::OpenBracket &&
+                at(1).type == havel::TokenType::Identifier &&
+                (at(2).type == havel::TokenType::CloseBracket ||
+                 at(2).type == havel::TokenType::OpenParen)) {
+                continue; // loop to consume this bracket group too
+            }
+            // Not a decorator pattern, break out
+            break;
         }
-      }
+
+        position = savePos; // restore position
+        if (isDecorator) {
+            return parseDecoratorStatement();
+        }
     }
-    // Expect closing bracket
-    if (at().type == havel::TokenType::CloseBracket) {
-      advance(); // consume ']'
-    } else {
-      // Not a valid decorator bracket, restore and fall through
-      position = savePos;
-    }
-    // Skip newlines
-    while (at().type == havel::TokenType::NewLine) advance();
-    // Check if followed by declaration keywords
-    bool isDecorator = (at().type == havel::TokenType::Fn ||
-                        at().type == havel::TokenType::Class ||
-at().type == havel::TokenType::Let ||
-            at().type == havel::TokenType::Val ||
-            at().type == havel::TokenType::Const);
-    position = savePos; // restore position
-    if (isDecorator) {
-      return parseDecoratorStatement();
-    }
-  }
 
   switch (at().type) {
   case havel::TokenType::Hotkey: {
@@ -6252,13 +6269,13 @@ while (at().type == havel::TokenType::NewLine) {
         bool savedInputContext = context.inInputContext;
         context.inInputContext = inputContext;
 
-    // Base indentation = header line indent + 1
-    // Anything at column > headerIndent is inside the block
-    // Skip any leading newlines first
-    while (at().type == havel::TokenType::NewLine) {
-        advance();
-    }
-    size_t baseIndentation = headerIndent + 1;
+        // Base indentation = header line indent + 1
+        // Anything at column > headerIndent is inside the block
+        // Skip any leading newlines first
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        size_t baseIndentation = headerIndent + 1;
     
     // Parse statements until we hit a dedent (token at lower column than base)
     while (notEOF()) {

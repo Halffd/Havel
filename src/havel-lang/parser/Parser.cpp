@@ -2287,25 +2287,34 @@ Parser::parseStrict(const std::string &sourceCode) {
   tokens = lexer.tokenize();
   position = 0;
 
-  auto program = std::make_unique<havel::ast::Program>();
-  while (notEOF()) {
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Semicolon) {
-      advance();
-      continue;
-    }
+    auto program = std::make_unique<havel::ast::Program>();
+    int strictLoopCounter = 0;
+    while (notEOF()) {
+        checkParseLoop(strictLoopCounter, "parseStrict");
 
-    try {
-      auto stmt = parseStatement();
-      if (stmt) {
-        program->body.push_back(std::move(stmt));
-      }
-    } catch (const havel::parser::ParseError &) {
-      throw;
-    } catch (const std::exception &e) {
-      fail(e.what());
+        if (at().type == havel::TokenType::NewLine ||
+            at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+        }
+
+        size_t beforePos = position;
+        try {
+            auto stmt = parseStatement();
+            if (stmt) {
+                program->body.push_back(std::move(stmt));
+            }
+        } catch (const havel::parser::ParseError &) {
+            throw;
+        } catch (const std::exception &e) {
+            fail(e.what());
+        }
+        // Forward progress guarantee
+        if (position == beforePos && notEOF() &&
+            at().type != havel::TokenType::NewLine && at().type != havel::TokenType::Semicolon) {
+            advance();
+        }
     }
-  }
 
   return program;
 }
@@ -6336,38 +6345,41 @@ while (at().type == havel::TokenType::NewLine) {
         }
         size_t baseIndentation = headerIndent + 1;
     
-    // Parse statements until we hit a dedent (token at lower column than base)
-    while (notEOF()) {
-        // Skip empty lines
-        if (at().type == havel::TokenType::NewLine) {
-            advance();
-            continue;
-        }
+        // Parse statements until we hit a dedent (token at lower column than base)
+        int blockLoopCounter = 0;
+        while (notEOF()) {
+            checkParseLoop(blockLoopCounter, "parseBlockStatement (colon)");
 
-        // Check for end of block conditions
-        if (at().type == havel::TokenType::CloseBrace ||
-            at().type == havel::TokenType::EOF_TOKEN) {
-            break;
-        }
+            // Skip empty lines
+            if (at().type == havel::TokenType::NewLine) {
+                advance();
+                continue;
+            }
 
-        // Check if we're back at base indentation or lower (dedent)
-        // Note: we use < not <= because statements at same column as base are still in the block
-        // Only strictly lower column indicates dedent
-        if (at().column < baseIndentation) {
-            break;
-        }
+            // Check for end of block conditions
+            if (at().type == havel::TokenType::CloseBrace ||
+                at().type == havel::TokenType::EOF_TOKEN) {
+                break;
+            }
 
-      size_t beforePos = position;
-      auto stmt = parseStatement();
-      if (stmt) {
-        block->body.push_back(std::move(stmt));
-      }
-      if (position == beforePos && notEOF() && at().column >= baseIndentation &&
-          at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN &&
-          at().type != havel::TokenType::NewLine) {
-        advance();
-      }
-    }
+            // Check if we're back at base indentation or lower (dedent)
+            // Note: we use < not <= because statements at same column as base are still in the block
+            // Only strictly lower column indicates dedent
+            if (at().column < baseIndentation) {
+                break;
+            }
+
+            size_t beforePos = position;
+            auto stmt = parseStatement();
+            if (stmt) {
+                block->body.push_back(std::move(stmt));
+            }
+            if (position == beforePos && notEOF() && at().column >= baseIndentation &&
+                at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN &&
+                at().type != havel::TokenType::NewLine) {
+                advance();
+            }
+        }
     
     // Restore input context
     context.inInputContext = savedInputContext;
@@ -6385,31 +6397,34 @@ while (at().type == havel::TokenType::NewLine) {
     bool savedInputContext = context.inInputContext;
     context.inInputContext = true; // Hotkey blocks are always in input context
     
-    // Parse statements until end of block
-    while (notEOF()) {
-      // Skip empty lines
-      if (at().type == havel::TokenType::NewLine) {
-        advance();
-        continue;
-      }
+        // Parse statements until end of block
+        int colonColonLoopCounter = 0;
+        while (notEOF()) {
+            checkParseLoop(colonColonLoopCounter, "parseBlockStatement (coloncolon)");
 
-      // Check for end of block
-      if (at().type == havel::TokenType::CloseBrace ||
-          at().type == havel::TokenType::EOF_TOKEN) {
-        break;
-      }
+            // Skip empty lines
+            if (at().type == havel::TokenType::NewLine) {
+                advance();
+                continue;
+            }
 
-      size_t beforePos = position;
-      auto stmt = parseStatement();
-      if (stmt) {
-        block->body.push_back(std::move(stmt));
-      }
-      // Forward progress guarantee
-      if (position == beforePos && notEOF() &&
-          at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN) {
-        advance();
-      }
-    }
+            // Check for end of block
+            if (at().type == havel::TokenType::CloseBrace ||
+                at().type == havel::TokenType::EOF_TOKEN) {
+                break;
+            }
+
+            size_t beforePos = position;
+            auto stmt = parseStatement();
+            if (stmt) {
+                block->body.push_back(std::move(stmt));
+            }
+            // Forward progress guarantee
+            if (position == beforePos && notEOF() &&
+                at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN) {
+                advance();
+            }
+        }
     
     // Restore input context
     context.inInputContext = savedInputContext;
@@ -6422,25 +6437,28 @@ while (at().type == havel::TokenType::NewLine) {
     bool savedInputContext = context.inInputContext;
     context.inInputContext = inputContext;
     
-    // Parse statements until closing brace
-    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-      // Skip newlines and semicolons (empty statements)
-      if (at().type == havel::TokenType::NewLine ||
-          at().type == havel::TokenType::Semicolon) {
-        advance();
-        continue;
-      }
+        // Parse statements until closing brace
+        int braceLoopCounter = 0;
+        while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+            checkParseLoop(braceLoopCounter, "parseBlockStatement (brace)");
 
-      size_t beforePos = position;
-      auto stmt = parseStatement();
-      if (stmt) {
-        block->body.push_back(std::move(stmt));
-      }
-      // Forward progress guarantee
-      if (position == beforePos && notEOF() && at().type != havel::TokenType::CloseBrace) {
-        advance();
-      }
-    }
+            // Skip newlines and semicolons (empty statements)
+            if (at().type == havel::TokenType::NewLine ||
+                at().type == havel::TokenType::Semicolon) {
+                advance();
+                continue;
+            }
+
+            size_t beforePos = position;
+            auto stmt = parseStatement();
+            if (stmt) {
+                block->body.push_back(std::move(stmt));
+            }
+            // Forward progress guarantee
+            if (position == beforePos && notEOF() && at().type != havel::TokenType::CloseBrace) {
+                advance();
+            }
+        }
 
     // Restore input context
     context.inInputContext = savedInputContext;

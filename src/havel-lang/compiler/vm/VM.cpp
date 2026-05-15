@@ -1229,10 +1229,7 @@ Value VM::callHostFunction(const Value &fn,
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
-    fprintf(stderr, "[VM] Calling host function: %s with %zu args\n", name.c_str(), args.size());
-    Value result = it->second(args);
-    fprintf(stderr, "[VM] Host function %s returned: %s\n", name.c_str(), result.toString().c_str());
-    return result;
+    return it->second(args);
   }
   return Value::makeNull();
 }
@@ -2926,7 +2923,6 @@ Value VM::invokeHostFunction(const std::string &name,
       stack.pop();
     }
 
-  fprintf(stderr, "[invokeHost] calling '%s' with %u args\n", name.c_str(), arg_count);
   return it->second(args);
 }
 
@@ -3841,7 +3837,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
       COMPILER_THROW("Host function not found: " + name);
     }
     Value result = it->second(args); // Call and get result
-    fprintf(stderr, "[doCall] host %s result: %s\n", name.c_str(), result.toString().c_str());
     pushStack(result); // Push result to stack
     return;
   }
@@ -5312,7 +5307,7 @@ void VM::execLogicalOp(OpCode opcode) {
 }
 
 void VM::execNegate() {
-	Value value = popStack();
+        Value value = popStack();
 
 	// Record feedback
 	auto &frame = currentFrame();
@@ -5419,7 +5414,7 @@ case OpCode::STORE_GLOBAL: {
         } else {
             name = "<unknown:" + std::to_string(strIndex) + ">";
         }
-        Value value = popStack();
+            Value value = popStack();
 
         if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
@@ -5479,7 +5474,6 @@ case OpCode::STORE_GLOBAL: {
             uint32_t abs = this->toAbsoluteLocal(var_index);
             this->ensureLocalIndex(abs);
             Value value = popStack();
-            fprintf(stderr, "[STORE_VAR] index=%u, value=%s\n", var_index, value.toString().c_str());
 
         if (immutable_locals_.count(abs)) {
             COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));

@@ -1,0 +1,139 @@
+// integration test: dependency injection patterns
+// Havel has no built-in DI system — use manual constructor injection
+// No @inject, no @autowire, no DI container
+
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+// 1. Constructor injection
+class Logger {
+  prefix
+  fn @(p) {
+    @prefix = p
+  }
+  fn log(msg) {
+    @prefix + ": " + msg
+  }
+}
+
+class Service {
+  logger
+  fn @(l) {
+    @logger = l
+  }
+  fn doWork(task) {
+    @logger.log("doing " + task)
+  }
+}
+
+log = Logger("APP")
+svc = Service(log)
+check("ctor-di", svc.doWork("task1"), "APP: doing task1")
+
+// 2. Multiple dependency injection
+class Settings {
+  env
+  fn @(e) {
+    @env = e
+  }
+  fn getEnv() {
+    @env
+  }
+}
+
+class AppWithDeps {
+  settings
+  logger
+  fn @(s, l) {
+    @settings = s
+    @logger = l
+  }
+  fn status() {
+    @logger.log(@settings.getEnv())
+  }
+}
+
+s = Settings("prod")
+app = AppWithDeps(s, log)
+check("multi-di", app.status(), "APP: prod")
+
+// 3. Factory-based injection
+fn makeService(prefix) {
+  logger = Logger(prefix)
+  fn execute(task) {
+    logger.log(task)
+  }
+  return execute
+}
+
+runner = makeService("SYS")
+check("func-di", runner("boot"), "SYS: boot")
+
+// 4. Swappable dependency
+class ConsoleLogger {
+  fn log(msg) {
+    "CONSOLE: " + msg
+  }
+}
+
+class FileLogger {
+  path
+  fn @(p) {
+    @path = p
+  }
+  fn log(msg) {
+    "FILE[" + @path + "]: " + msg
+  }
+}
+
+svc1 = Service(ConsoleLogger())
+check("swap-console", svc1.doWork("test"), "CONSOLE: doing test")
+
+svc2 = Service(FileLogger("/tmp/app.log"))
+check("swap-file", svc2.doWork("test"), "FILE[/tmp/app.log]: doing test")
+
+// 5. Dependency graph
+class Cache {
+  hits
+  fn @() {
+    @hits = 0
+  }
+  fn getHits() {
+    @hits
+  }
+  fn recordHit() {
+    @hits += 1
+  }
+}
+
+class Repository {
+  cache
+  fn @(c) {
+    @cache = c
+  }
+  fn fetch(id) {
+    @cache.recordHit()
+    "data-" + str(id)
+  }
+  fn getCacheHits() {
+    @cache.getHits()
+  }
+}
+
+cache = Cache()
+repo = Repository(cache)
+check("graph-fetch1", repo.fetch(1), "data-1")
+check("graph-fetch2", repo.fetch(2), "data-2")
+check("graph-hits", repo.getCacheHits(), 2)
+
+print(f"integration-di: {pass} passed, {fail} failed")
+exit(fail)

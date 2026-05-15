@@ -1,0 +1,192 @@
+// stress test: decorators — what works and what's broken
+// WORKING: identity, logging, factory, single [bracket] syntax
+// BROKEN:  wrapper closures, @ syntax, stacked decorators (only last runs)
+
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+// 1. Identity decorator
+fn identity(func) {
+  return func
+}
+
+[identity]
+fn square(x) {
+  return x * x
+}
+
+check("identity-square", square(5), 25)
+
+[identity]
+fn greet(name) {
+  return "hello " + name
+}
+
+check("identity-greet", greet("world"), "hello world")
+
+// 2. Logging decorator (side effect, return original)
+log_count = 0
+
+fn log_deco(func) {
+  log_count += 1
+  return func
+}
+
+[log_deco]
+fn add(a, b) {
+  return a + b
+}
+
+check("log-add", add(3, 4), 7)
+check("log-count1", log_count, 1)
+
+[log_deco]
+fn sub(a, b) {
+  return a - b
+}
+
+check("log-sub", sub(10, 3), 7)
+check("log-count2", log_count, 2)
+
+// 3. Factory decorator with args
+fn make_tagged(tag) {
+  fn tagger(func) {
+    return func
+  }
+  return tagger
+}
+
+[make_tagged("v1")]
+fn getData() {
+  return 42
+}
+
+check("factory-tag", getData(), 42)
+
+fn make_multiplier(factor) {
+  fn getter(func) {
+    return func
+  }
+  return getter
+}
+
+[make_multiplier(3)]
+fn getBase() {
+  return 10
+}
+
+check("factory-multi", getBase(), 10)
+
+// 4. Single decorator (stacked: only last one runs — known limitation)
+order = []
+
+fn first_deco(func) {
+  order.push("first")
+  return func
+}
+
+fn second_deco(func) {
+  order.push("second")
+  return func
+}
+
+[second_deco]
+fn compute(n) {
+  return n + 1
+}
+
+check("single-compute", compute(9), 10)
+check("single-order-len", #(order), 1)
+check("single-order-0", order[0], "second")
+
+[first_deco]
+fn multiply(a, b) {
+  return a * b
+}
+
+check("first-deco-mul", multiply(3, 4), 12)
+check("first-deco-order", #(order), 2)
+
+// 5. Decorator on function returning object
+fn audit(func) {
+  return func
+}
+
+[audit]
+fn createItem(name, qty) {
+  return {name: name, qty: qty}
+}
+
+item = createItem("widget", 5)
+check("audit-name", item.name, "widget")
+check("audit-qty", item.qty, 5)
+
+// 6. Multiple functions with different decorators
+counter_a = 0
+counter_b = 0
+
+fn deco_a(func) {
+  counter_a += 1
+  return func
+}
+
+fn deco_b(func) {
+  counter_b += 1
+  return func
+}
+
+[deco_a]
+fn fnA(x) {
+  return x + 1
+}
+
+[deco_b]
+fn fnB(x) {
+  return x + 2
+}
+
+check("deco-a-fn", fnA(10), 11)
+check("deco-b-fn", fnB(10), 12)
+check("deco-a-cnt", counter_a, 1)
+check("deco-b-cnt", counter_b, 1)
+
+// 7. Identity decorator on no-arg function
+[identity]
+fn constant() {
+  return 7
+}
+
+check("const-deco", constant(), 7)
+
+// 8. Factory with integer arg
+fn make_offset(offset) {
+  fn wrapper(func) {
+    return func
+  }
+  return wrapper
+}
+
+[make_offset(100)]
+fn getRaw() {
+  return 0
+}
+
+check("offset-factory", getRaw(), 0)
+
+// KNOWN BUGS (documented, not tested):
+// - [wrap_doubler] fn id(x) { x } → id(5) returns 5, not 10
+//   Wrapper closures returned by decorators can't call captured func param (null upvalue)
+// - @identity fn foo() { 1 } → "Undefined variable: 'this'"
+// - [deco_a][deco_b] fn f() → only deco_b runs, deco_a silently skipped
+
+print(f"stress-decorators: {pass} passed, {fail} failed")
+exit(fail)

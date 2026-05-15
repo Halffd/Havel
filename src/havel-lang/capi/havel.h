@@ -12,6 +12,10 @@ extern "C" {
 typedef struct HavelState HavelState;
 typedef struct HavelValue HavelValue;
 typedef int (*HavelCFunction)(HavelState*);
+typedef int (*HavelCFunctionWithCtx)(HavelState*, void* ctx);
+
+void*      havel_getuserdata(HavelState* H);
+void       havel_setuserdata(HavelState* H, void* data);
 
 // VM Runtime types (matches Value.hpp)
 #define HAVEL_TNIL       0   // isNull()
@@ -63,6 +67,7 @@ void havel_pushnumber(HavelState* H, double n);
 void havel_pushinteger(HavelState* H, int64_t n);
 void havel_pushstring(HavelState* H, const char* s);
 void havel_pushcfunction(HavelState* H, HavelCFunction fn, const char* name);
+void havel_pushcfunction_with_ctx(HavelState* H, HavelCFunctionWithCtx fn, void* ctx, const char* name);
 void havel_pushobject(HavelState* H);
 void havel_pusharray(HavelState* H);
 

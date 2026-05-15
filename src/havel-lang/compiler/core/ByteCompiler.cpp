@@ -191,14 +191,17 @@ ByteCompiler::compileImpl(const ast::Program &program) {
           class_method_indices_by_node_[method.get()] = next_function_index++;
         }
       }
-      if (statement && statement->kind == ast::NodeType::ImplDeclaration) {
-        const auto &impl =
-            static_cast<const ast::ImplDeclaration &>(*statement);
-        for (const auto &method : impl.funcs) {
-          if (!method || !method->name) continue;
-          function_indices_by_node_[method.get()] = next_function_index++;
-        }
-      }
+if (statement && statement->kind == ast::NodeType::ImplDeclaration) {
+const auto &impl =
+static_cast<const ast::ImplDeclaration &>(*statement);
+std::string typeName = impl.typeName ? impl.typeName->symbol : "";
+for (const auto &method : impl.funcs) {
+if (!method || !method->name) continue;
+impl_method_nodes_.insert(method.get());
+impl_method_type_names_[method.get()] = typeName;
+function_indices_by_node_[method.get()] = next_function_index++;
+}
+}
       continue;
     }
     if (!fnDecl->name) {
@@ -328,11 +331,12 @@ for (const auto &statement : program.body) {
         continue;
     }
 
-    if (statement->kind == ast::NodeType::DecoratorStatement) {
+        if (statement->kind == ast::NodeType::DecoratorStatement) {
         const auto &dec = static_cast<const ast::DecoratorStatement &>(*statement);
         if (dec.target && dec.target->kind == ast::NodeType::FunctionDeclaration) {
             const auto &fnDecl = static_cast<const ast::FunctionDeclaration &>(*dec.target);
             if (!fnDecl.name) continue;
+            decorated_function_names_.insert(fnDecl.name->symbol);
 
             auto index_it = function_indices_by_node_.find(&fnDecl);
             if (index_it == function_indices_by_node_.end()) continue;
@@ -501,63 +505,94 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
 }
 
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
-  if (!function.name) {
-    COMPILER_THROW("Function declaration missing name");
-  }
+    if (!function.name) {
+        COMPILER_THROW("Function declaration missing name");
+    }
 
 
     auto index_it = function_indices_by_node_.find(&function);
-  if (index_it == function_indices_by_node_.end()) {
-    COMPILER_THROW("Missing function index for declaration: " +
-                             function.name->symbol);
-  }
-
-  // Compute max local slot from resolver's declaration_slots for this function
-  // We need to find all declarations that belong to this function
-  uint32_t max_slot = static_cast<uint32_t>(function.parameters.size());
-  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-    if (slot >= max_slot) {
-      max_slot = slot + 1;
+    if (index_it == function_indices_by_node_.end()) {
+        COMPILER_THROW("Missing function index for declaration: " +
+                        function.name->symbol);
     }
-  }
 
-  // Collect parameter names for metadata
-  std::vector<std::string> param_names;
-  param_names.reserve(function.parameters.size());
-  for (const auto &param : function.parameters) {
-    if (param) {
-      param_names.push_back(extractParamName(*param));
-    } else {
-      param_names.push_back("_");
+    bool is_impl_method = impl_method_nodes_.count(&function) > 0;
+
+    // Compute max local slot from resolver's declaration_slots for this function
+    // We need to find all declarations that belong to this function
+    uint32_t max_slot = static_cast<uint32_t>(function.parameters.size());
+    if (is_impl_method) {
+        // impl methods have self at slot 0, user params at slot 1+
+        max_slot = static_cast<uint32_t>(function.parameters.size()) + 1;
     }
-  }
+    for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+        uint32_t adjusted_slot = is_impl_method ? slot + 1 : slot;
+        if (adjusted_slot >= max_slot) {
+            max_slot = adjusted_slot + 1;
+        }
+    }
 
-  // Create function with metadata
-  BytecodeFunction bf(function.name->symbol,
-                       static_cast<uint32_t>(function.parameters.size()), max_slot);
-  bf.param_names = std::move(param_names);
-  bf.source_line = function.line;
+    // Collect parameter names for metadata
+    std::vector<std::string> param_names;
+    param_names.reserve(function.parameters.size() + (is_impl_method ? 1 : 0));
+    if (is_impl_method) param_names.push_back("self");
+    for (const auto &param : function.parameters) {
+        if (param) {
+            param_names.push_back(extractParamName(*param));
+        } else {
+            param_names.push_back("_");
+        }
+    }
+
+    const uint32_t param_count = is_impl_method
+        ? static_cast<uint32_t>(function.parameters.size()) + 1
+        : static_cast<uint32_t>(function.parameters.size());
+
+    // Create function with metadata
+    BytecodeFunction bf(function.name->symbol, param_count, max_slot);
+    bf.param_names = std::move(param_names);
+    bf.source_line = function.line;
   // source_file will be set by the pipeline/compiler context
 
-  enterFunction(std::move(bf), index_it->second);
-  next_local_index = max_slot;
-  auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
-  if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
-    current_function->upvalues = upvalues_it->second;
-  }
+enterFunction(std::move(bf), index_it->second);
+next_local_index = max_slot;
+auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
+if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
+current_function->upvalues = upvalues_it->second;
+}
 
-  // Collect default parameter values and variadic info
-  for (size_t i = 0; i < function.parameters.size(); i++) {
-    const auto &param = function.parameters[i];
-    if (!param || !param->pattern) {
-      COMPILER_THROW("Function parameter missing pattern");
-    }
-    collectParameterPatternSlots(*param->pattern);
+if (is_impl_method) {
+// Impl method: self is at slot 0, user params at slot 1+
+// Offset all local variable accesses by 1 (same as class instance methods)
+local_slot_offset_ = 1;
 
-    // Track variadic parameter
-    if (param->isVariadic) {
-current_function->variadic_param_index = static_cast<uint32_t>(i);
-    }
+// Store self (slot 0) into global "this" for @field access
+{
+uint32_t this_id = addStringConstant("this");
+emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
+}
+
+// Set current class name so @field read uses LOAD_VAR 0
+auto type_it = impl_method_type_names_.find(&function);
+if (type_it != impl_method_type_names_.end()) {
+current_class_name_ = type_it->second;
+}
+}
+
+// Collect default parameter values and variadic info
+for (size_t i = 0; i < function.parameters.size(); i++) {
+const auto &param = function.parameters[i];
+if (!param || !param->pattern) {
+COMPILER_THROW("Function parameter missing pattern");
+}
+const uint32_t param_slot = is_impl_method ? static_cast<uint32_t>(i + 1) : static_cast<uint32_t>(i);
+collectParameterPatternSlots(*param->pattern);
+
+// Track variadic parameter
+if (param->isVariadic) {
+current_function->variadic_param_index = param_slot;
+}
 
     if (param->typeAnnotation && param->pattern &&
         param->pattern->kind == ast::NodeType::Identifier) {
@@ -680,11 +715,16 @@ compileStatement(*stmts[i]);
   }
   
   
-  if (function.body) {
-    current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
-	}
+if (function.body) {
+current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
+}
 
-	leaveFunction();
+if (is_impl_method) {
+local_slot_offset_ = 0;
+current_class_name_ = "";
+}
+
+leaveFunction();
 }
 
 void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
@@ -4480,11 +4520,21 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             return;
         }
 
-        if (binding->kind == ResolvedBindingKind::Function) {
-      // User-defined function - load as FunctionObject and call
-      uint32_t fn_index = top_level_function_indices_by_name_[binding->name];
-      uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));
-      emit(OpCode::LOAD_CONST, const_idx);
+    if (binding->kind == ResolvedBindingKind::Function) {
+        // User-defined function - load as FunctionObject and call
+        uint32_t fn_index = top_level_function_indices_by_name_[binding->name];
+
+        // Decorated functions must be called via LOAD_GLOBAL because
+        // decorators replace the global with the wrapper closure
+        bool isDecorated = decorated_function_names_.count(binding->name) > 0;
+
+        if (isDecorated) {
+            uint32_t nameStrId = addStringConstant(binding->name);
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
+        } else {
+            uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));
+            emit(OpCode::LOAD_CONST, const_idx);
+        }
 
       // Compile args, expanding spread
       uint32_t totalArgs = 0;

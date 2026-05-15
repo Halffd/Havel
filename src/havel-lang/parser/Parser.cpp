@@ -1557,11 +1557,15 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
                 std::move(left), ast::BinaryOperator::Is, std::move(right));
         }
 
-        case TokenType::Tilde:
-        case TokenType::Matches: {
-            auto right = parsePrattExpression(getRightBindingPower(token.type));
-            return std::make_unique<ast::BinaryExpression>(
-                std::move(left), ast::BinaryOperator::Matches, std::move(right));
+case TokenType::Tilde: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return std::make_unique<ast::BinaryExpression>(
+            std::move(left), ast::BinaryOperator::Tilde, std::move(right));
+    }
+    case TokenType::Matches: {
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return std::make_unique<ast::BinaryExpression>(
+            std::move(left), ast::BinaryOperator::Matches, std::move(right));
         }
 
         case TokenType::In: {
@@ -2472,13 +2476,42 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
             break;
         }
 
-        position = savePos; // restore position
+position = savePos; // restore position
         if (isDecorator) {
             return parseDecoratorStatement();
         }
     }
 
-  switch (at().type) {
+    // @decorator syntax: @identifier at statement start followed by fn/class
+    if (at().type == havel::TokenType::At &&
+        at(1).type == havel::TokenType::Identifier) {
+        size_t savePos = position;
+        advance(); // consume '@'
+        advance(); // consume identifier
+        // Check for optional parenthesized args: @decorator(args)
+        if (at().type == havel::TokenType::OpenParen) {
+            advance(); // consume '('
+            int depth = 1;
+            while (notEOF() && depth > 0) {
+                if (at().type == havel::TokenType::OpenParen) depth++;
+                else if (at().type == havel::TokenType::CloseParen) depth--;
+                advance();
+            }
+        }
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::Fn ||
+            at().type == havel::TokenType::Class ||
+            at().type == havel::TokenType::Let ||
+            at().type == havel::TokenType::Val ||
+            at().type == havel::TokenType::Const ||
+            at().type == havel::TokenType::At) {
+            position = savePos;
+            return parseAtDecoratorStatement();
+        }
+        position = savePos;
+    }
+
+    switch (at().type) {
   case havel::TokenType::Hotkey: {
     // Parse hotkey with potential prefix conditions (when/if before =>)
     auto hotkeyToken = at(); // Store the hotkey token
@@ -6767,8 +6800,58 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDecoratorStatement() {
     return nullptr;
   }
 
-  return std::make_unique<havel::ast::DecoratorStatement>(
-      std::move(decorators), std::move(target));
+return std::make_unique<havel::ast::DecoratorStatement>(
+        std::move(decorators), std::move(target));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
+    std::vector<std::unique_ptr<havel::ast::Expression>> decorators;
+
+    while (at().type == havel::TokenType::At &&
+           at(1).type == havel::TokenType::Identifier) {
+        advance(); // consume '@'
+
+        // @decorator: the @ is syntactic sugar, the name is a regular identifier
+        // (the decorator function), NOT a field access on 'this'
+        auto decoName = makeIdentifier(advance());
+        std::unique_ptr<havel::ast::Expression> decoExpr = std::move(decoName);
+
+        if (at().type == havel::TokenType::OpenParen) {
+            advance(); // consume '('
+            std::vector<std::unique_ptr<havel::ast::Expression>> args;
+            while (notEOF() && at().type != havel::TokenType::CloseParen) {
+                while (at().type == havel::TokenType::NewLine) advance();
+                if (at().type == havel::TokenType::CloseParen) break;
+                args.push_back(parsePrattExpression(bp(BindingPower::Assignment)));
+                while (at().type == havel::TokenType::NewLine) advance();
+                if (at().type == havel::TokenType::Comma) advance();
+                else if (at().type != havel::TokenType::CloseParen) {
+                    failAt(at(), "Expected ',' or ')' in decorator arguments");
+                    return nullptr;
+                }
+            }
+            if (at().type != havel::TokenType::CloseParen) {
+                failAt(at(), "Expected ')' after decorator arguments");
+                return nullptr;
+            }
+            advance(); // consume ')'
+            decoExpr = std::make_unique<havel::ast::CallExpression>(
+                std::move(decoExpr), std::move(args));
+        }
+
+        decorators.push_back(std::move(decoExpr));
+
+        while (at().type == havel::TokenType::NewLine) advance();
+    }
+
+    auto target = parseStatement();
+    if (!target) {
+        failAt(at(), "Expected declaration after @decorator");
+        return nullptr;
+    }
+
+    return std::make_unique<havel::ast::DecoratorStatement>(
+        std::move(decorators), std::move(target));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {

@@ -3149,17 +3149,26 @@ switch (binding->kind) {
             if (binary.operator_ == ast::BinaryOperator::NotIn) {
                 emit(OpCode::NOT);
             }
-        } else if (binary.operator_ == ast::BinaryOperator::Matches ||
-                   binary.operator_ == ast::BinaryOperator::Tilde) {
-            // Regex/string matching - compile as regex_search host function call
-            uint32_t strId = addStringConstant("regex_search");
-            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-            bool saved_tail = in_tail_position_;
-            in_tail_position_ = false;
-            compileExpression(*binary.left); // string to match
-            compileExpression(*binary.right); // pattern
-            in_tail_position_ = saved_tail;
-            emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+} else if (binary.operator_ == ast::BinaryOperator::Tilde) {
+        // ~ is substring search (literal, not regex)
+        uint32_t strId = addStringConstant("string.includes");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*binary.left); // string
+        compileExpression(*binary.right); // substring
+        in_tail_position_ = saved_tail;
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+    } else if (binary.operator_ == ast::BinaryOperator::Matches) {
+        // =~ / matches is regex matching
+        uint32_t strId = addStringConstant("regex_search");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*binary.left); // string to match
+        compileExpression(*binary.right); // pattern
+        in_tail_position_ = saved_tail;
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
         } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
             // Nullish coalescing: left ?? right
             bool saved_tail = in_tail_position_;

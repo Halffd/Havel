@@ -9046,33 +9046,44 @@ std::string VM::resolveStringKey(const Value &value) const {
 }
 
 Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk) {
-if (!chunk) return value;
-
-if (value.isStringValId()) {
-auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
-return Value::makeStringId(strRef.id);
+    std::unordered_set<uint32_t> visited;
+    return deepMaterializeStrings(value, chunk, visited);
 }
 
-if (value.isObjectId()) {
-auto* obj = heap_.object(value.asObjectId());
-if (!obj) return value;
-std::vector<std::pair<std::string, Value>> entries;
-for (auto& [k, v] : *obj) {
-Value mat_key_v = deepMaterializeStrings(v, chunk);
-entries.emplace_back(k, mat_key_v);
-}
-for (auto& [k, v] : entries) {
-(*obj)[k] = std::move(v);
-}
-return value;
-}
+Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited) {
+    if (!chunk) return value;
 
-if (value.isArrayId()) {
-auto* arr = heap_.array(value.asArrayId());
-if (!arr) return value;
-for (auto& elem : *arr) {
-elem = deepMaterializeStrings(elem, chunk);
-}
+    if (value.isStringValId()) {
+        auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
+        return Value::makeStringId(strRef.id);
+    }
+
+    if (value.isObjectId()) {
+        auto* obj = heap_.object(value.asObjectId());
+        if (!obj) return value;
+        uint32_t objId = value.asObjectId();
+        if (visited.count(objId)) return value;
+        visited.insert(objId);
+        std::vector<std::pair<std::string, Value>> entries;
+        for (auto& [k, v] : *obj) {
+            Value mat_key_v = deepMaterializeStrings(v, chunk, visited);
+            entries.emplace_back(k, mat_key_v);
+        }
+        for (auto& [k, v] : entries) {
+            (*obj)[k] = std::move(v);
+        }
+        return value;
+    }
+
+    if (value.isArrayId()) {
+        auto* arr = heap_.array(value.asArrayId());
+        if (!arr) return value;
+        uint32_t arrId = value.asArrayId();
+        if (visited.count(arrId)) return value;
+        visited.insert(arrId);
+        for (auto& elem : *arr) {
+            elem = deepMaterializeStrings(elem, chunk, visited);
+        }
         return value;
     }
 

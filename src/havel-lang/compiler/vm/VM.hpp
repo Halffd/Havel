@@ -749,6 +749,7 @@ public:
   std::unordered_set<std::string> getTypeProtocols(const std::string &typeName) const;
   std::unordered_set<std::string> getProtocolMethods(const std::string &protocolName) const;
   std::vector<std::string> getProtocolNames() const;
+  std::string getTypeName(const Value &value) const;
 
   // Get registered host functions (for copying to options)
   std::unordered_map<std::string, BytecodeHostFunction> &getHostFunctions() {

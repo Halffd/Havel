@@ -1392,6 +1392,31 @@ std::vector<std::string> VM::getProtocolNames() const {
   return names;
 }
 
+std::string VM::getTypeName(const Value &value) const {
+  if (!value.isObjectId()) return "";
+  const auto *obj = heap_.object(value.asObjectId());
+  if (!obj) return "";
+  // Check __name on the object itself (struct/class prototypes store __name)
+  auto nameIt = obj->data.find("__name");
+  if (nameIt != obj->data.end() && nameIt->second.isStringValId() && current_chunk) {
+    return current_chunk->getString(nameIt->second.asStringValId());
+  }
+  // Walk __class/__struct prototype chain for __name
+  for (const char *protoKey : {"__class", "__struct"}) {
+    auto protoIt = obj->data.find(protoKey);
+    if (protoIt != obj->data.end() && protoIt->second.isObjectId()) {
+      const auto *proto = heap_.object(protoIt->second.asObjectId());
+      if (proto) {
+        auto pnIt = proto->data.find("__name");
+        if (pnIt != proto->data.end() && pnIt->second.isStringValId() && current_chunk) {
+          return current_chunk->getString(pnIt->second.asStringValId());
+        }
+      }
+    }
+  }
+  return "";
+}
+
 std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {
   if (index >= host_function_names_.size()) {
     return std::nullopt;
@@ -6248,46 +6273,56 @@ break;
     break;
   }
 
-  case OpCode::PROT_CHECK: {
-    if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
-      COMPILER_THROW("PROT_CHECK expects operand: <string protocol>");
+    case OpCode::PROT_CHECK: {
+      if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
+        COMPILER_THROW("PROT_CHECK expects operand: <string protocol>");
+      }
+      if (!current_chunk) {
+        COMPILER_THROW("PROT_CHECK requires active chunk");
+      }
+      Value value = popStack();
+      const std::string proto =
+          current_chunk->getString(instruction.operands[0].asStringValId());
+      if (proto == "Iterable") {
+        pushStack(invokeHostFunctionDirect("isIterable", {value}));
+      } else if (proto == "Indexable") {
+        pushStack(invokeHostFunctionDirect("isIndexable", {value}));
+      } else if (proto == "Callable") {
+        pushStack(invokeHostFunctionDirect("callable", {value}));
+      } else {
+        // Structural protocol check: does the object's type declare : ProtocolName?
+        std::string typeName = getTypeName(value);
+        if (typeImplementsProtocol(typeName, proto)) {
+          pushStack(Value::makeBool(true));
+        } else {
+          pushStack(Value::makeBool(false));
+        }
+      }
+      break;
     }
-    if (!current_chunk) {
-      COMPILER_THROW("PROT_CHECK requires active chunk");
-    }
-    Value value = popStack();
-    const std::string proto =
-        current_chunk->getString(instruction.operands[0].asStringValId());
-    if (proto == "Iterable") {
-      pushStack(invokeHostFunctionDirect("isIterable", {value}));
-    } else if (proto == "Indexable") {
-      pushStack(invokeHostFunctionDirect("isIndexable", {value}));
-    } else if (proto == "Callable") {
-      pushStack(invokeHostFunctionDirect("callable", {value}));
-    } else {
-      pushStack(Value::makeBool(false));
-    }
-    break;
-  }
 
-  case OpCode::PROT_CAST: {
-    if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
-      COMPILER_THROW("PROT_CAST expects operand: <string protocol>");
-    }
-    if (!current_chunk) {
-      COMPILER_THROW("PROT_CAST requires active chunk");
-    }
-    Value value = popStack();
-    const std::string proto =
-        current_chunk->getString(instruction.operands[0].asStringValId());
-    Value ok = Value::makeBool(false);
-    if (proto == "Iterable") {
-      ok = invokeHostFunctionDirect("isIterable", {value});
-    } else if (proto == "Indexable") {
-      ok = invokeHostFunctionDirect("isIndexable", {value});
-    } else if (proto == "Callable") {
-      ok = invokeHostFunctionDirect("callable", {value});
-    }
+    case OpCode::PROT_CAST: {
+      if (instruction.operands.size() != 1 || !instruction.operands[0].isStringValId()) {
+        COMPILER_THROW("PROT_CAST expects operand: <string protocol>");
+      }
+      if (!current_chunk) {
+        COMPILER_THROW("PROT_CAST requires active chunk");
+      }
+      Value value = popStack();
+      const std::string proto =
+          current_chunk->getString(instruction.operands[0].asStringValId());
+      Value ok = Value::makeBool(false);
+      if (proto == "Iterable") {
+        ok = invokeHostFunctionDirect("isIterable", {value});
+      } else if (proto == "Indexable") {
+        ok = invokeHostFunctionDirect("isIndexable", {value});
+      } else if (proto == "Callable") {
+        ok = invokeHostFunctionDirect("callable", {value});
+      } else {
+        // Structural protocol check
+        std::string typeName = getTypeName(value);
+        ok = Value::makeBool(typeImplementsProtocol(typeName, proto));
+      }
     pushStack(toBool(ok) ? value : Value::makeNull());
     break;
   }

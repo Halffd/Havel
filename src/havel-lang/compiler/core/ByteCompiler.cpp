@@ -1973,11 +1973,11 @@ case ast::NodeType::TryExpression:
          addConstant(Value::makeStringValId(method_name_sid)));
     emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
                                   method_index_it->second)));
-    emit(OpCode::CALL, Value::makeInt(3));
-    emit(OpCode::POP);
+      emit(OpCode::CALL, Value::makeInt(3));
+      emit(OpCode::POP);
+    }
+    break;
   }
-  break;
-}
 
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
@@ -3205,8 +3205,22 @@ switch (binding->kind) {
             compileExpression(*binary.left);
             compileExpression(*binary.right);
             in_tail_position_ = saved_tail;
-            emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-        } else {
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+  } else if (binary.operator_ == ast::BinaryOperator::Is) {
+    // expr is ProtocolName -> PROT_CHECK
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*binary.left);
+    in_tail_position_ = saved_tail;
+    if (binary.right && binary.right->kind == ast::NodeType::Identifier) {
+      const auto &ident = static_cast<const ast::Identifier &>(*binary.right);
+      uint32_t sid = addStringConstant(ident.symbol);
+      emit(OpCode::PROT_CHECK, Value::makeStringValId(sid));
+    } else {
+      compileExpression(*binary.right);
+      emit(OpCode::IS);
+    }
+  } else {
             if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
                 break;
             }
@@ -3217,10 +3231,21 @@ switch (binding->kind) {
             in_tail_position_ = saved_tail;
             emit(toBytecodeOperator(binary.operator_));
     }
+      break;
+  }
+
+  case ast::NodeType::CastExpression: {
+    const auto &cast = static_cast<const ast::CastExpression &>(expression);
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileExpression(*cast.expr);
+    in_tail_position_ = saved_tail;
+    uint32_t sid = addStringConstant(cast.targetType);
+    emit(OpCode::PROT_CAST, Value::makeStringValId(sid));
     break;
   }
 
-    case ast::NodeType::RangeExpression: {
+  case ast::NodeType::RangeExpression: {
         const auto &range = static_cast<const ast::RangeExpression &>(expression);
         if (!range.start || !range.end) {
             COMPILER_THROW("Malformed range expression");

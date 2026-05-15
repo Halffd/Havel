@@ -4,7 +4,7 @@
  * Pixel and image automation service.
  * Provides screen capture, pixel operations, image search, and OCR.
  * 
- * Uses Qt and OpenCV internally, but doesn't leak types to VM.
+ * Uses Qt internally for screenshot capture, but doesn't leak types to VM.
  */
 #pragma once
 
@@ -58,8 +58,8 @@ struct ImageMatch {
     float confidence = 0.0f;
     
     ImageMatch() = default;
-    ImageMatch(int x, int y, int w, int h, float conf = 1.0f)
-        : found(true), x(x), y(y), w(w), h(h), confidence(conf) {}
+    ImageMatch(bool found, int x, int y, int w, int h, float conf = 1.0f)
+    : found(found), x(x), y(y), w(w), h(h), confidence(conf) {}
     
     // Center point of match
     int centerX() const { return x + w / 2; }

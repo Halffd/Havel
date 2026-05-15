@@ -235,7 +235,8 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   CLASS_SET_FIELD, // Set field with prototype chain lookup
   LOAD_CLASS_PROTO, // Load parent class reference
   CALL_SUPER,       // Call method from parent class
-  IMPORT,           // Runtime module import (path -> module object)
+    IMPORT, // Runtime module import (path -> module object)
+    IMPORT_WILDCARD, // Import all exports from module object as globals
 
   // Struct intrinsics (bypass generic CALL path)
   STRUCT_NEW,       // Create struct instance: typeNameId + arg_count
@@ -504,6 +505,12 @@ class JITCompiler {
 public:
   virtual ~JITCompiler() = default;
   virtual void compileFunction(const BytecodeFunction &func) = 0;
+  // Tier-aware compilation contract:
+  // tier 1 = baseline/fast compile, tier 2 = optimizing/background compile.
+  virtual void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) {
+    (void)tier;
+    compileFunction(func);
+  }
   virtual Value executeCompiled(VM* vm, const std::string &func_name,
                                 const std::vector<Value> &args) = 0;
   virtual bool isCompiled(const std::string &func_name) const = 0;

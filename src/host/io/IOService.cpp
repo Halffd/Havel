@@ -25,21 +25,35 @@ bool IOService::sendKeys(const std::string& keys) {
 
 bool IOService::sendKey(const std::string& key) {
     if (!m_io) return false;
+#ifdef _WIN32
+    m_io->Send(key.c_str(), true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    m_io->Send(key.c_str(), false);
+#else
     m_io->SendX11Key(key, true);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     m_io->SendX11Key(key, false);
+#endif
     return true;
 }
 
 bool IOService::keyDown(const std::string& key) {
     if (!m_io) return false;
+#ifdef _WIN32
+    m_io->Send(key.c_str(), true);
+#else
     m_io->SendX11Key(key, true);
+#endif
     return true;
 }
 
 bool IOService::keyUp(const std::string& key) {
     if (!m_io) return false;
+#ifdef _WIN32
+    m_io->Send(key.c_str(), false);
+#else
     m_io->SendX11Key(key, false);
+#endif
     return true;
 }
 
@@ -77,11 +91,11 @@ bool IOService::suspend() {
 }
 
 bool IOService::resume() {
-    if (!m_io) return false;
-    if (m_io->isSuspended) {
-        return m_io->Suspend();
-    }
-    return true;
+  if (!m_io) return false;
+  if (m_io->isSuspended) {
+    return m_io->Resume();
+  }
+  return true;
 }
 
 bool IOService::isSuspended() const {

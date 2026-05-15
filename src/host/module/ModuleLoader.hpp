@@ -57,6 +57,8 @@ public:
 
   /// Register a built-in module (provided by HostBridge)
   void registerBuiltin(const std::string &name, const ModuleInfo &info);
+  void registerBuiltin(const std::string &name, std::function<void(VM &)> initFn,
+                       const ModuleInfo &info);
 
   /// Register a stdlib module (pure VM)
   void registerStdlib(const std::string &name, std::function<void(VM &)> initFn,
@@ -112,6 +114,7 @@ private:
 
   // Module registry (metadata only - lazy loading)
   std::unordered_map<std::string, ModuleInfo> registry_;
+  std::unordered_map<std::string, std::function<void(VM &)>> builtinInitFns_;
   std::unordered_map<std::string, std::function<void(VM &)>> stdlibInitFns_;
 
   // Loaded modules cache

@@ -1,0 +1,39 @@
+// Test 3-level coroutine nesting with multiple yields per level
+// This is the bug case: saved_coroutine_id chain corruption
+
+fn inner() {
+    yield "i1"
+    yield "i2"
+    yield "i3"
+}
+
+fn middle() {
+    x = inner()
+    yield x()   // i1
+    yield x()   // i2
+    yield x()   // i3
+    yield "m1"
+}
+
+fn outer() {
+    y = middle()
+    yield y()   // i1
+    yield y()   // i2
+    yield y()   // i3
+    yield y()   // m1
+    yield "o1"
+}
+
+g = outer()
+r1 = g()
+r2 = g()
+r3 = g()
+r4 = g()
+r5 = g()
+
+assert(r1 == "i1", {"r1 should be i1, got {r1}"})
+assert(r2 == "i2", {"r2 should be i2, got {r2}"})
+assert(r3 == "i3", {"r3 should be i3, got {r3}"})
+assert(r4 == "m1", {"r4 should be m1, got {r4}"})
+assert(r5 == "o1", {"r5 should be o1, got {r5}"})
+print("3-level nesting with multiple yields: all passed")

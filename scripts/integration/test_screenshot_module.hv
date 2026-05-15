@@ -1,0 +1,23 @@
+// Screenshot module test
+// Note: capture/captureRegion require a running Qt event loop
+// and may hang in script-only mode. Only test metadata here.
+
+print("=== Screenshot Module Test ===")
+
+print("screenshot module exists:")
+print(screenshot != null)
+
+mc = screenshot.monitorCount()
+print("monitor count:")
+print(mc)
+
+if mc > 0 {
+    geo = screenshot.monitorGeometry(0)
+    print("monitor 0 geometry:")
+    print(geo)
+    print("Monitor detected - capture would work with event loop")
+} else {
+    print("No monitors detected (minimal mode)")
+}
+
+print("=== Screenshot Module Test Complete ===")

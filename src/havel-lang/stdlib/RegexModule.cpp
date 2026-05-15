@@ -7,15 +7,15 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Helper: extract string from Value using VMApi
-static std::string getString(VMApi &api, const Value &v) {
+static std::string getString(const VMApi &api, const Value &v) {
   return api.toString(v);
 }
 
 // Register regex module with VMApi (stable API layer)
-void registerRegexModule(VMApi &api) {
+void registerRegexModule(const VMApi &api) {
 
   // regex_match(pattern, text) - Test if entire text matches pattern
-  api.registerFunction("regex_match", [&api](const std::vector<Value> &args) {
+  api.registerFunction("regex_match", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("regex_match() requires pattern and text");
 
@@ -31,7 +31,7 @@ void registerRegexModule(VMApi &api) {
   });
 
   // regex_search(pattern, text) - Search for pattern anywhere in text
-  api.registerFunction("regex_search", [&api](const std::vector<Value> &args) {
+  api.registerFunction("regex_search", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("regex_search() requires pattern and text");
 
@@ -47,7 +47,7 @@ void registerRegexModule(VMApi &api) {
   });
 
   // regex_replace(pattern, text, replacement) - Replace all pattern matches
-  api.registerFunction("regex_replace", [&api](const std::vector<Value> &args) {
+  api.registerFunction("regex_replace", [api](const std::vector<Value> &args) {
     if (args.size() < 3)
       throw std::runtime_error("regex_replace() requires pattern, text, and replacement");
 
@@ -65,7 +65,7 @@ void registerRegexModule(VMApi &api) {
   });
 
   // regex_extract(pattern, text) - Extract all matches as array of strings
-  api.registerFunction("regex_extract", [&api](const std::vector<Value> &args) {
+  api.registerFunction("regex_extract", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("regex_extract() requires pattern and text");
 
@@ -99,7 +99,7 @@ void registerRegexModule(VMApi &api) {
   });
 
   // regex_split(pattern, text) - Split text by pattern into array
-  api.registerFunction("regex_split", [&api](const std::vector<Value> &args) {
+  api.registerFunction("regex_split", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("regex_split() requires pattern and text");
 
@@ -123,7 +123,7 @@ void registerRegexModule(VMApi &api) {
   });
 
   // escape_regex(text) - Escape regex special characters
-  api.registerFunction("escape_regex", [&api](const std::vector<Value> &args) {
+  api.registerFunction("escape_regex", [api](const std::vector<Value> &args) {
     if (args.empty())
       throw std::runtime_error("escape_regex() requires text");
 

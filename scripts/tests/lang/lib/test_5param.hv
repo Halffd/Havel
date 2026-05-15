@@ -1,0 +1,8 @@
+fn Test5(a, b, c, d, e):
+  n = {kind: "Test5"}
+  n.a = a
+  n.b = b
+  n.c = c
+  n.d = d
+  n.e = e
+  n

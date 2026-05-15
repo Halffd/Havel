@@ -1,0 +1,40 @@
+// scripts/test_config_sugar.hv
+use cfg
+// mock cfg for testing
+cfg.General = {}
+cfg.IO = {}
+cfg.Debug = {}
+cfg.Mouse = {}
+
+// Mock section function
+fn MySection(obj) {
+    print("MySection called with: {obj}")
+}
+
+config {
+  IO.Executor = Scheduler
+  General {
+    Terminal = konsole
+    GamingApps = steam_app_default,retroarch
+  }
+  Debug.ForceMinimal = 0
+  Mouse.DPI = 400
+}
+
+print("IO.Executor: {cfg.IO.Executor}")
+print("General.Terminal: {cfg.General.Terminal}")
+print("General.GamingApps: {cfg.General.GamingApps}")
+
+mode gaming {
+  condition = true
+  on enter {
+    print("Entered gaming mode")
+  }
+}
+
+// Top level section
+MySection {
+    key = val
+}
+
+print("Done")

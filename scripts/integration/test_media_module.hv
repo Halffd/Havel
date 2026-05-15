@@ -1,0 +1,43 @@
+// Media module test
+// Gracefully handles no-player scenarios
+
+print("=== Media Module Test ===")
+
+print("media module exists:")
+print(media != null)
+
+has = media.hasPlayer()
+print("media.hasPlayer:")
+print(has)
+
+players = media.getAvailablePlayers()
+print("available players:")
+print(players)
+
+active = media.getActivePlayer()
+print("active player:")
+print(active)
+
+vol = media.getVolume()
+print("volume:")
+print(vol)
+
+if has {
+    print("Testing playback controls...")
+    currentVol = media.getVolume()
+    media.setVolume(0.5)
+    newVol = media.getVolume()
+    print("volume after set 0.5:")
+    print(newVol)
+    media.setVolume(currentVol)
+    print("calling playPause...")
+    media.playPause()
+    print("calling next...")
+    media.next()
+    print("calling previous...")
+    media.previous()
+} else {
+    print("No MPRIS player available - skipping playback tests")
+}
+
+print("=== Media Module Test Complete ===")

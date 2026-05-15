@@ -1,0 +1,106 @@
+// integration: collections and iteration
+// covers: arrays, objects, for-in, map/filter/reduce, spread, nesting
+
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// 1. array creation and access
+arr = [10, 20, 30, 40, 50]
+check("arr-index", arr[0], 10)
+check("arr-index-last", arr[4], 50)
+check("arr-size", #arr, 5)
+
+// 2. array mutation
+arr2 = [1, 2, 3]
+arr2.push(4)
+check("arr-push", #arr2, 4)
+check("arr-push-val", arr2[3], 4)
+check("arr-pop", arr2.pop(), 4)
+check("arr-pop-len", #arr2, 3)
+
+// 3. array methods
+check("arr-map", [1,2,3].map((x) => x * 2), [2,4,6])
+check("arr-filter", [1,2,3,4,5].filter((x) => x > 3), [4,5])
+check("arr-reduce", [1,2,3,4].reduce((a,b) => a + b, 0), 10)
+check("arr-join", [1,2,3].join("-"), "1-2-3")
+check("arr-reverse", [1,2,3].reverse(), [3,2,1])
+check("arr-sum", [1,2,3,4].sum(), 10)
+check("arr-avg", [2,4,6].avg(), 4)
+check("arr-min", [5,3,1,4].min(), 1)
+check("arr-max", [5,3,1,4].max(), 5)
+check("arr-includes", [1,2,3].includes(2), true)
+check("arr-includes-f", [1,2,3].includes(9), false)
+
+// 4. nested arrays
+matrix = [[1,2], [3,4], [5,6]]
+check("nested-arr", matrix[1][0], 3)
+check("nested-arr-2", matrix[2][1], 6)
+
+// 5. spread operator
+a = [1, 2, 3]
+b = [...a, 4, 5]
+check("spread", b, [1,2,3,4,5])
+check("spread-len", #b, 5)
+
+// 6. for-in with array
+total = 0
+for item in [10, 20, 30] {
+  total += item
+}
+check("for-in-total", total, 60)
+
+// 7. for-in with destructure
+idx_sum = 0
+val_sum = 0
+for i, v in [100, 200, 300] {
+  idx_sum += i
+  val_sum += v
+}
+check("for-in-idx", idx_sum, 3)
+check("for-in-val", val_sum, 600)
+
+// 8. object creation and access
+obj = {x: 10, y: 20, z: 30}
+check("obj-dot", obj.x, 10)
+check("obj-bracket", obj["y"], 20)
+check("obj-keys", #(obj.keys()), 3)
+check("obj-values", #(obj.values()), 3)
+check("obj-has", obj.has("x"), true)
+check("obj-has-f", obj.has("w"), false)
+
+// 9. object mutation
+obj2 = {a: 1}
+obj2.b = 2
+obj2["c"] = 3
+check("obj-mut-b", obj2.b, 2)
+check("obj-mut-c", obj2["c"], 3)
+check("obj-mut-keys", #(obj2.keys()), 3)
+
+// 10. del operator
+obj3 = {a: 1, b: 2, c: 3}
+del obj3.b
+check("del-keys", #(obj3.keys()), 2)
+check("del-has", obj3.has("b"), false)
+
+// 11. object iteration
+o = {a: 1, b: 2, c: 3}
+okeys = []
+for k in o.keys() {
+  okeys.push(k)
+}
+check("obj-iter-keys", #okeys, 3)
+
+// 12. array of objects
+people = [{name: "alice", age: 30}, {name: "bob", age: 25}]
+names = people.map((p) => p.name)
+check("arr-obj-map", names, ["alice", "bob"])
+ages = people.map((p) => p.age)
+check("arr-obj-ages", ages.sum(), 55)
+
+// 13. chained operations
+result = [1,2,3,4,5,6,7,8,9,10].filter((x) => x % 2 == 0).map((x) => x * x).reduce((a,b) => a + b, 0)
+check("chain-filter-map-reduce", result, 220)
+
+print(f"collections-iter: {pass} passed, {fail} failed")
+exit(fail)

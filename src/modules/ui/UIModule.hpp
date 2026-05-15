@@ -20,6 +20,6 @@ namespace havel::modules {
  *   win.add(ui.btn("Click", () => print("clicked")))
  *   win.show()
  */
-void registerUIModule(compiler::VMApi &api);
+void registerUIModule(const compiler::VMApi &api);
 
 } // namespace havel::modules

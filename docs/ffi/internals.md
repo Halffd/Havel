@@ -39,8 +39,9 @@ target_link_libraries(havel PRIVATE
 ## Module Registration
 
 `registerFFIModule(VMApi& api)` is called from `registerStdLibWithVM()` in
-`src/havel-lang/runtime/StdLibModules.cpp`. The `ffi` identifier is added
-to `host_global_names` so the compiler treats it as a known global.
+`src/havel-lang/runtime/StdLibModules.cpp`. The `ffi` module is registered
+as a global object via `api.setGlobal("ffi", ffiObj)` - host functions are
+dispatched at runtime via `host_function_globals_` lookup.
 
 Registration follows the VMApi pattern:
 

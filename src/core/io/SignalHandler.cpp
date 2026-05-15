@@ -1,6 +1,7 @@
 #include "SignalHandler.hpp"
 #include "EventListener.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <cerrno>
 #include <csignal>
 #include <cstring>
@@ -73,7 +74,7 @@ void SignalHandler::InstallAsyncHandlers() {
   sigaction(SIGPWR, &sa, nullptr);    // Power failure
   sigaction(SIGSYS, &sa, nullptr);    // Bad system call
 
-  debug("Traditional signal handlers installed for all signals");
+  if (debugging::debug_io) debug("Traditional signal handlers installed for all signals");
 }
 
 bool SignalHandler::SetupSignalfd() {
@@ -119,7 +120,7 @@ bool SignalHandler::SetupSignalfd() {
     return false;
   }
 
-  debug("Signal handling: signalfd created (traditional handlers are primary "
+  if (debugging::debug_io) debug("Signal handling: signalfd created (traditional handlers are primary "
         "defense)");
   return true;
 }

@@ -1,27 +1,10 @@
-/*
- * MathModule.hpp - Math stdlib for VM (no host/service)
- * Pure VM implementation using Value
- */
 #pragma once
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
-#include <cmath> // for std::ceil, std::floor, std::round, std::sin, etc.
-
-namespace havel {
-class Environment;
-}
+#include <cmath>
 
 namespace havel::stdlib {
 
-// OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerMathModule(Environment &env);
-
-// NEW: Register math module with VMApi (stable API layer)
-void registerModule(havel::compiler::VMApi &api);
-
-// Implementation in MathModule.cpp
-
-// Implementation of old registerMathModule (placeholder)
-inline void registerMathModule(Environment &env) { (void)env; }
+void registerMathModule(havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

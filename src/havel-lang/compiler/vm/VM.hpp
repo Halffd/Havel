@@ -19,6 +19,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <queue>
 
 namespace havel::compiler {
 
@@ -26,6 +29,7 @@ namespace havel::compiler {
 class Fiber;
 class Scheduler;
 class WatcherRegistry;
+enum class FiberPriority : uint8_t;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
@@ -158,13 +162,8 @@ public:
   };
 
 private:
-  struct RuntimeClosure {
-    uint32_t function_index = 0;
-    uint32_t chunk_index = 0;  // NEW: track which chunk this closure belongs to
-    std::vector<std::shared_ptr<GCHeap::UpvalueCell>> upvalues;
-  };
 
-  struct TryHandler {
+ struct TryHandler {
     uint32_t catch_ip = 0;
     uint32_t finally_ip = 0; // 0 if no finally block
     uint32_t finally_return_ip =
@@ -172,14 +171,16 @@ private:
     size_t stack_depth = 0;
   };
 
-  struct CallFrame {
+struct CallFrame {
     const BytecodeFunction *function = nullptr;
+    const BytecodeChunk *chunk = nullptr;
     size_t ip = 0;
     size_t locals_base = 0;
     uint32_t closure_id = 0;
+    bool owns_globals = false;
     std::vector<TryHandler> try_stack;
-    size_t stack_depth = 0;  // Expression stack depth at call time
-  };
+    size_t stack_depth = 0; // Expression stack depth at call time
+};
   public:
 
   std::stack<Value> stack;
@@ -232,7 +233,7 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
     std::unordered_map<uint32_t, uint64_t> backedge_counters_;
 
     // Coroutine support (Lua-style coroutines)
-  uint32_t current_coroutine_id_ = 0;  // Currently executing coroutine (0 = main)
+uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (UINT32_MAX = main)
   std::unordered_map<uint32_t, uint32_t> coroutine_to_frame_; // Map coroutine ID to frame index
 
   
@@ -279,8 +280,9 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
   // Host context for service access (non-owning)
   const HostContext *context_ = nullptr;
 
-  const BytecodeChunk *current_chunk = nullptr;
+const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
+    bool host_globals_registered_ = false;
   size_t max_call_depth_ = 1024;
  size_t tail_call_depth_ = 0;
   bool profiling_enabled_ = false;
@@ -371,10 +373,11 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
 
   std::vector<Value> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
-  void maybeCollectGarbage();
-  void collectGarbage();
-  void stepGarbageCollection(size_t work_budget = 128);
-void registerDefaultHostFunctions();
+    void maybeCollectGarbage();
+    void collectGarbage();
+    void stepGarbageCollection(size_t work_budget = 128);
+    void drainFinalizers();
+    void registerDefaultHostFunctions();
     void registerDefaultHostGlobals();
     void registerDefaultPrototypes();
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
@@ -417,14 +420,14 @@ public:
     if (base >= locals.size()) return nullptr;
     return &locals[base]; 
   }
-  void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
-    if (frame_count_ >= frame_arena_.size()) {
-      frame_arena_.push_back(CallFrame{function, ip, locals_base, closure_id});
-    } else {
-      frame_arena_[frame_count_] = CallFrame{function, ip, locals_base, closure_id};
+    void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
+        if (frame_count_ >= frame_arena_.size()) {
+            frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, {}});
+        } else {
+            frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, {}};
+        }
+        frame_count_++;
     }
-    frame_count_++;
-  }
   size_t currentLocalsSizePublic() const { return locals.size(); }
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>& openUpvaluesPublic() { return open_upvalues; }
   void doTailCallPublic(Value callee_value, std::vector<Value> args) {
@@ -516,15 +519,25 @@ public:
   VMExecutionResult executeOneStep(Fiber *current_fiber);
   
   
-  // Load fiber's state into VM's global execution state
-  // Must be called before executeOneStep() to restore suspended fiber
-  // @param fiber The Fiber to load (must have SUSPENDED or pending state)
-  void loadFiberState(Fiber *fiber);
-  
-  // Save VM's current execution state back to fiber
-  // Must be called after executeOneStep() to persist execution progress
-  // @param fiber The Fiber to save to (preserves IP for resumption)
-  void saveFiberState(Fiber *fiber);
+    // Load fiber's state into VM's global execution state
+    // Must be called before executeOneStep() to restore suspended fiber
+    // @param fiber The Fiber to load (must have SUSPENDED or pending state)
+    void loadFiberState(Fiber *fiber);
+
+    // Save VM's current execution state back to fiber
+    // Must be called after executeOneStep() to persist execution progress
+    // @param fiber The Fiber to save to (preserves IP for resumption)
+    void saveFiberState(Fiber *fiber);
+
+    // Initialize a newly-spawned goroutine for first execution
+    // Sets up the initial call frame, resolves chunk from closure if needed,
+    // and copies arguments into locals
+    // @param function_id Bytecode function index to execute
+    // @param closure_id Closure context (0 for plain functions)
+    // @param args Arguments to pass to the function
+    // @return true if initialization succeeded, false if function not found
+    bool startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+                            const std::vector<Value> &args);
 
   
   // Track which fiber is waiting on a specific thread
@@ -588,12 +601,12 @@ public:
   // @return Goroutine ID
   uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {});
 
-  // Spawn a goroutine from a registered callback
-  uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
+    // Spawn a goroutine from a registered callback
+    uint32_t spawnCallback(CallbackId id, const std::vector<Value> &args = {});
 
-  // Hotkey execution state (atomic)
-  void beginHotkeyExecution();
-  void endHotkeyExecution();
+    // Spawn a goroutine from a registered callback with explicit priority
+    uint32_t spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args = {});
+
   void garbageCollectionSafePoint(size_t work_budget = 0);
 
   
@@ -780,53 +793,7 @@ public:
   // Execution Context System - Isolated execution with shared globals
   // ============================================================================
 
-  // Lightweight execution context for async/threaded execution
-  // Shares: globals, heap, host_functions, prototypes, chunk
-  // Isolated: stack, locals, frames, open_upvalues
-struct VMExecutionContext {
-private:
-    VM *parent_vm_ = nullptr;
-    std::stack<Value> stack;
-    std::vector<Value> locals;
-    std::vector<CallFrame> frame_arena_;
-    size_t frame_count_ = 0;
-    std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
-        open_upvalues;
-    std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices
-    bool has_current_exception_ = false;
-    Value current_exception_ = nullptr;
-    const BytecodeChunk *current_chunk = nullptr;
-
-    friend class VM;
-
-  public:
-    VMExecutionContext() = default;
-    ~VMExecutionContext() = default;
-
-    // Non-copyable (contains unique execution state)
-    VMExecutionContext(const VMExecutionContext &) = delete;
-    VMExecutionContext &operator=(const VMExecutionContext &) = delete;
-
-    // Movable
-    VMExecutionContext(VMExecutionContext &&) = default;
-    VMExecutionContext &operator=(VMExecutionContext &&) = default;
-
-    // Execute a callback in this isolated context
-    Value invokeCallback(CallbackId id,
-                                 const std::vector<Value> &args = {});
-
-    // Internal: execute single instruction in this context
-    void executeInstructionInContext(const Instruction &instruction);
-
-    // Check if context is valid (has parent VM)
-    bool isValid() const { return parent_vm_ != nullptr; }
-  };
-
-  // Create a lightweight execution context that shares globals/heap but has
-  // isolated stack This is the CORRECT way to execute hotkeys from threads
-  VMExecutionContext createExecutionContext();
-
-  // Thread-safe global variable access
+// Thread-safe global variable access
   void setGlobalThreadSafe(const std::string &name, Value value);
   std::optional<Value>
   getGlobalThreadSafe(const std::string &name) const;
@@ -845,6 +812,11 @@ private:
 
     Value runInContext(const std::string& source, Value context);
 
+    Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
+    Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
+                                   const std::unordered_map<std::string, Value>& moduleGlobals,
+                                   const std::string& canonicalKey,
+                                   const std::string& fieldPath);
     Value loadModule(const std::string& path);
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
@@ -855,10 +827,12 @@ private:
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
   void setCurrentChunkPublic(const BytecodeChunk* chunk) { current_chunk = chunk; }
  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
-void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
-  main_chunk_ = std::move(chunk);
-  current_chunk = main_chunk_.get();
-}
+ void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+ main_chunk_ = std::move(chunk);
+ current_chunk = main_chunk_.get();
+ }
+ const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
+ std::unordered_map<std::string, Value>& getGlobals() { return globals; }
 void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
   repl_chunks_.push_back(chunk);
   current_chunk = chunk.get();
@@ -872,12 +846,22 @@ void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
 
 private:
     std::atomic<uint32_t> active_hotkey_executions_{0};
+    mutable std::recursive_mutex execution_mutex_; // Main VM execution lock
     bool jit_tail_call_occurred_ = false;
 
     uint32_t app_args_array_id_ = 0;
     std::function<void()> restart_callback_;
     HotFunctionCallback hot_func_cb_;
     JITCompiler* jit_compiler_ = nullptr;
+    bool tiering_enabled_ = false;
+    uint64_t tier1_threshold_ = 1000;
+    uint64_t tier2_threshold_ = 10000;
+    std::unordered_set<std::string> tier1_compiled_;
+    std::unordered_set<std::string> tier2_compiled_;
+    std::mutex tier2_queue_mutex_;
+    std::queue<BytecodeFunction> tier2_queue_;
+    std::thread tier2_worker_;
+    std::atomic<bool> tier2_worker_running_{false};
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;
@@ -897,6 +881,7 @@ public:
 public:
   void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }
   void setRestartCallback(std::function<void()> cb) { restart_callback_ = std::move(cb); }
+  std::recursive_mutex& getExecutionMutex() const { return execution_mutex_; }
 };
 
 } // namespace havel::compiler

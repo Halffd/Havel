@@ -15,5 +15,6 @@ void registerNumberPrototype(VM& vm);
 void registerBoolPrototype(VM& vm);
 void registerObjectPrototype(VM& vm);
 void registerSetPrototype(VM& vm);
+void registerRangePrototype(VM& vm);
 
 } // namespace havel::compiler::prototypes

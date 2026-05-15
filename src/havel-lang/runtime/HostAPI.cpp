@@ -3,6 +3,8 @@
 // Composes subsystems rather than inheriting from IO
 
 #include "HostAPI.hpp"
+
+#ifndef HAVEL_PURE_VM
 #include "ImportManager.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
@@ -121,16 +123,16 @@ void HostAPI::Scroll(int dy, int dx) { io->Scroll(dy, dx); }
 
 // IClipboardAPI implementation
 std::string HostAPI::GetClipboardText() {
-  if (QGuiApplication::instance()) {
-    return QGuiApplication::clipboard()->text().toStdString();
-  }
+  // if (QGuiApplication::instance()) {
+  //   return QGuiApplication::clipboard()->text().toStdString();
+  // }
   return "";
 }
 
 void HostAPI::SetClipboardText(const std::string &text) {
-  if (QGuiApplication::instance()) {
-    QGuiApplication::clipboard()->setText(QString::fromStdString(text));
-  }
+  // if (QGuiApplication::instance()) {
+  //   QGuiApplication::clipboard()->setText(QString::fromStdString(text));
+  // }
 }
 
 // IConfigAPI implementation
@@ -175,3 +177,4 @@ const std::vector<std::string> &HostAPI::GetCommandLineArgs() {
 }
 
 } // namespace havel
+#endif // HAVEL_PURE_VM

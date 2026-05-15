@@ -23,7 +23,7 @@ static bool clipboardMgrEnabled = false;
 static ClipboardManager* clipboardMgrInstance = nullptr;
 
 // Get or create the clipboard manager instance
-static ClipboardManager* getClipboardManager(VMApi &api) {
+static ClipboardManager* getClipboardManager(const VMApi &api) {
   if (!clipboardMgrInstance) {
     // Check if QApplication exists (required for GUI)
     if (!QApplication::instance()) {
@@ -31,7 +31,7 @@ static ClipboardManager* getClipboardManager(VMApi &api) {
     }
     
     IO* io = nullptr;
-    if (const auto* hc = api.vm.hostContext()) {
+    if (const auto* hc = api.vm().hostContext()) {
       io = hc->io;
     }
     if (!io) {
@@ -49,7 +49,7 @@ static ClipboardManager* getClipboardManager(VMApi &api) {
 // ============================================================================
 
 // clipboardMgr.enable() -> bool - Enable the GUI clipboard manager
-static Value clipboardMgrEnable(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrEnable(const VMApi &api, const std::vector<Value> &args) {
   if (clipboardMgrEnabled) {
     return Value::makeBool(true);  // Already enabled
   }
@@ -69,7 +69,7 @@ static Value clipboardMgrEnable(VMApi &api, const std::vector<Value> &args) {
 }
 
 // clipboardMgr.disable() -> bool - Disable/hide the clipboard manager
-static Value clipboardMgrDisable(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrDisable(const VMApi &api, const std::vector<Value> &args) {
   if (!clipboardMgrEnabled || !clipboardMgrInstance) {
     return Value::makeBool(false);
   }
@@ -80,12 +80,12 @@ static Value clipboardMgrDisable(VMApi &api, const std::vector<Value> &args) {
 }
 
 // clipboardMgr.isEnabled() -> bool - Check if enabled
-static Value clipboardMgrIsEnabled(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrIsEnabled(const VMApi &api, const std::vector<Value> &args) {
   return Value::makeBool(clipboardMgrEnabled);
 }
 
 // clipboardMgr.show() -> bool - Show the clipboard manager window
-static Value clipboardMgrShow(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrShow(const VMApi &api, const std::vector<Value> &args) {
   if (!clipboardMgrEnabled) {
     return Value::makeBool(false);
   }
@@ -100,7 +100,7 @@ static Value clipboardMgrShow(VMApi &api, const std::vector<Value> &args) {
 }
 
 // clipboardMgr.hide() -> bool - Hide the clipboard manager window
-static Value clipboardMgrHide(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrHide(const VMApi &api, const std::vector<Value> &args) {
   if (!clipboardMgrEnabled || !clipboardMgrInstance) {
     return Value::makeBool(false);
   }
@@ -110,7 +110,7 @@ static Value clipboardMgrHide(VMApi &api, const std::vector<Value> &args) {
 }
 
 // clipboardMgr.toggle() -> bool - Toggle visibility
-static Value clipboardMgrToggle(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrToggle(const VMApi &api, const std::vector<Value> &args) {
   auto* mgr = getClipboardManager(api);
   if (!mgr) {
     return Value::makeBool(false);
@@ -122,7 +122,7 @@ static Value clipboardMgrToggle(VMApi &api, const std::vector<Value> &args) {
 }
 
 // clipboardMgr.addToHistory(text) -> bool - Add text to clipboard history
-static Value clipboardMgrAddToHistory(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrAddToHistory(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return Value::makeBool(false);
   }
@@ -149,7 +149,7 @@ static Value clipboardMgrAddToHistory(VMApi &api, const std::vector<Value> &args
 }
 
 // clipboardMgr.clearHistory() -> bool - Clear clipboard history
-static Value clipboardMgrClearHistory(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrClearHistory(const VMApi &api, const std::vector<Value> &args) {
   auto* mgr = getClipboardManager(api);
   if (!mgr) {
     return Value::makeBool(false);
@@ -160,7 +160,7 @@ static Value clipboardMgrClearHistory(VMApi &api, const std::vector<Value> &args
 }
 
 // clipboardMgr.getHistoryItem(index) -> string - Get history item at index
-static Value clipboardMgrGetHistoryItem(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrGetHistoryItem(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return api.makeNull();
   }
@@ -183,7 +183,7 @@ static Value clipboardMgrGetHistoryItem(VMApi &api, const std::vector<Value> &ar
 }
 
 // clipboardMgr.getHistoryCount() -> int - Get number of history items
-static Value clipboardMgrGetHistoryCount(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrGetHistoryCount(const VMApi &api, const std::vector<Value> &args) {
   auto* mgr = getClipboardManager(api);
   if (!mgr) {
     return Value::makeInt(0);
@@ -193,7 +193,7 @@ static Value clipboardMgrGetHistoryCount(VMApi &api, const std::vector<Value> &a
 }
 
 // clipboardMgr.pasteItem(index) -> bool - Paste history item at index
-static Value clipboardMgrPasteItem(VMApi &api, const std::vector<Value> &args) {
+static Value clipboardMgrPasteItem(const VMApi &api, const std::vector<Value> &args) {
   if (args.size() < 1) {
     return Value::makeBool(false);
   }
@@ -218,62 +218,62 @@ static Value clipboardMgrPasteItem(VMApi &api, const std::vector<Value> &args) {
 // Register Clipboard Manager Module
 // ============================================================================
 
-void registerClipboardMgrModule(compiler::VMApi &api) {
+void registerClipboardMgrModule(const compiler::VMApi &api) {
   // Enable/disable functions
   api.registerFunction("clipboardMgr.enable",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrEnable(api, args);
                        });
   
   api.registerFunction("clipboardMgr.disable",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrDisable(api, args);
                        });
   
   api.registerFunction("clipboardMgr.isEnabled",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrIsEnabled(api, args);
                        });
   
   // Window visibility functions
   api.registerFunction("clipboardMgr.show",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrShow(api, args);
                        });
   
   api.registerFunction("clipboardMgr.hide",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrHide(api, args);
                        });
   
   api.registerFunction("clipboardMgr.toggle",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrToggle(api, args);
                        });
   
   // History functions
   api.registerFunction("clipboardMgr.addToHistory",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrAddToHistory(api, args);
                        });
   
   api.registerFunction("clipboardMgr.clearHistory",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrClearHistory(api, args);
                        });
   
   api.registerFunction("clipboardMgr.getHistoryItem",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrGetHistoryItem(api, args);
                        });
   
   api.registerFunction("clipboardMgr.getHistoryCount",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrGetHistoryCount(api, args);
                        });
   
   api.registerFunction("clipboardMgr.pasteItem",
-                       [&api](const std::vector<Value> &args) {
+                       [api](const std::vector<Value> &args) {
                          return clipboardMgrPasteItem(api, args);
                        });
   

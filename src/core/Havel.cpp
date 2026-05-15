@@ -8,20 +8,32 @@
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "BrightnessManager.hpp"
 #include "ConfigManager.hpp"
+#include "IO.hpp"
+#include "HotkeyManager.hpp"
+#include "window/WindowManager.hpp"
+#include "automation/AutomationManager.hpp"
+#include "modules/HostModules.hpp"
+#ifdef HAVEL_ENABLE_LLVM
+#include "havel-lang/compiler/BytecodeOrcJIT.h"
+#endif
 #include "DisplayManager.hpp"
 #include "ModeManager.hpp"
 #include "media/MPVController.hpp"
 #include "media/AudioManager.hpp"
 #include "io/EventListener.hpp"
 #include "io/KeyTap.hpp"
-#include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
 #include "net/NetworkManager.hpp"
+#include "host/ServiceRegistry.hpp"
+#include "host/image/ImageService.hpp"
 #include <csignal>
 #include <cstdlib>
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -68,13 +80,13 @@ Havel::~Havel() {
   if (instance == this) {
     instance = nullptr;
   }
-  debug("Havel destroyed");
+  if (debugging::debug_io) debug("Havel destroyed");
 }
 
 void Havel::initialize(bool isStartup) {
-  debug("Initializing HvC components...");
-  debug("isStartup: " + std::to_string(isStartup));
-  debug("GUI: " + std::to_string(guiMode));
+  if (debugging::debug_io) debug("Initializing HvC components...");
+  if (debugging::debug_io) debug("isStartup: " + std::to_string(isStartup));
+  if (debugging::debug_io) debug("GUI: " + std::to_string(guiMode));
 
   // Initialize in dependency order
   io = std::make_shared<IO>();
@@ -126,7 +138,7 @@ void Havel::initialize(bool isStartup) {
   }
 
 #ifdef ENABLE_HAVEL_LANG
-  debug("Initializing bytecode VM and HostBridge...");
+  if (debugging::debug_io) debug("Initializing bytecode VM and HostBridge...");
 
   // Create host context
   hostContext = std::make_unique<HostContext>();
@@ -150,7 +162,7 @@ void Havel::initialize(bool isStartup) {
   // We'll trust the ConfigManager which should be updated by Launcher.
   
   if (useJIT) {
-    debug("JIT compilation enabled");
+    if (debugging::debug_io) debug("JIT compilation enabled");
     auto jit = std::make_unique<compiler::BytecodeOrcJIT>();
     
     // Check for debug JIT
@@ -166,6 +178,22 @@ void Havel::initialize(bool isStartup) {
     // Check for IR dumping
     if (Configs::Get().Get<bool>("Compiler.DumpIR", false)) {
       jit->setDumpIR(true);
+    }
+
+    jit->setShowWarnings(Configs::Get().Get<bool>("Compiler.JITWarnings", true));
+    std::string jitTargetOS = Configs::Get().Get<std::string>("Compiler.JITTargetOS", "");
+    std::transform(jitTargetOS.begin(), jitTargetOS.end(), jitTargetOS.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (jitTargetOS == "linux") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Linux);
+    } else if (jitTargetOS == "windows" || jitTargetOS == "win") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Windows);
+    } else if (jitTargetOS == "macos" || jitTargetOS == "darwin" || jitTargetOS == "mac") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::MacOS);
+    } else if (jitTargetOS == "wasm") {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Wasm);
+    } else {
+      jit->setTargetOS(compiler::BytecodeOrcJIT::TargetOS::Native);
     }
 
     // Hook up to VM
@@ -242,30 +270,11 @@ hostBridge->install();
 	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
 	bytecodeVM->setScheduler(scheduler);
 
-  
-  // When a hotkey action Fiber is executed (function_id == 0xFFFFFFFF),
-  // ExecutionEngine will call this callback to invoke the C++ hotkey action
-  executionEngine->setHotkeyActionCallback([](uint32_t fiber_id) {
-    
-    auto* callback = HotkeyActionWrapper::getCallback(fiber_id);
-    if (callback && *callback) {
-      try {
-        
-        // when scheduling the action Fiber. Just execute the callback.
-        (*callback)();  // Execute the C++ hotkey action function
-      } catch (const std::exception& e) {
-        error("Exception in hotkey action (Fiber " + std::to_string(fiber_id) + "): " + e.what());
-      }
-    } else {
-      warn("No callback registered for hotkey action Fiber " + std::to_string(fiber_id));
-    }
-    // Note: Callback unregistration happens when Fiber is cleaned up
-  });
 
-  
-  if (hotkeyManager) {
-    hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
-    hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
+if (hotkeyManager) {
+ hotkeyManager->setEventQueue(eventQueue);
+ hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
+ hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
     hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
     
     
@@ -282,7 +291,7 @@ hostBridge->install();
     
     // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
     // from HotkeyActionContext.cpp static initialization if needed
-    debug("Reactive hotkey system initialized");
+    if (debugging::debug_io) debug("Reactive hotkey system initialized");
     
     auto modeManager = hotkeyManager->getModeManager();
     if (modeManager) {
@@ -297,7 +306,7 @@ hostBridge->install();
   io->GetEventListener()->setHostBridge(hostBridge.get());
   if (executionEngine) {
     io->GetEventListener()->setExecutionEngine(executionEngine.get());
-    debug("ExecutionEngine integrated into EventListener main loop");
+    if (debugging::debug_io) debug("ExecutionEngine integrated into EventListener main loop");
   }
 }
 #else
@@ -313,48 +322,70 @@ hostBridge->install();
     std::thread([this]() {
       auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
       std::this_thread::sleep_for(std::chrono::seconds(s));
-      debug("AutoExit enabled - exiting after {} seconds", s);
+      if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
+        return; // AutoExit was disabled during the wait
+      }
+      if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", s);
       std::exit(0);
+      this->exit();
     }).detach();
   }
 }
 
 void Havel::cleanup() noexcept {
-  debug("Havel::cleanup() - starting cleanup");
+  if (debugging::debug_io) debug("Havel::cleanup() - starting cleanup");
+
+  // Force save config before everything else
+  try {
+    Configs::Get().ForceSave();
+    if (debugging::debug_io) debug("Havel::cleanup() - config saved");
+  } catch (...) {}
 
   // Stop timer first
   stopPeriodicTimer();
 
   // Stop EventListener FIRST
   if (io && io->GetEventListener()) {
-    debug("Havel::cleanup() - stopping EventListener");
+    if (debugging::debug_io) debug("Havel::cleanup() - stopping EventListener");
     io->GetEventListener()->Stop();
   }
 
   // Destroy hotkeyManager
   if (hotkeyManager) {
-    debug("Havel::cleanup() - destroying HotkeyManager");
+    if (debugging::debug_io) debug("Havel::cleanup() - destroying HotkeyManager");
     hotkeyManager->cleanup();
     hotkeyManager.reset();
   }
 
   
   if (conditionCompiler) {
-    debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
+    if (debugging::debug_io) debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
     delete conditionCompiler;
     conditionCompiler = nullptr;
   }
   
 
-  // Destroy VM FIRST
-  if (bytecodeVM) {
-    debug("Havel::cleanup() - destroying VM");
-    bytecodeVM.reset();
-  }
+ // Stop ExecutionEngine and Scheduler BEFORE destroying VM
+ if (executionEngine) {
+ if (debugging::debug_io) debug("Havel::cleanup() - shutting down ExecutionEngine");
+ executionEngine->shutdown();
+ executionEngine.reset();
+ }
+ auto& scheduler = compiler::Scheduler::instance();
+ if (scheduler.isRunning()) {
+ if (debugging::debug_io) debug("Havel::cleanup() - stopping Scheduler");
+ scheduler.stop();
+ }
+
+ // Destroy VM
+ if (bytecodeVM) {
+ if (debugging::debug_io) debug("Havel::cleanup() - destroying VM");
+ bytecodeVM.reset();
+ }
 
   // Destroy HostBridge
   if (hostBridge) {
-    debug("Havel::cleanup() - destroying HostBridge");
+    if (debugging::debug_io) debug("Havel::cleanup() - destroying HostBridge");
     hostBridge->shutdown();
     hostBridge.reset();
   }
@@ -376,13 +407,19 @@ void Havel::cleanup() noexcept {
     windowManager.reset();
   }
 
+  // Release ImageService handles (prevents leak when scripts don't call image.release)
+  auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
+  if (imgSvc) {
+    imgSvc->releaseAll();
+  }
+
   // Destroy IO LAST
   if (io) {
     io->cleanup();
     io.reset();
   }
 
-  debug("Havel::cleanup() - cleanup complete");
+  if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
 }
 
 void Havel::exit() {
@@ -443,9 +480,9 @@ void Havel::setupSignalHandling() {
       sigaction(SIGSEGV, &sa, nullptr);
       sigaction(SIGQUIT, &sa, nullptr);
 
-  debug("Signal handling initialized - fallback handlers for REPL mode");
+  if (debugging::debug_io) debug("Signal handling initialized - fallback handlers for REPL mode");
   } else {
-  debug("Signal handling initialized - EventListener manages signals");
+  if (debugging::debug_io) debug("Signal handling initialized - EventListener manages signals");
     }
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to set up signal handling: " +

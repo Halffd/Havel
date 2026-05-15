@@ -7,7 +7,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Register physics module with VMApi (stable API layer)
-void registerPhysicsModule(VMApi &api) {
+void registerPhysicsModule(const VMApi &api) {
   // Physics constants
   api.setGlobal("G",
                 Value(9.80665)); // Gravitational acceleration (m/s²)
@@ -34,7 +34,7 @@ void registerPhysicsModule(VMApi &api) {
   // Physics functions
 
   // force(mass, acceleration) - Calculate force (F = ma)
-  api.registerFunction("force", [&api](const std::vector<Value> &args) {
+  api.registerFunction("force", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
       throw std::runtime_error("force() requires mass and acceleration");
 
@@ -59,7 +59,7 @@ void registerPhysicsModule(VMApi &api) {
 
   // kinetic_energy(mass, velocity) - Calculate kinetic energy (KE = 0.5mv²)
   api.registerFunction(
-      "kinetic_energy", [&api](const std::vector<Value> &args) {
+      "kinetic_energy", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error(
               "kinetic_energy() requires mass and velocity");
@@ -87,7 +87,7 @@ void registerPhysicsModule(VMApi &api) {
   // potential_energy(mass, height, gravity) - Calculate potential energy (PE =
   // mgh)
   api.registerFunction(
-      "potential_energy", [&api](const std::vector<Value> &args) {
+      "potential_energy", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error(
               "potential_energy() requires mass and height");
@@ -124,7 +124,7 @@ void registerPhysicsModule(VMApi &api) {
 
   // momentum(mass, velocity) - Calculate momentum (p = mv)
   api.registerFunction(
-      "momentum", [&api](const std::vector<Value> &args) {
+      "momentum", [api](const std::vector<Value> &args) {
         if (args.size() < 2)
           throw std::runtime_error("momentum() requires mass and velocity");
 
@@ -149,7 +149,7 @@ void registerPhysicsModule(VMApi &api) {
 
   // wavelength(frequency) - Calculate wavelength (λ = c/f)
   api.registerFunction(
-      "wavelength", [&api](const std::vector<Value> &args) {
+      "wavelength", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("wavelength() requires frequency");
 

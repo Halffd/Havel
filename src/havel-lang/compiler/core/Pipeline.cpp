@@ -501,8 +501,10 @@ case OpCode::INT_DIV:
     return "LOAD_CLASS_PROTO";
   case OpCode::CALL_SUPER:
     return "CALL_SUPER";
-  case OpCode::IMPORT:
-    return "IMPORT";
+    case OpCode::IMPORT:
+        return "IMPORT";
+    case OpCode::IMPORT_WILDCARD:
+        return "IMPORT_WILDCARD";
   case OpCode::STRUCT_NEW:
     return "STRUCT_NEW";
   case OpCode::STRUCT_GET:
@@ -650,7 +652,7 @@ BytecodeSmokeResult runBytecodePipeline(
         sanitizeFileStem(options.compile_unit_name) + ".snapshot.txt";
     const std::filesystem::path artifact_path =
         std::filesystem::path(options.snapshot_dir) / artifact_name;
-    std::ofstream out(artifact_path, std::ios::trunc);
+    std::ofstream out(artifact_path.string(), std::ios::trunc);
     if (!out.is_open()) {
       COMPILER_THROW("Failed to open snapshot artifact: " +
                                artifact_path.string());
@@ -685,17 +687,25 @@ BytecodeSmokeResult runBytecodePipeline(
     COMPILER_THROW(
         "Bytecode pipeline failed: parser returned null AST");
   }
-  if (parser.hasErrors()) {
-    std::string allErrors;
-    for (const auto &err : parser.getErrors()) {
-      allErrors += formatDiagnostic(
-          "ParseError", err.message, options.compile_unit_name, source,
-          err.line, err.column, 1, "");
+    if (parser.hasErrors()) {
+      std::string allErrors;
+      for (const auto &err : parser.getErrors()) {
+        if (err.severity != ErrorSeverity::Error) continue;
+        allErrors += formatDiagnostic(
+            "ParseError", err.message, options.compile_unit_name, source,
+            err.line, err.column, 1, "");
+      }
+      COMPILER_THROW(allErrors);
     }
-    COMPILER_THROW(allErrors);
-  }
+    for (const auto &err : parser.getErrors()) {
+      if (err.severity == ErrorSeverity::Warning) {
+        std::cerr << formatDiagnostic(
+            "Warning", err.message, options.compile_unit_name, source,
+            err.line, err.column, 1, "") << std::endl;
+      }
+    }
 
-	ByteCompiler compiler;
+ByteCompiler compiler;
 	BytecodeSmokeResult result;
   std::unique_ptr<BytecodeChunk> chunk;
   try {
@@ -706,10 +716,10 @@ BytecodeSmokeResult runBytecodePipeline(
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
-    if (options.debugBytecode) {
-            ::havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
-    }
-    result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
+ if (options.debugBytecode) {
+ std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
+ }
+ result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -754,9 +764,9 @@ BytecodeSmokeResult runBytecodePipeline(
     chunk = compiler.takeCurrentChunk();
     if (chunk && !chunk->getAllFunctions().empty()) {
       result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
-      if (options.debugBytecode) {
-        ::havel::debug("=== BYTECODE ===\n{}", result.snapshot.bytecode);
-    }
+ if (options.debugBytecode) {
+ std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
+ }
     } else {
       result.snapshot.bytecode = "<no bytecode generated>";
     }

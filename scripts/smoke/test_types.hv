@@ -1,3 +1,0 @@
-struct Point { x: int y: int }
-p := Point.new(10, 20)
-print("x=" + p.x + ", y=" + p.y)

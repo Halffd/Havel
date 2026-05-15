@@ -200,21 +200,17 @@ std::vector<std::string> WindowService::getGroupNames() const {
 
 std::vector<WindowInfo>
 WindowService::getGroupWindows(const std::string &groupName) const {
-  if (!wm_)
-    return {};
-  auto names = wm_->getGroupWindows(groupName);
-  std::vector<WindowInfo> result;
-  return result;
+  return WindowManager::getGroupWindows(groupName);
 }
 
 bool WindowService::addWindowToGroup(uint64_t id,
-                                     const std::string &groupName) {
-  return false;
+                                    const std::string &groupName) {
+  return WindowManager::addWindowToGroup(id, groupName);
 }
 
 bool WindowService::removeWindowFromGroup(uint64_t id,
                                           const std::string &groupName) {
-  return false;
+  return WindowManager::removeWindowFromGroup(id, groupName);
 }
 
 // =========================================================================
@@ -222,7 +218,7 @@ bool WindowService::removeWindowFromGroup(uint64_t id,
 // =========================================================================
 
 void WindowService::moveActiveWindowToNextMonitor() {
-  // TODO: Implement
+  WindowManager::MoveWindowToNextMonitor();
 }
 
 std::string WindowService::getActiveWindowTitleStatic() {

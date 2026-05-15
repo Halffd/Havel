@@ -1,0 +1,3 @@
+use "./mathtest.hv" as m
+print(m.PI)
+print(m.add(1, 2))

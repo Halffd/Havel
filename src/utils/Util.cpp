@@ -1,8 +1,12 @@
 #include "./Util.hpp"
 #include "./Logger.hpp"
 #include <limits.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 namespace havel {
 void printStackTrace(int len) {
+#ifndef _WIN32
     havel::debug("----------------");
     std::vector<void *> callstack(len);
     int frames = backtrace(callstack.data(), len);
@@ -19,6 +23,10 @@ void printStackTrace(int len) {
     }
     havel::debug("----------------");
     free(strs);
+#else
+    (void)len;
+    havel::debug("Stack trace not supported on Windows");
+#endif
 }
 
 std::string ToLower(const std::string& str) {
@@ -63,6 +71,10 @@ std::string GetExecutablePath() {
 #ifdef __linux__
     char result[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    return std::string(result, (count > 0) ? count : 0);
+#elif defined(_WIN32)
+    char result[MAX_PATH];
+    DWORD count = GetModuleFileNameA(NULL, result, MAX_PATH);
     return std::string(result, (count > 0) ? count : 0);
 #else
     return "";

@@ -6,6 +6,7 @@
  */
 #include "UinputDevice.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <fcntl.h>
 #include <linux/uinput.h>
 #include <sys/ioctl.h>
@@ -75,7 +76,7 @@ bool UinputDevice::Setup() {
         return false;
     }
 
-    debug("uinput device initialized (fd={})", uinputFd);
+    if (debugging::debug_io) debug("uinput device initialized (fd={})", uinputFd);
     return true;
 }
 

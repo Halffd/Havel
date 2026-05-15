@@ -19,7 +19,6 @@
  */
 #include "PixelModule.hpp"
 #include "modules/ModuleMacros.hpp"
-#include "modules/ModuleRegistry.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/automation/PixelAutomationService.hpp"
 #include "utils/Logger.hpp"
@@ -32,13 +31,13 @@ using host::PixelAutomationService;
 
 static const char* PIXEL_MODULE_MARKER = "__pixel_module";
 
-static bool isPixelModuleObject(VMApi& api, const Value& val) {
+static bool isPixelModuleObject(const VMApi& api, const Value& val) {
     if (!val.isObjectId()) return false;
     auto marker = api.getField(val, PIXEL_MODULE_MARKER);
     return marker.isBool() && marker.asBool();
 }
 
-static std::vector<Value> stripReceiver(VMApi& api, const std::vector<Value>& args) {
+static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Value>& args) {
     if (!args.empty() && isPixelModuleObject(api, args[0])) {
         return std::vector<Value>(args.begin() + 1, args.end());
     }
@@ -54,7 +53,7 @@ static std::shared_ptr<PixelAutomationService> getPixelService() {
     return svc;
 }
 
-static host::Region parseRegion(VMApi& api, const Value& v) {
+static host::Region parseRegion(const VMApi& api, const Value& v) {
     if (v.isNull() || (!v.isObjectId() && !v.isArrayId())) {
         return host::Region();
     }
@@ -82,7 +81,7 @@ static host::Region parseRegion(VMApi& api, const Value& v) {
     return host::Region();
 }
 
-static Value colorToValue(VMApi& api, const host::Color& c) {
+static Value colorToValue(const VMApi& api, const host::Color& c) {
     auto obj = api.makeObject();
     api.setField(obj, "r", Value(static_cast<int64_t>(c.r)));
     api.setField(obj, "g", Value(static_cast<int64_t>(c.g)));
@@ -92,7 +91,7 @@ static Value colorToValue(VMApi& api, const host::Color& c) {
     return obj;
 }
 
-static Value matchToValue(VMApi& api, const host::ImageMatch& m) {
+static Value matchToValue(const VMApi& api, const host::ImageMatch& m) {
     auto obj = api.makeObject();
     api.setField(obj, "found", Value::makeBool(m.found));
     if (m.found) {
@@ -119,7 +118,7 @@ static float toFloat(const Value& v, float def = 0.0f) {
     return def;
 }
 
-static std::string toString(VMApi& api, const Value& v) {
+static std::string toString(const VMApi& api, const Value& v) {
     if (v.isStringId() || v.isStringValId()) return api.toString(v);
     if (v.isNull()) return "";
     if (v.isInt()) return std::to_string(v.asInt());
@@ -128,7 +127,7 @@ static std::string toString(VMApi& api, const Value& v) {
     return "";
 }
 
-static host::Color parseColor(VMApi& api, const Value& v) {
+static host::Color parseColor(const VMApi& api, const Value& v) {
     if (v.isStringId() || v.isStringValId()) {
         return host::Color::fromHex(api.toString(v));
     }
@@ -147,11 +146,11 @@ static host::Color parseColor(VMApi& api, const Value& v) {
     return host::Color();
 }
 
-void registerPixelModule(VMApi& api) {
+void registerPixelModule(const VMApi& api) {
     HAVEL_BEGIN_MODULE("Pixel");
 
     // pixel.get(x, y) -> {r, g, b, a, hex}
-    HAVEL_REGISTER_FUNCTION(api, "pixel.get", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.get", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 2) return Value::makeNull();
         auto svc = getPixelService();
@@ -163,7 +162,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.match(x, y, color, tolerance?) -> bool
-    HAVEL_REGISTER_FUNCTION(api, "pixel.match", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.match", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 3) return Value::makeBool(false);
         auto svc = getPixelService();
@@ -179,7 +178,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.wait(x, y, color, tolerance?, timeout?) -> bool
-    HAVEL_REGISTER_FUNCTION(api, "pixel.wait", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.wait", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 3) return Value::makeBool(false);
         auto svc = getPixelService();
@@ -196,7 +195,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.findImage(path, region?, threshold?) -> {found, x, y, w, h, confidence, centerX, centerY}
-    HAVEL_REGISTER_FUNCTION(api, "pixel.findImage", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.findImage", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return matchToValue(api, host::ImageMatch());
         auto svc = getPixelService();
@@ -209,7 +208,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.waitImage(path, region?, timeout?, threshold?) -> match
-    HAVEL_REGISTER_FUNCTION(api, "pixel.waitImage", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.waitImage", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return matchToValue(api, host::ImageMatch());
         auto svc = getPixelService();
@@ -223,7 +222,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.existsImage(path, region?, threshold?) -> bool
-    HAVEL_REGISTER_FUNCTION(api, "pixel.existsImage", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.existsImage", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeBool(false);
         auto svc = getPixelService();
@@ -235,7 +234,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.countImage(path, region?, threshold?) -> int
-    HAVEL_REGISTER_FUNCTION(api, "pixel.countImage", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.countImage", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getPixelService();
@@ -247,7 +246,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.findAllImage(path, region?, threshold?) -> [{found, x, y, w, h, confidence}, ...]
-    HAVEL_REGISTER_FUNCTION(api, "pixel.findAllImage", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.findAllImage", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return api.makeArray();
         auto svc = getPixelService();
@@ -264,7 +263,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.readText(region?, language?) -> string
-    HAVEL_REGISTER_FUNCTION(api, "pixel.readText", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.readText", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         auto svc = getPixelService();
         if (!svc) return api.makeString("");
@@ -276,7 +275,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.capture(path) -> bool
-    HAVEL_REGISTER_FUNCTION(api, "pixel.capture", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.capture", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeBool(false);
         auto svc = getPixelService();
@@ -286,7 +285,7 @@ void registerPixelModule(VMApi& api) {
     });
 
     // pixel.captureRegion(x, y, w, h, path) -> bool
-    HAVEL_REGISTER_FUNCTION(api, "pixel.captureRegion", [&api](const auto& rawArgs) {
+    HAVEL_REGISTER_FUNCTION(api, "pixel.captureRegion", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 5) return Value::makeBool(false);
         auto svc = getPixelService();

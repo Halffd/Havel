@@ -151,7 +151,7 @@ static Value mouseScroll(const std::vector<Value> &args) {
 }
 
 // mouse.pos() - returns {x, y}
-static Value mousePos(VMApi &api, const std::vector<Value> &args) {
+static Value mousePos(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
   
   auto [x, y] = havel::host::MouseService::pos();
@@ -196,7 +196,7 @@ static Value mouseSetDPI(const std::vector<Value> &args) {
 }
 
 // Register mouse module with VM
-void registerMouseModule(VMApi &api) {
+void registerMouseModule(const VMApi &api) {
   // mouse.click(button, action)
   api.registerFunction("mouse.click", [](const std::vector<Value> &args) {
     return mouseClick(args);
@@ -228,7 +228,7 @@ void registerMouseModule(VMApi &api) {
   });
   
   // mouse.pos() -> {x, y}
-  api.registerFunction("mouse.pos", [&api](const std::vector<Value> &args) {
+  api.registerFunction("mouse.pos", [api](const std::vector<Value> &args) {
     return mousePos(api, args);
   });
   

@@ -8,7 +8,6 @@
 #include <thread>
 
 #include "havel-lang/core/Value.hpp"
-#include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 
@@ -16,16 +15,6 @@ using havel::compiler::Value;
 using havel::compiler::VMApi;
 
 namespace havel::stdlib {
-
-// Helper: extract string from Value using VM's resolveStringKey
-static std::string valueToString(const Value &v, VMApi &api) {
-  return api.vm.resolveStringKey(v);
-}
-
-// Helper: create String from std::string using VMApi
-static Value makeString(const std::string &s, VMApi &api) {
-  return api.makeString(s);
-}
 
 // Helper: get current tm struct
 static std::tm getLocalTm() {
@@ -45,7 +34,7 @@ static int64_t getTimestampMs(const std::vector<Value> &args) {
   throw std::runtime_error("time: timestamp must be numeric");
 }
 
-void registerTimeModule(VMApi &api) {
+void registerTimeModule(const VMApi &api) {
   // time.now() — current epoch in milliseconds
   api.registerFunction("time.now",
                        [](const std::vector<Value> &args) {
@@ -84,41 +73,48 @@ void registerTimeModule(VMApi &api) {
 
   // time.format(timestamp, format?) — format timestamp as string
   api.registerFunction(
-      "time.format", [&api](const std::vector<Value> &args) {
+      "time.format", [api](const std::vector<Value> &args) {
         int64_t timestamp = getTimestampMs(args);
         std::time_t time = timestamp / 1000;
         std::string fmt = "%Y-%m-%d %H:%M:%S";
         if (args.size() > 1) {
-          fmt = valueToString(args[1], api);
+          fmt = api.resolveString(args[1]);
         }
         std::tm *tm = std::localtime(&time);
         char buf[256];
         std::strftime(buf, sizeof(buf), fmt.c_str(), tm);
-        return makeString(buf, api);
+        return api.makeString(buf);
       });
 
   // time.parse(datestr, format?) — parse date string to millisecond
   // timestamp
   api.registerFunction(
-      "time.parse", [&api](const std::vector<Value> &args) {
+      "time.parse", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.parse() requires date string");
-        std::string datestr = valueToString(args[0], api);
+        std::string datestr = api.resolveString(args[0]);
         std::string fmt = "%Y-%m-%d %H:%M:%S";
         if (args.size() > 1) {
-          fmt = valueToString(args[1], api);
+          fmt = api.resolveString(args[1]);
         }
         std::tm tm = {};
+#ifndef _WIN32
         char *result = strptime(datestr.c_str(), fmt.c_str(), &tm);
         if (!result)
           return Value::makeNull();
+#else
+        std::istringstream ss(datestr);
+        ss >> std::get_time(&tm, fmt.c_str());
+        if (ss.fail())
+          return Value::makeNull();
+#endif
         std::time_t time = std::mktime(&tm);
         return Value(static_cast<int64_t>(time) * 1000);
       });
 
   // time.sleep(ms) — non-blocking if in a goroutine
   api.registerFunction(
-      "time.sleep", [&api](const std::vector<Value> &args) {
+      "time.sleep", [api](const std::vector<Value> &args) {
         if (args.empty())
           throw std::runtime_error("time.sleep() requires milliseconds");
         int64_t ms = 0;
@@ -131,8 +127,8 @@ void registerTimeModule(VMApi &api) {
         
         
         // If we are running in a goroutine, suspend instead of blocking the thread
-        if (api.vm.getScheduler() && api.vm.getScheduler()->current()) {
-            api.vm.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP), 
+  if (api.isInGoroutine()) {
+    api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
                                    reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
             return Value::makeNull();
         }
@@ -191,21 +187,21 @@ void registerTimeModule(VMApi &api) {
   });
 
   // time.date() — current date as "YYYY-MM-DD" string
-  api.registerFunction("time.date", [&api](const std::vector<Value> &args) {
+  api.registerFunction("time.date", [api](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
-    return makeString(buf, api);
+    return api.makeString(buf);
   });
 
   // time.time() — current time as "HH:MM:SS" string
-  api.registerFunction("time.time", [&api](const std::vector<Value> &args) {
+  api.registerFunction("time.time", [api](const std::vector<Value> &args) {
     (void)args;
     auto tm = getLocalTm();
     char buf[32];
     std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
-    return makeString(buf, api);
+    return api.makeString(buf);
   });
 
   // Build namespace object

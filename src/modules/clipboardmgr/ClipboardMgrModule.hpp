@@ -10,6 +10,6 @@
 
 namespace havel::modules {
 
-void registerClipboardMgrModule(compiler::VMApi &api);
+void registerClipboardMgrModule(const compiler::VMApi &api);
 
 } // namespace havel::modules

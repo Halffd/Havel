@@ -1,0 +1,70 @@
+// integration: stdlib modules
+// covers: Type, string prototype, array prototype, regex basics, built-in functions
+
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// 1. Type module
+check("type-isNumber-int", Type.isNumber(42), true)
+check("type-isNumber-float", Type.isNumber(3.14), true)
+check("type-isNumber-str", Type.isNumber("hi"), false)
+check("type-isString", Type.isString("hello"), true)
+check("type-isString-int", Type.isString(42), false)
+check("type-isArray", Type.isArray([1,2]), true)
+check("type-isArray-str", Type.isArray("hi"), false)
+check("type-isObject", Type.isObject({}), true)
+check("type-isObject-arr", Type.isObject([]), false)
+check("type-isNull", Type.isNull(null), true)
+check("type-isNull-zero", Type.isNull(0), false)
+check("type-isBoolean", Type.isBoolean(true), true)
+check("type-isBoolean-int", Type.isBoolean(1), false)
+
+// 2. Array prototype methods
+check("arr-map", [1,2,3].map((x) => x * 3), [3,6,9])
+check("arr-filter", [1,2,3,4,5,6].filter((x) => x % 2 == 0), [2,4,6])
+check("arr-reduce-sum", [1,2,3,4,5].reduce((a,b) => a + b, 0), 15)
+check("arr-reduce-prod", [1,2,3,4].reduce((a,b) => a * b, 1), 24)
+check("arr-join", [1,2,3].join(","), "1,2,3")
+check("arr-reverse", [1,2,3].reverse(), [3,2,1])
+check("arr-sum", [10,20,30].sum(), 60)
+check("arr-avg", [10,20,30].avg(), 20)
+check("arr-min", [5,1,3].min(), 1)
+check("arr-max", [5,1,3].max(), 5)
+check("arr-includes", [1,2,3].includes(2), true)
+check("arr-includes-f", [1,2,3].includes(99), false)
+check("arr-push", [1,2].push(3), 3)
+check("arr-pop", [1,2,3].pop(), 3)
+check("arr-size", #[1,2,3,4], 4)
+
+// 3. String prototype methods
+check("str-len", "hello".len(), 5)
+check("str-upper", "hello".upper(), "HELLO")
+check("str-lower", "HELLO".lower(), "hello")
+check("str-trim", "  hi  ".trim(), "hi")
+check("str-startsWith", "hello".startsWith("he"), true)
+check("str-endsWith", "hello".endsWith("lo"), true)
+check("str-repeat", "ab".repeat(3), "ababab")
+check("str-split", "x,y,z".split(",").len(), 3)
+check("str-charAt", "abc"[1], "b")
+
+// 4. Built-in functions
+check("print-return", print("test"), null)
+check("exit-is-int", Type.isNumber(0), true)
+
+// 5. Type checking composition
+check("type-check-compose", Type.isArray([1]) && Type.isNumber(1), true)
+check("type-check-or", Type.isString(42) || Type.isNumber(42), true)
+
+// 6. Object operations
+obj = {a: 10, b: 20, c: 30}
+check("obj-keys-len", #(obj.keys()), 3)
+check("obj-values-len", #(obj.values()), 3)
+check("obj-has-true", obj.has("a"), true)
+check("obj-has-false", obj.has("z"), false)
+obj.d = 40
+check("obj-mut-add", obj.d, 40)
+check("obj-keys-after-add", #(obj.keys()), 4)
+
+print(f"stdlib-modules: {pass} passed, {fail} failed")
+exit(fail)

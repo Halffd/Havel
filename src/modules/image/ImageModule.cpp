@@ -21,13 +21,13 @@ using host::ImageService;
 
 static const char* IMAGE_MODULE_MARKER = "__image_module";
 
-static bool isImageModuleObject(VMApi& api, const Value& val) {
+static bool isImageModuleObject(const VMApi& api, const Value& val) {
     if (!val.isObjectId()) return false;
     auto marker = api.getField(val, IMAGE_MODULE_MARKER);
     return marker.isBool() && marker.asBool();
 }
 
-static std::vector<Value> stripReceiver(VMApi& api, const std::vector<Value>& args) {
+static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Value>& args) {
     if (!args.empty() && isImageModuleObject(api, args[0])) {
         return std::vector<Value>(args.begin() + 1, args.end());
     }
@@ -35,12 +35,12 @@ static std::vector<Value> stripReceiver(VMApi& api, const std::vector<Value>& ar
 }
 
 static std::shared_ptr<ImageService> getImageService() {
-    auto& registry = host::ServiceRegistry::instance();
-    auto svc = registry.get<ImageService>();
-    if (!svc) {
-        debug("ImageModule: ImageService not available");
-    }
-    return svc;
+  auto& registry = host::ServiceRegistry::instance();
+  auto svc = registry.get<ImageService>();
+  if (!svc) {
+    debug("ImageModule: ImageService not available");
+  }
+  return svc;
 }
 
 static int toInt(const Value& v, int def = 0) {
@@ -61,7 +61,7 @@ static float toFloat(const Value& v, float def = 0.0f) {
     return def;
 }
 
-static std::string toString(VMApi& api, const Value& v) {
+static std::string toString(const VMApi& api, const Value& v) {
     if (v.isStringId() || v.isStringValId()) return api.toString(v);
     if (v.isNull()) return "";
     if (v.isInt()) return std::to_string(v.asInt());
@@ -75,10 +75,10 @@ static std::string toString(VMApi& api, const Value& v) {
     if (g_currentModule) g_currentModule->functionCount++; \
 } while(0)
 
-void registerImageModule(VMApi& api) {
+void registerImageModule(const VMApi& api) {
     HAVEL_BEGIN_MODULE("Image");
 
-    REG("image.load", [&api](const auto& rawArgs) {
+    REG("image.load", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -87,7 +87,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->load(path));
     });
 
-    REG("image.save", [&api](const auto& rawArgs) {
+    REG("image.save", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 2) return Value::makeBool(false);
         auto svc = getImageService();
@@ -97,7 +97,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeBool(svc->save(handle, path));
     });
 
-    REG("image.release", [&api](const auto& rawArgs) {
+    REG("image.release", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeNull();
         auto svc = getImageService();
@@ -106,7 +106,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeNull();
     });
 
-    REG("image.info", [&api](const auto& rawArgs) {
+    REG("image.info", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return api.makeNull();
         auto svc = getImageService();
@@ -119,7 +119,7 @@ void registerImageModule(VMApi& api) {
         return obj;
     });
 
-    REG("image.width", [&api](const auto& rawArgs) {
+    REG("image.width", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -127,7 +127,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->width(toInt(args[0])));
     });
 
-    REG("image.height", [&api](const auto& rawArgs) {
+    REG("image.height", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -135,7 +135,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->height(toInt(args[0])));
     });
 
-    REG("image.channels", [&api](const auto& rawArgs) {
+    REG("image.channels", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -143,7 +143,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->channels(toInt(args[0])));
     });
 
-    REG("image.resize", [&api](const auto& rawArgs) {
+    REG("image.resize", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 3) return Value::makeInt(0);
         auto svc = getImageService();
@@ -154,7 +154,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->resize(handle, w, h));
     });
 
-    REG("image.crop", [&api](const auto& rawArgs) {
+    REG("image.crop", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 5) return Value::makeInt(0);
         auto svc = getImageService();
@@ -167,7 +167,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->crop(handle, x, y, w, h));
     });
 
-    REG("image.rotate", [&api](const auto& rawArgs) {
+    REG("image.rotate", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 2) return Value::makeInt(0);
         auto svc = getImageService();
@@ -175,7 +175,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->rotate(toInt(args[0]), toDouble(args[1])));
     });
 
-    REG("image.blur", [&api](const auto& rawArgs) {
+    REG("image.blur", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 2) return Value::makeInt(0);
         auto svc = getImageService();
@@ -183,7 +183,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->blur(toInt(args[0]), toInt(args[1])));
     });
 
-    REG("image.grayscale", [&api](const auto& rawArgs) {
+    REG("image.grayscale", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -191,7 +191,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->grayscale(toInt(args[0])));
     });
 
-    REG("image.edges", [&api](const auto& rawArgs) {
+    REG("image.edges", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -202,7 +202,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->edges(handle, t1, t2));
     });
 
-    REG("image.threshold", [&api](const auto& rawArgs) {
+    REG("image.threshold", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 2) return Value::makeInt(0);
         auto svc = getImageService();
@@ -214,7 +214,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->threshold(handle, thresh, maxval, type));
     });
 
-    REG("image.flip", [&api](const auto& rawArgs) {
+    REG("image.flip", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return Value::makeInt(0);
         auto svc = getImageService();
@@ -223,7 +223,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->flip(toInt(args[0]), code));
     });
 
-    REG("image.blend", [&api](const auto& rawArgs) {
+    REG("image.blend", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 3) return Value::makeInt(0);
         auto svc = getImageService();
@@ -234,7 +234,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->blend(h1, h2, alpha));
     });
 
-    REG("image.getPixel", [&api](const auto& rawArgs) {
+    REG("image.getPixel", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 3) return api.makeNull();
         auto svc = getImageService();
@@ -252,7 +252,7 @@ void registerImageModule(VMApi& api) {
         return obj;
     });
 
-    REG("image.setPixel", [&api](const auto& rawArgs) {
+    REG("image.setPixel", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 6) return Value::makeBool(false);
         auto svc = getImageService();
@@ -267,7 +267,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeBool(svc->setPixel(handle, x, y, r, g, b, a));
     });
 
-    REG("image.create", [&api](const auto& rawArgs) {
+    REG("image.create", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 2) return Value::makeInt(0);
         auto svc = getImageService();
@@ -281,7 +281,7 @@ void registerImageModule(VMApi& api) {
         return Value::makeInt(svc->create(w, h, r, g, b, a));
     });
 
-    REG("image.toRGBA", [&api](const auto& rawArgs) {
+    REG("image.toRGBA", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
         if (args.size() < 1) return api.makeArray();
         auto svc = getImageService();
@@ -294,9 +294,9 @@ void registerImageModule(VMApi& api) {
         return arr;
     });
 
-    REG("image.matchTemplate", [&api](const auto& rawArgs) {
+    REG("image.matchTemplate", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
-        auto notFound = [&api]() {
+        auto notFound = [api]() {
             auto obj = api.makeObject();
             api.setField(obj, "found", Value::makeBool(false));
             return obj;

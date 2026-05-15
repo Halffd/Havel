@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include "../utils/Logger.hpp"
+#include "../common/Debug.hpp"
 #include <iostream>
 #include <sstream>
 
@@ -19,6 +20,7 @@ static bool isKeywordToken(TokenType t) {
     case TokenType::Null: case TokenType::Del: case TokenType::Trait:
     case TokenType::Prot: case TokenType::Impl: case TokenType::This:
     case TokenType::Struct: case TokenType::Enum: case TokenType::Op:
+    case TokenType::Default:
         return true;
     default:
         return false;
@@ -349,12 +351,9 @@ firstToken.type == havel::TokenType::RegexString ||
     offset++;
   }
 
-  if (position + offset >= tokens.size()) {
-    return false;
-  }
-
-  // If we see ':' after a potential key, this is an object literal
-  return tokens[position + offset].type == havel::TokenType::Colon;
+  // If we see ':' or '=' after a potential key, this is an object literal
+  return tokens[position + offset].type == havel::TokenType::Colon ||
+         tokens[position + offset].type == havel::TokenType::Assign;
 }
 
 // ============================================================================
@@ -404,11 +403,13 @@ case TokenType::Nullish:
     case TokenType::And:
       return 40;
 
-    // Equality
-    case TokenType::Equals:
-    case TokenType::NotEquals:
-    case TokenType::Is:
-      return 50;
+        // Equality
+        case TokenType::Equals:
+        case TokenType::NotEquals:
+        case TokenType::Is:
+        case TokenType::Tilde:
+        case TokenType::Matches:
+        return 50;
 
     // Membership (in / not in)
     case TokenType::In:
@@ -584,10 +585,12 @@ setBoth(ModuloAssign, 10, 10);
       // Logical AND
       setBoth(And, 40, 40);
       
-      // Equality
-      setBoth(Equals, 50, 50);
-      setBoth(NotEquals, 50, 50);
-      setBoth(Is, 50, 50);  // Identity comparison
+        // Equality
+        setBoth(Equals, 50, 50);
+        setBoth(NotEquals, 50, 50);
+        setBoth(Is, 50, 50); // Identity comparison
+        setBoth(Tilde, 50, 50); // Regex match (~)
+        setBoth(Matches, 50, 50); // Regex match (matches)
       
       // Relational
       setBoth(Less, 60, 60);
@@ -1548,13 +1551,20 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
           std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
     }
 
-    case TokenType::Is: {
-      auto right = parsePrattExpression(getRightBindingPower(token.type));
-      return std::make_unique<ast::BinaryExpression>(
-          std::move(left), ast::BinaryOperator::Is, std::move(right));
-    }
+        case TokenType::Is: {
+            auto right = parsePrattExpression(getRightBindingPower(token.type));
+            return std::make_unique<ast::BinaryExpression>(
+                std::move(left), ast::BinaryOperator::Is, std::move(right));
+        }
 
-    case TokenType::In: {
+        case TokenType::Tilde:
+        case TokenType::Matches: {
+            auto right = parsePrattExpression(getRightBindingPower(token.type));
+            return std::make_unique<ast::BinaryExpression>(
+                std::move(left), ast::BinaryOperator::Matches, std::move(right));
+        }
+
+        case TokenType::In: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::In, std::move(right));
@@ -1952,10 +1962,12 @@ start = parsePrattExpression(0);
           std::move(left), ast::BinaryOperator::BitwiseShiftRight, std::move(right));
     }
 
-case TokenType::Arrow: {
-      // Arrow function: identifier => body
-        havel::debug("Arrow: left={}, at={}, Arrow.type={}",
-                     left->toString(), at().toString(), static_cast<int>(TokenType::Arrow));
+    case TokenType::Arrow: {
+        // Arrow function: identifier => body
+        if (debug.parser) {
+            havel::debug("Arrow: left={}, at={}, Arrow.type={}",
+                left->toString(), at().toString(), static_cast<int>(TokenType::Arrow));
+        }
       if (context.inMatchExpression) {
         return nullptr;
       }
@@ -2216,7 +2228,8 @@ Parser::produceAST(const std::string &sourceCode) {
 
     // Error throttle - stop after too many errors
     if (errors.size() > 100) {
-      throw std::runtime_error("Too many parse errors, aborting");
+      std::string firstError = errors.empty() ? "" : ": " + errors[0].message;
+      throw std::runtime_error("Too many parse errors, aborting" + firstError);
     }
 
     iterations++;
@@ -2346,11 +2359,27 @@ return parseSwitchStatement();
     return parseThrowStatement();
   case havel::TokenType::Del:
     return parseDelStatement();
-  default:
-    // Expression statement (including assignments, function calls, etc.)
-    auto expr = parseExpression();
-    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
-  }
+    default:
+        // Expression statement (including assignments, function calls, etc.)
+        auto expr = parseExpression();
+        // Handle multiple ; -separated statements on same line (e.g. advance(); advance())
+        if (at().type == havel::TokenType::Semicolon) {
+            auto block = std::make_unique<havel::ast::BlockStatement>();
+            block->body.push_back(std::make_unique<havel::ast::ExpressionStatement>(std::move(expr)));
+            while (at().type == havel::TokenType::Semicolon) {
+                advance(); // skip ;
+                // Stop at newline or EOF
+                if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::EOF_TOKEN) break;
+                // Stop at keywords that belong to parent constructs
+                if (at().type == havel::TokenType::Else || at().type == havel::TokenType::Catch || at().type == havel::TokenType::Finally) break;
+                auto next = parseInlineStatement();
+                if (next) block->body.push_back(std::move(next));
+                else break;
+            }
+            return block;
+        }
+        return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
@@ -2631,9 +2660,25 @@ case havel::TokenType::Identifier: {
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(call));
     }
 
-    // TEMPORARILY DISABLED: Check for config section - causes issues with mode
-    // definitions Original code checked for identifier [args...] { key = value
-    // } pattern but incorrectly triggered inside mode enter/exit blocks
+    // Check for config section: identifier [args...] { key = value }
+    if (at(1).type == havel::TokenType::OpenBrace ||
+        at(1).type == havel::TokenType::String ||
+        at(1).type == havel::TokenType::Number ||
+        (at(1).type == havel::TokenType::Identifier && at(1).value != "when" && at(1).value != "if")) {
+      
+      // Look ahead to see if it's actually a config section
+      // Config sections are followed by {
+      size_t lookPos = 1;
+      while (at(lookPos).type == havel::TokenType::Identifier || 
+             at(lookPos).type == havel::TokenType::String || 
+             at(lookPos).type == havel::TokenType::Number) {
+        lookPos++;
+      }
+      
+      if (at(lookPos).type == havel::TokenType::OpenBrace) {
+        return parseConfigSection();
+      }
+    }
 
     // Check if this is a hotkey (identifier followed by =>)
     // or if it has prefix conditions like: a when mode == "gaming" => action
@@ -2864,7 +2909,7 @@ case havel::TokenType::Struct:
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
   case havel::TokenType::Mode:
-    if (at(1).type == havel::TokenType::Identifier) {
+    if (at(1).type == havel::TokenType::Identifier || isKeywordToken(at(1).type)) {
       // Check if this is a simple mode block or full mode definition
       // Full definition: mode name [priority N] { condition/enter/exit/on ... }
       // Simple block: mode name { statements }
@@ -2896,9 +2941,10 @@ case havel::TokenType::Struct:
         // Check if this is a full definition (starts with
         // condition/enter/exit/on)
         bool isFullDefinition =
-            (at().type == havel::TokenType::Identifier &&
+            ((at().type == havel::TokenType::Identifier &&
              (at().value == "condition" || at().value == "enter" ||
-              at().value == "exit" || at().value == "on"));
+              at().value == "exit" || at().value == "on")) ||
+             at().type == havel::TokenType::On);
         position = savedPos; // restore position
 
         if (isFullDefinition) {
@@ -3188,19 +3234,19 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
   if (at().type != havel::TokenType::CloseParen) {
     failAt(at(), "Expected ')' after parameter list");
   }
-  advance(); // consume ')'
+    advance(); // consume ')'
 
-  // Check for return type annotation (-> Type)
-  std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-  if (at().type == havel::TokenType::ReturnType) {
-    advance(); // consume '->'
-    returnType = parseTypeAnnotation();
-  }
+    // Check for return type annotation (-> Type)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    if (at().type == havel::TokenType::ReturnType) {
+        advance(); // consume '->'
+        returnType = parseTypeAnnotation();
+    }
 
-  auto body = parseBlockStatement();
+    auto body = parseBlockStatement();
 
   return std::make_unique<havel::ast::FunctionDeclaration>(
       std::move(name), std::move(params), std::move(body),
@@ -3208,18 +3254,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
-  advance(); // consume "return"
-  std::unique_ptr<havel::ast::Expression> value = nullptr;
+    advance(); // consume "return"
+    std::unique_ptr<havel::ast::Expression> value = nullptr;
 
-  // Skip newlines before checking for return value
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-
-  // Return value is optional
-  if (at().type != havel::TokenType::Semicolon &&
-      at().type != havel::TokenType::CloseBrace &&
-      at().type != havel::TokenType::EOF_TOKEN) {
+    // Return value is optional — newline ends a bare return
+    if (at().type != havel::TokenType::Semicolon &&
+        at().type != havel::TokenType::CloseBrace &&
+        at().type != havel::TokenType::NewLine &&
+        at().type != havel::TokenType::EOF_TOKEN) {
     // Special case: "return @" means "return this" (builder pattern)
     if ((at().type == havel::TokenType::At ||
          at().type == havel::TokenType::Hotkey) &&
@@ -3999,6 +4041,12 @@ Parser::parseStructMembers() {
 		} else {
 			failAt(at(), "Expected ']' after '[' in index method");
 		}
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "repr") {
+		advance();
+		methodName = "op_repr";
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "code") {
+		advance();
+		methodName = "op_code";
 	} else {
 		// Check for operator symbols
 	bool isOp = false;
@@ -4309,6 +4357,12 @@ Parser::parseClassMembers() {
 		} else {
 			failAt(at(), "Expected ']' after '[' in index method");
 		}
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "repr") {
+		advance();
+		methodName = "op_repr";
+	} else if (ty == havel::TokenType::Identifier && tokenVal == "code") {
+		advance();
+		methodName = "op_code";
 	} else {
 		// Check for operator symbols
 		bool isOp = false;
@@ -5060,45 +5114,64 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
       std::move(finallyBlock));
 }
 
-std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
-  advance(); // consume "if"
+std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn) {
+    size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
+    advance(); // consume "if"
 
-  bool prevAllow = context.allowBraceSugar;
-  context.allowBraceSugar = false;
-  auto condition = parseExpression();
-  context.allowBraceSugar = prevAllow;
+    bool prevAllow = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+    auto condition = parseExpression();
+    context.allowBraceSugar = prevAllow;
 
-  std::unique_ptr<havel::ast::Statement> consequence;
+    std::unique_ptr<havel::ast::Statement> consequence;
 
-  // Block form or inline form
-  if (at().type == havel::TokenType::OpenBrace) {
-    consequence = parseBlockStatement();
-  } else {
-    // Inline form - single statement (don't skip newlines)
-    consequence = parseInlineStatement();
-  }
-
-  // Skip newlines before checking for else
-  while (at().type == havel::TokenType::NewLine) {
-    advance();
-  }
-
-  std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-  if (at().type == havel::TokenType::Else) {
-    advance(); // consume "else"
-
-    if (at().type == havel::TokenType::If) {
-      alternative = parseIfStatement();
-    } else if (at().type == havel::TokenType::OpenBrace) {
-      alternative = parseBlockStatement();
-    } else {
-      // Inline else - single statement (don't skip newlines)
-      alternative = parseInlineStatement();
+    // Skip newlines before body
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
     }
-  }
 
-  return std::make_unique<havel::ast::IfStatement>(
-      std::move(condition), std::move(consequence), std::move(alternative));
+    // Block form ({ or : with indented block) or inline form (single statement)
+    if (at().type == havel::TokenType::OpenBrace ||
+        at().type == havel::TokenType::Colon) {
+        consequence = parseBlockStatement();
+    } else {
+        consequence = parseInlineStatement();
+    }
+
+    // Skip newlines before checking for else
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+
+    std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+    if (at().type == havel::TokenType::Else) {
+        // Indentation-sensitive else: only attach else if it's at the same
+        // indent level or deeper than this if. If the else is at a shallower
+        // indent, it belongs to an outer if statement.
+        if (at().column >= ifColumn) {
+            size_t elseCol = at().column;
+            advance(); // consume "else"
+
+            // Skip newlines before else body
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+
+            if (at().type == havel::TokenType::If) {
+                // For "else if", pass the else column as the effective indent
+                // so nested else matching uses the chain's indent level
+                alternative = parseIfStatement(elseCol);
+            } else if (at().type == havel::TokenType::OpenBrace ||
+                       at().type == havel::TokenType::Colon) {
+                alternative = parseBlockStatement();
+            } else {
+                alternative = parseInlineStatement();
+            }
+        }
+    }
+
+    return std::make_unique<havel::ast::IfStatement>(
+        std::move(condition), std::move(consequence), std::move(alternative));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
@@ -5109,18 +5182,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
   auto condition = parseExpression();
   context.allowBraceSugar = prevAllow;
 
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
   std::unique_ptr<havel::ast::Statement> body;
 
-  // Block form or inline form
-  if (at().type == havel::TokenType::OpenBrace) {
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
     body = parseBlockStatement();
   } else {
-    // Inline form - single statement (don't skip newlines)
     body = parseInlineStatement();
   }
 
   return std::make_unique<havel::ast::WhileStatement>(std::move(condition),
-                                                      std::move(body));
+                                             std::move(body));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
@@ -5335,13 +5413,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     advance();
   }
 
+  // Skip newlines before body
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
   std::unique_ptr<havel::ast::Statement> body;
 
-  // Block form or inline form
-  if (at().type == havel::TokenType::OpenBrace) {
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
     body = parseBlockStatement();
   } else {
-    // Inline form - single statement (don't skip newlines)
     body = parseInlineStatement();
   }
 
@@ -5424,11 +5507,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
 
   std::unique_ptr<havel::ast::Statement> body;
 
-  // Block form or inline form
-  if (at().type == havel::TokenType::OpenBrace) {
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
     body = parseBlockStatement();
   } else {
-    // Inline form - single statement (don't skip newlines)
     body = parseInlineStatement();
   }
 
@@ -6128,64 +6211,75 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
 
   std::unique_ptr<havel::ast::Statement> body;
 
-  // Block form or inline form
-  if (at().type == havel::TokenType::OpenBrace) {
+  // Block form ({ or : with indented block) or inline form (single statement)
+  if (at().type == havel::TokenType::OpenBrace ||
+      at().type == havel::TokenType::Colon) {
     body = parseBlockStatement();
   } else {
-    // Inline form - single statement (don't skip newlines)
     body = parseInlineStatement();
   }
 
   return std::make_unique<ast::RepeatStatement>(std::move(countExpr),
-                                                std::move(body));
+                                                  std::move(body));
 }
 
 std::unique_ptr<havel::ast::BlockStatement>
 Parser::parseBlockStatement(bool inputContext) {
   auto block = std::make_unique<havel::ast::BlockStatement>();
 
-  // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
-  if (at().type == havel::TokenType::Colon) {
-    // Colon block: consume ':' and parse indented statements
-    size_t colonColumn = at().column; // Track colon's column for dedent detection
-    advance(); // consume ':'
-    
-    // Skip newline after colon
-    while (at().type == havel::TokenType::NewLine) {
-      advance();
+    // New grammar: support : (indented block), :: (hotkey block), and { } (brace block)
+    if (at().type == havel::TokenType::Colon) {
+        // Colon block: consume ':' and parse indented statements
+        // Find the indent of the header line (the line containing the colon)
+        // by scanning backwards to the first token on the same line
+        size_t colonLine = at().line;
+        size_t headerIndent = at().column; // fallback: colon's own column
+        for (size_t i = position + 1; i-- > 0; ) {
+            if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+                headerIndent = tokens[i].column;
+            } else {
+                break;
+            }
+        }
+        advance(); // consume ':'
+
+        // Skip newline after colon
+while (at().type == havel::TokenType::NewLine) {
+        advance();
     }
-    
+
     // Save and set input context
-    bool savedInputContext = context.inInputContext;
-    context.inInputContext = inputContext;
-    
-    // Track the first statement's column as base indentation for dedent detection
+        bool savedInputContext = context.inInputContext;
+        context.inInputContext = inputContext;
+
+    // Base indentation = header line indent + 1
+    // Anything at column > headerIndent is inside the block
     // Skip any leading newlines first
     while (at().type == havel::TokenType::NewLine) {
-      advance();
+        advance();
     }
-    size_t baseIndentation = at().column;
+    size_t baseIndentation = headerIndent + 1;
     
     // Parse statements until we hit a dedent (token at lower column than base)
     while (notEOF()) {
-      // Skip empty lines
-      if (at().type == havel::TokenType::NewLine) {
-        advance();
-        continue;
-      }
+        // Skip empty lines
+        if (at().type == havel::TokenType::NewLine) {
+            advance();
+            continue;
+        }
 
-      // Check for end of block conditions
-      if (at().type == havel::TokenType::CloseBrace ||
-          at().type == havel::TokenType::EOF_TOKEN) {
-        break;
-      }
+        // Check for end of block conditions
+        if (at().type == havel::TokenType::CloseBrace ||
+            at().type == havel::TokenType::EOF_TOKEN) {
+            break;
+        }
 
-      // Check if we're back at base indentation or lower (dedent)
-      // Note: we use < not <= because statements at same column as base are still in the block
-      // Only strictly lower column indicates dedent
-      if (at().column < baseIndentation) {
-        break;
-      }
+        // Check if we're back at base indentation or lower (dedent)
+        // Note: we use < not <= because statements at same column as base are still in the block
+        // Only strictly lower column indicates dedent
+        if (at().column < baseIndentation) {
+            break;
+        }
 
       size_t beforePos = position;
       auto stmt = parseStatement();
@@ -6363,9 +6457,27 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
   }
 
     if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
-        std::string moduleName = advance().value;
+        std::vector<std::string> moduleNames;
+        moduleNames.push_back(advance().value);
 
         while (at().type == havel::TokenType::NewLine) advance();
+        
+        if (at().type == havel::TokenType::Comma) {
+            while (at().type == havel::TokenType::Comma) {
+                advance(); // consume comma
+                while (at().type == havel::TokenType::NewLine) advance();
+                if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
+                    moduleNames.push_back(advance().value);
+                    while (at().type == havel::TokenType::NewLine) advance();
+                } else {
+                    failAt(at(), "Expected module name after comma in use statement");
+                    return nullptr;
+                }
+            }
+            return std::make_unique<havel::ast::UseStatement>(moduleNames);
+        }
+        
+        std::string moduleName = moduleNames[0];
         std::string alias = "";
         if (at().type == havel::TokenType::As) {
       advance();
@@ -6400,8 +6512,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         return stmt;
     }
 
-    auto stmt = std::make_unique<havel::ast::UseStatement>(
-        std::vector<std::string>{moduleName});
+    auto stmt = std::make_unique<havel::ast::UseStatement>(moduleNames);
     stmt->alias = alias;
     return stmt;
 }
@@ -6468,12 +6579,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
             return nullptr;
         }
 
-        auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
+    auto stmt = std::make_unique<havel::ast::UseStatement>(source, std::vector<std::string>{});
     stmt->isNamedImport = true;
     for (auto& [name, alias] : importNames) {
-      stmt->importNames.push_back(name);
+        stmt->importNames.push_back(name);
+        stmt->importAliases.push_back(alias);
     }
-    stmt->alias = importNames.empty() ? "" : importNames[0].second;
     return stmt;
   }
 
@@ -7117,21 +7228,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
-  auto left = parseComparison();
+    auto left = parseComparison();
 
-  // Regex match: ~ /pattern/ or ~ "string"
-  if (at().type == havel::TokenType::Tilde) {
-    auto tildeTok = at();
-    advance();
-    auto right = parseRange();
-    auto bin = std::make_unique<havel::ast::BinaryExpression>(
-        std::move(left), havel::ast::BinaryOperator::Tilde, std::move(right));
-    bin->line = tildeTok.line;
-    bin->column = tildeTok.column;
-    left = std::move(bin);
-  }
-
-  while (at().type == havel::TokenType::Equals ||
+    while (at().type == havel::TokenType::Equals ||
          at().type == havel::TokenType::NotEquals) {
     auto opTok = at(); // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
@@ -7178,20 +7277,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
     left = std::move(bin);
   }
 
-  // Regex match operator: matches or ~
-  if (at().type == havel::TokenType::Matches ||
-      at().type == havel::TokenType::Tilde) {
-    auto matchesTok = at(); // Save location
-    advance();              // consume 'matches' or '~'
-    auto right = parseRange();
-    auto bin = std::make_unique<havel::ast::BinaryExpression>(
-        std::move(left), havel::ast::BinaryOperator::Matches, std::move(right));
-    bin->line = matchesTok.line;
-    bin->column = matchesTok.column;
-    left = std::move(bin);
-  }
-
-  // Comparison operators: < > <= >=
+    // Comparison operators: < > <= >=
   // Left-associative: a < b < c parses as ((a < b) < c)
   // Note: Python-style chaining (a < b && b < c) is NOT supported.
   // For Python semantics, use explicit: (a < b) && (b < c)
@@ -8494,20 +8580,67 @@ t == havel::TokenType::RegexString ||
     if (isKeyToken(at().type)) {
       key = advance().value;
       validKey = true;
-      // Skip newlines to find colon
+      // Support dotted keys when using '=' (Lua/Nix style)
+      // We look ahead to see if '=' follows eventually to decide if we should consume dots
       size_t lookPos = position;
+      bool followedByAssign = false;
+      while (lookPos < tokens.size()) {
+        if (tokens[lookPos].type == havel::TokenType::Dot) {
+          lookPos++;
+          if (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::Identifier) {
+            lookPos++;
+            continue;
+          }
+          break;
+        }
+        if (tokens[lookPos].type == havel::TokenType::NewLine) {
+          lookPos++;
+          continue;
+        }
+        if (tokens[lookPos].type == havel::TokenType::Assign) {
+          followedByAssign = true;
+        }
+        break;
+      }
+
+      if (followedByAssign) {
+        while (at().type == havel::TokenType::Dot) {
+          advance(); // consume '.'
+          if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected identifier after '.' in key");
+          }
+          key += "." + advance().value;
+        }
+      }
+
+      // Skip newlines to find colon or equals
+      lookPos = position;
       while (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::NewLine) {
         lookPos++;
       }
-      if (lookPos < tokens.size() && tokens[lookPos].type == havel::TokenType::Colon) {
+      if (lookPos < tokens.size() && (tokens[lookPos].type == havel::TokenType::Colon || tokens[lookPos].type == havel::TokenType::Assign)) {
         hasColon = true;
       }
     }
 
     if (validKey && hasColon) {
-      // It's a key:value pair
-      advance(); // consume ':'
-      auto value = parseExpression();
+      // It's a key:value or key=value pair
+      auto sep = advance(); // consume ':' or '='
+      
+      // If using '=' in an object literal, treat RHS bare identifiers as strings
+      std::unique_ptr<ast::Expression> value;
+      if (sep.type == havel::TokenType::Assign && at().type == havel::TokenType::Identifier) {
+        auto next = at(1).type;
+        if (next == havel::TokenType::NewLine || next == havel::TokenType::Comma || 
+            next == havel::TokenType::Semicolon || next == havel::TokenType::CloseBrace) {
+          value = std::make_unique<ast::StringLiteral>(advance().value, false);
+        } else {
+          value = parseExpression();
+        }
+      } else {
+        value = parseExpression();
+      }
+
       havel::ast::ObjectLiteral::PairEntry entry;
       entry.key = std::move(key);
       entry.value = std::move(value);
@@ -9203,12 +9336,12 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
 
 std::unique_ptr<havel::ast::Statement> Parser::parseConfigBlock() {
   advance(); // consume 'config'
-  return std::make_unique<havel::ast::ConfigBlock>(parseKeyValueBlock());
+  return std::make_unique<havel::ast::ConfigBlock>(parseKeyValueBlock(true));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
   advance(); // consume 'devices'
-  return std::make_unique<havel::ast::DevicesBlock>(parseKeyValueBlock());
+  return std::make_unique<havel::ast::DevicesBlock>(parseKeyValueBlock(true));
 }
 
 // Parse single mode definition: mode name [priority N] { condition = ...; enter
@@ -9217,7 +9350,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   advance(); // consume 'mode'
 
   // Parse mode name
-  if (at().type != havel::TokenType::Identifier) {
+  if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
     failAt(at(), "Expected mode name after 'mode'");
   }
   std::string modeName = at().value;
@@ -9260,7 +9393,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       continue;
     }
 
-    if (at().type != havel::TokenType::Identifier) {
+    if (at().type != havel::TokenType::Identifier && at().type != havel::TokenType::On) {
       break;
     }
 
@@ -9290,27 +9423,31 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       advance();
 
       if (eventType == "enter") {
-        if (at().type != havel::TokenType::Identifier || at().value != "from") {
-          failAt(at(), "Expected 'from' after 'on enter'");
+        if (at().type == havel::TokenType::Identifier && at().value == "from") {
+          advance(); // consume 'from'
+          if (at().type != havel::TokenType::String) {
+            failAt(at(), "Expected mode name string after 'from'");
+          }
+          onEnterFromMode = at().value;
+          advance();
+          onEnterFromBlock = parseBlockStatement();
+        } else {
+          // Simple 'on enter { ... }'
+          enterBlock = parseBlockStatement();
         }
-        advance(); // consume 'from'
-        if (at().type != havel::TokenType::String) {
-          failAt(at(), "Expected mode name string after 'from'");
-        }
-        onEnterFromMode = at().value;
-        advance();
-        onEnterFromBlock = parseBlockStatement();
       } else if (eventType == "exit") {
-        if (at().type != havel::TokenType::Identifier || at().value != "to") {
-          failAt(at(), "Expected 'to' after 'on exit'");
+        if (at().type == havel::TokenType::Identifier && at().value == "to") {
+          advance(); // consume 'to'
+          if (at().type != havel::TokenType::String) {
+            failAt(at(), "Expected mode name string after 'to'");
+          }
+          onExitToMode = at().value;
+          advance();
+          onExitToBlock = parseBlockStatement();
+        } else {
+          // Simple 'on exit { ... }'
+          exitBlock = parseBlockStatement();
         }
-        advance(); // consume 'to'
-        if (at().type != havel::TokenType::String) {
-          failAt(at(), "Expected mode name string after 'to'");
-        }
-        onExitToMode = at().value;
-        advance();
-        onExitToBlock = parseBlockStatement();
       } else if (eventType == "close") {
         onCloseBlock = parseBlockStatement();
       } else if (eventType == "minimize") {
@@ -9355,7 +9492,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeBlock() {
   advance(); // consume 'mode'
 
   // Parse mode name
-  if (at().type != havel::TokenType::Identifier) {
+  if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
     failAt(at(), "Expected mode name after 'mode'");
   }
   std::string modeName = at().value;
@@ -9604,11 +9741,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseConfigSection() {
   }
 
   return std::make_unique<havel::ast::ConfigSection>(
-      sectionName, parseKeyValueBlock(), args);
+      sectionName, parseKeyValueBlock(true), args);
 }
 
 std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>
-Parser::parseKeyValueBlock() {
+Parser::parseKeyValueBlock(bool configContext) {
+  // Save old context
+  bool oldInConfig = context.inConfigContext;
+  context.inConfigContext = configContext;
   // Skip optional newlines
   while (notEOF() && at().type == havel::TokenType::NewLine) {
     advance();
@@ -9677,6 +9817,16 @@ Parser::parseKeyValueBlock() {
         at().type == havel::TokenType::Devices ||
         at().type == havel::TokenType::Modes) {
       key = advance().value;
+      // Support dotted keys in config context: IO.Executor = ...
+      if (configContext) {
+        while (at().type == havel::TokenType::Dot) {
+          advance(); // consume '.'
+          if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected identifier after '.' in config key");
+          }
+          key += "." + advance().value;
+        }
+      }
     } else if (at().type == havel::TokenType::String ||
                at().type == havel::TokenType::MultilineString) {
       key = advance().value;
@@ -9685,16 +9835,19 @@ Parser::parseKeyValueBlock() {
     }
 
     // Expect '=' or ':' (support both for compatibility)
-    if (at().type != havel::TokenType::Assign &&
-        at().type != havel::TokenType::Colon) {
+    // Optional if the value is a nested block starting with '{'
+    if (at().type == havel::TokenType::Assign ||
+        at().type == havel::TokenType::Colon) {
+      advance(); // consume '=' or ':'
+    } else if (at().type != havel::TokenType::OpenBrace) {
       failAt(at(), "Expected '=' or ':' after key");
     }
-    advance(); // consume '=' or ':'
+
 
     // Check if value is a nested block
     if (at().type == havel::TokenType::OpenBrace) {
       // Nested block - parse recursively and wrap in an ObjectLiteral
-      auto nestedPairs = parseKeyValueBlock();
+      auto nestedPairs = parseKeyValueBlock(configContext);
 
       // Convert old pair style to new PairEntry
       std::vector<havel::ast::ObjectLiteral::PairEntry> convertedEntries;
@@ -9709,9 +9862,59 @@ Parser::parseKeyValueBlock() {
           std::make_unique<havel::ast::ObjectLiteral>(std::move(convertedEntries));
       pairs.push_back({std::move(key), std::move(nestedObj)});
     } else {
-      // Parse value expression
-      auto value = parseExpression();
-      pairs.push_back({std::move(key), std::move(value)});
+      // Parse value expression(s) - support comma-separated lists as arrays in config context
+      std::vector<std::unique_ptr<ast::Expression>> values;
+      
+      auto parseSingleValue = [&]() {
+        // If we are in a config-like block, handle bare identifiers as strings
+        // Bare means: identifier followed by newline, comma, semicolon or }
+        auto isBareStringToken = [](havel::TokenType t) {
+          return t == TokenType::Identifier ||
+                 t == TokenType::Val ||
+                 t == TokenType::Const ||
+                 t == TokenType::Let ||
+                 t == TokenType::Mode ||
+                 t == TokenType::Modes ||
+                 t == TokenType::Devices ||
+                 t == TokenType::Config ||
+                 t == TokenType::Struct ||
+                 t == TokenType::Class ||
+                 t == TokenType::Enum ||
+                 t == TokenType::True ||
+                 t == TokenType::False ||
+                 t == TokenType::On ||
+                 t == TokenType::Off;
+        };
+
+        if (configContext && isBareStringToken(at().type)) {
+          auto nextType = at(1).type;
+          if (nextType == TokenType::NewLine || nextType == TokenType::Comma || 
+              nextType == TokenType::Semicolon || nextType == TokenType::CloseBrace) {
+            return std::unique_ptr<ast::Expression>(std::make_unique<ast::StringLiteral>(advance().value, false));
+          }
+        }
+        return parseExpression();
+      };
+
+      values.push_back(parseSingleValue());
+
+      while (at().type == TokenType::Comma) {
+        advance(); // consume ','
+        // Allow trailing comma by checking if we're at a separator or end of block
+        if (at().type == TokenType::NewLine || at().type == TokenType::Semicolon || at().type == TokenType::CloseBrace) {
+          break;
+        }
+        values.push_back(parseSingleValue());
+      }
+
+      std::unique_ptr<ast::Expression> finalValue;
+      if (values.size() == 1) {
+        finalValue = std::move(values[0]);
+      } else {
+        finalValue = std::make_unique<ast::ArrayLiteral>(std::move(values));
+      }
+      
+      pairs.push_back({std::move(key), std::move(finalValue)});
     }
 
     // Handle comma or newline as separator
@@ -9732,6 +9935,9 @@ Parser::parseKeyValueBlock() {
     failAt(at(), "Expected '}' to close block");
   }
   advance(); // consume '}'
+
+  // Restore context
+  context.inConfigContext = oldInConfig;
 
   return pairs;
 }

@@ -13,6 +13,6 @@
 
 namespace havel::modules {
 
-void registerAutomationModule(compiler::VMApi &api);
+void registerAutomationModule(const compiler::VMApi &api);
 
 } // namespace havel::modules

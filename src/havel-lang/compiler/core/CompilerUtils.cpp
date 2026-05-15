@@ -1,5 +1,6 @@
 #include "CompilerUtils.hpp"
 #include "../../../utils/Logger.hpp"
+#include "common/Debug.hpp"
 #include <cctype>
 
 namespace havel::compiler {
@@ -95,7 +96,7 @@ std::string CompilerUtils::bindingKindToString(ResolvedBindingKind kind) {
 }
 
 void CompilerUtils::printBinding(const ResolvedBinding& binding) {
-    ::havel::debug("Binding: {} [{}] slot={} distance={}",
+    if (debugging::debug_parser) ::havel::debug("Binding: {} [{}] slot={} distance={}",
                  binding.name, bindingKindToString(binding.kind),
                  binding.slot, binding.scope_distance);
 }

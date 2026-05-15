@@ -1,19 +1,7 @@
-#include "havel-lang/runtime/HostAPI.hpp"
-/*
- * AppModule.hpp
- * 
- * Application module for Havel language.
- */
 #pragma once
 
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
-namespace havel {
-
-class Environment;
-
-namespace modules {
-
-void registerModuleStub();
-
-} // namespace modules
-} // namespace havel
+namespace havel::modules {
+void registerAppModule(const compiler::VMApi& api);
+}

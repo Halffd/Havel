@@ -2953,9 +2953,11 @@ struct UseStatement : public Statement {
   std::vector<std::string>
       moduleNames;      // List of module names to flatten (old syntax)
   std::string filePath; // File path for script import (new syntax)
-  std::string alias;    // Alias for imported script (new syntax)
-  std::vector<std::string>
-      importNames; // Named imports from file (use x, y from "file.hv")
+    std::string alias; // Alias for imported script (new syntax)
+    std::vector<std::string>
+        importNames; // Named imports from file (use x, y from "file.hv")
+    std::vector<std::string>
+        importAliases; // Corresponding aliases (same size as importNames)
   bool isFileImport =
       false; // True if importing file, false if importing module
   bool isNamedImport =

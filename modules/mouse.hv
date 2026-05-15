@@ -16,7 +16,7 @@ if _c == 0 { _c = ffi.open("libc.so") }
 
 _XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
 _XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
-_DefaultRootWindow = ffi.sym(_xlib, "DefaultRootWindow")
+_DefaultRootWindow = ffi.sym(_xlib, "XDefaultRootWindow")
 _XQueryPointer = ffi.sym(_xlib, "XQueryPointer")
 _XWarpPointer = ffi.sym(_xlib, "XWarpPointer")
 _XFlush = ffi.sym(_xlib, "XFlush")

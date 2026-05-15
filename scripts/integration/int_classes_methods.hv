@@ -1,0 +1,191 @@
+// integration: classes, inheritance, and method dispatch
+// covers: constructor, field access, method call, @ self reference,
+//         class with defaults, method chaining, field mutation, struct basics
+
+pass = 0
+fail = 0
+
+fn check(name, actual, expected) {
+  if actual == expected {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {name}: got {actual}, expected {expected}")
+  }
+}
+
+// 1. basic class with constructor and methods
+class Vec2 {
+  x, y
+  fn @(a, b) {
+    @x = a
+    @y = b
+  }
+  fn magnitude() {
+    @x * @x + @y * @y
+  }
+  fn addX(n) {
+    @x += n
+    return @x
+  }
+}
+v = Vec2(3, 4)
+check("vec2-field-x", v.x, 3)
+check("vec2-field-y", v.y, 4)
+check("vec2-magnitude", v.magnitude(), 25)
+check("vec2-mutate", v.addX(7), 10)
+
+// 2. class with constructor initializing all fields
+class Accumulator {
+  total
+  fn @() {
+    @total = 0
+  }
+  fn addValue(n) {
+    @total = @total + n
+  }
+  fn getTotal() {
+    @total
+  }
+}
+acc = Accumulator()
+acc.addValue(10)
+acc.addValue(20)
+acc.addValue(30)
+check("accumulator", acc.getTotal(), 60)
+
+// 3. multiple instances are independent
+a1 = Accumulator()
+a2 = Accumulator()
+a1.addValue(5)
+a2.addValue(100)
+check("instance-independent-1", a1.getTotal(), 5)
+check("instance-independent-2", a2.getTotal(), 100)
+
+// 4. class storing arrays
+class Stack {
+  items
+  fn @() {
+    @items = []
+  }
+  fn pushValue(n) {
+    @items.push(n)
+  }
+  fn itemCount() {
+    #(@items)
+  }
+  fn itemSum() {
+    @items.sum()
+  }
+}
+
+// 5. class storing objects
+class Dict {
+  data
+  fn @() {
+    @data = {}
+  }
+  fn setKeyValue(k, v) {
+    @data[k] = v
+  }
+  fn getKeyValue(k) {
+    @data[k]
+  }
+  fn keyCount() {
+    #(@data.keys())
+  }
+}
+
+// 6. struct basic (defaults return null - must init in constructor)
+struct Point {
+  x, y
+  fn @(a, b) {
+    @x = a
+    @y = b
+  }
+}
+p1 = Point(10, 20)
+check("struct-field-1", p1.x, 10)
+check("struct-field-2", p1.y, 20)
+
+// 7. class with self-method-call
+class Calculator {
+  memory
+  fn @() {
+    @memory = 0
+  }
+  fn storeValue(n) {
+    @memory = n
+  }
+  fn addValue(n) {
+    @memory = @memory + n
+  }
+  fn multiplyBy(n) {
+    @memory = @memory * n
+  }
+  fn getMemory() {
+    @memory
+  }
+}
+calc = Calculator()
+calc.storeValue(5)
+calc.addValue(3)
+calc.multiplyBy(2)
+check("calc-chain", calc.getMemory(), 16)
+
+// 9. class field increment
+class Counter {
+  count
+  fn @(start) {
+    @count = start
+  }
+  fn increment() {
+    @count += 1
+  }
+  fn getCount() {
+    @count
+  }
+}
+ct = Counter(10)
+ct.increment()
+ct.increment()
+ct.increment()
+check("counter-incr", ct.getCount(), 13)
+
+// 10. class with object field
+class Pair {
+  first
+  second
+  fn @(a, b) {
+    @first = a
+    @second = b
+  }
+  fn getSum() {
+    @first + @second
+  }
+  fn getProduct() {
+    @first * @second
+  }
+}
+pair = Pair(3, 7)
+check("pair-sum", pair.getSum(), 10)
+check("pair-product", pair.getProduct(), 21)
+
+// 11. method returning function
+class Factory {
+  base
+  fn @(n) {
+    @base = n
+  }
+  fn makeMultiplier() {
+    n = @base
+    fn mul(x) { return x * n }
+    return mul
+  }
+}
+fac = Factory(3)
+tripler = fac.makeMultiplier()
+check("method-returns-fn", tripler(7), 21)
+
+print(f"classes-methods: {pass} passed, {fail} failed")
+exit(fail)

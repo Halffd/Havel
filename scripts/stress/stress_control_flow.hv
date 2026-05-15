@@ -1,0 +1,235 @@
+// stress test: control flow, loops, match, try/catch
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+// 1. deeply nested loops
+n3_total = 0
+for ni in 0..4 {
+  for nj in 0..4 {
+    for nk in 0..4 {
+      n3_total += ni * 100 + nj * 10 + nk
+    }
+  }
+}
+check("nested-3", n3_total, 27750)
+
+// 2. while loop with break
+wb_sum = 0
+wb_i = 0
+while wb_i < 100 {
+  if wb_i == 50 {
+    break
+  }
+  wb_sum += wb_i
+  wb_i += 1
+}
+check("while-break", wb_sum, 1225)
+
+// 3. while loop with continue
+wc_sum = 0
+wc_j = 0
+while wc_j < 50 {
+  wc_j += 1
+  if wc_j % 2 != 0 {
+    continue
+  }
+  wc_sum += wc_j
+}
+check("while-continue", wc_sum, 650)
+
+// 4. for loop with break
+fb_found = -1
+for fi in 0..999 {
+  if fi == 42 {
+    fb_found = fi
+    break
+  }
+}
+check("for-break", fb_found, 42)
+
+// 5. for loop with continue
+fc_sum = 0
+for fci in 0..99 {
+  if fci % 2 == 0 {
+    continue
+  }
+  fc_sum += fci
+}
+check("for-continue", fc_sum, 2500)
+
+// 6. nested for with break in inner
+ib_count = 0
+for oi in 0..9 {
+  for oj in 0..9 {
+    if oj == 5 {
+      break
+    }
+    ib_count += 1
+  }
+}
+check("inner-break", ib_count, 50)
+
+// 7. loop with complex condition
+cw_count = 0
+cw_x = 1
+while cw_x < 10000 {
+  cw_x = cw_x * 3
+  cw_count += 1
+}
+check("complex-while", cw_count, 9)
+
+// 8. do-while loop
+dw_sum = 0
+dw_k = 0
+do {
+  dw_sum += dw_k
+  dw_k += 1
+} while dw_k < 10
+check("do-while", dw_sum, 45)
+
+// 9. if/else chains
+classify = fn(n) {
+  if n < 10 {
+    "low"
+  } else if n < 50 {
+    "mid"
+  } else if n < 100 {
+    "high"
+  } else {
+    "very-high"
+  }
+}
+check("classify-1", classify(5), "low")
+check("classify-2", classify(25), "mid")
+check("classify-3", classify(75), "high")
+check("classify-4", classify(200), "very-high")
+
+// 10. match expression
+daytype = fn(d) {
+  match d {
+    0 => "sunday"
+    1 => "monday"
+    2 => "tuesday"
+    3 => "wednesday"
+    4 => "thursday"
+    5 => "friday"
+    6 => "saturday"
+    _ => "unknown"
+  }
+}
+check("match-0", daytype(0), "sunday")
+check("match-3", daytype(3), "wednesday")
+check("match-6", daytype(6), "saturday")
+check("match-9", daytype(9), "unknown")
+
+// 11. try/catch basic
+caught = 0
+try {
+  error("test error")
+} catch {
+  caught = 1
+}
+check("try-catch", caught, 1)
+
+// 12. try/catch with code after
+val_after = 0
+try {
+  val_after = 10
+} catch {
+  val_after = -1
+}
+val_after += 5
+check("try-after", val_after, 15)
+
+// 13. multiple try/catch blocks
+errors_caught = 0
+try {
+  error("e1")
+} catch {
+  errors_caught += 1
+}
+try {
+  error("e2")
+} catch {
+  errors_caught += 1
+}
+try {
+  errors_caught += 0
+} catch {
+  errors_caught += 100
+}
+check("multi-try", errors_caught, 2)
+
+// 14. loop that runs zero times
+zero_sum = 0
+for zi in 0..-1 {
+  zero_sum += 1
+}
+check("zero-loop", zero_sum, 0)
+
+// 15. for-in over array
+arr_for_sum = 0
+for item in [10, 20, 30, 40, 50] {
+  arr_for_sum += item
+}
+check("for-in-arr", arr_for_sum, 150)
+
+// 16. for-in over string
+char_count = 0
+for ch in "hello" {
+  char_count += 1
+}
+check("for-in-str", char_count, 5)
+
+// 17. complex boolean logic - returns true/false not 1/0
+check("and-tt", 1 && 1, true)
+check("and-tf", 1 && 0, false)
+check("or-tt", 1 || 0, true)
+check("or-ff", 0 || 0, false)
+check("not-t", !0, true)
+check("not-f", !1, false)
+
+// 18. ternary
+check("tern-t", 1 ? 100 : 200, 100)
+check("tern-f", 0 ? 100 : 200, 200)
+
+// 19. deeply nested if
+deep = 0
+da = 1
+db = 1
+dc = 1
+dd = 1
+if da {
+  if db {
+    if dc {
+      if dd {
+        deep = 42
+      }
+    }
+  }
+}
+check("deep-if", deep, 42)
+
+// 20. fibonacci with while
+fib_a = 0
+fib_b = 1
+fib_n = 0
+while fib_n < 15 {
+  tmp = fib_a + fib_b
+  fib_a = fib_b
+  fib_b = tmp
+  fib_n += 1
+}
+check("fib-while", fib_a, 610)
+
+print(f"stress-control: {pass} passed, {fail} failed")
+exit(fail)

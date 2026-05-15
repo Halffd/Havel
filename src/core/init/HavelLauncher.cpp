@@ -1,6 +1,7 @@
 #include "../Havel.hpp"
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
+#include "core/HotkeyManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
@@ -17,6 +18,7 @@
 #include "havel-lang/utils/ErrorPrinter.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -104,6 +106,51 @@ collectKnownGlobals(const havel::compiler::VM *vm) {
   return globals;
 }
 
+#ifdef HAVEL_ENABLE_LLVM
+static std::string normalizeTargetOS(std::string os) {
+  std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (os == "win") return "windows";
+  if (os == "mac" || os == "darwin") return "macos";
+  return os;
+}
+
+static std::string mapTargetTripleForOS(const std::string &requestedOS,
+                                        const std::string &fallbackTriple) {
+  std::string os = normalizeTargetOS(requestedOS);
+  if (os.empty() || os == "native") return fallbackTriple;
+  llvm::Triple hostTriple(fallbackTriple);
+  std::string arch = hostTriple.getArchName().str();
+  if (arch.empty()) arch = "x86_64";
+  if (os == "linux") return arch + "-pc-linux-gnu";
+  if (os == "windows") return arch + "-pc-windows-msvc";
+  if (os == "macos") return arch + "-apple-darwin";
+  if (os == "wasm") return "wasm32-unknown-unknown";
+  return fallbackTriple;
+}
+
+static std::string sharedLibraryExtensionForOS(const std::string &requestedOS) {
+  const std::string os = normalizeTargetOS(requestedOS);
+  if (os == "windows") return ".dll";
+  if (os == "macos") return ".dylib";
+  return ".so";
+}
+
+static void appendLinkLibraries(std::string &linkCmd,
+                                const std::vector<std::string> &libs) {
+  for (const auto &lib : libs) {
+    if (lib.empty()) continue;
+    if (lib.rfind("-l", 0) == 0 || lib.rfind("-L", 0) == 0 ||
+        lib.rfind("/", 0) == 0 || lib.rfind(".", 0) == 0) {
+      linkCmd += " " + lib;
+    } else {
+      linkCmd += " -l" + lib;
+    }
+  }
+}
+#endif
+
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
@@ -120,6 +167,12 @@ int HavelLauncher::run(int argc, char *argv[]) {
     Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DumpIR", cfg.dumpIR ? "true" : "false");
     Configs::Get().Set("Compiler.OutputAsm", cfg.outputAsmToFile ? "true" : "false");
+    Configs::Get().Set("Compiler.JITWarnings", cfg.aotWarnings ? "true" : "false");
+#ifdef HAVEL_ENABLE_LLVM
+    Configs::Get().Set("Compiler.JITTargetOS", normalizeTargetOS(cfg.targetOS));
+#else
+    Configs::Get().Set("Compiler.JITTargetOS", cfg.targetOS);
+#endif
 
 
     if (cfg.buildOnly) {
@@ -164,24 +217,31 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugMode = true;
       Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
  } else if (arg == "--debug-parser" || arg == "-dp") {
-            debugging::debug_parser = true;
-            cfg.debugParser = true;
-            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
-        } else if (arg == "--debug-ast" || arg == "-da") {
-            debugging::debug_ast = true;
-            cfg.debugAst = true;
-            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
-        } else if (arg == "--debug-lexer" || arg == "-dl") {
-            debugging::debug_lexer = true;
-            cfg.debugLexer = true;
-            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
-        } else if (arg == "--debug-bytecode" || arg == "-dbc") {
-            cfg.debugBytecode = true;
-            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+ debugging::debug_parser = true;
+ cfg.debugParser = true;
+ } else if (arg == "--debug-ast" || arg == "-da") {
+ debugging::debug_ast = true;
+ cfg.debugAst = true;
+ } else if (arg == "--debug-lexer" || arg == "-dl") {
+ debugging::debug_lexer = true;
+ cfg.debugLexer = true;
+ } else if (arg == "--debug-bytecode" || arg == "-dbc") {
+ cfg.debugBytecode = true;
+} else if (arg == "--debug-gc" || arg == "-dgc") {
+            debugging::debug_gc = true;
+            cfg.debugGc = true;
+        } else if (arg == "--debug-engine" || arg == "-de") {
+            debugging::debug_engine = true;
+            cfg.debugEngine = true;
+        } else if (arg == "--debug-io" || arg == "-dio") {
+            debugging::debug_io = true;
+            cfg.debugIo = true;
+        } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
+            debugging::debug_hotkeys = true;
+            cfg.debugHotkeys = true;
  } else if (arg == "--diff" || arg == "-diff") {
-            cfg.diffBytecode = true;
-            cfg.debugBytecode = true; // --diff implies --debug-bytecode
-            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+ cfg.diffBytecode = true;
+ cfg.debugBytecode = true;
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
@@ -245,6 +305,31 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "-S") {
       cfg.outputAsmToFile = true;
       cfg.dumpIR = true;
+    } else if (arg == "--os") {
+      if (i + 1 >= argc) {
+        error("--os requires one of: native, linux, windows, macos, wasm");
+      } else {
+        cfg.targetOS = argv[++i];
+      }
+    } else if (arg == "--aot-warnings") {
+      cfg.aotWarnings = true;
+    } else if (arg == "--no-aot-warnings") {
+      cfg.aotWarnings = false;
+    } else if (arg == "--link-lib") {
+      if (i + 1 >= argc) {
+        error("--link-lib requires a library name or linker flag");
+      } else {
+        cfg.linkLibs.push_back(argv[++i]);
+      }
+    } else if (arg == "--full-aot") {
+      cfg.fullAot = true;
+      cfg.buildOnly = true;
+      cfg.target = Target::AOT;
+      cfg.emitLLVM = true;
+      cfg.emitAsm = true;
+      cfg.emitObj = true;
+      cfg.emitBinary = true;
+      cfg.emitElf = true;
 
   } else if (arg == "--config" || arg == "-c") {
     // Config file path
@@ -292,47 +377,51 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
-} else if (arg == "--output" || arg == "-o") {
-    if (i + 1 < argc) {
-        cfg.outputPath = argv[++i];
-    }
-} else if (arg == "--emit-llvm") {
-    cfg.target = Target::IR;
-    cfg.emitLLVM = true;
-    cfg.buildOnly = true;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cfg.scriptFiles.push_back(argv[++i]);
-    }
-} else if (arg == "--emit-asm") {
-    cfg.target = Target::ASM;
-    cfg.emitAsm = true;
-    cfg.buildOnly = true;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cfg.scriptFiles.push_back(argv[++i]);
-    }
-} else if (arg == "--emit-obj") {
-    cfg.target = Target::AOT;
-    cfg.emitObj = true;
-    cfg.buildOnly = true;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        cfg.scriptFiles.push_back(argv[++i]);
-    }
-} else if (arg == "--arch") {
-    if (i + 1 < argc) {
-        cfg.arch = argv[++i];
-    }
-} else if (arg == "--syntax") {
-    if (i + 1 < argc) {
-        std::string syntax = argv[++i];
-        if (syntax == "intel") {
-            cfg.asmSyntax = AsmSyntax::INTEL;
-        } else if (syntax == "att") {
-            cfg.asmSyntax = AsmSyntax::ATT;
-        } else {
-            error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
-        }
-    }
-} else if (arg == "--help" || arg == "-h") {
+	} else if (arg == "--output" || arg == "-o") {
+		if (i + 1 < argc) {
+			cfg.outputPath = argv[++i];
+		}
+	} else if (arg == "--emit-llvm") {
+		cfg.target = Target::IR;
+		cfg.emitLLVM = true;
+		cfg.buildOnly = true;
+		if (i + 1 < argc && argv[i + 1][0] != '-') {
+			cfg.scriptFiles.push_back(argv[++i]);
+		}
+	} else if (arg == "--emit-asm") {
+		cfg.target = Target::ASM;
+		cfg.emitAsm = true;
+		cfg.buildOnly = true;
+		if (i + 1 < argc && argv[i + 1][0] != '-') {
+			cfg.scriptFiles.push_back(argv[++i]);
+		}
+	} else if (arg == "--emit-obj") {
+		cfg.target = Target::AOT;
+		cfg.emitObj = true;
+		cfg.buildOnly = true;
+		if (i + 1 < argc && argv[i + 1][0] != '-') {
+			cfg.scriptFiles.push_back(argv[++i]);
+		}
+	} else if (arg == "--arch") {
+		if (i + 1 < argc) {
+			cfg.arch = argv[++i];
+		}
+	} else if (arg == "--syntax") {
+		if (i + 1 < argc) {
+			std::string syntax = argv[++i];
+			if (syntax == "intel") {
+				cfg.asmSyntax = AsmSyntax::INTEL;
+			} else if (syntax == "att") {
+				cfg.asmSyntax = AsmSyntax::ATT;
+			} else {
+				error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
+			}
+		}
+	} else if (arg == "--input" || arg == "-i") {
+		if (i + 1 < argc) {
+			cfg.inputBackend = argv[++i];
+		}
+	} else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
     } else if (arg == "lexer") {
@@ -366,12 +455,21 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
   }
-  // Check for debug flags
-  if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
-    cfg.minimalMode = true;
-    info("Debug.ForceMinimal is set - forcing minimal mode");
-  }
-  // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
+	// Check for debug flags
+	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
+		cfg.minimalMode = true;
+		debug("Debug.ForceMinimal is set - forcing minimal mode");
+	}
+
+	// Resolve input backend: CLI arg > config > auto-detect
+	if (cfg.inputBackend.empty()) {
+		cfg.inputBackend = Configs::Get().Get<std::string>("Input.Backend", "auto");
+	}
+	if (cfg.inputBackend == "auto") {
+		cfg.inputBackend = ""; // Will be resolved by auto-detection
+	}
+
+	// Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
   return cfg;
 }
@@ -620,7 +718,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
        return 0;
     }
 
-    debug("Running combined scripts: {}", combinedNames);
+    if (debugging::debug_io) debug("Running combined scripts: {}", combinedNames);
 
     int dummy_argc = 1;
     char dummy_name[] = "havel-script";
@@ -668,7 +766,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       options.vm_override = bytecodeVM;
       options.debugBytecode = cfg.debugBytecode;
   auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-    debug("Execution successful");
+    if (debugging::debug_io) debug("Execution successful");
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
       return 1;
@@ -696,8 +794,6 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
                                                   const std::vector<std::string> &hvcFiles) {
   // Load and execute .hvc bytecode files directly
-  std::string combinedNames;
-  havel::compiler::BytecodeChunk combinedChunk;
 
   for (const auto& f : hvcFiles) {
     std::ifstream file(f, std::ios::binary | std::ios::ate);
@@ -722,35 +818,6 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
       return 2;
     }
 
-    if (!combinedNames.empty()) combinedNames += " + ";
-    combinedNames += f;
-
-    // Merge functions from this chunk into combined chunk
-    for (const auto& func : chunk->getAllFunctions()) {
-      havel::compiler::BytecodeFunction copy(func.name, func.param_count, func.local_count);
-      copy.instructions = func.instructions;
-      copy.constants = func.constants;
-      copy.upvalues = func.upvalues;
-      copy.default_values = func.default_values;
-      copy.variadic_param_index = func.variadic_param_index;
-      copy.param_names = func.param_names;
-      copy.is_generator = func.is_generator;
-      combinedChunk.addFunction(std::move(copy));
-    }
-  }
-
-  if (combinedChunk.getFunctionCount() == 0) {
-    error("No functions found in bytecode files");
-    return 2;
-  }
-
-  info("Loaded {} functions from {} bytecode file(s)", combinedChunk.getFunctionCount(), hvcFiles.size());
-  if (cfg.debugBytecode) {
-    info("Bytecode loaded successfully");
-  }
-
-  // Set up VM and execute
-  try {
     havel::HostContext ctx;
     havel::compiler::VM tempVm;
     ctx.vm = &tempVm;
@@ -764,15 +831,39 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
       vm->registerHostFunction(name, fn);
     }
 
-    // Execute __main__ function
-    auto result = vm->execute(combinedChunk, "__main__");
+    info("Loaded bytecode file: {} ({} function(s))", f, chunk->getFunctionCount());
+    if (cfg.debugBytecode) {
+      info("Bytecode loaded successfully: {}", f);
+    }
+
+    // Execute __main__ function from this chunk directly to keep string/constant tables valid
+    try {
+      auto result = vm->execute(*chunk, "__main__");
+      (void)result;
+    } catch (const std::exception &e) {
+      error("Bytecode error in {}: {}", f, e.what());
+      bridge->shutdown();
+      return 1;
+    } catch (...) {
+      error("Unknown bytecode error in {}", f);
+      bridge->shutdown();
+      return 1;
+    }
 
     bridge->shutdown();
-    return 0;
-  } catch (const std::exception &e) {
-    error("Bytecode error: {}", e.what());
-    return 1;
   }
+
+  return 0;
+}
+
+// Helper: Check if AST contains any hotkey bindings
+static bool hasHotkeyBindings(const havel::ast::Program& program) {
+  for (const auto& stmt : program.body) {
+    if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding) {
+      return true;
+    }
+  }
+  return false;
 }
 
 int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
@@ -823,20 +914,38 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
   if (combinedCode.empty()) return 0;
 
-  // LINT-ONLY MODE: Parse and type-check ONLY, no execution
-  if (cfg.lintOnly) {
-    havel::parser::Parser parser{{
-      .lexer = cfg.debugLexer,
-      .parser = cfg.debugParser,
-      .ast = cfg.debugAst
-    }};
-    std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
-    std::unique_ptr<havel::ast::Program> program;
-    try {
-      program = parser.produceAST(combinedCode);
-    } catch (const std::exception& e) {
-      // Parser aborted — still print what we collected
+  // Parse script to check for hotkey bindings
+  havel::parser::Parser parser{{
+    .lexer = cfg.debugLexer,
+    .parser = cfg.debugParser,
+    .ast = cfg.debugAst
+  }};
+  std::unique_ptr<havel::ast::Program> program;
+  try {
+    program = parser.produceAST(combinedCode);
+  } catch (const std::exception& e) {
+    // Parser aborted
+  }
+
+    if (parser.hasErrors() || !program) {
+        for (const auto& err : parser.getErrors()) {
+            std::cerr << "Parse error: " << err.message << " at line " << err.line << " col " << err.column << std::endl;
+        }
+        error("Failed to parse script");
+        return 1;
     }
+
+  // If hotkeys found, switch to SCRIPT mode (with full IO/event loop)
+  if (hasHotkeyBindings(*program)) {
+    if (debugging::debug_io) debug("Hotkey bindings detected - starting full IO/event loop");
+    LaunchConfig fullCfg = cfg;
+    fullCfg.mode = Mode::SCRIPT;
+    return runScript(fullCfg, argc, argv);
+  }
+
+  // LINT-ONLY MODE: type-check only, no execution
+  if (cfg.lintOnly) {
+    std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
     if (parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
         std::string sourceLine;
@@ -887,7 +996,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     return 0;
   }
 
-  debug("Running Havel scripts (pure mode): {}", combinedNames);
+  if (debugging::debug_io) debug("Running Havel scripts (pure mode): {}", combinedNames);
 
   // Set up signal handling ...
   struct sigaction sa;
@@ -903,11 +1012,10 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
  .debugLexer = cfg.debugLexer,
  .debugParser = cfg.debugParser,
  .debugAst = cfg.debugAst,
- .stopOnError = cfg.stopOnError
+ .stopOnError = cfg.stopOnError,
+ .leanMinimalStartup = true
  });
- auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
- havel::initializeServiceRegistry(hostAPI);
- engine.initializeMinimal();
+        engine.initializeMinimal();
  engine.execute(combinedCode, "__main__", combinedNames);
  engine.shutdown();
  return 0;
@@ -1057,7 +1165,11 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 }
 
 void havel::init::HavelLauncher::showHelp() {
-  std::cout << "  --debug-bytecode, -dbc  Enable bytecode debugging\n";
+std::cout << " --debug-bytecode, -dbc Enable bytecode debugging\n";
+    std::cout << " --debug-gc, -dgc       Enable GC debugging\n";
+std::cout << " --debug-engine, -de Enable engine debugging\n";
+std::cout << " --debug-io, -dio Enable IO debugging\n";
+std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
   std::cout << "  --diff              Compare bytecode with previous run "
                "(implies -dbc)\n";
   std::cout << " --error, -e Stop on first error/warning\n";
@@ -1072,18 +1184,24 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout
       << "  --test, -t          Run all .hv scripts in a directory\n";
   std::cout << "  --lint              Check syntax and compilation errors\n";
-std::cout << " --build Compile to .hvc bytecode file\n";
-std::cout << " --output, -o PATH Set output path for --build\n";
-std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
-std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
-std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
-std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
-std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
-std::cout << " --syntax <type> Assembly syntax: att|intel\n";
-std::cout << " --no-jit Disable JIT compilation\n";
-  std::cout << "  --debug-jit, -djt   Print LLVM IR and Assembly to console\n";
-  std::cout << "  -S                  Output compiled IR and Assembly to files\n";
-  std::cout << "  --help, -h          Show this help\n";
+	std::cout << " --build Compile to .hvc bytecode file\n";
+	std::cout << " --output, -o PATH Set output path for --build\n";
+	std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
+	std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
+	std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
+	std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
+	std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
+	std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
+	std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
+	std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+	std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
+	std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
+	std::cout << " --syntax <type> Assembly syntax: att|intel\n";
+	std::cout << " --no-jit Disable JIT compilation\n";
+	std::cout << " --debug-jit, -djt Print LLVM IR and Assembly to console\n";
+	std::cout << " -S Output compiled IR and Assembly to files\n";
+	std::cout << " --input, -i TYPE Set input backend (evdev, x11, wayland, auto)\n";
+	std::cout << " --help, -h Show this help\n";
 
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
@@ -1103,6 +1221,7 @@ std::cout << " --no-jit Disable JIT compilation\n";
   std::cout << "  havel --target ir script.hv          - Emit LLVM IR (.ll)\n";
   std::cout << "  havel --target asm script.hv         - Emit native assembly (.s)\n";
   std::cout << "  havel --target aot script.hv         - Emit object (.o) + shared binary (.so)\n";
+  std::cout << "  havel --full-aot --os windows script.hv - Emit full AOT set for Windows\n";
   std::cout << "  havel --target wasm script.hv        - Emit WebAssembly binary (.wasm)\n";
   std::cout << "  havel --target elf script.hv         - Emit standalone ELF executable\n";
   std::cout << " havel --minimal script.hv - Run script in MINIMAL mode\n";
@@ -1116,9 +1235,13 @@ std::cout << " --no-jit Disable JIT compilation\n";
   std::cout
       << "  Useful for testing scripts that auto-exit or don't need input.\n";
   std::cout << "  Example: havel --run scripts/test_types.hv\n";
-  std::cout << "\nBytecode debugging:\n";
-  std::cout << "  --debug-bytecode        Print bytecode to console\n";
-  std::cout << "  --diff                  Compare bytecode with previous run\n";
+std::cout << "\nDebugging flags:\n";
+    std::cout << " --debug-bytecode Print bytecode to console\n";
+    std::cout << " --debug-gc       Print GC collection info\n";
+std::cout << " --debug-engine Print engine scheduling info\n";
+std::cout << " --debug-io Print IO subsystem info\n";
+std::cout << " --debug-hotkeys Print hotkey registration info\n";
+    std::cout << " --diff Compare bytecode with previous run\n";
   std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
 }
 
@@ -1452,7 +1575,24 @@ info("Compilation successful, {} functions", chunk->getFunctionCount());
 if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary || cfg.emitElf) {
     // Import LLVM JIT for translation
     havel::compiler::BytecodeOrcJIT jit;
-    jit.setDumpIR(true);
+    jit.setShowWarnings(cfg.aotWarnings);
+    jit.setFullAOT(cfg.fullAot);
+    jit.setLinkedLibraries(cfg.linkLibs);
+    if (cfg.emitLLVM || cfg.debugJIT) {
+        jit.setDumpIR(true);
+    }
+    const std::string normalizedOS = normalizeTargetOS(cfg.targetOS);
+    if (normalizedOS == "linux") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Linux);
+    } else if (normalizedOS == "windows") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Windows);
+    } else if (normalizedOS == "macos") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::MacOS);
+    } else if (normalizedOS == "wasm") {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Wasm);
+    } else {
+        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Native);
+    }
 
     // Generate LLVM IR for each function
     llvm::LLVMContext ctx;
@@ -1466,7 +1606,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
     }
 
     // Verify module
-    std::string verifyErr;
     if (llvm::verifyModule(*module, &llvm::errs())) {
         error("LLVM IR verification failed");
         return 1;
@@ -1493,13 +1632,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
         info("LLVM IR written to: {}", llPath);
     }
 
-    if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary) {
+    if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
         // Initialize target for native code gen
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::InitializeNativeTargetAsmParser();
 
-        std::string targetTripleStr = cfg.arch.empty() ? llvm::sys::getDefaultTargetTriple() : cfg.arch;
+        std::string targetTripleStr = cfg.arch.empty()
+            ? mapTargetTripleForOS(cfg.targetOS, llvm::sys::getDefaultTargetTriple())
+            : cfg.arch;
         llvm::Triple targetTriple(targetTripleStr);
         module->setTargetTriple(targetTriple);
 
@@ -1532,8 +1673,11 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                 return 1;
             }
             llvm::legacy::PassManager pm;
-            targetMachine->addPassesToEmitFile(pm, out, nullptr,
-                llvm::CodeGenFileType::AssemblyFile);
+            if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                llvm::CodeGenFileType::AssemblyFile)) {
+                error("Target '{}' cannot emit assembly", targetTripleStr);
+                return 1;
+            }
             pm.run(*module);
             info("Assembly written to: {}", asmPath);
         }
@@ -1547,16 +1691,27 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                 return 1;
             }
             llvm::legacy::PassManager pm;
-            targetMachine->addPassesToEmitFile(pm, out, nullptr,
-                llvm::CodeGenFileType::ObjectFile);
+            if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+                llvm::CodeGenFileType::ObjectFile)) {
+                error("Target '{}' cannot emit object files", targetTripleStr);
+                return 1;
+            }
             pm.run(*module);
             info("Object file written to: {}", nativeObjPath);
         }
 
         if (cfg.emitBinary) {
-            std::string soPath = aotOutput + ".so";
-            std::string linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath +
-                                  "\" -o \"" + soPath + "\"";
+            const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
+            std::string soPath = aotOutput + shExt;
+            std::string linkCmd;
+            if (normalizeTargetOS(cfg.targetOS) == "windows") {
+                linkCmd = "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
+                linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            } else {
+                linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+            }
+            appendLinkLibraries(linkCmd, jit.linkedLibraries());
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
                 error("Failed to link native shared binary with command: {}", linkCmd);
@@ -1566,7 +1721,8 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
         }
 
         if (cfg.emitElf) {
-            std::string binPath = aotOutput;
+            const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
+            std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
             std::string stubPath = aotOutput + "_stub.cpp";
             {
                 std::ofstream stub(stubPath);
@@ -1596,23 +1752,27 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                      << "    return 0;\n"
                      << "}\n";
             }
-            
-            std::string exePath = std::filesystem::canonical("/proc/self/exe").string();
-            std::string libDir = std::filesystem::path(exePath).parent_path().string();
-            
-            // Link against havel_lang and system dependencies
-            std::string linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\" "
-                                  "-L\"" + libDir + "\" -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui "
-                                  "-lX11 -lXtst -lXrandr -lXinerama -lXi -lXcomposite -lXfixes -lpthread -ldl -lstdc++ -lm "
-                                  "$(pkg-config --libs alsa libpulse libpipewire-0.3 dbus-1 libpcre2-8 libpcre2-16 opencv4 Qt6Core Qt6Widgets Qt6Gui tesseract lept)";
-            
+
+            std::string linkCmd;
+            if (targetWindows) {
+                linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
+            } else {
+                linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
+                std::string exePath = Env::executable();
+                if (!exePath.empty()) {
+                    std::string libDir = std::filesystem::path(exePath).parent_path().string();
+                    linkCmd += " -L\"" + libDir + "\"";
+                }
+                linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+            }
+            appendLinkLibraries(linkCmd, jit.linkedLibraries());
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
-                error("Failed to link native ELF binary with command: {}", linkCmd);
+                error("Failed to link native AOT executable with command: {}", linkCmd);
                 std::filesystem::remove(stubPath);
                 return 1;
             }
-            info("Native ELF binary written to: {}", binPath);
+            info("Native AOT executable written to: {}", binPath);
             std::filesystem::remove(stubPath);
         }
     }
@@ -1643,8 +1803,11 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             return 1;
         }
         llvm::legacy::PassManager pm;
-        targetMachine->addPassesToEmitFile(pm, out, nullptr,
-            llvm::CodeGenFileType::ObjectFile);
+        if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
+            llvm::CodeGenFileType::ObjectFile)) {
+            error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
+            return 1;
+        }
         pm.run(*module);
         info("WebAssembly binary written to: {}", wasmPath);
     }

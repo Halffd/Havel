@@ -11,6 +11,6 @@
 namespace havel::stdlib {
 
 // Register time module with VMApi
-void registerTimeModule(compiler::VMApi &api);
+void registerTimeModule(const compiler::VMApi &api);
 
 } // namespace havel::stdlib

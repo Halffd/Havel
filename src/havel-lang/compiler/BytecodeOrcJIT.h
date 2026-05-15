@@ -10,6 +10,7 @@
 #include "core/Value.hpp"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -54,6 +55,14 @@ struct JITStackFrame {
  */
 class BytecodeOrcJIT : public JITCompiler {
 public:
+    enum class TargetOS {
+        Native,
+        Linux,
+        Windows,
+        MacOS,
+        Wasm
+    };
+
     BytecodeOrcJIT();
     ~BytecodeOrcJIT() override;
 
@@ -67,6 +76,21 @@ public:
     void setDumpIR(bool enabled) { dump_ir_ = enabled; }
     void setDumpAsmToFile(bool enabled) { dump_asm_to_file_ = enabled; }
     void setOptimizationLevel(uint8_t level) { optimization_level_ = level > 3 ? 3 : level; }
+    void setTargetOS(TargetOS os);
+    void setShowWarnings(bool enabled) { show_warnings_ = enabled; }
+    void setLinkedLibraries(const std::vector<std::string>& libs) { linked_libraries_ = libs; }
+    void addLinkedLibrary(const std::string& lib) { linked_libraries_.push_back(lib); }
+    void setFullAOT(bool enabled) { full_aot_ = enabled; }
+    TargetOS targetOS() const { return target_os_; }
+    bool showWarnings() const { return show_warnings_; }
+    bool fullAOT() const { return full_aot_; }
+    const std::vector<std::string>& linkedLibraries() const { return linked_libraries_; }
+    // Global JIT diagnostics state for script/runtime introspection.
+    static void setLastError(std::string err);
+    static std::string lastError();
+    static void clearLastError();
+    void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
+    void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
 
     void dumpAssembly(const std::string &filename);
 
@@ -74,17 +98,33 @@ public:
     void translate(const BytecodeFunction &func, llvm::Module &module);
 
 private:
+    struct CachedFunction {
+        std::string canonical_name;
+    };
+
     std::unique_ptr<llvm::orc::LLJIT> lljit_;
     std::unordered_map<std::string, void*> fptrs_;
+    std::unordered_map<uint64_t, CachedFunction> compile_cache_;
+    std::string cache_index_path_;
     std::unique_ptr<llvm::TargetMachine> target_machine_;
     bool debug_jit_ = false;
     bool dump_ir_ = false;
     bool dump_asm_to_file_ = false;
     uint8_t optimization_level_ = 1; // 0=O0 fast start, 1=O1 baseline, 2=O2, 3=O3
+    TargetOS target_os_ = TargetOS::Native;
+    bool show_warnings_ = true;
+    std::vector<std::string> linked_libraries_;
+    bool full_aot_ = false;
     std::string last_asm_;
+    static std::mutex last_error_mutex_;
+    static std::string last_error_;
 
+    std::string resolveTargetTriple() const;
     void initTargetMachine();
     void runOptimizations(llvm::Module &module);
+    uint64_t computeFunctionHash(const BytecodeFunction &func) const;
+    void loadCompileCacheIndex();
+    void saveCompileCacheIndex() const;
 
     static void InitializeLLVM();
 };

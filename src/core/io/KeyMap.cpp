@@ -1,5 +1,6 @@
 #include "KeyMap.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <X11/XF86keysym.h>
 #include <algorithm>
 
@@ -156,11 +157,11 @@ std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
 
 // Helper to add all key mappings
 void KeyMap::Initialize() {
- if (initialized) {
- ::havel::debug("KeyMap::Initialize(): Already initialized, skipping.");
- return;
- }
- ::havel::debug("KeyMap::Initialize(): Starting initialization...");
+    if (initialized) {
+        if (debugging::debug_io) ::havel::debug("KeyMap::Initialize(): Already initialized, skipping.");
+        return;
+    }
+    if (debugging::debug_io) ::havel::debug("KeyMap::Initialize(): Starting initialization...");
     
     // Windows VK codes (for reference when WINDOWS is not defined)
     #ifndef WINDOWS
@@ -657,7 +658,7 @@ void KeyMap::Initialize() {
     AddKey("unknown", KEY_UNKNOWN, 0, 0);
     AddAlias("nosymbol", "unknown");
 
-    ::havel::debug("KeyMap::Initialize(): Completed initialization, total keys: {}", nameToKey.size());
+    if (debugging::debug_io) ::havel::debug("KeyMap::Initialize(): Completed initialization, total keys: {}", nameToKey.size());
     initialized = true;
 }
 

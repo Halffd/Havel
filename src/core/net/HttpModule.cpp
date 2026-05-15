@@ -1,5 +1,6 @@
 #include "HttpModule.hpp"
 #include "../utils/Logger.hpp"
+#include "../utils/DebugFlags.hpp"
 #include <curl/curl.h>
 #include <fstream>
 #include <sstream>
@@ -209,7 +210,7 @@ HttpResponse HttpModule::request(const std::string& method,
         response.body = responseBody;
         response.headers = responseHeaders;
         
-        debug("HttpModule: {} {} -> {}", method, url, response.statusCode);
+        if (debugging::debug_io) debug("HttpModule: {} {} -> {}", method, url, response.statusCode);
     }
     
     // Cleanup

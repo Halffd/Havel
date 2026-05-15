@@ -3,6 +3,7 @@
 #include "havel-lang/errors/ErrorSystem.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -430,16 +431,16 @@ void ByteCompiler::emit(OpCode op, Value operand) {
 }
 
 void ByteCompiler::emit(OpCode op, std::vector<Value> operands) {
- if (!current_function) {
- COMPILER_THROW(
- "Attempted to emit bytecode without active function");
- }
- current_function->instructions.emplace_back(op, std::move(operands));
- current_function->instruction_locations.push_back(
- current_source_location_.value_or(SourceLocation{}));
- auto &instr = current_function->instructions.back();
- instr.location = current_source_location_;
- }
+if (!current_function) {
+COMPILER_THROW(
+"Attempted to emit bytecode without active function");
+}
+	current_function->instructions.emplace_back(op, std::move(operands));
+	current_function->instruction_locations.push_back(
+			current_source_location_.value_or(SourceLocation{}));
+	auto &instr = current_function->instructions.back();
+	instr.location = current_source_location_;
+}
 
 uint32_t ByteCompiler::addConstant(const Value &value) {
   if (!current_function) {
@@ -504,7 +505,8 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     COMPILER_THROW("Function declaration missing name");
   }
 
-  auto index_it = function_indices_by_node_.find(&function);
+
+    auto index_it = function_indices_by_node_.find(&function);
   if (index_it == function_indices_by_node_.end()) {
     COMPILER_THROW("Missing function index for declaration: " +
                              function.name->symbol);
@@ -616,50 +618,34 @@ if (param->defaultValue.has_value()) {
     }
   }
 
-  if (function.body) {
-    // Compile all statements except the last
-    const auto &stmts = function.body->body;
-    if (!stmts.empty()) {
-      // Compile all but last statement normally (not in tail position)
-      for (size_t i = 0; i < stmts.size() - 1; i++) {
-        if (stmts[i]) {
-          compileStatement(*stmts[i]);
-        }
-      }
+if (function.body) {
+// Compile all statements except the last
+const auto &stmts = function.body->body;
+if (!stmts.empty()) {
+// Compile all but last statement normally (not in tail position)
+for (size_t i = 0; i < stmts.size() - 1; i++) {
+if (stmts[i]) {
+if (false && current_function && current_function->name == "Parser") {
+std::cerr << "BSTMT Parser[" << current_function->instructions.size() << "] i=" << i << " type=" << static_cast<int>(stmts[i]->kind) << "\n";
+}
+compileStatement(*stmts[i]);
+}
+}
+    }
 
-      // Last statement: if it's an expression statement, return its value
-      // (Rust-like implicit return)
-      const auto &lastStmt = stmts.back();
-      if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
-        const auto &exprStmt =
-            static_cast<const ast::ExpressionStatement &>(*lastStmt);
-        if (exprStmt.expression) {
-          // TCO: Enter tail position for the last expression
-          enterTailPosition();
-          clearTailCallFlag();
-          compileExpression(*exprStmt.expression);
-          exitTailPosition();
-          // TCO: Only emit RETURN if we didn't emit TAIL_CALL
-          if (!wasTailCall()) {
-            emit(OpCode::RETURN);
-          }
-        } else {
-          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          emit(OpCode::RETURN);
-        }
-      } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
-        // Last statement is an explicit return - compile with tail position
+    // Last statement: if it's an expression statement, return its value
+    // (Rust-like implicit return)
+    const auto &lastStmt = stmts.back();
+    if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+      const auto &exprStmt =
+          static_cast<const ast::ExpressionStatement &>(*lastStmt);
+      if (exprStmt.expression) {
+        // TCO: Enter tail position for the last expression
         enterTailPosition();
-        compileStatement(*lastStmt);
+        clearTailCallFlag();
+        compileExpression(*exprStmt.expression);
         exitTailPosition();
-      } else if (lastStmt) {
-        // Last statement is not an expression or return - compile in tail
-        // position and add implicit return
-        enterTailPosition();
-        compileStatement(*lastStmt);
-        exitTailPosition();
-        // Only emit RETURN if the statement didn't already return (via tail
-        // call branches)
+        // TCO: Only emit RETURN if we didn't emit TAIL_CALL
         if (!wasTailCall()) {
           emit(OpCode::RETURN);
         }
@@ -667,12 +653,28 @@ if (param->defaultValue.has_value()) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::RETURN);
       }
+    } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
+      // Last statement is an explicit return - compile with tail position
+      enterTailPosition();
+      compileStatement(*lastStmt);
+      exitTailPosition();
+    } else if (lastStmt) {
+      // Last statement is not an expression or return - compile in tail
+      // position and add implicit return
+      enterTailPosition();
+      compileStatement(*lastStmt);
+      exitTailPosition();
+      // Only emit RETURN if the statement didn't already return (via tail
+      // call branches)
+      if (!wasTailCall()) {
+        emit(OpCode::RETURN);
+      }
     } else {
-      // Empty function body
       emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       emit(OpCode::RETURN);
     }
   } else {
+    // Empty function body
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }
@@ -680,9 +682,9 @@ if (param->defaultValue.has_value()) {
   
   if (function.body) {
     current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
-  }
-  
-  leaveFunction();
+	}
+
+	leaveFunction();
 }
 
 void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
@@ -1121,16 +1123,20 @@ void ByteCompiler::collectParameterPatternSlots(
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
   auto source_scope = atNode(statement);
   switch (statement.kind) {
-  case ast::NodeType::ExpressionStatement: {
-    const auto &expr_stmt =
-        static_cast<const ast::ExpressionStatement &>(statement);
-    if (expr_stmt.expression) {
-      compileExpression(*expr_stmt.expression);
-      // TCO: Don't POP if in tail position (value is return value)
-      // Also don't POP after yield expression - yield value is returned to caller
-      bool is_yield = expr_stmt.expression->kind == ast::NodeType::YieldExpression;
-      if (!in_tail_position_ && !is_yield) {
-        emit(OpCode::POP);
+case ast::NodeType::ExpressionStatement: {
+const auto &expr_stmt =
+static_cast<const ast::ExpressionStatement &>(statement);
+if (false && current_function && current_function->name == "Parser") {
+std::cerr << "EXPR_STMT Parser[" << current_function->instructions.size() << "] expr_type=" << static_cast<int>(expr_stmt.expression ? expr_stmt.expression->kind : ast::NodeType::Program) << "\n";
+}
+if (expr_stmt.expression) {
+                bool tail_before = in_tail_position_;
+                compileExpression(*expr_stmt.expression);
+                // TCO: Don't POP if in tail position (value is return value)
+                // Also don't POP after yield expression - yield value is returned to caller
+                bool is_yield = expr_stmt.expression->kind == ast::NodeType::YieldExpression;
+                if (!in_tail_position_ && !is_yield) {
+                    emit(OpCode::POP);
       }
     }
     break;
@@ -1310,9 +1316,10 @@ reserveLocalSlot(slot);
             emit(OpCode::OBJECT_GET);
             auto svOp = let.isConst ? OpCode::STORE_IMMUT_VAR : OpCode::STORE_VAR;
             emit(svOp, slot);
-        }
-      }
-      break;
+            }
+            }
+            emit(OpCode::LOAD_VAR, temp_slot);
+            break;
     }
 
     COMPILER_THROW(
@@ -1378,13 +1385,25 @@ reserveLocalSlot(slot);
     compileWaitStatement(static_cast<const ast::WaitStatement &>(statement));
     break;
 
-  case ast::NodeType::BreakStatement:
-    emit(OpCode::JUMP, 0); // Will be patched later
-    break;
+    case ast::NodeType::BreakStatement: {
+        if (loop_stack_.empty()) {
+            COMPILER_THROW("break outside of loop");
+        }
+        emit(OpCode::JUMP, 0);
+        loop_stack_.back().break_jumps.push_back(
+            static_cast<uint32_t>(current_function->instructions.size()) - 1);
+        break;
+    }
 
-  case ast::NodeType::ContinueStatement:
-    emit(OpCode::JUMP, 0); // Will be patched later
-    break;
+case ast::NodeType::ContinueStatement: {
+if (loop_stack_.empty()) {
+COMPILER_THROW("continue outside of loop");
+}
+emit(OpCode::JUMP, 0);
+loop_stack_.back().continue_jumps.push_back(
+static_cast<uint32_t>(current_function->instructions.size()) - 1);
+break;
+}
 
   case ast::NodeType::SleepStatement: {
     const auto &sleep = static_cast<const ast::SleepStatement &>(statement);
@@ -1506,6 +1525,51 @@ case ast::NodeType::TryExpression:
  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
       emit(OpCode::POP); // Discard result
     }
+    break;
+  }
+
+  case ast::NodeType::ConfigSection: {
+    // Config section: SectionName { key = value; ... }
+    // Compile to: SectionName({ key: value, ... })
+    const auto &section = static_cast<const ast::ConfigSection &>(statement);
+
+    // Load the section name as a global (it's the function being called)
+    uint32_t nameId = addStringConstant(section.name);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameId));
+
+    // Create the object literal from pairs
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &pair : section.pairs) {
+      compileExpression(*pair.second);
+      uint32_t keyId = addStringConstant(pair.first);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(keyId)));
+      emit(OpCode::OBJECT_SET);
+    }
+
+    // Call it
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+    emit(OpCode::POP); // Discard result
+    break;
+  }
+
+  case ast::NodeType::DevicesBlock: {
+    // Devices block: devices { ... }
+    // Compile to: devices({ ... })
+    const auto &devicesBlock = static_cast<const ast::DevicesBlock &>(statement);
+
+    uint32_t nameId = addStringConstant("devices");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameId));
+
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &pair : devicesBlock.pairs) {
+      compileExpression(*pair.second);
+      uint32_t keyId = addStringConstant(pair.first);
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(keyId)));
+      emit(OpCode::OBJECT_SET);
+    }
+
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+    emit(OpCode::POP);
     break;
   }
 
@@ -1831,14 +1895,25 @@ case ast::NodeType::ImplDeclaration: {
     break;
   }
 
-  case ast::NodeType::ConditionalHotkey: {
-    // Conditional hotkey: hotkey if condition => { ... }
-    const auto &condHk = static_cast<const ast::ConditionalHotkey &>(statement);
-    if (condHk.binding) {
-      compileHotkeyBinding(*condHk.binding);
-    }
-    break;
-  }
+case ast::NodeType::ConditionalHotkey: {
+            const auto &condHk = static_cast<const ast::ConditionalHotkey &>(statement);
+            if (condHk.binding && condHk.condition) {
+                BytecodeFunction conditionFn("condhotkey_condition");
+                enterFunction(std::move(conditionFn));
+                compileExpression(*condHk.condition);
+                emit(OpCode::RETURN);
+                leaveFunction();
+
+                uint32_t condFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+                auto prevWhenCondition = when_condition_func_index_;
+                when_condition_func_index_ = condFuncIndex;
+                compileHotkeyBinding(*condHk.binding);
+                when_condition_func_index_ = prevWhenCondition;
+            } else if (condHk.binding) {
+                compileHotkeyBinding(*condHk.binding);
+            }
+            break;
+        }
 
   default:
     COMPILER_THROW("Unsupported statement in bytecode compiler: " +
@@ -1950,16 +2025,24 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
         emit(OpCode::IMPORT);
 
-        if (statement.isNamedImport && !statement.importNames.empty()) {
-            for (const auto &name : statement.importNames) {
-                emit(OpCode::DUP);
-                uint32_t key_sid = addStringConstant(name);
-                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
-                emit(OpCode::OBJECT_GET);
-                uint32_t global_sid = addStringConstant(name);
-                emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+    if (statement.isNamedImport && !statement.importNames.empty()) {
+        for (size_t i = 0; i < statement.importNames.size(); ++i) {
+            const auto &name = statement.importNames[i];
+            const auto &alias = (i < statement.importAliases.size())
+                                    ? statement.importAliases[i]
+                                    : name;
+            if (name == "*" && statement.isWildcard) {
+                emit(OpCode::IMPORT_WILDCARD);
+                return;
             }
-            emit(OpCode::POP);
+            emit(OpCode::DUP);
+            uint32_t key_sid = addStringConstant(name);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
+            emit(OpCode::OBJECT_GET);
+            uint32_t global_sid = addStringConstant(alias);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+        }
+        emit(OpCode::POP);
         } else if (!statement.alias.empty()) {
             uint32_t alias_sid = addStringConstant(statement.alias);
             emit(OpCode::STORE_GLOBAL, Value::makeStringValId(alias_sid));
@@ -2641,34 +2724,37 @@ break;
                                id.symbol);
     }
 
-    switch (binding->kind) {
-    case ResolvedBindingKind::Local:
-      emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
-      break;
-    case ResolvedBindingKind::Upvalue:
-      emit(OpCode::LOAD_UPVALUE, binding->slot);
-      break;
-    case ResolvedBindingKind::Function:
-      // User-defined function - load as FunctionObject
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(
-               top_level_function_indices_by_name_[binding->name])));
-      break;
-    case ResolvedBindingKind::HostFunction:
-      // Host function - load as global, runtime will dispatch
-      {
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-      }
-      break;
-    case ResolvedBindingKind::Global:
-      // Global variable - runtime will decide
-      {
-        uint32_t strId = addStringConstant(binding->name);
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-      }
-      break;
+  if (current_function && current_function->name == "Parser" && (binding->kind == ResolvedBindingKind::Global || binding->kind == ResolvedBindingKind::HostFunction)) {
+    std::cerr << "PARSER_GLOBAL_REF[" << current_function->instructions.size() << "] name=" << id.symbol << " kind=" << static_cast<int>(binding->kind) << "\n";
+  }
+  switch (binding->kind) {
+  case ResolvedBindingKind::Local:
+    emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
+    break;
+  case ResolvedBindingKind::Upvalue:
+    emit(OpCode::LOAD_UPVALUE, binding->slot);
+    break;
+  case ResolvedBindingKind::Function:
+    // User-defined function - load as FunctionObject
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeFunctionObjId(
+             top_level_function_indices_by_name_[binding->name])));
+    break;
+  case ResolvedBindingKind::HostFunction:
+    // Host function - load as global, runtime will dispatch
+    {
+      uint32_t strId = addStringConstant(binding->name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
+    break;
+  case ResolvedBindingKind::Global:
+    // Global variable - runtime will decide
+    {
+      uint32_t strId = addStringConstant(binding->name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
+    break;
+  }
     break;
   }
 
@@ -2747,27 +2833,114 @@ break;
       COMPILER_THROW("Malformed binary expression");
     }
 
- // Special handling for 'in' and 'not in' - compile as CALL_METHOD "has"
- if (binary.operator_ == ast::BinaryOperator::In || binary.operator_ == ast::BinaryOperator::NotIn) {
- compileExpression(*binary.right); // container (receiver)
- compileExpression(*binary.left); // value (arg)
- uint32_t method_sid = addStringConstant("has");
- emit(OpCode::CALL_METHOD, std::vector<Value>{
- Value::makeStringValId(method_sid),
- Value(static_cast<uint32_t>(1))});
- if (binary.operator_ == ast::BinaryOperator::NotIn) {
- emit(OpCode::NOT);
- }
- } else if (binary.operator_ == ast::BinaryOperator::Matches ||
- binary.operator_ == ast::BinaryOperator::Tilde) {
- // Regex/string matching - compile as regex_search host function call
- uint32_t strId = addStringConstant("regex_search");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- compileExpression(*binary.left); // string to match
- compileExpression(*binary.right); // pattern
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
- } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
+    // Constant folding for literal binary expressions.
+    auto emitFoldedLiteral = [&](const ast::Expression &lhs, const ast::Expression &rhs,
+                                 ast::BinaryOperator op) -> bool {
+      if (lhs.kind == ast::NodeType::NumberLiteral && rhs.kind == ast::NodeType::NumberLiteral) {
+        const auto &l = static_cast<const ast::NumberLiteral &>(lhs);
+        const auto &r = static_cast<const ast::NumberLiteral &>(rhs);
+    const double lv = l.value;
+    const double rv = r.value;
+    auto intResult = [&](double v) -> Value {
+      if (!l.was_written_as_float && !r.was_written_as_float && isIntegerLiteral(v)) {
+        return Value::makeInt(static_cast<int64_t>(v));
+      }
+      return Value::makeDouble(v);
+    };
+    switch (op) {
+    case ast::BinaryOperator::Add:
+      emit(OpCode::LOAD_CONST, addConstant(intResult(lv + rv))); return true;
+    case ast::BinaryOperator::Sub:
+      emit(OpCode::LOAD_CONST, addConstant(intResult(lv - rv))); return true;
+    case ast::BinaryOperator::Mul:
+      emit(OpCode::LOAD_CONST, addConstant(intResult(lv * rv))); return true;
+    case ast::BinaryOperator::Div:
+      if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(intResult(lv / rv))); return true; }
+      return false;
+    case ast::BinaryOperator::Mod:
+      if (rv != 0.0) { emit(OpCode::LOAD_CONST, addConstant(intResult(std::fmod(lv, rv)))); return true; }
+      return false;
+        case ast::BinaryOperator::Less:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv < rv))); return true;
+        case ast::BinaryOperator::LessEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv <= rv))); return true;
+        case ast::BinaryOperator::Greater:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv > rv))); return true;
+        case ast::BinaryOperator::GreaterEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv >= rv))); return true;
+        case ast::BinaryOperator::Equal:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv == rv))); return true;
+        case ast::BinaryOperator::NotEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(lv != rv))); return true;
+        default:
+          return false;
+        }
+      }
+      if (lhs.kind == ast::NodeType::StringLiteral && rhs.kind == ast::NodeType::StringLiteral) {
+        const auto &l = static_cast<const ast::StringLiteral &>(lhs);
+        const auto &r = static_cast<const ast::StringLiteral &>(rhs);
+        switch (op) {
+        case ast::BinaryOperator::Add: {
+          const uint32_t sid = addStringConstant(l.value + r.value);
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
+          return true;
+        }
+        case ast::BinaryOperator::Equal:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value == r.value))); return true;
+        case ast::BinaryOperator::NotEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value != r.value))); return true;
+        default:
+          return false;
+        }
+      }
+      if (lhs.kind == ast::NodeType::BooleanLiteral && rhs.kind == ast::NodeType::BooleanLiteral) {
+        const auto &l = static_cast<const ast::BooleanLiteral &>(lhs);
+        const auto &r = static_cast<const ast::BooleanLiteral &>(rhs);
+        switch (op) {
+        case ast::BinaryOperator::And:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value && r.value))); return true;
+        case ast::BinaryOperator::Or:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value || r.value))); return true;
+        case ast::BinaryOperator::Equal:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value == r.value))); return true;
+        case ast::BinaryOperator::NotEqual:
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(l.value != r.value))); return true;
+        default:
+          return false;
+        }
+      }
+      return false;
+    };
+
+        // Special handling for 'in' and 'not in' - compile as CALL_METHOD "has"
+        if (binary.operator_ == ast::BinaryOperator::In || binary.operator_ == ast::BinaryOperator::NotIn) {
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.right); // container (receiver)
+            compileExpression(*binary.left); // value (arg)
+            in_tail_position_ = saved_tail;
+            uint32_t method_sid = addStringConstant("has");
+            emit(OpCode::CALL_METHOD, std::vector<Value>{
+                Value::makeStringValId(method_sid),
+                Value(static_cast<uint32_t>(1))});
+            if (binary.operator_ == ast::BinaryOperator::NotIn) {
+                emit(OpCode::NOT);
+            }
+        } else if (binary.operator_ == ast::BinaryOperator::Matches ||
+                   binary.operator_ == ast::BinaryOperator::Tilde) {
+            // Regex/string matching - compile as regex_search host function call
+            uint32_t strId = addStringConstant("regex_search");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.left); // string to match
+            compileExpression(*binary.right); // pattern
+            in_tail_position_ = saved_tail;
+            emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
             // Nullish coalescing: left ?? right
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
             // Evaluate left side
             compileExpression(*binary.left);
 
@@ -2782,45 +2955,58 @@ break;
             // right side
             uint32_t done = emitJump(OpCode::JUMP);
 
-            // Left was null - evaluate right side (the null was already popped by
-            // JUMP_IF_NULL)
+            // Left was null - pop the null left value, then evaluate right side
             patchJump(jumpToRight,
                 static_cast<uint32_t>(current_function->instructions.size()));
+            emit(OpCode::POP);
             compileExpression(*binary.right);
+            in_tail_position_ = saved_tail;
 
             // Done
             patchJump(done,
                 static_cast<uint32_t>(current_function->instructions.size()));
- } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
- uint32_t strId = addStringConstant("config.append");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- compileExpression(*binary.left);
- compileExpression(*binary.right);
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-    } else {
-      compileExpression(*binary.left);
-      compileExpression(*binary.right);
-      emit(toBytecodeOperator(binary.operator_));
+        } else if (binary.operator_ == ast::BinaryOperator::ConfigAppend) {
+            uint32_t strId = addStringConstant("config.append");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        } else {
+            if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
+                break;
+            }
+            bool saved_tail = in_tail_position_;
+            in_tail_position_ = false;
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            in_tail_position_ = saved_tail;
+            emit(toBytecodeOperator(binary.operator_));
     }
     break;
   }
 
-  case ast::NodeType::RangeExpression: {
-    const auto &range = static_cast<const ast::RangeExpression &>(expression);
-    if (!range.start || !range.end) {
-      COMPILER_THROW("Malformed range expression");
+    case ast::NodeType::RangeExpression: {
+        const auto &range = static_cast<const ast::RangeExpression &>(expression);
+        if (!range.start || !range.end) {
+            COMPILER_THROW("Malformed range expression");
+        }
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*range.start);
+        compileExpression(*range.end);
+        if (range.step) {
+            compileExpression(*range.step);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::RANGE_STEP_NEW);
+        } else {
+            in_tail_position_ = saved_tail;
+            emit(OpCode::RANGE_NEW);
+        }
+        break;
     }
-    compileExpression(*range.start);
-    compileExpression(*range.end);
-
-    if (range.step) {
-      compileExpression(*range.step);
-      emit(OpCode::RANGE_STEP_NEW);
-    } else {
-      emit(OpCode::RANGE_NEW);
-    }
-    break;
-  }
 
   case ast::NodeType::PipelineExpression: {
     const auto &pipeline =
@@ -3119,13 +3305,14 @@ break;
                 emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
               }
             } else {
-              COMPILER_THROW(
-                  "Unsupported binding kind for destructuring");
+                    COMPILER_THROW(
+                        "Unsupported binding kind for destructuring");
+                }
             }
-          }
         }
+        emit(OpCode::LOAD_VAR, temp_slot);
         break;
-      }
+    }
     if (target_object) {
         // Object destructuring assignment: {key: val} = obj
         // Value is already on the stack from the common RHS compilation above
@@ -3161,11 +3348,12 @@ break;
             } else {
               COMPILER_THROW(
                   "Unsupported binding kind for destructuring");
+                }
             }
-          }
         }
+        emit(OpCode::LOAD_VAR, temp_slot);
         break;
-      }
+    }
     if (target_at) {
         // @field assignment - store to self.field
         // Value is already on the stack from the common RHS compilation above
@@ -3778,66 +3966,76 @@ if (update_expr.isPrefix) {
   }
 
 case ast::NodeType::UnaryExpression: {
-    const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
-    if (!unary.operand) {
-        COMPILER_THROW("Unary expression missing operand");
+        const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
+        if (!unary.operand) {
+            COMPILER_THROW("Unary expression missing operand");
+        }
+
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        switch (unary.operator_) {
+        case ast::UnaryExpression::UnaryOperator::Not:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::NOT);
+            break;
+        case ast::UnaryExpression::UnaryOperator::BitwiseNot:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::BIT_NOT);
+            break;
+        case ast::UnaryExpression::UnaryOperator::Minus:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::NEGATE);
+            break;
+        case ast::UnaryExpression::UnaryOperator::Plus:
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            break;
+        case ast::UnaryExpression::UnaryOperator::Length: {
+            compileExpression(*unary.operand);
+            in_tail_position_ = saved_tail;
+            emit(OpCode::LENGTH);
+        }
+        break;
+        default:
+            in_tail_position_ = saved_tail;
+            COMPILER_THROW("Unsupported unary operator");
+        }
+        break;
     }
 
-    // Apply unary operator
-    switch (unary.operator_) {
-    case ast::UnaryExpression::UnaryOperator::Not:
-        compileExpression(*unary.operand);
-        emit(OpCode::NOT);
+    case ast::NodeType::TernaryExpression: {
+        const auto &ternary =
+            static_cast<const ast::TernaryExpression &>(expression);
+        if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
+            COMPILER_THROW("Ternary expression missing components");
+        }
+
+        // Condition is never in tail position (it's consumed by the branch)
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*ternary.condition);
+        in_tail_position_ = saved_tail;
+
+        // Jump to false branch if condition is false
+        uint32_t false_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+        // Compile true branch (inherits tail position from outer context)
+        compileExpression(*ternary.trueValue);
+        uint32_t end_jump = emitJump(OpCode::JUMP);
+
+        // Patch false jump and compile false branch
+        patchJump(false_jump,
+            static_cast<uint32_t>(current_function->instructions.size()));
+        compileExpression(*ternary.falseValue);
+
+        // Patch end jump
+        patchJump(end_jump,
+            static_cast<uint32_t>(current_function->instructions.size()));
         break;
-    case ast::UnaryExpression::UnaryOperator::BitwiseNot:
-        compileExpression(*unary.operand);
-        emit(OpCode::BIT_NOT);
-        break;
-    case ast::UnaryExpression::UnaryOperator::Minus:
-        compileExpression(*unary.operand);
-        emit(OpCode::NEGATE);
-        break;
-    case ast::UnaryExpression::UnaryOperator::Plus:
-        compileExpression(*unary.operand);
-        break;
-	case ast::UnaryExpression::UnaryOperator::Length: {
-		compileExpression(*unary.operand);
-		emit(OpCode::LENGTH);
-	}
- break;
-    default:
-      COMPILER_THROW("Unsupported unary operator");
     }
-    break;
-  }
-
-  case ast::NodeType::TernaryExpression: {
-    const auto &ternary =
-        static_cast<const ast::TernaryExpression &>(expression);
-    if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
-      COMPILER_THROW("Ternary expression missing components");
-    }
-
-    // Compile condition
-    compileExpression(*ternary.condition);
-
-    // Jump to false branch if condition is false
-    uint32_t false_jump = emitJump(OpCode::JUMP_IF_FALSE);
-
-    // Compile true branch
-    compileExpression(*ternary.trueValue);
-    uint32_t end_jump = emitJump(OpCode::JUMP);
-
-    // Patch false jump and compile false branch
-    patchJump(false_jump,
-              static_cast<uint32_t>(current_function->instructions.size()));
-    compileExpression(*ternary.falseValue);
-
-    // Patch end jump
-    patchJump(end_jump,
-              static_cast<uint32_t>(current_function->instructions.size()));
-    break;
-  }
 
   case ast::NodeType::GetInputExpression: {
     const auto &getInput = static_cast<const ast::GetInputExpression &>(expression);
@@ -3956,9 +4154,10 @@ void ByteCompiler::compileCallExpression(
       }
       compileExpression(*arg);
     }
-    // CALL with self + explicit args
-    emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
-    return;
+		// CALL with self + explicit args
+		emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
+		in_tail_position_ = saved_tail_position;
+		return;
   }
 
 if (expression.callee->kind == ast::NodeType::Identifier) {
@@ -3979,10 +4178,11 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 compileExpression(*arg);
                 ++totalArgs;
             }
-            emit(OpCode::STRUCT_NEW,
-                 std::vector<Value>{Value::makeStringValId(type_sid),
-                                    Value(totalArgs)});
-            return;
+		emit(OpCode::STRUCT_NEW,
+		     std::vector<Value>{Value::makeStringValId(type_sid),
+		                        Value(totalArgs)});
+		in_tail_position_ = saved_tail_position;
+		return;
         }
         if (binding && binding->kind == ResolvedBindingKind::Global &&
             top_level_class_names_.find(callee_id.symbol) !=
@@ -4003,6 +4203,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 totalArgs++;
             }
             emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
             return;
         }
         bool isHostFunc = binding && binding->kind == ResolvedBindingKind::HostFunction;
@@ -4026,11 +4227,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 }
                 totalArgs++;
             }
- emit(OpCode::CALL, Value(totalArgs));
- return;
- }
- }
- // Check for member call
+            emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
+            return;
+        }
+        }
+        // Check for member call
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
     const auto &member =
         static_cast<const ast::MemberExpression &>(*expression.callee);
@@ -4056,8 +4258,9 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
      COMPILER_THROW("struct.get requires literal string field name");
    }
    uint32_t field_sid = addStringConstant(fieldLit->value);
-   emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
-   return;
+            emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
+            in_tail_position_ = saved_tail_position;
+            return;
  }
  if (objIdent->symbol == "struct" && property->symbol == "set" &&
      expression.args.size() == 3) {
@@ -4069,13 +4272,26 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
    }
    compileExpression(*expression.args[2]); // value
    uint32_t field_sid = addStringConstant(fieldLit->value);
-   emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
-   return;
+            emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
+            in_tail_position_ = saved_tail_position;
+            return;
  }
 
- // Push namespace object as receiver
- uint32_t objSid = addStringConstant(objIdent->symbol);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+            // Push receiver: use local/upvalue binding if available, otherwise global
+            const auto *objBinding = bindingFor(*objIdent);
+            if (objBinding) {
+                if (objBinding->kind == ResolvedBindingKind::Local) {
+                    emit(OpCode::LOAD_VAR, effectiveSlot(objBinding->slot));
+                } else if (objBinding->kind == ResolvedBindingKind::Upvalue) {
+                    emit(OpCode::LOAD_UPVALUE, objBinding->slot);
+                } else {
+                    uint32_t objSid = addStringConstant(objIdent->symbol);
+                    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+                }
+            } else {
+                uint32_t objSid = addStringConstant(objIdent->symbol);
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
+            }
 
  // Compile args
  uint32_t totalArgs = 0;
@@ -4116,12 +4332,13 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  totalArgs++;
  }
 
- // Call method
- uint32_t method_sid = addStringConstant(property->symbol);
- emit(OpCode::CALL_METHOD, std::vector<Value>{
- Value::makeStringValId(method_sid),
- Value(totalArgs)});
- return;
+            // Call method
+            uint32_t method_sid = addStringConstant(property->symbol);
+            emit(OpCode::CALL_METHOD, std::vector<Value>{
+                Value::makeStringValId(method_sid),
+                Value(totalArgs)});
+            in_tail_position_ = saved_tail_position;
+            return;
  }
  // Fall through to instance-style call for non-identifier objects
 
@@ -4178,11 +4395,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         Value::makeStringValId(method_sid),
         Value(totalArgs)});
         
-    if (member.isOptional) {
-      patchJump(opt_jump,
-                static_cast<uint32_t>(current_function->instructions.size()));
-    }
-    return;
+            if (member.isOptional) {
+                patchJump(opt_jump,
+                    static_cast<uint32_t>(current_function->instructions.size()));
+            }
+            in_tail_position_ = saved_tail_position;
+            return;
   }
 
   if (expression.callee->kind == ast::NodeType::Identifier) {
@@ -4190,31 +4408,32 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
  if (!binding) {
- // Unknown identifier — try as global function call (runtime will throw if not found)
- uint32_t strId = addStringConstant(callee_id.symbol);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- uint32_t totalArgs = 0;
- for (const auto &arg : expression.args) {
- if (!arg) {
- emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
- totalArgs++;
- continue;
- }
- compileExpression(*arg);
- totalArgs++;
- }
- if (hasKwargs) {
- emit(OpCode::OBJECT_NEW);
- for (const auto &kwarg : expression.kwargs) {
- emit(OpCode::DUP);
- { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- compileExpression(*kwarg.value);
- emit(OpCode::OBJECT_SET);
- }
- totalArgs++;
- }
- emit(OpCode::CALL, Value(totalArgs));
- return;
+            // Unknown identifier — try as global function call (runtime will throw if not found)
+            uint32_t strId = addStringConstant(callee_id.symbol);
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            uint32_t totalArgs = 0;
+            for (const auto &arg : expression.args) {
+                if (!arg) {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                    totalArgs++;
+                    continue;
+                }
+                compileExpression(*arg);
+                totalArgs++;
+            }
+            if (hasKwargs) {
+                emit(OpCode::OBJECT_NEW);
+                for (const auto &kwarg : expression.kwargs) {
+                    emit(OpCode::DUP);
+                    { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                    compileExpression(*kwarg.value);
+                    emit(OpCode::OBJECT_SET);
+                }
+                totalArgs++;
+            }
+            emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
+            return;
  }
 
  if (binding->kind == ResolvedBindingKind::HostFunction) {
@@ -4256,11 +4475,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  }
  totalArgs++;
  }
- emit(OpCode::CALL, Value(totalArgs));
- return;
- }
+            emit(OpCode::CALL, Value(totalArgs));
+            in_tail_position_ = saved_tail_position;
+            return;
+        }
 
-    if (binding->kind == ResolvedBindingKind::Function) {
+        if (binding->kind == ResolvedBindingKind::Function) {
       // User-defined function - load as FunctionObject and call
       uint32_t fn_index = top_level_function_indices_by_name_[binding->name];
       uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));
@@ -4303,9 +4523,10 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         totalArgs++;
       }
 
-  in_tail_position_ = saved_tail_position;
+in_tail_position_ = saved_tail_position;
   if (in_tail_position_ && try_depth_ == 0) {
     emit(OpCode::TAIL_CALL, totalArgs);
+    emit(OpCode::RETURN);
     emitted_tail_call_ = true;
   } else {
     emit(OpCode::CALL, totalArgs);
@@ -4313,7 +4534,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
   return;
 }
 
-  if (binding->kind == ResolvedBindingKind::Global) {
+if (binding->kind == ResolvedBindingKind::Global) {
     // Global variable that might contain a function - load and call
     {
       uint32_t strId = addStringConstant(binding->name);
@@ -4358,8 +4579,9 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
     }
 
     in_tail_position_ = saved_tail_position;
-    if (in_tail_position_ && try_depth_ == 0) {
+if (in_tail_position_ && try_depth_ == 0) {
     emit(OpCode::TAIL_CALL, totalArgs);
+    emit(OpCode::RETURN);
     emitted_tail_call_ = true;
   } else {
     emit(OpCode::CALL, totalArgs);
@@ -4417,30 +4639,31 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
   // TCO: Emit TAIL_CALL if in tail position and callee is a user-defined
   // function
   in_tail_position_ = saved_tail_position;
-  if (in_tail_position_ && try_depth_ == 0 &&
-      expression.callee->kind == ast::NodeType::Identifier) {
-    const auto &callee_id =
-        static_cast<const ast::Identifier &>(*expression.callee);
-    const auto *binding = bindingFor(callee_id);
-    if (binding && (binding->kind == ResolvedBindingKind::Local ||
-                    binding->kind == ResolvedBindingKind::Upvalue ||
-                    binding->kind == ResolvedBindingKind::Global)) {
-      emit(OpCode::TAIL_CALL, actualArgCount);
-      emitted_tail_call_ = true;
-      return;
+if (in_tail_position_ && try_depth_ == 0 &&
+        expression.callee->kind == ast::NodeType::Identifier) {
+      const auto &callee_id =
+          static_cast<const ast::Identifier &>(*expression.callee);
+      const auto *binding = bindingFor(callee_id);
+      if (binding && (binding->kind == ResolvedBindingKind::Local ||
+                      binding->kind == ResolvedBindingKind::Upvalue ||
+                      binding->kind == ResolvedBindingKind::Global)) {
+        emit(OpCode::TAIL_CALL, actualArgCount);
+        emit(OpCode::RETURN);
+        emitted_tail_call_ = true;
+        return;
+      }
     }
-  }
 
   emit(OpCode::CALL, actualArgCount);
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
-  if (!statement.condition || !statement.consequence) {
-    COMPILER_THROW("Malformed if statement");
-  }
+    if (!statement.condition || !statement.consequence) {
+        COMPILER_THROW("Malformed if statement");
+    }
 
-  compileExpression(*statement.condition);
-  uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    compileExpression(*statement.condition);
+    uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
   bool was_tail = in_tail_position_;
   bool consequence_was_tail = false;
@@ -4462,11 +4685,11 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
     emit(OpCode::RETURN);
   }
 
-  if (statement.alternative) {
-    uint32_t end_jump = emitJump(OpCode::JUMP);
-    uint32_t else_target =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(else_jump, else_target);
+    if (statement.alternative) {
+        uint32_t end_jump = emitJump(OpCode::JUMP);
+        uint32_t else_target =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(else_jump, else_target);
 
     bool alternative_was_tail = false;
     if (was_tail) {
@@ -4484,9 +4707,9 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
       emit(OpCode::RETURN);
     }
 
-    uint32_t end_target =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(end_jump, end_target);
+        uint32_t end_target =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(end_jump, end_target);
 
     // TCO: Only set tail call flag if BOTH branches emitted tail calls
     if (was_tail && consequence_was_tail && alternative_was_tail) {
@@ -4505,55 +4728,73 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
 }
 
 void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
-  if (!statement.condition || !statement.body) {
-    COMPILER_THROW("Malformed while statement");
-  }
+    if (!statement.condition || !statement.body) {
+        COMPILER_THROW("Malformed while statement");
+    }
 
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
 
-  compileExpression(*statement.condition);
-  uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    loop_stack_.push_back({loop_start, {}, {}});
 
-  // Disable tail position so body's last expression result gets POPped
-  bool saved_tail = in_tail_position_;
-  in_tail_position_ = false;
-  compileStatement(*statement.body);
-  in_tail_position_ = saved_tail;
-  emit(OpCode::JUMP, loop_start);
+    compileExpression(*statement.condition);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
-  uint32_t loop_end =
-      static_cast<uint32_t>(current_function->instructions.size());
-  patchJump(end_jump, loop_end);
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileStatement(*statement.body);
+    in_tail_position_ = saved_tail;
+    emit(OpCode::JUMP, loop_start);
+
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, loop_end);
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, loop_start);
+    }
 }
 
 void ByteCompiler::compileDoWhileStatement(
     const ast::DoWhileStatement &statement) {
-  if (!statement.condition || !statement.body) {
-    COMPILER_THROW("Malformed do-while statement");
-  }
+    if (!statement.condition || !statement.body) {
+        COMPILER_THROW("Malformed do-while statement");
+    }
 
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
 
-  // Execute body first (do-while always executes at least once)
-  // Disable tail position so body's last expression result gets POPped
-  bool saved_tail = in_tail_position_;
-  in_tail_position_ = false;
-  compileStatement(*statement.body);
-  in_tail_position_ = saved_tail;
+    loop_stack_.push_back({loop_start, {}, {}});
 
-  // Then check condition
-  compileExpression(*statement.condition);
-  uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
+    compileStatement(*statement.body);
+    in_tail_position_ = saved_tail;
 
-  // Jump back to loop start
-  emit(OpCode::JUMP, loop_start);
+    uint32_t continue_target =
+        static_cast<uint32_t>(current_function->instructions.size());
+    compileExpression(*statement.condition);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
-  // Patch end jump
-  uint32_t loop_end =
-      static_cast<uint32_t>(current_function->instructions.size());
-  patchJump(end_jump, loop_end);
+    emit(OpCode::JUMP, loop_start);
+
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, loop_end);
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, continue_target);
+    }
 }
 
 void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
@@ -4588,41 +4829,145 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   reserveLocalSlot(iterVarSlot);
   emit(OpCode::STORE_VAR, iterVarSlot);
 
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
 
-  // Call iterator.next()
-  emit(OpCode::LOAD_VAR, iterVarSlot);
-  emit(OpCode::ITER_NEXT);
+    loop_stack_.push_back({loop_start, {}, {}});
 
-  // Store result in temp
-  uint32_t resultSlot = next_local_index++;
-  reserveLocalSlot(resultSlot);
-  emit(OpCode::STORE_VAR, resultSlot);
+    // Call iterator.next()
+    emit(OpCode::LOAD_VAR, iterVarSlot);
+    emit(OpCode::ITER_NEXT);
 
-  // Check result.done - if true, exit loop
-  emit(OpCode::LOAD_VAR, resultSlot);
-  { uint32_t _sid = addStringConstant("done"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-  emit(OpCode::OBJECT_GET);
-  uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
+    // Store result in temp
+    uint32_t resultSlot = next_local_index++;
+    reserveLocalSlot(resultSlot);
+    emit(OpCode::STORE_VAR, resultSlot);
 
-  // Iterator returns {first, second, done}:
-  // - Arrays: first=index, second=value
-  // - Objects: first=key, second=value
-  // - Strings: first=index, second=char
-  
-  if (multiVar && iterSlots.size() >= 2) {
-    // Multi-variable: store first and second directly
+    // Check result.done - if true, exit loop
     emit(OpCode::LOAD_VAR, resultSlot);
-    { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    { uint32_t _sid = addStringConstant("done"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
     emit(OpCode::OBJECT_GET);
-    emit(OpCode::STORE_VAR, iterSlots[0]);
-    
-    emit(OpCode::LOAD_VAR, resultSlot);
-    { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    emit(OpCode::OBJECT_GET);
-    emit(OpCode::STORE_VAR, iterSlots[1]);
-  } else {
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
+
+ // Iterator returns {first, second, done}:
+ // - Arrays: first=index, second=value
+ // - Objects: first=key, second=value
+ // - Strings: first=index, second=char
+
+ if (multiVar && iterSlots.size() >= 2) {
+ // Multi-variable iteration:
+ // - Arrays/strings/ranges: destructure the element (second)
+ //   e.g. for a, b in [[1,2],[3,4]] -> a=1, b=2
+ // - Objects/sets: key-value (first=key, second=value)
+
+ // Check if it's an array (has "push")
+ emit(OpCode::LOAD_VAR, iterableSlot);
+ { uint32_t _sid = addStringConstant("push"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ uint32_t isArrayJump = emitJump(OpCode::JUMP_IF_NULL);
+
+        // Array: first=index, second=value (consistent with string/range/object paths)
+        if (iterSlots.size() >= 2) {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[1]);
+            for (size_t i = 2; i < iterSlots.size(); i++) {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                emit(OpCode::STORE_VAR, iterSlots[i]);
+            }
+        } else {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+        }
+ uint32_t arrEndJump = emitJump(OpCode::JUMP);
+
+ // Check if it's a string (has "upper")
+ patchJump(isArrayJump, static_cast<uint32_t>(current_function->instructions.size()));
+ emit(OpCode::LOAD_VAR, iterableSlot);
+ { uint32_t _sid = addStringConstant("upper"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ uint32_t isStringJump = emitJump(OpCode::JUMP_IF_NULL);
+
+        // String: for i, c in "str" -> i=index (first), c=char (second)
+        if (iterSlots.size() >= 2) {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[1]);
+            for (size_t i = 2; i < iterSlots.size(); i++) {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                emit(OpCode::STORE_VAR, iterSlots[i]);
+            }
+        } else {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+        }
+ uint32_t strEndJump = emitJump(OpCode::JUMP);
+
+ // Check if it's a range (has "step")
+ patchJump(isStringJump, static_cast<uint32_t>(current_function->instructions.size()));
+ emit(OpCode::LOAD_VAR, iterableSlot);
+ { uint32_t _sid = addStringConstant("step"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ uint32_t isRangeJump = emitJump(OpCode::JUMP_IF_NULL);
+
+        // Range: for i, v in 1..10 -> i=index (first), v=value (second)
+        if (iterSlots.size() >= 2) {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[1]);
+            for (size_t i = 2; i < iterSlots.size(); i++) {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                emit(OpCode::STORE_VAR, iterSlots[i]);
+            }
+        } else {
+            emit(OpCode::LOAD_VAR, resultSlot);
+            { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_GET);
+            emit(OpCode::STORE_VAR, iterSlots[0]);
+        }
+ uint32_t rangeEndJump = emitJump(OpCode::JUMP);
+
+ // Object/set: first=key, second=value
+ patchJump(isRangeJump, static_cast<uint32_t>(current_function->instructions.size()));
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("first"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ emit(OpCode::STORE_VAR, iterSlots[0]);
+
+ if (iterSlots.size() >= 2) {
+ emit(OpCode::LOAD_VAR, resultSlot);
+ { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ emit(OpCode::OBJECT_GET);
+ emit(OpCode::STORE_VAR, iterSlots[1]);
+ }
+ for (size_t i = 2; i < iterSlots.size(); i++) {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::STORE_VAR, iterSlots[i]);
+ }
+
+ patchJump(arrEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+ patchJump(strEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+ patchJump(rangeEndJump, static_cast<uint32_t>(current_function->instructions.size()));
+ } else {
     // Single variable: 
     // - Arrays/strings/ranges: store second (value/char/element)
     // - Objects/sets: store first (key/element)
@@ -4697,22 +5042,28 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     patchJump(rangeEndJump, static_cast<uint32_t>(current_function->instructions.size()));
   }
 
-  // Execute body
-  // Disable tail position so body's last expression result gets POPped
-  {
-    bool saved_tail = in_tail_position_;
-    in_tail_position_ = false;
-    compileStatement(*statement.body);
-    in_tail_position_ = saved_tail;
-  }
+// Execute body
+    {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+    }
 
-  // Jump back to loop start
-  emit(OpCode::JUMP, loop_start);
+    emit(OpCode::JUMP, loop_start);
 
-  // Patch end jump
-  uint32_t loop_end =
-      static_cast<uint32_t>(current_function->instructions.size());
-  patchJump(end_jump, loop_end);
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, loop_end);
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, loop_start);
+    }
 }
 
 void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
@@ -4720,73 +5071,111 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
     COMPILER_THROW("Malformed loop statement: body is null");
   }
 
-  // Check if this is a count-based loop: loop 5 { ... }
-  if (statement.countExpr) {
-    // Compile count expression
-    compileExpression(*statement.countExpr);
+    // Check if this is a count-based loop: loop 5 { ... }
+    if (statement.countExpr) {
+        compileExpression(*statement.countExpr);
 
-    // Store count in temp variable
-    uint32_t countSlot = next_local_index++;
-    reserveLocalSlot(countSlot);
-    emit(OpCode::STORE_VAR, countSlot);
+        uint32_t countSlot = next_local_index++;
+        reserveLocalSlot(countSlot);
+        emit(OpCode::STORE_VAR, countSlot);
 
-    // Create counter variable starting at 0
-    uint32_t counterSlot = next_local_index++;
-    reserveLocalSlot(counterSlot);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
-    emit(OpCode::STORE_VAR, counterSlot);
+        uint32_t counterSlot = next_local_index++;
+        reserveLocalSlot(counterSlot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(0))));
+        emit(OpCode::STORE_VAR, counterSlot);
 
+        uint32_t loop_start =
+            static_cast<uint32_t>(current_function->instructions.size());
+
+        loop_stack_.push_back({loop_start, {}, {}});
+
+        emit(OpCode::LOAD_VAR, counterSlot);
+        emit(OpCode::LOAD_VAR, countSlot);
+        emit(OpCode::LT);
+        uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+
+        emit(OpCode::LOAD_VAR, counterSlot);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
+        emit(OpCode::ADD);
+        emit(OpCode::STORE_VAR, counterSlot);
+
+        emit(OpCode::JUMP, loop_start);
+
+        uint32_t loop_end =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(end_jump, loop_end);
+
+        auto info = std::move(loop_stack_.back());
+        loop_stack_.pop_back();
+        for (uint32_t bj : info.break_jumps) {
+            patchJump(bj, loop_end);
+        }
+        for (uint32_t cj : info.continue_jumps) {
+            patchJump(cj, loop_start);
+        }
+        return;
+    }
+
+    // Check if this is a condition-based loop: loop while condition { ... }
+    if (statement.condition) {
+        uint32_t loop_start =
+            static_cast<uint32_t>(current_function->instructions.size());
+
+        loop_stack_.push_back({loop_start, {}, {}});
+
+        compileExpression(*statement.condition);
+        uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+
+        emit(OpCode::JUMP, loop_start);
+
+        uint32_t loop_end =
+            static_cast<uint32_t>(current_function->instructions.size());
+        patchJump(end_jump, loop_end);
+
+        auto info = std::move(loop_stack_.back());
+        loop_stack_.pop_back();
+        for (uint32_t bj : info.break_jumps) {
+            patchJump(bj, loop_end);
+        }
+        for (uint32_t cj : info.continue_jumps) {
+            patchJump(cj, loop_start);
+        }
+        return;
+    }
+
+    // Infinite loop: loop { ... }
     uint32_t loop_start =
         static_cast<uint32_t>(current_function->instructions.size());
 
-    // Check if counter < count
-    emit(OpCode::LOAD_VAR, counterSlot);
-    emit(OpCode::LOAD_VAR, countSlot);
-    emit(OpCode::LT);
-    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    loop_stack_.push_back({loop_start, {}, {}});
 
-    // Execute body
-    compileStatement(*statement.body);
+    {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileStatement(*statement.body);
+        in_tail_position_ = saved_tail;
+    }
 
-    // Increment counter
-    emit(OpCode::LOAD_VAR, counterSlot);
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(1))));
-    emit(OpCode::ADD);
-    emit(OpCode::STORE_VAR, counterSlot);
-
-    // Jump back to loop start
     emit(OpCode::JUMP, loop_start);
 
-    // Patch end jump
-    uint32_t loop_end =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(end_jump, loop_end);
-    return;
-  }
-
-  // Check if this is a condition-based loop: loop while condition { ... }
-  if (statement.condition) {
-    uint32_t loop_start =
-        static_cast<uint32_t>(current_function->instructions.size());
-
-    compileExpression(*statement.condition);
-    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
-
-    compileStatement(*statement.body);
-    emit(OpCode::JUMP, loop_start);
-
-    uint32_t loop_end =
-        static_cast<uint32_t>(current_function->instructions.size());
-    patchJump(end_jump, loop_end);
-    return;
-  }
-
-  // Infinite loop: loop { ... }
-  uint32_t loop_start =
-      static_cast<uint32_t>(current_function->instructions.size());
-
-  compileStatement(*statement.body);
-  emit(OpCode::JUMP, loop_start);
+    auto info = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    for (uint32_t bj : info.break_jumps) {
+        patchJump(bj, static_cast<uint32_t>(current_function->instructions.size()));
+    }
+    for (uint32_t cj : info.continue_jumps) {
+        patchJump(cj, loop_start);
+    }
 }
 
 void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
@@ -4917,6 +5306,59 @@ void ByteCompiler::collectFunctionDeclarations(
           }
         }
       }
+    }
+    break;
+  }
+
+  case ast::NodeType::ForStatement: {
+    const auto &for_stmt = static_cast<const ast::ForStatement &>(statement);
+    if (for_stmt.body) {
+      collectFunctionDeclarations(*for_stmt.body, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::LoopStatement: {
+    const auto &loop_stmt = static_cast<const ast::LoopStatement &>(statement);
+    if (loop_stmt.body) {
+      collectFunctionDeclarations(*loop_stmt.body, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::DoWhileStatement: {
+    const auto &do_while = static_cast<const ast::DoWhileStatement &>(statement);
+    if (do_while.body) {
+      collectFunctionDeclarations(*do_while.body, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
+    for (const auto &case_node : switch_stmt.cases) {
+      if (case_node && case_node->body) {
+        collectFunctionDeclarations(*case_node->body, out);
+      }
+    }
+    break;
+  }
+
+  case ast::NodeType::OnModeStatement: {
+    const auto &on_mode = static_cast<const ast::OnModeStatement &>(statement);
+    if (on_mode.body) {
+      collectFunctionDeclarations(*on_mode.body, out);
+    }
+    if (on_mode.alternative) {
+      collectFunctionDeclarations(*on_mode.alternative, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::OffModeStatement: {
+    const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
+    if (off_mode.body) {
+      collectFunctionDeclarations(*off_mode.body, out);
     }
     break;
   }
@@ -5058,18 +5500,78 @@ void ByteCompiler::collectLambdaExpressions(
     }
       break;
     }
- case ast::NodeType::DecoratorStatement: {
-        const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
-        if (dec.target) {
-            collectLambdaExpressions(*dec.target, out);
-        }
-        for (const auto &deco : dec.decorators) {
-            if (deco) {
-                collectLambdaExpressions(*deco, out);
-            }
-        }
-        break;
+case ast::NodeType::DecoratorStatement: {
+    const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
+    if (dec.target) {
+      collectLambdaExpressions(*dec.target, out);
     }
+    for (const auto &deco : dec.decorators) {
+      if (deco) {
+        collectLambdaExpressions(*deco, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::TryExpression: {
+    const auto &try_expr = static_cast<const ast::TryExpression &>(statement);
+    if (try_expr.tryBody) {
+      collectLambdaExpressions(*try_expr.tryBody, out);
+    }
+    if (try_expr.catchBody) {
+      collectLambdaExpressions(*try_expr.catchBody, out);
+    }
+    if (try_expr.finallyBlock) {
+      collectLambdaExpressions(*try_expr.finallyBlock, out);
+    }
+    break;
+  }
+  case ast::NodeType::SwitchStatement: {
+    const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
+    if (switch_stmt.expression) {
+      collectLambdaExpressions(*switch_stmt.expression, out);
+    }
+    for (const auto &case_node : switch_stmt.cases) {
+      if (case_node) {
+        if (case_node->test) {
+          collectLambdaExpressions(*case_node->test, out);
+        }
+        if (case_node->body) {
+          collectLambdaExpressions(*case_node->body, out);
+        }
+      }
+    }
+    break;
+  }
+  case ast::NodeType::ImplDeclaration: {
+    const auto &impl = static_cast<const ast::ImplDeclaration &>(statement);
+    for (const auto &method : impl.funcs) {
+      if (method && method->body) {
+        for (const auto &nested : method->body->body) {
+          if (nested) {
+            collectLambdaExpressions(*nested, out);
+          }
+        }
+      }
+    }
+    break;
+  }
+  case ast::NodeType::OnModeStatement: {
+    const auto &on_mode = static_cast<const ast::OnModeStatement &>(statement);
+    if (on_mode.body) {
+      collectLambdaExpressions(*on_mode.body, out);
+    }
+    if (on_mode.alternative) {
+      collectLambdaExpressions(*on_mode.alternative, out);
+    }
+    break;
+  }
+  case ast::NodeType::OffModeStatement: {
+    const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
+    if (off_mode.body) {
+      collectLambdaExpressions(*off_mode.body, out);
+    }
+    break;
+  }
   default:
     break;
   }
@@ -5275,12 +5777,17 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
-  case ast::NodeType::SpreadPattern: {
-    const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
-    if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
-    break;
-  }
-  
+case ast::NodeType::SpreadPattern: {
+      const auto &spreadPat = static_cast<const ast::SpreadPattern &>(expression);
+      if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
+      break;
+    }
+  case ast::NodeType::GoExpression: {
+      const auto &go_expr = static_cast<const ast::GoExpression &>(expression);
+      if (go_expr.call) collectLambdaExpressions(*go_expr.call, out);
+      break;
+    }
+
   default:
     break;
   }
@@ -5466,9 +5973,8 @@ void ByteCompiler::reserveLocalSlot(uint32_t slot) {
 }
 
 void ByteCompiler::enterFunction(BytecodeFunction &&function,
-                                 std::optional<uint32_t> slot) {
-  // Support nested functions by saving current function context
-  if (current_function) {
+		std::optional<uint32_t> slot) {
+	if (current_function) {
     // Save current function state for nesting
     saved_functions_.push_back(
         std::make_pair(std::move(current_function), current_function_slot_));
@@ -5480,11 +5986,11 @@ void ByteCompiler::enterFunction(BytecodeFunction &&function,
 }
 
 void ByteCompiler::leaveFunction() {
-  if (!current_function) {
-    COMPILER_THROW("No active function to close");
-  }
+	if (!current_function) {
+		COMPILER_THROW("No active function to close");
+	}
 
-  // Apply jump threading optimization
+    // Apply jump threading optimization
   optimizeJumps();
 
   
@@ -5819,21 +6325,21 @@ void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
  { uint32_t _sid = addStringConstant(cmd.key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
  break;
- case ast::InputCommand::MouseClick:
- // io.mouseClick(cmd.text) - text contains button name
- {
- uint32_t strId = addStringConstant("io.mouseClick");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
- break;
- case ast::InputCommand::MouseMove:
- // io.mouseMove(x, y) - xExprStr and yExprStr contain coordinates
- {
- uint32_t strId = addStringConstant("io.mouseMove");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
+        case ast::InputCommand::MouseClick:
+            // io.click(cmd.text) - text contains button name
+            {
+                uint32_t strId = addStringConstant("io.click");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
+            { uint32_t _sid = addStringConstant(cmd.text); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+            break;
+        case ast::InputCommand::MouseMove:
+            // io.mouseMoveTo(x, y) - xExprStr and yExprStr contain coordinates
+            {
+                uint32_t strId = addStringConstant("io.mouseMoveTo");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
  { uint32_t _sid = addStringConstant(cmd.xExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  { uint32_t _sid = addStringConstant(cmd.yExprStr); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));

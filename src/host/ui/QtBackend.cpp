@@ -227,7 +227,15 @@ bool QtBackend::trayIsVisible() const {
 }
 
 void QtBackend::applyStyle(std::shared_ptr<ui::UIElement> element, const std::string &key, const ui::PropValue &value) {
-    service_->applyStyle(element, key, value);
+  service_->applyStyle(element, key, value);
+}
+
+void QtBackend::canvasFlush(std::shared_ptr<ui::UIElement> canvas) {
+  service_->canvasFlush(canvas);
+}
+
+void QtBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
+  service_->canvasClear(canvas);
 }
 
 } // namespace havel::host

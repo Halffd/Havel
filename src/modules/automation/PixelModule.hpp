@@ -10,6 +10,6 @@
 
 namespace havel::modules {
 
-void registerPixelModule(compiler::VMApi& api);
+void registerPixelModule(const compiler::VMApi& api);
 
 } // namespace havel::modules

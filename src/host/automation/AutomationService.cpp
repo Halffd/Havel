@@ -64,9 +64,7 @@ void AutomationService::stopAll() {
 }
 
 std::vector<std::string> AutomationService::getTaskNames() const {
-    // Note: AutomationManager doesn't expose task names directly
-    // This would need to be added to AutomationManager
-    return {};
+  return m_manager ? m_manager->getTaskNames() : std::vector<std::string>{};
 }
 
 } // namespace havel::host

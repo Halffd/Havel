@@ -231,18 +231,20 @@ regProto("map", 2, [&vm](const std::vector<Value>& args) {
     return args.size() > 2 ? args[2] : Value::makeNull();
   });
 
-  regProto("foreach", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
-    if (args[0].isArrayId()) {
-      auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr) {
-        for (const auto& v : *arr) {
-          vm.call(args[1], {v});
-        }
-      }
-    }
-    return Value::makeNull();
-  });
+auto foreachFn = [&vm](const std::vector<Value>& args) {
+if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+if (args[0].isArrayId()) {
+auto* arr = vm.getHeap().array(args[0].asArrayId());
+if (arr) {
+for (const auto& v : *arr) {
+vm.call(args[1], {v});
+}
+}
+}
+return Value::makeNull();
+};
+regProto("foreach", 2, foreachFn);
+regProto("each", 2, foreachFn);
 
   regProto("every", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeBool(false);
@@ -309,7 +311,7 @@ regProto("map", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
   });
 
-  regProto("slice", 4, [&vm](const std::vector<Value>& args) {
+    regProtoVar("slice", [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
@@ -528,21 +530,37 @@ regProto("map", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
   });
 
-  // count: [1,2,2,3].count(2) -> 2
-  regProto("count", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2) return Value::makeInt(0);
-    if (args[0].isArrayId()) {
-      auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr) {
-        int64_t count = 0;
-        for (const auto& v : *arr) {
-          if (vm.valuesEqualDeepPublic(v, args[1])) count++;
-        }
-        return Value::makeInt(count);
-      }
-    }
-    return Value::makeInt(0);
-  });
+regProtoVar("count", [&vm](const std::vector<Value>& args) {
+if (args.empty()) return Value::makeInt(0);
+if (!args[0].isArrayId()) return Value::makeInt(0);
+auto* arr = vm.getHeap().array(args[0].asArrayId());
+if (!arr) return Value::makeInt(0);
+int64_t count = 0;
+if (args.size() > 1 && (args[1].isFunctionObjId() || args[1].isClosureId())) {
+for (const auto& v : *arr) {
+auto predResult = vm.call(args[1], {v});
+if (vm.toBoolPublic(predResult)) count++;
+}
+} else if (args.size() > 1) {
+for (const auto& v : *arr) {
+if (vm.valuesEqualDeepPublic(v, args[1])) count++;
+}
+}
+return Value::makeInt(count);
+});
+
+regProto("includes", 2, [&vm](const std::vector<Value>& args) {
+if (args.size() < 2) return Value::makeBool(false);
+if (args[0].isArrayId()) {
+auto* arr = vm.getHeap().array(args[0].asArrayId());
+if (arr) {
+for (const auto& v : *arr) {
+if (vm.valuesEqualDeepPublic(v, args[1])) return Value::makeBool(true);
+}
+}
+}
+return Value::makeBool(false);
+});
 
   // groupBy: [1,2,3].groupBy(x => x % 2) -> {"odd":[1,3], "even":[2]}
   regProto("groupBy", 2, [&vm](const std::vector<Value>& args) {
@@ -590,6 +608,90 @@ regProto("map", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeBool(true);
   });
 
-}
+  regProto("toList", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateArray();
+    auto* result = vm.getHeap().array(resultRef.id);
+    for (const auto& v : *arr) result->push_back(v);
+    return Value::makeArrayId(resultRef.id);
+  });
+
+  regProto("toSet", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr) return Value::makeNull();
+    auto resultRef = vm.getHeap().allocateSet();
+    auto* result = vm.getHeap().set(resultRef.id);
+    for (const auto& v : *arr) {
+      std::string key;
+      if (v.isInt()) key = std::to_string(v.asInt());
+      else if (v.isStringValId() && vm.getCurrentChunk()) key = vm.getCurrentChunk()->getString(v.asStringValId());
+      else if (v.isStringId() && vm.getHeap().string(v.asStringId())) key = *vm.getHeap().string(v.asStringId());
+      else key = vm.toString(v);
+      (*result)[key] = Value::makeBool(true);
+    }
+    return Value::makeSetId(resultRef.id);
+    });
+
+  regProto("sum", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr) return Value::makeNull();
+    double total = 0;
+    for (const auto& v : *arr) {
+      if (v.isInt()) total += v.asInt();
+      else if (v.isDouble()) total += v.asDouble();
+    }
+    return Value(total);
+  });
+
+  regProto("avg", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) return Value::makeNull();
+    double total = 0;
+    size_t count = 0;
+    for (const auto& v : *arr) {
+      if (v.isInt()) { total += v.asInt(); ++count; }
+      else if (v.isDouble()) { total += v.asDouble(); ++count; }
+    }
+    return count > 0 ? Value(total / static_cast<double>(count)) : Value::makeNull();
+  });
+
+  regProto("max", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) return Value::makeNull();
+    double maxVal = std::numeric_limits<double>::lowest();
+    bool hasValue = false;
+    for (const auto& v : *arr) {
+      double num = 0;
+      if (v.isInt()) num = v.asInt();
+      else if (v.isDouble()) num = v.asDouble();
+      else continue;
+      if (!hasValue || num > maxVal) { maxVal = num; hasValue = true; }
+    }
+    return hasValue ? Value(maxVal) : Value::makeNull();
+  });
+
+  regProto("min", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty() || !args[0].isArrayId()) return Value::makeNull();
+    auto* arr = vm.getHeap().array(args[0].asArrayId());
+    if (!arr || arr->empty()) return Value::makeNull();
+    double minVal = std::numeric_limits<double>::max();
+    bool hasValue = false;
+    for (const auto& v : *arr) {
+      double num = 0;
+      if (v.isInt()) num = v.asInt();
+      else if (v.isDouble()) num = v.asDouble();
+      else continue;
+      if (!hasValue || num < minVal) { minVal = num; hasValue = true; }
+    }
+    return hasValue ? Value(minVal) : Value::makeNull();
+  });
+
+  }
 
 } // namespace havel::compiler::prototypes

@@ -3,8 +3,10 @@
 #include "ModeManager.hpp"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include "window/WindowMonitor.hpp"
 #include "../havel-lang/compiler/runtime/EventQueue.hpp"
+#include "../havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "HotkeyConditionCompiler.hpp"
 #include "HotkeyActionWrapper.hpp"
 #include "HotkeyActionContext.hpp"
@@ -21,7 +23,7 @@ std::string ConditionalHotkeyManager::currentMode = "default";
 
 ConditionalHotkeyManager::ConditionalHotkeyManager(std::shared_ptr<IO> io)
     : io(io) {
-  debug("Initializing ConditionalHotkeyManager (event-driven, no background thread)");
+  if (debugging::debug_hotkeys) debug("Initializing ConditionalHotkeyManager (event-driven, no background thread)");
 }
 
 ConditionalHotkeyManager::~ConditionalHotkeyManager() {
@@ -40,19 +42,23 @@ void ConditionalHotkeyManager::ScheduleReevaluation() {
 }
 
 void ConditionalHotkeyManager::registerVarChangedHandler() {
-  
-  // When a global variable changes, reevaluate all hotkey conditions
-  // This enables event-driven hotkey condition checking
   if (eventQueue_) {
-    // Register handler for VAR_CHANGED events
-    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED, 
-        [this](const compiler::Event& event) {
-          // Reevaluate hotkey conditions when variables change
-          // This allows "mode == 'gaming'" or similar conditions to react immediately
-          debug("VAR_CHANGED event - reevaluating hotkey conditions");
+    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
+      [this](const compiler::Event& event) {
+        std::string var_name;
+        if (event.ptr) {
+          var_name = static_cast<const char*>(event.ptr);
+        }
+        if (debugging::debug_hotkeys) debug("VAR_CHANGED event for '{}' - reevaluating conditional hotkeys", var_name);
+        if (!var_name.empty()) {
+          eventQueue_->push([this, var_name]() {
+            UpdateConditionalHotkeysForVariable(var_name);
+          });
+        } else {
           ScheduleReevaluation();
-        });
-    debug("ConditionalHotkeyManager: Registered VAR_CHANGED handler for reactive hotkey updates");
+        }
+      });
+    if (debugging::debug_hotkeys) debug("ConditionalHotkeyManager: Registered VAR_CHANGED handler with variable filtering");
   }
 }
 
@@ -73,10 +79,10 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
       // This caches the bytecode for fast repeated evaluation
       conditionCompiler_->compileCondition(bytecodeVM_, condition);
       hasCompiledCondition = true;
-      debug("Compiled hotkey condition to bytecode: '{}'", condition);
+      if (debugging::debug_hotkeys) debug("Compiled hotkey condition to bytecode: '{}'", condition);
     } catch (const std::exception& e) {
       // Fall back to string-based evaluation if compilation fails
-      debug("Failed to compile condition '{}': {}, falling back to string evaluation",
+      if (debugging::debug_hotkeys) debug("Failed to compile condition '{}': {}, falling back to string evaluation",
             condition, e.what());
       hasCompiledCondition = false;
     }
@@ -104,10 +110,10 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
                 trueAction
             );
             if (fiber) {
-              // Schedule the fiber for execution
-              // Note: The fiber will be executed by the ExecutionEngine
-              // which will call the registered callback
-              debug("Scheduled async hotkey action for condition: {}", condition);
+              // Schedule the fiber for execution by the ExecutionEngine
+              // Hotkey fibers get priority for responsive execution
+              scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
+              if (debugging::debug_hotkeys) debug("Scheduled async hotkey action for condition: {}", condition);
             } else {
               error("Failed to create Fiber for async hotkey action, falling back to sync");
               trueAction();
@@ -144,8 +150,10 @@ void ConditionalHotkeyManager::registerVarChangedHandler() {
                 falseAction
             );
             if (fiber) {
-              // Schedule the fiber for execution
-              debug("Scheduled async hotkey false action for condition: {}", condition);
+              // Schedule the fiber for execution by the ExecutionEngine
+              // Hotkey fibers get priority for responsive execution
+              scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
+              if (debugging::debug_hotkeys) debug("Scheduled async hotkey false action for condition: {}", condition);
             } else {
               error("Failed to create Fiber for async hotkey false action, falling back to sync");
               falseAction();
@@ -221,8 +229,10 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
                   trueAction
               );
               if (fiber) {
-                // Schedule the fiber for execution
-                debug("Scheduled async hotkey action for function condition");
+                // Schedule the fiber for execution by the ExecutionEngine
+                // Hotkey fibers get priority for responsive execution
+                scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
+                if (debugging::debug_hotkeys) debug("Scheduled async hotkey action for function condition");
               } else {
                 error("Failed to create Fiber for async hotkey action, falling back to sync");
                 trueAction();
@@ -256,8 +266,10 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
                   falseAction
               );
               if (fiber) {
-                // Schedule the fiber for execution
-                debug("Scheduled async hotkey false action for function condition");
+                // Schedule the fiber for execution by the ExecutionEngine
+                // Hotkey fibers get priority for responsive execution
+                scheduler_->addActionFiber(fiber, havel::compiler::FiberPriority::HOTKEY);
+                if (debugging::debug_hotkeys) debug("Scheduled async hotkey false action for function condition");
               } else {
                 error("Failed to create Fiber for async hotkey false action, falling back to sync");
                 falseAction();
@@ -359,6 +371,52 @@ ConditionalHotkey* ConditionalHotkeyManager::FindHotkey(int id) {
 
 void ConditionalHotkeyManager::UpdateAllConditionalHotkeys() {
   BatchUpdateConditionalHotkeys();
+}
+
+void ConditionalHotkeyManager::UpdateConditionalHotkeysForVariable(const std::string& var_name) {
+  if (!enabled) {
+    return;
+  }
+
+  std::vector<int> toGrab;
+  std::vector<int> toUngrab;
+
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+    for (auto& ch : conditionalHotkeys) {
+      if (!ch.monitoringEnabled) continue;
+
+      bool depends = ch.dependencies.empty() ||
+                     ch.dependencies.count(var_name) > 0;
+      if (!depends) continue;
+
+      bool shouldGrab = false;
+      if (std::holds_alternative<std::string>(ch.condition)) {
+        shouldGrab = EvaluateCondition(std::get<std::string>(ch.condition));
+      } else if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
+        const auto& func = std::get<std::function<bool()>>(ch.condition);
+        if (func) shouldGrab = func();
+      }
+
+      if (shouldGrab && !ch.currentlyGrabbed) {
+        toGrab.push_back(ch.id);
+        ch.currentlyGrabbed = true;
+        ch.lastConditionResult = true;
+      } else if (!shouldGrab && ch.currentlyGrabbed) {
+        toUngrab.push_back(ch.id);
+        ch.currentlyGrabbed = false;
+        ch.lastConditionResult = false;
+      }
+    }
+  }
+
+  for (int id : toGrab) {
+    io->GrabHotkey(id);
+  }
+  for (int id : toUngrab) {
+    io->UngrabHotkey(id);
+  }
 }
 
 void ConditionalHotkeyManager::ForceUpdateAllConditionalHotkeys() {
@@ -483,11 +541,11 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
 
   if (verboseLogging) {
     if (std::holds_alternative<std::function<bool()>>(hotkey.condition)) {
-      debug("Updating conditional hotkey - Key: '{}', Function Condition, "
+      if (debugging::debug_hotkeys) debug("Updating conditional hotkey - Key: '{}', Function Condition, "
             "CurrentlyGrabbed: {}",
             hotkey.key, hotkey.currentlyGrabbed);
     } else {
-      debug("Updating conditional hotkey - Key: '{}', Condition: '{}', "
+      if (debugging::debug_hotkeys) debug("Updating conditional hotkey - Key: '{}', Condition: '{}', "
             "CurrentlyGrabbed: {}",
             hotkey.key, std::get<std::string>(hotkey.condition), hotkey.currentlyGrabbed);
     }
@@ -565,10 +623,10 @@ void ConditionalHotkeyManager::UpdateHotkeyState(ConditionalHotkey& hotkey,
     hotkey.currentlyGrabbed = true;
     if (verboseLogging) {
       if (std::holds_alternative<std::string>(hotkey.condition)) {
-        debug("Grabbed conditional hotkey: {} ({})", hotkey.key, 
+        if (debugging::debug_hotkeys) debug("Grabbed conditional hotkey: {} ({})", hotkey.key, 
               std::get<std::string>(hotkey.condition));
       } else {
-        debug("Grabbed conditional hotkey: {} (function condition)", hotkey.key);
+        if (debugging::debug_hotkeys) debug("Grabbed conditional hotkey: {} (function condition)", hotkey.key);
       }
     }
   } else if (!conditionMet && hotkey.currentlyGrabbed) {
@@ -576,10 +634,10 @@ void ConditionalHotkeyManager::UpdateHotkeyState(ConditionalHotkey& hotkey,
     hotkey.currentlyGrabbed = false;
     if (verboseLogging) {
       if (std::holds_alternative<std::string>(hotkey.condition)) {
-        debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key,
+        if (debugging::debug_hotkeys) debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key,
               std::get<std::string>(hotkey.condition));
       } else {
-        debug("Ungrabbed conditional hotkey: {} (function condition)", hotkey.key);
+        if (debugging::debug_hotkeys) debug("Ungrabbed conditional hotkey: {} (function condition)", hotkey.key);
       }
     }
   }
@@ -662,7 +720,7 @@ void ConditionalHotkeyManager::SetMode(const std::string& newMode) {
     currentMode = newMode;
   }
 
-  debug("Mode changed to: {}", newMode);
+  if (debugging::debug_hotkeys) debug("Mode changed to: {}", newMode);
   // Schedule reevaluation through EventQueue for thread-safe execution
   ScheduleReevaluation();
 }

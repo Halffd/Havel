@@ -79,174 +79,183 @@ static std::string intToBase(int64_t val, int base, const std::string &prefix) {
     return prefix + digits;
 }
 
-void registerFormatModule(VMApi &api) {
-    api.registerFunction("hex", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("hex() requires a value");
-        const auto &v = args[0];
-        if (v.isInt())
-            return api.makeString(intToBase(v.asInt(), 16, "0x"));
-        if (v.isDouble())
-            return api.makeString(intToBase(
-                static_cast<int64_t>(v.asDouble()), 16, "0x"));
-        if (v.isPtr()) {
-            uint64_t addr = reinterpret_cast<uint64_t>(v.asPtr());
-            return api.makeString(intToBase(static_cast<int64_t>(addr), 16, "0x"));
-        }
-        if (v.isArrayId()) {
-            uint32_t len = api.length(v);
-            std::string result;
-            result.reserve(len * 4);
-            for (uint32_t i = 0; i < len; ++i) {
-                Value elem = api.getAt(v, i);
-                int64_t byte = elem.isInt() ? (elem.asInt() & 0xFF) : 0;
-                const char *hex_chars = "0123456789abcdef";
-                result += hex_chars[(byte >> 4) & 0xF];
-                result += hex_chars[byte & 0xF];
-            }
-            return api.makeString(std::move(result));
-        }
-        throw std::runtime_error("hex() expects a number, pointer, or array");
-    });
+void registerFormatModule(const VMApi &api) {
+	api.registerFunction("fmt.hex", [api](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("hex() requires a value");
+		const auto &v = args[0];
+		if (v.isInt())
+			return api.makeString(intToBase(v.asInt(), 16, "0x"));
+		if (v.isDouble())
+			return api.makeString(intToBase(
+				static_cast<int64_t>(v.asDouble()), 16, "0x"));
+		if (v.isPtr()) {
+			uint64_t addr = reinterpret_cast<uint64_t>(v.asPtr());
+			return api.makeString(intToBase(static_cast<int64_t>(addr), 16, "0x"));
+		}
+		if (v.isArrayId()) {
+			uint32_t len = api.length(v);
+			std::string result;
+			result.reserve(len * 4);
+			for (uint32_t i = 0; i < len; ++i) {
+				Value elem = api.getAt(v, i);
+				int64_t byte = elem.isInt() ? (elem.asInt() & 0xFF) : 0;
+				const char *hex_chars = "0123456789abcdef";
+				result += hex_chars[(byte >> 4) & 0xF];
+				result += hex_chars[byte & 0xF];
+			}
+			return api.makeString(std::move(result));
+		}
+		throw std::runtime_error("hex() expects a number, pointer, or array");
+	});
 
-    api.registerFunction("oct", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("oct() requires a value");
-        const auto &v = args[0];
-        if (v.isInt())
-            return api.makeString(intToBase(v.asInt(), 8, "0o"));
-        if (v.isDouble())
-            return api.makeString(intToBase(
-                static_cast<int64_t>(v.asDouble()), 8, "0o"));
-        if (v.isArrayId()) {
-            uint32_t len = api.length(v);
-            std::string result;
-            for (uint32_t i = 0; i < len; ++i) {
-                Value elem = api.getAt(v, i);
-                int64_t byte = elem.isInt() ? (elem.asInt() & 0xFF) : 0;
-                if (i > 0) result += ' ';
-                result += intToBase(byte, 8, "0o");
-            }
-            return api.makeString(std::move(result));
-        }
-        throw std::runtime_error("oct() expects a number or array");
-    });
+	api.registerFunction("fmt.oct", [api](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("oct() requires a value");
+		const auto &v = args[0];
+		if (v.isInt())
+			return api.makeString(intToBase(v.asInt(), 8, "0o"));
+		if (v.isDouble())
+			return api.makeString(intToBase(
+				static_cast<int64_t>(v.asDouble()), 8, "0o"));
+		if (v.isArrayId()) {
+			uint32_t len = api.length(v);
+			std::string result;
+			for (uint32_t i = 0; i < len; ++i) {
+				Value elem = api.getAt(v, i);
+				int64_t byte = elem.isInt() ? (elem.asInt() & 0xFF) : 0;
+				if (i > 0) result += ' ';
+				result += intToBase(byte, 8, "0o");
+			}
+			return api.makeString(std::move(result));
+		}
+		throw std::runtime_error("oct() expects a number or array");
+	});
 
-    api.registerFunction("bin", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("bin() requires a value");
-        const auto &v = args[0];
-        if (v.isInt())
-            return api.makeString(intToBase(v.asInt(), 2, "0b"));
-        if (v.isDouble())
-            return api.makeString(intToBase(
-                static_cast<int64_t>(v.asDouble()), 2, "0b"));
-        if (v.isArrayId()) {
-            uint32_t len = api.length(v);
-            std::string result;
-            for (uint32_t i = 0; i < len; ++i) {
-                Value elem = api.getAt(v, i);
-                int64_t byte = elem.isInt() ? (elem.asInt() & 0xFF) : 0;
-                if (i > 0) result += ' ';
-                result += intToBase(byte, 2, "0b");
-            }
-            return api.makeString(std::move(result));
-        }
-        throw std::runtime_error("bin() expects a number or array");
-    });
+	api.registerFunction("fmt.bin", [api](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("bin() requires a value");
+		const auto &v = args[0];
+		if (v.isInt())
+			return api.makeString(intToBase(v.asInt(), 2, "0b"));
+		if (v.isDouble())
+			return api.makeString(intToBase(
+				static_cast<int64_t>(v.asDouble()), 2, "0b"));
+		if (v.isArrayId()) {
+			uint32_t len = api.length(v);
+			std::string result;
+			for (uint32_t i = 0; i < len; ++i) {
+				Value elem = api.getAt(v, i);
+				int64_t byte = elem.isInt() ? (elem.asInt() & 0xFF) : 0;
+				if (i > 0) result += ' ';
+				result += intToBase(byte, 2, "0b");
+			}
+			return api.makeString(std::move(result));
+		}
+		throw std::runtime_error("bin() expects a number or array");
+	});
 
-    api.registerFunction("b64", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("b64() requires a string or array");
-        const auto &v = args[0];
-        if (v.isStringValId() || v.isStringId()) {
-            std::string s = api.toString(v);
-            std::string encoded = base64Encode(
-                reinterpret_cast<const uint8_t *>(s.data()), s.size());
-            return api.makeString(std::move(encoded));
-        }
-        if (v.isArrayId()) {
-            uint32_t len = api.length(v);
-            std::vector<uint8_t> bytes;
-            bytes.reserve(len);
-            for (uint32_t i = 0; i < len; ++i) {
-                Value elem = api.getAt(v, i);
-                if (elem.isInt())
-                    bytes.push_back(static_cast<uint8_t>(elem.asInt() & 0xFF));
-                else
-                    bytes.push_back(0);
-            }
-            std::string encoded = base64Encode(bytes.data(), bytes.size());
-            return api.makeString(std::move(encoded));
-        }
-        throw std::runtime_error("b64() expects a string or byte array");
-    });
+	api.registerFunction("fmt.b64", [api](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("b64() requires a string or array");
+		const auto &v = args[0];
+		if (v.isStringValId() || v.isStringId()) {
+			std::string s = api.toString(v);
+			std::string encoded = base64Encode(
+				reinterpret_cast<const uint8_t *>(s.data()), s.size());
+			return api.makeString(std::move(encoded));
+		}
+		if (v.isArrayId()) {
+			uint32_t len = api.length(v);
+			std::vector<uint8_t> bytes;
+			bytes.reserve(len);
+			for (uint32_t i = 0; i < len; ++i) {
+				Value elem = api.getAt(v, i);
+				if (elem.isInt())
+					bytes.push_back(static_cast<uint8_t>(elem.asInt() & 0xFF));
+				else
+					bytes.push_back(0);
+			}
+			std::string encoded = base64Encode(bytes.data(), bytes.size());
+			return api.makeString(std::move(encoded));
+		}
+		throw std::runtime_error("b64() expects a string or byte array");
+	});
 
-    api.registerFunction("b64decode", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("b64decode() requires a string");
-        const auto &v = args[0];
-        if (!v.isStringValId() && !v.isStringId())
-            throw std::runtime_error("b64decode() expects a string");
-        std::string s = api.toString(v);
-        auto decoded = base64Decode(s);
-        Value arr = api.makeArray();
-        for (auto b : decoded)
-            api.push(arr, Value(static_cast<int64_t>(b)));
-        return arr;
-    });
+	api.registerFunction("fmt.b64decode", [api](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("b64decode() requires a string");
+		const auto &v = args[0];
+		if (!v.isStringValId() && !v.isStringId())
+			throw std::runtime_error("b64decode() expects a string");
+		std::string s = api.toString(v);
+		auto decoded = base64Decode(s);
+		Value arr = api.makeArray();
+		for (auto b : decoded)
+			api.push(arr, Value(static_cast<int64_t>(b)));
+		return arr;
+	});
 
-    api.registerFunction("format", [&api](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("format() requires a format string");
-        const auto &fmtVal = args[0];
-        if (!fmtVal.isStringValId() && !fmtVal.isStringId())
-            throw std::runtime_error("format(): first argument must be a format string");
-        std::string fmt = api.toString(fmtVal);
+	api.registerFunction("fmt.format", [api](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("format() requires a format string");
+		const auto &fmtVal = args[0];
+		if (!fmtVal.isStringValId() && !fmtVal.isStringId())
+			throw std::runtime_error("format(): first argument must be a format string");
+		std::string fmt = api.toString(fmtVal);
 
-        std::string result;
-        size_t argIdx = 1;
-        for (size_t i = 0; i < fmt.size(); ++i) {
-            if (fmt[i] == '{' && i + 1 < fmt.size() && fmt[i + 1] == '}') {
-                if (argIdx >= args.size())
-                    throw std::runtime_error("format(): not enough arguments for {}");
-                result += api.toString(args[argIdx++]);
-                ++i;
-            } else if (fmt[i] == '{' && i + 1 < fmt.size() && fmt[i + 1] == ':') {
-                size_t close = fmt.find('}', i + 2);
-                if (close == std::string::npos)
-                    throw std::runtime_error("format(): unclosed format specifier");
-                std::string spec = fmt.substr(i + 2, close - i - 2);
-                if (argIdx >= args.size())
-                    throw std::runtime_error("format(): not enough arguments");
-                const auto &val = args[argIdx++];
-                if (spec == "x" || spec == "hex") {
-                    if (val.isInt())
-                        result += intToBase(val.asInt(), 16, "");
-                    else
-                        result += api.toString(val);
-                } else if (spec == "o" || spec == "oct") {
-                    if (val.isInt())
-                        result += intToBase(val.asInt(), 8, "");
-                    else
-                        result += api.toString(val);
-                } else if (spec == "b" || spec == "bin") {
-                    if (val.isInt())
-                        result += intToBase(val.asInt(), 2, "");
-                    else
-                        result += api.toString(val);
-                } else if (spec == "d" || spec == "dec") {
-                    result += api.toString(val);
-                } else {
-                    result += api.toString(val);
-                }
-                i = close;
-            } else {
-                result += fmt[i];
-            }
-        }
-        return api.makeString(std::move(result));
-    });
+		std::string result;
+		size_t argIdx = 1;
+		for (size_t i = 0; i < fmt.size(); ++i) {
+			if (fmt[i] == '{' && i + 1 < fmt.size() && fmt[i + 1] == '}') {
+				if (argIdx >= args.size())
+					throw std::runtime_error("format(): not enough arguments for {}");
+				result += api.toString(args[argIdx++]);
+				++i;
+			} else if (fmt[i] == '{' && i + 1 < fmt.size() && fmt[i + 1] == ':') {
+				size_t close = fmt.find('}', i + 2);
+				if (close == std::string::npos)
+					throw std::runtime_error("format(): unclosed format specifier");
+				std::string spec = fmt.substr(i + 2, close - i - 2);
+				if (argIdx >= args.size())
+					throw std::runtime_error("format(): not enough arguments");
+				const auto &val = args[argIdx++];
+				if (spec == "x" || spec == "hex") {
+					if (val.isInt())
+						result += intToBase(val.asInt(), 16, "");
+					else
+						result += api.toString(val);
+				} else if (spec == "o" || spec == "oct") {
+					if (val.isInt())
+						result += intToBase(val.asInt(), 8, "");
+					else
+						result += api.toString(val);
+				} else if (spec == "b" || spec == "bin") {
+					if (val.isInt())
+						result += intToBase(val.asInt(), 2, "");
+					else
+						result += api.toString(val);
+				} else if (spec == "d" || spec == "dec") {
+					result += api.toString(val);
+				} else {
+					result += api.toString(val);
+				}
+				i = close;
+			} else {
+				result += fmt[i];
+			}
+		}
+		return api.makeString(std::move(result));
+	});
+
+	auto fmtObj = api.makeObject();
+	api.setField(fmtObj, "hex", api.makeFunctionRef("fmt.hex"));
+	api.setField(fmtObj, "oct", api.makeFunctionRef("fmt.oct"));
+	api.setField(fmtObj, "bin", api.makeFunctionRef("fmt.bin"));
+	api.setField(fmtObj, "b64", api.makeFunctionRef("fmt.b64"));
+	api.setField(fmtObj, "b64decode", api.makeFunctionRef("fmt.b64decode"));
+	api.setField(fmtObj, "format", api.makeFunctionRef("fmt.format"));
+	api.setGlobal("fmt", fmtObj);
 }
 
 } // namespace havel::stdlib

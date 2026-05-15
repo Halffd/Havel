@@ -1,6 +1,7 @@
 #include "KeyTap.hpp"
 #include "core/HotkeyManager.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <iostream>
 
 namespace havel {
@@ -10,7 +11,7 @@ KeyTap::~KeyTap() {
 }
 
 void KeyTap::setup() {
-    debug("KeyTap::setup() called for key: '{}'", keyName);
+    if (debugging::debug_io) debug("KeyTap::setup() called for key: '{}'", keyName);
     
     // Only register ONE key down hotkey
     std::string downPrefix = "@|";
@@ -102,6 +103,6 @@ void KeyTap::setup() {
         });
     }
     
-    debug("KeyTap::setup() complete for '{}'", keyName);
+    if (debugging::debug_io) debug("KeyTap::setup() complete for '{}'", keyName);
 }
 }

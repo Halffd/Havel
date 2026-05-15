@@ -608,3 +608,130 @@ class Vec2 {
 
 v = Vec2(1, 2)
 print(v)        // Vec2(1, 2)
+
+## Protocols
+```havel
+// ⚠️⚠️ ULTRA IMPORTANT WARNING: DO NOT USE `impl` ⚠️⚠️
+// Havel's type/protocol system uses Python/Rust-style protocols (not interfaces/traits).
+// The `impl` keyword is **not supported** and must NEVER be used. 
+// Protocol conformance is checked structurally: if your class/struct defines the required functions, 
+// it conforms automatically. Using `impl ... for ...` will cause a compiler error, break your build, 
+// and may desync your runtime type data. 
+// 
+// Summary:
+//  - Protocol compliance is **automatic**: define the right methods, that's all.
+//  - DO NOT use `impl`, `implements` or any similar keywords.
+//  - You **only** need to declare `: ProtocolName` after your class/struct. 
+//  - Implementation is by method presence, not with explicit declarations.
+// 
+// IF YOU THINK YOU NEED TO WRITE `impl` — YOU ARE WRONG.
+
+// Protocol requiring id() → int for hash use
+prot Hashable {
+    fn id() -> int
+}
+
+// Protocol for optional-like types (e.g., container for possible None/Some value)
+prot Optional {
+    fn is_some() -> bool
+    fn get() -> any
+}
+
+// Marker protocol for generic interface typing (empty, structural use)
+prot Interface {}
+
+// Protocol requiring iter() yielding an iterator
+prot Iterable {
+    fn iter() -> Iter
+}
+
+// Protocol for array-like iterators; must implement each() and map()
+prot IterArray : Iterable {
+    fn each(arr: any) -> Iter
+    fn map(arr: any, fn_transform: fn(any) -> any) -> Iter
+}
+
+// Double-ended queue (deque), conforms to IterArray protocol
+class Deque : IterArray {
+    data: array
+
+    fn @(items: any...) {
+        @data = []
+        for item in items
+            @data.push(item)
+    }
+
+    fn each(arr: any = null) -> Iter {
+        idx: int = 0
+        arr_ref: array = arr if arr else @data
+        {
+            fn next() -> any {
+                if idx < arr_ref.len {
+                    v = arr_ref[idx]
+                    idx += 1
+                    v
+                }
+            }
+        }
+    }
+
+    fn map(arr: any = null, fn_transform: fn(any) -> any) -> Iter {
+        arr_ref: array = arr if arr else @data
+        out: array = []
+        for v in arr_ref
+            out.push(fn_transform(v))
+        Deque(*out).each()
+    }
+
+    fn sort() -> Deque {
+        sorted_data: array = []
+        for x in @data
+            sorted_data.push(x)
+        sorted_data.sort()
+        Deque(*sorted_data)
+    }
+
+    fn iter() -> Iter {
+        @each()
+    }
+
+    fn str() -> string {
+        "Deque({@data})"
+    }
+}
+
+// Struct representing a collection of exceptions, conforms to Optional protocol
+struct ExceptionList : Optional {
+    exceptions: array
+
+    fn @(exs: any...) {
+        @exceptions = []
+        for e in exs
+            @exceptions.push(e)
+    }
+
+    fn is_some() -> bool {
+        @exceptions.len > 0
+    }
+
+    fn get() -> array {
+        @exceptions
+    }
+
+    fn str() -> string {
+        "ExceptionList({@exceptions})"
+    }
+}
+
+// Native string: conforms to Hashable protocol via id()
+string : Hashable {
+    fn id() -> int {
+        // Simple polynomial rolling hash of string bytes
+        hash: int = 0
+        for c in this
+            hash = hash * 31 + c.ord
+        hash
+    }
+}
+}
+```

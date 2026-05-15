@@ -169,9 +169,9 @@ gdb ./build-debug/havel
 # ⚠️ HAVEL SYNTAX RULES (READ BEFORE CODING) ⚠️
 
 IF YOU GENERATE HAVEL CODE THAT USES:
-- Semicolons inside conditions/loops → REJECTED
+- Semicolons at every line → REJECTED (use only for inline separation)
 - Variable declaration with let → REJECTED  (use python-style declaration)
-- const keyword → REJECTED  (use uppercase)
+- const keyword → REJECTED  (use uppercase or kotlin-like  val)
 - `export` keyword → REJECTED
 - `hotkey "Ctrl+Shift+F1" {}` → REJECTED (use `^+F1 => { }` syntax)
 - `hotkey.register()` → REJECTED (only in loops/objects, use `F1 => { }` syntax)
@@ -179,7 +179,13 @@ IF YOU GENERATE HAVEL CODE THAT USES:
 - this keyword → REJECTED (use @ ruby-style)
 - static keyword → REJECTED (use @@)
 - # comments → REJECTED (use //)
-- String concatenation with +, commas, dot or newlines → REJECTED (use {var} or $var)
+- parseInt/parseFloat - REJECTED (use int() or num())
+- impl x for - REJECTED (use vcolons, class :)
+- Objects prentending to be sets - REJECTED (sets and tuples already exist, python-style {})
+- end, do or then - REJECTED (use block brackets or indent/colon syntax, prefer indented)
+- String concatenation with +, commas, dot or newlines → REJECTED (use {var} or $var string interpolation)
+- Doing complex things on modules that could be made into classes/structs - Then use them instead
+- and, or - use &&, || and !
 THE COMPILER WILL ERROR ON THESE PATTERNS. DO NOT USE THEM.
 Function calls without parenthesis - ALLOWED
 DO NOT THINK ABOUT WHAT HAVEL SYNTAX SHOULD BE
@@ -195,7 +201,7 @@ Havel uses **Python-style modules**:
 
 - NEVER reintroduce `host_global_names` set.
 - The compiler uses runtime dispatch via `CALL` + `HostFunctionRef`.
-- Host functions are registered via `registerHostFunction()` and exist as globals.
+https://www.youtube.com/watch?v=jmsgJPLbxbc- Host functions are registered via `registerHostFunction()` and exist as globals.
 - `host_global_names` was removed because it duplicated runtime information and caused desync bugs.
 - If you see `host_global_names` in code → DELETE IT.
 - If you think you need `host_global_names` → YOU ARE WRONG.

@@ -1,5 +1,4 @@
 // Decorator factory test — [bracket] syntax
-// @ syntax is broken: causes "Undefined variable: 'this'"
 // Use [bracket] syntax instead
 
 pass = 0

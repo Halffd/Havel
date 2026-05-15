@@ -3,6 +3,7 @@
 #include "../../ast/AST.h"
 #include "BytecodeIR.hpp"
 #include "../semantic/LexicalResolver.hpp"
+#include "../semantic/TypeChecker.hpp"
 #include "../module/ModuleLoader.hpp"
 #include <filesystem>
 #include <memory>
@@ -37,9 +38,15 @@ public:
   compileWithModuleLoader(const ast::Program &program, ModuleLoader &loader,
 	const std::filesystem::path &basePath);
 	// Pre-populate known global names (for REPL persistence across compiles)
-  void setKnownGlobals(const std::unordered_set<std::string> &names) {
-    known_globals_ = names;
-  }
+    void setKnownGlobals(const std::unordered_set<std::string> &names) {
+        known_globals_ = names;
+    }
+    void setTypeCheckResult(TypeCheckResult result) {
+        type_check_result_ = std::move(result);
+    }
+    const TypeCheckResult &typeCheckResult() const {
+        return type_check_result_;
+    }
   const LexicalResolutionResult &lexicalResolution() const {
     return lexical_resolution_;
   }
@@ -243,10 +250,12 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   // HostBridge for lazy module loading and permission checks
   HostBridge *host_bridge_ = nullptr;
 
-  // Error collection for linting
-  bool collect_errors_ = false;
-  bool has_error_ = false;
-  std::vector<CompilerError> errors_;
+    // Error collection for linting
+    bool collect_errors_ = false;
+    bool has_error_ = false;
+    std::vector<CompilerError> errors_;
+
+    TypeCheckResult type_check_result_;
 };
 
 } // namespace havel::compiler

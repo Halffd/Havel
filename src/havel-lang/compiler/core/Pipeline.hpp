@@ -2,6 +2,7 @@
 
 #include "BytecodeIR.hpp"
 #include "../semantic/LexicalResolver.hpp"
+#include "../semantic/TypeChecker.hpp"
 #include <functional>
 #include <unordered_map>
 #include <string>
@@ -17,14 +18,15 @@ struct CompileSnapshot {
 };
 
 struct PipelineOptions {
-  std::string compile_unit_name = "unit";
-  std::string snapshot_dir;
-  bool write_snapshot_artifact = false;
-  bool debugBytecode = false;
-	std::unordered_map<std::string, BytecodeHostFunction> host_functions;
-	VM *vm_override = nullptr;
-  std::function<void(VM &)> vm_setup;
-  std::function<void(VM *)> system_object_initializer;  // Create system object with proper namespacing
+    std::string compile_unit_name = "unit";
+    std::string snapshot_dir;
+    bool write_snapshot_artifact = false;
+    bool debugBytecode = false;
+    uint64_t max_instructions = 500'000'000; // ~500M instructions default limit
+    std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+    VM *vm_override = nullptr;
+    std::function<void(VM &)> vm_setup;
+    std::function<void(VM *)> system_object_initializer; // Create system object with proper namespacing
 };
 
 struct BytecodeSmokeResult {

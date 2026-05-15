@@ -813,6 +813,7 @@ public:
     Value runInContext(const std::string& source, Value context);
 
     Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
+Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited);
     Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                    const std::unordered_map<std::string, Value>& moduleGlobals,
                                    const std::string& canonicalKey,

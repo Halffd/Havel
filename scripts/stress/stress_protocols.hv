@@ -1,6 +1,10 @@
-// stress test: protocols — what parses and what's broken
-// WORKING: prot declaration, impl ... for ... registration, class methods
-// BROKEN:  impl method dispatch (returns null), is/as protocol operators
+// stress test: protocols — what works and what's broken
+// WORKING: prot declaration, impl ... for ... registration,
+//          impl method dispatch (no-param methods reading @field),
+//          multiple impl blocks on same class, marker protocols
+// BROKEN: impl methods with extra params (params are unbound → returns self),
+//         impl methods that write @field = value (writes self instead),
+//         is/as protocol operators (ByteCompiler never emits PROT_CHECK/PROT_CAST)
 
 pass = 0
 fail = 0
@@ -21,24 +25,20 @@ prot Measurable {
 
 prot Renderable {
   fn render()
-  fn resize(w, h)
 }
 
 prot Storable {
   fn save()
-  fn load(id)
 }
+
+prot Serializable {}
 
 check("prot-decl-1", true, true)
 check("prot-decl-2", true, true)
 check("prot-decl-3", true, true)
-
-// 2. Marker protocol (no methods)
-prot Serializable {}
-
 check("prot-marker", true, true)
 
-// 3. impl ... for ... registers without error
+// 2. Class with own methods + impl (no-param, reads @field)
 class Widget {
   w
   h
@@ -46,136 +46,127 @@ class Widget {
     @w = width
     @h = height
   }
-  fn getWidth() {
-    @w
-  }
-  fn getHeight() {
-    @h
-  }
-  fn area() {
-    @w * @h
-  }
-}
-
-impl Measurable for Widget {
-  fn measure(self) {
-    @w * @h
-  }
-}
-
-impl Renderable for Widget {
-  fn render(self) {
-    "Widget(" + str(@w) + "x" + str(@h) + ")"
-  }
-  fn resize(self, nw, nh) {
+  fn area() { @w * @h }
+  fn getWidth() { @w }
+  fn getHeight() { @h }
+  fn resize(nw, nh) {
     @w = nw
     @h = nh
   }
 }
 
-check("impl-reg-1", true, true)
-check("impl-reg-2", true, true)
+impl Measurable for Widget {
+  fn measure() { @w * @h }
+}
 
-// 4. Class own methods still work after impl
+impl Renderable for Widget {
+  fn render() { f"Widget({@w}x{@h})" }
+}
+
+impl Storable for Widget {
+  fn save() { f"saved:w={@w},h={@h}" }
+}
+
+impl Serializable for Widget {}
+
 wid = Widget(10, 20)
+check("class-area", wid.area(), 200)
+check("impl-measure", wid.measure(), 200)
+check("impl-render", wid.render(), "Widget(10x20)")
+check("impl-save", wid.save(), "saved:w=10,h=20")
 check("class-width", wid.getWidth(), 10)
 check("class-height", wid.getHeight(), 20)
-check("class-area", wid.area(), 200)
+
+// 3. Class method resize works (impl resize is broken — writes self instead of value)
+wid.resize(30, 40)
+check("class-resize-w", wid.getWidth(), 30)
+check("class-resize-h", wid.getHeight(), 40)
+check("impl-measure-after-resize", wid.measure(), 1200)
+
+// 4. Marker protocol impl
+check("marker-impl", true, true)
 
 // 5. Multiple classes with same protocol
 class Gadget {
   size
-  fn @(s) {
-    @size = s
-  }
-  fn getSize() {
-    @size
-  }
-  fn doubleSize() {
-    @size * 2
-  }
+  fn @(s) { @size = s }
+  fn getSize() { @size }
+  fn doubleSize() { @size * 2 }
 }
 
 impl Measurable for Gadget {
-  fn measure(self) {
-    @size * @size
-  }
+  fn measure() { @size * @size }
 }
+
+impl Serializable for Gadget {}
 
 g = Gadget(5)
 check("gadget-size", g.getSize(), 5)
 check("gadget-double", g.doubleSize(), 10)
+check("gadget-measure", g.measure(), 25)
 
-// 6. Protocol with many methods
-prot Handler {
-  fn onInit()
-  fn onUpdate(dt)
-  fn onRender()
-  fn onDestroy()
+// 6. Protocol with many methods (no-param only)
+prot Lifecycle {
+  fn onStart()
+  fn onStop()
+  fn onPause()
+  fn onResume()
 }
 
-class GameHandler {
-  active
-  fn @(a) {
-    @active = a
-  }
-  fn getActive() {
-    @active
-  }
-  fn toggleActive() {
-    if @active == true {
-      @active = false
-    } else {
-      @active = true
-    }
+class Engine {
+  running
+  fn @(r) { @running = r }
+  fn isRunning() { @running }
+  fn toggle() {
+    if @running == true { @running = false } else { @running = true }
   }
 }
 
-impl Handler for GameHandler {
-  fn onInit(self) {
-    @active = true
-  }
-  fn onUpdate(self, dt) {
-    0
-  }
-  fn onRender(self) {
-    1
-  }
-  fn onDestroy(self) {
-    @active = false
-  }
+impl Lifecycle for Engine {
+  fn onStart() { 1 }
+  fn onStop() { 0 }
+  fn onPause() { 2 }
+  fn onResume() { 3 }
 }
 
-gh = GameHandler(false)
-check("handler-active", gh.getActive(), false)
-gh.toggleActive()
-check("handler-toggle", gh.getActive(), true)
+e = Engine(true)
+check("engine-running", e.isRunning(), true)
+e.toggle()
+check("engine-toggled", e.isRunning(), false)
+check("engine-start", e.onStart(), 1)
+check("engine-stop", e.onStop(), 0)
+check("engine-pause", e.onPause(), 2)
+check("engine-resume", e.onResume(), 3)
 
-// 7. impl for marker protocol (no methods to implement)
-impl Serializable for Widget {}
-
-check("marker-impl", true, true)
-
-// 8. Multiple protocols on one class
-impl Storable for Widget {
-  fn save(self) {
-    {w: @w, h: @h}
+// 7. Multiple classes impl same protocol
+class Box {
+  width
+  height
+  depth
+  fn @(w, h, d) {
+    @width = w
+    @height = h
+    @depth = d
   }
-  fn load(self, id) {
-    0
-  }
+  fn volume() { @width * @height * @depth }
 }
 
-check("multi-prot", true, true)
+impl Measurable for Box {
+  fn measure() { @width * @height * @depth }
+}
 
-// 9. Class with both own methods and impl still works
-w2 = Widget(5, 8)
-check("w2-area", w2.area(), 40)
-check("w2-width", w2.getWidth(), 5)
+impl Storable for Box {
+  fn save() { f"box:{@width}x{@height}x{@depth}" }
+}
+
+b = Box(3, 4, 5)
+check("box-volume", b.volume(), 60)
+check("box-measure", b.measure(), 60)
+check("box-save", b.save(), "box:3x4x5")
 
 // KNOWN BUGS (documented, not tested):
-// - wid.measure() returns null instead of 200 — impl methods not dispatched by VM
-// - wid.render() returns null — same bug
+// - impl method with params: fn onUpdate(dt) { dt * 2 } → returns self, not 42
+// - impl method writing @field: fn resize(nw) { @w = nw } → assigns self to @w
 // - "s is Measurable" → "Undefined variable: 'Measurable'" — protocols not first-class values
 // - OpCode::IS does identity check (isNull), NOT protocol conformance
 // - OpCode::PROT_CHECK/PROT_CAST exist in VM but ByteCompiler never emits them

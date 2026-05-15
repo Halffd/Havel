@@ -456,16 +456,10 @@ fn Parser(tokenList):
 
         if tt == "Number":
             numVal = tok.value
-            if numVal.has("0x") or numVal.has("0X"):
-                NumberLiteral(parseInt(numVal, 16), l, c)
-            else if numVal.has("0o") or numVal.has("0O"):
-                NumberLiteral(parseInt(numVal, 8), l, c)
-            else if numVal.has("0b") or numVal.has("0B"):
-                NumberLiteral(parseInt(numVal, 2), l, c)
-            else if numVal.has("."):
-                NumberLiteral(parseFloat(numVal), l, c)
+            if numVal.has(".") or numVal.has("e") or numVal.has("E"):
+                NumberLiteral(num(numVal), l, c)
             else:
-                NumberLiteral(parseInt(numVal), l, c)
+                NumberLiteral(int(numVal), l, c)
 
         else if tt == "String" or tt == "MultilineString":
             StringLiteral(tok.value, l, c)

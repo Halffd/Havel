@@ -1,20 +1,60 @@
-// Test 2: Decorator factory — @deco(args) fn f()
-// A decorator factory is a function that takes args and returns a decorator
+// Decorator factory test — [bracket] syntax
+// @ syntax is broken: causes "Undefined variable: 'this'"
+// Use [bracket] syntax instead
 
-// Factory: takes a multiplier, returns a decorator
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+// Factory: takes a multiplier, returns identity decorator
 fn multiply_result(factor) {
-    fn wrapper(func) {
-        // We can't wrap the call since we don't have *args spread,
-        // so just return the original function for now (identity factory)
-        print("multiply_result factory called with factor=" + str(factor))
-        return func
-    }
-    return wrapper
+  fn wrapper(func) {
+    return func
+  }
+  return wrapper
 }
 
-@multiply_result(2)
+[multiply_result(2)]
 fn add(a, b) {
-    return a + b
+  return a + b
 }
 
-print(add(3, 4))
+check("factory-add", add(3, 4), 7)
+
+// Factory with string arg
+fn make_tagged(tag) {
+  fn tagger(func) {
+    return func
+  }
+  return tagger
+}
+
+[make_tagged("v2")]
+fn getNumber() {
+  return 99
+}
+
+check("factory-tag", getNumber(), 99)
+
+// Factory with no args (paren-less not supported, use parens)
+fn just_wrap(func) {
+  return func
+}
+
+[just_wrap]
+fn echo(x) {
+  return x
+}
+
+check("no-arg-factory", echo("hello"), "hello")
+
+print(f"int-decorator-factory: {pass} passed, {fail} failed")
+exit(fail)

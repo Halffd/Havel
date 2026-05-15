@@ -1,0 +1,185 @@
+// stress test: protocols — what parses and what's broken
+// WORKING: prot declaration, impl ... for ... registration, class methods
+// BROKEN:  impl method dispatch (returns null), is/as protocol operators
+
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+// 1. Protocol declarations parse correctly
+prot Measurable {
+  fn measure()
+}
+
+prot Renderable {
+  fn render()
+  fn resize(w, h)
+}
+
+prot Storable {
+  fn save()
+  fn load(id)
+}
+
+check("prot-decl-1", true, true)
+check("prot-decl-2", true, true)
+check("prot-decl-3", true, true)
+
+// 2. Marker protocol (no methods)
+prot Serializable {}
+
+check("prot-marker", true, true)
+
+// 3. impl ... for ... registers without error
+class Widget {
+  w
+  h
+  fn @(width, height) {
+    @w = width
+    @h = height
+  }
+  fn getWidth() {
+    @w
+  }
+  fn getHeight() {
+    @h
+  }
+  fn area() {
+    @w * @h
+  }
+}
+
+impl Measurable for Widget {
+  fn measure(self) {
+    @w * @h
+  }
+}
+
+impl Renderable for Widget {
+  fn render(self) {
+    "Widget(" + str(@w) + "x" + str(@h) + ")"
+  }
+  fn resize(self, nw, nh) {
+    @w = nw
+    @h = nh
+  }
+}
+
+check("impl-reg-1", true, true)
+check("impl-reg-2", true, true)
+
+// 4. Class own methods still work after impl
+wid = Widget(10, 20)
+check("class-width", wid.getWidth(), 10)
+check("class-height", wid.getHeight(), 20)
+check("class-area", wid.area(), 200)
+
+// 5. Multiple classes with same protocol
+class Gadget {
+  size
+  fn @(s) {
+    @size = s
+  }
+  fn getSize() {
+    @size
+  }
+  fn doubleSize() {
+    @size * 2
+  }
+}
+
+impl Measurable for Gadget {
+  fn measure(self) {
+    @size * @size
+  }
+}
+
+g = Gadget(5)
+check("gadget-size", g.getSize(), 5)
+check("gadget-double", g.doubleSize(), 10)
+
+// 6. Protocol with many methods
+prot Handler {
+  fn onInit()
+  fn onUpdate(dt)
+  fn onRender()
+  fn onDestroy()
+}
+
+class GameHandler {
+  active
+  fn @(a) {
+    @active = a
+  }
+  fn getActive() {
+    @active
+  }
+  fn toggleActive() {
+    if @active == true {
+      @active = false
+    } else {
+      @active = true
+    }
+  }
+}
+
+impl Handler for GameHandler {
+  fn onInit(self) {
+    @active = true
+  }
+  fn onUpdate(self, dt) {
+    0
+  }
+  fn onRender(self) {
+    1
+  }
+  fn onDestroy(self) {
+    @active = false
+  }
+}
+
+gh = GameHandler(false)
+check("handler-active", gh.getActive(), false)
+gh.toggleActive()
+check("handler-toggle", gh.getActive(), true)
+
+// 7. impl for marker protocol (no methods to implement)
+impl Serializable for Widget {}
+
+check("marker-impl", true, true)
+
+// 8. Multiple protocols on one class
+impl Storable for Widget {
+  fn save(self) {
+    {w: @w, h: @h}
+  }
+  fn load(self, id) {
+    0
+  }
+}
+
+check("multi-prot", true, true)
+
+// 9. Class with both own methods and impl still works
+w2 = Widget(5, 8)
+check("w2-area", w2.area(), 40)
+check("w2-width", w2.getWidth(), 5)
+
+// KNOWN BUGS (documented, not tested):
+// - wid.measure() returns null instead of 200 — impl methods not dispatched by VM
+// - wid.render() returns null — same bug
+// - "s is Measurable" → "Undefined variable: 'Measurable'" — protocols not first-class values
+// - OpCode::IS does identity check (isNull), NOT protocol conformance
+// - OpCode::PROT_CHECK/PROT_CAST exist in VM but ByteCompiler never emits them
+// - CastExpression AST node exists but ByteCompiler has no handler for `as`
+
+print(f"stress-protocols: {pass} passed, {fail} failed")
+exit(fail)

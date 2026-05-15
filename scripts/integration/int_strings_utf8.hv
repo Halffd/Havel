@@ -1,0 +1,79 @@
+// integration: strings and UTF-8
+// covers: string methods, concatenation, interpolation, UTF-8 codepoint indexing,
+// iteration, split/join, comparison
+
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// 1. basic string methods
+check("len", "hello".len(), 5)
+check("upper", "hello".upper(), "HELLO")
+check("lower", "HELLO".lower(), "hello")
+check("trim", "  hi  ".trim(), "hi")
+check("startsWith", "hello".startsWith("hel"), true)
+check("endsWith", "hello".endsWith("llo"), true)
+check("startsWith-false", "hello".startsWith("xyz"), false)
+check("endsWith-false", "hello".endsWith("xyz"), false)
+check("repeat", "ab".repeat(3), "ababab")
+check("empty-len", "".len(), 0)
+
+// 2. string indexing (codepoint-based)
+check("index-0", "hello"[0], "h")
+check("index-1", "hello"[1], "e")
+check("index-last", "hello"[4], "o")
+check("utf8-accent", "café"[3], "é")
+
+// 3. string concatenation
+check("concat", "hello" + " world", "hello world")
+check("concat-empty", "hi" + "", "hi")
+check("concat-multi", "a" + "b" + "c", "abc")
+
+// 4. f-string interpolation
+x = 42
+s = "world"
+check("fstring-var", f"hello {s}", "hello world")
+check("fstring-int", f"x={x}", "x=42")
+check("fstring-expr", f"{x+1}", "43")
+check("fstring-multi", f"{x} and {x*2}", "42 and 84")
+
+// 5. split and join
+check("split-join", "a-b-c".split("-").join(","), "a,b,c")
+check("split-len", "1,2,3".split(",").len(), 3)
+check("join-single", ["hi"].join("-"), "hi")
+check("join-empty", [].join("-"), "")
+
+// 6. string comparison
+check("eq", "hello" == "hello", true)
+check("neq", "hello" == "world", false)
+check("lt", "abc" < "abd", true)
+
+// 7. string in object
+obj = {name: "test", value: "data"}
+check("str-in-obj", obj.name, "test")
+check("str-obj-get", obj["value"], "data")
+
+// 8. for-in over string (iterates codepoints)
+chars = []
+for c in "abc" {
+  chars.push(c)
+}
+check("str-iter-len", #chars, 3)
+check("str-iter-0", chars[0], "a")
+check("str-iter-2", chars[2], "c")
+
+// 9. string as map key
+m = {}
+m["key1"] = 10
+m["key2"] = 20
+check("str-map-key1", m["key1"], 10)
+check("str-map-key2", m["key2"], 20)
+
+// 10. string in array operations
+words = ["hello", "world"]
+check("str-arr-join", words.join(" "), "hello world")
+check("str-arr-contains", words.includes("hello"), true)
+check("str-arr-contains-f", words.includes("xyz"), false)
+
+print(f"strings-utf8: {pass} passed, {fail} failed")
+exit(fail)

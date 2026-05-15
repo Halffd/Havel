@@ -1,14 +1,7 @@
-/*
- * ModeModule.hpp
- * 
- * Mode system module for Havel language.
- * Exposes mode.* API for scripts.
- */
 #pragma once
-#include "havel-lang/runtime/HostAPI.hpp"
+
+#include "havel-lang/compiler/vm/VMApi.hpp"
 
 namespace havel::modules {
-
-void registerModuleStub();
-
-} // namespace havel::modules
+void registerModeModule(const compiler::VMApi& api);
+}

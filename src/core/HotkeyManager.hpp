@@ -59,9 +59,9 @@ public:
   bool AddHotkey(const std::string &key, const std::string &action);
   bool RemoveHotkey(const std::string &key);
   bool RemoveHotkey(int id);  // Remove by id
-  void HandleKeyEvent(const std::string &key);
   void EnableHotkey(const std::string &key);
   void DisableHotkey(const std::string &key);
+  void handleHotkeyTrigger(int hotkeyId);
   bool GrabHotkey(int id);      // Grab hotkey by id
   bool UngrabHotkey(int id);    // Ungrab hotkey by id
 
@@ -90,8 +90,16 @@ public:
   void setConditionalHotkeysEnabled(bool enabled);
   void setMode(const std::string& mode);  // Set current mode for conditional hotkeys
   std::string getMode() const;  // Get current mode
-  void setEventQueue(compiler::EventQueue* eq);
-  std::mutex &getHotkeyMutex();
+ void setEventQueue(compiler::EventQueue* eq);
+ compiler::EventQueue* getEventQueue() const { return eventQueue_; }
+ std::mutex &getHotkeyMutex();
+
+  // Test harness: programmatically trigger a hotkey by alias
+  // Implementation in .cpp to avoid incomplete type issues
+  void triggerForTest(const std::string &alias);
+
+  // Test harness: get current queue sizes
+  void getQueueStatsForTest(size_t &total, size_t &enabled) const;
 
   // ModeManager access
   std::shared_ptr<ModeManager>& getModeManager() { return modeManager; }
@@ -116,13 +124,14 @@ public:
 
   bool HandleInputEvent(const InputEvent &event);
 
-  static std::unordered_map<int, HotKey> &RegisteredHotkeys();
+static std::unordered_map<int, HotKey> &RegisteredHotkeys();
   static std::mutex &RegisteredHotkeysMutex();
 
-  bool conditionalHotkeysEnabled = true;
-  std::vector<ConditionalHotkey> *activeConditionalHotkeys;
-
-  // Note: setInterpreter removed - interpreter no longer available
+// Internal: track registered hotkey callbacks for test triggering
+// Maps alias -> callback function
+std::unordered_map<std::string, std::function<void()>> testCallbacks_;
+std::vector<ConditionalHotkey>* activeConditionalHotkeys = nullptr;
+bool conditionalHotkeysEnabled = true;
 
 private:
   void initializeInputCallbacks();
@@ -130,9 +139,6 @@ private:
   std::shared_ptr<IO> io;  // Shared ownership to ensure IO stays alive
   ConditionalHotkeyManager conditionalManager;
   std::shared_ptr<ModeManager> modeManager;  // Shared ownership for mode management
-  std::unordered_map<std::string, std::function<void()>> simpleHotkeys;
-  std::unordered_map<std::string, bool> simpleHotkeyEnabled;
-  mutable std::mutex simpleHotkeysMutex;
   std::vector<AnyKeyPressCallback> anyKeyCallbacks;
   mutable std::mutex anyKeyCallbacksMutex;
   bool inputCallbacksInitialized = false;
@@ -160,7 +166,6 @@ private:
   bool evaluateCombo(const HotKey &hotkey) const;
   bool evaluateWheelCombo(const HotKey &hotkey, int wheelDirection) const;
   void executeHotkey(const HotKey &hotkey) const;
-  void handleHotkeyTrigger(int hotkeyId);
 
   mutable std::shared_mutex stateMutex;
   std::unordered_map<int, ActiveInput> activeInputs;
@@ -172,9 +177,10 @@ private:
   std::chrono::steady_clock::time_point lastWheelUpTime{};
   std::chrono::steady_clock::time_point lastWheelDownTime{};
 
-  MouseGestureEngine mouseGestureEngine;
-  std::unordered_set<int> registeredGestureHotkeys;
-  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
+ MouseGestureEngine mouseGestureEngine;
+ std::unordered_set<int> registeredGestureHotkeys;
+ std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
+    compiler::EventQueue* eventQueue_ = nullptr;
 };
 
 } // namespace havel

@@ -72,7 +72,7 @@ static Value windowActivePid(const std::vector<Value> &args) {
 }
 
 // window.active() - Get all active window info as object
-static Value windowActive(VMApi &api, const std::vector<Value> &args) {
+static Value windowActive(const VMApi &api, const std::vector<Value> &args) {
   (void)args;
   
   auto obj = api.makeObject();
@@ -95,7 +95,7 @@ static Value windowActive(VMApi &api, const std::vector<Value> &args) {
 }
 
 // Register window monitor module with VM
-void registerWindowMonitorModule(VMApi &api) {
+void registerWindowMonitorModule(const VMApi &api) {
   // window.activeTitle()
   api.registerFunction("window.activeTitle", [](const std::vector<Value> &args) {
     return windowActiveTitle(args);
@@ -117,7 +117,7 @@ void registerWindowMonitorModule(VMApi &api) {
   });
 
   // window.active()
-  api.registerFunction("window.active", [&api](const std::vector<Value> &args) {
+  api.registerFunction("window.active", [api](const std::vector<Value> &args) {
     return windowActive(api, args);
   });
 
@@ -135,7 +135,7 @@ void registerWindowMonitorModule(VMApi &api) {
 
 // Setup dynamic window globals - MUST be called with existing WindowMonitor
 // This integrates with the WindowMonitor from HotkeyManager
-void setupDynamicWindowGlobals(VMApi &api, WindowMonitor *monitor) {
+void setupDynamicWindowGlobals(const VMApi &api, WindowMonitor *monitor) {
   if (!monitor) {
     debug("WindowMonitor not available, skipping dynamic window globals");
     return;

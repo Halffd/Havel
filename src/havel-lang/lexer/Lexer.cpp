@@ -579,21 +579,22 @@ if (isAtEnd()) {
         line = savedLine;
         column = savedColumn;
         std::string value = raw.substr(1);
+        raw = std::string(1, quote) + raw + std::string(1, quote);
         return makeToken(value, TokenType::String, raw);
     }
 
-  // Consume closing quote
-  advance();
+    advance(); // consume closing quote
 
-  TokenType type;
-  if (isRegexString) {
-    type = TokenType::RegexString;
-  } else if (hasInterpolation) {
-    type = TokenType::InterpolatedString;
-  } else {
-    type = TokenType::String;
-  }
-  return makeToken(value, type, raw);
+    TokenType type;
+    if (isRegexString) {
+        type = TokenType::RegexString;
+    } else if (hasInterpolation) {
+        type = TokenType::InterpolatedString;
+    } else {
+        type = TokenType::String;
+    }
+    raw = std::string(1, quote) + raw + std::string(1, quote);
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanMultilineString(bool isFString, char quote) {
@@ -707,14 +708,15 @@ if (isAtEnd()) {
         return makeToken(value, TokenType::MultilineString, raw);
     }
 
-  // Consume closing triple-quote
-  advance();
-  advance();
-  advance();
+    // Consume closing triple-quote
+    advance();
+    advance();
+    advance();
 
-  TokenType type = hasInterpolation ? TokenType::InterpolatedString
-                                    : TokenType::MultilineString;
-  return makeToken(value, type, raw);
+    TokenType type = hasInterpolation ? TokenType::InterpolatedString
+                                      : TokenType::MultilineString;
+    raw = std::string(3, quote) + raw + std::string(3, quote);
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanBacktick(bool isMultiline) {
@@ -815,17 +817,19 @@ Token Lexer::scanBacktick(bool isMultiline) {
     return makeToken(value, TokenType::Backtick, raw);
   }
 
-  if (isMultiline) {
-    advance();
-    advance();
-    advance();
-  } else {
-    advance();
-  }
+    if (isMultiline) {
+        advance();
+        advance();
+        advance();
+        raw = "```" + raw + "```";
+    } else {
+        advance();
+        raw = "`" + raw + "`";
+    }
 
-  TokenType type = hasInterpolation ? TokenType::InterpolatedBacktick
-                                         : TokenType::Backtick;
-  return makeToken(value, type, raw);
+    TokenType type = hasInterpolation ? TokenType::InterpolatedBacktick
+                                      : TokenType::Backtick;
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanRegexLiteral() {
@@ -973,6 +977,18 @@ Token Lexer::scanHotkey() {
     return makeToken(hotkey, TokenType::Hotkey);
   }
 
+  // Accept pure alphanumeric key names (Esc, Return, Delete, Tab, Space,
+  // Backspace, etc.) that don't match the modifier or F-key patterns above
+  if (!hotkey.empty()) {
+    bool allAlphaNumeric =
+        std::all_of(hotkey.begin(), hotkey.end(), [](unsigned char ch) {
+          return std::isalnum(ch);
+        });
+    if (allAlphaNumeric) {
+      return makeToken(hotkey, TokenType::Hotkey);
+    }
+  }
+
   // Fallback: not a recognizable hotkey, rewind and treat as identifier
   position -= (hotkey.size() - 1);
   return scanIdentifier();
@@ -1002,92 +1018,56 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-// Handle # as length operator or hotkey modifier
-        if (c == '#') {
-        // Determine if we're in expression context or statement context
-            bool inExpressionContext = false;
-            if (!tokens.empty()) {
-                TokenType prevType = tokens.back().type;
-                inExpressionContext = (prevType == TokenType::Number ||
-prevType == TokenType::String || prevType == TokenType::InterpolatedString || prevType == TokenType::MultilineString || prevType == TokenType::RegexString ||
-prevType == TokenType::Identifier ||
-          prevType == TokenType::True || prevType == TokenType::False ||
-          prevType == TokenType::Null ||
- prevType == TokenType::CloseParen ||
- prevType == TokenType::CloseBracket ||
- prevType == TokenType::CloseBrace ||
- prevType == TokenType::OpenBracket ||
- prevType == TokenType::OpenParen ||
- prevType == TokenType::Not ||
-          prevType == TokenType::Or || prevType == TokenType::And ||
-          prevType == TokenType::Assign ||
-          prevType == TokenType::If || prevType == TokenType::While ||
-          prevType == TokenType::For || prevType == TokenType::In ||
-          prevType == TokenType::Matches ||
-          prevType == TokenType::Tilde ||
-          prevType == TokenType::Comma ||
-          prevType == TokenType::Dot ||
-          prevType == TokenType::Arrow || prevType == TokenType::ReturnType ||
-          prevType == TokenType::Plus || prevType == TokenType::Minus ||
-          prevType == TokenType::Multiply || prevType == TokenType::Divide ||
-          prevType == TokenType::Modulo || prevType == TokenType::Power ||
-          prevType == TokenType::Backslash ||
-          prevType == TokenType::Equals || prevType == TokenType::NotEquals ||
-          prevType == TokenType::Less || prevType == TokenType::Greater ||
-          prevType == TokenType::LessEquals || prevType == TokenType::GreaterEquals ||
-          prevType == TokenType::PlusAssign || prevType == TokenType::MinusAssign ||
-          prevType == TokenType::MultiplyAssign || prevType == TokenType::DivideAssign ||
-          prevType == TokenType::Question || prevType == TokenType::Colon ||
-          prevType == TokenType::ColonColon ||
-          prevType == TokenType::PlusPlus || prevType == TokenType::MinusMinus ||
-prevType == TokenType::Not ||
-        prevType == TokenType::Nullish || prevType == TokenType::Pipe ||
-        prevType == TokenType::Matches || prevType == TokenType::Tilde ||
-        prevType == TokenType::DoubleCloseParen ||
-        prevType == TokenType::BitwiseOr ||
-        prevType == TokenType::BitwiseAnd ||
-        prevType == TokenType::BitwiseXor ||
- prevType == TokenType::ShiftLeft ||
- prevType == TokenType::ShiftRight ||
- prevType == TokenType::LeftArrow ||
-				prevType == TokenType::Return ||
-				prevType == TokenType::Semicolon ||
-				prevType == TokenType::OpenBrace ||
-				prevType == TokenType::NewLine ||
-				prevType == TokenType::Fn ||
-				prevType == TokenType::Op);
-      }
-
-
-        // If followed by identifier, '(', '[', string, or number
-        if (isAlpha(peek()) || peek() == '(' || peek() == '[' || peek() == '"' || peek() == '\'' || isDigit(peek())) {
-            // In expression context, treat as length operator
-            // In statement context, treat as hotkey modifier
-                if (inExpressionContext) {
-                    auto lenToken = makeToken("#", TokenType::Length);
-                    tokens.push_back(lenToken);
-                if (debug_lexer) {
-                    havel::debug("LEX: {}", tokens.back().toString());
-                }
-                continue;
-        }
-        // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
-        tokens.push_back(scanHotkey());
+    // Handle # as length operator or hotkey modifier
+    if (c == '#') {
+      bool isStatementStart = tokens.empty();
+      if (!isStatementStart) {
+        TokenType prevType = tokens.back().type;
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {} value: '{}'", 
+                       line, column, static_cast<int>(prevType), tokens.back().value);
         }
-        continue;
+        isStatementStart = (prevType == TokenType::NewLine ||
+                            prevType == TokenType::Semicolon ||
+                            prevType == TokenType::Arrow ||
+                            prevType == TokenType::OpenBrace ||
+                            prevType == TokenType::CloseBrace);
       }
 
-      // If not followed by identifier-starting char, scan as hotkey
-      tokens.push_back(scanHotkey());
+      // Hotkey modifier detection: # at statement start OR followed by modifier keys
+      bool hasModifierPrefix = (!isAtEnd() && (peek() == '!' || peek() == '&' || peek() == '^'));
+      bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
+      
+      if (isStatementStart || (hasModifierPrefix && hasKeyName)) {
+        // Look ahead to see if it's actually followed by '=>' (a hotkey binding)
+        size_t look = position;
+        while (look < source.length() && isHotkeyChar(source[look])) {
+          look++;
+        }
+        while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) {
+          look++;
+        }
+        bool hasArrow = (look + 1 < source.length() && source[look] == '=' && source[look+1] == '>');
+        
+        if (hasArrow) {
+          tokens.push_back(scanHotkey());
+          if (debug_lexer) {
+            havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
+          }
+          continue;
+        }
+      }
+
+      // If it's not a hotkey, it's the length operator
+      tokens.push_back(makeToken("#", TokenType::Length));
       if (debug_lexer) {
         havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
     }
 
-// Handle numbers (including negative numbers in certain contexts)
+
+    // Handle numbers (including negative numbers in certain contexts)
 // Only treat -digit as a negative number when NOT after an expression
 bool canBeNegativeNumber = (c == '-' && isDigit(peek()));
  if (canBeNegativeNumber && !tokens.empty()) {

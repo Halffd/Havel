@@ -1,0 +1,4 @@
+use { Lexer } from "lib/lexer"
+
+a = Lexer("1")
+print(type(a.run))

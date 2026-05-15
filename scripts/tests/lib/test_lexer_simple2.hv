@@ -1,0 +1,9 @@
+use { Lexer } from "lib/lexer"
+
+a = Lexer("1")
+print("created lexer")
+print(type(a))
+print(type(a.run))
+r = a.run
+print("got run field")
+print(type(r))

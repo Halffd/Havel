@@ -1,0 +1,98 @@
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// 1. large array creation and ops
+arr = []
+for i in 0..99 { arr.push(i) }
+check("large-len", #arr, 100)
+check("large-sum", arr.sum(), 4950)
+check("large-avg", int(arr.avg()), 49)
+check("large-min", arr.min(), 0)
+check("large-max", arr.max(), 99)
+
+// 2. chained transforms on large array
+evens = arr.filter((x) => x % 2 == 0)
+check("evens-len", #evens, 50)
+check("evens-sum", evens.sum(), 2450)
+
+doubled = evens.map((x) => x * 2)
+check("doubled-first", doubled[0], 0)
+check("doubled-last", doubled[49], 196)
+
+// 3. reduce on large array
+check("reduce-sum", arr.reduce((a, b) => a + b, 0), 4950)
+prod = arr.filter((x) => x > 0).filter((x) => x < 10).reduce((a, b) => a * b, 1)
+check("reduce-prod-1to9", prod, 362880)
+
+// 4. nested arrays
+matrix = []
+for i in 0..4 {
+  row = []
+  for j in 0..4 {
+    row.push(i * 5 + j)
+  }
+  matrix.push(row)
+}
+check("matrix-1-0", matrix[1][0], 5)
+check("matrix-4-4", matrix[4][4], 24)
+
+// 5. large object
+obj = {}
+for i in 0..49 {
+  obj[i] = i * i
+}
+check("obj-10", obj[10], 100)
+check("obj-49", obj[49], 2401)
+check("obj-keys", #(obj.keys()), 50)
+
+// 6. object with string keys
+words = {}
+words["hello"] = 1
+words["world"] = 2
+words["test"] = 3
+check("str-keys-hello", words["hello"], 1)
+check("str-keys-count", #(words.keys()), 3)
+
+// 7. array of objects
+items = []
+for i in 0..9 {
+  items.push({id: i, val: i * 10})
+}
+check("arr-obj-5-id", items[5].id, 5)
+check("arr-obj-5-val", items[5].val, 50)
+ids = items.map((x) => x.id)
+check("arr-obj-ids", ids.sum(), 45)
+vals = items.map((x) => x.val)
+check("arr-obj-vals", vals.sum(), 450)
+
+// 8. push/pop stress
+stack = []
+for i in 0..49 { stack.push(i) }
+check("push-50", #stack, 50)
+for i in 0..24 { stack.pop() }
+check("pop-25", #stack, 25)
+check("pop-top", stack[24], 24)
+
+// 9. includes on large array
+check("includes-mid", arr.includes(50), true)
+check("includes-end", arr.includes(99), true)
+check("includes-missing", arr.includes(999), false)
+
+// 10. reverse on large array
+rev = arr.reverse()
+check("rev-0", rev[0], 99)
+check("rev-99", rev[99], 0)
+
+// 11. join on large array
+joined = arr.join(",")
+check("join-commas", joined.len() > 0, true)
+
+// 12. spread operator
+a = [1, 2, 3]
+b = [...a, ...a]
+check("spread-double", b, [1, 2, 3, 1, 2, 3])
+check("spread-double-len", #b, 6)
+
+print(f"stress-collections: {pass} passed, {fail} failed")
+exit(fail)

@@ -5,6 +5,7 @@
 
 #include <QGuiApplication>
 #include <QMenu>
+#include <QPainterPath>
 #include <QScreen>
 #include <QStyle>
 #include <QStyleFactory>
@@ -211,6 +212,16 @@ std::shared_ptr<ui::UIElement> UIService::scroll() {
   return elem;
 }
 
+std::shared_ptr<ui::UIElement> UIService::canvas(int width, int height) {
+  ensureApp();
+  auto elem = std::make_shared<ui::UIElement>(ui::ElementType::CANVAS);
+  elem->id = nextId_++;
+  elem->set("width", static_cast<int64_t>(width));
+  elem->set("height", static_cast<int64_t>(height));
+  elem->set("background", std::string("white"));
+  return elem;
+}
+
 // Realization - creates actual Qt widgets
 void UIService::realize(std::shared_ptr<ui::UIElement> element) {
   if (!element || element->realized)
@@ -279,6 +290,8 @@ QWidget *UIService::createWidget(ui::UIElement *element) {
     return createGrid(element);
   } else if (type == ui::ElementType::SCROLL) {
     return createScroll(element);
+  } else if (type == ui::ElementType::CANVAS) {
+    return createCanvas(element);
   }
 
   return nullptr;
@@ -1075,11 +1088,188 @@ bool UIService::trayIsVisible() const {
 
 // Apply style to element
 void UIService::applyStyle(std::shared_ptr<ui::UIElement> element,
-                           const std::string &key,
-                           const ui::PropValue &value) {
+                            const std::string &key,
+                            const ui::PropValue &value) {
   if (!element)
     return;
   element->set(key, value);
+}
+
+// ============================================================================
+// Canvas Widget - custom QWidget that paints from UIElement canvasCommands
+// ============================================================================
+
+class CanvasWidget : public QWidget {
+public:
+  explicit CanvasWidget(std::shared_ptr<ui::UIElement> elem, QWidget *parent = nullptr)
+      : QWidget(parent), elem_(std::move(elem)) {
+    int w = elem_->getProp("width", 800);
+    int h = elem_->getProp("height", 600);
+    setFixedSize(w, h);
+    setAutoFillBackground(true);
+  }
+
+  void triggerRepaint() { update(); }
+
+protected:
+  void paintEvent(QPaintEvent *) override {
+    if (!elem_)
+      return;
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    std::string bg = elem_->getProp("background", std::string("white"));
+    p.fillRect(rect(), QColor(QString::fromStdString(bg)));
+
+    QPen pen;
+    QBrush brush(Qt::NoBrush);
+    QFont font;
+    pen.setColor(Qt::black);
+    pen.setWidthF(elem_->canvasStrokeWidth);
+    p.setPen(pen);
+
+    for (const auto &cmd : elem_->canvasCommands) {
+      if (cmd.type == ui::CanvasCmdType::CLEAR) {
+        p.fillRect(rect(), QColor(QString::fromStdString(bg)));
+        pen.setColor(Qt::black);
+        pen.setWidthF(1.0);
+        brush = QBrush(Qt::NoBrush);
+        p.setPen(pen);
+        p.setBrush(brush);
+      } else if (cmd.type == ui::CanvasCmdType::SET_COLOR) {
+        auto it = cmd.params.find("color");
+        if (it != cmd.params.end() && std::holds_alternative<std::string>(it->second)) {
+          auto c = QString::fromStdString(std::get<std::string>(it->second));
+          pen.setColor(QColor(c));
+          brush.setColor(QColor(c));
+          p.setPen(pen);
+          p.setBrush(brush);
+        }
+      } else if (cmd.type == ui::CanvasCmdType::SET_STROKE) {
+        auto it = cmd.params.find("color");
+        if (it != cmd.params.end() && std::holds_alternative<std::string>(it->second)) {
+          auto c = QString::fromStdString(std::get<std::string>(it->second));
+          pen.setColor(QColor(c));
+          p.setPen(pen);
+        }
+      } else if (cmd.type == ui::CanvasCmdType::SET_FILL) {
+        auto it = cmd.params.find("color");
+        if (it != cmd.params.end() && std::holds_alternative<std::string>(it->second)) {
+          auto c = QString::fromStdString(std::get<std::string>(it->second));
+          brush = QBrush(QColor(c));
+          p.setBrush(brush);
+        }
+      } else if (cmd.type == ui::CanvasCmdType::SET_LINE_WIDTH) {
+        auto it = cmd.params.find("width");
+        if (it != cmd.params.end() && std::holds_alternative<double>(it->second)) {
+          pen.setWidthF(std::get<double>(it->second));
+          p.setPen(pen);
+        }
+      } else if (cmd.type == ui::CanvasCmdType::SET_FONT) {
+        auto fi = cmd.params.find("family");
+        auto si = cmd.params.find("size");
+        if (fi != cmd.params.end() && std::holds_alternative<std::string>(fi->second) &&
+            si != cmd.params.end() && std::holds_alternative<int64_t>(si->second)) {
+          font.setFamily(QString::fromStdString(std::get<std::string>(fi->second)));
+          font.setPointSize(static_cast<int>(std::get<int64_t>(si->second)));
+          p.setFont(font);
+        }
+      } else if (cmd.type == ui::CanvasCmdType::LINE) {
+        int x1 = cmd.getParam("x1", 0), y1 = cmd.getParam("y1", 0);
+        int x2 = cmd.getParam("x2", 0), y2 = cmd.getParam("y2", 0);
+        p.drawLine(x1, y1, x2, y2);
+      } else if (cmd.type == ui::CanvasCmdType::RECT) {
+        int x = cmd.getParam("x", 0), y = cmd.getParam("y", 0);
+        int w = cmd.getParam("w", 0), h = cmd.getParam("h", 0);
+        p.drawRect(x, y, w, h);
+      } else if (cmd.type == ui::CanvasCmdType::FILL_RECT) {
+        int x = cmd.getParam("x", 0), y = cmd.getParam("y", 0);
+        int w = cmd.getParam("w", 0), h = cmd.getParam("h", 0);
+        p.fillRect(x, y, w, h, brush);
+      } else if (cmd.type == ui::CanvasCmdType::CIRCLE) {
+        int cx = cmd.getParam("cx", 0), cy = cmd.getParam("cy", 0);
+        int r = cmd.getParam("r", 0);
+        p.drawEllipse(cx - r, cy - r, r * 2, r * 2);
+      } else if (cmd.type == ui::CanvasCmdType::FILL_CIRCLE) {
+        int cx = cmd.getParam("cx", 0), cy = cmd.getParam("cy", 0);
+        int r = cmd.getParam("r", 0);
+        p.setBrush(brush);
+        p.drawEllipse(cx - r, cy - r, r * 2, r * 2);
+      } else if (cmd.type == ui::CanvasCmdType::ARC) {
+        int cx = cmd.getParam("cx", 0), cy = cmd.getParam("cy", 0);
+        int r = cmd.getParam("r", 0);
+        auto si = cmd.params.find("start");
+        auto spi = cmd.params.find("span");
+        double startAngle = si != cmd.params.end() && std::holds_alternative<double>(si->second)
+                                ? std::get<double>(si->second) : 0.0;
+        double spanAngle = spi != cmd.params.end() && std::holds_alternative<double>(spi->second)
+                               ? std::get<double>(spi->second) : 360.0;
+        p.drawArc(cx - r, cy - r, r * 2, r * 2,
+                  static_cast<int>(startAngle * 16), static_cast<int>(spanAngle * 16));
+      } else if (cmd.type == ui::CanvasCmdType::TEXT) {
+        int x = cmd.getParam("x", 0), y = cmd.getParam("y", 0);
+        auto ti = cmd.params.find("text");
+        if (ti != cmd.params.end() && std::holds_alternative<std::string>(ti->second)) {
+          p.drawText(x, y, QString::fromStdString(std::get<std::string>(ti->second)));
+        }
+      } else if (cmd.type == ui::CanvasCmdType::MOVE_TO) {
+        int x = cmd.getParam("x", 0), y = cmd.getParam("y", 0);
+        path_ = QPainterPath();
+        path_.moveTo(x, y);
+      } else if (cmd.type == ui::CanvasCmdType::LINE_TO) {
+        int x = cmd.getParam("x", 0), y = cmd.getParam("y", 0);
+        path_.lineTo(x, y);
+      } else if (cmd.type == ui::CanvasCmdType::BEZIER) {
+        int x1 = cmd.getParam("x1", 0), y1 = cmd.getParam("y1", 0);
+        int x2 = cmd.getParam("x2", 0), y2 = cmd.getParam("y2", 0);
+        int x3 = cmd.getParam("x3", 0), y3 = cmd.getParam("y3", 0);
+        path_.cubicTo(x1, y1, x2, y2, x3, y3);
+      } else if (cmd.type == ui::CanvasCmdType::IMAGE) {
+        int x = cmd.getParam("x", 0), y = cmd.getParam("y", 0);
+        int w = cmd.getParam("w", 0), h = cmd.getParam("h", 0);
+        auto pi = cmd.params.find("path");
+        if (pi != cmd.params.end() && std::holds_alternative<std::string>(pi->second)) {
+          QPixmap pix(QString::fromStdString(std::get<std::string>(pi->second)));
+          p.drawPixmap(x, y, w, h, pix);
+        }
+      }
+    }
+
+    if (!path_.isEmpty()) {
+      p.drawPath(path_);
+    }
+  }
+
+private:
+  std::shared_ptr<ui::UIElement> elem_;
+  QPainterPath path_;
+};
+
+QWidget *UIService::createCanvas(ui::UIElement *element) {
+auto shared = element->shared_from_this();
+auto *canvas = new CanvasWidget(shared);
+applyStylesheet(static_cast<QWidget*>(canvas), element);
+return static_cast<QWidget*>(canvas);
+}
+
+void UIService::canvasFlush(std::shared_ptr<ui::UIElement> canvas) {
+  if (!canvas)
+    return;
+  auto it = widgets_.find(canvas->id);
+  if (it != widgets_.end()) {
+    if (auto *cw = dynamic_cast<CanvasWidget *>(it->second)) {
+      cw->triggerRepaint();
+    }
+  }
+}
+
+void UIService::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
+  if (!canvas)
+    return;
+  canvas->canvasCommands.clear();
+  canvas->canvasCommands.push_back({ui::CanvasCmdType::CLEAR, {}});
+  canvasFlush(canvas);
 }
 
 } // namespace havel::host

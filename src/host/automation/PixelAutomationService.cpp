@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QImage>
 
 namespace havel::host {
 
@@ -97,7 +98,14 @@ ImageMatch PixelAutomationService::findImage(const std::string& imagePath, const
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     auto match = m_automation->findImage(imagePath, screenRegion, threshold);
 
-    return ImageMatch(match.x, match.y, match.w, match.h, match.confidence);
+    ImageMatch result;
+    result.found = match.found;
+    result.x = match.x;
+    result.y = match.y;
+    result.w = match.w;
+    result.h = match.h;
+    result.confidence = match.confidence;
+    return result;
 }
 
 std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string& imagePath, const Region& region, float threshold) {
@@ -108,7 +116,14 @@ std::vector<ImageMatch> PixelAutomationService::findAllImages(const std::string&
 
     std::vector<ImageMatch> results;
     for (const auto& m : matches) {
-        results.emplace_back(m.x, m.y, m.w, m.h, m.confidence);
+        ImageMatch result;
+        result.found = m.found;
+        result.x = m.x;
+        result.y = m.y;
+        result.w = m.w;
+        result.h = m.h;
+        result.confidence = m.confidence;
+        results.push_back(result);
     }
     return results;
 }
@@ -133,7 +148,14 @@ ImageMatch PixelAutomationService::waitImage(const std::string& imagePath, const
     havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
     auto match = m_automation->waitImage(imagePath, screenRegion, timeout, threshold);
 
-    return ImageMatch(match.x, match.y, match.w, match.h, match.confidence);
+    ImageMatch result;
+    result.found = match.found;
+    result.x = match.x;
+    result.y = match.y;
+    result.w = match.w;
+    result.h = match.h;
+    result.confidence = match.confidence;
+    return result;
 }
 
 std::string PixelAutomationService::readText(const Region& region) {
@@ -144,9 +166,10 @@ std::string PixelAutomationService::readText(const Region& region) {
 }
 
 std::string PixelAutomationService::readText(const Region& region, const std::string& ocrEngine) {
-    // For now, ignore ocrEngine parameter and use default
-    (void)ocrEngine;
-    return readText(region);
+  if (!m_automation) return "";
+
+  havel::ScreenRegion screenRegion(region.x, region.y, region.w, region.h);
+  return m_automation->readText(screenRegion, ocrEngine);
 }
 
 bool PixelAutomationService::captureScreen(const std::string& filePath) {
@@ -154,8 +177,8 @@ bool PixelAutomationService::captureScreen(const std::string& filePath) {
     auto rgba = screenshot.captureFullDesktop();
     if (rgba.empty()) return false;
 
-    auto* app = QApplication::instance();
     int w = 1920, h = 1080;
+    auto* app = QApplication::instance();
     if (app) {
         auto* screen = QGuiApplication::primaryScreen();
         if (screen) {
@@ -165,16 +188,11 @@ bool PixelAutomationService::captureScreen(const std::string& filePath) {
         }
     }
 
-    cv::Mat img(h, w, CV_8UC4);
-    if (rgba.size() >= static_cast<size_t>(w * h * 4)) {
-        std::memcpy(img.data, rgba.data(), w * h * 4);
-    } else {
-        return false;
-    }
+    if (rgba.size() < static_cast<size_t>(w * h * 4)) return false;
 
-    cv::Mat bgra;
-    cv::cvtColor(img, bgra, cv::COLOR_RGBA2BGRA);
-    return cv::imwrite(filePath, bgra);
+    QImage img(reinterpret_cast<const uchar*>(rgba.data()), w, h, w * 4,
+               QImage::Format_RGBA8888);
+    return img.save(QString::fromStdString(filePath), "PNG");
 }
 
 bool PixelAutomationService::captureRegion(const Region& region, const std::string& filePath) {
@@ -182,16 +200,11 @@ bool PixelAutomationService::captureRegion(const Region& region, const std::stri
     auto rgba = screenshot.captureRegion(region.x, region.y, region.w, region.h);
     if (rgba.empty()) return false;
 
-    cv::Mat img(region.h, region.w, CV_8UC4);
-    if (rgba.size() >= static_cast<size_t>(region.w * region.h * 4)) {
-        std::memcpy(img.data, rgba.data(), region.w * region.h * 4);
-    } else {
-        return false;
-    }
+    if (rgba.size() < static_cast<size_t>(region.w * region.h * 4)) return false;
 
-    cv::Mat bgra;
-    cv::cvtColor(img, bgra, cv::COLOR_RGBA2BGRA);
-    return cv::imwrite(filePath, bgra);
+    QImage img(reinterpret_cast<const uchar*>(rgba.data()), region.w, region.h,
+               region.w * 4, QImage::Format_RGBA8888);
+    return img.save(QString::fromStdString(filePath), "PNG");
 }
 
 } // namespace havel::host

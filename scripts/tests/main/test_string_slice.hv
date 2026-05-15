@@ -1,0 +1,2 @@
+s = "hello"
+print(s.slice(1, 3))

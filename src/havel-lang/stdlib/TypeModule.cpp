@@ -12,7 +12,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Register type module with VMApi (stable API layer)
-void registerTypeModule(VMApi &api) {
+void registerTypeModule(const VMApi &api) {
   // isNumber(value) - Check if value is a number
   api.registerFunction("isNumber", [](const std::vector<Value> &args) {
     if (args.empty())
@@ -134,7 +134,7 @@ void registerTypeModule(VMApi &api) {
   });
 
   // newEnum(typeName, variantName, ...payload) - Create a new enum variant
-  api.registerFunction("newEnum", [&api](const std::vector<Value> &args) {
+  api.registerFunction("newEnum", [api](const std::vector<Value> &args) {
     if (args.size() < 2) throw std::runtime_error("newEnum() requires at least type name and variant name");
     std::string typeName = api.toString(args[0]);
     std::string variantName = api.toString(args[1]);
@@ -149,14 +149,14 @@ void registerTypeModule(VMApi &api) {
   });
 
   // getVariant(value) - Get variant name of an enum
-  api.registerFunction("getVariant", [&api](const std::vector<Value> &args) {
+  api.registerFunction("getVariant", [api](const std::vector<Value> &args) {
     if (args.empty() || !args[0].isEnumId()) throw std::runtime_error("getVariant() requires an enum argument");
     Value val = args[0];
     return api.makeString(api.getEnumVariantName(val.asEnumTypeId(), api.getEnumTag(val)));
   });
 
   // getVariantPayload(value) - Get payload array of an enum variant
-  api.registerFunction("getVariantPayload", [&api](const std::vector<Value> &args) {
+  api.registerFunction("getVariantPayload", [api](const std::vector<Value> &args) {
     if (args.empty() || !args[0].isEnumId()) throw std::runtime_error("getVariantPayload() requires an enum argument");
     Value val = args[0];
     uint32_t count = api.getEnumPayloadCount(val);

@@ -42,6 +42,45 @@ using PropValue =
 using EventHandler = std::variant<UIEventCallback, UIEventCallbackWithValue,
                                   UIEventCallbackWithXY>;
 
+// Canvas drawing commands (retained-mode command list)
+namespace CanvasCmdType {
+inline constexpr const char *CLEAR = "clear";
+inline constexpr const char *LINE = "line";
+inline constexpr const char *RECT = "rect";
+inline constexpr const char *FILL_RECT = "fill_rect";
+inline constexpr const char *CIRCLE = "circle";
+inline constexpr const char *FILL_CIRCLE = "fill_circle";
+inline constexpr const char *ARC = "arc";
+inline constexpr const char *TEXT = "text";
+inline constexpr const char *SET_COLOR = "set_color";
+inline constexpr const char *SET_STROKE = "set_stroke";
+inline constexpr const char *SET_FILL = "set_fill";
+inline constexpr const char *SET_FONT = "set_font";
+inline constexpr const char *SET_LINE_WIDTH = "set_line_width";
+inline constexpr const char *MOVE_TO = "move_to";
+inline constexpr const char *LINE_TO = "line_to";
+inline constexpr const char *POLYLINE = "polyline";
+inline constexpr const char *POLYGON = "polygon";
+inline constexpr const char *BEZIER = "bezier";
+inline constexpr const char *IMAGE = "image";
+}
+
+struct CanvasCmd {
+  std::string type;
+  std::map<std::string, PropValue> params;
+
+  int getParam(const std::string &key, int defaultVal) const {
+    auto it = params.find(key);
+    if (it == params.end())
+      return defaultVal;
+    if (std::holds_alternative<int64_t>(it->second))
+      return static_cast<int>(std::get<int64_t>(it->second));
+    if (std::holds_alternative<double>(it->second))
+      return static_cast<int>(std::get<double>(it->second));
+    return defaultVal;
+  }
+};
+
 /**
  * UIElement - Core UI element structure
  *
@@ -71,6 +110,12 @@ struct UIElement : public std::enable_shared_from_this<UIElement> {
 
   // Element is visible
   bool visible = false;
+
+  // Canvas drawing state (retained-mode command list)
+  std::vector<CanvasCmd> canvasCommands;
+  double canvasStrokeWidth = 1.0;
+  std::string canvasStrokeColor = "black";
+  std::string canvasFillColor = "transparent";
 
   UIElement() = default;
   explicit UIElement(std::string t) : type(std::move(t)) {}
@@ -143,6 +188,80 @@ struct UIElement : public std::enable_shared_from_this<UIElement> {
   UIElement &align(const std::string &a) { return set("align", a); }
   UIElement &alignRight() { return set("align", std::string("right")); }
   UIElement &alignCenter() { return set("align", std::string("center")); }
+
+  // Canvas drawing commands (builder pattern, returns self for chaining)
+  UIElement &canvasClear() {
+    canvasCommands.clear();
+    canvasCommands.push_back({CanvasCmdType::CLEAR, {}});
+    return *this;
+  }
+  UIElement &canvasSetColor(const std::string &color) {
+    canvasCommands.push_back({CanvasCmdType::SET_COLOR, {{"color", color}}});
+    return *this;
+  }
+  UIElement &canvasSetStroke(const std::string &color) {
+    canvasStrokeColor = color;
+    canvasCommands.push_back({CanvasCmdType::SET_STROKE, {{"color", color}}});
+    return *this;
+  }
+  UIElement &canvasSetFill(const std::string &color) {
+    canvasFillColor = color;
+    canvasCommands.push_back({CanvasCmdType::SET_FILL, {{"color", color}}});
+    return *this;
+  }
+  UIElement &canvasSetLineWidth(double w) {
+    canvasStrokeWidth = w;
+    canvasCommands.push_back({CanvasCmdType::SET_LINE_WIDTH, {{"width", w}}});
+    return *this;
+  }
+  UIElement &canvasSetFont(const std::string &family, int size) {
+    canvasCommands.push_back({CanvasCmdType::SET_FONT, {{"family", family}, {"size", static_cast<int64_t>(size)}}});
+    return *this;
+  }
+  UIElement &canvasLine(int x1, int y1, int x2, int y2) {
+    canvasCommands.push_back({CanvasCmdType::LINE, {{"x1", static_cast<int64_t>(x1)}, {"y1", static_cast<int64_t>(y1)}, {"x2", static_cast<int64_t>(x2)}, {"y2", static_cast<int64_t>(y2)}}});
+    return *this;
+  }
+  UIElement &canvasRect(int x, int y, int w, int h) {
+    canvasCommands.push_back({CanvasCmdType::RECT, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}, {"w", static_cast<int64_t>(w)}, {"h", static_cast<int64_t>(h)}}});
+    return *this;
+  }
+  UIElement &canvasFillRect(int x, int y, int w, int h) {
+    canvasCommands.push_back({CanvasCmdType::FILL_RECT, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}, {"w", static_cast<int64_t>(w)}, {"h", static_cast<int64_t>(h)}}});
+    return *this;
+  }
+  UIElement &canvasCircle(int cx, int cy, int r) {
+    canvasCommands.push_back({CanvasCmdType::CIRCLE, {{"cx", static_cast<int64_t>(cx)}, {"cy", static_cast<int64_t>(cy)}, {"r", static_cast<int64_t>(r)}}});
+    return *this;
+  }
+  UIElement &canvasFillCircle(int cx, int cy, int r) {
+    canvasCommands.push_back({CanvasCmdType::FILL_CIRCLE, {{"cx", static_cast<int64_t>(cx)}, {"cy", static_cast<int64_t>(cy)}, {"r", static_cast<int64_t>(r)}}});
+    return *this;
+  }
+  UIElement &canvasArc(int cx, int cy, int r, double start, double span) {
+    canvasCommands.push_back({CanvasCmdType::ARC, {{"cx", static_cast<int64_t>(cx)}, {"cy", static_cast<int64_t>(cy)}, {"r", static_cast<int64_t>(r)}, {"start", start}, {"span", span}}});
+    return *this;
+  }
+  UIElement &canvasDrawText(int x, int y, const std::string &text) {
+    canvasCommands.push_back({CanvasCmdType::TEXT, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}, {"text", text}}});
+    return *this;
+  }
+  UIElement &canvasMoveTo(int x, int y) {
+    canvasCommands.push_back({CanvasCmdType::MOVE_TO, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}}});
+    return *this;
+  }
+  UIElement &canvasLineTo(int x, int y) {
+    canvasCommands.push_back({CanvasCmdType::LINE_TO, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}}});
+    return *this;
+  }
+  UIElement &canvasBezier(int x1, int y1, int x2, int y2, int x3, int y3) {
+    canvasCommands.push_back({CanvasCmdType::BEZIER, {{"x1", static_cast<int64_t>(x1)}, {"y1", static_cast<int64_t>(y1)}, {"x2", static_cast<int64_t>(x2)}, {"y2", static_cast<int64_t>(y2)}, {"x3", static_cast<int64_t>(x3)}, {"y3", static_cast<int64_t>(y3)}}});
+    return *this;
+  }
+  UIElement &canvasDrawImage(int x, int y, int w, int h, const std::string &path) {
+    canvasCommands.push_back({CanvasCmdType::IMAGE, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}, {"w", static_cast<int64_t>(w)}, {"h", static_cast<int64_t>(h)}, {"path", path}}});
+    return *this;
+  }
 };
 
 // Element type constants

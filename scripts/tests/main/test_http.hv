@@ -202,6 +202,9 @@ tcpServer = net.tcp(port = 9090,
   onClose = fn(conn) {
     print("TCP: Connection closed: " + conn.peerAddr())
   })
+
+import sqlite
+db = sqlite.open("/tmp/test.db")
 tcpServer.route("/users", fn(conn, req) {
   // Example handler: returns static user list as JSON
   let users = [
@@ -220,125 +223,15 @@ tcpServer.route("/:id", fn(conn, req) {
   let resJson = json.stringify(dataList)
   conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
 })
-// Simple UDP server with routing logic
-udpServer = net.udp(9091,
-  onMessage = fn(data, peer) {
-    let msg = str(data).trim()
-    if msg == "ping" {
-      net.udpSend(peer, "pong\n")
-    }
-    else if msg.startsWith("echo ") {
-      let rest = msg.slice(5)
-      net.udpSend(peer, "echo: " + rest + "\n")
-    }
-    else {
-      net.udpSend(peer, "Unknown UDP command\n")
-    }
-  }
-)
-tcpServer.route("/mongo", fn(conn, req) {
-  // Example: query MongoDB's "test.users" collection and return results as JSON
-  let users = []
-  let cursor = mongo.collection("test.users").find({})
-  for doc in cursor {
-    users.append(doc)
-  }
-  let resJson = json.stringify(users)
-  conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
-})
 tcpServer.route("/sqlite-users", fn(conn, req) {
   // Example: query SQLite "users" table and return results as JSON
   let users = []
-  let rows = sqlite.query("SELECT id, name FROM users")
+  let rows = db.query("SELECT id, name FROM users")
   for row in rows {
     users.append({ id: row.id, name: row.name })
   }
   let resJson = json.stringify(users)
   conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
-})
-tcpServer.route("/graphql", fn(conn, req) {
-  // Parse incoming JSON body to get GraphQL query (very simple demo, no variables, no fragments)
-  let body = req.body || ""
-  let jsonPayload = {}
-  try {
-    jsonPayload = json.parse(body)
-  } catch (e) {
-    conn.send("HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid JSON")
-    return
-  }
-  let query = jsonPayload.query || ""
-  // Simple GraphQL query matcher for `{ users { id name } }`
-  if query.trim() == "{ users { id name } }" {
-    let users = []
-    let rows = sqlite.query("SELECT id, name FROM users")
-    for row in rows {
-      users.append({ id: row.id, name: row.name })
-    }
-    let resData = { data: { users: users } }
-    let resJson = json.stringify(resData)
-    conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
-    return
-  } else {
-    conn.send("HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nUnsupported GraphQL query")
-    return
-  }
-})
-tcpServer.route("/firebase-users", fn(conn, req) {
-  // Example: query Firebase Realtime Database "users" node and return results as JSON
-  let users = []
-  try {
-    let snapshot = firebase.db("users").get()
-    // Assuming snapshot is an array or an iterable structure
-    for user in snapshot {
-      users.append(user)
-    }
-    let resJson = json.stringify(users)
-    conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
-  } catch (e) {
-    conn.send("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFirebase fetch error")
-  }
-})
-tcpServer.route("/supabase-crypto", fn(conn, req) {
-  // Example: Query Supabase "crypto" table and return results as JSON
-  let cryptos = []
-  try {
-    // Assuming supabase.db returns an object with .select method
-    let rows = supabase.db("crypto").select("*") // Fetch all fields for demo
-    for row in rows {
-      cryptos.append(row)
-    }
-    let resJson = json.stringify(cryptos)
-    conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + resJson)
-  } catch (e) {
-    conn.send("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nSupabase fetch error")
-  }
-})
-tcpServer.route("/redis-video-list", fn(conn, req) {
-  // Example: Store and retrieve a list of videos in a Redis "video_list" key
-  try {
-    if req.method == "POST" {
-      // Assume request body contains a JSON array of videos
-      let videos = json.parse(req.body)
-      if !(videos is Array) {
-        conn.send("HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nRequest body must be a JSON array")
-        return
-      }
-      // Store list in Redis DB
-      redis.module.set("video_list", json.stringify(videos))
-      conn.send("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nVideo list saved")
-    } else if req.method == "GET" {
-      let stored = redis.module.get("video_list")
-      if stored == null {
-        conn.send("HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nNo video list found")
-        return
-      }
-      conn.send("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" + stored)
-    } else {
-      conn.send("HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nOnly GET and POST allowed")
-    }
-  } catch (e) {
-    conn.send("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nRedis video list error")
-  }
 })
 tcpServer.route("/close", fn(conn, req) {
   // Gracefully close all servers and respond to client

@@ -2,6 +2,7 @@
 
 #include "../core/BytecodeIR.hpp"
 #include "VM.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -14,218 +15,238 @@ namespace havel::compiler {
 using Value = ::havel::core::Value;
 
 struct VMApi {
-  VM &vm;
+    VM *vm_;
 
-  // Value creation
-  Value makeNull() { return Value::makeNull(); }
-  Value makeBool(bool v) { return Value::makeBool(v); }
-  Value makeNumber(int64_t v) { return Value::makeInt(v); }
-  Value makeNumber(double v) { return Value::makeDouble(v); }
-  Value makeString(std::string v) {
-    auto ref = vm.createRuntimeString(std::move(v));
-    return Value::makeStringId(ref.id);
-  }
-  Value makeObject() { return Value::makeObjectId(vm.createHostObject().id); }
-  Value makeArray() { return Value::makeArrayId(vm.createHostArray().id); }
-  Value makeFunctionRef(const std::string &name) {
-    return Value::makeHostFuncId(vm.getHostFunctionIndex(name));
-  }
-  Value makeEnum(uint32_t typeId, uint32_t tag, const std::vector<Value> &payload = {}) {
-    auto ref = vm.createEnum(typeId, tag, payload.size());
-    for (size_t i = 0; i < payload.size(); ++i) {
-      vm.setEnumPayload(ref, i, payload[i]);
+    VMApi(VM &vm) : vm_(&vm) {}
+    VM &vm() const { return *vm_; }
+
+    Value makeNull() const { return Value::makeNull(); }
+    Value makeBool(bool v) const { return Value::makeBool(v); }
+    Value makeNumber(int64_t v) const { return Value::makeInt(v); }
+    Value makeNumber(double v) const { return Value::makeDouble(v); }
+    Value makeString(std::string v) const {
+        auto ref = vm().createRuntimeString(std::move(v));
+        return Value::makeStringId(ref.id);
     }
-    return Value::makeEnumId(ref.id, typeId);
-  }
-
-  // String conversion
-  std::string toString(const Value &value) {
-    return vm.toString(value);
-  }
-
-  // Global scope
-  void setGlobal(const std::string &name, Value value) {
-    vm.setGlobal(name, std::move(value));
-  }
-
-  // Object operations
-  void setField(Value obj, const std::string &key,
-                Value value) {
-    if (!obj.isObjectId()) {
-      throw std::runtime_error("VMApi::setField: expected object");
+    Value makeObject() const { return Value::makeObjectId(vm().createHostObject().id); }
+    Value makeArray() const { return Value::makeArrayId(vm().createHostArray().id); }
+    Value makeFunctionRef(const std::string &name) const {
+        return Value::makeHostFuncId(vm().getHostFunctionIndex(name));
     }
-    vm.setHostObjectField(ObjectRef{obj.asObjectId(), true}, key, std::move(value));
-  }
-
-  std::vector<std::string> getObjectKeys(Value obj) {
-    if (!obj.isObjectId())
-      return {};
-    return vm.getHostObjectKeys(ObjectRef{obj.asObjectId(), true});
-  }
-
-  bool hasField(Value obj, const std::string &key) {
-    if (!obj.isObjectId())
-      return false;
-    return vm.hasHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
-  }
-
-  Value getField(Value obj, const std::string &key) {
-    if (!obj.isObjectId())
-      return Value::makeNull();
-    return vm.getHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
-  }
-
-  bool deleteField(Value obj, const std::string &key) {
-    if (!obj.isObjectId())
-      return false;
-    return vm.deleteHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
-  }
-
-  // Array operations
-  void push(Value arr, Value value) {
-    if (!arr.isArrayId()) {
-      throw std::runtime_error("VMApi::push: expected array");
+    Value makeEnum(uint32_t typeId, uint32_t tag, const std::vector<Value> &payload = {}) const {
+        auto ref = vm().createEnum(typeId, tag, payload.size());
+        for (size_t i = 0; i < payload.size(); ++i) {
+            vm().setEnumPayload(ref, i, payload[i]);
+        }
+        return Value::makeEnumId(ref.id, typeId);
     }
-    vm.pushHostArrayValue(ArrayRef{arr.asArrayId()}, std::move(value));
-  }
 
-  Value pop(Value arr) {
-    if (!arr.isArrayId()) {
-      throw std::runtime_error("VMApi::pop: expected array");
+    std::string toString(const Value &value) const {
+        return vm().toString(value);
     }
-    return vm.popHostArrayValue(ArrayRef{arr.asArrayId()});
-  }
 
-  uint32_t length(Value arr) {
-    if (arr.isArrayId()) {
-      return (uint32_t)vm.getHostArrayLength(ArrayRef{arr.asArrayId()});
-    } else if (arr.isStringId()) {
-      return (uint32_t)vm.getRuntimeStringLength(StringRef{arr.asStringId()});
+    std::string resolveString(const Value &value) const {
+        return vm().resolveStringKey(value);
     }
-    return 0;
+
+    void setGlobal(const std::string &name, Value value) const {
+        vm().setGlobal(name, std::move(value));
+    }
+
+    void setField(Value obj, const std::string &key,
+                  Value value) const {
+        if (!obj.isObjectId()) {
+            throw std::runtime_error("VMApi::setField: expected object");
+        }
+        vm().setHostObjectField(ObjectRef{obj.asObjectId(), true}, key, std::move(value));
+    }
+
+    std::vector<std::string> getObjectKeys(Value obj) const {
+        if (!obj.isObjectId())
+            return {};
+        return vm().getHostObjectKeys(ObjectRef{obj.asObjectId(), true});
+    }
+
+    bool hasField(Value obj, const std::string &key) const {
+        if (!obj.isObjectId())
+            return false;
+        return vm().hasHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+    }
+
+    Value getField(Value obj, const std::string &key) const {
+        if (!obj.isObjectId())
+            return Value::makeNull();
+        return vm().getHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+    }
+
+    bool deleteField(Value obj, const std::string &key) const {
+        if (!obj.isObjectId())
+            return false;
+        return vm().deleteHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+    }
+
+    void push(Value arr, Value value) const {
+        if (!arr.isArrayId()) {
+            throw std::runtime_error("VMApi::push: expected array");
+        }
+        vm().pushHostArrayValue(ArrayRef{arr.asArrayId()}, std::move(value));
+    }
+
+    Value pop(Value arr) const {
+        if (!arr.isArrayId()) {
+            throw std::runtime_error("VMApi::pop: expected array");
+        }
+        return vm().popHostArrayValue(ArrayRef{arr.asArrayId()});
+    }
+
+    uint32_t length(Value arr) const {
+        if (arr.isArrayId()) {
+            return (uint32_t)vm().getHostArrayLength(ArrayRef{arr.asArrayId()});
+        } else if (arr.isStringId()) {
+            return (uint32_t)vm().getRuntimeStringLength(StringRef{arr.asStringId()});
+        }
+        return 0;
+    }
+
+    Value getAt(Value arr, uint32_t index) const {
+        if (!arr.isArrayId())
+            return Value::makeNull();
+        return vm().getHostArrayValue(ArrayRef{arr.asArrayId()}, index);
+    }
+
+    void setAt(Value arr, uint32_t index, Value value) const {
+        if (!arr.isArrayId())
+            return;
+        vm().setHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
+    }
+
+    template <typename F>
+    void registerFunction(const std::string &name, F func) const {
+        vm().registerHostFunction(name, std::function<Value(const std::vector<Value> &)>(std::move(func)));
+    }
+
+    template <typename F>
+    void registerFunction(const std::string &name, uint32_t arity, F func) const {
+        vm().registerHostFunction(name, arity, std::function<Value(const std::vector<Value> &)>(std::move(func)));
+    }
+
+    Value invoke(Value callee, const std::vector<Value> &args) const {
+        return vm().callFunction(callee, args);
+    }
+
+    bool toBool(Value v) const { return vm().toBoolPublic(v); }
+
+    Value callFunction(const Value &fn,
+                       const std::vector<Value> &args = {}) const {
+        return vm().callFunction(fn, args);
+    }
+
+    void registerPrototypeMethod(const std::string &typeName,
+                                 const std::string &methodName,
+                                 uint32_t funcIndex) const {
+        vm().registerPrototypeMethod(typeName, methodName, funcIndex);
+    }
+
+    template <typename F>
+    void registerPrototypeMethod(const std::string &typeName,
+                                 const std::string &methodName,
+                                 uint32_t arity, F func) const {
+        std::string fullName = typeName + "." + methodName;
+        vm().registerHostFunction(fullName, arity, std::move(func));
+        vm().registerPrototypeMethodByName(typeName, methodName, fullName);
+    }
+
+    void registerPrototypeMethodByName(const std::string &typeName,
+                                       const std::string &methodName,
+                                       const std::string &funcName) const {
+        vm().registerPrototypeMethodByName(typeName, methodName, funcName);
+    }
+
+    CallbackId registerCallback(const Value &closure) const {
+        return vm().registerCallback(closure);
+    }
+
+    Value invokeCallback(CallbackId id,
+                         const std::vector<Value> &args = {}) const {
+        return vm().invokeCallback(id, args);
+    }
+
+    void releaseCallback(CallbackId id) const { vm().releaseCallback(id); }
+
+    bool isValidCallback(CallbackId id) const { return vm().isValidCallback(id); }
+
+    uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {}) const {
+        return vm().spawnGoroutine(callee, args);
+    }
+
+    void requestSuspension(uint8_t reason, void *context = nullptr) const {
+        vm().requestSuspension(reason, context);
+    }
+
+    bool hasScheduler() const {
+        return vm().getScheduler() != nullptr;
+    }
+
+  bool isInGoroutine() const {
+    auto *sched = vm().getScheduler();
+    return sched && sched->current() != nullptr;
   }
 
-  Value getAt(Value arr, uint32_t index) {
-    if (!arr.isArrayId())
-      return Value::makeNull();
-    return vm.getHostArrayValue(ArrayRef{arr.asArrayId()}, index);
-  }
-
-  void setAt(Value arr, uint32_t index, Value value) {
-    if (!arr.isArrayId())
+  template<typename F>
+  void deferToVM(F&& fn) const {
+    auto *sched = vm().getScheduler();
+    if (!sched) {
+      fn();
       return;
-    vm.setHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
+    }
+    sched->deferToVM(std::forward<F>(fn));
   }
 
-  // Function registration
-  void registerFunction(const std::string &name,
-                        std::function<Value(const std::vector<Value> &)> func) {
-    vm.registerHostFunction(name, std::move(func));
-  }
+    VMImage createImage(int width, int height, int stride, PixelFormat format,
+                        const uint8_t *data) const {
+        return vm().createImage(width, height, stride, format, data);
+    }
 
-  template <typename F>
-  void registerFunction(const std::string &name, uint32_t arity, F func) {
-    vm.registerHostFunction(name, arity, std::move(func));
-  }
+    VMImage createImageFromRGBA(int width, int height,
+                                const std::vector<uint8_t> &rgbaData) const {
+        return vm().createImageFromRGBA(width, height, rgbaData);
+    }
 
-  Value invoke(Value callee, const std::vector<Value> &args) {
-    return vm.callFunction(callee, args);
-  }
+    uint32_t registerEnumType(const std::string &name, const std::vector<std::string> &variants) const {
+        return vm().registerEnumType(name, variants);
+    }
 
-  bool toBool(Value v) { return vm.toBoolPublic(v); }
+    uint32_t getEnumTag(Value val) const {
+        if (!val.isEnumId()) return 0;
+        return vm().getEnumTag(EnumRef{val.asEnumId()});
+    }
 
-  Value callFunction(const Value &fn,
-                                 const std::vector<Value> &args = {}) {
-    return vm.callFunction(fn, args);
-  }
+    Value getEnumPayload(Value val, size_t index) const {
+        if (!val.isEnumId()) return Value::makeNull();
+        return vm().getEnumPayload(EnumRef{val.asEnumId()}, index);
+    }
 
-  // Prototype method registration
-  void registerPrototypeMethod(const std::string &typeName,
-                               const std::string &methodName,
-                               uint32_t funcIndex) {
-    vm.registerPrototypeMethod(typeName, methodName, funcIndex);
-  }
+    uint32_t getEnumValueCount(Value val) const {
+        if (!val.isEnumId()) return 0;
+        return vm().getEnumPayloadCount(EnumRef{val.asEnumId()});
+    }
 
-  template <typename F>
-  void registerPrototypeMethod(const std::string &typeName,
-                               const std::string &methodName,
-                               uint32_t arity, F func) {
-    std::string fullName = typeName + "." + methodName;
-    vm.registerHostFunction(fullName, arity, std::move(func));
-    vm.registerPrototypeMethodByName(typeName, methodName, fullName);
-  }
+    uint32_t getEnumPayloadCount(Value val) const {
+        if (!val.isEnumId()) return 0;
+        return vm().getEnumPayloadCount(EnumRef{val.asEnumId()});
+    }
 
-  void registerPrototypeMethodByName(const std::string &typeName,
-                                     const std::string &methodName,
-                                     const std::string &funcName) {
-    vm.registerPrototypeMethodByName(typeName, methodName, funcName);
-  }
+    std::string getEnumTypeName(uint32_t typeId) const {
+        return vm().getEnumTypeName(typeId);
+    }
 
-  // Callback system
-  CallbackId registerCallback(const Value &closure) {
-    return vm.registerCallback(closure);
-  }
+    std::string getEnumVariantName(uint32_t typeId, uint32_t tag) const {
+        return vm().getEnumVariantName(typeId, tag);
+    }
 
-  Value invokeCallback(CallbackId id,
-                                const std::vector<Value> &args = {}) {
-    return vm.invokeCallback(id, args);
-  }
-
-  void releaseCallback(CallbackId id) { vm.releaseCallback(id); }
-
-  bool isValidCallback(CallbackId id) const { return vm.isValidCallback(id); }
-
-  uint32_t spawnGoroutine(const Value &callee, const std::vector<Value> &args = {}) {
-    return vm.spawnGoroutine(callee, args);
-  }
-
-  // Image helpers
-  VMImage createImage(int width, int height, int stride, PixelFormat format,
-                      const uint8_t *data) {
-    return vm.createImage(width, height, stride, format, data);
-  }
-
-  VMImage createImageFromRGBA(int width, int height,
-                              const std::vector<uint8_t> &rgbaData) {
-    return vm.createImageFromRGBA(width, height, rgbaData);
-  }
-
-  // Enum operations
-  uint32_t registerEnumType(const std::string &name, const std::vector<std::string> &variants) {
-    return vm.registerEnumType(name, variants);
-  }
-
-  uint32_t getEnumTag(Value val) {
-    if (!val.isEnumId()) return 0;
-    return vm.getEnumTag(EnumRef{val.asEnumId()});
-  }
-
-  Value getEnumPayload(Value val, size_t index) {
-    if (!val.isEnumId()) return Value::makeNull();
-    return vm.getEnumPayload(EnumRef{val.asEnumId()}, index);
-  }
-
-  uint32_t getEnumValueCount(Value val) {
-    if (!val.isEnumId()) return 0;
-    return vm.getEnumPayloadCount(EnumRef{val.asEnumId()});
-  }
-
-  uint32_t getEnumPayloadCount(Value val) {
-    if (!val.isEnumId()) return 0;
-    return vm.getEnumPayloadCount(EnumRef{val.asEnumId()});
-  }
-
-  std::string getEnumTypeName(uint32_t typeId) {
-    return vm.getEnumTypeName(typeId);
-  }
-
-  std::string getEnumVariantName(uint32_t typeId, uint32_t tag) {
-    return vm.getEnumVariantName(typeId, tag);
-  }
-
-  uint32_t getEnumTypeVariantCount(uint32_t typeId) {
-    return vm.getEnumTypeVariantCount(typeId);
-  }
+    uint32_t getEnumTypeVariantCount(uint32_t typeId) const {
+        return vm().getEnumTypeVariantCount(typeId);
+    }
 };
 
 } // namespace havel::compiler

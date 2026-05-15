@@ -67,17 +67,17 @@ bool UIManager::setBackend(const std::string& apiName) {
 }
 
 UIBackend* UIManager::backend() {
-    if (!backend_) {
-        // Initialize with default (try Qt extension first)
-        #if defined(HAVE_QT_EXTENSION)
-            setBackend(UIBackend::Api::QT);
-        #elif defined(HAVE_GTK_BACKEND)
-            setBackend(UIBackend::Api::GTK);
-        #elif defined(HAVE_IMGUI_BACKEND)
-            setBackend(UIBackend::Api::IMGUI);
-        #else
-            setBackend(UIBackend::Api::QT); // Fallback
-        #endif
+    if (!backend_ && !initialized_) {
+        initialized_ = true;
+#if defined(HAVE_QT_EXTENSION)
+        setBackend(UIBackend::Api::QT);
+#elif defined(HAVE_GTK_BACKEND)
+        setBackend(UIBackend::Api::GTK);
+#elif defined(HAVE_IMGUI_BACKEND)
+        setBackend(UIBackend::Api::IMGUI);
+#else
+        setBackend(UIBackend::Api::QT);
+#endif
     }
     return backend_.get();
 }

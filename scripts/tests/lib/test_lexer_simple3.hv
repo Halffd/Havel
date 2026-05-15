@@ -1,0 +1,6 @@
+use { Lexer } from "lib/lexer"
+
+lx = Lexer("1")
+print("created")
+result = lx.run()
+print("result type: " + type(result))

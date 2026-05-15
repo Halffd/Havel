@@ -26,6 +26,6 @@ namespace havel::modules::ffi {
  *   printf = ffi.sym(libc, "printf")
  *   ffi.call(printf, "int32", ["string", "int32"], "hello %d\n", 42)
  */
-void registerFFIModule(compiler::VMApi& api);
+void registerFFIModule(const compiler::VMApi& api);
 
 } // namespace havel::modules::ffi

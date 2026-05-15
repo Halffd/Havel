@@ -50,25 +50,37 @@ std::optional<SourceLocation> DebugInfo::getSourceLocation(
 }
 
 void DebugInfo::addVariable(uint32_t functionIndex, const VariableInfo& var) {
-  auto it = functionInfo_.find(functionIndex);
-  if (it != functionInfo_.end()) {
-    // Could store in a more structured way
-    (void)var;
-  }
+    auto it = functionInfo_.find(functionIndex);
+    if (it != functionInfo_.end()) {
+        it->second.variables.push_back(var);
+        it->second.slotNames[var.slot] = var.name;
+        bool found = false;
+        for (const auto& ln : it->second.localNames) {
+            if (ln == var.name) { found = true; break; }
+        }
+        if (!found) it->second.localNames.push_back(var.name);
+    }
 }
 
 std::vector<DebugInfo::VariableInfo> DebugInfo::getVariables(
     uint32_t functionIndex) const {
-  (void)functionIndex;
-  return {};
+    auto it = functionInfo_.find(functionIndex);
+    if (it != functionInfo_.end()) {
+        return it->second.variables;
+    }
+    return {};
 }
 
 std::optional<DebugInfo::VariableInfo> DebugInfo::findVariable(
     uint32_t functionIndex,
     const std::string& name) const {
-  (void)functionIndex;
-  (void)name;
-  return std::nullopt;
+    auto it = functionInfo_.find(functionIndex);
+    if (it != functionInfo_.end()) {
+        for (const auto& var : it->second.variables) {
+            if (var.name == name) return var;
+        }
+    }
+    return std::nullopt;
 }
 
 std::string DebugInfo::serialize() const {
@@ -400,63 +412,177 @@ std::string BytecodeDisassembler::disassemble(const Options& options) const {
 std::string BytecodeDisassembler::disassembleFunction(
     uint32_t functionIndex,
     const Options& options) const {
-  auto* function = chunk_.getFunction(functionIndex);
-  if (!function) {
-    return "Invalid function index\n";
-  }
-
-  std::stringstream ss;
-
-  if (options.showFunctionInfo) {
-    ss << "=== Function " << functionIndex << " ===\n";
-    ss << "Name: " << function->name << "\n";
-    ss << "Params: " << function->param_count << "\n";
-    ss << "Instructions: " << function->instructions.size() << "\n";
-  }
-
-  ss << "\n";
-
-  for (size_t i = 0; i < function->instructions.size(); ++i) {
-    if (options.showLineNumbers) {
-      ss << std::setw(4) << i << ": ";
+    auto* function = chunk_.getFunction(functionIndex);
+    if (!function) {
+        return "Invalid function index\n";
     }
-    ss << disassembleInstruction(function->instructions[i],
-                                  static_cast<uint32_t>(i),
-                                  options);
-    ss << "\n";
-  }
 
-  return ss.str();
+    std::stringstream ss;
+
+    if (options.showFunctionInfo) {
+        ss << "=== Function " << functionIndex << " ===\n";
+        ss << "Name: " << function->name << "\n";
+        ss << "Params: " << function->param_count;
+        if (!function->param_names.empty()) {
+            ss << " (";
+            for (size_t p = 0; p < function->param_names.size(); ++p) {
+                if (p > 0) ss << ", ";
+                ss << function->param_names[p];
+                if (p < function->default_values.size() && function->default_values[p]) {
+                    ss << "=" << operandToString(*function->default_values[p]);
+                }
+            }
+            ss << ")";
+        }
+        ss << "\n";
+        ss << "Locals: " << function->local_count << "\n";
+        if (!function->upvalues.empty()) {
+            ss << "Upvalues: " << function->upvalues.size() << "\n";
+        }
+        if (function->is_generator) {
+            ss << "Generator: yes\n";
+        }
+        if (!function->source_file.empty()) {
+            ss << "Source: " << function->source_file << ":" << function->source_line << "\n";
+        }
+        ss << "Instructions: " << function->instructions.size() << "\n";
+    }
+
+    // Show local variable table
+    if (options.showFunctionInfo) {
+        auto* debugChunk = &chunk_;
+        bool hasVarInfo = false;
+        for (size_t i = 0; i < function->param_names.size(); ++i) {
+            if (!hasVarInfo) {
+                ss << "\nVariables:\n";
+                hasVarInfo = true;
+            }
+            ss << "  slot " << i << ": " << function->param_names[i]
+               << " (param)\n";
+        }
+        // Show slot names from instruction operands
+        // Collect LOAD_VAR/STORE_VAR slot references with string operand names
+        std::unordered_map<uint32_t, std::string> slotNameMap;
+        for (size_t i = 0; i < function->instructions.size(); ++i) {
+            const auto& instr = function->instructions[i];
+            if ((instr.opcode == OpCode::LOAD_VAR ||
+                 instr.opcode == OpCode::STORE_VAR ||
+                 instr.opcode == OpCode::STORE_IMMUT_VAR) &&
+                instr.operands.size() >= 1) {
+                auto slot = static_cast<uint32_t>(instr.operands[0].asInt());
+                if (instr.operands.size() >= 2 && instr.operands[1].isStringValId()) {
+                    auto name = debugChunk->getString(instr.operands[1].asStringValId());
+                    if (!name.empty() && slotNameMap.find(slot) == slotNameMap.end()) {
+                        slotNameMap[slot] = name;
+                    }
+                }
+            }
+        }
+        for (const auto& [slot, name] : slotNameMap) {
+            if (!hasVarInfo) {
+                ss << "\nVariables:\n";
+                hasVarInfo = true;
+            }
+            bool isParam = slot < function->param_count;
+            if (!isParam) {
+                ss << "  slot " << slot << ": " << name << " (local)\n";
+            }
+        }
+        if (hasVarInfo) ss << "\n";
+    }
+
+    // Collect try/catch block ranges
+    std::vector<std::tuple<size_t, size_t, uint32_t>> tryBlocks;
+    for (size_t i = 0; i < function->instructions.size(); ++i) {
+        if (function->instructions[i].opcode == OpCode::TRY_ENTER) {
+            for (size_t j = i + 1; j < function->instructions.size(); ++j) {
+                if (function->instructions[j].opcode == OpCode::TRY_EXIT) {
+                    uint32_t catchIp = 0;
+                    if (!function->instructions[i].operands.empty()) {
+                        catchIp = static_cast<uint32_t>(function->instructions[i].operands[0].asInt());
+                    }
+                    tryBlocks.emplace_back(i, j, catchIp);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!tryBlocks.empty() && options.showFunctionInfo) {
+        ss << "Exception Handlers:\n";
+        for (const auto& [tryStart, tryEnd, catchIp] : tryBlocks) {
+            ss << "  try [" << tryStart << ".." << tryEnd << "] -> catch @" << catchIp << "\n";
+        }
+        ss << "\n";
+    }
+
+    for (size_t i = 0; i < function->instructions.size(); ++i) {
+        for (const auto& [tryStart, tryEnd, catchIp] : tryBlocks) {
+            if (i == tryStart) ss << "  ┌─ try ─\n";
+        }
+
+        ss << formatInstruction(static_cast<uint32_t>(i),
+                                function->instructions[i],
+                                options) << "\n";
+
+        for (const auto& [tryStart, tryEnd, catchIp] : tryBlocks) {
+            if (i == tryEnd) ss << "  └─ end try ─\n";
+        }
+    }
+
+    // Show function-level constants inline
+    if (!function->constants.empty()) {
+        ss << "\n  constants:\n";
+        for (size_t c = 0; c < function->constants.size(); ++c) {
+            const auto& cv = function->constants[c];
+            ss << "    [" << c << "] ";
+            if (cv.isStringValId()) {
+                ss << "\"" << chunk_.getString(cv.asStringValId()) << "\"";
+            } else {
+                ss << operandToString(cv);
+            }
+            ss << "\n";
+        }
+    }
+
+    return ss.str();
 }
 
 std::string BytecodeDisassembler::disassembleInstruction(
- const Instruction& instr, uint32_t index, const Options& options) const {
- (void)index;
- std::stringstream ss;
+    const Instruction& instr, uint32_t index, const Options& options) const {
+    return formatInstruction(index, instr, options);
+}
 
- ss << " " << std::left << std::setw(15) << opcodeToString(instr.opcode);
+std::string BytecodeDisassembler::disassembleConstantPool() const {
+    std::stringstream ss;
+    ss << "=== Constant Pool ===\n";
 
- for (const auto& operand : instr.operands) {
- ss << " ";
- if (operand.isStringValId()) {
- ss << "str[" << operand.asStringValId() << "]=\"" << chunk_.getString(operand.asStringValId()) << "\"";
- } else {
- ss << operandToString(operand);
- }
- }
+    const auto& strings = chunk_.getAllStrings();
+    if (!strings.empty()) {
+        ss << "Strings:\n";
+        for (size_t i = 0; i < strings.size(); ++i) {
+            ss << "  [" << i << "] \"" << strings[i] << "\"\n";
+        }
+    }
 
- if (options.showSourceLocations && instr.location) {
- ss << " ; " << instr.location->line << ":" << instr.location->column;
- }
+    for (size_t fi = 0; fi < chunk_.getFunctionCount(); ++fi) {
+        auto* func = chunk_.getFunction(static_cast<uint32_t>(fi));
+        if (func && !func->constants.empty()) {
+            ss << "Function " << fi << " (" << func->name << ") constants:\n";
+            for (size_t c = 0; c < func->constants.size(); ++c) {
+                const auto& cv = func->constants[c];
+                ss << "  [" << c << "] ";
+                if (cv.isStringValId()) {
+                    ss << "\"" << chunk_.getString(cv.asStringValId()) << "\"";
+                } else {
+                    ss << operandToString(cv);
+                }
+                ss << "\n";
+            }
+        }
+    }
 
- return ss.str();
- }
-
- std::string BytecodeDisassembler::disassembleConstantPool() const {
-  std::stringstream ss;
-  ss << "=== Constant Pool ===\n";
-  ss << "(Constants are now function-level)\n";
-  return ss.str();
+    return ss.str();
 }
 
 std::string BytecodeDisassembler::opcodeToString(OpCode opcode) {
@@ -633,7 +759,8 @@ case OpCode::INT_DIV: return "INT_DIV";
   case OpCode::CLASS_SET_FIELD: return "CLASS_SET_FIELD";
   case OpCode::LOAD_CLASS_PROTO: return "LOAD_CLASS_PROTO";
   case OpCode::CALL_SUPER: return "CALL_SUPER";
-  case OpCode::IMPORT: return "IMPORT";
+    case OpCode::IMPORT: return "IMPORT";
+    case OpCode::IMPORT_WILDCARD: return "IMPORT_WILDCARD";
   case OpCode::STRUCT_NEW: return "STRUCT_NEW";
   case OpCode::STRUCT_GET: return "STRUCT_GET";
   case OpCode::STRUCT_SET: return "STRUCT_SET";
@@ -695,10 +822,42 @@ std::string BytecodeDisassembler::formatInstruction(
     uint32_t index,
     const Instruction& instr,
     const Options& options) const {
-  (void)index;
-  (void)instr;
-  (void)options;
-  return ""; // Not implemented
+    std::stringstream ss;
+
+    if (options.showLineNumbers) {
+        ss << std::setw(4) << index << ": ";
+    }
+
+    ss << " " << std::left << std::setw(15) << opcodeToString(instr.opcode);
+
+    for (size_t j = 0; j < instr.operands.size(); ++j) {
+        const auto& operand = instr.operands[j];
+        ss << (j == 0 ? " " : ", ");
+        if (operand.isStringValId()) {
+            ss << "str[" << operand.asStringValId() << "]=\""
+               << chunk_.getString(operand.asStringValId()) << "\"";
+        } else if (options.useLabels && operand.isInt()) {
+            auto iv = operand.asInt();
+            bool isJump = (instr.opcode == OpCode::JUMP ||
+                          instr.opcode == OpCode::JUMP_IF_FALSE ||
+                          instr.opcode == OpCode::JUMP_IF_TRUE ||
+                          instr.opcode == OpCode::JUMP_IF_NULL);
+            if (isJump) {
+                auto target = static_cast<int64_t>(index) + iv;
+                ss << "->" << target;
+            } else {
+                ss << operandToString(operand);
+            }
+        } else {
+            ss << operandToString(operand);
+        }
+    }
+
+    if (options.showSourceLocations && instr.location) {
+        ss << " ; " << instr.location->line << ":" << instr.location->column;
+    }
+
+    return ss.str();
 }
 
 // ============================================================================

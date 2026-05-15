@@ -1,33 +1,31 @@
 #pragma once
 
-#include "BrightnessManager.hpp"
-#include "ConfigManager.hpp"
-#include "IO.hpp"
-#include "HotkeyManager.hpp"
-#include "modules/HostModules.hpp"
-#include "window/WindowManager.hpp"
-#include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include <atomic>
 #include <chrono>
-#include <csignal>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-#ifdef HAVEL_ENABLE_LLVM
-#include "havel-lang/compiler/BytecodeOrcJIT.h"
-#endif
 
+namespace havel {
+class BrightnessManager;
+class IO;
+class HotkeyManager;
+class WindowManager;
+class AudioManager;
+class MPVController;
+class HotkeyConditionCompiler;
+struct HostContext;
+void blockAllSignals();
+class HavelLauncher;
+}
 
-// Forward declarations
-#include "automation/AutomationManager.hpp"
+namespace havel::automation {
+class AutomationManager;
+}
 
 namespace havel::net {
 class NetworkManager;
-}
-
-namespace havel::gui {
-class GUIManager;
 }
 
 namespace havel::compiler {
@@ -35,17 +33,12 @@ class HostBridge;
 class VM;
 class Scheduler;
 class ExecutionEngine;
+#ifdef HAVEL_ENABLE_LLVM
+class JITCompiler;
+#endif
 }
 
 namespace havel {
-
-struct HostContext;
-
-// Block all signals in the calling thread
-void blockAllSignals();
-
-// Forward declaration
-class HavelLauncher;
 
 class Havel {
 public:
@@ -128,7 +121,7 @@ private:
 
   
   
-  class HotkeyConditionCompiler *conditionCompiler = nullptr;    
+  HotkeyConditionCompiler *conditionCompiler = nullptr;    
   
 
   // Host context (persistent for VM lifetime)

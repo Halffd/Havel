@@ -1,8 +1,10 @@
 #include "GC.hpp"
 
 #include <chrono>
+#include <iostream>
 #include <limits>
 #include "utils/Logger.hpp"
+#include "common/Debug.hpp"
 
 namespace havel::compiler {
 
@@ -94,6 +96,7 @@ void GCHeap::reset() {
 }
 
 ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_closure_id_++;
     closures_.emplace(id, std::move(closure));
     closure_ages_[id] = 0;
@@ -102,22 +105,26 @@ ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
 }
 
 StringRef GCHeap::allocateString(std::string value) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_string_id_++;
     strings_.emplace(id, std::move(value));
     return StringRef{.id = id};
 }
 
 std::string *GCHeap::string(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
 const std::string *GCHeap::string(uint32_t id) const {
+    std::lock_guard<std::recursive_mutex> lock(const_cast<std::recursive_mutex&>(mutex_));
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
 
 ArrayRef GCHeap::allocateArray() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_array_id_++;
     arrays_[id] = {};
     array_ages_[id] = 0;
@@ -126,6 +133,7 @@ ArrayRef GCHeap::allocateArray() {
 }
 
 ObjectRef GCHeap::allocateObject(bool sorted) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_object_id_++;
     ObjectEntry entry;
     entry.sorted = sorted;
@@ -136,6 +144,7 @@ ObjectRef GCHeap::allocateObject(bool sorted) {
 }
 
 SetRef GCHeap::allocateSet() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const uint32_t id = next_set_id_++;
     sets_[id] = {};
     set_ages_[id] = 0;
@@ -231,27 +240,32 @@ Value GCHeap::iteratorNext(uint32_t id) {
             first = Value::makeInt(iter->index);
             second = (*arr)[iter->index++];
         }
-    } else if (iter->iterable.isStringValId()) {
-        if (iter->index >= 256) {
+        } else if (iter->iterable.isStringValId()) {
             done = true;
             first = Value::makeNull();
             second = Value::makeNull();
-        } else {
-            first = Value::makeInt(iter->index);
-            second = Value::makeInt(iter->index++);
-        }
-    } else if (iter->iterable.isStringId()) {
-        auto *s = string(iter->iterable.asStringId());
-        if (!s || iter->index >= s->size()) {
-            done = true;
-            first = Value::makeNull();
-            second = Value::makeNull();
-        } else {
-            first = Value::makeInt(iter->index);
-            char c = (*s)[iter->index++];
-            auto charStrRef = allocateString(std::string(1, c));
-            second = Value::makeStringId(charStrRef.id);
-        }
+        } else if (iter->iterable.isStringId()) {
+            auto *s = string(iter->iterable.asStringId());
+            if (!s || iter->index >= s->size()) {
+                done = true;
+                first = Value::makeNull();
+                second = Value::makeNull();
+            } else {
+                size_t bytePos = iter->index;
+                unsigned char c = static_cast<unsigned char>((*s)[bytePos]);
+                size_t cpLen = 1;
+                if (c < 0x80) { cpLen = 1; }
+                else if ((c & 0xE0) == 0xC0) { cpLen = 2; }
+                else if ((c & 0xF0) == 0xE0) { cpLen = 3; }
+                else if ((c & 0xF8) == 0xF0) { cpLen = 4; }
+                if (bytePos + cpLen > s->size()) { cpLen = 1; }
+                std::string ch = s->substr(bytePos, cpLen);
+                auto charStrRef = allocateString(std::move(ch));
+                iter->codepoint_index++;
+                iter->index = bytePos + cpLen;
+                first = Value::makeInt(iter->codepoint_index - 1);
+                second = Value::makeStringId(charStrRef.id);
+            }
     } else if (iter->iterable.isObjectId()) {
         if (iter->index >= iter->keys.size()) {
             done = true;
@@ -327,16 +341,19 @@ bool GCHeap::isCollectionInProgress() const {
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
+    std::lock_guard<std::recursive_mutex> lock(const_cast<std::recursive_mutex&>(mutex_));
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ArrayEntry *GCHeap::array(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = arrays_.find(id);
     return it == arrays_.end() ? nullptr : &it->second;
 }
@@ -347,6 +364,7 @@ const GCHeap::ArrayEntry *GCHeap::array(uint32_t id) const {
 }
 
 GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = objects_.find(id);
     return it == objects_.end() ? nullptr : &it->second;
 }
@@ -596,10 +614,11 @@ void GCHeap::startIncrementalCollection(
     gc_state_ = IncrementalState::Mark;
     markRoots();
 
-    ::havel::debug("[GC] Started {} collection (budget: {}, objects: {})",
-        current_collection_full_ ? "full" : "minor",
-        allocation_budget_,
-        arrays_.size() + objects_.size() + sets_.size() + closures_.size());
+    if (debugging::debug_gc)
+        std::cerr << "[GC] Started " << (current_collection_full_ ? "full" : "minor")
+                  << " collection (budget: " << allocation_budget_
+                  << ", objects: " << (arrays_.size() + objects_.size() + sets_.size() + closures_.size())
+                  << ")\n";
 }
 
 void GCHeap::markReference(const Value &value) {
@@ -880,8 +899,15 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_objects_.find(id) != old_objects_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-        if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
-            objects_.erase(it);
+            if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
+                auto *obj = object(id);
+                if (obj) {
+                    auto it = obj->find("op_destructor");
+                    if (it != obj->end() && (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId())) {
+                        finalizer_queue_.push_back({id, std::move(*obj)});
+                    }
+                }
+                objects_.erase(it);
                     object_ages_.erase(id);
                     old_objects_.erase(id);
                     recovered_in_cycle_++;
@@ -1264,8 +1290,9 @@ void GCHeap::completeCollection() {
         minor_collections_since_full_++;
     }
 
-    ::havel::debug("[GC] Collection complete: recovered {} objects, new budget: {}",
-        recovered_in_cycle_, allocation_budget_);
+    if (debugging::debug_gc)
+        std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_
+                  << " objects, new budget: " << allocation_budget_ << "\n";
 }
 
 void GCHeap::ageOrPromoteArray(uint32_t id) {
@@ -1406,6 +1433,17 @@ GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) {
 const GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) const {
     auto it = coroutines_.find(id);
     return it == coroutines_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizers() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto result = std::move(finalizer_queue_);
+    finalizer_queue_.clear();
+    return result;
+}
+
+std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizerQueue() {
+    return drainFinalizers();
 }
 
 }

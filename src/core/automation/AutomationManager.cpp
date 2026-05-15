@@ -134,8 +134,18 @@ void AutomationManager::stopAll() {
 }
 
 std::string AutomationManager::generateUniqueName(const std::string& base) const {
-    static std::atomic<int> counter{0};
-    return base + "_" + std::to_string(counter++);
+  static std::atomic<int> counter{0};
+  return base + "_" + std::to_string(counter++);
+}
+
+std::vector<std::string> AutomationManager::getTaskNames() const {
+  std::lock_guard<std::mutex> lock(tasksMutex_);
+  std::vector<std::string> names;
+  names.reserve(tasks_.size());
+  for (const auto& [name, _] : tasks_) {
+    names.push_back(name);
+  }
+  return names;
 }
 
 } // namespace havel::automation

@@ -23,6 +23,7 @@ struct EngineConfig {
     bool debugParser = false;
     bool debugAst = false;
     bool stopOnError = false;
+    bool leanMinimalStartup = false;
 };
 
 class HavelEngine {
@@ -37,16 +38,14 @@ public:
 
     void initializeMinimal() {
         auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
-        initializeFull(hostAPI);
+        initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
-    void initializeFull(std::shared_ptr<IHostAPI> hostAPI) {
-        if (initialized_) return;
+  void initializeFull(std::shared_ptr<IHostAPI> hostAPI, bool leanStartup = false) {
+    if (initialized_) return;
 
-        host::ServiceRegistry::instance().clear();
-        if (hostAPI && hostAPI->GetIO()) {
-            initializeServiceRegistry(hostAPI);
-        }
+    host::ServiceRegistry::instance().clear();
+    initializeServiceRegistry(hostAPI);
 
         hostContext_ = std::make_unique<HostContext>(createHostContext(hostAPI));
 
@@ -54,10 +53,10 @@ public:
         hostContext_->vm = vm_.get();
 
         hostBridge_ = compiler::createHostBridge(*hostContext_);
-        vm_->suspendGC();
-        registerStdLibWithVM(*hostBridge_);
-        vm_->resumeGC();
-        hostBridge_->install();
+  vm_->suspendGC();
+  registerStdLibWithVM(*hostBridge_);
+  vm_->resumeGC();
+  hostBridge_->install(!leanStartup);
 
         for (const auto& [name, fn] : hostBridge_->options().host_functions) {
             vm_->registerHostFunction(name, fn);

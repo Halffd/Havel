@@ -41,137 +41,164 @@ static Value typedWrite(const std::vector<Value> &args) {
     return Value::makeNull();
 }
 
-void registerPointerModule(VMApi &api) {
-    api.registerFunction("ptr", [](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("ptr() requires a value");
-        const auto &v = args[0];
-        if (v.isPtr())
-            return v;
-        if (v.isInt()) {
-            uint64_t addr = static_cast<uint64_t>(v.asInt());
-            return Value::makePtr(reinterpret_cast<void *>(addr));
-        }
-        if (v.isDouble()) {
-            uint64_t addr = static_cast<uint64_t>(v.asDouble());
-            return Value::makePtr(reinterpret_cast<void *>(addr));
-        }
-        if (v.isNull())
-            return Value::makePtr(nullptr);
-        throw std::runtime_error("ptr() expects an integer address or null");
-    });
+void registerPointerModule(const VMApi &api) {
+	api.registerFunction("ptr.create", [](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("ptr() requires a value");
+		const auto &v = args[0];
+		if (v.isPtr())
+			return v;
+		if (v.isInt()) {
+			uint64_t addr = static_cast<uint64_t>(v.asInt());
+			return Value::makePtr(reinterpret_cast<void *>(addr));
+		}
+		if (v.isDouble()) {
+			uint64_t addr = static_cast<uint64_t>(v.asDouble());
+			return Value::makePtr(reinterpret_cast<void *>(addr));
+		}
+		if (v.isNull())
+			return Value::makePtr(nullptr);
+		throw std::runtime_error("ptr() expects an integer address or null");
+	});
 
-    api.registerFunction("deref", [](const std::vector<Value> &args) {
-        if (args.empty())
-            throw std::runtime_error("deref() requires a pointer");
-        const auto &v = args[0];
-        if (!v.isPtr())
-            throw std::runtime_error("deref() expects a pointer");
-        void *ptr = v.asPtr();
-        if (!ptr)
-            throw std::runtime_error("deref(): null pointer");
-        uint64_t addr = reinterpret_cast<uint64_t>(ptr);
-        return Value(static_cast<int64_t>(addr));
-    });
+	api.registerFunction("ptr.deref", [](const std::vector<Value> &args) {
+		if (args.empty())
+			throw std::runtime_error("deref() requires a pointer");
+		const auto &v = args[0];
+		if (!v.isPtr())
+			throw std::runtime_error("deref() expects a pointer");
+		void *ptr = v.asPtr();
+		if (!ptr)
+			throw std::runtime_error("deref(): null pointer");
+		uint64_t addr = reinterpret_cast<uint64_t>(ptr);
+		return Value(static_cast<int64_t>(addr));
+	});
 
-    api.registerFunction("offset", [](const std::vector<Value> &args) {
-        if (args.size() < 2)
-            throw std::runtime_error("offset() requires a pointer and offset");
-        const auto &base = args[0];
-        const auto &off = args[1];
-        if (!base.isPtr())
-            throw std::runtime_error("offset() first arg must be a pointer");
-        uint64_t addr = reinterpret_cast<uint64_t>(base.asPtr());
-        int64_t delta = off.isInt() ? off.asInt() : static_cast<int64_t>(off.asDouble());
-        return Value::makePtr(reinterpret_cast<void *>(addr + delta));
-    });
+	api.registerFunction("ptr.offset", [](const std::vector<Value> &args) {
+		if (args.size() < 2)
+			throw std::runtime_error("offset() requires a pointer and offset");
+		const auto &base = args[0];
+		const auto &off = args[1];
+		if (!base.isPtr())
+			throw std::runtime_error("offset() first arg must be a pointer");
+		uint64_t addr = reinterpret_cast<uint64_t>(base.asPtr());
+		int64_t delta = off.isInt() ? off.asInt() : static_cast<int64_t>(off.asDouble());
+		return Value::makePtr(reinterpret_cast<void *>(addr + delta));
+	});
 
-    api.registerFunction("ptreq", [](const std::vector<Value> &args) {
-        if (args.size() < 2)
-            throw std::runtime_error("ptreq() requires two pointers");
-        const auto &a = args[0];
-        const auto &b = args[1];
-        if (a.isPtr() && b.isPtr())
-            return Value(a.asPtr() == b.asPtr());
-        uint64_t va = 0, vb = 0;
-        if (a.isPtr()) va = reinterpret_cast<uint64_t>(a.asPtr());
-        else if (a.isInt()) va = static_cast<uint64_t>(a.asInt());
-        if (b.isPtr()) vb = reinterpret_cast<uint64_t>(b.asPtr());
-        else if (b.isInt()) vb = static_cast<uint64_t>(b.asInt());
-        return Value(va == vb);
-    });
+	api.registerFunction("ptr.eq", [](const std::vector<Value> &args) {
+		if (args.size() < 2)
+			throw std::runtime_error("ptreq() requires two pointers");
+		const auto &a = args[0];
+		const auto &b = args[1];
+		if (a.isPtr() && b.isPtr())
+			return Value(a.asPtr() == b.asPtr());
+		uint64_t va = 0, vb = 0;
+		if (a.isPtr()) va = reinterpret_cast<uint64_t>(a.asPtr());
+		else if (a.isInt()) va = static_cast<uint64_t>(a.asInt());
+		if (b.isPtr()) vb = reinterpret_cast<uint64_t>(b.asPtr());
+		else if (b.isInt()) vb = static_cast<uint64_t>(b.asInt());
+		return Value(va == vb);
+	});
 
-    api.registerFunction("deref.i8", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.i8() requires a pointer");
-        return typedRead<int8_t>(args[0]);
-    });
-    api.registerFunction("deref.i16", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.i16() requires a pointer");
-        return typedRead<int16_t>(args[0]);
-    });
-    api.registerFunction("deref.i32", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.i32() requires a pointer");
-        return typedRead<int32_t>(args[0]);
-    });
-    api.registerFunction("deref.i64", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.i64() requires a pointer");
-        return typedRead<int64_t>(args[0]);
-    });
-    api.registerFunction("deref.u8", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.u8() requires a pointer");
-        return typedRead<uint8_t>(args[0]);
-    });
-    api.registerFunction("deref.u16", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.u16() requires a pointer");
-        return typedRead<uint16_t>(args[0]);
-    });
-    api.registerFunction("deref.u32", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.u32() requires a pointer");
-        return typedRead<uint32_t>(args[0]);
-    });
-    api.registerFunction("deref.u64", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.u64() requires a pointer");
-        return typedRead<uint64_t>(args[0]);
-    });
-    api.registerFunction("deref.f32", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.f32() requires a pointer");
-        return typedRead<float>(args[0]);
-    });
-    api.registerFunction("deref.f64", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("deref.f64() requires a pointer");
-        return typedRead<double>(args[0]);
-    });
+	api.registerFunction("ptr.deref_i8", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.i8() requires a pointer");
+		return typedRead<int8_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_i16", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.i16() requires a pointer");
+		return typedRead<int16_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_i32", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.i32() requires a pointer");
+		return typedRead<int32_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_i64", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.i64() requires a pointer");
+		return typedRead<int64_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_u8", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.u8() requires a pointer");
+		return typedRead<uint8_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_u16", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.u16() requires a pointer");
+		return typedRead<uint16_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_u32", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.u32() requires a pointer");
+		return typedRead<uint32_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_u64", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.u64() requires a pointer");
+		return typedRead<uint64_t>(args[0]);
+	});
+	api.registerFunction("ptr.deref_f32", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.f32() requires a pointer");
+		return typedRead<float>(args[0]);
+	});
+	api.registerFunction("ptr.deref_f64", [](const std::vector<Value> &args) {
+		if (args.empty()) throw std::runtime_error("deref.f64() requires a pointer");
+		return typedRead<double>(args[0]);
+	});
 
-    api.registerFunction("write.i8", [](const std::vector<Value> &args) {
-        return typedWrite<int8_t>(args);
-    });
-    api.registerFunction("write.i16", [](const std::vector<Value> &args) {
-        return typedWrite<int16_t>(args);
-    });
-    api.registerFunction("write.i32", [](const std::vector<Value> &args) {
-        return typedWrite<int32_t>(args);
-    });
-    api.registerFunction("write.i64", [](const std::vector<Value> &args) {
-        return typedWrite<int64_t>(args);
-    });
-    api.registerFunction("write.u8", [](const std::vector<Value> &args) {
-        return typedWrite<uint8_t>(args);
-    });
-    api.registerFunction("write.u16", [](const std::vector<Value> &args) {
-        return typedWrite<uint16_t>(args);
-    });
-    api.registerFunction("write.u32", [](const std::vector<Value> &args) {
-        return typedWrite<uint32_t>(args);
-    });
-    api.registerFunction("write.u64", [](const std::vector<Value> &args) {
-        return typedWrite<uint64_t>(args);
-    });
-    api.registerFunction("write.f32", [](const std::vector<Value> &args) {
-        return typedWrite<float>(args);
-    });
-    api.registerFunction("write.f64", [](const std::vector<Value> &args) {
-        return typedWrite<double>(args);
-    });
+	api.registerFunction("ptr.write_i8", [](const std::vector<Value> &args) {
+		return typedWrite<int8_t>(args);
+	});
+	api.registerFunction("ptr.write_i16", [](const std::vector<Value> &args) {
+		return typedWrite<int16_t>(args);
+	});
+	api.registerFunction("ptr.write_i32", [](const std::vector<Value> &args) {
+		return typedWrite<int32_t>(args);
+	});
+	api.registerFunction("ptr.write_i64", [](const std::vector<Value> &args) {
+		return typedWrite<int64_t>(args);
+	});
+	api.registerFunction("ptr.write_u8", [](const std::vector<Value> &args) {
+		return typedWrite<uint8_t>(args);
+	});
+	api.registerFunction("ptr.write_u16", [](const std::vector<Value> &args) {
+		return typedWrite<uint16_t>(args);
+	});
+	api.registerFunction("ptr.write_u32", [](const std::vector<Value> &args) {
+		return typedWrite<uint32_t>(args);
+	});
+	api.registerFunction("ptr.write_u64", [](const std::vector<Value> &args) {
+		return typedWrite<uint64_t>(args);
+	});
+	api.registerFunction("ptr.write_f32", [](const std::vector<Value> &args) {
+		return typedWrite<float>(args);
+	});
+	api.registerFunction("ptr.write_f64", [](const std::vector<Value> &args) {
+		return typedWrite<double>(args);
+	});
+
+	auto ptrObj = api.makeObject();
+	api.setField(ptrObj, "create", api.makeFunctionRef("ptr.create"));
+	api.setField(ptrObj, "deref", api.makeFunctionRef("ptr.deref"));
+	api.setField(ptrObj, "offset", api.makeFunctionRef("ptr.offset"));
+	api.setField(ptrObj, "eq", api.makeFunctionRef("ptr.eq"));
+	api.setField(ptrObj, "deref_i8", api.makeFunctionRef("ptr.deref_i8"));
+	api.setField(ptrObj, "deref_i16", api.makeFunctionRef("ptr.deref_i16"));
+	api.setField(ptrObj, "deref_i32", api.makeFunctionRef("ptr.deref_i32"));
+	api.setField(ptrObj, "deref_i64", api.makeFunctionRef("ptr.deref_i64"));
+	api.setField(ptrObj, "deref_u8", api.makeFunctionRef("ptr.deref_u8"));
+	api.setField(ptrObj, "deref_u16", api.makeFunctionRef("ptr.deref_u16"));
+	api.setField(ptrObj, "deref_u32", api.makeFunctionRef("ptr.deref_u32"));
+	api.setField(ptrObj, "deref_u64", api.makeFunctionRef("ptr.deref_u64"));
+	api.setField(ptrObj, "deref_f32", api.makeFunctionRef("ptr.deref_f32"));
+	api.setField(ptrObj, "deref_f64", api.makeFunctionRef("ptr.deref_f64"));
+	api.setField(ptrObj, "write_i8", api.makeFunctionRef("ptr.write_i8"));
+	api.setField(ptrObj, "write_i16", api.makeFunctionRef("ptr.write_i16"));
+	api.setField(ptrObj, "write_i32", api.makeFunctionRef("ptr.write_i32"));
+	api.setField(ptrObj, "write_i64", api.makeFunctionRef("ptr.write_i64"));
+	api.setField(ptrObj, "write_u8", api.makeFunctionRef("ptr.write_u8"));
+	api.setField(ptrObj, "write_u16", api.makeFunctionRef("ptr.write_u16"));
+	api.setField(ptrObj, "write_u32", api.makeFunctionRef("ptr.write_u32"));
+	api.setField(ptrObj, "write_u64", api.makeFunctionRef("ptr.write_u64"));
+	api.setField(ptrObj, "write_f32", api.makeFunctionRef("ptr.write_f32"));
+	api.setField(ptrObj, "write_f64", api.makeFunctionRef("ptr.write_f64"));
+	api.setGlobal("ptr", ptrObj);
 }
 
 } // namespace havel::stdlib

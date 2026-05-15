@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -41,11 +42,13 @@ is_open = false;
 bool isClosed() const { return !is_open; }
 };
 
-    struct RuntimeClosure {
-        uint32_t function_index = 0;
-        uint32_t chunk_index = 0;
-        std::vector<std::shared_ptr<UpvalueCell>> upvalues;
-    };
+struct RuntimeClosure {
+    uint32_t function_index = 0;
+    uint32_t chunk_index = 0;
+    const BytecodeChunk* chunk = nullptr;
+    std::shared_ptr<std::unordered_map<std::string, Value>> module_globals;
+    std::vector<std::shared_ptr<UpvalueCell>> upvalues;
+};
 
     struct ObjectEntry {
         std::unordered_map<std::string, Value> data;
@@ -135,11 +138,12 @@ bool isClosed() const { return !is_open; }
         void assign(typename std::vector<Value>::iterator first, typename std::vector<Value>::iterator last) { if (!frozen) data.assign(first, last); }
     };
 
-    struct Iterator {
-        Value iterable;
-        size_t index = 0;
-        std::vector<std::string> keys;
-    };
+struct Iterator {
+    Value iterable;
+    size_t index = 0;
+    size_t codepoint_index = 0;
+    std::vector<std::string> keys;
+};
 
     struct Range {
         int64_t start = 0;
@@ -167,25 +171,31 @@ bool isClosed() const { return !is_open; }
               column(col), cause(nullptr) {}
     };
 
- struct Coroutine {
- enum State { Runnable, Waiting, Done };
+    struct CallerFrame {
+        uint32_t coroutine_id = UINT32_MAX;
+        size_t frame_count = 0;
+        uint32_t ip = 0;
+        std::vector<Value> locals;
+        std::vector<Value> stack;
+    };
 
- uint32_t function_index = 0;
- uint32_t chunk_index = 0;
- uint32_t ip = 0;
- uint32_t closure_id = 0;
- std::vector<Value> stack;
- std::vector<Value> locals;
- size_t saved_frame_count = 0;
- std::vector<Value> saved_locals;
- uint32_t saved_coroutine_id = UINT32_MAX;
- State state = Runnable;
- std::vector<Value> yield_values;
- size_t parent_locals_size = 0;
- std::chrono::steady_clock::time_point resume_at_time{}; // Time-based resume for FIBER_SLEEP
+    struct Coroutine {
+        enum State { Runnable, Waiting, Done };
 
- Coroutine() = default;
- };
+        uint32_t function_index = 0;
+        uint32_t chunk_index = 0;
+        uint32_t ip = 0;
+        uint32_t closure_id = 0;
+        std::vector<Value> stack;
+        std::vector<Value> locals;
+        std::vector<CallerFrame> caller_stack;
+        State state = Runnable;
+        std::vector<Value> yield_values;
+        size_t parent_locals_size = 0;
+        std::chrono::steady_clock::time_point resume_at_time{};
+
+        Coroutine() = default;
+    };
 
     void reset();
 
@@ -306,6 +316,8 @@ bool isClosed() const { return !is_open; }
         const std::unordered_map<std::string, Value> &globals,
         const std::vector<uint32_t> &active_closure_ids,
         const std::function<std::optional<Value>(uint32_t)> &open_local_reader);
+
+    std::vector<std::pair<uint32_t, ObjectEntry>> drainFinalizers();
 
 private:
     enum class Generation : uint8_t {
@@ -442,6 +454,11 @@ private:
     std::vector<uint32_t> sweep_keys_;
     size_t sweep_index_ = 0;
     IncrementalState sweep_phase_ = IncrementalState::Idle;
+    std::recursive_mutex mutex_;
+
+    std::vector<std::pair<uint32_t, ObjectEntry>> finalizer_queue_;
+    bool hasFinalizers() const { return !finalizer_queue_.empty(); }
+    std::vector<std::pair<uint32_t, ObjectEntry>> drainFinalizerQueue();
 };
 
 }

@@ -94,6 +94,9 @@ endif()
 # D-Bus
 pkg_check_modules(DBUS REQUIRED dbus-1)
 
+# libcurl (HTTP client)
+pkg_check_modules(CURL REQUIRED libcurl)
+
 # PipeWire
 pkg_check_modules(PIPEWIRE QUIET libpipewire-0.3)
 if(PIPEWIRE_FOUND)
@@ -329,6 +332,8 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/ai/ocr/*.cpp"
 )
 
+# Input backend adapters - re-enabled after API fixes
+
 # GUI sources (conditionally included based on backend)
 file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
 
@@ -408,29 +413,35 @@ pkg_check_modules(MINIZIP minizip)
 
 # OCR libraries
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(TESSERACT REQUIRED tesseract)
-pkg_check_modules(LEPTONICA REQUIRED lept)
+pkg_check_modules(TESSERACT tesseract)
+pkg_check_modules(LEPTONICA lept)
 
 # OpenCV with workaround for FFmpeg symbol version mismatch
 # Some systems have libavfilter/libavutil version conflicts
 # We ignore unresolved symbols in OpenCV's FFmpeg dependencies since we don't use video
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+find_package(OpenCV COMPONENTS core imgproc imgcodecs)
 
-# Only link essential OpenCV modules (reduces binary size by ~200MB)
-# Full OpenCV has 40+ modules, we only use:
-# - core: Basic data structures and functions
-# - imgproc: Image processing (pixel automation)
-# - imgcodecs: Image reading/writing (screenshots)
-set(OPENCV_ESSENTIAL_LIBS
-    opencv_core
-    opencv_imgproc
-    opencv_imgcodecs
-)
+if(OpenCV_FOUND)
+    set(OPENCV_ESSENTIAL_LIBS
+        opencv_core
+        opencv_imgproc
+        opencv_imgcodecs
+    )
 
-if(OpenCV_LIBS MATCHES "avfilter")
-    message(STATUS "OpenCV found with FFmpeg - applying linker workaround for libavutil symbols")
-    # Add workaround for av_alpha_mode_* symbols that may be missing in some FFmpeg versions
-    set(OPENCV_FFMPEG_WORKAROUND "-Wl,--unresolved-symbols=ignore-in-shared-libs")
+    if(OpenCV_LIBS MATCHES "avfilter")
+        message(STATUS "OpenCV found with FFmpeg - applying linker workaround for libavutil symbols")
+        set(OPENCV_FFMPEG_WORKAROUND "-Wl,--unresolved-symbols=ignore-in-shared-libs")
+    endif()
+else()
+    message(STATUS "OpenCV not found - image module will be stubbed")
+    set(OPENCV_ESSENTIAL_LIBS "")
+    set(OPENCV_FFMPEG_WORKAROUND "")
+endif()
+
+if(TESSERACT_FOUND)
+    message(STATUS "Tesseract found - OCR will be available")
+else()
+    message(STATUS "Tesseract not found - OCR will be stubbed")
 endif()
 
 # ==============================================================================
@@ -544,29 +555,31 @@ if(UI_BACKEND STREQUAL "AUTO")
 endif()
 
 set(COMMON_LIBS
-    # System libraries
-    ${PCRE2_8_LIBRARIES}
-    ${PCRE2_16_LIBRARIES}
-    ${X11_LIBRARIES}
-    ${XI_LIBRARIES}
-    ${XTEST_LIB}
-    ${XRANDR_LIB}
-    ${XINERAMA_LIB}
-    ${XCOMPOSITE_LIBRARIES}
-    Xfixes
-    ${PULSEAUDIO_LIBRARIES}
+# System libraries
+${PCRE2_8_LIBRARIES}
+${PCRE2_16_LIBRARIES}
+${X11_LIBRARIES}
+${XI_LIBRARIES}
+${XTEST_LIB}
+${XRANDR_LIB}
+${XINERAMA_LIB}
+${XCOMPOSITE_LIBRARIES}
+Xfixes
+${WAYLAND_LIBRARIES}
+${PULSEAUDIO_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}
     ${ALSA_LIBRARIES}
     Threads::Threads
     ncurses
   ${DBUS_LIBRARIES}
-  # OCR libraries
-    ${TESSERACT_LIBRARIES}
-    ${LEPTONICA_LIBRARIES}
-    ${OPENCV_ESSENTIAL_LIBS}
+# OCR libraries (only linked if found, see image_extension/ocr_extension targets)
+$<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_LIBRARIES}>
+$<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_LIBRARIES}>
+$<$<BOOL:${OpenCV_FOUND}>:${OPENCV_ESSENTIAL_LIBS}>
     # Optional Readline
     ${READLINE_LIB}
     dl crypto ssl pthread m
+ ${CURL_LIBRARIES}
     # ZIP libraries (use minizip if available, otherwise fall back to generic zip)
     $<$<BOOL:${MINIZIP_FOUND}>:${MINIZIP_LIBRARIES}>
     $<$<NOT:$<BOOL:${MINIZIP_FOUND}>>:zip>
@@ -596,13 +609,14 @@ target_compile_options(havel_extension_runtime PRIVATE -fno-lto)
 target_link_options(havel_extension_runtime PRIVATE -fno-lto)
 
 # Image extension (OpenCV-based)
+if(OpenCV_FOUND)
 add_library(image_extension MODULE src/extensions/image/image_extension.cpp)
 target_include_directories(image_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(image_extension PRIVATE 
+target_link_libraries(image_extension PRIVATE
     havel_extension_runtime
     ${OPENCV_ESSENTIAL_LIBS}
 )
@@ -611,8 +625,11 @@ set_target_properties(image_extension PROPERTIES
 )
 target_compile_options(image_extension PRIVATE -fno-lto)
 target_link_options(image_extension PRIVATE -fno-lto)
+target_compile_definitions(image_extension PRIVATE HAVE_OPENCV)
+endif()
 
 # OCR extension (Tesseract-based)
+if(TESSERACT_FOUND)
 add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)
 target_include_directories(ocr_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -637,6 +654,7 @@ set_target_properties(ocr_extension PROPERTIES
 )
 target_compile_options(ocr_extension PRIVATE -fno-lto)
 target_link_options(ocr_extension PRIVATE -fno-lto)
+endif()
 
 # GTK4 extension (GTK4-based UI)
 # Uses dynamic loading - no compile-time dependency on GTK4
@@ -731,36 +749,38 @@ add_library(havel_gui STATIC ${GUI_SOURCES})
 
 # Shared configuration for the libraries
 foreach(lib havel_core havel_modules havel_gui)
-    target_include_directories(${lib} PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/src/extensions
-        ${X11_INCLUDE_DIR}
-        ${XI_INCLUDE_DIR}
-        ${DBUS_INCLUDE_DIRS}
-        ${PULSEAUDIO_INCLUDE_DIRS}
-        ${PIPEWIRE_INCLUDE_DIRS}
-        ${ALSA_INCLUDE_DIRS}
-        ${WAYLAND_INCLUDE_DIRS}
-        ${GENERATED_PROTO_DIR}
-        ${TESSERACT_INCLUDE_DIRS}
-        ${LEPTONICA_INCLUDE_DIRS}
-        ${OpenCV_INCLUDE_DIRS}
-        ${UI_BACKEND_INCLUDES}
-        $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-    )
+target_include_directories(${lib} PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/extensions
+    ${X11_INCLUDE_DIR}
+    ${XI_INCLUDE_DIR}
+    ${DBUS_INCLUDE_DIRS}
+    ${PULSEAUDIO_INCLUDE_DIRS}
+    ${PIPEWIRE_INCLUDE_DIRS}
+    ${ALSA_INCLUDE_DIRS}
+    ${WAYLAND_INCLUDE_DIRS}
+    ${GENERATED_PROTO_DIR}
+    $<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_INCLUDE_DIRS}>
+    $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_INCLUDE_DIRS}>
+    $<$<BOOL:${OpenCV_FOUND}>:${OpenCV_INCLUDE_DIRS}>
+    ${UI_BACKEND_INCLUDES}
+    $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
+)
     target_compile_definitions(${lib} PRIVATE
-        $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
-        $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
-        $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
-        $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
-        $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-        $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
-        $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
-        $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
-        ${UI_BACKEND_DEFS}
-        UI_BACKEND=\"${UI_BACKEND}\"
-    )
+    $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
+    $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
+    $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+    $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+    $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+    $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
+    $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
+    $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
+    $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
+    $<$<BOOL:${TESSERACT_FOUND}>:HAVE_TESSERACT>
+    ${UI_BACKEND_DEFS}
+    UI_BACKEND=\"${UI_BACKEND}\"
+)
 endforeach()
 
 add_executable(havel
@@ -823,6 +843,7 @@ if(ENABLE_HAVEL_LANG)
 set(HVTEST_SOURCES
   src/hvtest/main.cpp
   src/hvtest/smoke_runner.cpp
+  src/hvtest/test_scheduler_rig.cpp
   src/utils/Logger.cpp
 )
 
@@ -843,7 +864,7 @@ target_include_directories(hvtest PRIVATE
 )
 
 target_link_libraries(hvtest PRIVATE
- havel_lang
+  havel_lang
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -913,32 +934,31 @@ target_precompile_headers(havel PRIVATE
 
 # Include directories
 target_include_directories(havel PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src/extensions
-    ${X11_INCLUDE_DIR}
-    ${XI_INCLUDE_DIR}
-    ${DBUS_INCLUDE_DIRS}
+${CMAKE_SOURCE_DIR}/src
+${CMAKE_SOURCE_DIR}/include
+${CMAKE_SOURCE_DIR}/src/extensions
+${X11_INCLUDE_DIR}
+${XI_INCLUDE_DIR}
+${DBUS_INCLUDE_DIRS}
+${CURL_INCLUDE_DIRS}
     ${PULSEAUDIO_INCLUDE_DIRS}
     ${PIPEWIRE_INCLUDE_DIRS}
-  ${ALSA_INCLUDE_DIRS}
-  ${WAYLAND_INCLUDE_DIRS}
+    ${ALSA_INCLUDE_DIRS}
+    ${WAYLAND_INCLUDE_DIRS}
     ${GENERATED_PROTO_DIR}
-    ${TESSERACT_INCLUDE_DIRS}
-    ${LEPTONICA_INCLUDE_DIRS}
-    ${OpenCV_INCLUDE_DIRS}
+    $<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_INCLUDE_DIRS}>
+    $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_INCLUDE_DIRS}>
+    $<$<BOOL:${OpenCV_FOUND}>:${OpenCV_INCLUDE_DIRS}>
     ${UI_BACKEND_INCLUDES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
-    # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
-    # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
 )
 
 # Link libraries
 target_link_libraries(havel PRIVATE
     ${COMMON_LIBS}
-$<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
-$<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
-${OPENCV_FFMPEG_WORKAROUND}
+    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
+    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
+    $<$<BOOL:${OpenCV_FOUND}>:${OPENCV_FFMPEG_WORKAROUND}>
     havel_extension_runtime
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     $<$<BOOL:${HAVE_LIBFFI}>:ffi>
@@ -952,6 +972,8 @@ target_compile_definitions(havel PRIVATE
     $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
     $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
     $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
+    $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
+    $<$<BOOL:${TESSERACT_FOUND}>:HAVE_TESSERACT>
     ${UI_BACKEND_DEFS}
     UI_BACKEND=\"${UI_BACKEND}\"
 )
@@ -972,6 +994,7 @@ if(ENABLE_HAVEL_LANG)
     # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
     list(APPEND HAVEL_LANG_LIB_SOURCES
         ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
     )
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
     
@@ -997,6 +1020,7 @@ ${COMMON_LIBS}
 $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 $<$<BOOL:${HAVE_LIBFFI}>:ffi>
 dl
+havel_core
 )
 
     # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow
@@ -1047,7 +1071,8 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
             ${CMAKE_SOURCE_DIR}/include
             ${X11_INCLUDE_DIR}
             ${XI_INCLUDE_DIR}
-            ${DBUS_INCLUDE_DIRS}
+ ${DBUS_INCLUDE_DIRS}
+ ${CURL_INCLUDE_DIRS}
             ${PULSEAUDIO_INCLUDE_DIRS}
             ${PIPEWIRE_INCLUDE_DIRS}
   ${ALSA_INCLUDE_DIRS}

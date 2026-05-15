@@ -119,8 +119,12 @@ public:
     void trayHide() override;
     bool trayIsVisible() const override;
 
-    // Styling
-    void applyStyle(std::shared_ptr<ui::UIElement> element, const std::string &key, const ui::PropValue &value) override;
+  // Styling
+  void applyStyle(std::shared_ptr<ui::UIElement> element, const std::string &key, const ui::PropValue &value) override;
+
+  // Canvas drawing
+  void canvasFlush(std::shared_ptr<ui::UIElement> canvas) override;
+  void canvasClear(std::shared_ptr<ui::UIElement> canvas) override;
 
     // GTK-specific features
     GtkApplication* getApplication() const { return app_; }

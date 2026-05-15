@@ -2,6 +2,7 @@
 #include "HotkeyModule.hpp"
 #include "../../core/HotkeyManager.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
+#include "../../utils/Logger.hpp"
 #include <mutex>
 #include <unordered_map>
 
@@ -79,6 +80,10 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
   vm->setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
   vm->setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
   vm->setHostObjectField(contextObj, "enabled", Value::makeBool(enabled));
+
+  // Set type name for prototype lookup
+  auto typeStr = vm->createRuntimeString("Hotkey");
+  vm->setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
 
   return Value::makeObjectId(contextObj.id);
 }
@@ -285,7 +290,7 @@ static Value hotkey_disable(const std::vector<Value> &args,
                                     const havel::HostContext *ctx) {
 
   if (args.empty() || !args[0].isObjectId()) {
-    return Value::makeBool(false);
+    return Value::makeNull();
   }
 
   auto objRef = ObjectRef{args[0].asObjectId(), true};
@@ -294,7 +299,7 @@ static Value hotkey_disable(const std::vector<Value> &args,
   // Get hotkey id
   auto idValue = vm->getHostObjectField(objRef, "id");
   if (!idValue.isStringValId()) {
-    return Value::makeBool(false);
+    return Value::makeNull();
   }
 
   // TODO: string pool lookup
@@ -302,21 +307,33 @@ static Value hotkey_disable(const std::vector<Value> &args,
   auto *contextData = getHotkeyContextData(hotkeyId);
 
   if (!contextData) {
+    return Value::makeNull();
+  }
+
+  // Create and return a callable function that disables the hotkey
+  auto disableFn = [ctx, hotkeyId, objRef, vm](const std::vector<Value> &args) -> Value {
+    // Disable hotkey through HotkeyManager
+    if (ctx->hotkeyManager) {
+      ctx->hotkeyManager->DisableHotkey(hotkeyId);
+      auto *contextData = getHotkeyContextData(hotkeyId);
+      if (contextData) {
+        contextData->enabled = false;
+        contextData->state = "disabled";
+        vm->setHostObjectField(objRef, "enabled", Value::makeBool(false));
+        auto strRef = vm->createRuntimeString("disabled");
+        vm->setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
+      }
+      return Value::makeBool(true);
+    }
     return Value::makeBool(false);
-  }
+  };
 
-  // Disable hotkey through HotkeyManager
-  if (ctx->hotkeyManager) {
-    ctx->hotkeyManager->DisableHotkey(hotkeyId);
-    contextData->enabled = false;
-    contextData->state = "disabled";
-    vm->setHostObjectField(objRef, "enabled", Value::makeBool(false));
-    auto strRef = vm->createRuntimeString("disabled");
-    vm->setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
-    return Value::makeBool(true);
-  }
-
-  return Value::makeBool(false);
+  // Register the function as a host function and return it
+  vm->registerHostFunction("hotkey_disable_action", 0, disableFn);
+  // Get the index of the registered function
+  uint32_t idx = static_cast<uint32_t>(vm->host_function_names_.size() - 1);
+  debug("Created disable function for hotkey %s with index %u", hotkeyId.c_str(), idx);
+  return Value::makeHostFuncId(idx);
 }
 
 static Value hotkey_toggle(const std::vector<Value> &args,
@@ -395,7 +412,7 @@ static Value hotkey_remove(const std::vector<Value> &args,
   return Value::makeBool(false);
 }
 
-void registerHotkeyModule(VMApi &api) {
+void registerHotkeyModule(const VMApi &api) {
   // Create hotkey prototype object (not used for method registration)
   auto hotkeyPrototype = api.makeObject();
 

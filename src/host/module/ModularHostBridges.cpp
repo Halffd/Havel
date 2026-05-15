@@ -3,8 +3,10 @@
  */
 #include "ModularHostBridges.hpp"
 #include "../../utils/Logger.hpp"
+#include "../../utils/DebugFlags.hpp"
 #include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/stdlib/HotkeyModule.hpp"
+#include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HardwareDetector.hpp"
@@ -18,7 +20,6 @@
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/app/AppService.hpp"
-#include "host/async/AsyncService.hpp"
 #include "host/audio/AudioService.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "host/automation/AutomationService.hpp"
@@ -168,9 +169,48 @@ void IOBridge::install(PipelineOptions &options) {
     options.host_functions["io.mouseDown"] = [ctx = ctx_](const auto &args) {
         return handleMouseDown(args, ctx);
     };
-    options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
-        return handleMouseUp(args, ctx);
-    };
+ options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
+ return handleMouseUp(args, ctx);
+ };
+ options.host_functions["mouse.click"] = [ctx = ctx_](const auto &args) {
+ return handleMouseClick(args, ctx);
+ };
+ options.host_functions["mouse.down"] = [ctx = ctx_](const auto &args) {
+ return handleMouseDown(args, ctx);
+ };
+ options.host_functions["mouse.up"] = [ctx = ctx_](const auto &args) {
+ return handleMouseUp(args, ctx);
+ };
+ options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
+ return handleMouseMoveTo(args, ctx);
+ };
+ options.host_functions["mouse.moveRel"] = [ctx = ctx_](const auto &args) {
+ return handleMouseMoveRel(args, ctx);
+ };
+ options.host_functions["mouse.scroll"] = [ctx = ctx_](const auto &args) {
+ return handleMouseScroll(args, ctx);
+ };
+ options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
+ return handleMousePos(args, ctx);
+ };
+ options.host_functions["mouse.setSpeed"] = [ctx = ctx_](const auto &args) {
+ return handleMouseSetSpeed(args, ctx);
+ };
+ options.host_functions["mouse.setAccel"] = [ctx = ctx_](const auto &args) {
+ return handleMouseSetAccel(args, ctx);
+ };
+ options.host_functions["mouse.setDPI"] = [ctx = ctx_](const auto &args) {
+ return handleMouseSetDPI(args, ctx);
+ };
+ options.host_functions["keyDown"] = [ctx = ctx_](const auto &args) {
+ return handleKeyDown(args, ctx);
+ };
+ options.host_functions["keyUp"] = [ctx = ctx_](const auto &args) {
+ return handleKeyUp(args, ctx);
+ };
+ options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
+ return handleSuspend(args, ctx);
+ };
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -371,9 +411,87 @@ Value IOBridge::handleMouseUp(const std::vector<Value> &args,
         button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
     }
 
-    ::havel::host::MouseService::release(button);
-    return Value::makeBool(true);
-}
+ ::havel::host::MouseService::release(button);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleMousePos(const std::vector<Value> &,
+ const HostContext *ctx) {
+ auto [x, y] = ::havel::host::MouseService::pos();
+ auto *vm = static_cast<VM *>(ctx->vm);
+ if (!vm) return Value::makeBool(false);
+ auto obj = vm->createHostObject();
+ vm->setHostObjectField(obj, "x", Value::makeInt(x));
+ vm->setHostObjectField(obj, "y", Value::makeInt(y));
+ return Value::makeObjectId(obj.id);
+ }
+
+Value IOBridge::handleMouseSetSpeed(const std::vector<Value> &args,
+ const HostContext *) {
+ if (args.empty()) return Value::makeBool(false);
+ int speed = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+ args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 5;
+ ::havel::host::MouseService::setSpeed(speed);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleMouseSetAccel(const std::vector<Value> &args,
+ const HostContext *) {
+ if (args.empty()) return Value::makeBool(false);
+ float accel = args[0].isDouble() ? static_cast<float>(args[0].asDouble()) :
+ args[0].isInt() ? static_cast<float>(args[0].asInt()) : 1.0f;
+ ::havel::host::MouseService::setAccel(accel);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleMouseSetDPI(const std::vector<Value> &args,
+ const HostContext *) {
+ if (args.empty()) return Value::makeBool(false);
+ int dpi = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
+ args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 800;
+ ::havel::host::MouseService::setDPI(dpi);
+ return Value::makeBool(true);
+ }
+
+Value IOBridge::handleKeyDown(const std::vector<Value> &args,
+ const HostContext *ctx) {
+ if (args.empty() || !ctx->io) return Value::makeBool(false);
+ std::string key;
+ if (args[0].isStringValId() || args[0].isStringId()) {
+ auto *vm = static_cast<VM *>(ctx->vm);
+ key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ } else {
+ return Value::makeBool(false);
+ }
+ ::havel::host::IOService ioService(ctx->io);
+ return Value::makeBool(ioService.keyDown(key));
+ }
+
+Value IOBridge::handleKeyUp(const std::vector<Value> &args,
+ const HostContext *ctx) {
+ if (args.empty() || !ctx->io) return Value::makeBool(false);
+ std::string key;
+ if (args[0].isStringValId() || args[0].isStringId()) {
+ auto *vm = static_cast<VM *>(ctx->vm);
+ key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ } else {
+ return Value::makeBool(false);
+ }
+ ::havel::host::IOService ioService(ctx->io);
+ return Value::makeBool(ioService.keyUp(key));
+ }
+
+Value IOBridge::handleSuspend(const std::vector<Value> &,
+ const HostContext *ctx) {
+ if (!ctx->io) return Value::makeBool(false);
+ ::havel::host::IOService ioService(ctx->io);
+ if (ioService.isSuspended()) {
+ ioService.resume();
+ return Value::makeBool(false);
+ }
+ ioService.suspend();
+ return Value::makeBool(true);
+ }
 
 // ============================================================================
 // SystemBridge Implementation
@@ -438,6 +556,80 @@ void SystemBridge::install(PipelineOptions &options) {
         extensionObj, "addSearchPath",
         Value::makeHostFuncId(vm->getHostFunctionIndex("extension.addSearchPath")));
     vm->setGlobal("extension", Value::makeObjectId(extensionObj.id));
+
+ // Mouse object
+ auto mouseObj = vm->createHostObject();
+ vm->setHostObjectField(
+ mouseObj, "click",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.click")));
+ vm->setHostObjectField(
+ mouseObj, "down",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.down")));
+ vm->setHostObjectField(
+ mouseObj, "up",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.up")));
+ vm->setHostObjectField(
+ mouseObj, "move",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.move")));
+ vm->setHostObjectField(
+ mouseObj, "moveRel",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.moveRel")));
+ vm->setHostObjectField(
+ mouseObj, "scroll",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+ vm->setHostObjectField(
+ mouseObj, "pos",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.pos")));
+ vm->setHostObjectField(
+ mouseObj, "setSpeed",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setSpeed")));
+ vm->setHostObjectField(
+ mouseObj, "setAccel",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setAccel")));
+ vm->setHostObjectField(
+ mouseObj, "setDPI",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
+ vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
+
+ // IO object
+ auto ioObj = vm->createHostObject();
+ vm->setHostObjectField(
+ ioObj, "send",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.send")));
+ vm->setHostObjectField(
+ ioObj, "sendKey",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendKey")));
+ vm->setHostObjectField(
+ ioObj, "sendText",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendText")));
+ vm->setHostObjectField(
+ ioObj, "wait",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.wait")));
+ vm->setHostObjectField(
+ ioObj, "click",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.click")));
+ vm->setHostObjectField(
+ ioObj, "mouseMoveTo",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveTo")));
+ vm->setHostObjectField(
+ ioObj, "mouseMoveRel",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveRel")));
+ vm->setHostObjectField(
+ ioObj, "mouseScroll",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseScroll")));
+ vm->setHostObjectField(
+ ioObj, "mouseDown",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseDown")));
+ vm->setHostObjectField(
+ ioObj, "mouseUp",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseUp")));
+ vm->setHostObjectField(
+ ioObj, "suspend",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("suspend")));
+ vm->setHostObjectField(
+ ioObj, "getClipboard",
+ Value::makeHostFuncId(vm->getHostFunctionIndex("io.getClipboard")));
+ vm->setGlobal("io", Value::makeObjectId(ioObj.id));
   };
 
   // File operations
@@ -585,25 +777,23 @@ SystemBridge::handleFileDelete(const std::vector<Value> &args,
 Value
 SystemBridge::handleProcessExecute(const std::vector<Value> &args,
                                    const HostContext *ctx) {
-  (void)ctx;
   if (args.empty()) {
     throw std::runtime_error("execute() requires a command");
   }
-  const std::string *command = nullptr;
-  if (!command) {
+  if (!ctx || !ctx->vm) {
+    return Value::makeNull();
+  }
+  std::string command;
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    command = vm->resolveStringKey(args[0]);
+  } else {
     throw std::runtime_error("execute() requires a string command");
   }
-  std::ostringstream output;
-  FILE *pipe = popen(command->c_str(), "r");
-  if (!pipe) {
-    throw std::runtime_error("Failed to execute command: " + *command);
-  }
-  char buffer[128];
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    output << buffer;
-  }
-  pclose(pipe);
-  return Value::makeNull();
+
+  auto result = ::havel::Launcher::runSync(command);
+  auto outRef = vm->getHeap().allocateString(result.stdout);
+  return Value::makeStringId(outRef.id);
 }
 
 Value
@@ -842,24 +1032,20 @@ SystemBridge::handleMediaPlay(const std::vector<Value> &args,
 
 Value
 SystemBridge::handleSystemDetect(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)args;
-::havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
-               ctx ? static_cast<const void*>(ctx->vm) : nullptr);
+                                  const HostContext *ctx) {
+    (void)args;
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
+        ctx ? static_cast<const void*>(ctx->vm) : nullptr);
 
     if (!ctx || !ctx->vm) {
-        ::havel::debug("[SystemDetect] ctx or vm is null, returning empty string");
-    return Value::makeNull();
-  }
+        return Value::makeNull();
+    }
 
     auto *vm = static_cast<compiler::VM *>(ctx->vm);
-    ::havel::debug("[SystemDetect] vm={}, creating object", static_cast<void*>(vm));
     auto obj = vm->createHostObject();
-    ::havel::debug("[SystemDetect] object created, setting fields");
 
-    // Use HardwareDetector for system detection
     auto sysInfo = ::havel::HardwareDetector::detectSystem();
-    ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
 
   // Allocate strings on heap for non-empty values
   auto makeStr = [vm](const std::string &s) -> Value {
@@ -869,12 +1055,12 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   };
 
     vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
-    ::havel::debug("[SystemDetect] set os field");
-  vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
-  vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
-  vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
-  vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
-    ::havel::debug("[SystemDetect] all fields set, returning");
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] set os field");
+    vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
+    vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
+    vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
+    vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
+    if (debugging::debug_io) ::havel::debug("[SystemDetect] all fields set, returning");
 
   // Linux-specific fields (always set, even if empty)
   vm->setHostObjectField(obj, "displayProtocol",
@@ -2730,173 +2916,44 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   // Register closure as a callback - this pins it as a GC root
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
 
-  // Create hotkey context object using HotkeyModule
-  auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-      vm, hotkeyId, hotkeyStr, hotkeyStr, "",
-      "Hotkey registered via hotkey.register", callbackId);
+    // Create hotkey context object using HotkeyModule
+    auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
+        vm, hotkeyId, hotkeyStr, hotkeyStr, "",
+        "Hotkey registered via hotkey.register", callbackId);
 
-  // Get event queue and mode manager for thread-safe dispatch
-  auto *eventQueue = ctx->eventQueue;
-  auto *modeMgr = ctx->modeManager;
-  auto *hotkeyMgr = ctx->hotkeyManager;
+    auto *modeMgr = ctx->modeManager;
+    auto *hotkeyMgr = ctx->hotkeyManager;
 
-// Register hotkey with dispatch based on IO.Executor config mode
-auto *io = ctx->io;
-ExecutorMode execMode = io ? io->GetExecutorMode() : ExecutorMode::Scheduler;
-
-bool success = ctx->hotkeyManager->AddHotkey(
-  hotkeyStr, [vm, callbackId, hotkeyContext, eventQueue, io, execMode]() {
-    auto invoke = [vm, callbackId, hotkeyContext]() {
-      vm->beginHotkeyExecution();
-      try {
-        vm->invokeCallback(callbackId, {hotkeyContext});
-      } catch (...) {
-        vm->endHotkeyExecution();
-        throw;
-      }
-      vm->endHotkeyExecution();
-    };
-
-    switch (execMode) {
-    case ExecutorMode::Executor: {
-      if (io) {
-        auto *executor = io->GetHotkeyExecutor();
-        if (executor) {
-          executor->submitExecutionContext(*vm,
-            [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
-              ctx.invokeCallback(callbackId, {hotkeyContext});
-            });
-          return;
-        }
-      }
-      // Fallback to Scheduler if no executor available
-      if (eventQueue) {
-        eventQueue->push([invoke]() { invoke(); });
-      } else {
-        invoke();
-      }
-      return;
-    }
-    case ExecutorMode::Scheduler: {
-      
-      // This allows the hotkey to run concurrently and use async operations (like sleep)
-      // without blocking the main event loop.
-      if (vm && eventQueue) {
-        eventQueue->push([vm, callbackId, hotkeyContext]() {
-          vm->spawnCallback(callbackId, {hotkeyContext});
+    bool success = ctx->hotkeyManager->AddHotkey(
+        hotkeyStr, [vm, callbackId, hotkeyContext]() {
+            ::havel::debug("[ModularHostBridges] HOTKEY CALLBACK invoked for callbackId={}", callbackId);
+            auto &hotkeys = ::havel::HotkeyManager::RegisteredHotkeys();
+            auto &mutex = ::havel::HotkeyManager::RegisteredHotkeysMutex();
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                ::havel::debug("[ModularHostBridges] Registered hotkeys count: {}", hotkeys.size());
+            }
+            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+            ::havel::debug("[ModularHostBridges] spawnCallback returned gid={}", gid);
+            if (gid == 0) {
+                ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
+            }
         });
-      } else if (vm) {
-        vm->spawnCallback(callbackId, {hotkeyContext});
-      } else {
-        invoke();
-      }
-      return;
-    }
-    case ExecutorMode::Sync: {
-      invoke();
-      return;
-    }
-    case ExecutorMode::Thread: {
-        if (io) {
-            auto *executor = io->GetHotkeyExecutor();
-            if (executor) {
-                executor->submitExecutionContext(*vm,
-                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
-                        ctx.invokeCallback(callbackId, {hotkeyContext});
-                    });
-                return;
-            }
-        }
-        std::thread([invoke]() {
-            try { invoke(); }
-        catch (const std::exception &e) {
-            ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
-        } catch (...) {
-            ::havel::error("[Hotkey:Thread] unknown exception");
-        }
-        }).detach();
-        return;
-    }
-    }
-  });
 
-  // Register conditional hotkey (when/if mode conditions)
-  // This uses the Scheduler's event loop to evaluate conditions and trigger actions
-  if (eventQueue && modeMgr && hotkeyMgr) {
-    ctx->hotkeyManager->AddContextualHotkey(
-        hotkeyStr,
-        // Condition: evaluated by checking current mode
-        [modeMgr]() {
-          std::string mode = modeMgr->getCurrentMode();
-          return !mode.empty() && mode != "default";
-        },
-// True action: dispatch based on IO.Executor mode
-[vm, callbackId, hotkeyContext, eventQueue, io, execMode]() {
-  auto invoke = [vm, callbackId, hotkeyContext]() {
-    vm->beginHotkeyExecution();
-    try {
-      vm->invokeCallback(callbackId, {hotkeyContext});
-    } catch (...) {
-      vm->endHotkeyExecution();
-      throw;
-    }
-    vm->endHotkeyExecution();
-  };
-
-  switch (execMode) {
-  case ExecutorMode::Executor: {
-    if (io) {
-      auto *executor = io->GetHotkeyExecutor();
-      if (executor) {
-          executor->submitExecutionContext(*vm,
-            [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
-              ctx.invokeCallback(callbackId, {hotkeyContext});
-            });
-        return;
-      }
-    }
-    if (eventQueue) {
-      eventQueue->push([invoke]() { invoke(); });
-    } else {
-      invoke();
-    }
-    return;
-  }
-  case ExecutorMode::Scheduler: {
-    if (eventQueue) {
-      eventQueue->push([invoke]() { invoke(); });
-    } else {
-      invoke();
-    }
-    return;
-  }
-  case ExecutorMode::Sync: {
-    invoke();
-    return;
-  }
-    case ExecutorMode::Thread: {
-        if (io) {
-            auto *executor = io->GetHotkeyExecutor();
-            if (executor) {
-                executor->submitExecutionContext(*vm,
-                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
-                        ctx.invokeCallback(callbackId, {hotkeyContext});
-                    });
-                return;
+    // Register conditional hotkey (when/if mode conditions)
+    if (modeMgr && hotkeyMgr) {
+        ctx->hotkeyManager->AddContextualHotkey(
+            hotkeyStr,
+            [modeMgr]() {
+                std::string mode = modeMgr->getCurrentMode();
+                return !mode.empty() && mode != "default";
+            },
+        [vm, callbackId, hotkeyContext]() {
+            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+            if (gid == 0) {
+                ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
             }
-        }
-        std::thread([invoke]() {
-        try { invoke(); }
-        catch (const std::exception &e) {
-            ::havel::error(std::string("[Hotkey:Thread] ") + e.what());
-        } catch (...) {
-            ::havel::error("[Hotkey:Thread] unknown exception");
-        }
-        }).detach();
-        return;
-    }
-}
-    }); 
+        });
     }
 
     // Return hotkey context object on success, null on failure
@@ -2937,100 +2994,46 @@ Value InputBridge::handleHotkeyRegisterConditional(
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Conditional hotkey via when block", callbackId);
 
-    auto *eventQueue = ctx->eventQueue;
-    auto *io = ctx->io;
-    ExecutorMode execMode = io ? io->GetExecutorMode() : ExecutorMode::Scheduler;
-
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
-    auto makeInvoke = [vm, callbackId, hotkeyContext]() {
-        vm->beginHotkeyExecution();
-        try {
-            vm->invokeCallback(callbackId, {hotkeyContext});
-        } catch (...) {
-            vm->endHotkeyExecution();
-            throw;
-        }
-        vm->endHotkeyExecution();
-    };
-
-    auto trueAction = [makeInvoke, eventQueue, io, execMode, vm, callbackId, hotkeyContext]() {
-        switch (execMode) {
-    case ExecutorMode::Executor: {
-        if (io) {
-            auto *executor = io->GetHotkeyExecutor();
-            if (executor) {
-                executor->submitExecutionContext(*vm,
-                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
-                        ctx.invokeCallback(callbackId, {hotkeyContext});
-                    });
-                return;
-            }
-        }
-            if (eventQueue) {
-                eventQueue->push([makeInvoke]() { makeInvoke(); });
-            } else {
-                makeInvoke();
-            }
-            return;
-        }
-        case ExecutorMode::Scheduler: {
-            if (eventQueue) {
-                eventQueue->push([makeInvoke]() { makeInvoke(); });
-            } else {
-                makeInvoke();
-            }
-            return;
-        }
-        case ExecutorMode::Sync: {
-            makeInvoke();
-            return;
-        }
-    case ExecutorMode::Thread: {
-        if (io) {
-            auto *executor = io->GetHotkeyExecutor();
-            if (executor) {
-                executor->submitExecutionContext(*vm,
-                    [callbackId, hotkeyContext](VM::VMExecutionContext &ctx) {
-                        ctx.invokeCallback(callbackId, {hotkeyContext});
-                    });
-                return;
-            }
-        }
-        std::thread([makeInvoke]() {
-        try { makeInvoke(); }
-        catch (const std::exception &e) {
-            ::havel::error(std::string("[CondHotkey:Thread] ") + e.what());
-        } catch (...) {
-            ::havel::error("[CondHotkey:Thread] unknown exception");
-        }
-        }).detach();
-        return;
-        }
+    auto makeSpawn = [vm, callbackId, hotkeyContext]() {
+        uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+        if (gid == 0) {
+            ::havel::error("[Hotkey] Conditional hotkey: failed to spawn goroutine for callback {}", callbackId);
         }
     };
 
-    auto falseAction = [vm, condCallbackId]() {
-        // When condition becomes false, ungrab is handled by
-        // ConditionalHotkeyManager automatically.
-        // Evaluate condition function to ensure clean state.
+    auto trueAction = makeSpawn;
+
+    auto falseAction = []() {
     };
 
-    auto conditionFn = [vm, condCallbackId]() -> bool {
-        try {
-            Value result = vm->invokeCallback(condCallbackId, {});
-            return result.asBool();
-        } catch (...) {
-            return false;
-        }
-    };
+ auto conditionFn = [vm, condCallbackId]() -> bool {
+ try {
+ Value result = vm->invokeCallback(condCallbackId, {});
+ return result.asBool();
+ } catch (...) {
+ return false;
+ }
+ };
 
-    condMgr.AddConditionalHotkey(hotkeyStr, conditionFn, trueAction,
-                                  falseAction, 0, true);
+ int condHkId = condMgr.AddConditionalHotkey(hotkeyStr, conditionFn, trueAction,
+ falseAction, 0, true);
 
-    // Also register as a regular hotkey (will be grabbed/ungrabbed
-    // by the conditional manager)
-    ctx->hotkeyManager->AddHotkey(hotkeyStr, trueAction);
+ {
+ auto tracker = std::make_shared<compiler::DependencyTracker>();
+ compiler::DependencyTrackerScope scope(tracker);
+ try {
+ vm->invokeCallback(condCallbackId, {});
+ } catch (...) {}
+ auto deps = tracker->getGlobalDependencies();
+ auto* ch = condMgr.FindHotkey(condHkId);
+ if (ch) {
+ ch->dependencies = std::move(deps);
+ }
+ }
+
+ ctx->hotkeyManager->AddHotkey(hotkeyStr, trueAction);
 
     return hotkeyContext;
 }
@@ -3038,9 +3041,21 @@ Value InputBridge::handleHotkeyRegisterConditional(
 Value
 InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  return Value::makeBool(false);
+  if (!ctx || !ctx->hotkeyManager) {
+    return Value::makeBool(false);
+  }
+
+  if (args.empty() || !args[0].isStringValId()) {
+    return Value::makeBool(false);
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string alias = vm->resolveStringKey(args[0]);
+
+  ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
+  ctx->hotkeyManager->triggerForTest(alias);
+
+  return Value::makeBool(true);
 }
 
 Value
@@ -3194,11 +3209,7 @@ Value AsyncBridge::handleSleep(const std::vector<Value> &args,
   if (ms < 0) {
     throw std::runtime_error("sleep() milliseconds must be non-negative");
   }
-  if (ctx->asyncService) {
-    ctx->asyncService->sleep(static_cast<int>(ms));
-  } else {
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-  }
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   return Value::makeNull();
 }
 
@@ -3284,14 +3295,9 @@ AsyncBridge::handleAsyncAwait(const std::vector<Value> &args,
       }
       return it->second.result;
     }
-  }
+}
 
-  if (ctx && ctx->asyncService) {
-    bool completed = ctx->asyncService->await(taskId);
-    return Value::makeBool(completed);
-  }
-
-  return Value::makeBool(false);
+	return Value::makeBool(false);
 }
 
 Value
@@ -3317,10 +3323,6 @@ AsyncBridge::handleAsyncCancel(const std::vector<Value> &args,
     }
   }
 
-  if (ctx && ctx->asyncService) {
-    bool cancelled = ctx->asyncService->cancel(taskId);
-    return Value::makeBool(cancelled);
-  }
 
   return Value::makeBool(false);
 }
@@ -3346,10 +3348,6 @@ AsyncBridge::handleAsyncIsRunning(const std::vector<Value> &args,
     }
   }
 
-  if (ctx && ctx->asyncService) {
-    bool running = ctx->asyncService->isRunning(taskId);
-    return Value::makeBool(running);
-  }
 
   return Value::makeBool(false);
 }
@@ -3374,9 +3372,6 @@ AsyncBridge::handleChannelCreate(const std::vector<Value> &args,
     channel.closed = false;
   }
 
-  if (ctx && ctx->asyncService) {
-    (void)ctx->asyncService->createChannel(name);
-  }
   return Value::makeBool(true);
 }
 
@@ -3402,9 +3397,6 @@ AsyncBridge::handleChannelSend(const std::vector<Value> &args,
     it->second.queue.push_back(args[1]);
   }
 
-  if (ctx && ctx->asyncService) {
-    (void)ctx->asyncService->send(name, toString(args[1]));
-  }
   return Value::makeBool(true);
 }
 
@@ -3483,9 +3475,6 @@ AsyncBridge::handleChannelClose(const std::vector<Value> &args,
     it->second.queue.clear();
   }
 
-  if (ctx && ctx->asyncService) {
-    (void)ctx->asyncService->closeChannel(name);
-  }
   return Value::makeBool(true);
 }
 
@@ -3632,35 +3621,29 @@ AsyncBridge::handleIntervalCreate(const std::vector<Value> &args,
     g_timers[id] = timer;
   }
 
-  if (ctx->asyncService) {
-    std::string task_id =
-        ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
-          auto *vm_local = static_cast<VM *>(ctx->vm);
-          while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            bool should_run = false;
-            {
-              std::lock_guard<std::mutex> lock(g_async_mutex);
-              auto it = g_timers.find(id);
-              if (it == g_timers.end() || !it->second.running) {
-                break;
-              }
-              should_run = !it->second.paused;
-            }
-            if (!should_run || !vm_local) {
-              continue;
-            }
-            std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-            try {
-              (void)vm_local->invokeCallback(callback, {});
-            } catch (...) {
-              // Keep timer alive; script side can stop it explicitly.
-            }
-          }
-        });
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_timers[id].task_id = task_id;
-  }
+  std::thread([ctx, id, callback, delay_ms]() {
+    auto *vm_local = static_cast<VM *>(ctx->vm);
+    while (true) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      bool should_run = false;
+      {
+        std::lock_guard<std::mutex> lock(g_async_mutex);
+        auto it = g_timers.find(id);
+        if (it == g_timers.end() || !it->second.running) {
+          break;
+        }
+        should_run = !it->second.paused;
+      }
+      if (!should_run || !vm_local) {
+        continue;
+      }
+      std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+      try {
+        (void)vm_local->invokeCallback(callback, {});
+      } catch (...) {
+      }
+    }
+  }).detach();
 
   return Value::makeObjectId(makeHandleObject(vm, "interval", id).id);
 }
@@ -3707,9 +3690,6 @@ AsyncBridge::handleIntervalStop(const std::vector<Value> &args,
   if (it == g_timers.end())
     return Value::makeBool(false);
   it->second.running = false;
-  if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
-    (void)ctx->asyncService->cancel(it->second.task_id);
-  }
   if (vm) {
     vm->releaseCallback(it->second.callback);
   }
@@ -3746,31 +3726,6 @@ AsyncBridge::handleTimeoutCreate(const std::vector<Value> &args,
                                .task_id = ""};
   }
 
-  if (ctx->asyncService) {
-    std::string task_id = ctx->asyncService->spawn([ctx, id, callback,
-                                                    delay_ms]() {
-      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-      auto *vm_local = static_cast<VM *>(ctx->vm);
-      bool should_run = false;
-      {
-        std::lock_guard<std::mutex> lock(g_async_mutex);
-        auto it = g_timers.find(id);
-        if (it != g_timers.end() && it->second.running && !it->second.paused) {
-          should_run = true;
-          it->second.running = false;
-        }
-      }
-      if (should_run && vm_local) {
-        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
-        try {
-          (void)vm_local->invokeCallback(callback, {});
-        } catch (...) {
-        }
-      }
-    });
-    std::lock_guard<std::mutex> lock(g_async_mutex);
-    g_timers[id].task_id = task_id;
-  }
 
   return Value::makeObjectId(makeHandleObject(vm, "timeout", id).id);
 }
@@ -3787,9 +3742,6 @@ AsyncBridge::handleTimeoutCancel(const std::vector<Value> &args,
   if (it == g_timers.end())
     return Value::makeBool(false);
   it->second.running = false;
-  if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
-    (void)ctx->asyncService->cancel(it->second.task_id);
-  }
   if (vm) {
     vm->releaseCallback(it->second.callback);
   }
@@ -3874,189 +3826,8 @@ Value AutomationBridge::handleAutomationStopAll(
 // ============================================================================
 
 void BrowserBridge::install(PipelineOptions &options) {
-  options.host_functions["browser.connect"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserConnect(args, ctx);
-  };
-  options.host_functions["browser.connectFirefox"] =
-      [ctx = ctx_](const auto &args) {
-        return handleBrowserConnectFirefox(args, ctx);
-      };
-  options.host_functions["browser.disconnect"] = [ctx =
-                                                      ctx_](const auto &args) {
-    return handleBrowserDisconnect(args, ctx);
-  };
-  options.host_functions["browser.isConnected"] = [ctx =
-                                                       ctx_](const auto &args) {
-    return handleBrowserIsConnected(args, ctx);
-  };
-  options.host_functions["browser.open"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserOpen(args, ctx);
-  };
-  options.host_functions["browser.newTab"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserNewTab(args, ctx);
-  };
-  options.host_functions["browser.goto"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserGoto(args, ctx);
-  };
-  options.host_functions["browser.back"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserBack(args, ctx);
-  };
-  options.host_functions["browser.forward"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserForward(args, ctx);
-  };
-  options.host_functions["browser.reload"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserReload(args, ctx);
-  };
-  options.host_functions["browser.listTabs"] = [ctx = ctx_](const auto &args) {
-    return handleBrowserListTabs(args, ctx);
-  };
-}
-
-Value
-BrowserBridge::handleBrowserConnect(const std::vector<Value> &args,
-                                    const HostContext *ctx) {
-  (void)ctx;
-  std::string browserUrl = "http://localhost:9222";
-  if (!args.empty()) {
-    if (false) { // TODO: string support
-      // browserUrl = ...; // TODO: get string from Value
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.connect(browserUrl));
-}
-
-Value BrowserBridge::handleBrowserConnectFirefox(
-    const std::vector<Value> &args, const HostContext *ctx) {
-  (void)ctx;
-  int port = 2828;
-  if (!args.empty()) {
-    if (auto *v = (args[0].isInt() ? &args[0] : nullptr)) {
-      port = static_cast<int>(v->asInt());
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.connectFirefox(port));
-}
-
-Value
-BrowserBridge::handleBrowserDisconnect(const std::vector<Value> &args,
-                                       const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  browser.disconnect();
-  return Value::makeBool(true);
-}
-
-Value
-BrowserBridge::handleBrowserIsConnected(const std::vector<Value> &args,
-                                        const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.isConnected());
-}
-
-Value
-BrowserBridge::handleBrowserOpen(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty()) {
-    throw std::runtime_error("browser.open() requires a URL");
-  }
-  const std::string *url = nullptr;
-  if (!url) {
-    throw std::runtime_error("browser.open() requires a string URL");
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.open(*url));
-}
-
-Value
-BrowserBridge::handleBrowserNewTab(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
-  (void)ctx;
-  std::string url;
-  if (!args.empty()) {
-    if (false) { // TODO: string support
-      // url = ...; // TODO: get string from Value
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.newTab(url));
-}
-
-Value
-BrowserBridge::handleBrowserGoto(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty()) {
-    throw std::runtime_error("browser.goto() requires a URL");
-  }
-  const std::string *url = nullptr;
-  if (!url) {
-    throw std::runtime_error("browser.goto() requires a string URL");
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.gotoUrl(*url));
-}
-
-Value
-BrowserBridge::handleBrowserBack(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.back());
-}
-
-Value
-BrowserBridge::handleBrowserForward(const std::vector<Value> &args,
-                                    const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.forward());
-}
-
-Value
-BrowserBridge::handleBrowserReload(const std::vector<Value> &args,
-                                   const HostContext *ctx) {
-  (void)ctx;
-  bool ignoreCache = false;
-  if (!args.empty()) {
-    if (auto *b = (args[0].isBool() ? &args[0] : nullptr)) {
-      ignoreCache = b->asBool();
-    }
-  }
-  ::havel::host::BrowserService browser;
-  return Value::makeBool(browser.reload(ignoreCache));
-}
-
-Value
-BrowserBridge::handleBrowserListTabs(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  (void)args;
-  ::havel::host::BrowserService browser;
-  auto tabs = browser.listTabs();
-  auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) {
-    return Value::makeNull();
-  }
-  auto arr = vm->createHostArray();
-  for (const auto &tab : tabs) {
-    auto tabObj = vm->createHostObject();
-    vm->setHostObjectField(tabObj, "id",
-                           Value::makeInt(static_cast<int64_t>(tab.id)));
-    // TODO: string pool integration - for now return null for strings
-    (void)tab.title; (void)tab.url; (void)tab.type;
-    vm->setHostObjectField(tabObj, "title", Value::makeNull());
-    vm->setHostObjectField(tabObj, "url", Value::makeNull());
-    vm->setHostObjectField(tabObj, "type", Value::makeNull());
-    vm->pushHostArrayValue(arr, Value::makeObjectId(tabObj.id));
-  }
-  return Value::makeArrayId(arr.id);
+  // Browser functionality is now provided by stdlib::registerBrowserModule
+  // in StdLibModules.cpp. No host_functions registered here.
 }
 
 // ============================================================================
@@ -4461,155 +4232,11 @@ Value MediaBridge::handleMediaGetAvailablePlayers(
 // ============================================================================
 
 void NetworkBridge::install(PipelineOptions &options) {
-  // HTTP module (aliases for network.*)
-  options.host_functions["http.get"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkGet(args, ctx);
-  };
-  options.host_functions["http.post"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkPost(args, ctx);
-  };
-  options.host_functions["http.download"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkDownload(args, ctx);
-  };
-
-  // Legacy network.* names
-  options.host_functions["network.get"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkGet(args, ctx);
-  };
-  options.host_functions["network.post"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkPost(args, ctx);
-  };
-  options.host_functions["network.isOnline"] = [ctx = ctx_](const auto &args) {
-    return handleNetworkIsOnline(args, ctx);
-  };
-  options.host_functions["network.getExternalIp"] =
-      [ctx = ctx_](const auto &args) {
-        return handleNetworkGetExternalIp(args, ctx);
-      };
+  // HTTP functionality is now provided by stdlib::registerHttpModule
+  // in StdLibModules.cpp. No host_functions registered here.
 }
 
-Value
-NetworkBridge::handleNetworkGet(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-  (void)ctx;
-  if (args.empty()) {
-    throw std::runtime_error("http.get() requires a URL");
-  }
 
-  // Try to get string from variant
-  std::string url;
-  if (args[0].isStringValId()) {
-    url = args[0].toString();
-  } else {
-    throw std::runtime_error(
-        "http.get() requires a string URL");
-  }
-
-  int timeout_ms = 30000;
-  if (args.size() > 1 && args[1].isInt()) {
-    timeout_ms = static_cast<int>(args[1].asInt());
-  }
-  try {
-    ::havel::host::NetworkService net;
-    auto response = net.get(url, timeout_ms);
-    if (response.success) {
-      // TODO: string pool integration - for now return null
-      (void)response;
-      return Value::makeNull();
-    } else {
-      return Value::makeNull();
-    }
-  } catch (const std::exception &e) {
-    throw std::runtime_error(std::string("http.get() failed: ") + e.what());
-  }
-}
-
-Value
-NetworkBridge::handleNetworkPost(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-  (void)ctx;
-  if (args.size() < 2) {
-    throw std::runtime_error("network.post() requires URL and data");
-  }
-  const std::string *url = nullptr;
-  const std::string *data = nullptr;
-  if (!url || !data) {
-    throw std::runtime_error("network.post() requires string arguments");
-  }
-  std::string content_type = "application/json";
-  if (args.size() > 2 && args[2].isStringValId()) {
-    content_type = args[2].toString();
-  }
-  int timeout_ms = 30000;
-  if (args.size() > 3 && args[3].isInt()) {
-    timeout_ms = static_cast<int>(args[3].asInt());
-  }
-  try {
-    ::havel::host::NetworkService net;
-    auto response = net.post(*url, *data, content_type, timeout_ms);
-    if (response.success) {
-      // TODO: string pool integration - for now return null
-      (void)response;
-      return Value::makeNull();
-    } else {
-      return Value::makeNull();
-    }
-  } catch (...) {
-    return Value::makeNull();
-  }
-}
-
-Value
-NetworkBridge::handleNetworkIsOnline(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  try {
-    ::havel::host::NetworkService net;
-    return Value::makeBool(net.isOnline());
-  } catch (...) {
-    return Value::makeBool(false);
-  }
-}
-
-Value NetworkBridge::handleNetworkGetExternalIp(
-    const std::vector<Value> &args, const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  try {
-    ::havel::host::NetworkService net;
-    // TODO: string pool integration - for now return null
-    (void)net;
-    return Value::makeNull();
-  } catch (...) {
-    return Value::makeNull();
-  }
-}
-
-Value
-NetworkBridge::handleNetworkDownload(const std::vector<Value> &args,
-                                     const HostContext *ctx) {
-  (void)ctx;
-  if (args.size() < 2) {
-    throw std::runtime_error("http.download() requires URL and path");
-  }
-  const std::string *url = nullptr;
-  const std::string *path = nullptr;
-  if (!url || !path) {
-    throw std::runtime_error("http.download() requires string URL and path");
-  }
-  int timeout_ms = 30000;
-  if (args.size() > 2 && args[2].isInt()) {
-    timeout_ms = static_cast<int>(args[2].asInt());
-  }
-  try {
-    ::havel::host::NetworkService net;
-    bool success = net.download(*url, *path, timeout_ms);
-    return Value::makeBool(success);
-  } catch (...) {
-    return Value::makeBool(false);
-  }
-}
 
 // ============================================================================
 // AudioBridge Implementation
@@ -5862,15 +5489,9 @@ Value TimerBridge::handleAfter(const std::vector<Value> &args,
 
   int64_t delay_ms = args[0].asInt();
 
-  // Simple implementation: just sleep
-  // For callback support, use: sleep(delay_ms); callback()
-  if (ctx && ctx->asyncService) {
-    ctx->asyncService->sleep(static_cast<int>(delay_ms));
-  } else {
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-  }
+	std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
-  return Value::makeNull();
+	return Value::makeNull();
 }
 
 Value TimerBridge::handleEvery(const std::vector<Value> &args,

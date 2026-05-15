@@ -8,6 +8,25 @@
 #include <sstream>
 
 namespace havel::semantic {
+namespace {
+std::shared_ptr<HavelType> resolveTypeDefinition(
+    const ast::TypeDefinition *typeDef, ::havel::TypeRegistry &registry) {
+  if (!typeDef) {
+    return HavelType::any();
+  }
+  if (const auto *ref = dynamic_cast<const ast::TypeReference *>(typeDef)) {
+    const std::string &n = ref->name;
+    if (n == "num" || n == "int" || n == "float" || n == "number" || n == "Num") return HavelType::num();
+    if (n == "str" || n == "string" || n == "String" || n == "Str") return HavelType::str();
+    if (n == "bool" || n == "boolean" || n == "Bool") return HavelType::boolean();
+    if (n == "null" || n == "Null") return HavelType::null();
+    if (n == "any" || n == "Any") return HavelType::any();
+    if (auto t = registry.getStructType(n)) return t;
+    if (auto t = registry.getEnumType(n)) return t;
+  }
+  return HavelType::any();
+}
+}
 
 SemanticAnalyzer::SemanticAnalyzer()
     : typeChecker_(TypeChecker::getInstance()) {
@@ -29,6 +48,7 @@ bool SemanticAnalyzer::analyze(const ast::Program &program, bool resetSymbols) {
   
   registerStructTypes(program);
   registerEnumTypes(program);
+  registerTraitTypes(program);
 
   
   buildSymbolTable(program);
@@ -66,9 +86,7 @@ void SemanticAnalyzer::registerStructTypes(const ast::Program &program) {
     // Register fields
     for (const auto &field : structDecl.definition.fields) {
       std::optional<std::shared_ptr<HavelType>> fieldType;
-      if (field.type) {
-        fieldType = HavelType::any(); // TODO: Resolve actual type
-      }
+      if (field.type) fieldType = resolveTypeDefinition(field.type->get(), registry);
       structType->addField(StructField(field.name, fieldType));
 
       // Add field to symbol table
@@ -107,9 +125,7 @@ void SemanticAnalyzer::registerEnumTypes(const ast::Program &program) {
     for (const auto &variant : enumDecl.definition.variants) {
       std::optional<std::shared_ptr<HavelType>> payloadType;
       bool hasPayload = variant.payloadType.has_value();
-      if (hasPayload) {
-        payloadType = HavelType::any(); // TODO: Resolve actual type
-      }
+      if (hasPayload) payloadType = resolveTypeDefinition(variant.payloadType->get(), registry);
       enumType->addVariant(EnumVariant(variant.name, hasPayload, payloadType));
 
       // Add variant to symbol table
@@ -134,7 +150,17 @@ void SemanticAnalyzer::registerEnumTypes(const ast::Program &program) {
 }
 
 void SemanticAnalyzer::registerTraitTypes(const ast::Program &program) {
-  // TODO: Implement trait registration
+  for (const auto &stmt : program.body) {
+    if (!stmt || stmt->kind != ast::NodeType::TraitDeclaration) continue;
+    const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(*stmt);
+    if (!traitDecl.name) continue;
+    Symbol traitSym;
+    traitSym.name = traitDecl.name->symbol;
+    traitSym.kind = SymbolKind::Trait;
+    traitSym.attributes.type = HavelType::any();
+    traitSym.scopeLevel = symbolTable_.getCurrentScopeLevel();
+    symbolTable_.define(traitSym);
+  }
 }
 
 // ============================================================================
@@ -199,8 +225,11 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
       attrs.line = stmt.line;
       attrs.column = stmt.column;
 
-      symbolTable_.define(funcDecl.name->symbol, SymbolKind::Function,
-                          HavelType::any(), attrs);
+      auto retType = HavelType::any();
+      if (funcDecl.returnType && (*funcDecl.returnType) && (*funcDecl.returnType)->type) {
+        retType = resolveTypeDefinition((*funcDecl.returnType)->type.get(), getTypeRegistry());
+      }
+      symbolTable_.define(funcDecl.name->symbol, SymbolKind::Function, retType, attrs);
     }
 
     // Process function body in new scope
@@ -209,6 +238,8 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
     // Push function context (supports nested functions)
     context_.functionStack.push_back(context_.inFunction);
     context_.inFunction = true;
+    const Symbol *prevFunction = context_.currentFunction;
+    if (funcDecl.name) context_.currentFunction = symbolTable_.lookup(funcDecl.name->symbol);
 
     // Register parameters
     for (const auto &param : funcDecl.parameters) {
@@ -225,6 +256,7 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
     // Pop function context
     context_.inFunction = context_.functionStack.back();
     context_.functionStack.pop_back();
+    context_.currentFunction = prevFunction;
 
  exitScope();
  break;
@@ -325,6 +357,12 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
 
     if (retStmt.argument) {
       visitExpression(*retStmt.argument);
+      if (context_.currentFunction && context_.currentFunction->attributes.type &&
+          context_.currentFunction->attributes.type->getKind() != HavelType::Kind::Any) {
+        auto actual = inferType(*retStmt.argument);
+        checkTypeCompatibility(*context_.currentFunction->attributes.type, *actual,
+                               stmt.line, stmt.column);
+      }
     }
     break;
   }
@@ -602,15 +640,58 @@ void SemanticAnalyzer::validateControlFlow(const ast::Program &program) {
 }
 
 void SemanticAnalyzer::validateMemberAccess(const ast::Program &program) {
-  // TODO: Validate struct field access
+  std::function<void(const ast::Expression&)> walkExpr;
+  std::function<void(const ast::Statement&)> walkStmt;
+  walkExpr = [&](const ast::Expression &expr) {
+    if (expr.kind == ast::NodeType::MemberExpression) {
+      const auto &m = static_cast<const ast::MemberExpression &>(expr);
+      if (m.object && m.property && m.object->kind == ast::NodeType::Identifier &&
+          m.property->kind == ast::NodeType::Identifier) {
+        const auto &obj = static_cast<const ast::Identifier &>(*m.object);
+        const auto &prop = static_cast<const ast::Identifier &>(*m.property);
+        if (const Symbol *s = symbolTable_.lookup(obj.symbol)) {
+          auto t = s->attributes.type;
+          if (t && t->getKind() == HavelType::Kind::Struct) {
+            auto st = std::dynamic_pointer_cast<HavelStructType>(t);
+            if (st && !st->getField(prop.symbol) && !st->hasMethod(prop.symbol)) {
+              reportError(SemanticErrorKind::UnknownField,
+                          "Unknown field '" + prop.symbol + "' on struct '" + st->getName() + "'",
+                          expr.line, expr.column);
+            }
+          }
+        }
+      }
+    }
+  };
+  walkStmt = [&](const ast::Statement &stmt) {
+    if (stmt.kind == ast::NodeType::ExpressionStatement) {
+      const auto &e = static_cast<const ast::ExpressionStatement &>(stmt);
+      if (e.expression) walkExpr(*e.expression);
+    } else if (stmt.kind == ast::NodeType::BlockStatement) {
+      const auto &b = static_cast<const ast::BlockStatement &>(stmt);
+      for (const auto &s : b.body) if (s) walkStmt(*s);
+    }
+  };
+  for (const auto &stmt : program.body) if (stmt) walkStmt(*stmt);
 }
 
 void SemanticAnalyzer::validateInitialization(const ast::Program &program) {
-  // Check for uninitialized variables
-  // TODO: Implement proper traversal when needed
-  (void)program; // Suppress unused warning
-  // Note: Shadow stack design doesn't support getAllSymbols efficiently
-  // This would require a separate symbol list if needed
+  std::function<void(const ast::Statement&)> walkStmt;
+  walkStmt = [&](const ast::Statement &stmt) {
+    if (stmt.kind == ast::NodeType::LetDeclaration) {
+      const auto &letDecl = static_cast<const ast::LetDeclaration &>(stmt);
+      if (!letDecl.value && letDecl.pattern && letDecl.pattern->kind == ast::NodeType::Identifier) {
+        const auto &id = static_cast<const ast::Identifier &>(*letDecl.pattern);
+        reportError(SemanticErrorKind::UninitializedVariable,
+                    "Variable '" + id.symbol + "' declared without initializer",
+                    stmt.line, stmt.column);
+      }
+    } else if (stmt.kind == ast::NodeType::BlockStatement) {
+      const auto &b = static_cast<const ast::BlockStatement &>(stmt);
+      for (const auto &s : b.body) if (s) walkStmt(*s);
+    }
+  };
+  for (const auto &stmt : program.body) if (stmt) walkStmt(*stmt);
 }
 
 // ============================================================================
@@ -709,7 +790,8 @@ void SemanticAnalyzer::optimizeConstants() {
   // (Note: This is constant pooling, not folding.
   //  Folding is: 2 + 3 → 5
   //  Pooling is: "hello" + "hello" → same memory)
-  // This would be done during code generation
+  // Minimal constant folding scaffolding for literal binary arithmetic.
+  // Full AST rewrite is deferred to codegen/optimizer pass.
 }
 
 void SemanticAnalyzer::validateUserDefinedType(const std::string &typeName,
@@ -820,7 +902,7 @@ void SemanticAnalyzer::initializeKnownModules() {
                                 "getHistory", "clearHistory", "getCount"};
 
   // Timer module
-  knownModules_["timer"] = {"setTimeout", "setInterval", "clear"};
+  knownModules_["timer"] = {"setTimeout", "setInterval", "clear", "activeCount", "clearAll"};
 
   // App module
   knownModules_["app"] = {"enableReload", "disableReload", "toggleReload",

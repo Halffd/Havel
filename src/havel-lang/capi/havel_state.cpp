@@ -428,17 +428,55 @@ int havel_arraylen(HavelState* H, int idx) {
 }
 
 void havel_call(HavelState* H, int nargs, int nresults) {
-    (void)H;
-    (void)nargs;
-    (void)nresults;
+    if (!H || !H->vm) return;
+    int top = havel_gettop(H);
+    if (nargs < 0 || nargs >= top) return;
+    int func_idx = top - nargs - 1;
+    if (func_idx < 0) return;
+    havel::core::Value funcVal = H->stack[func_idx];
+    std::vector<havel::core::Value> args;
+    for (int i = func_idx + 1; i < top; i++) {
+        args.push_back(H->stack[i]);
+    }
+    H->stack.resize(func_idx);
+    try {
+        havel::core::Value result = H->vm->callFunction(funcVal, args);
+        if (nresults != 0) {
+            H->stack.push_back(result);
+        }
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        if (nresults != 0) {
+            H->stack.push_back(havel::core::Value::makeNull());
+        }
+    }
 }
 
 int havel_pcall(HavelState* H, int nargs, int nresults, int msgh) {
-    (void)H;
-    (void)nargs;
-    (void)nresults;
-    (void)msgh;
-    return HAVEL_ERR;
+    if (!H || !H->vm) return HAVEL_ERR;
+    int top = havel_gettop(H);
+    if (nargs < 0 || nargs >= top) return HAVEL_ERR;
+    int func_idx = top - nargs - 1;
+    if (func_idx < 0) return HAVEL_ERR;
+    havel::core::Value funcVal = H->stack[func_idx];
+    std::vector<havel::core::Value> args;
+    for (int i = func_idx + 1; i < top; i++) {
+        args.push_back(H->stack[i]);
+    }
+    H->stack.resize(func_idx);
+    try {
+        havel::core::Value result = H->vm->callFunction(funcVal, args);
+        if (nresults != 0) {
+            H->stack.push_back(result);
+        }
+        return HAVEL_OK;
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        if (nresults != 0) {
+            H->stack.push_back(havel::core::Value::makeNull());
+        }
+        return HAVEL_ERR;
+    }
 }
 
 int havel_resume(HavelState* main, HavelState* thread, int nargs) {
@@ -544,9 +582,21 @@ void havel_require(HavelState* H, const char* name) {
 }
 
 void havel_register_cmodule(HavelState* H, const char* name, int (*init)(HavelState*)) {
-    (void)H;
-    (void)name;
-    (void)init;
+  if (!H || !name || !init || !H->vm) return;
+
+  try {
+    int result = init(H);
+    if (result == HAVEL_ERR) {
+      H->last_error = "cmodule init failed";
+      return;
+    }
+
+    for (const auto& [key, val] : H->globals) {
+      H->vm->setGlobal(key, val);
+    }
+  } catch (const std::exception& e) {
+    H->last_error = e.what();
+  }
 }
 
 void havel_add_search_path(HavelState* H, const char* path) {

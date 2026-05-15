@@ -13,9 +13,12 @@ typedef struct HavelState HavelState;
 typedef struct HavelValue HavelValue;
 typedef int (*HavelCFunction)(HavelState*);
 typedef int (*HavelCFunctionWithCtx)(HavelState*, void* ctx);
+<<<<<<< HEAD
 
 void*      havel_getuserdata(HavelState* H);
 void       havel_setuserdata(HavelState* H, void* data);
+=======
+>>>>>>> origin/main
 
 // VM Runtime types (matches Value.hpp)
 #define HAVEL_TNIL       0   // isNull()
@@ -53,6 +56,9 @@ void       havel_setuserdata(HavelState* H, void* data);
 HavelState* havel_newstate(void);
 void       havel_close(HavelState* H);
 HavelState* havel_newthread(HavelState* H);
+
+void*      havel_getuserdata(HavelState* H);
+void       havel_setuserdata(HavelState* H, void* data);
 
 int  havel_gettop(HavelState* H);
 void havel_settop(HavelState* H, int idx);

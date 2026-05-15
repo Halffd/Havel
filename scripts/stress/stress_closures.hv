@@ -1,0 +1,98 @@
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// 1. deeply nested closures (5 levels)
+fn f0(n) {
+  fn f1() {
+    fn f2() {
+      fn f3() {
+        fn f4() {
+          n + 1
+        }
+        return f4
+      }
+      return f3
+    }
+    return f2
+  }
+  return f1
+}
+check("deep-5", f0(99)()()()(), 100)
+
+// 2. loop closure reference semantics
+fns = []
+for i in 0..2 {
+  fns.push((x) => i + x)
+}
+check("loop-closure-ref", fns[0](0), 2)
+
+// 3. factory-based independent closures
+fn makeAdder(n) {
+  fn add(x) { n + x }
+  return add
+}
+check("adder-5", makeAdder(5)(10), 15)
+check("adder-0", makeAdder(0)(100), 100)
+
+// 4. independent counters with params
+fn makeCounter(seed) {
+  x = seed
+  fn next() { x += 1; return x }
+  return next
+}
+c1 = makeCounter(0)
+c2 = makeCounter(1000)
+check("counter-1a", c1(), 1)
+check("counter-1b", c1(), 2)
+check("counter-1c", c1(), 3)
+check("counter-2a", c2(), 1001)
+check("counter-isolated", c1(), 4)
+
+// 5. recursive closure
+fn makeFib() {
+  fn fib(n) {
+    if n <= 1 { return n }
+    fib(n - 1) + fib(n - 2)
+  }
+  return fib
+}
+f = makeFib()
+check("fib-10", f(10), 55)
+check("fib-15", f(15), 610)
+check("fib-20", f(20), 6765)
+
+// 6. closure over captured array
+fn makeSummarizer(arr) {
+  fn sumAll() { arr.reduce((a, b) => a + b, 0) }
+  fn countAll() { #arr }
+  return {sumAll: sumAll, countAll: countAll}
+}
+big = []
+for i in 0..49 { big.push(i) }
+s = makeSummarizer(big)
+check("big-sum", s.sumAll(), 1225)
+check("big-count", s.countAll(), 50)
+
+// 7. currying with multiple args
+fn curry3(a) {
+  fn cur2(b) {
+    fn cur3(c) { a + b + c }
+    return cur3
+  }
+  return cur2
+}
+check("curry3", curry3(10)(20)(30), 60)
+check("curry3-neg", curry3(-5)(5)(0), 0)
+
+// 8. function in object called repeatedly
+fn multiplier(x, y) { return x * y }
+obj = {mul: multiplier}
+total = 0
+for i in 0..9 {
+  total += obj.mul(i, 2)
+}
+check("fn-in-obj-loop", total, 90)
+
+print(f"stress-closures: {pass} passed, {fail} failed")
+exit(fail)

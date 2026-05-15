@@ -89,3 +89,4 @@ session*
 *.ll
 *.s
 *.S
+.sisyphus

@@ -1,5 +1,6 @@
 #include "HotkeyActionContext.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 
 namespace havel {
 
@@ -18,7 +19,7 @@ void HotkeyActionContext::setContext(const ContextData& context) {
   current_context_ = context;
   context_available_ = true;
   
-  debug("HotkeyActionContext: Set context for hotkey '{}', var='{}', result={}",
+  if (debugging::debug_hotkeys) debug("HotkeyActionContext: Set context for hotkey '{}', var='{}', result={}",
         context.hotkey_name, context.changed_variable, context.condition_result);
 }
 
@@ -35,7 +36,7 @@ bool HotkeyActionContext::hasContext() {
 
 void HotkeyActionContext::clearContext() {
   context_available_ = false;
-  debug("HotkeyActionContext: Cleared context");
+  if (debugging::debug_hotkeys) debug("HotkeyActionContext: Cleared context");
 }
 
 // ============================================================================
@@ -44,7 +45,7 @@ void HotkeyActionContext::clearContext() {
 
 void HotkeyActionStateSync::setState(const std::string& key, const StateValue& value) {
   state_[key] = value;
-  debug("HotkeyActionStateSync: Set state: {} = {}", key, value);
+  if (debugging::debug_hotkeys) debug("HotkeyActionStateSync: Set state: {} = {}", key, value);
 }
 
 HotkeyActionStateSync::StateValue HotkeyActionStateSync::getState(const std::string& key) {

@@ -384,7 +384,7 @@ void registerStringPrototype(VM& vm) {
     return Value::makeNull();
   });
 
-  regProto("slice", 4, [&vm](const std::vector<Value>& args) {
+    regProtoVar("slice", [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
     if (s.empty()) { auto ref = vm.getHeap().allocateString(""); return Value::makeStringId(ref.id); }

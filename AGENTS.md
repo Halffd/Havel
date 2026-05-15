@@ -169,7 +169,6 @@ gdb ./build-debug/havel
 # ⚠️ HAVEL SYNTAX RULES (READ BEFORE CODING) ⚠️
 
 IF YOU GENERATE HAVEL CODE THAT USES:
-- Parentheses around if/for conditions → REJECTED
 - Semicolons inside conditions/loops → REJECTED
 - Variable declaration with let → REJECTED  (use python-style declaration)
 - const keyword → REJECTED  (use uppercase)

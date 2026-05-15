@@ -1,0 +1,7 @@
+fn make_adder(x):
+  fn add(y):
+    x + y
+  add
+
+add5 = make_adder(5)
+print(add5(3))

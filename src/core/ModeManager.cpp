@@ -2,6 +2,7 @@
 #include "havel-lang/ast/AST.h"
 #include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <chrono>
 
@@ -176,7 +177,7 @@ void ModeManager::update(ExprEvaluator evaluator) {
   std::string newActiveMode = currentMode;
   bool modeChanged = false;
 
-  debug("ModeManager::update() - checking {} modes, current={}", modes.size(),
+  if (debugging::debug_hotkeys) debug("ModeManager::update() - checking {} modes, current={}", modes.size(),
         currentMode);
 
   // Sort modes by priority (higher priority first)
@@ -209,7 +210,7 @@ void ModeManager::update(ExprEvaluator evaluator) {
     if (!hasCondition)
       continue;
 
-    debug("  Mode '{}' (priority {}) condition = {}", mode.name, mode.priority,
+    if (debugging::debug_hotkeys) debug("  Mode '{}' (priority {}) condition = {}", mode.name, mode.priority,
           shouldActivate ? "true" : "false");
 
     if (shouldActivate && !mode.isActive) {
@@ -218,18 +219,18 @@ void ModeManager::update(ExprEvaluator evaluator) {
       if (currentMode != mode.name) {
         for (auto &activeMode : modes) {
           if (activeMode.isActive && activeMode.name != mode.name) {
-            debug("  Exiting mode '{}'", activeMode.name);
+            if (debugging::debug_hotkeys) debug("  Exiting mode '{}'", activeMode.name);
             triggerExit(activeMode);
           }
         }
       }
-      debug("  Entering mode '{}'", mode.name);
+      if (debugging::debug_hotkeys) debug("  Entering mode '{}'", mode.name);
       triggerEnter(mode);
       modeChanged = true;
       newActiveMode = mode.name;
     } else if (!shouldActivate && mode.isActive && mode.name == currentMode) {
       // Current mode condition no longer met
-      debug("  Exiting mode '{}' (condition no longer met)", mode.name);
+      if (debugging::debug_hotkeys) debug("  Exiting mode '{}' (condition no longer met)", mode.name);
       triggerExit(mode);
       newActiveMode = "default";
       modeChanged = true;
@@ -240,7 +241,7 @@ void ModeManager::update(ExprEvaluator evaluator) {
   if (newActiveMode == "default" && currentMode != "default") {
     for (auto &mode : modes) {
       if (mode.isActive) {
-        debug("  Exiting mode '{}' (no mode active)", mode.name);
+        if (debugging::debug_hotkeys) debug("  Exiting mode '{}' (no mode active)", mode.name);
         triggerExit(mode);
       }
     }
@@ -264,7 +265,7 @@ void ModeManager::registerVarChangedHandler() {
         [this](const compiler::Event& event) {
           // Reevaluate mode conditions when variables change
           // This allows conditions like "window.any(exe == 'steam.exe')" to react immediately
-          debug("VAR_CHANGED event - reevaluating mode conditions");
+          if (debugging::debug_hotkeys) debug("VAR_CHANGED event - reevaluating mode conditions");
           // Schedule reevaluation via a callback to avoid blocking
           eventQueue_->push([this]() {
             // Use cached evaluator if available, otherwise skip
@@ -272,7 +273,7 @@ void ModeManager::registerVarChangedHandler() {
             update();
           });
         });
-    debug("ModeManager: Registered VAR_CHANGED handler for reactive mode updates");
+    if (debugging::debug_hotkeys) debug("ModeManager: Registered VAR_CHANGED handler for reactive mode updates");
   }
 }
 

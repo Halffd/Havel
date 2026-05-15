@@ -1,0 +1,7 @@
+use { Lexer } from "lib/lexer"
+
+a = Lexer("1")
+print("created lexer")
+result = a.run()
+print("got result")
+print(type(result))

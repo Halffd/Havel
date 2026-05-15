@@ -44,43 +44,51 @@ private:
 #ifdef HAVE_QT_EXTENSION
   std::unique_ptr<QApplication> app_;
 #endif
-  struct LaunchConfig {
-    Mode mode = Mode::DAEMON;
-    std::vector<std::string> scriptFiles;
-    bool isStartup = false;
-    bool debugMode = false;
-    bool debugParser = false;
-    bool debugAst = false;
-    bool debugLexer = false;
-    bool debugBytecode = false;
-    bool diffBytecode = false;  // Compare bytecode with previous run
-    bool stopOnError = false; // Stop on first error/warning
-    bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
-    bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
-    bool lintOnly = false; // Only lint the script and check for errors
-    bool buildOnly = false; // Compile to bytecode only
-    std::string outputPath; // Output path for --build (-o)
-    std::string testDir;   // Directory containing test scripts
-    int testTimeout = 30; // Timeout for each test in seconds
-bool useJIT = true;
-    bool debugJIT = false;
-    bool dumpIR = false;
-    bool outputAsmToFile = false;
-    Target target = Target::INTERPRET;
+	struct LaunchConfig {
+		Mode mode = Mode::DAEMON;
+		std::vector<std::string> scriptFiles;
+		bool isStartup = false;
+		bool debugMode = false;
+		bool debugParser = false;
+		bool debugAst = false;
+		bool debugLexer = false;
+		bool debugBytecode = false;
+		bool debugGc = false;
+		bool debugEngine = false;
+		bool debugIo = false;
+		bool debugHotkeys = false;
+		bool diffBytecode = false; // Compare bytecode with previous run
+		bool stopOnError = false; // Stop on first error/warning
+		bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
+		bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
+		bool lintOnly = false; // Only lint the script and check for errors
+		bool buildOnly = false; // Compile to bytecode only
+		std::string outputPath; // Output path for --build (-o)
+		std::string testDir; // Directory containing test scripts
+		int testTimeout = 30; // Timeout for each test in seconds
+		bool useJIT = true;
+		bool debugJIT = false;
+		bool dumpIR = false;
+		bool outputAsmToFile = false;
+		Target target = Target::INTERPRET;
 
-    // AOT compilation options
-    bool emitLLVM = false;      // --emit-llvm: output .ll file
-    bool emitAsm = false;       // --emit-asm: output .s assembly file
-    bool emitObj = false;       // --emit-obj: output .o object file
-    bool emitWasm = false;      // --target wasm: output .wasm
-    bool emitBinary = false;    // --target aot: output native .so
-    bool emitElf = false;       // --target elf/bin: output native ELF executable
-    std::string aotOutput; // -o for AOT output path
-    std::string arch; // --arch: target triple
-    AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
-    std::string evalString; // --eval/-E: run inline code
-
-  };
+		// AOT compilation options
+		bool emitLLVM = false; // --emit-llvm: output .ll file
+		bool emitAsm = false; // --emit-asm: output .s assembly file
+		bool emitObj = false; // --emit-obj: output .o object file
+		bool emitWasm = false; // --target wasm: output .wasm
+		bool emitBinary = false; // --target aot: output native .so
+		bool emitElf = false; // --target elf/bin: output native ELF executable
+		bool fullAot = false; // --full-aot: emit all native artifacts
+		bool aotWarnings = true; // --aot-warnings / --no-aot-warnings
+		std::string aotOutput; // -o for AOT output path
+		std::string arch; // --arch: target triple
+		std::string targetOS; // --os: linux|windows|macos|wasm|native
+		std::vector<std::string> linkLibs; // --link-lib repeated
+		AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
+		std::string evalString; // --eval/-E: run inline code
+		std::string inputBackend; // Input backend: "evdev", "x11", "wayland", "auto"
+	};
 
   LaunchConfig parseArgs(int argc, char *argv[]);
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);

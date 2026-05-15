@@ -20,4 +20,8 @@ void loadStdLibModules(Environment &env, ModuleLoader &loader,
 // Register stdlib modules with VM (VM-native, no Environment)
 void registerStdLibWithVM(compiler::HostBridge& bridge);
 
+// Register ONLY pure stdlib modules with VM
+namespace compiler { class VM; }
+void registerPureStdLib(compiler::VM& vm);
+
 } // namespace havel

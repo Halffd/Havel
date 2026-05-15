@@ -1,0 +1,12 @@
+use {outer} from "lib/test_simple_closure"
+
+i = outer()
+r1 = i()
+
+print(r1)
+
+if r1 == 42 {
+  print("PASS")
+} else {
+  print("FAIL")
+}

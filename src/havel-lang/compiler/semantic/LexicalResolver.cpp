@@ -106,6 +106,24 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
                 top_level_functions_.insert(fn.name->symbol);
             }
     }
+  } else if (statement->kind == ast::NodeType::UseStatement) {
+    const auto &use = static_cast<const ast::UseStatement &>(*statement);
+    if (!use.isFileImport) {
+      for (const auto &module : use.moduleNames) {
+        global_variables_.insert(module);
+      }
+    } else {
+      if (use.isNamedImport) {
+        for (size_t i = 0; i < use.importNames.size(); ++i) {
+          const auto &alias = (i < use.importAliases.size())
+                                  ? use.importAliases[i]
+                                  : use.importNames[i];
+          global_variables_.insert(alias);
+        }
+      } else if (!use.alias.empty()) {
+        global_variables_.insert(use.alias);
+      }
+    }
   }
   }
 
@@ -928,6 +946,50 @@ case ast::NodeType::ImplDeclaration: {
     break;
   }
 
+  case ast::NodeType::ModesBlock: {
+    const auto &modes = static_cast<const ast::ModesBlock &>(statement);
+    for (const auto &mode : modes.modes) {
+      if (mode.condition) resolveExpression(*mode.condition);
+      if (mode.enterBlock) resolveStatement(*mode.enterBlock);
+      if (mode.exitBlock) resolveStatement(*mode.exitBlock);
+      if (mode.onEnterFromBlock) resolveStatement(*mode.onEnterFromBlock);
+      if (mode.onExitToBlock) resolveStatement(*mode.onExitToBlock);
+      if (mode.onCloseBlock) resolveStatement(*mode.onCloseBlock);
+      if (mode.onMinimizeBlock) resolveStatement(*mode.onMinimizeBlock);
+      if (mode.onMaximizeBlock) resolveStatement(*mode.onMaximizeBlock);
+      if (mode.onOpenBlock) resolveStatement(*mode.onOpenBlock);
+    }
+    break;
+  }
+
+  case ast::NodeType::ConfigBlock: {
+    const auto &config = static_cast<const ast::ConfigBlock &>(statement);
+    for (const auto &pair : config.pairs) {
+      if (pair.second) resolveExpression(*pair.second);
+    }
+    break;
+  }
+
+  case ast::NodeType::DevicesBlock: {
+    const auto &devices = static_cast<const ast::DevicesBlock &>(statement);
+    for (const auto &pair : devices.pairs) {
+      if (pair.second) resolveExpression(*pair.second);
+    }
+    break;
+  }
+
+  case ast::NodeType::ConfigSection: {
+    const auto &section = static_cast<const ast::ConfigSection &>(statement);
+    for (const auto &pair : section.pairs) {
+      if (pair.second) resolveExpression(*pair.second);
+    }
+    break;
+  }
+
+  case ast::NodeType::UseStatement:
+    // Global imports already handled in first pass of resolve()
+    break;
+
   default:
     break;
   }
@@ -1018,10 +1080,18 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         assignment.target->kind == ast::NodeType::Identifier) {
       const auto &ident =
           static_cast<const ast::Identifier &>(*assignment.target);
-      auto binding = resolveIdentifier(ident.symbol);
+    auto binding = resolveIdentifier(ident.symbol);
 
-      // Explicit global override (::x = ...) must never create a local.
-      if (assignment.isGlobalScope || ident.isGlobalScope) {
+        // DEBUG: trace assignment resolution for key identifiers
+        if (ident.symbol == "nextTok" || ident.symbol == "lookahead" || ident.symbol == "isObject" || ident.symbol == "setLook") {
+            std::cerr << "[LEX_DBG] assign '" << ident.symbol << "' fstack=" << function_stack_.size()
+                      << " binding=" << (binding ? std::to_string(static_cast<int>(binding->kind)) : "none")
+                      << " gvars=" << global_variables_.count(ident.symbol)
+                      << " insideFn=" << (function_stack_.size() > 1) << "\n";
+        }
+
+        // Explicit global override (::x = ...) must never create a local.
+        if (assignment.isGlobalScope || ident.isGlobalScope) {
         global_variables_.insert(ident.symbol);
         noteIdentifierBinding(
             ident, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, ident.symbol, false});
@@ -1052,9 +1122,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             shouldDeclareLocal = true;
         }
 
-      if (shouldDeclareLocal) {
-        // Implicit declaration on first assignment
-        bool isGlobalScope = !insideFunction;
+        if (shouldDeclareLocal) {
+            // Implicit declaration on first assignment
+            bool isGlobalScope = !insideFunction;
+            if (ident.symbol == "nextTok" || ident.symbol == "lookahead" || ident.symbol == "isObject" || ident.symbol == "setLook") {
+                std::cerr << "[LEX_DBG] '" << ident.symbol << "' shouldDeclareLocal=true isGlobal=" << isGlobalScope << "\n";
+            }
 
         if (isGlobalScope) {
           // At top-level program scope - declare as global variable
@@ -1067,50 +1140,11 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-          // Inside a function - declare as local variable.
-          // If we're inside a closure, declare in the outermost
-          // enclosing non-closure function so the binding is visible
-          // both in the closure and in the surrounding scope.
-          size_t target_fn = function_stack_.size() - 1;
-          while (target_fn > 0) {
-            const auto &ctx = function_stack_[target_fn];
-            if (ctx.owner && ctx.owner->kind == ast::NodeType::LambdaExpression) {
-              // This is a closure — skip to enclosing function
-              if (target_fn == 0) break;
-              target_fn--;
-            } else {
-              break;
-            }
-          }
-          auto &target_ctx = function_stack_[target_fn];
-          if (target_ctx.scopes.empty()) {
-            beginScope();
-            // beginScope was called on the wrong context, we need to
-            // manually ensure the target has a scope
-          }
-          if (target_ctx.scopes.empty()) {
-            target_ctx.scopes.emplace_back();
-          }
-          auto &scope = target_ctx.scopes.back();
-          auto existing = scope.find(ident.symbol);
-          if (existing == scope.end()) {
-            uint32_t slot = target_ctx.next_slot++;
-            scope[ident.symbol] =
-                FunctionContext::LocalSymbol{.slot = slot, .is_const = false};
-            if (result_.declaration_slots.find(&ident) == result_.declaration_slots.end()) {
-              result_.declaration_slots[&ident] = slot;
-            }
-            ResolvedBinding newBinding;
-            newBinding.kind = ResolvedBindingKind::Local;
-            newBinding.slot = slot;
-            newBinding.name = ident.symbol;
-            newBinding.is_const = false;
-            noteIdentifierBinding(ident, newBinding);
-          } else {
-            noteIdentifierBinding(ident, ResolvedBinding{
-                ResolvedBindingKind::Local, existing->second.slot, 0,
-                ident.symbol, existing->second.is_const});
-          }
+            // Inside a function - declare as local in the current function.
+            // Variables that need to be shared with enclosing scopes will
+            // be resolved as upvalues via resolveIdentifier when accessed
+            // from nested functions.
+            declareLocal(ident.symbol, &ident, false);
         }
       } else {
         noteIdentifierBinding(ident, *binding);

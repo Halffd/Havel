@@ -1,12 +1,18 @@
-#define CV__DEBUG_NS_START namespace cv {
-#define CV__DEBUG_NS_END }
 #pragma once
 
 #include <string>
 #include <memory>
+#include <vector>
+
+#ifdef HAVE_OPENCV
+#ifdef COUNT
+#undef COUNT
+#endif
+#ifdef EPS
+#undef EPS
+#endif
 #include <opencv2/opencv.hpp>
-#include <tesseract/baseapi.h>
-#include <leptonica/allheaders.h>
+#endif
 
 namespace havel {
 
@@ -44,6 +50,7 @@ public:
                       preserveInterwordSpaces(true), minConfidence(0) {}
     };
 
+#ifdef HAVE_OPENCV
     struct OCRResult {
         std::string text;
         float confidence = 0.0f;
@@ -55,25 +62,24 @@ public:
     explicit OCR(const OCRConfig& config = OCRConfig{});
     ~OCR();
 
-    // Main OCR functions
     OCRResult recognize(const cv::Mat& image);
     OCRResult recognize(const std::string& imagePath);
     std::string recognizeText(const cv::Mat& image);
-    
-    // Preprocessing utilities
+
     static cv::Mat preprocessImage(const cv::Mat& input, bool upscale = true, int scaleFactor = 2);
     static cv::Mat preprocessForUI(const cv::Mat& input);
     static cv::Mat preprocessForText(const cv::Mat& input);
-    
-    // Configuration
+
+    OCRResult recognizeWithDetails(const cv::Mat& image);
+#endif
+
     void setLanguage(const std::string& lang);
     void setDataPath(const std::string& path);
     void setPageSegmentationMode(PageSegmentationMode mode);
     void setCharWhitelist(const std::string& whitelist);
     void setPreserveInterwordSpaces(bool preserve);
     void setMinConfidence(int minConf);
-    
-    // Getters
+
     std::string getLanguage() const;
     std::string getDataPath() const;
     PageSegmentationMode getPageSegmentationMode() const;
@@ -81,17 +87,10 @@ public:
     bool getPreserveInterwordSpaces() const;
     int getMinConfidence() const;
 
-    // Advanced recognition with detailed results
-    OCRResult recognizeWithDetails(const cv::Mat& image);
-
 private:
-    std::unique_ptr<tesseract::TessBaseAPI> tessApi;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
     OCRConfig config;
-
-    void initializeTesseract();
-    void applyConfiguration();
-    float calculateAverageConfidence();
-    std::vector<std::pair<cv::Rect, float>> getWordResults();
 };
 
 } // namespace havel

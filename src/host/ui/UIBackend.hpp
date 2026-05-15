@@ -112,8 +112,12 @@ public:
     virtual void trayHide() = 0;
     virtual bool trayIsVisible() const = 0;
 
-    // Styling
-    virtual void applyStyle(std::shared_ptr<ui::UIElement> element, const std::string &key, const ui::PropValue &value) = 0;
+  // Styling
+  virtual void applyStyle(std::shared_ptr<ui::UIElement> element, const std::string &key, const ui::PropValue &value) = 0;
+
+  // Canvas drawing
+  virtual void canvasFlush(std::shared_ptr<ui::UIElement> canvas) = 0;
+  virtual void canvasClear(std::shared_ptr<ui::UIElement> canvas) = 0;
 };
 
 } // namespace havel::host

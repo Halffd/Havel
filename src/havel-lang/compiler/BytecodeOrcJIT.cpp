@@ -5,6 +5,7 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/TargetParser/TargetParser.h>
@@ -16,7 +17,10 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cctype>
 #include <fstream>
+#include <functional>
+#include <filesystem>
 #include <sstream>
 #include <unordered_set>
 #include <llvm/Transforms/Utils/Cloning.h>
@@ -31,6 +35,37 @@
 using namespace llvm::orc;
 
 namespace havel::compiler {
+
+std::mutex BytecodeOrcJIT::last_error_mutex_;
+std::string BytecodeOrcJIT::last_error_;
+
+void BytecodeOrcJIT::setLastError(std::string err) {
+    std::lock_guard<std::mutex> lock(last_error_mutex_);
+    last_error_ = std::move(err);
+}
+
+std::string BytecodeOrcJIT::lastError() {
+    std::lock_guard<std::mutex> lock(last_error_mutex_);
+    return last_error_;
+}
+
+void BytecodeOrcJIT::clearLastError() {
+    std::lock_guard<std::mutex> lock(last_error_mutex_);
+    last_error_.clear();
+}
+
+namespace {
+
+void reportLLVMError(const std::string& stage, llvm::Error err, bool showWarnings) {
+    if (!err) return;
+    std::string details = llvm::toString(std::move(err));
+    BytecodeOrcJIT::setLastError(stage + ": " + details);
+    if (showWarnings) {
+        ::havel::warning("BytecodeOrcJIT [{}]: {}", stage, details);
+    }
+}
+
+} // namespace
 
 // ============================================================================
 
@@ -170,7 +205,15 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
 }
 
 void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
-    ::havel::debug("[JIT] Deoptimizing in {} for types: 0x{:x} op 0x{:x}", func, l, r);
+    // Track deopt count per function to detect bad type assumptions
+    static thread_local std::unordered_map<std::string, uint32_t> deopt_counts;
+    auto& count = deopt_counts[func];
+    count++;
+    if (count == 1) {
+        ::havel::warn("[JIT] First deopt in '{}' for types: l=0x{:x} r=0x{:x} — consider recompilation", func, l, r);
+    } else if (count == 100) {
+        ::havel::warn("[JIT] {} deopts in '{}' — type specialization unstable, needs generic path", count, func);
+    }
 }
 
 // JIT helper for function calls - delegates to VM
@@ -928,9 +971,15 @@ uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
         return Value::makeNull().rawBits();
     const auto* target = chunk->getFunction(func_index);
 
-    GCHeap::RuntimeClosure closure;
-    closure.function_index = func_index;
-    closure.upvalues.reserve(target->upvalues.size());
+ GCHeap::RuntimeClosure closure;
+ closure.function_index = func_index;
+ closure.chunk = chunk;
+ closure.upvalues.reserve(target->upvalues.size());
+
+ auto& mainChunk = vm->getMainChunk();
+ if (mainChunk && chunk != mainChunk.get()) {
+     closure.module_globals = std::make_shared<std::unordered_map<std::string, Value>>(vm->getGlobals());
+ }
 
     for (const auto& descriptor : target->upvalues) {
         if (descriptor.captures_local) {
@@ -955,8 +1004,8 @@ uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
         }
     }
 
-    auto ref = vm->getHeap().allocateClosure(std::move(closure));
-    return Value::makeClosureId(ref.id).rawBits();
+ auto ref = vm->getHeap().allocateClosure(std::move(closure));
+ return Value::makeClosureId(ref.id).rawBits();
 }
 
 uint64_t havel_vm_array_del(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) {
@@ -1769,6 +1818,25 @@ void BytecodeOrcJIT::InitializeLLVM() {
 
 BytecodeOrcJIT::BytecodeOrcJIT() {
     InitializeLLVM();
+    if (const char* osEnv = std::getenv("HAVEL_JIT_TARGET_OS")) {
+        std::string os = osEnv;
+        std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (os == "linux") target_os_ = TargetOS::Linux;
+        else if (os == "windows" || os == "win") target_os_ = TargetOS::Windows;
+        else if (os == "macos" || os == "darwin" || os == "mac") target_os_ = TargetOS::MacOS;
+        else if (os == "wasm" || os == "webassembly") target_os_ = TargetOS::Wasm;
+    }
+    if (const char* warnEnv = std::getenv("HAVEL_JIT_WARNINGS")) {
+        std::string v = warnEnv;
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (v == "0" || v == "false" || v == "off") {
+            show_warnings_ = false;
+        }
+    }
     initTargetMachine();
     if (const char* optEnv = std::getenv("HAVEL_JIT_OPT_LEVEL")) {
         int parsed = std::atoi(optEnv);
@@ -1779,7 +1847,7 @@ BytecodeOrcJIT::BytecodeOrcJIT() {
 
     auto jit_or_err = LLJITBuilder().create();
     if (!jit_or_err) {
-        llvm::consumeError(jit_or_err.takeError());
+        reportLLVMError("create", jit_or_err.takeError(), show_warnings_);
         return;
     }
     lljit_ = std::move(*jit_or_err);
@@ -1915,19 +1983,67 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
         addSym("havel_vm_begin_module", reinterpret_cast<void*>(&havel_vm_begin_module));
         addSym("havel_vm_end_module", reinterpret_cast<void*>(&havel_vm_end_module));
 
-        if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
-        llvm::consumeError(std::move(err));
+    if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
+        reportLLVMError("define-symbols", std::move(err), show_warnings_);
     }
+
+    // Phase 3 cache metadata: load persisted hash->symbol aliases.
+    const char* customCache = std::getenv("HAVEL_JIT_CACHE_INDEX");
+    if (customCache && *customCache) {
+        cache_index_path_ = customCache;
+    } else if (const char* home = std::getenv("HOME")) {
+        cache_index_path_ = std::string(home) + "/.cache/havel/jit_function_cache.idx";
+    } else {
+        cache_index_path_ = "/tmp/havel_jit_function_cache.idx";
+    }
+    loadCompileCacheIndex();
 }
 
 BytecodeOrcJIT::~BytecodeOrcJIT() = default;
 
+void BytecodeOrcJIT::setTargetOS(TargetOS os) {
+    target_os_ = os;
+    initTargetMachine();
+}
+
+std::string BytecodeOrcJIT::resolveTargetTriple() const {
+    const std::string hostTriple = llvm::sys::getDefaultTargetTriple();
+    if (target_os_ == TargetOS::Native) {
+        return hostTriple;
+    }
+
+    llvm::Triple host(hostTriple);
+    std::string arch = host.getArchName().str();
+    if (arch.empty()) {
+        arch = "x86_64";
+    }
+
+    switch (target_os_) {
+        case TargetOS::Linux:
+            return arch + "-pc-linux-gnu";
+        case TargetOS::Windows:
+            return arch + "-pc-windows-msvc";
+        case TargetOS::MacOS:
+            return arch + "-apple-darwin";
+        case TargetOS::Wasm:
+            return "wasm32-unknown-unknown";
+        case TargetOS::Native:
+        default:
+            return hostTriple;
+    }
+}
+
 void BytecodeOrcJIT::initTargetMachine() {
-    auto target_triple_str = llvm::sys::getDefaultTargetTriple();
+    auto target_triple_str = resolveTargetTriple();
     llvm::Triple target_triple(target_triple_str);
     std::string error;
     auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
     if (!target) {
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: cannot resolve target '{}': {}",
+                             target_triple_str, error);
+        }
+        target_machine_.reset();
         return;
     }
     llvm::TargetOptions opt;
@@ -1937,6 +2053,15 @@ void BytecodeOrcJIT::initTargetMachine() {
 }
 
 void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
+    if (!lljit_) {
+        setLastError("compile:" + func.name + ": JIT is not initialized");
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT: compile requested for '{}' but JIT is not initialized",
+                             func.name);
+        }
+        return;
+    }
+
     // Coroutines are currently interpreter-only: JIT frame suspension/resume
     // semantics are not preserved for YIELD/GO_ASYNC paths yet.
     for (const auto& instr : func.instructions) {
@@ -1947,6 +2072,16 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
                 return;
             default:
                 break;
+        }
+    }
+
+    const uint64_t func_hash = computeFunctionHash(func);
+    auto cached = compile_cache_.find(func_hash);
+    if (cached != compile_cache_.end()) {
+        auto existing = fptrs_.find(cached->second.canonical_name);
+        if (existing != fptrs_.end()) {
+            fptrs_[func.name] = existing->second;
+            return;
         }
     }
 
@@ -2005,18 +2140,38 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     if (auto err = lljit_->addIRModule(ThreadSafeModule(std::move(module), std::move(context)))) {
-        llvm::consumeError(std::move(err));
+        reportLLVMError("add-module:" + func.name, std::move(err), show_warnings_);
         return;
     }
 
     auto sym = lljit_->lookup(func.name);
     if (!sym) {
-        llvm::consumeError(sym.takeError());
+        reportLLVMError("lookup:" + func.name, sym.takeError(), show_warnings_);
         return;
     }
 
     fptrs_[func.name] = reinterpret_cast<void*>((*sym).getValue());
+    compile_cache_[func_hash] = CachedFunction{func.name};
+    saveCompileCacheIndex();
     func.jit_compiled = true;
+}
+
+void BytecodeOrcJIT::compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level) {
+    const uint8_t saved = optimization_level_;
+    optimization_level_ = level > 3 ? 3 : level;
+    compileFunction(func);
+    optimization_level_ = saved;
+}
+
+void BytecodeOrcJIT::compileFunctionTier(const BytecodeFunction &func, uint8_t tier) {
+    // Tier mapping:
+    // tier 1 -> O0 (fast startup / baseline JIT)
+    // tier 2 -> O2 (optimizing background recompile)
+    if (tier <= 1) {
+        compileFunctionAtOptLevel(func, 0);
+        return;
+    }
+    compileFunctionAtOptLevel(func, 2);
 }
 
 Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
@@ -2071,9 +2226,17 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
         // TRY_ENTER handlers in active VM frames.
         throw;
     } catch (const std::exception& e) {
+        setLastError("runtime:" + func_name + ": " + std::string(e.what()));
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT runtime exception in '{}': {}", func_name, e.what());
+        }
         vm->throwError(std::string("JIT exception in ") + func_name + ": " + e.what());
         return Value::makeNull();
     } catch (...) {
+        setLastError("runtime:" + func_name + ": unknown exception");
+        if (show_warnings_) {
+            ::havel::warning("BytecodeOrcJIT runtime exception in '{}': unknown exception", func_name);
+        }
         vm->throwError(std::string("Unknown JIT exception in ") + func_name);
         return Value::makeNull();
     }
@@ -2081,6 +2244,80 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
 
 bool BytecodeOrcJIT::isCompiled(const std::string &func_name) const {
     return fptrs_.count(func_name) > 0;
+}
+
+uint64_t BytecodeOrcJIT::computeFunctionHash(const BytecodeFunction &func) const {
+    uint64_t seed = 1469598103934665603ULL;
+    auto mix = [&](uint64_t v) {
+        seed ^= v;
+        seed *= 1099511628211ULL;
+    };
+
+    mix(static_cast<uint64_t>(func.param_count));
+    mix(static_cast<uint64_t>(func.local_count));
+    mix(static_cast<uint64_t>(func.instructions.size()));
+    mix(static_cast<uint64_t>(func.constants.size()));
+
+    for (const auto &ins : func.instructions) {
+        mix(static_cast<uint64_t>(ins.opcode));
+        mix(static_cast<uint64_t>(ins.operands.size()));
+        for (const auto &op : ins.operands) {
+            mix(op.rawBits());
+            if (op.isStringValId()) {
+                for (char c : op.toString()) {
+                    mix(static_cast<uint64_t>(static_cast<unsigned char>(c)));
+                }
+            }
+        }
+    }
+
+    for (const auto &c : func.constants) {
+        mix(c.rawBits());
+    }
+    return seed;
+}
+
+void BytecodeOrcJIT::loadCompileCacheIndex() {
+    std::ifstream in(cache_index_path_);
+    if (!in.is_open()) {
+        return;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        auto pos = line.find(' ');
+        if (pos == std::string::npos || pos == 0 || pos + 1 >= line.size()) {
+            continue;
+        }
+        try {
+            uint64_t hash = static_cast<uint64_t>(std::stoull(line.substr(0, pos), nullptr, 16));
+            std::string name = line.substr(pos + 1);
+            compile_cache_[hash] = CachedFunction{name};
+        } catch (...) {
+            // Ignore malformed lines.
+        }
+    }
+}
+
+void BytecodeOrcJIT::saveCompileCacheIndex() const {
+    if (cache_index_path_.empty()) return;
+    try {
+        std::filesystem::path p(cache_index_path_);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path());
+        }
+    } catch (...) {
+        return;
+    }
+
+    std::ofstream out(cache_index_path_, std::ios::trunc);
+    if (!out.is_open()) {
+        return;
+    }
+    out << std::hex;
+    for (const auto& [hash, entry] : compile_cache_) {
+        out << hash << " " << entry.canonical_name << "\n";
+    }
 }
 
 void BytecodeOrcJIT::dumpAssembly(const std::string &filename) {
@@ -2137,8 +2374,8 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     llvm::Type *i64 = llvm::Type::getInt64Ty(ctx);
     llvm::Type *f64 = llvm::Type::getDoubleTy(ctx);
     llvm::Type *voidT = llvm::Type::getVoidTy(ctx);
-    llvm::Type *i8p = llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(ctx));
-    llvm::Type *i64p = llvm::PointerType::getUnqual(i64);
+    llvm::Type *i8p = llvm::PointerType::get(ctx, 0);
+    llvm::Type *i64p = llvm::PointerType::get(ctx, 0);
 
     std::vector<llvm::Type*> paramTypes = {i8p, i64p, i32};
     llvm::FunctionType *funcType = llvm::FunctionType::get(i64, paramTypes, false);
@@ -2164,7 +2401,7 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     llvm::Value *frame = B.CreateAlloca(frameType, nullptr, "gc_frame");
 
     llvm::Function *fn_reg = module.getFunction("havel_gc_register_roots");
-    if (!fn_reg) fn_reg = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, llvm::PointerType::getUnqual(frameType), i64p, i32}, false), llvm::Function::ExternalLinkage, "havel_gc_register_roots", &module);
+    if (!fn_reg) fn_reg = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, llvm::PointerType::get(ctx, 0), i64p, i32}, false), llvm::Function::ExternalLinkage, "havel_gc_register_roots", &module);
     B.CreateCall(fn_reg, {vmArg, frame, B.CreateInBoundsGEP(i64, argsArg, llvm::ConstantInt::get(i32, 0)), llvm::ConstantInt::get(i32, func.local_count)});
 
     std::vector<llvm::Value*> vlocals;
@@ -2209,10 +2446,25 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
     };
 
 auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, llvm::Value* left, llvm::Value* right) -> llvm::Value* {
-    // Check for AOT type hint - if we know the type at compile time, use direct path
-    uint64_t type_hint = (fb && fb->has_aot_hint) ? fb->aot_type_hint : 0;
+    // Check for AOT type hint first, then fall back to runtime type feedback
+    uint64_t type_hint = 0;
+    if (fb && fb->has_aot_hint) {
+        type_hint = fb->aot_type_hint;
+    } else if (fb && fb->execution_count >= 100) {
+        // Runtime feedback: if interpreter has seen only one type, specialize
+        // (still uses guarded paths below for the speculative case)
+        uint64_t combined = fb->left_type_mask | fb->right_type_mask;
+        if (combined == TYPE_HINT_INT) {
+            type_hint = TYPE_HINT_INT;
+        } else if (combined == TYPE_HINT_NUMBER) {
+            type_hint = TYPE_HINT_NUMBER;
+        } else if (combined == (TYPE_HINT_INT | TYPE_HINT_NUMBER)) {
+            type_hint = TYPE_HINT_NUMBER; // mixed int/double → use double path
+        }
+        // If mixed or polymorphic, type_hint stays 0 → fall through to guarded path
+    }
     
-    // If AOT hint says both operands are int, use direct integer path
+    // If type hint says both operands are int, use direct integer path
     if ((type_hint & TYPE_HINT_INT) && !(type_hint & TYPE_HINT_NUMBER)) {
         // Pure integer operation - no runtime check needed
         llvm::Value *lIv = unboxInt(left);
@@ -2451,7 +2703,7 @@ case OpCode::INCLOCAL:
             break;
         }
 
-      // Comparisons — use semantic bridge functions for correct NaN-boxed dispatch
+      // Comparisons — use type feedback to specialize or fall back to bridge
       case OpCode::EQ:
       case OpCode::NEQ:
       case OpCode::LT:
@@ -2460,22 +2712,99 @@ case OpCode::INCLOCAL:
       case OpCode::GTE: {
         llvm::Value* r = vstack.back(); vstack.pop_back();
         llvm::Value* l = vstack.back(); vstack.pop_back();
-        const char* fname = nullptr;
-        switch (instr.opcode) {
-          case OpCode::EQ:  fname = "havel_vm_eq";  break;
-          case OpCode::NEQ: fname = "havel_vm_neq"; break;
-          case OpCode::LT:  fname = "havel_vm_lt";  break;
-          case OpCode::LTE: fname = "havel_vm_lte"; break;
-          case OpCode::GT:  fname = "havel_vm_gt";  break;
-          case OpCode::GTE: fname = "havel_vm_gte"; break;
+        
+        // Check if feedback says both sides are always int
+        bool bothAlwaysInt = false;
+        if (fb && fb->execution_count >= 100) {
+            uint64_t combined = fb->left_type_mask | fb->right_type_mask;
+            bothAlwaysInt = (combined == TYPE_HINT_INT);
         }
-        llvm::Function* fnComp = module.getFunction(fname);
-        if (!fnComp) {
-            fnComp = llvm::Function::Create(
-                llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                llvm::Function::ExternalLinkage, fname, &module);
+        if (fb && fb->has_aot_hint && (fb->aot_type_hint & TYPE_HINT_INT) && !(fb->aot_type_hint & TYPE_HINT_NUMBER)) {
+            bothAlwaysInt = true;
         }
-        vstack.push_back(B.CreateCall(fnComp, {vmArg, l, r}));
+        
+        // NaN-boxed bool constants
+        uint64_t boolTrueBits = QNAN | (2ULL << 48) | 1ULL;
+        uint64_t boolFalseBits = QNAN | (2ULL << 48);
+        
+        if (bothAlwaysInt) {
+            // Fast path: inline integer comparison with guard
+            std::string pfx = "cmp" + std::to_string(ip) + "_";
+            llvm::BasicBlock *intCmpBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
+            llvm::BasicBlock *slowBB = llvm::BasicBlock::Create(ctx, pfx+"slow", f);
+            llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
+            
+            llvm::Value* bothInt = B.CreateAnd(isInt48Loc(l), isInt48Loc(r));
+            B.CreateCondBr(bothInt, intCmpBB, slowBB);
+            
+            // Integer fast path
+            B.SetInsertPoint(intCmpBB);
+            llvm::Value* lI = unboxInt(l);
+            llvm::Value* rI = unboxInt(r);
+            llvm::Value* cmpResult = nullptr;
+            switch (instr.opcode) {
+                case OpCode::EQ:  cmpResult = B.CreateICmpEQ(lI, rI);  break;
+                case OpCode::NEQ: cmpResult = B.CreateICmpNE(lI, rI);  break;
+                case OpCode::LT:  cmpResult = B.CreateICmpSLT(lI, rI); break;
+                case OpCode::LTE: cmpResult = B.CreateICmpSLE(lI, rI); break;
+                case OpCode::GT:  cmpResult = B.CreateICmpSGT(lI, rI); break;
+                case OpCode::GTE: cmpResult = B.CreateICmpSGE(lI, rI); break;
+                default: cmpResult = B.CreateICmpEQ(lI, rI); break;
+            }
+            llvm::Value* intResult = B.CreateSelect(cmpResult,
+                llvm::ConstantInt::get(i64, boolTrueBits),
+                llvm::ConstantInt::get(i64, boolFalseBits));
+            auto* intExitBB = B.GetInsertBlock();
+            B.CreateBr(mergeBB);
+            
+            // Slow path: bridge function
+            B.SetInsertPoint(slowBB);
+            const char* fname = nullptr;
+            switch (instr.opcode) {
+                case OpCode::EQ:  fname = "havel_vm_eq";  break;
+                case OpCode::NEQ: fname = "havel_vm_neq"; break;
+                case OpCode::LT:  fname = "havel_vm_lt";  break;
+                case OpCode::LTE: fname = "havel_vm_lte"; break;
+                case OpCode::GT:  fname = "havel_vm_gt";  break;
+                case OpCode::GTE: fname = "havel_vm_gte"; break;
+                default: fname = "havel_vm_eq"; break;
+            }
+            llvm::Function* fnComp = module.getFunction(fname);
+            if (!fnComp) {
+                fnComp = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, fname, &module);
+            }
+            llvm::Value* slowResult = B.CreateCall(fnComp, {vmArg, l, r});
+            auto* slowExitBB = B.GetInsertBlock();
+            B.CreateBr(mergeBB);
+            
+            // Merge
+            B.SetInsertPoint(mergeBB);
+            llvm::PHINode* phi = B.CreatePHI(i64, 2);
+            phi->addIncoming(intResult, intExitBB);
+            phi->addIncoming(slowResult, slowExitBB);
+            vstack.push_back(phi);
+        } else {
+            // No feedback or polymorphic: use bridge
+            const char* fname = nullptr;
+            switch (instr.opcode) {
+              case OpCode::EQ:  fname = "havel_vm_eq";  break;
+              case OpCode::NEQ: fname = "havel_vm_neq"; break;
+              case OpCode::LT:  fname = "havel_vm_lt";  break;
+              case OpCode::LTE: fname = "havel_vm_lte"; break;
+              case OpCode::GT:  fname = "havel_vm_gt";  break;
+              case OpCode::GTE: fname = "havel_vm_gte"; break;
+              default: fname = "havel_vm_eq"; break;
+            }
+            llvm::Function* fnComp = module.getFunction(fname);
+            if (!fnComp) {
+                fnComp = llvm::Function::Create(
+                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::Function::ExternalLinkage, fname, &module);
+            }
+            vstack.push_back(B.CreateCall(fnComp, {vmArg, l, r}));
+        }
         break;
       }
     // CLOSURE - operand: func_index
@@ -3075,6 +3404,18 @@ case OpCode::INCLOCAL:
         break;
     }
 
+    case OpCode::IMPORT_WILDCARD: {
+        llvm::Value* exports = vstack.back(); vstack.pop_back();
+        llvm::Function* fnImportWildcard = module.getFunction("havel_vm_import_wildcard");
+        if (!fnImportWildcard) {
+            fnImportWildcard = llvm::Function::Create(
+                llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_import_wildcard", &module);
+        }
+        B.CreateCall(fnImportWildcard, {vmArg, exports});
+        break;
+    }
+
     // Class operations
     case OpCode::STRUCT_NEW: {
         // Operands: type_name_id, arg_count
@@ -3448,7 +3789,7 @@ case OpCode::LENGTH: {
         }
         llvm::Value* mallocSize = llvm::ConstantInt::get(i64, argCount * sizeof(uint64_t));
         llvm::Value* argsArrayI8 = B.CreateCall(fnMalloc, {mallocSize});
-        llvm::Value* argsArray = B.CreatePointerCast(argsArrayI8, llvm::PointerType::getUnqual(llvm::ArrayType::get(i64, argCount)), "tail_args");
+        llvm::Value* argsArray = B.CreatePointerCast(argsArrayI8, llvm::PointerType::get(ctx, 0), "tail_args");
         for (uint32_t i = 0; i < argCount; ++i) {
             llvm::Value* arg = vstack.back(); vstack.pop_back();
             B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
@@ -3460,7 +3801,7 @@ case OpCode::LENGTH: {
 
         // Unregister GC roots before tail call
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
         B.CreateCall(fn_unreg, {frame});
 
         // Call havel_vm_tail_call which handles frame reuse
@@ -3494,7 +3835,7 @@ case OpCode::LENGTH: {
         llvm::Value* lb = B.CreateCall(fnLocalsBase, {vmArg});
         B.CreateCall(fnClose, {vmArg, lb});
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
-        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
+        if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
         B.CreateCall(fn_unreg, {frame});
         B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
         break;
@@ -3505,7 +3846,7 @@ case OpCode::LENGTH: {
         llvm::Function* fnTryEnter = module.getFunction("havel_vm_try_enter");
         if (!fnTryEnter) {
             fnTryEnter = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType), i32, i32, i32}, false),
+                llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0), i32, i32, i32}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_try_enter", &module);
         }
         B.CreateCall(fnTryEnter, {frame,
@@ -3519,7 +3860,7 @@ case OpCode::LENGTH: {
         llvm::Function* fnTryExit = module.getFunction("havel_vm_try_exit");
         if (!fnTryExit) {
             fnTryExit = llvm::Function::Create(
-                llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+                llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_try_exit", &module);
         }
         B.CreateCall(fnTryExit, {frame});
@@ -3561,9 +3902,9 @@ case OpCode::LENGTH: {
             fnFindHandler = llvm::Function::Create(
                 llvm::FunctionType::get(
                     i32,
-                    {llvm::PointerType::getUnqual(frameType),
-                     llvm::PointerType::getUnqual(i32),
-                     llvm::PointerType::getUnqual(i32)},
+                    {llvm::PointerType::get(ctx, 0),
+                     llvm::PointerType::get(ctx, 0),
+                     llvm::PointerType::get(ctx, 0)},
                     false),
                 llvm::Function::ExternalLinkage, "havel_vm_try_find_throw_target", &module);
         }
@@ -4083,7 +4424,7 @@ if (B.GetInsertBlock()->getTerminator() == nullptr) {
     llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
     if (!fn_unreg) {
         fn_unreg = llvm::Function::Create(
-            llvm::FunctionType::get(voidT, {llvm::PointerType::getUnqual(frameType)}, false),
+            llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false),
             llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
     }
     B.CreateCall(fn_unreg, {frame});

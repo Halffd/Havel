@@ -808,11 +808,18 @@ for (const auto &stmt : program->body) {
         implDecl.traitName ? implDecl.traitName->symbol : "";
     std::string typeName =
         implDecl.typeName ? implDecl.typeName->symbol : "";
-    if (!traitName.empty() && !typeName.empty()) {
-      vm->registerProtocolImpl(traitName, typeName);
+      if (!traitName.empty() && !typeName.empty()) {
+        vm->registerProtocolImpl(traitName, typeName);
+      }
+    }
+    if (stmt->kind == ast::NodeType::StructDeclaration) {
+      const auto &structDecl =
+          static_cast<const ast::StructDeclaration &>(*stmt);
+      for (const auto &protoName : structDecl.protocolNames) {
+        vm->registerProtocolImpl(protoName, structDecl.name);
+      }
     }
   }
-}
   // Set up system object initializer to run after execute() initializes state
     if (options.system_object_initializer) {
         vm->setSystemObjectInitializer(options.system_object_initializer);

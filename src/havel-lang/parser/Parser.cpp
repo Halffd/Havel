@@ -406,10 +406,11 @@ case TokenType::Nullish:
         // Equality
         case TokenType::Equals:
         case TokenType::NotEquals:
-        case TokenType::Is:
-        case TokenType::Tilde:
-        case TokenType::Matches:
-        return 50;
+      case TokenType::Is:
+      case TokenType::Tilde:
+      case TokenType::Matches:
+      case TokenType::As:
+      return 50;
 
     // Membership (in / not in)
     case TokenType::In:
@@ -1563,12 +1564,19 @@ case TokenType::Tilde: {
             std::move(left), ast::BinaryOperator::Tilde, std::move(right));
     }
     case TokenType::Matches: {
-        auto right = parsePrattExpression(getRightBindingPower(token.type));
-        return std::make_unique<ast::BinaryExpression>(
-            std::move(left), ast::BinaryOperator::Matches, std::move(right));
-        }
+      auto right = parsePrattExpression(getRightBindingPower(token.type));
+      return std::make_unique<ast::BinaryExpression>(
+          std::move(left), ast::BinaryOperator::Matches, std::move(right));
+    }
+    case TokenType::As: {
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected type name after 'as'");
+      }
+      std::string targetType = advance().value;
+      return std::make_unique<ast::CastExpression>(std::move(left), targetType);
+    }
 
-        case TokenType::In: {
+    case TokenType::In: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return std::make_unique<ast::BinaryExpression>(
           std::move(left), ast::BinaryOperator::In, std::move(right));
@@ -3841,6 +3849,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
   }
   std::string structName = advance().value;
 
+  // Parse protocol conformance: struct Name : ProtocolName [, ProtocolName2]
+  std::vector<std::string> protocolNames;
+  if (at().type == havel::TokenType::Colon) {
+    advance(); // consume ':'
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected protocol name after ':'");
+    }
+    protocolNames.push_back(advance().value);
+    while (at().type == havel::TokenType::Comma) {
+      advance(); // consume ','
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected protocol name after ','");
+      }
+      protocolNames.push_back(advance().value);
+    }
+  }
+
   // Parse opening brace
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after struct name");
@@ -3859,7 +3884,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
   // Create struct definition with fields and methods
   ast::StructDefinition def(std::move(fields), std::move(methods));
 
-  return std::make_unique<ast::StructDeclaration>(structName, std::move(def));
+  return std::make_unique<ast::StructDeclaration>(structName, std::move(def),
+                                                   std::move(protocolNames));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {

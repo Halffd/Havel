@@ -2198,15 +2198,27 @@ struct TypeDeclaration : public Statement {
 struct StructDeclaration : public Statement {
   std::string name;
   StructDefinition definition;
+  std::vector<std::string> protocolNames;
 
-  StructDeclaration(const std::string &structName, StructDefinition def)
-      : name(structName), definition(std::move(def)) {
+  StructDeclaration(const std::string &structName, StructDefinition def,
+                    std::vector<std::string> protos = {})
+      : name(structName), definition(std::move(def)),
+        protocolNames(std::move(protos)) {
     kind = NodeType::StructDeclaration;
   }
 
   std::string toString() const override {
-    return "StructDeclaration{name: " + name +
-           ", definition: " + definition.toString() + "}";
+    std::string result = "StructDeclaration{name: " + name;
+    if (!protocolNames.empty()) {
+      result += ", protocols: [";
+      for (size_t i = 0; i < protocolNames.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += protocolNames[i];
+      }
+      result += "]";
+    }
+    result += ", definition: " + definition.toString() + "}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;

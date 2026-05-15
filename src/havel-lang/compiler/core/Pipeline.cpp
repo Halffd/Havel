@@ -3,6 +3,7 @@
 
 #include "ByteCompiler.hpp"
 #include "../vm/VM.hpp"
+#include "../semantic/TypeChecker.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 #include "../../utils/ErrorPrinter.hpp"
@@ -705,10 +706,30 @@ BytecodeSmokeResult runBytecodePipeline(
       }
     }
 
-ByteCompiler compiler;
-	BytecodeSmokeResult result;
-  std::unique_ptr<BytecodeChunk> chunk;
-  try {
+ TypeChecker typeChecker;
+ auto typeCheckResult = typeChecker.check(*program);
+ if (!typeCheckResult.errors.empty()) {
+     std::string allTypeErrors;
+     for (const auto &err : typeCheckResult.errors) {
+         allTypeErrors += "TypeError: " + err + "\n";
+         ::havel::errors::ErrorReporter::instance().error(
+             ::havel::errors::ErrorStage::Compiler, err);
+     }
+     if (!allTypeErrors.empty()) {
+         COMPILER_THROW(allTypeErrors);
+     }
+ }
+ for (const auto &warn : typeCheckResult.warnings) {
+     std::cerr << formatDiagnostic(
+         "TypeWarning", warn, options.compile_unit_name, source,
+         0, 0, 0, "") << std::endl;
+ }
+
+ ByteCompiler compiler;
+ compiler.setTypeCheckResult(std::move(typeCheckResult));
+ BytecodeSmokeResult result;
+ std::unique_ptr<BytecodeChunk> chunk;
+ try {
     chunk = compiler.compile(*program);
     if (!chunk) {
       COMPILER_THROW(
@@ -840,8 +861,9 @@ for (const auto &stmt : program->body) {
             }
         }
     }
- try {
- if (options.vm_override) {
+    try {
+        vm->setMaxInstructions(options.max_instructions);
+        if (options.vm_override) {
  auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
  vm->storeMainChunk(shared_chunk);
  result.return_value = vm->execute(*shared_chunk, entry_function);

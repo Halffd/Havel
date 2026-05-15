@@ -3206,21 +3206,25 @@ switch (binding->kind) {
             compileExpression(*binary.right);
             in_tail_position_ = saved_tail;
       emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-  } else if (binary.operator_ == ast::BinaryOperator::Is) {
-    // expr is ProtocolName -> PROT_CHECK
-    bool saved_tail = in_tail_position_;
-    in_tail_position_ = false;
-    compileExpression(*binary.left);
-    in_tail_position_ = saved_tail;
-    if (binary.right && binary.right->kind == ast::NodeType::Identifier) {
-      const auto &ident = static_cast<const ast::Identifier &>(*binary.right);
-      uint32_t sid = addStringConstant(ident.symbol);
-      emit(OpCode::PROT_CHECK, Value::makeStringValId(sid));
+} else if (binary.operator_ == ast::BinaryOperator::Is) {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        if (type_check_result_.provablyTrueIs.count(&expression) > 0) {
+            compileExpression(*binary.left);
+            emit(OpCode::POP);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+        } else if (binary.right && binary.right->kind == ast::NodeType::Identifier) {
+            compileExpression(*binary.left);
+            const auto &ident = static_cast<const ast::Identifier &>(*binary.right);
+            uint32_t sid = addStringConstant(ident.symbol);
+            emit(OpCode::PROT_CHECK, Value::makeStringValId(sid));
+        } else {
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            emit(OpCode::IS);
+        }
+        in_tail_position_ = saved_tail;
     } else {
-      compileExpression(*binary.right);
-      emit(OpCode::IS);
-    }
-  } else {
             if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
                 break;
             }
@@ -3234,16 +3238,20 @@ switch (binding->kind) {
       break;
   }
 
-  case ast::NodeType::CastExpression: {
-    const auto &cast = static_cast<const ast::CastExpression &>(expression);
-    bool saved_tail = in_tail_position_;
-    in_tail_position_ = false;
-    compileExpression(*cast.expr);
-    in_tail_position_ = saved_tail;
-    uint32_t sid = addStringConstant(cast.targetType);
-    emit(OpCode::PROT_CAST, Value::makeStringValId(sid));
-    break;
-  }
+case ast::NodeType::CastExpression: {
+      const auto &cast = static_cast<const ast::CastExpression &>(expression);
+      bool saved_tail = in_tail_position_;
+      in_tail_position_ = false;
+      compileExpression(*cast.expr);
+      in_tail_position_ = saved_tail;
+      if (type_check_result_.provablySafeCast.count(&cast)) {
+        // TypeChecker proved this cast always succeeds — skip PROT_CAST
+      } else {
+        uint32_t sid = addStringConstant(cast.targetType);
+        emit(OpCode::PROT_CAST, Value::makeStringValId(sid));
+      }
+      break;
+    }
 
   case ast::NodeType::RangeExpression: {
         const auto &range = static_cast<const ast::RangeExpression &>(expression);
@@ -6128,15 +6136,27 @@ std::optional<std::string> ByteCompiler::normalizeTypeAnnotation(
   if (type_name == "fn" || type_name == "function" || type_name == "closure") {
     return std::string("function");
   }
-  if (type_name == "class") {
-    return std::string("class");
-  }
-  if (type_name == "struct") {
-    return std::string("struct");
-  }
+    if (type_name == "class") {
+        return std::string("class");
+    }
+    if (type_name == "struct") {
+        return std::string("struct");
+    }
 
-// Custom nominal types are not enforceable yet in bytecode VM.
-return std::nullopt;
+    if (!type_check_result_.registry.empty()) {
+        for (const auto &[regName, info] : type_check_result_.registry) {
+            if (info.kind == TypeKind::Nominal || info.kind == TypeKind::Protocol) {
+                std::string lowered = regName;
+                for (char &ch : lowered)
+                    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                if (lowered == type_name) {
+                    return regName;
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
 }
 
 uint64_t ByteCompiler::typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const {
@@ -6186,17 +6206,44 @@ void ByteCompiler::emitTypeAssertionForLocal(
  emit(OpCode::EQ);
  };
 
-  if (normalized_expected == "number") {
-    emitTypeEq("int");
-    emitTypeEq("float");
-    emit(OpCode::OR);
-  } else if (normalized_expected == "function") {
-    emitTypeEq("function");
-    emitTypeEq("closure");
-    emit(OpCode::OR);
-  } else {
-    emitTypeEq(normalized_expected.c_str());
-  }
+    if (normalized_expected == "number") {
+        emitTypeEq("int");
+        emitTypeEq("float");
+        emit(OpCode::OR);
+    } else if (normalized_expected == "function") {
+        emitTypeEq("function");
+        emitTypeEq("closure");
+        emit(OpCode::OR);
+} else if (type_check_result_.registry.count(normalized_expected) > 0) {
+auto &info = type_check_result_.registry.at(normalized_expected);
+if (info.kind == TypeKind::Nominal) {
+const uint32_t type_fn = addStringConstant("type");
+emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_fn));
+emit(OpCode::LOAD_VAR, slot);
+emit(OpCode::CALL, Value(1));
+const uint32_t struct_id = addStringConstant("struct");
+emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(struct_id)));
+emit(OpCode::EQ);
+emit(OpCode::DUP);
+const uint32_t jmp = emitJump(OpCode::JUMP_IF_FALSE);
+{
+emit(OpCode::POP);
+const uint32_t prot_check_name = addStringConstant(normalized_expected);
+emit(OpCode::LOAD_VAR, slot);
+emit(OpCode::PROT_CHECK, Value::makeStringValId(prot_check_name));
+}
+emit(OpCode::AND);
+patchJump(jmp, current_function->instructions.size());
+        } else if (info.kind == TypeKind::Protocol) {
+            const uint32_t prot_check_name = addStringConstant(normalized_expected);
+            emit(OpCode::LOAD_VAR, slot);
+            emit(OpCode::PROT_CHECK, Value::makeStringValId(prot_check_name));
+        } else {
+            emitTypeEq(normalized_expected.c_str());
+        }
+    } else {
+        emitTypeEq(normalized_expected.c_str());
+    }
 
  const std::string message = "Type annotation mismatch for '" + label +
  "': expected " + normalized_expected;

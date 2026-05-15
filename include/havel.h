@@ -14,6 +14,9 @@ typedef struct HavelValue HavelValue;
 typedef int (*HavelCFunction)(HavelState*);
 typedef int (*HavelCFunctionWithCtx)(HavelState*, void* ctx);
 
+void*      havel_getuserdata(HavelState* H);
+void       havel_setuserdata(HavelState* H, void* data);
+
 // VM Runtime types (matches Value.hpp)
 #define HAVEL_TNIL       0   // isNull()
 #define HAVEL_TBOOLEAN    1   // isBool()
@@ -115,6 +118,8 @@ void havel_gc(HavelState* H, int what);
 
 int havel_loadstring(HavelState* H, const char* s, const char* name);
 int havel_loadfile(HavelState* H, const char* filename);
+
+int havel_call_named_function(HavelState* H, const char* name);
 
 void havel_require(HavelState* H, const char* name);
 void havel_register_cmodule(HavelState* H, const char* name,

@@ -270,10 +270,6 @@ const char* havel_tostring(HavelState* H, int idx) {
     int i = idx >= 0 ? idx : t + idx;
     if (i < 0 || i >= t) return "";
     const auto& v = H->stack[i];
-    if (H->vm) {
-        buf = H->vm->resolveStringKey(v);
-        return buf.c_str();
-    }
     if (v.isStringValId()) {
         auto it = H->strings.find(v.asStringValId());
         if (it != H->strings.end()) return it->second.c_str();
@@ -281,6 +277,10 @@ const char* havel_tostring(HavelState* H, int idx) {
     if (v.isStringId()) {
         auto it = H->strings.find(v.asStringId());
         if (it != H->strings.end()) return it->second.c_str();
+    }
+    if (H->vm) {
+        buf = H->vm->resolveStringKey(v);
+        return buf.c_str();
     }
     buf = v.toString();
     return buf.c_str();
@@ -541,6 +541,14 @@ int havel_loadstring(HavelState* H, const char* s, const char* name) {
     opts.compile_unit_name = unitName;
     opts.vm_override = H->vm.get();
     auto result = havel::compiler::runBytecodePipeline(s, "__main__", opts);
+    fprintf(stderr, "[SYNC] VM globals (%zu):", H->vm->globals.size());
+    for (const auto& kv : H->vm->globals) {
+        fprintf(stderr, " %s", kv.first.c_str());
+        if (H->globals.find(kv.first) == H->globals.end()) {
+            H->globals[kv.first] = kv.second;
+        }
+    }
+    fprintf(stderr, "\n");
     H->stack.push_back(result.return_value);
         return HAVEL_OK;
     } catch (const std::exception& e) {
@@ -947,3 +955,18 @@ void* havel_ffi_sym(HavelState* H, void* handle, const char* name) {
 }
 
 #endif // HAVE_LIBFFI
+
+// Call a function defined in the script by name, using the VM's stored main chunk
+int havel_call_named_function(HavelState* H, const char* name) {
+    if (!H || !H->vm || !name) return HAVEL_ERR;
+    try {
+        auto* chunk = H->vm->getMainChunk().get();
+        if (!chunk) { H->last_error = "no main chunk"; return HAVEL_ERR; }
+        auto result = H->vm->execute(*chunk, name);
+        H->stack.push_back(result);
+        return HAVEL_OK;
+    } catch (const std::exception& e) {
+        H->last_error = e.what();
+        return HAVEL_ERR;
+    }
+}

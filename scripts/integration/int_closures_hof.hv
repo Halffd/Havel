@@ -1,0 +1,125 @@
+// integration: closures and higher-order functions
+// covers: closure capture, transitive closure, counter factory, function composition,
+//         currying, partial application, map/filter/reduce, function as argument/return
+
+pass = 0
+fail = 0
+
+fn check(name, actual, expected) {
+  if actual == expected {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {name}: got {actual}, expected {expected}")
+  }
+}
+
+// 1. basic closure capture
+fn makeAdder(x) {
+  fn add(y) { return x + y }
+  return add
+}
+add5 = makeAdder(5)
+check("closure-capture", add5(10), 15)
+check("closure-capture-2", add5(100), 105)
+
+// 2. transitive closure (3 levels)
+fn outer() {
+  x = 41
+  fn middle() {
+    fn inner() { return x + 1 }
+    return inner
+  }
+  return middle()
+}
+f = outer()
+check("transitive-closure", f(), 42)
+
+// 3. counter factory with mutable upvalue
+fn makeCounter(seed) {
+  x = seed
+  fn next() {
+    x += 1
+    return x
+  }
+  return next
+}
+c1 = makeCounter(0)
+c2 = makeCounter(100)
+check("counter-factory-1", c1(), 1)
+check("counter-factory-2", c1(), 2)
+check("counter-factory-3", c2(), 101)
+check("counter-factory-isolated", c1(), 3)
+
+// 4. function composition
+fn compose(f, g) {
+  fn composed(x) { return f(g(x)) }
+  return composed
+}
+fn doubleIt(n) { return n * 2 }
+fn addOne(n) { return n + 1 }
+doubleThenAdd = compose(addOne, doubleIt)
+check("compose", doubleThenAdd(5), 11)
+check("compose-2", doubleThenAdd(0), 1)
+
+// 5. currying
+fn curryAdd(a) {
+  fn curried(b) { return a + b }
+  return curried
+}
+add3 = curryAdd(3)
+check("curry", add3(7), 10)
+check("curry-2", curryAdd(100)(200), 300)
+
+// 6. function as argument (apply)
+fn apply(func, v) {
+  return func(v)
+}
+fn square(n) { return n * n }
+check("apply", apply(square, 6), 36)
+
+// 7. map/filter/reduce chaining
+nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+result = nums.filter((x) => x % 2 == 0).map((x) => x * x).reduce((a, b) => a + b, 0)
+check("hof-chain", result, 220)
+
+// 8. reduce with string concat
+words = ["h", "a", "v", "e", "l"]
+joined = words.reduce((a, b) => a + b, "")
+check("reduce-string", joined, "havel")
+
+// 9. lambda capturing local
+fn testCapture() {
+  offset = 10
+  mapped = [1, 2, 3].map((x) => x + offset)
+  return mapped[2]
+}
+check("lambda-capture-local", testCapture(), 13)
+
+// 10. first-class function in object
+fn greeter() { return "hi" }
+obj = {greet: greeter}
+check("fn-in-object", obj.greet(), "hi")
+
+// 11. function returning function returning function
+fn deep1() {
+  fn deep2() {
+    fn deep3() { return 99 }
+    return deep3
+  }
+  return deep2
+}
+check("deep-nesting", deep1()()(), 99)
+
+// 12. closure over loop variable (reference semantics - all share final v)
+fns = []
+i = 0
+while i < 5 {
+  v = i
+  fns.push((x) => v)
+  i += 1
+}
+check("loop-closure-ref", fns[3](), 4)
+
+print(f"closures-hof: {pass} passed, {fail} failed")
+exit(fail)

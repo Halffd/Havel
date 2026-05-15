@@ -1,0 +1,165 @@
+// integration: control flow and error handling
+// covers: if/else, match, try/catch/finally, throw, null coalescing,
+// for-in, while, do-while, loop/break, ternary
+
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// 1. if/else
+x = 10
+r1 = 0
+if x > 5 {
+  r1 = 1
+} else {
+  r1 = 2
+}
+check("if-basic", r1, 1)
+
+r2 = 0
+if x < 5 {
+  r2 = 1
+} else {
+  r2 = 2
+}
+check("if-else", r2, 2)
+
+// 2. if/else if/else
+y = 50
+r3 = 0
+if y < 10 {
+  r3 = 1
+} else if y < 100 {
+  r3 = 2
+} else {
+  r3 = 3
+}
+check("if-elseif", r3, 2)
+
+// 3. match
+mv = 3
+mr = match mv {
+  1 => "one"
+  2 => "two"
+  3 => "three"
+  _ => "other"
+}
+check("match-val", mr, "three")
+
+mr2 = match 99 {
+  1 => "one"
+  _ => "default"
+}
+check("match-default", mr2, "default")
+
+// 4. match with block body
+mr3 = match 1 {
+  1 => { 10 + 20 }
+  _ => { 0 }
+}
+check("match-block", mr3, 30)
+
+// 5. try/catch
+caught_msg = ""
+try {
+  throw "oops"
+} catch {
+  caught_msg = "caught"
+}
+check("try-catch-throw", caught_msg, "caught")
+
+// 6. try/catch/finally
+tc = 0
+tf = 0
+try {
+  tc = 1
+  throw "err"
+} catch {
+  tc += 10
+} finally {
+  tf = 100
+}
+check("try-catch-val", tc, 11)
+check("try-finally-val", tf, 100)
+
+// 7. try without throw
+no_err = 0
+try {
+  no_err = 1
+} catch {
+  no_err = 99
+}
+check("try-no-err", no_err, 1)
+
+// 8. null coalescing
+check("null-coal", null ?? 42, 42)
+check("null-coal-not", 5 ?? 42, 5)
+check("null-coal-zero", 0 ?? 42, 0)
+check("null-coal-false", false ?? true, false)
+
+// 9. while loop
+wi = 0
+wsum = 0
+while wi < 5 {
+  wsum += wi
+  wi += 1
+}
+check("while-sum", wsum, 10)
+
+// 10. do-while
+di = 0
+dsum = 0
+do {
+  dsum += di
+  di += 1
+} while di < 5
+check("do-while-sum", dsum, 10)
+
+// 11. do-while at least once
+dx = 100
+dcheck = 0
+do {
+  dcheck = 1
+} while dx < 0
+check("do-while-once", dcheck, 1)
+
+// 12. loop with break
+li = 0
+lsum = 0
+loop {
+  lsum += li
+  li += 1
+  if li >= 5 { break }
+}
+check("loop-break-sum", lsum, 10)
+
+// 13. for-in range
+fsum = 0
+for i in 0..4 {
+  fsum += i
+}
+check("for-range-sum", fsum, 10)
+
+// 14. for-in with array
+asum = 0
+for v in [10, 20, 30] {
+  asum += v
+}
+check("for-in-array", asum, 60)
+
+// 15. nested loops
+nsum = 0
+for i in 0..2 {
+  for j in 0..2 {
+    nsum += 1
+  }
+}
+check("nested-loops", nsum, 9)
+
+// 16. del operator
+obj = {a: 1, b: 2, c: 3}
+del obj.a
+check("del-key", #(obj.keys()), 2)
+
+print(f"control-flow-errors: {pass} passed, {fail} failed")
+exit(fail)

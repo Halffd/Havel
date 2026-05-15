@@ -714,6 +714,7 @@ set_target_properties(imgui_extension PROPERTIES
 
 # Qt6 extension (Qt6 Widgets) - for additional dynamic UI capabilities
 # Uses dynamic loading but main executable still links Qt for core functionality
+if(QT_BACKEND_AVAILABLE)
 add_library(qt_extension MODULE 
     src/extensions/qt/qt_extension.cpp
 )
@@ -739,6 +740,7 @@ set_target_properties(qt_extension PROPERTIES
 )
 target_compile_options(qt_extension PRIVATE -fno-lto)
 target_link_options(qt_extension PRIVATE -fno-lto)
+endif()  # QT_BACKEND_AVAILABLE
 
 # ==============================================================================
 # MAIN EXECUTABLE

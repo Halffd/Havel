@@ -2431,11 +2431,34 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         proto->set("__is_struct", Value::makeBool(true));
         proto->set("__fields", args[offset + 1]);
 
-        return Value::makeObjectId(protoRef.id);
-      });
+  return Value::makeObjectId(protoRef.id);
+  });
 
   registerHostFunction(
-      "struct.new", [this](const std::vector<Value> &args) {
+  "struct.method", [this](const std::vector<Value> &args) {
+    if (args.size() != 3 || !args[1].isStringValId() ||
+        !args[2].isFunctionObjId()) {
+      COMPILER_THROW("struct.method expects (structType, methodNameString, functionObj)");
+    }
+    if (!current_chunk) COMPILER_THROW("struct.method requires active chunk");
+
+    auto* structObj = heap_.object(args[0].asObjectId());
+    if (!structObj) return Value::makeNull();
+
+    const std::string &method_name = current_chunk->getString(args[1].asStringValId());
+    structObj->set(method_name, args[2]);
+
+    auto nameVal = structObj->get("__name");
+    if (nameVal && nameVal->isStringValId()) {
+      const std::string& structName = current_chunk->getString(nameVal->asStringValId());
+      setGlobal(structName + "." + method_name, args[2]);
+    }
+
+    return Value::makeNull();
+  });
+
+  registerHostFunction(
+  "struct.new", [this](const std::vector<Value> &args) {
         if (args.empty()) {
           COMPILER_THROW("struct.new(type, ...values) requires a type argument");
         }
@@ -2478,19 +2501,50 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         auto instanceRef = heap_.allocateObject();
         auto* instance = heap_.object(instanceRef.id);
         
-        instance->set("__struct", protoVal); // set prototype
+  instance->set("__struct", protoVal); // set prototype
 
-        const size_t provided = args.size() - 1 - offset;
-        for (size_t i = 0; i < fields->size(); ++i) {
-            std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
-            if (i < provided) {
-                instance->set(fieldName, args[i + 1 + offset]);
-            } else {
-                instance->set(fieldName, Value::makeNull());
-            }
-        }
-        
-        return Value::makeObjectId(instanceRef.id);
+  // Initialize fields from positional arguments (fallback if no init method)
+  const size_t provided = args.size() - 1 - offset;
+
+  // Look for init method on prototype (like class.new does)
+  Value initMethodVal = Value::makeNull();
+  auto* currentProto = proto;
+  while (currentProto) {
+    auto val = currentProto->get("init");
+    if (val) {
+      initMethodVal = *val;
+      break;
+    }
+    auto parentVal = currentProto->get("__parent");
+    if (parentVal && parentVal->isObjectId()) {
+      currentProto = heap_.object(parentVal->asObjectId());
+    } else {
+      break;
+    }
+  }
+
+  if (!initMethodVal.isNull()) {
+    // Call init method with instance as first arg
+    std::vector<Value> ctor_args;
+    ctor_args.reserve(args.size());
+    ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+    for (size_t i = offset + 1; i < args.size(); ++i) {
+      ctor_args.push_back(args[i]);
+    }
+    (void)call(initMethodVal, ctor_args);
+  } else {
+    // No init method: set fields from positional arguments
+    for (size_t i = 0; i < fields->size(); ++i) {
+      std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
+      if (i < provided) {
+        instance->set(fieldName, args[i + 1 + offset]);
+      } else {
+        instance->set(fieldName, Value::makeNull());
+      }
+    }
+  }
+
+  return Value::makeObjectId(instanceRef.id);
       });
 
   // struct.get(instance, field_name)
@@ -6027,37 +6081,39 @@ case OpCode::TAIL_CALL: {
       }
     }
 
-    // 3. Check __class prototype for class methods
-    if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
-      auto *classProto = heap_.object(receiver.asObjectId());
-      if (classProto) {
-        auto *classVal = classProto->get("__class");
-        if (classVal && classVal->isObjectId()) {
-          classProto = heap_.object(classVal->asObjectId());
-        }
-      }
+// 3. Check __class/__struct prototype for class/struct methods
+if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
+auto *classProto = heap_.object(receiver.asObjectId());
+if (classProto) {
+auto *classVal = classProto->get("__class");
+if (!classVal) classVal = classProto->get("__struct");
+if (classVal && classVal->isObjectId()) {
+classProto = heap_.object(classVal->asObjectId());
+} else {
+classProto = nullptr;
+}
+}
 
-      while (classProto) {
-        auto *methodVal = classProto->get(method_name);
-        if (methodVal) {
-          if (methodVal->isHostFuncId()) {
-            host_func_idx = methodVal->asHostFuncId();
-            found_host = true;
-            break;
-          } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
-            vm_func = *methodVal;
-            break;
-          }
-        }
-        // Check parent class
-        auto *parentVal = classProto->get("__parent");
-        if (parentVal && parentVal->isObjectId()) {
-          classProto = heap_.object(parentVal->asObjectId());
-        } else {
-          break;
-        }
-      }
-    }
+while (classProto) {
+auto *methodVal = classProto->get(method_name);
+if (methodVal) {
+if (methodVal->isHostFuncId()) {
+host_func_idx = methodVal->asHostFuncId();
+found_host = true;
+break;
+} else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
+vm_func = *methodVal;
+break;
+}
+}
+auto *parentVal = classProto->get("__parent");
+if (parentVal && parentVal->isObjectId()) {
+classProto = heap_.object(parentVal->asObjectId());
+} else {
+break;
+}
+}
+}
 
     if (!found_host && vm_func.isNull()) {
       // Pop args and receiver before pushing null result

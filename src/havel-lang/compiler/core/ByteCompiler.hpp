@@ -104,9 +104,12 @@ void optimizeJumps();  // Jump threading optimization
   void compileFunction(const ast::FunctionDeclaration &function);
   void compileLambda(const ast::LambdaExpression &lambda);
   void compileClassMethod(const std::string &class_name,
-                          const ast::ClassMethodDef &method,
-                          const std::vector<ast::ClassFieldDef> &fields,
-                          const std::string &parent_class_name);
+  const ast::ClassMethodDef &method,
+  const std::vector<ast::ClassFieldDef> &fields,
+  const std::string &parent_class_name);
+  void compileStructMethod(const std::string &struct_name,
+  const ast::StructMethodDef &method,
+  const std::vector<ast::StructFieldDef> &fields);
   void compileParameterPattern(const ast::Expression &pattern,
                                uint32_t paramIndex);
   void compileParameterPatternValue(const ast::Expression &pattern);
@@ -193,7 +196,9 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
       function_indices_by_node_;
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>
-      class_method_indices_by_node_;
+  class_method_indices_by_node_;
+  std::unordered_map<const ast::StructMethodDef *, uint32_t>
+  struct_method_indices_by_node_;
   std::unordered_map<const ast::LambdaExpression *, uint32_t>
       lambda_indices_by_node_;
   std::optional<uint32_t> current_function_slot_;

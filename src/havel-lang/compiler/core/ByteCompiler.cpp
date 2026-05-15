@@ -132,6 +132,7 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   compiled_functions.clear();
   function_indices_by_node_.clear();
   class_method_indices_by_node_.clear();
+  struct_method_indices_by_node_.clear();
   lambda_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
@@ -175,11 +176,18 @@ ByteCompiler::compileImpl(const ast::Program &program) {
       }
     }
     if (!fnDecl) {
-      if (statement && statement->kind == ast::NodeType::StructDeclaration) {
-        const auto &decl =
-            static_cast<const ast::StructDeclaration &>(*statement);
-        top_level_struct_names_.insert(decl.name);
-      }
+        if (statement && statement->kind == ast::NodeType::StructDeclaration) {
+          const auto &decl =
+              static_cast<const ast::StructDeclaration &>(*statement);
+          top_level_struct_names_.insert(decl.name);
+          for (const auto &method : decl.definition.methods) {
+            if (!method) {
+              continue;
+            }
+            struct_method_indices_by_node_[method.get()] =
+                next_function_index++;
+          }
+        }
       if (statement && statement->kind == ast::NodeType::ClassDeclaration) {
         const auto &decl =
             static_cast<const ast::ClassDeclaration &>(*statement);
@@ -267,6 +275,24 @@ function_indices_by_node_[method.get()] = next_function_index++;
       }
       compileClassMethod(class_decl.name, *method, class_decl.definition.fields,
                          class_decl.parentName);
+    }
+  }
+
+  for (const auto &statement : program.body) {
+    if (!statement) {
+      continue;
+    }
+    if (statement->kind != ast::NodeType::StructDeclaration) {
+      continue;
+    }
+    const auto &struct_decl =
+        static_cast<const ast::StructDeclaration &>(*statement);
+    for (const auto &method : struct_decl.definition.methods) {
+      if (!method) {
+        continue;
+      }
+      compileStructMethod(struct_decl.name, *method,
+                          struct_decl.definition.fields);
     }
   }
 
@@ -1012,6 +1038,141 @@ void ByteCompiler::compileClassMethod(
 
   current_class_name_ = prev_class_name;
   current_parent_class_name_ = prev_parent_name;
+  local_slot_offset_ = 0;
+  leaveFunction();
+}
+
+void ByteCompiler::compileStructMethod(
+    const std::string &struct_name, const ast::StructMethodDef &method,
+    const std::vector<ast::StructFieldDef> &fields) {
+  auto index_it = struct_method_indices_by_node_.find(&method);
+  if (index_it == struct_method_indices_by_node_.end()) {
+    COMPILER_THROW("Missing function index for struct method: " + method.name);
+  }
+
+  // Struct instance methods always have self at slot 0
+  const uint32_t param_count =
+      static_cast<uint32_t>(method.parameters.size() + 1);
+
+  // Compute max slot
+  uint32_t max_slot = param_count;
+  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
+    uint32_t adjusted_slot = slot + 1;
+    if (adjusted_slot >= max_slot) {
+      max_slot = adjusted_slot + 1;
+    }
+  }
+
+  // Collect parameter names
+  std::vector<std::string> param_names;
+  param_names.reserve(method.parameters.size() + 1);
+  param_names.push_back("self");
+  for (const auto &param : method.parameters) {
+    if (param && param->pattern) {
+      param_names.push_back(extractParamName(*param));
+    } else {
+      param_names.push_back("_");
+    }
+  }
+
+  BytecodeFunction bf(struct_name + "." + method.name, param_count, max_slot);
+  bf.param_names = std::move(param_names);
+  bf.source_line = method.line;
+
+  enterFunction(std::move(bf), index_it->second);
+  next_local_index = max_slot;
+
+  // Instance method: Store self (slot 0) into global "this" for @field access.
+  {
+    uint32_t this_id = addStringConstant("this");
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
+  }
+
+  // Mirror instance fields into globals for bare field references.
+  for (const auto &field : fields) {
+    uint32_t field_id = addStringConstant(field.name);
+    emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(field_id)));
+    emit(OpCode::OBJECT_GET);
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(field_id));
+  }
+
+  // Bind user parameters to slots 1..N (slot 0 is self)
+  for (size_t i = 0; i < method.parameters.size(); ++i) {
+    const auto &param = method.parameters[i];
+    if (!param || !param->pattern) {
+      COMPILER_THROW("Struct method parameter missing pattern");
+    }
+    const uint32_t method_param_slot = static_cast<uint32_t>(i + 1);
+    compileParameterPattern(*param->pattern, method_param_slot);
+    if (param->isVariadic) {
+      current_function->variadic_param_index = method_param_slot;
+    }
+  }
+
+  // Offset local variable slots by 1 (slot 0 = self)
+  local_slot_offset_ = 1;
+
+  const std::string prev_class_name = current_class_name_;
+  current_class_name_ = struct_name;
+
+  if (method.body) {
+    const auto &stmts = method.body->body;
+    if (!stmts.empty()) {
+      for (size_t i = 0; i < stmts.size() - 1; i++) {
+        if (stmts[i]) {
+          compileStatement(*stmts[i]);
+        }
+      }
+
+      const auto &lastStmt = stmts.back();
+      if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+        const auto &exprStmt =
+            static_cast<const ast::ExpressionStatement &>(*lastStmt);
+        if (exprStmt.expression) {
+          enterTailPosition();
+          clearTailCallFlag();
+          compileExpression(*exprStmt.expression);
+          exitTailPosition();
+          if (!wasTailCall()) {
+            emit(OpCode::RETURN);
+          }
+        } else {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          emit(OpCode::RETURN);
+        }
+      } else if (lastStmt &&
+                 lastStmt->kind == ast::NodeType::ReturnStatement) {
+        enterTailPosition();
+        compileStatement(*lastStmt);
+        exitTailPosition();
+      } else if (lastStmt) {
+        enterTailPosition();
+        clearTailCallFlag();
+        compileStatement(*lastStmt);
+        exitTailPosition();
+        if (!wasTailCall()) {
+          emit(OpCode::RETURN);
+        }
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::RETURN);
+      }
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+      emit(OpCode::RETURN);
+    }
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+  }
+
+  if (method.body) {
+    current_function->is_generator = functionContainsYield(*method.body);
+  }
+
+  current_class_name_ = prev_class_name;
   local_slot_offset_ = 0;
   leaveFunction();
 }
@@ -1784,14 +1945,39 @@ case ast::NodeType::TryExpression:
  { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
  emit(OpCode::ARRAY_PUSH);
  }
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-    // Store the type_id in a global variable so constructor calls work
-    {
-      uint32_t strId = addStringConstant(structDecl.name);
-      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-    }
-    break;
+  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+  // Store the type_id in a global variable so constructor calls work
+  {
+    uint32_t strId = addStringConstant(structDecl.name);
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
   }
+
+  // Register compiled methods on the struct type (mirrors class.method pattern)
+  for (const auto &method : structDecl.definition.methods) {
+    if (!method) {
+      continue;
+    }
+    auto method_index_it = struct_method_indices_by_node_.find(method.get());
+    if (method_index_it == struct_method_indices_by_node_.end()) {
+      COMPILER_THROW("Missing struct method index: " + structDecl.name +
+                     "." + method->name);
+    }
+    {
+      uint32_t register_sid = addStringConstant("struct.method");
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(register_sid));
+    }
+    uint32_t struct_name_sid = addStringConstant(structDecl.name);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(struct_name_sid));
+    uint32_t method_name_sid = addStringConstant(method->name);
+    emit(OpCode::LOAD_CONST,
+         addConstant(Value::makeStringValId(method_name_sid)));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
+                                  method_index_it->second)));
+    emit(OpCode::CALL, Value::makeInt(3));
+    emit(OpCode::POP);
+  }
+  break;
+}
 
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
@@ -2762,12 +2948,9 @@ break;
     if (!binding) {
       COMPILER_THROW("Missing lexical binding for identifier: " +
                                id.symbol);
-    }
+}
 
-  if (current_function && current_function->name == "Parser" && (binding->kind == ResolvedBindingKind::Global || binding->kind == ResolvedBindingKind::HostFunction)) {
-    std::cerr << "PARSER_GLOBAL_REF[" << current_function->instructions.size() << "] name=" << id.symbol << " kind=" << static_cast<int>(binding->kind) << "\n";
-  }
-  switch (binding->kind) {
+switch (binding->kind) {
   case ResolvedBindingKind::Local:
     emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
     break;

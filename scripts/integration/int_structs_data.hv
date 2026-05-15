@@ -1,7 +1,6 @@
 // integration: structs and data patterns
-// covers: struct construction, field access, struct in arrays/objects,
-// struct vs class, class methods, factory functions
-// note: struct methods return null (VM bug), so only class methods are tested
+// covers: struct construction, field access, struct methods, struct vs class,
+// class methods, factory functions, mutable state
 
 pass = 0
 fail = 0
@@ -16,8 +15,8 @@ struct Point {
   }
 }
 p = Point(3, 4)
-check("struct-field-x", p.x, 3)
-check("struct-field-y", p.y, 4)
+check("struct-ctor-x", p.x, 3)
+check("struct-ctor-y", p.y, 4)
 
 // 2. multiple struct instances independent
 p1 = Point(1, 2)
@@ -30,7 +29,57 @@ points = [Point(1, 2), Point(3, 4), Point(5, 6)]
 check("struct-array-x", points[1].x, 3)
 check("struct-array-y", points[2].y, 6)
 
-// 4. class with methods (struct methods are broken, use class)
+// 4. struct with methods
+struct SVec2 {
+  x, y
+  fn @(a, b) {
+    @x = a
+    @y = b
+  }
+  fn getX() { @x }
+  fn getY() { @y }
+  fn computeDistSq() { @x * @x + @y * @y }
+}
+sv = SVec2(3, 4)
+check("struct-method-x", sv.x, 3)
+check("struct-method-y", sv.y, 4)
+check("struct-method-dsq", sv.computeDistSq(), 25)
+check("struct-method-getter", sv.getX(), 3)
+
+// 5. struct with mutable state
+struct SCounter {
+  count
+  fn @() {
+    @count = 0
+  }
+  fn addOne() {
+    @count += 1
+  }
+  fn getCount() {
+    @count
+  }
+}
+sc = SCounter()
+sc.addOne()
+sc.addOne()
+sc.addOne()
+check("struct-mutable", sc.getCount(), 3)
+
+// 6. struct with method taking params
+struct SAdder {
+  base
+  fn @(n) {
+    @base = n
+  }
+fn addTo(n) {
+    @base + n
+}
+}
+sa = SAdder(10)
+check("struct-param-method", sa.addTo(5), 15)
+check("struct-param-method2", sa.addTo(20), 30)
+
+// 7. class with methods
 class Vec2 {
   x, y
   fn @(a, b) {
@@ -47,7 +96,7 @@ check("class-field-y", v.y, 4)
 check("class-method-dsq", v.computeDistSq(), 25)
 check("class-getter", v.getX(), 3)
 
-// 5. class with range check
+// 8. class with range check
 class RangeCheck {
   lo, hi
   fn @(a, b) {
@@ -64,7 +113,7 @@ check("range-contains-in", rc.checkContains(7), true)
 check("range-contains-out", rc.checkContains(3), false)
 check("range-size", rc.getSize(), 6)
 
-// 6. class with mutable state
+// 9. class with mutable state
 class MutableCounter {
   count
   fn @(n) {
@@ -83,7 +132,7 @@ mc.addOne()
 mc.addOne()
 check("class-mutable", mc.getCount(), 3)
 
-// 7. class with array field
+// 10. class with array field
 class IntStack {
   items
   fn @() {
@@ -106,7 +155,7 @@ stk.pushItem(30)
 check("class-stack-count", stk.itemCount(), 3)
 check("class-stack-sum", stk.itemSum(), 60)
 
-// 8. class with computed methods
+// 11. class with computed methods
 class Rect {
   w, h
   fn @(width, height) {
@@ -120,19 +169,19 @@ rect = Rect(5, 3)
 check("class-area", rect.computeArea(), 15)
 check("class-perimeter", rect.computePerimeter(), 16)
 
-// 9. factory function returning classes
+// 12. factory function returning classes
 fn makeRange(lo, hi) { RangeCheck(lo, hi) }
 r2 = makeRange(1, 100)
 check("factory-range-in", r2.checkContains(50), true)
 check("factory-range-out", r2.checkContains(200), false)
 
-// 10. array of class instances with map
+// 13. array of class instances with map
 rects = [Rect(2, 3), Rect(4, 5), Rect(1, 10)]
 areas = rects.map((r) => r.computeArea())
 check("class-array-map", areas, [6, 20, 10])
 check("class-array-map-sum", areas.sum(), 36)
 
-// 11. independent instances
+// 14. independent instances
 a1 = MutableCounter(0)
 a2 = MutableCounter(100)
 a1.addOne()
@@ -141,10 +190,19 @@ a2.addOne()
 check("instance-indep-1", a1.getCount(), 1)
 check("instance-indep-2", a2.getCount(), 102)
 
-// 12. struct field mutation
+// 15. struct field mutation
 sp = Point(1, 2)
 sp.x = 10
 check("struct-field-mut", sp.x, 10)
+
+// 16. struct independent instances with methods
+sc1 = SCounter()
+sc2 = SCounter()
+sc1.addOne()
+sc2.addOne()
+sc2.addOne()
+check("struct-indep-1", sc1.getCount(), 1)
+check("struct-indep-2", sc2.getCount(), 2)
 
 print(f"structs-data: {pass} passed, {fail} failed")
 exit(fail)

@@ -825,13 +825,34 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
-  case ast::NodeType::StructDeclaration: {
-    const auto &structDecl =
-        static_cast<const ast::StructDeclaration &>(statement);
-    // Register struct type name in current scope
-    // For now, just skip - full type system requires semantic analysis pass
-    break;
+case ast::NodeType::StructDeclaration: {
+  const auto &structDecl =
+      static_cast<const ast::StructDeclaration &>(statement);
+  beginScope();
+  for (const auto &field : structDecl.definition.fields) {
+    declareLocal(field.name, nullptr, false);
   }
+  for (const auto &method : structDecl.definition.methods) {
+    if (method) {
+      beginFunction(method.get());
+      for (const auto &param : method->parameters) {
+        if (param && param->pattern) {
+          collectPatternIdentifiers(*param->pattern);
+        }
+      }
+      if (method->body) {
+        for (const auto &stmt : method->body->body) {
+          if (stmt) {
+            resolveStatement(*stmt);
+          }
+        }
+      }
+      endFunction();
+    }
+  }
+  endScope();
+  break;
+}
 
   case ast::NodeType::EnumDeclaration: {
     const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);

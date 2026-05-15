@@ -342,12 +342,12 @@ fn Parser(tokenList):
         else:
             error("Expected " + ttype + " but got " + t.type, t.line, t.col)
 
-fn expectValue(ttype, expectedVal):
-	t = current()
-	if t.type == ttype and t.value == expectedVal:
-		advance()
-	else:
-		error("Expected " + ttype + " '" + expectedVal + "' but got " + t.type, t.line, t.col)
+    fn expectValue(ttype, expectedVal):
+        t = current()
+        if t.type == ttype and t.value == expectedVal:
+            advance()
+        else:
+            error("Expected " + ttype + " '" + expectedVal + "' but got " + t.type, t.line, t.col)
 
     // --- Newline skipping ---
     fn skipNewlines():
@@ -1284,7 +1284,7 @@ fn expectValue(ttype, expectedVal):
 
         // Check if object: identifier/string/number followed by colon
         isObject = false
-	isObjKeyType = (nextTok.type == "Identifier" or nextTok.type == "String" or nextTok.type == "MultilineString" or nextTok.type == "Number" or isKeywordIdent(nextTok.type))
+        isObjKeyType = (nextTok.type == "Identifier" or nextTok.type == "String" or nextTok.type == "MultilineString" or nextTok.type == "Number" or isKeywordIdent(nextTok.type))
 
         if isObjKeyType:
             colonLook = lookahead + 1
@@ -1297,12 +1297,12 @@ fn expectValue(ttype, expectedVal):
             return parseObjectLiteral(false)
 
         // Check for set literal: {expr, ...}
-	couldBeSet = (nextTok.type == "Identifier" or nextTok.type == "String" or nextTok.type == "MultilineString" or nextTok.type == "RegexString" or nextTok.type == "Number" or nextTok.type == "OpenBracket" or nextTok.type == "OpenParen" or nextTok.type == "OpenBrace" or nextTok.type == "Minus" or nextTok.type == "Not" or nextTok.type == "Plus" or nextTok.type == "Length" or nextTok.type == "True" or nextTok.type == "False" or nextTok.type == "Null")
+        couldBeSet = (nextTok.type == "Identifier" or nextTok.type == "String" or nextTok.type == "MultilineString" or nextTok.type == "RegexString" or nextTok.type == "Number" or nextTok.type == "OpenBracket" or nextTok.type == "OpenParen" or nextTok.type == "OpenBrace" or nextTok.type == "Minus" or nextTok.type == "Not" or nextTok.type == "Plus" or nextTok.type == "Length" or nextTok.type == "True" or nextTok.type == "False" or nextTok.type == "Null")
 
         if couldBeSet:
             // Look ahead for comma
             setLook = lookahead + 1
-	while setLook < tokens.len and at(setLook).type != "Comma" and at(setLook).type != "Semicolon" and at(setLook).type != "CloseBrace" and at(setLook).type != "NewLine":
+        while setLook < tokens.len and at(setLook).type != "Comma" and at(setLook).type != "Semicolon" and at(setLook).type != "CloseBrace" and at(setLook).type != "NewLine":
                 setLook = setLook + 1
 
             if at(setLook).type == "Comma":
@@ -1725,7 +1725,7 @@ fn expectValue(ttype, expectedVal):
 
         value = null
         // Return value is optional — check if next token can start expression
-	if canStartExpr(current().type) or (current().type == "Not" and isNotIn()) or current().type == "Minus" or current().type == "Plus":
+        if canStartExpr(current().type) or (current().type == "Not" and isNotIn()) or current().type == "Minus" or current().type == "Plus":
             value = parseExpr(0)
 
         ReturnStatement(value, l, c)

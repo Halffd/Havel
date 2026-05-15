@@ -1226,11 +1226,10 @@ Value VM::callHostFunction(const Value &fn,
     }
     const std::string &name = host_function_names_[host_func_idx];
     auto it = host_functions.find(name);
-        if (it == host_functions.end()) {
-            COMPILER_THROW("Host function not found: " + name);
-        }
-        Value result = it->second(args);
-        return result;
+    if (it == host_functions.end()) {
+      COMPILER_THROW("Host function not found: " + name);
+    }
+    return it->second(args);
   }
   return Value::makeNull();
 }
@@ -5387,7 +5386,7 @@ void VM::execLogicalOp(OpCode opcode) {
 }
 
 void VM::execNegate() {
-	Value value = popStack();
+        Value value = popStack();
 
 	// Record feedback
 	auto &frame = currentFrame();
@@ -5494,7 +5493,7 @@ case OpCode::STORE_GLOBAL: {
         } else {
             name = "<unknown:" + std::to_string(strIndex) + ">";
         }
-        Value value = popStack();
+            Value value = popStack();
 
         if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
@@ -5547,13 +5546,13 @@ case OpCode::STORE_GLOBAL: {
 
     pushStack(value);
     break;
-  }
+    }
 
-case OpCode::STORE_VAR: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value value = popStack();
+    case OpCode::STORE_VAR: {
+            uint32_t var_index = instruction.operands[0].asInt();
+            uint32_t abs = this->toAbsoluteLocal(var_index);
+            this->ensureLocalIndex(abs);
+            Value value = popStack();
 
         if (immutable_locals_.count(abs)) {
             COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));

@@ -435,14 +435,11 @@ if (!current_function) {
 COMPILER_THROW(
 "Attempted to emit bytecode without active function");
 }
-if (false && current_function->name == "Parser" && current_function->instructions.size() < 600) {
-std::cerr << "EMIT_P[" << current_function->instructions.size() << "]:" << static_cast<int>(op) << "\n";
-}
-current_function->instructions.emplace_back(op, std::move(operands));
-  current_function->instruction_locations.push_back(
-      current_source_location_.value_or(SourceLocation{}));
-  auto &instr = current_function->instructions.back();
-  instr.location = current_source_location_;
+	current_function->instructions.emplace_back(op, std::move(operands));
+	current_function->instruction_locations.push_back(
+			current_source_location_.value_or(SourceLocation{}));
+	auto &instr = current_function->instructions.back();
+	instr.location = current_source_location_;
 }
 
 uint32_t ByteCompiler::addConstant(const Value &value) {
@@ -507,9 +504,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     COMPILER_THROW("Function declaration missing name");
   }
-  if (function.name->symbol == "disambiguateBrace") {
-    std::cerr << "COMPILE_FN disambiguateBrace current_function=" << (current_function ? current_function->name : "(null)") << " saved_depth=" << saved_functions_.size() << "\n";
-  }
+
 
     auto index_it = function_indices_by_node_.find(&function);
   if (index_it == function_indices_by_node_.end()) {
@@ -687,9 +682,9 @@ compileStatement(*stmts[i]);
   
   if (function.body) {
     current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
-}
+	}
 
-    leaveFunction();
+	leaveFunction();
 }
 
 void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
@@ -5978,8 +5973,8 @@ void ByteCompiler::reserveLocalSlot(uint32_t slot) {
 }
 
 void ByteCompiler::enterFunction(BytecodeFunction &&function,
-                                      std::optional<uint32_t> slot) {
-    if (current_function) {
+		std::optional<uint32_t> slot) {
+	if (current_function) {
     // Save current function state for nesting
     saved_functions_.push_back(
         std::make_pair(std::move(current_function), current_function_slot_));
@@ -5991,9 +5986,9 @@ void ByteCompiler::enterFunction(BytecodeFunction &&function,
 }
 
 void ByteCompiler::leaveFunction() {
-  if (!current_function) {
-    COMPILER_THROW("No active function to close");
-    }
+	if (!current_function) {
+		COMPILER_THROW("No active function to close");
+	}
 
     // Apply jump threading optimization
   optimizeJumps();

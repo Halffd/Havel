@@ -1,10 +1,9 @@
 // stress test: protocols — what works and what's broken
 // WORKING: prot declaration, impl ... for ... registration,
-//          impl method dispatch (no-param methods reading @field),
-//          multiple impl blocks on same class, marker protocols
-// BROKEN: impl methods with extra params (params are unbound → returns self),
-//         impl methods that write @field = value (writes self instead),
-//         is/as protocol operators (ByteCompiler never emits PROT_CHECK/PROT_CAST)
+// impl method dispatch (no-param methods reading @field),
+// impl methods with extra params, impl methods that write @field = value,
+// multiple impl blocks on same class, marker protocols
+// BROKEN: is/as protocol operators (ByteCompiler never emits PROT_CHECK/PROT_CAST)
 
 pass = 0
 fail = 0
@@ -164,9 +163,54 @@ check("box-volume", b.volume(), 60)
 check("box-measure", b.measure(), 60)
 check("box-save", b.save(), "box:3x4x5")
 
+// 8. Impl methods with extra params
+class Counter {
+  count
+  fn @(n) { @count = n }
+  fn getCount() { @count }
+}
+
+prot Addable {
+  fn addOne(x)
+  fn addMulti(x, y)
+}
+
+impl Addable for Counter {
+  fn addOne(x) { @count = @count + x }
+  fn addMulti(x, y) { @count = @count + x + y }
+}
+
+c = Counter(10)
+check("impl-param-init", c.getCount(), 10)
+c.addOne(5)
+check("impl-param-addOne", c.getCount(), 15)
+c.addMulti(3, 7)
+check("impl-param-addMulti", c.getCount(), 25)
+
+// 9. Impl methods that write @field
+prot Resizable {
+  fn resizeTo(nw, nh)
+  fn doubleW()
+}
+
+impl Resizable for Widget {
+  fn resizeTo(nw, nh) {
+    @w = nw
+    @h = nh
+  }
+  fn doubleW() {
+    @w = @w * 2
+  }
+}
+
+wid2 = Widget(5, 10)
+wid2.resizeTo(20, 30)
+check("impl-write-w", wid2.getWidth(), 20)
+check("impl-write-h", wid2.getHeight(), 30)
+wid2.doubleW()
+check("impl-write-double", wid2.getWidth(), 40)
+
 // KNOWN BUGS (documented, not tested):
-// - impl method with params: fn onUpdate(dt) { dt * 2 } → returns self, not 42
-// - impl method writing @field: fn resize(nw) { @w = nw } → assigns self to @w
 // - "s is Measurable" → "Undefined variable: 'Measurable'" — protocols not first-class values
 // - OpCode::IS does identity check (isNull), NOT protocol conformance
 // - OpCode::PROT_CHECK/PROT_CAST exist in VM but ByteCompiler never emits them

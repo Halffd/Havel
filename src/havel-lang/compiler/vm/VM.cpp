@@ -3684,15 +3684,24 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
-  while (frame_count_ > stop_frame_depth) {
-    // Periodically check for expired timers
-    if (timer_check_func_) {
-      instructions_since_timer_check_++;
-      if (instructions_since_timer_check_ >= TIMER_CHECK_INTERVAL) {
-        timer_check_func_();
-        instructions_since_timer_check_ = 0;
-      }
-    }
+    while (frame_count_ > stop_frame_depth) {
+        // Instruction limit check - prevents infinite loops
+        if (max_instructions_ > 0) {
+            executed_instructions_++;
+            if (executed_instructions_ > max_instructions_) {
+                throw std::runtime_error("VM instruction limit exceeded (" +
+                    std::to_string(max_instructions_) + ") - possible infinite loop");
+            }
+        }
+
+        // Periodically check for expired timers
+        if (timer_check_func_) {
+            instructions_since_timer_check_++;
+            if (instructions_since_timer_check_ >= TIMER_CHECK_INTERVAL) {
+                timer_check_func_();
+                instructions_since_timer_check_ = 0;
+            }
+        }
     
     // CRITICAL: Capture ALL frame data by value BEFORE any mutation!
     // doCall() may cause vector reallocation, invalidating all

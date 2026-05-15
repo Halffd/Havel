@@ -283,20 +283,21 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
 const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
     bool host_globals_registered_ = false;
-  size_t max_call_depth_ = 1024;
- size_t tail_call_depth_ = 0;
-  bool profiling_enabled_ = false;
-  std::array<uint64_t, 256> opcode_counts_{};
-  uint64_t executed_instructions_ = 0;
+    size_t max_call_depth_ = 1024;
+    size_t tail_call_depth_ = 0;
+    bool profiling_enabled_ = false;
+    std::array<uint64_t, 256> opcode_counts_{};
+    uint64_t executed_instructions_ = 0;
+    uint64_t max_instructions_ = 0; // 0 = no limit
 
-  // System object initializer - called after registerDefaultHostGlobals()
-  using SystemObjectInitializer = std::function<void(VM *)>;
-  SystemObjectInitializer system_object_initializer_;
-  
-  // Timer check function - called periodically during execution
-  TimerCheckFunction timer_check_func_;
-  size_t instructions_since_timer_check_ = 0;
-  static constexpr size_t TIMER_CHECK_INTERVAL = 1000;  // Check every 1000 instructions
+    // System object initializer - called after registerDefaultHostGlobals()
+    using SystemObjectInitializer = std::function<void(VM *)>;
+    SystemObjectInitializer system_object_initializer_;
+
+    // Timer check function - called periodically during execution
+    TimerCheckFunction timer_check_func_;
+    size_t instructions_since_timer_check_ = 0;
+    static constexpr size_t TIMER_CHECK_INTERVAL = 1000; // Check every 1000 instructions
 
   template <typename T> T getValue(const Value &value);
  std::string toStringInternal(const Value &value,
@@ -637,11 +638,13 @@ public:
   }
 
   void setMaxCallDepth(size_t value);
-  void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
-  uint64_t executedInstructionCount() const { return executed_instructions_; }
-  uint64_t opcodeCount(OpCode opcode) const {
-    return opcode_counts_[static_cast<uint8_t>(opcode)];
-  }
+    void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
+    uint64_t executedInstructionCount() const { return executed_instructions_; }
+    void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
+    uint64_t maxInstructions() const { return max_instructions_; }
+    uint64_t opcodeCount(OpCode opcode) const {
+        return opcode_counts_[static_cast<uint8_t>(opcode)];
+    }
 
   void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
   void runGarbageCollection() { collectGarbage(); }

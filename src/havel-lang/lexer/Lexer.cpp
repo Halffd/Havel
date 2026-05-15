@@ -140,14 +140,16 @@ char Lexer::advance() {
   if (isAtEnd())
     return '\0';
 
-  char current = source[position++];
+    char current = source[position++];
 
-  if (current == '\n') {
-    line++;
-    column = 1;
-  } else {
-    column++;
-  }
+    if (current == '\n') {
+        line++;
+        column = 1;
+    } else if (current == '\t') {
+        column = ((column + 7) / 8) * 8 + 1;
+    } else {
+        column++;
+    }
 
   return current;
 }

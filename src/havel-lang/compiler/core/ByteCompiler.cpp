@@ -679,20 +679,18 @@ if (param->defaultValue.has_value()) {
     }
   }
 
-if (function.body) {
-// Compile all statements except the last
-const auto &stmts = function.body->body;
-if (!stmts.empty()) {
-// Compile all but last statement normally (not in tail position)
-for (size_t i = 0; i < stmts.size() - 1; i++) {
+  if (function.body) {
+    // Compile all statements except the last
+    const auto &stmts = function.body->body;
+    if (!stmts.empty()) {
+      // Compile all but last statement normally (not in tail position)
+      for (size_t i = 0; i < stmts.size() - 1; i++) {
         compileStatement(*stmts[i]);
-}
-}
-    }
+      }
 
-    // Last statement: if it's an expression statement, return its value
-    // (Rust-like implicit return)
-    const auto &lastStmt = stmts.back();
+      // Last statement: if it's an expression statement, return its value
+      // (Rust-like implicit return)
+      const auto &lastStmt = stmts.back();
     if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
       const auto &exprStmt =
           static_cast<const ast::ExpressionStatement &>(*lastStmt);
@@ -735,8 +733,9 @@ for (size_t i = 0; i < stmts.size() - 1; i++) {
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }
-  
-  
+  }
+
+
 if (function.body) {
 current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);
 }

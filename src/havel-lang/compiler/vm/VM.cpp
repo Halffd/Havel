@@ -370,65 +370,92 @@ return "<struct " + structName + ">";
 
 // Type conversion helpers
 int64_t VM::toInt(const Value &value) const {
-  if (value.isInt()) {
-    return value.asInt();
-  }
-  if (value.isDouble()) {
-    return static_cast<int64_t>(value.asDouble());
-  }
-  if (value.isBool()) {
-    return value.asBool() ? 1 : 0;
-  }
-  if (value.isStringValId()) {
-    if (current_chunk) {
-      try {
-        return std::stoll(current_chunk->getString(value.asStringValId()));
-      } catch (...) {
-        return 0;
-      }
+    if (value.isInt()) {
+        return value.asInt();
     }
-  }
-  return 0;
+    if (value.isDouble()) {
+        return static_cast<int64_t>(value.asDouble());
+    }
+    if (value.isBool()) {
+        return value.asBool() ? 1 : 0;
+    }
+    if (value.isStringValId()) {
+        if (current_chunk) {
+            try {
+                return std::stoll(current_chunk->getString(value.asStringValId()));
+            } catch (...) {
+                return 0;
+            }
+        }
+    }
+    if (value.isStringId()) {
+        if (auto *s = heap_.string(value.asStringId())) {
+            try {
+                return std::stoll(*s);
+            } catch (...) {
+                return 0;
+            }
+        }
+    }
+    return 0;
 }
 
 double VM::toFloat(const Value &value) const {
-  if (value.isDouble()) {
-    return value.asDouble();
-  }
-  if (value.isInt()) {
-    return static_cast<double>(value.asInt());
-  }
-  if (value.isBool()) {
-    return value.asBool() ? 1.0 : 0.0;
-  }
-  if (value.isStringValId()) {
-    if (current_chunk) {
-      try {
-        return std::stod(current_chunk->getString(value.asStringValId()));
-      } catch (...) {
-        return 0.0;
-      }
+    if (value.isDouble()) {
+        return value.asDouble();
     }
-  }
-  return 0.0;
+    if (value.isInt()) {
+        return static_cast<double>(value.asInt());
+    }
+    if (value.isBool()) {
+        return value.asBool() ? 1.0 : 0.0;
+    }
+    if (value.isStringValId()) {
+        if (current_chunk) {
+            try {
+                return std::stod(current_chunk->getString(value.asStringValId()));
+            } catch (...) {
+                return 0.0;
+            }
+        }
+    }
+    if (value.isStringId()) {
+        if (auto *s = heap_.string(value.asStringId())) {
+            try {
+                return std::stod(*s);
+            } catch (...) {
+                return 0.0;
+            }
+        }
+    }
+    return 0.0;
 }
 
 bool VM::toBool(const Value &value) const {
-  if (value.isBool()) {
-    return value.asBool();
-  }
-  if (value.isInt()) {
-    return value.asInt() != 0;
-  }
-  if (value.isDouble()) {
-    return value.asDouble() != 0.0;
-  }
-  if (value.isStringValId()) {
-    if (current_chunk) {
-      return !current_chunk->getString(value.asStringValId()).empty();
+    if (value.isBool()) {
+        return value.asBool();
     }
-    return true; // nonempty string is truthy
-  }
+    if (value.isInt()) {
+        return value.asInt() != 0;
+    }
+    if (value.isDouble()) {
+        return value.asDouble() != 0.0;
+    }
+    if (value.isStringValId()) {
+        if (current_chunk) {
+            return !current_chunk->getString(value.asStringValId()).empty();
+        }
+        return true;
+    }
+    if (value.isStringId()) {
+        if (auto *s = heap_.string(value.asStringId())) {
+            return !s->empty();
+        }
+        return true;
+    }
+    if (value.isRegexValId()) {
+        return true;
+    }
   // Collections: JavaScript truthiness (all collections are truthy, even empty)
   if (value.isArrayId() || value.isObjectId() || value.isSetId()) {
     return true;
@@ -564,7 +591,25 @@ bool VM::valuesEqualDeep(
     return left.asFunctionObjId() == right.asFunctionObjId();
   }
     if (left.isHostFuncId() && right.isHostFuncId()) {
-      return left.asHostFuncId() == right.asHostFuncId();
+        return left.asHostFuncId() == right.asHostFuncId();
+    }
+
+    if (left.isEnumId() && right.isEnumId()) {
+        if (left.asEnumId() == right.asEnumId()) return true;
+        uint32_t lId = left.asEnumId();
+        uint32_t rId = right.asEnumId();
+        auto lIt = heap_.enums_.find(lId);
+        auto rIt = heap_.enums_.find(rId);
+        if (lIt == heap_.enums_.end() || rIt == heap_.enums_.end()) return false;
+        if (left.asEnumTypeId() != right.asEnumTypeId()) return false;
+        if (lIt->second.first != rIt->second.first) return false;
+        const auto &lPayload = lIt->second.second;
+        const auto &rPayload = rIt->second.second;
+        if (lPayload.size() != rPayload.size()) return false;
+        for (size_t i = 0; i < lPayload.size(); ++i) {
+            if (!valuesEqualDeep(lPayload[i], rPayload[i], visited_array_pairs, visited_object_pairs)) return false;
+        }
+        return true;
     }
 
     if (left.isSetId() && right.isSetId()) {
@@ -2462,22 +2507,24 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
     });
 
   // Struct operations (prototype-based)
-  registerHostFunction(
-      "struct.define", [this](const std::vector<Value> &args) {
-        // args: [self, name, fields] when called as method, or [name, fields] when direct
+registerHostFunction(
+        "struct.define", [this](const std::vector<Value> &args) {
         size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
         if (args.size() - offset < 2) COMPILER_THROW("struct.define requires name and fields");
         if (!current_chunk) COMPILER_THROW("struct.define requires active chunk");
 
         auto protoRef = heap_.allocateObject();
         auto* proto = heap_.object(protoRef.id);
-        
+
         proto->set("__name", Value::makeStringValId(args[offset].asStringValId()));
         proto->set("__is_struct", Value::makeBool(true));
         proto->set("__fields", args[offset + 1]);
+        if (args.size() - offset >= 3 && args[offset + 2].isArrayId()) {
+            proto->set("__defaults", args[offset + 2]);
+        }
 
-  return Value::makeObjectId(protoRef.id);
-  });
+        return Value::makeObjectId(protoRef.id);
+    });
 
   registerHostFunction(
   "struct.method", [this](const std::vector<Value> &args) {
@@ -2568,26 +2615,33 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
     }
   }
 
-  if (!initMethodVal.isNull()) {
-    // Call init method with instance as first arg
-    std::vector<Value> ctor_args;
-    ctor_args.reserve(args.size());
-    ctor_args.push_back(Value::makeObjectId(instanceRef.id));
-    for (size_t i = offset + 1; i < args.size(); ++i) {
-      ctor_args.push_back(args[i]);
+    if (!initMethodVal.isNull()) {
+        // Call init method with instance as first arg
+        std::vector<Value> ctor_args;
+        ctor_args.reserve(args.size());
+        ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+        for (size_t i = offset + 1; i < args.size(); ++i) {
+            ctor_args.push_back(args[i]);
+        }
+        (void)call(initMethodVal, ctor_args);
+    } else {
+        // No init method: set fields from positional arguments, falling back to defaults
+            GCHeap::ArrayEntry* defaultsArr = nullptr;
+            auto defaultsVal = proto->get("__defaults");
+            if (defaultsVal && defaultsVal->isArrayId()) {
+                defaultsArr = heap_.array(defaultsVal->asArrayId());
+            }
+            for (size_t i = 0; i < fields->size(); ++i) {
+                std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
+                if (i < provided) {
+                    instance->set(fieldName, args[i + 1 + offset]);
+                } else if (defaultsArr && i < defaultsArr->size() && !(*defaultsArr)[i].isNull()) {
+                    instance->set(fieldName, (*defaultsArr)[i]);
+                } else {
+                    instance->set(fieldName, Value::makeNull());
+                }
+            }
     }
-    (void)call(initMethodVal, ctor_args);
-  } else {
-    // No init method: set fields from positional arguments
-    for (size_t i = 0; i < fields->size(); ++i) {
-      std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
-      if (i < provided) {
-        instance->set(fieldName, args[i + 1 + offset]);
-      } else {
-        instance->set(fieldName, Value::makeNull());
-      }
-    }
-  }
 
   return Value::makeObjectId(instanceRef.id);
       });
@@ -2624,10 +2678,76 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         auto* instance = heap_.object(args[offset].asObjectId());
         std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
         instance->set(fieldName, args[offset + 2]);
-        return Value::makeNull();
-      });
+            return Value::makeNull();
+        });
 
-  // Class operations (prototype-based)
+        // Enum operations: enum.define(name, [variantNames], [payloadCounts])
+        // Registers the enum type and creates variant constructors as globals
+        registerHostFunction(
+        "enum.define", [this](const std::vector<Value> &args) {
+            if (!current_chunk) COMPILER_THROW("enum.define requires active chunk");
+            size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
+            if (args.size() - offset < 2) COMPILER_THROW("enum.define requires name and variants");
+
+            const std::string &enumName = current_chunk->getString(args[offset].asStringValId());
+
+            auto* variantsArr = heap_.array(args[offset + 1].asArrayId());
+            if (!variantsArr) COMPILER_THROW("enum.define variants must be an array");
+
+            std::vector<std::string> variantNames;
+            for (size_t i = 0; i < variantsArr->size(); ++i) {
+                variantNames.push_back(current_chunk->getString((*variantsArr)[i].asStringValId()));
+            }
+
+            uint32_t typeId = heap_.registerEnumType(enumName, variantNames);
+
+            auto enumObj = heap_.allocateObject();
+            auto* enumObjPtr = heap_.object(enumObj.id);
+            enumObjPtr->set("__name", Value::makeStringValId(args[offset].asStringValId()));
+            enumObjPtr->set("__is_enum", Value::makeBool(true));
+            enumObjPtr->set("__enum_type_id", Value::makeInt(static_cast<int64_t>(typeId)));
+
+            for (uint32_t tag = 0; tag < variantNames.size(); ++tag) {
+                const std::string &variantName = variantNames[tag];
+                uint32_t capturedTag = tag;
+                uint32_t capturedTypeId = typeId;
+                std::string fullName = enumName + "." + variantName;
+
+                bool hasPayload = (args.size() - offset > 2 && args[offset + 2].isArrayId())
+                    ? (heap_.array(args[offset + 2].asArrayId())->size() > tag &&
+                       (*heap_.array(args[offset + 2].asArrayId()))[tag].asInt() > 0)
+                    : false;
+
+                if (hasPayload) {
+                    registerHostFunction(fullName, 1, [this, capturedTypeId, capturedTag](const std::vector<Value> &a) {
+                        EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 1);
+                        if (!a.empty()) {
+                            auto it = heap_.enums_.find(ref.id);
+                            if (it != heap_.enums_.end() && !it->second.second.empty())
+                                it->second.second[0] = a[0];
+                        }
+                        return Value::makeEnumId(ref.id, capturedTypeId);
+                    });
+        } else {
+            Value singleton = [&]() -> Value {
+                EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 0);
+                return Value::makeEnumId(ref.id, capturedTypeId);
+            }();
+            registerHostFunction(fullName, 0, [this, singleton](const std::vector<Value> &) -> Value {
+                return singleton;
+            });
+            enumObjPtr->set(variantName, singleton);
+            continue;
+        }
+
+        uint32_t variantFuncIdx = getHostFunctionIndex(fullName);
+        enumObjPtr->set(variantName, Value::makeHostFuncId(variantFuncIdx));
+            }
+
+            return Value::makeObjectId(enumObj.id);
+        });
+
+        // Class operations (prototype-based)
   registerHostFunction(
       "class.define", [this](const std::vector<Value> &args) {
         if (!current_chunk) COMPILER_THROW("class.define requires active chunk");
@@ -4828,7 +4948,9 @@ case OpCode::ADD:
     } else if (left.isFunctionObjId() && right.isFunctionObjId()) {
       identical = left.asFunctionObjId() == right.asFunctionObjId();
     } else if (left.isHostFuncId() && right.isHostFuncId()) {
-      identical = left.asHostFuncId() == right.asHostFuncId();
+        identical = left.asHostFuncId() == right.asHostFuncId();
+    } else if (left.isEnumId() && right.isEnumId()) {
+        identical = left.asEnumId() == right.asEnumId();
     }
     pushStack(Value::makeBool(identical));
     return;

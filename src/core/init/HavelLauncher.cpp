@@ -321,6 +321,12 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       } else {
         cfg.linkLibs.push_back(argv[++i]);
       }
+    } else if (arg == "--profile") {
+      if (i + 1 >= argc) {
+        error("--profile requires one of: full, core");
+      } else {
+        cfg.profile = argv[++i];
+      }
     } else if (arg == "--full-aot") {
       cfg.fullAot = true;
       cfg.buildOnly = true;
@@ -628,6 +634,20 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
 int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 #ifdef HAVE_QT_EXTENSION
+  // Unify .hvc execution path with runScriptOnly.
+  std::vector<std::string> hvcFiles;
+  std::vector<std::string> hvFiles;
+  for (const auto &f : cfg.scriptFiles) {
+    if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc") {
+      hvcFiles.push_back(f);
+    } else {
+      hvFiles.push_back(f);
+    }
+  }
+  if (!hvcFiles.empty() && hvFiles.empty() && cfg.evalString.empty()) {
+    return runBytecodeFiles(cfg, hvcFiles);
+  }
+
   while (true) {
     std::string combinedCode;
     std::string combinedNames;
@@ -822,11 +842,19 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
     havel::compiler::VM tempVm;
     ctx.vm = &tempVm;
     auto bridge = havel::compiler::createHostBridge(ctx);
-    bridge->install();
-    havel::registerStdLibWithVM(*bridge);
-
     // Register host functions with VM
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
+    const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
+    bridge->install(
+        coreProfile ? havel::compiler::HostBridge::InstallProfile::Core
+                    : havel::compiler::HostBridge::InstallProfile::Full,
+        !coreProfile);
+    if (coreProfile) {
+      havel::registerPureStdLib(*vm);
+    } else {
+      havel::registerStdLibWithVM(*bridge);
+    }
+
     for (const auto& [name, fn] : bridge->options().host_functions) {
       vm->registerHostFunction(name, fn);
     }
@@ -1193,7 +1221,8 @@ std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
 	std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
 	std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
 	std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
-	std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+	std::cout << " --profile <name> AOT link profile: full|core\n";
 	std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
 	std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
 	std::cout << " --syntax <type> Assembly syntax: att|intel\n";
@@ -1607,7 +1636,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
 
     // Verify module
     if (llvm::verifyModule(*module, &llvm::errs())) {
-        error("LLVM IR verification failed");
+        std::string failPath = "/tmp/havel_aot_verify_fail.ll";
+        std::error_code ec;
+        llvm::raw_fd_ostream failOut(failPath, ec, llvm::sys::fs::OF_None);
+        if (!ec) {
+            module->print(failOut, nullptr);
+            error("LLVM IR verification failed (dumped to {})", failPath);
+        } else {
+            error("LLVM IR verification failed");
+        }
         return 1;
     }
 
@@ -1700,6 +1737,8 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             info("Object file written to: {}", nativeObjPath);
         }
 
+        const bool coreProfile = (cfg.profile == "core");
+
         if (cfg.emitBinary) {
             const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
             std::string soPath = aotOutput + shExt;
@@ -1711,7 +1750,9 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             } else {
                 linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
             }
-            appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            if (!coreProfile) {
+                appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            }
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
                 error("Failed to link native shared binary with command: {}", linkCmd);
@@ -1726,9 +1767,12 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             std::string stubPath = aotOutput + "_stub.cpp";
             {
                 std::ofstream stub(stubPath);
+                const std::string initSymbol = coreProfile
+                    ? "havel_vm_init_standalone_core"
+                    : "havel_vm_init_standalone";
                 stub << "#include <cstdint>\n"
                      << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
-                     << "extern \"C\" void* havel_vm_init_standalone(const char**, uint32_t);\n"
+                     << "extern \"C\" void* " << initSymbol << "(const char**, uint32_t);\n"
                      << "int main() {\n"
                      << "    const char* strings[] = {\n";
                 const auto& chunkStrings = chunk->getAllStrings();
@@ -1745,7 +1789,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                     stub << "        \"" << escaped << "\",\n";
                 }
                 stub << "    };\n"
-                     << "    void* vm = havel_vm_init_standalone(strings, " << chunkStrings.size() << ");\n"
+                     << "    void* vm = " << initSymbol << "(strings, " << chunkStrings.size() << ");\n"
                      << "    uint64_t dummy_args[1024];\n"
                      << "    for(int i=0; i<1024; ++i) dummy_args[i] = 0x7ffb000000000000ULL;\n"
                      << "    __main__(vm, dummy_args, 0);\n"
@@ -1763,7 +1807,11 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                     std::string libDir = std::filesystem::path(exePath).parent_path().string();
                     linkCmd += " -L\"" + libDir + "\"";
                 }
-                linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+                if (coreProfile) {
+                    linkCmd += " -lhavel_aot_core_shim -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+                } else {
+                    linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+                }
             }
             appendLinkLibraries(linkCmd, jit.linkedLibraries());
             int linkRc = std::system(linkCmd.c_str());

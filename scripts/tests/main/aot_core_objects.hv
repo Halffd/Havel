@@ -1,0 +1,12 @@
+print("aot core objects")
+
+obj = {"x": 1}
+obj["y"] = 2
+print(obj["x"])
+print(obj["y"])
+
+arr = [1, 2]
+arr.push(3)
+print(arr[0])
+print(arr[2])
+

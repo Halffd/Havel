@@ -679,49 +679,42 @@ if (param->defaultValue.has_value()) {
     }
   }
 
-  if (function.body) {
-    // Compile all statements except the last
-    const auto &stmts = function.body->body;
-    if (!stmts.empty()) {
-      // Compile all but last statement normally (not in tail position)
-      for (size_t i = 0; i < stmts.size() - 1; i++) {
-        compileStatement(*stmts[i]);
-      }
+ if (function.body) {
+ // Compile all statements except the last
+ const auto &stmts = function.body->body;
+ if (!stmts.empty()) {
+ // Compile all but last statement normally (not in tail position)
+ for (size_t i = 0; i < stmts.size() - 1; i++) {
+ compileStatement(*stmts[i]);
+ }
 
-      // Last statement: if it's an expression statement, return its value
-      // (Rust-like implicit return)
-      const auto &lastStmt = stmts.back();
-    if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
-      const auto &exprStmt =
-          static_cast<const ast::ExpressionStatement &>(*lastStmt);
-      if (exprStmt.expression) {
-        // TCO: Enter tail position for the last expression
+ // Last statement: if it's an expression statement, return its value
+ // (Rust-like implicit return)
+ const auto &lastStmt = stmts.back();
+ if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+ const auto &exprStmt =
+ static_cast<const ast::ExpressionStatement &>(*lastStmt);
+ if (exprStmt.expression) {
+ enterTailPosition();
+ clearTailCallFlag();
+ compileExpression(*exprStmt.expression);
+ exitTailPosition();
+ if (!wasTailCall()) emit(OpCode::RETURN);
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::RETURN);
+ }
+      } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
         enterTailPosition();
-        clearTailCallFlag();
-        compileExpression(*exprStmt.expression);
+        compileStatement(*lastStmt);
         exitTailPosition();
-        // TCO: Only emit RETURN if we didn't emit TAIL_CALL
-        if (!wasTailCall()) {
-          emit(OpCode::RETURN);
-        }
+      } else if (lastStmt) {
+        enterTailPosition();
+        compileStatement(*lastStmt);
+        exitTailPosition();
+        if (!wasTailCall()) emit(OpCode::RETURN);
       } else {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-        emit(OpCode::RETURN);
-      }
-    } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
-      // Last statement is an explicit return - compile with tail position
-      enterTailPosition();
-      compileStatement(*lastStmt);
-      exitTailPosition();
-    } else if (lastStmt) {
-      // Last statement is not an expression or return - compile in tail
-      // position and add implicit return
-      enterTailPosition();
-      compileStatement(*lastStmt);
-      exitTailPosition();
-      // Only emit RETURN if the statement didn't already return (via tail
-      // call branches)
-      if (!wasTailCall()) {
         emit(OpCode::RETURN);
       }
     } else {
@@ -729,7 +722,6 @@ if (param->defaultValue.has_value()) {
       emit(OpCode::RETURN);
     }
   } else {
-    // Empty function body
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
     emit(OpCode::RETURN);
   }

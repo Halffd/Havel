@@ -199,11 +199,12 @@ void HostBridge::initBridges() {
                                 {"automation", "1.0", true, false, ""});
 }
 
-void HostBridge::install(bool eagerBridgeInstall) {
+void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
+  const bool coreProfile = (profile == InstallProfile::Core);
   options_.host_functions.reserve(64);
   vm_setup_callbacks_.reserve(16);
 
-  if (eagerBridgeInstall) {
+  if (eagerBridgeInstall && !coreProfile) {
     // Default/full mode: install all bridge modules eagerly.
     ioBridge_->install(options_);
     systemBridge_->install(options_);
@@ -227,14 +228,14 @@ void HostBridge::install(bool eagerBridgeInstall) {
   // Setup dynamic window globals using existing WindowMonitor from
   // HotkeyManager This integrates window monitoring with bytecode VM without
   // creating duplicate instances
-  if (ctx_->windowMonitor && ctx_->vm) {
+  if (!coreProfile && ctx_->windowMonitor && ctx_->vm) {
     VM *vm = static_cast<VM *>(ctx_->vm);
     VMApi api(*vm);
     ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
   }
 
   // Create hotkey global object if hotkey module is loaded.
-  addVmSetup([this](VM &vm) {
+  if (!coreProfile) addVmSetup([this](VM &vm) {
     auto hotkeyObj = vm.createHostObject();
     if (vm.getHostFunctionIndex("hotkey.list") >= 0) {
       vm.setHostObjectField(
@@ -247,7 +248,7 @@ void HostBridge::install(bool eagerBridgeInstall) {
   // Install extension loading functions
   // Use raw 'this' pointer to avoid circular reference (HostBridge outlives VM
   // usage)
-  options_.host_functions["extension.load"] =
+  if (!coreProfile) options_.host_functions["extension.load"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isStringValId()) {
           return Value::makeBool(false);
@@ -255,7 +256,7 @@ void HostBridge::install(bool eagerBridgeInstall) {
         std::string name = args[0].toString();
         return Value(extensionLoader_->loadExtensionByName(name));
       };
-  options_.host_functions["extension.isLoaded"] =
+  if (!coreProfile) options_.host_functions["extension.isLoaded"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isStringValId()) {
           return Value::makeBool(false);
@@ -263,7 +264,7 @@ void HostBridge::install(bool eagerBridgeInstall) {
         std::string name = args[0].toString();
         return Value(extensionLoader_->isLoaded(name));
       };
-  options_.host_functions["extension.list"] =
+  if (!coreProfile) options_.host_functions["extension.list"] =
       [this](const std::vector<Value> &args) {
         (void)args;
         auto names = extensionLoader_->getLoadedExtensions();
@@ -278,7 +279,7 @@ void HostBridge::install(bool eagerBridgeInstall) {
         }
         return Value::makeArrayId(arr.id);
       };
-  options_.host_functions["extension.addSearchPath"] =
+  if (!coreProfile) options_.host_functions["extension.addSearchPath"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isStringValId()) {
           return Value::makeBool(false);
@@ -305,6 +306,12 @@ if (args.empty()) return Value::makeInt(0);
 auto *vm = static_cast<VM *>(ctx_->vm);
 return vm->execLengthOp(args[0]);
 };
+
+  if (coreProfile) {
+    // Core profile: keep host API lean.
+    // Only generic helpers required by pure language/runtime.
+    return;
+  }
 
   // Global eval() function - compile and execute code at runtime
   // Note: eval is limited - it cannot call print() or other host functions

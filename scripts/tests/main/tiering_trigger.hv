@@ -1,0 +1,15 @@
+print("tiering trigger")
+
+fn hot(a, b) {
+  a + b
+}
+
+i = 0
+acc = 0
+while i < 5000 {
+  acc = hot(acc, 1)
+  i = i + 1
+}
+
+print(acc)
+

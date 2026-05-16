@@ -16,6 +16,7 @@
 #include <llvm/MC/TargetRegistry.h>
 
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <cctype>
 #include <fstream>
@@ -84,6 +85,9 @@ static constexpr uint64_t ARRAY_TAG_BITS   = QNAN | (EXT_TAG << 48) | (0x1ULL <<
 // ============================================================================
 // Native Bridge Helpers
 // ============================================================================
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC visibility push(default)
+#endif
 extern "C" {
 
 void havel_vm_throw_error(void* vm_ptr, const char* msg) {
@@ -1802,6 +1806,9 @@ uint64_t havel_vm_end_module(void* vm_ptr) {
 }
 
 } // extern "C"
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC visibility pop
+#endif
 
 // ============================================================================
 // BytecodeOrcJIT – implementation
@@ -2519,93 +2526,93 @@ else if (op == OpCode::INT_DIV) {
         return B.CreateBitCast(dRes, i64);
     }
 
-    // No AOT hint - use speculative optimization with runtime type checks
+    // No AOT hint - use speculative optimization with strict single-merge CFG.
     std::string pfx = "op" + std::to_string(ip) + "_";
-    llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
-    llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx+"chk_dbl", f);
-    llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx+"dbl", f);
-    llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx+"deopt", f);
-    llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
+    llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx + "int", f);
+    llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx + "chk_dbl", f);
+    llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx + "dbl", f);
+    llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx + "deopt", f);
+    llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx + "merge", f);
 
-    llvm::Value* bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
+    llvm::Value *bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
     B.CreateCondBr(bothInt, intBB, chkDblBB);
 
     B.SetInsertPoint(intBB);
     llvm::Value *lIv = unboxInt(left);
     llvm::Value *rIv = unboxInt(right);
     llvm::Value *iRes = nullptr;
-    llvm::Value *iBoxed = nullptr;
+    llvm::Value *intBoxed = nullptr;
     if (op == OpCode::ADD) iRes = B.CreateAdd(lIv, rIv);
     else if (op == OpCode::SUB) iRes = B.CreateSub(lIv, rIv);
     else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
-else if (op == OpCode::INT_DIV) iRes = B.CreateSDiv(lIv, rIv);
-  else if (op == OpCode::REMAINDER) iRes = B.CreateSRem(lIv, rIv);
-  else if (op == OpCode::DIV) {
-    llvm::Value* lD = B.CreateSIToFP(lIv, f64);
-    llvm::Value* rD = B.CreateSIToFP(rIv, f64);
-    llvm::Value* dRes = B.CreateFDiv(lD, rD);
-    iBoxed = B.CreateBitCast(dRes, i64);
-  }
-  else if (op == OpCode::MOD) {
-    llvm::Value* cRem = B.CreateSRem(lIv, rIv);
-    llvm::Value* signsDiffer = B.CreateICmpSLT(B.CreateXor(cRem, rIv), llvm::ConstantInt::get(i64, 0));
-    llvm::Value* adjusted = B.CreateAdd(cRem, rIv);
-    iRes = B.CreateSelect(signsDiffer, adjusted, cRem);
-  }
-    else iRes = B.CreateAdd(lIv, rIv); // Fallback
-    if (!iBoxed) iBoxed = boxInt(iRes);
-    auto* iExitBB = B.GetInsertBlock();
+    else if (op == OpCode::INT_DIV) iRes = B.CreateSDiv(lIv, rIv);
+    else if (op == OpCode::REMAINDER) iRes = B.CreateSRem(lIv, rIv);
+    else if (op == OpCode::DIV) {
+      llvm::Value *lD = B.CreateSIToFP(lIv, f64);
+      llvm::Value *rD = B.CreateSIToFP(rIv, f64);
+      llvm::Value *dRes = B.CreateFDiv(lD, rD);
+      intBoxed = B.CreateBitCast(dRes, i64);
+    } else if (op == OpCode::MOD) {
+      llvm::Value *cRem = B.CreateSRem(lIv, rIv);
+      llvm::Value *signsDiffer = B.CreateICmpSLT(B.CreateXor(cRem, rIv), llvm::ConstantInt::get(i64, 0));
+      llvm::Value *adjusted = B.CreateAdd(cRem, rIv);
+      iRes = B.CreateSelect(signsDiffer, adjusted, cRem);
+    } else iRes = B.CreateAdd(lIv, rIv);
+    if (!intBoxed) intBoxed = boxInt(iRes);
+    llvm::BasicBlock *intExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(chkDblBB);
-    llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
+    llvm::Value *bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
     B.CreateCondBr(bothDbl, dblBB, deoptBB);
 
     B.SetInsertPoint(dblBB);
     llvm::Value *lDv = B.CreateBitCast(left, f64);
     llvm::Value *rDv = B.CreateBitCast(right, f64);
-    llvm::Value *dBoxed = nullptr;
-if (op == OpCode::INT_DIV) {
-    llvm::Value* lI = B.CreateFPToSI(lDv, i64);
-    llvm::Value* rI = B.CreateFPToSI(rDv, i64);
-    llvm::Value* iRes2 = B.CreateSDiv(lI, rI);
-    dBoxed = boxInt(iRes2);
-  } else if (op == OpCode::REMAINDER) {
-    llvm::Value* lI = B.CreateFPToSI(lDv, i64);
-    llvm::Value* rI = B.CreateFPToSI(rDv, i64);
-    llvm::Value* iRes2 = B.CreateSRem(lI, rI);
-    dBoxed = boxInt(iRes2);
-  } else {
-        llvm::Value *dRes = nullptr;
-        if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
-        else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
-        else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
-        else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
-        else dRes = B.CreateFDiv(lDv, rDv);
-        dBoxed = B.CreateBitCast(dRes, i64);
+    llvm::Value *dblBoxed = nullptr;
+    if (op == OpCode::INT_DIV) {
+      llvm::Value *lI = B.CreateFPToSI(lDv, i64);
+      llvm::Value *rI = B.CreateFPToSI(rDv, i64);
+      llvm::Value *iRes2 = B.CreateSDiv(lI, rI);
+      dblBoxed = boxInt(iRes2);
+    } else if (op == OpCode::REMAINDER) {
+      llvm::Value *lI = B.CreateFPToSI(lDv, i64);
+      llvm::Value *rI = B.CreateFPToSI(rDv, i64);
+      llvm::Value *iRes2 = B.CreateSRem(lI, rI);
+      dblBoxed = boxInt(iRes2);
+    } else {
+      llvm::Value *dRes = nullptr;
+      if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
+      else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
+      else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
+      else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
+      else dRes = B.CreateFDiv(lDv, rDv);
+      dblBoxed = B.CreateBitCast(dRes, i64);
     }
-    auto* dExitBB = B.GetInsertBlock();
+    llvm::BasicBlock *dblExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(deoptBB);
     llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
-    if (!fn_deopt) fn_deopt = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false), llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
-
-    // Create global string constant for function name
-    llvm::Constant *funcNameStr = llvm::ConstantDataArray::getString(module.getContext(), func.name);
+    if (!fn_deopt) fn_deopt = llvm::Function::Create(
+        llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false),
+        llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
+    llvm::Constant *funcNameStr =
+        llvm::ConstantDataArray::getString(module.getContext(), func.name);
     llvm::GlobalVariable *gv = new llvm::GlobalVariable(
         module, funcNameStr->getType(), true,
         llvm::GlobalValue::PrivateLinkage, funcNameStr);
-    llvm::Value* funcNameConst = B.CreatePointerCast(gv, i8p);
-
+    llvm::Value *funcNameConst = B.CreatePointerCast(gv, i8p);
     B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
+    llvm::Value *slowBoxed = makeNull();
+    llvm::BasicBlock *slowExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(mergeBB);
     llvm::PHINode *phi = B.CreatePHI(i64, 3);
-    phi->addIncoming(iBoxed, iExitBB);
-    phi->addIncoming(dBoxed, dExitBB);
-    phi->addIncoming(makeNull(), deoptBB);
+    phi->addIncoming(intBoxed, intExitBB);
+    phi->addIncoming(dblBoxed, dblExitBB);
+    phi->addIncoming(slowBoxed, slowExitBB);
     return phi;
 };
 
@@ -2615,18 +2622,130 @@ if (op == OpCode::INT_DIV) {
     for (size_t ip = 0; ip <= func.instructions.size(); ++ip) {
         basicBlocks[ip] = llvm::BasicBlock::Create(ctx, "ip" + std::to_string(ip), f);
     }
+
+    std::unordered_map<llvm::BasicBlock*, size_t> blockToIp;
+    blockToIp.reserve(basicBlocks.size());
+    for (size_t ip = 0; ip < basicBlocks.size(); ++ip) {
+        blockToIp[basicBlocks[ip]] = ip;
+    }
+
+    // Static predecessor map from bytecode CFG.
+    std::vector<std::vector<size_t>> predecessors(basicBlocks.size());
+    auto addStaticEdge = [&](size_t from, size_t to) {
+        if (to >= basicBlocks.size()) return;
+        predecessors[to].push_back(from);
+    };
+    for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
+        const auto &instr = func.instructions[ip];
+        bool addsFallthrough = true;
+        if (instr.opcode == OpCode::JUMP) {
+            size_t target = instr.operands[0].asInt();
+            addStaticEdge(ip, (target < basicBlocks.size()) ? target : (ip + 1));
+            addsFallthrough = false;
+        } else if (instr.opcode == OpCode::JUMP_IF_FALSE ||
+                   instr.opcode == OpCode::JUMP_IF_TRUE ||
+                   instr.opcode == OpCode::JUMP_IF_NULL) {
+            size_t target = instr.operands[0].asInt();
+            addStaticEdge(ip, (target < basicBlocks.size()) ? target : (ip + 1));
+            addStaticEdge(ip, ip + 1);
+            addsFallthrough = false;
+        } else if (instr.opcode == OpCode::RETURN ||
+                   instr.opcode == OpCode::TAIL_CALL ||
+                   instr.opcode == OpCode::THROW) {
+            addsFallthrough = false;
+        }
+
+        if (addsFallthrough) {
+            addStaticEdge(ip, ip + 1);
+        }
+    }
+
+    struct IncomingStackState {
+        llvm::BasicBlock* pred = nullptr;
+        std::vector<llvm::Value*> stack;
+    };
+
+    std::vector<std::vector<IncomingStackState>> pendingIncoming(basicBlocks.size());
+    std::vector<std::vector<llvm::PHINode*>> entryStackPhis(basicBlocks.size());
+
+    auto addIncomingState = [&](size_t targetIp, llvm::BasicBlock* predBB,
+                                const std::vector<llvm::Value*>& stack) {
+        if (targetIp >= basicBlocks.size() || !predBB) return;
+
+        auto &phis = entryStackPhis[targetIp];
+        if (!phis.empty()) {
+            if (phis.size() != stack.size()) {
+                return;
+            }
+            for (size_t i = 0; i < phis.size(); ++i) {
+                phis[i]->addIncoming(stack[i], predBB);
+            }
+            return;
+        }
+
+        pendingIncoming[targetIp].push_back({predBB, stack});
+    };
+
+    auto resolveEntryStack = [&](size_t blockIp, llvm::BasicBlock* block) -> std::vector<llvm::Value*> {
+        auto &incoming = pendingIncoming[blockIp];
+        if (incoming.empty()) {
+            return {};
+        }
+
+        size_t depth = incoming.front().stack.size();
+        for (const auto &inc : incoming) {
+            if (inc.stack.size() != depth) {
+                depth = std::min(depth, inc.stack.size());
+            }
+        }
+
+        if (predecessors[blockIp].size() <= 1) {
+            std::vector<llvm::Value*> single = incoming.front().stack;
+            if (single.size() > depth) single.resize(depth);
+            return single;
+        }
+
+        auto &phis = entryStackPhis[blockIp];
+        if (phis.empty()) {
+            auto insertPt = block->begin();
+            B.SetInsertPoint(block, insertPt);
+            phis.reserve(depth);
+            for (size_t slot = 0; slot < depth; ++slot) {
+                auto *phi = B.CreatePHI(i64, static_cast<unsigned>(predecessors[blockIp].size()),
+                                        "stack_phi_" + std::to_string(blockIp) + "_" + std::to_string(slot));
+                phis.push_back(phi);
+            }
+            for (const auto &inc : incoming) {
+                if (inc.stack.size() < depth) continue;
+                for (size_t slot = 0; slot < depth; ++slot) {
+                    phis[slot]->addIncoming(inc.stack[slot], inc.pred);
+                }
+            }
+        }
+
+        std::vector<llvm::Value*> merged;
+        merged.reserve(phis.size());
+        for (auto *phi : phis) {
+            merged.push_back(phi);
+        }
+        return merged;
+    };
+
     B.CreateBr(basicBlocks[0]);
+    pendingIncoming[0].push_back({entryBB, {}});
 
     // Emit instructions with control flow.
     for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
         B.SetInsertPoint(basicBlocks[ip]);
         llvm::BasicBlock* instrBlock = basicBlocks[ip]; // Save the instruction block
 
-        // Skip if current block already has instructions (and thus may have terminator)
-        // Note: use empty() instead of getTerminator() due to LLVM internal state issues
-        if (!instrBlock->empty()) {
+        // Skip blocks that are already fully emitted.
+        if (instrBlock->getTerminator() != nullptr) {
             continue;
         }
+
+        vstack = resolveEntryStack(ip, instrBlock);
+        B.SetInsertPoint(instrBlock);
 
         const auto &instr = func.instructions[ip];
         const TypeFeedback* fb = (ip < func.type_feedback.size()) ? &func.type_feedback[ip] : nullptr;
@@ -4415,6 +4534,20 @@ case OpCode::LENGTH: {
     // We terminate the current insert block (which might be a merge block from a specialized op).
     if (B.GetInsertBlock()->getTerminator() == nullptr) {
         B.CreateBr(basicBlocks[ip + 1]);
+    }
+
+    // Capture outgoing stack state for each successor. This feeds entry PHIs.
+    if (auto *term = B.GetInsertBlock()->getTerminator()) {
+        if (auto *br = llvm::dyn_cast<llvm::BranchInst>(term)) {
+            std::unordered_set<size_t> seenSuccs;
+            for (unsigned s = 0; s < br->getNumSuccessors(); ++s) {
+                llvm::BasicBlock* succ = br->getSuccessor(s);
+                auto it = blockToIp.find(succ);
+                if (it == blockToIp.end()) continue;
+                if (!seenSuccs.insert(it->second).second) continue;
+                addIncomingState(it->second, br->getParent(), vstack);
+            }
+        }
     }
 }
 

@@ -84,6 +84,7 @@ private:
 		std::string aotOutput; // -o for AOT output path
 		std::string arch; // --arch: target triple
 		std::string targetOS; // --os: linux|windows|macos|wasm|native
+		std::string profile = "full"; // --profile: full|core
 		std::vector<std::string> linkLibs; // --link-lib repeated
 		AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
 		std::string evalString; // --eval/-E: run inline code

@@ -685,10 +685,7 @@ const auto &stmts = function.body->body;
 if (!stmts.empty()) {
 // Compile all but last statement normally (not in tail position)
 for (size_t i = 0; i < stmts.size() - 1; i++) {
-if (stmts[i]) {
-std::cerr << "BSTMT Parser[" << current_function->instructions.size() << "] i=" << i << " type=" << static_cast<int>(stmts[i]->kind) << "\n";
-}
-compileStatement(*stmts[i]);
+        compileStatement(*stmts[i]);
 }
 }
     }

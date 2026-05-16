@@ -321,15 +321,42 @@ void LexicalResolver::resolveFunctionDeclaration(
     const ast::FunctionDeclaration &function) {
   beginFunction(&function);
 
-
   for (const auto &param : function.parameters) {
     if (param && param->pattern) {
       collectPatternIdentifiers(*param->pattern);
     }
   }
 
-  for (const auto &scope : function_stack_.back().scopes) {
-    for (const auto &[name, sym] : scope) {
+  // Hoisting pre-pass: scan the function body for FunctionDeclaration
+  // nodes and declare their names as locals before resolving any
+  // statements.  This lets sibling inner functions reference each other
+  // regardless of source order (analogous to JS function hoisting).
+  if (function.body) {
+    for (const auto &stmt : function.body->body) {
+      if (!stmt)
+        continue;
+      const ast::FunctionDeclaration *innerFn = nullptr;
+      if (stmt->kind == ast::NodeType::FunctionDeclaration) {
+        innerFn = &static_cast<const ast::FunctionDeclaration &>(*stmt);
+      } else if (stmt->kind == ast::NodeType::DecoratorStatement) {
+        const auto &dec = static_cast<const ast::DecoratorStatement &>(*stmt);
+        if (dec.target &&
+            dec.target->kind == ast::NodeType::FunctionDeclaration) {
+          innerFn =
+              &static_cast<const ast::FunctionDeclaration &>(*dec.target);
+        }
+      }
+      if (innerFn && innerFn->name &&
+          top_level_functions_.count(innerFn->name->symbol) == 0) {
+        uint32_t slot =
+            declareLocal(innerFn->name->symbol, innerFn->name.get(), false);
+        ResolvedBinding binding;
+        binding.kind = ResolvedBindingKind::Local;
+        binding.slot = slot;
+        binding.name = innerFn->name->symbol;
+        binding.is_const = false;
+        result_.identifier_bindings[innerFn->name.get()] = binding;
+      }
     }
   }
 
@@ -672,17 +699,24 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
  binding.kind = ResolvedBindingKind::Function;
  binding.name = fn.name->symbol;
  result_.identifier_bindings[fn.name.get()] = binding;
- } else {
- // Nested function - declare as local in current (enclosing) scope
- uint32_t slot = declareLocal(fn.name->symbol, fn.name.get(), false);
- // Also record the binding for the function name itself so ByteCompiler can find it
- ResolvedBinding binding;
- binding.kind = ResolvedBindingKind::Local;
- binding.slot = slot;
- binding.name = fn.name->symbol;
- binding.is_const = false;
- result_.identifier_bindings[fn.name.get()] = binding;
- }
+      } else {
+        // Nested function - declare as local in current (enclosing) scope
+        // If already hoisted (function-declaration hoisting pre-pass),
+        // reuse the existing slot instead of re-declaring.
+        uint32_t slot;
+        auto existing = result_.declaration_slots.find(fn.name.get());
+        if (existing != result_.declaration_slots.end()) {
+          slot = existing->second;
+        } else {
+          slot = declareLocal(fn.name->symbol, fn.name.get(), false);
+        }
+        ResolvedBinding binding;
+        binding.kind = ResolvedBindingKind::Local;
+        binding.slot = slot;
+        binding.name = fn.name->symbol;
+        binding.is_const = false;
+        result_.identifier_bindings[fn.name.get()] = binding;
+      }
  }
  resolveFunctionDeclaration(fn);
  break;

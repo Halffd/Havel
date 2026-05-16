@@ -1934,18 +1934,29 @@ case ast::NodeType::TryExpression:
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl =
         static_cast<const ast::StructDeclaration &>(statement);
- // Runtime registration: struct.define("Name", ["field1", ...])
- {
- uint32_t strId = addStringConstant("struct.define");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- { uint32_t _sid = addStringConstant(structDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- emit(OpCode::ARRAY_NEW);
- for (const auto &field : structDecl.definition.fields) {
- { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- emit(OpCode::ARRAY_PUSH);
- }
-  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+    // Runtime registration: struct.define("Name", ["field1", ...], [default1, ...])
+        {
+            uint32_t strId = addStringConstant("struct.define");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+        }
+        { uint32_t _sid = addStringConstant(structDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        // Field names
+        emit(OpCode::ARRAY_NEW);
+        for (const auto &field : structDecl.definition.fields) {
+            { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::ARRAY_PUSH);
+        }
+        // Default values array (null for fields without defaults)
+        emit(OpCode::ARRAY_NEW);
+        for (const auto &field : structDecl.definition.fields) {
+            if (field.defaultValue) {
+                compileExpression(*(*field.defaultValue));
+            } else {
+                emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            }
+            emit(OpCode::ARRAY_PUSH);
+        }
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
   // Store the type_id in a global variable so constructor calls work
   {
     uint32_t strId = addStringConstant(structDecl.name);
@@ -2061,15 +2072,35 @@ case ast::NodeType::TryExpression:
     break;
   }
 
-  case ast::NodeType::EnumDeclaration: {
-    const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);
-    // Register enum type with its variants
-    std::vector<std::string> variantNames;
-    for (const auto &variant : enumDecl.definition.variants) {
-      variantNames.push_back(variant.name);
+case ast::NodeType::EnumDeclaration: {
+        const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);
+        // Emit: enum.define("EnumName", ["Variant1", "Variant2", ...], [payloadCount1, payloadCount2, ...])
+        {
+            uint32_t strId = addStringConstant("enum.define");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+        }
+        { uint32_t _sid = addStringConstant(enumDecl.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        // Variant names array
+        emit(OpCode::ARRAY_NEW);
+        for (const auto &variant : enumDecl.definition.variants) {
+            { uint32_t _sid = addStringConstant(variant.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::ARRAY_PUSH);
+        }
+        // Payload counts array
+        emit(OpCode::ARRAY_NEW);
+        for (const auto &variant : enumDecl.definition.variants) {
+            int64_t payloadCount = variant.payloadType.has_value() ? 1 : 0;
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(payloadCount)));
+            emit(OpCode::ARRAY_PUSH);
+        }
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+        // Store the enum namespace object as a global (Color, Option, etc.)
+        {
+            uint32_t strId = addStringConstant(enumDecl.name);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+        }
+        break;
     }
-    break;
-  }
 
     case ast::NodeType::TraitDeclaration: {
       const auto &traitDecl =

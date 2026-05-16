@@ -13,6 +13,7 @@ enum class TypeKind {
     Builtin,
     Nominal,
     Protocol,
+    Nullable,
     Dynamic,
 };
 
@@ -105,6 +106,10 @@ private:
     FunctionSignature signatureFromMethod(const ast::TraitMethod &method) const;
     FunctionSignature signatureFromFunction(const ast::FunctionDeclaration &fn) const;
     std::optional<std::string> resolveTypeAnnotation(const ast::TypeAnnotation *ann) const;
+    std::optional<std::string> resolveTypeName(const std::string &name) const;
+
+    bool isNullableType(const std::string &typeStr) const;
+    std::string unwrapNullable(const std::string &typeStr) const;
 
     void checkStatement(const ast::Statement &stmt);
     void checkExpression(const ast::Expression &expr);

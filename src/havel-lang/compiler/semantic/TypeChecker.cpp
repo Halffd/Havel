@@ -302,35 +302,64 @@ TypeChecker::signatureFromFunction(const ast::FunctionDeclaration &fn) const {
 
 std::optional<std::string> TypeChecker::resolveTypeAnnotation(
     const ast::TypeAnnotation *ann) const {
-  if (!ann || !ann->type) return std::nullopt;
-  const auto *ref =
-      dynamic_cast<const ast::TypeReference *>(ann->type.get());
-  if (!ref) return std::nullopt;
-  std::string name = ref->name;
-  std::string lowered = name;
-  for (char &ch : lowered)
-    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (!ann || !ann->type) return std::nullopt;
 
-  if (lowered == "int" || lowered == "integer") return "int";
-  if (lowered == "num" || lowered == "number" || lowered == "float" ||
-      lowered == "double" || lowered == "decimal")
-    return "number";
-  if (lowered == "str" || lowered == "string") return "string";
-  if (lowered == "bool" || lowered == "boolean") return "bool";
-  if (lowered == "list" || lowered == "array" || lowered == "vector")
-    return "array";
-  if (lowered == "obj" || lowered == "object" || lowered == "map")
-    return "object";
-  if (lowered == "fn" || lowered == "function" || lowered == "closure")
-    return "function";
-  if (lowered == "class") return "class";
-  if (lowered == "struct") return "struct";
-  if (lowered == "any" || lowered == "auto" || lowered == "unknown")
+    // Handle nullable type ?T
+    const auto *nullable =
+        dynamic_cast<const ast::NullableType *>(ann->type.get());
+    if (nullable && nullable->inner) {
+        const auto *innerRef =
+            dynamic_cast<const ast::TypeReference *>(nullable->inner.get());
+        if (innerRef) {
+            auto innerResolved = resolveTypeName(innerRef->name);
+            if (innerResolved) {
+                return "?" + *innerResolved;
+            }
+        }
+        return std::nullopt;
+    }
+
+    const auto *ref =
+        dynamic_cast<const ast::TypeReference *>(ann->type.get());
+    if (!ref) return std::nullopt;
+    auto resolved = resolveTypeName(ref->name);
+    return resolved;
+}
+
+std::optional<std::string> TypeChecker::resolveTypeName(const std::string &name) const {
+    std::string lowered = name;
+    for (char &ch : lowered)
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+
+    if (lowered == "int" || lowered == "integer") return "int";
+    if (lowered == "num" || lowered == "number" || lowered == "float" ||
+        lowered == "double" || lowered == "decimal")
+        return "number";
+    if (lowered == "str" || lowered == "string") return "string";
+    if (lowered == "bool" || lowered == "boolean") return "bool";
+    if (lowered == "list" || lowered == "array" || lowered == "vector")
+        return "array";
+    if (lowered == "obj" || lowered == "object" || lowered == "map")
+        return "object";
+    if (lowered == "fn" || lowered == "function" || lowered == "closure")
+        return "function";
+    if (lowered == "class") return "class";
+    if (lowered == "struct") return "struct";
+    if (lowered == "any" || lowered == "auto" || lowered == "unknown")
+        return std::nullopt;
+
+    if (result_.registry.count(name) > 0) return name;
+
     return std::nullopt;
+}
 
-  if (result_.registry.count(name) > 0) return name;
+bool TypeChecker::isNullableType(const std::string &typeStr) const {
+    return typeStr.size() > 1 && typeStr[0] == '?';
+}
 
-  return std::nullopt;
+std::string TypeChecker::unwrapNullable(const std::string &typeStr) const {
+    if (isNullableType(typeStr)) return typeStr.substr(1);
+    return typeStr;
 }
 
 void TypeChecker::checkStatement(const ast::Statement &stmt) {
@@ -424,49 +453,69 @@ void TypeChecker::checkWhenStatement(const ast::WhenStatement &whenStmt) {
 }
 
 void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
-  std::string varName;
-  if (let.pattern &&
-      let.pattern->kind == ast::NodeType::Identifier) {
-    varName = static_cast<const ast::Identifier &>(*let.pattern).symbol;
-  }
+    std::string varName;
+    if (let.pattern &&
+        let.pattern->kind == ast::NodeType::Identifier) {
+        varName = static_cast<const ast::Identifier &>(*let.pattern).symbol;
+    }
 
-  if (let.typeAnnotation) {
-    auto resolved =
-      resolveTypeAnnotation((*let.typeAnnotation).get());
-    if (resolved && !varName.empty()) {
-      env_.set(varName, *resolved);
-      if (let.value) {
-        std::string valType = exprTypeName(*let.value);
-        if (!valType.empty() && valType != *resolved) {
-          auto expectedIt = result_.registry.find(*resolved);
-          auto valIt = result_.registry.find(valType);
-          if (expectedIt != result_.registry.end() &&
-              expectedIt->second.kind == TypeKind::Nominal &&
-              valIt != result_.registry.end() &&
-              valIt->second.kind == TypeKind::Nominal) {
-            if (valType != *resolved) {
-              result_.errors.push_back(
-                  "cannot assign value of type '" + valType +
-                  "' to variable '" + varName + "' of type '" +
-                  *resolved + "'");
+    if (let.typeAnnotation) {
+        auto resolved =
+            resolveTypeAnnotation((*let.typeAnnotation).get());
+        if (resolved && !varName.empty()) {
+            env_.set(varName, *resolved);
+            if (let.value) {
+                std::string valType = exprTypeName(*let.value);
+                if (!valType.empty() && valType != *resolved) {
+                    // Allow null for nullable types: ?T accepts null
+                    if (isNullableType(*resolved) && valType == "null") {
+                        // ok: null is valid for ?T
+                    } else {
+                        // Also allow if valType matches unwrapped nullable
+                        std::string expectedInner = unwrapNullable(*resolved);
+                        if (valType == expectedInner) {
+                            // ok: T is valid for ?T
+                        } else {
+                            auto expectedIt = result_.registry.find(*resolved);
+                            auto valIt = result_.registry.find(valType);
+                            if (expectedIt != result_.registry.end() &&
+                                expectedIt->second.kind == TypeKind::Nominal &&
+                                valIt != result_.registry.end() &&
+                                valIt->second.kind == TypeKind::Nominal) {
+                                if (valType != *resolved) {
+                                    result_.errors.push_back(
+                                        "cannot assign value of type '" + valType +
+                                        "' to variable '" + varName + "' of type '" +
+                                        *resolved + "'");
+                                }
+                            }
+                        }
+                    }
+                }
             }
-          }
+        } else if (!resolved && let.typeAnnotation) {
+            const auto *nullable =
+                dynamic_cast<const ast::NullableType *>((*let.typeAnnotation)->type.get());
+            if (nullable) {
+                // ?UnknownType — just register as nullable dynamic
+                if (!varName.empty()) {
+                    env_.set(varName, "?dynamic");
+                }
+            } else {
+                const auto *ref =
+                    dynamic_cast<const ast::TypeReference *>((*let.typeAnnotation)->type.get());
+                if (ref && !BUILTIN_TYPES.count(ref->name) &&
+                    result_.registry.find(ref->name) == result_.registry.end()) {
+                    result_.errors.push_back("unknown type '" + ref->name + "'");
+                }
+            }
         }
-      }
-} else if (!resolved && let.typeAnnotation) {
-    const auto *ref =
-      dynamic_cast<const ast::TypeReference *>((*let.typeAnnotation)->type.get());
-    if (ref && !BUILTIN_TYPES.count(ref->name) &&
-        result_.registry.find(ref->name) == result_.registry.end()) {
-        result_.errors.push_back("unknown type '" + ref->name + "'");
+    } else if (!varName.empty() && let.value) {
+        std::string valType = exprTypeName(*let.value);
+        if (!valType.empty()) {
+            env_.set(varName, valType);
+        }
     }
-}
-  } else if (!varName.empty() && let.value) {
-    std::string valType = exprTypeName(*let.value);
-    if (!valType.empty()) {
-      env_.set(varName, valType);
-    }
-  }
 }
 
 void TypeChecker::checkFunctionDeclaration(
@@ -498,28 +547,34 @@ void TypeChecker::checkFunctionDeclaration(
 }
 
 void TypeChecker::checkAssignment(const ast::AssignmentExpression &assign) {
-  if (!assign.target) return;
-  if (assign.target->kind != ast::NodeType::Identifier) return;
-  std::string varName =
-      static_cast<const ast::Identifier &>(*assign.target).symbol;
-  auto knownType = env_.lookup(varName);
-  if (!knownType) return;
+    if (!assign.target) return;
+    if (assign.target->kind != ast::NodeType::Identifier) return;
+    std::string varName =
+        static_cast<const ast::Identifier &>(*assign.target).symbol;
+    auto knownType = env_.lookup(varName);
+    if (!knownType) return;
 
-  if (assign.value) {
-    std::string valType = exprTypeName(*assign.value);
-    if (!valType.empty() && valType != *knownType) {
-      auto expectedIt = result_.registry.find(*knownType);
-      auto valIt = result_.registry.find(valType);
-      if (expectedIt != result_.registry.end() &&
-          expectedIt->second.kind == TypeKind::Nominal &&
-          valIt != result_.registry.end() &&
-          valIt->second.kind == TypeKind::Nominal) {
-        result_.errors.push_back(
-            "cannot assign value of type '" + valType + "' to variable '" +
-            varName + "' of type '" + *knownType + "'");
-      }
+    if (assign.value) {
+        std::string valType = exprTypeName(*assign.value);
+        if (!valType.empty() && valType != *knownType) {
+            // Allow null for nullable types
+            if (isNullableType(*knownType) &&
+                (valType == "null" || valType == unwrapNullable(*knownType))) {
+                // ok
+                return;
+            }
+            auto expectedIt = result_.registry.find(*knownType);
+            auto valIt = result_.registry.find(valType);
+            if (expectedIt != result_.registry.end() &&
+                expectedIt->second.kind == TypeKind::Nominal &&
+                valIt != result_.registry.end() &&
+                valIt->second.kind == TypeKind::Nominal) {
+                result_.errors.push_back(
+                    "cannot assign value of type '" + valType + "' to variable '" +
+                    varName + "' of type '" + *knownType + "'");
+            }
+        }
     }
-  }
 }
 
 void TypeChecker::narrowFromIsCheck(const ast::Expression &condition) {

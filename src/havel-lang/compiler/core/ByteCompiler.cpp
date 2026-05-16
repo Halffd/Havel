@@ -721,12 +721,10 @@ if (param->defaultValue.has_value()) {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       emit(OpCode::RETURN);
     }
-  } else {
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-    emit(OpCode::RETURN);
-  }
-  }
-
+    } else {
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::RETURN);
+    }
 
 if (function.body) {
 current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);

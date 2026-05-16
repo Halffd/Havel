@@ -341,10 +341,31 @@ return "<struct " + structName + ">";
       first = false;
       result += pair.first;
     }
-    result += "}";
-    return result;
-  }
-  return "unknown";
+        result += "}";
+        return result;
+    }
+    if (value.isEnumId()) {
+        uint32_t enumId = value.asEnumId();
+        uint32_t typeId = value.asEnumTypeId();
+        auto it = heap_.enums_.find(enumId);
+        if (it == heap_.enums_.end()) return "<enum:invalid>";
+        uint32_t tag = it->second.first;
+        const auto &payload = it->second.second;
+        std::string typeName = (typeId < heap_.enumTypes_.size()) ? heap_.enumTypes_[typeId].name : "enum";
+        std::string variantName = (typeId < heap_.enumTypes_.size() && tag < heap_.enumTypes_[typeId].variantNames.size())
+            ? heap_.enumTypes_[typeId].variantNames[tag] : std::to_string(tag);
+        std::string result = typeName + "." + variantName;
+        if (!payload.empty()) {
+            result += "(";
+            for (size_t i = 0; i < payload.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += toStringInternal(payload[i], visitedIds, depth + 1);
+            }
+            result += ")";
+        }
+        return result;
+    }
+    return "unknown";
 }
 
 // Type conversion helpers
@@ -3685,14 +3706,14 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
     while (frame_count_ > stop_frame_depth) {
-        // Instruction limit check - prevents infinite loops
-        if (max_instructions_ > 0) {
-            executed_instructions_++;
-            if (executed_instructions_ > max_instructions_) {
-                throw std::runtime_error("VM instruction limit exceeded (" +
-                    std::to_string(max_instructions_) + ") - possible infinite loop");
-            }
+    // Instruction limit check - prevents infinite loops
+    if (max_instructions_ > 0) {
+        executed_instructions_++;
+        if (executed_instructions_ > max_instructions_) {
+            throw std::runtime_error("VM instruction limit exceeded (" +
+                std::to_string(max_instructions_) + ") - possible infinite loop");
         }
+    }
 
         // Periodically check for expired timers
         if (timer_check_func_) {

@@ -5245,8 +5245,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
 
     std::unique_ptr<havel::ast::Statement> alternative = nullptr;
     if (at().type == havel::TokenType::Else) {
-        std::cerr << "[DBG-PARSE-IF] found Else token at col=" << at().column
-                  << " ifColumn=" << ifColumn << " comparison=" << (at().column >= ifColumn) << "\n";
         // Indentation-sensitive else: only attach else if it's at the same
         // indent level or deeper than this if. If the else is at a shallower
         // indent, it belongs to an outer if statement.
@@ -6355,7 +6353,7 @@ while (at().type == havel::TokenType::NewLine) {
         context.inInputContext = inputContext;
 
         // Base indentation = header line indent + 1
-        // Anything at column > headerIndent is inside the block
+        // Anything at column >= headerIndent+1 is inside the block
         // Skip any leading newlines first
         while (at().type == havel::TokenType::NewLine) {
             advance();

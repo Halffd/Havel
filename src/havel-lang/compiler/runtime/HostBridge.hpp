@@ -47,12 +47,18 @@ class ToolsBridge;
  */
 class HostBridge : public std::enable_shared_from_this<HostBridge> {
 public:
+  enum class InstallProfile {
+    Full,
+    Core
+  };
+
   explicit HostBridge(const ::havel::HostContext &ctx);
   explicit HostBridge(const ::havel::HostContext &ctx,
                       const ExecutionPolicy &policy);
   ~HostBridge();
 
-  void install(bool eagerBridgeInstall = true);
+  void install(InstallProfile profile = InstallProfile::Full,
+               bool eagerBridgeInstall = true);
   void clear();
   void shutdown();
 

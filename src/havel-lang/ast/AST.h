@@ -238,7 +238,23 @@ struct TypeReference : public TypeDefinition {
     return "TypeReference{" + name + "}";
   }
 
-  void accept(ASTVisitor &visitor) const override;
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Nullable type (e.g., ?Int means Int or null)
+struct NullableType : public TypeDefinition {
+    std::unique_ptr<TypeDefinition> inner;
+
+    NullableType(std::unique_ptr<TypeDefinition> innerType)
+        : inner(std::move(innerType)) {
+        kind = NodeType::TypeAnnotation;
+    }
+
+    std::string toString() const override {
+        return "NullableType{?" + (inner ? inner->toString() : "nullptr") + "}";
+    }
+
+    void accept(ASTVisitor &visitor) const override;
 };
 
 // Type Annotation (e.g., : List(Int))
@@ -3119,8 +3135,9 @@ public:
   virtual void visitUnionType(const UnionType &node) = 0;
   virtual void visitRecordType(const RecordType &node) = 0;
   virtual void visitFunctionType(const FunctionType &node) = 0;
-  virtual void visitTypeReference(const TypeReference &node) = 0;
-  virtual void visitTryExpression(const TryExpression &node) = 0;
+virtual void visitTypeReference(const TypeReference &node) = 0;
+virtual void visitNullableType(const NullableType &node) = 0;
+virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement &node) = 0;
@@ -3525,11 +3542,15 @@ inline void FunctionType::accept(ASTVisitor &visitor) const {
 }
 
 inline void TypeReference::accept(ASTVisitor &visitor) const {
-  visitor.visitTypeReference(*this);
+    visitor.visitTypeReference(*this);
+}
+
+inline void NullableType::accept(ASTVisitor &visitor) const {
+    visitor.visitNullableType(*this);
 }
 
 inline void TryExpression::accept(ASTVisitor &visitor) const {
-  visitor.visitTryExpression(*this);
+    visitor.visitTryExpression(*this);
 }
 
 inline void ThrowStatement::accept(ASTVisitor &visitor) const {

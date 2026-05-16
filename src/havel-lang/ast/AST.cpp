@@ -426,10 +426,17 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 
-  void visitTypeReference(const TypeReference &node) override {
+void visitTypeReference(const TypeReference &node) override {
     out << getIndent() << "TypeReference{" << node.name << "}" << std::endl;
-  }
-  void visitTryExpression(const TryExpression &node) override {
+}
+void visitNullableType(const NullableType &node) override {
+    out << getIndent() << "NullableType{?" << std::endl;
+    indentLevel++;
+    printChildNode("inner: ", node.inner);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+}
+void visitTryExpression(const TryExpression &node) override {
     out << getIndent() << "TryExpression {" << std::endl;
     indentLevel++;
     printChildNode("tryBody: ", node.tryBody);

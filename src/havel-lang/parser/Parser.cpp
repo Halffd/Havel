@@ -4877,8 +4877,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
 }
 
 std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
-  std::string typeName;
-  switch (at().type) {
+    // Handle nullable type prefix: ?T means T or null
+    if (at().type == havel::TokenType::Question) {
+        advance(); // consume '?'
+        auto inner = parseTypeDefinition();
+        return std::make_unique<ast::NullableType>(std::move(inner));
+    }
+
+    std::string typeName;
+    switch (at().type) {
   case havel::TokenType::Identifier:
     typeName = advance().value;
     break;
@@ -4908,9 +4915,17 @@ std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
     typeName += "[]";
   }
 
-  // For now, just create a type reference
-  // Could be extended to parse generic types like List(Int)
-  return std::make_unique<ast::TypeReference>(typeName);
+    // For now, just create a type reference
+    // Could be extended to parse generic types like List(Int)
+    auto ref = std::make_unique<ast::TypeReference>(typeName);
+
+    // Trailing ? makes it nullable: String? means String or null
+    if (at().type == havel::TokenType::Question) {
+        advance(); // consume '?'
+        return std::make_unique<ast::NullableType>(std::move(ref));
+    }
+
+    return ref;
 }
 
 std::unique_ptr<ast::TypeAnnotation> Parser::parseTypeAnnotation() {

@@ -1,0 +1,15 @@
+print("aot core control")
+
+sum = 0
+i = 0
+while i < 5 {
+  sum = sum + i
+  i = i + 1
+}
+
+if sum == 10 {
+  print("ok")
+} else {
+  print("bad")
+}
+

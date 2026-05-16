@@ -1,0 +1,15 @@
+print("tiering dupe guard")
+
+fn hot2(x) {
+  x * 2 + 1
+}
+
+i = 0
+v = 1
+while i < 8000 {
+  v = hot2(v)
+  i = i + 1
+}
+
+print(v)
+

@@ -137,11 +137,11 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeNull();
 	});
 
-	api.registerFunction("bc.func_new", [&api](const std::vector<Value> &args) -> Value {
+	api.registerFunction("bc.func_new", [api](const std::vector<Value> &args) -> Value {
     if (args.size() < 1 || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.func_new: requires name (string)");
     }
-    auto name = api.resolveString(args[0]);
+    std::string name = api.vm().toString(args[0]);
 		uint32_t params = 0;
 		uint32_t locals = 0;
 		if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
@@ -153,7 +153,7 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));
 	});
 
-	api.registerFunction("bc.emit", [&api](const std::vector<Value> &args) -> Value {
+	api.registerFunction("bc.emit", [api](const std::vector<Value> &args) -> Value {
 		auto *fn = g_builder.currentFunc();
 		if (!fn) throw std::runtime_error("bc.emit: no current function");
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -184,23 +184,24 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeInt(static_cast<int64_t>(idx));
 	});
 
-	api.registerFunction("bc.add_string", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.add_string: no current function");
+api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.add_string: no current function");
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.add_string: requires string value");
     }
-		auto strVal = args[0];
-		auto &consts = fn->constants;
-		for (uint32_t i = 0; i < consts.size(); ++i) {
-			if (consts[i] == strVal) return Value::makeInt(static_cast<int64_t>(i));
-		}
-		uint32_t idx = static_cast<uint32_t>(consts.size());
-		consts.push_back(strVal);
-		return Value::makeInt(static_cast<int64_t>(idx));
-	});
+    auto resolved = api.resolveString(args[0]);
+    auto heapStr = api.makeString(resolved);
+    auto &consts = fn->constants;
+    for (uint32_t i = 0; i < consts.size(); ++i) {
+        if (consts[i] == heapStr) return Value::makeInt(static_cast<int64_t>(i));
+    }
+    uint32_t idx = static_cast<uint32_t>(consts.size());
+    consts.push_back(heapStr);
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
 
-	api.registerFunction("bc.add_chunk_string", [&api](const std::vector<Value> &args) -> Value {
+	api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.add_chunk_string: requires string");
     }
@@ -239,15 +240,22 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeNull();
 	});
 
-	api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.set_param_count: no current function");
-		if (args.empty() || !args[0].isInt()) {
-			throw std::runtime_error("bc.set_param_count: requires count (int)");
-		}
-		fn->param_count = static_cast<uint32_t>(args[0].asInt());
-		return Value::makeNull();
-	});
+api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.set_param_count: no current function");
+    if (args.empty() || !args[0].isInt()) {
+        throw std::runtime_error("bc.set_param_count: requires count (int)");
+    }
+    fn->param_count = static_cast<uint32_t>(args[0].asInt());
+    return Value::makeNull();
+});
+
+api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isInt()) {
+        throw std::runtime_error("bc.str_id: requires chunk string index (int)");
+    }
+    return Value::makeStringValId(static_cast<uint32_t>(args[0].asInt()));
+});
 
 	api.registerFunction("bc.add_upvalue", [](const std::vector<Value> &args) -> Value {
 		auto *fn = g_builder.currentFunc();
@@ -262,51 +270,82 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
 	});
 
-	api.registerFunction("bc.execute", [&api](const std::vector<Value> &args) -> Value {
-		if (g_builder.chunk->getFunctionCount() == 0) {
-			throw std::runtime_error("bc.execute: no functions in chunk");
-		}
-		std::string entry = "__main__";
-		if (!args.empty() && args[0].isStringId()) {
-			entry = api.vm().resolveStringKey(args[0]);
-		}
+api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
+    if (g_builder.chunk->getFunctionCount() == 0) {
+        throw std::runtime_error("bc.execute: no functions in chunk");
+    }
+    std::string entry = "__main__";
+    if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
+        entry = api.resolveString(args[0]);
+    }
 
-		std::vector<Value> runArgs;
-		for (size_t i = 1; i < args.size(); ++i) {
-			runArgs.push_back(args[i]);
-		}
+    std::vector<Value> runArgs;
+    for (size_t i = 1; i < args.size(); ++i) {
+        runArgs.push_back(args[i]);
+    }
 
-		auto &vm = api.vm();
-		vm.registerDefaultHostGlobals();
-		try {
-			auto result = vm.execute(*g_builder.chunk, entry, runArgs);
-			return result;
-		} catch (const std::exception &e) {
-			throw std::runtime_error(std::string("bc.execute error: ") + e.what());
-		}
-	});
+    auto &vm = api.vm();
+    auto saved_chunk = vm.current_chunk;
+    auto saved_frame_count = vm.frame_count_;
+    auto saved_frame_arena = vm.frame_arena_;
+    std::stack<Value> saved_stack = vm.stack;
+    auto saved_locals = vm.locals;
 
-	api.registerFunction("bc.execute_persistent", [&api](const std::vector<Value> &args) -> Value {
-		if (g_builder.chunk->getFunctionCount() == 0) {
-			throw std::runtime_error("bc.execute_persistent: no functions in chunk");
-		}
-		std::string entry = "__main__";
-		if (!args.empty() && args[0].isStringId()) {
-			entry = api.vm().resolveStringKey(args[0]);
-		}
+    try {
+        auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+        vm.current_chunk = saved_chunk;
+        vm.frame_count_ = saved_frame_count;
+        vm.frame_arena_ = std::move(saved_frame_arena);
+        vm.stack = std::move(saved_stack);
+        vm.locals = std::move(saved_locals);
+        return result;
+    } catch (const std::exception &e) {
+        vm.current_chunk = saved_chunk;
+        vm.frame_count_ = saved_frame_count;
+        vm.frame_arena_ = std::move(saved_frame_arena);
+        vm.stack = std::move(saved_stack);
+        vm.locals = std::move(saved_locals);
+        throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+    }
+});
 
-		std::vector<Value> runArgs;
-		for (size_t i = 1; i < args.size(); ++i) {
-			runArgs.push_back(args[i]);
-		}
+api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {
+    if (g_builder.chunk->getFunctionCount() == 0) {
+        throw std::runtime_error("bc.execute_persistent: no functions in chunk");
+    }
+    std::string entry = "__main__";
+    if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
+        entry = api.resolveString(args[0]);
+    }
 
-		auto &vm = api.vm();
-		try {
-			auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
-			return result;
-		} catch (const std::exception &e) {
-			throw std::runtime_error(std::string("bc.execute_persistent error: ") + e.what());
-		}
+    std::vector<Value> runArgs;
+    for (size_t i = 1; i < args.size(); ++i) {
+        runArgs.push_back(args[i]);
+    }
+
+    auto &vm = api.vm();
+    auto saved_chunk = vm.current_chunk;
+    auto saved_frame_count = vm.frame_count_;
+    auto saved_frame_arena = vm.frame_arena_;
+    std::stack<Value> saved_stack = vm.stack;
+    auto saved_locals = vm.locals;
+
+    try {
+        auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
+        vm.current_chunk = saved_chunk;
+        vm.frame_count_ = saved_frame_count;
+        vm.frame_arena_ = std::move(saved_frame_arena);
+        vm.stack = std::move(saved_stack);
+        vm.locals = std::move(saved_locals);
+        return result;
+    } catch (const std::exception &e) {
+        vm.current_chunk = saved_chunk;
+        vm.frame_count_ = saved_frame_count;
+        vm.frame_arena_ = std::move(saved_frame_arena);
+        vm.stack = std::move(saved_stack);
+        vm.locals = std::move(saved_locals);
+        throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+    }
 	});
 
 	api.registerFunction("bc.func_count", [](const std::vector<Value> &) -> Value {
@@ -325,7 +364,7 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeInt(static_cast<int64_t>(fn->constants.size()));
 	});
 
-	api.registerFunction("bc.disasm", [&api](const std::vector<Value> &) -> Value {
+	api.registerFunction("bc.disasm", [api](const std::vector<Value> &) -> Value {
 		auto *fn = g_builder.currentFunc();
 		if (!fn) return api.makeString("<no current function>");
 		std::string out;
@@ -359,11 +398,11 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return api.makeString(out);
 	});
 
-  api.registerFunction("bc.opcode_id", [&api](const std::vector<Value> &args) -> Value {
-    if (args.empty() || !args[0].isStringId()) {
-      throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
+  api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Value {
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
     }
-    auto name = api.vm().resolveStringKey(args[0]);
+    auto name = api.resolveString(args[0]);
     auto op = parseOpcode(name);
     return Value::makeInt(static_cast<int64_t>(static_cast<uint8_t>(op)));
   });
@@ -385,8 +424,9 @@ void registerBytecodeBuilderModule(const VMApi &api) {
   api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));
   api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));
   api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
-  api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
-  api.setGlobal("bc", bcObj);
+api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
+api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
+api.setGlobal("bc", bcObj);
 }
 
 } // namespace havel::stdlib

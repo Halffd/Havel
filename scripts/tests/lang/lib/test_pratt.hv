@@ -155,13 +155,13 @@ check("member kind", e.kind == "MemberExpression")
 check("member obj", e.obj.kind == "Identifier")
 check("member prop", e.property == "field")
 
-r = parse("fn()")
+r = parse("foo()")
 e = firstExpr(r.ast)
 check("call kind", e.kind == "CallExpression")
 check("call callee", e.callee.kind == "Identifier")
 check("call args empty", #e.args == 0)
 
-r = parse("fn(1, 2)")
+r = parse("foo(1, 2)")
 e = firstExpr(r.ast)
 check("call with args", #e.args == 2)
 
@@ -411,11 +411,20 @@ check("multi stmt kinds", nodeKind(r.ast, 0) == "ValDeclaration" and nodeKind(r.
 // 33. Bitwise operations
 // ============================================================
 r = parse("a & b")
+tokens = tokenize("a & b")
+for t in tokens: print("TOK: " + t.type + " " + t.value)
+print("DEBUG and: body0kind=" + r.ast.body[0].kind + " body0exprkind=" + str(r.ast.body[0].expr.kind))
 check("bitwise and", firstExpr(r.ast).oper == "&")
 
+tokens = tokenize("a | b")
+for t in tokens: print("TOK: " + t.type + " " + t.value)
+print("DEBUG or: body0kind=" + r.ast.body[0].kind + " body0exprkind=" + str(r.ast.body[0].expr.kind))
 r = parse("a | b")
 check("bitwise or", firstExpr(r.ast).oper == "|")
 
+tokens = tokenize("a ^ b")
+for t in tokens: print("TOK: " + t.type + " " + t.value)
+print("DEBUG xor: body0kind=" + r.ast.body[0].kind + " body0exprkind=" + str(r.ast.body[0].expr.kind))
 r = parse("a ^ b")
 check("bitwise xor", firstExpr(r.ast).oper == "^")
 
@@ -528,14 +537,14 @@ check("try-finally has finally", s.finally_block != null)
 // ============================================================
 // 46. For-else
 // ============================================================
-r = parse("for i in items { print(i) } else { print("empty") }")
+r = parse("for i in items { print(i) } else { print('empty') }")
 s = firstStmt(r.ast)
 check("for-else kind", s.kind == "ForStatement")
 
 // ============================================================
 // 47. While-else
 // ============================================================
-r = parse("while x > 0 { x-- } else { print("done") }")
+r = parse("while x > 0 { x-- } else { print('done') }")
 s = firstStmt(r.ast)
 check("while-else kind", s.kind == "WhileStatement")
 

@@ -1320,12 +1320,10 @@ void ByteCompiler::collectParameterPatternSlots(
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
   auto source_scope = atNode(statement);
   switch (statement.kind) {
-case ast::NodeType::ExpressionStatement: {
-const auto &expr_stmt =
-static_cast<const ast::ExpressionStatement &>(statement);
-std::cerr << "EXPR_STMT Parser[" << current_function->instructions.size() << "] expr_type=" << static_cast<int>(expr_stmt.expression ? expr_stmt.expression->kind : ast::NodeType::Program) << "\n";
-}
-if (expr_stmt.expression) {
+  case ast::NodeType::ExpressionStatement: {
+    const auto &expr_stmt =
+        static_cast<const ast::ExpressionStatement &>(statement);
+    if (expr_stmt.expression) {
                 bool tail_before = in_tail_position_;
                 compileExpression(*expr_stmt.expression);
                 // TCO: Don't POP if in tail position (value is return value)

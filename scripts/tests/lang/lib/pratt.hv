@@ -75,6 +75,7 @@ fn getBindingPower(ttype):
     else if ttype == "LessEquals": BP_COMPARISON
     else if ttype == "GreaterEquals": BP_COMPARISON
     else if ttype == "DotDot": BP_RANGE
+    else if ttype == "DotDotEquals": BP_RANGE
     else if ttype == "Plus": BP_ADD
     else if ttype == "Minus": BP_ADD
     else if ttype == "Pipe": BP_PIPE
@@ -526,7 +527,7 @@ fn Parser(tokenList):
                 parseObjectLiteral(true)
             else:
                 operand = parseExpr(140)
-                UnaryExpression("not", operand, l, c)
+                UnaryExpression(tok.value, operand, l, c)
 
         else if tt == "Minus":
             operand = parseExpr(140)
@@ -783,7 +784,7 @@ fn Parser(tokenList):
             // If right is a CallExpression, prepend left as first arg
             if right != null and right.kind == "CallExpression":
                 right.args.insert(0, left)
-                right
+                PipelineExpression(left, right, l, c)
             else:
                 PipelineExpression(left, right, l, c)
 
@@ -892,7 +893,7 @@ fn Parser(tokenList):
             else if t.type == "CloseBracket":
                 depth = depth - 1
                 if depth == 0: break
-            else if (t.type == "Colon" or t.type == "ColonColon") and depth == 1:
+            else if (t.type == "Colon" or t.type == "ColonColon" or t.type == "DotDot" or t.type == "DotDotEquals") and depth == 1:
                 return true
             else if t.type == "EOF": break
             lookahead = lookahead + 1
@@ -906,7 +907,7 @@ fn Parser(tokenList):
         end = null
         step = null
 
-        if current().type != "Colon" and current().type != "ColonColon":
+        if current().type != "Colon" and current().type != "ColonColon" and current().type != "DotDot" and current().type != "DotDotEquals":
             start = parseExpr(0)
 
         if current().type == "ColonColon":
@@ -922,6 +923,14 @@ fn Parser(tokenList):
                 if current().type != "CloseBracket":
                     step = parseExpr(0)
 
+        else if current().type == "DotDot":
+         advance()
+         if current().type != "CloseBracket":
+          end = parseExpr(0)
+        else if current().type == "DotDotEquals":
+         advance()
+         if current().type != "CloseBracket":
+          end = parseExpr(0)
         if current().type == "CloseBracket":
             advance()
         else:
@@ -945,16 +954,16 @@ fn Parser(tokenList):
     fn parseInterpolatedString(value, l, c):
         parts = []
         i = 0
-        current = ""
+        buf = ""
 
         while i < value.len:
             ch = value.sub(i, 1)
 
             // ${...} interpolation
             if ch == "$" and i + 1 < value.len and value.sub(i + 1, 1) == "{":
-                if current.len > 0:
-                    parts.push(StringLiteral(current, l, c))
-                    current = ""
+                if buf.len > 0:
+                    parts.push(StringLiteral(buf, l, c))
+                    buf = ""
                 i = i + 2
                 depth = 1
                 exprStr = ""
@@ -973,9 +982,9 @@ fn Parser(tokenList):
 
             // {...} f-string interpolation
             else if ch == "{" and (i == 0 or value.sub(i - 1, 1) != "$"):
-                if current.len > 0:
-                    parts.push(StringLiteral(current, l, c))
-                    current = ""
+                if buf.len > 0:
+                    parts.push(StringLiteral(buf, l, c))
+                    buf = ""
                 i = i + 1
                 depth = 1
                 exprStr = ""
@@ -992,11 +1001,11 @@ fn Parser(tokenList):
                 else: parts.push(Identifier(exprStr, l, c))
 
             else:
-                current = current + ch
+                buf = buf + ch
                 i = i + 1
 
-        if current.len > 0:
-            parts.push(StringLiteral(current, l, c))
+        if buf.len > 0:
+            parts.push(StringLiteral(buf, l, c))
 
         InterpolatedString(parts, l, c)
 
@@ -1097,11 +1106,9 @@ fn Parser(tokenList):
         else if current().type == "Identifier":
             params.push(advance().value)
 
-        // Expect =>
+        // Optional => (fn(x) body and fn(x) => body both valid)
         if current().type == "Arrow":
-            advance()
-        else
-            return error("Expected '=>' in lambda", l, c)
+         advance()
 
         if current().type == "OpenBrace":
             body = parseBlock()
@@ -1292,28 +1299,28 @@ fn Parser(tokenList):
         if couldBeSet:
             // Look ahead for comma
             setLook = lookahead + 1
-        while setLook < tokens.len and at(setLook).type != "Comma" and at(setLook).type != "Semicolon" and at(setLook).type != "CloseBrace" and at(setLook).type != "NewLine":
-                setLook = setLook + 1
+            while setLook < tokens.len and at(setLook).type != "Comma" and at(setLook).type != "Semicolon" and at(setLook).type != "CloseBrace" and at(setLook).type != "NewLine":
+                    setLook = setLook + 1
 
-            if at(setLook).type == "Comma":
-                // Parse as set literal
-                advance() // consume {
-                elements = []
-                skipNewlines()
-                while current().type != "CloseBrace" and notEOF():
+                if at(setLook).type == "Comma":
+                    // Parse as set literal
+                    advance() // consume {
+                    elements = []
                     skipNewlines()
-                    if current().type == "CloseBrace": break
-                    elements.push(parseExpr(0))
-                    skipNewlines()
-                    if current().type == "Comma": advance()
-                    else if current().type != "CloseBrace":
-                        // Allow newline-separated
+                    while current().type != "CloseBrace" and notEOF():
                         skipNewlines()
-                expect("CloseBrace")
-                // Represent set as ArrayLiteral with isSet flag
-                node = ArrayLiteral(elements, l, c)
-                node.isSet = true
-                return node
+                        if current().type == "CloseBrace": break
+                        elements.push(parseExpr(0))
+                        skipNewlines()
+                        if current().type == "Comma": advance()
+                        else if current().type != "CloseBrace":
+                            // Allow newline-separated
+                            skipNewlines()
+                    expect("CloseBrace")
+                    // Represent set as ArrayLiteral with isSet flag
+                    node = ArrayLiteral(elements, l, c)
+                    node.isSet = true
+                    return node
 
         // Default to object literal
         parseObjectLiteral(false)
@@ -1630,8 +1637,13 @@ fn Parser(tokenList):
                 if current().type == "Comma": advance()
             expect("CloseParen")
         else
+          names.push(advance().value)
+          skipNewlines()
+          while current().type == "Comma":
+            advance() // consume comma
+            skipNewlines()
             names.push(advance().value)
-
+            skipNewlines()
         skipNewlines()
 
         // Expect 'in'
@@ -1852,6 +1864,11 @@ fn Parser(tokenList):
         advance() // consume 'fn'
         skipNewlines()
 
+        // Check if this is a lambda (fn followed by open paren)
+        if current().type == "OpenParen":
+         lambda = parseLambdaExpr()
+         return ExpressionStatement(lambda, l, c)
+        
         // Function name
         name = advance().value
         skipNewlines()

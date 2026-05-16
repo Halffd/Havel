@@ -1,36 +1,36 @@
 // End-to-end test for the pure-Havel Pratt parser
 // Exercises: lexing → parsing → AST structure verification
 
-use { parse, parseTokens } from "pratt"
-use { tokenize } from "lexer"
-use { prettyPrint, isNode } from "ast"
+use { parse, parseTokens } from pratt
+use { tokenize } from lexer
+use { prettyPrint, isNode } from ast
 
 passed = 0
 failed = 0
 
 fn check(name, cond):
- if cond:
- passed = passed + 1
- else:
- failed = failed + 1
- print("FAIL: " + name)
+  if cond:
+    passed = passed + 1
+  else:
+    failed = failed + 1
+    print("FAIL: " + name)
 
 fn nodeKind(ast, idx):
- if idx < #ast.body: ast.body[idx].kind
- else: null
+  if idx < #ast.body: ast.body[idx].kind
+  else: null
 
 fn exprKind(ast, idx):
- s = ast.body[idx]
- if s != null and s.kind == "ExpressionStatement" and s.expr != null: s.expr.kind
- else: null
+  s = ast.body[idx]
+  if s != null and s.kind == "ExpressionStatement" and s.expr != null: s.expr.kind
+  else: null
 
 fn firstExpr(ast):
- if #ast.body > 0 and ast.body[0].kind == "ExpressionStatement": ast.body[0].expr
- else: null
+  if #ast.body > 0 and ast.body[0].kind == "ExpressionStatement": ast.body[0].expr
+  else: null
 
 fn firstStmt(ast):
- if #ast.body > 0: ast.body[0]
- else: null
+  if #ast.body > 0: ast.body[0]
+  else: null
 
 // ============================================================
 // 1. Literals
@@ -44,7 +44,7 @@ check("number no errors", #r.errors == 0)
 
 r = parse('"hello"')
 check("string literal kind", exprKind(r.ast, 0) == "StringLiteral")
-check("string literal value", firstExpr(r.ast).value == '"hello"')
+check("string literal value", firstExpr(r.ast).value == "hello")
 
 r = parse("true")
 check("bool true kind", exprKind(r.ast, 0) == "BooleanLiteral")

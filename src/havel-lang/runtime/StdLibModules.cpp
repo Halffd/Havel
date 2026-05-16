@@ -52,6 +52,7 @@ void registerFormatModule(const compiler::VMApi &api);
 void registerPackModule(const compiler::VMApi &api);
 void registerBitModule(const compiler::VMApi &api);
 void registerOptionModule(const compiler::VMApi &api);
+void registerBytecodeBuilderModule(const compiler::VMApi &api);
 #ifndef HAVEL_PURE_VM
 void registerHttpModule(const compiler::VMApi &api);
 void registerBrowserModule(const compiler::VMApi &api);
@@ -84,7 +85,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerFormatModule(api);
   stdlib::registerPackModule(api);
   stdlib::registerBitModule(api);
-stdlib::registerOptionModule(api);
+    stdlib::registerOptionModule(api);
+    stdlib::registerBytecodeBuilderModule(api);
 
 #ifndef HAVEL_PURE_VM
   stdlib::registerHttpModule(api);

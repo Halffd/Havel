@@ -4178,15 +4178,49 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
         else if (callee_value.isInt()) typeInfo = "int";
         else if (callee_value.isDouble()) typeInfo = "double";
         else if (callee_value.isBool()) typeInfo = "bool";
-        else if (callee_value.isStringValId()) typeInfo = "string_val_id";
-        else if (callee_value.isStringId()) typeInfo = "string_id";
-        else if (callee_value.isObjectId()) typeInfo = "object_id";
-        else if (callee_value.isArrayId()) typeInfo = "array_id";
-        else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-        else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
-        else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
-        else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
-        COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ")");
+else if (callee_value.isStringValId()) {
+		typeInfo = current_chunk ? std::string("string_val_id='") + current_chunk->getString(callee_value.asStringValId()) + "'"
+		                         : std::string("string_val_id=<") + std::to_string(callee_value.asStringValId()) + ">";
+	}
+	else if (callee_value.isStringId()) {
+		auto *sp = heap_.string(callee_value.asStringId());
+		typeInfo = sp ? std::string("string_id='") + *sp + "'" : std::string("string_id=<") + std::to_string(callee_value.asStringId()) + ">";
+	}
+	else if (callee_value.isObjectId()) typeInfo = "object_id";
+	else if (callee_value.isArrayId()) typeInfo = "array_id";
+	else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+	else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+	else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
+	else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
+	// Dump call stack for debugging
+	std::string frameInfo;
+	for (int fi = static_cast<int>(frame_count_) - 1; fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
+		auto &fr = frame_arena_[fi];
+		std::string fname = fr.function ? fr.function->name : "<anon>";
+		frameInfo += "  frame[" + std::to_string(fi) + "] " + fname + " ip=" + std::to_string(fr.ip) + "\n";
+	}
+	// Dump instructions around the failing IP
+	std::string instrInfo;
+	auto &cf = currentFrame();
+	if (cf.function && cf.ip < cf.function->instructions.size()) {
+		uint32_t start = cf.ip > 5 ? cf.ip - 5 : 0;
+		uint32_t end = std::min(cf.function->instructions.size(), static_cast<size_t>(cf.ip + 5));
+		for (uint32_t ii = start; ii < end; ++ii) {
+			auto &inst = cf.function->instructions[ii];
+			std::string marker = (ii == cf.ip) ? " >>> " : "     ";
+			instrInfo += marker + std::to_string(ii) + ": op=" + std::to_string(static_cast<int>(inst.opcode));
+			for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
+				instrInfo += " op" + std::to_string(oi) + "=";
+				if (inst.operands[oi].isStringValId() && resolve_chunk) {
+					instrInfo += "'" + resolve_chunk->getString(inst.operands[oi].asStringValId()) + "'";
+				} else {
+					instrInfo += inst.operands[oi].toString();
+				}
+			}
+			instrInfo += "\n";
+		}
+	}
+	COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ") [callee_bits=" + std::to_string(callee_value.rawBits()) + ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" + frameInfo + "Instructions:\n" + instrInfo);
     }
 
     if (!resolve_chunk) {
@@ -4508,11 +4542,17 @@ void VM::doTailCall(Value callee_value,
         else if (callee_value.isInt()) typeInfo = "int";
         else if (callee_value.isDouble()) typeInfo = "double";
         else if (callee_value.isBool()) typeInfo = "bool";
-        else if (callee_value.isStringValId()) typeInfo = "string_val_id";
-        else if (callee_value.isStringId()) typeInfo = "string_id";
-        else if (callee_value.isArrayId()) typeInfo = "array_id";
-        else if (callee_value.isEnumId()) typeInfo = "enum_id";
-        COMPILER_THROW("TAIL_CALL expects function, closure, or callable object as callee (got " + typeInfo + ")");
+else if (callee_value.isStringValId()) {
+		typeInfo = current_chunk ? std::string("string_val_id='") + current_chunk->getString(callee_value.asStringValId()) + "'"
+		                         : std::string("string_val_id=<") + std::to_string(callee_value.asStringValId()) + ">";
+	}
+	else if (callee_value.isStringId()) {
+		auto *sp = heap_.string(callee_value.asStringId());
+		typeInfo = sp ? std::string("string_id='") + *sp + "'" : std::string("string_id=<") + std::to_string(callee_value.asStringId()) + ">";
+	}
+	else if (callee_value.isArrayId()) typeInfo = "array_id";
+	else if (callee_value.isEnumId()) typeInfo = "enum_id";
+	COMPILER_THROW("TAIL_CALL expects function, closure, or callable object as callee (got " + typeInfo + ")");
     }
 
     if (!resolve_chunk) {
@@ -5896,17 +5936,32 @@ if (upvalue_index >= closure->upvalues.size() ||
 !closure->upvalues[upvalue_index]) {
 COMPILER_THROW("LOAD_UPVALUE index out of range");
 }
-const auto &cell = closure->upvalues[upvalue_index];
-Value value;
-if (cell->is_open) {
-uint32_t abs_index = cell->locals_base + cell->open_index;
-this->ensureLocalIndex(abs_index);
-value = locals[abs_index];
-} else {
-value = cell->closed_value;
-}
-pushStack(value);
-break;
+    const auto &cell = closure->upvalues[upvalue_index];
+    Value value;
+    if (cell->is_open) {
+        uint32_t abs_index = cell->locals_base + cell->open_index;
+        this->ensureLocalIndex(abs_index);
+        value = locals[abs_index];
+        // Diagnostic: detect string loaded from upvalue that should hold a function
+        if (value.isStringValId() && currentFrame().function) {
+            std::string sv = current_chunk ? current_chunk->getString(value.asStringValId()) : "?";
+            COMPILER_THROW("LOAD_UPVALUE[" + std::to_string(upvalue_index) + "] in " + currentFrame().function->name
+                + " ip=" + std::to_string(currentFrame().ip) + ": got string_val_id='" + sv
+                + "' from OPEN cell (locals_base=" + std::to_string(cell->locals_base)
+                + ", open_index=" + std::to_string(cell->open_index)
+                + ", abs=" + std::to_string(abs_index) + ")");
+        }
+    } else {
+        value = cell->closed_value;
+        if (value.isStringValId() && currentFrame().function) {
+            std::string sv = current_chunk ? current_chunk->getString(value.asStringValId()) : "?";
+            COMPILER_THROW("LOAD_UPVALUE[" + std::to_string(upvalue_index) + "] in " + currentFrame().function->name
+                + " ip=" + std::to_string(currentFrame().ip) + ": got string_val_id='" + sv
+                + "' from CLOSED cell)");
+        }
+    }
+    pushStack(value);
+    break;
 }
 
 case OpCode::STORE_UPVALUE: {

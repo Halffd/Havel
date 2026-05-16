@@ -183,6 +183,8 @@ void havel_pushcfunction_with_ctx(HavelState* H, HavelCFunctionWithCtx fn, void*
             return havel::core::Value::makeNull();
         };
         H->vm->registerHostFunction(name, hostFn);
+        uint32_t idx = H->vm->getHostFunctionIndex(name);
+        H->stack.push_back(havel::core::Value::makeHostFuncId(idx));
     } catch (const std::exception& e) {
         H->last_error = e.what();
     }
@@ -541,14 +543,11 @@ int havel_loadstring(HavelState* H, const char* s, const char* name) {
     opts.compile_unit_name = unitName;
     opts.vm_override = H->vm.get();
     auto result = havel::compiler::runBytecodePipeline(s, "__main__", opts);
-    fprintf(stderr, "[SYNC] VM globals (%zu):", H->vm->globals.size());
     for (const auto& kv : H->vm->globals) {
-        fprintf(stderr, " %s", kv.first.c_str());
         if (H->globals.find(kv.first) == H->globals.end()) {
             H->globals[kv.first] = kv.second;
         }
     }
-    fprintf(stderr, "\n");
     H->stack.push_back(result.return_value);
         return HAVEL_OK;
     } catch (const std::exception& e) {

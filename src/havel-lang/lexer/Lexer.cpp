@@ -501,9 +501,9 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         std::string decoded = processEscapeSequence(isFString, suppressInterp);
         value += decoded;
         if (suppressInterp) continue;
-    } else if (c == '$' && braceDepth == 0) {
-        char next = peek();
-        if (isAlpha(next) || next == '_' || next == '@') {
+} else if (c == '$' && braceDepth == 0) {
+                char next = peek(1);
+                if (isAlpha(next) || next == '_' || next == '@') {
             hasInterpolation = true;
             value += advance(); // $
 

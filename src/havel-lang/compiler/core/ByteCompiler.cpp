@@ -4939,6 +4939,10 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
 
     compileExpression(*statement.condition);
     uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    std::cerr << "[DBG-IF] fn=" << (current_function ? current_function->name : "<null>")
+              << " else_jump=" << else_jump
+              << " instr_count=" << current_function->instructions.size()
+              << " has_alternative=" << (statement.alternative ? "yes" : "no") << "\n";
 
   bool was_tail = in_tail_position_;
   bool consequence_was_tail = false;
@@ -4965,6 +4969,10 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
         uint32_t else_target =
             static_cast<uint32_t>(current_function->instructions.size());
         patchJump(else_jump, else_target);
+        std::cerr << "[DBG-IF] fn=" << current_function->name
+                  << " patched else_jump=" << else_jump << " -> else_target=" << else_target
+                  << " end_jump=" << end_jump
+                  << " instr_count=" << current_function->instructions.size() << "\n";
 
     bool alternative_was_tail = false;
     if (was_tail) {
@@ -4985,6 +4993,8 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
         uint32_t end_target =
             static_cast<uint32_t>(current_function->instructions.size());
         patchJump(end_jump, end_target);
+        std::cerr << "[DBG-IF] fn=" << current_function->name
+                  << " patched end_jump=" << end_jump << " -> end_target=" << end_target << "\n";
 
     // TCO: Only set tail call flag if BOTH branches emitted tail calls
     if (was_tail && consequence_was_tail && alternative_was_tail) {

@@ -12,373 +12,361 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 struct BuilderState {
-    std::unique_ptr<BytecodeChunk> chunk;
-    BytecodeFunction *current_func = nullptr;
-    std::unordered_map<std::string, OpCode> opcode_map;
-    bool has_func = false;
+	std::unique_ptr<BytecodeChunk> chunk;
+	int32_t current_func_idx = -1;
+	std::unordered_map<std::string, OpCode> opcode_map;
 
-    BuilderState() {
-        chunk = std::make_unique<BytecodeChunk>();
-        opcode_map = {
-            {"LOAD_CONST", OpCode::LOAD_CONST},
-            {"LOAD_GLOBAL", OpCode::LOAD_GLOBAL},
-            {"STORE_GLOBAL", OpCode::STORE_GLOBAL},
-            {"STORE_IMMUT_GLOBAL", OpCode::STORE_IMMUT_GLOBAL},
-            {"LOAD_VAR", OpCode::LOAD_VAR},
-            {"STORE_VAR", OpCode::STORE_VAR},
-            {"STORE_IMMUT_VAR", OpCode::STORE_IMMUT_VAR},
-            {"LOAD_UPVALUE", OpCode::LOAD_UPVALUE},
-            {"STORE_UPVALUE", OpCode::STORE_UPVALUE},
-            {"POP", OpCode::POP},
-            {"DUP", OpCode::DUP},
-            {"SWAP", OpCode::SWAP},
-            {"PUSH_NULL", OpCode::PUSH_NULL},
-            {"ADD", OpCode::ADD},
-            {"SUB", OpCode::SUB},
-            {"MUL", OpCode::MUL},
-            {"DIV", OpCode::DIV},
-            {"INT_DIV", OpCode::INT_DIV},
-            {"MOD", OpCode::MOD},
-            {"POW", OpCode::POW},
-            {"NEGATE", OpCode::NEGATE},
-            {"NOT", OpCode::NOT},
-            {"AND", OpCode::AND},
-            {"OR", OpCode::OR},
-            {"EQ", OpCode::EQ},
-            {"NEQ", OpCode::NEQ},
-            {"IS", OpCode::IS},
-            {"LT", OpCode::LT},
-            {"LTE", OpCode::LTE},
-            {"GT", OpCode::GT},
-            {"GTE", OpCode::GTE},
-            {"IS_NULL", OpCode::IS_NULL},
-            {"BIT_AND", OpCode::BIT_AND},
-            {"BIT_OR", OpCode::BIT_OR},
-            {"BIT_XOR", OpCode::BIT_XOR},
-            {"BIT_LSH", OpCode::BIT_LSH},
-            {"BIT_RSH", OpCode::BIT_RSH},
-            {"BIT_NOT", OpCode::BIT_NOT},
-            {"LENGTH", OpCode::LENGTH},
-            {"JUMP", OpCode::JUMP},
-            {"JUMP_IF_FALSE", OpCode::JUMP_IF_FALSE},
-            {"JUMP_IF_TRUE", OpCode::JUMP_IF_TRUE},
-            {"JUMP_IF_NULL", OpCode::JUMP_IF_NULL},
-            {"CALL", OpCode::CALL},
-            {"TAIL_CALL", OpCode::TAIL_CALL},
-            {"CALL_METHOD", OpCode::CALL_METHOD},
-            {"RETURN", OpCode::RETURN},
-            {"DEFINE_FUNC", OpCode::DEFINE_FUNC},
-            {"CLOSURE", OpCode::CLOSURE},
-            {"PRINT", OpCode::PRINT},
-            {"OBJECT_NEW", OpCode::OBJECT_NEW},
-            {"OBJECT_GET", OpCode::OBJECT_GET},
-            {"OBJECT_SET", OpCode::OBJECT_SET},
-            {"ARRAY_NEW", OpCode::ARRAY_NEW},
-            {"ARRAY_PUSH", OpCode::ARRAY_PUSH},
-            {"ARRAY_GET", OpCode::ARRAY_GET},
-            {"ARRAY_SET", OpCode::ARRAY_SET},
-            {"ARRAY_LEN", OpCode::ARRAY_LEN},
-            {"ARRAY_FREEZE", OpCode::ARRAY_FREEZE},
-            {"SET_NEW", OpCode::SET_NEW},
-            {"RANGE_NEW", OpCode::RANGE_NEW},
-            {"ENUM_NEW", OpCode::ENUM_NEW},
-            {"ENUM_TAG", OpCode::ENUM_TAG},
-            {"ENUM_PAYLOAD", OpCode::ENUM_PAYLOAD},
-            {"ITER_NEW", OpCode::ITER_NEW},
-            {"ITER_NEXT", OpCode::ITER_NEXT},
-            {"STRING_LEN", OpCode::STRING_LEN},
-            {"STRING_CONCAT", OpCode::STRING_CONCAT},
-            {"SPREAD", OpCode::SPREAD},
-            {"TO_INT", OpCode::TO_INT},
-            {"TO_FLOAT", OpCode::TO_FLOAT},
-            {"TO_STRING", OpCode::TO_STRING},
-            {"TO_BOOL", OpCode::TO_BOOL},
-            {"TYPE_OF", OpCode::TYPE_OF},
-            {"AS_TYPE", OpCode::AS_TYPE},
-            {"CLASS_NEW", OpCode::CLASS_NEW},
-            {"CLASS_GET_FIELD", OpCode::CLASS_GET_FIELD},
-            {"CLASS_SET_FIELD", OpCode::CLASS_SET_FIELD},
-            {"CALL_SUPER", OpCode::CALL_SUPER},
-            {"STRUCT_NEW", OpCode::STRUCT_NEW},
-            {"STRUCT_GET", OpCode::STRUCT_GET},
-            {"STRUCT_SET", OpCode::STRUCT_SET},
-            {"IMPORT", OpCode::IMPORT},
-            {"YIELD", OpCode::YIELD},
-            {"THROW", OpCode::THROW},
-            {"TRY_ENTER", OpCode::TRY_ENTER},
-            {"TRY_EXIT", OpCode::TRY_EXIT},
-            {"LOAD_EXCEPTION", OpCode::LOAD_EXCEPTION},
-            {"INCLOCAL", OpCode::INCLOCAL},
-            {"DECLOCAL", OpCode::DECLOCAL},
-            {"INCLOCAL_POST", OpCode::INCLOCAL_POST},
-            {"DECLOCAL_POST", OpCode::DECLOCAL_POST},
-            {"NOP", OpCode::NOP},
-        };
-    }
+	BytecodeFunction *currentFunc() {
+		if (current_func_idx < 0) return nullptr;
+		return chunk->getFunctionMutable(static_cast<uint32_t>(current_func_idx));
+	}
+
+	BuilderState() {
+		chunk = std::make_unique<BytecodeChunk>();
+		opcode_map = {
+		{"LOAD_CONST", OpCode::LOAD_CONST},
+		{"LOAD_GLOBAL", OpCode::LOAD_GLOBAL},
+		{"STORE_GLOBAL", OpCode::STORE_GLOBAL},
+		{"STORE_IMMUT_GLOBAL", OpCode::STORE_IMMUT_GLOBAL},
+		{"LOAD_VAR", OpCode::LOAD_VAR},
+		{"STORE_VAR", OpCode::STORE_VAR},
+		{"STORE_IMMUT_VAR", OpCode::STORE_IMMUT_VAR},
+		{"LOAD_UPVALUE", OpCode::LOAD_UPVALUE},
+		{"STORE_UPVALUE", OpCode::STORE_UPVALUE},
+		{"POP", OpCode::POP},
+		{"DUP", OpCode::DUP},
+		{"SWAP", OpCode::SWAP},
+		{"PUSH_NULL", OpCode::PUSH_NULL},
+		{"ADD", OpCode::ADD},
+		{"SUB", OpCode::SUB},
+		{"MUL", OpCode::MUL},
+		{"DIV", OpCode::DIV},
+		{"INT_DIV", OpCode::INT_DIV},
+		{"MOD", OpCode::MOD},
+		{"POW", OpCode::POW},
+		{"NEGATE", OpCode::NEGATE},
+		{"NOT", OpCode::NOT},
+		{"AND", OpCode::AND},
+		{"OR", OpCode::OR},
+		{"EQ", OpCode::EQ},
+		{"NEQ", OpCode::NEQ},
+		{"IS", OpCode::IS},
+		{"LT", OpCode::LT},
+		{"LTE", OpCode::LTE},
+		{"GT", OpCode::GT},
+		{"GTE", OpCode::GTE},
+		{"IS_NULL", OpCode::IS_NULL},
+		{"BIT_AND", OpCode::BIT_AND},
+		{"BIT_OR", OpCode::BIT_OR},
+		{"BIT_XOR", OpCode::BIT_XOR},
+		{"BIT_LSH", OpCode::BIT_LSH},
+		{"BIT_RSH", OpCode::BIT_RSH},
+		{"BIT_NOT", OpCode::BIT_NOT},
+		{"LENGTH", OpCode::LENGTH},
+		{"JUMP", OpCode::JUMP},
+		{"JUMP_IF_FALSE", OpCode::JUMP_IF_FALSE},
+		{"JUMP_IF_TRUE", OpCode::JUMP_IF_TRUE},
+		{"JUMP_IF_NULL", OpCode::JUMP_IF_NULL},
+		{"CALL", OpCode::CALL},
+		{"TAIL_CALL", OpCode::TAIL_CALL},
+		{"CALL_METHOD", OpCode::CALL_METHOD},
+		{"RETURN", OpCode::RETURN},
+		{"DEFINE_FUNC", OpCode::DEFINE_FUNC},
+		{"CLOSURE", OpCode::CLOSURE},
+		{"PRINT", OpCode::PRINT},
+		{"OBJECT_NEW", OpCode::OBJECT_NEW},
+		{"OBJECT_GET", OpCode::OBJECT_GET},
+		{"OBJECT_SET", OpCode::OBJECT_SET},
+		{"ARRAY_NEW", OpCode::ARRAY_NEW},
+		{"ARRAY_PUSH", OpCode::ARRAY_PUSH},
+		{"ARRAY_GET", OpCode::ARRAY_GET},
+		{"ARRAY_SET", OpCode::ARRAY_SET},
+		{"ARRAY_LEN", OpCode::ARRAY_LEN},
+		{"ARRAY_FREEZE", OpCode::ARRAY_FREEZE},
+		{"SET_NEW", OpCode::SET_NEW},
+		{"RANGE_NEW", OpCode::RANGE_NEW},
+		{"ENUM_NEW", OpCode::ENUM_NEW},
+		{"ENUM_TAG", OpCode::ENUM_TAG},
+		{"ENUM_PAYLOAD", OpCode::ENUM_PAYLOAD},
+		{"ITER_NEW", OpCode::ITER_NEW},
+		{"ITER_NEXT", OpCode::ITER_NEXT},
+		{"STRING_LEN", OpCode::STRING_LEN},
+		{"STRING_CONCAT", OpCode::STRING_CONCAT},
+		{"SPREAD", OpCode::SPREAD},
+		{"TO_INT", OpCode::TO_INT},
+		{"TO_FLOAT", OpCode::TO_FLOAT},
+		{"TO_STRING", OpCode::TO_STRING},
+		{"TO_BOOL", OpCode::TO_BOOL},
+		{"TYPE_OF", OpCode::TYPE_OF},
+		{"AS_TYPE", OpCode::AS_TYPE},
+		{"CLASS_NEW", OpCode::CLASS_NEW},
+		{"CLASS_GET_FIELD", OpCode::CLASS_GET_FIELD},
+		{"CLASS_SET_FIELD", OpCode::CLASS_SET_FIELD},
+		{"CALL_SUPER", OpCode::CALL_SUPER},
+		{"STRUCT_NEW", OpCode::STRUCT_NEW},
+		{"STRUCT_GET", OpCode::STRUCT_GET},
+		{"STRUCT_SET", OpCode::STRUCT_SET},
+		{"IMPORT", OpCode::IMPORT},
+		{"YIELD", OpCode::YIELD},
+		{"THROW", OpCode::THROW},
+		{"TRY_ENTER", OpCode::TRY_ENTER},
+		{"TRY_EXIT", OpCode::TRY_EXIT},
+		{"LOAD_EXCEPTION", OpCode::LOAD_EXCEPTION},
+		{"INCLOCAL", OpCode::INCLOCAL},
+		{"DECLOCAL", OpCode::DECLOCAL},
+		{"INCLOCAL_POST", OpCode::INCLOCAL_POST},
+		{"DECLOCAL_POST", OpCode::DECLOCAL_POST},
+		{"NOP", OpCode::NOP},
+		};
+	}
 };
 
 static BuilderState g_builder;
 
 static OpCode parseOpcode(const std::string &name) {
-    auto it = g_builder.opcode_map.find(name);
-    if (it == g_builder.opcode_map.end()) {
-        throw std::runtime_error("bc: unknown opcode: " + name);
-    }
-    return it->second;
+	auto it = g_builder.opcode_map.find(name);
+	if (it == g_builder.opcode_map.end()) {
+		throw std::runtime_error("bc: unknown opcode: " + name);
+	}
+	return it->second;
 }
 
 void registerBytecodeBuilderModule(const VMApi &api) {
-    api.registerFunction("bc.reset", [](const std::vector<Value> &) -> Value {
-        g_builder = BuilderState();
-        return Value::makeNull();
-    });
+	api.registerFunction("bc.reset", [](const std::vector<Value> &) -> Value {
+		g_builder = BuilderState();
+		return Value::makeNull();
+	});
 
-    api.registerFunction("bc.func_new", [&api](const std::vector<Value> &args) -> Value {
-        if (args.size() < 1 || !args[0].isStringId()) {
-            throw std::runtime_error("bc.func_new: requires name (string)");
-        }
-        auto name = api.vm().resolveStringKey(args[0]);
-        uint32_t params = 0;
-        uint32_t locals = 0;
-        if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
-        if (args.size() > 2 && args[2].isInt()) locals = static_cast<uint32_t>(args[2].asInt());
+	api.registerFunction("bc.func_new", [&api](const std::vector<Value> &args) -> Value {
+		if (args.size() < 1 || !args[0].isStringId()) {
+			throw std::runtime_error("bc.func_new: requires name (string)");
+		}
+		auto name = api.vm().resolveStringKey(args[0]);
+		uint32_t params = 0;
+		uint32_t locals = 0;
+		if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
+		if (args.size() > 2 && args[2].isInt()) locals = static_cast<uint32_t>(args[2].asInt());
 
-        BytecodeFunction func(name, params, locals);
-        g_builder.chunk->addFunction(std::move(func));
-        auto &all = const_cast<std::vector<BytecodeFunction>&>(g_builder.chunk->getAllFunctions());
-        g_builder.current_func = &all.back();
-        g_builder.has_func = true;
-        auto idx = g_builder.chunk->getFunctionCount() - 1;
-        return Value::makeInt(static_cast<int64_t>(idx));
-    });
+		BytecodeFunction func(name, params, locals);
+		g_builder.chunk->addFunction(std::move(func));
+		g_builder.current_func_idx = static_cast<int32_t>(g_builder.chunk->getFunctionCount() - 1);
+		return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));
+	});
 
-    api.registerFunction("bc.emit", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.emit: no current function");
-        }
-        if (args.empty() || !args[0].isStringId()) {
-            throw std::runtime_error("bc.emit: requires opcode name (string)");
-        }
-        auto opName = api.vm().resolveStringKey(args[0]);
-        OpCode op = parseOpcode(opName);
+	api.registerFunction("bc.emit", [&api](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.emit: no current function");
+		if (args.empty() || !args[0].isStringId()) {
+			throw std::runtime_error("bc.emit: requires opcode name (string)");
+		}
+		auto opName = api.vm().resolveStringKey(args[0]);
+		OpCode op = parseOpcode(opName);
 
-        std::vector<Value> operands;
-        for (size_t i = 1; i < args.size(); ++i) {
-            operands.push_back(args[i]);
-        }
-        g_builder.current_func->instructions.emplace_back(op, std::move(operands));
-        auto ip = g_builder.current_func->instructions.size() - 1;
-        return Value::makeInt(static_cast<int64_t>(ip));
-    });
+		std::vector<Value> operands;
+		for (size_t i = 1; i < args.size(); ++i) {
+			operands.push_back(args[i]);
+		}
+		fn->instructions.emplace_back(op, std::move(operands));
+		auto ip = fn->instructions.size() - 1;
+		return Value::makeInt(static_cast<int64_t>(ip));
+	});
 
-    api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.add_const: no current function");
-        }
-        if (args.empty()) {
-            throw std::runtime_error("bc.add_const: requires value");
-        }
-        auto &consts = g_builder.current_func->constants;
-        for (uint32_t i = 0; i < consts.size(); ++i) {
-            if (consts[i] == args[0]) return Value::makeInt(static_cast<int64_t>(i));
-        }
-        uint32_t idx = static_cast<uint32_t>(consts.size());
-        consts.push_back(args[0]);
-        return Value::makeInt(static_cast<int64_t>(idx));
-    });
+	api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.add_const: no current function");
+		if (args.empty()) throw std::runtime_error("bc.add_const: requires value");
+		auto &consts = fn->constants;
+		for (uint32_t i = 0; i < consts.size(); ++i) {
+			if (consts[i] == args[0]) return Value::makeInt(static_cast<int64_t>(i));
+		}
+		uint32_t idx = static_cast<uint32_t>(consts.size());
+		consts.push_back(args[0]);
+		return Value::makeInt(static_cast<int64_t>(idx));
+	});
 
-    api.registerFunction("bc.add_string", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.add_string: no current function");
-        }
-        if (args.empty() || !args[0].isStringId()) {
-            throw std::runtime_error("bc.add_string: requires string value");
-        }
-        auto strVal = args[0];
-        auto &consts = g_builder.current_func->constants;
-        for (uint32_t i = 0; i < consts.size(); ++i) {
-            if (consts[i] == strVal) return Value::makeInt(static_cast<int64_t>(i));
-        }
-        uint32_t idx = static_cast<uint32_t>(consts.size());
-        consts.push_back(strVal);
-        return Value::makeInt(static_cast<int64_t>(idx));
-    });
+	api.registerFunction("bc.add_string", [](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.add_string: no current function");
+		if (args.empty() || !args[0].isStringId()) {
+			throw std::runtime_error("bc.add_string: requires string value");
+		}
+		auto strVal = args[0];
+		auto &consts = fn->constants;
+		for (uint32_t i = 0; i < consts.size(); ++i) {
+			if (consts[i] == strVal) return Value::makeInt(static_cast<int64_t>(i));
+		}
+		uint32_t idx = static_cast<uint32_t>(consts.size());
+		consts.push_back(strVal);
+		return Value::makeInt(static_cast<int64_t>(idx));
+	});
 
-    api.registerFunction("bc.add_chunk_string", [](const std::vector<Value> &args) -> Value {
-        if (args.empty() || !args[0].isStringId()) {
-            throw std::runtime_error("bc.add_chunk_string: requires string");
-        }
-        auto str = api.vm().resolveStringKey(args[0]);
-        auto idx = g_builder.chunk->addString(str);
-        return Value::makeInt(static_cast<int64_t>(idx));
-    });
+	api.registerFunction("bc.add_chunk_string", [&api](const std::vector<Value> &args) -> Value {
+		if (args.empty() || !args[0].isStringId()) {
+			throw std::runtime_error("bc.add_chunk_string: requires string");
+		}
+		auto str = api.vm().resolveStringKey(args[0]);
+		auto idx = g_builder.chunk->addString(str);
+		return Value::makeInt(static_cast<int64_t>(idx));
+	});
 
-    api.registerFunction("bc.patch_jump", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.patch_jump: no current function");
-        }
-        if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
-            throw std::runtime_error("bc.patch_jump: requires (jump_ip, target_ip)");
-        }
-        uint32_t jumpIp = static_cast<uint32_t>(args[0].asInt());
-        uint32_t targetIp = static_cast<uint32_t>(args[1].asInt());
-        auto &instrs = g_builder.current_func->instructions;
-        if (jumpIp >= instrs.size()) {
-            throw std::runtime_error("bc.patch_jump: jump_ip out of range");
-        }
-        if (instrs[jumpIp].operands.empty()) {
-            instrs[jumpIp].operands.push_back(Value::makeInt(static_cast<int64_t>(targetIp)));
-        } else {
-            instrs[jumpIp].operands[0] = Value::makeInt(static_cast<int64_t>(targetIp));
-        }
-        return Value::makeNull();
-    });
+	api.registerFunction("bc.patch_jump", [](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.patch_jump: no current function");
+		if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
+			throw std::runtime_error("bc.patch_jump: requires (jump_ip, target_ip)");
+		}
+		uint32_t jumpIp = static_cast<uint32_t>(args[0].asInt());
+		uint32_t targetIp = static_cast<uint32_t>(args[1].asInt());
+		auto &instrs = fn->instructions;
+		if (jumpIp >= instrs.size()) {
+			throw std::runtime_error("bc.patch_jump: jump_ip out of range");
+		}
+		if (instrs[jumpIp].operands.empty()) {
+			instrs[jumpIp].operands.push_back(Value::makeInt(static_cast<int64_t>(targetIp)));
+		} else {
+			instrs[jumpIp].operands[0] = Value::makeInt(static_cast<int64_t>(targetIp));
+		}
+		return Value::makeNull();
+	});
 
-    api.registerFunction("bc.set_local_count", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.set_local_count: no current function");
-        }
-        if (args.empty() || !args[0].isInt()) {
-            throw std::runtime_error("bc.set_local_count: requires count (int)");
-        }
-        g_builder.current_func->local_count = static_cast<uint32_t>(args[0].asInt());
-        return Value::makeNull();
-    });
+	api.registerFunction("bc.set_local_count", [](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.set_local_count: no current function");
+		if (args.empty() || !args[0].isInt()) {
+			throw std::runtime_error("bc.set_local_count: requires count (int)");
+		}
+		fn->local_count = static_cast<uint32_t>(args[0].asInt());
+		return Value::makeNull();
+	});
 
-    api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.set_param_count: no current function");
-        }
-        if (args.empty() || !args[0].isInt()) {
-            throw std::runtime_error("bc.set_param_count: requires count (int)");
-        }
-        g_builder.current_func->param_count = static_cast<uint32_t>(args[0].asInt());
-        return Value::makeNull();
-    });
+	api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.set_param_count: no current function");
+		if (args.empty() || !args[0].isInt()) {
+			throw std::runtime_error("bc.set_param_count: requires count (int)");
+		}
+		fn->param_count = static_cast<uint32_t>(args[0].asInt());
+		return Value::makeNull();
+	});
 
-    api.registerFunction("bc.add_upvalue", [](const std::vector<Value> &args) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            throw std::runtime_error("bc.add_upvalue: no current function");
-        }
-        if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
-            throw std::runtime_error("bc.add_upvalue: requires (index, captures_local)");
-        }
-        havel::compiler::UpvalueDescriptor desc;
-        desc.index = static_cast<uint32_t>(args[0].asInt());
-        desc.captures_local = args[1].asInt() != 0;
-        g_builder.current_func->upvalues.push_back(desc);
-        return Value::makeInt(static_cast<int64_t>(g_builder.current_func->upvalues.size() - 1));
-    });
+	api.registerFunction("bc.add_upvalue", [](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.add_upvalue: no current function");
+		if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
+			throw std::runtime_error("bc.add_upvalue: requires (index, captures_local)");
+		}
+		havel::compiler::UpvalueDescriptor desc;
+		desc.index = static_cast<uint32_t>(args[0].asInt());
+		desc.captures_local = args[1].asInt() != 0;
+		fn->upvalues.push_back(desc);
+		return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
+	});
 
-    api.registerFunction("bc.execute", [&api](const std::vector<Value> &args) -> Value {
-        if (g_builder.chunk->getFunctionCount() == 0) {
-            throw std::runtime_error("bc.execute: no functions in chunk");
-        }
-        std::string entry = "__main__";
-        if (!args.empty() && args[0].isStringId()) {
-            entry = api.vm().resolveStringKey(args[0]);
-        }
+	api.registerFunction("bc.execute", [&api](const std::vector<Value> &args) -> Value {
+		if (g_builder.chunk->getFunctionCount() == 0) {
+			throw std::runtime_error("bc.execute: no functions in chunk");
+		}
+		std::string entry = "__main__";
+		if (!args.empty() && args[0].isStringId()) {
+			entry = api.vm().resolveStringKey(args[0]);
+		}
 
-        std::vector<Value> runArgs;
-        for (size_t i = 1; i < args.size(); ++i) {
-            runArgs.push_back(args[i]);
-        }
+		std::vector<Value> runArgs;
+		for (size_t i = 1; i < args.size(); ++i) {
+			runArgs.push_back(args[i]);
+		}
 
-        auto &vm = api.vm();
-        vm.registerDefaultHostGlobals();
-        try {
-            auto result = vm.execute(*g_builder.chunk, entry, runArgs);
-            return result;
-        } catch (const std::exception &e) {
-            throw std::runtime_error(std::string("bc.execute error: ") + e.what());
-        }
-    });
+		auto &vm = api.vm();
+		vm.registerDefaultHostGlobals();
+		try {
+			auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+			return result;
+		} catch (const std::exception &e) {
+			throw std::runtime_error(std::string("bc.execute error: ") + e.what());
+		}
+	});
 
-    api.registerFunction("bc.execute_persistent", [&api](const std::vector<Value> &args) -> Value {
-        if (g_builder.chunk->getFunctionCount() == 0) {
-            throw std::runtime_error("bc.execute_persistent: no functions in chunk");
-        }
-        std::string entry = "__main__";
-        if (!args.empty() && args[0].isStringId()) {
-            entry = api.vm().resolveStringKey(args[0]);
-        }
+	api.registerFunction("bc.execute_persistent", [&api](const std::vector<Value> &args) -> Value {
+		if (g_builder.chunk->getFunctionCount() == 0) {
+			throw std::runtime_error("bc.execute_persistent: no functions in chunk");
+		}
+		std::string entry = "__main__";
+		if (!args.empty() && args[0].isStringId()) {
+			entry = api.vm().resolveStringKey(args[0]);
+		}
 
-        std::vector<Value> runArgs;
-        for (size_t i = 1; i < args.size(); ++i) {
-            runArgs.push_back(args[i]);
-        }
+		std::vector<Value> runArgs;
+		for (size_t i = 1; i < args.size(); ++i) {
+			runArgs.push_back(args[i]);
+		}
 
-        auto &vm = api.vm();
-        try {
-            auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
-            return result;
-        } catch (const std::exception &e) {
-            throw std::runtime_error(std::string("bc.execute_persistent error: ") + e.what());
-        }
-    });
+		auto &vm = api.vm();
+		try {
+			auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
+			return result;
+		} catch (const std::exception &e) {
+			throw std::runtime_error(std::string("bc.execute_persistent error: ") + e.what());
+		}
+	});
 
-    api.registerFunction("bc.func_count", [](const std::vector<Value> &) -> Value {
-        return Value::makeInt(static_cast<int64_t>(g_builder.chunk->getFunctionCount()));
-    });
+	api.registerFunction("bc.func_count", [](const std::vector<Value> &) -> Value {
+		return Value::makeInt(static_cast<int64_t>(g_builder.chunk->getFunctionCount()));
+	});
 
-    api.registerFunction("bc.instr_count", [](const std::vector<Value> &) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            return Value::makeInt(0);
-        }
-        return Value::makeInt(static_cast<int64_t>(g_builder.current_func->instructions.size()));
-    });
+	api.registerFunction("bc.instr_count", [](const std::vector<Value> &) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) return Value::makeInt(0);
+		return Value::makeInt(static_cast<int64_t>(fn->instructions.size()));
+	});
 
-    api.registerFunction("bc.const_count", [](const std::vector<Value> &) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            return Value::makeInt(0);
-        }
-        return Value::makeInt(static_cast<int64_t>(g_builder.current_func->constants.size()));
-    });
+	api.registerFunction("bc.const_count", [](const std::vector<Value> &) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) return Value::makeInt(0);
+		return Value::makeInt(static_cast<int64_t>(fn->constants.size()));
+	});
 
-    api.registerFunction("bc.disasm", [&api](const std::vector<Value> &) -> Value {
-        if (!g_builder.has_func || !g_builder.current_func) {
-            return api.makeString("<no current function>");
-        }
-        std::string out;
-        auto *fn = g_builder.current_func;
-        out += "function " + fn->name + " (params=" + std::to_string(fn->param_count)
-             + " locals=" + std::to_string(fn->local_count) + ")\n";
-        for (size_t i = 0; i < fn->instructions.size(); ++i) {
-            auto &instr = fn->instructions[i];
-            out += "  " + std::to_string(i) + ": ";
-            uint8_t opVal = static_cast<uint8_t>(instr.opcode);
-            out += std::to_string(opVal);
-            for (auto &op : instr.operands) {
-                if (op.isInt()) out += " " + std::to_string(op.asInt());
-                else if (op.isDouble()) out += " " + std::to_string(op.asDouble());
-                else if (op.isStringId()) out += " str[" + std::to_string(op.asStringValId()) + "]";
-                else out += " ?";
-            }
-            out += "\n";
-        }
-        if (!fn->constants.empty()) {
-            out += "constants:\n";
-            for (size_t i = 0; i < fn->constants.size(); ++i) {
-                out += "  [" + std::to_string(i) + "] ";
-                auto &c = fn->constants[i];
-                if (c.isInt()) out += std::to_string(c.asInt());
-                else if (c.isDouble()) out += std::to_string(c.asDouble());
-                else if (c.isStringId()) out += "str[" + std::to_string(c.asStringValId()) + "]";
-                else out += "?";
-                out += "\n";
-            }
-        }
-        return api.makeString(out);
-    });
+	api.registerFunction("bc.disasm", [&api](const std::vector<Value> &) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) return api.makeString("<no current function>");
+		std::string out;
+		out += "function " + fn->name + " (params=" + std::to_string(fn->param_count)
+			+ " locals=" + std::to_string(fn->local_count) + ")\n";
+		for (size_t i = 0; i < fn->instructions.size(); ++i) {
+			auto &instr = fn->instructions[i];
+			out += "  " + std::to_string(i) + ": ";
+			uint8_t opVal = static_cast<uint8_t>(instr.opcode);
+			out += std::to_string(opVal);
+			for (auto &op : instr.operands) {
+				if (op.isInt()) out += " " + std::to_string(op.asInt());
+				else if (op.isDouble()) out += " " + std::to_string(op.asDouble());
+				else if (op.isStringId()) out += " str[" + std::to_string(op.asStringValId()) + "]";
+				else out += " ?";
+			}
+			out += "\n";
+		}
+		if (!fn->constants.empty()) {
+			out += "constants:\n";
+			for (size_t i = 0; i < fn->constants.size(); ++i) {
+				out += "  [" + std::to_string(i) + "] ";
+				auto &c = fn->constants[i];
+				if (c.isInt()) out += std::to_string(c.asInt());
+				else if (c.isDouble()) out += std::to_string(c.asDouble());
+				else if (c.isStringId()) out += "str[" + std::to_string(c.asStringValId()) + "]";
+				else out += "?";
+				out += "\n";
+			}
+		}
+		return api.makeString(out);
+	});
 
-    api.registerFunction("bc.opcode_id", [&api](const std::vector<Value> &args) -> Value {
-        if (args.empty() || !args[0].isStringId()) {
-            throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
-        }
-        auto name = api.vm().resolveStringKey(args[0]);
-        auto op = parseOpcode(name);
-        return Value::makeInt(static_cast<int64_t>(static_cast<uint8_t>(op)));
-    });
+	api.registerFunction("bc.opcode_id", [&api](const std::vector<Value> &args) -> Value {
+		if (args.empty() || !args[0].isStringId()) {
+			throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
+		}
+		auto name = api.vm().resolveStringKey(args[0]);
+		auto op = parseOpcode(name);
+		return Value::makeInt(static_cast<int64_t>(static_cast<uint8_t>(op)));
+	});
 }
 
 } // namespace havel::stdlib

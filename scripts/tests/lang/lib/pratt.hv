@@ -455,11 +455,7 @@ fn Parser(tokenList):
         c = tok.col
 
         if tt == "Number":
-            numVal = tok.value
-            if numVal.has(".") or numVal.has("e") or numVal.has("E"):
-                NumberLiteral(num(numVal), l, c)
-            else:
-                NumberLiteral(int(numVal), l, c)
+            NumberLiteral(tok.value, l, c)
 
         else if tt == "String" or tt == "MultilineString":
             StringLiteral(tok.value, l, c)
@@ -495,7 +491,7 @@ fn Parser(tokenList):
         else if tt == "InterpolatedString":
             parseInterpolatedString(tok.value, l, c)
 
-        else if tt == "Identifier" or isKeywordIdent(tt):
+        else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null"):
             Identifier(tok.value, l, c)
 
         else if tt == "True":

@@ -730,6 +730,7 @@ VM::VM() {
   tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
   tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
   tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
+  tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
   registerDefaultHostFunctions();
 }
 
@@ -737,6 +738,7 @@ VM::VM(const ::havel::HostContext &ctx) {
   tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
   tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
   tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
+  tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
   // Store context for service access
   context_ = &ctx;
   registerDefaultHostFunctions();
@@ -745,8 +747,27 @@ VM::VM(const ::havel::HostContext &ctx) {
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
 
 VM::~VM() {
+  if (tier2_flush_on_shutdown_) {
+    // Optional drain mode: let queued tier2 compiles finish before shutdown.
+    for (;;) {
+      bool empty = false;
+      {
+        std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+        empty = tier2_queue_.empty() && tier2_queued_or_compiling_.empty();
+      }
+      if (empty) break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+  }
   tier2_worker_running_.store(false);
   if (tier2_worker_.joinable()) tier2_worker_.join();
+  if (tiering_enabled_) {
+    ::havel::info("[tiering] transitions: tier1={} tier2_enqueued={} tier2_compiled={} tier2_dup_skipped={}",
+                  tier1_transition_count_.load(),
+                  tier2_enqueue_count_.load(),
+                  tier2_compile_count_.load(),
+                  tier2_skip_duplicate_count_.load());
+  }
   if (heap_.externalRootCount() > 0) {
         ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
   }
@@ -4840,17 +4861,29 @@ void VM::execBinaryOp(const Instruction &instruction) {
       const std::string fn_name = frame.function->name;
       if (fb.execution_count >= tier1_threshold_ && !tier1_compiled_.count(fn_name)) {
         tier1_compiled_.insert(fn_name);
+        tier1_transition_count_.fetch_add(1);
+        ::havel::debug("[tiering] {} -> tier1", fn_name);
         jit_compiler_->compileFunctionTier(*frame.function, 1);
       }
       if (fb.execution_count >= tier2_threshold_ && !tier2_compiled_.count(fn_name)) {
         tier2_compiled_.insert(fn_name);
         {
           std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-          tier2_queue_.push(*frame.function);
+          if (tier2_queued_or_compiling_.insert(fn_name).second) {
+            tier2_queue_.push(*frame.function);
+            tier2_enqueue_count_.fetch_add(1);
+            ::havel::debug("[tiering] {} queued for tier2", fn_name);
+          } else {
+            tier2_skip_duplicate_count_.fetch_add(1);
+          }
         }
         if (!tier2_worker_running_.exchange(true)) {
           tier2_worker_ = std::thread([this]() {
-            while (tier2_worker_running_.load()) {
+            auto hasQueuedWork = [this]() {
+              std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+              return !tier2_queue_.empty();
+            };
+            while (tier2_worker_running_.load() || hasQueuedWork()) {
               std::optional<BytecodeFunction> fn;
               {
                 std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
@@ -4861,6 +4894,10 @@ void VM::execBinaryOp(const Instruction &instruction) {
               }
               if (fn.has_value() && jit_compiler_) {
                 jit_compiler_->compileFunctionTier(*fn, 2);
+                tier2_compile_count_.fetch_add(1);
+                ::havel::debug("[tiering] {} -> tier2", fn->name);
+                std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+                tier2_queued_or_compiling_.erase(fn->name);
               } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
               }

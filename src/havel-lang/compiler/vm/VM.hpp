@@ -863,10 +863,16 @@ private:
     uint64_t tier2_threshold_ = 10000;
     std::unordered_set<std::string> tier1_compiled_;
     std::unordered_set<std::string> tier2_compiled_;
+    std::unordered_set<std::string> tier2_queued_or_compiling_;
     std::mutex tier2_queue_mutex_;
     std::queue<BytecodeFunction> tier2_queue_;
     std::thread tier2_worker_;
     std::atomic<bool> tier2_worker_running_{false};
+    std::atomic<uint64_t> tier1_transition_count_{0};
+    std::atomic<uint64_t> tier2_enqueue_count_{0};
+    std::atomic<uint64_t> tier2_compile_count_{0};
+    std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
+    bool tier2_flush_on_shutdown_ = false;
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;

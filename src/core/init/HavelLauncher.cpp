@@ -321,6 +321,12 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       } else {
         cfg.linkLibs.push_back(argv[++i]);
       }
+    } else if (arg == "--profile") {
+      if (i + 1 >= argc) {
+        error("--profile requires one of: full, core");
+      } else {
+        cfg.profile = argv[++i];
+      }
     } else if (arg == "--full-aot") {
       cfg.fullAot = true;
       cfg.buildOnly = true;
@@ -1193,7 +1199,8 @@ std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
 	std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
 	std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
 	std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
-	std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
+	std::cout << " --profile <name> AOT link profile: full|core\n";
 	std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
 	std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
 	std::cout << " --syntax <type> Assembly syntax: att|intel\n";
@@ -1607,7 +1614,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
 
     // Verify module
     if (llvm::verifyModule(*module, &llvm::errs())) {
-        error("LLVM IR verification failed");
+        std::string failPath = "/tmp/havel_aot_verify_fail.ll";
+        std::error_code ec;
+        llvm::raw_fd_ostream failOut(failPath, ec, llvm::sys::fs::OF_None);
+        if (!ec) {
+            module->print(failOut, nullptr);
+            error("LLVM IR verification failed (dumped to {})", failPath);
+        } else {
+            error("LLVM IR verification failed");
+        }
         return 1;
     }
 
@@ -1700,6 +1715,8 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             info("Object file written to: {}", nativeObjPath);
         }
 
+        const bool coreProfile = (cfg.profile == "core");
+
         if (cfg.emitBinary) {
             const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
             std::string soPath = aotOutput + shExt;
@@ -1711,7 +1728,9 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             } else {
                 linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
             }
-            appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            if (!coreProfile) {
+                appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            }
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
                 error("Failed to link native shared binary with command: {}", linkCmd);
@@ -1763,9 +1782,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                     std::string libDir = std::filesystem::path(exePath).parent_path().string();
                     linkCmd += " -L\"" + libDir + "\"";
                 }
-                linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+                if (coreProfile) {
+                    linkCmd += " -lhavel_lang";
+                } else {
+                    linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+                }
             }
-            appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            if (!coreProfile) {
+                appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            }
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
                 error("Failed to link native AOT executable with command: {}", linkCmd);

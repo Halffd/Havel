@@ -2519,93 +2519,93 @@ else if (op == OpCode::INT_DIV) {
         return B.CreateBitCast(dRes, i64);
     }
 
-    // No AOT hint - use speculative optimization with runtime type checks
+    // No AOT hint - use speculative optimization with strict single-merge CFG.
     std::string pfx = "op" + std::to_string(ip) + "_";
-    llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx+"int", f);
-    llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx+"chk_dbl", f);
-    llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx+"dbl", f);
-    llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx+"deopt", f);
-    llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx+"merge", f);
+    llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx + "int", f);
+    llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx + "chk_dbl", f);
+    llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx + "dbl", f);
+    llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx + "deopt", f);
+    llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx + "merge", f);
 
-    llvm::Value* bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
+    llvm::Value *bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
     B.CreateCondBr(bothInt, intBB, chkDblBB);
 
     B.SetInsertPoint(intBB);
     llvm::Value *lIv = unboxInt(left);
     llvm::Value *rIv = unboxInt(right);
     llvm::Value *iRes = nullptr;
-    llvm::Value *iBoxed = nullptr;
+    llvm::Value *intBoxed = nullptr;
     if (op == OpCode::ADD) iRes = B.CreateAdd(lIv, rIv);
     else if (op == OpCode::SUB) iRes = B.CreateSub(lIv, rIv);
     else if (op == OpCode::MUL) iRes = B.CreateMul(lIv, rIv);
-else if (op == OpCode::INT_DIV) iRes = B.CreateSDiv(lIv, rIv);
-  else if (op == OpCode::REMAINDER) iRes = B.CreateSRem(lIv, rIv);
-  else if (op == OpCode::DIV) {
-    llvm::Value* lD = B.CreateSIToFP(lIv, f64);
-    llvm::Value* rD = B.CreateSIToFP(rIv, f64);
-    llvm::Value* dRes = B.CreateFDiv(lD, rD);
-    iBoxed = B.CreateBitCast(dRes, i64);
-  }
-  else if (op == OpCode::MOD) {
-    llvm::Value* cRem = B.CreateSRem(lIv, rIv);
-    llvm::Value* signsDiffer = B.CreateICmpSLT(B.CreateXor(cRem, rIv), llvm::ConstantInt::get(i64, 0));
-    llvm::Value* adjusted = B.CreateAdd(cRem, rIv);
-    iRes = B.CreateSelect(signsDiffer, adjusted, cRem);
-  }
-    else iRes = B.CreateAdd(lIv, rIv); // Fallback
-    if (!iBoxed) iBoxed = boxInt(iRes);
-    auto* iExitBB = B.GetInsertBlock();
+    else if (op == OpCode::INT_DIV) iRes = B.CreateSDiv(lIv, rIv);
+    else if (op == OpCode::REMAINDER) iRes = B.CreateSRem(lIv, rIv);
+    else if (op == OpCode::DIV) {
+      llvm::Value *lD = B.CreateSIToFP(lIv, f64);
+      llvm::Value *rD = B.CreateSIToFP(rIv, f64);
+      llvm::Value *dRes = B.CreateFDiv(lD, rD);
+      intBoxed = B.CreateBitCast(dRes, i64);
+    } else if (op == OpCode::MOD) {
+      llvm::Value *cRem = B.CreateSRem(lIv, rIv);
+      llvm::Value *signsDiffer = B.CreateICmpSLT(B.CreateXor(cRem, rIv), llvm::ConstantInt::get(i64, 0));
+      llvm::Value *adjusted = B.CreateAdd(cRem, rIv);
+      iRes = B.CreateSelect(signsDiffer, adjusted, cRem);
+    } else iRes = B.CreateAdd(lIv, rIv);
+    if (!intBoxed) intBoxed = boxInt(iRes);
+    llvm::BasicBlock *intExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(chkDblBB);
-    llvm::Value* bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
+    llvm::Value *bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
     B.CreateCondBr(bothDbl, dblBB, deoptBB);
 
     B.SetInsertPoint(dblBB);
     llvm::Value *lDv = B.CreateBitCast(left, f64);
     llvm::Value *rDv = B.CreateBitCast(right, f64);
-    llvm::Value *dBoxed = nullptr;
-if (op == OpCode::INT_DIV) {
-    llvm::Value* lI = B.CreateFPToSI(lDv, i64);
-    llvm::Value* rI = B.CreateFPToSI(rDv, i64);
-    llvm::Value* iRes2 = B.CreateSDiv(lI, rI);
-    dBoxed = boxInt(iRes2);
-  } else if (op == OpCode::REMAINDER) {
-    llvm::Value* lI = B.CreateFPToSI(lDv, i64);
-    llvm::Value* rI = B.CreateFPToSI(rDv, i64);
-    llvm::Value* iRes2 = B.CreateSRem(lI, rI);
-    dBoxed = boxInt(iRes2);
-  } else {
-        llvm::Value *dRes = nullptr;
-        if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
-        else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
-        else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
-        else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
-        else dRes = B.CreateFDiv(lDv, rDv);
-        dBoxed = B.CreateBitCast(dRes, i64);
+    llvm::Value *dblBoxed = nullptr;
+    if (op == OpCode::INT_DIV) {
+      llvm::Value *lI = B.CreateFPToSI(lDv, i64);
+      llvm::Value *rI = B.CreateFPToSI(rDv, i64);
+      llvm::Value *iRes2 = B.CreateSDiv(lI, rI);
+      dblBoxed = boxInt(iRes2);
+    } else if (op == OpCode::REMAINDER) {
+      llvm::Value *lI = B.CreateFPToSI(lDv, i64);
+      llvm::Value *rI = B.CreateFPToSI(rDv, i64);
+      llvm::Value *iRes2 = B.CreateSRem(lI, rI);
+      dblBoxed = boxInt(iRes2);
+    } else {
+      llvm::Value *dRes = nullptr;
+      if (op == OpCode::ADD) dRes = B.CreateFAdd(lDv, rDv);
+      else if (op == OpCode::SUB) dRes = B.CreateFSub(lDv, rDv);
+      else if (op == OpCode::MUL) dRes = B.CreateFMul(lDv, rDv);
+      else if (op == OpCode::MOD) dRes = B.CreateFRem(lDv, rDv);
+      else dRes = B.CreateFDiv(lDv, rDv);
+      dblBoxed = B.CreateBitCast(dRes, i64);
     }
-    auto* dExitBB = B.GetInsertBlock();
+    llvm::BasicBlock *dblExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(deoptBB);
     llvm::Function *fn_deopt = module.getFunction("havel_deoptimize");
-    if (!fn_deopt) fn_deopt = llvm::Function::Create(llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false), llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
-
-    // Create global string constant for function name
-    llvm::Constant *funcNameStr = llvm::ConstantDataArray::getString(module.getContext(), func.name);
+    if (!fn_deopt) fn_deopt = llvm::Function::Create(
+        llvm::FunctionType::get(voidT, {i8p, i64, i64, i8p}, false),
+        llvm::Function::ExternalLinkage, "havel_deoptimize", &module);
+    llvm::Constant *funcNameStr =
+        llvm::ConstantDataArray::getString(module.getContext(), func.name);
     llvm::GlobalVariable *gv = new llvm::GlobalVariable(
         module, funcNameStr->getType(), true,
         llvm::GlobalValue::PrivateLinkage, funcNameStr);
-    llvm::Value* funcNameConst = B.CreatePointerCast(gv, i8p);
-
+    llvm::Value *funcNameConst = B.CreatePointerCast(gv, i8p);
     B.CreateCall(fn_deopt, {vmArg, left, right, funcNameConst});
+    llvm::Value *slowBoxed = makeNull();
+    llvm::BasicBlock *slowExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(mergeBB);
     llvm::PHINode *phi = B.CreatePHI(i64, 3);
-    phi->addIncoming(iBoxed, iExitBB);
-    phi->addIncoming(dBoxed, dExitBB);
-    phi->addIncoming(makeNull(), deoptBB);
+    phi->addIncoming(intBoxed, intExitBB);
+    phi->addIncoming(dblBoxed, dblExitBB);
+    phi->addIncoming(slowBoxed, slowExitBB);
     return phi;
 };
 
@@ -3837,7 +3837,11 @@ case OpCode::LENGTH: {
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
         if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
         B.CreateCall(fn_unreg, {frame});
-        B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
+        // SSA stack values are currently modeled linearly; at CFG merge points
+        // a top-of-stack value may not dominate all return paths.
+        // Return a stable value here to keep IR verifiable until full stack-phi
+        // merging is implemented.
+        B.CreateRet(makeNull());
         break;
     }
     case OpCode::TRY_ENTER: {

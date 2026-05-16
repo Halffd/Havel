@@ -138,10 +138,10 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 	});
 
 	api.registerFunction("bc.func_new", [&api](const std::vector<Value> &args) -> Value {
-		if (args.size() < 1 || !args[0].isStringId()) {
-			throw std::runtime_error("bc.func_new: requires name (string)");
-		}
-		auto name = api.vm().resolveStringKey(args[0]);
+    if (args.size() < 1 || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.func_new: requires name (string)");
+    }
+    auto name = api.resolveString(args[0]);
 		uint32_t params = 0;
 		uint32_t locals = 0;
 		if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
@@ -156,10 +156,10 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 	api.registerFunction("bc.emit", [&api](const std::vector<Value> &args) -> Value {
 		auto *fn = g_builder.currentFunc();
 		if (!fn) throw std::runtime_error("bc.emit: no current function");
-		if (args.empty() || !args[0].isStringId()) {
-			throw std::runtime_error("bc.emit: requires opcode name (string)");
-		}
-		auto opName = api.vm().resolveStringKey(args[0]);
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.emit: requires opcode name (string)");
+    }
+    auto opName = api.resolveString(args[0]);
 		OpCode op = parseOpcode(opName);
 
 		std::vector<Value> operands;
@@ -187,9 +187,9 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 	api.registerFunction("bc.add_string", [](const std::vector<Value> &args) -> Value {
 		auto *fn = g_builder.currentFunc();
 		if (!fn) throw std::runtime_error("bc.add_string: no current function");
-		if (args.empty() || !args[0].isStringId()) {
-			throw std::runtime_error("bc.add_string: requires string value");
-		}
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.add_string: requires string value");
+    }
 		auto strVal = args[0];
 		auto &consts = fn->constants;
 		for (uint32_t i = 0; i < consts.size(); ++i) {
@@ -201,10 +201,10 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 	});
 
 	api.registerFunction("bc.add_chunk_string", [&api](const std::vector<Value> &args) -> Value {
-		if (args.empty() || !args[0].isStringId()) {
-			throw std::runtime_error("bc.add_chunk_string: requires string");
-		}
-		auto str = api.vm().resolveStringKey(args[0]);
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.add_chunk_string: requires string");
+    }
+    auto str = api.resolveString(args[0]);
 		auto idx = g_builder.chunk->addString(str);
 		return Value::makeInt(static_cast<int64_t>(idx));
 	});
@@ -359,14 +359,34 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return api.makeString(out);
 	});
 
-	api.registerFunction("bc.opcode_id", [&api](const std::vector<Value> &args) -> Value {
-		if (args.empty() || !args[0].isStringId()) {
-			throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
-		}
-		auto name = api.vm().resolveStringKey(args[0]);
-		auto op = parseOpcode(name);
-		return Value::makeInt(static_cast<int64_t>(static_cast<uint8_t>(op)));
-	});
+  api.registerFunction("bc.opcode_id", [&api](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isStringId()) {
+      throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
+    }
+    auto name = api.vm().resolveStringKey(args[0]);
+    auto op = parseOpcode(name);
+    return Value::makeInt(static_cast<int64_t>(static_cast<uint8_t>(op)));
+  });
+
+  auto bcObj = api.makeObject();
+  api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
+  api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
+  api.setField(bcObj, "emit", api.makeFunctionRef("bc.emit"));
+  api.setField(bcObj, "add_const", api.makeFunctionRef("bc.add_const"));
+  api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));
+  api.setField(bcObj, "add_chunk_string", api.makeFunctionRef("bc.add_chunk_string"));
+  api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
+  api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));
+  api.setField(bcObj, "set_param_count", api.makeFunctionRef("bc.set_param_count"));
+  api.setField(bcObj, "add_upvalue", api.makeFunctionRef("bc.add_upvalue"));
+  api.setField(bcObj, "execute", api.makeFunctionRef("bc.execute"));
+  api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
+  api.setField(bcObj, "func_count", api.makeFunctionRef("bc.func_count"));
+  api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));
+  api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));
+  api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
+  api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
+  api.setGlobal("bc", bcObj);
 }
 
 } // namespace havel::stdlib

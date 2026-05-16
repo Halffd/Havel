@@ -16,6 +16,7 @@
 #include <llvm/MC/TargetRegistry.h>
 
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <cctype>
 #include <fstream>
@@ -84,6 +85,9 @@ static constexpr uint64_t ARRAY_TAG_BITS   = QNAN | (EXT_TAG << 48) | (0x1ULL <<
 // ============================================================================
 // Native Bridge Helpers
 // ============================================================================
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC visibility push(default)
+#endif
 extern "C" {
 
 void havel_vm_throw_error(void* vm_ptr, const char* msg) {
@@ -1802,6 +1806,9 @@ uint64_t havel_vm_end_module(void* vm_ptr) {
 }
 
 } // extern "C"
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC visibility pop
+#endif
 
 // ============================================================================
 // BytecodeOrcJIT – implementation
@@ -2615,18 +2622,130 @@ else if (op == OpCode::INT_DIV) {
     for (size_t ip = 0; ip <= func.instructions.size(); ++ip) {
         basicBlocks[ip] = llvm::BasicBlock::Create(ctx, "ip" + std::to_string(ip), f);
     }
+
+    std::unordered_map<llvm::BasicBlock*, size_t> blockToIp;
+    blockToIp.reserve(basicBlocks.size());
+    for (size_t ip = 0; ip < basicBlocks.size(); ++ip) {
+        blockToIp[basicBlocks[ip]] = ip;
+    }
+
+    // Static predecessor map from bytecode CFG.
+    std::vector<std::vector<size_t>> predecessors(basicBlocks.size());
+    auto addStaticEdge = [&](size_t from, size_t to) {
+        if (to >= basicBlocks.size()) return;
+        predecessors[to].push_back(from);
+    };
+    for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
+        const auto &instr = func.instructions[ip];
+        bool addsFallthrough = true;
+        if (instr.opcode == OpCode::JUMP) {
+            size_t target = instr.operands[0].asInt();
+            addStaticEdge(ip, (target < basicBlocks.size()) ? target : (ip + 1));
+            addsFallthrough = false;
+        } else if (instr.opcode == OpCode::JUMP_IF_FALSE ||
+                   instr.opcode == OpCode::JUMP_IF_TRUE ||
+                   instr.opcode == OpCode::JUMP_IF_NULL) {
+            size_t target = instr.operands[0].asInt();
+            addStaticEdge(ip, (target < basicBlocks.size()) ? target : (ip + 1));
+            addStaticEdge(ip, ip + 1);
+            addsFallthrough = false;
+        } else if (instr.opcode == OpCode::RETURN ||
+                   instr.opcode == OpCode::TAIL_CALL ||
+                   instr.opcode == OpCode::THROW) {
+            addsFallthrough = false;
+        }
+
+        if (addsFallthrough) {
+            addStaticEdge(ip, ip + 1);
+        }
+    }
+
+    struct IncomingStackState {
+        llvm::BasicBlock* pred = nullptr;
+        std::vector<llvm::Value*> stack;
+    };
+
+    std::vector<std::vector<IncomingStackState>> pendingIncoming(basicBlocks.size());
+    std::vector<std::vector<llvm::PHINode*>> entryStackPhis(basicBlocks.size());
+
+    auto addIncomingState = [&](size_t targetIp, llvm::BasicBlock* predBB,
+                                const std::vector<llvm::Value*>& stack) {
+        if (targetIp >= basicBlocks.size() || !predBB) return;
+
+        auto &phis = entryStackPhis[targetIp];
+        if (!phis.empty()) {
+            if (phis.size() != stack.size()) {
+                return;
+            }
+            for (size_t i = 0; i < phis.size(); ++i) {
+                phis[i]->addIncoming(stack[i], predBB);
+            }
+            return;
+        }
+
+        pendingIncoming[targetIp].push_back({predBB, stack});
+    };
+
+    auto resolveEntryStack = [&](size_t blockIp, llvm::BasicBlock* block) -> std::vector<llvm::Value*> {
+        auto &incoming = pendingIncoming[blockIp];
+        if (incoming.empty()) {
+            return {};
+        }
+
+        size_t depth = incoming.front().stack.size();
+        for (const auto &inc : incoming) {
+            if (inc.stack.size() != depth) {
+                depth = std::min(depth, inc.stack.size());
+            }
+        }
+
+        if (predecessors[blockIp].size() <= 1) {
+            std::vector<llvm::Value*> single = incoming.front().stack;
+            if (single.size() > depth) single.resize(depth);
+            return single;
+        }
+
+        auto &phis = entryStackPhis[blockIp];
+        if (phis.empty()) {
+            auto insertPt = block->begin();
+            B.SetInsertPoint(block, insertPt);
+            phis.reserve(depth);
+            for (size_t slot = 0; slot < depth; ++slot) {
+                auto *phi = B.CreatePHI(i64, static_cast<unsigned>(predecessors[blockIp].size()),
+                                        "stack_phi_" + std::to_string(blockIp) + "_" + std::to_string(slot));
+                phis.push_back(phi);
+            }
+            for (const auto &inc : incoming) {
+                if (inc.stack.size() < depth) continue;
+                for (size_t slot = 0; slot < depth; ++slot) {
+                    phis[slot]->addIncoming(inc.stack[slot], inc.pred);
+                }
+            }
+        }
+
+        std::vector<llvm::Value*> merged;
+        merged.reserve(phis.size());
+        for (auto *phi : phis) {
+            merged.push_back(phi);
+        }
+        return merged;
+    };
+
     B.CreateBr(basicBlocks[0]);
+    pendingIncoming[0].push_back({entryBB, {}});
 
     // Emit instructions with control flow.
     for (size_t ip = 0; ip < func.instructions.size(); ++ip) {
         B.SetInsertPoint(basicBlocks[ip]);
         llvm::BasicBlock* instrBlock = basicBlocks[ip]; // Save the instruction block
 
-        // Skip if current block already has instructions (and thus may have terminator)
-        // Note: use empty() instead of getTerminator() due to LLVM internal state issues
-        if (!instrBlock->empty()) {
+        // Skip blocks that are already fully emitted.
+        if (instrBlock->getTerminator() != nullptr) {
             continue;
         }
+
+        vstack = resolveEntryStack(ip, instrBlock);
+        B.SetInsertPoint(instrBlock);
 
         const auto &instr = func.instructions[ip];
         const TypeFeedback* fb = (ip < func.type_feedback.size()) ? &func.type_feedback[ip] : nullptr;
@@ -3837,11 +3956,7 @@ case OpCode::LENGTH: {
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
         if (!fn_unreg) fn_unreg = llvm::Function::Create(llvm::FunctionType::get(voidT, {llvm::PointerType::get(ctx, 0)}, false), llvm::Function::ExternalLinkage, "havel_gc_unregister_roots", &module);
         B.CreateCall(fn_unreg, {frame});
-        // SSA stack values are currently modeled linearly; at CFG merge points
-        // a top-of-stack value may not dominate all return paths.
-        // Return a stable value here to keep IR verifiable until full stack-phi
-        // merging is implemented.
-        B.CreateRet(makeNull());
+        B.CreateRet(vstack.empty() ? makeNull() : vstack.back());
         break;
     }
     case OpCode::TRY_ENTER: {
@@ -4419,6 +4534,20 @@ case OpCode::LENGTH: {
     // We terminate the current insert block (which might be a merge block from a specialized op).
     if (B.GetInsertBlock()->getTerminator() == nullptr) {
         B.CreateBr(basicBlocks[ip + 1]);
+    }
+
+    // Capture outgoing stack state for each successor. This feeds entry PHIs.
+    if (auto *term = B.GetInsertBlock()->getTerminator()) {
+        if (auto *br = llvm::dyn_cast<llvm::BranchInst>(term)) {
+            std::unordered_set<size_t> seenSuccs;
+            for (unsigned s = 0; s < br->getNumSuccessors(); ++s) {
+                llvm::BasicBlock* succ = br->getSuccessor(s);
+                auto it = blockToIp.find(succ);
+                if (it == blockToIp.end()) continue;
+                if (!seenSuccs.insert(it->second).second) continue;
+                addIncomingState(it->second, br->getParent(), vstack);
+            }
+        }
     }
 }
 

@@ -447,7 +447,12 @@ public:
     return &functions[index];
   }
 
-  const std::vector<BytecodeFunction> &getAllFunctions() const {
+	BytecodeFunction *getFunctionMutable(uint32_t index) {
+		if (index >= functions.size()) return nullptr;
+		return &functions[index];
+	}
+
+	const std::vector<BytecodeFunction> &getAllFunctions() const {
     return functions;
   }
 

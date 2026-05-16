@@ -966,6 +966,10 @@ target_link_libraries(havel PRIVATE
     $<$<BOOL:${HAVE_LIBFFI}>:ffi>
 )
 
+if(ENABLE_HAVEL_LANG)
+    add_dependencies(havel havel_aot_core_shim)
+endif()
+
 # Compile definitions
 target_compile_definitions(havel PRIVATE
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
@@ -1051,6 +1055,20 @@ $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
     # std::__detail across every translation unit in havel_lang.
     # -----------------------------------------------------------------------
 
+endif()
+
+# Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).
+if(ENABLE_HAVEL_LANG)
+    add_library(havel_aot_core_shim STATIC
+        src/havel-lang/runtime/AotCoreShim.cpp
+    )
+    target_include_directories(havel_aot_core_shim PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(havel_aot_core_shim PRIVATE
+        havel_lang
+    )
 endif()
 
 # ==============================================================================

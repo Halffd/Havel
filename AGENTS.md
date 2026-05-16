@@ -80,13 +80,16 @@ CI runs: CMake configure → build → bytecode-smoke → ctest
 
 ```bash
 # Run a single Havel script
-./build-release/havel script.hv
+./build-release/havel run script.hv
 
 # Run test suite
-./build.sh test
+./build-debug/hvtest
 
 # Run specific test script
 ./build-debug/havel run scripts/test_basic.hv
+
+# Run with full debugging
+./build-debug/havel run scripts/test.hv -d -dl -dp -da --debug-bytecode --debug-jit
 ```
 
 ## Dependencies
@@ -129,8 +132,8 @@ Optional (graceful fallback):
 ./build.sh 0 test
 
 # Debug a specific issue
-./build.sh 0 build
-gdb ./build-debug/havel
+./build.sh 6 build
+gdb --args ./build-debug/havel run test.hv -d -dbc -da -dp -dl -batch -q -ex ... # Or use tmux
 ```
 
 ### Debugging the Language
@@ -186,6 +189,7 @@ IF YOU GENERATE HAVEL CODE THAT USES:
 - String concatenation with +, commas, dot or newlines → REJECTED (use {var} or $var string interpolation)
 - Doing complex things on modules that could be made into classes/structs - Then use them instead
 - and, or - use &&, || and !
+- types: str, int, num (float), bool, array, object, set, tuple, fn and nil
 THE COMPILER WILL ERROR ON THESE PATTERNS. DO NOT USE THEM.
 Function calls without parenthesis - ALLOWED
 DO NOT THINK ABOUT WHAT HAVEL SYNTAX SHOULD BE

@@ -51,6 +51,7 @@ TOKEN_TYPES = {
     "Interval": "Interval",
     "Timeout": "Timeout",
     "Yield": "Yield",
+    "Sleep": "Sleep",
     "Go": "Go",
     "Sync": "Sync",
     "Async": "Async",
@@ -190,6 +191,7 @@ KEYWORDS = {
     "interval": "Interval",
     "timeout": "Timeout",
     "yield": "Yield",
+    "sleep": "Sleep",
     "go": "Go",
     "sync": "Sync",
     "async": "Async",
@@ -387,6 +389,10 @@ fn Lexer(source):
                     s = s + "\\" + c
                 if c != null and c != "x" and c != "u":
                     advance()
+            else if current() == "{" and !isFString:
+             isInterpolated = true
+             s = s + current()
+             advance()
             else if current() == "$" and isFString:
                 isInterpolated = true
                 s = s + "$"
@@ -790,7 +796,7 @@ fn Lexer(source):
                 continue
 
             if c == "!":
-                if afterExpression():
+                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z"):
                     advance()
                     addToken("Not", "!")
                 else:
@@ -1160,7 +1166,7 @@ fn Lexer(source):
                 continue
 
             if c == "@":
-                if afterExpression():
+                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z"):
                     advance()
                     addToken("At", "@")
                 else:

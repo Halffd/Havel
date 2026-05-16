@@ -677,17 +677,17 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
-  case ast::NodeType::BlockStatement: {
+case ast::NodeType::BlockStatement: {
     beginScope();
     const auto &block = static_cast<const ast::BlockStatement &>(statement);
     for (const auto &nested : block.body) {
-      if (nested) {
-        resolveStatement(*nested);
-      }
+        if (nested) {
+            resolveStatement(*nested);
+        }
     }
     endScope();
     break;
-  }
+}
 
  case ast::NodeType::FunctionDeclaration: {
  const auto &fn = static_cast<const ast::FunctionDeclaration &>(statement);
@@ -1064,18 +1064,16 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
 
     auto binding = resolveIdentifier(id.symbol);
     if (!binding) {
-      if (top_level_structs_.count(id.symbol)) {
-        noteIdentifierBinding(
-            id, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id.symbol,
-                                false});
-        break;
-      }
+        if (top_level_structs_.count(id.symbol)) {
+            noteIdentifierBinding(
+                id, ResolvedBinding{ResolvedBindingKind::Global, 0, 0, id.symbol, false});
+            break;
+        }
     }
     if (!binding) {
-      errors_.push_back("Unresolved identifier '" + id.symbol + "' at " +
-                        std::to_string(id.line) + ":" +
-                        std::to_string(id.column));
-      return;
+        errors_.push_back("Unresolved identifier '" + id.symbol + "' at " +
+                          std::to_string(id.line) + ":" + std::to_string(id.column));
+        return;
     }
     noteIdentifierBinding(id, *binding);
     break;
@@ -1184,11 +1182,11 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-            // Inside a function - declare as local in the current function.
-            // Variables that need to be shared with enclosing scopes will
-            // be resolved as upvalues via resolveIdentifier when accessed
-            // from nested functions.
-            declareLocal(ident.symbol, &ident, false);
+        // Inside a function - declare as local in the current function.
+        // Variables that need to be shared with enclosing scopes will
+        // be resolved as upvalues via resolveIdentifier when accessed
+        // from nested functions.
+        declareLocal(ident.symbol, &ident, false);
         }
       } else {
         noteIdentifierBinding(ident, *binding);

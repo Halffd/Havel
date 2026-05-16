@@ -167,11 +167,15 @@ void collectUpvaluesFromExpr(const ast::Expression &expr, std::vector<UpvalueDes
 std::optional<std::string> getCalleeName(const ast::Expression &callee) const;
 std::optional<std::string>
 normalizeTypeAnnotation(const ast::TypeAnnotation *annotation) const;
+std::optional<std::string> normalizeTypeName(const std::string &name) const;
 uint64_t typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const;
 void setTypeFeedbackHint(uint32_t ip, uint64_t type_mask);
 void emitTypeAssertionForLocal(const std::string &normalized_expected,
-                                uint32_t slot,
-                                const std::string &label);
+    uint32_t slot,
+    const std::string &label);
+void emitNullableTypeAssertionForLocal(const std::string &inner_type,
+    uint32_t slot,
+    const std::string &label);
 const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);

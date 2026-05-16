@@ -6091,51 +6091,71 @@ ByteCompiler::getCalleeName(const ast::Expression &callee) const {
 }
 
 std::optional<std::string> ByteCompiler::normalizeTypeAnnotation(
-    const ast::TypeAnnotation *annotation) const {
-  if (!annotation || !annotation->type) {
-    return std::nullopt;
-  }
-  const auto *reference =
-      dynamic_cast<const ast::TypeReference *>(annotation->type.get());
-  if (!reference) {
-    return std::nullopt;
-  }
+const ast::TypeAnnotation *annotation) const {
+    if (!annotation || !annotation->type) {
+        return std::nullopt;
+    }
 
-  std::string type_name = reference->name;
-  for (char &ch : type_name) {
-    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-  }
+    // Handle nullable type: ?T -> return "?<normalized_inner>"
+    const auto *nullable =
+        dynamic_cast<const ast::NullableType *>(annotation->type.get());
+    if (nullable && nullable->inner) {
+        const auto *innerRef =
+            dynamic_cast<const ast::TypeReference *>(nullable->inner.get());
+        if (innerRef) {
+            auto innerNorm = normalizeTypeName(innerRef->name);
+            if (innerNorm) {
+                return "?" + *innerNorm;
+            }
+        }
+        return std::nullopt;
+    }
 
-  if (type_name.empty() || type_name == "any" || type_name == "auto" ||
-      type_name == "unknown") {
-    return std::nullopt;
-  }
-  if (type_name.size() >= 2 &&
-      type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
-    return std::string("array");
-  }
-  if (type_name == "int" || type_name == "integer") {
-    return std::string("int");
-  }
-  if (type_name == "num" || type_name == "number" || type_name == "float" ||
-      type_name == "double" || type_name == "decimal") {
-    return std::string("number");
-  }
-  if (type_name == "str" || type_name == "string") {
-    return std::string("string");
-  }
-  if (type_name == "bool" || type_name == "boolean") {
-    return std::string("bool");
-  }
-  if (type_name == "list" || type_name == "array" || type_name == "vector") {
-    return std::string("array");
-  }
-  if (type_name == "obj" || type_name == "object" || type_name == "map") {
-    return std::string("object");
-  }
-  if (type_name == "fn" || type_name == "function" || type_name == "closure") {
-    return std::string("function");
-  }
+    const auto *reference =
+        dynamic_cast<const ast::TypeReference *>(annotation->type.get());
+    if (!reference) {
+        return std::nullopt;
+    }
+
+    return normalizeTypeName(reference->name);
+}
+
+std::optional<std::string> ByteCompiler::normalizeTypeName(const std::string &rawName) const {
+    std::string type_name = rawName;
+    for (char &ch : type_name) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+
+    if (type_name.empty() || type_name == "any" || type_name == "auto" ||
+        type_name == "unknown") {
+        return std::nullopt;
+    }
+    if (type_name.size() >= 2 &&
+        type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
+        return std::string("array");
+    }
+    if (type_name == "int" || type_name == "integer") {
+        return std::string("int");
+    }
+    if (type_name == "num" || type_name == "number" || type_name == "float" ||
+        type_name == "double" || type_name == "decimal") {
+        return std::string("number");
+    }
+    if (type_name == "str" || type_name == "string") {
+        return std::string("string");
+    }
+    if (type_name == "bool" || type_name == "boolean") {
+        return std::string("bool");
+    }
+    if (type_name == "list" || type_name == "array" || type_name == "vector") {
+        return std::string("array");
+    }
+    if (type_name == "obj" || type_name == "object" || type_name == "map") {
+        return std::string("object");
+    }
+    if (type_name == "fn" || type_name == "function" || type_name == "closure") {
+        return std::string("function");
+    }
     if (type_name == "class") {
         return std::string("class");
     }
@@ -6160,26 +6180,35 @@ std::optional<std::string> ByteCompiler::normalizeTypeAnnotation(
 }
 
 uint64_t ByteCompiler::typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const {
-auto normalized = normalizeTypeAnnotation(annotation);
-if (!normalized) return 0;
+    auto normalized = normalizeTypeAnnotation(annotation);
+    if (!normalized) return 0;
 
-if (*normalized == "int") {
-return TYPE_HINT_INT;
-} else if (*normalized == "number") {
-return TYPE_HINT_NUMBER | TYPE_HINT_INT;  // number includes int
-} else if (*normalized == "string") {
-return TYPE_HINT_STRING;
-} else if (*normalized == "array") {
-return TYPE_HINT_ARRAY;
-} else if (*normalized == "object") {
-return TYPE_HINT_OBJECT;
-} else if (*normalized == "bool") {
-return TYPE_HINT_BOOL;
-} else if (*normalized == "function") {
-return TYPE_HINT_FUNCTION;
-}
+    // Nullable types include null in their type set
+    bool isNullable = normalized->size() > 1 && (*normalized)[0] == '?';
+    std::string base = isNullable ? normalized->substr(1) : *normalized;
 
-return 0;
+    uint64_t hint = 0;
+    if (base == "int") {
+        hint = TYPE_HINT_INT;
+    } else if (base == "number") {
+        hint = TYPE_HINT_NUMBER | TYPE_HINT_INT;
+    } else if (base == "string") {
+        hint = TYPE_HINT_STRING;
+    } else if (base == "array") {
+        hint = TYPE_HINT_ARRAY;
+    } else if (base == "object") {
+        hint = TYPE_HINT_OBJECT;
+    } else if (base == "bool") {
+        hint = TYPE_HINT_BOOL;
+    } else if (base == "function") {
+        hint = TYPE_HINT_FUNCTION;
+    }
+
+    if (isNullable && hint != 0) {
+        hint |= TYPE_HINT_NULL;
+    }
+
+    return hint;
 }
 
 void ByteCompiler::setTypeFeedbackHint(uint32_t ip, uint64_t type_mask) {
@@ -6190,9 +6219,31 @@ current_function->type_feedback[ip].has_aot_hint = true;
 }
 
 void ByteCompiler::emitTypeAssertionForLocal(
-    const std::string &normalized_expected, uint32_t slot,
-    const std::string &label) {
- const auto emitTypeEq = [&](const char *runtime_type_name) {
+const std::string &normalized_expected, uint32_t slot,
+const std::string &label) {
+    // Handle nullable type: ?T -> null || T assertion
+    if (normalized_expected.size() > 1 && normalized_expected[0] == '?') {
+        std::string inner = normalized_expected.substr(1);
+        // Use the nullable-specific assertion that allows null
+        {
+            const uint32_t type_fn = addStringConstant("type");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_fn));
+            emit(OpCode::LOAD_VAR, slot);
+            emit(OpCode::CALL, Value(1));
+            const uint32_t null_id = addStringConstant("null");
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(null_id)));
+            emit(OpCode::EQ);
+        }
+        emit(OpCode::DUP);
+        const uint32_t null_jump = emitJump(OpCode::JUMP_IF_TRUE);
+        emit(OpCode::POP);
+        // Recurse with inner type (without '?' prefix)
+        emitTypeAssertionForLocal(inner, slot, label);
+        patchJump(null_jump, current_function->instructions.size());
+        return;
+    }
+
+    const auto emitTypeEq = [&](const char *runtime_type_name) {
  {
  const uint32_t type_name = addStringConstant("type");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name));
@@ -6258,6 +6309,30 @@ patchJump(jmp, current_function->instructions.size());
  }
  emit(OpCode::CALL, Value(2));
   emit(OpCode::POP);
+}
+
+void ByteCompiler::emitNullableTypeAssertionForLocal(
+const std::string &inner_type, uint32_t slot,
+const std::string &label) {
+// Emit: type(var) == "null" || <inner_type_assertion>
+// Check if value is null first
+{
+const uint32_t type_fn = addStringConstant("type");
+emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_fn));
+emit(OpCode::LOAD_VAR, slot);
+emit(OpCode::CALL, Value(1));
+const uint32_t null_id = addStringConstant("null");
+emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(null_id)));
+emit(OpCode::EQ);
+}
+// If null, short-circuit to end (assertion passes)
+emit(OpCode::DUP);
+const uint32_t null_jump = emitJump(OpCode::JUMP_IF_TRUE);
+emit(OpCode::POP);
+// Not null, so check inner type
+emitTypeAssertionForLocal(inner_type, slot, label);
+// null_jump target: the JUMP_IF_TRUE already left true on stack
+patchJump(null_jump, current_function->instructions.size());
 }
 
 const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const {

@@ -4355,24 +4355,15 @@ co->ip = 0;
   if (!args.empty() && args.back().isObjectId()) {
     kwargs_obj = heap_.object(args.back().asObjectId());
     if (kwargs_obj) {
-      auto itEnd = kwargs_obj->find("end");
-      if (itEnd != kwargs_obj->end()) {
-        has_kwargs = true;
-      } else {
-        auto itDelim = kwargs_obj->find("delim");
-        if (itDelim != kwargs_obj->end()) {
-          has_kwargs = true;
-        } else {
-          // Check if any key matches a param name
-          for (uint32_t pi = 0; pi < callee->param_count && pi < callee->param_names.size(); pi++) {
-            auto it = kwargs_obj->find(callee->param_names[pi]);
-            if (it != kwargs_obj->end()) {
-              has_kwargs = true;
-              break;
+            auto itEnd = kwargs_obj->find("end");
+            if (itEnd != kwargs_obj->end()) {
+                has_kwargs = true;
+            } else {
+                auto itDelim = kwargs_obj->find("delim");
+                if (itDelim != kwargs_obj->end()) {
+                    has_kwargs = true;
+                }
             }
-          }
-        }
-      }
       if (has_kwargs) {
         args.pop_back();
       } else {

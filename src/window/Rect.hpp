@@ -21,11 +21,4 @@ public:
     }
 };
 
-// Display server enum for Linux
-enum class DisplayServer {
-    X11,
-    Wayland,
-    Unknown
-};
-
 } // namespace havel 

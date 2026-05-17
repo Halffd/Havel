@@ -25,7 +25,6 @@
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
-#include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
 #include "net/NetworkManager.hpp"
 #include "host/ServiceRegistry.hpp"
@@ -105,8 +104,7 @@ void Havel::initialize(bool isStartup) {
     throw std::runtime_error("Failed to create WindowManager");
   }
 
-  // Initialize compositor bridge
-  WindowManager::InitializeCompositorBridge();
+
 
   mpv = std::make_shared<MPVController>();
   if (!mpv) {

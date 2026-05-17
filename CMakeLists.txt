@@ -324,6 +324,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/host/window/*.cpp"
      "src/window/*.cpp"
      "src/window/backends/*.cpp"
+     "src/window/strategies/*.cpp"
     "src/utils/*.cpp"
     "src/fs/*.cpp"
     "src/process/*.cpp"

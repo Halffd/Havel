@@ -398,7 +398,17 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
 		return api.makeString(out);
 	});
 
-  api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Value {
+  api.registerFunction("bc.is_string_id", [](const std::vector<Value> &args) -> Value {
+    if (args.empty()) return Value::makeBool(false);
+    return Value::makeBool(args[0].isStringId());
+    });
+
+api.registerFunction("bc.is_string_val_id", [](const std::vector<Value> &args) -> Value {
+    if (args.empty()) return Value::makeBool(false);
+    return Value::makeBool(args[0].isStringValId());
+    });
+
+api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.opcode_id: requires opcode name (string)");
     }
@@ -426,7 +436,9 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
   api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
 api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
 api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
-api.setGlobal("bc", bcObj);
+    api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
+    api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
+    api.setGlobal("bc", bcObj);
 }
 
 } // namespace havel::stdlib

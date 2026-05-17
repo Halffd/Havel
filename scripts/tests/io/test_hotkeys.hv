@@ -1,0 +1,63 @@
+x = ['a', '~', 'c', 0]
+f1 => {
+   if #x < 1 return
+   xv = x.pop()
+   io.send(f"xxxxx {xv}")
+}
+hotkey.register("p", fn() {
+    print("pressed P")
+})
+a => print "hello"
+b => {
+  try {
+      print(rand())
+      print 1/0
+  } catch e {
+    if type e == 'string'
+       return
+    print e
+  }
+  interval(500, {
+    print("hello", z)
+  })
+}
+z = 0
+c => {
+    if 1 > 0 {
+       print 1 > 0
+    } else  {
+       print 0
+    }
+    loop {
+      z++
+      print z
+      sleep(100)
+    }
+}
+!d => io.send("#d")
+RShift => {
+  print 'zoom'
+  while z > 0 {
+    z -= 3
+    print f"-{z}"
+    sleep(80)
+  }
+}
+// dhk  assigned below
+dhk=d => {
+  print @id
+  print @alias
+  print @key
+  @disable()
+  print "hotkey disabled"
+}
+e => {
+  exit(0)
+}
+f => {
+  shell.run("firefox")
+}
+print dhk
+#Esc => print 'Win+Esc pressed'
+hs = hotkey.list()
+print #hs

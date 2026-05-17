@@ -6300,16 +6300,50 @@ case OpCode::TAIL_CALL: {
       }
     }
 
-            // 1. Try host prototype (for primitives and built-in object methods)
-            if (!found_host && vm_func.isNull()) {
-                auto typeIt = prototypes_.find(type_name);
-                if (typeIt != prototypes_.end()) {
-                    auto methodIt = typeIt->second.find(method_name);
-                    if (methodIt != typeIt->second.end()) {
-        host_func_idx = methodIt->second;
-        found_host = true;
+    // 0.5 Check __class/__struct prototype for class/struct methods first
+    if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
+      auto *classProto = heap_.object(receiver.asObjectId());
+      if (classProto) {
+        auto *classVal = classProto->get("__class");
+        if (!classVal) classVal = classProto->get("__struct");
+        if (classVal && classVal->isObjectId()) {
+          classProto = heap_.object(classVal->asObjectId());
+        } else {
+          classProto = nullptr;
+        }
       }
-                }
+
+      while (classProto) {
+        auto *methodVal = classProto->get(method_name);
+        if (methodVal) {
+          if (methodVal->isHostFuncId()) {
+            host_func_idx = methodVal->asHostFuncId();
+            found_host = true;
+            break;
+          } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
+            vm_func = *methodVal;
+            break;
+          }
+        }
+        auto *parentVal = classProto->get("__parent");
+        if (parentVal && parentVal->isObjectId()) {
+          classProto = heap_.object(parentVal->asObjectId());
+        } else {
+          break;
+        }
+      }
+    }
+
+    // 1. Try host prototype (for primitives and built-in object methods)
+    if (!found_host && vm_func.isNull()) {
+        auto typeIt = prototypes_.find(type_name);
+        if (typeIt != prototypes_.end()) {
+            auto methodIt = typeIt->second.find(method_name);
+            if (methodIt != typeIt->second.end()) {
+                host_func_idx = methodIt->second;
+                found_host = true;
+            }
+        }
     }
 
     // 1.5 Try module object for monkey-patched methods
@@ -6339,40 +6373,6 @@ case OpCode::TAIL_CALL: {
         }
       }
     }
-
-// 3. Check __class/__struct prototype for class/struct methods
-if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
-auto *classProto = heap_.object(receiver.asObjectId());
-if (classProto) {
-auto *classVal = classProto->get("__class");
-if (!classVal) classVal = classProto->get("__struct");
-if (classVal && classVal->isObjectId()) {
-classProto = heap_.object(classVal->asObjectId());
-} else {
-classProto = nullptr;
-}
-}
-
-while (classProto) {
-auto *methodVal = classProto->get(method_name);
-if (methodVal) {
-if (methodVal->isHostFuncId()) {
-host_func_idx = methodVal->asHostFuncId();
-found_host = true;
-break;
-} else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
-vm_func = *methodVal;
-break;
-}
-}
-auto *parentVal = classProto->get("__parent");
-if (parentVal && parentVal->isObjectId()) {
-classProto = heap_.object(parentVal->asObjectId());
-} else {
-break;
-}
-}
-}
 
     if (!found_host && vm_func.isNull()) {
       // Pop args and receiver before pushing null result

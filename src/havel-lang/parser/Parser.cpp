@@ -4541,20 +4541,43 @@ Parser::parseClassMembers() {
     // Parse field definition
     // Note: isClassMember is already set from @@ or @ above
 
-    // Support optional val/const/let prefix for fields
+    // Support optional val/const/let prefix for fields.
+    // Only consume as prefix if the next non-newline token is an identifier,
+    // otherwise treat val/const/let as the field name itself.
     bool isConst = false;
     if (at().type == havel::TokenType::Val ||
         at().type == havel::TokenType::Const ||
         at().type == havel::TokenType::Let) {
-        isConst = (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const);
-        advance(); // consume val/const/let
+        // Peek ahead past newlines to see if an identifier follows
+        size_t lookahead = 1;
+        while (at(lookahead).type == havel::TokenType::NewLine ||
+               at(lookahead).type == havel::TokenType::Comment) {
+          ++lookahead;
+        }
+        if (at(lookahead).type == havel::TokenType::Identifier) {
+          // It's a prefix: val fieldName / const fieldName
+          isConst = (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const);
+          advance(); // consume val/const/let
+          // Skip newlines between prefix and field name
+          while (at().type == havel::TokenType::NewLine ||
+                 at().type == havel::TokenType::Comment) {
+            advance();
+          }
+        }
+        // else: treat val/const/let as the field name (fall through to Identifier check below)
     }
 
-    // Parse field name
-    if (at().type != havel::TokenType::Identifier) {
+    // Parse field name - val/const/let tokens are also valid field names
+    std::string fieldName;
+    if (at().type == havel::TokenType::Identifier) {
+      fieldName = advance().value;
+    } else if (at().type == havel::TokenType::Val ||
+               at().type == havel::TokenType::Const ||
+               at().type == havel::TokenType::Let) {
+      fieldName = advance().value; // use keyword as field name
+    } else {
       failAt(at(), "Expected field name or 'fn' in class");
     }
-    std::string fieldName = advance().value;
 
     // Optional type annotation
     std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
@@ -6377,12 +6400,12 @@ while (at().type == havel::TokenType::NewLine) {
                 break;
             }
 
-            // Check if we're back at base indentation or lower (dedent)
-            // Note: we use < not <= because statements at same column as base are still in the block
-            // Only strictly lower column indicates dedent
-            if (at().column < baseIndentation) {
-                break;
-            }
+        // Check if we're back at base indentation or lower (dedent)
+        // Note: we use < not <= because statements at same column as base are still in the block
+        // Only strictly lower column indicates dedent
+		if (at().column < baseIndentation) {
+			break;
+		}
 
             size_t beforePos = position;
             auto stmt = parseStatement();

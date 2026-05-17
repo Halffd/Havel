@@ -269,6 +269,9 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   std::unordered_map<std::string, uint32_t>>
   prototypes_;
 
+  // Method overloading tracker (maps classObjId.methodName -> list of candidate function values)
+  std::unordered_map<std::string, std::vector<Value>> overloaded_methods_;
+
   // Protocol system - protocol declarations and implementations
   // protocol_contracts_: protocol name -> set of required method names
   std::unordered_map<std::string, std::unordered_set<std::string>> protocol_contracts_;

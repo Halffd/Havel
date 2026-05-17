@@ -1,102 +1,54 @@
-/*
- * WindowQuery.cpp
- *
- * Window query API implementation.
- */
 #include "WindowQuery.hpp"
 #include "WindowManager.hpp"
-#include "WindowMonitor.hpp"
 
 namespace havel {
 
 std::vector<WindowInfo> WindowQuery::getAll() {
-  // TODO: Implement window enumeration
-  // For now, return empty list
-  return {};
+  return WindowManager::getAllWindows();
 }
 
 WindowInfo WindowQuery::getActive() {
-  WindowInfo info;
-
-  // Get from WindowManager
-  info.id = WindowManager::GetActiveWindow();
-  info.title = WindowManager::GetActiveWindowTitle();
-  info.windowClass = WindowManager::GetActiveWindowClass();
-  info.pid = WindowManager::GetActiveWindowPID();
-  info.exe = WindowManager::getProcessName(info.pid);
-  info.cmdline = WindowManager::getProcessCmdline(info.pid);
-  info.valid = (info.id != 0);
-
-  return info;
+  return WindowManager::getActiveWindowInfo();
 }
 
 bool WindowQuery::any(ConditionFn condition) {
-  if (!condition)
-    return false;
-
-  // Check active window first (most common case)
+  if (!condition) return false;
   auto active = getActive();
-  if (active.valid && condition(active)) {
-    return true;
+  if (active.valid && condition(active)) return true;
+  auto all = getAll();
+  for (const auto &w : all) {
+    if (condition(w)) return true;
   }
-
-  // TODO: Check all windows
-  // For now, just check active window
   return false;
 }
 
 int WindowQuery::count(ConditionFn condition) {
-  if (!condition)
-    return 0;
-
+  if (!condition) return 0;
   int count = 0;
-
-  // Check active window
-  auto active = getActive();
-  if (active.valid && condition(active)) {
-    count++;
+  auto all = getAll();
+  for (const auto &w : all) {
+    if (condition(w)) count++;
   }
-
-  // TODO: Count all matching windows
-  // For now, just count active window
-
   return count;
 }
 
 std::vector<WindowInfo> WindowQuery::filter(ConditionFn condition) {
   std::vector<WindowInfo> result;
-
-  if (!condition)
-    return result;
-
-  // Check active window
-  auto active = getActive();
-  if (active.valid && condition(active)) {
-    result.push_back(active);
+  if (!condition) return result;
+  auto all = getAll();
+  for (const auto &w : all) {
+    if (condition(w)) result.push_back(w);
   }
-
-  // TODO: Filter all windows
-  // For now, just filter active window
-
   return result;
 }
 
 WindowInfo WindowQuery::find(ConditionFn condition) {
-  WindowInfo empty;
-
-  if (!condition)
-    return empty;
-
-  // Check active window first
-  auto active = getActive();
-  if (active.valid && condition(active)) {
-    return active;
+  if (!condition) return {};
+  auto all = getAll();
+  for (const auto &w : all) {
+    if (condition(w)) return w;
   }
-
-  // TODO: Search all windows
-  // For now, just check active window
-
-  return empty;
+  return {};
 }
 
 } // namespace havel

@@ -111,9 +111,9 @@ class Building {
 class TowerBuilder {
   b
   fn @() { @b = Building() }
-  fn withType(t) { @b.type = t; @b }
-  fn withDesc(d) { @b.desc = d; @b }
-  fn withArea(a) { @b.area = a; @b }
+  fn withType(t) { @b.type = t; this }
+  fn withDesc(d) { @b.desc = d; this }
+  fn withArea(a) { @b.area = a; this }
   fn build() { r = @b; @b = Building(); r }
 }
 
@@ -625,12 +625,6 @@ class XMLTemplate : TemplateDecoder {
     // simulate processing
   }
 }
-    {id: id, name: n}
-  }
-  fn process(r) {
-    // simulate processing
-  }
-}
 
 fn testTemplateMethod() {
   d = XMLTemplate()
@@ -663,10 +657,9 @@ fn calcMul(n) {
 }
 
 fn calcExpr(e) {
-  if e.n != null { calcInt(e) }
-  else if e.left && e.right {
-    if e.left.n != null { calcMul(e) } else { calcAdd(e) }
-  }
+  if e.__struct.__name == "IntNode" { calcInt(e) }
+  else if e.__struct.__name == "AddNode" { calcAdd(e) }
+  else if e.__struct.__name == "MulNode" { calcMul(e) }
   else { 0 }
 }
 
@@ -681,10 +674,9 @@ fn printMul(n) {
 }
 
 fn printExpr(e) {
-  if e.n != null { printInt(e) }
-  else if e.left {
-    if e.left.n != null { printMul(e) } else { printAdd(e) }
-  }
+  if e.__struct.__name == "IntNode" { printInt(e) }
+  else if e.__struct.__name == "AddNode" { printAdd(e) }
+  else if e.__struct.__name == "MulNode" { printMul(e) }
   else { "?" }
 }
 

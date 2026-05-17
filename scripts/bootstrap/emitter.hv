@@ -327,10 +327,10 @@ fn compileFunc(emitter, name, params, bodyNode, localCount):
     emitter.scope = oldScope
 
 fn compileProgram(emitter, program):
-    bc.reset()
-    body = program.body
-    topStmts = []
-    funcDecls = []
+bc.reset()
+body = program.body
+topStmts = []
+funcDecls = []
     for stmt in body:
         if stmt.kind == "FnDeclaration":
             funcDecls.push(stmt)
@@ -361,8 +361,8 @@ fn compileProgram(emitter, program):
         bc.emit("CLOSURE", emitter.func_map[decl.name])
         bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
 lastIdx = #topStmts - 1
-if lastIdx > 0:
-for i in 0..(lastIdx - 1):
+for i in 0..(#topStmts - 1):
+if i != lastIdx:
 emitStmt(emitter, topStmts[i])
 if #topStmts > 0:
         last = topStmts[lastIdx]
@@ -376,6 +376,5 @@ if #topStmts > 0:
     else:
         bc.emit("PUSH_NULL")
         bc.emit("RETURN")
-    emitter.scope = null
-    print(bc.disasm())
-    bc.execute_persistent("__main__")
+emitter.scope = null
+bc.execute_persistent("__main__")

@@ -12,7 +12,6 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
-#include <linux/uinput.h>
 #include <linux/input.h>
 #include <shared_mutex>
 #include <signal.h>
@@ -80,17 +79,82 @@ EventListener::EventListener() {
 }
 
 EventListener::~EventListener() {
-  // Force ungrab all devices FIRST (critical for evdev cleanup)
-  ForceUngrabAllDevices();
-
-  // Stop the event loop and join thread
+  if (backend_) backend_->UngrabAllDevices();
   Stop();
+  if (shutdownFd >= 0) close(shutdownFd);
+}
 
-  if (shutdownFd >= 0) {
-    close(shutdownFd);
+void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths, bool grab) {
+  backend_ = InputBackend::Create(InputBackendType::Evdev);
+  if (!backend_) {
+    error("EventListener: Failed to create input backend");
+    return;
   }
 
-  if (debugging::debug_io) debug("EventListener destructor completed - all devices ungrabbed");
+  if (!backend_->Init()) {
+    error("EventListener: Backend init failed");
+    return;
+  }
+
+  auto type = backend_->GetType();
+
+  if (type == InputBackendType::Evdev || type == InputBackendType::X11) {
+    for (const auto &path : devicePaths) {
+      if (!backend_->OpenDevice(path)) {
+        error("EventListener: Failed to open device: {}", path);
+        continue;
+      }
+      if (grab && !backend_->GrabDevice(path)) {
+        error("EventListener: Failed to grab device: {}", path);
+      }
+    }
+  }
+
+  backend_->SetKeyCallback([this](const KeyEvent &ke) { OnBackendKeyEvent(ke); });
+  backend_->SetMouseCallback([this](const MouseEvent &me) { OnBackendMouseEvent(me); });
+
+  if (backend_->GetDeviceCount() == 0) {
+    error("EventListener: No input devices available");
+  }
+}
+
+void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
+  if (blockInput.load()) return;
+  struct input_event ev;
+  ev.type = EV_KEY;
+  ev.code = ke.code;
+  ev.value = ke.down ? 1 : (ke.repeat ? 2 : 0);
+  if (ke.code >= BTN_MOUSE && ke.code < BTN_JOYSTICK) {
+    ProcessMouseEvent(ev);
+  } else {
+    ProcessKeyboardEvent(ev);
+  }
+}
+
+void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
+  if (blockInput.load()) return;
+  if (me.type == MouseEvent::Type::Move) {
+    struct input_event ev;
+    ev.type = EV_REL;
+    ev.code = REL_X;
+    ev.value = static_cast<int>(me.dx * mouseSensitivity);
+    ProcessMouseEvent(ev);
+    ev.code = REL_Y;
+    ev.value = static_cast<int>(me.dy * mouseSensitivity);
+    ProcessMouseEvent(ev);
+  } else if (me.type == MouseEvent::Type::Button) {
+    struct input_event ev;
+    ev.type = EV_KEY;
+    ev.code = me.button;
+    ev.value = me.down ? 1 : 0;
+    ProcessMouseEvent(ev);
+  } else if (me.type == MouseEvent::Type::Wheel) {
+    struct input_event ev;
+    ev.type = EV_REL;
+    ev.code = REL_WHEEL;
+    ev.value = me.wheel;
+    ProcessMouseEvent(ev);
+  }
 }
 
 bool EventListener::Start(const std::vector<std::string> &devicePaths,
@@ -102,87 +166,15 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 
   this->grabDevices = grabDevices;
 
-  // Set up signal handling BEFORE spawning the event thread
-  // This prevents race condition where SIGINT arrives before signalfd is ready
   SetupSignalHandling();
 
-  // Create eventfd for shutdown signaling
   shutdownFd = eventfd(0, EFD_NONBLOCK);
   if (shutdownFd < 0) {
     error("Failed to create eventfd");
     return false;
   }
 
-  // Open all devices
-  for (const auto &path : devicePaths) {
-    int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
-    if (fd < 0) {
-      error("Failed to open device: {}", path);
-      continue;
-    }
-
-    char name[256] = "Unknown";
-    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-
-    // Try to grab device if requested
-    if (grabDevices) {
-      if (ioctl(fd, EVIOCGRAB, 1) < 0) {
-        error("Failed to grab device {} ({}): already grabbed elsewhere. "
-              "Closing device.",
-              name, path);
-        close(fd);
-        continue;
-      }
-      if (debugging::debug_io) debug("Successfully grabbed device: {} ({})", name, path);
-      
-      // Query and release any keys that were pressed before we grabbed
-      // This prevents stuck modifiers and ghost keys
-      uint8_t key_bits[(KEY_MAX + 7) / 8] = {};
-      if (ioctl(fd, EVIOCGKEY(sizeof(key_bits)), key_bits) >= 0) {
-        int released_count = 0;
-        for (int key = 0; key < KEY_MAX; ++key) {
-          if (key_bits[key / 8] & (1 << (key % 8))) {
-            // Key is pressed - synthesize key-up event
-            struct input_event ev = {};
-            ev.type = EV_KEY;
-            ev.code = key;
-            ev.value = 0;  // key up
-            if (write(fd, &ev, sizeof(ev)) < 0) {
-              if (debugging::debug_io) debug("Failed to release key {}", key);
-            }
-            released_count++;
-          }
-        }
-        // Flush the events
-        struct input_event sync_ev = {};
-        sync_ev.type = EV_SYN;
-        sync_ev.code = SYN_REPORT;
-        sync_ev.value = 0;
-        write(fd, &sync_ev, sizeof(sync_ev));
-        
-        if (released_count > 0) {
-          if (debugging::debug_io) debug("Released {} pre-existing pressed keys on {}", released_count, name);
-        }
-      } else {
-        if (debugging::debug_io) debug("Could not query key state for {} - continuing anyway", name);
-      }
-    }
-
-    DrainDeviceEvents(fd);
-
-    DeviceInfo device;
-    device.path = path;
-    device.fd = fd;
-    device.name = name;
-    devices.push_back(device);
-
-    if (debugging::debug_io) debug("Opened input device: {} ({})", name, path);
-  }
-
-  if (devices.empty()) {
-    error("No input devices opened");
-    return false;
-  }
+  InitInputBackend(devicePaths, grabDevices);
 
   ResetInputState();
 
@@ -194,115 +186,57 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 }
 
 void EventListener::Stop() {
-  if (!running.load()) {
-    return;
-  }
+  if (!running.load()) return;
 
   running.store(false);
   shutdown.store(true);
 
-  // Signal shutdown
   if (shutdownFd >= 0) {
     uint64_t val = 1;
     write(shutdownFd, &val, sizeof(val));
   }
 
-  if (eventThread.joinable()) {
-    eventThread.join();
-  }
+  if (eventThread.joinable()) eventThread.join();
 
-  // Release all pressed virtual keys before ungrabbing devices
   ReleaseAllVirtualKeys();
-  for (auto &device : devices) {
-    DrainDeviceEvents(device.fd);
-  }
 
-  // Ungrab and close all devices
-  for (auto &device : devices) {
-    if (device.fd >= 0) {
-      if (grabDevices) {
-        ioctl(device.fd, EVIOCGRAB, 0); // Ungrab device
-      }
-      close(device.fd);
-    }
+  if (backend_) {
+    backend_->Shutdown();
   }
-  devices.clear();
 
   if (signalHandler) {
     signalHandler->Shutdown();
   }
 }
 
-void EventListener::DrainDeviceEvents(int fd) {
-  if (debugging::debug_io) debug("Draining events from device fd={}", fd);
-  struct input_event ev;
-  ssize_t n;
-  
-  // Read and discard all pending events
-  while (true) {
-    n = read(fd, &ev, sizeof(ev));
-    if (n < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        break;  // No more events
-      }
-      // Real error
-      if (debugging::debug_io) debug("DrainDeviceEvents: read error: {}", strerror(errno));
-      break;
-    }
-    if (n == sizeof(ev)) {
-      if (debugging::debug_io) debug("Drained event: type={}, code={}, value={}", ev.type, ev.code, ev.value);
-    }
-  }
-}
-
 bool EventListener::SetupUinput() {
-  uinputDevice = std::make_unique<UinputDevice>();
-  if (!uinputDevice->Setup()) {
-    error("Failed to initialize UinputDevice");
-    return false;
-  }
-  return true;
+  return backend_ && backend_->SupportsSynthesis();
 }
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
-  if (!uinputDevice || !uinputDevice->IsInitialized()) {
-    error("Cannot send event: uinput not initialized");
-    return;
-  }
+  if (!backend_ || !backend_->SupportsSynthesis()) return;
 
-  uinputDevice->SendEvent(type, code, value);
+  if (type == EV_KEY) {
+    backend_->SendKeyEvent(code, value == 1);
+    if (value == 1) pressedVirtualKeys.insert(code);
+    else if (value == 0) pressedVirtualKeys.erase(code);
+  }
 }
 
 void EventListener::BeginUinputBatch() {
-  if (!uinputDevice) {
-    error("Cannot begin batch: uinput not initialized");
-    return;
-  }
-  uinputDevice->BeginBatch();
+  if (backend_) backend_->BeginBatch();
 }
 
 void EventListener::QueueUinputEvent(int type, int code, int value) {
-  if (!uinputDevice) {
-    error("Cannot queue event: uinput not initialized");
-    return;
-  }
-  uinputDevice->SendEvent(type, code, value);
+  if (backend_) backend_->QueueEvent(type, code, value);
 }
 
 void EventListener::EndUinputBatch() {
-  if (!uinputDevice) {
-    error("Cannot end batch: uinput not initialized");
-    return;
-  }
-  uinputDevice->EndBatch();
+  if (backend_) backend_->EndBatch();
 }
 
 void EventListener::EmergencyReleaseAllKeys() {
-  if (!uinputDevice) {
-    error("Cannot release keys: uinput not initialized");
-    return;
-  }
-  uinputDevice->ReleaseAllKeys();
+  if (backend_) backend_->EmergencyReleaseAllKeys();
 }
 
 bool EventListener::GetKeyState(int evdevCode) const {
@@ -316,16 +250,22 @@ const EventListener::ModifierState &EventListener::GetModifierState() const {
   return modifierState;
 }
 
-void EventListener::SetBlockInput(bool block) { blockInput.store(block); }
+void EventListener::SetBlockInput(bool block) {
+  blockInput.store(block);
+  if (backend_) backend_->SetBlockInput(block);
+}
 
 void EventListener::AddKeyRemap(int fromCode, int toCode) {
   std::lock_guard<std::mutex> lock(remapMutex);
   keyRemaps[fromCode] = toCode;
+  if (backend_) backend_->SetKeyRemap(fromCode, toCode);
 }
 
 void EventListener::RemoveKeyRemap(int fromCode) {
   std::lock_guard<std::mutex> lock(remapMutex);
   keyRemaps.erase(fromCode);
+  activeRemaps.erase(fromCode);
+  if (backend_) backend_->RemoveKeyRemap(fromCode);
 }
 
 int EventListener::RemapKey(int evdevCode, bool down) {
@@ -352,16 +292,17 @@ int EventListener::RemapKey(int evdevCode, bool down) {
 
 void EventListener::SetEmergencyShutdownKey(int evdevCode) {
   emergencyShutdownKey = evdevCode;
+  if (backend_) backend_->SetEmergencyShutdownKey(evdevCode);
 }
 
 void EventListener::SetMouseSensitivity(double sensitivity) {
-  IO::mouseSensitivity = sensitivity;
   mouseSensitivity = sensitivity;
+  if (backend_) backend_->SetMouseSensitivity(sensitivity);
 }
 
 void EventListener::SetScrollSpeed(double speed) {
   scrollSpeed = speed;
-  IO::scrollSpeed = speed;
+  if (backend_) backend_->SetScrollSpeed(speed);
 }
 
 void EventListener::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
@@ -431,14 +372,15 @@ void EventListener::setHotkeyManager(HotkeyManager *manager) {
 
 void EventListener::EventLoop() {
     while (running.load() && !shutdown.load()) {
-        bool workRemains = false;
         if (executionEngine) {
-            if (hostBridge) {
-                hostBridge->checkTimers();
-            }
-            workRemains = executionEngine->executeFrame();
+            if (hostBridge) hostBridge->checkTimers();
+            executionEngine->executeFrame();
         } else if (hostBridge) {
             hostBridge->checkTimers();
+        }
+
+        if (backend_) {
+            backend_->PollEvents(10);
         }
 
     fd_set readfds;
@@ -452,11 +394,6 @@ void EventListener::EventLoop() {
       FD_SET(signalFd, &readfds);
       if (signalFd > maxFd) maxFd = signalFd;
     }
-
-        for (const auto &device : devices) {
-            FD_SET(device.fd, &readfds);
-            if (device.fd > maxFd) maxFd = device.fd;
-        }
 
         int eventQueueWakeupFd = -1;
         if (executionEngine) {
@@ -472,7 +409,7 @@ void EventListener::EventLoop() {
 
     struct timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 10000;  // Always check for events every 10ms
+    timeout.tv_usec = 10000;
 
     int ret = select(maxFd + 1, &readfds, nullptr, nullptr, &timeout);
 
@@ -484,7 +421,6 @@ void EventListener::EventLoop() {
 
     if (ret == 0) continue;
 
-    // Shutdown signal from eventfd
     if (FD_ISSET(shutdownFd, &readfds)) {
       if (asyncSignalRequested != 0) {
         SignalSafeShutdown(asyncSignalRequested, false);
@@ -493,7 +429,6 @@ void EventListener::EventLoop() {
       break;
     }
 
-    // Process signalfd signals (SIGINT, SIGTERM, etc.)
     if (signalFd >= 0 && FD_ISSET(signalFd, &readfds)) {
       struct signalfd_siginfo fdsi;
       ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
@@ -503,36 +438,13 @@ void EventListener::EventLoop() {
           RequestShutdownFromSignal(fdsi.ssi_signo);
           break;
         }
-        // Ignore other signals (SIGCHLD, etc.)
         }
         continue;
     }
 
-    // EventQueue wakeup — new callbacks/events pending
     if (eventQueueWakeupFd >= 0 && FD_ISSET(eventQueueWakeupFd, &readfds)) {
-        // processAll() is called at the top of next iteration via executeFrame()
-        // Just drain the eventfd so select() doesn't spin
         uint64_t val;
         while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
-    }
-
-    // Process input devices
-    for (const auto &device : devices) {
-      if (!FD_ISSET(device.fd, &readfds)) continue;
-
-      struct input_event ev;
-      ssize_t n = read(device.fd, &ev, sizeof(ev));
-      if (n != sizeof(ev)) continue;
-
-      if (ev.type == EV_KEY) {
-        if (ev.code >= BTN_MOUSE && ev.code < BTN_JOYSTICK) {
-          ProcessMouseEvent(ev);
-        } else {
-          ProcessKeyboardEvent(ev);
-        }
-      } else if (ev.type == EV_REL || ev.type == EV_ABS) {
-        ProcessMouseEvent(ev);
-      }
     }
   }
 
@@ -1966,48 +1878,12 @@ bool EventListener::MatchGesturePattern(
 
 // Release all pressed virtual keys (for clean shutdown)
 void EventListener::ReleaseAllVirtualKeys() {
-  if (pressedVirtualKeys.empty())
-    return;
-
-  if (debugging::debug_io) debug("Releasing {} pressed virtual keys", pressedVirtualKeys.size());
-
-  // Copy the set to avoid use-after-free if SendUinputEvent modifies it
-  std::unordered_set<int> keysToRelease = pressedVirtualKeys;
-
-  for (int code : keysToRelease) {
-    SendUinputEvent(EV_KEY, code, 0);
-  }
-
-  // Send final SYN_REPORT
-  SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-
+  if (backend_) backend_->ReleaseAllVirtualKeys();
   pressedVirtualKeys.clear();
 }
 
-// Force ungrab all devices - ASYNC-SIGNAL-SAFE (Layer 2)
-// This is called from signal handlers and MUST complete successfully
-// to prevent stuck grabs. Uses only async-signal-safe operations.
 void EventListener::ForceUngrabAllDevices() {
-  // CRITICAL: This method is called from signal handlers
-  // Do NOT use: malloc, free, printf, cerr, logging, mutexes, etc.
-  // Only use: ioctl, close, _exit, and simple memory operations
-
-  // Ungrab all input devices - this is the MOST IMPORTANT operation
-  for (auto &device : devices) {
-    if (device.fd >= 0) {
-      // EVIOCGRAB with 0 releases the grab
-      // This is async-signal-safe according to POSIX
-      ioctl(device.fd, EVIOCGRAB, 0);
-    }
-  }
-
-  // Also destroy uinput device if active
-  if (uinputDevice) {
-    const int uinputFd = uinputDevice->GetFd();
-    if (uinputFd >= 0) {
-      ioctl(uinputFd, UI_DEV_DESTROY);
-    }
-  }
+  if (backend_) backend_->UngrabAllDevices();
 }
 
 // Helper function to convert gesture pattern string to directions

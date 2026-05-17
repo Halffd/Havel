@@ -1,0 +1,11 @@
+use { miniEmitStmt, Emitter, Scope, scopeDeclare, scopeResolve, globalIdx } from "test_mini_mod"
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+scopeDeclare(em.scope, "x")
+
+node = {kind: "ValDeclaration", value: null, name: "x", line: 0, col: 0}
+miniEmitStmt(em, node)
+print("ok")

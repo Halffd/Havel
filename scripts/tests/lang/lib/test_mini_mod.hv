@@ -1,0 +1,254 @@
+fn Scope(parent):
+    {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+fn scopeDeclare(scope, name):
+    if scope.locals[name] != null: return scope.locals[name]
+    idx = scope.count
+    scope.locals[name] = idx
+    scope.count = idx + 1
+    idx
+
+fn scopeResolve(scope, name):
+    if scope.locals[name] != null:
+        {kind: "local", index: scope.locals[name]}
+    else if scope.parent != null:
+        outer = scopeResolve(scope.parent, name)
+        if outer == null: null
+        else if outer.kind == "local":
+            upidx = scope.upvalues[name]
+            if upidx == null:
+                upidx = scope.upcount
+                scope.upvalues[name] = upidx
+                scope.upcount = upidx + 1
+                {kind: "upvalue", index: upidx}
+            else
+                outer
+        else
+            outer
+    else
+        null
+
+fn Emitter():
+    {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0}
+
+fn emitError(emitter, msg, line, col):
+    print("emit error at " + str(line) + ":" + str(col) + " - " + msg)
+    null
+
+fn globalIdx(emitter, name):
+    cidx = emitter.globals[name]
+    if cidx != null: return cidx
+    cidx = bc.add_chunk_string(name)
+    emitter.globals[name] = cidx
+    cidx
+
+fn emitExpr(emitter, node):
+    if node == null:
+        bc.emit("PUSH_NULL")
+        return
+    k = node.kind
+    if k == "NumberLiteral":
+        idx = bc.add_const(node.value)
+        bc.emit("LOAD_CONST", idx)
+    else if k == "StringLiteral":
+        idx = bc.add_string(node.value)
+        bc.emit("LOAD_CONST", idx)
+    else if k == "BooleanLiteral":
+        if node.value:
+            bc.emit("LOAD_CONST", bc.add_const(1))
+        else:
+            bc.emit("LOAD_CONST", bc.add_const(0))
+            bc.emit("TO_BOOL")
+    else if k == "NullLiteral":
+        bc.emit("PUSH_NULL")
+    else if k == "Identifier":
+        resolved = scopeResolve(emitter.scope, node.name)
+        if resolved != null:
+            if resolved.kind == "local":
+                bc.emit("LOAD_VAR", resolved.index)
+            else if resolved.kind == "upvalue":
+                bc.emit("LOAD_UPVALUE", resolved.index)
+            else:
+                bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+        else:
+            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    else if k == "BinaryExpression":
+        opr = node.oper
+        if opr == "&&":
+            emitExpr(emitter, node.left)
+            sj = bc.emit("JUMP_IF_FALSE", 0)
+            bc.emit("POP")
+            emitExpr(emitter, node.right)
+            bc.patch_jump(sj, bc.instr_count())
+        else if opr == "||":
+            emitExpr(emitter, node.left)
+            sj = bc.emit("JUMP_IF_TRUE", 0)
+            bc.emit("POP")
+            emitExpr(emitter, node.right)
+            bc.patch_jump(sj, bc.instr_count())
+        else
+            emitExpr(emitter, node.left)
+            emitExpr(emitter, node.right)
+            opcodes = {
+                "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
+                "%": "MOD", "**": "POW",
+                "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
+                "<=": "LTE", ">=": "GTE",
+                "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
+                "<<": "BIT_LSH", ">>": "BIT_RSH",
+                "is": "IS",
+            }
+            oc = opcodes[opr]
+            if oc != null:
+                bc.emit(oc)
+            else:
+                emitError(emitter, "unknown binary opr: " + opr, node.line, node.col)
+    else if k == "UnaryExpression":
+        emitExpr(emitter, node.operand)
+        opcodes = {"-": "NEGATE", "!": "NOT", "not": "NOT", "#": "LENGTH"}
+        oc = opcodes[node.oper]
+        if oc != null:
+            bc.emit(oc)
+        else:
+            emitError(emitter, "unknown unary op: " + node.oper, node.line, node.col)
+    else if k == "CallExpression":
+        callee = node.callee
+        argc = node.args.length
+        if callee.kind == "Identifier":
+            resolved = scopeResolve(emitter.scope, callee.name)
+            if resolved != null:
+                if resolved.kind == "local":
+                    bc.emit("LOAD_VAR", resolved.index)
+                else
+                    bc.emit("LOAD_UPVALUE", resolved.index)
+            else:
+                bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, callee.name)))
+            for arg in node.args:
+                emitExpr(emitter, arg)
+            bc.emit("CALL", argc)
+        else if callee.kind == "MemberExpression":
+            emitExpr(emitter, callee.obj)
+            for arg in node.args:
+                emitExpr(emitter, arg)
+            propIdx = bc.add_chunk_string(callee.property)
+            bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
+        else
+            emitExpr(emitter, callee)
+            for arg in node.args:
+                emitExpr(emitter, arg)
+            bc.emit("CALL", argc)
+    else if k == "AssignmentExpression":
+        target = node.target
+        if target.kind == "Identifier":
+            emitExpr(emitter, node.value)
+            resolved = scopeResolve(emitter.scope, target.name)
+            if resolved != null:
+                if resolved.kind == "local":
+                    bc.emit("STORE_VAR", resolved.index)
+                else
+                    bc.emit("STORE_UPVALUE", resolved.index)
+            else:
+                bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
+        else
+            emitError(emitter, "unsupported assignment target: " + target.kind, node.line, node.col)
+    else if k == "TernaryExpression":
+        emitExpr(emitter, node.condition)
+        elseJump = bc.emit("JUMP_IF_FALSE", 0)
+        bc.emit("POP")
+        emitExpr(emitter, node.true_expr)
+        endJump = bc.emit("JUMP", 0)
+        bc.patch_jump(elseJump, bc.instr_count())
+        bc.emit("POP")
+        emitExpr(emitter, node.false_expr)
+        bc.patch_jump(endJump, bc.instr_count())
+    else if k == "ArrayLiteral":
+        for el in node.elements:
+            emitExpr(emitter, el)
+        bc.emit("ARRAY_NEW", node.elements.length)
+    else if k == "ObjectLiteral":
+        for field in node.fields:
+            if field.kind == "ObjectField":
+                keyIdx = bc.add_string(field.key)
+                bc.emit("LOAD_CONST", keyIdx)
+                emitExpr(emitter, field.value)
+        bc.emit("OBJECT_NEW", node.fields.length)
+    else
+        emitError(emitter, "unsupported expr: " + k, node.line, node.col)
+
+fn emitStmt(emitter, node):
+    if node == null: return
+    k = node.kind
+    if k == "ExpressionStatement":
+        emitExpr(emitter, node.expr)
+        bc.emit("POP")
+    else if k == "IfStatement":
+        emitExpr(emitter, node.condition)
+        elseJump = bc.emit("JUMP_IF_FALSE", 0)
+        bc.emit("POP")
+        emitBlock(emitter, node.then)
+        if node["else"] != null:
+            endJump = bc.emit("JUMP", 0)
+            bc.patch_jump(elseJump, bc.instr_count())
+            bc.emit("POP")
+            emitBlock(emitter, node["else"])
+            bc.patch_jump(endJump, bc.instr_count())
+        else:
+            bc.patch_jump(elseJump, bc.instr_count())
+            bc.emit("POP")
+    else if k == "WhileStatement":
+        loopTop = bc.instr_count()
+        emitExpr(emitter, node.condition)
+        exitJump = bc.emit("JUMP_IF_FALSE", 0)
+        bc.emit("POP")
+        emitBlock(emitter, node.body)
+        bc.emit("JUMP", loopTop)
+        bc.patch_jump(exitJump, bc.instr_count())
+        bc.emit("POP")
+    else if k == "ReturnStatement":
+        if node.value != null:
+            emitExpr(emitter, node.value)
+        else:
+            bc.emit("PUSH_NULL")
+        bc.emit("RETURN")
+    else if k == "LetDeclaration" || k == "ValDeclaration":
+        if node.value != null:
+            emitExpr(emitter, node.value)
+        else:
+            bc.emit("PUSH_NULL")
+        resolved = scopeResolve(emitter.scope, node.name)
+        if resolved != null:
+            if k == "ValDeclaration":
+                bc.emit("STORE_IMMUT_VAR", resolved.index)
+            else:
+                bc.emit("STORE_VAR", resolved.index)
+        else:
+            if k == "ValDeclaration":
+                bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+            else:
+                bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    else if k == "FnDeclaration":
+        funcIdx = emitter.func_idx
+        emitter.func_idx = funcIdx + 1
+        emitter.func_map[node.name] = funcIdx
+        bc.emit("CLOSURE", funcIdx)
+        resolved = scopeResolve(emitter.scope, node.name)
+        if resolved != null:
+            bc.emit("STORE_VAR", resolved.index)
+        else:
+            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    else if k == "BreakStatement":
+        bc.emit("PUSH_NULL")
+        bc.emit("RETURN")
+    else if k == "ContinueStatement":
+        bc.emit("PUSH_NULL")
+        bc.emit("RETURN")
+    else:
+        emitError(emitter, "unsupported stmt: " + k, node.line, node.col)
+
+fn emitBlock(emitter, node):
+    if node == null: return
+    if node.kind == "BlockStatement":
+        for stmt in node.body:
+            emitStmt(emitter, stmt)
+    else
+        emitStmt(emitter, node)

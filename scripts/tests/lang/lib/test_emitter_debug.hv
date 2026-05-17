@@ -1,0 +1,22 @@
+use { Emitter, compileProgram, globalIdx, emitStmt, emitExpr, Scope, scopeDeclare, scopeResolve } from "emitter"
+use { Program, NumberLiteral, ExpressionStatement, ValDeclaration, Identifier, CallExpression } from "ast"
+
+// Test: val x = 42; print(x)
+val_decl = ValDeclaration("x", NumberLiteral(42, 0, 0), 0, 0)
+print_stmt = ExpressionStatement(CallExpression(Identifier("print", 0, 0), [Identifier("x", 0, 0)], 0, 0), 0, 0)
+
+program = Program([val_decl, print_stmt], 0, 0)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+
+emitStmt(em, val_decl)
+emitStmt(em, print_stmt)
+bc.emit("PUSH_NULL")
+bc.emit("RETURN")
+em.scope = null
+
+bc.execute("__main__")
+print("emitter test ok")

@@ -1,0 +1,8 @@
+use { testFn, testFn2 } from "test_mod"
+
+n = {kind: "test"}
+r1 = testFn(n)
+print("testFn: " + str(r1))
+
+r2 = testFn(n)
+print("testFn2: " + str(r2))

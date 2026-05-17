@@ -1,0 +1,11 @@
+// End-to-end test: source -> lexer -> parser -> emitter -> execute
+use { tokenize } from "lexer"
+use { parse } from "pratt_debug10"
+use { Emitter, compileProgram } from "emitter"
+
+source = "1 + 2"
+tokens = tokenize(source)
+ast = parse(tokens)
+print("parsed: " + ast.kind)
+em = Emitter()
+compileProgram(em, ast)

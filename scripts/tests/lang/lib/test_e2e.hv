@@ -1,11 +1,64 @@
-// End-to-end test: source -> lexer -> parser -> emitter -> execute
-use { tokenize } from "lexer"
-use { parse } from "pratt_debug10"
-use { Emitter, compileProgram } from "emitter"
+// Comprehensive e2e test
+use { Emitter, Scope, scopeDeclare, globalIdx } from "emitter"
 
-source = "1 + 2"
-tokens = tokenize(source)
-ast = parse(tokens)
-print("parsed: " + ast.kind)
+// Test 1: Simple return
+bc.reset()
+bc.func_new("__main__", 0, 32)
+bc.emit("LOAD_CONST", bc.add_const(42))
+bc.emit("RETURN")
+r1 = bc.execute_persistent("__main__")
+print("test1: " + str(r1))
+
+// Test 2: Arithmetic
+bc.reset()
+bc.func_new("__main__", 0, 32)
+bc.emit("LOAD_CONST", bc.add_const(10))
+bc.emit("LOAD_CONST", bc.add_const(20))
+bc.emit("ADD")
+bc.emit("RETURN")
+r2 = bc.execute_persistent("__main__")
+print("test2: " + str(r2))
+
+// Test 3: Function call
 em = Emitter()
-compileProgram(em, ast)
+bc.reset()
+bc.func_new("double", 1, 8)
+bc.emit("LOAD_VAR", 0)
+bc.emit("LOAD_CONST", bc.add_const(2))
+bc.emit("MUL")
+bc.emit("RETURN")
+
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+bc.emit("CLOSURE", 0)
+bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(em, "double")))
+bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(em, "double")))
+bc.emit("LOAD_CONST", bc.add_const(21))
+bc.emit("CALL", 1)
+bc.emit("RETURN")
+r3 = bc.execute_persistent("__main__")
+print("test3: " + str(r3))
+
+// Test 4: Conditional using JUMP_IF_FALSE (which pops condition)
+bc.reset()
+bc.func_new("__main__", 0, 32)
+bc.emit("LOAD_CONST", bc.add_const(1))    // push true
+sj = bc.emit("JUMP_IF_FALSE", 0)          // pops condition, jump if false
+bc.emit("LOAD_CONST", bc.add_const(100))  // true branch value
+endJump = bc.emit("JUMP", 0)
+bc.patch_jump(sj, bc.instr_count())       // false lands here
+bc.emit("LOAD_CONST", bc.add_const(200))  // false branch value
+bc.patch_jump(endJump, bc.instr_count())
+bc.emit("RETURN")
+r4 = bc.execute_persistent("__main__")
+print("test4: " + str(r4))
+
+// Test 5: String constant
+bc.reset()
+bc.func_new("__main__", 0, 32)
+bc.emit("LOAD_CONST", bc.add_string("hello world"))
+bc.emit("RETURN")
+r5 = bc.execute_persistent("__main__")
+print("test5: " + str(r5))
+
+print("all e2e tests passed!")

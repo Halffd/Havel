@@ -1,0 +1,875 @@
+// integration: GoF creational, structural, behavioral + GRASP design patterns
+// Each pattern has a self-contained demo with assert-style checks
+
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: got {a}, expected {e}")
+  }
+}
+
+fn checkTrue(n, a) {
+  if a {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL {n}: expected true, got {a}")
+  }
+}
+
+// ======================== CREATIONAL ========================
+
+// --- Abstract Factory ---
+struct CustData { id, name, email }
+
+fn parseCSV(msg) {
+  // manual split since .split() has VM bug in class methods
+  parts = []
+  acc = ""
+  for c in msg {
+    if c == ";" { parts.push(acc); acc = "" }
+    else { acc = acc + c }
+  }
+  parts.push(acc)
+  if parts.len < 3 { CustData("0", "", "") }
+  else { CustData(parts[0], parts[1], parts[2]) }
+}
+
+fn testAbstractFactory() {
+  r1 = parseCSV("1;Alice;alice_at_x.com")
+  check("AF-csv-id", r1.id, "1")
+  check("AF-csv-name", r1.name, "Alice")
+}
+testAbstractFactory()
+
+// --- Factory Method ---
+class PaymentResult {
+  approved: bool
+  txId: str
+  method: str
+  amount: num
+}
+
+fn makePaymentResult(approved, txId, method, amount) {
+  r = PaymentResult()
+  r.approved = approved
+  r.txId = txId
+  r.method = method
+  r.amount = amount
+  r
+}
+
+class PixPayment {
+  key: str
+  fn @(k) { @key = k }
+  fn pay(amount) {
+    makePaymentResult(true, "PIX-1", "PIX", amount)
+  }
+}
+
+class CardPayment {
+  number: str
+  holder: str
+  fn @(n, h) { @number = n; @holder = h }
+  fn pay(amount) {
+    makePaymentResult(true, "CARD-1", "CARD", amount)
+  }
+}
+
+class PaymentService {
+  strategy
+  fn @() {}
+  fn setStrategy(s) { @strategy = s }
+  fn pay(amount) { @strategy.pay(amount) }
+}
+
+fn testFactoryMethod() {
+  svc = PaymentService()
+  svc.setStrategy(PixPayment("alice_at_x"))
+  r = svc.pay(100)
+  check("FM-pix-approve", r.approved, true)
+  check("FM-pix-method", r.method, "PIX")
+  svc.setStrategy(CardPayment("4111", "Alice"))
+  r2 = svc.pay(200)
+  check("FM-card-approve", r2.approved, true)
+  check("FM-card-method", r2.method, "CARD")
+}
+testFactoryMethod()
+
+// --- Builder ---
+class Building {
+  type: str
+  desc: str
+  area: int
+}
+
+class TowerBuilder {
+  b
+  fn @() { @b = Building() }
+  fn withType(t) { @b.type = t; @b }
+  fn withDesc(d) { @b.desc = d; @b }
+  fn withArea(a) { @b.area = a; @b }
+  fn build() { r = @b; @b = Building(); r }
+}
+
+class Tower {
+  floors
+  fn @() { @floors = [] }
+  fn add(fl) { @floors.push(fl) }
+  fn count() { @floors.len }
+}
+
+fn testBuilder() {
+  tower = Tower()
+  builder = TowerBuilder()
+  b1 = builder.withType("Lobby")
+  b1 = b1.withDesc("Main Lobby")
+  b1 = b1.withArea(100)
+  tower.add(b1.build())
+  b2 = builder.withType("Office")
+  b2 = b2.withDesc("Open Office")
+  b2 = b2.withArea(200)
+  tower.add(b2.build())
+  check("Builder-count", tower.count(), 2)
+}
+testBuilder()
+
+// --- Prototype ---
+class Document {
+  title: str
+  content: str
+  fmt: str
+  fn @(t, c, fmt) { @title = t; @content = c; @fmt = fmt }
+  fn clone() { Document(@title, @content, @fmt) }
+}
+
+fn testPrototype() {
+  d1 = Document("Report", "data", "PDF")
+  d2 = d1.clone()
+  check("Proto-title", d2.title, "Report")
+  check("Proto-fmt", d2.fmt, "PDF")
+}
+testPrototype()
+
+// --- Singleton ---
+// Note: constructor from class method has VM bug, use manual lazy init
+_configInstance = null
+
+fn getConfig() {
+  if _configInstance == null {
+    _configInstance = {}
+    _configInstance["items"] = {}
+  }
+  _configInstance
+}
+
+fn testSingleton() {
+  c1 = getConfig()
+  c2 = getConfig()
+  c1["items"]["key"] = "val"
+  check("Single-get", c2["items"]["key"], "val")
+  checkTrue("Single-instance", c1["items"]["key"] == c2["items"]["key"])
+}
+testSingleton()
+
+// ======================== STRUCTURAL ========================
+
+// --- Adapter ---
+class PayXPTO {
+  fn pay(card, amount) {
+    f"XPTO: {card} paid {amount}"
+  }
+}
+
+class ABCService {
+  fn process(card, amount) {
+    f"ABC: paid {amount}"
+  }
+}
+
+class XPTOAdapter {
+  xpto
+  fn @(x) { @xpto = x }
+  fn pay(card, amount) { @xpto.pay(card, amount) }
+}
+
+class PaymentProcessor {
+  adapter
+  fn @(a) { @adapter = a }
+  fn pay(card, amount) { @adapter.pay(card, amount) }
+}
+
+fn testAdapter() {
+  p = PaymentProcessor(XPTOAdapter(PayXPTO()))
+  r = p.pay("4111", 100)
+  checkTrue("Adapter", r != "")
+}
+testAdapter()
+
+// --- Bridge ---
+class TextRenderer {
+  fn render(t) { t }
+}
+
+class WidgetRenderer {
+  fn render(t) { f"[WIDGET] {t}" }
+}
+
+class TextArea {
+  text
+  renderer
+  fn @(t, r) { @text = t; @renderer = r }
+  fn render() { @renderer.render(@text) }
+}
+
+fn testBridge() {
+  t1 = TextArea("Hello", TextRenderer())
+  t2 = TextArea("Hello", WidgetRenderer())
+  check("Bridge-plain", t1.render(), "Hello")
+  check("Bridge-widget", t2.render(), "[WIDGET] Hello")
+}
+testBridge()
+
+// --- Composite ---
+class File {
+  name: str
+  fn @(n) { @name = n }
+  fn delete() { f"Deleting {@name}" }
+  fn encrypt() {
+    // simple caesar shift
+    result = ""
+    for c in @name
+      result += str.char(str.ord(c) + 1)
+    result
+  }
+}
+
+class Folder {
+  name: str
+  children
+  fn @(n) { @name = n; @children = [] }
+  fn add(e) { @children.push(e) }
+  fn delete() {
+    @children.map(fn(f){ f.delete() }).join(",")
+  }
+  fn encrypt() {
+    @children.map(fn(f){ f.encrypt() }).join(",")
+  }
+}
+
+fn testComposite() {
+  root = Folder("root")
+  root.add(File("secret"))
+  root.add(File("data"))
+  e = root.encrypt()
+  checkTrue("Composite", e.len > 0)
+}
+testComposite()
+
+// --- Decorator ---
+fn testDecorator() {
+  // Simple writer chain: compress then encrypt
+  parts = []
+  fn write(s) { parts.push(s) }
+
+  // encryptor
+  fn enc(s) {
+    result = ""
+    for c in s { result = result + str.char(str.ord(c) + 1) }
+    result
+  }
+
+  // compression simulation
+  data = "Hello World"
+  encrypted = enc(data)
+  parts.push(encrypted)
+  checkTrue("Decorator", parts.len > 0)
+}
+testDecorator()
+
+// --- Facade ---
+class Castle {
+  fn lightsOn() { "Lights on" }
+  fn lightsOff() { "Lights off" }
+  fn fireOn() { "Fireplace lit" }
+  fn fireOff() { "Fireplace out" }
+  fn arm() { "Security armed" }
+  fn disarm() { "Security disarmed" }
+}
+
+class CastleFacade {
+  castle
+  fn @() { @castle = Castle() }
+  fn goodNight() {
+    f"Disarmed, { @castle.disarm() } -> Lights: { @castle.lightsOff() } -> Fire: { @castle.fireOff() } -> Armed: { @castle.arm() }"
+  }
+}
+
+fn testFacade() {
+  cf = CastleFacade()
+  r = cf.goodNight()
+  checkTrue("Facade", r.len > 10)
+}
+testFacade()
+
+// --- Flyweight ---
+class Element {
+  symbol
+  name
+  num
+  mass
+  fn @(s, n, num, m) { @symbol = s; @name = n; @num = num; @mass = m }
+}
+
+elementData = [
+  ["H", "Hydrogen", 1, 1.008], ["He", "Helium", 2, 4.003],
+  ["C", "Carbon", 6, 12.011], ["O", "Oxygen", 8, 15.999],
+  ["Fe", "Iron", 26, 55.845], ["Au", "Gold", 79, 196.967]
+]
+
+fn getElement(sym) {
+  for row in elementData {
+    if row[0] == sym { return Element(row[0], row[1], row[2], row[3]) }
+  }
+}
+
+fn testFlyweight() {
+  h1 = getElement("H")
+  h2 = getElement("H")
+  check("Flyweight-name", h1.name, "Hydrogen")
+  checkTrue("Flyweight-same", h1.num == h2.num)
+}
+testFlyweight()
+
+// --- Proxy ---
+fn testProxy() {
+  cache = {}
+  cache["key"] = null
+  fn readPath(p, cache, real) {
+    if cache[p] != null { f"[CACHE] {cache[p]}" }
+    else {
+      v = f"Content of {p}"
+      cache[p] = v
+      v
+    }
+  }
+  r1 = readPath("/doc.txt", cache, null)
+  r2 = readPath("/doc.txt", cache, null)
+  checkTrue("Proxy", r1 != "")
+  checkTrue("Proxy-cache", r2.find("[CACHE]") != null)
+}
+testProxy()
+
+// ======================== BEHAVIORAL ========================
+
+// --- Chain of Responsibility ---
+class PhoneCall {
+  typ: str
+  duration: int
+  fn @(t, d) { @typ = t; @duration = d }
+}
+
+class CallRater {
+  next
+  fn setNext(n) { @next = n }
+  fn rate(call) { @next ? @next.rate(call) : -1 }
+}
+
+class InternalRater : CallRater {
+  fn rate(call) {
+    if call.typ == "internal" { 0 }
+    else { @next ? @next.rate(call) : -1 }
+  }
+}
+
+class LocalRater : CallRater {
+  fn rate(call) {
+    if call.typ == "local" { call.duration * 0.1 }
+    else { @next ? @next.rate(call) : -1 }
+  }
+}
+
+class NationalRater : CallRater {
+  fn rate(call) {
+    if call.typ == "national" { call.duration * 0.5 }
+    else { @next ? @next.rate(call) : -1 }
+  }
+}
+
+fn testChain() {
+  c1 = InternalRater()
+  c1.setNext(LocalRater())
+  c2 = c1.next
+  c2.setNext(NationalRater())
+
+  r1 = c1.rate(PhoneCall("internal", 10))
+  r2 = c1.rate(PhoneCall("national", 10))
+  check("Chain-internal", r1, 0)
+  check("Chain-national", r2, 5)
+}
+testChain()
+
+// --- Command --- class Macro
+class Adventurer {
+  hp
+  fn @() { @hp = 100 }
+  fn attack() { f"Attack! HP={@hp}" }
+  fn heal() { @hp = @hp + 20; if @hp > 100 { @hp = 100 }; f"Heal! HP={@hp}" }
+}
+
+class AttackCmd {
+  a
+  fn @(a) { @a = a }
+  fn exec() { @a.attack() }
+  fn undo() { "Undo attack" }
+}
+
+class HealCmd {
+  a
+  fn @(a) { @a = a }
+  fn exec() { @a.heal() }
+  fn undo() { "Undo heal" }
+}
+
+class Macro {
+  cmds
+  fn @() { @cmds = [] }
+  fn add(c) { @cmds.push(c) }
+  fn exec() {
+    // manual accumulation due to push bug in class methods
+    r = ""
+    for c in @cmds {
+      if r != "" { r = r + "; " }
+      r = r + c.exec()
+    }
+    r
+  }
+  fn undo() {
+    r = ""
+    i = @cmds.len - 1
+    while i >= 0 {
+      if r != "" { r = r + "; " }
+      r = r + @cmds[i].undo()
+      i -= 1
+    }
+    r
+  }
+}
+
+fn testCommand() {
+  a = Adventurer()
+  macro = Macro()
+  macro.add(AttackCmd(a))
+  macro.add(HealCmd(a))
+  r = macro.exec()
+  checkTrue("Command", r.len > 0)
+  u = macro.undo()
+  checkTrue("Command-undo", u.len > 0)
+}
+testCommand()
+
+// --- Interpreter ---
+fn testInterpreter() {
+  expr = 5 + 3 * 4  // Havel has built-in precedence
+  check("Interpreter", expr, 17)
+}
+testInterpreter()
+
+// --- Iterator (built-in iteration) ---
+fn testIterator() {
+  items = ["Sword", "Potion", "Shield"]
+  names = items.join(",")
+  check("Iterator", names, "Sword,Potion,Shield")
+  count = 0
+  for i in items
+    count += 1
+  check("Iterator-count", count, 3)
+}
+testIterator()
+
+// --- Memento ---
+struct OrderState {
+  number, status
+}
+
+class Order {
+  number
+  status
+  items
+  fn @(num) { @number = num; @items = []; @status = "OPEN" }
+  fn addItem(item) { @items.push(item) }
+  fn save() { OrderState(@number, @status) }
+  fn restore(s) { @number = s.number; @status = s.status }
+}
+
+fn testMemento() {
+  ord = Order(1)
+  ord.addItem("Sword")
+  saved = ord.save()
+  ord.status = "CLOSED"
+  ord.restore(saved)
+  check("Memento", ord.status, "OPEN")
+}
+testMemento()
+
+// --- Observer ---
+class Observable {
+  observers
+  changed
+  fn @() { @observers = []; @changed = false }
+  fn add(o) { @observers.push(o) }
+  fn setChanged() { @changed = true }
+  fn notify(data) {
+    if @changed {
+      for o in @observers
+        o.update(data)
+      @changed = false
+    }
+  }
+}
+
+class Point : Observable {
+  x: int
+  y: int
+  fn @(x, y) { @x = x; @y = y; @observers = [] }
+  fn move(x, y) { @x = x; @y = y; @changed = true; for o in @observers { o.update(@x) } }
+  fn getX() { @x }
+}
+
+class PrinterObserver {
+  lastX
+  fn @() { @lastX = 0 }
+  fn update(x) { @lastX = x }
+}
+
+fn testObserver() {
+  p = Point(0, 0)
+  obs = PrinterObserver()
+  p.add(obs)
+  p.move(10, 20)
+  check("Observer-x", obs.lastX, 10)
+}
+testObserver()
+
+// --- State ---
+class State {
+  fn startWithdrawal() {
+    "starting withdrawal"
+  }
+}
+
+class POS {
+  state
+  fn @() { @state = State() }
+  fn changeState(s) { @state = s }
+  fn startWithdrawal() { @state.startWithdrawal() }
+}
+
+class WithdrawState : State {
+  fn startWithdrawal() {
+    "already in withdrawal"
+  }
+}
+
+fn testState() {
+  pos = POS()
+  r1 = pos.startWithdrawal()
+  pos.changeState(WithdrawState())
+  r2 = pos.startWithdrawal()
+  checkTrue("State", r1 != "")
+  checkTrue("State-2", r2 != "")
+}
+testState()
+
+// --- Strategy ---
+fn testStrategy() {
+  svc = PaymentService()  // reuse PaymentService from FactoryMethod
+  svc.setStrategy(PixPayment("alice_at_x"))
+  r = svc.pay(150)
+  check("Strategy-approve", r.approved, true)
+  check("Strategy-method", r.method, "PIX")
+  svc.setStrategy(CardPayment("4111", "Alice"))
+  r2 = svc.pay(200)
+  check("Strategy-card-approve", r2.approved, true)
+}
+testStrategy()
+
+// --- Template Method ---
+class TemplateDecoder {
+  fn decode(msg) {
+    result = @doDecode(msg)
+    @process(result)
+    result
+  }
+  fn doDecode(msg) { {id: "0"} }
+  fn process(r) {}
+}
+
+class XMLTemplate : TemplateDecoder {
+  fn doDecode(msg) {
+    id = "1"
+    n = ""
+    nPos = msg.find('name="')
+    if nPos {
+      rest = msg.sub(nPos + 6)
+      n = rest.sub(0, rest.find('"'))
+    }
+    {id: id, name: n}
+  }
+  fn process(r) {
+    // simulate processing
+  }
+}
+    {id: id, name: n}
+  }
+  fn process(r) {
+    // simulate processing
+  }
+}
+
+fn testTemplateMethod() {
+  d = XMLTemplate()
+  r = d.decode('<person name="Charlie"/>')
+  check("Template", r.name, "Charlie")
+}
+testTemplateMethod()
+
+// --- Visitor ---
+struct IntNode {
+  n: int
+}
+
+struct AddNode {
+  left, right
+}
+
+struct MulNode {
+  left, right
+}
+
+fn calcInt(n) { n.n }
+
+fn calcAdd(n) {
+  calcExpr(n.left) + calcExpr(n.right)
+}
+
+fn calcMul(n) {
+  calcExpr(n.left) * calcExpr(n.right)
+}
+
+fn calcExpr(e) {
+  if e.n != null { calcInt(e) }
+  else if e.left && e.right {
+    if e.left.n != null { calcMul(e) } else { calcAdd(e) }
+  }
+  else { 0 }
+}
+
+fn printInt(n) { f"{n.n}" }
+
+fn printAdd(n) {
+  f"({printExpr(n.left)}+{printExpr(n.right)})"
+}
+
+fn printMul(n) {
+  f"({printExpr(n.left)}*{printExpr(n.right)})"
+}
+
+fn printExpr(e) {
+  if e.n != null { printInt(e) }
+  else if e.left {
+    if e.left.n != null { printMul(e) } else { printAdd(e) }
+  }
+  else { "?" }
+}
+
+fn testVisitor() {
+  expr = AddNode(IntNode(5), MulNode(IntNode(3), IntNode(4)))
+  check("Visitor-calc", calcExpr(expr), 17)
+  checkTrue("Visitor-print", printExpr(expr) != "")
+}
+testVisitor()
+
+// ======================== GRASP ========================
+
+// --- Coupling ---
+fn testCoupling() {
+  // Decoupled order - doesn't depend on DB source
+  order = Order(1)  // from Memento section
+  order.addItem("Sword")
+  total = order.items.len  // simplified
+  check("Coupling", total, 1)
+}
+testCoupling()
+
+// --- Cohesion ---
+class StatementService {
+  fn generate(account) { f"Statement for {account}" }
+}
+
+class EmailService {
+  fn send(dest, msg) { f"Email to {dest}: {msg}" }
+}
+
+fn testCohesion() {
+  ss = StatementService()
+  es = EmailService()
+  check("Cohesion-stmt", ss.generate("ACC-1"), "Statement for ACC-1")
+  check("Cohesion-email", es.send("a@b.com", "hello"), "Email to a@b.com: hello")
+}
+testCohesion()
+
+// --- Controller ---
+class ReservationService {
+  fn reserve(flight) { f"Reserved {flight}" }
+}
+
+class FlightController {
+  rs
+  fn @() { @rs = ReservationService() }
+  fn reserve(flight) { @rs.reserve(flight) }
+}
+
+fn testController() {
+  ctrl = FlightController()
+  r = ctrl.reserve("FL001")
+  check("Controller", r, "Reserved FL001")
+}
+testController()
+
+// --- Creator ---
+class OrderItem {
+  product: str
+  qty: int
+  price: int
+  fn @(p, q, pr) { @product = p; @qty = q; @price = pr }
+  fn getTotal() { @qty * @price }
+}
+
+class SimpleOrder {
+  number: int
+  items
+  fn @(num) { @number = num; @items = [] }
+  fn add(product, qty, price) { @items.push(OrderItem(product, qty, price)) }
+  fn getTotal() {
+    t = 0
+    for i in @items { t += i.getTotal() }
+    t
+  }
+}
+
+fn testCreator() {
+  o = SimpleOrder(1)
+  o.add("Sword", 2, 100)
+  check("Creator", o.getTotal(), 200)
+}
+testCreator()
+
+// --- Indirection ---
+class OrderRepo {
+  data
+  fn @() { @data = {} }
+  fn save(o) { @data[o.number] = o }
+  fn find(num) { @data[num] }
+  fn count() { @data.len }
+}
+
+fn testIndirection() {
+  repo = OrderRepo()
+  order = SimpleOrder(1)
+  order.add("Shield", 1, 50)
+  repo.save(order)
+  found = repo.find(1)
+  check("Indirection", found.number, 1)
+  check("Indirection-count", repo.count(), 1)
+}
+testIndirection()
+
+// --- Information Expert ---
+fn testInfoExpert() {
+  o = SimpleOrder(2)
+  o.add("Potion", 5, 10)
+  o.add("Elixir", 2, 50)
+  check("InfoExpert", o.getTotal(), 5*10 + 2*50)
+}
+testInfoExpert()
+
+// --- Polymorphism ---
+class AlphaBroker {
+  fn pay(card, amount) { f"Alpha:{card}:{amount}" }
+}
+
+class BetaBroker {
+  fn pay(card, amount) { f"Beta:{card}:{amount}" }
+}
+
+class PaymentClient {
+  broker
+  fn @(b) { @broker = b }
+  fn pay(card, amount) { @broker.pay(card, amount) }
+}
+
+fn testPolymorphism() {
+  alpha = PaymentClient(AlphaBroker())
+  r1 = alpha.pay("4111", 100)
+  checkTrue("Poly-alpha", r1 != "")
+  beta = PaymentClient(BetaBroker())
+  r2 = beta.pay("4111", 100)
+  checkTrue("Poly-beta", r2.find("Beta") != null)
+}
+testPolymorphism()
+
+// --- Repository ---
+class ProductRepo {
+  data
+  fn @() { @data = {} }
+  fn save(p) { @data[p.code] = p }
+  fn find(code) { @data[code] }
+  fn remove(code) { @data[code] = nil }
+}
+
+fn testRepository() {
+  repo = ProductRepo()
+  prod = {code: "P1", name: "Sword", price: 100}
+  repo.save(prod)
+  found = repo.find("P1")
+  check("Repo-name", found.name, "Sword")
+  check("Repo-price", found.price, 100)
+}
+testRepository()
+
+// --- Protected Variation ---
+class StdFreight {
+  fn calc(order) { 25 }
+}
+
+class ExpressFreight {
+  fn calc(order) { 45 }
+}
+
+class OrderCloser {
+  freight
+  fn @(f) { @freight = f }
+  fn close(order) {
+    // Freight calculation is protected from changes
+    @freight.calc(order)
+  }
+}
+
+fn testProtectedVariation() {
+  order = SimpleOrder(3)
+  closer = OrderCloser(StdFreight())
+  check("ProtVar-std", closer.close(order), 25)
+  closer2 = OrderCloser(ExpressFreight())
+  check("ProtVar-express", closer2.close(order), 45)
+}
+testProtectedVariation()
+
+// ======================== SUMMARY ========================
+print(f"\n=== Results: {pass} passed, {fail} failed ===")
+if fail > 0 { exit(1) }

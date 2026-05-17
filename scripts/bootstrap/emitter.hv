@@ -2,7 +2,8 @@ fn Scope(parent):
     {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
 
 fn scopeDeclare(scope, name):
-    if scope.locals[name] != null: return scope.locals[name]
+    if scope.locals[name] != null:
+        return scope.locals[name]
     idx = scope.count
     scope.locals[name] = idx
     scope.count = idx + 1
@@ -13,7 +14,8 @@ fn scopeResolve(scope, name):
         {kind: "local", index: scope.locals[name]}
     else if scope.parent != null:
         outer = scopeResolve(scope.parent, name)
-        if outer == null: null
+        if outer == null:
+            null
         else if outer.kind == "local":
             upidx = scope.upvalues[name]
             if upidx == null:
@@ -42,7 +44,8 @@ fn emitError(emitter, msg, line, col):
 
 fn globalIdx(emitter, name):
     cidx = emitter.globals[name]
-    if cidx != null: return cidx
+    if cidx != null:
+        return cidx
     cidx = bc.add_chunk_string(name)
     emitter.globals[name] = cidx
     cidx
@@ -188,7 +191,8 @@ fn emitExpr(emitter, node):
     emitError(emitter, "unsupported expr: " + k, node.line, node.col)
 
 fn emitStmt(emitter, node):
-    if node == null: return
+    if node == null:
+        return
     k = node.kind
     if k == "ExpressionStatement":
         emitExpr(emitter, node.expr)
@@ -285,7 +289,8 @@ fn emitStmt(emitter, node):
     emitError(emitter, "unsupported stmt: " + k, node.line, node.col)
 
 fn emitBlock(emitter, node):
-    if node == null: return
+    if node == null:
+        return
     if node.kind == "BlockStatement":
         for stmt in node.body:
             emitStmt(emitter, stmt)
@@ -327,10 +332,10 @@ fn compileFunc(emitter, name, params, bodyNode, localCount):
     emitter.scope = oldScope
 
 fn compileProgram(emitter, program):
-bc.reset()
-body = program.body
-topStmts = []
-funcDecls = []
+    bc.reset()
+    body = program.body
+    topStmts = []
+    funcDecls = []
     for stmt in body:
         if stmt.kind == "FnDeclaration":
             funcDecls.push(stmt)
@@ -347,7 +352,8 @@ funcDecls = []
         for j in 0..(#params - 1):
             p = params[j]
             pname = p
-            if p != null && p.name != null: pname = p.name
+            if p != null && p.name != null:
+                pname = p.name
             scopeDeclare(emitter.scope, pname)
         lc = #params + 8
         bc.func_new(decl.name, #params, lc)
@@ -360,11 +366,11 @@ funcDecls = []
         decl = funcDecls[i]
         bc.emit("CLOSURE", emitter.func_map[decl.name])
         bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
-lastIdx = #topStmts - 1
-for i in 0..(#topStmts - 1):
-if i != lastIdx:
-emitStmt(emitter, topStmts[i])
-if #topStmts > 0:
+    lastIdx = #topStmts - 1
+    for i in 0..(#topStmts - 1):
+        if i != lastIdx:
+            emitStmt(emitter, topStmts[i])
+    if #topStmts > 0:
         last = topStmts[lastIdx]
         if last.kind == "ExpressionStatement":
             emitExpr(emitter, last.expr)
@@ -376,5 +382,5 @@ if #topStmts > 0:
     else:
         bc.emit("PUSH_NULL")
         bc.emit("RETURN")
-emitter.scope = null
-bc.execute_persistent("__main__")
+    emitter.scope = null
+    bc.execute_persistent("__main__")

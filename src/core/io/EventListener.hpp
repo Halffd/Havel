@@ -1,8 +1,8 @@
 #pragma once
-#include "HotkeyExecutor.hpp" // Include HotkeyExecutor
+#include "HotkeyExecutor.hpp"
 #include "MouseGestureEngine.hpp"
-#include "UinputDevice.hpp"           // Include UinputDevice
-#include "core/CallbackTypes.hpp"     // Include callback types
+#include "InputBackend.hpp"
+#include "core/CallbackTypes.hpp"
 #include "../MouseGestureTypes.hpp" // Include mouse gesture types
 #include "core/HotkeyManager.hpp"  // Include HotkeyManager
 #include <atomic>
@@ -41,7 +41,6 @@ class SignalHandler;
 // Event listener that handles all input devices with unified evdev logic
 class EventListener {
 public:
-  // Modifier keys bitmask
   enum Modifier {
     Null = 0,
     Ctrl = 1 << 0,
@@ -52,33 +51,20 @@ public:
   EventListener();
   ~EventListener();
 
-  // Start listening on specified devices
   bool Start(const std::vector<std::string> &devicePaths,
              bool grabDevices = false);
-  
-  // Set HostBridge for timer checking
+
   void setHostBridge(havel::compiler::HostBridge *hostBridge);
-  
-  
   void setExecutionEngine(havel::compiler::ExecutionEngine *executionEngine);
   void setHotkeyManager(HotkeyManager *manager);
-  
+
   std::map<int, bool> evdevKeyState;
 
-  // Stop listening
   void Stop();
-  // Drain all pending events from a device
-  void DrainDeviceEvents(int fd);
-  // Enable/disable device grabbing
   void SetGrabDevices(bool grab) { grabDevices = grab; }
-
-  // Check if running
   bool IsRunning() const { return running.load(); }
-
-  // Get key state
   bool GetKeyState(int evdevCode) const;
 
-  // Get modifier state
   struct ModifierState {
     bool leftCtrl = false;
     bool rightCtrl = false;
@@ -97,15 +83,13 @@ public:
 
   const ModifierState &GetModifierState() const;
 
-  // Debugging
   std::string GetModifiersString() const;
   std::string GetActiveInputsString() const;
-
   int GetCurrentModifiersMask() const;
-  // Hotkey optimization
+
   struct ActiveInput {
     std::chrono::steady_clock::time_point timestamp;
-    int modifiers; // Modifiers that were held when this key was pressed
+    int modifiers;
 
     ActiveInput() : modifiers(0) {}
     explicit ActiveInput(int mods)
@@ -114,156 +98,101 @@ public:
         : timestamp(time), modifiers(mods) {}
   };
 
-  // Setup uinput for event forwarding
   bool SetupUinput();
-
-  // Send event through uinput
   void SendUinputEvent(int type, int code, int value);
-
-  // Batch event sending for reduced syscall overhead
   void BeginUinputBatch();
   void QueueUinputEvent(int type, int code, int value);
   void EndUinputBatch();
-
-  // Emergency release all keys
   void EmergencyReleaseAllKeys();
-
-  // Set blocking mode for specific keys
   void SetBlockInput(bool block);
-
-  // Add key remap
   void AddKeyRemap(int fromCode, int toCode);
-
-  // Remove key remap
   void RemoveKeyRemap(int fromCode);
-
-  // Set emergency shutdown key
   void SetEmergencyShutdownKey(int evdevCode);
-
-  // Set mouse sensitivity (1.0 = default)
   void SetMouseSensitivity(double sensitivity);
   double GetMouseSensitivity() const { return mouseSensitivity; }
-
-  // Set scroll speed (1.0 = default)
   void SetScrollSpeed(double speed);
   double GetScrollSpeed() const { return scrollSpeed; }
-  using MouseMovementCallback = std::function<void(int dx, int dy)>;
 
+  using MouseMovementCallback = std::function<void(int dx, int dy)>;
   void SetMouseMovementCallback(MouseMovementCallback callback) {
     mouseMovementCallback = callback;
   }
-// X11 hotkey monitoring (separate from evdev)
+
 #ifdef __linux__
   bool StartX11Monitor(Display *display);
   void StopX11Monitor();
   bool IsX11MonitorRunning() const;
 #endif
 
-  // Callback for any key press
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
-
-  // Raw input event stream for external hotkey ownership.
   void SetInputEventCallback(InputEventCallback callback) {
     inputEventCallback = std::move(callback);
   }
-
-  // Callback to decide if an input event should be blocked from forwarding.
   void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
     inputBlockCallback = std::move(callback);
   }
 
-  // Callback for raw key down events
   using KeyCallback = std::function<void(int keyCode)>;
   void SetKeyDownCallback(KeyCallback callback) {
     keyDownCallback = std::move(callback);
   }
-
-  // Callback for raw key up events
   void SetKeyUpCallback(KeyCallback callback) {
     keyUpCallback = std::move(callback);
   }
 
-// Set HotkeyExecutor for thread-safe callback execution
-void SetHotkeyExecutor(HotkeyExecutor *executor) {
-  hotkeyExecutor = executor;
-}
-void SetExecutorMode(ExecutorMode mode) {
-  executorMode_ = mode;
-}
+  void SetHotkeyExecutor(HotkeyExecutor *executor) {
+    hotkeyExecutor = executor;
+  }
+  void SetExecutorMode(ExecutorMode mode) {
+    executorMode_ = mode;
+  }
 
-  // Get current mouse position (from evdev ABS events)
   std::pair<int, int> GetMousePosition() const {
     return {currentMouseX, currentMouseY};
   }
 
-  // Callback for any key press
   std::function<void(const std::string &key)> anyKeyPressCallback = nullptr;
-
-  // Raw key down/up callbacks
   KeyCallback keyDownCallback = nullptr;
   KeyCallback keyUpCallback = nullptr;
-
-  // Raw input events emitted before internal matching.
   InputEventCallback inputEventCallback = nullptr;
   std::function<bool(const InputEvent &)> inputBlockCallback = nullptr;
-
-  // Callback for input notification (for watchdog)
   std::function<void()> inputNotificationCallback = nullptr;
 
-  // Release all pressed virtual keys (for clean shutdown)
   void ReleaseAllVirtualKeys();
-
-  // Force ungrab all devices - async-signal-safe for signal handlers
-  // This is the CRITICAL method that prevents stuck grabs
   void ForceUngrabAllDevices();
 
-  // Signal handling methods
   void SetupSignalHandling();
   void ProcessSignal();
   void RequestShutdownFromSignal(int sig);
 
 private:
-	friend class IO;
-	friend class SignalHandler;
+  friend class IO;
+  friend class SignalHandler;
   void HandleSignal(int sig);
   void SignalSafeShutdown(int sig, bool exitAfter = false);
-  // Signal handling members
+  void InitInputBackend(const std::vector<std::string> &devicePaths, bool grab);
+  void OnBackendKeyEvent(const KeyEvent &ke);
+  void OnBackendMouseEvent(const MouseEvent &me);
+
   std::atomic<bool> signalReceived{false};
-  int signalFd = -1; // fd for signalfd to integrate with select loop
+  int signalFd = -1;
   sigset_t signalMask{};
   std::sig_atomic_t asyncSignalRequested = 0;
-
-  // Signal handling for device cleanup
   std::atomic<int> pendingSignal{0};
 
-  // Mouse position tracking
   int currentMouseX = 0;
   int currentMouseY = 0;
 
 private:
   std::unique_ptr<SignalHandler> signalHandler;
-  
-  // HostBridge for timer checking (single-threaded VM timer queue)
+  std::unique_ptr<InputBackend> backend_;
+
   havel::compiler::HostBridge *hostBridge = nullptr;
-  
-  
   havel::compiler::ExecutionEngine *executionEngine = nullptr;
   HotkeyManager *hotkeyManager = nullptr;
 
-  // Device info
-  struct DeviceInfo {
-    std::string path;
-    int fd = -1;
-    std::string name;
-  };
-
-  // Main event loop (exact logic from IO.cpp)
   void EventLoop();
-
-  // Process keyboard event (exact logic from IO.cpp)
   void ProcessKeyboardEvent(const input_event &ev);
-
-  // Process mouse event
   void ProcessMouseEvent(const input_event &ev);
 
   // Hotkey evaluation helpers (legacy; kept for compatibility)
@@ -315,14 +244,10 @@ private:
   std::atomic<int> pendingCallbacks{0};
   std::thread eventThread;
 
-  std::vector<DeviceInfo> devices;
-  int shutdownFd = -1; // eventfd for clean shutdown
+  int shutdownFd = -1;
   int emergencyShutdownKey = 0;
 
-  // Uinput device for virtual input
-  std::unique_ptr<UinputDevice> uinputDevice;
-
-  // State tracking (exact from IO.cpp)
+  // State tracking
   mutable std::shared_mutex stateMutex;
   std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
   std::unordered_map<int, ActiveInput> activeInputs;
@@ -367,12 +292,7 @@ ExecutorMode executorMode_ = ExecutorMode::Scheduler;
 std::mutex hotkeyExecMutex;
   std::unordered_set<std::string> executingHotkeys;
 
-  // Event batching for reduced syscall overhead
-  std::vector<input_event> uinputBatchBuffer;
-  std::mutex uinputBatchMutex; // Protects batch buffer
-  std::atomic<bool> uinputBatching{false};
-  static constexpr size_t MAX_BATCH_SIZE = 16;  // Flush after 16 events
-  static constexpr int BATCH_TIMEOUT_US = 5000; // Or after 5ms
+
 
 // X11 hotkey monitor (separate component)
 #ifdef __linux__

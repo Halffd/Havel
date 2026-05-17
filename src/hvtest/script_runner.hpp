@@ -70,7 +70,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 		dup2(pipefd[1], STDOUT_FILENO);
 		dup2(pipefd[1], STDERR_FILENO);
 		close(pipefd[1]);
-		execlp(havel_bin.c_str(), havel_bin.c_str(), script_path.c_str(), nullptr);
+		execlp(havel_bin.c_str(), havel_bin.c_str(), "run", script_path.c_str(), nullptr);
 		_exit(127);
 	}
 

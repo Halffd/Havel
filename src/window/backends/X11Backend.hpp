@@ -1,8 +1,7 @@
 #pragma once
 #include "window/WindowBackend.hpp"
-#include "window/CompositorBridge.hpp"
 #include "core/DisplayManager.hpp"
-#include <memory>
+#include <optional>
 
 namespace havel {
 
@@ -80,9 +79,7 @@ private:
   WindowManagerDetector detector;
   std::string wmName;
   bool wmSupported{false};
-  WindowManagerDetector::WMType wmType{WindowManagerDetector::WMType::UNKNOWN};
-
-  std::unique_ptr<CompositorBridge> compositorBridge;
+  WindowManagerDetector::WMType wmType{};
 
   struct ActiveWindowContext {
     Display *display;
@@ -93,8 +90,6 @@ private:
   std::string ReadProcFile(const std::string &path) const;
   bool InitializeX11();
   void ManageVirtualDesktops(int action);
-  std::string getActiveWindowTitleX11();
-  std::string getActiveWindowClassX11();
 };
 
 } // namespace havel

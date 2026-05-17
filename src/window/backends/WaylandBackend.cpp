@@ -79,16 +79,6 @@ CompositorBridge::CompositorType WaylandBackend::GetCompositor() const {
          CompositorBridge::CompositorType::Unknown;
 }
 
-static bool IsWayfireRunning() {
-  auto out = std::string();
-  auto pipe = popen("pidof wayfire 2>/dev/null", "r");
-  if (!pipe) return false;
-  std::array<char, 64> buf;
-  if (fgets(buf.data(), buf.size(), pipe)) out = buf.data();
-  pclose(pipe);
-  return !out.empty();
-}
-
 wID WaylandBackend::getActiveWindow() {
   if (compositorBridge && compositorBridge->IsAvailable()) {
     auto info = compositorBridge->GetActiveWindow();

@@ -1,6 +1,7 @@
 #pragma once
 #include "../utils/Logger.hpp"
-#include "WindowManagerDetector.hpp"
+#include "WindowBackend.hpp"
+#include "WindowBackendFactory.hpp"
 #include "WindowQuery.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
@@ -12,25 +13,10 @@
 #include <type_traits>
 #include <vector>
 
-#ifdef __linux__
-#include "x11.h"
-#include <sys/wait.h>
-#include <unistd.h>
-// Use X11's Window type directly
-typedef ::Window XWindow;
-#endif
-#ifdef WINDOWS
-// Struct to hold the window handle and the target process name
-struct EnumWindowsData {
-  wID id;
-  std::string targetProcessName;
-
-  EnumWindowsData(const std::string &processName)
-      : id(NULL), targetProcessName(processName) {}
-};
-#endif
-
 namespace havel {
+
+class CompositorBridge;
+
 struct WindowStats {
   wID id;
   std::string className;
@@ -38,8 +24,6 @@ struct WindowStats {
   bool isFullscreen;
   int x, y, width, height;
 };
-
-class CompositorBridge;
 
 class WindowManager {
 public:
@@ -51,51 +35,43 @@ public:
   }
   static str defaultTerminal;
   static WindowStats activeWindow;
-  // Static window methods
-  static XWindow GetActiveWindow();
-  static pID GetActiveWindowPID();
-  static std::string
-  GetActiveWindowProcess(); // Get process name of active window
-  static std::string GetActiveWindowTitle();
-  static pID GetWindowPID(XWindow id);
-  static std::string GetWindowTitle(XWindow id);
-  static std::string GetWindowClass(XWindow id);
-  static XWindow GetwIDByPID(pID pid);
-  static XWindow GetwIDByProcessName(cstr processName);
-  static XWindow FindByClass(cstr className);
-  static XWindow FindByTitle(cstr title);
-  static XWindow Find(cstr identifier);
-  static XWindow FindWindowInGroup(cstr groupName);
-  static XWindow NewWindow(cstr name, std::vector<int> *dimensions = nullptr,
-                           bool hide = false);
 
-  // Window manager info
+  static wID GetActiveWindow();
+  static pID GetActiveWindowPID();
+  static std::string GetActiveWindowProcess();
+  static std::string GetActiveWindowTitle();
+  static pID GetWindowPID(wID id);
+  static std::string GetWindowTitle(wID id);
+  static std::string GetWindowClass(wID id);
+  static wID GetwIDByPID(pID pid);
+  static wID GetwIDByProcessName(cstr processName);
+  static wID FindByClass(cstr className);
+  static wID FindByTitle(cstr title);
+  static wID Find(cstr identifier);
+  static wID FindWindowInGroup(cstr groupName);
+  static wID NewWindow(cstr name, std::vector<int> *dimensions = nullptr,
+                       bool hide = false);
+
   std::string GetCurrentWMName() const;
   bool IsWMSupported() const;
   static bool IsX11();
   static bool IsWayland();
   void All();
 
-  // Group management
   static void AddGroup(cstr groupName, cstr identifier);
-  static void LoadGroupsFromConfig();              // Load groups from config
-  static std::vector<std::string> GetGroupNames(); // Get all group names
-  static std::vector<std::string>
-  GetGroupWindows(cstr groupName); // Get windows in group
-  static bool IsWindowInGroup(cstr windowTitle,
-                              cstr groupName); // Check if window is in group
+  static void LoadGroupsFromConfig();
+  static std::vector<std::string> GetGroupNames();
+  static std::vector<std::string> GetGroupWindows(cstr groupName);
+  static bool IsWindowInGroup(cstr windowTitle, cstr groupName);
 
-  // Window switching
   static void AltTab();
   static void UpdatePreviousActiveWindow();
 
-  // Helper methods
   static str GetIdentifierType(cstr identifier);
   static str GetIdentifierValue(cstr identifier);
   static str getProcessName(pid_t windowPID);
   static str getProcessCmdline(pid_t windowPID);
 
-  // Add to WindowManager class
   static void MoveToCorners(int direction, int distance = 10);
   static bool Resize(wID windowId, int width, int height,
                      bool fullscreen = false);
@@ -107,7 +83,6 @@ public:
                    bool centerOnScreen = false);
   static bool Center(const std::string &windowTitle);
   static bool Center(wID windowId);
-
   static bool MoveToCorner(wID windowId, const std::string &corner);
   static bool MoveToMonitor(wID windowId, int monitorIndex);
   static bool MoveResize(wID windowId, int x, int y, int width, int height);
@@ -133,25 +108,15 @@ public:
   static void WinSetAlwaysOnTop(bool onTop);
   static void SnapWindowWithPadding(int position, int padding);
 
-  // New method
   static std::string GetActiveWindowClass();
   static void MoveWindowToNextMonitor();
   static void ToggleFullscreen(wID windowId);
   static bool IsWindowFullscreen(wID windowId);
 
-  /**
-   * @brief Get compositor bridge instance (Wayland only)
-   *
-   * @return Compositor bridge if available, nullptr on X11 or unsupported
-   * compositors
-   */
   static CompositorBridge *GetCompositorBridge();
-
-  // Compositor bridge management
   static void InitializeCompositorBridge();
   static void ShutdownCompositorBridge();
 
-  // Window module interface methods
   static WindowInfo getActiveWindowInfo();
   static std::vector<WindowInfo> getAllWindows();
   static WindowInfo getWindowInfo(wID id);
@@ -175,39 +140,30 @@ public:
   static bool setAlwaysOnTop(uint64_t id, bool onTop);
   static bool moveWindowToMonitor(uint64_t id, int monitor);
 
-  // Workspace methods
   static std::vector<WorkspaceInfo> getWorkspaces();
   static bool switchToWorkspace(int workspace);
   static int getCurrentWorkspace();
 
-  // Group methods
   static std::vector<std::string> getGroupNames();
   static std::vector<WindowInfo> getGroupWindows(const std::string &groupName);
   static bool addWindowToGroup(uint64_t id, const std::string &groupName);
   static bool removeWindowFromGroup(uint64_t id, const std::string &groupName);
 
+  WindowBackend &getBackend() { return *backend_; }
+  const WindowBackend &getBackend() const { return *backend_; }
+
 private:
-  static bool InitializeX11();
+  bool InitializeX11();
+
   std::string DetectWindowManager() const;
   bool CheckWMProtocols() const;
 
-  // Private helper for getting X11 context
-  struct ActiveWindowContext {
-    Display *display;
-    ::Window root;
-    wID activeWindowId;
-  };
-  static std::optional<ActiveWindowContext> GetActiveWindowContext();
-
-  // Private members
   std::string wmName;
   bool wmSupported{false};
-  WindowManagerDetector::WMType wmType{}; // Default initialization
+  WindowManagerDetector::WMType wmType{};
 
-  // Static member to track previous active window
-  static XWindow previousActiveWindow;
-
-  // Compositor bridge
-  static std::unique_ptr<CompositorBridge> compositorBridge;
+  static wID previousActiveWindow;
+  std::unique_ptr<WindowBackend> backend_;
 };
+
 } // namespace havel

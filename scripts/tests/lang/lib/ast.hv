@@ -84,16 +84,12 @@ fn _node(kind, line, col):
 // --- Program ---
 
 fn Program(body, line, col):
-  n = _node("Program", line, col)
-  n.body = body
-  n
+    {kind: "Program", line: line, col: col, body: body}
 
 // --- Block ---
 
 fn BlockStatement(body, line, col):
-  n = _node("BlockStatement", line, col)
-  n.body = body
-  n
+    {kind: "BlockStatement", line: line, col: col, body: body}
 
 // --- Expression statement ---
 

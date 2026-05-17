@@ -1,0 +1,12 @@
+use { NumberLiteral, ValDeclaration } from "ast"
+
+n = NumberLiteral(42, 0, 0)
+print("kind: " + n.kind)
+print("value type: " + type(n.value))
+print("value: " + str(n.value))
+
+v = ValDeclaration("x", n, 0, 0)
+print("val_decl kind: " + v.kind)
+print("val_decl name: " + v.name)
+print("val_decl value kind: " + v.value.kind)
+print("val_decl value: " + str(v.value.value))

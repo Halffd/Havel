@@ -1,0 +1,24 @@
+// Test emitter with manually constructed AST
+use { Emitter, compileProgram } from "emitter"
+use { Program, NumberLiteral, BinaryExpression, ExpressionStatement, FnDeclaration, ReturnStatement, BlockStatement, ValDeclaration, CallExpression, Identifier } from "ast"
+
+// Build AST for:
+// fn add(a, b): a + b
+// val result = add(1, 2)
+// print(result)
+
+body_expr = BinaryExpression(Identifier("a", 0, 0), "+", Identifier("b", 0, 0), 0, 0)
+body_stmt = ReturnStatement(body_expr, 0, 0)
+fn_body = BlockStatement([body_stmt], 0, 0)
+add_fn = FnDeclaration("add", ["a", "b"], fn_body, 0, 0)
+
+call_expr = CallExpression(Identifier("add", 0, 0), [NumberLiteral(1, 0, 0), NumberLiteral(2, 0, 0)], 0, 0)
+val_decl = ValDeclaration("result", call_expr, 0, 0)
+
+print_expr = CallExpression(Identifier("print", 0, 0), [Identifier("result", 0, 0)], 0, 0)
+print_stmt = ExpressionStatement(print_expr, 0, 0)
+
+program = Program([add_fn, val_decl, print_stmt], 0, 0)
+
+em = Emitter()
+compileProgram(em, program)

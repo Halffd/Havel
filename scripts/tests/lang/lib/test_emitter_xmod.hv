@@ -1,0 +1,7 @@
+use { emitStmt } from "emitter"
+
+node = {kind: "ReturnStatement", value: null, line: 0, col: 0}
+bc.reset()
+bc.func_new("__main__", 0, 32)
+emitStmt({scope: {locals: {}, count: 0, upvalues: {}, upcount: 0, parent: null}, globals: {}, func_idx: 0, func_map: {}, loop_breaks: [], loop_continues: []}, node)
+print("ok")

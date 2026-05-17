@@ -1,45 +1,48 @@
 #include "WindowManager.hpp"
-#include "../utils/Logger.hpp"
-#include "CompositorBridge.hpp" // Include CompositorBridge
-#include "core/DisplayManager.hpp"
+#include "utils/Logger.hpp"
 #include "types.hpp"
 #include <cstring>
 #include <iostream>
 #include <optional>
 #include <sstream>
-#include <sys/resource.h>
-#include <sys/wait.h>
 #include <thread>
-#include <unistd.h>
-
-#ifdef __linux__
-#include "x11.h"
-#include <X11/Xatom.h>
-#include <X11/extensions/Xinerama.h>
-#endif
 
 namespace havel {
-// Define global variables
+
 typedef std::map<std::string, std::vector<std::string>> group;
 static group groups;
 
-#ifdef _WIN32
-static str defaultTerminal = "Cmd";
-#else
-str WindowManager::defaultTerminal = "alacritty"; // gnome-terminal
-static cstr globalShell = "zsh";
-#endif
+str WindowManager::defaultTerminal = "alacritty";
+wID WindowManager::previousActiveWindow = 0;
+WindowStats WindowManager::activeWindow = {};
 
-// Load window groups from config
+WindowManager::WindowManager() {
+  backend_ = WindowBackendFactory::Create();
+  WindowManagerDetector detector;
+  wmName = detector.GetWMName();
+  wmType = detector.Detect();
+  wmSupported = true;
+
+  backend_->initialize();
+
+  if (backend_->getDisplayServer() == DisplayServer::X11) {
+    InitializeX11();
+  }
+
+  LoadGroupsFromConfig();
+}
+
+bool WindowManager::InitializeX11() {
+  DisplayManager::Initialize();
+  return DisplayManager::GetDisplay() != nullptr;
+}
+
 void WindowManager::LoadGroupsFromConfig() {
   auto &config = Configs::Get();
-
-  // Get all keys from config and find window groups
   auto allKeys = config.GetAllKeys();
   for (const auto &key : allKeys) {
     if (key.find("window.group.") == 0) {
-      // Extract group name and window identifier
-      std::string rest = key.substr(13); // Skip "window.group."
+      std::string rest = key.substr(13);
       size_t dotPos = rest.find('.');
       if (dotPos != std::string::npos) {
         std::string groupName = "group." + rest.substr(0, dotPos);
@@ -51,346 +54,53 @@ void WindowManager::LoadGroupsFromConfig() {
       }
     }
   }
-
   debug("Loaded {} window groups from config", groups.size());
 }
 
-// Initialize the static previousActiveWindow variable
-XWindow havel::WindowManager::previousActiveWindow = x11::XNone;
-WindowStats havel::WindowManager::activeWindow = {};
-
-WindowManager::WindowManager() {
-#ifdef _WIN32
-  // Windows implementation
-#elif defined(__linux__)
-  WindowManagerDetector detector;
-  wmName = detector.GetWMName();
-  wmType = detector.Detect();
-  wmSupported = true;
-
-  if (IsX11()) {
-    InitializeX11();
-  }
-
-  // Load window groups from config
-  LoadGroupsFromConfig();
-#endif
-}
-
-bool WindowManager::InitializeX11() {
-#ifdef __linux__
-  DisplayManager::Initialize();
-  return DisplayManager::GetDisplay() != nullptr;
-#else
-  return false;
-#endif
+wID WindowManager::GetActiveWindow() {
+  return get().backend_->getActiveWindow();
 }
 
 pID WindowManager::GetActiveWindowPID() {
-#ifdef __linux__
-  wID active_win = GetActiveWindow();
-  if (active_win == 0)
-    return 0;
-
-  Display *display = DisplayManager::GetDisplay();
-  if (!display)
-    return 0;
-
-  Atom pidAtom = XInternAtom(display, "_NET_WM_PID", x11::XTrue);
-  if (pidAtom == x11::XNone)
-    return 0;
-
-  Atom actualType;
-  int actualFormat;
-  unsigned long nItems, bytesAfter;
-  unsigned char *propPID = nullptr;
-  pID pid = 0;
-
-  if (XGetWindowProperty(display, active_win, pidAtom, 0, 1, x11::XFalse,
-                         XA_CARDINAL, &actualType, &actualFormat, &nItems,
-                         &bytesAfter, &propPID) == x11::XSuccess) {
-    if (nItems > 0) {
-      pid = *reinterpret_cast<pID *>(propPID);
-    }
-    if (propPID)
-      XFree(propPID);
-  }
-  return pid;
-#else
-  return 0;
-#endif
+  return get().backend_->getActiveWindowPID();
 }
 
 std::string WindowManager::GetActiveWindowProcess() {
-#ifdef __linux__
-  pID pid = GetActiveWindowPID();
-  if (pid == 0)
-    return "";
-
-  // Get process name from /proc/[pid]/comm
-  std::string procPath = "/proc/" + std::to_string(pid) + "/comm";
-  std::ifstream procFile(procPath);
-  if (procFile.is_open()) {
-    std::string processName;
-    std::getline(procFile, processName);
-    procFile.close();
-    if (!processName.empty()) {
-      return processName;
-    }
-  }
-
-  // Fallback: use /proc/[pid]/cmdline
-  procPath = "/proc/" + std::to_string(pid) + "/cmdline";
-  procFile.open(procPath);
-  if (procFile.is_open()) {
-    std::string cmdline;
-    std::getline(procFile, cmdline);
-    procFile.close();
-    if (!cmdline.empty()) {
-      // Extract just the process name from cmdline
-      size_t slashPos = cmdline.rfind('/');
-      if (slashPos != std::string::npos) {
-        return cmdline.substr(slashPos + 1);
-      }
-      return cmdline;
-    }
-  }
-
-  return "";
-#else
-  return "";
-#endif
-}
-
-pID WindowManager::GetWindowPID(XWindow id) {
-#ifdef __linux__
-  if (id == 0) return 0;
-  
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) return 0;
-
-  Atom pidAtom = XInternAtom(display, "_NET_WM_PID", x11::XTrue);
-  if (pidAtom == x11::XNone) return 0;
-
-  Atom actualType;
-  int actualFormat;
-  unsigned long nItems, bytesAfter;
-  unsigned char *propPID = nullptr;
-  pID pid = 0;
-
-  if (XGetWindowProperty(display, id, pidAtom, 0, 1, x11::XFalse,
-                         XA_CARDINAL, &actualType, &actualFormat, &nItems,
-                         &bytesAfter, &propPID) == x11::XSuccess) {
-    if (nItems > 0) {
-      pid = *reinterpret_cast<pID *>(propPID);
-    }
-    if (propPID) XFree(propPID);
-  }
-  return pid;
-#else
-  return 0;
-#endif
-}
-
-std::string WindowManager::GetWindowTitle(XWindow id) {
-#ifdef __linux__
-  if (id == 0) return "";
-  
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) return "";
-  
-  char* windowName = nullptr;
-  if (XFetchName(display, id, &windowName) && windowName) {
-    std::string title(windowName);
-    XFree(windowName);
-    return title;
-  }
-  return "";
-#else
-  return "";
-#endif
-}
-
-std::string WindowManager::GetWindowClass(XWindow id) {
-#ifdef __linux__
-  if (id == 0) return "";
-  
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) return "";
-  
-  XClassHint classHint;
-  if (XGetClassHint(display, id, &classHint) == 0) {
-    return "";
-  }
-  
-  std::string windowClass;
-  if (classHint.res_class) {
-    windowClass = classHint.res_class;
-    XFree(classHint.res_class);
-  }
-  if (classHint.res_name) {
-    if (!windowClass.empty()) windowClass += ":";
-    windowClass += classHint.res_name;
-    XFree(classHint.res_name);
-  }
-  
-  return windowClass;
-#else
-  return "";
-#endif
+  return get().backend_->getActiveWindowProcess();
 }
 
 std::string WindowManager::GetActiveWindowTitle() {
-#ifdef __linux__
-  // On Wayland, use CompositorBridge
-  if (IsWayland() && compositorBridge && compositorBridge->IsAvailable()) {
-    auto windowInfo = compositorBridge->GetActiveWindow();
-    if (windowInfo.valid) {
-      return windowInfo.title;
-    }
-    return "";
-  }
-
-  // X11 fallback
-  wID active_win = GetActiveWindow();
-  if (active_win == 0)
-    return "";
-
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return "";
-    }
-    display = DisplayManager::GetDisplay();
-  }
-
-  Atom nameAtom = XInternAtom(display, "_NET_WM_NAME", x11::XFalse);
-  Atom utf8Atom = XInternAtom(display, "UTF8_STRING", x11::XFalse);
-
-  char *windowName = nullptr;
-  Atom actualType;
-  int actualFormat;
-  unsigned long nItems, bytesAfter;
-  unsigned char *prop = nullptr;
-  std::string title;
-
-  // Try _NET_WM_NAME (UTF-8)
-  if (XGetWindowProperty(display, active_win, nameAtom, 0, 1024, x11::XFalse,
-                         utf8Atom, &actualType, &actualFormat, &nItems,
-                         &bytesAfter, &prop) == x11::XSuccess) {
-    if (prop) {
-      title = std::string(reinterpret_cast<char *>(prop));
-      XFree(prop);
-      return title;
-    }
-  }
-
-  // Fall back to WM_NAME (legacy)
-  XTextProperty textProp;
-  if (XGetWMName(display, active_win, &textProp) && textProp.value &&
-      textProp.nitems > 0) {
-    if (textProp.encoding == XA_STRING) {
-      title = std::string(reinterpret_cast<char *>(textProp.value));
-    } else {
-      char **list = nullptr;
-      int count = 0;
-      if (XmbTextPropertyToTextList(display, &textProp, &list, &count) >= 0 &&
-          count > 0 && *list) {
-        title = std::string(*list);
-        XFreeStringList(list);
-      }
-    }
-    XFree(textProp.value);
-  }
-
-  XFlush(display);
-  return title;
-#else
-  return "";
-#endif
+  return get().backend_->getActiveWindowTitle();
 }
 
-// Function to add a group
-void WindowManager::AddGroup(cstr groupName, cstr identifier) {
-  if (groups.find(groupName) == groups.end()) {
-    groups[groupName] = std::vector<std::string>();
-  }
-  groups[groupName].push_back(identifier);
+pID WindowManager::GetWindowPID(wID id) {
+  return get().backend_->getWindowPID(id);
 }
 
-str WindowManager::GetIdentifierType(cstr identifier) {
-  std::istringstream iss(identifier);
-  std::string type;
-  std::getline(iss, type, ' ');
-  return type;
+std::string WindowManager::GetWindowTitle(wID id) {
+  return get().backend_->getWindowTitle(id);
 }
 
-str WindowManager::GetIdentifierValue(cstr identifier) {
-  std::istringstream iss(identifier);
-  std::string type;
-  std::getline(iss, type, ' ');
-  std::string value;
-  std::getline(iss, value);
-  return value;
+std::string WindowManager::GetWindowClass(wID id) {
+  return get().backend_->getWindowClass(id);
 }
 
-wID WindowManager::GetActiveWindow() {
-#ifdef _WIN32
-  return reinterpret_cast<wID>(GetForegroundWindow());
-#elif defined(__linux__)
-  // On Wayland, use CompositorBridge
-  if (IsWayland() && compositorBridge && compositorBridge->IsAvailable()) {
-    auto windowInfo = compositorBridge->GetActiveWindow();
-    if (windowInfo.valid) {
-      // Return a fake window ID for Wayland windows
-      // This is a limitation - Wayland doesn't have window IDs like X11
-      return static_cast<wID>(windowInfo.pid); // Use PID as fake window ID
-    }
-    return 0;
-  }
-
-  // X11 fallback
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return 0;
-    }
-    display = DisplayManager::GetDisplay();
-  }
-
-  Atom activeWindowAtom =
-      XInternAtom(display, "_NET_ACTIVE_WINDOW", x11::XFalse);
-  if (activeWindowAtom == x11::XNone)
-    return 0;
-
-  Atom actualType;
-  int actualFormat;
-  unsigned long nitems, bytesAfter;
-  unsigned char *prop = nullptr;
-  Window activeWindow = 0;
-
-  if (XGetWindowProperty(display, DefaultRootWindow(display), activeWindowAtom,
-                         0, 1, x11::XFalse, XA_WINDOW, &actualType,
-                         &actualFormat, &nitems, &bytesAfter,
-                         &prop) == x11::XSuccess) {
-    if (prop) {
-      activeWindow = *reinterpret_cast<Window *>(prop);
-      XFree(prop);
-
-      // Update previous active window if this is a different window
-      if (activeWindow != 0 && activeWindow != previousActiveWindow) {
-        UpdatePreviousActiveWindow();
-      }
-    }
-  }
-
-  return activeWindow;
-#else
-  return 0;
-#endif
+wID WindowManager::GetwIDByPID(pID pid) {
+  return get().backend_->findWindowByPID(pid);
 }
 
-// Method to find a window based on various identifiers
+wID WindowManager::GetwIDByProcessName(cstr processName) {
+  return get().backend_->findWindowByProcessName(processName);
+}
+
+wID WindowManager::FindByClass(cstr className) {
+  return get().backend_->findWindowByClass(className);
+}
+
+wID WindowManager::FindByTitle(cstr title) {
+  return get().backend_->findWindowByTitle(title);
+}
+
 wID WindowManager::Find(cstr identifier) {
   std::string type = GetIdentifierType(identifier);
   std::string value = GetIdentifierValue(identifier);
@@ -398,11 +108,7 @@ wID WindowManager::Find(cstr identifier) {
   if (type == "group") {
     return FindWindowInGroup(value);
   } else if (type == "class") {
-#ifdef _WIN32
-    return reinterpret_cast<wID>(FindWindowA(value.c_str(), NULL));
-#elif defined(__linux__)
     return FindByClass(value);
-#endif
   } else if (type == "pid") {
     pID pid = std::stoul(value);
     return GetwIDByPID(pid);
@@ -412,459 +118,8 @@ wID WindowManager::Find(cstr identifier) {
     return FindByTitle(value);
   } else if (type == "id") {
     return std::stoul(value);
-  } else {
-    // Default to title search if no type specified
-    return FindByTitle(identifier);
   }
-  return 0; // Unsupported platform
-}
-
-void WindowManager::AltTab() {
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("Failed to open X display for Alt+Tab");
-    return;
-  }
-
-  // Get the root window
-  Window root = DefaultRootWindow(display);
-
-  // Get the current active window
-  wID currentActiveWindow = GetActiveWindow();
-  info(
-      "Alt+Tab: Current active window: " + std::to_string(currentActiveWindow) +
-      ", Previous window: " + std::to_string(previousActiveWindow));
-
-  // Check if we have a valid previous window to switch to
-  bool previousWindowValid = false;
-  if (previousActiveWindow != x11::XNone &&
-      previousActiveWindow != currentActiveWindow) {
-    XWindowAttributes attrs;
-    if (XGetWindowAttributes(display, previousActiveWindow, &attrs) &&
-        attrs.map_state == IsViewable) {
-      // Get window class for better logging
-      XClassHint classHint;
-      std::string windowClass = "unknown";
-      if (XGetClassHint(display, previousActiveWindow, &classHint)) {
-        windowClass = classHint.res_class;
-        XFree(classHint.res_name);
-        XFree(classHint.res_class);
-      }
-
-      info("Alt+Tab: Found valid previous window " +
-           std::to_string(previousActiveWindow) + " class: " + windowClass);
-      previousWindowValid = true;
-    } else {
-      warning("Alt+Tab: Previous window " +
-              std::to_string(previousActiveWindow) +
-              " is no longer valid or viewable");
-      previousActiveWindow = x11::XNone; // Reset invalid window
-    }
-  }
-
-  // If we don't have a valid previous window, find another suitable window
-  Window windowToActivate = x11::XNone;
-
-  if (!previousWindowValid) {
-    info("Alt+Tab: Looking for an alternative window");
-
-    // Get the list of windows
-    Atom clientListAtom =
-        XInternAtom(display, "_NET_CLIENT_LIST_STACKING", x11::XFalse);
-    if (clientListAtom == x11::XNone) {
-      clientListAtom = XInternAtom(display, "_NET_CLIENT_LIST", x11::XFalse);
-      if (clientListAtom == x11::XNone) {
-        error("Failed to get window list atom");
-        XCloseDisplay(display);
-        return;
-      }
-    }
-
-    Atom actualType;
-    int actualFormat;
-    unsigned long numWindows, bytesAfter;
-    unsigned char *data = nullptr;
-
-    if (XGetWindowProperty(display, root, clientListAtom, 0, ~0L, x11::XFalse,
-                           XA_WINDOW, &actualType, &actualFormat, &numWindows,
-                           &bytesAfter, &data) != x11::XSuccess ||
-        numWindows < 1) {
-      if (data)
-        XFree(data);
-      error("Failed to get window list or empty list");
-      XCloseDisplay(display);
-      return;
-    }
-
-    Window *windows = reinterpret_cast<Window *>(data);
-
-    // Find a suitable window to switch to (not the current active window)
-    for (unsigned long i = numWindows; i > 0; i--) {
-      // Start from top of stack
-      unsigned long idx = i - 1; // Convert to zero-based index
-
-      if (windows[idx] != currentActiveWindow && windows[idx] != x11::XNone) {
-        XWindowAttributes attrs;
-        if (XGetWindowAttributes(display, windows[idx], &attrs) &&
-            attrs.map_state == IsViewable) {
-          // Check if this is a normal window (not a desktop, dock, etc.)
-          Atom windowTypeAtom =
-              XInternAtom(display, "_NET_WM_WINDOW_TYPE", x11::XFalse);
-          Atom actualType;
-          int actualFormat;
-          unsigned long numItems, bytesAfter;
-          unsigned char *typeData = nullptr;
-          bool isNormalWindow = true;
-
-          if (XGetWindowProperty(display, windows[idx], windowTypeAtom, 0, ~0L,
-                                 x11::XFalse, AnyPropertyType, &actualType,
-                                 &actualFormat, &numItems, &bytesAfter,
-                                 &typeData) == x11::XSuccess &&
-              typeData) {
-            Atom *types = reinterpret_cast<Atom *>(typeData);
-            Atom normalAtom =
-                XInternAtom(display, "_NET_WM_WINDOW_TYPE_NORMAL", x11::XFalse);
-            Atom dialogAtom =
-                XInternAtom(display, "_NET_WM_WINDOW_TYPE_DIALOG", x11::XFalse);
-
-            isNormalWindow = false;
-            for (unsigned long j = 0; j < numItems; j++) {
-              if (types[j] == normalAtom || types[j] == dialogAtom) {
-                isNormalWindow = true;
-                break;
-              }
-            }
-            XFree(typeData);
-          }
-
-          // If it's a normal window, use it
-          if (isNormalWindow) {
-            windowToActivate = windows[idx];
-
-            // Get window class for logging
-            XClassHint classHint;
-            std::string windowClass = "unknown";
-            if (XGetClassHint(display, windowToActivate, &classHint)) {
-              windowClass = classHint.res_class;
-              XFree(classHint.res_name);
-              XFree(classHint.res_class);
-            }
-
-            info("Alt+Tab: Found alternative window " +
-                 std::to_string(windowToActivate) + " class: " + windowClass);
-            break;
-          }
-        }
-      }
-    }
-
-    if (data)
-      XFree(data);
-  } else {
-    windowToActivate = previousActiveWindow;
-  }
-
-  // Store current window as previous before switching
-  if (currentActiveWindow != x11::XNone) {
-    previousActiveWindow = currentActiveWindow;
-    debug("Alt+Tab: Stored current window as previous: " +
-          std::to_string(previousActiveWindow));
-  }
-
-  // Activate the selected window
-  if (windowToActivate != x11::XNone) {
-    Atom activeWindowAtom =
-        XInternAtom(display, "_NET_ACTIVE_WINDOW", x11::XFalse);
-    if (activeWindowAtom != x11::XNone) {
-      XEvent event = {};
-      event.type = x11::XClientMessage;
-      event.xclient.window = windowToActivate;
-      event.xclient.message_type = activeWindowAtom;
-      event.xclient.format = 32;
-      event.xclient.data.l[0] = 2; // Source: pager
-      event.xclient.data.l[1] = CurrentTime;
-
-      XSendEvent(display, root, x11::XFalse,
-                 SubstructureRedirectMask | SubstructureNotifyMask, &event);
-
-      // Also try direct methods
-      XRaiseWindow(display, windowToActivate);
-      XSetInputFocus(display, windowToActivate, RevertToParent, CurrentTime);
-
-      info("Alt+Tab: Switched to window: " + std::to_string(windowToActivate));
-    }
-  } else {
-    warning("Alt+Tab: Could not find a suitable window to switch to");
-  }
-
-  XSync(display, x11::XFalse);
-  XCloseDisplay(display);
-#endif
-}
-
-wID WindowManager::GetwIDByPID(pID pid) {
-#ifdef _WIN32
-  wID hwnd = NULL;
-  // Windows implementation would go here
-  return hwnd;
-#elif defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return 0;
-    }
-  }
-
-  Atom pidAtom =
-      XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_PID", x11::XTrue);
-  if (pidAtom == x11::XNone) {
-    havel::warning("X11 does not support _NET_WM_PID");
-    return 0;
-  }
-
-  Window root = DefaultRootWindow(display);
-  Window parent, *children;
-  unsigned int nchildren;
-
-  if (XQueryTree(display, root, &root, &parent, &children, &nchildren)) {
-    for (unsigned int i = 0; i < nchildren; i++) {
-      Atom actualType;
-      int actualFormat;
-      unsigned long nItems, bytesAfter;
-      unsigned char *propPID = nullptr;
-
-      if (XGetWindowProperty(display, children[i], pidAtom, 0, 1, x11::XFalse,
-                             XA_CARDINAL, &actualType, &actualFormat, &nItems,
-                             &bytesAfter, &propPID) == x11::XSuccess) {
-        if (nItems > 0) {
-          pid_t windowPID = *reinterpret_cast<pid_t *>(propPID);
-          if (windowPID == pid) {
-            XFree(propPID);
-            XFree(children);
-            return reinterpret_cast<wID>(children[i]);
-          }
-        }
-        if (propPID)
-          XFree(propPID);
-      }
-    }
-    XFree(children);
-  }
-  return 0;
-#else
-  return 0;
-#endif
-}
-
-wID WindowManager::GetwIDByProcessName(cstr processName) {
-#ifdef _WIN32
-  // Windows implementation would go here
-  return 0;
-#elif defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return 0;
-    }
-  }
-
-  Atom pidAtom =
-      XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_PID", x11::XTrue);
-  if (pidAtom == x11::XNone) {
-    havel::warning("X11 does not support _NET_WM_PID");
-    return 0;
-  }
-
-  Window root = DefaultRootWindow(display);
-  Window parent, *children;
-  unsigned int nchildren;
-
-  if (XQueryTree(display, root, &root, &parent, &children, &nchildren)) {
-    for (unsigned int i = 0; i < nchildren; i++) {
-      Atom actualType;
-      int actualFormat;
-      unsigned long nItems, bytesAfter;
-      unsigned char *propPID = nullptr;
-
-      if (XGetWindowProperty(display, children[i], pidAtom, 0, 1, x11::XFalse,
-                             XA_CARDINAL, &actualType, &actualFormat, &nItems,
-                             &bytesAfter, &propPID) == x11::XSuccess) {
-        if (nItems > 0) {
-          pid_t windowPID = *reinterpret_cast<pid_t *>(propPID);
-          std::string procName = getProcessName(windowPID);
-          if (procName == processName) {
-            XFree(children);
-            return reinterpret_cast<wID>(children[i]);
-          }
-        }
-        if (propPID)
-          XFree(propPID);
-      }
-    }
-    XFree(children);
-  }
-  return 0;
-#else
-  return 0;
-#endif
-}
-
-// Find a window by class
-wID WindowManager::FindByClass(cstr className) {
-#ifdef _WIN32
-  // Windows implementation would go here
-  return 0;
-#elif defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return 0;
-    }
-  }
-
-  Window rootWindow = DisplayManager::GetRootWindow();
-  Window parent;
-  Window *children;
-  unsigned int numChildren;
-
-  if (XQueryTree(display, rootWindow, &rootWindow, &parent, &children,
-                 &numChildren)) {
-    if (children) {
-      for (unsigned int i = 0; i < numChildren; i++) {
-        XClassHint classHint;
-        if (XGetClassHint(display, children[i], &classHint)) {
-          bool match = false;
-
-          if (classHint.res_name &&
-              strcmp(classHint.res_name, className.c_str()) == 0) {
-            match = true;
-          } else if (classHint.res_class &&
-                     strcmp(classHint.res_class, className.c_str()) == 0) {
-            match = true;
-          }
-
-          if (classHint.res_name)
-            XFree(classHint.res_name);
-          if (classHint.res_class)
-            XFree(classHint.res_class);
-
-          if (match) {
-            XFree(children);
-            return children[i];
-          }
-        }
-      }
-      XFree(children);
-    }
-  }
-  return 0;
-#else
-  return 0;
-#endif
-}
-
-wID WindowManager::FindByTitle(cstr title) {
-#ifdef _WIN32
-  // Windows implementation would go here
-  return 0;
-#elif defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return 0;
-    }
-  }
-
-  Window root = DefaultRootWindow(display);
-  Window parent, *children;
-  unsigned int nchildren;
-
-  if (XQueryTree(display, root, &root, &parent, &children, &nchildren)) {
-    for (unsigned int i = 0; i < nchildren; i++) {
-      char *windowName = nullptr;
-      if (XFetchName(display, children[i], &windowName) && windowName) {
-        bool match = (title == windowName);
-        XFree(windowName);
-
-        if (match) {
-          XFree(children);
-          return reinterpret_cast<wID>(children[i]);
-        }
-      }
-    }
-    XFree(children);
-  }
-  return 0;
-#endif
-  return 0;
-}
-
-std::string WindowManager::getProcessName(pid_t windowPID) {
-#ifdef __linux__
-  std::ostringstream procPath;
-  procPath << "/proc/" << windowPID << "/comm";
-
-  std::string path = procPath.str();
-  FILE *procFile = fopen(path.c_str(), "r");
-
-  if (procFile) {
-    char procName[256];
-    size_t len = fread(procName, 1, sizeof(procName) - 1, procFile);
-    procName[len] = '\0';
-
-    // Remove trailing newline if present
-    if (len > 0 && procName[len - 1] == '\n') {
-      procName[len - 1] = '\0';
-      // Replace newline with null terminator
-    }
-
-    fclose(procFile);
-    return std::string(procName); // Return the process name as a string
-  } else {
-        havel::error("Could not read from file {}: {}", path, std::strerror(errno));
-    return ""; // Handle the error as needed
-  }
-#else
-  return "";
-#endif
-}
-
-std::string WindowManager::getProcessCmdline(pid_t windowPID) {
-#ifdef __linux__
-  std::ostringstream procPath;
-  procPath << "/proc/" << windowPID << "/cmdline";
-
-  std::string path = procPath.str();
-  FILE *procFile = fopen(path.c_str(), "r");
-
-  if (procFile) {
-    char cmdline[4096];
-    size_t len = fread(cmdline, 1, sizeof(cmdline) - 1, procFile);
-    cmdline[len] = '\0';
-
-    fclose(procFile);
-    
-    // Replace null bytes with spaces (cmdline uses null as separator)
-    for (size_t i = 0; i < len; i++) {
-      if (cmdline[i] == '\0') {
-        cmdline[i] = ' ';
-      }
-    }
-    
-    // Trim trailing space
-    std::string result(cmdline);
-    while (!result.empty() && result.back() == ' ') {
-      result.pop_back();
-    }
-    
-    return result;
-  } else {
-    return "";
-  }
-#else
-  return "";
-#endif
+  return FindByTitle(value);
 }
 
 wID WindowManager::FindWindowInGroup(cstr groupName) {
@@ -872,17 +127,24 @@ wID WindowManager::FindWindowInGroup(cstr groupName) {
   if (it != groups.end()) {
     for (const auto &identifier : it->second) {
       wID win = Find(identifier);
-      if (win) {
-        return win;
-      }
+      if (win) return win;
     }
   }
   return 0;
 }
 
+wID WindowManager::NewWindow(cstr name, std::vector<int> *dimensions,
+                              bool hide) {
+  return get().backend_->newWindow(name, dimensions, hide);
+}
+
+void WindowManager::AddGroup(cstr groupName, cstr identifier) {
+  groups[groupName].push_back(identifier);
+}
+
 std::vector<std::string> WindowManager::GetGroupNames() {
   std::vector<std::string> names;
-  for (const auto &[name, windows] : groups) {
+  for (const auto &[name, _] : groups) {
     names.push_back(name);
   }
   return names;
@@ -890,9 +152,7 @@ std::vector<std::string> WindowManager::GetGroupNames() {
 
 std::vector<std::string> WindowManager::GetGroupWindows(cstr groupName) {
   auto it = groups.find(groupName);
-  if (it != groups.end()) {
-    return it->second;
-  }
+  if (it != groups.end()) return it->second;
   return {};
 }
 
@@ -900,1079 +160,341 @@ bool WindowManager::IsWindowInGroup(cstr windowTitle, cstr groupName) {
   auto it = groups.find(groupName);
   if (it != groups.end()) {
     for (const auto &identifier : it->second) {
-      if (identifier == windowTitle) {
-        return true;
-      }
+      if (identifier == windowTitle) return true;
     }
   }
   return false;
 }
-
-wID WindowManager::NewWindow(cstr name, std::vector<int> *dimensions,
-                             bool hide) {
-#ifdef _WIN32
-  // Windows implementation would go here
-  return 0;
-#elif defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    if (!WindowManager::InitializeX11()) {
-      return 0;
-    }
-  }
-
-  int screen = DefaultScreen(display);
-  Window root = RootWindow(display, screen);
-  int x = 0, y = 0, width = 800, height = 600;
-
-  if (dimensions && dimensions->size() == 4) {
-    x = (*dimensions)[0];
-    y = (*dimensions)[1];
-    width = (*dimensions)[2];
-    height = (*dimensions)[3];
-  }
-
-  Window newWindow = XCreateSimpleWindow(display, root, x, y, width, height, 1,
-                                         BlackPixel(display, screen),
-                                         WhitePixel(display, screen));
-
-  XStoreName(display, newWindow, name.c_str());
-  if (!hide) {
-    XMapWindow(display, newWindow);
-  }
-  XFlush(display);
-
-  return reinterpret_cast<wID>(newWindow);
-#else
-    havel::warning("NewWindow not supported on this platform");
-  return 0;
-#endif
-}
-#ifdef _WIN32
-// Function to convert error code to a human-readable message
-str WindowManager::GetErrorMessage(pID errorCode) {
-  // Windows implementation would go here
-  return "Unknown error";
-}
-
-// Function to create a process and handle common logic
-bool WindowManager::CreateProcessWrapper(cstr path, cstr command,
-                                         pID creationFlags, STARTUPINFO &si,
-                                         PROCESS_INFORMATION &pi) {
-  // Windows implementation would go here
-  return false;
-}
-#endif
 
 std::string WindowManager::GetCurrentWMName() const { return wmName; }
 
 bool WindowManager::IsWMSupported() const { return wmSupported; }
 
-bool WindowManager::IsX11() { return WindowManagerDetector().IsX11(); }
+bool WindowManager::IsX11() {
+  return get().backend_->getDisplayServer() == DisplayServer::X11;
+}
 
-bool WindowManager::IsWayland() { return WindowManagerDetector().IsWayland(); }
-
-void WindowManager::All() {
-  // Implementation for All method
+bool WindowManager::IsWayland() {
+  return get().backend_->getDisplayServer() == DisplayServer::Wayland;
 }
 
 std::string WindowManager::DetectWindowManager() const {
-#ifdef __linux__
-  // Try to get window manager name from _NET_SUPPORTING_WM_CHECK
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    const_cast<WindowManager *>(this)->InitializeX11();
-    if (!display)
-      return "Unknown";
-  }
-
-  Atom netSupportingWmCheck =
-      XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", x11::XFalse);
-  Atom netWmName = XInternAtom(display, "_NET_WM_NAME", x11::XFalse);
-
-  if (netSupportingWmCheck != x11::XNone && netWmName != x11::XNone) {
-    Atom actualType;
-    int actualFormat;
-    unsigned long nItems, bytesAfter;
-    unsigned char *data = nullptr;
-
-    if (XGetWindowProperty(display, DefaultRootWindow(display),
-                           netSupportingWmCheck, 0, 1, x11::XFalse, XA_WINDOW,
-                           &actualType, &actualFormat, &nItems, &bytesAfter,
-                           &data) == x11::XSuccess &&
-        data) {
-      Window wmWindow = *(reinterpret_cast<Window *>(data));
-      XFree(data);
-
-      if (XGetWindowProperty(display, wmWindow, netWmName, 0, 1024, x11::XFalse,
-                             XInternAtom(display, "UTF8_STRING", x11::XFalse),
-                             &actualType, &actualFormat, &nItems, &bytesAfter,
-                             &data) == x11::XSuccess &&
-          data) {
-        std::string name(reinterpret_cast<char *>(data));
-        XFree(data);
-        return name;
-      }
-    }
-  }
-
-  return "Unknown";
-#else
-  return "Unknown";
-#endif
+  return WindowManagerDetector().GetWMName();
 }
 
 bool WindowManager::CheckWMProtocols() const {
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display)
-    return false;
-
-  Atom wmProtocols = XInternAtom(display, "WM_PROTOCOLS", x11::XFalse);
-  Atom wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", x11::XFalse);
-  Atom wmTakeFocus = XInternAtom(display, "WM_TAKE_FOCUS", x11::XFalse);
-
-  if (wmProtocols != x11::XNone && wmDeleteWindow != x11::XNone &&
-      wmTakeFocus != x11::XNone) {
-    Window dummyWindow = XCreateSimpleWindow(
-        display, DefaultRootWindow(display), 0, 0, 1, 1, 0, 0, 0);
-
-    Atom *protocols = nullptr;
-    int numProtocols = 0;
-    bool hasRequiredProtocols = false;
-
-    if (XGetWMProtocols(display, dummyWindow, &protocols, &numProtocols)) {
-      // Check if the required protocols are supported
-      hasRequiredProtocols = true;
-      XFree(protocols);
-    }
-
-    XDestroyWindow(display, dummyWindow);
-    return hasRequiredProtocols;
-  }
-
-  return false;
-#else
   return true;
-#endif
 }
 
-std::optional<WindowManager::ActiveWindowContext>
-WindowManager::GetActiveWindowContext() {
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("No X11 display available.");
-    return std::nullopt;
+void WindowManager::All() {
+  auto windows = get().backend_->getAllWindows();
+  for (const auto &w : windows) {
+    std::cout << "Window: id=" << w.id << " title='" << w.title
+              << "' class='" << w.windowClass << "'" << std::endl;
   }
-  wID activeWin = GetActiveWindow();
-  if (activeWin == 0) {
-    error("No active window found.");
-    return std::nullopt;
-  }
-  return ActiveWindowContext{display, DisplayManager::GetRootWindow(),
-                             activeWin};
 }
 
-void WindowManager::MoveToCorners(int direction, int distance) {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-  auto &context = *contextOpt;
-
-  XWindowAttributes attrs;
-  if (!XGetWindowAttributes(context.display, context.activeWindowId, &attrs)) {
-    error("Failed to get window attributes for MoveToCorners.");
-    return;
-  }
-
-  int newX = attrs.x;
-  int newY = attrs.y;
-
-  switch (direction) {
-  case 1:
-    newY -= distance;
-    break; // Up
-  case 2:
-    newY += distance;
-    break; // Down
-  case 3:
-    newX -= distance;
-    break; // Left
-  case 4:
-    newX += distance;
-    break; // Right
-  }
-
-  XMoveWindow(context.display, context.activeWindowId, newX, newY);
-  XFlush(context.display);
+str WindowManager::GetIdentifierType(cstr identifier) {
+  size_t pos = identifier.find('=');
+  if (pos == std::string::npos) return "title";
+  return identifier.substr(0, pos);
 }
 
-void WindowManager::ResizeToCorner(int direction, int distance) {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-  auto &context = *contextOpt;
+str WindowManager::GetIdentifierValue(cstr identifier) {
+  size_t pos = identifier.find('=');
+  if (pos == std::string::npos) return identifier;
+  return identifier.substr(pos + 1);
+}
 
-  XWindowAttributes attrs;
-  if (!XGetWindowAttributes(context.display, context.activeWindowId, &attrs)) {
-    error("Failed to get window attributes for ResizeToCorner.");
-    return;
-  }
+str WindowManager::getProcessName(pid_t windowPID) {
+  return get().backend_->getProcessName(windowPID);
+}
 
-  int newWidth = attrs.width;
-  int newHeight = attrs.height;
-
-  switch (direction) {
-  case 1:
-    newHeight -= distance;
-    break; // Up
-  case 2:
-    newHeight += distance;
-    break; // Down
-  case 3:
-    newWidth -= distance;
-    break; // Left
-  case 4:
-    newWidth += distance;
-    break; // Right
-  }
-
-  XResizeWindow(context.display, context.activeWindowId,
-                newWidth > 0 ? newWidth : 1, newHeight > 0 ? newHeight : 1);
-  XFlush(context.display);
+str WindowManager::getProcessCmdline(pid_t windowPID) {
+  return get().backend_->getProcessCmdline(windowPID);
 }
 
 bool WindowManager::Resize(wID windowId, int width, int height,
-                           bool fullscreen) {
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return false;
-
-  // This is a complex function, will keep its original structure for now.
-  // It's already quite specialized for Wine.
-  // The main goal is to reduce redundancy in simpler functions.
-  return MoveResize(windowId, -1, -1, width,
-                    height); // Use -1 to indicate no move
+                            bool fullscreen) {
+  return get().backend_->resizeWindow(windowId, width, height);
 }
 
 bool WindowManager::Move(wID windowId, int x, int y, bool centerOnScreen) {
-  return MoveResize(windowId, x, y, -1, -1); // Use -1 to indicate no resize
+  if (centerOnScreen) return Center(windowId);
+  return get().backend_->moveWindow(windowId, x, y);
 }
+
 bool WindowManager::MoveResize(wID windowId, int x, int y, int width,
-                               int height) {
-#if defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return false;
-
-  XWindowAttributes attrs;
-  if (!XGetWindowAttributes(display, windowId, &attrs)) {
-    error("Failed to get attributes for MoveResize");
-    return false;
-  }
-
-  int finalX = (x == -1) ? attrs.x : x;
-  int finalY = (y == -1) ? attrs.y : y;
-  int finalWidth = (width == -1) ? attrs.width : (width > 0 ? width : 1);
-  int finalHeight = (height == -1) ? attrs.height : (height > 0 ? height : 1);
-
-  // Handle fullscreen/maximized windows
-  bool wasFullscreen = IsWindowFullscreen(windowId);
-
-  if (wasFullscreen) {
-    ToggleFullscreen(windowId);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
-
-  // Method 1: EWMH (works with 90% of normal apps)
-  Atom moveresize = XInternAtom(display, "_NET_MOVERESIZE_WINDOW", x11::XTrue);
-  if (moveresize != x11::XNone) {
-    XEvent ev = {};
-    ev.xclient.type = x11::XClientMessage;
-    ev.xclient.window = windowId;
-    ev.xclient.message_type = moveresize;
-    ev.xclient.format = 32;
-    ev.xclient.data.l[0] = (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11);
-    ev.xclient.data.l[1] = finalX;
-    ev.xclient.data.l[2] = finalY;
-    ev.xclient.data.l[3] = finalWidth;
-    ev.xclient.data.l[4] = finalHeight;
-
-    if (XSendEvent(display, DefaultRootWindow(display), x11::XFalse,
-                   SubstructureRedirectMask | SubstructureNotifyMask, &ev)) {
-      XFlush(display);
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-      // Verify it worked
-      int actualX, actualY;
-      Window child;
-      XTranslateCoordinates(display, windowId, DefaultRootWindow(display), 0, 0,
-                            &actualX, &actualY, &child);
-      if (abs(actualX - finalX) < 50 && abs(actualY - finalY) < 50) {
-        debug("EWMH move succeeded");
-        return true;
-      }
-    }
-  }
-
-  // Method 2: Check for Wine/Game windows and try parent
-  XClassHint classHint;
-  if (XGetClassHint(display, windowId, &classHint)) {
-    if (classHint.res_class) {
-      std::string className = classHint.res_class;
-      std::transform(className.begin(), className.end(), className.begin(),
-                     ::tolower);
-
-      if (className.find("wine") != std::string::npos ||
-          className.find("steam") != std::string::npos ||
-          className.find("game") != std::string::npos) {
-
-        Window root, parent;
-        Window *children;
-        unsigned int nchildren;
-
-        if (XQueryTree(display, windowId, &root, &parent, &children,
-                       &nchildren)) {
-          if (children)
-            XFree(children);
-          if (parent != root) {
-            debug("Wine/Game detected, trying parent window");
-            XMoveResizeWindow(display, parent, finalX, finalY, finalWidth,
-                              finalHeight);
-            XFlush(display);
-            if (classHint.res_name)
-              XFree(classHint.res_name);
-            if (classHint.res_class)
-              XFree(classHint.res_class);
-            return true;
-          }
-        }
-      }
-      XFree(classHint.res_class);
-    }
-    if (classHint.res_name)
-      XFree(classHint.res_name);
-  }
-
-  // Method 3: Direct XMoveResizeWindow (works for most remaining cases)
-  XMoveResizeWindow(display, windowId, finalX, finalY, finalWidth, finalHeight);
-  XFlush(display);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  // Verify direct approach worked
-  int actualX, actualY;
-  Window child;
-  XTranslateCoordinates(display, windowId, DefaultRootWindow(display), 0, 0,
-                        &actualX, &actualY, &child);
-  if (abs(actualX - finalX) < 50 && abs(actualY - finalY) < 50) {
-    debug("Direct XMoveResizeWindow succeeded");
-    return true;
-  }
-
-  // Method 4: Nuclear option - XConfigureWindow with synthetic event
-  debug("Stubborn window detected, using nuclear approach");
-
-  XWindowChanges changes;
-  changes.x = finalX;
-  changes.y = finalY;
-  changes.width = finalWidth;
-  changes.height = finalHeight;
-  changes.stack_mode = Above;
-  XConfigureWindow(display, windowId,
-                   CWX | CWY | CWWidth | CWHeight | CWStackMode, &changes);
-
-  // Send synthetic ConfigureNotify to make app think it moved
-  XEvent configureEvent = {};
-  configureEvent.xconfigure.type = x11::XConfigureNotify;
-  configureEvent.xconfigure.event = windowId;
-  configureEvent.xconfigure.window = windowId;
-  configureEvent.xconfigure.x = finalX;
-  configureEvent.xconfigure.y = finalY;
-  configureEvent.xconfigure.width = finalWidth;
-  configureEvent.xconfigure.height = finalHeight;
-  configureEvent.xconfigure.border_width = attrs.border_width;
-  configureEvent.xconfigure.above = x11::XNone;
-  configureEvent.xconfigure.override_redirect = attrs.override_redirect;
-  XSendEvent(display, windowId, x11::XFalse, StructureNotifyMask,
-             &configureEvent);
-
-  XFlush(display);
-
-  debug("Applied nuclear move/resize to window {}", windowId);
-  return true;
-
-#else
-  return false;
-#endif
+                                int height) {
+  return get().backend_->moveResizeWindow(windowId, x, y, width, height);
 }
+
 bool WindowManager::Center(wID windowId) {
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return false;
-
-  auto monitor = DisplayManager::GetPrimaryMonitor();
-  XWindowAttributes attrs;
-  if (!XGetWindowAttributes(display, windowId, &attrs))
-    return false;
-
-  int x = monitor.x + (monitor.width - attrs.width) / 2;
-  int y = monitor.y + (monitor.height - attrs.height) / 2;
-
-  return Move(windowId, x, y);
-#else
-  return false;
-#endif
+  return get().backend_->centerWindow(windowId);
 }
 
 bool WindowManager::MoveToCorner(wID windowId, const std::string &corner) {
-#if defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return false;
+  auto monitors = DisplayManager::GetMonitors();
+  if (monitors.empty()) return false;
 
-  auto monitor = DisplayManager::GetPrimaryMonitor();
-  XWindowAttributes attrs;
-  if (!XGetWindowAttributes(display, windowId, &attrs))
-    return false;
+  auto &monitor = monitors[0];
+  Rect pos = get().backend_->getWindowPosition(windowId);
 
   int x = 0, y = 0;
-
   if (corner == "top-left" || corner == "tl") {
-    x = monitor.x;
-    y = monitor.y;
+    x = monitor.x; y = monitor.y;
   } else if (corner == "top-right" || corner == "tr") {
-    x = monitor.x + monitor.width - attrs.width;
-    y = monitor.y;
+    x = monitor.x + monitor.width - pos.width; y = monitor.y;
   } else if (corner == "bottom-left" || corner == "bl") {
-    x = monitor.x;
-    y = monitor.y + monitor.height - attrs.height;
+    x = monitor.x; y = monitor.y + monitor.height - pos.height;
   } else if (corner == "bottom-right" || corner == "br") {
-    x = monitor.x + monitor.width - attrs.width;
-    y = monitor.y + monitor.height - attrs.height;
-  } else {
-        havel::warning("Unknown corner: {}", corner);
-    return false;
+    x = monitor.x + monitor.width - pos.width;
+    y = monitor.y + monitor.height - pos.height;
   }
-
-  return Move(windowId, x, y);
-#endif
-  return false;
+  return get().backend_->moveWindow(windowId, x, y);
 }
 
 bool WindowManager::MoveToMonitor(wID windowId, int monitorIndex) {
-#if defined(__linux__)
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return false;
-
-  auto monitors = DisplayManager::GetMonitors();
-  if (monitorIndex < 0 ||
-      static_cast<size_t>(monitorIndex) >= monitors.size()) {
-    error("Invalid monitor index: {}", monitorIndex);
-    return false;
-  }
-
-  const auto &monitor = monitors[monitorIndex];
-
-  XWindowAttributes attrs;
-  if (!XGetWindowAttributes(display, windowId, &attrs))
-    return false;
-
-  int x = monitor.x + (monitor.width - attrs.width) / 2;
-  int y = monitor.y + (monitor.height - attrs.height) / 2;
-
-  return Move(windowId, x, y);
-#endif
-  return false;
-}
-
-// Convenience overloads with window title
-bool WindowManager::Move(const std::string &windowTitle, int x, int y,
-                         bool centerOnScreen) {
-  wID windowId = FindByTitle(windowTitle);
-  if (!windowId) {
-        havel::warning("Window not found: {}", windowTitle);
-    return false;
-  }
-  return Move(windowId, x, y, centerOnScreen);
+  return get().backend_->moveWindowToMonitor(windowId, monitorIndex);
 }
 
 bool WindowManager::Center(const std::string &windowTitle) {
-  return Move(windowTitle, 0, 0, true);
+  wID win = FindByTitle(windowTitle);
+  if (!win) return false;
+  return Center(win);
 }
 
 bool WindowManager::Resize(const std::string &windowTitle, int width,
-                           int height, bool fullscreen) {
-  wID windowId = FindByTitle(windowTitle);
-  if (!windowId) {
-        havel::warning("Window not found: {}", windowTitle);
-    return false;
-  }
-  return Resize(windowId, width, height, fullscreen);
+                            int height, bool fullscreen) {
+  wID win = FindByTitle(windowTitle);
+  if (!win) return false;
+  return Resize(win, width, height, fullscreen);
 }
 
-bool WindowManager::SetResolution(wID windowId, const std::string &resolution) {
-  static const std::unordered_map<std::string, std::pair<int, int>>
-      resolutions = {
-          {"720p", {1280, 720}},
-          {"1080p", {1920, 1080}},
-          {"1440p", {2560, 1440}},
-          {"4k", {3840, 2160}},
-          {"fullscreen", {0, 0}} // Special case for fullscreen
-      };
+bool WindowManager::SetResolution(wID windowId,
+                                   const std::string &resolution) {
+  size_t xPos = resolution.find('x');
+  if (xPos == std::string::npos) return false;
+  int width = std::stoi(resolution.substr(0, xPos));
+  int height = std::stoi(resolution.substr(xPos + 1));
+  return Resize(windowId, width, height);
+}
 
-  auto it = resolutions.find(resolution);
-  if (it == resolutions.end()) {
-        havel::warning("Unknown resolution: {}", resolution);
-    return false;
+bool WindowManager::Move(const std::string &windowTitle, int x, int y,
+                          bool centerOnScreen) {
+  wID win = FindByTitle(windowTitle);
+  if (!win) return false;
+  return Move(win, x, y, centerOnScreen);
+}
+
+void WindowManager::MoveToCorners(int direction, int distance) {
+  wID win = GetActiveWindow();
+  if (!win) return;
+
+  if (direction == 1) {
+    Move(win, distance, distance);
+  } else if (direction == 2) {
+    auto monitor = DisplayManager::GetPrimaryMonitor();
+    Rect pos = get().backend_->getWindowPosition(win);
+    Move(win, monitor.width - pos.width - distance, distance);
   }
+}
 
-  if (resolution == "fullscreen") {
-    return Resize(windowId, 0, 0, true);
-  } else {
-    return Resize(windowId, it->second.first, it->second.second, false);
+void WindowManager::ResizeToCorner(int direction, int distance) {
+  wID win = GetActiveWindow();
+  if (!win) return;
+
+  auto monitor = DisplayManager::GetPrimaryMonitor();
+  int w = (monitor.width / 2) - distance * 2;
+  int h = (monitor.height / 2) - distance * 2;
+
+  if (direction == 1) {
+    MoveResize(win, distance, distance, w, h);
+  } else if (direction == 2) {
+    MoveResize(win, monitor.width / 2 + distance, distance, w, h);
   }
 }
 
 void WindowManager::SnapWindow(wID windowId, int position) {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-  auto &context = *contextOpt;
-
-  auto monitor = DisplayManager::GetPrimaryMonitor();
-  int screenWidth = monitor.width;
-  int screenHeight = monitor.height;
-
-  int newX = monitor.x;
-  int newY = monitor.y;
-  int newWidth = screenWidth;
-  int newHeight = screenHeight;
-
-  switch (position) {
-  case 1:
-    newWidth /= 2;
-    break; // Left half
-  case 2:
-    newWidth /= 2;
-    newX += screenWidth / 2;
-    break; // Right half
-           // Add other cases for top, bottom, corners etc.
-  }
-  MoveResize(context.activeWindowId, newX, newY, newWidth, newHeight);
-}
-
-void WindowManager::ManageVirtualDesktops(int action) {
-  // Implementation remains complex and specific, so no major refactoring with
-  // the helper.
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (!display) {
-        havel::error("Cannot manage desktops - no X11 display");
-    return;
-  }
-
-  Window root = DisplayManager::GetRootWindow();
-  Atom desktopAtom = XInternAtom(display, "_NET_CURRENT_DESKTOP", x11::XFalse);
-  Atom desktopCountAtom =
-      XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS", x11::XFalse);
-
-  unsigned long nitems, bytes;
-  unsigned char *data = NULL;
-  int format;
-  Atom type;
-
-  // Get current desktop
-  XGetWindowProperty(display, root, desktopAtom, 0, 1, x11::XFalse, XA_CARDINAL,
-                     &type, &format, &nitems, &bytes, &data);
-
-  int currentDesktop = *(int *)data;
-  XFree(data);
-
-  // Get total desktops
-  XGetWindowProperty(display, root, desktopCountAtom, 0, 1, x11::XFalse,
-                     XA_CARDINAL, &type, &format, &nitems, &bytes, &data);
-
-  int totalDesktops = *(int *)data;
-  XFree(data);
-
-  int newDesktop = currentDesktop;
-  switch (action) {
-  case 1:
-    newDesktop = (currentDesktop + 1) % totalDesktops;
-    break;
-  case 2:
-    newDesktop = (currentDesktop - 1 + totalDesktops) % totalDesktops;
-    break;
-  }
-
-  XEvent event;
-  event.xclient.type = x11::XClientMessage;
-  event.xclient.message_type = desktopAtom;
-  event.xclient.format = 32;
-  event.xclient.data.l[0] = newDesktop;
-  event.xclient.data.l[1] = CurrentTime;
-
-  XSendEvent(display, root, x11::XFalse,
-             SubstructureRedirectMask | SubstructureNotifyMask, &event);
-  XFlush(display);
-#endif
+  get().backend_->snapWindow(windowId, position);
 }
 
 void WindowManager::SnapWindowWithPadding(int position, int padding) {
-  // This can also be refactored, but is left for brevity.
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (!display)
-    return;
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->snapWindow(win, position, padding);
+}
 
-  Window win = GetActiveWindow();
-  if (!win)
-    return;
-
-  Window root = DisplayManager::GetRootWindow();
-
-  XWindowAttributes root_attrs;
-  XGetWindowAttributes(display, root, &root_attrs);
-
-  XWindowAttributes win_attrs;
-  XGetWindowAttributes(display, win, &win_attrs);
-
-  const int screenWidth = root_attrs.width - padding * 2;
-  const int screenHeight = root_attrs.height - padding * 2;
-
-  switch (position) {
-  case 1: // Left with padding
-    XMoveResizeWindow(display, win, padding, padding, screenWidth / 2,
-                      screenHeight);
-    break;
-  case 2: // Right with padding
-    XMoveResizeWindow(display, win, screenWidth / 2 + padding, padding,
-                      screenWidth / 2, screenHeight);
-    break;
-    // Add other positions...
+void WindowManager::ManageVirtualDesktops(int action) {
+  auto &backend = get().backend_;
+  if (action == 1 || action == 2) {
+    int current = backend->getCurrentWorkspace();
+    auto workspaces = backend->getWorkspaces();
+    if (workspaces.empty()) return;
+    int next = (action == 1) ? current + 1 : current - 1;
+    if (next < 1) next = workspaces.size();
+    if (next > static_cast<int>(workspaces.size())) next = 1;
+    backend->switchToWorkspace(next);
   }
-  XFlush(display);
-#endif
 }
 
 void WindowManager::ToggleAlwaysOnTop() {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-  auto &context = *contextOpt;
-
-  Atom wmState = XInternAtom(context.display, "_NET_WM_STATE", x11::XFalse);
-  Atom wmStateAbove =
-      XInternAtom(context.display, "_NET_WM_STATE_ABOVE", x11::XFalse);
-  if (wmState == x11::XNone || wmStateAbove == x11::XNone)
-    return;
-
-  bool isOnTop = false;
-  // ... (code to check current state) ...
-
-  XEvent event;
-  // ... (code to build and send the event) ...
-  event.xclient.data.l[0] = isOnTop ? 0 : 1; // 0=remove, 1=add, 2=toggle
-
-  XSendEvent(context.display, context.root, x11::XFalse,
-             SubstructureNotifyMask | SubstructureRedirectMask, &event);
-  XFlush(context.display);
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->setWindowAlwaysOnTop(win, true);
 }
 
 std::string WindowManager::GetActiveWindowClass() {
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("Failed to get display in GetActiveWindowClass");
-    return "";
-  }
-
-  ::Window focusedWindow; // Use X11's Window type
-  int revertTo;
-  if (XGetInputFocus(display, &focusedWindow, &revertTo) == 0) {
-    error("Failed to get input focus");
-    return "";
-  }
-
-  if (focusedWindow == x11::XNone) {
-    debug("No window currently focused");
-    return "";
-  }
-
-  XClassHint classHint;
-  x11::XStatus status = XGetClassHint(display, focusedWindow, &classHint);
-  if (status == 0) {
-    debug("Failed to get class hint for window");
-    return "";
-  }
-
-  std::string className(classHint.res_class);
-  XFree(classHint.res_name);
-  XFree(classHint.res_class);
-
-  debug("Active window class: " + className);
-  return className;
+  return get().backend_->getActiveWindowClass();
 }
 
-// Update previous active window
 void WindowManager::UpdatePreviousActiveWindow() {
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display)
-    return;
-
-  Atom activeWindowAtom =
-      XInternAtom(display, "_NET_ACTIVE_WINDOW", x11::XFalse);
-  if (activeWindowAtom == x11::XNone)
-    return;
-
-  Atom actualType;
-  int actualFormat;
-  unsigned long nitems, bytesAfter;
-  unsigned char *prop = nullptr;
-  activeWindow.className = GetActiveWindowClass();
-  if (XGetWindowProperty(display, DefaultRootWindow(display), activeWindowAtom,
-                         0, 1, x11::XFalse, XA_WINDOW, &actualType,
-                         &actualFormat, &nitems, &bytesAfter,
-                         &prop) == x11::XSuccess) {
-    if (prop) {
-      Window currentActive = *reinterpret_cast<Window *>(prop);
-      XFree(prop);
-
-      // Only update if both windows are valid and different
-      if (currentActive != x11::XNone &&
-          previousActiveWindow != currentActive) {
-        wID oldWindow = previousActiveWindow;
-        previousActiveWindow = currentActive;
-        debug("Updated previous active window to: {} Title: {} Class: {}",
-              previousActiveWindow, GetActiveWindowTitle(),
-              GetActiveWindowClass());
-      }
-    }
+  auto active = GetActiveWindow();
+  if (active != 0 && active != previousActiveWindow) {
+    activeWindow.id = active;
+    activeWindow.className = GetActiveWindowClass();
+    activeWindow.title = GetActiveWindowTitle();
+    previousActiveWindow = active;
   }
-#endif
 }
+
 void WindowManager::ToggleFullscreen(wID windowId) {
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return;
-
-  debug("Nuclear fullscreen toggle for stubborn game: {}", windowId);
-
-  // Force the window to be windowed by removing fullscreen properties
-  Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
-  Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
-
-  if (stateAtom != x11::XNone && fsAtom != x11::XNone) {
-    // Force REMOVE fullscreen state first
-    XEvent ev{};
-    ev.xclient.type = x11::XClientMessage;
-    ev.xclient.window = windowId;
-    ev.xclient.message_type = stateAtom;
-    ev.xclient.format = 32;
-    ev.xclient.data.l[0] = 0; // _NET_WM_STATE_REMOVE
-    ev.xclient.data.l[1] = fsAtom;
-    ev.xclient.data.l[2] = 0;
-    ev.xclient.data.l[3] = 1;
-    ev.xclient.data.l[4] = 0;
-
-    XSendEvent(display, DefaultRootWindow(display), false,
-               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
-    XFlush(display);
-  }
-#else
-  return;
-#endif
+  get().backend_->toggleWindowFullscreen(windowId);
 }
 
 bool WindowManager::IsWindowFullscreen(wID windowId) {
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display || windowId == 0)
-    return false;
-
-  Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", false);
-  Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", false);
-  Atom actualType;
-  int actualFormat;
-  unsigned long nItems, bytesAfter;
-  unsigned char *prop = nullptr;
-
-  if (XGetWindowProperty(display, windowId, stateAtom, 0, 1024, false,
-                         AnyPropertyType, &actualType, &actualFormat, &nItems,
-                         &bytesAfter, &prop) != x11::XSuccess) {
-    return false;
-  }
-
-  if (!prop) {
-    return false;
-  }
-
-  bool isFullscreen = false;
-  Atom *states = (Atom *)prop;
-  for (unsigned long i = 0; i < nItems; ++i) {
-    if (states[i] == fsAtom) {
-      isFullscreen = true;
-      break;
-    }
-  }
-
-  XFree(prop);
-  return isFullscreen;
-#else
-  return false;
-#endif
+  return get().backend_->isWindowFullscreen(windowId);
 }
 
 void WindowManager::MoveWindowToNextMonitor() {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-  auto &context = *contextOpt;
-
-  XWindowAttributes winAttr;
-  if (!XGetWindowAttributes(context.display, context.activeWindowId,
-                            &winAttr)) {
-    error("Failed to get window attributes for MoveWindowToNextMonitor.");
-    return;
-  }
-
-  int winX, winY;
-  Window child;
-  XTranslateCoordinates(context.display, context.activeWindowId, context.root,
-                        0, 0, &winX, &winY, &child);
-
-  // Check if window is fullscreen (like old code did)
-  bool isFullscreen = IsWindowFullscreen(context.activeWindowId);
-
-  if (isFullscreen) {
-    // Exit fullscreen first
-    ToggleFullscreen(context.activeWindowId);
-  }
+  wID win = GetActiveWindow();
+  if (!win) return;
 
   auto monitors = DisplayManager::GetMonitors();
-  if (monitors.size() < 2)
-    return;
+  if (monitors.size() < 2) return;
 
-  // Find current monitor
+  Rect pos = get().backend_->getWindowPosition(win);
+  if (pos.width == 0) return;
+
+  bool isFullscreen = IsWindowFullscreen(win);
+  if (isFullscreen) ToggleFullscreen(win);
+
   int currentMonitor = 0;
-  for (size_t i = 0; i < monitors.size(); ++i) {
-    if (winX >= monitors[i].x && winX < monitors[i].x + monitors[i].width &&
-        winY >= monitors[i].y && winY < monitors[i].y + monitors[i].height) {
+  for (size_t i = 0; i < monitors.size(); i++) {
+    if (pos.x >= monitors[i].x &&
+        pos.x < monitors[i].x + monitors[i].width) {
       currentMonitor = i;
       break;
     }
   }
 
   int nextMonitor = (currentMonitor + 1) % monitors.size();
-  const auto &target = monitors[nextMonitor];
-
-  // Center the window on target monitor with original size
-  int targetX = target.x + (target.width - winAttr.width) / 2;
-  int targetY = target.y + (target.height - winAttr.height) / 2;
-
-  // Move window - keep original dimensions
-  XMoveResizeWindow(context.display, context.activeWindowId, targetX, targetY,
-                    winAttr.width, winAttr.height);
-
-  XRaiseWindow(context.display, context.activeWindowId);
-  XSetInputFocus(context.display, context.activeWindowId, RevertToPointerRoot,
-                 CurrentTime);
-  XFlush(context.display);
-
-  if (isFullscreen) {
-    // Restore fullscreen on new monitor
-    ToggleFullscreen(context.activeWindowId);
-  }
+  auto &target = monitors[nextMonitor];
+  auto &current = monitors[currentMonitor];
+  int newX = target.x + (pos.x - current.x);
+  int newY = target.y + (pos.y - current.y);
+  Move(win, newX, newY);
 }
 
-#ifdef WINDOWS
-// Function to convert error code to a human-readable message
-str WindowManager::GetErrorMessage(pID errorCode) {
-  LPWSTR lpMsgBuf;
-  FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-                     FORMAT_MESSAGE_IGNORE_INSERTS,
-                 nullptr, errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                 (LPWSTR)&lpMsgBuf, 0, nullptr);
+void WindowManager::AltTab() {
+  UpdatePreviousActiveWindow();
+  auto windows = get().backend_->getAllWindows();
+  if (windows.size() < 2) return;
 
-  // Convert wide string to narrow string
-  int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, lpMsgBuf, -1, nullptr, 0,
-                                       nullptr, nullptr);
-  std::string errorMessage(sizeNeeded, 0);
-  WideCharToMultiByte(CP_UTF8, 0, lpMsgBuf, -1, &errorMessage[0], sizeNeeded,
-                      nullptr, nullptr);
-
-  LocalFree(lpMsgBuf);
-  return errorMessage;
-}
-
-// Function to create a process and handle common logic
-bool WindowManager::CreateProcessWrapper(cstr path, cstr command,
-                                         pID creationFlags, STARTUPINFO &si,
-                                         PROCESS_INFORMATION &pi) {
-  if (path.empty()) {
-    return CreateProcess(NULL, const_cast<char *>(command.c_str()), nullptr,
-                         nullptr, FALSE, creationFlags, nullptr, nullptr, &si,
-                         &pi);
-  } else {
-    return CreateProcess(path.c_str(), const_cast<char *>(command.c_str()),
-                         nullptr, nullptr, FALSE, creationFlags, nullptr,
-                         nullptr, &si, &pi);
-  }
-}
-#endif
-
-// Static member definition
-std::unique_ptr<CompositorBridge> WindowManager::compositorBridge = nullptr;
-
-// Initialize the compositor bridge (call this once at startup)
-void WindowManager::InitializeCompositorBridge() {
-#ifdef __linux__
-  if (IsWayland()) {
-    compositorBridge = std::make_unique<CompositorBridge>();
-    if (compositorBridge->IsAvailable()) {
-      compositorBridge->Start();
-      debug("Compositor bridge initialized and started");
-    } else {
-      compositorBridge.reset();
-      debug("Compositor bridge not available on this Wayland compositor");
+  size_t currentIdx = 0;
+  wID active = GetActiveWindow();
+  for (size_t i = 0; i < windows.size(); i++) {
+    if (windows[i].id == active) {
+      currentIdx = i;
+      break;
     }
   }
-#endif
+
+  size_t nextIdx = (currentIdx + 1) % windows.size();
+  if (windows[nextIdx].valid && windows[nextIdx].id != 0) {
+    get().backend_->focusWindow(static_cast<wID>(windows[nextIdx].id));
+  }
 }
 
-// Shutdown the compositor bridge (call this at shutdown)
+void WindowManager::WindowSpy() {}
+void WindowManager::MouseDrag() {}
+void WindowManager::ClickThrough() {}
+void WindowManager::ToggleClickLock() {}
+void WindowManager::AltTabMenu() {}
+void WindowManager::RotateWindow() {}
+
+void WindowManager::WinClose() {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->closeWindow(win);
+}
+
+void WindowManager::WinMinimize() {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->minimizeWindow(win);
+}
+
+void WindowManager::WinMaximize() {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->maximizeWindow(win);
+}
+
+void WindowManager::WinRestore() {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->restoreWindow(win);
+}
+
+void WindowManager::WinHide(wID win) {
+  get().backend_->hideWindow(win);
+}
+
+void WindowManager::WinShow(wID win) {
+  get().backend_->showWindow(win);
+}
+
+void WindowManager::WinTransparent() {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->setWindowOpacity(win, 0.8f);
+}
+
+void WindowManager::WinMoveResize() {}
+
+void WindowManager::WinSetAlwaysOnTop(bool onTop) {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  get().backend_->setWindowAlwaysOnTop(win, onTop);
+}
+
+void WindowManager::SendToMonitor(int monitorIndex) {
+  wID win = GetActiveWindow();
+  if (!win) return;
+  MoveToMonitor(win, monitorIndex);
+}
+
+void WindowManager::InitializeCompositorBridge() {
+}
+
 void WindowManager::ShutdownCompositorBridge() {
-  if (compositorBridge) {
-    compositorBridge->Stop();
-    compositorBridge.reset();
-  }
 }
 
 CompositorBridge *WindowManager::GetCompositorBridge() {
-  return compositorBridge.get();
+  return nullptr;
 }
 
-// Window module interface implementations
 WindowInfo WindowManager::getActiveWindowInfo() {
-  WindowInfo info;
-  auto activeWin = GetActiveWindow();
-  if (activeWin == 0) {
-    return info;
-  }
-
-  info.id = activeWin;
-  info.title = GetActiveWindowTitle();
-  info.windowClass = GetActiveWindowClass();
-  info.exe = GetActiveWindowProcess();
-  info.pid = GetActiveWindowPID();
-  info.valid = true;
-
-  // Get geometry
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (display) {
-    XWindowAttributes attrs;
-    if (XGetWindowAttributes(display, activeWin, &attrs)) {
-      info.x = attrs.x;
-      info.y = attrs.y;
-      info.width = attrs.width;
-      info.height = attrs.height;
-    }
-  }
-#endif
-
-  return info;
+  return get().backend_->getActiveWindowInfo();
 }
 
 WindowInfo WindowManager::getWindowInfo(wID id) {
-  WindowInfo info;
-  if (id == 0) {
-    return info;
-  }
-
-  info.id = id;
-  info.pid = GetWindowPID(id);
-  info.exe = getProcessName(info.pid);
-  info.cmdline = getProcessCmdline(info.pid);
-  info.title = GetWindowTitle(id);
-  info.windowClass = GetWindowClass(id);
-  info.valid = (id != 0);
-
-  // Get geometry
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (display) {
-    XWindowAttributes attrs;
-    if (XGetWindowAttributes(display, id, &attrs)) {
-      info.x = attrs.x;
-      info.y = attrs.y;
-      info.width = attrs.width;
-      info.height = attrs.height;
-    }
-  }
-#endif
-
-  return info;
+  return get().backend_->getWindowInfo(id);
 }
 
 std::vector<WindowInfo> WindowManager::getAllWindows() {
-  std::vector<WindowInfo> windows;
-
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (!display)
-    return windows;
-
-  Window root = DisplayManager::GetRootWindow();
-  Window rootReturn, parentReturn;
-  Window *childrenReturn;
-  unsigned int nChildren;
-
-  if (XQueryTree(display, root, &rootReturn, &parentReturn, &childrenReturn,
-                 &nChildren)) {
-    for (unsigned int i = 0; i < nChildren; i++) {
-      WindowInfo info;
-      info.id = childrenReturn[i];
-
-      // Get basic info
-      char *windowName = nullptr;
-      if (XFetchName(display, childrenReturn[i], &windowName)) {
-        info.title = windowName ? windowName : "";
-        XFree(windowName);
-      }
-
-      // Get class name
-      XClassHint classHint;
-      if (XGetClassHint(display, childrenReturn[i], &classHint)) {
-        info.windowClass = classHint.res_class ? classHint.res_class : "";
-        if (classHint.res_name)
-          XFree(classHint.res_name);
-        if (classHint.res_class)
-          XFree(classHint.res_class);
-      }
-
-      // Get geometry
-      XWindowAttributes attrs;
-      if (XGetWindowAttributes(display, childrenReturn[i], &attrs)) {
-        info.x = attrs.x;
-        info.y = attrs.y;
-        info.width = attrs.width;
-        info.height = attrs.height;
-        info.pid =
-            attrs.all_event_masks; // This is not correct, but placeholder
-      }
-
-      info.valid = true;
-      windows.push_back(info);
-    }
-    XFree(childrenReturn);
-  }
-#endif
-
-  return windows;
+  return get().backend_->getAllWindows();
 }
 
 uint64_t WindowManager::getActiveWindow() {
@@ -1980,41 +502,11 @@ uint64_t WindowManager::getActiveWindow() {
 }
 
 bool WindowManager::focusWindow(uint64_t id) {
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (!display)
-    return false;
-
-  Window win = static_cast<Window>(id);
-  XSetInputFocus(display, win, RevertToPointerRoot, CurrentTime);
-  XFlush(display);
-  return true;
-#else
-  return false;
-#endif
+  return get().backend_->focusWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::closeWindow(uint64_t id) {
-#ifdef __linux__
-  auto *display = DisplayManager::GetDisplay();
-  if (!display)
-    return false;
-
-  Window win = static_cast<Window>(id);
-  XEvent event;
-  event.type = x11::XClientMessage;
-  event.xclient.window = win;
-  event.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", false);
-  event.xclient.format = 32;
-  event.xclient.data.l[0] = XInternAtom(display, "WM_DELETE_WINDOW", false);
-  event.xclient.data.l[1] = CurrentTime;
-
-  XSendEvent(display, win, false, NoEventMask, &event);
-  XFlush(display);
-  return true;
-#else
-  return false;
-#endif
+  return get().backend_->closeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::moveWindow(uint64_t id, int x, int y) {
@@ -2025,34 +517,29 @@ bool WindowManager::resizeWindow(uint64_t id, int width, int height) {
   return Resize(static_cast<wID>(id), width, height);
 }
 
-bool WindowManager::moveResizeWindow(uint64_t id, int x, int y, int width,
-                                     int height) {
+bool WindowManager::moveResizeWindow(uint64_t id, int x, int y,
+                                      int width, int height) {
   return MoveResize(static_cast<wID>(id), x, y, width, height);
 }
 
 bool WindowManager::maximizeWindow(uint64_t id) {
-  WinMaximize();
-  return true;
+  return get().backend_->maximizeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::minimizeWindow(uint64_t id) {
-  WinMinimize();
-  return true;
+  return get().backend_->minimizeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::restoreWindow(uint64_t id) {
-  WinRestore();
-  return true;
+  return get().backend_->restoreWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::hideWindow(uint64_t id) {
-  WinHide(static_cast<wID>(id));
-  return true;
+  return get().backend_->hideWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::showWindow(uint64_t id) {
-  WinShow(static_cast<wID>(id));
-  return true;
+  return get().backend_->showWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::toggleFullscreen(uint64_t id) {
@@ -2061,8 +548,7 @@ bool WindowManager::toggleFullscreen(uint64_t id) {
 }
 
 bool WindowManager::setFloating(uint64_t id, bool floating) {
-  // Implementation depends on window manager
-  return false;
+  return get().backend_->setWindowFloating(static_cast<wID>(id), floating);
 }
 
 bool WindowManager::centerWindow(uint64_t id) {
@@ -2070,46 +556,31 @@ bool WindowManager::centerWindow(uint64_t id) {
 }
 
 bool WindowManager::snapWindow(uint64_t id, int position) {
-  SnapWindow(static_cast<wID>(id), position);
-  return true;
+  return get().backend_->snapWindow(static_cast<wID>(id), position);
 }
 
 bool WindowManager::moveWindowToWorkspace(uint64_t id, int workspace) {
-  ManageVirtualDesktops(workspace);
-  return true;
+  return get().backend_->moveWindowToWorkspace(static_cast<wID>(id), workspace);
 }
 
 bool WindowManager::setAlwaysOnTop(uint64_t id, bool onTop) {
-  WinSetAlwaysOnTop(onTop);
-  return true;
+  return get().backend_->setWindowAlwaysOnTop(static_cast<wID>(id), onTop);
 }
 
 bool WindowManager::moveWindowToMonitor(uint64_t id, int monitor) {
-  MoveToMonitor(static_cast<wID>(id), monitor);
-  return true;
+  return get().backend_->moveWindowToMonitor(static_cast<wID>(id), monitor);
 }
 
 std::vector<WorkspaceInfo> WindowManager::getWorkspaces() {
-  std::vector<WorkspaceInfo> workspaces;
-  // Basic implementation - would need to query actual window manager
-  for (int i = 1; i <= 4; i++) {
-    WorkspaceInfo ws;
-    ws.id = i;
-    ws.name = "Workspace " + std::to_string(i);
-    ws.visible = (i == 1); // Assume first is visible
-    ws.windowCount = 0;
-    workspaces.push_back(ws);
-  }
-  return workspaces;
+  return get().backend_->getWorkspaces();
 }
 
 bool WindowManager::switchToWorkspace(int workspace) {
-  ManageVirtualDesktops(workspace);
-  return true;
+  return get().backend_->switchToWorkspace(workspace);
 }
 
 int WindowManager::getCurrentWorkspace() {
-  return 1; // Default to first workspace
+  return get().backend_->getCurrentWorkspace();
 }
 
 std::vector<std::string> WindowManager::getGroupNames() {
@@ -2130,134 +601,13 @@ WindowManager::getGroupWindows(const std::string &groupName) {
 }
 
 bool WindowManager::addWindowToGroup(uint64_t id,
-                                     const std::string &groupName) {
-  // Implementation would need window title from ID
+                                      const std::string &groupName) {
   return false;
 }
 
 bool WindowManager::removeWindowFromGroup(uint64_t id,
-                                          const std::string &groupName) {
-  // Implementation would need window title from ID
+                                           const std::string &groupName) {
   return false;
-}
-
-// Implementation of missing window control methods
-void WindowManager::WinClose() {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-
-  XEvent event;
-  event.type = x11::XClientMessage;
-  event.xclient.window = contextOpt->activeWindowId;
-  event.xclient.message_type =
-      XInternAtom(contextOpt->display, "WM_PROTOCOLS", false);
-  event.xclient.format = 32;
-  event.xclient.data.l[0] =
-      XInternAtom(contextOpt->display, "WM_DELETE_WINDOW", false);
-  event.xclient.data.l[1] = CurrentTime;
-
-  XSendEvent(contextOpt->display, contextOpt->activeWindowId, false,
-             NoEventMask, &event);
-  XFlush(contextOpt->display);
-}
-
-void WindowManager::WinMinimize() {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-
-  XIconifyWindow(contextOpt->display, contextOpt->activeWindowId,
-                 DefaultScreen(contextOpt->display));
-  XFlush(contextOpt->display);
-}
-
-void WindowManager::WinMaximize() {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-
-  XEvent event;
-  event.type = x11::XClientMessage;
-  event.xclient.window = contextOpt->activeWindowId;
-  event.xclient.message_type =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE", false);
-  event.xclient.format = 32;
-  event.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
-  event.xclient.data.l[1] =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
-  event.xclient.data.l[2] =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
-  event.xclient.data.l[3] = 0;
-  event.xclient.data.l[4] = 0;
-
-  XSendEvent(contextOpt->display, contextOpt->root, false,
-             SubstructureRedirectMask | SubstructureNotifyMask, &event);
-  XFlush(contextOpt->display);
-}
-
-void WindowManager::WinRestore() {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-
-  XEvent event;
-  event.type = x11::XClientMessage;
-  event.xclient.window = contextOpt->activeWindowId;
-  event.xclient.message_type =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE", false);
-  event.xclient.format = 32;
-  event.xclient.data.l[0] = 0; // _NET_WM_STATE_REMOVE
-  event.xclient.data.l[1] =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
-  event.xclient.data.l[2] =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
-  event.xclient.data.l[3] = 0;
-  event.xclient.data.l[4] = 0;
-
-  XSendEvent(contextOpt->display, contextOpt->root, false,
-             SubstructureRedirectMask | SubstructureNotifyMask, &event);
-  XFlush(contextOpt->display);
-}
-
-void WindowManager::WinHide(wID win) {
-  if (!win) return;
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt) return;
-  XUnmapWindow(contextOpt->display, win);
-  XFlush(contextOpt->display);
-}
-
-void WindowManager::WinShow(wID win) {
-  if (!win) return;
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt) return;
-  XMapWindow(contextOpt->display, win);
-  XFlush(contextOpt->display);
-}
-
-void WindowManager::WinSetAlwaysOnTop(bool onTop) {
-  auto contextOpt = GetActiveWindowContext();
-  if (!contextOpt)
-    return;
-
-  XEvent event;
-  event.type = x11::XClientMessage;
-  event.xclient.window = contextOpt->activeWindowId;
-  event.xclient.message_type =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE", false);
-  event.xclient.format = 32;
-  event.xclient.data.l[0] =
-      onTop ? 1 : 0; // _NET_WM_STATE_ADD or _NET_WM_STATE_REMOVE
-  event.xclient.data.l[1] =
-      XInternAtom(contextOpt->display, "_NET_WM_STATE_ABOVE", false);
-  event.xclient.data.l[2] = 0;
-  event.xclient.data.l[3] = 0;
-  event.xclient.data.l[4] = 0;
-
-  XSendEvent(contextOpt->display, contextOpt->root, false,
-             SubstructureRedirectMask | SubstructureNotifyMask, &event);
-  XFlush(contextOpt->display);
 }
 
 } // namespace havel

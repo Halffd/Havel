@@ -81,6 +81,7 @@ private:
   std::string wmName;
   bool wmSupported{false};
 
+  CompositorBridge::CompositorType GetCompositor() const;
   std::string ExecCmd(const std::string &cmd) const;
   std::string ReadProcFile(const std::string &path) const;
 };

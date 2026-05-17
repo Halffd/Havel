@@ -2901,25 +2901,97 @@ return Value::makeObjectId(instanceRef.id);
   registerHostFunction(
       "class.method", [this](const std::vector<Value> &args) {
         if (args.size() != 3 || !args[1].isStringValId() ||
-            !args[2].isFunctionObjId()) {
-          COMPILER_THROW("class.method expects (classType, methodNameString, functionObj)");
+            (!args[2].isFunctionObjId() && !args[2].isClosureId() && !args[2].isHostFuncId())) {
+          COMPILER_THROW("class.method expects (classType, methodNameString, callableObj)");
         }
         if (!current_chunk) COMPILER_THROW("class.method requires active chunk");
         
-        // args[0] is retrieved via LOAD_GLOBAL, so it depends on what the compiler emits. 
-        // Previously it was LOAD_GLOBAL 'ClassName' which now yields the ObjectId.
         auto* classObj = heap_.object(args[0].asObjectId());
         if (!classObj) return Value::makeNull();
         
         const std::string &method_name = current_chunk->getString(args[1].asStringValId());
-        classObj->set(method_name, args[2]);
         
-        // Emulate the older fallback for supercalls if invoked globally.
-        // E.g., `setGlobal("ClassName.methodName", function)`
-        auto nameVal = classObj->get("__name");
-        if (nameVal && nameVal->isStringValId()) {
+        // Overloading/Arity dispatch logic
+        uint32_t classObjId = args[0].asObjectId();
+        std::string key = std::to_string(classObjId) + "." + method_name;
+        auto &candidates = overloaded_methods_[key];
+        
+        // If candidates is empty but classObj already has an existing method of that name,
+        // add the existing one to the candidates first
+        if (candidates.empty()) {
+          auto *existing = classObj->get(method_name);
+          if (existing && (existing->isFunctionObjId() || existing->isClosureId() || existing->isHostFuncId())) {
+            candidates.push_back(*existing);
+          }
+        }
+        
+        // Push the new candidate
+        candidates.push_back(args[2]);
+        
+        if (candidates.size() > 1) {
+          // Create dispatcher host function name
+          std::string dispatcher_name = "_overload_" + std::to_string(classObjId) + "_" + method_name;
+          
+          // Register dynamic host function (updates if already exists)
+          registerHostFunction(dispatcher_name, [this, key](const std::vector<Value> &dispatcher_args) -> Value {
+            auto candIt = overloaded_methods_.find(key);
+            if (candIt == overloaded_methods_.end()) return Value::makeNull();
+            const auto &cands = candIt->second;
+            
+            Value best_cand = Value::makeNull();
+            for (const auto &cand : cands) {
+              uint32_t param_count = 0;
+              if (cand.isFunctionObjId()) {
+                uint32_t idx = cand.asFunctionObjId();
+                if (current_chunk && idx < current_chunk->getFunctionCount()) {
+                  if (auto *bf = current_chunk->getFunction(idx)) {
+                    param_count = bf->param_count;
+                  }
+                }
+              } else if (cand.isClosureId()) {
+                if (auto *closure = heap_.closure(cand.asClosureId())) {
+                  uint32_t idx = closure->function_index;
+                  if (current_chunk && idx < current_chunk->getFunctionCount()) {
+                    if (auto *bf = current_chunk->getFunction(idx)) {
+                      param_count = bf->param_count;
+                    }
+                  }
+                }
+              }
+              if (param_count == dispatcher_args.size()) {
+                best_cand = cand;
+                break;
+              }
+            }
+            if (best_cand.isNull() && !cands.empty()) {
+              best_cand = cands.back();
+            }
+            if (!best_cand.isNull()) {
+              return this->callFunction(best_cand, dispatcher_args);
+            }
+            return Value::makeNull();
+          });
+          
+          uint32_t dispatcher_idx = getHostFunctionIndex(dispatcher_name);
+          Value dispatcher_val = Value::makeHostFuncId(dispatcher_idx);
+          classObj->set(method_name, dispatcher_val);
+          
+          // Emulate older fallback for supercalls if invoked globally
+          auto nameVal = classObj->get("__name");
+          if (nameVal && nameVal->isStringValId()) {
+            const std::string& className = current_chunk->getString(nameVal->asStringValId());
+            setGlobal(className + "." + method_name, dispatcher_val);
+          }
+        } else {
+          // Only one candidate so far - store it directly (no overhead of host function dispatcher)
+          classObj->set(method_name, args[2]);
+          
+          // Emulate older fallback for supercalls if invoked globally
+          auto nameVal = classObj->get("__name");
+          if (nameVal && nameVal->isStringValId()) {
             const std::string& className = current_chunk->getString(nameVal->asStringValId());
             setGlobal(className + "." + method_name, args[2]);
+          }
         }
         
         return Value::makeNull();

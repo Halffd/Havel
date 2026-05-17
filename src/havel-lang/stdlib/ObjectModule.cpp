@@ -177,12 +177,32 @@ void registerObjectModule(const VMApi &api) {
     api.registerPrototypeMethodByName("object", "values", "object.values");
     api.registerPrototypeMethodByName("object", "entries", "object.entries");
     api.registerPrototypeMethodByName("object", "has", "object.has");
+    api.registerPrototypeMethodByName("object", "find", "object.find");
     api.registerPrototypeMethodByName("object", "size", "object.size");
+    api.registerPrototypeMethodByName("object", "len", "object.len");
     api.registerPrototypeMethodByName("object", "isEmpty", "object.isEmpty");
     api.registerPrototypeMethodByName("object", "map", "object.map");
     api.registerPrototypeMethodByName("object", "filter", "object.filter");
     api.registerPrototypeMethodByName("object", "set", "object.set");
     api.registerPrototypeMethodByName("object", "delete", "object.delete");
+
+    // Register global object/Object namespace object
+    auto objVal = api.makeObject();
+    api.setField(objVal, "keys", api.makeFunctionRef("object.keys"));
+    api.setField(objVal, "values", api.makeFunctionRef("object.values"));
+    api.setField(objVal, "entries", api.makeFunctionRef("object.entries"));
+    api.setField(objVal, "has", api.makeFunctionRef("object.has"));
+    api.setField(objVal, "find", api.makeFunctionRef("object.find"));
+    api.setField(objVal, "size", api.makeFunctionRef("object.size"));
+    api.setField(objVal, "len", api.makeFunctionRef("object.len"));
+    api.setField(objVal, "isEmpty", api.makeFunctionRef("object.isEmpty"));
+    api.setField(objVal, "map", api.makeFunctionRef("object.map"));
+    api.setField(objVal, "filter", api.makeFunctionRef("object.filter"));
+    api.setField(objVal, "set", api.makeFunctionRef("object.set"));
+    api.setField(objVal, "delete", api.makeFunctionRef("object.delete"));
+
+    api.setGlobal("Object", objVal);
+    api.setGlobal("object", objVal);
 }
 
 } // namespace havel::stdlib

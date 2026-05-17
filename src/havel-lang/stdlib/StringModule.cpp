@@ -83,15 +83,15 @@ void registerStringModule(const VMApi &api) {
 
         if (start < 0)
           start = 0;
+        if (static_cast<size_t>(start) >= str.length()) {
+          return api.makeString("");
+        }
         if (len < 0)
           len = 0;
-        if (static_cast<size_t>(start) >= str.length())
-          return Value::makeNull();
         if (static_cast<size_t>(start + len) > str.length())
           len = str.length() - start;
 
-        // TODO: string pool integration - for now return null
-        return Value::makeNull();
+        return api.makeString(str.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
       });
 
   api.registerFunction("string.find",
@@ -114,25 +114,39 @@ void registerStringModule(const VMApi &api) {
         std::string to = api.toString(args[2]);
 
         size_t pos = 0;
-        while ((pos = str.find(from, pos)) != std::string::npos) {
-          str.replace(pos, from.length(), to);
-          pos += to.length();
+        if (!from.empty()) {
+          while ((pos = str.find(from, pos)) != std::string::npos) {
+            str.replace(pos, from.length(), to);
+            pos += to.length();
+          }
         }
-        // TODO: string pool integration - for now return null
-        (void)str;
-        return Value::makeNull();
+        return api.makeString(str);
       });
 
-api.registerFunction(
-  "string.split", [api](const std::vector<Value> &args) {
-  if (args.empty())
-    throw std::runtime_error(
-        "string.split() requires at least 1 argument");
+  api.registerFunction(
+      "string.split", [api](const std::vector<Value> &args) {
+        if (args.empty())
+          throw std::runtime_error(
+              "string.split() requires at least 1 argument");
+        std::string str = api.toString(args[0]);
+        std::string delim = (args.size() > 1) ? api.toString(args[1]) : "";
 
-  auto arr = api.makeArray();
-  api.push(arr, Value::makeInt(42));
-  return arr;
-});
+        Value arr = api.makeArray();
+        if (delim.empty()) {
+          for (char c : str) {
+            api.push(arr, api.makeString(std::string(1, c)));
+          }
+        } else {
+          size_t pos = 0;
+          size_t prev = 0;
+          while ((pos = str.find(delim, prev)) != std::string::npos) {
+            api.push(arr, api.makeString(str.substr(prev, pos - prev)));
+            prev = pos + delim.length();
+          }
+          api.push(arr, api.makeString(str.substr(prev)));
+        }
+        return arr;
+      });
 
   api.registerFunction(
       "string.join", [api](const std::vector<Value> &args) {
@@ -145,9 +159,16 @@ api.registerFunction(
         }
 
         std::string delim = (args.size() > 1) ? api.toString(args[1]) : "";
-        // Note: Would need VM access to get array values and join them
-        // Simplified for now - just return null
-        return Value::makeNull();
+        Value arr = args[0];
+        uint32_t len = api.length(arr);
+        std::string result;
+        for (uint32_t i = 0; i < len; ++i) {
+          if (i > 0) {
+            result += delim;
+          }
+          result += api.toString(api.getAt(arr, i));
+        }
+        return api.makeString(result);
       });
 
   api.registerFunction(

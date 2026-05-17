@@ -3453,7 +3453,7 @@ case ast::NodeType::CastExpression: {
       }
       emit(OpCode::DUP);
       if (binding.kind == ResolvedBindingKind::Local) {
-        emit(OpCode::STORE_VAR, binding.slot);
+        emit(OpCode::STORE_VAR, effectiveSlot(binding.slot));
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
@@ -3461,9 +3461,9 @@ case ast::NodeType::CastExpression: {
           uint32_t strId = addStringConstant(binding.name);
           emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
-} else {
-            COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
-        }
+      } else {
+        COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
+      }
     };
 
     auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
@@ -3472,7 +3472,7 @@ case ast::NodeType::CastExpression: {
                                  binding.name);
       }
       if (binding.kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, binding.slot);
+        emit(OpCode::LOAD_VAR, effectiveSlot(binding.slot));
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
@@ -3480,9 +3480,9 @@ case ast::NodeType::CastExpression: {
           uint32_t strId = addStringConstant(binding.name);
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
-} else {
-            COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
-        }
+      } else {
+        COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
+      }
     };
 
     auto emitStoreMemberWithResult = [&](const ast::MemberExpression &member) {
@@ -3685,13 +3685,10 @@ case ast::NodeType::CastExpression: {
         uint32_t temp_key = next_local_index;
         reserveLocalSlot(temp_key);
         emit(OpCode::STORE_VAR, temp_key); // pop key → stack: []
-        // Rebuild: [class_obj, value, key]
+        // Rebuild: [class_obj, value, key] for OBJECT_SET
         emit(OpCode::LOAD_VAR, temp_obj); // [class_obj]
         emit(OpCode::LOAD_VAR, temp_val); // [class_obj, value]
         emit(OpCode::LOAD_VAR, temp_key); // [class_obj, value, key]
-        emit(OpCode::LOAD_VAR, temp_obj);   // [class_obj]
-        emit(OpCode::LOAD_VAR, temp_val);   // [class_obj, value]
-        emit(OpCode::LOAD_VAR, temp_key);   // [class_obj, value, key]
         emit(OpCode::OBJECT_SET);
         break;
       }
@@ -3992,7 +3989,7 @@ case ast::NodeType::MultipleAssignment: {
             emit(OpCode::DUP);
 
             if (binding->kind == ResolvedBindingKind::Local) {
-                emit(OpCode::STORE_VAR, binding->slot);
+                emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
             } else if (binding->kind == ResolvedBindingKind::Upvalue) {
                 emit(OpCode::STORE_UPVALUE, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Global) {

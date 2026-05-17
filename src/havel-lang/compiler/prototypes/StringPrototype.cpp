@@ -147,12 +147,18 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  regProto("sub", 3, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 3) return Value::makeNull();
+  regProtoVar("sub", [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
     int64_t start = args[1].isInt() ? args[1].asInt() : 0;
-    int64_t len = args[2].isInt() ? args[2].asInt() : static_cast<int64_t>(s.size());
     if (start < 0) start = std::max(static_cast<int64_t>(0), static_cast<int64_t>(s.size()) + start);
+    int64_t len = (args.size() > 2 && args[2].isInt()) ? args[2].asInt() : static_cast<int64_t>(s.size()) - start;
+    if (static_cast<size_t>(start) >= s.size()) {
+      auto ref = vm.getHeap().allocateString("");
+      return Value::makeStringId(ref.id);
+    }
+    if (len < 0) len = 0;
+    if (static_cast<size_t>(start + len) > s.size()) len = s.size() - start;
     auto ref = vm.getHeap().allocateString(s.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
     return Value::makeStringId(ref.id);
   });
@@ -444,12 +450,18 @@ void registerStringPrototype(VM& vm) {
   });
 
   // substr alias for sub
-  regProto("substr", 3, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 3) return Value::makeNull();
+  regProtoVar("substr", [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
     int64_t start = args[1].isInt() ? args[1].asInt() : 0;
-    int64_t len = args[2].isInt() ? args[2].asInt() : static_cast<int64_t>(s.size());
     if (start < 0) start = std::max(static_cast<int64_t>(0), static_cast<int64_t>(s.size()) + start);
+    int64_t len = (args.size() > 2 && args[2].isInt()) ? args[2].asInt() : static_cast<int64_t>(s.size()) - start;
+    if (static_cast<size_t>(start) >= s.size()) {
+      auto ref = vm.getHeap().allocateString("");
+      return Value::makeStringId(ref.id);
+    }
+    if (len < 0) len = 0;
+    if (static_cast<size_t>(start + len) > s.size()) len = s.size() - start;
     auto ref = vm.getHeap().allocateString(s.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
     return Value::makeStringId(ref.id);
   });

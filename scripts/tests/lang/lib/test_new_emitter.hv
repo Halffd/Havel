@@ -1,0 +1,72 @@
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+passed = 0
+failed = 0
+
+fn testE2E(label, source, expected):
+    ast = parse(source)
+    if ast == null || ast.ast == null:
+        print("FAIL " + label + ": parse returned null")
+        failed = failed + 1
+        return false
+    em = Emitter()
+    result = compileProgram(em, ast)
+    if result == expected:
+        print("PASS " + label + ": " + str(result))
+        passed = passed + 1
+        true
+    else:
+        print("FAIL " + label + ": expected " + str(expected) + " got " + str(result))
+        failed = failed + 1
+        false
+
+// Basic arithmetic
+testE2E("mul", "6 * 7", 42)
+testE2E("add", "3 + 4", 7)
+testE2E("sub", "10 - 3", 7)
+testE2E("div", "42 / 6", 7)
+testE2E("mod", "10 % 3", 1)
+testE2E("negate", "-5", -5)
+testE2E("paren", "(2 + 3) * 4", 20)
+
+// Variables
+testE2E("val_decl", "val x = 10\nx + 5", 15)
+testE2E("val_use", "val x = 10\nval y = 20\nx + y", 30)
+testE2E("let_reassign", "let x = 5\nx = 10\nx", 10)
+
+// Booleans and comparisons
+testE2E("bool_true", "true", true)
+testE2E("bool_false", "false", false)
+testE2E("not_op", "!false", true)
+testE2E("lt_true", "3 < 5", true)
+testE2E("lt_false", "5 < 3", false)
+testE2E("eq_true", "3 == 3", true)
+testE2E("eq_false", "3 == 4", false)
+testE2E("neq", "3 != 4", true)
+testE2E("gte", "5 >= 5", true)
+testE2E("and_op", "true && false", false)
+testE2E("or_op", "true || false", true)
+
+// String
+testE2E("string", "\"hello\"", "hello")
+testE2E("string_eq", "\"abc\" == \"abc\"", true)
+
+// Null
+testE2E("null_val", "null", null)
+
+// Ternary
+testE2E("ternary", "true ? 1 : 0", 1)
+
+// If/else
+testE2E("if_true", "if true\n  1\nelse\n  0", 1)
+testE2E("if_false", "if false\n  1\nelse\n  0", 0)
+
+// Functions
+testE2E("fn_call", "fn double(n)\n  n * 2\ndouble(21)", 42)
+testE2E("fn_two_params", "fn add(a, b)\n  a + b\nadd(3, 4)", 7)
+testE2E("fn_local", "fn f()\n  val x = 42\n  x\nf()", 42)
+testE2E("fn_recursive", "fn fib(n)\n  if n <= 1\n    n\n  else\n    fib(n - 1) + fib(n - 2)\nfib(10)", 55)
+
+print("============================")
+print("passed: " + str(passed) + " failed: " + str(failed))

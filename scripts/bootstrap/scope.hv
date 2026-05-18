@@ -7,28 +7,24 @@ fn Scope(parent):
 fn scopeDeclare(scope, name):
     existing = scope.locals[name]
     if existing != null:
-        existing
+        return existing
     idx = scope.count
     scope.locals[name] = idx
     scope.count = idx + 1
-    idx
+    return idx
 
 fn scopeResolveLocal(scope, name):
     entry = scope.locals[name]
     if entry != null:
-        {kind: "local", index: entry, scope: scope}
-    else if scope.parent != null:
-        scopeResolveLocal(scope.parent, name)
-    else:
-        null
+        return {kind: "local", index: entry, scope: scope}
+    if scope.parent != null:
+        return scopeResolveLocal(scope.parent, name)
+    null
 
 fn scopeResolveUpvalue(scope, name):
-    // Returns upvalue index in this scope, registering if needed
-    // Also registers bc.add_upvalue() with the current function
     existing = scope.upvalues[name]
     if existing != null:
-        existing
-    // Find where the variable lives in an enclosing scope
+        return existing
     outer = scopeResolveLocal(scope.parent, name)
     if outer == null:
         return -1
@@ -39,23 +35,19 @@ fn scopeResolveUpvalue(scope, name):
         bc.add_upvalue(outer.index, 1)
     else:
         bc.add_upvalue(outer.index, 0)
-    upidx
+    return upidx
 
 fn scopeResolve(scope, name):
-    // Check local first
     localEntry = scope.locals[name]
     if localEntry != null:
-        {kind: "local", index: localEntry}
-    // Check if we have an enclosing scope
+        return {kind: "local", index: localEntry}
     if scope.parent == null:
-        null
-    // Try to resolve in parent chain
+        return null
     outer = scopeResolveLocal(scope.parent, name)
     if outer != null:
         upidx = scopeResolveUpvalue(scope, name)
-        {kind: "upvalue", index: upidx}
-    else:
-        null
+        return {kind: "upvalue", index: upidx}
+    null
 
 fn scopeDepth(scope):
     d = 0

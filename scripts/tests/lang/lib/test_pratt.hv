@@ -8,30 +8,37 @@ use { prettyPrint, isNode } from ast
 passed = 0
 failed = 0
 
-fn check(name, cond):
-  if cond:
+fn check(name, cond) {
+  if cond {
     passed = passed + 1
-  else:
+  }
+  else {
     failed = failed + 1
     print("FAIL: " + name)
 
-fn nodeKind(ast, idx):
+  }
+}
+fn nodeKind(ast, idx) {
   if idx < #ast.body: ast.body[idx].kind
   else: null
 
-fn exprKind(ast, idx):
+}
+fn exprKind(ast, idx) {
   s = ast.body[idx]
   if s != null and s.kind == "ExpressionStatement" and s.expr != null: s.expr.kind
   else: null
 
-fn firstExpr(ast):
+}
+fn firstExpr(ast) {
   if #ast.body > 0 and ast.body[0].kind == "ExpressionStatement": ast.body[0].expr
   else: null
 
-fn firstStmt(ast):
+}
+fn firstStmt(ast) {
   if #ast.body > 0: ast.body[0]
   else: null
 
+}
 // ============================================================
 // 1. Literals
 // ============================================================
@@ -494,8 +501,9 @@ r = parse("[1, ...arr, 2]")
 e = firstExpr(r.ast)
 // Check that one element is a spread
 has_spread = false
-for el in e.elements:
+for el in e.elements {
  if el.kind == "SpreadExpression": has_spread = true
+}
 check("spread in array", has_spread)
 
 // ============================================================
@@ -582,7 +590,10 @@ print("")
 print("============================")
 print("passed: " + passed)
 print("failed: " + failed)
-if failed == 0:
+if failed == 0 {
  print("all parser tests passed")
-else:
+}
+else {
  print("some tests failed")
+
+}

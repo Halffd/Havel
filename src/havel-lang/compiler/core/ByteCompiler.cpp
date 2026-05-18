@@ -6385,10 +6385,10 @@ void ByteCompiler::leaveFunction() {
   optimizeJumps();
 
   
-  current_function->type_feedback.resize(current_function->instructions.size());
+    current_function->type_feedback.resize(current_function->instructions.size());
 
-  current_function->local_count = std::max(next_local_index, current_function->param_count);
-  if (current_function_slot_.has_value()) {
+    current_function->local_count = std::max(next_local_index, current_function->param_count);
+    if (current_function_slot_.has_value()) {
     const uint32_t slot = *current_function_slot_;
     if (slot >= compiled_functions.size()) {
       compiled_functions.resize(slot + 1);

@@ -78,401 +78,519 @@ UNARY_OPS = {
     "-": "-", "!": "!", "not": "not", "#": "#",
 }
 
-fn Program(body, line, col):
+fn Program(body, line, col) {
     {kind: "Program", line: line, col: col, body: body}
 
-fn BlockStatement(body, line, col):
+}
+fn BlockStatement(body, line, col) {
     {kind: "BlockStatement", line: line, col: col, body: body}
 
-fn ExpressionStatement(expr, line, col):
+}
+fn ExpressionStatement(expr, line, col) {
     {kind: "ExpressionStatement", line: line, col: col, expr: expr}
 
-fn NumberLiteral(value, line, col):
+}
+fn NumberLiteral(value, line, col) {
     {kind: "NumberLiteral", line: line, col: col, value: value}
 
-fn StringLiteral(value, line, col):
+}
+fn StringLiteral(value, line, col) {
     {kind: "StringLiteral", line: line, col: col, value: value}
 
-fn BooleanLiteral(value, line, col):
+}
+fn BooleanLiteral(value, line, col) {
     {kind: "BooleanLiteral", line: line, col: col, value: value}
 
-fn NullLiteral(line, col):
+}
+fn NullLiteral(line, col) {
     {kind: "NullLiteral", line: line, col: col}
 
-fn Identifier(name, line, col):
+}
+fn Identifier(name, line, col) {
     {kind: "Identifier", line: line, col: col, name: name}
 
-fn BinaryExpression(left, oper, right, line, col):
+}
+fn BinaryExpression(left, oper, right, line, col) {
     {kind: "BinaryExpression", line: line, col: col, left: left, oper: oper, right: right}
 
-fn UnaryExpression(oper, operand, line, col):
+}
+fn UnaryExpression(oper, operand, line, col) {
     {kind: "UnaryExpression", line: line, col: col, oper: oper, operand: operand}
 
-fn UpdateExpression(operand, oper, prefix, line, col):
+}
+fn UpdateExpression(operand, oper, prefix, line, col) {
     {kind: "UpdateExpression", line: line, col: col, operand: operand, oper: oper, prefix: prefix}
 
-fn CallExpression(callee, args, line, col):
+}
+fn CallExpression(callee, args, line, col) {
     {kind: "CallExpression", line: line, col: col, callee: callee, args: args}
 
-fn MemberExpression(obj, property, line, col):
+}
+fn MemberExpression(obj, property, line, col) {
     {kind: "MemberExpression", line: line, col: col, obj: obj, property: property}
 
-fn IndexExpression(obj, index, line, col):
+}
+fn IndexExpression(obj, index, line, col) {
     {kind: "IndexExpression", line: line, col: col, obj: obj, index: index}
 
-fn AssignmentExpression(target, value, line, col):
+}
+fn AssignmentExpression(target, value, line, col) {
     {kind: "AssignmentExpression", line: line, col: col, target: target, value: value}
 
-fn CompoundAssignment(target, oper, value, line, col):
+}
+fn CompoundAssignment(target, oper, value, line, col) {
     {kind: "CompoundAssignment", line: line, col: col, target: target, oper: oper, value: value}
 
-fn ArrayLiteral(elements, line, col):
+}
+fn ArrayLiteral(elements, line, col) {
     {kind: "ArrayLiteral", line: line, col: col, elements: elements}
 
-fn ObjectLiteral(fields, line, col):
+}
+fn ObjectLiteral(fields, line, col) {
     {kind: "ObjectLiteral", line: line, col: col, fields: fields}
 
-fn ObjectField(key, value, line, col):
+}
+fn ObjectField(key, value, line, col) {
     {kind: "ObjectField", line: line, col: col, key: key, value: value}
 
-fn SpreadExpression(value, line, col):
+}
+fn SpreadExpression(value, line, col) {
     {kind: "SpreadExpression", line: line, col: col, value: value}
 
-fn IfStatement(condition, then_branch, else_branch, line, col):
+}
+fn IfStatement(condition, then_branch, else_branch, line, col) {
     n = {kind: "IfStatement", line: line, col: col, condition: condition, then: then_branch}
     n["else"] = else_branch
     n
 
-fn WhileStatement(condition, body, line, col):
+}
+fn WhileStatement(condition, body, line, col) {
     {kind: "WhileStatement", line: line, col: col, condition: condition, body: body}
 
-fn ForStatement(name, iterator, body, line, col):
+}
+fn ForStatement(name, iterator, body, line, col) {
     {kind: "ForStatement", line: line, col: col, name: name, iterator: iterator, body: body}
 
-fn LoopStatement(body, line, col):
+}
+fn LoopStatement(body, line, col) {
     {kind: "LoopStatement", line: line, col: col, body: body}
 
-fn RepeatStatement(count, body, line, col):
+}
+fn RepeatStatement(count, body, line, col) {
     {kind: "RepeatStatement", line: line, col: col, count: count, body: body}
 
-fn BreakStatement(line, col):
+}
+fn BreakStatement(line, col) {
     {kind: "BreakStatement", line: line, col: col}
 
-fn ContinueStatement(line, col):
+}
+fn ContinueStatement(line, col) {
     {kind: "ContinueStatement", line: line, col: col}
 
-fn FnDeclaration(name, params, body, line, col):
+}
+fn FnDeclaration(name, params, body, line, col) {
     {kind: "FnDeclaration", line: line, col: col, name: name, params: params, body: body}
 
-fn LambdaExpression(params, body, line, col):
+}
+fn LambdaExpression(params, body, line, col) {
     {kind: "LambdaExpression", line: line, col: col, params: params, body: body}
 
-fn ReturnStatement(value, line, col):
+}
+fn ReturnStatement(value, line, col) {
     {kind: "ReturnStatement", line: line, col: col, value: value}
 
-fn LetDeclaration(name, value, line, col):
+}
+fn LetDeclaration(name, value, line, col) {
     {kind: "LetDeclaration", line: line, col: col, name: name, value: value}
 
-fn ValDeclaration(name, value, line, col):
+}
+fn ValDeclaration(name, value, line, col) {
     {kind: "ValDeclaration", line: line, col: col, name: name, value: value}
 
-fn UseStatement(module, names, line, col):
+}
+fn UseStatement(module, names, line, col) {
     {kind: "UseStatement", line: line, col: col, module: module, names: names}
 
-fn ImportStatement(module, names, line, col):
+}
+fn ImportStatement(module, names, line, col) {
     {kind: "ImportStatement", line: line, col: col, module: module, names: names}
 
-fn HotkeyBinding(key, body, line, col):
+}
+fn HotkeyBinding(key, body, line, col) {
     {kind: "HotkeyBinding", line: line, col: col, key: key, body: body}
 
-fn BacktickExpression(command, line, col):
+}
+fn BacktickExpression(command, line, col) {
     {kind: "BacktickExpression", line: line, col: col, command: command}
 
-fn ShellCommand(command, capture, line, col):
+}
+fn ShellCommand(command, capture, line, col) {
     {kind: "ShellCommand", line: line, col: col, command: command, capture: capture}
 
-fn RangeExpression(start, end, inclusive, line, col):
+}
+fn RangeExpression(start, end, inclusive, line, col) {
     {kind: "RangeExpression", line: line, col: col, start: start, end: end, inclusive: inclusive}
 
-fn TernaryExpression(condition, true_expr, false_expr, line, col):
+}
+fn TernaryExpression(condition, true_expr, false_expr, line, col) {
     {kind: "TernaryExpression", line: line, col: col, condition: condition, true_expr: true_expr, false_expr: false_expr}
 
-fn PipelineExpression(left, right, line, col):
+}
+fn PipelineExpression(left, right, line, col) {
     {kind: "PipelineExpression", line: line, col: col, left: left, right: right}
 
-fn ThrowStatement(value, line, col):
+}
+fn ThrowStatement(value, line, col) {
     {kind: "ThrowStatement", line: line, col: col, value: value}
 
-fn TryStatement(try_block, catch_param, catch_block, finally_block, line, col):
+}
+fn TryStatement(try_block, catch_param, catch_block, finally_block, line, col) {
     {kind: "TryStatement", line: line, col: col, try_block: try_block, catch_param: catch_param, catch_block: catch_block, finally_block: finally_block}
 
-fn MatchExpression(subject, cases, line, col):
+}
+fn MatchExpression(subject, cases, line, col) {
     {kind: "MatchExpression", line: line, col: col, subject: subject, cases: cases}
 
-fn MatchCase(pattern, guard, body, line, col):
+}
+fn MatchCase(pattern, guard, body, line, col) {
     {kind: "MatchCase", line: line, col: col, pattern: pattern, guard: guard, body: body}
 
-fn InterpolatedString(parts, line, col):
+}
+fn InterpolatedString(parts, line, col) {
     {kind: "InterpolatedString", line: line, col: col, parts: parts}
 
-fn RegexLiteral(pattern, flags, line, col):
+}
+fn RegexLiteral(pattern, flags, line, col) {
     {kind: "RegexLiteral", line: line, col: col, pattern: pattern, flags: flags}
 
-fn AtExpression(field, line, col):
+}
+fn AtExpression(field, line, col) {
     {kind: "AtExpression", line: line, col: col, field: field}
 
-fn AtAtExpression(field, line, col):
+}
+fn AtAtExpression(field, line, col) {
     {kind: "AtAtExpression", line: line, col: col, field: field}
 
-fn ConfigBlock(name, body, line, col):
+}
+fn ConfigBlock(name, body, line, col) {
     {kind: "ConfigBlock", line: line, col: col, name: name, body: body}
 
-fn SleepStatement(duration, line, col):
+}
+fn SleepStatement(duration, line, col) {
     {kind: "SleepStatement", line: line, col: col, duration: duration}
 
-fn ErrorNode(msg, line, col):
+}
+fn ErrorNode(msg, line, col) {
     {kind: "ErrorNode", line: line, col: col, msg: msg}
 
+}
 // --- AST utilities ---
 
-fn isNode(v):
+fn isNode(v) {
     if v == null: false
     else if type(v) != "object": false
     else if v.kind == null: false
     else: NODE_TYPES[v.kind] != null
 
-fn nodeKind(v):
+}
+fn nodeKind(v) {
     result = null
-    if isNode(v):
+    if isNode(v) {
         result = v.kind
+    }
     result
 
+}
 // --- Pretty printer ---
 
-fn _indent(depth):
+fn _indent(depth) {
     s = ""
     i = 0
-    while i < depth:
+    while i < depth {
         s = s + " "
         i = i + 1
+    }
     s
 
-fn _fmtVal(v):
+}
+fn _fmtVal(v) {
     result = null
-    if v == null:
+    if v == null {
         result = "null"
-    else if v.kind == "NumberLiteral":
+    }
+    else if v.kind == "NumberLiteral" {
         result = str(v.value)
-    else if v.kind == "StringLiteral":
+    }
+    else if v.kind == "StringLiteral" {
         result = "\"" + v.value + "\""
-    else if v.kind == "BooleanLiteral":
-        if v.value:
+    }
+    else if v.kind == "BooleanLiteral" {
+        if v.value {
             result = "true"
-        else:
+        }
+        else {
             result = "false"
-    else if v.kind == "NullLiteral":
+        }
+    }
+    else if v.kind == "NullLiteral" {
         result = "null"
-    else if v.kind == "Identifier":
+    }
+    else if v.kind == "Identifier" {
         result = v.name
+    }
     result
 
-fn prettyPrint(node, depth):
-    if node == null:
+}
+fn prettyPrint(node, depth) {
+    if node == null {
         print(_indent(depth) + "null")
         return
 
-    if type(node) == "array":
-        for s in node:
+    }
+    if type(node) == "array" {
+        for s in node {
             prettyPrint(s, depth)
+        }
         return
 
+    }
     prefix = _indent(depth)
     k = node.kind
 
-    if k == "Program":
+    if k == "Program" {
         print(prefix + "Program:")
-        for s in node.body:
+        for s in node.body {
             prettyPrint(s, depth + 1)
 
-    else if k == "BlockStatement":
+        }
+    }
+    else if k == "BlockStatement" {
         print(prefix + "Block:")
-        for s in node.body:
+        for s in node.body {
             prettyPrint(s, depth + 1)
 
-    else if k == "ExpressionStatement":
+        }
+    }
+    else if k == "ExpressionStatement" {
         print(prefix + "ExprStmt:")
         prettyPrint(node.expr, depth + 1)
 
-    else if k == "NumberLiteral":
+    }
+    else if k == "NumberLiteral" {
         print(prefix + "Num(" + str(node.value) + ")")
 
-    else if k == "StringLiteral":
+    }
+    else if k == "StringLiteral" {
         print(prefix + "Str(\"" + node.value + "\")")
 
-    else if k == "BooleanLiteral":
+    }
+    else if k == "BooleanLiteral" {
         print(prefix + "Bool(" + str(node.value) + ")")
 
-    else if k == "NullLiteral":
+    }
+    else if k == "NullLiteral" {
         print(prefix + "Null")
 
-    else if k == "Identifier":
+    }
+    else if k == "Identifier" {
         print(prefix + "Id(" + node.name + ")")
 
-    else if k == "BinaryExpression":
+    }
+    else if k == "BinaryExpression" {
         print(prefix + "Bin(" + node.oper + "):")
         prettyPrint(node.left, depth + 1)
         prettyPrint(node.right, depth + 1)
 
-    else if k == "UnaryExpression":
+    }
+    else if k == "UnaryExpression" {
         print(prefix + "Unary(" + node.oper + "):")
         prettyPrint(node.operand, depth + 1)
 
-    else if k == "UpdateExpression":
+    }
+    else if k == "UpdateExpression" {
         pre = "pre"
         if !node.prefix: pre = "post"
         print(prefix + "Update(" + node.oper + " " + pre + "):")
         prettyPrint(node.operand, depth + 1)
 
-    else if k == "CallExpression":
+    }
+    else if k == "CallExpression" {
         print(prefix + "Call:")
         prettyPrint(node.callee, depth + 1)
-        if node.args.len > 0:
+        if node.args.len > 0 {
             print(_indent(depth + 1) + "args:")
-            for a in node.args:
+            for a in node.args {
                 prettyPrint(a, depth + 2)
 
-    else if k == "MemberExpression":
+            }
+        }
+    }
+    else if k == "MemberExpression" {
         print(prefix + "Member(.):")
         prettyPrint(node.obj, depth + 1)
         print(_indent(depth + 1) + "." + node.property)
 
-    else if k == "IndexExpression":
+    }
+    else if k == "IndexExpression" {
         print(prefix + "Index([]):")
         prettyPrint(node.obj, depth + 1)
         prettyPrint(node.index, depth + 1)
 
-    else if k == "AssignmentExpression":
+    }
+    else if k == "AssignmentExpression" {
         print(prefix + "Assign:")
         prettyPrint(node.target, depth + 1)
         prettyPrint(node.value, depth + 1)
 
-    else if k == "CompoundAssignment":
+    }
+    else if k == "CompoundAssignment" {
         print(prefix + "CompoundAssign(" + node.oper + "):")
         prettyPrint(node.target, depth + 1)
         prettyPrint(node.value, depth + 1)
 
-    else if k == "ArrayLiteral":
+    }
+    else if k == "ArrayLiteral" {
         print(prefix + "Array:")
-        for e in node.elements:
+        for e in node.elements {
             prettyPrint(e, depth + 1)
 
-    else if k == "ObjectLiteral":
+        }
+    }
+    else if k == "ObjectLiteral" {
         print(prefix + "Object:")
-        for f in node.fields:
-            if f.kind == "ObjectField":
+        for f in node.fields {
+            if f.kind == "ObjectField" {
                 print(_indent(depth + 1) + f.key + ":")
                 prettyPrint(f.value, depth + 2)
 
-    else if k == "SpreadExpression":
+            }
+        }
+    }
+    else if k == "SpreadExpression" {
         print(prefix + "Spread:")
         prettyPrint(node.value, depth + 1)
 
-    else if k == "IfStatement":
+    }
+    else if k == "IfStatement" {
         print(prefix + "If:")
         print(_indent(depth + 1) + "cond:")
         prettyPrint(node.condition, depth + 2)
         print(_indent(depth + 1) + "then:")
         prettyPrint(node.then, depth + 2)
-        if node.else != null:
+        if node.else != null {
             print(_indent(depth + 1) + "else:")
             prettyPrint(node.else, depth + 2)
 
-    else if k == "WhileStatement":
+        }
+    }
+    else if k == "WhileStatement" {
         print(prefix + "While:")
         print(_indent(depth + 1) + "cond:")
         prettyPrint(node.condition, depth + 2)
         print(_indent(depth + 1) + "body:")
         prettyPrint(node.body, depth + 2)
 
-    else if k == "ForStatement":
+    }
+    else if k == "ForStatement" {
         print(prefix + "For(" + node.name + " in):")
         prettyPrint(node.iterator, depth + 1)
         print(_indent(depth + 1) + "body:")
         prettyPrint(node.body, depth + 2)
 
-    else if k == "LoopStatement":
+    }
+    else if k == "LoopStatement" {
         print(prefix + "Loop:")
         prettyPrint(node.body, depth + 1)
 
-    else if k == "RepeatStatement":
+    }
+    else if k == "RepeatStatement" {
         print(prefix + "Repeat:")
         prettyPrint(node.count, depth + 1)
         print(_indent(depth + 1) + "body:")
         prettyPrint(node.body, depth + 2)
 
-    else if k == "BreakStatement":
+    }
+    else if k == "BreakStatement" {
         print(prefix + "Break")
 
-    else if k == "ContinueStatement":
+    }
+    else if k == "ContinueStatement" {
         print(prefix + "Continue")
 
-    else if k == "FnDeclaration":
+    }
+    else if k == "FnDeclaration" {
         params = node.params.join(", ")
         print(prefix + "Fn(" + node.name + "(" + params + ")):")
         prettyPrint(node.body, depth + 1)
 
-    else if k == "LambdaExpression":
+    }
+    else if k == "LambdaExpression" {
         params = node.params.join(", ")
         print(prefix + "Lambda(" + params + "):")
         prettyPrint(node.body, depth + 1)
 
-    else if k == "ReturnStatement":
+    }
+    else if k == "ReturnStatement" {
         print(prefix + "Return:")
-        if node.value != null:
+        if node.value != null {
             prettyPrint(node.value, depth + 1)
 
-    else if k == "LetDeclaration":
+        }
+    }
+    else if k == "LetDeclaration" {
         print(prefix + "Let(" + node.name + "):")
-        if node.value != null:
+        if node.value != null {
             prettyPrint(node.value, depth + 1)
 
-    else if k == "ValDeclaration":
+        }
+    }
+    else if k == "ValDeclaration" {
         print(prefix + "Val(" + node.name + "):")
-        if node.value != null:
+        if node.value != null {
             prettyPrint(node.value, depth + 1)
 
-    else if k == "UseStatement":
+        }
+    }
+    else if k == "UseStatement" {
         names = ""
-        if node.names != null and node.names.len > 0:
+        if node.names != null and node.names.len > 0 {
             names = " {" + node.names.join(", ") + "}"
+        }
         print(prefix + "Use(" + node.module + names + ")")
 
-    else if k == "ImportStatement":
+    }
+    else if k == "ImportStatement" {
         names = ""
-        if node.names != null and node.names.len > 0:
+        if node.names != null and node.names.len > 0 {
             names = " {" + node.names.join(", ") + "}"
+        }
         print(prefix + "Import(" + node.module + names + ")")
 
-    else if k == "HotkeyBinding":
+    }
+    else if k == "HotkeyBinding" {
         print(prefix + "Hotkey(" + node.key + "):")
         prettyPrint(node.body, depth + 1)
 
-    else if k == "BacktickExpression":
+    }
+    else if k == "BacktickExpression" {
         print(prefix + "Backtick(`" + node.command + "`)")
 
-    else if k == "ShellCommand":
+    }
+    else if k == "ShellCommand" {
         cap = "$"
         if node.capture: cap = "$!"
         print(prefix + "Shell(" + cap + " " + node.command + ")")
 
-    else if k == "RangeExpression":
+    }
+    else if k == "RangeExpression" {
         rdot = ".."
         if node.inclusive: rdot = "..="
         print(prefix + "Range(" + rdot + "):")
         prettyPrint(node.start, depth + 1)
         prettyPrint(node.end, depth + 1)
 
-    else if k == "TernaryExpression":
+    }
+    else if k == "TernaryExpression" {
         print(prefix + "Ternary:")
         print(_indent(depth + 1) + "cond:")
         prettyPrint(node.condition, depth + 2)
@@ -481,63 +599,84 @@ fn prettyPrint(node, depth):
         print(_indent(depth + 1) + "false:")
         prettyPrint(node.false_expr, depth + 2)
 
-    else if k == "PipelineExpression":
+    }
+    else if k == "PipelineExpression" {
         print(prefix + "Pipeline(|>):")
         prettyPrint(node.left, depth + 1)
         prettyPrint(node.right, depth + 1)
 
-    else if k == "ThrowStatement":
+    }
+    else if k == "ThrowStatement" {
         print(prefix + "Throw:")
         prettyPrint(node.value, depth + 1)
 
-    else if k == "TryStatement":
+    }
+    else if k == "TryStatement" {
         print(prefix + "Try:")
         prettyPrint(node.try_block, depth + 1)
-        if node.catch_param != null:
+        if node.catch_param != null {
             print(_indent(depth + 1) + "catch(" + node.catch_param + "):")
             prettyPrint(node.catch_block, depth + 2)
-        if node.finally_block != null:
+        }
+        if node.finally_block != null {
             print(_indent(depth + 1) + "finally:")
             prettyPrint(node.finally_block, depth + 2)
 
-    else if k == "MatchExpression":
+        }
+    }
+    else if k == "MatchExpression" {
         print(prefix + "Match:")
         prettyPrint(node.subject, depth + 1)
-        for c in node.cases:
+        for c in node.cases {
             prettyPrint(c, depth + 1)
 
-    else if k == "MatchCase":
+        }
+    }
+    else if k == "MatchCase" {
         print(prefix + "Case:")
         prettyPrint(node.pattern, depth + 1)
-        if node.guard != null:
+        if node.guard != null {
             print(_indent(depth + 1) + "when:")
             prettyPrint(node.guard, depth + 2)
+        }
         prettyPrint(node.body, depth + 1)
 
-    else if k == "InterpolatedString":
+    }
+    else if k == "InterpolatedString" {
         print(prefix + "InterpStr:")
-        for p in node.parts:
+        for p in node.parts {
             prettyPrint(p, depth + 1)
 
-    else if k == "RegexLiteral":
+        }
+    }
+    else if k == "RegexLiteral" {
         print(prefix + "Regex(/" + node.pattern + "/" + node.flags + ")")
 
-    else if k == "AtExpression":
+    }
+    else if k == "AtExpression" {
         print(prefix + "At(." + node.field + ")")
 
-    else if k == "AtAtExpression":
+    }
+    else if k == "AtAtExpression" {
         print(prefix + "AtAt(." + node.field + ")")
 
-    else if k == "ConfigBlock":
+    }
+    else if k == "ConfigBlock" {
         print(prefix + "Config(" + node.name + "):")
         prettyPrint(node.body, depth + 1)
 
-    else if k == "SleepStatement":
+    }
+    else if k == "SleepStatement" {
         print(prefix + "Sleep:")
         prettyPrint(node.duration, depth + 1)
 
-    else if k == "ErrorNode":
+    }
+    else if k == "ErrorNode" {
         print(prefix + "ERROR: " + node.msg)
 
-    else:
+    }
+    else {
         print(prefix + "Unknown(" + k + ")")
+
+    }
+}

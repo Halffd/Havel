@@ -1,0 +1,10 @@
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+source = "fn add(a, b) { a + b } print(add(2, 3))"
+tokens = tokenize(source)
+ast = parse(tokens)
+compileProgram(Emitter, ast, true)
+bc.serialize("/tmp/test_out.hvc")
+print("serialized ok")

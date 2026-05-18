@@ -1,0 +1,24 @@
+use fs
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+
+print("step 1: reading")
+source = fs.read("/tmp/simple_input.hv")
+print("source length: " + #source)
+
+print("step 2: tokenizing")
+tokens = tokenize(source)
+print("token count: " + #tokens)
+
+print("step 3: parsing")
+ast = parse(tokens)
+print("parsed ok")
+
+print("step 4: compiling")
+use { Emitter, compileProgram } from "emitter"
+compileProgram(Emitter, ast, true)
+print("compile done")
+
+print("step 5: serializing")
+bc.serialize("/tmp/self_hosted.hvc")
+print("serialized ok")

@@ -145,12 +145,16 @@ fn emitExpr(emitter, node):
     if k == "CallExpression":
         callee = node.callee
         argc = #node.args
-        if callee.kind == "Identifier":
-            emitLoadVar(emitter, callee.name)
-        else if callee.kind == "MemberExpression":
+        if callee.kind == "MemberExpression":
             emitExpr(emitter, callee.obj)
+            for arg in node.args:
+                emitExpr(emitter, arg)
             propIdx = bc.add_chunk_string(callee.property)
             bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
+            return
+
+        if callee.kind == "Identifier":
+            emitLoadVar(emitter, callee.name)
         else:
             emitExpr(emitter, callee)
         for arg in node.args:

@@ -798,7 +798,7 @@ fn compileLambda(emitter, funcIdx, params, bodyNode) {
 // Program compilation (two-pass: functions first, then main)
 // ============================================================
 
-fn compileProgram(emitter, program) {
+fn compileProgram(emitter, program, skip_execute = false) {
     bc.reset()
     // parse() returns {errors, ast} — unwrap if needed
     if program.ast != null {
@@ -862,6 +862,8 @@ fn compileProgram(emitter, program) {
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
-    bc.execute_persistent("__main__")
+    if !skip_execute {
+        bc.execute_persistent("__main__")
+    }
 
 }

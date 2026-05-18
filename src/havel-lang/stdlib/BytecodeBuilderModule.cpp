@@ -1,6 +1,8 @@
 #include "BytecodeBuilderModule.hpp"
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
+#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
+#include <fstream>
 
 using havel::compiler::BytecodeChunk;
 using havel::compiler::BytecodeFunction;
@@ -351,6 +353,27 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         }
 	});
 
+	api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
+	    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+	        throw std::runtime_error("bc.serialize: requires path (string)");
+	    }
+	    auto path = api.resolveString(args[0]);
+	    auto &chunk = *g_builder.chunk;
+	    if (chunk.getFunctionCount() == 0) {
+	        throw std::runtime_error("bc.serialize: no functions in chunk");
+	    }
+	    havel::compiler::ValueSerializer serializer;
+	    auto data = serializer.serializeChunk(chunk);
+	    std::ofstream out(path, std::ios::binary);
+	    if (!out.is_open()) {
+	        throw std::runtime_error("bc.serialize: cannot open " + path);
+	    }
+	    out.write(reinterpret_cast<const char *>(data.data()),
+	              static_cast<std::streamsize>(data.size()));
+	    out.close();
+	    return Value::makeBool(true);
+	});
+
 	api.registerFunction("bc.func_count", [](const std::vector<Value> &) -> Value {
 		return Value::makeInt(static_cast<int64_t>(g_builder.chunk->getFunctionCount()));
 	});
@@ -432,6 +455,7 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
   api.setField(bcObj, "set_param_count", api.makeFunctionRef("bc.set_param_count"));
   api.setField(bcObj, "add_upvalue", api.makeFunctionRef("bc.add_upvalue"));
   api.setField(bcObj, "execute", api.makeFunctionRef("bc.execute"));
+  api.setField(bcObj, "serialize", api.makeFunctionRef("bc.serialize"));
   api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
   api.setField(bcObj, "func_count", api.makeFunctionRef("bc.func_count"));
   api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));

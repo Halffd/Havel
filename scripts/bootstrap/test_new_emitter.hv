@@ -1,0 +1,59 @@
+// Test the full pipeline: source → lexer → parser → emitter → execute
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+use { Emitter, compileProgram, emitExpr, emitStmt, Scope, scopeDeclare, scopeResolve } from "emitter"
+
+fn testE2E(label, source, expected):
+    ast = parse(source)
+    if ast == null:
+        print("FAIL " + label + ": parse returned null")
+        return false
+    em = Emitter()
+    result = compileProgram(em, ast)
+    if result == expected:
+        print("PASS " + label + ": " + str(result))
+        true
+    else:
+        print("FAIL " + label + ": expected " + str(expected) + " got " + str(result))
+        false
+
+// Test 1: Simple arithmetic expression
+testE2E("arithmetic", "6 * 7", 42)
+
+// Test 2: Variable declaration + use
+testE2E("val_decl", "val x = 10\nx + 5", 15)
+
+// Test 3: Function declaration + call
+testE2E("fn_call", "fn double(n)\n  n * 2\ndouble(21)", 42)
+
+// Test 4: If/else
+testE2E("if_else", "val x = 10\nif x > 5\n  100\nelse\n  200", 100)
+
+// Test 5: String literal
+testE2E("string", "\"hello\"", "hello")
+
+// Test 6: Boolean
+testE2E("bool_true", "true", true)
+testE2E("bool_false", "false", false)
+
+// Test 7: Null
+testE2E("null_val", "null", null)
+
+// Test 8: Unary negate
+testE2E("negate", "-5", -5)
+
+// Test 9: Comparison
+testE2E("lt_true", "3 < 5", true)
+testE2E("lt_false", "5 < 3", false)
+
+// Test 10: Ternary
+testE2E("ternary", "true ? 1 : 0", 1)
+
+// Test 11: Array literal
+r = testE2E("array", "[1, 2, 3]", null)
+// Arrays return as arrays, not simple equality — just check it doesn't crash
+
+// Test 12: Nested function
+testE2E("nested_fn", "fn add(a, b)\n  a + b\nadd(3, 4)", 7)
+
+print("e2e pipeline tests complete")

@@ -1172,12 +1172,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         }
         // If binding resolves to a Function or HostFunction name, declare as local
         // so that shadowing variables (e.g., _root = _root()) work correctly
-        if (binding && (binding->kind == ResolvedBindingKind::Function ||
-                        binding->kind == ResolvedBindingKind::HostFunction)) {
-            shouldDeclareLocal = true;
-        }
+    if (binding && (binding->kind == ResolvedBindingKind::Function ||
+        binding->kind == ResolvedBindingKind::HostFunction)) {
+        shouldDeclareLocal = true;
+    }
 
-        if (shouldDeclareLocal) {
+    if (shouldDeclareLocal) {
             // Implicit declaration on first assignment
             bool isGlobalScope = !insideFunction;
 
@@ -1192,11 +1192,17 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-        // Inside a function - declare as local in the current function.
-        // Variables that need to be shared with enclosing scopes will
-        // be resolved as upvalues via resolveIdentifier when accessed
-        // from nested functions.
-        declareLocal(ident.symbol, &ident, false);
+            // Inside a function - declare as local in the current function.
+            // Variables that need to be shared with enclosing scopes will
+            // be resolved as upvalues via resolveIdentifier when accessed
+            // from nested functions.
+            uint32_t slot = declareLocal(ident.symbol, &ident, false);
+            ResolvedBinding newBinding;
+            newBinding.kind = ResolvedBindingKind::Local;
+            newBinding.slot = slot;
+            newBinding.name = ident.symbol;
+            newBinding.is_const = false;
+            noteIdentifierBinding(ident, newBinding);
         }
       } else {
         noteIdentifierBinding(ident, *binding);

@@ -219,15 +219,25 @@ void LexicalResolver::endFunction() {
   const auto &ctx = function_stack_.back();
   if (ctx.owner) {
     if (ctx.owner->kind == ast::NodeType::FunctionDeclaration) {
-      result_.function_upvalues[static_cast<const ast::FunctionDeclaration *>(
-          ctx.owner)] = ctx.upvalues;
+      auto *fn = static_cast<const ast::FunctionDeclaration *>(ctx.owner);
+      result_.function_upvalues[fn] = ctx.upvalues;
+      result_.function_local_counts[fn] = ctx.next_slot;
     } else if (ctx.owner->kind == ast::NodeType::LambdaExpression) {
-      result_.lambda_upvalues[static_cast<const ast::LambdaExpression *>(
-          ctx.owner)] = ctx.upvalues;
+      auto *lam = static_cast<const ast::LambdaExpression *>(ctx.owner);
+      result_.lambda_upvalues[lam] = ctx.upvalues;
+      result_.lambda_local_counts[lam] = ctx.next_slot;
+    } else if (ctx.owner->kind == ast::NodeType::ClassMethodDef) {
+      auto *m = static_cast<const ast::ClassMethodDef *>(ctx.owner);
+      result_.class_method_local_counts[m] = ctx.next_slot;
+    } else if (ctx.owner->kind == ast::NodeType::StructMethodDef) {
+      auto *m = static_cast<const ast::StructMethodDef *>(ctx.owner);
+      result_.struct_method_local_counts[m] = ctx.next_slot;
     }
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
     // ByteCompiler can find them via bindingFor().
+  } else {
+    result_.main_local_count = ctx.next_slot;
   }
 
   function_stack_.pop_back();

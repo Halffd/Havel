@@ -314,6 +314,8 @@ fn Parser(tokenList):
     errors = []
     inMatchExpr = false
     allowBraceSugar = true
+    _dbg_s = null
+    _dbg_cnt = 0
 
     // --- Token access ---
     fn at(offset):
@@ -2252,6 +2254,8 @@ fn Parser(tokenList):
             if !notEOF() or current().type == "EOF": break
 
             s = parseStatement()
+            _dbg_s = s
+            _dbg_cnt = _dbg_cnt + 1
             if s != null and s.kind != "ErrorNode":
                 stmts.push(s)
             else if s != null and s.kind == "ErrorNode":
@@ -2265,13 +2269,15 @@ fn Parser(tokenList):
 
     // Return the parser interface
     {
-        parseExpr: parseExpr,
-        parseStatement: parseStatement,
-        parseBlock: parseBlock,
-        produceAST: produceAST,
-        errors: errors,
-        pos: pos,
-        tokens: tokens,
+    parseExpr: parseExpr,
+    parseStatement: parseStatement,
+    parseBlock: parseBlock,
+    produceAST: produceAST,
+    errors: errors,
+    pos: pos,
+    tokens: tokens,
+    _dbg_s: _dbg_s,
+    _dbg_cnt: _dbg_cnt,
     }
 
 // ===================================================================

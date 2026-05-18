@@ -76,7 +76,10 @@ void registerStringModule(const VMApi &api) {
         if (args.size() < 2)
           throw std::runtime_error(
               "string.sub() requires at least 2 arguments");
-        std::string str = api.toString(args[0]);
+        const std::string* strPtr = api.getStringPtr(args[0]);
+        std::string tempStr;
+        const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
+
         int64_t start = args[1].asInt();
         int64_t len = (args.size() > 2) ? args[2].asInt()
                                         : str.length() - start;
@@ -88,10 +91,11 @@ void registerStringModule(const VMApi &api) {
         }
         if (len < 0)
           len = 0;
-        if (static_cast<size_t>(start + len) > str.length())
+        if (static_cast<size_t>(start + len) > str.length()) {
           len = str.length() - start;
+        }
 
-        return api.makeString(str.substr(static_cast<size_t>(start), static_cast<size_t>(len)));
+        return api.makeString(str.substr(start, len));
       });
 
   api.registerFunction("string.find",

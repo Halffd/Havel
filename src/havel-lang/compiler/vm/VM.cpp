@@ -154,6 +154,13 @@ std::string VM::toString(const Value &value) {
  return toStringInternal(value, visited, 0);
 }
 
+const std::string* VM::getStringPtr(const Value &value) const {
+  if (value.isStringValId()) {
+    return heap_.string(value.asStringValId());
+  }
+  return nullptr;
+}
+
 bool VM::toBoolPublic(const Value &value) {
   return isTruthy(value);
 }

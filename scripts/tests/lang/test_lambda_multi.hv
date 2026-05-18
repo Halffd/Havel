@@ -1,16 +1,18 @@
 // Test multiple lambdas with overlapping local slots
-fn test():
+fn test() {
     x = 10
     f1 = fn(a) { r = a + x; r }
     f2 = fn(b) { r = b * x; r }
     print(f1(5))
     print(f2(5))
+}
 test()
 
-fn test2():
+fn test2() {
     items = [1, 2, 3]
     mapped = items.map(fn(v) { v * 2 })
     filtered = items.filter(fn(v) { v > 1 })
     print(mapped)
     print(filtered)
+}
 test2()

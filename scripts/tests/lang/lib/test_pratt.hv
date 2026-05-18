@@ -1,9 +1,9 @@
 // End-to-end test for the pure-Havel Pratt parser
 // Exercises: lexing → parsing → AST structure verification
 
-use { parse, parseTokens } from pratt
-use { tokenize } from lexer
-use { prettyPrint, isNode } from ast
+use { parse, parseTokens } from "pratt"
+use { tokenize } from "lexer"
+use { prettyPrint, isNode } from "ast"
 
 passed = 0
 failed = 0

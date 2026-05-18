@@ -4,23 +4,27 @@ use { Emitter, compileProgram } from "emitter"
 passed = 0
 failed = 0
 
-fn testE2E(label, source, expected):
+fn testE2E(label, source, expected) {
     ast = parse(source)
-    if ast == null || ast.ast == null:
+    if ast == null || ast.ast == null {
         print("FAIL " + label + ": parse returned null")
         failed = failed + 1
         return false
+    }
     em = Emitter()
     result = compileProgram(em, ast)
-    if result == expected:
+    if result == expected {
         print("PASS " + label + ": " + str(result))
         passed = passed + 1
         true
-    else:
+    }
+    else {
         print("FAIL " + label + ": expected " + str(expected) + " got " + str(result))
         failed = failed + 1
         false
 
+    }
+}
 // Basic arithmetic
 testE2E("mul", "6 * 7", 42)
 testE2E("add", "3 + 4", 7)

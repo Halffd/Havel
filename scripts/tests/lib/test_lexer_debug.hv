@@ -1,4 +1,4 @@
-use { Lexer } from "lib/lexer"
+use { Lexer } from "lexer"
 print("Lexer type: " + type(Lexer))
 a = Lexer("1")
 print("a type: " + type(a))

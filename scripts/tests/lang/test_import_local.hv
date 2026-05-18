@@ -1,4 +1,4 @@
-use { Lexer } from "lib/lexer"
+use { Lexer } from "lexer"
 print("imported")
 lx = Lexer("1 + 2")
 print("created lexer")

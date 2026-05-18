@@ -3,20 +3,24 @@ use { tokenize } from "lexer"
 use { parse } from "pratt"
 use { Emitter, compileProgram, emitExpr, emitStmt, Scope, scopeDeclare, scopeResolve } from "emitter"
 
-fn testE2E(label, source, expected):
+fn testE2E(label, source, expected) {
     ast = parse(source)
-    if ast == null:
+    if ast == null {
         print("FAIL " + label + ": parse returned null")
         return false
+    }
     em = Emitter()
     result = compileProgram(em, ast)
-    if result == expected:
+    if result == expected {
         print("PASS " + label + ": " + str(result))
         true
-    else:
+    }
+    else {
         print("FAIL " + label + ": expected " + str(expected) + " got " + str(result))
         false
 
+    }
+}
 // Test 1: Simple arithmetic expression
 testE2E("arithmetic", "6 * 7", 42)
 

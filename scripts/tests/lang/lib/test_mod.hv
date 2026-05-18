@@ -1,12 +1,1 @@
-// test_mod.hv — simple function for cross-module testing
-fn testFn(node):
-    k = node.kind
-    k
-
-fn testFn2(node):
-    if node == null: return null
-    k = node.kind
-    if k == "test":
-        1
-    else:
-        2
+../../../../modules/lang/test_mod.hv

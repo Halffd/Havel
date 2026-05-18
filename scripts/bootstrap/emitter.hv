@@ -330,17 +330,7 @@ fn emitStmt(emitter, node):
         return
 
     if k == "IfStatement":
-        emitExpr(emitter, node.condition)
-        elseJump = bc.emit("JUMP_IF_FALSE", 0)
-        emitBlock(emitter, node.then)
-        elseBranch = node["else"]
-        if elseBranch != null:
-            endJump = bc.emit("JUMP", 0)
-            bc.patch_jump(elseJump, bc.instr_count())
-            emitBlock(emitter, elseBranch)
-            bc.patch_jump(endJump, bc.instr_count())
-        else:
-            bc.patch_jump(elseJump, bc.instr_count())
+        emitIfExpr(emitter, node)
         return
 
     if k == "WhileStatement":
@@ -442,16 +432,17 @@ fn emitStmt(emitter, node):
         return
 
     if k == "LetDeclaration" || k == "ValDeclaration":
+        // Declare the variable in scope first
+        localIdx = scopeDeclare(emitter.scope, node.name)
         if node.value != null:
             emitExpr(emitter, node.value)
         else:
             bc.emit("PUSH_NULL")
-        resolved = scopeResolve(emitter.scope, node.name)
-        if resolved != null:
+        if localIdx >= 0:
             if k == "ValDeclaration":
-                bc.emit("STORE_IMMUT_VAR", resolved.index)
+                bc.emit("STORE_IMMUT_VAR", localIdx)
             else:
-                bc.emit("STORE_VAR", resolved.index)
+                bc.emit("STORE_VAR", localIdx)
         else:
             if k == "ValDeclaration":
                 bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
@@ -460,6 +451,8 @@ fn emitStmt(emitter, node):
         return
 
     if k == "FnDeclaration":
+        // Declare the function name in scope
+        localIdx = scopeDeclare(emitter.scope, node.name)
         funcIdx = emitter.func_idx
         emitter.func_idx = funcIdx + 1
         emitter.func_map[node.name] = funcIdx
@@ -468,9 +461,8 @@ fn emitStmt(emitter, node):
         // Emit CLOSURE to create the closure value
         bc.emit("CLOSURE", funcIdx)
         // Store the closure in the variable
-        resolved = scopeResolve(emitter.scope, node.name)
-        if resolved != null:
-            bc.emit("STORE_VAR", resolved.index)
+        if localIdx >= 0:
+            bc.emit("STORE_VAR", localIdx)
         else:
             bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
         return
@@ -541,6 +533,23 @@ fn emitStmt(emitter, node):
 // ============================================================
 // Block emission
 // ============================================================
+
+fn emitIfExpr(emitter, node):
+    emitExpr(emitter, node.condition)
+    elseJump = bc.emit("JUMP_IF_FALSE", 0)
+    elseBranch = node["else"]
+    if elseBranch != null:
+        emitBlockWithReturn(emitter, node.then)
+        endJump = bc.emit("JUMP", 0)
+        bc.patch_jump(elseJump, bc.instr_count())
+        emitBlockWithReturn(emitter, elseBranch)
+        bc.patch_jump(endJump, bc.instr_count())
+    else:
+        emitBlockWithReturn(emitter, node.then)
+        endJump = bc.emit("JUMP", 0)
+        bc.patch_jump(elseJump, bc.instr_count())
+        bc.emit("PUSH_NULL")
+        bc.patch_jump(endJump, bc.instr_count())
 
 fn emitBlock(emitter, node):
     if node == null:
@@ -630,6 +639,9 @@ fn compileLambda(emitter, funcIdx, params, bodyNode):
 
 fn compileProgram(emitter, program):
     bc.reset()
+    // parse() returns {errors, ast} — unwrap if needed
+    if program.ast != null:
+        program = program.ast
     body = program.body
     topStmts = []
     funcDecls = []
@@ -655,14 +667,18 @@ fn compileProgram(emitter, program):
         decl = funcDecls[i]
         bc.emit("CLOSURE", emitter.func_map[decl.name])
         bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
-    // Emit top-level statements
-    for i in 0..(#topStmts - 1):
+    // Emit top-level statements (all except last)
+    n = #topStmts
+    for i in 0..(n - 2):
         emitStmt(emitter, topStmts[i])
     // Last expression is the return value
-    if #topStmts > 0:
-        last = topStmts[#topStmts - 1]
+    if n > 0:
+        last = topStmts[n - 1]
         if last.kind == "ExpressionStatement":
             emitExpr(emitter, last.expr)
+            bc.emit("RETURN")
+        else if last.kind == "IfStatement":
+            emitIfExpr(emitter, last)
             bc.emit("RETURN")
         else:
             emitStmt(emitter, last)

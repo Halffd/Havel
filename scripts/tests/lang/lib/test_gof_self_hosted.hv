@@ -1,6 +1,6 @@
 use fs
 use { tokenize } from "lexer"
-use { Parser } from "pratt"
+use { parseTokens } from "pratt"
 use { Emitter, compileProgram } from "emitter"
 
 print("Reading int_gof_patterns.hv...")
@@ -11,10 +11,11 @@ print("Content length: " + str(#content))
 tokens = tokenize(content)
 print("Token count: " + str(#tokens))
 
-parser = Parser(tokens)
-ast = parser.parseProgram()
-print("Parse successful. AST body length: " + str(#ast.body))
+res = parseTokens(tokens)
+ast = res.ast
+print("Parse finished. AST body length: " + str(#ast.body))
 
 emitter = Emitter()
+print("Emitter created.")
 compileProgram(emitter, ast)
 print("Compilation finished.")

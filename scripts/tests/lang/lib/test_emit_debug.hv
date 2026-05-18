@@ -1,0 +1,21 @@
+use { parse } from "pratt"
+
+// Test expression body
+ast1 = parse("fn f()\n  42")
+print("expr body ast null? " + str(ast1.ast == null))
+if ast1.ast != null:
+    print("  body count: " + str(#ast1.ast.body))
+    if #ast1.ast.body > 0:
+        stmt = ast1.ast.body[0]
+        print("  kind: " + stmt.kind)
+        if stmt.kind == "ExpressionStatement":
+            print("  inner: " + stmt.expr.kind)
+
+// Test block body
+ast2 = parse("fn f():\n  val x = 42\n  x")
+print("block body ast null? " + str(ast2.ast == null))
+if ast2.ast != null:
+    print("  body count: " + str(#ast2.ast.body))
+    if #ast2.ast.body > 0:
+        stmt = ast2.ast.body[0]
+        print("  kind: " + stmt.kind)

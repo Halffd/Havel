@@ -1909,15 +1909,13 @@ fn Parser(tokenList):
             advance() // consume type name
             skipNewlines()
 
-        // Body
-        if current().type == "OpenBrace" or current().type == "Colon":
-            body = parseBlock()
-        else
-            // Expression body
-            bodyExpr = parseExpr(0)
-            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-
-        FnDeclaration(name, params, body, l, c)
+    // Body
+    _isBlk = current().type == "OpenBrace" or current().type == "Colon"
+    if _isBlk
+        body = parseBlock()
+    if !_isBlk
+        body = parseExpr(0)
+    FnDeclaration(name, params, body, l, c)
 
     // ===================================================================
     // STATEMENT: let / val declaration

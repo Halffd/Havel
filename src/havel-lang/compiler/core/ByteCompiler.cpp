@@ -303,15 +303,10 @@ function_indices_by_node_[method.get()] = next_function_index++;
     compileLambda(*lambda);
   }
 
-  // Compute max local slot from resolver's declaration_slots
-  uint32_t max_slot = 0;
-  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-    if (slot >= max_slot) {
-      max_slot = slot + 1;
-    }
-  }
+  // Compute max local slot from resolver's main_local_count
+  uint32_t max_slot = lexical_resolution_.main_local_count;
 
-enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
+  enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
 next_local_index = max_slot;
 
 const ast::Statement *lastRegularStmt = nullptr;
@@ -544,19 +539,20 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
 
     bool is_impl_method = impl_method_nodes_.count(&function) > 0;
 
-    // Compute max local slot from resolver's declaration_slots for this function
-    // We need to find all declarations that belong to this function
-    uint32_t max_slot = static_cast<uint32_t>(function.parameters.size());
-    if (is_impl_method) {
-        // impl methods have self at slot 0, user params at slot 1+
-        max_slot = static_cast<uint32_t>(function.parameters.size()) + 1;
+  // Compute max local slot from resolver's function_local_counts
+  uint32_t max_slot = static_cast<uint32_t>(function.parameters.size());
+  if (is_impl_method) {
+    max_slot = static_cast<uint32_t>(function.parameters.size()) + 1;
+  }
+  auto local_count_it = lexical_resolution_.function_local_counts.find(&function);
+  if (local_count_it != lexical_resolution_.function_local_counts.end()) {
+    uint32_t resolver_max = is_impl_method
+        ? local_count_it->second + 1
+        : local_count_it->second;
+    if (resolver_max > max_slot) {
+      max_slot = resolver_max;
     }
-    for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-        uint32_t adjusted_slot = is_impl_method ? slot + 1 : slot;
-        if (adjusted_slot >= max_slot) {
-            max_slot = adjusted_slot + 1;
-        }
-    }
+  }
 
     // Collect parameter names for metadata
     std::vector<std::string> param_names;
@@ -883,20 +879,15 @@ void ByteCompiler::compileClassMethod(
       is_class_method ? static_cast<uint32_t>(method.parameters.size())
                       : static_cast<uint32_t>(method.parameters.size() + 1);
 
-  // Compute max slot
+  // Compute max slot from resolver's class_method_local_counts
   uint32_t max_slot = param_count;
-  if (!is_class_method) {
-    for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-      uint32_t adjusted_slot = slot + 1;
-      if (adjusted_slot >= max_slot) {
-        max_slot = adjusted_slot + 1;
-      }
-    }
-  } else {
-    for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-      if (slot >= max_slot) {
-        max_slot = slot + 1;
-      }
+  auto method_local_it = lexical_resolution_.class_method_local_counts.find(&method);
+  if (method_local_it != lexical_resolution_.class_method_local_counts.end()) {
+    uint32_t resolver_max = is_class_method
+        ? method_local_it->second
+        : method_local_it->second + 1;
+    if (resolver_max > max_slot) {
+      max_slot = resolver_max;
     }
   }
 
@@ -1039,12 +1030,13 @@ void ByteCompiler::compileStructMethod(
   const uint32_t param_count =
       static_cast<uint32_t>(method.parameters.size() + 1);
 
-  // Compute max slot
+  // Compute max slot from resolver's struct_method_local_counts
   uint32_t max_slot = param_count;
-  for (const auto &[node, slot] : lexical_resolution_.declaration_slots) {
-    uint32_t adjusted_slot = slot + 1;
-    if (adjusted_slot >= max_slot) {
-      max_slot = adjusted_slot + 1;
+  auto impl_local_it = lexical_resolution_.struct_method_local_counts.find(&method);
+  if (impl_local_it != lexical_resolution_.struct_method_local_counts.end()) {
+    uint32_t resolver_max = impl_local_it->second + 1;
+    if (resolver_max > max_slot) {
+      max_slot = resolver_max;
     }
   }
 

@@ -1,21 +1,69 @@
-use { parse } from "pratt"
+fn outer():
+    pos = 0
+    fn f1(): pos = pos + 1
+    fn f2(): pos = pos + 1
+    fn f3(): pos = pos + 1
+    fn f4(): pos = pos + 1
+    fn f5(): pos = pos + 1
+    fn f6(): pos = pos + 1
+    fn f7(): pos = pos + 1
+    fn f8(): pos = pos + 1
+    fn f9(): pos = pos + 1
+    fn f10(): pos = pos + 1
+    fn f11(): pos = pos + 1
+    fn f12(): pos = pos + 1
+    fn f13(): pos = pos + 1
+    fn f14(): pos = pos + 1
+    fn f15(): pos = pos + 1
+    fn f16(): pos = pos + 1
+    fn f17(): pos = pos + 1
+    fn f18(): pos = pos + 1
+    fn f19(): pos = pos + 1
+    fn f20(): pos = pos + 1
+    fn f21(): pos = pos + 1
+    fn f22(): pos = pos + 1
+    fn f23(): pos = pos + 1
+    fn f24(): pos = pos + 1
+    fn f25(): pos = pos + 1
+    fn f26(): pos = pos + 1
+    fn f27(): pos = pos + 1
+    fn f28(): pos = pos + 1
+    fn f29(): pos = pos + 1
+    fn f30(): pos = pos + 1
+    fn f31(): pos = pos + 1
+    fn f32(): pos = pos + 1
+    fn f33(): pos = pos + 1
+    fn f34(): pos = pos + 1
+    fn f35(): pos = pos + 1
+    fn f36(): pos = pos + 1
+    fn f37(): pos = pos + 1
+    fn f38(): pos = pos + 1
+    fn f39(): pos = pos + 1
+    fn f40(): pos = pos + 1
+    fn f41(): pos = pos + 1
+    fn f42(): pos = pos + 1
+    fn f43(): pos = pos + 1
+    fn f44(): pos = pos + 1
+    fn f45(): pos = pos + 1
+    fn f46(): pos = pos + 1
+    fn f47(): pos = pos + 1
+    fn f48(): pos = pos + 1
+    fn f49(): pos = pos + 1
+    fn f50(): pos = pos + 1
+    fn f51(): pos = pos + 1
+    fn f52(): pos = pos + 1
+    fn f53(): pos = pos + 1
+    fn f54(): pos = pos + 1
+    fn f55(): pos = pos + 1
+    fn f56(): pos = pos + 1
+    fn f57(): pos = pos + 1
+    fn inner():
+        x = null
+        if true:
+            x = 42
+        else
+            x = 99
+        return x
+    inner()
 
-// Test expression body
-ast1 = parse("fn f()\n  42")
-print("expr body ast null? " + str(ast1.ast == null))
-if ast1.ast != null:
-    print("  body count: " + str(#ast1.ast.body))
-    if #ast1.ast.body > 0:
-        stmt = ast1.ast.body[0]
-        print("  kind: " + stmt.kind)
-        if stmt.kind == "ExpressionStatement":
-            print("  inner: " + stmt.expr.kind)
-
-// Test block body
-ast2 = parse("fn f():\n  val x = 42\n  x")
-print("block body ast null? " + str(ast2.ast == null))
-if ast2.ast != null:
-    print("  body count: " + str(#ast2.ast.body))
-    if #ast2.ast.body > 0:
-        stmt = ast2.ast.body[0]
-        print("  kind: " + stmt.kind)
+print(str(outer()))

@@ -1,0 +1,9 @@
+use { parse, tokenize } from "pratt"
+
+// Simulate parseBlock manually
+tokens = tokenize(":\n  42")
+print("tokens: " + str(tokens))
+
+// Now let me parse just "42"  
+r2 = parse("42")
+print("parse 42: " + str(r2))

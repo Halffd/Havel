@@ -1,7 +1,26 @@
-use { emitStmt } from "emitter"
+use { emitStmt, emitExpr, Emitter, Scope, scopeDeclare, scopeResolve, globalIdx } from "emitter"
+use { ValDeclaration, NumberLiteral, ReturnStatement, FnDeclaration, IfStatement, BinaryExpression, Identifier } from "ast"
 
-node = {kind: "ReturnStatement", value: null, line: 0, col: 0}
+em = Emitter()
 bc.reset()
 bc.func_new("__main__", 0, 32)
-emitStmt({scope: {locals: {}, count: 0, upvalues: {}, upcount: 0, parent: null}, globals: {}, func_idx: 0, func_map: {}, loop_breaks: [], loop_continues: []}, node)
-print("ok")
+em.scope = Scope(null)
+
+// Test 1: ValDeclaration with NumberLiteral
+emitStmt(em, ValDeclaration("x", NumberLiteral(42, 0, 0), 0, 0))
+print("test1 val decl ok")
+
+// Test 2: ReturnStatement with number
+emitStmt(em, ReturnStatement(NumberLiteral(99, 0, 0), 0, 0))
+print("test2 return ok")
+
+// Test 3: IfStatement
+scopeDeclare(em.scope, "cond")
+emitStmt(em, IfStatement(
+    Identifier("cond", 0, 0),
+    ReturnStatement(NumberLiteral(1, 0, 0), 0, 0),
+    null,
+    0, 0))
+print("test3 if ok")
+
+print("all cross-module emitStmt tests passed!")

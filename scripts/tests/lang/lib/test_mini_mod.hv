@@ -1,3 +1,6 @@
+// Havel bytecode emitter — pure Havel implementation
+// Walks AST nodes from ast.hv, calls bc.* host functions to build bytecode
+
 fn Scope(parent):
     {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
 
@@ -21,11 +24,11 @@ fn scopeResolve(scope, name):
                 scope.upvalues[name] = upidx
                 scope.upcount = upidx + 1
                 {kind: "upvalue", index: upidx}
-            else
-                outer
-        else
+            else:
+                {kind: "upvalue", index: upidx}
+        else:
             outer
-    else
+    else:
         null
 
 fn Emitter():
@@ -46,21 +49,27 @@ fn emitExpr(emitter, node):
     if node == null:
         bc.emit("PUSH_NULL")
         return
+
     k = node.kind
+
     if k == "NumberLiteral":
         idx = bc.add_const(node.value)
         bc.emit("LOAD_CONST", idx)
+
     else if k == "StringLiteral":
         idx = bc.add_string(node.value)
         bc.emit("LOAD_CONST", idx)
+
     else if k == "BooleanLiteral":
         if node.value:
             bc.emit("LOAD_CONST", bc.add_const(1))
         else:
             bc.emit("LOAD_CONST", bc.add_const(0))
-            bc.emit("TO_BOOL")
+        bc.emit("TO_BOOL")
+
     else if k == "NullLiteral":
         bc.emit("PUSH_NULL")
+
     else if k == "Identifier":
         resolved = scopeResolve(emitter.scope, node.name)
         if resolved != null:
@@ -72,6 +81,7 @@ fn emitExpr(emitter, node):
                 bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
         else:
             bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+
     else if k == "BinaryExpression":
         opr = node.oper
         if opr == "&&":
@@ -98,11 +108,12 @@ fn emitExpr(emitter, node):
                 "<<": "BIT_LSH", ">>": "BIT_RSH",
                 "is": "IS",
             }
-            oc = opcodes[opr]
-            if oc != null:
-                bc.emit(oc)
-            else:
-                emitError(emitter, "unknown binary opr: " + opr, node.line, node.col)
+        oc = opcodes[opr]
+        if oc != null:
+            bc.emit(oc)
+        else:
+            emitError(emitter, "unknown binary opr: " + opr, node.line, node.col)
+
     else if k == "UnaryExpression":
         emitExpr(emitter, node.operand)
         opcodes = {"-": "NEGATE", "!": "NOT", "not": "NOT", "#": "LENGTH"}
@@ -111,6 +122,7 @@ fn emitExpr(emitter, node):
             bc.emit(oc)
         else:
             emitError(emitter, "unknown unary op: " + node.oper, node.line, node.col)
+
     else if k == "CallExpression":
         callee = node.callee
         argc = node.args.length
@@ -137,6 +149,7 @@ fn emitExpr(emitter, node):
             for arg in node.args:
                 emitExpr(emitter, arg)
             bc.emit("CALL", argc)
+
     else if k == "AssignmentExpression":
         target = node.target
         if target.kind == "Identifier":
@@ -151,6 +164,7 @@ fn emitExpr(emitter, node):
                 bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
         else
             emitError(emitter, "unsupported assignment target: " + target.kind, node.line, node.col)
+
     else if k == "TernaryExpression":
         emitExpr(emitter, node.condition)
         elseJump = bc.emit("JUMP_IF_FALSE", 0)
@@ -161,10 +175,12 @@ fn emitExpr(emitter, node):
         bc.emit("POP")
         emitExpr(emitter, node.false_expr)
         bc.patch_jump(endJump, bc.instr_count())
+
     else if k == "ArrayLiteral":
         for el in node.elements:
             emitExpr(emitter, el)
         bc.emit("ARRAY_NEW", node.elements.length)
+
     else if k == "ObjectLiteral":
         for field in node.fields:
             if field.kind == "ObjectField":
@@ -172,15 +188,19 @@ fn emitExpr(emitter, node):
                 bc.emit("LOAD_CONST", keyIdx)
                 emitExpr(emitter, field.value)
         bc.emit("OBJECT_NEW", node.fields.length)
+
     else
         emitError(emitter, "unsupported expr: " + k, node.line, node.col)
 
 fn emitStmt(emitter, node):
     if node == null: return
+
     k = node.kind
+
     if k == "ExpressionStatement":
         emitExpr(emitter, node.expr)
         bc.emit("POP")
+
     else if k == "IfStatement":
         emitExpr(emitter, node.condition)
         elseJump = bc.emit("JUMP_IF_FALSE", 0)
@@ -195,6 +215,7 @@ fn emitStmt(emitter, node):
         else:
             bc.patch_jump(elseJump, bc.instr_count())
             bc.emit("POP")
+
     else if k == "WhileStatement":
         loopTop = bc.instr_count()
         emitExpr(emitter, node.condition)
@@ -204,12 +225,14 @@ fn emitStmt(emitter, node):
         bc.emit("JUMP", loopTop)
         bc.patch_jump(exitJump, bc.instr_count())
         bc.emit("POP")
+
     else if k == "ReturnStatement":
         if node.value != null:
             emitExpr(emitter, node.value)
         else:
             bc.emit("PUSH_NULL")
         bc.emit("RETURN")
+
     else if k == "LetDeclaration" || k == "ValDeclaration":
         if node.value != null:
             emitExpr(emitter, node.value)
@@ -223,26 +246,31 @@ fn emitStmt(emitter, node):
                 bc.emit("STORE_VAR", resolved.index)
         else:
             if k == "ValDeclaration":
-                bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-            else:
-                bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+            bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+        else:
+            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+
     else if k == "FnDeclaration":
         funcIdx = emitter.func_idx
         emitter.func_idx = funcIdx + 1
         emitter.func_map[node.name] = funcIdx
         bc.emit("CLOSURE", funcIdx)
+
         resolved = scopeResolve(emitter.scope, node.name)
         if resolved != null:
             bc.emit("STORE_VAR", resolved.index)
         else:
             bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+
     else if k == "BreakStatement":
         bc.emit("PUSH_NULL")
         bc.emit("RETURN")
+
     else if k == "ContinueStatement":
         bc.emit("PUSH_NULL")
         bc.emit("RETURN")
-    else:
+
+    else
         emitError(emitter, "unsupported stmt: " + k, node.line, node.col)
 
 fn emitBlock(emitter, node):
@@ -252,3 +280,51 @@ fn emitBlock(emitter, node):
             emitStmt(emitter, stmt)
     else
         emitStmt(emitter, node)
+
+fn compileFunc(emitter, name, params, bodyNode, localCount):
+    oldScope = emitter.scope
+    emitter.scope = Scope(oldScope)
+    for p in params:
+        scopeDeclare(emitter.scope, p)
+    paramCount = params.length
+    bc.func_new(name, paramCount, localCount)
+    emitBlock(emitter, bodyNode)
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    emitter.scope = oldScope
+
+fn compileProgram(emitter, program):
+    bc.reset()
+    body = program.body
+    topStmts = []
+    funcDecls = []
+    for stmt in body:
+        if stmt.kind == "FnDeclaration":
+            funcDecls.push(stmt)
+        else:
+            topStmts.push(stmt)
+
+    for decl in funcDecls:
+        oldScope = emitter.scope
+        emitter.scope = Scope(null)
+        for p in decl.params:
+            scopeDeclare(emitter.scope, p)
+        lc = decl.params.length + 8
+        bc.func_new(decl.name, decl.params.length, lc)
+        emitBlock(emitter, decl.body)
+        bc.emit("PUSH_NULL")
+        bc.emit("RETURN")
+        emitter.scope = oldScope
+
+    bc.func_new("__main__", 0, 32)
+    emitter.scope = Scope(null)
+    for stmt in topStmts:
+        emitStmt(emitter, stmt)
+    for decl in funcDecls:
+        bc.emit("CLOSURE", emitter.func_map[decl.name])
+        bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    emitter.scope = null
+
+    bc.execute("__main__")

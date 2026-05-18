@@ -573,11 +573,18 @@ fn emitBlockWithReturn(emitter, node):
         if n == 0:
             bc.emit("PUSH_NULL")
             return
+        // Check for buggy BlockStatement([ExpressionStatement(null)]) from parseFnDeclaration
+        if n == 1 && stmts[0].kind == "ExpressionStatement" && stmts[0].expr == null:
+            bc.emit("PUSH_NULL")
+            return
         for i in 0..(n - 2):
             emitStmt(emitter, stmts[i])
         last = stmts[n - 1]
         if last.kind == "ExpressionStatement":
-            emitExpr(emitter, last.expr)
+            if last.expr != null:
+                emitExpr(emitter, last.expr)
+            else:
+                bc.emit("PUSH_NULL")
         else if last.kind == "ReturnStatement":
             emitStmt(emitter, last)
         else:
@@ -585,7 +592,10 @@ fn emitBlockWithReturn(emitter, node):
             bc.emit("PUSH_NULL")
     else:
         if node.kind == "ExpressionStatement":
-            emitExpr(emitter, node.expr)
+            if node.expr != null:
+                emitExpr(emitter, node.expr)
+            else:
+                bc.emit("PUSH_NULL")
         else:
             emitStmt(emitter, node)
             bc.emit("PUSH_NULL")

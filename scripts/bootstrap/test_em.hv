@@ -1,97 +1,126 @@
-fn Scope(parent):
+fn Scope(parent) {
     {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
 
-fn scopeDeclare(scope, name):
+}
+fn scopeDeclare(scope, name) {
     if scope.locals[name] != null: return scope.locals[name]
     idx = scope.count
     scope.locals[name] = idx
     scope.count = idx + 1
     idx
 
-fn scopeResolve(scope, name):
-    if scope.locals[name] != null:
+}
+fn scopeResolve(scope, name) {
+    if scope.locals[name] != null {
         {kind: "local", index: scope.locals[name]}
-    else if scope.parent != null:
+    }
+    else if scope.parent != null {
         outer = scopeResolve(scope.parent, name)
         if outer == null: null
-        else if outer.kind == "local":
+        else if outer.kind == "local" {
             upidx = scope.upvalues[name]
-            if upidx == null:
+            if upidx == null {
                 upidx = scope.upcount
                 scope.upvalues[name] = upidx
                 scope.upcount = upidx + 1
+            }
             {kind: "upvalue", index: upidx}
-        else if outer.kind == "upvalue":
+        }
+        else if outer.kind == "upvalue" {
             upidx = scope.upvalues[name]
-            if upidx == null:
+            if upidx == null {
                 upidx = scope.upcount
                 scope.upvalues[name] = upidx
                 scope.upcount = upidx + 1
+            }
             {kind: "upvalue", index: upidx}
-        else:
+        }
+        else {
             outer
-    else:
+        }
+    }
+    else {
         null
 
-fn Emitter():
+    }
+}
+fn Emitter() {
     {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: []}
 
-fn emitError(emitter, msg, line, col):
+}
+fn emitError(emitter, msg, line, col) {
     print("emit error at " + str(line) + ":" + str(col) + " - " + msg)
     null
 
-fn globalIdx(emitter, name):
+}
+fn globalIdx(emitter, name) {
     cidx = emitter.globals[name]
     if cidx != null: return cidx
     cidx = bc.add_chunk_string(name)
     emitter.globals[name] = cidx
     cidx
 
-fn emitExpr(emitter, node):
-    if node == null:
+}
+fn emitExpr(emitter, node) {
+    if node == null {
         bc.emit("PUSH_NULL")
         return
+    }
     k = node.kind
-    if k == "NumberLiteral":
+    if k == "NumberLiteral" {
         idx = bc.add_const(num(node.value))
         bc.emit("LOAD_CONST", idx)
-    else if k == "StringLiteral":
+    }
+    else if k == "StringLiteral" {
         idx = bc.add_string(node.value)
         bc.emit("LOAD_CONST", idx)
-    else if k == "BooleanLiteral":
-        if node.value:
+    }
+    else if k == "BooleanLiteral" {
+        if node.value {
             bc.emit("LOAD_CONST", bc.add_const(1))
-        else:
+        }
+        else {
             bc.emit("LOAD_CONST", bc.add_const(0))
+        }
         bc.emit("TO_BOOL")
-    else if k == "NullLiteral":
+    }
+    else if k == "NullLiteral" {
         bc.emit("PUSH_NULL")
-    else if k == "Identifier":
+    }
+    else if k == "Identifier" {
         resolved = scopeResolve(emitter.scope, node.name)
-        if resolved != null:
-            if resolved.kind == "local":
+        if resolved != null {
+            if resolved.kind == "local" {
                 bc.emit("LOAD_VAR", resolved.index)
-            else if resolved.kind == "upvalue":
+            }
+            else if resolved.kind == "upvalue" {
                 bc.emit("LOAD_UPVALUE", resolved.index)
-            else:
+            }
+            else {
                 bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        else:
+            }
+        }
+        else {
             bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-    else if k == "BinaryExpression":
+        }
+    }
+    else if k == "BinaryExpression" {
         opr = node.oper
-        if opr == "&&":
+        if opr == "&&" {
             emitExpr(emitter, node.left)
             sj = bc.emit("JUMP_IF_FALSE", 0)
             bc.emit("POP")
             emitExpr(emitter, node.right)
             bc.patch_jump(sj, bc.instr_count())
-        else if opr == "||":
+        }
+        else if opr == "||" {
             emitExpr(emitter, node.left)
             sj = bc.emit("JUMP_IF_TRUE", 0)
             bc.emit("POP")
             emitExpr(emitter, node.right)
             bc.patch_jump(sj, bc.instr_count())
-        else:
+        }
+        else {
             emitExpr(emitter, node.left)
             emitExpr(emitter, node.right)
             opcodes = {
@@ -104,51 +133,73 @@ fn emitExpr(emitter, node):
                 "is": "IS",
             }
             oc = opcodes[opr]
-            if oc != null:
+            if oc != null {
                 bc.emit(oc)
-            else:
+            }
+            else {
                 emitError(emitter, "unknown binary opr: " + opr, node.line, node.col)
-    else if k == "UnaryExpression":
+            }
+        }
+    }
+    else if k == "UnaryExpression" {
         emitExpr(emitter, node.operand)
         opcodes = {"-": "NEGATE", "!": "NOT", "not": "NOT", "#": "LENGTH"}
         oc = opcodes[node.oper]
-        if oc != null:
+        if oc != null {
             bc.emit(oc)
-        else:
+        }
+        else {
             emitError(emitter, "unknown unary op: " + node.oper, node.line, node.col)
-    else if k == "CallExpression":
+        }
+    }
+    else if k == "CallExpression" {
         callee = node.callee
         argc = #node.args
-        if callee.kind == "Identifier":
+        if callee.kind == "Identifier" {
             resolved = scopeResolve(emitter.scope, callee.name)
-            if resolved != null:
-                if resolved.kind == "local":
+            if resolved != null {
+                if resolved.kind == "local" {
                     bc.emit("LOAD_VAR", resolved.index)
-                else if resolved.kind == "upvalue":
+                }
+                else if resolved.kind == "upvalue" {
                     bc.emit("LOAD_UPVALUE", resolved.index)
-                else:
+                }
+                else {
                     bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, callee.name)))
-            else:
+                }
+            }
+            else {
                 bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, callee.name)))
-        for arg in node.args:
+            }
+        }
+        for arg in node.args {
             emitExpr(emitter, arg)
+        }
         bc.emit("CALL", argc)
-    else if k == "AssignmentExpression":
+    }
+    else if k == "AssignmentExpression" {
         target = node.target
-        if target.kind == "Identifier":
+        if target.kind == "Identifier" {
             emitExpr(emitter, node.value)
             bc.emit("DUP")
             resolved = scopeResolve(emitter.scope, target.name)
-            if resolved != null:
-                if resolved.kind == "local":
+            if resolved != null {
+                if resolved.kind == "local" {
                     bc.emit("STORE_VAR", resolved.index)
-                else:
+                }
+                else {
                     bc.emit("STORE_UPVALUE", resolved.index)
-            else:
+                }
+            }
+            else {
                 bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
-        else:
+            }
+        }
+        else {
             emitError(emitter, "unsupported assignment target: " + target.kind, node.line, node.col)
-    else if k == "TernaryExpression":
+        }
+    }
+    else if k == "TernaryExpression" {
         emitExpr(emitter, node.condition)
         elseJump = bc.emit("JUMP_IF_FALSE", 0)
         bc.emit("POP")
@@ -158,18 +209,26 @@ fn emitExpr(emitter, node):
         bc.emit("POP")
         emitExpr(emitter, node.false_expr)
         bc.patch_jump(endJump, bc.instr_count())
-    else if k == "ArrayLiteral":
-        for el in node.elements:
+    }
+    else if k == "ArrayLiteral" {
+        for el in node.elements {
             emitExpr(emitter, el)
+        }
         bc.emit("ARRAY_NEW", #node.elements)
-    else if k == "ObjectLiteral":
-        for field in node.fields:
-            if field.kind == "ObjectField":
+    }
+    else if k == "ObjectLiteral" {
+        for field in node.fields {
+            if field.kind == "ObjectField" {
                 keyIdx = bc.add_string(field.key)
                 bc.emit("LOAD_CONST", keyIdx)
                 emitExpr(emitter, field.value)
+            }
+        }
         bc.emit("OBJECT_NEW", #node.fields)
-    else:
+    }
+    else {
         emitError(emitter, "unsupported expr: " + k, node.line, node.col)
 
+    }
+}
 print("emitExpr defined ok")

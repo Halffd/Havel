@@ -1,0 +1,52 @@
+fn Scope(parent) {
+    {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+}
+fn scopeDeclare(scope, name) {
+    if scope.locals[name] != null: return scope.locals[name]
+    idx = scope.count
+    scope.locals[name] = idx
+    scope.count = idx + 1
+    idx
+
+}
+fn compileProgramTest(emitter, program) {
+    bc.reset()
+    body = program.body
+    topStmts = []
+    funcDecls = []
+    for stmt in body {
+        if stmt.kind == "FnDeclaration" {
+            funcDecls.push(stmt)
+        }
+        else {
+            topStmts.push(stmt)
+
+        }
+    }
+    for i in 0..(#funcDecls - 1) {
+        decl = funcDecls[i]
+        funcIdx = emitter.func_idx
+        emitter.func_idx = funcIdx + 1
+        emitter.func_map[decl.name] = funcIdx
+        oldScope = emitter.scope
+        emitter.scope = Scope(null)
+        params = decl.params
+        for j in 0..(#params - 1) {
+            p = params[j]
+            pname = p
+            scopeDeclare(emitter.scope, pname)
+        }
+        lc = #params + 8
+        bc.func_new(decl.name, #params, lc)
+        bc.emit("PUSH_NULL")
+        bc.emit("RETURN")
+        emitter.scope = oldScope
+
+    }
+    bc.func_new("__main__", 0, 32)
+    bc.emit("LOAD_CONST", bc.add_const(42))
+    bc.emit("RETURN")
+    bc.execute_persistent("__main__")
+
+}

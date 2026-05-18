@@ -1,11 +1,15 @@
-fn outer():
+fn outer() {
   src = "hello"
-  fn inner():
-    if src.len > 3:
+  fn inner() {
+    if src.len > 3 {
       src.sub(0, 3)
-    else:
+    }
+    else {
       src
+    }
+  }
   {run: inner}
 
+}
 o = outer()
 print(o.run())

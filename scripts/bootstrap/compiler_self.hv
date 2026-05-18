@@ -1,28 +1,37 @@
-fn compile_file(input_path, output_path):
+fn compile_file(input_path, output_path) {
     ok = compiler_build(input_path, output_path)
-    if !ok:
+    if !ok {
         print("compile_file failed")
         print(input_path)
         false
-    else:
+    }
+    else {
         true
 
-fn compile_batch(pairs):
+    }
+}
+fn compile_batch(pairs) {
     i = 0
-    while i < pairs.len:
+    while i < pairs.len {
         pair = pairs[i]
-        if pair.len < 2:
+        if pair.len < 2 {
             print("invalid batch pair")
             false
-        else:
+        }
+        else {
             ok = compile_file(pair[0], pair[1])
             if !ok: false
-            else:
+            else {
                 i = i + 1
                 continue
+            }
+        }
+    }
     true
 
-fn main():
+}
+fn main() {
     compile_file("scripts/test_simple.hv", "/tmp/phase9_simple_from_compiler_self.hvc")
 
+}
 print(main())

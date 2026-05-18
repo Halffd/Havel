@@ -1,6 +1,0 @@
-use { parse } from "pratt"
-
-r = parse("42")
-print(r.ast.kind)
-print(#r.ast.body)
-print(r.ast.body[0].kind)

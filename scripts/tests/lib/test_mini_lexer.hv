@@ -1,4 +1,4 @@
-use { Lexer } from "lib/lexer"
+use { Lexer } from "lexer"
 lx = Lexer("a")
 print("lexer created")
 result = lx.run()

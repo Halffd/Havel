@@ -1,13 +1,1 @@
-X = 42
-
-fn outer():
-    fn inner():
-        X
-    inner
-
-fn deep_outer():
-    fn mid():
-        fn inner():
-            X
-        inner
-    mid
+../../../../modules/lang/test_module_closure.hv

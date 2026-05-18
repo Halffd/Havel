@@ -1,4 +1,4 @@
-use { Lexer } from "lib/lexer"
+use { Lexer } from "lexer"
 
 a = Lexer("1")
 print("created lexer")

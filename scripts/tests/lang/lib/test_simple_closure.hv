@@ -1,5 +1,1 @@
-X = 42
-fn outer():
-    fn inner():
-        X
-    inner
+../../../../modules/lang/test_simple_closure.hv

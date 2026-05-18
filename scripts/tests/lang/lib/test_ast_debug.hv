@@ -5,7 +5,9 @@ r = parse(src)
 fnDecl = r.ast.body[0]
 print("fn name: " + fnDecl.name)
 print("params count: " + str(#fnDecl.params))
-if #fnDecl.params > 0:
+if #fnDecl.params > 0 {
     print("param0: " + str(fnDecl.params[0]))
     print("param0 name: " + str(fnDecl.params[0].name))
     print("param0 kind: " + str(fnDecl.params[0].kind))
+
+}

@@ -1,2 +1,1 @@
-fn add(a, b):
-  a + b
+../../modules/testmod2.hv

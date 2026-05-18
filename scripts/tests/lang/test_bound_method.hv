@@ -1,6 +1,7 @@
-fn greeter():
+fn greeter() {
   "hello world"
 
+}
 obj = {
   name: "world"
   greet: greeter
@@ -9,9 +10,10 @@ obj = {
 r1 = obj.greet()
 print(r1)
 
-fn add(a, b):
+fn add(a, b) {
   a + b
 
+}
 obj2 = {
   myAdd: add
 }

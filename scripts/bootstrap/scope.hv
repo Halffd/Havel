@@ -1,0 +1,69 @@
+// scope.hv — Lexical scope, variable resolution, upvalue tracking
+// Works with bc.add_upvalue() to register closure captures with the VM
+
+fn Scope(parent):
+    {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+fn scopeDeclare(scope, name):
+    existing = scope.locals[name]
+    if existing != null:
+        existing
+    idx = scope.count
+    scope.locals[name] = idx
+    scope.count = idx + 1
+    idx
+
+fn scopeResolveLocal(scope, name):
+    entry = scope.locals[name]
+    if entry != null:
+        {kind: "local", index: entry, scope: scope}
+    else if scope.parent != null:
+        scopeResolveLocal(scope.parent, name)
+    else:
+        null
+
+fn scopeResolveUpvalue(scope, name):
+    // Returns upvalue index in this scope, registering if needed
+    // Also registers bc.add_upvalue() with the current function
+    existing = scope.upvalues[name]
+    if existing != null:
+        existing
+    // Find where the variable lives in an enclosing scope
+    outer = scopeResolveLocal(scope.parent, name)
+    if outer == null:
+        return -1
+    upidx = scope.upcount
+    scope.upvalues[name] = upidx
+    scope.upcount = upidx + 1
+    if outer.kind == "local":
+        bc.add_upvalue(outer.index, 1)
+    else:
+        bc.add_upvalue(outer.index, 0)
+    upidx
+
+fn scopeResolve(scope, name):
+    // Check local first
+    localEntry = scope.locals[name]
+    if localEntry != null:
+        {kind: "local", index: localEntry}
+    // Check if we have an enclosing scope
+    if scope.parent == null:
+        null
+    // Try to resolve in parent chain
+    outer = scopeResolveLocal(scope.parent, name)
+    if outer != null:
+        upidx = scopeResolveUpvalue(scope, name)
+        {kind: "upvalue", index: upidx}
+    else:
+        null
+
+fn scopeDepth(scope):
+    d = 0
+    s = scope
+    while s.parent != null:
+        d = d + 1
+        s = s.parent
+    d
+
+fn scopeLocalCount(scope):
+    scope.count

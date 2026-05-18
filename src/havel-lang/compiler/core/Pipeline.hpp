@@ -22,7 +22,7 @@ struct PipelineOptions {
     std::string snapshot_dir;
     bool write_snapshot_artifact = false;
     bool debugBytecode = false;
-    uint64_t max_instructions = 10'000'000;
+    uint64_t max_instructions = 0; // 0 = unlimited
     std::unordered_map<std::string, BytecodeHostFunction> host_functions;
     VM *vm_override = nullptr;
     std::function<void(VM &)> vm_setup;

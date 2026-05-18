@@ -246,28 +246,35 @@ EXPRESSION_TOKENS = {
     "LeftArrow": true,
 }
 
-fn isAlpha(c):
+fn isAlpha(c) {
     (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
 
-fn isDigit(c):
+}
+fn isDigit(c) {
     c >= "0" and c <= "9"
 
-fn isAlphaNum(c):
+}
+fn isAlphaNum(c) {
     isAlpha(c) or isDigit(c)
 
-fn isHexDigit(c):
+}
+fn isHexDigit(c) {
     isDigit(c) or (c >= "a" and c <= "f") or (c >= "A" and c <= "F")
 
-fn isBinDigit(c):
+}
+fn isBinDigit(c) {
     c == "0" or c == "1"
 
-fn isOctDigit(c):
+}
+fn isOctDigit(c) {
     c >= "0" and c <= "7"
 
-fn isWhitespace(c):
+}
+fn isWhitespace(c) {
     c == " " or c == "\t" or c == "\r"
 
-fn Lexer(source):
+}
+fn Lexer(source) {
     // Copy module-scope vars into locals so nested closures can see them
     keywords = KEYWORDS
     exprTokens = EXPRESSION_TOKENS
@@ -281,75 +288,96 @@ fn Lexer(source):
     inBitwiseExpr = false
     parenDepth = 0
 
-    fn peek(offset):
+    fn peek(offset) {
         i = pos + offset
         if i < src.len: src.sub(i, 1)
         else: null
 
-    fn current():
+    }
+    fn current() {
         if pos < src.len: src.sub(pos, 1)
         else: null
 
-    fn advance():
+    }
+    fn advance() {
         c = current()
-        if c != null:
+        if c != null {
             pos = pos + 1
-            if c == "\n":
+            if c == "\n" {
                 line = line + 1
                 col = 1
-            else:
+            }
+            else {
                 col = col + 1
+            }
+        }
         c
 
-    fn matchChar(expected):
-        if current() == expected:
+    }
+    fn matchChar(expected) {
+        if current() == expected {
             advance()
             true
-        else:
+        }
+        else {
             false
 
-    fn addToken(ttype, value):
+        }
+    }
+    fn addToken(ttype, value) {
         tokens.push({type: ttype, value: value, line: line, col: col})
 
-    fn error(msg):
+    }
+    fn error(msg) {
         errors.push({msg: msg, line: line, col: col})
 
-    fn skipWhitespace():
-        while isWhitespace(current()):
+    }
+    fn skipWhitespace() {
+        while isWhitespace(current()) {
             advance()
 
-    fn skipLineComment():
+        }
+    }
+    fn skipLineComment() {
         advance()
         advance()
-        while current() != null and current() != "\n":
+        while current() != null and current() != "\n" {
             advance()
 
-    fn skipBlockComment():
+        }
+    }
+    fn skipBlockComment() {
         advance()
         advance()
         depth = 1
-        while depth > 0 and current() != null:
-            if current() == "*" and peek(1) == "/":
+        while depth > 0 and current() != null {
+            if current() == "*" and peek(1) == "/" {
                 advance()
                 advance()
                 depth = depth - 1
-            else if current() == "/" and peek(1) == "*":
+            }
+            else if current() == "/" and peek(1) == "*" {
                 advance()
                 advance()
                 depth = depth + 1
-            else:
+            }
+            else {
                 advance()
 
-    fn scanString(quote, isFString, isRegexString):
+            }
+        }
+    }
+    fn scanString(quote, isFString, isRegexString) {
         advance()
 
         s = ""
         isInterpolated = false
-        if isFString:
+        if isFString {
             isInterpolated = true
 
-        while current() != null and current() != quote and current() != "\n":
-            if current() == "\\":
+        }
+        while current() != null and current() != quote and current() != "\n" {
+            if current() == "\\" {
                 advance()
                 c = current()
                 if c == "n": s = s + "\n"
@@ -361,740 +389,929 @@ fn Lexer(source):
                 else if c == "$": s = s + "$"
                 else if c == "{": s = s + "{"
                 else if c == "}": s = s + "}"
-                else if c == "x":
+                else if c == "x" {
                     h1 = peek(1)
                     h2 = peek(2)
-                    if h1 != null and h2 != null and isHexDigit(h1) and isHexDigit(h2):
+                    if h1 != null and h2 != null and isHexDigit(h1) and isHexDigit(h2) {
                         advance()
                         advance()
                         advance()
                         s = s + "\\x" + h1 + h2
-                    else:
+                    }
+                    else {
                         s = s + "\\x"
-                else if c == "u":
+                    }
+                }
+                else if c == "u" {
                     h1 = peek(1)
                     h2 = peek(2)
                     h3 = peek(3)
                     h4 = peek(4)
-                    if h1 != null and h2 != null and h3 != null and h4 != null and isHexDigit(h1) and isHexDigit(h2) and isHexDigit(h3) and isHexDigit(h4):
+                    if h1 != null and h2 != null and h3 != null and h4 != null and isHexDigit(h1) and isHexDigit(h2) and isHexDigit(h3) and isHexDigit(h4) {
                         advance()
                         advance()
                         advance()
                         advance()
                         advance()
                         s = s + "\\u" + h1 + h2 + h3 + h4
-                    else:
+                    }
+                    else {
                         s = s + "\\u"
-                else:
+                    }
+                }
+                else {
                     s = s + "\\" + c
-                if c != null and c != "x" and c != "u":
+                }
+                if c != null and c != "x" and c != "u" {
                     advance()
-            else if current() == "{" and !isFString:
+                }
+            }
+            else if current() == "{" and !isFString {
              isInterpolated = true
              s = s + current()
              advance()
-            else if current() == "$" and isFString:
+            }
+            else if current() == "$" and isFString {
                 isInterpolated = true
                 s = s + "$"
                 advance()
-                if current() == "@" or (current() != null and isAlpha(current())):
+                if current() == "@" or (current() != null and isAlpha(current())) {
                     s = s + current()
                     advance()
-                    while current() != null and isAlphaNum(current()):
+                    while current() != null and isAlphaNum(current()) {
                         s = s + current()
                         advance()
-                    if current() == "?":
+                    }
+                    if current() == "?" {
                         s = s + "?"
                         advance()
-                else:
+                    }
+                }
+                else {
                     s = s + current()
                     advance()
-            else:
+                }
+            }
+            else {
                 s = s + current()
                 advance()
 
-        if current() == quote:
+            }
+        }
+        if current() == quote {
             advance()
-        else:
+        }
+        else {
             error("Unterminated string")
 
-        if isRegexString:
+        }
+        if isRegexString {
             addToken("RegexString", s)
-        else if isInterpolated:
+        }
+        else if isInterpolated {
             addToken("InterpolatedString", s)
-        else:
+        }
+        else {
             addToken("String", s)
 
-    fn scanMultilineString(quote, isFString):
+        }
+    }
+    fn scanMultilineString(quote, isFString) {
         advance()
         advance()
         advance()
 
-        if current() == "\n":
+        if current() == "\n" {
             advance()
 
+        }
         s = ""
         isInterpolated = isFString
 
-        while pos < src.len:
-            if current() == quote and peek(1) == quote and peek(2) == quote:
+        while pos < src.len {
+            if current() == quote and peek(1) == quote and peek(2) == quote {
                 advance()
                 advance()
                 advance()
                 break
 
-            if current() == "\\":
+            }
+            if current() == "\\" {
                 advance()
                 c = current()
-                if c == "n":
+                if c == "n" {
                     s = s + "\n"
                     advance()
-                else if c == "t":
+                }
+                else if c == "t" {
                     s = s + "\t"
                     advance()
-                else if c == "r":
+                }
+                else if c == "r" {
                     s = s + "\r"
                     advance()
-                else if c == "\\":
+                }
+                else if c == "\\" {
                     s = s + "\\"
                     advance()
-                else if c == quote:
+                }
+                else if c == quote {
                     s = s + quote
                     advance()
-                else if c == "0":
+                }
+                else if c == "0" {
                     s = s + "\0"
                     advance()
-                else:
+                }
+                else {
                     s = s + "\\" + c
                     advance()
-            else if current() == "$" and isFString:
+                }
+            }
+            else if current() == "$" and isFString {
                 isInterpolated = true
                 s = s + "$"
                 advance()
-                if current() == "@" or (current() != null and isAlpha(current())):
+                if current() == "@" or (current() != null and isAlpha(current())) {
                     s = s + current()
                     advance()
-                    while current() != null and isAlphaNum(current()):
+                    while current() != null and isAlphaNum(current()) {
                         s = s + current()
                         advance()
-                else
+                    }
+                }
+                else {
                     s = s + current()
                     advance()
-            else:
+                }
+            }
+            else {
                 s = s + current()
                 advance()
 
-        if isInterpolated:
+            }
+        }
+        if isInterpolated {
             addToken("InterpolatedString", s)
-        else:
+        }
+        else {
             addToken("MultilineString", s)
 
-    fn scanBacktick():
+        }
+    }
+    fn scanBacktick() {
         advance()
 
         isTriple = false
-        if current() == "`" and peek(1) == "`":
+        if current() == "`" and peek(1) == "`" {
             isTriple = true
             advance()
             advance()
 
+        }
         s = ""
         isInterpolated = false
 
-        while pos < src.len:
-            if isTriple:
-                if current() == "`" and peek(1) == "`" and peek(2) == "`":
+        while pos < src.len {
+            if isTriple {
+                if current() == "`" and peek(1) == "`" and peek(2) == "`" {
                     advance()
                     advance()
                     advance()
                     break
-            else:
-                if current() == "`":
+                }
+            }
+            else {
+                if current() == "`" {
                     advance()
                     break
 
-            if current() == "\\":
+                }
+            }
+            if current() == "\\" {
                 advance()
                 c = current()
-                if c == "n":
+                if c == "n" {
                     s = s + "\n"
                     advance()
-                else if c == "t":
+                }
+                else if c == "t" {
                     s = s + "\t"
                     advance()
-                else if c == "r":
+                }
+                else if c == "r" {
                     s = s + "\r"
                     advance()
-                else if c == "\\":
+                }
+                else if c == "\\" {
                     s = s + "\\"
                     advance()
-                else if c == "`":
+                }
+                else if c == "`" {
                     s = s + "`"
                     advance()
-                else:
+                }
+                else {
                     s = s + "\\" + c
                     advance()
-            else if current() == "{" and isTriple:
+                }
+            }
+            else if current() == "{" and isTriple {
                 isInterpolated = true
                 s = s + "{"
                 advance()
-            else if current() == "$" and isTriple:
+            }
+            else if current() == "$" and isTriple {
                 isInterpolated = true
                 s = s + "$"
                 advance()
-            else:
+            }
+            else {
                 s = s + current()
                 advance()
 
-        if isInterpolated:
+            }
+        }
+        if isInterpolated {
             addToken("InterpolatedBacktick", s)
-        else:
+        }
+        else {
             addToken("Backtick", s)
 
-    fn scanNumber():
+        }
+    }
+    fn scanNumber() {
         s = ""
 
-        if current() == "0":
+        if current() == "0" {
             next = peek(1)
-            if next == "x" or next == "X":
+            if next == "x" or next == "X" {
                 s = s + advance()
                 s = s + advance()
-                if isHexDigit(current()):
-                    while isHexDigit(current()):
+                if isHexDigit(current()) {
+                    while isHexDigit(current()) {
                         s = s + current()
                         advance()
-                else:
+                    }
+                }
+                else {
                     error("Invalid hex literal")
+                }
                 addToken("Number", s)
                 return
-            else if next == "o" or next == "O":
+            }
+            else if next == "o" or next == "O" {
                 s = s + advance()
                 s = s + advance()
-                if isOctDigit(current()):
-                    while isOctDigit(current()):
+                if isOctDigit(current()) {
+                    while isOctDigit(current()) {
                         s = s + current()
                         advance()
-                else:
+                    }
+                }
+                else {
                     error("Invalid octal literal")
+                }
                 addToken("Number", s)
                 return
-            else if next == "b" or next == "B":
+            }
+            else if next == "b" or next == "B" {
                 s = s + advance()
                 s = s + advance()
-                if isBinDigit(current()):
-                    while isBinDigit(current()):
+                if isBinDigit(current()) {
+                    while isBinDigit(current()) {
                         s = s + current()
                         advance()
-                else:
+                    }
+                }
+                else {
                     error("Invalid binary literal")
+                }
                 addToken("Number", s)
                 return
 
-        while isDigit(current()):
+            }
+        }
+        while isDigit(current()) {
             s = s + current()
             advance()
-            if current() == "_" and isDigit(peek(1)):
+            if current() == "_" and isDigit(peek(1)) {
                 advance()
 
-        if current() == "." and isDigit(peek(1)):
+            }
+        }
+        if current() == "." and isDigit(peek(1)) {
             s = s + "."
             advance()
-            while isDigit(current()):
+            while isDigit(current()) {
                 s = s + current()
                 advance()
-                if current() == "_" and isDigit(peek(1)):
+                if current() == "_" and isDigit(peek(1)) {
                     advance()
 
+                }
+            }
+        }
         addToken("Number", s)
 
-    fn scanIdentifier():
+    }
+    fn scanIdentifier() {
         s = ""
-        while current() != null and isAlphaNum(current()):
+        while current() != null and isAlphaNum(current()) {
             s = s + current()
             advance()
 
-        if keywords.has(s):
+        }
+        if keywords.has(s) {
             addToken(keywords[s], s)
-        else:
+        }
+        else {
             addToken("Identifier", s)
 
-    fn scanRegexLiteral():
+        }
+    }
+    fn scanRegexLiteral() {
         advance()
         s = ""
-        while pos < src.len and current() != "/":
-            if current() == "\\":
+        while pos < src.len and current() != "/" {
+            if current() == "\\" {
                 s = s + current()
                 advance()
-                if current() != null:
+                if current() != null {
                     s = s + current()
                     advance()
-            else:
+                }
+            }
+            else {
                 s = s + current()
                 advance()
 
-        if current() == "/":
+            }
+        }
+        if current() == "/" {
             advance()
-            while current() != null and isAlpha(current()):
+            while current() != null and isAlpha(current()) {
                 s = s + current()
                 advance()
 
+            }
+        }
         addToken("RegexLiteral", s)
 
-    fn scanHotkey():
+    }
+    fn scanHotkey() {
         s = ""
-        while current() != null:
+        while current() != null {
             c = current()
-            if c == "\r" or c == "\n" or c == "{" or c == "(":
+            if c == "\r" or c == "\n" or c == "{" or c == "(" {
                 break
-            if c == "=" and peek(1) == ">":
+            }
+            if c == "=" and peek(1) == ">" {
                 break
+            }
             s = s + c
             advance()
 
-        if s.len > 0:
+        }
+        if s.len > 0 {
             addToken("Hotkey", s)
 
-    fn lastTokenType():
+        }
+    }
+    fn lastTokenType() {
         if tokens.len > 0: tokens[tokens.len - 1].type
         else: "NewLine"
 
-    fn afterExpression():
+    }
+    fn afterExpression() {
         exprTokens.has(lastTokenType())
 
-    fn _scan():
-        while pos < src.len:
+    }
+    fn _scan() {
+        while pos < src.len {
             skipWhitespace()
-            if pos >= src.len:
+            if pos >= src.len {
                 break
 
+            }
             c = current()
 
-            if c == "\n":
+            if c == "\n" {
                 addToken("NewLine", "\n")
                 advance()
                 continue
 
-            if c == "/" and peek(1) == "/":
-                if peek(2) == "*":
+            }
+            if c == "/" and peek(1) == "/" {
+                if peek(2) == "*" {
                     skipBlockComment()
-                else:
+                }
+                else {
                     skipLineComment()
+                }
                 continue
 
-            if c == "/" and peek(1) == "*":
+            }
+            if c == "/" and peek(1) == "*" {
                 skipBlockComment()
                 continue
 
-            if (c == "r" or c == "R") and (peek(1) == "\"" or peek(1) == "'"):
+            }
+            if (c == "r" or c == "R") and (peek(1) == "\"" or peek(1) == "'") {
                 advance()
                 quote = current()
                 scanString(quote, false, true)
                 continue
 
-            if (c == "f" or c == "F") and (peek(1) == "\"" or peek(1) == "'"):
-                if peek(2) == peek(1):
+            }
+            if (c == "f" or c == "F") and (peek(1) == "\"" or peek(1) == "'") {
+                if peek(2) == peek(1) {
                     advance()
                     scanMultilineString(peek(0), true)
                     continue
+                }
                 advance()
                 quote = current()
                 scanString(quote, true, false)
                 continue
 
-            if (c == "\"" or c == "'") and peek(1) == c and peek(2) == c:
+            }
+            if (c == "\"" or c == "'") and peek(1) == c and peek(2) == c {
                 scanMultilineString(c, false)
                 continue
 
-            if c == "\"" or c == "'":
+            }
+            if c == "\"" or c == "'" {
                 scanString(c, false, false)
                 continue
 
-            if c == "`":
+            }
+            if c == "`" {
                 scanBacktick()
                 continue
 
-            if isDigit(c):
+            }
+            if isDigit(c) {
                 scanNumber()
                 continue
 
-            if isAlpha(c):
+            }
+            if isAlpha(c) {
                 scanIdentifier()
                 continue
 
-            if c == "$":
+            }
+            if c == "$" {
                 advance()
-                if current() == "!":
+                if current() == "!" {
                     advance()
                     addToken("ShellCommandCapture", "$!")
-                else:
+                }
+                else {
                     addToken("ShellCommand", "$")
+                }
                 continue
 
-            if c == ":" and peek(1) == ":":
+            }
+            if c == ":" and peek(1) == ":" {
                 advance()
                 advance()
                 addToken("ColonColon", "::")
                 continue
 
-            if c == ":":
+            }
+            if c == ":" {
                 advance()
                 addToken("Colon", ":")
                 continue
 
-            if c == "." and peek(1) == "." and peek(2) == ".":
+            }
+            if c == "." and peek(1) == "." and peek(2) == "." {
                 advance()
                 advance()
                 advance()
                 addToken("Spread", "...")
                 continue
 
-            if c == "." and peek(1) == "." and peek(2) == "=":
+            }
+            if c == "." and peek(1) == "." and peek(2) == "=" {
                 advance()
                 advance()
                 advance()
                 addToken("DotDotEquals", "..=")
                 continue
 
-            if c == "." and peek(1) == ".":
+            }
+            if c == "." and peek(1) == "." {
                 advance()
                 advance()
                 addToken("DotDot", "..")
                 continue
 
-            if c == ".":
+            }
+            if c == "." {
                 advance()
                 addToken("Dot", ".")
                 continue
 
-            if c == "=" and peek(1) == ">":
+            }
+            if c == "=" and peek(1) == ">" {
                 advance()
                 advance()
                 addToken("Arrow", "=>")
                 continue
 
-            if c == "=" and peek(1) == "=":
+            }
+            if c == "=" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("Equals", "==")
                 continue
 
-            if c == "=":
+            }
+            if c == "=" {
                 advance()
                 addToken("Assign", "=")
                 continue
 
-            if c == "!" and peek(1) == "=":
+            }
+            if c == "!" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("NotEquals", "!=")
                 continue
 
-            if c == "!" and peek(1) == "{":
+            }
+            if c == "!" and peek(1) == "{" {
                 advance()
                 advance()
                 addToken("BangOpenBrace", "!{")
                 continue
 
-            if c == "!":
-                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z"):
+            }
+            if c == "!" {
+                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z") {
                     advance()
                     addToken("Not", "!")
-                else:
+                }
+                else {
                     advance()
                     s = "!"
-                    while current() != null and current() != "\n" and current() != "{" and current() != "(":
-                        if current() == "=" and peek(1) == ">":
+                    while current() != null and current() != "\n" and current() != "{" and current() != "(" {
+                        if current() == "=" and peek(1) == ">" {
                             break
+                        }
                         s = s + current()
                         advance()
-                    if s == "!":
+                    }
+                    if s == "!" {
                         addToken("Not", "!")
-                    else:
+                    }
+                    else {
                         addToken("Hotkey", s)
+                    }
+                }
                 continue
 
-            if c == "<" and peek(1) == "=":
+            }
+            if c == "<" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("LessEquals", "<=")
                 continue
 
-            if c == "<" and peek(1) == "-":
+            }
+            if c == "<" and peek(1) == "-" {
                 advance()
                 advance()
                 addToken("LeftArrow", "<-")
                 continue
 
-            if c == "<" and peek(1) == "<" and peek(2) == "=":
+            }
+            if c == "<" and peek(1) == "<" and peek(2) == "=" {
                 advance()
                 advance()
                 advance()
                 addToken("ShiftLeftAssign", "<<=")
                 continue
 
-            if c == "<" and peek(1) == "<":
+            }
+            if c == "<" and peek(1) == "<" {
                 advance()
                 advance()
                 addToken("ShiftLeft", "<<")
                 continue
 
-            if c == "<":
+            }
+            if c == "<" {
                 advance()
                 addToken("Less", "<")
                 continue
 
-            if c == ">" and peek(1) == "=":
+            }
+            if c == ">" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("GreaterEquals", ">=")
                 continue
 
-            if c == ">" and peek(1) == ">" and peek(2) == "=":
+            }
+            if c == ">" and peek(1) == ">" and peek(2) == "=" {
                 advance()
                 advance()
                 advance()
                 addToken("ShiftRightAssign", ">>=")
                 continue
 
-            if c == ">" and peek(1) == ">":
+            }
+            if c == ">" and peek(1) == ">" {
                 advance()
                 advance()
                 addToken("ShiftRight", ">>")
                 continue
 
-            if c == ">":
+            }
+            if c == ">" {
                 advance()
                 addToken("Greater", ">")
                 continue
 
-            if c == "-" and peek(1) == ">":
+            }
+            if c == "-" and peek(1) == ">" {
                 advance()
                 advance()
                 addToken("ReturnType", "->")
                 continue
 
-            if c == "-" and peek(1) == "=":
+            }
+            if c == "-" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("MinusAssign", "-=")
                 continue
 
-            if c == "-" and peek(1) == "-":
+            }
+            if c == "-" and peek(1) == "-" {
                 advance()
                 advance()
                 addToken("MinusMinus", "--")
                 continue
 
-            if c == "-":
+            }
+            if c == "-" {
                 advance()
                 addToken("Minus", "-")
                 continue
 
-            if c == "+" and peek(1) == "+":
+            }
+            if c == "+" and peek(1) == "+" {
                 advance()
                 advance()
                 addToken("PlusPlus", "++")
                 continue
 
-            if c == "+" and peek(1) == "=":
+            }
+            if c == "+" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("PlusAssign", "+=")
                 continue
 
-            if c == "+":
+            }
+            if c == "+" {
                 advance()
                 addToken("Plus", "+")
                 continue
 
-            if c == "*" and peek(1) == "*" and peek(2) == "=":
+            }
+            if c == "*" and peek(1) == "*" and peek(2) == "=" {
                 advance()
                 advance()
                 advance()
                 addToken("PowerAssign", "**=")
                 continue
 
-            if c == "*" and peek(1) == "*":
+            }
+            if c == "*" and peek(1) == "*" {
                 advance()
                 advance()
                 addToken("Power", "**")
                 continue
 
-            if c == "*" and peek(1) == "=":
+            }
+            if c == "*" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("MultiplyAssign", "*=")
                 continue
 
-            if c == "*":
+            }
+            if c == "*" {
                 advance()
                 addToken("Multiply", "*")
                 continue
 
-            if c == "/":
-                if peek(1) == "=":
+            }
+            if c == "/" {
+                if peek(1) == "=" {
                     advance()
                     advance()
                     addToken("DivideAssign", "/=")
                     continue
-                if !afterExpression():
+                }
+                if !afterExpression() {
                     scanRegexLiteral()
                     continue
+                }
                 advance()
                 addToken("Divide", "/")
                 continue
 
-            if c == "%" and peek(1) == "%" and peek(2) == "=":
+            }
+            if c == "%" and peek(1) == "%" and peek(2) == "=" {
                 advance()
                 advance()
                 advance()
                 addToken("DoubleModuloAssign", "%%=")
                 continue
 
-            if c == "%" and peek(1) == "%":
+            }
+            if c == "%" and peek(1) == "%" {
                 advance()
                 advance()
                 addToken("DoubleModulo", "%%")
                 continue
 
-            if c == "%" and peek(1) == "=":
+            }
+            if c == "%" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("ModuloAssign", "%=")
                 continue
 
-            if c == "%":
+            }
+            if c == "%" {
                 advance()
                 addToken("Modulo", "%")
                 continue
 
-            if c == "\\" and peek(1) == "\\" and peek(2) == "=":
+            }
+            if c == "\\" and peek(1) == "\\" and peek(2) == "=" {
                 advance()
                 advance()
                 advance()
                 addToken("BackslashAssign", "\\=")
                 continue
 
-            if c == "\\" and peek(1) == "\\":
+            }
+            if c == "\\" and peek(1) == "\\" {
                 advance()
                 advance()
                 addToken("DoubleBackslash", "\\\\")
                 continue
 
-            if c == "\\" and peek(1) == "=":
+            }
+            if c == "\\" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("BackslashAssign", "\\=")
                 continue
 
-            if c == "\\":
+            }
+            if c == "\\" {
                 advance()
                 addToken("Backslash", "\\")
                 continue
 
-            if c == "?" and peek(1) == "?":
+            }
+            if c == "?" and peek(1) == "?" {
                 advance()
                 advance()
                 addToken("Nullish", "??")
                 continue
 
-            if c == "?" and peek(1) == ".":
+            }
+            if c == "?" and peek(1) == "." {
                 advance()
                 advance()
                 addToken("QuestionDot", "?.")
                 continue
 
-            if c == "?":
+            }
+            if c == "?" {
                 advance()
                 addToken("Question", "?")
                 continue
 
-            if c == "&" and peek(1) == "&":
+            }
+            if c == "&" and peek(1) == "&" {
                 advance()
                 advance()
                 addToken("And", "&&")
                 continue
 
-            if c == "&" and peek(1) == "=":
+            }
+            if c == "&" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("BitwiseAndAssign", "&=")
                 continue
 
-            if c == "&":
-                if inBitwiseExpr:
+            }
+            if c == "&" {
+                if inBitwiseExpr {
                     advance()
                     addToken("BitwiseAnd", "&")
-                else if afterExpression():
+                }
+                else if afterExpression() {
                     advance()
                     addToken("BitwiseAnd", "&")
-                else:
+                }
+                else {
                     s = "&"
                     advance()
-                    while current() != null and current() != "\n" and current() != "{":
-                        if current() == "=" and peek(1) == ">":
+                    while current() != null and current() != "\n" and current() != "{" {
+                        if current() == "=" and peek(1) == ">" {
                             break
+                        }
                         s = s + current()
                         advance()
+                    }
                     addToken("Hotkey", s)
+                }
                 continue
 
-            if c == "|" and peek(1) == "|":
+            }
+            if c == "|" and peek(1) == "|" {
                 advance()
                 advance()
                 addToken("Or", "||")
                 continue
 
-            if c == "|" and peek(1) == "=":
+            }
+            if c == "|" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("BitwiseOrAssign", "|=")
                 continue
 
-            if c == "|" and peek(1) == ">":
+            }
+            if c == "|" and peek(1) == ">" {
                 advance()
                 advance()
                 addToken("PipeRight", "|>")
                 continue
 
-            if c == "|":
-                if inBitwiseExpr:
+            }
+            if c == "|" {
+                if inBitwiseExpr {
                     advance()
                     addToken("BitwiseOr", "|")
-                else if afterExpression():
+                }
+                else if afterExpression() {
                     advance()
                     addToken("BitwiseOr", "|")
-                else:
+                }
+                else {
                     advance()
                     addToken("Pipe", "|")
+                }
                 continue
 
-            if c == "^" and peek(1) == "=":
+            }
+            if c == "^" and peek(1) == "=" {
                 advance()
                 advance()
                 addToken("BitwiseXorAssign", "^=")
                 continue
 
-            if c == "^":
-                if inBitwiseExpr:
+            }
+            if c == "^" {
+                if inBitwiseExpr {
                     advance()
                     addToken("BitwiseXor", "^")
-                else if afterExpression():
+                }
+                else if afterExpression() {
                     advance()
                     addToken("BitwiseXor", "^")
-                else:
+                }
+                else {
                     s = "^"
                     advance()
-                    while current() != null and current() != "\n" and current() != "{":
-                        if current() == "=" and peek(1) == ">":
+                    while current() != null and current() != "\n" and current() != "{" {
+                        if current() == "=" and peek(1) == ">" {
                             break
+                        }
                         s = s + current()
                         advance()
+                    }
                     addToken("Hotkey", s)
+                }
                 continue
 
-            if c == "(" and peek(1) == "(":
-                if !afterExpression():
+            }
+            if c == "(" and peek(1) == "(" {
+                if !afterExpression() {
                     advance()
                     advance()
                     inBitwiseExpr = true
@@ -1102,139 +1319,179 @@ fn Lexer(source):
                     addToken("DoubleOpenParen", "((")
                     continue
 
-            if c == "(":
+                }
+            }
+            if c == "(" {
                 advance()
                 parenDepth = parenDepth + 1
                 addToken("OpenParen", "(")
                 continue
 
-            if c == ")" and peek(1) == ")" and inBitwiseExpr:
+            }
+            if c == ")" and peek(1) == ")" and inBitwiseExpr {
                 advance()
                 advance()
                 inBitwiseExpr = false
                 addToken("DoubleCloseParen", "))")
                 continue
 
-            if c == ")":
+            }
+            if c == ")" {
                 advance()
-                if parenDepth > 0:
+                if parenDepth > 0 {
                     parenDepth = parenDepth - 1
+                }
                 addToken("CloseParen", ")")
                 continue
 
-            if c == "[":
+            }
+            if c == "[" {
                 advance()
                 addToken("OpenBracket", "[")
                 continue
 
-            if c == "]":
+            }
+            if c == "]" {
                 advance()
                 addToken("CloseBracket", "]")
                 continue
 
-            if c == "{":
+            }
+            if c == "{" {
                 advance()
                 addToken("OpenBrace", "{")
                 continue
 
-            if c == "}":
+            }
+            if c == "}" {
                 advance()
                 addToken("CloseBrace", "}")
                 continue
 
-            if c == ",":
+            }
+            if c == "," {
                 advance()
                 addToken("Comma", ",")
                 continue
 
-            if c == ";":
+            }
+            if c == ";" {
                 advance()
                 addToken("Semicolon", ";")
                 continue
 
-            if c == "@" and peek(1) == "-" and peek(2) == ">":
+            }
+            if c == "@" and peek(1) == "-" and peek(2) == ">" {
                 advance()
                 advance()
                 advance()
                 addToken("SuperArrow", "@->")
                 continue
 
-            if c == "@" and peek(1) == "@":
+            }
+            if c == "@" and peek(1) == "@" {
                 advance()
                 advance()
                 addToken("AtAt", "@@")
                 continue
 
-            if c == "@":
-                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z"):
+            }
+            if c == "@" {
+                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z") {
                     advance()
                     addToken("At", "@")
-                else:
+                }
+                else {
                     advance()
                     s = "@"
-                    while current() != null and isAlphaNum(current()):
+                    while current() != null and isAlphaNum(current()) {
                         s = s + current()
                         advance()
-                    if current() == "=" and peek(1) == ">":
+                    }
+                    if current() == "=" and peek(1) == ">" {
                         addToken("Hotkey", s)
-                    else if current() == "&" or current() == ":":
+                    }
+                    else if current() == "&" or current() == ":" {
                         addToken("Hotkey", s)
-                    else:
+                    }
+                    else {
                         addToken("At", "@")
+                    }
+                }
                 continue
 
-            if c == "#":
-                if afterExpression():
+            }
+            if c == "#" {
+                if afterExpression() {
                     advance()
                     addToken("Length", "#")
-                else:
+                }
+                else {
                     advance()
                     s = "#"
-                    while current() != null and current() != "\n" and current() != "{":
-                        if current() == "=" and peek(1) == ">":
+                    while current() != null and current() != "\n" and current() != "{" {
+                        if current() == "=" and peek(1) == ">" {
                             break
+                        }
                         s = s + current()
                         advance()
-                    if s == "#":
+                    }
+                    if s == "#" {
                         addToken("Length", "#")
-                    else:
+                    }
+                    else {
                         addToken("Hotkey", s)
+                    }
+                }
                 continue
 
-            if c == "~":
+            }
+            if c == "~" {
                 advance()
                 addToken("Tilde", "~")
                 continue
 
-            if c == "_":
-                if !isAlphaNum(peek(1)):
+            }
+            if c == "_" {
+                if !isAlphaNum(peek(1)) {
                     advance()
                     addToken("Underscore", "_")
                     continue
+                }
                 scanIdentifier()
                 continue
 
+            }
             advance()
 
+        }
         addToken("EOF", "")
         {tokens: tokens, errors: errors}
 
+    }
     {run: _scan}
 
-fn tokenize(source):
+}
+fn tokenize(source) {
     lx = Lexer(source)
     result = lx.run()
     result.tokens
 
-fn tokenizeWithErrors(source):
+}
+fn tokenizeWithErrors(source) {
     lx = Lexer(source)
     result = lx.run()
     {tokens: result.tokens, errors: result.errors}
 
-fn printTokens(tokens):
-    for t in tokens:
+}
+fn printTokens(tokens) {
+    for t in tokens {
         typeStr = t.type
         valStr = t.value
-        if valStr.len > 40:
+        if valStr.len > 40 {
             valStr = valStr.sub(0, 37) + "..."
+        }
         print(typeStr + " " + valStr)
+
+    }
+}

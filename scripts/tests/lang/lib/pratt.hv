@@ -316,9 +316,6 @@ fn Parser(tokenList):
     allowBraceSugar = true
     _dbg_s = null
     _dbg_cnt = 0
-    _dbg_cur = null
-    _dbg_cur_val = null
-    _dbg_while_pre_block = null
 
     // --- Token access ---
     fn at(offset):
@@ -395,14 +392,11 @@ fn Parser(tokenList):
         tok = advance()
 
         left = nud(tok)
-        print("DBG nud left=" + str(left))
 
         if left == null:
-            print("DBG parseExpr left null")
             return error("Unexpected token " + tok.type, startToken.line, startToken.col)
 
         if left.kind == "ErrorNode":
-            print("DBG parseExpr error node")
             return left
 
         iterations = 0
@@ -422,8 +416,8 @@ fn Parser(tokenList):
             if curType == "Arrow" and inMatchExpr:
                 break
 
-        if bp == BP_NONE or rbp >= bp:
-            break
+            if bp == BP_NONE or rbp >= bp:
+                break
 
             opToken = advance()
             left = led(opToken, left)
@@ -453,7 +447,6 @@ fn Parser(tokenList):
 
             left = CallExpression(left, args, startToken.line, startToken.col)
 
-        print("DBG parseExpr returning left=" + str(left))
         left
 
     // ===================================================================
@@ -1309,27 +1302,25 @@ fn Parser(tokenList):
             // Look ahead for comma
             setLook = lookahead + 1
             while setLook < tokens.len and at(setLook).type != "Comma" and at(setLook).type != "Semicolon" and at(setLook).type != "CloseBrace" and at(setLook).type != "NewLine":
-                    setLook = setLook + 1
+                setLook = setLook + 1
 
-                if at(setLook).type == "Comma":
-                    // Parse as set literal
-                    advance() // consume {
-                    elements = []
+            if at(setLook).type == "Comma":
+                // Parse as set literal
+                advance()
+                elements = []
+                skipNewlines()
+                while current().type != "CloseBrace" and notEOF():
                     skipNewlines()
-                    while current().type != "CloseBrace" and notEOF():
+                    if current().type == "CloseBrace": break
+                    elements.push(parseExpr(0))
+                    skipNewlines()
+                    if current().type == "Comma": advance()
+                    else if current().type != "CloseBrace":
                         skipNewlines()
-                        if current().type == "CloseBrace": break
-                        elements.push(parseExpr(0))
-                        skipNewlines()
-                        if current().type == "Comma": advance()
-                        else if current().type != "CloseBrace":
-                            // Allow newline-separated
-                            skipNewlines()
-                    expect("CloseBrace")
-                    // Represent set as ArrayLiteral with isSet flag
-                    node = ArrayLiteral(elements, l, c)
-                    node.isSet = true
-                    return node
+                expect("CloseBrace")
+                node = ArrayLiteral(elements, l, c)
+                node.isSet = true
+                return node
 
         // Default to object literal
         parseObjectLiteral(false)
@@ -1409,7 +1400,6 @@ fn Parser(tokenList):
         if current().type == "OpenBrace":
             advance()
             skipNewlines()
-            print("DBG openbrace cur=" + str(current().type))
             stmts = []
             while current().type != "CloseBrace" and notEOF():
                 skipNewlines()
@@ -1606,7 +1596,6 @@ fn Parser(tokenList):
     // STATEMENT: while
     // ===================================================================
     fn parseWhileStatement():
-        _dbg_while_pre_block = "ENTERED"
         l = current().line
         c = current().col
         advance() // consume 'while'
@@ -1620,10 +1609,8 @@ fn Parser(tokenList):
         skipNewlines()
 
         if current().type == "OpenBrace" or current().type == "Colon":
-            _dbg_while_pre_block = current().type
             body = parseBlock()
         else
-            _dbg_while_pre_block = "else:" + str(current().type)
             body = parseStatement()
             if body == null: body = BlockStatement([], l, c)
 
@@ -2289,9 +2276,6 @@ fn Parser(tokenList):
     tokens: tokens,
     _dbg_s: _dbg_s,
     _dbg_cnt: _dbg_cnt,
-    _dbg_cur: _dbg_cur,
-    _dbg_cur_val: _dbg_cur_val,
-    _dbg_while_pre_block: _dbg_while_pre_block,
     }
 
 // ===================================================================

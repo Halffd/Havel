@@ -1,0 +1,4 @@
+use { parse } from "pratt"
+
+r = parse("1 + 2")
+print("r = " + str(r))

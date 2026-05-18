@@ -192,6 +192,19 @@ fn emitExpr(emitter, node):
                 emitExpr(emitter, field.value)
         bc.emit("OBJECT_NEW", #node.fields)
         return
+    if k == "InterpolatedStringExpression":
+        sid = bc.add_chunk_string("")
+        bc.emit("LOAD_CONST", bc.str_id(sid))
+        for seg in node.segments:
+            if seg.isString:
+                strId = bc.add_chunk_string(seg.stringValue)
+                bc.emit("LOAD_CONST", bc.str_id(strId))
+                bc.emit("STRING_CONCAT")
+            else:
+                emitExpr(emitter, seg.expression)
+                bc.emit("TO_STRING")
+                bc.emit("STRING_CONCAT")
+        return
     emitError(emitter, "unsupported expr: " + k, node.line, node.col)
 
 fn emitStmt(emitter, node):
@@ -290,6 +303,86 @@ fn emitStmt(emitter, node):
             bc.emit("PUSH_NULL")
             bc.emit("RETURN")
         return
+    if k == "ClassDeclaration":
+        strId = bc.add_chunk_string("class.define")
+        bc.emit("LOAD_GLOBAL", bc.str_id(strId))
+        sid = bc.add_chunk_string(node.name)
+        bc.emit("LOAD_CONST", bc.str_id(sid))
+        bc.emit("ARRAY_NEW")
+        for f in node.definition.fields:
+            if !f.isClassField:
+                fid = bc.add_chunk_string(f.name)
+                bc.emit("LOAD_CONST", bc.str_id(fid))
+                bc.emit("ARRAY_PUSH")
+        if node.parentName != null && node.parentName != "":
+            pid = bc.add_chunk_string(node.parentName)
+            bc.emit("LOAD_GLOBAL", bc.str_id(pid))
+        else:
+            bc.emit("PUSH_NULL")
+        bc.emit("ARRAY_NEW")
+        for f in node.definition.fields:
+            if f.isClassField:
+                fid = bc.add_chunk_string(f.name)
+                bc.emit("LOAD_CONST", bc.str_id(fid))
+                bc.emit("ARRAY_PUSH")
+        bc.emit("CALL", 4)
+        nid = bc.add_chunk_string(node.name)
+        bc.emit("STORE_GLOBAL", bc.str_id(nid))
+        for f in node.definition.fields:
+            if f.isClassField && f.defaultValue != null:
+                sid2 = bc.add_chunk_string(node.name)
+                bc.emit("LOAD_GLOBAL", bc.str_id(sid2))
+                emitExpr(emitter, f.defaultValue)
+                fid = bc.add_chunk_string(f.name)
+                bc.emit("LOAD_CONST", bc.str_id(fid))
+                bc.emit("OBJECT_SET")
+                bc.emit("POP")
+        for m in node.definition.methods:
+            if m != null:
+                regId = bc.add_chunk_string("class.method")
+                bc.emit("LOAD_GLOBAL", bc.str_id(regId))
+                cid = bc.add_chunk_string(node.name)
+                bc.emit("LOAD_GLOBAL", bc.str_id(cid))
+                mid = bc.add_chunk_string(m.name)
+                bc.emit("LOAD_CONST", bc.str_id(mid))
+                funcIdx = emitter.func_map[node.name + "." + m.name]
+                bc.emit("CLOSURE", funcIdx)
+                bc.emit("CALL", 3)
+                bc.emit("POP")
+        return
+    if k == "StructDeclaration":
+        strId = bc.add_chunk_string("struct.define")
+        bc.emit("LOAD_GLOBAL", bc.str_id(strId))
+        sid = bc.add_chunk_string(node.name)
+        bc.emit("LOAD_CONST", bc.str_id(sid))
+        bc.emit("ARRAY_NEW")
+        for f in node.definition.fields:
+            fid = bc.add_chunk_string(f.name)
+            bc.emit("LOAD_CONST", bc.str_id(fid))
+            bc.emit("ARRAY_PUSH")
+        bc.emit("ARRAY_NEW")
+        for f in node.definition.fields:
+            if f.defaultValue != null:
+                emitExpr(emitter, f.defaultValue)
+            else:
+                bc.emit("PUSH_NULL")
+            bc.emit("ARRAY_PUSH")
+        bc.emit("CALL", 3)
+        nid = bc.add_chunk_string(node.name)
+        bc.emit("STORE_GLOBAL", bc.str_id(nid))
+        for m in node.definition.methods:
+            if m != null:
+                regId = bc.add_chunk_string("class.method")
+                bc.emit("LOAD_GLOBAL", bc.str_id(regId))
+                cid = bc.add_chunk_string(node.name)
+                bc.emit("LOAD_GLOBAL", bc.str_id(cid))
+                mid = bc.add_chunk_string(m.name)
+                bc.emit("LOAD_CONST", bc.str_id(mid))
+                funcIdx = emitter.func_map[node.name + "." + m.name]
+                bc.emit("CLOSURE", funcIdx)
+                bc.emit("CALL", 3)
+                bc.emit("POP")
+        return
     emitError(emitter, "unsupported stmt: " + k, node.line, node.col)
 
 fn emitBlock(emitter, node):
@@ -343,13 +436,22 @@ fn compileProgram(emitter, program):
     for stmt in body:
         if stmt.kind == "FnDeclaration":
             funcDecls.push(stmt)
+        else if stmt.kind == "ClassDeclaration" || stmt.kind == "StructDeclaration":
+            for m in stmt.definition.methods:
+                if m != null:
+                    m.uniqueName = stmt.name + "." + m.name
+                    funcDecls.push(m)
+            topStmts.push(stmt)
         else:
             topStmts.push(stmt)
     for i in 0..(#funcDecls - 1):
         decl = funcDecls[i]
         funcIdx = emitter.func_idx
         emitter.func_idx = funcIdx + 1
-        emitter.func_map[decl.name] = funcIdx
+        nameToUse = decl.name
+        if decl.uniqueName != null:
+            nameToUse = decl.uniqueName
+        emitter.func_map[nameToUse] = funcIdx
         oldScope = emitter.scope
         emitter.scope = Scope(null)
         params = decl.params
@@ -368,8 +470,9 @@ fn compileProgram(emitter, program):
     emitter.scope = Scope(null)
     for i in 0..(#funcDecls - 1):
         decl = funcDecls[i]
-        bc.emit("CLOSURE", emitter.func_map[decl.name])
-        bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+        if decl.uniqueName == null:
+            bc.emit("CLOSURE", emitter.func_map[decl.name])
+            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
     lastIdx = #topStmts - 1
     for i in 0..(#topStmts - 1):
         if i != lastIdx:

@@ -45,6 +45,10 @@ struct VMApi {
         return vm().toString(value);
     }
 
+    const std::string* getStringPtr(const Value &value) const {
+        return vm().getStringPtr(value);
+    }
+
     std::string resolveString(const Value &value) const {
         return vm().resolveStringKey(value);
     }

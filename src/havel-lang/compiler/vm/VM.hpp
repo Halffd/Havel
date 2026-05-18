@@ -590,6 +590,7 @@ public:
   Value call(const Value &callee_value,
              const std::vector<Value> &args = {});
   std::string toString(const Value &value);
+  const std::string* getStringPtr(const Value &value) const;
   bool toBoolPublic(const Value &value);
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,

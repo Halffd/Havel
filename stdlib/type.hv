@@ -39,3 +39,22 @@ fn isRange(x) {
 fn isEnum(x) {
     type(x) == "enum"
 }
+
+fn toString(x) {
+    if isNull(x) { return nil }
+    str(x)
+}
+
+fn toNumber(x) {
+    if isNull(x) { return 0 }
+    if isBoolean(x) { if x { return 1 } else { return 0 } }
+    if isNumber(x) { return x }
+    if isString(x) {
+        val f = num(x)
+        if f != 0.0 { return f }
+        val parsed = int(x)
+        if parsed != 0 { return parsed }
+        return 0
+    }
+    0
+}

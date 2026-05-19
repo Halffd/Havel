@@ -30,8 +30,10 @@ fn inferBinary(leftType, oper, rightType) {
     bitOps = {"&": true, "|": true, "^": true, "<<": true, ">>": true}
     cmpOps = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "is": true}
     if arithOps[oper] != null {
-        if oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR) { TYPE_STR }
-        else if isNumeric(leftType) && isNumeric(rightType) {
+        strConcat = oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR)
+        bothNum = isNumeric(leftType) && isNumeric(rightType)
+        if strConcat { TYPE_STR }
+        else if bothNum {
             if leftType == TYPE_NUM || rightType == TYPE_NUM { TYPE_NUM }
             else { TYPE_INT }
         }
@@ -51,8 +53,9 @@ fn inferBinary(leftType, oper, rightType) {
 }
 
 fn inferUnary(oper, operandType) {
+    numType = isNumeric(operandType)
     if oper == "-" {
-        if isNumeric(operandType) { operandType }
+        if numType { operandType }
         else { TYPE_UNKNOWN }
     }
     else if oper == "!" || oper == "not" { TYPE_BOOL }

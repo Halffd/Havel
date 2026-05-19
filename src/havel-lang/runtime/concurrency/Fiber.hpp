@@ -26,36 +26,44 @@ using ::havel::core::Value;
  * Unlike traditional stacks where frames are hidden, here we explicitly store
  * each frame so suspension can preserve the entire call chain.
  */
+class BytecodeChunk;
+
 struct CallFrame {
-    // ===== FUNCTION IDENTITY =====
-    uint32_t function_id;      // Which function is executing
-    uint32_t chunk_index;      // Which bytecode chunk (for modules)
-    
-    // ===== EXECUTION CONTEXT =====
-    uint32_t ip;               // Instruction pointer in this function's bytecode
-    uint32_t locals_base;      // Where this frame's locals start in fiber->locals
-    uint32_t arg_count;        // Number of arguments passed to function
-    
-    // ===== CLOSURE CONTEXT =====
-    uint32_t closure_id;       // Closure context (for upvalues)
-    
-    // ===== ERROR HANDLING =====
-    struct TryHandler {
-        uint32_t catch_ip;
-        uint32_t finally_ip;
-        uint32_t finally_return_ip;
-        size_t stack_depth;
-    };
-    std::vector<TryHandler> try_stack;
-    
-    // ===== CONSTRUCTOR =====
-    CallFrame() 
-        : function_id(0), chunk_index(0), ip(0), locals_base(0),
-          arg_count(0), closure_id(0) {}
-    
-    explicit CallFrame(uint32_t func_id, uint32_t chunk_idx = 0, uint32_t local_base = 0)
-        : function_id(func_id), chunk_index(chunk_idx), ip(0),
-          locals_base(local_base), arg_count(0), closure_id(0) {}
+  // ===== FUNCTION IDENTITY =====
+  uint32_t function_id; // Which function is executing (index in chunk)
+  uint32_t chunk_index; // Which bytecode chunk (for modules)
+  const BytecodeChunk *chunk_ptr; // Direct chunk pointer for fast resolution
+
+  // ===== EXECUTION CONTEXT =====
+  uint32_t ip; // Instruction pointer in this function's bytecode
+  uint32_t locals_base; // Where this frame's locals start in fiber->locals
+  uint32_t arg_count; // Number of arguments passed to function
+  size_t stack_depth; // Stack depth at call time
+
+  // ===== CLOSURE CONTEXT =====
+  uint32_t closure_id; // Closure context (for upvalues)
+  bool owns_globals; // Whether this frame pushed a globals scope
+
+  // ===== ERROR HANDLING =====
+  struct TryHandler {
+    uint32_t catch_ip;
+    uint32_t finally_ip;
+    uint32_t finally_return_ip;
+    size_t stack_depth;
+  };
+  std::vector<TryHandler> try_stack;
+
+  // ===== CONSTRUCTOR =====
+  CallFrame()
+      : function_id(0), chunk_index(0), chunk_ptr(nullptr), ip(0),
+        locals_base(0), arg_count(0), stack_depth(0), closure_id(0),
+        owns_globals(false) {}
+
+  explicit CallFrame(uint32_t func_id, const BytecodeChunk *chunk = nullptr,
+                     uint32_t local_base = 0)
+      : function_id(func_id), chunk_index(0), chunk_ptr(chunk), ip(0),
+        locals_base(local_base), arg_count(0), stack_depth(0), closure_id(0),
+owns_globals(false) {}
 };
 
 // ============================================================================
@@ -177,9 +185,9 @@ public:
     
     // ========== BYTECODE POSITION (CRITICAL FOR RESUMPTION) ==========
     // These define where execution resumes after suspension
-    uint32_t current_function_id;
-    uint32_t current_chunk_index;
-    uint32_t ip;               // Instruction pointer in current chunk
+  uint32_t current_function_id;
+  const BytecodeChunk *current_chunk_ptr;
+  uint32_t ip; // Instruction pointer in current chunk
     
     // ========== CALL STACK (TRACKS NESTED FUNCTIONS) ==========
     // Each element is a function call (main = one frame, foo() = two frames, etc)
@@ -217,7 +225,7 @@ public:
     explicit Fiber(uint32_t fiber_id, uint32_t start_function_id, 
                    uint32_t parent_fiber_id = 0, const std::string& fiber_name = "")
         : id(fiber_id), name(fiber_name.empty() ? ("fiber-" + std::to_string(fiber_id)) : fiber_name),
-          current_function_id(start_function_id), current_chunk_index(0), ip(0),
+          current_function_id(start_function_id), current_chunk_ptr(nullptr), ip(0),
           return_value(Value()),
           state(FiberState::CREATED), suspended_reason(SuspensionReason::NONE),
           suspension_context(nullptr), suspension_timestamp(0),
@@ -239,14 +247,15 @@ public:
      * @param function_id Function to call
      * @param arg_count Number of arguments passed
      */
-    void pushCall(uint32_t function_id, uint32_t arg_count) {
-        if (call_stack.size() >= MAX_CALL_FRAMES) {
-            had_error = true;
-            error_message = "Call stack exceeded " + std::to_string(MAX_CALL_FRAMES) + " frames";
-            throw std::runtime_error(error_message);
-        }
-        
-        CallFrame frame(function_id, current_chunk_index, locals.size());
+  void pushCall(uint32_t function_id, uint32_t arg_count,
+                const BytecodeChunk *chunk = nullptr) {
+    if (call_stack.size() >= MAX_CALL_FRAMES) {
+      had_error = true;
+      error_message = "Call stack exceeded " + std::to_string(MAX_CALL_FRAMES) + " frames";
+      throw std::runtime_error(error_message);
+    }
+
+    CallFrame frame(function_id, chunk, locals.size());
         frame.arg_count = arg_count;
         call_stack.push_back(frame);
         
@@ -274,7 +283,7 @@ public:
         if (!call_stack.empty()) {
             const CallFrame& prev = call_stack.back();
             current_function_id = prev.function_id;
-            current_chunk_index = prev.chunk_index;
+            current_chunk_ptr = prev.chunk_ptr;
             ip = prev.ip;  // Resume at where we called from
         }
     }

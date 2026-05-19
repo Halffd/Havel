@@ -1,0 +1,58 @@
+use { inferProgram, getVarType, getReturnType, TYPE_INT, TYPE_NUM, TYPE_STR, TYPE_BOOL, TYPE_UNKNOWN } from "types"
+
+num42 = {kind: "NumberLiteral", value: 42, line: 1, col: 1}
+num3_14 = {kind: "NumberLiteral", value: 3.14, line: 1, col: 1}
+strHello = {kind: "StringLiteral", value: "hello", line: 1, col: 1}
+boolTrue = {kind: "BooleanLiteral", value: true, line: 1, col: 1}
+
+p = 0
+f = 0
+
+fn check(name, actual, expected) {
+    if actual == expected {
+        p = p + 1
+    }
+    else {
+        f = f + 1
+        print("FAIL: " + name + " got=" + str(actual) + " expected=" + str(expected))
+    }
+}
+
+letX = {kind: "LetDeclaration", name: "x", value: num42, line: 1, col: 1}
+letY = {kind: "LetDeclaration", name: "y", value: num3_14, line: 1, col: 1}
+letS = {kind: "LetDeclaration", name: "s", value: strHello, line: 1, col: 1}
+letB = {kind: "LetDeclaration", name: "b", value: boolTrue, line: 1, col: 1}
+
+prog = {kind: "Program", body: [letX, letY, letS, letB], line: 1, col: 1}
+result = inferProgram(prog)
+
+check("x is int", getVarType(result, "x"), TYPE_INT)
+check("y is num", getVarType(result, "y"), TYPE_NUM)
+check("s is str", getVarType(result, "s"), TYPE_STR)
+check("b is bool", getVarType(result, "b"), TYPE_BOOL)
+
+addExpr = {kind: "BinaryExpression", oper: "+", left: num42, right: num42, line: 1, col: 1}
+letSum = {kind: "LetDeclaration", name: "sum", value: addExpr, line: 1, col: 1}
+prog2 = {kind: "Program", body: [letX, letSum], line: 1, col: 1}
+result2 = inferProgram(prog2)
+check("int+int is int", getVarType(result2, "sum"), TYPE_INT)
+
+addFloat = {kind: "BinaryExpression", oper: "+", left: num42, right: num3_14, line: 1, col: 1}
+letFsum = {kind: "LetDeclaration", name: "fsum", value: addFloat, line: 1, col: 1}
+prog3 = {kind: "Program", body: [letX, letY, letFsum], line: 1, col: 1}
+result3 = inferProgram(prog3)
+check("int+num is num", getVarType(result3, "fsum"), TYPE_NUM)
+
+negExpr = {kind: "UnaryExpression", oper: "-", operand: num42, line: 1, col: 1}
+letNeg = {kind: "LetDeclaration", name: "neg", value: negExpr, line: 1, col: 1}
+prog4 = {kind: "Program", body: [letX, letNeg], line: 1, col: 1}
+result4 = inferProgram(prog4)
+check("-int is int", getVarType(result4, "neg"), TYPE_INT)
+
+cmpExpr = {kind: "BinaryExpression", oper: "<", left: num42, right: num3_14, line: 1, col: 1}
+letCmp = {kind: "LetDeclaration", name: "cmp", value: cmpExpr, line: 1, col: 1}
+prog5 = {kind: "Program", body: [letX, letY, letCmp], line: 1, col: 1}
+result5 = inferProgram(prog5)
+check("int<num is bool", getVarType(result5, "cmp"), TYPE_BOOL)
+
+print("$p passed, $f failed")

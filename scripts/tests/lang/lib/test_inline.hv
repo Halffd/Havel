@@ -1,0 +1,32 @@
+use { isNode } from "ast"
+use { inline, countUses } from "optimizer"
+
+num42 = {kind: "NumberLiteral", value: 42, line: 1, col: 1}
+
+retStmt = {kind: "ReturnStatement", value: num42, line: 1, col: 1}
+fnBody = {kind: "BlockStatement", body: [retStmt], line: 1, col: 1}
+fnDecl = {kind: "FnDeclaration", name: "getAnswer", params: [], body: fnBody, line: 1, col: 1}
+
+callExpr = {kind: "CallExpression", callee: {kind: "Identifier", name: "getAnswer", line: 1, col: 1}, args: [], line: 1, col: 1}
+exprStmt = {kind: "ExpressionStatement", expr: callExpr, line: 1, col: 1}
+
+prog = {kind: "Program", body: [fnDecl, exprStmt], line: 1, col: 1}
+
+cnt = countUses(prog.body, "getAnswer")
+print("countUses getAnswer=" + str(cnt))
+
+result = inline(prog)
+secondStmt = result.body[1]
+print("second stmt kind=" + secondStmt.kind)
+if secondStmt.kind == "ExpressionStatement" {
+    print("inlined expr kind=" + secondStmt.expr.kind)
+    if secondStmt.expr.kind == "NumberLiteral" {
+        print("PASS: inlined getAnswer() -> 42")
+    }
+    else {
+        print("FAIL: expected NumberLiteral, got " + secondStmt.expr.kind)
+    }
+}
+else {
+    print("FAIL: unexpected stmt kind")
+}

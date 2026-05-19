@@ -1880,9 +1880,12 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // type() builtin returns type name
-  registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
-    const auto &value = args[0];
-    std::string typeName;
+        registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
+            const auto &value = args[0];
+            fprintf(stderr, "type() debug: isFnObj=%d isClosure=%d isHostFunc=%d isObj=%d isNull=%d isBool=%d isInt=%d isDouble=%d\n",
+                value.isFunctionObjId(), value.isClosureId(), value.isHostFuncId(),
+                value.isObjectId(), value.isNull(), value.isBool(), value.isInt(), value.isDouble());
+            std::string typeName;
     if (value.isNull()) typeName = "null";
     else if (value.isBool()) typeName = "bool";
     else if (value.isInt()) typeName = "int";

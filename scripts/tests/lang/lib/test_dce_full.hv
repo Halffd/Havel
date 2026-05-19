@@ -1,0 +1,40 @@
+use { isNode } from "ast"
+use { deadCodeElim, nullLiteral } from "optimizer"
+
+passes = 0
+fails = 0
+
+fn check(name, actual, expected) {
+    if actual == expected {
+        passes = passes + 1
+        print("PASS: " + name)
+    }
+    else {
+        fails = fails + 1
+        print("FAIL: " + name + " got=" + str(actual) + " expected=" + str(expected))
+    }
+}
+
+falseLit = {kind: "BooleanLiteral", value: false, line: 1, col: 1}
+trueLit = {kind: "BooleanLiteral", value: true, line: 1, col: 1}
+thenBlock = {kind: "BlockStatement", body: [], line: 1, col: 1}
+elseBlock = {kind: "BlockStatement", body: [{kind: "ExpressionStatement", expr: {kind: "NumberLiteral", value: 42, line: 1, col: 1}, line: 1, col: 1}], line: 1, col: 1}
+
+ifFalseElse = {kind: "IfStatement", condition: falseLit, then: thenBlock, line: 1, col: 1}
+ifFalseElse["else"] = elseBlock
+r1 = deadCodeElim(ifFalseElse)
+check("if false w/ else returns else branch", r1.kind, "BlockStatement")
+
+ifFalseNoElse = {kind: "IfStatement", condition: falseLit, then: thenBlock, line: 1, col: 1}
+r2 = deadCodeElim(ifFalseNoElse)
+check("if false w/o else returns null", r2.kind, "NullLiteral")
+
+ifTrue = {kind: "IfStatement", condition: trueLit, then: thenBlock, line: 1, col: 1}
+r3 = deadCodeElim(ifTrue)
+check("if true returns then branch", r3.kind, "BlockStatement")
+
+whileFalse = {kind: "WhileStatement", condition: falseLit, body: thenBlock, line: 1, col: 1}
+r4 = deadCodeElim(whileFalse)
+check("while false returns null", r4.kind, "NullLiteral")
+
+print("\n{passes} passed, {fails} failed")

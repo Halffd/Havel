@@ -5,7 +5,7 @@
 use { Scope, scopeDeclare, scopeResolve, scopeLocalCount } from "scope"
 
 fn Emitter() {
-    {scope: null, func_idx: 0, func_map: {}, func_upcounts: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], current_class: null}
+    {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: []}
 
 }
 fn emitError(msg, line, col) {
@@ -219,23 +219,6 @@ fn emitExpr(emitter, node) {
             return
         }
         if callee.kind == "Identifier" {
-            if emitter.structs[callee.name] != null {
-                for arg in node.args {
-                    emitExpr(emitter, arg)
-                }
-                bc.emit("STRUCT_NEW", bc.str_id(bc.add_chunk_string(callee.name)), argc)
-                return
-            }
-            if emitter.classes[callee.name] != null {
-                bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "class.new")))
-                cnameIdx = bc.add_string(callee.name)
-                bc.emit("LOAD_CONST", cnameIdx)
-                for arg in node.args {
-                    emitExpr(emitter, arg)
-                }
-                bc.emit("CALL", argc + 1)
-                return
-            }
             emitLoadVar(emitter, callee.name)
         }
         else {
@@ -270,32 +253,6 @@ fn emitExpr(emitter, node) {
             emitExpr(emitter, node.value)
             bc.emit("DUP")
             bc.emit("ARRAY_SET")
-        }
-        else if target.kind == "AtExpression" {
-            if emitter.current_class != null {
-                bc.emit("LOAD_VAR", 0)
-            } else {
-                bc.emit("LOAD_GLOBAL", bc.str_id(bc.add_string("this")))
-            }
-            emitExpr(emitter, node.value)
-            bc.emit("DUP")
-            fIdx = bc.add_string(target.field)
-            bc.emit("LOAD_CONST", fIdx)
-            bc.emit("SWAP")
-            bc.emit("OBJECT_SET")
-        }
-        else if target.kind == "AtAtExpression" {
-            if emitter.current_class != null {
-                bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, emitter.current_class)))
-            } else {
-                bc.emit("PUSH_NULL")
-            }
-            emitExpr(emitter, node.value)
-            bc.emit("DUP")
-            fIdx = bc.add_string(target.field)
-            bc.emit("LOAD_CONST", fIdx)
-            bc.emit("SWAP")
-            bc.emit("OBJECT_SET")
         }
         else {
             emitError("unsupported assignment target: " + target.kind, node.line, node.col)
@@ -394,14 +351,8 @@ fn emitExpr(emitter, node) {
         emitter.func_idx = funcIdx + 1
         // Compile the lambda body now
         compileLambda(emitter, funcIdx, node.params, node.body)
-        // Emit CLOSURE instruction (or LOAD_CONST if zero upvalues)
-        upcount = emitter.func_upcounts[funcIdx]
-        if upcount == 0 {
-            bc.emit("LOAD_CONST", bc.add_const(bc.func_id(funcIdx)))
-        }
-        else {
-            bc.emit("CLOSURE", funcIdx)
-        }
+        // Emit CLOSURE instruction
+        bc.emit("CLOSURE", funcIdx)
         return
 
     }
@@ -433,28 +384,6 @@ fn emitExpr(emitter, node) {
         // x |> f  →  f(x)
         // x |> f(1)  →  f(x, 1) — handled by parser desugaring
         emitExpr(emitter, node.right)
-        return
-
-    }
-    if k == "AtExpression" {
-        if emitter.current_class != null {
-            bc.emit("LOAD_VAR", 0)
-        } else {
-            bc.emit("LOAD_GLOBAL", bc.str_id(bc.add_string("this")))
-        }
-        bc.emit("LOAD_CONST", bc.add_string(node.field))
-        bc.emit("OBJECT_GET")
-        return
-
-    }
-    if k == "AtAtExpression" {
-        if emitter.current_class != null {
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, emitter.current_class)))
-        } else {
-            bc.emit("PUSH_NULL")
-        }
-        bc.emit("LOAD_CONST", bc.add_string(node.field))
-        bc.emit("OBJECT_GET")
         return
 
     }
@@ -624,14 +553,8 @@ fn emitStmt(emitter, node) {
         emitter.func_map[node.name] = funcIdx
         // Compile the function body
         compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx)
-        // Emit CLOSURE to create the closure value (or LOAD_CONST if zero upvalues)
-        upcount = emitter.func_upcounts[funcIdx]
-        if upcount == 0 {
-            bc.emit("LOAD_CONST", bc.add_const(bc.func_id(funcIdx)))
-        }
-        else {
-            bc.emit("CLOSURE", funcIdx)
-        }
+        // Emit CLOSURE to create the closure value
+        bc.emit("CLOSURE", funcIdx)
         // Store the closure in the variable
         if localIdx >= 0 {
             bc.emit("STORE_VAR", localIdx)
@@ -718,104 +641,6 @@ fn emitStmt(emitter, node) {
     if k == "SleepStatement" {
         emitExpr(emitter, node.duration)
         bc.emit("SLEEP")
-        return
-
-    }
-    if k == "StructDeclaration" {
-        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "struct.define")))
-        nameIdx = bc.add_string(node.name)
-        bc.emit("LOAD_CONST", nameIdx)
-        bc.emit("ARRAY_NEW")
-        for f in node.fields {
-            fIdx = bc.add_string(f.name)
-            bc.emit("LOAD_CONST", fIdx)
-            bc.emit("ARRAY_PUSH")
-        }
-        bc.emit("ARRAY_NEW")
-        for f in node.fields {
-            if f.defaultValue != null {
-                emitExpr(emitter, f.defaultValue)
-            } else {
-                bc.emit("PUSH_NULL")
-            }
-            bc.emit("ARRAY_PUSH")
-        }
-        bc.emit("CALL", 3)
-        bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        for m in node.methods {
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "struct.method")))
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-            mnameIdx = bc.add_string(m.name)
-            bc.emit("LOAD_CONST", mnameIdx)
-            mname = node.name + "." + m.name
-            funcIdx = emitter.func_map[mname]
-            upcount = emitter.func_upcounts[funcIdx]
-            if upcount == 0 {
-                bc.emit("LOAD_CONST", bc.add_const(bc.func_id(funcIdx)))
-            }
-            else {
-                bc.emit("CLOSURE", funcIdx)
-            }
-            bc.emit("CALL", 3)
-            bc.emit("POP")
-        }
-        return
-
-    }
-    if k == "ClassDeclaration" {
-        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "class.define")))
-        nameIdx = bc.add_string(node.name)
-        bc.emit("LOAD_CONST", nameIdx)
-        bc.emit("ARRAY_NEW")
-        for f in node.fields {
-            if not f.isClassField {
-                fIdx = bc.add_string(f.name)
-                bc.emit("LOAD_CONST", fIdx)
-                bc.emit("ARRAY_PUSH")
-            }
-        }
-        if node.parentName != "" {
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.parentName)))
-        } else {
-            bc.emit("PUSH_NULL")
-        }
-        bc.emit("ARRAY_NEW")
-        for f in node.fields {
-            if f.isClassField {
-                fIdx = bc.add_string(f.name)
-                bc.emit("LOAD_CONST", fIdx)
-                bc.emit("ARRAY_PUSH")
-            }
-        }
-        bc.emit("CALL", 4)
-        bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        for f in node.fields {
-            if f.isClassField and f.defaultValue != null {
-                bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-                emitExpr(emitter, f.defaultValue)
-                fIdx = bc.add_string(f.name)
-                bc.emit("LOAD_CONST", fIdx)
-                bc.emit("OBJECT_SET")
-                bc.emit("POP")
-            }
-        }
-        for m in node.methods {
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "class.method")))
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-            mnameIdx = bc.add_string(m.name)
-            bc.emit("LOAD_CONST", mnameIdx)
-            mname = node.name + "." + m.name
-            funcIdx = emitter.func_map[mname]
-            upcount = emitter.func_upcounts[funcIdx]
-            if upcount == 0 {
-                bc.emit("LOAD_CONST", bc.add_const(bc.func_id(funcIdx)))
-            }
-            else {
-                bc.emit("CLOSURE", funcIdx)
-            }
-            bc.emit("CALL", 3)
-            bc.emit("POP")
-        }
         return
 
     }
@@ -943,11 +768,6 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx) {
     // Set actual local count
     actualLocals = scopeLocalCount(newScope)
     bc.set_local_count(actualLocals)
-    emitter.func_upcounts[funcIdx] = newScope.upcount
-    if name == "test" || name == "parseCSV" {
-        print("DISASSEMBLY OF " + name + ":")
-        print(bc.disasm())
-    }
     emitter.scope = oldScope
 
 }
@@ -971,7 +791,6 @@ fn compileLambda(emitter, funcIdx, params, bodyNode) {
     bc.emit("RETURN")
     actualLocals = scopeLocalCount(newScope)
     bc.set_local_count(actualLocals)
-    emitter.func_upcounts[funcIdx] = newScope.upcount
     emitter.scope = oldScope
 
 }
@@ -997,16 +816,6 @@ fn compileProgram(emitter, program, skip_execute = false) {
 
         }
     }
-    emitter.structs = {}
-    emitter.classes = {}
-    for stmt in topStmts {
-        if stmt.kind == "StructDeclaration" {
-            emitter.structs[stmt.name] = true
-        }
-        if stmt.kind == "ClassDeclaration" {
-            emitter.classes[stmt.name] = true
-        }
-    }
     // Pass 1: compile all function bodies
     for i in 0..(#funcDecls - 1) {
         decl = funcDecls[i]
@@ -1016,32 +825,13 @@ fn compileProgram(emitter, program, skip_execute = false) {
         compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx)
 
     }
-    // Pass 1.5: compile all struct and class methods
-    for stmt in topStmts {
-        if stmt.kind == "StructDeclaration" || stmt.kind == "ClassDeclaration" {
-            for m in stmt.methods {
-                mname = stmt.name + "." + m.name
-                funcIdx = emitter.func_idx
-                emitter.func_idx = funcIdx + 1
-                emitter.func_map[mname] = funcIdx
-                compileFuncDecl(emitter, mname, m.params, m.body, funcIdx)
-            }
-        }
-    }
     // Pass 2: compile __main__
     bc.func_new("__main__", 0, 64)
     emitter.scope = Scope(null)
-    // Emit CLOSURE/LOAD_CONST + STORE_GLOBAL for each top-level function
+    // Emit CLOSURE + STORE_GLOBAL for each top-level function
     for i in 0..(#funcDecls - 1) {
         decl = funcDecls[i]
-        funcIdx = emitter.func_map[decl.name]
-        upcount = emitter.func_upcounts[funcIdx]
-        if upcount == 0 {
-            bc.emit("LOAD_CONST", bc.add_const(bc.func_id(funcIdx)))
-        }
-        else {
-            bc.emit("CLOSURE", funcIdx)
-        }
+        bc.emit("CLOSURE", emitter.func_map[decl.name])
         bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
     }
     // Emit top-level statements (all except last)

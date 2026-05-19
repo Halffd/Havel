@@ -1,0 +1,197 @@
+use { isNode } from "ast"
+
+TYPE_INT = "int"
+TYPE_NUM = "num"
+TYPE_STR = "str"
+TYPE_BOOL = "bool"
+TYPE_NULL = "nil"
+TYPE_ARRAY = "array"
+TYPE_OBJECT = "object"
+TYPE_FN = "fn"
+TYPE_UNKNOWN = "any"
+
+fn isNumeric(t) { t == TYPE_INT || t == TYPE_NUM }
+
+fn inferLiteral(node) {
+    if node == null { TYPE_UNKNOWN }
+    else if node.kind == "NumberLiteral" {
+        v = node.value
+        if v == int(v) { TYPE_INT }
+        else { TYPE_NUM }
+    }
+    else if node.kind == "StringLiteral" { TYPE_STR }
+    else if node.kind == "BooleanLiteral" { TYPE_BOOL }
+    else if node.kind == "NullLiteral" { TYPE_NULL }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferBinary(leftType, oper, rightType) {
+    arithOps = {"+": true, "-": true, "*": true, "/": true, "%": true, "**": true, "\\": true, "%%": true}
+    bitOps = {"&": true, "|": true, "^": true, "<<": true, ">>": true}
+    cmpOps = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "is": true}
+    if arithOps[oper] != null {
+        if oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR) { TYPE_STR }
+        else if isNumeric(leftType) && isNumeric(rightType) {
+            if leftType == TYPE_NUM || rightType == TYPE_NUM { TYPE_NUM }
+            else { TYPE_INT }
+        }
+        else { TYPE_UNKNOWN }
+    }
+    else if bitOps[oper] != null {
+        if leftType == TYPE_INT && rightType == TYPE_INT { TYPE_INT }
+        else { TYPE_UNKNOWN }
+    }
+    else if cmpOps[oper] != null { TYPE_BOOL }
+    else if oper == "&&" || oper == "||" { TYPE_BOOL }
+    else if oper == "??" {
+        if rightType != TYPE_UNKNOWN { rightType }
+        else { leftType }
+    }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferUnary(oper, operandType) {
+    if oper == "-" {
+        if isNumeric(operandType) { operandType }
+        else { TYPE_UNKNOWN }
+    }
+    else if oper == "!" || oper == "not" { TYPE_BOOL }
+    else if oper == "#" {
+        if operandType == TYPE_STR { TYPE_INT }
+        else { TYPE_UNKNOWN }
+    }
+    else { TYPE_UNKNOWN }
+}
+
+fn TypeEnv(parent) {
+    {bindings: {}, parent: parent}
+}
+
+fn envLookup(env, name) {
+    cur = env
+    while cur != null {
+        if cur.bindings[name] != null { return cur.bindings[name] }
+        cur = cur.parent
+    }
+    TYPE_UNKNOWN
+}
+
+fn envSet(env, name, t) {
+    env.bindings[name] = t
+}
+
+fn inferExpr(node, env) {
+    if node == null { TYPE_UNKNOWN }
+    k = node.kind
+    if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
+        inferLiteral(node)
+    }
+    else if k == "Identifier" { envLookup(env, node.name) }
+    else if k == "BinaryExpression" {
+        lt = inferExpr(node.left, env)
+        rt = inferExpr(node.right, env)
+        inferBinary(lt, node.oper, rt)
+    }
+    else if k == "UnaryExpression" {
+        ot = inferExpr(node.operand, env)
+        inferUnary(node.oper, ot)
+    }
+    else if k == "TernaryExpression" {
+        tt = inferExpr(node.true_expr, env)
+        ft = inferExpr(node.false_expr, env)
+        if tt == ft { tt }
+        else { TYPE_UNKNOWN }
+    }
+    else if k == "CallExpression" {
+        if node.callee.kind == "Identifier" {
+            calleeType = envLookup(env, node.callee.name)
+            if calleeType == TYPE_FN || calleeType != TYPE_UNKNOWN {
+                fnSig = envLookup(env, "$ret_" + node.callee.name)
+                if fnSig != TYPE_UNKNOWN { fnSig }
+                else { TYPE_UNKNOWN }
+            }
+            else { TYPE_UNKNOWN }
+        }
+        else { TYPE_UNKNOWN }
+    }
+    else if k == "ArrayLiteral" { TYPE_ARRAY }
+    else if k == "ObjectLiteral" { TYPE_OBJECT }
+    else if k == "LambdaExpression" { TYPE_FN }
+    else if k == "RangeExpression" { TYPE_ARRAY }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferStmt(node, env) {
+    if node == null { return }
+    k = node.kind
+    if k == "ExpressionStatement" { inferExpr(node.expr, env) }
+    else if k == "LetDeclaration" || k == "ValDeclaration" {
+        t = TYPE_UNKNOWN
+        if node.value != null { t = inferExpr(node.value, env) }
+        envSet(env, node.name, t)
+    }
+    else if k == "AssignmentExpression" {
+        inferExpr(node.value, env)
+        if node.target.kind == "Identifier" {
+            existing = envLookup(env, node.target.name)
+            newType = inferExpr(node.value, env)
+            if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
+        }
+    }
+    else if k == "CompoundAssignment" {
+        inferExpr(node.value, env)
+    }
+    else if k == "ReturnStatement" {
+        if node.value != null { inferExpr(node.value, env) }
+    }
+    else if k == "IfStatement" {
+        inferExpr(node.condition, env)
+        inferStmt(node.then, env)
+        if node["else"] != null { inferStmt(node["else"], env) }
+    }
+    else if k == "WhileStatement" {
+        inferExpr(node.condition, env)
+        inferStmt(node.body, env)
+    }
+    else if k == "ForStatement" {
+        inferExpr(node.iterator, env)
+        envSet(env, node.name, TYPE_UNKNOWN)
+        inferStmt(node.body, env)
+    }
+    else if k == "BlockStatement" {
+        for s in node.body { inferStmt(s, env) }
+    }
+    else if k == "FnDeclaration" {
+        envSet(env, node.name, TYPE_FN)
+        childEnv = TypeEnv(env)
+        for p in node.params { envSet(childEnv, p, TYPE_UNKNOWN) }
+        retType = TYPE_UNKNOWN
+        if node.body.kind == "BlockStatement" {
+            for s in node.body.body { inferStmt(s, childEnv) }
+            lastStmt = node.body.body[#node.body.body - 1]
+            if lastStmt != null && lastStmt.kind == "ReturnStatement" {
+                retType = inferExpr(lastStmt.value, childEnv)
+            }
+        }
+        else { retType = inferExpr(node.body, childEnv) }
+        if retType != TYPE_UNKNOWN {
+            envSet(env, "$ret_" + node.name, retType)
+        }
+    }
+}
+
+fn inferProgram(program) {
+    n = program
+    if n.ast != null { n = n.ast }
+    env = TypeEnv(null)
+    for stmt in n.body { inferStmt(stmt, env) }
+    {types: env.bindings, env: env}
+}
+
+fn getVarType(inferenceResult, name) {
+    envLookup(inferenceResult.env, name)
+}
+
+fn getReturnType(inferenceResult, fnName) {
+    envLookup(inferenceResult.env, "$ret_" + fnName)
+}

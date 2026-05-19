@@ -1,0 +1,41 @@
+fn isNumber(x) {
+    val t = type(x)
+    t == "int" || t == "float"
+}
+
+fn isString(x) {
+    type(x) == "string"
+}
+
+fn isArray(x) {
+    type(x) == "array"
+}
+
+fn isObject(x) {
+    type(x) == "object"
+}
+
+fn isNull(x) {
+    type(x) == "null"
+}
+
+fn isBoolean(x) {
+    type(x) == "bool"
+}
+
+fn isFunction(x) {
+    val t = type(x)
+    t == "function" || t == "unknown"
+}
+
+fn isSet(x) {
+    type(x) == "set"
+}
+
+fn isRange(x) {
+    type(x) == "range"
+}
+
+fn isEnum(x) {
+    type(x) == "enum"
+}

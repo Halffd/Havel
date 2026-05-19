@@ -1,0 +1,9 @@
+use { deadCodeElim, isAlwaysFalse, isAlwaysTrue } from "optimizer"
+use { BooleanLiteral } from "ast"
+
+cond = BooleanLiteral(false, 1, 1)
+dceCond = deadCodeElim(cond)
+print("dceCond kind=" + str(dceCond.kind))
+print("dceCond value=" + str(dceCond.value))
+print("isAlwaysFalse=" + str(isAlwaysFalse(dceCond)))
+print("isAlwaysTrue=" + str(isAlwaysTrue(dceCond)))

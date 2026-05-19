@@ -696,48 +696,6 @@ fn prettyPrint(node, depth) {
         prettyPrint(node.body, depth + 1)
 
     }
-    else if k == "StructDeclaration" {
-        print(prefix + "StructDecl(" + node.name + "):")
-        if #node.protocols > 0 {
-            print(_indent(depth + 1) + "protocols: " + node.protocols.join(", "))
-        }
-        print(_indent(depth + 1) + "fields:")
-        for f in node.definition.fields {
-            tStr = ""
-            if f.type != null: tStr = ": " + f.type
-            dStr = ""
-            if f.defaultValue != null: dStr = " = (default)"
-            print(_indent(depth + 2) + f.name + tStr + dStr)
-        }
-        if #node.definition.methods > 0 {
-            print(_indent(depth + 1) + "methods:")
-            for m in node.definition.methods {
-                print(_indent(depth + 2) + "fn " + m.name + "(" + m.params.join(", ") + ")")
-            }
-        }
-    }
-    else if k == "ClassDeclaration" {
-        print(prefix + "ClassDecl(" + node.name + "):")
-        if node.parentName != "" {
-            print(_indent(depth + 1) + "parent: " + node.parentName)
-        }
-        print(_indent(depth + 1) + "fields:")
-        for f in node.definition.fields {
-            tStr = ""
-            if f.type != null: tStr = ": " + f.type
-            dStr = ""
-            if f.defaultValue != null: dStr = " = (default)"
-            cStr = ""
-            if f.isClassField: cStr = "class "
-            print(_indent(depth + 2) + cStr + f.name + tStr + dStr)
-        }
-        if #node.definition.methods > 0 {
-            print(_indent(depth + 1) + "methods:")
-            for m in node.definition.methods {
-                print(_indent(depth + 2) + "fn " + m.name + "(" + m.params.join(", ") + ")")
-            }
-        }
-    }
     else if k == "SleepStatement" {
         print(prefix + "Sleep:")
         prettyPrint(node.duration, depth + 1)

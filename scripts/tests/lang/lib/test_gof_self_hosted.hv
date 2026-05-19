@@ -6,40 +6,16 @@ use { Emitter, compileProgram } from "emitter"
 print("Reading int_gof_patterns.hv...")
 content = fs.read("scripts/integration/int_gof_patterns.hv")
 
+print("Parsing int_gof_patterns.hv with self-hosted pratt.hv...")
+print("Content length: " + str(#content))
 tokens = tokenize(content)
+print("Token count: " + str(#tokens))
+
 res = parseTokens(tokens)
 ast = res.ast
+print("Parse finished. AST body length: " + str(#ast.body))
 
 emitter = Emitter()
-compileProgram(emitter, ast, true)
-
-print("Searching __main__ disassembly for CustData...")
-dasm = bc.disasm()
-lines = []
-acc = ""
-for c in dasm {
-    if c == "\n" {
-        lines.push(acc)
-        acc = ""
-    } else {
-        acc = acc + c
-    }
-}
-lines.push(acc)
-
-for line in lines {
-    // manually search substring CustData since we don't have regex
-    found = false
-    for i in 0..(#line - 8) {
-        sub = ""
-        for j in 0..7 {
-            sub = sub + line[i + j]
-        }
-        if sub == "CustData" {
-            found = true
-        }
-    }
-    if found {
-        print(line)
-    }
-}
+print("Emitter created.")
+compileProgram(emitter, ast)
+print("Compilation finished.")

@@ -259,13 +259,6 @@ api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
     return Value::makeStringValId(static_cast<uint32_t>(args[0].asInt()));
 });
 
-api.registerFunction("bc.func_id", [](const std::vector<Value> &args) -> Value {
-    if (args.empty() || !args[0].isInt()) {
-        throw std::runtime_error("bc.func_id: requires index (integer)");
-    }
-    return Value::makeFunctionObjId(static_cast<uint32_t>(args[0].asInt()));
-});
-
 	api.registerFunction("bc.add_upvalue", [](const std::vector<Value> &args) -> Value {
 		auto *fn = g_builder.currentFunc();
 		if (!fn) throw std::runtime_error("bc.add_upvalue: no current function");
@@ -470,7 +463,6 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
   api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
 api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
 api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
-api.setField(bcObj, "func_id", api.makeFunctionRef("bc.func_id"));
     api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
     api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
     api.setGlobal("bc", bcObj);

@@ -1,0 +1,49 @@
+use { isAlwaysFalse, isAlwaysTrue, nullLiteral, deadCodeElimStmts } from "optimizer"
+use { IfStatement, BooleanLiteral, NumberLiteral, ExpressionStatement, Program, isNode } from "ast"
+
+fn myDCE(node) {
+    if node == null { null }
+    else if type(node) == "array" { deadCodeElimStmts(node) }
+    else if !isNode(node) { node }
+    else if node.kind == "IfStatement" {
+        n = node
+        n.condition = myDCE(n.condition)
+        n.then = myDCE(n.then)
+        if n["else"] != null { n["else"] = myDCE(n["else"]) }
+        print("checking: kind=" + str(n.kind) + " cond_kind=" + str(n.condition.kind))
+        print("isAlwaysTrue=" + str(isAlwaysTrue(n.condition)))
+        print("isAlwaysFalse=" + str(isAlwaysFalse(n.condition)))
+        print("else_val=" + str(n["else"]))
+        if isAlwaysTrue(n.condition) {
+            print("-> always true")
+            n.then
+        }
+        else if isAlwaysFalse(n.condition) {
+            print("-> always false")
+            if n["else"] != null {
+                print("-> returning else")
+                n["else"]
+            }
+            else {
+                print("-> returning nullLit")
+                nullLiteral(n)
+            }
+        }
+        else {
+            print("-> keeping")
+            n
+        }
+    }
+    else { node }
+}
+
+cond = BooleanLiteral(false, 1, 1)
+thenBr = ExpressionStatement(NumberLiteral(1, 1, 1), 1, 1)
+elseBr = ExpressionStatement(NumberLiteral(2, 1, 1), 1, 1)
+ifStmt = IfStatement(cond, thenBr, elseBr, 1, 1)
+
+result = myDCE(ifStmt)
+print("result type=" + str(type(result)))
+if result != null && result != false && result != true {
+    print("result kind=" + str(result.kind))
+}

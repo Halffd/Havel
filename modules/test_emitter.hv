@@ -1,0 +1,5 @@
+use { Emitter } from "emitter"
+e = Emitter()
+print(e.func_idx)
+e.func_map["test"] = 5
+print(e.func_map["test"])

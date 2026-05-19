@@ -1,0 +1,8 @@
+use { parse } from "pratt"
+
+source = "fn greet(name) {\n    print(\"hello \" + name)\n}\ngreet(\"world\")\n"
+ast = parse(source)
+body = ast.ast.body
+for i in 0..(#body - 1) {
+    print(body[i].kind + " name=" + str(body[i].name))
+}

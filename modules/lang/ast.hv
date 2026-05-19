@@ -54,6 +54,8 @@ NODE_TYPES = {
     "ConfigBlock": true,
     "SleepStatement": true,
     "ErrorNode": true,
+    "StructDeclaration": true,
+    "ClassDeclaration": true,
 }
 
 BINARY_OPS = {
@@ -282,6 +284,34 @@ fn SleepStatement(duration, line, col) {
 }
 fn ErrorNode(msg, line, col) {
     {kind: "ErrorNode", line: line, col: col, msg: msg}
+
+}
+fn StructDeclaration(name, fields, methods, protocols, line, col) {
+    {
+        kind: "StructDeclaration",
+        line: line,
+        col: col,
+        name: name,
+        definition: {
+            fields: fields,
+            methods: methods
+        },
+        protocols: protocols
+    }
+
+}
+fn ClassDeclaration(name, parentName, fields, methods, line, col) {
+    {
+        kind: "ClassDeclaration",
+        line: line,
+        col: col,
+        name: name,
+        parentName: parentName,
+        definition: {
+            fields: fields,
+            methods: methods
+        }
+    }
 
 }
 // --- AST utilities ---
@@ -665,6 +695,48 @@ fn prettyPrint(node, depth) {
         print(prefix + "Config(" + node.name + "):")
         prettyPrint(node.body, depth + 1)
 
+    }
+    else if k == "StructDeclaration" {
+        print(prefix + "StructDecl(" + node.name + "):")
+        if #node.protocols > 0 {
+            print(_indent(depth + 1) + "protocols: " + node.protocols.join(", "))
+        }
+        print(_indent(depth + 1) + "fields:")
+        for f in node.definition.fields {
+            tStr = ""
+            if f.type != null: tStr = ": " + f.type
+            dStr = ""
+            if f.defaultValue != null: dStr = " = (default)"
+            print(_indent(depth + 2) + f.name + tStr + dStr)
+        }
+        if #node.definition.methods > 0 {
+            print(_indent(depth + 1) + "methods:")
+            for m in node.definition.methods {
+                print(_indent(depth + 2) + "fn " + m.name + "(" + m.params.join(", ") + ")")
+            }
+        }
+    }
+    else if k == "ClassDeclaration" {
+        print(prefix + "ClassDecl(" + node.name + "):")
+        if node.parentName != "" {
+            print(_indent(depth + 1) + "parent: " + node.parentName)
+        }
+        print(_indent(depth + 1) + "fields:")
+        for f in node.definition.fields {
+            tStr = ""
+            if f.type != null: tStr = ": " + f.type
+            dStr = ""
+            if f.defaultValue != null: dStr = " = (default)"
+            cStr = ""
+            if f.isClassField: cStr = "class "
+            print(_indent(depth + 2) + cStr + f.name + tStr + dStr)
+        }
+        if #node.definition.methods > 0 {
+            print(_indent(depth + 1) + "methods:")
+            for m in node.definition.methods {
+                print(_indent(depth + 2) + "fn " + m.name + "(" + m.params.join(", ") + ")")
+            }
+        }
     }
     else if k == "SleepStatement" {
         print(prefix + "Sleep:")

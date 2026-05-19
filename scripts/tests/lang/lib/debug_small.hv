@@ -1,0 +1,15 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+src = 'struct CustData { id, name, email }\nfn test() {\n    CustData("1", "Alice", "alice")\n}\ntest()\n'
+
+tokens = tokenize(src)
+res = parseTokens(tokens)
+ast = res.ast
+
+emitter = Emitter()
+compileProgram(emitter, ast, true)
+print("Disassembly of main:")
+print(bc.disasm())

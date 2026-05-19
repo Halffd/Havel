@@ -18,7 +18,7 @@ use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
       RangeExpression, TernaryExpression, PipelineExpression,
       ThrowStatement, TryStatement, MatchExpression, MatchCase,
       InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
-      ConfigBlock, SleepStatement, ErrorNode,
+      ConfigBlock, SleepStatement, ErrorNode, StructDeclaration, ClassDeclaration,
       isNode, prettyPrint } from "ast"
 
 // --- Binding power constants (matching C++ switch-based values) ---
@@ -2651,23 +2651,207 @@ fn Parser(tokenList) {
     // ===================================================================
     // STATEMENT: type declarations (stub — just consume and return error)
     // ===================================================================
+    fn parseTypeMembers(isClass) {
+        fields = []
+        methods = []
+
+        expect("OpenBrace")
+        skipNewlines()
+
+        while current().type != "CloseBrace" and notEOF() {
+            skipNewlines()
+            if current().type == "CloseBrace": break
+
+            // Check if class/instance member modifiers for class
+            isClassMember = false
+            if isClass {
+                if current().type == "AtAt" {
+                    advance() // consume '@@'
+                    isClassMember = true
+                }
+                else if current().type == "At" {
+                    advance() // consume '@'
+                }
+            }
+
+            // Check if method
+            if current().type == "Fn" or current().type == "Op" {
+                isOperator = (current().type == "Op")
+                advance() // consume 'fn' or 'op'
+                skipNewlines()
+
+                methodName = ""
+                if isOperator {
+                    // operator symbol
+                    methodName = advance().value
+                    if methodName == "+" { methodName = "op_add" }
+                    else if methodName == "-" { methodName = "op_sub" }
+                    else if methodName == "*" { methodName = "op_mul" }
+                    else if methodName == "/" { methodName = "op_div" }
+                    else if methodName == "%" { methodName = "op_mod" }
+                    else if methodName == "==" { methodName = "op_eq" }
+                    else if methodName == "!=" { methodName = "op_ne" }
+                    else if methodName == "<" { methodName = "op_lt" }
+                    else if methodName == ">" { methodName = "op_gt" }
+                    else if methodName == "<=" { methodName = "op_le" }
+                    else if methodName == ">=" { methodName = "op_ge" }
+                    else if methodName == "[" {
+                        methodName = "op_index"
+                        if current().type == "CloseBracket" {
+                            advance()
+                            if current().type == "Assign" {
+                                advance()
+                                methodName = "op_index_set"
+                            }
+                        }
+                    }
+                    else if methodName == "[]=" { methodName = "op_index_set" }
+                    else if methodName == "(" { methodName = "op_call" }
+                    else if methodName == "**" { methodName = "op_pow" }
+                    else if methodName == "|>" { methodName = "op_pipe_right" }
+                    else if methodName == "|" { methodName = "op_bit_or" }
+                    else if methodName == "&" { methodName = "op_bit_and" }
+                    else if methodName == "^" { methodName = "op_bit_xor" }
+                    else if methodName == "~" { methodName = "op_bit_not" }
+                    else if methodName == ">>" { methodName = "op_shift_right" }
+                    else if methodName == "<<" { methodName = "op_shift_left" }
+                    else if methodName == "=" { methodName = "op_copy" }
+                    else if methodName == "+=" { methodName = "op_iadd" }
+                    else if methodName == "-=" { methodName = "op_isub" }
+                    else if methodName == "*=" { methodName = "op_imul" }
+                    else if methodName == "/=" { methodName = "op_idiv" }
+                    else if methodName == "%=" { methodName = "op_imod" }
+                    else if methodName == "**=" { methodName = "op_ipow" }
+                    else if methodName == "&=" { methodName = "op_iand" }
+                    else if methodName == "|=" { methodName = "op_ior" }
+                    else if methodName == "^=" { methodName = "op_ixor" }
+                    else if methodName == "<<=" { methodName = "op_ilsh" }
+                    else if methodName == ">>=" { methodName = "op_irsh" }
+                }
+                else {
+                    // fn constructor/method/etc
+                    if current().type == "At" {
+                        advance()
+                        if current().type == "Minus" {
+                            advance()
+                            methodName = "op_destructor"
+                        }
+                        else {
+                            methodName = "init"
+                        }
+                    }
+                    else {
+                        methodName = advance().value
+                    }
+                }
+
+                isConstructor = (methodName == "init" or methodName == "op_init")
+
+                expect("OpenParen")
+                params = []
+                while current().type != "CloseParen" and notEOF() {
+                    if current().type == "Identifier" {
+                        paramName = advance().value
+                        params.push(paramName)
+                    }
+                    if current().type == "Comma" {
+                        advance()
+                    }
+                }
+                expect("CloseParen")
+                skipNewlines()
+
+                // Parse body block
+                body = parseBlock()
+
+                methods.push({
+                    name: methodName,
+                    params: params,
+                    body: body,
+                    isConstructor: isConstructor,
+                    isOperator: isOperator,
+                    isClassMethod: isClassMember
+                })
+                continue
+            }
+
+            // Otherwise, it must be a field name
+            fieldName = advance().value
+
+            fieldType = null
+            if current().type == "Colon" {
+                advance()
+                fieldType = advance().value
+            }
+
+            defaultValue = null
+            if current().type == "Assign" {
+                advance()
+                defaultValue = parseExpr(0)
+            }
+
+            fields.push({
+                name: fieldName,
+                type: fieldType,
+                defaultValue: defaultValue,
+                isClassField: isClassMember
+            })
+
+            if current().type == "Comma" {
+                advance()
+            }
+            skipNewlines()
+        }
+
+        expect("CloseBrace")
+        {fields: fields, methods: methods}
+    }
+
     fn parseTypeDeclStatement() {
         l = current().line
         c = current().col
-        advance() // consume struct/class/etc
+        kind = advance().value
         skipNewlines()
         name = advance().value
         skipNewlines()
-        // Try to parse body
-        body = null
-        if current().type == "OpenBrace" or current().type == "Colon" {
-            body = parseBlock()
+
+        if kind == "struct" {
+            protocols = []
+            if current().type == "Colon" {
+                advance() // consume ':'
+                skipNewlines()
+                protocols.push(advance().value)
+                while current().type == "Comma" {
+                    advance()
+                    skipNewlines()
+                    protocols.push(advance().value)
+                }
+            }
+            skipNewlines()
+            members = parseTypeMembers(false)
+            StructDeclaration(name, members.fields, members.methods, protocols, l, c)
+        }
+        else if kind == "class" {
+            parentName = ""
+            if current().type == "Colon" {
+                advance() // consume ':'
+                skipNewlines()
+                parentName = advance().value
+            }
+            skipNewlines()
+            members = parseTypeMembers(true)
+            ClassDeclaration(name, parentName, members.fields, members.methods, l, c)
         }
         else {
-            body = BlockStatement([], l, c)
+            body = null
+            if current().type == "OpenBrace" or current().type == "Colon" {
+                body = parseBlock()
+            }
+            else {
+                body = BlockStatement([], l, c)
+            }
+            ConfigBlock("type:" + name, body, l, c)
         }
-        ConfigBlock("type:" + name, body, l, c)
-
     }
     // ===================================================================
     // PRODUCE AST — main entry point

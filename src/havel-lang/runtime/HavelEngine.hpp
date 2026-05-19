@@ -53,28 +53,9 @@ public:
         hostContext_->vm = vm_.get();
 
         hostBridge_ = compiler::createHostBridge(*hostContext_);
-        vm_->suspendGC();
-        if (leanStartup) {
-          registerPureStdLib(*vm_);
-        } else {
-          registerStdLibWithVM(*hostBridge_);
-        }
-        vm_->resumeGC();
-        hostBridge_->install(
-            leanStartup ? compiler::HostBridge::InstallProfile::Core
-                        : compiler::HostBridge::InstallProfile::Full,
-            !leanStartup);
 
-        for (const auto& [name, fn] : hostBridge_->options().host_functions) {
-            vm_->registerHostFunction(name, fn);
-        }
-
-	vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
-
-	// Wire watcher registry for reactive when blocks
-	watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
-	vm_->setWatcherRegistry(watcher_registry_.get());
-
+        // Set stdlib path BEFORE registration so pure-Havel stdlib modules
+        // (type.hv, etc.) can be found by loadModule during init.
         {
             std::string stdlibPath;
             const char* envStdlib = std::getenv("HAVEL_STDLIB");
@@ -90,6 +71,28 @@ public:
             }
             vm_->moduleLoader().setStdlibPath(stdlibPath);
         }
+
+        vm_->suspendGC();
+        if (leanStartup) {
+            registerPureStdLib(*vm_);
+        } else {
+            registerStdLibWithVM(*hostBridge_);
+        }
+        vm_->resumeGC();
+        hostBridge_->install(
+            leanStartup ? compiler::HostBridge::InstallProfile::Core
+                        : compiler::HostBridge::InstallProfile::Full,
+            !leanStartup);
+
+        for (const auto& [name, fn] : hostBridge_->options().host_functions) {
+            vm_->registerHostFunction(name, fn);
+        }
+
+        vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
+
+        // Wire watcher registry for reactive when blocks
+        watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
+        vm_->setWatcherRegistry(watcher_registry_.get());
 
         initialized_ = true;
     }

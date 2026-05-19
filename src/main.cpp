@@ -11,28 +11,17 @@ int main(int argc, char* argv[]) {
         return launcher.run(argc, argv);
     }
 
-  // Check if running in pure mode (--run or --eval flag)
-  bool pureMode = false;
-  for (int i = 1; i < argc; ++i) {
-    std::string a = argv[i];
-    if (a == "--run" || a == "--eval" || a == "-E") {
-      pureMode = true;
-      break;
-    }
-  }
-
-    // Initialize config only if not in pure mode
-    if (!pureMode) {
-        try {
-            auto& config = havel::Configs::Get();
-            config.EnsureConfigFile();
-            config.Load();
-            havel::debug("Config path: {}", config.getPath());
-        } catch (const std::exception& e) {
-            havel::error("Critical: Failed to initialize config: {}", e.what());
-            return 1;
-        }
-    }
+	// Initialize config (always load - pure mode just skips GUI/hotkeys)
+	{
+		try {
+			auto& config = havel::Configs::Get();
+			config.EnsureConfigFile();
+			config.Load();
+		} catch (const std::exception& e) {
+			havel::error("Critical: Failed to initialize config: {}", e.what());
+			return 1;
+		}
+	}
 
     // X11 error handler
     XSetIOErrorHandler([](Display*) -> int {

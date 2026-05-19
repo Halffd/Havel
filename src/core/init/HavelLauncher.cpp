@@ -49,6 +49,8 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <unordered_set>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -1024,33 +1026,46 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     return 0;
   }
 
-  if (debugging::debug_io) debug("Running Havel scripts (pure mode): {}", combinedNames);
+	if (debugging::debug_io) debug("Running Havel scripts (pure mode): {}", combinedNames);
 
-  // Set up signal handling ...
-  struct sigaction sa;
-  sa.sa_flags = 0;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_handler = [](int sig) { std::exit(0); };
-  sigaction(SIGINT, &sa, nullptr);
-  sigaction(SIGTERM, &sa, nullptr);
+	// Set up signal handling ...
+	struct sigaction sa;
+	sa.sa_flags = 0;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = [](int sig) { std::exit(0); };
+	sigaction(SIGINT, &sa, nullptr);
+	sigaction(SIGTERM, &sa, nullptr);
 
- try {
- havel::HavelEngine engine({
- .debugBytecode = cfg.debugBytecode,
- .debugLexer = cfg.debugLexer,
- .debugParser = cfg.debugParser,
- .debugAst = cfg.debugAst,
- .stopOnError = cfg.stopOnError,
- .leanMinimalStartup = true
- });
-        engine.initializeMinimal();
- engine.execute(combinedCode, "__main__", combinedNames);
- engine.shutdown();
- return 0;
- } catch (const std::exception &e) {
- error("Bytecode error: {}", e.what());
- return 1;
- }
+	// Debug.AutoExit support for pure script mode
+	if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+		int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+		std::thread([delay]() {
+			std::this_thread::sleep_for(std::chrono::seconds(delay));
+			if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+				return; // AutoExit was disabled during the wait
+			}
+			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", delay);
+			std::exit(0);
+		}).detach();
+	}
+
+	try {
+		havel::HavelEngine engine({
+			.debugBytecode = cfg.debugBytecode,
+			.debugLexer = cfg.debugLexer,
+			.debugParser = cfg.debugParser,
+			.debugAst = cfg.debugAst,
+			.stopOnError = cfg.stopOnError,
+			.leanMinimalStartup = true
+		});
+		engine.initializeMinimal();
+		engine.execute(combinedCode, "__main__", combinedNames);
+		engine.shutdown();
+		return 0;
+	} catch (const std::exception &e) {
+		error("Bytecode error: {}", e.what());
+		return 1;
+	}
 }
 
 int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,

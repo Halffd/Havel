@@ -1,4 +1,8 @@
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
+#include "havel-lang/runtime/concurrency/Fiber.hpp"
+#include "havel-lang/compiler/core/BytecodeIR.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
+#include "havel-lang/runtime/HostContext.hpp"
 #include <cassert>
 #include <iostream>
 
@@ -562,6 +566,328 @@ static void test_runnableCount_accuracy() {
   go1->state = Scheduler::GoroutineState::Done;
 }
 
+// ============================================================
+// Fiber state save/load round-trip tests
+// ============================================================
+
+static void test_fiber_callframe_saves_chunk_ptr() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("first", 0, 2));
+  chunk.addFunction(BytecodeFunction("second", 1, 3));
+
+  Fiber fib(1, 1, 0, "test-fiber");
+  fib.pushCall(1, 0, &chunk);
+
+  assert(!fib.call_stack.empty());
+  assert(fib.call_stack.back().chunk_ptr == &chunk);
+  assert(fib.call_stack.back().function_id == 1);
+}
+
+static void test_fiber_callframe_default_chunk_ptr_null() {
+  Fiber fib(1, 0);
+  assert(!fib.call_stack.empty());
+  assert(fib.call_stack.back().chunk_ptr == nullptr);
+  assert(fib.call_stack.back().function_id == 0);
+}
+
+static void test_fiber_popCall_restores_chunk_ptr() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("main_fn", 0, 2));
+  chunk.addFunction(BytecodeFunction("callee", 0, 3));
+
+  Fiber fib(1, 0, 0, "test-fiber");
+  fib.pushCall(0, 0, &chunk);
+  fib.call_stack.back().ip = 5;
+
+  fib.pushCall(1, 1, &chunk);
+  assert(fib.call_stack.back().chunk_ptr == &chunk);
+  assert(fib.call_stack.back().function_id == 1);
+
+  fib.popCall();
+  assert(fib.call_stack.back().chunk_ptr == &chunk);
+  assert(fib.call_stack.back().function_id == 0);
+  assert(fib.current_chunk_ptr == &chunk);
+}
+
+static void test_fiber_multiple_chunks_different_pointers() {
+  BytecodeChunk chunk_a;
+  chunk_a.addFunction(BytecodeFunction("fn_a", 0, 1));
+
+  BytecodeChunk chunk_b;
+  chunk_b.addFunction(BytecodeFunction("fn_b", 0, 1));
+
+  Fiber fib(1, 0, 0, "multi-chunk");
+
+  fib.pushCall(0, 0, &chunk_a);
+  fib.call_stack.back().ip = 3;
+
+  fib.pushCall(0, 0, &chunk_b);
+  assert(fib.call_stack.back().chunk_ptr == &chunk_b);
+
+  fib.popCall();
+  assert(fib.call_stack.back().chunk_ptr == &chunk_a);
+}
+
+static void test_chunk_getFunctionIndex_valid() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("alpha", 0, 1));
+  chunk.addFunction(BytecodeFunction("beta", 0, 2));
+  chunk.addFunction(BytecodeFunction("gamma", 1, 3));
+
+  const auto *f0 = chunk.getFunction(0);
+  const auto *f1 = chunk.getFunction(1);
+  const auto *f2 = chunk.getFunction(2);
+
+  assert(chunk.getFunctionIndex(f0) == 0);
+  assert(chunk.getFunctionIndex(f1) == 1);
+  assert(chunk.getFunctionIndex(f2) == 2);
+}
+
+static void test_chunk_getFunctionIndex_nullptr() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("only", 0, 1));
+  assert(chunk.getFunctionIndex(nullptr) == UINT32_MAX);
+}
+
+static void test_chunk_getFunctionIndex_out_of_range() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("only", 0, 1));
+  uint8_t raw_memory[sizeof(BytecodeFunction)];
+  const auto *bogus = reinterpret_cast<const BytecodeFunction *>(raw_memory);
+  assert(chunk.getFunctionIndex(bogus) == UINT32_MAX);
+}
+
+static void test_saveFiberState_preserves_function_id_and_chunk() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("first", 0, 4));
+  chunk.addFunction(BytecodeFunction("second", 1, 4));
+  chunk.addFunction(BytecodeFunction("third", 2, 4));
+
+  HostContext ctx;
+  VM vm(ctx);
+
+  vm.frame_arena_.resize(2);
+  vm.frame_count_ = 1;
+  auto &vm_frame = vm.frame_arena_[0];
+  vm_frame.function = chunk.getFunction(2);
+  vm_frame.chunk = &chunk;
+  vm_frame.ip = 7;
+  vm_frame.locals_base = 0;
+  vm_frame.closure_id = 0;
+  vm_frame.stack_depth = 3;
+  vm_frame.owns_globals = true;
+  vm.current_chunk = &chunk;
+
+  Fiber fib(10, 2, 0, "save-test");
+  vm.saveFiberState(&fib);
+
+  assert(!fib.call_stack.empty());
+  const auto &saved = fib.call_stack.back();
+  assert(saved.function_id == 2);
+  assert(saved.chunk_ptr == &chunk);
+  assert(saved.ip == 7);
+  assert(saved.stack_depth == 3);
+  assert(saved.owns_globals == true);
+}
+
+static void test_saveFiberState_zero_function_when_no_chunk() {
+  HostContext ctx;
+  VM vm(ctx);
+
+  vm.frame_arena_.resize(1);
+  vm.frame_count_ = 1;
+  auto &vm_frame = vm.frame_arena_[0];
+  vm_frame.function = nullptr;
+  vm_frame.chunk = nullptr;
+  vm_frame.ip = 0;
+
+  Fiber fib(11, 0, 0, "no-chunk-test");
+  vm.saveFiberState(&fib);
+
+  assert(!fib.call_stack.empty());
+  assert(fib.call_stack.back().function_id == 0);
+  assert(fib.call_stack.back().chunk_ptr == nullptr);
+}
+
+static void test_loadFiberState_resolves_function_from_chunk_ptr() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("first", 0, 2));
+  chunk.addFunction(BytecodeFunction("second", 1, 4));
+  chunk.addFunction(BytecodeFunction("third", 2, 4));
+
+  HostContext ctx;
+  VM vm(ctx);
+
+  Fiber fib(20, 2, 0, "load-test");
+  fib.call_stack.clear();
+  CallFrame cf;
+  cf.function_id = 2;
+  cf.chunk_ptr = &chunk;
+  cf.ip = 9;
+  cf.locals_base = 0;
+  cf.closure_id = 0;
+  cf.stack_depth = 5;
+  cf.owns_globals = true;
+  fib.call_stack.push_back(cf);
+
+  vm.loadFiberState(&fib);
+
+  assert(vm.frame_count_ == 1);
+  const auto &vm_frame = vm.frame_arena_[0];
+  assert(vm_frame.function == chunk.getFunction(2));
+  assert(vm_frame.chunk == &chunk);
+  assert(vm_frame.stack_depth == 5);
+  assert(vm_frame.owns_globals == true);
+}
+
+static void test_loadFiberState_fallback_to_current_chunk() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("fallback_fn", 0, 2));
+  chunk.addFunction(BytecodeFunction("other", 0, 2));
+
+  HostContext ctx;
+  VM vm(ctx);
+  vm.current_chunk = &chunk;
+
+  Fiber fib(21, 0, 0, "fallback-test");
+  fib.call_stack.clear();
+  CallFrame cf;
+  cf.function_id = 1;
+  cf.chunk_ptr = nullptr;
+  cf.ip = 0;
+  cf.locals_base = 0;
+  cf.closure_id = 0;
+  cf.stack_depth = 0;
+  cf.owns_globals = false;
+  fib.call_stack.push_back(cf);
+
+  vm.loadFiberState(&fib);
+
+  assert(vm.frame_count_ == 1);
+  assert(vm.frame_arena_[0].function == chunk.getFunction(1));
+  assert(vm.frame_arena_[0].chunk == &chunk);
+}
+
+static void test_save_load_roundtrip_preserves_identity() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("alpha", 0, 2));
+  chunk.addFunction(BytecodeFunction("beta", 1, 3));
+  chunk.addFunction(BytecodeFunction("gamma", 2, 4));
+
+  HostContext ctx;
+  VM vm(ctx);
+
+  vm.frame_arena_.resize(2);
+  vm.frame_count_ = 1;
+  auto &vm_frame = vm.frame_arena_[0];
+  vm_frame.function = chunk.getFunction(2);
+  vm_frame.chunk = &chunk;
+  vm_frame.ip = 42;
+  vm_frame.locals_base = 10;
+  vm_frame.closure_id = 7;
+  vm_frame.stack_depth = 8;
+  vm_frame.owns_globals = true;
+  vm.current_chunk = &chunk;
+
+  Fiber fib(30, 2, 0, "roundtrip");
+  vm.saveFiberState(&fib);
+
+  assert(fib.call_stack.back().function_id == 2);
+  assert(fib.call_stack.back().chunk_ptr == &chunk);
+  assert(fib.call_stack.back().ip == 42);
+  assert(fib.call_stack.back().stack_depth == 8);
+  assert(fib.call_stack.back().owns_globals == true);
+
+  vm.frame_count_ = 0;
+  vm.frame_arena_[0].function = nullptr;
+  vm.frame_arena_[0].chunk = nullptr;
+  vm.frame_arena_[0].stack_depth = 0;
+  vm.frame_arena_[0].owns_globals = false;
+  vm.current_chunk = nullptr;
+
+  vm.loadFiberState(&fib);
+
+  assert(vm.frame_count_ == 1);
+  assert(vm.frame_arena_[0].function == chunk.getFunction(2));
+  assert(vm.frame_arena_[0].chunk == &chunk);
+  assert(vm.frame_arena_[0].stack_depth == 8);
+  assert(vm.frame_arena_[0].owns_globals == true);
+}
+
+static void test_save_load_roundtrip_nonzero_function_not_zero() {
+  BytecodeChunk chunk;
+  chunk.addFunction(BytecodeFunction("zeroth", 0, 1));
+  chunk.addFunction(BytecodeFunction("first", 0, 1));
+
+  HostContext ctx;
+  VM vm(ctx);
+
+  vm.frame_arena_.resize(2);
+  vm.frame_count_ = 1;
+  vm.frame_arena_[0].function = chunk.getFunction(1);
+  vm.frame_arena_[0].chunk = &chunk;
+  vm.frame_arena_[0].ip = 0;
+  vm.frame_arena_[0].locals_base = 0;
+  vm.frame_arena_[0].closure_id = 0;
+  vm.frame_arena_[0].stack_depth = 0;
+  vm.frame_arena_[0].owns_globals = false;
+  vm.current_chunk = &chunk;
+
+  Fiber fib(31, 1, 0, "nonzero-test");
+  vm.saveFiberState(&fib);
+
+  assert(fib.call_stack.back().function_id == 1);
+  assert(fib.call_stack.back().function_id != 0);
+
+  vm.frame_count_ = 0;
+  vm.current_chunk = nullptr;
+  vm.frame_arena_[0].function = nullptr;
+  vm.frame_arena_[0].chunk = nullptr;
+  vm.frame_arena_[0].stack_depth = 0;
+  vm.frame_arena_[0].owns_globals = false;
+  vm.frame_arena_[0].ip = 0;
+
+  vm.loadFiberState(&fib);
+
+  assert(vm.frame_arena_[0].function == chunk.getFunction(1));
+  assert(vm.frame_arena_[0].function != chunk.getFunction(0));
+}
+
+static void test_loadFiberState_restores_current_chunk_from_top_frame() {
+  BytecodeChunk chunk_a;
+  chunk_a.addFunction(BytecodeFunction("main_fn", 0, 2));
+
+  BytecodeChunk chunk_b;
+  chunk_b.addFunction(BytecodeFunction("helper", 0, 2));
+
+  HostContext ctx;
+  VM vm(ctx);
+
+  Fiber fib(40, 0, 0, "chunk-restore");
+  fib.call_stack.clear();
+
+  CallFrame bottom;
+  bottom.function_id = 0;
+  bottom.chunk_ptr = &chunk_a;
+  bottom.ip = 5;
+  bottom.locals_base = 0;
+  fib.call_stack.push_back(bottom);
+
+  CallFrame top;
+  top.function_id = 0;
+  top.chunk_ptr = &chunk_b;
+  top.ip = 3;
+  top.locals_base = 2;
+  fib.call_stack.push_back(top);
+
+  vm.loadFiberState(&fib);
+
+  assert(vm.frame_count_ == 2);
+  assert(vm.current_chunk == &chunk_b);
+  assert(vm.frame_arena_[0].chunk == &chunk_a);
+  assert(vm.frame_arena_[1].chunk == &chunk_b);
+}
+
 void run_scheduler_tests() {
   std::cout << "=== Scheduler Tests ===\n\n";
 
@@ -640,7 +966,49 @@ void run_scheduler_tests() {
   test_runnableCount_accuracy();
   std::cout << " PASS runnableCount accuracy\n";
 
-  constexpr int total = 25;
+  test_fiber_callframe_saves_chunk_ptr();
+  std::cout << " PASS fiber CallFrame saves chunk_ptr\n";
+
+  test_fiber_callframe_default_chunk_ptr_null();
+  std::cout << " PASS fiber CallFrame default chunk_ptr is null\n";
+
+  test_fiber_popCall_restores_chunk_ptr();
+  std::cout << " PASS fiber popCall restores chunk_ptr\n";
+
+  test_fiber_multiple_chunks_different_pointers();
+  std::cout << " PASS fiber multiple chunks preserve different pointers\n";
+
+  test_chunk_getFunctionIndex_valid();
+  std::cout << " PASS chunk getFunctionIndex returns correct indices\n";
+
+  test_chunk_getFunctionIndex_nullptr();
+  std::cout << " PASS chunk getFunctionIndex returns UINT32_MAX for nullptr\n";
+
+  test_chunk_getFunctionIndex_out_of_range();
+  std::cout << " PASS chunk getFunctionIndex returns UINT32_MAX for out-of-range\n";
+
+  test_saveFiberState_preserves_function_id_and_chunk();
+  std::cout << " PASS saveFiberState preserves function_id and chunk\n";
+
+  test_saveFiberState_zero_function_when_no_chunk();
+  std::cout << " PASS saveFiberState yields function_id=0 when no chunk\n";
+
+  test_loadFiberState_resolves_function_from_chunk_ptr();
+  std::cout << " PASS loadFiberState resolves function from chunk_ptr\n";
+
+  test_loadFiberState_fallback_to_current_chunk();
+  std::cout << " PASS loadFiberState falls back to current_chunk\n";
+
+  test_save_load_roundtrip_preserves_identity();
+  std::cout << " PASS save/load roundtrip preserves identity\n";
+
+  test_save_load_roundtrip_nonzero_function_not_zero();
+  std::cout << " PASS save/load roundtrip nonzero function stays nonzero\n";
+
+  test_loadFiberState_restores_current_chunk_from_top_frame();
+  std::cout << " PASS loadFiberState restores current_chunk from top frame\n";
+
+  constexpr int total = 25 + 14;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 }
 

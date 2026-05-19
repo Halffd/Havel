@@ -726,13 +726,13 @@ fn emitStmt(emitter, node) {
         nameIdx = bc.add_string(node.name)
         bc.emit("LOAD_CONST", nameIdx)
         bc.emit("ARRAY_NEW")
-        for f in node.definition.fields {
+        for f in node.fields {
             fIdx = bc.add_string(f.name)
             bc.emit("LOAD_CONST", fIdx)
             bc.emit("ARRAY_PUSH")
         }
         bc.emit("ARRAY_NEW")
-        for f in node.definition.fields {
+        for f in node.fields {
             if f.defaultValue != null {
                 emitExpr(emitter, f.defaultValue)
             } else {
@@ -742,7 +742,7 @@ fn emitStmt(emitter, node) {
         }
         bc.emit("CALL", 3)
         bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        for m in node.definition.methods {
+        for m in node.methods {
             bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "struct.method")))
             bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
             mnameIdx = bc.add_string(m.name)
@@ -767,7 +767,7 @@ fn emitStmt(emitter, node) {
         nameIdx = bc.add_string(node.name)
         bc.emit("LOAD_CONST", nameIdx)
         bc.emit("ARRAY_NEW")
-        for f in node.definition.fields {
+        for f in node.fields {
             if not f.isClassField {
                 fIdx = bc.add_string(f.name)
                 bc.emit("LOAD_CONST", fIdx)
@@ -780,7 +780,7 @@ fn emitStmt(emitter, node) {
             bc.emit("PUSH_NULL")
         }
         bc.emit("ARRAY_NEW")
-        for f in node.definition.fields {
+        for f in node.fields {
             if f.isClassField {
                 fIdx = bc.add_string(f.name)
                 bc.emit("LOAD_CONST", fIdx)
@@ -789,7 +789,7 @@ fn emitStmt(emitter, node) {
         }
         bc.emit("CALL", 4)
         bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        for f in node.definition.fields {
+        for f in node.fields {
             if f.isClassField and f.defaultValue != null {
                 bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
                 emitExpr(emitter, f.defaultValue)
@@ -799,7 +799,7 @@ fn emitStmt(emitter, node) {
                 bc.emit("POP")
             }
         }
-        for m in node.definition.methods {
+        for m in node.methods {
             bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "class.method")))
             bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
             mnameIdx = bc.add_string(m.name)
@@ -1019,7 +1019,7 @@ fn compileProgram(emitter, program, skip_execute = false) {
     // Pass 1.5: compile all struct and class methods
     for stmt in topStmts {
         if stmt.kind == "StructDeclaration" || stmt.kind == "ClassDeclaration" {
-            for m in stmt.definition.methods {
+            for m in stmt.methods {
                 mname = stmt.name + "." + m.name
                 funcIdx = emitter.func_idx
                 emitter.func_idx = funcIdx + 1

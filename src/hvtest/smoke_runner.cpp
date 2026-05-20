@@ -298,14 +298,17 @@ std::unordered_map<std::string, bool> timeout_running;
 
 options.vm_setup = [&](havel::compiler::VM &vm) {
     vm_ptr = &vm;
-    auto thread_obj = vm.createHostObject();
-    vm.setHostObjectField(thread_obj, "spawn", Value::makeHostFuncId(vm.getHostFunctionIndex("thread")));
-    vm.setGlobal("thread", Value::makeObjectId(thread_obj.id));
-    auto interval_obj = vm.createHostObject();
-    vm.setHostObjectField(interval_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("interval")));
-    vm.setGlobal("interval", Value::makeObjectId(interval_obj.id));
-    auto timeout_obj = vm.createHostObject();
-    vm.setHostObjectField(timeout_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("timeout")));
+  auto thread_obj = vm.createHostObject();
+  auto threadGuard = vm.makeRoot(Value::makeObjectId(thread_obj.id));
+  vm.setHostObjectField(thread_obj, "spawn", Value::makeHostFuncId(vm.getHostFunctionIndex("thread")));
+  vm.setGlobal("thread", Value::makeObjectId(thread_obj.id));
+  auto interval_obj = vm.createHostObject();
+  auto intervalGuard = vm.makeRoot(Value::makeObjectId(interval_obj.id));
+  vm.setHostObjectField(interval_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("interval")));
+  vm.setGlobal("interval", Value::makeObjectId(interval_obj.id));
+  auto timeout_obj = vm.createHostObject();
+  auto timeoutGuard = vm.makeRoot(Value::makeObjectId(timeout_obj.id));
+  vm.setHostObjectField(timeout_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("timeout")));
     vm.setGlobal("timeout", Value::makeObjectId(timeout_obj.id));
 
     vm.registerPrototypeMethodByName("object", "send", "object.send");

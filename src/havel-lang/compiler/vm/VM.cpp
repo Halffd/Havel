@@ -1214,8 +1214,9 @@ Value VM::iteratorNext(IteratorRef iterRef) {
       return Value::makeObjectId(resultObj.id);
     }
     auto key = iter->keys[iter->index++];
-    auto keyStrRef = heap_.allocateString(key);
-    Value first = Value::makeStringId(keyStrRef.id);
+  auto keyStrRef = heap_.allocateString(key);
+  auto keyGuard = makeRoot(Value::makeStringId(keyStrRef.id));
+  Value first = Value::makeStringId(keyStrRef.id);
     Value second = Value::makeNull();
     auto it = globals.find(key);
     if (it != globals.end()) {
@@ -1887,13 +1888,13 @@ void VM::registerDefaultHostFunctions() {
         registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
             const auto &value = args[0];
             std::string typeName;
-            fprintf(stderr, "TYPE_BUILTIN: isFnObj=%d isClosure=%d isHostFunc=%d isObj=%d isNull=%d isBool=%d isInt=%d isDouble=%d isArr=%d isSet=%d isRange=%d isEnum=%d isIter=%d isCoro=%d isStr=%d\n",
-                value.isFunctionObjId(), value.isClosureId(), value.isHostFuncId(),
-                value.isObjectId(), value.isNull(), value.isBool(), value.isInt(), value.isDouble(),
-                value.isArrayId(), value.isSetId(), value.isRangeId(), value.isEnumId(),
-                value.isIteratorId(), value.isCoroutineId(),
-                value.isStringValId() || value.isStringId() || value.isRegexValId());
-            fflush(stderr);
+ if (debug_mode) fprintf(stderr, "TYPE_BUILTIN: isFnObj=%d isClosure=%d isHostFunc=%d isObj=%d isNull=%d isBool=%d isInt=%d isDouble=%d isArr=%d isSet=%d isRange=%d isEnum=%d isIter=%d isCoro=%d isStr=%d\n",
+ value.isFunctionObjId(), value.isClosureId(), value.isHostFuncId(),
+ value.isObjectId(), value.isNull(), value.isBool(), value.isInt(), value.isDouble(),
+ value.isArrayId(), value.isSetId(), value.isRangeId(), value.isEnumId(),
+ value.isIteratorId(), value.isCoroutineId(),
+ value.isStringValId() || value.isStringId() || value.isRegexValId());
+ if (debug_mode) fflush(stderr);
     if (value.isNull()) typeName = "null";
     else if (value.isBool()) typeName = "bool";
     else if (value.isInt()) typeName = "int";
@@ -2050,8 +2051,9 @@ void VM::registerDefaultHostFunctions() {
     if (args.empty()) return Value::makeNull();
     Value fn = args[0];
     
-    ArrayRef arrRef = heap_.allocateArray();
-    auto *arr = heap_.array(arrRef.id);
+  ArrayRef arrRef = heap_.allocateArray();
+  auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
+  auto *arr = heap_.array(arrRef.id);
     
     if (fn.isFunctionObjId()) {
       uint32_t idx = fn.asFunctionObjId();
@@ -2629,8 +2631,9 @@ registerHostFunction(
 
         auto* fields = heap_.array(fieldsVal->asArrayId());
         
-        auto instanceRef = heap_.allocateObject();
-        auto* instance = heap_.object(instanceRef.id);
+  auto instanceRef = heap_.allocateObject();
+  auto instanceGuard = makeRoot(Value::makeObjectId(instanceRef.id));
+  auto* instance = heap_.object(instanceRef.id);
         
   instance->set("__struct", protoVal); // set prototype
 
@@ -2740,8 +2743,9 @@ registerHostFunction(
 
             uint32_t typeId = heap_.registerEnumType(enumName, variantNames);
 
-            auto enumObj = heap_.allocateObject();
-            auto* enumObjPtr = heap_.object(enumObj.id);
+  auto enumObj = heap_.allocateObject();
+  auto enumObjGuard = makeRoot(Value::makeObjectId(enumObj.id));
+  auto* enumObjPtr = heap_.object(enumObj.id);
             enumObjPtr->set("__name", Value::makeStringValId(args[offset].asStringValId()));
             enumObjPtr->set("__is_enum", Value::makeBool(true));
             enumObjPtr->set("__enum_type_id", Value::makeInt(static_cast<int64_t>(typeId)));
@@ -2853,53 +2857,54 @@ if (!protoVal.isObjectId()) {
 COMPILER_THROW("Class type is not an object prototype");
 }
 
-auto instanceRef = heap_.allocateObject();
-auto* instance = heap_.object(instanceRef.id);
+  auto instanceRef = heap_.allocateObject();
+  auto instanceGuard = makeRoot(Value::makeObjectId(instanceRef.id));
+  auto* instance = heap_.object(instanceRef.id);
 
-instance->set("__class", protoVal);
+  instance->set("__class", protoVal);
 
-auto* currentProto = heap_.object(protoVal.asObjectId());
-while (currentProto) {
-auto fieldsVal = currentProto->get("__fields");
-if (fieldsVal && fieldsVal->isArrayId()) {
-auto* fields = heap_.array(fieldsVal->asArrayId());
-for (const auto& f : *fields) {
-std::string fName = current_chunk->getString(f.asStringValId());
-instance->set(fName, Value::makeNull());
-}
-}
-auto parentVal = currentProto->get("__parent");
-if (parentVal && parentVal->isObjectId()) {
-currentProto = heap_.object(parentVal->asObjectId());
-} else {
-currentProto = nullptr;
-}
-}
+  auto* currentProto = heap_.object(protoVal.asObjectId());
+  while (currentProto) {
+    auto fieldsVal = currentProto->get("__fields");
+    if (fieldsVal && fieldsVal->isArrayId()) {
+      auto* fields = heap_.array(fieldsVal->asArrayId());
+      for (const auto& f : *fields) {
+        std::string fName = current_chunk->getString(f.asStringValId());
+        instance->set(fName, Value::makeNull());
+      }
+    }
+    auto parentVal = currentProto->get("__parent");
+    if (parentVal && parentVal->isObjectId()) {
+      currentProto = heap_.object(parentVal->asObjectId());
+    } else {
+      currentProto = nullptr;
+    }
+  }
 
-Value initMethodVal = Value::makeNull();
-currentProto = heap_.object(protoVal.asObjectId());
-while (currentProto) {
-auto val = currentProto->get("init");
-if (val) {
-initMethodVal = *val;
-break;
-}
-auto parentVal = currentProto->get("__parent");
-if (parentVal && parentVal->isObjectId()) {
-currentProto = heap_.object(parentVal->asObjectId());
-} else {
-break;
-}
-}
+  Value initMethodVal = Value::makeNull();
+  currentProto = heap_.object(protoVal.asObjectId());
+  while (currentProto) {
+    auto val = currentProto->get("init");
+    if (val) {
+      initMethodVal = *val;
+      break;
+    }
+    auto parentVal = currentProto->get("__parent");
+    if (parentVal && parentVal->isObjectId()) {
+      currentProto = heap_.object(parentVal->asObjectId());
+    } else {
+      break;
+    }
+  }
 
-if (!initMethodVal.isNull()) {
-            std::vector<Value> ctor_args;
-            ctor_args.reserve(args.size());
-            ctor_args.push_back(Value::makeObjectId(instanceRef.id));
-            for (size_t i = ctor_offset; i < args.size(); ++i) {
-                ctor_args.push_back(args[i]);
-            }
-            (void)call(initMethodVal, ctor_args);
+  if (!initMethodVal.isNull()) {
+    std::vector<Value> ctor_args;
+    ctor_args.reserve(args.size());
+    ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+    for (size_t i = ctor_offset; i < args.size(); ++i) {
+      ctor_args.push_back(args[i]);
+    }
+    (void)call(initMethodVal, ctor_args);
 } else {
 auto* proto = heap_.object(protoVal.asObjectId());
 auto fieldsVal = proto->get("__fields");
@@ -3145,6 +3150,7 @@ void VM::registerDefaultHostGlobals() {
   }
 
   auto system_obj = heap_.allocateObject();
+  auto systemGuard = makeRoot(Value::makeObjectId(system_obj.id));
   setHostObjectField(system_obj, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
   setHostObjectField(system_obj, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
   auto sysIt = globals.find("system");
@@ -3162,6 +3168,7 @@ void VM::registerDefaultHostGlobals() {
   }
 
   auto struct_obj = heap_.allocateObject();
+  auto structGuard = makeRoot(Value::makeObjectId(struct_obj.id));
   setHostObjectField(struct_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("struct.define")));
   setHostObjectField(struct_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("struct.new")));
   setHostObjectField(struct_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("struct.get")));
@@ -3171,6 +3178,7 @@ void VM::registerDefaultHostGlobals() {
   setGlobal("Struct", Value::makeObjectId(struct_obj.id));
 
   auto class_obj = heap_.allocateObject();
+  auto classGuard = makeRoot(Value::makeObjectId(class_obj.id));
   setHostObjectField(class_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("class.define")));
   setHostObjectField(class_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
   setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
@@ -3189,14 +3197,16 @@ void VM::registerDefaultHostGlobals() {
         setHostObjectField(existingRef, "args", Value::makeArrayId(app_args_array_id_));
         setHostObjectField(existingRef, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       } else {
-        auto app_obj = heap_.allocateObject();
-        setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
-        setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
-        setGlobal("app", Value::makeObjectId(app_obj.id));
-      }
-    } else {
       auto app_obj = heap_.allocateObject();
+      auto appGuard = makeRoot(Value::makeObjectId(app_obj.id));
       setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+      setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+      setGlobal("app", Value::makeObjectId(app_obj.id));
+    }
+  } else {
+    auto app_obj = heap_.allocateObject();
+    auto appGuard = makeRoot(Value::makeObjectId(app_obj.id));
+    setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
       setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       setGlobal("app", Value::makeObjectId(app_obj.id));
     }
@@ -3321,27 +3331,29 @@ if (debug_mode) {
         ::havel::debug("=== Executing function: {} ===", function_name);
     }
 
-    fprintf(stderr, "[DBG vm.execute] entry='%s' func_count=%u instr_count=%zu\n",
-        function_name.c_str(), chunk.getFunctionCount(), entry->instructions.size());
-    for (size_t di = 0; di < entry->instructions.size() && di < 10; di++) {
-        const auto& inst = entry->instructions[di];
-        std::string opsStr;
-        for (size_t oi = 0; oi < inst.operands.size(); oi++) {
-            if (oi > 0) opsStr += ", ";
-            if (inst.operands[oi].isStringValId()) {
-                opsStr += "strId(" + std::to_string(inst.operands[oi].asStringValId()) + ")";
-                if (&chunk) opsStr += "='" + chunk.getString(inst.operands[oi].asStringValId()) + "'";
-            } else if (inst.operands[oi].isInt()) {
-                opsStr += "int(" + std::to_string(inst.operands[oi].asInt()) + ")";
-            } else {
-                opsStr += inst.operands[oi].toString();
-            }
-        }
-        fprintf(stderr, "[DBG vm.execute]   instr[%zu]: op=%d operands=[%s]\n",
-            di, (int)inst.opcode, opsStr.c_str());
-    }
+ if (debug_mode) {
+ fprintf(stderr, "[DBG vm.execute] entry='%s' func_count=%u instr_count=%zu\n",
+ function_name.c_str(), chunk.getFunctionCount(), entry->instructions.size());
+ for (size_t di = 0; di < entry->instructions.size() && di < 10; di++) {
+ const auto& inst = entry->instructions[di];
+ std::string opsStr;
+ for (size_t oi = 0; oi < inst.operands.size(); oi++) {
+ if (oi > 0) opsStr += ", ";
+ if (inst.operands[oi].isStringValId()) {
+ opsStr += "strId(" + std::to_string(inst.operands[oi].asStringValId()) + ")";
+ if (&chunk) opsStr += "='" + chunk.getString(inst.operands[oi].asStringValId()) + "'";
+ } else if (inst.operands[oi].isInt()) {
+ opsStr += "int(" + std::to_string(inst.operands[oi].asInt()) + ")";
+ } else {
+ opsStr += inst.operands[oi].toString();
+ }
+ }
+ fprintf(stderr, "[DBG vm.execute] instr[%zu]: op=%d operands=[%s]\n",
+ di, (int)inst.opcode, opsStr.c_str());
+ }
+ }
 
-    runDispatchLoop(0);
+ runDispatchLoop(0);
 
  current_chunk = saved_chunk;
 
@@ -5827,15 +5839,15 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 
-            fprintf(stderr, "[DBG LOAD_GLOBAL] name='%s' strIndex=%u func='%s' globals_size=%zu\n",
-                name.c_str(), strIndex,
-                func ? func->name.c_str() : "<null>", globals.size());
-            {
-                bool found_in_globals = globals.count(name) > 0;
-                bool found_in_host = host_function_globals_.count(name) > 0;
-                if (!found_in_globals && !found_in_host) fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' NOT in globals OR host_function_globals\n", name.c_str());
-                else fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' found: globals=%d host=%d\n", name.c_str(), found_in_globals, found_in_host);
-            }
+ if (debug_mode) {
+ fprintf(stderr, "[DBG LOAD_GLOBAL] name='%s' strIndex=%u func='%s' globals_size=%zu\n",
+ name.c_str(), strIndex,
+ func ? func->name.c_str() : "<null>", globals.size());
+ bool found_in_globals = globals.count(name) > 0;
+ bool found_in_host = host_function_globals_.count(name) > 0;
+ if (!found_in_globals && !found_in_host) fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' NOT in globals OR host_function_globals\n", name.c_str());
+ else fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' found: globals=%d host=%d\n", name.c_str(), found_in_globals, found_in_host);
+ }
 
             // First check regular globals (user variables shadow host functions)
             auto it = globals.find(name);
@@ -5871,8 +5883,8 @@ case OpCode::STORE_GLOBAL: {
         }
             Value value = popStack();
 
-        fprintf(stderr, "[DBG STORE_GLOBAL] name='%s' value=%s globals_size=%zu\n",
-            name.c_str(), value.toString().c_str(), globals.size());
+ if (debug_mode) fprintf(stderr, "[DBG STORE_GLOBAL] name='%s' value=%s globals_size=%zu\n",
+ name.c_str(), value.toString().c_str(), globals.size());
 
         if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
@@ -6288,10 +6300,10 @@ case OpCode::LENGTH: {
                 args[arg_count - 1 - i] = popStack();
             }
             Value callee_value = popStack();
-            fprintf(stderr, "CALL: callee isHostFunc=%d isFnObj=%d isClosure=%d isObj=%d\n",
-                callee_value.isHostFuncId(), callee_value.isFunctionObjId(),
-                callee_value.isClosureId(), callee_value.isObjectId());
-            fflush(stderr);
+ if (debug_mode) fprintf(stderr, "CALL: callee isHostFunc=%d isFnObj=%d isClosure=%d isObj=%d\n",
+ callee_value.isHostFuncId(), callee_value.isFunctionObjId(),
+ callee_value.isClosureId(), callee_value.isObjectId());
+ if (debug_mode) fflush(stderr);
 
 	// Handle callable objects (Lua-style __call metamethod, or op_call operator)
 	if (callee_value.isObjectId()) {
@@ -6770,10 +6782,10 @@ case OpCode::TAIL_CALL: {
 
 case OpCode::CLOSURE: {
             if (instruction.operands.empty()) COMPILER_THROW("CLOSURE: no operands");
-            fprintf(stderr, "[DBG CLOSURE] operand type: isInt=%d isFunctionObjId=%d raw=%zu\n",
-                instruction.operands[0].isInt() ? 1 : 0,
-                instruction.operands[0].isFunctionObjId() ? 1 : 0,
-                instruction.operands[0].rawBits());
+ if (debug_mode) fprintf(stderr, "[DBG CLOSURE] operand type: isInt=%d isFunctionObjId=%d raw=%zu\n",
+ instruction.operands[0].isInt() ? 1 : 0,
+ instruction.operands[0].isFunctionObjId() ? 1 : 0,
+ instruction.operands[0].rawBits());
             uint32_t function_index = instruction.operands[0].asInt();
     const auto *target = current_chunk->getFunction(function_index);
     if (!target) {
@@ -6825,7 +6837,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                                         .chunk = current_chunk,
                                         .module_globals = std::move(closure_globals),
                                         .upvalues = std::move(closure.upvalues)}).id));
-            fprintf(stderr, "[DBG CLOSURE] Created closure for func_idx=%u, pushed to stack\n", function_index);
+            if (debug_mode) fprintf(stderr, "[DBG CLOSURE] Created closure for func_idx=%u, pushed to stack\n", function_index);
             // Disable GC to test if it's causing corruption
     // maybeCollectGarbage();
     break;
@@ -7354,13 +7366,14 @@ auto *parent_closure = heap_.closure(parent_closure_id);
           } else if (*key == "arity") {
             pushStack(Value::makeInt(static_cast<int64_t>(func->param_count)));
             break;
-          } else if (*key == "params") {
-            auto arrRef = heap_.allocateArray();
-            auto* arr = heap_.array(arrRef.id);
-            for (const auto& p : func->param_names) {
-              arr->push_back(Value::makeStringId(heap_.allocateString(p).id));
-            }
-            pushStack(Value::makeArrayId(arrRef.id));
+      } else if (*key == "params") {
+        auto arrRef = heap_.allocateArray();
+        auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
+        auto* arr = heap_.array(arrRef.id);
+        for (const auto& p : func->param_names) {
+          arr->push_back(Value::makeStringId(heap_.allocateString(p).id));
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
             break;
           }
         }
@@ -7462,27 +7475,29 @@ auto *parent_closure = heap_.closure(parent_closure_id);
               if (nameVal) { pushStack(*nameVal); break; }
               pushStack(Value::makeNull());
               break;
-            } else if (*key == "methods") {
-              // Collect method names from the prototype
-              auto arrRef = heap_.allocateArray();
-              auto* arr = heap_.array(arrRef.id);
-              auto keys = obj->getKeys();
-              for (const auto& k : keys) {
-                auto* val = obj->get(k);
-                if (val && (val->isFunctionObjId() || val->isHostFuncId())) {
-                  arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
-                }
-              }
-              pushStack(Value::makeArrayId(arrRef.id));
+      } else if (*key == "methods") {
+        // Collect method names from the prototype
+        auto arrRef = heap_.allocateArray();
+        auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
+        auto* arr = heap_.array(arrRef.id);
+        auto keys = obj->getKeys();
+        for (const auto& k : keys) {
+          auto* val = obj->get(k);
+          if (val && (val->isFunctionObjId() || val->isHostFuncId())) {
+            arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
+          }
+        }
+        pushStack(Value::makeArrayId(arrRef.id));
               break;
             } else if (*key == "fields") {
               auto* fieldsVal = obj->get("__fields");
               if (fieldsVal && fieldsVal->isArrayId()) {
                 pushStack(*fieldsVal);
               } else {
-                // Collect from default null fields
-                auto arrRef = heap_.allocateArray();
-                auto* arr = heap_.array(arrRef.id);
+        // Collect from default null fields
+        auto arrRef = heap_.allocateArray();
+        auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
+        auto* arr = heap_.array(arrRef.id);
                 auto keys = obj->getKeys();
                 for (const auto& k : keys) {
                   auto* val = obj->get(k);
@@ -7782,12 +7797,13 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 (*bObj)["self"] = object;
                 pushStack(Value::makeObjectId(boundObj.id));
             } else {
-                // Autovivification: if object has __vivify, auto-create sub-object
-                auto* vivify = obj->get("__vivify");
-                if (vivify && !vivify->isNull() && !vivify->isBool()) {
-                    // Create a new sub-object with same __vivify marker
-                    auto subRef = heap_.allocateObject();
-                    auto *subObj = heap_.object(subRef.id);
+    // Autovivification: if object has __vivify, auto-create sub-object
+    auto* vivify = obj->get("__vivify");
+    if (vivify && !vivify->isNull() && !vivify->isBool()) {
+      // Create a new sub-object with same __vivify marker
+      auto subRef = heap_.allocateObject();
+      auto subGuard = makeRoot(Value::makeObjectId(subRef.id));
+      auto *subObj = heap_.object(subRef.id);
                     (*subObj)["__vivify"] = *vivify;
                     // Also propagate __autosave_root if present
                     auto* autoSaveRoot = obj->get("__autosave_root");
@@ -8052,22 +8068,23 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!obj) {
       COMPILER_THROW("OBJECT_ENTRIES unknown object id");
     }
-    auto arrRef = heap_.allocateArray();
-    auto keys = obj->getKeys();
-    for (const auto &key : keys) {
-      auto *val = obj->get(key);
-      if (val) {
-        // Create [key, value] tuple as array
-        auto tupleRef = heap_.allocateArray();
-        auto *tuple = heap_.array(tupleRef.id);
-        // TODO: string pool registration
-        tuple->push_back(Value::makeNull());
-        tuple->push_back(*val);
-        auto *arr = heap_.array(arrRef.id);
-        arr->push_back(Value::makeArrayId(tupleRef.id));
+      auto arrRef = heap_.allocateArray();
+      auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
+      auto keys = obj->getKeys();
+      for (const auto &key : keys) {
+        auto *val = obj->get(key);
+        if (val) {
+          // Create [key, value] tuple as array
+          auto tupleRef = heap_.allocateArray();
+          auto *tuple = heap_.array(tupleRef.id);
+          // TODO: string pool registration
+          tuple->push_back(Value::makeNull());
+          tuple->push_back(*val);
+          auto *arr = heap_.array(arrRef.id);
+          arr->push_back(Value::makeArrayId(tupleRef.id));
+        }
       }
-    }
-    pushStack(Value::makeArrayId(arrRef.id));
+      pushStack(Value::makeArrayId(arrRef.id));
     break;
   }
 
@@ -8576,7 +8593,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         for (const auto& [name, value] : *obj) {
             if (name.empty() || name[0] == '_') continue;
         globals[name] = value;
-        if (name == "f") fprintf(stderr, "[DBG STORE_GLOBAL] STORED 'f' to globals, value=%s, globals_size=%zu\n", value.toString().c_str(), globals.size());
+        if (debug_mode && name == "f") fprintf(stderr, "[DBG STORE_GLOBAL] STORED 'f' to globals, value=%s, globals_size=%zu\n", value.toString().c_str(), globals.size());
         emitVariableChanged(name);
         }
         break;
@@ -9800,8 +9817,9 @@ Value VM::loadModule(const std::string& path) {
             if (name.rfind(prefix, 0) == 0) { hasNamespace = true; break; }
         }
         if (hasNamespace || (context_ && context_->hostBridge && context_->hostBridge->loadModule(path))) {
-            auto exportsObj = createHostObject();
-            auto *obj = heap_.object(exportsObj.id);
+  auto exportsObj = createHostObject();
+  auto exportsGuard = makeRoot(Value::makeObjectId(exportsObj.id));
+  auto *obj = heap_.object(exportsObj.id);
             for (const auto& [name, value] : host_function_globals_) {
                 if (name.rfind(prefix, 0) == 0) {
                     std::string localName = name.substr(prefix.size());

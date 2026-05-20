@@ -940,13 +940,14 @@ return vm->execLengthOp(args[0]);
         }
         return Value::makeInt(static_cast<int64_t>(-1));
       };
-  options_.host_functions["array.map"] =
-      [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isArrayId())
-          return Value::makeNull();
-        auto arrRef = ArrayRef{args[0].asArrayId()};
-        auto resultRef = ctx_->vm->createHostArray();
-        size_t len = ctx_->vm->getHostArrayLength(arrRef);
+options_.host_functions["array.map"] =
+[this](const std::vector<Value> &args) {
+  if (args.size() < 2 || !args[0].isArrayId())
+    return Value::makeNull();
+  auto arrRef = ArrayRef{args[0].asArrayId()};
+  auto resultRef = ctx_->vm->createHostArray();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeArrayId(resultRef.id));
+  size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
           auto mapped = ctx_->vm->callFunction(args[1], {elem});
@@ -954,13 +955,14 @@ return vm->execLengthOp(args[0]);
         }
         return Value::makeArrayId(resultRef.id);
       };
-  options_.host_functions["array.filter"] =
-      [this](const std::vector<Value> &args) {
-        if (args.size() < 2 || !args[0].isArrayId())
-          return Value::makeNull();
-        auto arrRef = ArrayRef{args[0].asArrayId()};
-        auto resultRef = ctx_->vm->createHostArray();
-        size_t len = ctx_->vm->getHostArrayLength(arrRef);
+options_.host_functions["array.filter"] =
+[this](const std::vector<Value> &args) {
+  if (args.size() < 2 || !args[0].isArrayId())
+    return Value::makeNull();
+  auto arrRef = ArrayRef{args[0].asArrayId()};
+  auto resultRef = ctx_->vm->createHostArray();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeArrayId(resultRef.id));
+  size_t len = ctx_->vm->getHostArrayLength(arrRef);
         for (size_t i = 0; i < len; i++) {
           auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
           auto keep = ctx_->vm->callFunction(args[1], {elem});
@@ -1162,9 +1164,10 @@ return vm->execLengthOp(args[0]);
         const auto &predicate = args[1];
         const std::string &fnName = HostFunctionRef{predicate.toString()}.name;
 
-        ArrayRef result = ctx_->vm->createHostArray();
+  ArrayRef result = ctx_->vm->createHostArray();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeArrayId(result.id));
 
-        // Create iterator
+  // Create iterator
         IteratorRef iterRef = ctx_->vm->createIterator(iterable);
 
         while (true) {
@@ -1201,11 +1204,12 @@ return vm->execLengthOp(args[0]);
     const auto &iterable = args[0];
     const auto &transform = args[1];
     const std::string &fnName = HostFunctionRef{transform.toString()}.name;
-    (void)fnName;
+  (void)fnName;
 
-    ArrayRef result = ctx_->vm->createHostArray();
+  ArrayRef result = ctx_->vm->createHostArray();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeArrayId(result.id));
 
-    // Create iterator
+  // Create iterator
     IteratorRef iterRef = ctx_->vm->createIterator(iterable);
 
     while (true) {
@@ -1239,9 +1243,10 @@ return vm->execLengthOp(args[0]);
     }
     const auto &iterable = args[0];
 
-    // Create set and add unique elements
-    ObjectRef result = ctx_->vm->createHostObject();
-    ctx_->vm->setHostObjectField(result, "__set_marker__", Value::makeBool(true));
+  // Create set and add unique elements
+  ObjectRef result = ctx_->vm->createHostObject();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeObjectId(result.id));
+  ctx_->vm->setHostObjectField(result, "__set_marker__", Value::makeBool(true));
     IteratorRef iterRef = ctx_->vm->createIterator(iterable);
 
     while (true) {
@@ -1271,8 +1276,9 @@ return vm->execLengthOp(args[0]);
         }
         const auto &iterable = args[0];
 
-        ObjectRef result = ctx_->vm->createHostObject();
-        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+  ObjectRef result = ctx_->vm->createHostObject();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeObjectId(result.id));
+  IteratorRef iterRef = ctx_->vm->createIterator(iterable);
 
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef);
@@ -1522,9 +1528,10 @@ return vm->execLengthOp(args[0]);
           groups[keyStr].push_back(valueVal);
         }
 
-        // Create result object with groups
-        ObjectRef result = ctx_->vm->createHostObject();
-        for (const auto &pair : groups) {
+  // Create result object with groups
+  ObjectRef result = ctx_->vm->createHostObject();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeObjectId(result.id));
+  for (const auto &pair : groups) {
           ArrayRef groupArray = ctx_->vm->createHostArray();
           for (const auto &elem : pair.second) {
             ctx_->vm->pushHostArrayValue(groupArray, elem);
@@ -1542,9 +1549,10 @@ return vm->execLengthOp(args[0]);
           return Value::makeNull();
         }
 
-        ArrayRef result = ctx_->vm->createHostArray();
+  ArrayRef result = ctx_->vm->createHostArray();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeArrayId(result.id));
 
-        // Add elements from first iterable
+  // Add elements from first iterable
         IteratorRef iterRef1 = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef1);
@@ -1590,9 +1598,10 @@ return vm->execLengthOp(args[0]);
           return Value::makeNull();
         }
 
-        ObjectRef result = ctx_->vm->createHostObject();
+  ObjectRef result = ctx_->vm->createHostObject();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeObjectId(result.id));
 
-        // Copy properties from first object
+  // Copy properties from first object
         IteratorRef iterRef1 = ctx_->vm->createIterator(args[0]);
         while (true) {
           auto iterResult = ctx_->vm->iteratorNext(iterRef1);
@@ -1651,9 +1660,10 @@ return vm->execLengthOp(args[0]);
 
         // For now, return a simplified join (inner join)
         // This is a placeholder - full join requires more context
-        ArrayRef result = ctx_->vm->createHostArray();
+  ArrayRef result = ctx_->vm->createHostArray();
+  auto resultGuard = ctx_->vm->makeRoot(Value::makeArrayId(result.id));
 
-        // Create map of inner elements by key
+  // Create map of inner elements by key
         std::unordered_map<std::string, std::vector<Value>> innerMap;
         IteratorRef innerIterRef = ctx_->vm->createIterator(inner);
         while (true) {

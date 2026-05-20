@@ -15,12 +15,16 @@ namespace havel::compiler {
 using Value = ::havel::core::Value;
 
 struct VMApi {
-    VM *vm_;
+  VM *vm_;
 
-    VMApi(VM &vm) : vm_(&vm) {}
-    VM &vm() const { return *vm_; }
+  VMApi(VM &vm) : vm_(&vm) {}
+  VM &vm() const { return *vm_; }
 
-    Value makeNull() const { return Value::makeNull(); }
+  [[nodiscard]] VM::GCRoot root(const Value &value) const {
+    return vm().makeRoot(value);
+  }
+
+  Value makeNull() const { return Value::makeNull(); }
     Value makeBool(bool v) const { return Value::makeBool(v); }
     Value makeNumber(int64_t v) const { return Value::makeInt(v); }
     Value makeNumber(double v) const { return Value::makeDouble(v); }

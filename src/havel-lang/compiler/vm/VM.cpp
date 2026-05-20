@@ -3313,11 +3313,31 @@ Value VM::execute(const BytecodeChunk &chunk,
  }
  }
 
- if (debug_mode) {
- ::havel::debug("=== Executing function: {} ===", function_name);
- }
+if (debug_mode) {
+        ::havel::debug("=== Executing function: {} ===", function_name);
+    }
 
- runDispatchLoop(0);
+    fprintf(stderr, "[DBG vm.execute] entry='%s' func_count=%u instr_count=%zu\n",
+        function_name.c_str(), chunk.getFunctionCount(), entry->instructions.size());
+    for (size_t di = 0; di < entry->instructions.size() && di < 10; di++) {
+        const auto& inst = entry->instructions[di];
+        std::string opsStr;
+        for (size_t oi = 0; oi < inst.operands.size(); oi++) {
+            if (oi > 0) opsStr += ", ";
+            if (inst.operands[oi].isStringValId()) {
+                opsStr += "strId(" + std::to_string(inst.operands[oi].asStringValId()) + ")";
+                if (&chunk) opsStr += "='" + chunk.getString(inst.operands[oi].asStringValId()) + "'";
+            } else if (inst.operands[oi].isInt()) {
+                opsStr += "int(" + std::to_string(inst.operands[oi].asInt()) + ")";
+            } else {
+                opsStr += inst.operands[oi].toString();
+            }
+        }
+        fprintf(stderr, "[DBG vm.execute]   instr[%zu]: op=%d operands=[%s]\n",
+            di, (int)inst.opcode, opsStr.c_str());
+    }
+
+    runDispatchLoop(0);
 
  current_chunk = saved_chunk;
 
@@ -5771,25 +5791,33 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
-  case OpCode::LOAD_GLOBAL: {
-    if (instruction.operands.empty() ||
-        !instruction.operands[0].isStringValId()) {
-      COMPILER_THROW("LOAD_GLOBAL expects string operand");
-    }
-    // Get the string from the function's string table
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    const auto* func = currentFrame().function;
-        std::string name;
-        if (current_chunk) {
-            name = current_chunk->getString(strIndex);
-        } else {
-            name = "<unknown:" + std::to_string(strIndex) + ">";
-    }
+case OpCode::LOAD_GLOBAL: {
+            if (instruction.operands.empty() ||
+                !instruction.operands[0].isStringValId()) {
+                COMPILER_THROW("LOAD_GLOBAL expects string operand");
+            }
+            // Get the string from the function's string table
+            uint32_t strIndex = instruction.operands[0].asStringValId();
+            const auto* func = currentFrame().function;
+            std::string name;
+            if (current_chunk) {
+                name = current_chunk->getString(strIndex);
+            } else {
+                name = "<unknown:" + std::to_string(strIndex) + ">";
+            }
 
-    
+            fprintf(stderr, "[DBG LOAD_GLOBAL] name='%s' strIndex=%u func='%s' globals_size=%zu\n",
+                name.c_str(), strIndex,
+                func ? func->name.c_str() : "<null>", globals.size());
+            {
+                bool found_in_globals = globals.count(name) > 0;
+                bool found_in_host = host_function_globals_.count(name) > 0;
+                if (!found_in_globals && !found_in_host) fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' NOT in globals OR host_function_globals\n", name.c_str());
+                else fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' found: globals=%d host=%d\n", name.c_str(), found_in_globals, found_in_host);
+            }
 
-        // First check regular globals (user variables shadow host functions)
-        auto it = globals.find(name);
+            // First check regular globals (user variables shadow host functions)
+            auto it = globals.find(name);
         if (it != globals.end()) {
             trackGlobalAccess(name);
             pushStack(it->second);
@@ -5821,6 +5849,9 @@ case OpCode::STORE_GLOBAL: {
             name = "<unknown:" + std::to_string(strIndex) + ">";
         }
             Value value = popStack();
+
+        fprintf(stderr, "[DBG STORE_GLOBAL] name='%s' value=%s globals_size=%zu\n",
+            name.c_str(), value.toString().c_str(), globals.size());
 
         if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
@@ -6225,17 +6256,21 @@ case OpCode::LENGTH: {
     break;
   }
 
-  case OpCode::CALL: {
-    uint32_t arg_count = instruction.operands[0].asInt();
-    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-      COMPILER_THROW("Stack underflow during CALL");
-    }
+        case OpCode::CALL: {
+            uint32_t arg_count = instruction.operands[0].asInt();
+            if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+                COMPILER_THROW("Stack underflow during CALL");
+            }
 
-    std::vector<Value> args(arg_count);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-      args[arg_count - 1 - i] = popStack();
-    }
-    Value callee_value = popStack();
+            std::vector<Value> args(arg_count);
+            for (uint32_t i = 0; i < arg_count; ++i) {
+                args[arg_count - 1 - i] = popStack();
+            }
+            Value callee_value = popStack();
+            fprintf(stderr, "CALL: callee isHostFunc=%d isFnObj=%d isClosure=%d isObj=%d\n",
+                callee_value.isHostFuncId(), callee_value.isFunctionObjId(),
+                callee_value.isClosureId(), callee_value.isObjectId());
+            fflush(stderr);
 
 	// Handle callable objects (Lua-style __call metamethod, or op_call operator)
 	if (callee_value.isObjectId()) {
@@ -6712,8 +6747,13 @@ case OpCode::TAIL_CALL: {
     throw ScriptThrow{std::move(thrown)};
   }
 
-  case OpCode::CLOSURE: {
-    uint32_t function_index = instruction.operands[0].asInt();
+case OpCode::CLOSURE: {
+            if (instruction.operands.empty()) COMPILER_THROW("CLOSURE: no operands");
+            fprintf(stderr, "[DBG CLOSURE] operand type: isInt=%d isFunctionObjId=%d raw=%zu\n",
+                instruction.operands[0].isInt() ? 1 : 0,
+                instruction.operands[0].isFunctionObjId() ? 1 : 0,
+                instruction.operands[0].rawBits());
+            uint32_t function_index = instruction.operands[0].asInt();
     const auto *target = current_chunk->getFunction(function_index);
     if (!target) {
       COMPILER_THROW("CLOSURE references unknown function index");
@@ -6758,13 +6798,14 @@ auto *parent_closure = heap_.closure(parent_closure_id);
   if (current_chunk != main_chunk_.get()) {
     closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
   }
- pushStack(Value::makeClosureId(heap_.allocateClosure(
-     GCHeap::RuntimeClosure{.function_index = closure.function_index,
-                            .chunk_index = 0,
-                            .chunk = current_chunk,
-                            .module_globals = std::move(closure_globals),
-                            .upvalues = std::move(closure.upvalues)}).id));
-    // Disable GC to test if it's causing corruption
+            pushStack(Value::makeClosureId(heap_.allocateClosure(
+                GCHeap::RuntimeClosure{.function_index = closure.function_index,
+                                        .chunk_index = 0,
+                                        .chunk = current_chunk,
+                                        .module_globals = std::move(closure_globals),
+                                        .upvalues = std::move(closure.upvalues)}).id));
+            fprintf(stderr, "[DBG CLOSURE] Created closure for func_idx=%u, pushed to stack\n", function_index);
+            // Disable GC to test if it's causing corruption
     // maybeCollectGarbage();
     break;
   }
@@ -8513,8 +8554,9 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         }
         for (const auto& [name, value] : *obj) {
             if (name.empty() || name[0] == '_') continue;
-            globals[name] = value;
-            emitVariableChanged(name);
+        globals[name] = value;
+        if (name == "f") fprintf(stderr, "[DBG STORE_GLOBAL] STORED 'f' to globals, value=%s, globals_size=%zu\n", value.toString().c_str(), globals.size());
+        emitVariableChanged(name);
         }
         break;
     }

@@ -294,8 +294,16 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     std::stack<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
 
+    fprintf(stderr, "[DBG bc.execute] About to execute chunk with %u functions, globals_size=%zu, 'f' in globals: %d\n",
+        g_builder.chunk->getFunctionCount(), vm.globals.size(),
+        vm.globals.count("f") > 0 ? 1 : 0);
+
     try {
         auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+
+        fprintf(stderr, "[DBG bc.execute] After execute: globals_size=%zu, 'f' in globals: %d\n",
+            vm.globals.size(), vm.globals.count("f") > 0 ? 1 : 0);
+
         vm.current_chunk = saved_chunk;
         vm.frame_count_ = saved_frame_count;
         vm.frame_arena_ = std::move(saved_frame_arena);
@@ -303,6 +311,7 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
         vm.locals = std::move(saved_locals);
         return result;
     } catch (const std::exception &e) {
+        fprintf(stderr, "[DBG bc.execute] CAUGHT: %s\n", e.what());
         vm.current_chunk = saved_chunk;
         vm.frame_count_ = saved_frame_count;
         vm.frame_arena_ = std::move(saved_frame_arena);

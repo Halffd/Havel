@@ -1037,16 +1037,22 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	sigaction(SIGTERM, &sa, nullptr);
 
 	// Debug.AutoExit support for pure script mode
-	if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+	{
+		bool autoExit = Configs::Get().Get<bool>("Debug.AutoExit", false);
 		int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
-		std::thread([delay]() {
-			std::this_thread::sleep_for(std::chrono::seconds(delay));
-			if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
-				return; // AutoExit was disabled during the wait
-			}
-			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", delay);
-			std::exit(0);
-		}).detach();
+		fprintf(stderr, "DEBUG: AutoExit=%d delay=%d\n", autoExit, delay);
+		if (autoExit) {
+			std::thread([delay]() {
+				fprintf(stderr, "DEBUG: AutoExit thread started, sleeping %d seconds\n", delay);
+				std::this_thread::sleep_for(std::chrono::seconds(delay));
+				if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+					fprintf(stderr, "DEBUG: AutoExit cancelled during wait\n");
+					return;
+				}
+				fprintf(stderr, "DEBUG: AutoExit firing after %d seconds\n", delay);
+				std::exit(0);
+			}).detach();
+		}
 	}
 
 	try {

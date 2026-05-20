@@ -3681,43 +3681,55 @@ void VM::loadFiberState(Fiber *fiber) {
     if (frame_arena_.size() <= frame_count_) {
       frame_arena_.push_back(CallFrame());
     }
-    
+
     auto &vm_frame = frame_arena_[frame_count_];
-    
-    // Resolve function pointer from function_id
+
+    // Resolve function pointer from function_id using the saved chunk
+    const BytecodeChunk *resolve_chunk = fiber_frame.chunk_ptr;
     if (fiber_frame.function_id == 0xFFFFFFFF) {
-        vm_frame.function = nullptr; // Special marker for hotkey action
-    } else if (current_chunk) {
-        // Resolve from current chunk (main or module)
-        if (fiber_frame.function_id < current_chunk->getFunctionCount()) {
-            vm_frame.function = current_chunk->getFunction(fiber_frame.function_id);
-        }
+      vm_frame.function = nullptr; // Special marker for hotkey action
+    } else if (resolve_chunk && fiber_frame.function_id < resolve_chunk->getFunctionCount()) {
+      vm_frame.function = resolve_chunk->getFunction(fiber_frame.function_id);
+      vm_frame.chunk = resolve_chunk;
+    } else if (current_chunk && fiber_frame.function_id < current_chunk->getFunctionCount()) {
+      // Fallback: resolve from current chunk if no saved chunk
+      vm_frame.function = current_chunk->getFunction(fiber_frame.function_id);
+      vm_frame.chunk = current_chunk;
+      ::havel::warn("[VM] loadFiberState: No saved chunk, resolved function {} from current chunk", fiber_frame.function_id);
     }
-    
+
     if (!vm_frame.function && fiber_frame.function_id != 0xFFFFFFFF) {
-        ::havel::warn("[VM] loadFiberState: Could not resolve function {} in current chunk", fiber_frame.function_id);
+      ::havel::warn("[VM] loadFiberState: Could not resolve function {} (chunk_ptr={})", fiber_frame.function_id, (void*)resolve_chunk);
     }
+
     vm_frame.ip = fiber_frame.ip;
     vm_frame.locals_base = fiber_frame.locals_base;
     vm_frame.closure_id = fiber_frame.closure_id;
-    
+    vm_frame.stack_depth = fiber_frame.stack_depth;
+    vm_frame.owns_globals = fiber_frame.owns_globals;
+
     // Convert try_stack: both have same structure but different types
     vm_frame.try_stack.clear();
     for (const auto& handler : fiber_frame.try_stack) {
       vm_frame.try_stack.push_back(VM::TryHandler{
-          handler.catch_ip,
-          handler.finally_ip,
-          handler.finally_return_ip,
-          handler.stack_depth
+        handler.catch_ip,
+        handler.finally_ip,
+        handler.finally_return_ip,
+        handler.stack_depth
       });
     }
-    
+
     frame_count_++;
   }
 
-  // STEP 5: Update current frame's IP to point to the saved instruction
-  // This is critical for resumption - we need to continue from where we left off
+  // STEP 5: Restore current_chunk from the topmost frame's chunk
+  // This is critical for LOAD_GLOBAL and other chunk-dependent operations
   if (frame_count_ > 0) {
+    const auto &top_frame = frame_arena_[frame_count_ - 1];
+    if (top_frame.chunk) {
+      current_chunk = top_frame.chunk;
+    }
+
     // The fiber->ip tells us where to resume in the current chunk
     // This was saved during the previous suspension
     frame_arena_[frame_count_ - 1].ip = fiber->ip;
@@ -3778,6 +3790,15 @@ void VM::saveFiberState(Fiber *fiber) {
     fiber_cf.ip = vm_frame.ip;
     fiber_cf.locals_base = vm_frame.locals_base;
     fiber_cf.closure_id = vm_frame.closure_id;
+    fiber_cf.arg_count = 0;
+    fiber_cf.stack_depth = vm_frame.stack_depth;
+    fiber_cf.owns_globals = vm_frame.owns_globals;
+    fiber_cf.chunk_ptr = vm_frame.chunk;
+    if (vm_frame.function && vm_frame.chunk) {
+      fiber_cf.function_id = vm_frame.chunk->getFunctionIndex(vm_frame.function);
+    } else {
+      fiber_cf.function_id = 0;
+    }
     
     // Convert try_stack: both have same structure but different types
     fiber_cf.try_stack.clear();

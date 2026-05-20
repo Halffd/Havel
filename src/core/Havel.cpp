@@ -316,18 +316,18 @@ if (hotkeyManager) {
       throw std::runtime_error("Failed to open X11 display");
     }
   }
-  if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
-    std::thread([this]() {
-      auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
-      std::this_thread::sleep_for(std::chrono::seconds(s));
-		if(!Configs::Get().Get<bool>("Debug.AutoExit", false)){
-			return; // AutoExit was disabled during the wait
-		}
-		if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", s);
-		this->exit();
-		std::exit(0);
-    }).detach();
-  }
+	if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
+		std::thread([this]() {
+			auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+			std::this_thread::sleep_for(std::chrono::seconds(s));
+			if(!Configs::Get().Get<bool>("Debug.AutoExit", false)){
+				return; // AutoExit was disabled during the wait
+			}
+			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", s);
+			this->exit();
+			std::exit(0);
+		}).detach();
+	}
 }
 
 void Havel::cleanup() noexcept {

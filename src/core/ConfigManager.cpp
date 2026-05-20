@@ -186,16 +186,18 @@ void havel::Configs::Reload() {
 }
 
 void havel::Configs::Load(const std::string &filename) {
-    path = ConfigPaths::GetConfigPath(filename);
+	path = ConfigPaths::GetConfigPath(filename);
 
-    std::ifstream file(path);
+	std::ifstream file(path);
 
-    std::string line, currentSection;
+	std::string line, currentSection;
 
-    if (!file.is_open()) {
-        havel::error("Could not open config file: {}", path);
-        return;
-    }
+	if (!file.is_open()) {
+		havel::error("Could not open config file: {}", path);
+		return;
+	}
+
+	fprintf(stderr, "DEBUG Load: reading config from '%s'\n", path.c_str());
 
     while (std::getline(file, line)) {
         // Skip empty lines and comments

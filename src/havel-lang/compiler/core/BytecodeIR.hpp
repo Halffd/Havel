@@ -452,11 +452,18 @@ public:
 		return &functions[index];
 	}
 
-	const std::vector<BytecodeFunction> &getAllFunctions() const {
+  const std::vector<BytecodeFunction> &getAllFunctions() const {
     return functions;
   }
 
   size_t getFunctionCount() const { return functions.size(); }
+
+  uint32_t getFunctionIndex(const BytecodeFunction *func) const {
+    if (!func || functions.empty()) return UINT32_MAX;
+    auto offset = static_cast<ptrdiff_t>(func - functions.data());
+    if (offset < 0 || offset >= static_cast<ptrdiff_t>(functions.size())) return UINT32_MAX;
+    return static_cast<uint32_t>(offset);
+  }
 
   uint32_t addString(std::string str) {
     for (uint32_t i = 0; i < strings.size(); i++) {

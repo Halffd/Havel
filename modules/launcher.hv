@@ -1,0 +1,27 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+if #app.args < 1 {
+    print("usage: havel --run modules/launcher.hv -- <script.hv> [args...]")
+    exit(1)
+}
+
+path = app.args[0]
+source = fs.read(path)
+if source == null {
+    print("error: cannot read " + path)
+    exit(1)
+}
+
+tokens = tokenize(source)
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+    for err in result.errors { print(err) }
+    exit(1)
+}
+
+emitter = Emitter()
+compileProgram(emitter, result.ast, true)
+bc.execute()

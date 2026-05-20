@@ -27,21 +27,16 @@ fn checkTrue(n, a) {
 // --- Abstract Factory ---
 struct CustData { id, name, email }
 
-fn parseCSV(msg) {
-  // manual split since .split() has VM bug in class methods
-  parts = []
-  acc = ""
-  for c in msg {
-    if c == ";" { parts.push(acc); acc = "" }
-    else { acc = acc + c }
+class CSVParser {
+  fn parse(msg) {
+    parts = msg.split(";")
+    if parts.len < 3 { CustData("0", "", "") }
+    else { CustData(parts[0], parts[1], parts[2]) }
   }
-  parts.push(acc)
-  if parts.len < 3 { CustData("0", "", "") }
-  else { CustData(parts[0], parts[1], parts[2]) }
 }
 
 fn testAbstractFactory() {
-  r1 = parseCSV("1;Alice;alice_at_x.com")
+  r1 = CSVParser().parse("1;Alice;alice_at_x.com")
   check("AF-csv-id", r1.id, "1")
   check("AF-csv-name", r1.name, "Alice")
 }
@@ -156,24 +151,64 @@ fn testPrototype() {
 }
 testPrototype()
 
-// --- Singleton ---
-// Note: constructor from class method has VM bug, use manual lazy init
-_configInstance = null
+// --- Singleton (3 styles with @@ class vars) ---
 
-fn getConfig() {
-  if _configInstance == null {
-    _configInstance = {}
-    _configInstance["items"] = {}
+// 1. Lazy: @@instance created on first @@fn get()
+class ConfigLazy {
+  @@instance = null
+  items
+  fn @() { @items = {} }
+  @@fn get() {
+    if @@instance == null { @@instance = ConfigLazy() }
+    @@instance
   }
-  _configInstance
+}
+
+// 2. Eager: instance created at module load, @@fn get() returns it
+class ConfigEager {
+  @@instance = null
+  items
+  fn @() { @items = {} }
+  @@fn get() { @@instance }
+}
+ConfigEager.instance = ConfigEager()
+
+// 3. Guarded: only @@fn get() may construct (@@allowNew gate)
+class ConfigGuarded {
+  @@instance = null
+  @@allowNew = false
+  items
+  fn @() {
+    @items = {}
+    @@allowNew = false
+  }
+  @@fn get() {
+    if @@instance == null {
+      @@allowNew = true
+      @@instance = ConfigGuarded()
+    }
+    @@instance
+  }
 }
 
 fn testSingleton() {
-  c1 = getConfig()
-  c2 = getConfig()
-  c1["items"]["key"] = "val"
-  check("Single-get", c2["items"]["key"], "val")
-  checkTrue("Single-instance", c1["items"]["key"] == c2["items"]["key"])
+  l1 = ConfigLazy.get()
+  l2 = ConfigLazy.get()
+  l1.items["lazy"] = "ok"
+  check("Single-lazy", l2.items["lazy"], "ok")
+  checkTrue("Single-lazy-same", l1 == l2)
+
+  e1 = ConfigEager.get()
+  e2 = ConfigEager.get()
+  e1.items["eager"] = "ok"
+  check("Single-eager", e2.items["eager"], "ok")
+  checkTrue("Single-eager-same", e1 == e2)
+
+  g1 = ConfigGuarded.get()
+  g2 = ConfigGuarded.get()
+  g1.items["guard"] = "ok"
+  check("Single-guard", g2.items["guard"], "ok")
+  checkTrue("Single-guard-same", g1 == g2)
 }
 testSingleton()
 
@@ -440,24 +475,12 @@ class Macro {
   cmds
   fn @() { @cmds = [] }
   fn add(c) { @cmds.push(c) }
-  fn exec() {
-    // manual accumulation due to push bug in class methods
-    r = ""
-    for c in @cmds {
-      if r != "" { r = r + "; " }
-      r = r + c.exec()
-    }
-    r
-  }
+  fn exec() { @cmds.map(fn(c){ c.exec() }).join("; ") }
   fn undo() {
-    r = ""
+    rev = []
     i = @cmds.len - 1
-    while i >= 0 {
-      if r != "" { r = r + "; " }
-      r = r + @cmds[i].undo()
-      i -= 1
-    }
-    r
+    while i >= 0 { rev.push(@cmds[i]); i -= 1 }
+    rev.map(fn(c){ c.undo() }).join("; ")
   }
 }
 

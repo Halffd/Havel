@@ -1,0 +1,13 @@
+use { isNode } from "ast"
+use { isAlwaysFalse, deadCodeElim, nullLiteral } from "optimizer"
+
+falseLit = {kind: "BooleanLiteral", value: false, line: 1, col: 1}
+thenBlock = {kind: "BlockStatement", body: [], line: 1, col: 1}
+whileNode = {kind: "WhileStatement", condition: falseLit, body: thenBlock, line: 1, col: 1}
+
+af = isAlwaysFalse(whileNode.condition)
+print("isAlwaysFalse=" + str(af))
+
+result = deadCodeElim(whileNode)
+print("result=" + str(result))
+print("result kind=" + str(result.kind))

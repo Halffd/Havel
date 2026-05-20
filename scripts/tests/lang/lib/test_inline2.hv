@@ -1,0 +1,27 @@
+use { isNode } from "ast"
+use { inline, countUses, isSimpleReturn, getReturnValue } from "optimizer"
+
+num42 = {kind: "NumberLiteral", value: 42, line: 1, col: 1}
+retStmt = {kind: "ReturnStatement", value: num42, line: 1, col: 1}
+fnBody = {kind: "BlockStatement", body: [retStmt], line: 1, col: 1}
+fnDecl = {kind: "FnDeclaration", name: "getAnswer", params: [], body: fnBody, line: 1, col: 1}
+
+sr = isSimpleReturn(fnDecl.body)
+print("isSimpleReturn=" + str(sr))
+rv = getReturnValue(fnDecl.body)
+print("returnValue kind=" + str(rv.kind))
+
+callExpr = {kind: "CallExpression", callee: {kind: "Identifier", name: "getAnswer", line: 1, col: 1}, args: [], line: 1, col: 1}
+exprStmt = {kind: "ExpressionStatement", expr: callExpr, line: 1, col: 1}
+
+prog = {kind: "Program", body: [fnDecl, exprStmt], line: 1, col: 1}
+
+cnt = countUses(prog.body, "getAnswer")
+print("countUses getAnswer=" + str(cnt))
+
+result = inline(prog)
+s0 = result.body[0]
+s1 = result.body[1]
+print("stmt0 kind=" + s0.kind + " name=" + s0.name)
+print("stmt1 kind=" + s1.kind)
+print("stmt1 expr=" + str(s1.expr))

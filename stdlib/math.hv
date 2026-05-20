@@ -1,0 +1,27 @@
+// math.hv - Pure Havel math stdlib additions
+// Provides math.* namespace functions implementable in pure Havel.
+// Loaded by: use "math"
+//
+// Native C++ functions (MathModule.cpp) that require <cmath> remain in C++:
+// sin, cos, tan, sqrt, log, exp, pow, ceil, floor, round, cbrt, hypot, log2, log10
+//
+// This module provides pure-Havel implementations of:
+// abs, min, max, clamp
+
+fn abs(x) {
+  if x < 0 { -x } else { x }
+}
+
+fn min(a, b) {
+  if a < b { a } else { b }
+}
+
+fn max(a, b) {
+  if a > b { a } else { b }
+}
+
+fn clamp(v, lo, hi) {
+  if v < lo { lo }
+  else if v > hi { hi }
+  else { v }
+}

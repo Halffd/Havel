@@ -1,0 +1,109 @@
+// array.hv - Pure Havel array stdlib additions
+// Provides array.* namespace functions implementable in pure Havel.
+// Loaded by: use "array"
+//
+// All array prototype methods are registered natively in ArrayPrototype.cpp.
+// This module provides namespace-style access and additional utilities.
+
+// Wrappers for prototype methods (namespace-style access)
+fn len(arr) { arr.len() }
+fn has(arr, v) { arr.has(v) }
+fn indexOf(arr, v) { arr.indexOf(v) }
+fn find(arr, pred) { arr.find(pred) }
+fn map(arr, pred) { arr.map(pred) }
+fn filter(arr, pred) { arr.filter(pred) }
+fn reduce(arr, pred, init) { arr.reduce(pred, init) }
+fn foreach(arr, pred) { arr.foreach(pred) }
+fn every(arr, pred) { arr.every(pred) }
+fn some(arr, pred) { arr.some(pred) }
+fn join(arr, sep) { arr.join(sep) }
+fn concat(a, b) { a.concat(b) }
+fn slice(arr, start, end = nil) {
+  if end != nil { arr.slice(start, end) }
+  else { arr.slice(start) }
+}
+fn reversed(arr) { arr.reversed() }
+fn unique(arr) { arr.unique() }
+fn clone(arr) { arr.clone() }
+fn count(arr, v = nil) {
+  if v != nil { arr.count(v) }
+  else { arr.count() }
+}
+fn includes(arr, v) { arr.includes(v) }
+fn sum(arr) { arr.sum() }
+fn avg(arr) { arr.avg() }
+fn max(arr) { arr.max() }
+fn min(arr) { arr.min() }
+fn empty(arr) { arr.empty() }
+fn groupBy(arr, pred) { arr.groupBy(pred) }
+
+// Mutation wrappers
+fn push(arr, v) { arr.push(v) }
+fn pop(arr) { arr.pop() }
+fn unshift(arr, v) { arr.unshift(v) }
+fn shift(arr) { arr.shift() }
+fn insert(arr, idx, v) { arr.insert(idx, v) }
+fn reverse(arr) { arr.reverse() }
+fn sort(arr, cmp = nil) {
+  if cmp != nil { arr.sort(cmp) }
+  else { arr.sort() }
+}
+fn extend(a, b) { a.extend(b) }
+fn delete(arr, idx) { arr.delete(idx) }
+fn clear(arr) { arr.clear() }
+
+// Additional pure-Havel utilities:
+
+fn flatten(arr) {
+  result = []
+  for item in arr {
+    if type(item) == "array" {
+      for sub in item {
+        result.push(sub)
+      }
+    } else {
+      result.push(item)
+    }
+  }
+  result
+}
+
+fn zip(a, b) {
+result = []
+ln = min(#a, #b)
+i = 0
+while i < ln {
+result.push([a[i], b[i]])
+i += 1
+}
+result
+}
+
+fn range(start, stop, step = nil) {
+arr = []
+if step == nil { step = 1 }
+if step > 0 {
+    i = start
+    while i < stop {
+      arr.push(i)
+      i += step
+    }
+  } else if step < 0 {
+    i = start
+    while i > stop {
+      arr.push(i)
+      i += step
+    }
+  }
+  arr
+}
+
+fn fill(len, v) {
+arr = []
+i = 0
+while i < len {
+arr.push(v)
+i += 1
+}
+arr
+}

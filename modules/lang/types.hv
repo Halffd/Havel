@@ -44,8 +44,9 @@ fn inferBinary(leftType, oper, rightType) {
         else { TYPE_UNKNOWN }
     }
     else if cmpOps[oper] != null { TYPE_BOOL }
-    else if oper == "&&" || oper == "||" { TYPE_BOOL }
-    else if oper == "??" {
+  else if oper == "&&" || oper == "||" { TYPE_BOOL }
+  else if oper == "in" || oper == "not in" || oper == "matches" { TYPE_BOOL }
+  else if oper == "??" {
         if rightType != TYPE_UNKNOWN { rightType }
         else { leftType }
     }
@@ -84,103 +85,191 @@ fn envSet(env, name, t) {
 }
 
 fn inferExpr(node, env) {
-    if node == null { TYPE_UNKNOWN }
-    k = node.kind
-    if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
-        inferLiteral(node)
-    }
-    else if k == "Identifier" { envLookup(env, node.name) }
-    else if k == "BinaryExpression" {
-        lt = inferExpr(node.left, env)
-        rt = inferExpr(node.right, env)
-        inferBinary(lt, node.oper, rt)
-    }
-    else if k == "UnaryExpression" {
-        ot = inferExpr(node.operand, env)
-        inferUnary(node.oper, ot)
-    }
-    else if k == "TernaryExpression" {
-        tt = inferExpr(node.true_expr, env)
-        ft = inferExpr(node.false_expr, env)
-        if tt == ft { tt }
-        else { TYPE_UNKNOWN }
-    }
-    else if k == "CallExpression" {
-        if node.callee.kind == "Identifier" {
-            calleeType = envLookup(env, node.callee.name)
-            if calleeType == TYPE_FN || calleeType != TYPE_UNKNOWN {
-                fnSig = envLookup(env, "$ret_" + node.callee.name)
-                if fnSig != TYPE_UNKNOWN { fnSig }
-                else { TYPE_UNKNOWN }
-            }
-            else { TYPE_UNKNOWN }
-        }
-        else { TYPE_UNKNOWN }
-    }
-    else if k == "ArrayLiteral" { TYPE_ARRAY }
-    else if k == "ObjectLiteral" { TYPE_OBJECT }
-    else if k == "LambdaExpression" { TYPE_FN }
-    else if k == "RangeExpression" { TYPE_ARRAY }
+  if node == null { TYPE_UNKNOWN }
+  k = node.kind
+  if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
+    inferLiteral(node)
+  }
+  else if k == "RegexLiteral" { TYPE_OBJECT }
+  else if k == "Identifier" { envLookup(env, node.name) }
+  else if k == "BinaryExpression" {
+    lt = inferExpr(node.left, env)
+    rt = inferExpr(node.right, env)
+    if node.oper == "matches" { TYPE_BOOL }
+    else if node.oper == "not in" { TYPE_BOOL }
+    else { inferBinary(lt, node.oper, rt) }
+  }
+  else if k == "UnaryExpression" {
+    ot = inferExpr(node.operand, env)
+    if node.oper == "~" { TYPE_INT }
+    else { inferUnary(node.oper, ot) }
+  }
+  else if k == "UpdateExpression" {
+    inferExpr(node.operand, env)
+  }
+  else if k == "TernaryExpression" {
+    tt = inferExpr(node.true_expr, env)
+    ft = inferExpr(node.false_expr, env)
+    if tt == ft { tt }
     else { TYPE_UNKNOWN }
+  }
+  else if k == "CallExpression" {
+    if node.callee.kind == "Identifier" {
+      calleeType = envLookup(env, node.callee.name)
+      fnSig = envLookup(env, "$ret_" + node.callee.name)
+      if fnSig != TYPE_UNKNOWN { fnSig }
+      else { TYPE_UNKNOWN }
+    }
+    else if node.callee.kind == "MemberExpression" {
+      inferExpr(node.callee, env)
+      TYPE_UNKNOWN
+    }
+    else { TYPE_UNKNOWN }
+  }
+  else if k == "MemberExpression" {
+    inferExpr(node.obj, env)
+    TYPE_UNKNOWN
+  }
+  else if k == "IndexExpression" {
+    inferExpr(node.obj, env)
+    inferExpr(node.index, env)
+    TYPE_UNKNOWN
+  }
+  else if k == "ArrayLiteral" { TYPE_ARRAY }
+  else if k == "ObjectLiteral" { TYPE_OBJECT }
+  else if k == "LambdaExpression" { TYPE_FN }
+  else if k == "RangeExpression" { TYPE_ARRAY }
+  else if k == "InterpolatedString" { TYPE_STR }
+  else if k == "SpreadExpression" {
+    inferExpr(node.value, env)
+  }
+  else if k == "PipelineExpression" {
+    inferExpr(node.right, env)
+  }
+  else if k == "AtExpression" { TYPE_UNKNOWN }
+  else if k == "AtAtExpression" { TYPE_UNKNOWN }
+  else if k == "ShellCommand" { TYPE_STR }
+  else if k == "BacktickExpression" { TYPE_STR }
+  else if k == "MatchExpression" { TYPE_UNKNOWN }
+  else if k == "AssignmentExpression" {
+    inferExpr(node.value, env)
+  }
+  else if k == "CompoundAssignment" {
+    inferExpr(node.value, env)
+  }
+  else { TYPE_UNKNOWN }
 }
 
 fn inferStmt(node, env) {
-    if node == null { return }
-    k = node.kind
-    if k == "ExpressionStatement" { inferExpr(node.expr, env) }
-    else if k == "LetDeclaration" || k == "ValDeclaration" {
-        t = TYPE_UNKNOWN
-        if node.value != null { t = inferExpr(node.value, env) }
-        envSet(env, node.name, t)
+  if node == null { return }
+  k = node.kind
+  if k == "ExpressionStatement" { inferExpr(node.expr, env) }
+  else if k == "LetDeclaration" || k == "ValDeclaration" {
+    t = TYPE_UNKNOWN
+    if node.value != null { t = inferExpr(node.value, env) }
+    envSet(env, node.name, t)
+  }
+  else if k == "AssignmentExpression" {
+    newType = inferExpr(node.value, env)
+    if node.target.kind == "Identifier" {
+      existing = envLookup(env, node.target.name)
+      if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
     }
-    else if k == "AssignmentExpression" {
-        inferExpr(node.value, env)
-        if node.target.kind == "Identifier" {
-            existing = envLookup(env, node.target.name)
-            newType = inferExpr(node.value, env)
-            if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
+  }
+  else if k == "CompoundAssignment" {
+    inferExpr(node.value, env)
+  }
+  else if k == "ReturnStatement" {
+    if node.value != null { inferExpr(node.value, env) }
+  }
+  else if k == "IfStatement" {
+    inferExpr(node.condition, env)
+    inferStmt(node.then, env)
+    if node["else"] != null { inferStmt(node["else"], env) }
+  }
+  else if k == "WhileStatement" {
+    inferExpr(node.condition, env)
+    inferStmt(node.body, env)
+  }
+  else if k == "ForStatement" {
+    inferExpr(node.iterator, env)
+    envSet(env, node.name, TYPE_UNKNOWN)
+    inferStmt(node.body, env)
+  }
+  else if k == "LoopStatement" {
+    inferStmt(node.body, env)
+  }
+  else if k == "RepeatStatement" {
+    inferExpr(node.count, env)
+    inferStmt(node.body, env)
+  }
+  else if k == "BlockStatement" {
+    for s in node.body { inferStmt(s, env) }
+  }
+  else if k == "FnDeclaration" {
+    envSet(env, node.name, TYPE_FN)
+    childEnv = TypeEnv(env)
+    for p in node.params {
+      if type(p) == "object" && p.name != null { envSet(childEnv, p.name, TYPE_UNKNOWN) }
+      else { envSet(childEnv, p, TYPE_UNKNOWN) }
+    }
+    retType = TYPE_UNKNOWN
+    if node.body.kind == "BlockStatement" {
+      for s in node.body.body { inferStmt(s, childEnv) }
+      lastStmt = node.body.body[#node.body.body - 1]
+      if lastStmt != null && lastStmt.kind == "ReturnStatement" {
+        retType = inferExpr(lastStmt.value, childEnv)
+      }
+    }
+    else { retType = inferExpr(node.body, childEnv) }
+    if retType != TYPE_UNKNOWN {
+      envSet(env, "$ret_" + node.name, retType)
+    }
+  }
+  else if k == "ClassDeclaration" {
+    envSet(env, node.name, TYPE_OBJECT)
+    childEnv = TypeEnv(env)
+    if node.definition.fields != null {
+      for f in node.definition.fields { envSet(childEnv, f, TYPE_UNKNOWN) }
+    }
+    if node.definition.methods != null {
+      for m in node.definition.methods {
+        if m != null && m.name != null {
+          envSet(childEnv, m.name, TYPE_FN)
         }
+      }
     }
-    else if k == "CompoundAssignment" {
-        inferExpr(node.value, env)
+  }
+  else if k == "StructDeclaration" {
+    envSet(env, node.name, TYPE_OBJECT)
+  }
+  else if k == "MatchExpression" {
+    inferExpr(node.subject, env)
+    for c in node.cases {
+      if c.guard != null { inferExpr(c.guard, env) }
+      inferStmt(c.body, env)
     }
-    else if k == "ReturnStatement" {
-        if node.value != null { inferExpr(node.value, env) }
-    }
-    else if k == "IfStatement" {
-        inferExpr(node.condition, env)
-        inferStmt(node.then, env)
-        if node["else"] != null { inferStmt(node["else"], env) }
-    }
-    else if k == "WhileStatement" {
-        inferExpr(node.condition, env)
-        inferStmt(node.body, env)
-    }
-    else if k == "ForStatement" {
-        inferExpr(node.iterator, env)
-        envSet(env, node.name, TYPE_UNKNOWN)
-        inferStmt(node.body, env)
-    }
-    else if k == "BlockStatement" {
-        for s in node.body { inferStmt(s, env) }
-    }
-    else if k == "FnDeclaration" {
-        envSet(env, node.name, TYPE_FN)
-        childEnv = TypeEnv(env)
-        for p in node.params { envSet(childEnv, p, TYPE_UNKNOWN) }
-        retType = TYPE_UNKNOWN
-        if node.body.kind == "BlockStatement" {
-            for s in node.body.body { inferStmt(s, childEnv) }
-            lastStmt = node.body.body[#node.body.body - 1]
-            if lastStmt != null && lastStmt.kind == "ReturnStatement" {
-                retType = inferExpr(lastStmt.value, childEnv)
-            }
-        }
-        else { retType = inferExpr(node.body, childEnv) }
-        if retType != TYPE_UNKNOWN {
-            envSet(env, "$ret_" + node.name, retType)
-        }
-    }
+  }
+  else if k == "HotkeyBinding" {
+    inferStmt(node.body, env)
+  }
+  else if k == "ConfigBlock" {
+    inferStmt(node.body, env)
+  }
+  else if k == "UseStatement" || k == "ImportStatement" {}
+  else if k == "BreakStatement" || k == "ContinueStatement" {}
+  else if k == "ThrowStatement" {
+    if node.value != null { inferExpr(node.value, env) }
+  }
+  else if k == "TryStatement" {
+    inferStmt(node.try_block, env)
+    if node.catch_block != null { inferStmt(node.catch_block, env) }
+    if node.finally_block != null { inferStmt(node.finally_block, env) }
+  }
+  else if k == "SleepStatement" {}
+  else if k == "AtExpression" || k == "AtAtExpression" {
+    inferExpr(node, env)
+  }
 }
 
 fn inferProgram(program) {

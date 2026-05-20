@@ -20,8 +20,21 @@ _t_ppppuuu = ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64
 _t_ppppppppu = ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"]
 
 _ALLPLANES = 4294967295
+_ZPIXMAP = 2
+
+fn _ptrIsNull(p) {
+  if p == null { return true }
+  ffi.ptr_to_uint(p) == 0
+}
 
 fn _openDisplay() {
+  _disp = shell.getenv("DISPLAY")
+  if _disp != null && _disp != "" {
+    _cs = ffi.cstring(_disp)
+    _dpy = ffi.call(_XOpenDisplay, "pointer", _t_p, _cs)
+    ffi.free(_cs)
+    if !_ptrIsNull(_dpy) { return _dpy }
+  }
   ffi.call(_XOpenDisplay, "pointer", _t_p, 0)
 }
 
@@ -40,16 +53,16 @@ fn _ximageData(img) {
 
 fn get(x, y) {
   _dpy = _openDisplay()
-  if _dpy == 0 { return null }
+  if _ptrIsNull(_dpy) { return null }
   _root = _rootWindow(_dpy)
-  _img = ffi.call(_XGetImage, "pointer", _t_ppppuuu, _dpy, _root, x, y, 1, 1, _ALLPLANES)
-  if _img == 0 {
+  _img = ffi.call(_XGetImage, "pointer", ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64", "int32"], _dpy, _root, x, y, 1, 1, _ALLPLANES, _ZPIXMAP)
+  if _ptrIsNull(_img) {
     _closeDisplay(_dpy)
     return null
   }
   _data = _ximageData(_img)
   _pixel = 0
-  if _data != 0 { _pixel = ffi.get_u32(_data) }
+  if !_ptrIsNull(_data) { _pixel = ffi.get_u32(_data) }
 _b = ((_pixel & 255))
 _gt = _pixel >> 8
 _g = ((_gt & 255))
@@ -62,7 +75,7 @@ _r = ((_rt & 255))
 
 fn cursor() {
   _dpy = _openDisplay()
-  if _dpy == 0 { return null }
+  if _ptrIsNull(_dpy) { return null }
   _root = _rootWindow(_dpy)
   _root_ret = ffi.allocBytes(8)
   _child_ret = ffi.allocBytes(8)

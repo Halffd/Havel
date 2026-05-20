@@ -1,0 +1,23 @@
+// color_clicker.hv — click when cursor is over a target color (pure Havel + FFI)
+
+use "./lib/pixel.hv" as pixel
+use "./lib/automation.hv" as automation
+
+fn autoClickOnColor(targetR, targetG, targetB, tolerance, interval) {
+  if tolerance == null { tolerance = 30 }
+  if interval == null { interval = 100 }
+  _target = {r: targetR, g: targetG, b: targetB}
+  while true {
+    _color = pixel.getPixelUnderMouse()
+    if _color != null && pixel.colorsMatch(_color, _target, tolerance) {
+      automation.click(1)
+      print(f"Clicked! Color: {_color.hex}")
+    }
+    sleep(interval)
+  }
+}
+
+RUN_DEMO = false
+if RUN_DEMO {
+  autoClickOnColor(255, 255, 255, 30, 100)
+}

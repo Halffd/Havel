@@ -1,0 +1,152 @@
+// automation.hv — X11 pointer/keyboard automation via libXtst + libX11
+
+use ffi
+use x11
+use "./pixel.hv" as pixel
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_xtst = ffi.open("libXtst.so.6")
+if _xtst == 0 { _xtst = ffi.open("libXtst.so") }
+
+_XWarpPointer = ffi.sym(_xlib, "XWarpPointer")
+_XFlush = ffi.sym(_xlib, "XFlush")
+_XTestFakeButtonEvent = ffi.sym(_xtst, "XTestFakeButtonEvent")
+_XTestFakeKeyEvent = ffi.sym(_xtst, "XTestFakeKeyEvent")
+
+_t_p = ["pointer"]
+_t_puIuI = ["pointer", "uint32", "int32", "uint64"]
+_t_ppuuuiiuii = ["pointer", "uint64", "uint64", "int32", "int32", "uint32", "uint32", "int32", "int32"]
+
+fn _ptrIsNull(p) {
+  if p == null { return true }
+  ffi.ptr_to_uint(p) == 0
+}
+
+fn _dpy() {
+  pixel.display()
+}
+
+fn _root() {
+  x11.rootWindow(_dpy())
+}
+
+fn _flush() {
+  ffi.call(_XFlush, "int32", _t_p, _dpy())
+}
+
+fn click(button) {
+  if button == null { button = 1 }
+  _d = _dpy()
+  if _ptrIsNull(_d) { return false }
+  ffi.call(_XTestFakeButtonEvent, "int32", _t_puIuI, _d, button, 1, 0)
+  ffi.call(_XTestFakeButtonEvent, "int32", _t_puIuI, _d, button, 0, 0)
+  _flush()
+  true
+}
+
+fn moveTo(x, y) {
+  _d = _dpy()
+  if _ptrIsNull(_d) { return false }
+  _root = _root()
+  ffi.call(_XWarpPointer, "void", _t_ppuuuiiuii, _d, 0, _root, 0, 0, 0, 0, x, y)
+  _flush()
+  true
+}
+
+fn clickAt(x, y, button) {
+  moveTo(x, y)
+  click(button)
+}
+
+fn pressKey(keycode) {
+  _d = _dpy()
+  if _ptrIsNull(_d) { return false }
+  ffi.call(_XTestFakeKeyEvent, "int32", _t_puIuI, _d, keycode, 1, 0)
+  _flush()
+  true
+}
+
+fn releaseKey(keycode) {
+  _d = _dpy()
+  if _ptrIsNull(_d) { return false }
+  ffi.call(_XTestFakeKeyEvent, "int32", _t_puIuI, _d, keycode, 0, 0)
+  _flush()
+  true
+}
+
+fn sendKeys(keys) {
+  if keys == null { return false }
+  for _k in keys {
+    pressKey(_k)
+    sleep(10)
+    releaseKey(_k)
+  }
+  true
+}
+
+fn _hexVal(ch) {
+  _h = "0123456789abcdef"
+  _c = lower(ch)
+  for _i in range(0, 16) {
+    if _h[_i] == _c { return _i }
+  }
+  null
+}
+
+fn _parseHexByte(hi, lo) {
+  _hi = _hexVal(hi)
+  _lo = _hexVal(lo)
+  if _hi == null || _lo == null { return 0 }
+  _hi * 16 + _lo
+}
+
+fn _normalizeColor(targetColor) {
+  if targetColor == null { return null }
+  if type(targetColor) == "string" {
+    _s = targetColor
+    if _s[0] == "#" { _s = _s[1:] }
+    if _s.len() >= 6 {
+      return {
+        r: _parseHexByte(_s[0], _s[1]),
+        g: _parseHexByte(_s[2], _s[3]),
+        b: _parseHexByte(_s[4], _s[5])
+      }
+    }
+    return null
+  }
+  _r = targetColor.r
+  _g = targetColor.g
+  _b = targetColor.b
+  if _r == null { _r = 0 }
+  if _g == null { _g = 0 }
+  if _b == null { _b = 0 }
+  {r: _r, g: _g, b: _b}
+}
+
+fn clickIfColor(x, y, targetColor, tolerance) {
+  if tolerance == null { tolerance = 10 }
+  _want = _normalizeColor(targetColor)
+  if _want == null { return false }
+  _got = pixel.getPixel(x, y)
+  if _got == null { return false }
+  if pixel.colorsMatch(_got, _want, tolerance) {
+    clickAt(x, y, 1)
+    return true
+  }
+  false
+}
+
+fn waitForColor(x, y, targetColor, tolerance, timeoutMs) {
+  if tolerance == null { tolerance = 10 }
+  if timeoutMs == null { timeoutMs = 5000 }
+  _start = time.now()
+  while time.now() - _start < timeoutMs {
+    if clickIfColor(x, y, targetColor, tolerance) {
+      return true
+    }
+    sleep(50)
+  }
+  false
+}

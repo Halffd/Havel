@@ -1,0 +1,280 @@
+// imagick.hv — ImageMagick MagickWand FFI (load, findColor, matchTemplate)
+
+use ffi
+
+_magick = ffi.open("libMagickWand-7.Q16HDRI.so")
+if _magick == 0 { _magick = ffi.open("libMagickWand-7.Q16.so") }
+if _magick == 0 { _magick = ffi.open("libMagickWand-6.Q16.so") }
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_malloc = ffi.sym(_c, "malloc")
+_free = ffi.sym(_c, "free")
+_fopen = ffi.sym(_c, "fopen")
+_fclose = ffi.sym(_c, "fclose")
+_realpath = ffi.sym(_c, "realpath")
+
+_MagickWandGenesis = ffi.sym(_magick, "MagickWandGenesis")
+_NewMagickWand = ffi.sym(_magick, "NewMagickWand")
+_DestroyMagickWand = ffi.sym(_magick, "DestroyMagickWand")
+_MagickReadImage = ffi.sym(_magick, "MagickReadImage")
+_MagickReadImageFile = ffi.sym(_magick, "MagickReadImageFile")
+_MagickGetImageWidth = ffi.sym(_magick, "MagickGetImageWidth")
+_MagickGetImageHeight = ffi.sym(_magick, "MagickGetImageHeight")
+_MagickExportImagePixels = ffi.sym(_magick, "MagickExportImagePixels")
+_MagickRelinquishMemory = ffi.sym(_magick, "MagickRelinquishMemory")
+_MagickGetException = ffi.sym(_magick, "MagickGetException")
+_MagickClearException = ffi.sym(_magick, "MagickClearException")
+
+_t_p = ["pointer"]
+_t_pp = ["pointer", "pointer"]
+_t_ppuuuup = ["pointer", "uint64", "uint64", "uint64", "uint64", "pointer", "int32", "pointer"]
+_t_ppp = ["pointer", "pointer", "pointer"]
+
+_CHAR_PIXEL = 1
+_RGBA_MAP = "RGBA"
+
+_genesisDone = false
+
+fn _ptrIsNull(p) {
+  if p == null { return true }
+  ffi.ptr_to_uint(p) == 0
+}
+
+fn _ensureGenesis() {
+  if !_genesisDone {
+    ffi.call(_MagickWandGenesis, "void", [])
+    _genesisDone = true
+  }
+}
+
+fn _p(ptr, n) {
+  ffi.ptr_add(ptr, n)
+}
+
+fn _hexVal(ch) {
+  _h = "0123456789abcdef"
+  _c = lower(ch)
+  for _i in range(0, 16) {
+    if _h[_i] == _c { return _i }
+  }
+  null
+}
+
+fn _parseHexByte(hi, lo) {
+  _hi = _hexVal(hi)
+  _lo = _hexVal(lo)
+  if _hi == null || _lo == null { return 0 }
+  _hi * 16 + _lo
+}
+
+fn _normalizeColor(targetColor) {
+  if targetColor == null { return null }
+  if type(targetColor) == "string" {
+    _s = targetColor
+    if _s[0] == "#" { _s = _s[1:] }
+    if _s.len() >= 6 {
+      return {
+        r: _parseHexByte(_s[0], _s[1]),
+        g: _parseHexByte(_s[2], _s[3]),
+        b: _parseHexByte(_s[4], _s[5])
+      }
+    }
+    return null
+  }
+  _r = targetColor.r
+  _g = targetColor.g
+  _b = targetColor.b
+  if _r == null { _r = 0 }
+  if _g == null { _g = 0 }
+  if _b == null { _b = 0 }
+  {r: _r, g: _g, b: _b}
+}
+
+fn _p8(ptr, n) {
+  ffi.ptr_add(ptr, n)
+}
+
+fn _colorAt(pixels, width, x, y) {
+  _off = (y * width + x) * 4
+  _ptr = _p8(pixels, _off)
+  ({r: ffi.get_u8(_ptr), g: ffi.get_u8(_p8(_ptr, 1)), b: ffi.get_u8(_p8(_ptr, 2)), a: ffi.get_u8(_p8(_ptr, 3))})
+}
+
+fn _colorsMatch(c1, c2, tolerance) {
+  if c1 == null || c2 == null { return false }
+  if tolerance == null { tolerance = 0 }
+  _dr = c1.r - c2.r
+  if _dr < 0 { _dr = -_dr }
+  _dg = c1.g - c2.g
+  if _dg < 0 { _dg = -_dg }
+  _db = c1.b - c2.b
+  if _db < 0 { _db = -_db }
+  _dr <= tolerance && _dg <= tolerance && _db <= tolerance
+}
+
+fn _fetchPixels(wand, width, height) {
+  _size = width * height * 4
+  _buf = ffi.allocBytes(_size)
+  _map_cs = ffi.cstring(_RGBA_MAP)
+  _ok = ffi.call(_MagickExportImagePixels, "int32", _t_ppuuuup,
+    wand, 0, 0, width, height, _map_cs, _CHAR_PIXEL, _buf)
+  ffi.free(_map_cs)
+  if _ok == 0 {
+    ffi.free(_buf)
+    return null
+  }
+  _buf
+}
+
+fn _resolvePath(path) {
+  if path == null || path == "" { return null }
+  if _realpath == 0 { return path }
+  _cs = ffi.cstring(path)
+  _resolved = ffi.allocBytes(4096)
+  _rp = ffi.call(_realpath, "pointer", ["pointer", "pointer"], _cs, _resolved)
+  ffi.free(_cs)
+  if _ptrIsNull(_rp) {
+    ffi.free(_resolved)
+    return path
+  }
+  _out = ffi.string(_resolved)
+  ffi.free(_resolved)
+  _out
+}
+
+fn _wandError(wand) {
+  if _ptrIsNull(wand) || _MagickGetException == 0 { return "" }
+  _sev_ptr = ffi.allocBytes(4)
+  _desc_p = ffi.call(_MagickGetException, "pointer", ["pointer", "pointer"], wand, _sev_ptr)
+  ffi.free(_sev_ptr)
+  _msg = ""
+  if !_ptrIsNull(_desc_p) {
+    _msg = ffi.string(_desc_p)
+    ffi.call(_MagickRelinquishMemory, "pointer", _t_p, _desc_p)
+  }
+  if _MagickClearException != 0 {
+    ffi.call(_MagickClearException, "void", _t_p, wand)
+  }
+  _msg
+}
+
+fn loadImage(path) {
+  _ensureGenesis()
+  if _magick == 0 { return null }
+  _path = _resolvePath(path)
+  _wand = ffi.call(_NewMagickWand, "pointer", [])
+  if _ptrIsNull(_wand) { return null }
+  _path_cs = ffi.cstring(_path)
+  _read = ffi.call(_MagickReadImage, "int32", _t_pp, _wand, _path_cs)
+  if _read == 0 {
+    _mode_cs = ffi.cstring("rb")
+    _fp = ffi.call(_fopen, "pointer", ["pointer", "pointer"], _path_cs, _mode_cs)
+    ffi.free(_mode_cs)
+    if !_ptrIsNull(_fp) {
+      _read = ffi.call(_MagickReadImageFile, "int32", ["pointer", "pointer"], _wand, _fp)
+      ffi.call(_fclose, "int32", ["pointer"], _fp)
+    }
+  }
+  ffi.free(_path_cs)
+  if _read == 0 {
+    _err = _wandError(_wand)
+    if _err != "" { print(f"imagick: {_err}") }
+    ffi.call(_DestroyMagickWand, "int32", _t_p, _wand)
+    return null
+  }
+  _w = ffi.call(_MagickGetImageWidth, "uint64", _t_p, _wand)
+  _h = ffi.call(_MagickGetImageHeight, "uint64", _t_p, _wand)
+  _w = int(_w)
+  _h = int(_h)
+  if _w <= 0 || _h <= 0 {
+    ffi.call(_DestroyMagickWand, "int32", _t_p, _wand)
+    return null
+  }
+  _pixels = _fetchPixels(_wand, _w, _h)
+  if _pixels == null {
+    ffi.call(_DestroyMagickWand, "int32", _t_p, _wand)
+    return null
+  }
+  ({wand: _wand, width: _w, height: _h, pixels: _pixels, path: _path})
+}
+
+fn releaseImage(image) {
+  if image == null { return null }
+  if image.pixels != null && !_ptrIsNull(image.pixels) {
+    ffi.free(image.pixels)
+  }
+  if image.wand != null && !_ptrIsNull(image.wand) {
+    ffi.call(_DestroyMagickWand, "int32", _t_p, image.wand)
+  }
+  null
+}
+
+fn findColor(image, targetColor, tolerance) {
+  if image == null || image.pixels == null { return null }
+  if tolerance == null { tolerance = 10 }
+  _want = _normalizeColor(targetColor)
+  if _want == null { return null }
+  _w = image.width
+  _h = image.height
+  _px = image.pixels
+  for _y in range(0, _h) {
+    for _x in range(0, _w) {
+      _c = _colorAt(_px, _w, _x, _y)
+      if _colorsMatch(_c, _want, tolerance) {
+        return {x: _x, y: _y, color: _c}
+      }
+    }
+  }
+  null
+}
+
+fn _windowScore(hay, tpl, x, y) {
+  _tw = tpl.width
+  _th = tpl.height
+  _hw = hay.width
+  _sum = 0.0
+  _count = 0
+  for _ty in range(0, _th) {
+    for _tx in range(0, _tw) {
+      _hc = _colorAt(hay.pixels, _hw, x + _tx, y + _ty)
+      _tc = _colorAt(tpl.pixels, _tw, _tx, _ty)
+      _dr = _hc.r - _tc.r
+      _dg = _hc.g - _tc.g
+      _db = _hc.b - _tc.b
+      _sum = _sum + _dr * _dr + _dg * _dg + _db * _db
+      _count = _count + 1
+    }
+  }
+  if _count == 0 { return 0.0 }
+  1.0 - (_sum / (_count * 255.0 * 255.0 * 3.0))
+}
+
+fn matchTemplate(image, template, threshold) {
+  if image == null || template == null { return null }
+  if image.pixels == null || template.pixels == null { return null }
+  if threshold == null { threshold = 0.85 }
+  _tw = template.width
+  _th = template.height
+  _iw = image.width
+  _ih = image.height
+  if _tw > _iw || _th > _ih { return null }
+  _best = -1.0
+  _bestX = 0
+  _bestY = 0
+  _maxY = _ih - _th
+  _maxX = _iw - _tw
+  for _y in range(0, _maxY + 1) {
+    for _x in range(0, _maxX + 1) {
+      _score = _windowScore(image, template, _x, _y)
+      if _score > _best {
+        _best = _score
+        _bestX = _x
+        _bestY = _y
+      }
+    }
+  }
+  if _best < threshold { return null }
+  {x: _bestX, y: _bestY, score: _best, width: _tw, height: _th}
+}

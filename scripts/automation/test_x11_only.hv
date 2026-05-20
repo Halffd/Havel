@@ -1,0 +1,9 @@
+use "./lib/pixel.hv" as pixel
+
+print("display ptr:")
+print(ffi.ptr_to_uint(pixel.display()))
+print("mouse:")
+print(pixel.getMousePos())
+print("pixel 100,100:")
+print(pixel.getPixel(100, 100))
+pixel.closeDisplay()

@@ -1,0 +1,68 @@
+// test_automation.hv — non-destructive smoke tests for FFI automation modules
+
+use "./lib/pixel.hv" as pixel
+use "./lib/automation.hv" as automation
+use "./lib/imagick.hv" as imagick
+
+print("=== pixel ===")
+print(f"DISPLAY: {shell.getenv('DISPLAY')}")
+_dpy = pixel.display()
+print(f"display ptr: {ffi.ptr_to_uint(_dpy)}")
+
+_pos = pixel.getMousePos()
+print("mouse:")
+print(_pos)
+
+_c = pixel.getPixel(0, 0)
+print("pixel(0,0):")
+print(_c)
+
+if _pos != null {
+  _under = pixel.getPixelUnderMouse()
+  print("pixel under mouse:")
+  print(_under)
+}
+
+_region = pixel.getPixelRegion(0, 0, 2, 2)
+print("region 2x2:")
+print(_region)
+if _region != null {
+  print("region rows:")
+  print(_region.len())
+}
+
+print("=== automation (no click) ===")
+if _pos != null {
+  _moved = automation.moveTo(_pos.x, _pos.y)
+  print("moveTo cursor pos:")
+  print(_moved)
+} else {
+  print("moveTo skipped (no mouse pos)")
+}
+
+print("=== imagick ===")
+_imgPaths = [
+  "/usr/share/pixmaps/archlinux-logo.png",
+  "/usr/share/pixmaps/anki.png",
+  "/usr/share/icons/hicolor/48x48/apps/firefox.png"
+]
+_img = null
+for _p in _imgPaths {
+  _img = imagick.loadImage(_p)
+  if _img != null {
+    print(f"loaded: {_p}")
+    break
+  }
+}
+print("loadImage:")
+print(_img)
+if _img != null {
+  print(f"size: {_img.width}x{_img.height}")
+  _hit = imagick.findColor(_img, "#1793d1", 40)
+  print("findColor arch blue:")
+  print(_hit)
+  imagick.releaseImage(_img)
+}
+
+pixel.closeDisplay()
+print("=== done ===")

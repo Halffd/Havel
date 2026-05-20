@@ -1,0 +1,169 @@
+// pixel.hv — X11 FFI pixel sampling (shared display via x11.open)
+// getPixel, getMousePos, getPixelUnderMouse, getPixelRegion
+
+use ffi
+use x11
+
+_xlib = ffi.open("libX11.so.6")
+if _xlib == 0 { _xlib = ffi.open("libX11.so") }
+
+_XGetImage = ffi.sym(_xlib, "XGetImage")
+_XDestroyImage = ffi.sym(_xlib, "XDestroyImage")
+_XQueryPointer = ffi.sym(_xlib, "XQueryPointer")
+_XFlush = ffi.sym(_xlib, "XFlush")
+
+_t_p = ["pointer"]
+_t_ppppuuui = ["pointer", "uint64", "int32", "int32", "uint32", "uint32", "uint64", "int32"]
+_t_ppppppppu = ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"]
+
+_ALLPLANES = 4294967295
+_ZPIXMAP = 2
+_XIMAGE_DATA_OFF = 88
+
+_dpy = 0
+
+fn _ptrIsNull(p) {
+  if p == null { return true }
+  ffi.ptr_to_uint(p) == 0
+}
+
+fn _init() {
+  if _ptrIsNull(_dpy) {
+    _disp = shell.getenv("DISPLAY")
+    if _disp != null && _disp != "" {
+      _dpy = x11.open(_disp)
+    } else {
+      _dpy = x11.open(null)
+    }
+  }
+}
+
+fn display() {
+  _init()
+  _dpy
+}
+
+fn closeDisplay() {
+  if !_ptrIsNull(_dpy) {
+    x11.close(_dpy)
+    _dpy = 0
+  }
+}
+
+fn _rootWindow() {
+  x11.rootWindow(_dpy)
+}
+
+fn _ximageData(img) {
+  _data_ptr_ptr = ffi.ptr_add(img, _XIMAGE_DATA_OFF)
+  ffi.get_ptr(_data_ptr_ptr)
+}
+
+fn _hexDigit(n) {
+  _h = "0123456789abcdef"
+  _h[n]
+}
+
+fn _toHex(r, g, b) {
+  _rh = r >> 4
+  _rl = r & 15
+  _gh = g >> 4
+  _gl = g & 15
+  _bh = b >> 4
+  _bl = b & 15
+  "#${_hexDigit(_rh)}${_hexDigit(_rl)}${_hexDigit(_gh)}${_hexDigit(_gl)}${_hexDigit(_bh)}${_hexDigit(_bl)}"
+}
+
+fn _colorFromPixel(pixel) {
+  _b = pixel & 255
+  _g = (pixel >> 8) & 255
+  _r = (pixel >> 16) & 255
+  ({r: _r, g: _g, b: _b, a: 255, hex: _toHex(_r, _g, _b)})
+}
+
+fn getPixel(x, y) {
+  _init()
+  if _ptrIsNull(_dpy) { return null }
+  _root = _rootWindow()
+  _img = ffi.call(_XGetImage, "pointer", _t_ppppuuui, _dpy, _root, x, y, 1, 1, _ALLPLANES, _ZPIXMAP)
+  if _ptrIsNull(_img) { return null }
+  _data = _ximageData(_img)
+  _pixel = 0
+  if !_ptrIsNull(_data) { _pixel = ffi.get_u32(_data) }
+  ffi.call(_XDestroyImage, "int32", _t_p, _img)
+  _colorFromPixel(_pixel)
+}
+
+fn getMousePos() {
+  _init()
+  if _ptrIsNull(_dpy) { return null }
+  _root = _rootWindow()
+  _root_ret = ffi.allocBytes(8)
+  _child_ret = ffi.allocBytes(8)
+  _rx_ret = ffi.allocBytes(4)
+  _ry_ret = ffi.allocBytes(4)
+  _wx_ret = ffi.allocBytes(4)
+  _wy_ret = ffi.allocBytes(4)
+  _mask_ret = ffi.allocBytes(4)
+  ffi.call(_XQueryPointer, "int32", _t_ppppppppu,
+    _dpy, _root, _root_ret, _child_ret, _rx_ret, _ry_ret, _wx_ret, _wy_ret, _mask_ret)
+  _pos = {x: ffi.get_i32(_rx_ret), y: ffi.get_i32(_ry_ret)}
+  ffi.free(_root_ret)
+  ffi.free(_child_ret)
+  ffi.free(_rx_ret)
+  ffi.free(_ry_ret)
+  ffi.free(_wx_ret)
+  ffi.free(_wy_ret)
+  ffi.free(_mask_ret)
+  _pos
+}
+
+fn getPixelUnderMouse() {
+  _pos = getMousePos()
+  if _pos == null { return null }
+  getPixel(_pos.x, _pos.y)
+}
+
+fn getPixelRegion(x, y, w, h) {
+  _init()
+  if _ptrIsNull(_dpy) { return null }
+  if w <= 0 || h <= 0 { return [] }
+  _root = _rootWindow()
+  _img = ffi.call(_XGetImage, "pointer", _t_ppppuuui, _dpy, _root, x, y, w, h, _ALLPLANES, _ZPIXMAP)
+  if _ptrIsNull(_img) { return null }
+  _data = _ximageData(_img)
+  _result = []
+  if !_ptrIsNull(_data) {
+    for _row in range(0, h) {
+      _line = []
+      for _col in range(0, w) {
+        _off = (_row * w + _col) * 4
+        _pixel = ffi.get_u32(ffi.ptr_add(_data, _off))
+        _line.push(_colorFromPixel(_pixel))
+      }
+      _result.push(_line)
+    }
+  }
+  ffi.call(_XDestroyImage, "int32", _t_p, _img)
+  _result
+}
+
+fn colorDistance(c1, c2) {
+  if c1 == null || c2 == null { return 9999 }
+  _dr = c1.r - c2.r
+  if _dr < 0 { _dr = -_dr }
+  _dg = c1.g - c2.g
+  if _dg < 0 { _dg = -_dg }
+  _db = c1.b - c2.b
+  if _db < 0 { _db = -_db }
+  if _dr > _dg {
+    if _dr > _db { _dr } else { _db }
+  } else {
+    if _dg > _db { _dg } else { _db }
+  }
+}
+
+fn colorsMatch(c1, c2, tolerance) {
+  if tolerance == null { tolerance = 0 }
+  colorDistance(c1, c2) <= tolerance
+}

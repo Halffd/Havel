@@ -100,6 +100,13 @@ bool ExecutionEngine::executeFrame() {
             return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
         }
         g->state = Scheduler::GoroutineState::Runnable;
+        // Sync VM state to fiber immediately so the fiber's call_stack
+        // has the correct chunk_ptr. The Fiber constructor initializes
+        // call_stack via pushCall() with chunk_ptr=nullptr; without this
+        // sync, the first loadFiberState would see null chunk_ptr.
+        if (g->fiber) {
+            vm_->saveFiberState(g->fiber);
+        }
     } else if (g->fiber) {
         vm_->loadFiberState(g->fiber);
     }

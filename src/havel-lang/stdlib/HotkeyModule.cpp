@@ -60,6 +60,10 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
 
   auto contextObj = vm->createHostObject();
 
+  // Root the object on the VM stack to prevent GC from collecting it
+  // during subsequent allocations (createRuntimeString triggers GC).
+  vm->pushStackPublic(Value::makeObjectId(contextObj.id));
+
   // Store context data in our registry
   {
     std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
@@ -84,6 +88,8 @@ createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
   // Set type name for prototype lookup
   auto typeStr = vm->createRuntimeString("Hotkey");
   vm->setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
+
+  vm->popStackPublic();
 
   return Value::makeObjectId(contextObj.id);
 }

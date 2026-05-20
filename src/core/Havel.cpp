@@ -417,6 +417,8 @@ void Havel::cleanup() noexcept {
     io.reset();
   }
 
+  DisplayManager::Close();
+
   if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
 }
 
@@ -469,9 +471,12 @@ void Havel::setupSignalHandling() {
           info("Received signal {} - shutting down", sig);
           break;
         }
-        std::exit(0);
+        if (Havel::instance && !Havel::instance->isShutdownRequested()) {
+          Havel::instance->exit();
+        } else {
+          std::exit(0);
+        }
       };
-
       sigaction(SIGINT, &sa, nullptr);
       sigaction(SIGTERM, &sa, nullptr);
       sigaction(SIGABRT, &sa, nullptr);

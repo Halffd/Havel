@@ -207,6 +207,8 @@ void EventListener::Stop() {
   if (signalHandler) {
     signalHandler->Shutdown();
   }
+
+  StopX11Monitor();
 }
 
 bool EventListener::SetupUinput() {

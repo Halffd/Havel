@@ -882,9 +882,14 @@ Value VM::callFunctionSync(const Value &fn,
 }
 
 void VM::registerHostFunction(const std::string &name,
+<<<<<<< HEAD
 BytecodeHostFunction function) {
     fprintf(stderr, "REG_HOST: this=%p name='%s' idx=%zu overwrite=%d\n", (void*)this, name.c_str(), host_function_names_.size(), host_functions.count(name)); fflush(stderr);
     host_functions[name] = std::move(function);
+=======
+                               BytecodeHostFunction function) {
+  host_functions[name] = std::move(function);
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
     uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
     host_function_names_.push_back(name);
     host_function_globals_[name] = Value::makeHostFuncId(idx);
@@ -894,9 +899,14 @@ void VM::registerHostFunction(const std::string &name, size_t arity,
 BytecodeHostFunction function) {
     registerHostFunction(
         name,
+<<<<<<< HEAD
         [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
             fprintf(stderr, "ARITY_WRAPPER: name='%s' arity=%zu args.size=%zu\n", name.c_str(), arity, args.size()); fflush(stderr);
             if (args.size() != arity) {
+=======
+    [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
+      if (args.size() != arity) {
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
                 COMPILER_THROW("Host function '" + name + "' expects " +
                     std::to_string(arity) + " arguments, got " +
                     std::to_string(args.size()));
@@ -1878,6 +1888,7 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // type() builtin returns type name
+<<<<<<< HEAD
         registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
             const auto &value = args[0];
             std::string typeName;
@@ -1903,18 +1914,41 @@ void VM::registerDefaultHostFunctions() {
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
     else if (value.isCoroutineId()) typeName = "coroutine";
+=======
+registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
+        const auto &value = args[0];
+        std::string typeName;
+        if (value.isNull()) typeName = "null";
+        else if (value.isBool()) typeName = "bool";
+        else if (value.isInt()) typeName = "int";
+        else if (value.isDouble()) typeName = "float";
+        else if (value.isStringValId() || value.isStringId() || value.isRegexValId()) typeName = "string";
+        else if (value.isArrayId()) typeName = "array";
+        else if (value.isObjectId()) typeName = "object";
+        else if (value.isSetId()) typeName = "set";
+        else if (value.isRangeId()) typeName = "range";
+        else if (value.isHostFuncId()) typeName = "function";
+        else if (value.isClosureId()) typeName = "closure";
+        else if (value.isFunctionObjId()) typeName = "function";
+        else if (value.isEnumId()) typeName = "enum";
+        else if (value.isIteratorId()) typeName = "iterator";
+        else if (value.isCoroutineId()) typeName = "coroutine";
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
         else typeName = "unknown";
         auto strRef = heap_.allocateString(typeName);
         return Value::makeStringId(strRef.id);
     });
+<<<<<<< HEAD
     fprintf(stderr, "REGISTERED type() host func, this=%p total host_functions=%zu\n", (void*)this, host_functions.size()); fflush(stderr);
+=======
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
 
-  // ========================================================================
-  // Duck typing / Protocol functions
-  // ========================================================================
+    // ========================================================================
+    // Duck typing / Protocol functions
+    // ========================================================================
 
-  // iter(x) - Get an iterator for any iterable type
-  registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
+    // iter(x) - Get an iterator for any iterable type
+    registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
     if (args.empty()) return Value::makeNull();
     const auto &value = args[0];
     // Check if value is iterable
@@ -3271,6 +3305,7 @@ Value VM::execute(const BytecodeChunk &chunk,
     if (!entry) {
         COMPILER_THROW("Function not found: " + function_name);
     }
+<<<<<<< HEAD
 
     fprintf(stderr, "[DBG vm.execute ENTRY] func_name='%s' chunk_ptr=%p entry_ptr=%p instr_count=%zu first_op=%d\n",
         function_name.c_str(), (const void*)&chunk, (const void*)entry,
@@ -3278,8 +3313,10 @@ Value VM::execute(const BytecodeChunk &chunk,
     for (size_t di = 0; di < entry->instructions.size() && di < 5; di++) {
         fprintf(stderr, "[DBG vm.execute ENTRY] instr[%zu]: op=%d\n", di, (int)entry->instructions[di].opcode);
     }
+=======
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
 
-    while (!stack.empty()) {
+while (!stack.empty()) {
         stack.pop();
     }
     locals.clear();
@@ -4014,7 +4051,11 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
             continue;
         }
 
+<<<<<<< HEAD
         const auto &instruction = function->instructions[ip];
+=======
+const auto &instruction = function->instructions[ip];
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
 
         // Debug: trace every instruction in the inner chunk execution
         // Only trace when we're in a chunk that's NOT the main chunk (i.e. bc.execute)
@@ -4222,13 +4263,19 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  tail_call_depth_ = 0;
 
     // Handle host function call directly
+<<<<<<< HEAD
     if (callee_value.isHostFuncId()) {
         fprintf(stderr, "doCall: HOST FUNC path taken\n"); fflush(stderr);
         uint32_t host_func_idx = callee_value.asHostFuncId();
+=======
+  if (callee_value.isHostFuncId()) {
+    uint32_t host_func_idx = callee_value.asHostFuncId();
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
     if (host_func_idx >= host_function_names_.size()) {
       COMPILER_THROW("Host function index out of range: " +
-                               std::to_string(host_func_idx));
+                     std::to_string(host_func_idx));
     }
+<<<<<<< HEAD
         const std::string &name = host_function_names_[host_func_idx];
         fprintf(stderr, "doCall: host func name='%s' idx=%u\n", name.c_str(), host_func_idx); fflush(stderr);
         // ... existing code ...
@@ -4240,6 +4287,15 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
         Value result = it->second(args); // Call and get result
         fprintf(stderr, "doCall: host func '%s' returned\n", name.c_str()); fflush(stderr);
     pushStack(result); // Push result to stack
+=======
+    const std::string &name = host_function_names_[host_func_idx];
+    auto it = host_functions.find(name);
+    if (it == host_functions.end()) {
+      COMPILER_THROW("Host function not found: " + name);
+    }
+    Value result = it->second(args);
+    pushStack(result);
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
     return;
   }
 
@@ -5223,7 +5279,7 @@ case OpCode::ADD:
         case OpCode::EQ: pushStack(l == r); break;
         case OpCode::NEQ: pushStack(l != r); break;
         case OpCode::LT: pushStack(l < r); break;
-        case OpCode::LTE: pushStack(l <= r); break;
+case OpCode::LTE: pushStack(l <= r); break;
         case OpCode::GT: pushStack(l > r); break;
         case OpCode::GTE: pushStack(l >= r); break;
         case OpCode::BIT_AND: pushStack(l & r); break;
@@ -5910,13 +5966,23 @@ case OpCode::STORE_GLOBAL: {
         break;
     }
 
-  case OpCode::LOAD_VAR: {
-    uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value value = locals[abs];
+case OpCode::LOAD_VAR: {
+            uint32_t var_index = instruction.operands[0].asInt();
+            uint32_t abs = this->toAbsoluteLocal(var_index);
+            this->ensureLocalIndex(abs);
+            Value value = locals[abs];
+            // Debug: trace LOAD_VAR for the inner chunk
+            static int loadvar_dbg_count = 0;
+            if (currentFrame().function->name == "f" && loadvar_dbg_count < 10) {
+                fprintf(stderr, "[DBG LOAD_VAR] func='%s' var_idx=%u abs=%u value_isInt=%d value_isNull=%d value_isBool=%d value_bits=0x%016llx locals_base=%u locals_size=%zu\n",
+                    currentFrame().function->name.c_str(), var_index, abs,
+                    value.isInt(), value.isNull(), value.isBool(),
+                    (unsigned long long)value.rawBits(),
+                    currentFrame().locals_base, locals.size());
+                loadvar_dbg_count++;
+            }
 
-    // Record feedback
+            // Record feedback
     auto &frame = currentFrame();
     if (frame.ip < frame.function->type_feedback.size()) {
       auto &fb = frame.function->type_feedback[frame.ip];
@@ -6291,13 +6357,9 @@ case OpCode::LENGTH: {
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
             }
-            Value callee_value = popStack();
-            fprintf(stderr, "CALL: callee isHostFunc=%d isFnObj=%d isClosure=%d isObj=%d\n",
-                callee_value.isHostFuncId(), callee_value.isFunctionObjId(),
-                callee_value.isClosureId(), callee_value.isObjectId());
-            fflush(stderr);
+Value callee_value = popStack();
 
-	// Handle callable objects (Lua-style __call metamethod, or op_call operator)
+// Handle callable objects (Lua-style __call metamethod, or op_call operator)
 	if (callee_value.isObjectId()) {
 		auto *obj = heap_.object(callee_value.asObjectId());
 		if (obj) {

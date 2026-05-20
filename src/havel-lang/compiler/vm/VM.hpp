@@ -836,10 +836,14 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
   void setCurrentChunkPublic(const BytecodeChunk* chunk) { current_chunk = chunk; }
  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
- void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
- main_chunk_ = std::move(chunk);
- current_chunk = main_chunk_.get();
- }
+    void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+        main_chunk_ = std::move(chunk);
+        current_chunk = main_chunk_.get();
+    }
+    void setMainChunkShared(const std::shared_ptr<BytecodeChunk>& chunk) {
+        main_chunk_ = chunk;
+        current_chunk = main_chunk_.get();
+    }
  const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
  std::unordered_map<std::string, Value>& getGlobals() { return globals; }
 void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {

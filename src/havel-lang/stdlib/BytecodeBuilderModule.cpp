@@ -173,18 +173,24 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeInt(static_cast<int64_t>(ip));
 	});
 
-	api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.add_const: no current function");
-		if (args.empty()) throw std::runtime_error("bc.add_const: requires value");
-		auto &consts = fn->constants;
-		for (uint32_t i = 0; i < consts.size(); ++i) {
-			if (consts[i] == args[0]) return Value::makeInt(static_cast<int64_t>(i));
-		}
-		uint32_t idx = static_cast<uint32_t>(consts.size());
-		consts.push_back(args[0]);
-		return Value::makeInt(static_cast<int64_t>(idx));
-	});
+api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.add_const: no current function");
+    if (args.empty()) throw std::runtime_error("bc.add_const: requires value");
+    auto &consts = fn->constants;
+    for (uint32_t i = 0; i < consts.size(); ++i) {
+        if (consts[i] == args[0]) return Value::makeInt(static_cast<int64_t>(i));
+    }
+    uint32_t idx = static_cast<uint32_t>(consts.size());
+    consts.push_back(args[0]);
+    fprintf(stderr, "[DBG add_const] func='%s' idx=%u isInt=%d isDouble=%d isNull=%d isBool=%d bits=0x%016llx",
+        fn->name.c_str(), idx, args[0].isInt(), args[0].isDouble(), args[0].isNull(), args[0].isBool(),
+        (unsigned long long)args[0].rawBits());
+    if (args[0].isInt()) fprintf(stderr, " int_val=%lld", (long long)args[0].asInt());
+    if (args[0].isDouble()) fprintf(stderr, " double_val=%f", args[0].asDouble());
+    fprintf(stderr, "\n");
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
 
 api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> Value {
         auto *fn = g_builder.currentFunc();
@@ -293,6 +299,14 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     auto saved_frame_arena = vm.frame_arena_;
     std::stack<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
+    auto saved_main_chunk = vm.getMainChunk();
+
+    // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
+    // (same-chunk closures should share the globals namespace, not capture a snapshot)
+    // Use aliasing shared_ptr: shares ownership with saved_main_chunk but points to inner chunk
+    auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
+    vm.setMainChunkShared(inner_chunk_ptr);
+    vm.current_chunk = g_builder.chunk.get();
 
     fprintf(stderr, "[DBG bc.execute] About to execute chunk with %u functions, globals_size=%zu, 'f' in globals: %d\n",
         g_builder.chunk->getFunctionCount(), vm.globals.size(),
@@ -301,9 +315,23 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     // Dump all instructions in the entry function
     const auto* entryFunc = g_builder.chunk->getFunction("__main__");
     if (entryFunc) {
+<<<<<<< HEAD
         fprintf(stderr, "[DBG bc.execute] __main__ has %zu instructions, %zu constants, %u params, %u locals\n",
             entryFunc->instructions.size(), entryFunc->constants.size(),
             entryFunc->param_count, entryFunc->local_count);
+=======
+    fprintf(stderr, "[DBG bc.execute] __main__ has %zu instructions, %zu constants, %u params, %u locals\n",
+        entryFunc->instructions.size(), entryFunc->constants.size(),
+        entryFunc->param_count, entryFunc->local_count);
+    for (size_t ci = 0; ci < entryFunc->constants.size(); ci++) {
+        const auto& cv = entryFunc->constants[ci];
+        fprintf(stderr, "[DBG bc.execute] __main__ constants[%zu]: isInt=%d isDouble=%d isNull=%d isBool=%d bits=0x%016llx",
+            ci, cv.isInt(), cv.isDouble(), cv.isNull(), cv.isBool(), (unsigned long long)cv.rawBits());
+        if (cv.isInt()) fprintf(stderr, " int_val=%lld", (long long)cv.asInt());
+        if (cv.isDouble()) fprintf(stderr, " double_val=%f", cv.asDouble());
+        fprintf(stderr, "\n");
+    }
+>>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
         for (size_t i = 0; i < entryFunc->instructions.size(); i++) {
             const auto& inst = entryFunc->instructions[i];
             fprintf(stderr, "[DBG bc.execute]   __main__[%zu]: op=%d", i, (int)inst.opcode);
@@ -341,21 +369,23 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
         fprintf(stderr, "[DBG bc.execute] After execute: globals_size=%zu, 'f' in globals: %d\n",
             vm.globals.size(), vm.globals.count("f") > 0 ? 1 : 0);
 
-        vm.current_chunk = saved_chunk;
-        vm.frame_count_ = saved_frame_count;
-        vm.frame_arena_ = std::move(saved_frame_arena);
-        vm.stack = std::move(saved_stack);
-        vm.locals = std::move(saved_locals);
-        return result;
-    } catch (const std::exception &e) {
-        fprintf(stderr, "[DBG bc.execute] CAUGHT: %s\n", e.what());
-        vm.current_chunk = saved_chunk;
-        vm.frame_count_ = saved_frame_count;
-        vm.frame_arena_ = std::move(saved_frame_arena);
-        vm.stack = std::move(saved_stack);
-        vm.locals = std::move(saved_locals);
-        throw std::runtime_error(std::string("Bytecode error: ") + e.what());
-    }
+vm.current_chunk = saved_chunk;
+    vm.frame_count_ = saved_frame_count;
+    vm.frame_arena_ = std::move(saved_frame_arena);
+    vm.stack = std::move(saved_stack);
+    vm.locals = std::move(saved_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    return result;
+} catch (const std::exception &e) {
+    fprintf(stderr, "[DBG bc.execute] CAUGHT: %s\n", e.what());
+    vm.current_chunk = saved_chunk;
+    vm.frame_count_ = saved_frame_count;
+    vm.frame_arena_ = std::move(saved_frame_arena);
+    vm.stack = std::move(saved_stack);
+    vm.locals = std::move(saved_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+}
 });
 
 api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {

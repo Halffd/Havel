@@ -186,6 +186,14 @@ void QtBackend::pumpEvents(int timeoutMs) {
     service_->pumpEvents(timeoutMs);
 }
 
+int QtBackend::runEventLoop() {
+    return service_->runEventLoop();
+}
+
+void QtBackend::quitEventLoop(int exitCode) {
+    service_->quitEventLoop(exitCode);
+}
+
 bool QtBackend::hasActiveWindows() const {
     return service_->hasActiveWindows();
 }

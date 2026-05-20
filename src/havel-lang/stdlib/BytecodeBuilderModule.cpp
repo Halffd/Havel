@@ -298,6 +298,43 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
         g_builder.chunk->getFunctionCount(), vm.globals.size(),
         vm.globals.count("f") > 0 ? 1 : 0);
 
+    // Dump all instructions in the entry function
+    const auto* entryFunc = g_builder.chunk->getFunction("__main__");
+    if (entryFunc) {
+        fprintf(stderr, "[DBG bc.execute] __main__ has %zu instructions, %zu constants, %u params, %u locals\n",
+            entryFunc->instructions.size(), entryFunc->constants.size(),
+            entryFunc->param_count, entryFunc->local_count);
+        for (size_t i = 0; i < entryFunc->instructions.size(); i++) {
+            const auto& inst = entryFunc->instructions[i];
+            fprintf(stderr, "[DBG bc.execute]   __main__[%zu]: op=%d", i, (int)inst.opcode);
+            for (size_t j = 0; j < inst.operands.size(); j++) {
+                if (inst.operands[j].isStringValId()) {
+                    uint32_t sid = inst.operands[j].asStringValId();
+                    std::string s = g_builder.chunk->getString(sid);
+                    fprintf(stderr, " strId(%u)='%s'", sid, s.c_str());
+                } else if (inst.operands[j].isInt()) {
+                    fprintf(stderr, " int(%lld)", (long long)inst.operands[j].asInt());
+                } else {
+                    fprintf(stderr, " %s", inst.operands[j].toString().c_str());
+                }
+            }
+            fprintf(stderr, "\n");
+        }
+    }
+
+    // Also dump function 0 (which should be 'f')
+    const auto* funcF = g_builder.chunk->getFunction(0);
+    if (funcF) {
+        fprintf(stderr, "[DBG bc.execute] func[0] name='%s' has %zu instructions, %zu constants, %u params, %u locals\n",
+            funcF->name.c_str(), funcF->instructions.size(), funcF->constants.size(),
+            funcF->param_count, funcF->local_count);
+    }
+    // Dump all function names
+    for (uint32_t fi = 0; fi < g_builder.chunk->getFunctionCount(); fi++) {
+        const auto* fInfo = g_builder.chunk->getFunction(fi);
+        if (fInfo) fprintf(stderr, "[DBG bc.execute] chunk func[%u] = '%s'\n", fi, fInfo->name.c_str());
+    }
+
     try {
         auto result = vm.execute(*g_builder.chunk, entry, runArgs);
 

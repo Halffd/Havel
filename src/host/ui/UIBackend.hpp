@@ -96,6 +96,10 @@ public:
     // Event pumping
     virtual void pumpEvents(int timeoutMs) = 0;
 
+    // Event loop management (routed through UI module)
+    virtual int runEventLoop() = 0;
+    virtual void quitEventLoop(int exitCode = 0) = 0;
+
     // Window state
     virtual bool hasActiveWindows() const = 0;
     virtual void onAllWindowsClosed(std::function<void()> callback) = 0;

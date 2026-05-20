@@ -89,6 +89,10 @@ public:
     // Event pumping
     void pumpEvents(int timeoutMs) override;
 
+    // Event loop management (routed through UI module)
+    int runEventLoop() override;
+    void quitEventLoop(int exitCode = 0) override;
+
     // Window state
     bool hasActiveWindows() const override;
     void onAllWindowsClosed(std::function<void()> callback) override;

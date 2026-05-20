@@ -882,29 +882,27 @@ Value VM::callFunctionSync(const Value &fn,
 }
 
 void VM::registerHostFunction(const std::string &name,
-                              BytecodeHostFunction function) {
-  host_functions[name] = std::move(function);
-  // Track index for HostFuncId lookup
-  uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
-  host_function_names_.push_back(name);
-  // Register host function by name in globals (for LOAD_GLOBAL lookup)
-  // The bytecode will look up the string constant which points to this name
-  host_function_globals_[name] = Value::makeHostFuncId(idx);
+BytecodeHostFunction function) {
+    fprintf(stderr, "REG_HOST: this=%p name='%s' idx=%zu overwrite=%d\n", (void*)this, name.c_str(), host_function_names_.size(), host_functions.count(name)); fflush(stderr);
+    host_functions[name] = std::move(function);
+    uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
+    host_function_names_.push_back(name);
+    host_function_globals_[name] = Value::makeHostFuncId(idx);
 }
 
 void VM::registerHostFunction(const std::string &name, size_t arity,
-                              BytecodeHostFunction function) {
-  registerHostFunction(
-      name,
-      [arity, function = std::move(function),
-       name](const std::vector<Value> &args) -> Value {
-        if (args.size() != arity) {
-          COMPILER_THROW("Host function '" + name + "' expects " +
-                                   std::to_string(arity) + " arguments, got " +
-                                   std::to_string(args.size()));
-        }
-        return function(args);
-      });
+BytecodeHostFunction function) {
+    registerHostFunction(
+        name,
+        [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
+            fprintf(stderr, "ARITY_WRAPPER: name='%s' arity=%zu args.size=%zu\n", name.c_str(), arity, args.size()); fflush(stderr);
+            if (args.size() != arity) {
+                COMPILER_THROW("Host function '" + name + "' expects " +
+                    std::to_string(arity) + " arguments, got " +
+                    std::to_string(args.size()));
+            }
+            return function(args);
+        });
 }
 
 bool VM::hasHostFunction(const std::string &name) const {
@@ -1905,10 +1903,11 @@ void VM::registerDefaultHostFunctions() {
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
     else if (value.isCoroutineId()) typeName = "coroutine";
-    else typeName = "unknown";
-    auto strRef = heap_.allocateString(typeName);
-    return Value::makeStringId(strRef.id);
-  });
+        else typeName = "unknown";
+        auto strRef = heap_.allocateString(typeName);
+        return Value::makeStringId(strRef.id);
+    });
+    fprintf(stderr, "REGISTERED type() host func, this=%p total host_functions=%zu\n", (void*)this, host_functions.size()); fflush(stderr);
 
   // ========================================================================
   // Duck typing / Protocol functions
@@ -3268,10 +3267,17 @@ Value VM::execute(const BytecodeChunk &chunk,
  const BytecodeChunk *saved_chunk = current_chunk;
  current_chunk = &chunk;
 
- const auto *entry = chunk.getFunction(function_name);
- if (!entry) {
- COMPILER_THROW("Function not found: " + function_name);
- }
+    const auto *entry = chunk.getFunction(function_name);
+    if (!entry) {
+        COMPILER_THROW("Function not found: " + function_name);
+    }
+
+    fprintf(stderr, "[DBG vm.execute ENTRY] func_name='%s' chunk_ptr=%p entry_ptr=%p instr_count=%zu first_op=%d\n",
+        function_name.c_str(), (const void*)&chunk, (const void*)entry,
+        entry->instructions.size(), entry->instructions.empty() ? -1 : (int)entry->instructions[0].opcode);
+    for (size_t di = 0; di < entry->instructions.size() && di < 5; di++) {
+        fprintf(stderr, "[DBG vm.execute ENTRY] instr[%zu]: op=%d\n", di, (int)entry->instructions[di].opcode);
+    }
 
     while (!stack.empty()) {
         stack.pop();
@@ -4002,15 +4008,30 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     uint32_t ip = frame_arena_[active_frame_idx].ip;
     size_t entry_frame_count = frame_count_;
 
-    if (ip >= function->instructions.size()) {
-      stack.push(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      continue;
-    }
+        if (ip >= function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            continue;
+        }
 
-    const auto &instruction = function->instructions[ip];
+        const auto &instruction = function->instructions[ip];
 
-    try {
+        // Debug: trace every instruction in the inner chunk execution
+        // Only trace when we're in a chunk that's NOT the main chunk (i.e. bc.execute)
+        static const BytecodeChunk* trace_target_chunk = nullptr;
+        static int trace_instr_count = 0;
+        if (trace_target_chunk == nullptr && current_chunk != main_chunk_.get() && function->name == "__main__" && ip == 0 && instruction.opcode == OpCode::CLOSURE) {
+            trace_target_chunk = current_chunk;
+            trace_instr_count = 0;
+        }
+        if (current_chunk == trace_target_chunk && trace_instr_count < 30) {
+            fprintf(stderr, "[DBG TRACE] func='%s' ip=%u op=%d stack_size=%zu frame_count=%zu\n",
+                function->name.c_str(), ip, (int)instruction.opcode, stack.size(), frame_count_);
+            trace_instr_count++;
+            if (trace_instr_count >= 30) trace_target_chunk = nullptr; // reset
+        }
+
+        try {
       if (profiling_enabled_) {
         opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
         executed_instructions_++;
@@ -4200,20 +4221,24 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  bool advance_caller_ip) {
  tail_call_depth_ = 0;
 
- // Handle host function call directly
-  if (callee_value.isHostFuncId()) {
-    uint32_t host_func_idx = callee_value.asHostFuncId();
+    // Handle host function call directly
+    if (callee_value.isHostFuncId()) {
+        fprintf(stderr, "doCall: HOST FUNC path taken\n"); fflush(stderr);
+        uint32_t host_func_idx = callee_value.asHostFuncId();
     if (host_func_idx >= host_function_names_.size()) {
       COMPILER_THROW("Host function index out of range: " +
                                std::to_string(host_func_idx));
     }
-    const std::string &name = host_function_names_[host_func_idx];
-// ... existing code ...
-    auto it = host_functions.find(name);
-    if (it == host_functions.end()) {
-      COMPILER_THROW("Host function not found: " + name);
-    }
-    Value result = it->second(args); // Call and get result
+        const std::string &name = host_function_names_[host_func_idx];
+        fprintf(stderr, "doCall: host func name='%s' idx=%u\n", name.c_str(), host_func_idx); fflush(stderr);
+        // ... existing code ...
+        auto it = host_functions.find(name);
+        if (it == host_functions.end()) {
+            COMPILER_THROW("Host function not found: " + name);
+        }
+        fprintf(stderr, "doCall: about to call host func '%s', args.size=%zu\n", name.c_str(), args.size()); fflush(stderr);
+        Value result = it->second(args); // Call and get result
+        fprintf(stderr, "doCall: host func '%s' returned\n", name.c_str()); fflush(stderr);
     pushStack(result); // Push result to stack
     return;
   }

@@ -165,6 +165,12 @@ public:
   void ProcessSignal();
   void RequestShutdownFromSignal(int sig);
 
+  // Callback invoked when the event loop exits due to a shutdown signal
+  // Used by embedders (e.g., Qt main loop) to unblock the main thread
+  void SetShutdownCallback(std::function<void()> cb) {
+    shutdownCallback_ = std::move(cb);
+  }
+
 private:
   friend class IO;
   friend class SignalHandler;
@@ -186,6 +192,8 @@ private:
 private:
   std::unique_ptr<SignalHandler> signalHandler;
   std::unique_ptr<InputBackend> backend_;
+
+  std::function<void()> shutdownCallback_;
 
   havel::compiler::HostBridge *hostBridge = nullptr;
   havel::compiler::ExecutionEngine *executionEngine = nullptr;

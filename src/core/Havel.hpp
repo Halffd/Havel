@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -56,6 +57,9 @@ public:
   void initialize(bool isStartup);
   void cleanup() noexcept;
   void exit();
+
+  // Shutdown callback for embedders (e.g., Qt event loop)
+  void setShutdownCallback(std::function<void()> cb);
 
   // Getters
   static Havel *getInstance() { return instance; }

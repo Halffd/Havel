@@ -443,6 +443,12 @@ void Havel::exit() {
   std::exit(0);
 }
 
+void Havel::setShutdownCallback(std::function<void()> cb) {
+  if (io && io->GetEventListener()) {
+    io->GetEventListener()->SetShutdownCallback(std::move(cb));
+  }
+}
+
 void Havel::setupSignalHandling() {
   try {
     // Set up fallback signal handlers for REPL mode

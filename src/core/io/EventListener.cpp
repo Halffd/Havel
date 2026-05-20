@@ -466,6 +466,10 @@ void EventListener::EventLoop() {
   }
 
   if (debugging::debug_io) debug("EventListener: Stopped");
+
+  if (shutdownCallback_) {
+    shutdownCallback_();
+  }
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {
   if (inputNotificationCallback) {

@@ -654,44 +654,81 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
     if (!s.empty()) append(s.data(), s.size());
   }
 
-  // Serialize functions
-  for (const auto& func : functions) {
-    uint32_t nameLen = static_cast<uint32_t>(func.name.size());
-    append(&nameLen, sizeof(nameLen));
-    if (!func.name.empty()) append(func.name.data(), func.name.size());
+    // Serialize functions
+    for (const auto& func : functions) {
+        uint32_t nameLen = static_cast<uint32_t>(func.name.size());
+        append(&nameLen, sizeof(nameLen));
+        if (!func.name.empty()) append(func.name.data(), func.name.size());
 
-    append(&func.param_count, sizeof(func.param_count));
-    append(&func.local_count, sizeof(func.local_count));
+        append(&func.param_count, sizeof(func.param_count));
+        append(&func.local_count, sizeof(func.local_count));
 
-    uint32_t numInstr = static_cast<uint32_t>(func.instructions.size());
-    append(&numInstr, sizeof(numInstr));
-    for (const auto& instr : func.instructions) {
-      uint8_t opcode = static_cast<uint8_t>(instr.opcode);
-      append(&opcode, sizeof(opcode));
-      uint32_t numOps = static_cast<uint32_t>(instr.operands.size());
-      append(&numOps, sizeof(numOps));
-      for (const auto& op : instr.operands) {
-        uint64_t opVal = op.rawBits();
-        append(&opVal, sizeof(opVal));
-      }
+        // Constants (per-function)
+        uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
+        append(&numConsts, sizeof(numConsts));
+        for (const auto& c : func.constants) {
+            if (c.isStringValId()) {
+                uint8_t tag = 1;
+                append(&tag, sizeof(tag));
+                uint32_t strIdx = c.asStringValId();
+                const std::string& str = chunk.getString(strIdx);
+                uint32_t len = static_cast<uint32_t>(str.size());
+                append(&len, sizeof(len));
+                if (!str.empty()) append(str.data(), str.size());
+            } else if (c.isFunctionObjId()) {
+                uint8_t tag = 2;
+                append(&tag, sizeof(tag));
+                uint32_t fnIdx = c.asFunctionObjId();
+                append(&fnIdx, sizeof(fnIdx));
+            } else {
+                uint8_t tag = 0;
+                append(&tag, sizeof(tag));
+                uint64_t raw = c.rawBits();
+                append(&raw, sizeof(raw));
+            }
+        }
 
-      uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
-      append(&numConsts, sizeof(numConsts));
-      for (const auto& c : func.constants) {
-        uint64_t raw = c.rawBits();
-        append(&raw, sizeof(raw));
-      }
+        // Upvalues (per-function)
+        uint32_t numUp = static_cast<uint32_t>(func.upvalues.size());
+        append(&numUp, sizeof(numUp));
+        for (const auto& u : func.upvalues) {
+            append(&u.index, sizeof(u.index));
+            append(&u.captures_local, sizeof(u.captures_local));
+        }
 
-      uint32_t numUp = static_cast<uint32_t>(func.upvalues.size());
-      append(&numUp, sizeof(numUp));
-      for (const auto& u : func.upvalues) {
-        append(&u.index, sizeof(u.index));
-        append(&u.captures_local, sizeof(u.captures_local));
-      }
+        // Instructions (per-function)
+        uint32_t numInstr = static_cast<uint32_t>(func.instructions.size());
+        append(&numInstr, sizeof(numInstr));
+        for (const auto& instr : func.instructions) {
+            uint8_t opcode = static_cast<uint8_t>(instr.opcode);
+            append(&opcode, sizeof(opcode));
+            uint32_t numOps = static_cast<uint32_t>(instr.operands.size());
+            append(&numOps, sizeof(numOps));
+            for (const auto& op : instr.operands) {
+                if (op.isStringValId()) {
+                    uint8_t tag = 1;
+                    append(&tag, sizeof(tag));
+                    uint32_t strIdx = op.asStringValId();
+                    const std::string& str = chunk.getString(strIdx);
+                    uint32_t len = static_cast<uint32_t>(str.size());
+                    append(&len, sizeof(len));
+                    if (!str.empty()) append(str.data(), str.size());
+                } else if (op.isFunctionObjId()) {
+                    uint8_t tag = 2;
+                    append(&tag, sizeof(tag));
+                    uint32_t fnIdx = op.asFunctionObjId();
+                    append(&fnIdx, sizeof(fnIdx));
+                } else {
+                    uint8_t tag = 0;
+                    append(&tag, sizeof(tag));
+                    uint64_t raw = op.rawBits();
+                    append(&raw, sizeof(raw));
+                }
+            }
+        }
     }
-  }
 
-  return data;
+    return data;
 }
 
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
@@ -751,52 +788,96 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (!read(&param_count, sizeof(param_count))) return std::nullopt;
     if (!read(&local_count, sizeof(local_count))) return std::nullopt;
 
-    BytecodeFunction func(funcName, param_count, local_count);
+        BytecodeFunction func(funcName, param_count, local_count);
 
-    // Number of instructions
-    uint32_t numInstr = 0;
-    if (!read(&numInstr, sizeof(numInstr))) return std::nullopt;
+        // Constants (per-function)
+        uint32_t numConsts = 0;
+        if (!read(&numConsts, sizeof(numConsts))) return std::nullopt;
+        for (uint32_t c = 0; c < numConsts; ++c) {
+            uint8_t tag = 0;
+            if (!read(&tag, sizeof(tag))) return std::nullopt;
+            if (tag == 1) {
+                // StringValId - resolve via chunk string table
+                uint32_t len = 0;
+                if (!read(&len, sizeof(len))) return std::nullopt;
+                std::string str(len, '\0');
+                if (len > 0) {
+                    if (pos + len > data.size()) return std::nullopt;
+                    std::memcpy(str.data(), data.data() + pos, len);
+                    pos += len;
+                }
+                uint32_t strId = chunk.addString(std::move(str));
+                func.constants.push_back(Value::makeStringValId(strId));
+            } else if (tag == 2) {
+                // FunctionObjId
+                uint32_t fnIdx = 0;
+                if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
+                func.constants.push_back(Value::makeFunctionObjId(fnIdx));
+            } else {
+                // Raw value (int, double, bool, null)
+                uint64_t raw = 0;
+                if (!read(&raw, sizeof(raw))) return std::nullopt;
+                func.constants.push_back(Value::fromRawBits(raw));
+            }
+        }
 
-    for (uint32_t i = 0; i < numInstr; ++i) {
-      uint8_t opcode = 0;
-      if (!read(&opcode, sizeof(opcode))) return std::nullopt;
+        // Upvalues (per-function)
+        uint32_t numUp = 0;
+        if (!read(&numUp, sizeof(numUp))) return std::nullopt;
+        for (uint32_t u = 0; u < numUp; ++u) {
+            UpvalueDescriptor uv;
+            if (!read(&uv.index, sizeof(uv.index))) return std::nullopt;
+            if (!read(&uv.captures_local, sizeof(uv.captures_local))) return std::nullopt;
+            func.upvalues.push_back(uv);
+        }
 
-      uint32_t numOps = 0;
-      if (!read(&numOps, sizeof(numOps))) return std::nullopt;
+        // Instructions (per-function)
+        uint32_t numInstr = 0;
+        if (!read(&numInstr, sizeof(numInstr))) return std::nullopt;
 
-      std::vector<Value> operands;
-      for (uint32_t o = 0; o < numOps; ++o) {
-        uint64_t opVal = 0;
-        if (!read(&opVal, sizeof(opVal))) return std::nullopt;
-        operands.push_back(Value::fromRawBits(opVal));
-      }
+        for (uint32_t i = 0; i < numInstr; ++i) {
+            uint8_t opcode = 0;
+            if (!read(&opcode, sizeof(opcode))) return std::nullopt;
 
-      // Constants (per-instruction in serialization format)
-      uint32_t numConsts = 0;
-      if (!read(&numConsts, sizeof(numConsts))) return std::nullopt;
-      for (uint32_t c = 0; c < numConsts; ++c) {
-        uint64_t raw = 0;
-        if (!read(&raw, sizeof(raw))) return std::nullopt;
-        func.constants.push_back(Value::fromRawBits(raw));
-      }
+            uint32_t numOps = 0;
+            if (!read(&numOps, sizeof(numOps))) return std::nullopt;
 
-      // Upvalues (per-instruction in serialization format)
-      uint32_t numUp = 0;
-      if (!read(&numUp, sizeof(numUp))) return std::nullopt;
-      for (uint32_t u = 0; u < numUp; ++u) {
-        UpvalueDescriptor uv;
-        if (!read(&uv.index, sizeof(uv.index))) return std::nullopt;
-        if (!read(&uv.captures_local, sizeof(uv.captures_local))) return std::nullopt;
-        func.upvalues.push_back(uv);
-      }
+            std::vector<Value> operands;
+            for (uint32_t o = 0; o < numOps; ++o) {
+                uint8_t opTag = 0;
+                if (!read(&opTag, sizeof(opTag))) return std::nullopt;
+                if (opTag == 1) {
+                    // StringValId operand
+                    uint32_t len = 0;
+                    if (!read(&len, sizeof(len))) return std::nullopt;
+                    std::string str(len, '\0');
+                    if (len > 0) {
+                        if (pos + len > data.size()) return std::nullopt;
+                        std::memcpy(str.data(), data.data() + pos, len);
+                        pos += len;
+                    }
+                    uint32_t strId = chunk.addString(std::move(str));
+                    operands.push_back(Value::makeStringValId(strId));
+                } else if (opTag == 2) {
+                    // FunctionObjId operand
+                    uint32_t fnIdx = 0;
+                    if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
+                    operands.push_back(Value::makeFunctionObjId(fnIdx));
+                } else {
+                    // Raw value operand
+                    uint64_t opVal = 0;
+                    if (!read(&opVal, sizeof(opVal))) return std::nullopt;
+                    operands.push_back(Value::fromRawBits(opVal));
+                }
+            }
 
-      func.instructions.push_back(Instruction(static_cast<OpCode>(opcode), std::move(operands)));
+            func.instructions.push_back(Instruction(static_cast<OpCode>(opcode), std::move(operands)));
+        }
+
+        chunk.addFunction(std::move(func));
     }
 
-    chunk.addFunction(std::move(func));
-  }
-
-  return chunk;
+    return chunk;
 }
 
 std::string ValueSerializer::valueToJson(const Value& value) {

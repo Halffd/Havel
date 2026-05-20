@@ -187,21 +187,22 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 	});
 
 api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> Value {
-    auto *fn = g_builder.currentFunc();
-    if (!fn) throw std::runtime_error("bc.add_string: no current function");
-    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-        throw std::runtime_error("bc.add_string: requires string value");
-    }
-    auto resolved = api.resolveString(args[0]);
-    auto heapStr = api.makeString(resolved);
-    auto &consts = fn->constants;
-    for (uint32_t i = 0; i < consts.size(); ++i) {
-        if (consts[i] == heapStr) return Value::makeInt(static_cast<int64_t>(i));
-    }
-    uint32_t idx = static_cast<uint32_t>(consts.size());
-    consts.push_back(heapStr);
-    return Value::makeInt(static_cast<int64_t>(idx));
-});
+        auto *fn = g_builder.currentFunc();
+        if (!fn) throw std::runtime_error("bc.add_string: no current function");
+        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+            throw std::runtime_error("bc.add_string: requires string value");
+        }
+        auto resolved = api.resolveString(args[0]);
+        uint32_t strId = g_builder.chunk->addString(resolved);
+        Value constVal = Value::makeStringValId(strId);
+        auto &consts = fn->constants;
+        for (uint32_t i = 0; i < consts.size(); ++i) {
+            if (consts[i] == constVal) return Value::makeInt(static_cast<int64_t>(i));
+        }
+        uint32_t idx = static_cast<uint32_t>(consts.size());
+        consts.push_back(constVal);
+        return Value::makeInt(static_cast<int64_t>(idx));
+    });
 
 	api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {

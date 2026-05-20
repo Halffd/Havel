@@ -5885,19 +5885,9 @@ case OpCode::LOAD_GLOBAL: {
                 name = current_chunk->getString(strIndex);
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
-            }
+}
 
-            fprintf(stderr, "[DBG LOAD_GLOBAL] name='%s' strIndex=%u func='%s' globals_size=%zu\n",
-                name.c_str(), strIndex,
-                func ? func->name.c_str() : "<null>", globals.size());
-            {
-                bool found_in_globals = globals.count(name) > 0;
-                bool found_in_host = host_function_globals_.count(name) > 0;
-                if (!found_in_globals && !found_in_host) fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' NOT in globals OR host_function_globals\n", name.c_str());
-                else fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' found: globals=%d host=%d\n", name.c_str(), found_in_globals, found_in_host);
-            }
-
-            // First check regular globals (user variables shadow host functions)
+    // First check regular globals (user variables shadow host functions)
             auto it = globals.find(name);
         if (it != globals.end()) {
             trackGlobalAccess(name);
@@ -5931,10 +5921,7 @@ case OpCode::STORE_GLOBAL: {
         }
             Value value = popStack();
 
-        fprintf(stderr, "[DBG STORE_GLOBAL] name='%s' value=%s globals_size=%zu\n",
-            name.c_str(), value.toString().c_str(), globals.size());
-
-        if (immutable_globals_.count(name)) {
+    if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
             if (existing != globals.end() && existing->second == value) {
                 break;
@@ -5970,19 +5957,9 @@ case OpCode::LOAD_VAR: {
             uint32_t var_index = instruction.operands[0].asInt();
             uint32_t abs = this->toAbsoluteLocal(var_index);
             this->ensureLocalIndex(abs);
-            Value value = locals[abs];
-            // Debug: trace LOAD_VAR for the inner chunk
-            static int loadvar_dbg_count = 0;
-            if (currentFrame().function->name == "f" && loadvar_dbg_count < 10) {
-                fprintf(stderr, "[DBG LOAD_VAR] func='%s' var_idx=%u abs=%u value_isInt=%d value_isNull=%d value_isBool=%d value_bits=0x%016llx locals_base=%u locals_size=%zu\n",
-                    currentFrame().function->name.c_str(), var_index, abs,
-                    value.isInt(), value.isNull(), value.isBool(),
-                    (unsigned long long)value.rawBits(),
-                    currentFrame().locals_base, locals.size());
-                loadvar_dbg_count++;
-            }
+Value value = locals[abs];
 
-            // Record feedback
+    // Record feedback
     auto &frame = currentFrame();
     if (frame.ip < frame.function->type_feedback.size()) {
       auto &fb = frame.function->type_feedback[frame.ip];
@@ -6835,12 +6812,8 @@ case OpCode::TAIL_CALL: {
   }
 
 case OpCode::CLOSURE: {
-            if (instruction.operands.empty()) COMPILER_THROW("CLOSURE: no operands");
-            fprintf(stderr, "[DBG CLOSURE] operand type: isInt=%d isFunctionObjId=%d raw=%zu\n",
-                instruction.operands[0].isInt() ? 1 : 0,
-                instruction.operands[0].isFunctionObjId() ? 1 : 0,
-                instruction.operands[0].rawBits());
-            uint32_t function_index = instruction.operands[0].asInt();
+    if (instruction.operands.empty()) COMPILER_THROW("CLOSURE: no operands");
+    uint32_t function_index = instruction.operands[0].asInt();
     const auto *target = current_chunk->getFunction(function_index);
     if (!target) {
       COMPILER_THROW("CLOSURE references unknown function index");
@@ -6889,11 +6862,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 GCHeap::RuntimeClosure{.function_index = closure.function_index,
                                         .chunk_index = 0,
                                         .chunk = current_chunk,
-                                        .module_globals = std::move(closure_globals),
-                                        .upvalues = std::move(closure.upvalues)}).id));
-            fprintf(stderr, "[DBG CLOSURE] Created closure for func_idx=%u, pushed to stack\n", function_index);
-            // Disable GC to test if it's causing corruption
-    // maybeCollectGarbage();
+.module_globals = std::move(closure_globals),
+    .upvalues = std::move(closure.upvalues)}).id));
     break;
   }
 

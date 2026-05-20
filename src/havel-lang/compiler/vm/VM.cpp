@@ -882,14 +882,8 @@ Value VM::callFunctionSync(const Value &fn,
 }
 
 void VM::registerHostFunction(const std::string &name,
-<<<<<<< HEAD
-BytecodeHostFunction function) {
-    fprintf(stderr, "REG_HOST: this=%p name='%s' idx=%zu overwrite=%d\n", (void*)this, name.c_str(), host_function_names_.size(), host_functions.count(name)); fflush(stderr);
-    host_functions[name] = std::move(function);
-=======
                                BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
     uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
     host_function_names_.push_back(name);
     host_function_globals_[name] = Value::makeHostFuncId(idx);
@@ -897,16 +891,10 @@ BytecodeHostFunction function) {
 
 void VM::registerHostFunction(const std::string &name, size_t arity,
 BytecodeHostFunction function) {
-    registerHostFunction(
-        name,
-<<<<<<< HEAD
-        [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
-            fprintf(stderr, "ARITY_WRAPPER: name='%s' arity=%zu args.size=%zu\n", name.c_str(), arity, args.size()); fflush(stderr);
-            if (args.size() != arity) {
-=======
+  registerHostFunction(
+    name,
     [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
       if (args.size() != arity) {
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
                 COMPILER_THROW("Host function '" + name + "' expects " +
                     std::to_string(arity) + " arguments, got " +
                     std::to_string(args.size()));
@@ -1891,18 +1879,10 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeStringId(strRef.id);
   });
 
-  // type() builtin returns type name
-<<<<<<< HEAD
-        registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
-            const auto &value = args[0];
-            std::string typeName;
-            fprintf(stderr, "TYPE_BUILTIN: isFnObj=%d isClosure=%d isHostFunc=%d isObj=%d isNull=%d isBool=%d isInt=%d isDouble=%d isArr=%d isSet=%d isRange=%d isEnum=%d isIter=%d isCoro=%d isStr=%d\n",
-                value.isFunctionObjId(), value.isClosureId(), value.isHostFuncId(),
-                value.isObjectId(), value.isNull(), value.isBool(), value.isInt(), value.isDouble(),
-                value.isArrayId(), value.isSetId(), value.isRangeId(), value.isEnumId(),
-                value.isIteratorId(), value.isCoroutineId(),
-                value.isStringValId() || value.isStringId() || value.isRegexValId());
-            fflush(stderr);
+// type() builtin returns type name
+  registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
+    const auto &value = args[0];
+    std::string typeName;
     if (value.isNull()) typeName = "null";
     else if (value.isBool()) typeName = "bool";
     else if (value.isInt()) typeName = "int";
@@ -1918,34 +1898,10 @@ void VM::registerDefaultHostFunctions() {
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
     else if (value.isCoroutineId()) typeName = "coroutine";
-=======
-registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
-        const auto &value = args[0];
-        std::string typeName;
-        if (value.isNull()) typeName = "null";
-        else if (value.isBool()) typeName = "bool";
-        else if (value.isInt()) typeName = "int";
-        else if (value.isDouble()) typeName = "float";
-        else if (value.isStringValId() || value.isStringId() || value.isRegexValId()) typeName = "string";
-        else if (value.isArrayId()) typeName = "array";
-        else if (value.isObjectId()) typeName = "object";
-        else if (value.isSetId()) typeName = "set";
-        else if (value.isRangeId()) typeName = "range";
-        else if (value.isHostFuncId()) typeName = "function";
-        else if (value.isClosureId()) typeName = "closure";
-        else if (value.isFunctionObjId()) typeName = "function";
-        else if (value.isEnumId()) typeName = "enum";
-        else if (value.isIteratorId()) typeName = "iterator";
-        else if (value.isCoroutineId()) typeName = "coroutine";
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
-        else typeName = "unknown";
-        auto strRef = heap_.allocateString(typeName);
-        return Value::makeStringId(strRef.id);
-    });
-<<<<<<< HEAD
-    fprintf(stderr, "REGISTERED type() host func, this=%p total host_functions=%zu\n", (void*)this, host_functions.size()); fflush(stderr);
-=======
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
+    else typeName = "unknown";
+    auto strRef = heap_.allocateString(typeName);
+    return Value::makeStringId(strRef.id);
+  });
 
     // ========================================================================
     // Duck typing / Protocol functions
@@ -3305,22 +3261,12 @@ Value VM::execute(const BytecodeChunk &chunk,
  const BytecodeChunk *saved_chunk = current_chunk;
  current_chunk = &chunk;
 
-    const auto *entry = chunk.getFunction(function_name);
-    if (!entry) {
-        COMPILER_THROW("Function not found: " + function_name);
-    }
-<<<<<<< HEAD
+  const auto *entry = chunk.getFunction(function_name);
+  if (!entry) {
+    COMPILER_THROW("Function not found: " + function_name);
+  }
 
-    fprintf(stderr, "[DBG vm.execute ENTRY] func_name='%s' chunk_ptr=%p entry_ptr=%p instr_count=%zu first_op=%d\n",
-        function_name.c_str(), (const void*)&chunk, (const void*)entry,
-        entry->instructions.size(), entry->instructions.empty() ? -1 : (int)entry->instructions[0].opcode);
-    for (size_t di = 0; di < entry->instructions.size() && di < 5; di++) {
-        fprintf(stderr, "[DBG vm.execute ENTRY] instr[%zu]: op=%d\n", di, (int)entry->instructions[di].opcode);
-    }
-=======
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
-
-while (!stack.empty()) {
+  while (!stack.empty()) {
         stack.pop();
     }
     locals.clear();
@@ -3362,26 +3308,6 @@ while (!stack.empty()) {
 
 if (debug_mode) {
         ::havel::debug("=== Executing function: {} ===", function_name);
-    }
-
-    fprintf(stderr, "[DBG vm.execute] entry='%s' func_count=%u instr_count=%zu\n",
-        function_name.c_str(), chunk.getFunctionCount(), entry->instructions.size());
-    for (size_t di = 0; di < entry->instructions.size() && di < 10; di++) {
-        const auto& inst = entry->instructions[di];
-        std::string opsStr;
-        for (size_t oi = 0; oi < inst.operands.size(); oi++) {
-            if (oi > 0) opsStr += ", ";
-            if (inst.operands[oi].isStringValId()) {
-                opsStr += "strId(" + std::to_string(inst.operands[oi].asStringValId()) + ")";
-                if (&chunk) opsStr += "='" + chunk.getString(inst.operands[oi].asStringValId()) + "'";
-            } else if (inst.operands[oi].isInt()) {
-                opsStr += "int(" + std::to_string(inst.operands[oi].asInt()) + ")";
-            } else {
-                opsStr += inst.operands[oi].toString();
-            }
-        }
-        fprintf(stderr, "[DBG vm.execute]   instr[%zu]: op=%d operands=[%s]\n",
-            di, (int)inst.opcode, opsStr.c_str());
     }
 
     runDispatchLoop(0);
@@ -4064,30 +3990,11 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
             stack.push(nullptr);
             executeInstruction(Instruction{OpCode::RETURN});
             continue;
-        }
+  }
 
-<<<<<<< HEAD
-        const auto &instruction = function->instructions[ip];
-=======
-const auto &instruction = function->instructions[ip];
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
+  const auto &instruction = function->instructions[ip];
 
-        // Debug: trace every instruction in the inner chunk execution
-        // Only trace when we're in a chunk that's NOT the main chunk (i.e. bc.execute)
-        static const BytecodeChunk* trace_target_chunk = nullptr;
-        static int trace_instr_count = 0;
-        if (trace_target_chunk == nullptr && current_chunk != main_chunk_.get() && function->name == "__main__" && ip == 0 && instruction.opcode == OpCode::CLOSURE) {
-            trace_target_chunk = current_chunk;
-            trace_instr_count = 0;
-        }
-        if (current_chunk == trace_target_chunk && trace_instr_count < 30) {
-            fprintf(stderr, "[DBG TRACE] func='%s' ip=%u op=%d stack_size=%zu frame_count=%zu\n",
-                function->name.c_str(), ip, (int)instruction.opcode, stack.size(), frame_count_);
-            trace_instr_count++;
-            if (trace_instr_count >= 30) trace_target_chunk = nullptr; // reset
-        }
-
-        try {
+  try {
       if (profiling_enabled_) {
         opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
         executed_instructions_++;
@@ -4284,31 +4191,12 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  tail_call_depth_ = 0;
 
     // Handle host function call directly
-<<<<<<< HEAD
-    if (callee_value.isHostFuncId()) {
-        fprintf(stderr, "doCall: HOST FUNC path taken\n"); fflush(stderr);
-        uint32_t host_func_idx = callee_value.asHostFuncId();
-=======
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
     if (host_func_idx >= host_function_names_.size()) {
       COMPILER_THROW("Host function index out of range: " +
                      std::to_string(host_func_idx));
     }
-<<<<<<< HEAD
-        const std::string &name = host_function_names_[host_func_idx];
-        fprintf(stderr, "doCall: host func name='%s' idx=%u\n", name.c_str(), host_func_idx); fflush(stderr);
-        // ... existing code ...
-        auto it = host_functions.find(name);
-        if (it == host_functions.end()) {
-            COMPILER_THROW("Host function not found: " + name);
-        }
-        fprintf(stderr, "doCall: about to call host func '%s', args.size=%zu\n", name.c_str(), args.size()); fflush(stderr);
-        Value result = it->second(args); // Call and get result
-        fprintf(stderr, "doCall: host func '%s' returned\n", name.c_str()); fflush(stderr);
-    pushStack(result); // Push result to stack
-=======
     const std::string &name = host_function_names_[host_func_idx];
     auto it = host_functions.find(name);
     if (it == host_functions.end()) {
@@ -4316,7 +4204,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     }
     Value result = it->second(args);
     pushStack(result);
->>>>>>> 57b2a2dd (feat: enhance type identification for functions and closures in runtime)
     return;
   }
 
@@ -6609,22 +6496,40 @@ case OpCode::TAIL_CALL: {
       break;
     }
 
-    // Pop args and receiver
-    std::vector<Value> args2(arg_count);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-      args2[arg_count - 1 - i] = popStack();
-    }
-    Value recv = popStack();
+// Pop args and receiver
+std::vector<Value> args2(arg_count);
+for (uint32_t i = 0; i < arg_count; ++i) {
+args2[arg_count - 1 - i] = popStack();
+}
+Value recv = popStack();
 
-    // Prepare args
-    std::vector<Value> all_args;
-    if (isInstanceFunc || found_via_module) {
-      all_args = args2;
-    } else {
-      all_args.reserve(arg_count + 1);
-      all_args.push_back(recv);
-      all_args.insert(all_args.end(), args2.begin(), args2.end());
-    }
+// Prepare args
+std::vector<Value> all_args;
+if (isInstanceFunc || found_via_module) {
+all_args = args2;
+} else {
+all_args.reserve(arg_count + 1);
+all_args.push_back(recv);
+all_args.insert(all_args.end(), args2.begin(), args2.end());
+}
+
+if (method_name == "join" || method_name == "map" || method_name == "filter") {
+fprintf(stderr, "[CALLMETHOD] %s: arg_count=%d found_host=%d found_via_module=%d isInstanceFunc=%d\n",
+method_name.c_str(), arg_count, found_host, found_via_module, isInstanceFunc);
+fprintf(stderr, "[CALLMETHOD] all_args.size=%zu\n", all_args.size());
+for (size_t i = 0; i < all_args.size(); i++) {
+fprintf(stderr, "[CALLMETHOD]   all_args[%zu] = ", i);
+if (all_args[i].isArrayId()) fprintf(stderr, "array\n");
+else if (all_args[i].isStringValId()) fprintf(stderr, "strval\n");
+else if (all_args[i].isStringId()) fprintf(stderr, "strid\n");
+else if (all_args[i].isInt()) fprintf(stderr, "int\n");
+else if (all_args[i].isNull()) fprintf(stderr, "null\n");
+else if (all_args[i].isFunctionObjId()) fprintf(stderr, "funcobj\n");
+else if (all_args[i].isClosureId()) fprintf(stderr, "closure\n");
+else if (all_args[i].isHostFuncId()) fprintf(stderr, "hostfunc\n");
+else fprintf(stderr, "other\n");
+}
+}
 
     if (found_host) {
       if (host_func_idx < host_function_names_.size()) {
@@ -8632,9 +8537,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         }
         for (const auto& [name, value] : *obj) {
             if (name.empty() || name[0] == '_') continue;
-        globals[name] = value;
-        if (name == "f") fprintf(stderr, "[DBG STORE_GLOBAL] STORED 'f' to globals, value=%s, globals_size=%zu\n", value.toString().c_str(), globals.size());
-        emitVariableChanged(name);
+globals[name] = value;
+            emitVariableChanged(name);
         }
         break;
     }
@@ -9645,29 +9549,60 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
         const auto* moduleFunc = chunk->getFunction(funcIdx);
         uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
     auto moduleChunk = chunk;
-    auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
-    std::string fnCapturedKey = canonicalKey;
-    std::string fnCapturedField = fieldPath;
-            registerHostFunction(wrapperName,
-                [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
-                    std::vector<Value> callArgs = args;
-                    if (callArgs.size() > paramCount && paramCount > 0) {
-                        callArgs.erase(callArgs.begin());
-                    }
-                    auto* savedChunk = current_chunk;
+auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+std::string fnCapturedKey = canonicalKey;
+std::string fnCapturedField = fieldPath;
+if (fieldPath == "join" || fieldPath == "split") {
+fprintf(stderr, "[MODFNDBG] CREATING wrapper for %s paramCount=%d\n", wrapperName.c_str(), paramCount);
+}
+registerHostFunction(wrapperName,
+[this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+std::vector<Value> callArgs = args;
+if (callArgs.size() > paramCount && paramCount > 0) {
+callArgs.erase(callArgs.begin());
+}
+if (fnCapturedField == "join" || fnCapturedField == "split") {
+std::string dbg2 = "[" + wrapperName + "] paramCount=" + std::to_string(paramCount) + " args=" + std::to_string(args.size()) + " callArgs=" + std::to_string(callArgs.size());
+for (size_t i = 0; i < callArgs.size(); i++) {
+dbg2 += " [" + std::to_string(i) + "]=";
+if (callArgs[i].isArrayId()) dbg2 += "array";
+else if (callArgs[i].isStringValId()) dbg2 += "strval";
+else if (callArgs[i].isStringId()) dbg2 += "strid";
+else if (callArgs[i].isInt()) dbg2 += "int";
+else if (callArgs[i].isNull()) dbg2 += "null";
+else dbg2 += "other";
+}
+fprintf(stderr, "[MODFNDBG] %s\n", dbg2.c_str());
+}
+auto* savedChunk = current_chunk;
                     auto savedGlobals = globals;
                     auto savedMirrorId = globals_mirror_object_id_;
                     Value savedG = globals["_G"];
                     globals = moduleGlobals;
                     current_chunk = moduleChunk.get();
-                    const auto* callee = moduleChunk->getFunction(funcIdx);
-                    if (!callee) {
-                        globals = std::move(savedGlobals);
-                        globals_mirror_object_id_ = savedMirrorId;
-                        globals["_G"] = savedG;
-                        current_chunk = savedChunk;
-                        return Value::makeNull();
-                    }
+const auto* callee = moduleChunk->getFunction(funcIdx);
+if (!callee) {
+globals = std::move(savedGlobals);
+globals_mirror_object_id_ = savedMirrorId;
+globals["_G"] = savedG;
+current_chunk = savedChunk;
+return Value::makeNull();
+}
+if (fnCapturedField == "join" || fnCapturedField == "split") {
+fprintf(stderr, "[MODFNDBG]   callee param_count=%d local_count=%d\n", callee->param_count, callee->local_count);
+for (uint32_t i = 0; i < callee->param_count && i < callArgs.size(); i++) {
+Value v = callArgs[i];
+fprintf(stderr, "[MODFNDBG]   param[%d] = ", i);
+if (v.isArrayId()) fprintf(stderr, "array\n");
+else if (v.isStringValId()) fprintf(stderr, "strval\n");
+else if (v.isStringId()) fprintf(stderr, "strid\n");
+else if (v.isInt()) fprintf(stderr, "int(%ld)\n", (long)v.asInt());
+else if (v.isNull()) fprintf(stderr, "null\n");
+else fprintf(stderr, "other\n");
+}
+fprintf(stderr, "[MODFNDBG]   moduleGlobals has 'delim'=%d 'sep'=%d 'arr'=%d 's'=%d\n",
+moduleGlobals.count("delim"), moduleGlobals.count("sep"), moduleGlobals.count("arr"), moduleGlobals.count("s"));
+}
                     size_t base = locals.size();
                     size_t savedLocalsSize = base;
                     locals.resize(base + callee->local_count, nullptr);
@@ -10049,17 +9984,26 @@ Value exports = Value::makeObjectId(exportsObj.id);
     // caller's chunk after restore, producing garbage.
 auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
-    auto moduleGlobalsSnapshot = globals;
-    for (const auto& [name, value] : globals) {
-        if (!name.empty() && name[0] != '_') {
-            if (host_function_globals_.count(name) == 0 || !value.isHostFuncId()) {
-                Value materialized = deepMaterializeStrings(value, current_chunk);
-                materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
-                    canonicalKey, name);
-                (*obj)[name] = materialized;
-            }
-        }
-    }
+auto moduleGlobalsSnapshot = globals;
+fprintf(stderr, "[MODFNDBG] loadModule export loop for %s, globals_count=%zu\n", canonicalKey.c_str(), globals.size());
+int exportCount = 0;
+for (const auto& [name, value] : globals) {
+if (!name.empty() && name[0] != '_') {
+bool skip = !(host_function_globals_.count(name) == 0 || !value.isHostFuncId());
+if (name == "join" || name == "split" || name == "len") {
+fprintf(stderr, "[MODFNDBG]   global '%s' skip=%d isHostFunc=%d inHFG=%d\n",
+name.c_str(), skip, value.isHostFuncId(), (int)host_function_globals_.count(name));
+}
+if (!skip) {
+Value materialized = deepMaterializeStrings(value, current_chunk);
+materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
+canonicalKey, name);
+(*obj)[name] = materialized;
+exportCount++;
+}
+}
+}
+fprintf(stderr, "[MODFNDBG] loadModule %s exported %d fields\n", canonicalKey.c_str(), exportCount);
     Value exports = Value::makeObjectId(exportsObj.id);
 
     // Restore caller's globals and execution state

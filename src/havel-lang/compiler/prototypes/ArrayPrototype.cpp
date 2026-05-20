@@ -275,10 +275,17 @@ regProto("each", 2, foreachFn);
     return Value::makeBool(false);
   });
 
-  regProto("join", 2, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeNull();
-    std::string delim = ",";
-    if (args.size() > 1 && args[1].isStringValId() && vm.getCurrentChunk()) delim = vm.getCurrentChunk()->getString(args[1].asStringValId());
+regProto("join", 2, [&vm](const std::vector<Value>& args) {
+if (args.empty()) return Value::makeNull();
+std::string delim = ",";
+if (args.size() > 1) {
+if (args[1].isStringValId() && vm.getCurrentChunk()) {
+delim = vm.getCurrentChunk()->getString(args[1].asStringValId());
+} else if (args[1].isStringId()) {
+auto* s = vm.getHeap().string(args[1].asStringId());
+if (s) delim = *s;
+}
+}
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
       if (arr) {

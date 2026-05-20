@@ -1,5 +1,6 @@
 #include "ObjectModule.hpp"
 #include "../compiler/vm/VMApi.hpp"
+#include "../compiler/vm/VM.hpp"
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -201,8 +202,24 @@ void registerObjectModule(const VMApi &api) {
     api.setField(objVal, "set", api.makeFunctionRef("object.set"));
     api.setField(objVal, "delete", api.makeFunctionRef("object.delete"));
 
-    api.setGlobal("Object", objVal);
-    api.setGlobal("object", objVal);
+  api.setGlobal("Object", objVal);
+  api.setGlobal("object", objVal);
+
+  Value exports;
+  try {
+    auto &vm = api.vm();
+    exports = vm.loadModule("object");
+    if (exports.isObjectId()) {
+      auto *obj = vm.getHeap().object(exports.asObjectId());
+      if (obj) {
+        for (const auto& [name, value] : *obj) {
+          if (name.empty() || name[0] == '_') continue;
+          api.setField(objVal, name, value);
+          api.setGlobal(name, value);
+        }
+      }
+    }
+  } catch (...) {}
 }
 
 } // namespace havel::stdlib

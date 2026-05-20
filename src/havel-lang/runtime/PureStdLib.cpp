@@ -11,6 +11,7 @@ void registerMathModule(const compiler::VMApi &api);
 void registerStringModule(const compiler::VMApi &api);
 void registerObjectModule(const compiler::VMApi &api);
 void registerTypeModule(const compiler::VMApi &api);
+void registerArrayModule(const compiler::VMApi &api);
 void registerRegexModule(const compiler::VMApi &api);
 void registerPhysicsModule(const compiler::VMApi &api);
 void registerTimeModule(const compiler::VMApi &api);
@@ -38,6 +39,7 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerStringModule(api);
   stdlib::registerObjectModule(api);
   stdlib::registerTypeModule(api);
+  stdlib::registerArrayModule(api);
   stdlib::registerRegexModule(api);
   stdlib::registerPhysicsModule(api);
   stdlib::registerTimeModule(api);

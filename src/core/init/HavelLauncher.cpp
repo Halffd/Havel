@@ -800,10 +800,19 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
- if (hkManager) {
+  if (hkManager) {
       hkManager->printHotkeys();
       hkManager->updateAllConditionalHotkeys();
     }
+
+    havel_inst.setShutdownCallback([&app]() { app.quit(); });
+
+    bool hasHotkeys = hkManager && !hkManager->getHotkeyList().empty();
+    if (!hasHotkeys) {
+      info("No hotkeys registered - exiting");
+      return 0;
+    }
+
     info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
     int exitCode = app.exec();
 

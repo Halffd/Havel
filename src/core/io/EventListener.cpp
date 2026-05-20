@@ -19,6 +19,11 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include <sys/signalfd.h>
+
+#ifdef HAVE_QT_EXTENSION
+#include <QCoreApplication>
+#endif
+
 namespace havel {
 
 std::string EventListener::GetActiveInputsString() const {
@@ -377,6 +382,22 @@ void EventListener::EventLoop() {
         if (executionEngine) {
             if (hostBridge) hostBridge->checkTimers();
             executionEngine->executeFrame();
+
+            // Check if the VM requested a clean exit (from a Havel script's exit() call)
+            auto* vm = executionEngine->getVM();
+            if (vm && vm->exit_requested_.load()) {
+                int code = vm->exit_code_.load();
+                shutdown.store(true);
+                running.store(false);
+#ifdef HAVE_QT_EXTENSION
+                QCoreApplication::exit(code);
+#endif
+                if (shutdownFd >= 0) {
+                    uint64_t val = 1;
+                    write(shutdownFd, &val, sizeof(val));
+                }
+                break;
+            }
         } else if (hostBridge) {
             hostBridge->checkTimers();
         }

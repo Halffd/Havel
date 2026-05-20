@@ -1798,14 +1798,18 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeNull();
   });
 
-  // exit(code) - terminate the program with the given exit code
-    registerHostFunction("exit", [](const std::vector<Value> &args) {
+  // exit(code) - request clean program shutdown
+  // Instead of calling std::exit() (which crashes during static destruction
+  // while Qt widgets are alive), we set a flag on the VM for cooperative
+  // shutdown. The EventListener detects this and stops cleanly.
+    registerHostFunction("exit", [this](const std::vector<Value> &args) {
         int exit_code = 0;
         if (!args.empty() && args[0].isInt()) {
             exit_code = static_cast<int>(args[0].asInt());
         }
-        std::exit(exit_code);
-        return Value::makeNull(); // Never reached
+        exit_requested_ = true;
+        exit_code_ = exit_code;
+        return Value::makeNull();
     });
 
   // Performance: clock_ns() - high-resolution clock in nanoseconds
@@ -3556,7 +3560,13 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     // Process any pending callbacks that resulted from instruction
     processPendingCalls();
 
-    
+    // Check if exit was requested during this instruction (from exit() host function)
+    // Stop all goroutines immediately and return so the EventLoop shuts down cleanly
+    if (exit_requested_.load()) {
+        if (scheduler_) scheduler_->stop();
+        return VMExecutionResult::Returned(nullptr);
+    }
+
     if (suspension_requested_) {
       suspension_requested_ = false;
       
@@ -3715,7 +3725,7 @@ void VM::loadFiberState(Fiber *fiber) {
       // Fallback: resolve from current chunk if no saved chunk
       vm_frame.function = current_chunk->getFunction(fiber_frame.function_id);
       vm_frame.chunk = current_chunk;
-      ::havel::warn("[VM] loadFiberState: No saved chunk, resolved function {} from current chunk", fiber_frame.function_id);
+      ::havel::debug("[VM] loadFiberState: No saved chunk, resolved function {} from current chunk", fiber_frame.function_id);
     }
 
     if (!vm_frame.function && fiber_frame.function_id != 0xFFFFFFFF) {
@@ -3974,6 +3984,11 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
     while (frame_count_ > stop_frame_depth) {
+        // Check if exit was requested (from exit() host function)
+        if (exit_requested_.load()) {
+            break;
+        }
+
     // Instruction limit check - prevents infinite loops
     if (max_instructions_ > 0) {
         executed_instructions_++;
@@ -4016,6 +4031,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         executed_instructions_++;
       }
       executeInstruction(instruction);
+      if (exit_requested_.load()) {
+        break;
+      }
     } catch (const ScriptThrow &thrown) {
       if (!handleScriptThrow(thrown.value)) {
         // Build stack trace for uncaught exception
@@ -4074,6 +4092,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     }
 
     processPendingCalls();
+      if (exit_requested_.load()) {
+        break;
+      }
 
         // CRITICAL: Re-fetch frame AFTER executeInstruction (vector may have
         // reallocated). Only increment IP if the frame count didn't change

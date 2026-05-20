@@ -663,7 +663,12 @@ public:
 	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }
 
 	void setScheduler(Scheduler* sched) { scheduler_ = sched; }
-	Scheduler* getScheduler() const { return scheduler_; }
+ 	Scheduler* getScheduler() const { return scheduler_; }
+
+    // When true, the script requested program exit (via exit() host function)
+    std::atomic<bool> exit_requested_{false};
+    // The exit code passed to the exit() function
+    std::atomic<int> exit_code_{0};
   
     void setGlobal(std::string name, Value value) {
         std::string key = name;

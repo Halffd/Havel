@@ -197,8 +197,6 @@ void havel::Configs::Load(const std::string &filename) {
 		return;
 	}
 
-	fprintf(stderr, "DEBUG Load: reading config from '%s'\n", path.c_str());
-
     while (std::getline(file, line)) {
         // Skip empty lines and comments
         if (line.empty() || line[0] == '#' || line[0] == ';')

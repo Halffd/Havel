@@ -429,7 +429,13 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 		if (i + 1 < argc) {
 			cfg.inputBackend = argv[++i];
 		}
-	} else if (arg == "--help" || arg == "-h") {
+      } else if (arg == "--") {
+        // Everything after -- is script arguments (app.args), not flags
+        for (int j = i + 1; j < argc; j++) {
+          cfg.scriptArgs.push_back(argv[j]);
+        }
+        break;
+      } else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
     } else if (arg == "lexer") {
@@ -1037,36 +1043,42 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	sigaction(SIGTERM, &sa, nullptr);
 
 	// Debug.AutoExit support for pure script mode
-	{
-		bool autoExit = Configs::Get().Get<bool>("Debug.AutoExit", false);
+	if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
 		int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
-		fprintf(stderr, "DEBUG: AutoExit=%d delay=%d\n", autoExit, delay);
-		if (autoExit) {
-			std::thread([delay]() {
-				fprintf(stderr, "DEBUG: AutoExit thread started, sleeping %d seconds\n", delay);
-				std::this_thread::sleep_for(std::chrono::seconds(delay));
-				if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
-					fprintf(stderr, "DEBUG: AutoExit cancelled during wait\n");
-					return;
-				}
-				fprintf(stderr, "DEBUG: AutoExit firing after %d seconds\n", delay);
-				std::exit(0);
-			}).detach();
-		}
+		std::thread([delay]() {
+			std::this_thread::sleep_for(std::chrono::seconds(delay));
+			if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+				return; // AutoExit was disabled during the wait
+			}
+			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", delay);
+			std::exit(0);
+		}).detach();
 	}
 
-	try {
-		havel::HavelEngine engine({
-			.debugBytecode = cfg.debugBytecode,
-			.debugLexer = cfg.debugLexer,
-			.debugParser = cfg.debugParser,
-			.debugAst = cfg.debugAst,
-			.stopOnError = cfg.stopOnError,
-			.leanMinimalStartup = true
-		});
-		engine.initializeMinimal();
-		engine.execute(combinedCode, "__main__", combinedNames);
-		engine.shutdown();
+    try {
+      havel::HavelEngine engine({
+        .debugBytecode = cfg.debugBytecode,
+        .debugLexer = cfg.debugLexer,
+        .debugParser = cfg.debugParser,
+        .debugAst = cfg.debugAst,
+        .stopOnError = cfg.stopOnError,
+        .leanMinimalStartup = true
+      });
+      engine.initializeMinimal();
+
+      // Populate app.args with script arguments (after --)
+      if (!cfg.scriptArgs.empty()) {
+        auto& vm = *engine.vm();
+        auto arrRef = vm.createHostArray();
+        for (const auto& arg : cfg.scriptArgs) {
+          auto strRef = vm.createRuntimeString(arg);
+          vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
+        }
+        vm.setAppArgs(arrRef.id);
+      }
+
+      engine.execute(combinedCode, "__main__", combinedNames);
+      engine.shutdown();
 		return 0;
 	} catch (const std::exception &e) {
 		error("Bytecode error: {}", e.what());

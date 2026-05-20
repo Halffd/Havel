@@ -44,9 +44,10 @@ private:
 #ifdef HAVE_QT_EXTENSION
   std::unique_ptr<QApplication> app_;
 #endif
-	struct LaunchConfig {
-		Mode mode = Mode::DAEMON;
-		std::vector<std::string> scriptFiles;
+  struct LaunchConfig {
+    Mode mode = Mode::DAEMON;
+    std::vector<std::string> scriptFiles;
+    std::vector<std::string> scriptArgs;
 		bool isStartup = false;
 		bool debugMode = false;
 		bool debugParser = false;

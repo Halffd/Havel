@@ -26,7 +26,7 @@ UinputDevice::~UinputDevice() {
 }
 
 bool UinputDevice::Setup() {
-    uinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    uinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (uinputFd < 0) {
         error("Failed to open /dev/uinput: {}", strerror(errno));
         return false;

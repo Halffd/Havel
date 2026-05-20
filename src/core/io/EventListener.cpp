@@ -385,6 +385,13 @@ void EventListener::EventLoop() {
             backend_->PollEvents(10);
         }
 
+        // Fast path: if there are pending goroutines (especially hotkeys),
+        // skip the select sleep and process them immediately
+        if (executionEngine && executionEngine->getScheduler() &&
+            executionEngine->getScheduler()->hasRunnableFibers()) {
+            continue;
+        }
+
     fd_set readfds;
     FD_ZERO(&readfds);
 

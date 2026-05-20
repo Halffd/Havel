@@ -158,21 +158,23 @@ static std::vector<std::string> splitArgs(const std::string& cmd) {
 // Register all functions and create the global "shell" object
 void registerShellModule(const VMApi &api) {
   // ----------------------------------------------------------------------
-  // shell.run – execute command via system shell (returns exit code)
+  // shell.run – execute command (non-blocking, returns pid on success)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.run",
     [api](const std::vector<Value> &args) {
-      if (api.vm().getScheduler()) {
-        api.vm().getScheduler()->yieldCurrentAndCheckTimers();
-      }
       if (args.empty())
         throw std::runtime_error("shell.run() requires a command string");
       std::string cmd = api.resolveString(args[0]);
-      int ret = std::system(cmd.c_str());
-      if (api.vm().getScheduler()) {
-        api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+      pid_t pid = fork();
+      if (pid == -1) {
+        return Value(static_cast<int64_t>(-1));
       }
-      return Value(static_cast<int64_t>(ret));
+      if (pid == 0) {
+        setsid();
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), (char *)nullptr);
+        _exit(127);
+      }
+      return Value(static_cast<int64_t>(pid));
     });
 
   // ----------------------------------------------------------------------

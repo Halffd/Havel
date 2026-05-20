@@ -224,7 +224,7 @@ private:
 };
 
 EvdevAdapter::EvdevAdapter() {
-    shutdownFd_ = eventfd(0, EFD_NONBLOCK);
+    shutdownFd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 }
 
 EvdevAdapter::~EvdevAdapter() {
@@ -281,7 +281,7 @@ std::vector<DeviceInfo> EvdevAdapter::EnumerateDevices() {
         if (strncmp(entry->d_name, "event", 5) != 0) continue;
 
         std::string path = std::string("/dev/input/") + entry->d_name;
-        int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
+    int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) continue;
 
         char name[256] = "Unknown";

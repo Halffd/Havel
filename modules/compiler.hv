@@ -1,22 +1,23 @@
 use fs
 use { tokenize } from "lexer"
-use { parse } from "pratt"
+use { parseTokens } from "pratt"
 use { Emitter, compileProgram } from "emitter"
 
-if #args < 2 {
-    print("usage: hvel run modules/compiler.hv <input.hv> <output.hvc>")
+if #app.args < 2 {
+    print("usage: havel --run modules/compiler.hv -- <input.hv> <output.hvc>")
     exit(1)
 }
 
-source = fs.read(args[0])
+source = fs.read(app.args[0])
 tokens = tokenize(source)
-ast = parse(tokens)
-if ast.errors != null && #ast.errors > 0 {
-    for err in ast.errors {
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+    for err in result.errors {
         print(err)
     }
     exit(1)
 }
-compileProgram(Emitter, ast, true)
-bc.serialize(args[1])
-print("written " + args[1])
+emitter = Emitter()
+compileProgram(emitter, result.ast, true)
+bc.serialize(app.args[1])
+print("written " + app.args[1])

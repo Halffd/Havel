@@ -906,9 +906,23 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
       info("Bytecode loaded successfully: {}", f);
     }
 
+    // Set main_chunk_ so CLOSURE correctly decides whether to snapshot globals
+    auto chunkPtr = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
+    vm->setMainChunkShared(chunkPtr);
+
+    // Populate app.args with script arguments (after --)
+    if (!cfg.scriptArgs.empty()) {
+        auto arrRef = vm->createHostArray();
+        for (const auto& arg : cfg.scriptArgs) {
+            auto strRef = vm->createRuntimeString(arg);
+            vm->pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
+        }
+        vm->setAppArgs(arrRef.id);
+    }
+
     // Execute __main__ function from this chunk directly to keep string/constant tables valid
     try {
-      auto result = vm->execute(*chunk, "__main__");
+        auto result = vm->execute(*chunkPtr, "__main__");
       (void)result;
     } catch (const std::exception &e) {
       error("Bytecode error in {}: {}", f, e.what());

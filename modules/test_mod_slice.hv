@@ -1,7 +1,0 @@
-// test_mod_slice.hv - test slicing in module context
-fn test() {
-  s = "hello"
-  i = 0
-  ch = s[i:i+1]
-  return ch
-}

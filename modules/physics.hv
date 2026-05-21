@@ -1,0 +1,45 @@
+// modules/physics.hv — Pure Havel physics module
+// Replaces C++ PhysicsModule with identical constants and functions
+// NOTE: Function names prefixed with "phys_" to avoid collision with
+// C++ PhysicsModule globals (force, momentum, etc). When C++ PhysicsModule
+// is removed, the prefix can be dropped.
+
+// Gravitational acceleration (m/s^2)
+G = 9.80665
+// Speed of light (m/s)
+C = 299792458.0
+// Gravitational constant (N*m^2/kg^2)
+G0 = 6.67430e-11
+// Boltzmann constant (J/K)
+KB = 1.380649e-23
+// Avogadro constant (mol^-1)
+NA = 6.02214076e23
+// Gas constant (J/(mol*K))
+RGAS = 8.314462618
+// Electron mass (kg)
+ME = 9.1093837015e-31
+// Proton mass (kg)
+MP = 1.67262192369e-27
+// Elementary charge (C)
+E_CHARGE = 1.602176634e-19
+// Planck constant (J*s)
+HPLANCK = 6.62607015e-34
+// Vacuum permittivity (F/m)
+EPS0 = 8.8541878128e-12
+// Vacuum permeability (N/A^2)
+MU0 = 1.25663706212e-6
+
+fn phys_force(mass, accel) { return num(mass) * num(accel) }
+fn phys_kinetic_energy(mass, velocity) { m = num(mass); v = num(velocity); return 0.5 * m * v * v }
+fn phys_potential_energy(mass, height, gravity = 9.80665) { return num(mass) * num(gravity) * num(height) }
+fn phys_momentum(mass, velocity) { return num(mass) * num(velocity) }
+fn phys_wavelength(frequency) {
+    f = num(frequency)
+    if f <= 0 { return 0.0 / 0.0 }
+    return C / f
+}
+fn phys_de_broglie(mass, velocity) { return HPLANCK / (num(mass) * num(velocity)) }
+fn phys_kepler_period(semi_major_axis, mass) { return 2.0 * PI * sqrt((num(semi_major_axis) ^ 3) / (G0 * num(mass))) }
+fn phys_escape_velocity(mass, radius) { return sqrt(2.0 * G0 * num(mass) / num(radius)) }
+fn phys_ohm_law(voltage, resistance) { return num(voltage) / num(resistance) }
+fn phys_gravitational_force(m1, m2, distance) { return G0 * num(m1) * num(m2) / (num(distance) ^ 2) }

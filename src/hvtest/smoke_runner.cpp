@@ -2268,7 +2268,6 @@ return string.find("hello world", "world")
 )havel", 6, dump_bytecode, snapshot_dir);
 
 failures += runStdlibCase("string-find-not-found", R"havel(
-// npos cast to int64_t is -1
 v = string.find("hello", "xyz")
 return v == -1 ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
@@ -2298,27 +2297,24 @@ return string.includes("hello", "xyz") ? 1 : 0
 )havel", 0, dump_bytecode, snapshot_dir);
 
 // string.sub is a stub - returns null
-failures += runStdlibCase("string-sub-stub", R"havel(
+failures += runStdlibCase("string-sub", R"havel(
 v = string.sub("hello", 0, 3)
-return isNull(v) ? 1 : 0
+return v == "hel" ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-// string.replace is a stub - returns null
-failures += runStdlibCase("string-replace-stub", R"havel(
+failures += runStdlibCase("string-replace", R"havel(
 v = string.replace("hello", "l", "r")
-return isNull(v) ? 1 : 0
+return v == "herlo" ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-// string.split returns stub array [42]
-failures += runStdlibCase("string-split-stub", R"havel(
+failures += runStdlibCase("string-split", R"havel(
 v = string.split("a,b,c", ",")
 return isArray(v) ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-// string.join is a stub - returns null
-failures += runStdlibCase("string-join-stub", R"havel(
+failures += runStdlibCase("string-join", R"havel(
 v = string.join([1, 2, 3], ",")
-return isNull(v) ? 1 : 0
+return v == "1,2,3" ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
 // Global replace() function (non-regex path, replaces first occurrence)

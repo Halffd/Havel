@@ -1,5 +1,6 @@
 /* StringModule.cpp - VM-native stdlib module */
 #include "StringModule.hpp"
+#include "../compiler/vm/VM.hpp"
 #include <regex>
 
 using havel::compiler::Value;
@@ -7,8 +8,7 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
-// Register string module with VMApi (stable API layer)
-void registerStringModule(const VMApi &api) {
+static void registerStringFallback(const VMApi &api) {
   // Helper: convert string to lowercase
   auto toLower = [](const std::string &s) -> std::string {
     std::string result = s;
@@ -206,31 +206,30 @@ void registerStringModule(const VMApi &api) {
       });
 
   api.registerFunction("replace", [api](const std::vector<Value>& args) {
- if (args.size() < 3)
- throw std::runtime_error("replace() requires string, pattern, and replacement");
- std::string s = api.toString(args[0]);
- std::string pattern = api.toString(args[1]);
- std::string replacement = api.toString(args[2]);
+    if (args.size() < 3)
+      throw std::runtime_error("replace() requires string, pattern, and replacement");
+    std::string s = api.toString(args[0]);
+    std::string pattern = api.toString(args[1]);
+    std::string replacement = api.toString(args[2]);
 
- bool isRegex = !pattern.empty() && pattern.front() == '/' && pattern.size() > 2 && pattern.back() == '/';
- if (isRegex) {
- std::string regexPattern = pattern.substr(1, pattern.size() - 2);
- try {
- std::regex re(regexPattern);
- std::string result = std::regex_replace(s, re, replacement);
- return api.makeString(std::move(result));
- } catch (const std::regex_error&) {
- return Value::makeNull();
- }
- }
+    bool isRegex = !pattern.empty() && pattern.front() == '/' && pattern.size() > 2 && pattern.back() == '/';
+    if (isRegex) {
+      std::string regexPattern = pattern.substr(1, pattern.size() - 2);
+      try {
+        std::regex re(regexPattern);
+        std::string result = std::regex_replace(s, re, replacement);
+        return api.makeString(std::move(result));
+      } catch (const std::regex_error&) {
+        return Value::makeNull();
+      }
+    }
 
- size_t pos = s.find(pattern);
- if (pos == std::string::npos) return api.makeString(s);
- s.replace(pos, pattern.size(), replacement);
- return api.makeString(std::move(s));
- });
+    size_t pos = s.find(pattern);
+    if (pos == std::string::npos) return api.makeString(s);
+    s.replace(pos, pattern.size(), replacement);
+    return api.makeString(std::move(s));
+  });
 
- // Register string object
   auto strObj = api.makeObject();
   api.setField(strObj, "len", api.makeFunctionRef("string.len"));
   api.setField(strObj, "lower", api.makeFunctionRef("string.lower"));
@@ -245,7 +244,37 @@ void registerStringModule(const VMApi &api) {
   api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
   api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
   api.setGlobal("String", strObj);
-  api.setGlobal("string", strObj); // lowercase alias
+  api.setGlobal("string", strObj);
+}
+
+void registerStringModule(const VMApi &api) {
+auto &vm = api.vm();
+Value exports;
+try {
+exports = vm.loadModule("string");
+} catch (const std::exception& e) {
+registerStringFallback(api);
+return;
+} catch (...) {
+registerStringFallback(api);
+return;
+}
+
+  if (!exports.isObjectId()) {
+    registerStringFallback(api);
+    return;
+  }
+
+  api.setGlobal("String", exports);
+  api.setGlobal("string", exports);
+
+  auto *obj = vm.getHeap().object(exports.asObjectId());
+  if (obj) {
+    for (const auto& [name, value] : *obj) {
+      if (name.empty() || name[0] == '_') continue;
+      api.setGlobal(name, value);
+    }
+  }
 }
 
 } // namespace havel::stdlib

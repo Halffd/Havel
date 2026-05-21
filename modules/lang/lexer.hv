@@ -431,27 +431,28 @@ fn Lexer(source) {
              s = s + current()
              advance()
             }
-            else if current() == "$" and isFString {
-                isInterpolated = true
-                s = s + "$"
-                advance()
-                if current() == "@" or (current() != null and isAlpha(current())) {
-                    s = s + current()
-                    advance()
-                    while current() != null and isAlphaNum(current()) {
-                        s = s + current()
-                        advance()
-                    }
-                    if current() == "?" {
-                        s = s + "?"
-                        advance()
-                    }
-                }
-                else {
-                    s = s + current()
-                    advance()
-                }
-            }
+            else if current() == "$" {
+    advance()
+    if current() != null and (isAlpha(current()) or current() == "_" or current() == "@") {
+      isInterpolated = true
+      s = s + "${"
+      s = s + current()
+      advance()
+      while current() != null and (isAlphaNum(current()) or current() == "_") {
+        s = s + current()
+        advance()
+      }
+      if current() == "?" {
+        s = s + "?"
+        advance()
+      }
+      s = s + "}"
+    }
+    else {
+      s = s + "$"
+      advance()
+    }
+  }
             else {
                 s = s + current()
                 advance()

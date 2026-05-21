@@ -17,6 +17,7 @@ if source == null {
 
 tokens = tokenize(source)
 result = parseTokens(tokens)
+
 if result.errors != null && #result.errors > 0 {
     for err in result.errors { print(err) }
     exit(1)

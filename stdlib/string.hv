@@ -1,0 +1,24 @@
+// string.hv - Pure Havel string stdlib
+// Provides string.* namespace functions wrapping prototype methods.
+// Loaded by: use "string"
+//
+// These wrap the native prototype methods registered in StringPrototype.cpp.
+// The prototype method names are camelCase (startsWith, endsWith, etc.)
+// while the C++ StringModule.cpp namespace uses lowercase (startswith, endswith).
+// This .hv file provides the lowercase namespace API matching StringModule.cpp.
+
+fn len(s) { s.len() }
+fn lower(s) { s.lower() }
+fn upper(s) { s.upper() }
+fn trim(s) { s.trim() }
+fn sub(s, start, count = nil) {
+  if count != nil { s.sub(start, count) }
+  else { s.sub(start) }
+}
+fn find(s, pattern) { s.find(pattern) }
+fn replace(s, src, dest) { s.replace(src, dest) }
+fn split(s, delim) { s.split(delim) }
+fn join(arr, delim) { arr.join(delim) }
+fn startswith(s, prefix) { s.startsWith(prefix) }
+fn endswith(s, suffix) { s.endsWith(suffix) }
+fn includes(s, pattern) { s.includes(pattern) }

@@ -14,9 +14,10 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 struct BuilderState {
-	std::unique_ptr<BytecodeChunk> chunk;
-	int32_t current_func_idx = -1;
-	std::unordered_map<std::string, OpCode> opcode_map;
+    std::unique_ptr<BytecodeChunk> chunk;
+    int32_t current_func_idx = -1;
+    std::vector<int32_t> saved_func_stack;
+    std::unordered_map<std::string, OpCode> opcode_map;
 
 	BytecodeFunction *currentFunc() {
 		if (current_func_idx < 0) return nullptr;
@@ -118,9 +119,75 @@ struct BuilderState {
 		{"DECLOCAL", OpCode::DECLOCAL},
 		{"INCLOCAL_POST", OpCode::INCLOCAL_POST},
 		{"DECLOCAL_POST", OpCode::DECLOCAL_POST},
-		{"NOP", OpCode::NOP},
-		};
-	}
+        {"NOP", OpCode::NOP},
+        {"JUMP_IF_NULL", OpCode::JUMP_IF_NULL},
+        {"SET_SET", OpCode::SET_SET},
+        {"SET_DEL", OpCode::SET_DEL},
+        {"RANGE_STEP_NEW", OpCode::RANGE_STEP_NEW},
+        {"STRING_PROMOTE", OpCode::STRING_PROMOTE},
+        {"STRING_SUB", OpCode::STRING_SUB},
+        {"STRING_HAS", OpCode::STRING_HAS},
+        {"STRING_FIND", OpCode::STRING_FIND},
+        {"STRING_SPLIT", OpCode::STRING_SPLIT},
+        {"STRING_REPLACE", OpCode::STRING_REPLACE},
+        {"STRING_TRIM", OpCode::STRING_TRIM},
+        {"STRING_LOWER", OpCode::STRING_LOWER},
+        {"STRING_UPPER", OpCode::STRING_UPPER},
+        {"STRING_STARTS", OpCode::STRING_STARTS},
+        {"STRING_ENDS", OpCode::STRING_ENDS},
+        {"ARRAY_POP", OpCode::ARRAY_POP},
+        {"ARRAY_DEL", OpCode::ARRAY_DEL},
+        {"ARRAY_FIND", OpCode::ARRAY_FIND},
+        {"ARRAY_HAS", OpCode::ARRAY_HAS},
+        {"ARRAY_MAP", OpCode::ARRAY_MAP},
+        {"ARRAY_FILTER", OpCode::ARRAY_FILTER},
+        {"ARRAY_FOREACH", OpCode::ARRAY_FOREACH},
+        {"ARRAY_REDUCE", OpCode::ARRAY_REDUCE},
+        {"OBJECT_KEYS", OpCode::OBJECT_KEYS},
+        {"OBJECT_VALUES", OpCode::OBJECT_VALUES},
+        {"OBJECT_HAS", OpCode::OBJECT_HAS},
+        {"OBJECT_DELETE", OpCode::OBJECT_DELETE},
+        {"OBJECT_ENTRIES", OpCode::OBJECT_ENTRIES},
+        {"OBJECT_GET_RAW", OpCode::OBJECT_GET_RAW},
+        {"ENUM_MATCH", OpCode::ENUM_MATCH},
+        {"CHANNEL_NEW", OpCode::CHANNEL_NEW},
+        {"CHANNEL_SEND", OpCode::CHANNEL_SEND},
+        {"CHANNEL_RECEIVE", OpCode::CHANNEL_RECEIVE},
+        {"CHANNEL_CLOSE", OpCode::CHANNEL_CLOSE},
+        {"THREAD_SPAWN", OpCode::THREAD_SPAWN},
+        {"THREAD_JOIN", OpCode::THREAD_JOIN},
+        {"THREAD_SEND", OpCode::THREAD_SEND},
+        {"THREAD_RECEIVE", OpCode::THREAD_RECEIVE},
+        {"FIBER_AWAIT", OpCode::FIBER_AWAIT},
+        {"FIBER_SLEEP", OpCode::FIBER_SLEEP},
+        {"GO_ASYNC", OpCode::GO_ASYNC},
+        {"YIELD_RESUME", OpCode::YIELD_RESUME},
+        {"LOAD_CLASS_PROTO", OpCode::LOAD_CLASS_PROTO},
+        {"PROT_CAST", OpCode::PROT_CAST},
+        {"PROT_CHECK", OpCode::PROT_CHECK},
+        {"IMPORT_WILDCARD", OpCode::IMPORT_WILDCARD},
+        {"ADD_ASSIGN", OpCode::ADD_ASSIGN},
+        {"SUB_ASSIGN", OpCode::SUB_ASSIGN},
+        {"MUL_ASSIGN", OpCode::MUL_ASSIGN},
+        {"DIV_ASSIGN", OpCode::DIV_ASSIGN},
+        {"MOD_ASSIGN", OpCode::MOD_ASSIGN},
+        {"INT_DIV_ASSIGN", OpCode::INT_DIV_ASSIGN},
+        {"POW_ASSIGN", OpCode::POW_ASSIGN},
+        {"BITWISE_AND_ASSIGN", OpCode::BITWISE_AND_ASSIGN},
+        {"BITWISE_OR_ASSIGN", OpCode::BITWISE_OR_ASSIGN},
+        {"BITWISE_XOR_ASSIGN", OpCode::BITWISE_XOR_ASSIGN},
+        {"SHIFT_LEFT_ASSIGN", OpCode::SHIFT_LEFT_ASSIGN},
+        {"SHIFT_RIGHT_ASSIGN", OpCode::SHIFT_RIGHT_ASSIGN},
+        {"REMAINDER", OpCode::REMAINDER},
+        {"REMAINDER_ASSIGN", OpCode::REMAINDER_ASSIGN},
+        {"DIVMOD", OpCode::DIVMOD},
+        {"OBJECT_NEW_UNSORTED", OpCode::OBJECT_NEW_UNSORTED},
+        {"SPREAD_CALL", OpCode::SPREAD_CALL},
+        {"DEBUG", OpCode::DEBUG},
+        {"BEGIN_MODULE", OpCode::BEGIN_MODULE},
+        {"END_MODULE", OpCode::END_MODULE},
+    };
+}
 };
 
 static BuilderState g_builder;
@@ -153,11 +220,26 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		g_builder.chunk->addFunction(std::move(func));
 		g_builder.current_func_idx = static_cast<int32_t>(g_builder.chunk->getFunctionCount() - 1);
 		return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));
-	});
+    });
 
-	api.registerFunction("bc.emit", [api](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.emit: no current function");
+    api.registerFunction("bc.func_push", [](const std::vector<Value> &args) -> Value {
+        g_builder.saved_func_stack.push_back(g_builder.current_func_idx);
+        g_builder.current_func_idx = -1;
+        return Value::makeInt(0);
+    });
+
+    api.registerFunction("bc.func_pop", [](const std::vector<Value> &args) -> Value {
+        if (g_builder.saved_func_stack.empty()) {
+            throw std::runtime_error("bc.func_pop: no saved function context");
+        }
+        g_builder.current_func_idx = g_builder.saved_func_stack.back();
+        g_builder.saved_func_stack.pop_back();
+        return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));
+    });
+
+    api.registerFunction("bc.emit", [api](const std::vector<Value> &args) -> Value {
+        auto *fn = g_builder.currentFunc();
+        if (!fn) throw std::runtime_error("bc.emit: no current function");
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.emit: requires opcode name (string)");
     }
@@ -173,18 +255,18 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		return Value::makeInt(static_cast<int64_t>(ip));
 	});
 
-	api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.add_const: no current function");
-		if (args.empty()) throw std::runtime_error("bc.add_const: requires value");
-		auto &consts = fn->constants;
-		for (uint32_t i = 0; i < consts.size(); ++i) {
-			if (consts[i] == args[0]) return Value::makeInt(static_cast<int64_t>(i));
-		}
-		uint32_t idx = static_cast<uint32_t>(consts.size());
-		consts.push_back(args[0]);
-		return Value::makeInt(static_cast<int64_t>(idx));
-	});
+api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.add_const: no current function");
+    if (args.empty()) throw std::runtime_error("bc.add_const: requires value");
+    auto &consts = fn->constants;
+    for (uint32_t i = 0; i < consts.size(); ++i) {
+        if (consts[i] == args[0]) return Value::makeInt(static_cast<int64_t>(i));
+    }
+    uint32_t idx = static_cast<uint32_t>(consts.size());
+    consts.push_back(args[0]);
+    return Value::makeInt(static_cast<int64_t>(idx));
+});
 
 api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> Value {
         auto *fn = g_builder.currentFunc();
@@ -293,32 +375,37 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     auto saved_frame_arena = vm.frame_arena_;
     std::stack<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
+    auto saved_main_chunk = vm.getMainChunk();
 
-    fprintf(stderr, "[DBG bc.execute] About to execute chunk with %u functions, globals_size=%zu, 'f' in globals: %d\n",
-        g_builder.chunk->getFunctionCount(), vm.globals.size(),
-        vm.globals.count("f") > 0 ? 1 : 0);
+    // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
+    // (same-chunk closures should share the globals namespace, not capture a snapshot)
+    // Use aliasing shared_ptr: shares ownership with saved_main_chunk but points to inner chunk
+    auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
+    vm.setMainChunkShared(inner_chunk_ptr);
+vm.current_chunk = g_builder.chunk.get();
 
-    try {
-        auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+ try {
+ vm.bc_execute_depth_++;
+ auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+ vm.bc_execute_depth_--;
 
-        fprintf(stderr, "[DBG bc.execute] After execute: globals_size=%zu, 'f' in globals: %d\n",
-            vm.globals.size(), vm.globals.count("f") > 0 ? 1 : 0);
-
-        vm.current_chunk = saved_chunk;
-        vm.frame_count_ = saved_frame_count;
-        vm.frame_arena_ = std::move(saved_frame_arena);
-        vm.stack = std::move(saved_stack);
-        vm.locals = std::move(saved_locals);
-        return result;
-    } catch (const std::exception &e) {
-        fprintf(stderr, "[DBG bc.execute] CAUGHT: %s\n", e.what());
-        vm.current_chunk = saved_chunk;
-        vm.frame_count_ = saved_frame_count;
-        vm.frame_arena_ = std::move(saved_frame_arena);
-        vm.stack = std::move(saved_stack);
-        vm.locals = std::move(saved_locals);
-        throw std::runtime_error(std::string("Bytecode error: ") + e.what());
-    }
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ return result;
+ } catch (const std::exception &e) {
+ vm.bc_execute_depth_--;
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+ }
 });
 
 api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {
@@ -335,32 +422,43 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         runArgs.push_back(args[i]);
     }
 
-        auto &vm = api.vm();
-        auto saved_chunk = vm.current_chunk;
-        auto saved_frame_count = vm.frame_count_;
-        auto saved_frame_arena = vm.frame_arena_;
-        std::stack<Value> saved_stack = vm.stack;
-        auto saved_locals = vm.locals;
-        auto saved_immutable_locals = vm.immutable_locals_;
+  auto &vm = api.vm();
+  auto saved_chunk = vm.current_chunk;
+  auto saved_frame_count = vm.frame_count_;
+  auto saved_frame_arena = vm.frame_arena_;
+  std::stack<Value> saved_stack = vm.stack;
+  auto saved_locals = vm.locals;
+  auto saved_immutable_locals = vm.immutable_locals_;
+  auto saved_main_chunk = vm.getMainChunk();
 
-        try {
-            auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
-            vm.current_chunk = saved_chunk;
-            vm.frame_count_ = saved_frame_count;
-            vm.frame_arena_ = std::move(saved_frame_arena);
-            vm.stack = std::move(saved_stack);
-            vm.locals = std::move(saved_locals);
-            vm.immutable_locals_ = std::move(saved_immutable_locals);
-            return result;
-        } catch (const std::exception &e) {
-            vm.current_chunk = saved_chunk;
-            vm.frame_count_ = saved_frame_count;
-            vm.frame_arena_ = std::move(saved_frame_arena);
-            vm.stack = std::move(saved_stack);
-            vm.locals = std::move(saved_locals);
-            vm.immutable_locals_ = std::move(saved_immutable_locals);
-            throw std::runtime_error(std::string("Bytecode error: ") + e.what());
-        }
+  // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
+  auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
+  vm.setMainChunkShared(inner_chunk_ptr);
+  vm.current_chunk = g_builder.chunk.get();
+
+ try {
+ vm.bc_execute_depth_++;
+ auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
+ vm.bc_execute_depth_--;
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.immutable_locals_ = std::move(saved_immutable_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ return result;
+ } catch (const std::exception &e) {
+ vm.bc_execute_depth_--;
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.immutable_locals_ = std::move(saved_immutable_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+  }
 	});
 
 	api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
@@ -455,7 +553,9 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
 
   auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
-  api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
+    api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
+    api.setField(bcObj, "func_push", api.makeFunctionRef("bc.func_push"));
+    api.setField(bcObj, "func_pop", api.makeFunctionRef("bc.func_pop"));
   api.setField(bcObj, "emit", api.makeFunctionRef("bc.emit"));
   api.setField(bcObj, "add_const", api.makeFunctionRef("bc.add_const"));
   api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));

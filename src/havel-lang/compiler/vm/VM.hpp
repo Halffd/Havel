@@ -186,8 +186,9 @@ struct CallFrame {
   std::stack<Value> stack;
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
-  size_t frame_count_ = 0;
-  GCHeap heap_;
+ size_t frame_count_ = 0;
+ int bc_execute_depth_ = 0;
+ GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
     std::unordered_map<std::string, Value> globals;
@@ -830,7 +831,8 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
     Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                    const std::unordered_map<std::string, Value>& moduleGlobals,
                                    const std::string& canonicalKey,
-                                   const std::string& fieldPath);
+                                   const std::string& fieldPath,
+                                int depth = 0);
     Value loadModule(const std::string& path);
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
@@ -841,10 +843,14 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }
   void setCurrentChunkPublic(const BytecodeChunk* chunk) { current_chunk = chunk; }
  void setCurrentChunk(const BytecodeChunk *chunk) { current_chunk = chunk; }
- void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
- main_chunk_ = std::move(chunk);
- current_chunk = main_chunk_.get();
- }
+    void storeMainChunk(std::shared_ptr<BytecodeChunk> chunk) {
+        main_chunk_ = std::move(chunk);
+        current_chunk = main_chunk_.get();
+    }
+    void setMainChunkShared(const std::shared_ptr<BytecodeChunk>& chunk) {
+        main_chunk_ = chunk;
+        current_chunk = main_chunk_.get();
+    }
  const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
  std::unordered_map<std::string, Value>& getGlobals() { return globals; }
 void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {

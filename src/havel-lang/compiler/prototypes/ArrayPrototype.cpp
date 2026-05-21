@@ -216,20 +216,27 @@ regProto("map", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
   });
 
-  regProto("reduce", 3, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 3 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
-    if (args[0].isArrayId()) {
-      auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr && !arr->empty()) {
-        Value acc = args[2];
-        for (const auto& v : *arr) {
-          acc = vm.call(args[1], {acc, v});
-        }
-        return acc;
-      }
-    }
-    return args.size() > 2 ? args[2] : Value::makeNull();
-  });
+regProtoVar("reduce", [&vm](const std::vector<Value>& args) {
+if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
+if (args[0].isArrayId()) {
+auto* arr = vm.getHeap().array(args[0].asArrayId());
+if (arr && !arr->empty()) {
+size_t start = 0;
+Value acc;
+if (args.size() >= 3) {
+acc = args[2];
+} else {
+acc = (*arr)[0];
+start = 1;
+}
+for (size_t i = start; i < arr->size(); i++) {
+acc = vm.call(args[1], {acc, (*arr)[i]});
+}
+return acc;
+}
+}
+return args.size() > 2 ? args[2] : Value::makeNull();
+});
 
 auto foreachFn = [&vm](const std::vector<Value>& args) {
 if (args.size() < 2 || (!args[1].isFunctionObjId() && !args[1].isClosureId())) return Value::makeNull();
@@ -275,10 +282,17 @@ regProto("each", 2, foreachFn);
     return Value::makeBool(false);
   });
 
-  regProto("join", 2, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeNull();
-    std::string delim = ",";
-    if (args.size() > 1 && args[1].isStringValId() && vm.getCurrentChunk()) delim = vm.getCurrentChunk()->getString(args[1].asStringValId());
+regProto("join", 2, [&vm](const std::vector<Value>& args) {
+if (args.empty()) return Value::makeNull();
+std::string delim = ",";
+if (args.size() > 1) {
+if (args[1].isStringValId() && vm.getCurrentChunk()) {
+delim = vm.getCurrentChunk()->getString(args[1].asStringValId());
+} else if (args[1].isStringId()) {
+auto* s = vm.getHeap().string(args[1].asStringId());
+if (s) delim = *s;
+}
+}
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
       if (arr) {

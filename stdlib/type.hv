@@ -24,8 +24,8 @@ fn isBoolean(x) {
 }
 
 fn isFunction(x) {
-    val t = type(x)
-    t == "function" || t == "unknown"
+  val t = type(x)
+  t == "function" || t == "closure"
 }
 
 fn isSet(x) {

@@ -327,6 +327,17 @@ void ExtensionUIBridge::pumpEvents(int timeoutMs) {
   (void)timeoutMs;
 }
 
+int ExtensionUIBridge::runEventLoop() {
+  // ExtensionUIBridge doesn't manage event loop directly
+  // This should not be called in normal usage
+  return 0;
+}
+
+void ExtensionUIBridge::quitEventLoop(int exitCode) {
+  (void)exitCode;
+  // ExtensionUIBridge doesn't manage event loop directly
+}
+
 bool ExtensionUIBridge::hasActiveWindows() const {
   return false;
 }

@@ -864,6 +864,26 @@ void UIService::pumpEvents(int timeoutMs) {
   }
 }
 
+// Event loop management - routes event loop through UI module
+int UIService::runEventLoop() {
+  ensureApp();
+  eventLoopRunning_ = true;
+  eventLoopExitCode_ = 0;
+  int result = QApplication::exec();
+  eventLoopRunning_ = false;
+  return result;
+}
+
+void UIService::quitEventLoop(int exitCode) {
+  if (QApplication::instance()) {
+    eventLoopExitCode_ = exitCode;
+    QApplication::quit();
+    if (exitCode != 0) {
+      QApplication::exit(exitCode);
+    }
+  }
+}
+
 bool UIService::hasActiveWindows() const { return openWindowCount_ > 0; }
 
 void UIService::onAllWindowsClosed(std::function<void()> callback) {

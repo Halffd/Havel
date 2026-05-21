@@ -112,6 +112,14 @@ public:
   // Event pumping (call this to process Qt events)
   void pumpEvents(int timeoutMs = 0);
 
+  // Event loop management (routed through UI module)
+  // runEventLoop() - runs the Qt event loop until quit() is called
+  // returns the exit code passed to quit()
+  int runEventLoop();
+  
+  // quitEventLoop(exitCode) - quits the event loop with given exit code
+  void quitEventLoop(int exitCode = 0);
+
   // Check if any windows are still open
   bool hasActiveWindows() const;
 
@@ -197,6 +205,10 @@ private:
   // System Tray
   QSystemTrayIcon *trayIcon_ = nullptr;
   QMenu *trayMenu_ = nullptr;
+
+  // Event loop management
+  bool eventLoopRunning_ = false;
+  int eventLoopExitCode_ = 0;
 
   // Ensure QApplication exists
   void ensureApp();

@@ -812,7 +812,13 @@ VM::CallFrame &VM::currentFrame() {
 }
 
 Value VM::getConstant(uint32_t index) {
-  return currentFrame().function->constants[index];
+  auto& consts = currentFrame().function->constants;
+  if (index >= consts.size()) {
+    fprintf(stderr, "getConstant: index %u >= constants.size() %zu in function '%s'\n",
+            index, consts.size(), currentFrame().function->name.c_str());
+    return Value::makeNull();
+  }
+  return consts[index];
 }
 
 VM::ExecutionState VM::saveState() const {
@@ -882,29 +888,25 @@ Value VM::callFunctionSync(const Value &fn,
 }
 
 void VM::registerHostFunction(const std::string &name,
-                              BytecodeHostFunction function) {
+                               BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
-  // Track index for HostFuncId lookup
-  uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
-  host_function_names_.push_back(name);
-  // Register host function by name in globals (for LOAD_GLOBAL lookup)
-  // The bytecode will look up the string constant which points to this name
-  host_function_globals_[name] = Value::makeHostFuncId(idx);
+    uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
+    host_function_names_.push_back(name);
+    host_function_globals_[name] = Value::makeHostFuncId(idx);
 }
 
 void VM::registerHostFunction(const std::string &name, size_t arity,
-                              BytecodeHostFunction function) {
+BytecodeHostFunction function) {
   registerHostFunction(
-      name,
-      [arity, function = std::move(function),
-       name](const std::vector<Value> &args) -> Value {
-        if (args.size() != arity) {
-          COMPILER_THROW("Host function '" + name + "' expects " +
-                                   std::to_string(arity) + " arguments, got " +
-                                   std::to_string(args.size()));
-        }
-        return function(args);
-      });
+    name,
+    [arity, function = std::move(function), name](const std::vector<Value> &args) -> Value {
+      if (args.size() != arity) {
+                COMPILER_THROW("Host function '" + name + "' expects " +
+                    std::to_string(arity) + " arguments, got " +
+                    std::to_string(args.size()));
+            }
+            return function(args);
+        });
 }
 
 bool VM::hasHostFunction(const std::string &name) const {
@@ -1214,9 +1216,8 @@ Value VM::iteratorNext(IteratorRef iterRef) {
       return Value::makeObjectId(resultObj.id);
     }
     auto key = iter->keys[iter->index++];
-  auto keyStrRef = heap_.allocateString(key);
-  auto keyGuard = makeRoot(Value::makeStringId(keyStrRef.id));
-  Value first = Value::makeStringId(keyStrRef.id);
+    auto keyStrRef = heap_.allocateString(key);
+    Value first = Value::makeStringId(keyStrRef.id);
     Value second = Value::makeNull();
     auto it = globals.find(key);
     if (it != globals.end()) {
@@ -1884,17 +1885,10 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeStringId(strRef.id);
   });
 
-  // type() builtin returns type name
-        registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
-            const auto &value = args[0];
-            std::string typeName;
- if (debug_mode) fprintf(stderr, "TYPE_BUILTIN: isFnObj=%d isClosure=%d isHostFunc=%d isObj=%d isNull=%d isBool=%d isInt=%d isDouble=%d isArr=%d isSet=%d isRange=%d isEnum=%d isIter=%d isCoro=%d isStr=%d\n",
- value.isFunctionObjId(), value.isClosureId(), value.isHostFuncId(),
- value.isObjectId(), value.isNull(), value.isBool(), value.isInt(), value.isDouble(),
- value.isArrayId(), value.isSetId(), value.isRangeId(), value.isEnumId(),
- value.isIteratorId(), value.isCoroutineId(),
- value.isStringValId() || value.isStringId() || value.isRegexValId());
- if (debug_mode) fflush(stderr);
+// type() builtin returns type name
+  registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
+    const auto &value = args[0];
+    std::string typeName;
     if (value.isNull()) typeName = "null";
     else if (value.isBool()) typeName = "bool";
     else if (value.isInt()) typeName = "int";
@@ -1915,12 +1909,12 @@ void VM::registerDefaultHostFunctions() {
     return Value::makeStringId(strRef.id);
   });
 
-  // ========================================================================
-  // Duck typing / Protocol functions
-  // ========================================================================
+    // ========================================================================
+    // Duck typing / Protocol functions
+    // ========================================================================
 
-  // iter(x) - Get an iterator for any iterable type
-  registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
+    // iter(x) - Get an iterator for any iterable type
+    registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
     if (args.empty()) return Value::makeNull();
     const auto &value = args[0];
     // Check if value is iterable
@@ -2051,9 +2045,8 @@ void VM::registerDefaultHostFunctions() {
     if (args.empty()) return Value::makeNull();
     Value fn = args[0];
     
-  ArrayRef arrRef = heap_.allocateArray();
-  auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
-  auto *arr = heap_.array(arrRef.id);
+    ArrayRef arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
     
     if (fn.isFunctionObjId()) {
       uint32_t idx = fn.asFunctionObjId();
@@ -2631,9 +2624,8 @@ registerHostFunction(
 
         auto* fields = heap_.array(fieldsVal->asArrayId());
         
-  auto instanceRef = heap_.allocateObject();
-  auto instanceGuard = makeRoot(Value::makeObjectId(instanceRef.id));
-  auto* instance = heap_.object(instanceRef.id);
+        auto instanceRef = heap_.allocateObject();
+        auto* instance = heap_.object(instanceRef.id);
         
   instance->set("__struct", protoVal); // set prototype
 
@@ -2743,9 +2735,8 @@ registerHostFunction(
 
             uint32_t typeId = heap_.registerEnumType(enumName, variantNames);
 
-  auto enumObj = heap_.allocateObject();
-  auto enumObjGuard = makeRoot(Value::makeObjectId(enumObj.id));
-  auto* enumObjPtr = heap_.object(enumObj.id);
+            auto enumObj = heap_.allocateObject();
+            auto* enumObjPtr = heap_.object(enumObj.id);
             enumObjPtr->set("__name", Value::makeStringValId(args[offset].asStringValId()));
             enumObjPtr->set("__is_enum", Value::makeBool(true));
             enumObjPtr->set("__enum_type_id", Value::makeInt(static_cast<int64_t>(typeId)));
@@ -2857,54 +2848,53 @@ if (!protoVal.isObjectId()) {
 COMPILER_THROW("Class type is not an object prototype");
 }
 
-  auto instanceRef = heap_.allocateObject();
-  auto instanceGuard = makeRoot(Value::makeObjectId(instanceRef.id));
-  auto* instance = heap_.object(instanceRef.id);
+auto instanceRef = heap_.allocateObject();
+auto* instance = heap_.object(instanceRef.id);
 
-  instance->set("__class", protoVal);
+instance->set("__class", protoVal);
 
-  auto* currentProto = heap_.object(protoVal.asObjectId());
-  while (currentProto) {
-    auto fieldsVal = currentProto->get("__fields");
-    if (fieldsVal && fieldsVal->isArrayId()) {
-      auto* fields = heap_.array(fieldsVal->asArrayId());
-      for (const auto& f : *fields) {
-        std::string fName = current_chunk->getString(f.asStringValId());
-        instance->set(fName, Value::makeNull());
-      }
-    }
-    auto parentVal = currentProto->get("__parent");
-    if (parentVal && parentVal->isObjectId()) {
-      currentProto = heap_.object(parentVal->asObjectId());
-    } else {
-      currentProto = nullptr;
-    }
-  }
+auto* currentProto = heap_.object(protoVal.asObjectId());
+while (currentProto) {
+auto fieldsVal = currentProto->get("__fields");
+if (fieldsVal && fieldsVal->isArrayId()) {
+auto* fields = heap_.array(fieldsVal->asArrayId());
+for (const auto& f : *fields) {
+std::string fName = current_chunk->getString(f.asStringValId());
+instance->set(fName, Value::makeNull());
+}
+}
+auto parentVal = currentProto->get("__parent");
+if (parentVal && parentVal->isObjectId()) {
+currentProto = heap_.object(parentVal->asObjectId());
+} else {
+currentProto = nullptr;
+}
+}
 
-  Value initMethodVal = Value::makeNull();
-  currentProto = heap_.object(protoVal.asObjectId());
-  while (currentProto) {
-    auto val = currentProto->get("init");
-    if (val) {
-      initMethodVal = *val;
-      break;
-    }
-    auto parentVal = currentProto->get("__parent");
-    if (parentVal && parentVal->isObjectId()) {
-      currentProto = heap_.object(parentVal->asObjectId());
-    } else {
-      break;
-    }
-  }
+Value initMethodVal = Value::makeNull();
+currentProto = heap_.object(protoVal.asObjectId());
+while (currentProto) {
+auto val = currentProto->get("init");
+if (val) {
+initMethodVal = *val;
+break;
+}
+auto parentVal = currentProto->get("__parent");
+if (parentVal && parentVal->isObjectId()) {
+currentProto = heap_.object(parentVal->asObjectId());
+} else {
+break;
+}
+}
 
-  if (!initMethodVal.isNull()) {
-    std::vector<Value> ctor_args;
-    ctor_args.reserve(args.size());
-    ctor_args.push_back(Value::makeObjectId(instanceRef.id));
-    for (size_t i = ctor_offset; i < args.size(); ++i) {
-      ctor_args.push_back(args[i]);
-    }
-    (void)call(initMethodVal, ctor_args);
+if (!initMethodVal.isNull()) {
+            std::vector<Value> ctor_args;
+            ctor_args.reserve(args.size());
+            ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+            for (size_t i = ctor_offset; i < args.size(); ++i) {
+                ctor_args.push_back(args[i]);
+            }
+            (void)call(initMethodVal, ctor_args);
 } else {
 auto* proto = heap_.object(protoVal.asObjectId());
 auto fieldsVal = proto->get("__fields");
@@ -3150,7 +3140,6 @@ void VM::registerDefaultHostGlobals() {
   }
 
   auto system_obj = heap_.allocateObject();
-  auto systemGuard = makeRoot(Value::makeObjectId(system_obj.id));
   setHostObjectField(system_obj, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
   setHostObjectField(system_obj, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
   auto sysIt = globals.find("system");
@@ -3168,7 +3157,6 @@ void VM::registerDefaultHostGlobals() {
   }
 
   auto struct_obj = heap_.allocateObject();
-  auto structGuard = makeRoot(Value::makeObjectId(struct_obj.id));
   setHostObjectField(struct_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("struct.define")));
   setHostObjectField(struct_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("struct.new")));
   setHostObjectField(struct_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("struct.get")));
@@ -3178,7 +3166,6 @@ void VM::registerDefaultHostGlobals() {
   setGlobal("Struct", Value::makeObjectId(struct_obj.id));
 
   auto class_obj = heap_.allocateObject();
-  auto classGuard = makeRoot(Value::makeObjectId(class_obj.id));
   setHostObjectField(class_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("class.define")));
   setHostObjectField(class_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
   setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
@@ -3197,16 +3184,14 @@ void VM::registerDefaultHostGlobals() {
         setHostObjectField(existingRef, "args", Value::makeArrayId(app_args_array_id_));
         setHostObjectField(existingRef, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       } else {
+        auto app_obj = heap_.allocateObject();
+        setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+        setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+        setGlobal("app", Value::makeObjectId(app_obj.id));
+      }
+    } else {
       auto app_obj = heap_.allocateObject();
-      auto appGuard = makeRoot(Value::makeObjectId(app_obj.id));
       setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
-      setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
-      setGlobal("app", Value::makeObjectId(app_obj.id));
-    }
-  } else {
-    auto app_obj = heap_.allocateObject();
-    auto appGuard = makeRoot(Value::makeObjectId(app_obj.id));
-    setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
       setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       setGlobal("app", Value::makeObjectId(app_obj.id));
     }
@@ -3282,12 +3267,12 @@ Value VM::execute(const BytecodeChunk &chunk,
  const BytecodeChunk *saved_chunk = current_chunk;
  current_chunk = &chunk;
 
- const auto *entry = chunk.getFunction(function_name);
- if (!entry) {
- COMPILER_THROW("Function not found: " + function_name);
- }
+  const auto *entry = chunk.getFunction(function_name);
+  if (!entry) {
+    COMPILER_THROW("Function not found: " + function_name);
+  }
 
-    while (!stack.empty()) {
+  while (!stack.empty()) {
         stack.pop();
     }
     locals.clear();
@@ -3331,29 +3316,7 @@ if (debug_mode) {
         ::havel::debug("=== Executing function: {} ===", function_name);
     }
 
- if (debug_mode) {
- fprintf(stderr, "[DBG vm.execute] entry='%s' func_count=%u instr_count=%zu\n",
- function_name.c_str(), chunk.getFunctionCount(), entry->instructions.size());
- for (size_t di = 0; di < entry->instructions.size() && di < 10; di++) {
- const auto& inst = entry->instructions[di];
- std::string opsStr;
- for (size_t oi = 0; oi < inst.operands.size(); oi++) {
- if (oi > 0) opsStr += ", ";
- if (inst.operands[oi].isStringValId()) {
- opsStr += "strId(" + std::to_string(inst.operands[oi].asStringValId()) + ")";
- if (&chunk) opsStr += "='" + chunk.getString(inst.operands[oi].asStringValId()) + "'";
- } else if (inst.operands[oi].isInt()) {
- opsStr += "int(" + std::to_string(inst.operands[oi].asInt()) + ")";
- } else {
- opsStr += inst.operands[oi].toString();
- }
- }
- fprintf(stderr, "[DBG vm.execute] instr[%zu]: op=%d operands=[%s]\n",
- di, (int)inst.opcode, opsStr.c_str());
- }
- }
-
- runDispatchLoop(0);
+    runDispatchLoop(0);
 
  current_chunk = saved_chunk;
 
@@ -4029,15 +3992,15 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     uint32_t ip = frame_arena_[active_frame_idx].ip;
     size_t entry_frame_count = frame_count_;
 
-    if (ip >= function->instructions.size()) {
-      stack.push(nullptr);
-      executeInstruction(Instruction{OpCode::RETURN});
-      continue;
-    }
+        if (ip >= function->instructions.size()) {
+            stack.push(nullptr);
+            executeInstruction(Instruction{OpCode::RETURN});
+            continue;
+  }
 
-    const auto &instruction = function->instructions[ip];
+  const auto &instruction = function->instructions[ip];
 
-    try {
+  try {
       if (profiling_enabled_) {
         opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
         executed_instructions_++;
@@ -4233,21 +4196,20 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  bool advance_caller_ip) {
  tail_call_depth_ = 0;
 
- // Handle host function call directly
+    // Handle host function call directly
   if (callee_value.isHostFuncId()) {
     uint32_t host_func_idx = callee_value.asHostFuncId();
     if (host_func_idx >= host_function_names_.size()) {
       COMPILER_THROW("Host function index out of range: " +
-                               std::to_string(host_func_idx));
+                     std::to_string(host_func_idx));
     }
     const std::string &name = host_function_names_[host_func_idx];
-// ... existing code ...
     auto it = host_functions.find(name);
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
-    Value result = it->second(args); // Call and get result
-    pushStack(result); // Push result to stack
+    Value result = it->second(args);
+    pushStack(result);
     return;
   }
 
@@ -4311,19 +4273,20 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     return;
   }
 
- uint32_t function_index = 0;
- uint32_t closure_id = 0;
- const BytecodeChunk *resolve_chunk = current_chunk;
- std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
- if (callee_value.isFunctionObjId()) {
- function_index = callee_value.asFunctionObjId();
- } else if (callee_value.isClosureId()) {
- closure_id = callee_value.asClosureId();
- auto *closure = heap_.closure(closure_id);
- if (!closure) {
- COMPILER_THROW("Closure not found: " +
- std::to_string(closure_id));
- }
+uint32_t function_index = 0;
+uint32_t closure_id = 0;
+const BytecodeChunk *resolve_chunk = current_chunk;
+std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
+if (callee_value.isFunctionObjId()) {
+function_index = callee_value.asFunctionObjId();
+if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
+if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+resolve_chunk = main_chunk_.get();
+}
+}
+} else if (callee_value.isClosureId()) {
+closure_id = callee_value.asClosureId();
+auto *closure = heap_.closure(closure_id);
  function_index = closure->function_index;
  if (closure->chunk) {
  resolve_chunk = closure->chunk;
@@ -5231,7 +5194,7 @@ case OpCode::ADD:
         case OpCode::EQ: pushStack(l == r); break;
         case OpCode::NEQ: pushStack(l != r); break;
         case OpCode::LT: pushStack(l < r); break;
-        case OpCode::LTE: pushStack(l <= r); break;
+case OpCode::LTE: pushStack(l <= r); break;
         case OpCode::GT: pushStack(l > r); break;
         case OpCode::GTE: pushStack(l >= r); break;
         case OpCode::BIT_AND: pushStack(l & r); break;
@@ -5837,19 +5800,9 @@ case OpCode::LOAD_GLOBAL: {
                 name = current_chunk->getString(strIndex);
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
-            }
+}
 
- if (debug_mode) {
- fprintf(stderr, "[DBG LOAD_GLOBAL] name='%s' strIndex=%u func='%s' globals_size=%zu\n",
- name.c_str(), strIndex,
- func ? func->name.c_str() : "<null>", globals.size());
- bool found_in_globals = globals.count(name) > 0;
- bool found_in_host = host_function_globals_.count(name) > 0;
- if (!found_in_globals && !found_in_host) fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' NOT in globals OR host_function_globals\n", name.c_str());
- else fprintf(stderr, "[DBG LOAD_GLOBAL] '%s' found: globals=%d host=%d\n", name.c_str(), found_in_globals, found_in_host);
- }
-
-            // First check regular globals (user variables shadow host functions)
+    // First check regular globals (user variables shadow host functions)
             auto it = globals.find(name);
         if (it != globals.end()) {
             trackGlobalAccess(name);
@@ -5883,10 +5836,7 @@ case OpCode::STORE_GLOBAL: {
         }
             Value value = popStack();
 
- if (debug_mode) fprintf(stderr, "[DBG STORE_GLOBAL] name='%s' value=%s globals_size=%zu\n",
- name.c_str(), value.toString().c_str(), globals.size());
-
-        if (immutable_globals_.count(name)) {
+    if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
             if (existing != globals.end() && existing->second == value) {
                 break;
@@ -5918,11 +5868,11 @@ case OpCode::STORE_GLOBAL: {
         break;
     }
 
-  case OpCode::LOAD_VAR: {
-    uint32_t var_index = instruction.operands[0].asInt();
-    uint32_t abs = this->toAbsoluteLocal(var_index);
-    this->ensureLocalIndex(abs);
-    Value value = locals[abs];
+case OpCode::LOAD_VAR: {
+            uint32_t var_index = instruction.operands[0].asInt();
+            uint32_t abs = this->toAbsoluteLocal(var_index);
+            this->ensureLocalIndex(abs);
+Value value = locals[abs];
 
     // Record feedback
     auto &frame = currentFrame();
@@ -6299,13 +6249,9 @@ case OpCode::LENGTH: {
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
             }
-            Value callee_value = popStack();
- if (debug_mode) fprintf(stderr, "CALL: callee isHostFunc=%d isFnObj=%d isClosure=%d isObj=%d\n",
- callee_value.isHostFuncId(), callee_value.isFunctionObjId(),
- callee_value.isClosureId(), callee_value.isObjectId());
- if (debug_mode) fflush(stderr);
+Value callee_value = popStack();
 
-	// Handle callable objects (Lua-style __call metamethod, or op_call operator)
+// Handle callable objects (Lua-style __call metamethod, or op_call operator)
 	if (callee_value.isObjectId()) {
 		auto *obj = heap_.object(callee_value.asObjectId());
 		if (obj) {
@@ -6452,9 +6398,9 @@ case OpCode::TAIL_CALL: {
     // 0. If receiver is an object, check for direct callable field FIRST.
     // Namespace objects like `process` have host function fields (e.g. `find`)
     // that must take priority over prototype methods (e.g. `object.find`).
-    if (receiver.isObjectId()) {
-      auto *instanceObj = heap_.object(receiver.asObjectId());
-      if (instanceObj) {
+if (receiver.isObjectId()) {
+    auto *instanceObj = heap_.object(receiver.asObjectId());
+    if (instanceObj) {
         auto it = instanceObj->find(method_name);
         if (it != instanceObj->end()) {
           if (it->second.isHostFuncId()) {
@@ -6557,24 +6503,24 @@ case OpCode::TAIL_CALL: {
       break;
     }
 
-    // Pop args and receiver
-    std::vector<Value> args2(arg_count);
-    for (uint32_t i = 0; i < arg_count; ++i) {
-      args2[arg_count - 1 - i] = popStack();
-    }
-    Value recv = popStack();
+// Pop args and receiver
+std::vector<Value> args2(arg_count);
+for (uint32_t i = 0; i < arg_count; ++i) {
+args2[arg_count - 1 - i] = popStack();
+}
+Value recv = popStack();
 
-    // Prepare args
-    std::vector<Value> all_args;
-    if (isInstanceFunc || found_via_module) {
-      all_args = args2;
-    } else {
-      all_args.reserve(arg_count + 1);
-      all_args.push_back(recv);
-      all_args.insert(all_args.end(), args2.begin(), args2.end());
-    }
+// Prepare args
+std::vector<Value> all_args;
+if (isInstanceFunc || found_via_module) {
+all_args = args2;
+} else {
+all_args.reserve(arg_count + 1);
+all_args.push_back(recv);
+all_args.insert(all_args.end(), args2.begin(), args2.end());
+}
 
-    if (found_host) {
+if (found_host) {
       if (host_func_idx < host_function_names_.size()) {
         std::string resolved_name = host_function_names_[host_func_idx];
         auto fnIt = host_functions.find(resolved_name);
@@ -6781,12 +6727,8 @@ case OpCode::TAIL_CALL: {
   }
 
 case OpCode::CLOSURE: {
-            if (instruction.operands.empty()) COMPILER_THROW("CLOSURE: no operands");
- if (debug_mode) fprintf(stderr, "[DBG CLOSURE] operand type: isInt=%d isFunctionObjId=%d raw=%zu\n",
- instruction.operands[0].isInt() ? 1 : 0,
- instruction.operands[0].isFunctionObjId() ? 1 : 0,
- instruction.operands[0].rawBits());
-            uint32_t function_index = instruction.operands[0].asInt();
+    if (instruction.operands.empty()) COMPILER_THROW("CLOSURE: no operands");
+    uint32_t function_index = instruction.operands[0].asInt();
     const auto *target = current_chunk->getFunction(function_index);
     if (!target) {
       COMPILER_THROW("CLOSURE references unknown function index");
@@ -6835,11 +6777,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 GCHeap::RuntimeClosure{.function_index = closure.function_index,
                                         .chunk_index = 0,
                                         .chunk = current_chunk,
-                                        .module_globals = std::move(closure_globals),
-                                        .upvalues = std::move(closure.upvalues)}).id));
-            if (debug_mode) fprintf(stderr, "[DBG CLOSURE] Created closure for func_idx=%u, pushed to stack\n", function_index);
-            // Disable GC to test if it's causing corruption
-    // maybeCollectGarbage();
+.module_globals = std::move(closure_globals),
+    .upvalues = std::move(closure.upvalues)}).id));
     break;
   }
 
@@ -7366,14 +7305,13 @@ auto *parent_closure = heap_.closure(parent_closure_id);
           } else if (*key == "arity") {
             pushStack(Value::makeInt(static_cast<int64_t>(func->param_count)));
             break;
-      } else if (*key == "params") {
-        auto arrRef = heap_.allocateArray();
-        auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
-        auto* arr = heap_.array(arrRef.id);
-        for (const auto& p : func->param_names) {
-          arr->push_back(Value::makeStringId(heap_.allocateString(p).id));
-        }
-        pushStack(Value::makeArrayId(arrRef.id));
+          } else if (*key == "params") {
+            auto arrRef = heap_.allocateArray();
+            auto* arr = heap_.array(arrRef.id);
+            for (const auto& p : func->param_names) {
+              arr->push_back(Value::makeStringId(heap_.allocateString(p).id));
+            }
+            pushStack(Value::makeArrayId(arrRef.id));
             break;
           }
         }
@@ -7475,29 +7413,27 @@ auto *parent_closure = heap_.closure(parent_closure_id);
               if (nameVal) { pushStack(*nameVal); break; }
               pushStack(Value::makeNull());
               break;
-      } else if (*key == "methods") {
-        // Collect method names from the prototype
-        auto arrRef = heap_.allocateArray();
-        auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
-        auto* arr = heap_.array(arrRef.id);
-        auto keys = obj->getKeys();
-        for (const auto& k : keys) {
-          auto* val = obj->get(k);
-          if (val && (val->isFunctionObjId() || val->isHostFuncId())) {
-            arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
-          }
-        }
-        pushStack(Value::makeArrayId(arrRef.id));
+            } else if (*key == "methods") {
+              // Collect method names from the prototype
+              auto arrRef = heap_.allocateArray();
+              auto* arr = heap_.array(arrRef.id);
+              auto keys = obj->getKeys();
+              for (const auto& k : keys) {
+                auto* val = obj->get(k);
+                if (val && (val->isFunctionObjId() || val->isHostFuncId())) {
+                  arr->push_back(Value::makeStringId(heap_.allocateString(k).id));
+                }
+              }
+              pushStack(Value::makeArrayId(arrRef.id));
               break;
             } else if (*key == "fields") {
               auto* fieldsVal = obj->get("__fields");
               if (fieldsVal && fieldsVal->isArrayId()) {
                 pushStack(*fieldsVal);
               } else {
-        // Collect from default null fields
-        auto arrRef = heap_.allocateArray();
-        auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
-        auto* arr = heap_.array(arrRef.id);
+                // Collect from default null fields
+                auto arrRef = heap_.allocateArray();
+                auto* arr = heap_.array(arrRef.id);
                 auto keys = obj->getKeys();
                 for (const auto& k : keys) {
                   auto* val = obj->get(k);
@@ -7797,13 +7733,12 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 (*bObj)["self"] = object;
                 pushStack(Value::makeObjectId(boundObj.id));
             } else {
-    // Autovivification: if object has __vivify, auto-create sub-object
-    auto* vivify = obj->get("__vivify");
-    if (vivify && !vivify->isNull() && !vivify->isBool()) {
-      // Create a new sub-object with same __vivify marker
-      auto subRef = heap_.allocateObject();
-      auto subGuard = makeRoot(Value::makeObjectId(subRef.id));
-      auto *subObj = heap_.object(subRef.id);
+                // Autovivification: if object has __vivify, auto-create sub-object
+                auto* vivify = obj->get("__vivify");
+                if (vivify && !vivify->isNull() && !vivify->isBool()) {
+                    // Create a new sub-object with same __vivify marker
+                    auto subRef = heap_.allocateObject();
+                    auto *subObj = heap_.object(subRef.id);
                     (*subObj)["__vivify"] = *vivify;
                     // Also propagate __autosave_root if present
                     auto* autoSaveRoot = obj->get("__autosave_root");
@@ -8068,23 +8003,22 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!obj) {
       COMPILER_THROW("OBJECT_ENTRIES unknown object id");
     }
-      auto arrRef = heap_.allocateArray();
-      auto arrGuard = makeRoot(Value::makeArrayId(arrRef.id));
-      auto keys = obj->getKeys();
-      for (const auto &key : keys) {
-        auto *val = obj->get(key);
-        if (val) {
-          // Create [key, value] tuple as array
-          auto tupleRef = heap_.allocateArray();
-          auto *tuple = heap_.array(tupleRef.id);
-          // TODO: string pool registration
-          tuple->push_back(Value::makeNull());
-          tuple->push_back(*val);
-          auto *arr = heap_.array(arrRef.id);
-          arr->push_back(Value::makeArrayId(tupleRef.id));
-        }
+    auto arrRef = heap_.allocateArray();
+    auto keys = obj->getKeys();
+    for (const auto &key : keys) {
+      auto *val = obj->get(key);
+      if (val) {
+        // Create [key, value] tuple as array
+        auto tupleRef = heap_.allocateArray();
+        auto *tuple = heap_.array(tupleRef.id);
+        // TODO: string pool registration
+        tuple->push_back(Value::makeNull());
+        tuple->push_back(*val);
+        auto *arr = heap_.array(arrRef.id);
+        arr->push_back(Value::makeArrayId(tupleRef.id));
       }
-      pushStack(Value::makeArrayId(arrRef.id));
+    }
+    pushStack(Value::makeArrayId(arrRef.id));
     break;
   }
 
@@ -8592,9 +8526,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         }
         for (const auto& [name, value] : *obj) {
             if (name.empty() || name[0] == '_') continue;
-        globals[name] = value;
-        if (debug_mode && name == "f") fprintf(stderr, "[DBG STORE_GLOBAL] STORED 'f' to globals, value=%s, globals_size=%zu\n", value.toString().c_str(), globals.size());
-        emitVariableChanged(name);
+globals[name] = value;
+            emitVariableChanged(name);
         }
         break;
     }
@@ -9559,10 +9492,20 @@ Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk) {
 Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited) {
     if (!chunk) return value;
 
-    if (value.isStringValId()) {
-        auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
-        return Value::makeStringId(strRef.id);
-    }
+if (value.isStringValId()) {
+auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
+return Value::makeStringId(strRef.id);
+}
+
+if (value.isFunctionObjId() && chunk != current_chunk) {
+auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+.function_index = value.asFunctionObjId(),
+.chunk_index = 0,
+.chunk = chunk,
+.module_globals = nullptr,
+.upvalues = {}});
+return Value::makeClosureId(closureRef.id);
+}
 
     if (value.isObjectId()) {
         auto* obj = heap_.object(value.asObjectId());
@@ -9598,37 +9541,38 @@ Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::u
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                   const std::unordered_map<std::string, Value>& moduleGlobals,
-                                  const std::string& canonicalKey,
-                                  const std::string& fieldPath) {
-    if (value.isFunctionObjId() && chunk) {
+                                  const std::string& canonicalKey, const std::string& fieldPath,
+                                  int depth) {
+  if (depth > 16) return value;
+  if (value.isFunctionObjId() && chunk) {
         uint32_t funcIdx = value.asFunctionObjId();
         const auto* moduleFunc = chunk->getFunction(funcIdx);
         uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
     auto moduleChunk = chunk;
-    auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
-    std::string fnCapturedKey = canonicalKey;
-    std::string fnCapturedField = fieldPath;
-            registerHostFunction(wrapperName,
-                [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
-                    std::vector<Value> callArgs = args;
-                    if (callArgs.size() > paramCount && paramCount > 0) {
-                        callArgs.erase(callArgs.begin());
-                    }
-                    auto* savedChunk = current_chunk;
+auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+std::string fnCapturedKey = canonicalKey;
+std::string fnCapturedField = fieldPath;
+registerHostFunction(wrapperName,
+[this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+std::vector<Value> callArgs = args;
+if (callArgs.size() > paramCount && paramCount > 0) {
+callArgs.erase(callArgs.begin());
+}
+auto* savedChunk = current_chunk;
                     auto savedGlobals = globals;
                     auto savedMirrorId = globals_mirror_object_id_;
                     Value savedG = globals["_G"];
                     globals = moduleGlobals;
                     current_chunk = moduleChunk.get();
-                    const auto* callee = moduleChunk->getFunction(funcIdx);
-                    if (!callee) {
-                        globals = std::move(savedGlobals);
-                        globals_mirror_object_id_ = savedMirrorId;
-                        globals["_G"] = savedG;
-                        current_chunk = savedChunk;
-                        return Value::makeNull();
-                    }
-                    size_t base = locals.size();
+const auto* callee = moduleChunk->getFunction(funcIdx);
+if (!callee) {
+globals = std::move(savedGlobals);
+globals_mirror_object_id_ = savedMirrorId;
+globals["_G"] = savedG;
+current_chunk = savedChunk;
+return Value::makeNull();
+}
+size_t base = locals.size();
                     size_t savedLocalsSize = base;
                     locals.resize(base + callee->local_count, nullptr);
                     uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
@@ -9659,18 +9603,20 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
                 locals[base + i] = Value::makeNull();
             }
         }
-        runDispatchLoop(frame_count_ - 1);
-        Value result = popStack();
-        if (locals.size() > savedLocalsSize) {
-            locals.resize(savedLocalsSize);
-        }
-                    result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
-                        moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
-                    globals = std::move(savedGlobals);
-                    globals_mirror_object_id_ = savedMirrorId;
-                    globals["_G"] = savedG;
-                    current_chunk = savedChunk;
-                    return result;
+ runDispatchLoop(frame_count_ - 1);
+ Value result = popStack();
+ if (locals.size() > savedLocalsSize) {
+ locals.resize(savedLocalsSize);
+ }
+ if (bc_execute_depth_ == 0) {
+ result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+ moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
+ }
+ globals = std::move(savedGlobals);
+ globals_mirror_object_id_ = savedMirrorId;
+ globals["_G"] = savedG;
+ current_chunk = savedChunk;
+ return result;
                 });
         uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
         return Value::makeHostFuncId(hostIdx);
@@ -9747,16 +9693,18 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
             }
         }
 
-        runDispatchLoop(frame_count_ - 1);
-        Value result = popStack();
-        result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
-            moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
-            globals = std::move(savedGlobals);
-            globals_mirror_object_id_ = savedMirrorId;
-            globals["_G"] = savedG;
-            current_chunk = savedChunk;
-            return result;
-        });
+ runDispatchLoop(frame_count_ - 1);
+ Value result = popStack();
+ if (bc_execute_depth_ == 0) {
+ result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+ moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+ }
+ globals = std::move(savedGlobals);
+ globals_mirror_object_id_ = savedMirrorId;
+ globals["_G"] = savedG;
+ current_chunk = savedChunk;
+ return result;
+ });
     uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
     return Value::makeHostFuncId(hostIdx);
   }
@@ -9766,7 +9714,7 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
     if (!obj) return value;
     for (auto& [k, v] : *obj) {
       v = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
-                                    fieldPath.empty() ? k : (fieldPath + "." + k));
+                                    fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
     }
     return value;
   }
@@ -9776,7 +9724,7 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
     if (!arr) return value;
     for (size_t i = 0; i < arr->size(); i++) {
       (*arr)[i] = deepWrapModuleFunctions((*arr)[i], chunk, moduleGlobals, canonicalKey,
-                                            fieldPath + "[" + std::to_string(i) + "]");
+                                            fieldPath + "[" + std::to_string(i) + "]", depth + 1);
     }
     return value;
   }
@@ -9817,9 +9765,8 @@ Value VM::loadModule(const std::string& path) {
             if (name.rfind(prefix, 0) == 0) { hasNamespace = true; break; }
         }
         if (hasNamespace || (context_ && context_->hostBridge && context_->hostBridge->loadModule(path))) {
-  auto exportsObj = createHostObject();
-  auto exportsGuard = makeRoot(Value::makeObjectId(exportsObj.id));
-  auto *obj = heap_.object(exportsObj.id);
+            auto exportsObj = createHostObject();
+            auto *obj = heap_.object(exportsObj.id);
             for (const auto& [name, value] : host_function_globals_) {
                 if (name.rfind(prefix, 0) == 0) {
                     std::string localName = name.substr(prefix.size());
@@ -9910,23 +9857,26 @@ Value exports = Value::makeObjectId(exportsObj.id);
     bool saved_exception = has_current_exception_;
     Value saved_exception_val = current_exception_;
 
-    // Fresh globals for the module — populate with host globals so
-    // the module can call print(), len(), etc.
-    globals.clear();
-    // Register host function globals into sandbox (print, len, str, etc.)
-    for (const auto& [name, value] : host_function_globals_) {
+// Fresh globals for the module — populate with host globals so
+// the module can call print(), len(), etc.
+std::unordered_set<std::string> inheritedGlobalNames;
+globals.clear();
+// Register host function globals into sandbox (print, len, str, etc.)
+for (const auto& [name, value] : host_function_globals_) {
+    globals[name] = value;
+    inheritedGlobalNames.insert(name);
+}
+// Also carry over namespace objects (fs, sys, math, etc.) from the
+// caller's globals so module code can call fs.read(), sys.cwd(), etc.
+auto &callerGlobals = globals_stack_.back();
+for (const auto& [name, value] : callerGlobals) {
+    if (name.empty() || name[0] == '_') continue;
+    if (globals.count(name)) continue; // don't overwrite host function globals
+    if (value.isObjectId()) {
         globals[name] = value;
+        inheritedGlobalNames.insert(name);
     }
-    // Also carry over namespace objects (fs, sys, math, etc.) from the
-    // caller's globals so module code can call fs.read(), sys.cwd(), etc.
-    auto &callerGlobals = globals_stack_.back();
-    for (const auto& [name, value] : callerGlobals) {
-        if (name.empty() || name[0] == '_') continue;
-        if (globals.count(name)) continue; // don't overwrite host function globals
-        if (value.isObjectId()) {
-            globals[name] = value;
-        }
-    }
+}
     auto g_obj = createHostObject();
     globals_mirror_object_id_ = g_obj.id;
     globals["_G"] = Value::makeObjectId(g_obj.id);
@@ -10010,17 +9960,17 @@ Value exports = Value::makeObjectId(exportsObj.id);
     // caller's chunk after restore, producing garbage.
 auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
-    auto moduleGlobalsSnapshot = globals;
-    for (const auto& [name, value] : globals) {
-        if (!name.empty() && name[0] != '_') {
-            if (host_function_globals_.count(name) == 0 || !value.isHostFuncId()) {
-                Value materialized = deepMaterializeStrings(value, current_chunk);
-                materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
-                    canonicalKey, name);
-                (*obj)[name] = materialized;
-            }
-        }
+auto moduleGlobalsSnapshot = globals;
+int exportCount = 0;
+for (const auto& [name, value] : globals) {
+    if (!name.empty() && name[0] != '_' && !inheritedGlobalNames.count(name)) {
+        Value materialized = deepMaterializeStrings(value, current_chunk);
+        materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
+            canonicalKey, name);
+        (*obj)[name] = materialized;
+        exportCount++;
     }
+}
     Value exports = Value::makeObjectId(exportsObj.id);
 
     // Restore caller's globals and execution state

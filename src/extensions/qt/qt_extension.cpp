@@ -85,6 +85,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "host/ui/UIManager.hpp"
+
 namespace {
 
 /* Qt6 opaque types */
@@ -1610,12 +1612,29 @@ static HavelValue* qt_init(int argc, HavelValue** argv) {
 static HavelValue* qt_exec(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
     if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_int(0);
+    
+    // Route event loop through UI module when available
+    auto* uiBackend = havel::host::UIManager::instance().backend();
+    if (uiBackend) {
+      int exitCode = uiBackend->runEventLoop();
+      return havel_new_int(exitCode);
+    }
+    
+    // Fallback to direct QApplication::exec() if UI module not available
     return havel_new_int(g_qtLibs->qApp_exec());
 }
 
 static HavelValue* qt_quit(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
     if (!g_qtLibs || !g_qtLibs->isLoaded()) return havel_new_null();
+    
+    // Route quit through UI module when available
+    auto* uiBackend = havel::host::UIManager::instance().backend();
+    if (uiBackend) {
+      uiBackend->quitEventLoop(0);
+    }
+    
+    // Also call Qt quit for backward compatibility
     g_qtLibs->qApp_quit();
     return havel_new_null();
 }

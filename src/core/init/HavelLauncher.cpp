@@ -39,6 +39,7 @@
 #ifdef HAVE_QT_EXTENSION
 #include <QApplication>
 #include <QProcess>
+#include "host/ui/UIManager.hpp"
 #endif
 #include <csignal>
 #include <cstdio>
@@ -623,7 +624,16 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
 
     info("Havel started successfully - running in system tray");
-    int exitCode = app.exec();
+    
+    // Route event loop through UI module
+    auto* uiBackend = host::UIManager::instance().backend();
+    int exitCode = 0;
+    if (uiBackend) {
+      exitCode = uiBackend->runEventLoop();
+    } else {
+      // Fallback if UIBackend not available
+      exitCode = app.exec();
+    }
 
     // Handle restart exit code - loop back to restart
     if (exitCode == 42) {
@@ -805,7 +815,14 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       hkManager->updateAllConditionalHotkeys();
     }
 
-    havel_inst.setShutdownCallback([&app]() { app.quit(); });
+    // Set shutdown callback - route through UI module when available
+    auto* uiBackend = host::UIManager::instance().backend();
+    havel_inst.setShutdownCallback([&app, uiBackend]() { 
+      if (uiBackend) {
+        uiBackend->quitEventLoop(0);
+      }
+      app.quit();
+    });
 
     bool hasHotkeys = hkManager && !hkManager->getHotkeyList().empty();
     if (!hasHotkeys) {
@@ -814,7 +831,15 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
 
     info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
-    int exitCode = app.exec();
+    
+    // Route event loop through UI module
+    int exitCode = 0;
+    if (uiBackend) {
+      exitCode = uiBackend->runEventLoop();
+    } else {
+      // Fallback if UIBackend not available
+      exitCode = app.exec();
+    }
 
     if (exitCode == 42) continue;
     return exitCode;

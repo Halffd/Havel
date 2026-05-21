@@ -1,0 +1,63 @@
+// object.hv - Pure Havel object stdlib additions
+// Provides object.* namespace functions implementable in pure Havel.
+// Loaded by: use "object"
+//
+// The C++ ObjectModule.cpp registers object.* namespace functions and
+// prototype methods (.keys(), .values(), etc.) via VMApi at startup.
+// This module provides additional utility functions in pure Havel
+// that are not in the C++ ObjectModule.
+
+fn isEmpty(obj) { obj.isEmpty() }
+fn size(obj) { obj.size() }
+fn has(obj, key) { obj.has(key) }
+fn keys(obj) { obj.keys() }
+fn values(obj) { obj.values() }
+fn entries(obj) { obj.entries() }
+fn map(obj, pred) { obj.map(pred) }
+fn filter(obj, pred) { obj.filter(pred) }
+
+// Additional pure-Havel utilities not in C++ ObjectModule:
+
+fn fromEntries(pairs) {
+  obj = {}
+  for pair in pairs {
+    obj[pair[0]] = pair[1]
+  }
+  obj
+}
+
+fn assign(target, source) {
+  for k in source.keys() {
+    target[k] = source[k]
+  }
+  target
+}
+
+fn defaults(target, source) {
+  for k in source.keys() {
+    if !target.has(k) {
+      target[k] = source[k]
+    }
+  }
+  target
+}
+
+fn pick(obj, keys) {
+  result = {}
+  for k in keys {
+    if obj.has(k) {
+      result[k] = obj[k]
+    }
+  }
+  result
+}
+
+fn omit(obj, keys) {
+  result = {}
+  for k in obj.keys() {
+    if !keys.includes(k) {
+      result[k] = obj[k]
+    }
+  }
+  result
+}

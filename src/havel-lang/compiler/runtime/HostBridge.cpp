@@ -90,6 +90,12 @@ static std::string getTypeName(const Value &value) {
     return "timeout";
   if (value.isErrorId())
     return "error";
+  if (value.isFunctionObjId())
+    return "function";
+  if (value.isClosureId())
+    return "closure";
+  if (value.isHostFuncId())
+    return "function";
   return "unknown";
 }
 

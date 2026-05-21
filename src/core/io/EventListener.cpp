@@ -147,6 +147,7 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.code = REL_Y;
     ev.value = static_cast<int>(me.dy * mouseSensitivity);
     ProcessMouseEvent(ev);
+    SendUinputEvent(EV_SYN, SYN_REPORT, 0);
   } else if (me.type == MouseEvent::Type::Button) {
     struct input_event ev;
     ev.type = EV_KEY;
@@ -159,6 +160,7 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.code = REL_WHEEL;
     ev.value = me.wheel;
     ProcessMouseEvent(ev);
+    SendUinputEvent(EV_SYN, SYN_REPORT, 0);
   }
 }
 
@@ -221,17 +223,34 @@ bool EventListener::SetupUinput() {
 }
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
-  if (!backend_ || !backend_->SupportsSynthesis()) return;
+    if (!backend_ || !backend_->SupportsSynthesis()) return;
 
-  if (type == EV_KEY) {
-    backend_->SendKeyEvent(code, value == 1);
-    if (value == 1) pressedVirtualKeys.insert(code);
-    else if (value == 0) pressedVirtualKeys.erase(code);
-  }
+    std::lock_guard<std::mutex> lock(sendInputMutex);
+
+    if (type == EV_KEY) {
+        if (pendingRelBatch_) {
+            backend_->EndBatch();
+            pendingRelBatch_ = false;
+        }
+        backend_->SendKeyEvent(code, value != 0);
+        if (value == 1) pressedVirtualKeys.insert(code);
+        else if (value == 0) pressedVirtualKeys.erase(code);
+    } else if (type == EV_SYN) {
+        if (pendingRelBatch_) {
+            backend_->EndBatch();
+            pendingRelBatch_ = false;
+        }
+    } else {
+        if (!pendingRelBatch_) {
+            backend_->BeginBatch();
+            pendingRelBatch_ = true;
+        }
+        backend_->QueueEvent(type, code, value);
+    }
 }
 
 void EventListener::BeginUinputBatch() {
-  if (backend_) backend_->BeginBatch();
+    if (backend_) backend_->BeginBatch();
 }
 
 void EventListener::QueueUinputEvent(int type, int code, int value) {
@@ -239,7 +258,8 @@ void EventListener::QueueUinputEvent(int type, int code, int value) {
 }
 
 void EventListener::EndUinputBatch() {
-  if (backend_) backend_->EndBatch();
+    if (backend_) backend_->EndBatch();
+    pendingRelBatch_ = false;
 }
 
 void EventListener::EmergencyReleaseAllKeys() {
@@ -638,6 +658,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     running.store(false);
     shutdown.store(true);
     ForceUngrabAllDevices();
+    EmergencyReleaseAllKeys();
     if (shutdownFd >= 0) {
       uint64_t val = 1;
       write(shutdownFd, &val, sizeof(val));
@@ -1997,6 +2018,7 @@ void EventListener::HandleSignal(int sig) {
 
 void EventListener::RequestShutdownFromSignal(int sig) {
   ForceUngrabAllDevices();
+  EmergencyReleaseAllKeys();
   asyncSignalRequested = sig;
   if (shutdownFd >= 0) {
     uint64_t val = 1;
@@ -2006,6 +2028,7 @@ void EventListener::RequestShutdownFromSignal(int sig) {
 
 void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
   ForceUngrabAllDevices();
+  EmergencyReleaseAllKeys();
   running.store(false);
   shutdown.store(true);
   if (shutdownFd >= 0) {

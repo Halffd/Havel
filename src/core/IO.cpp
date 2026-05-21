@@ -1178,11 +1178,41 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
     return true;
   }
 
-  // For Wayland, fall back to REL with feedback loop
-  int currentX = 0, currentY = 0;
-  (void)currentX;
-  (void)currentY;
-  return false;
+    // For Wayland, fall back to REL with feedback loop
+    auto currentPos = GetMousePosition();
+    int currentX = currentPos.first;
+    int currentY = currentPos.second;
+    int dx = targetX - currentX;
+    int dy = targetY - currentY;
+    int distance = std::abs(dx) + std::abs(dy);
+
+    if (distance == 0) return true;
+
+    if (distance < 3) {
+        eventListener->SendUinputEvent(EV_REL, REL_X, dx);
+        eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        return true;
+    }
+
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, distance / (speed * 10)));
+    int stepDx = dx / steps;
+    int stepDy = dy / steps;
+    int remainderDx = dx - stepDx * steps;
+    int remainderDy = dy - stepDy * steps;
+
+    for (int i = 0; i < steps; ++i) {
+        int mx = stepDx + (i == steps - 1 ? remainderDx : 0);
+        int my = stepDy + (i == steps - 1 ? remainderDy : 0);
+        if (mx != 0) eventListener->SendUinputEvent(EV_REL, REL_X, mx);
+        if (my != 0) eventListener->SendUinputEvent(EV_REL, REL_Y, my);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        int sleepMs = std::max(1, 5 / std::max(1, speed));
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    return true;
 }
 
 bool IO::ClickAt(int x, int y, int button, int speed, float accel) {

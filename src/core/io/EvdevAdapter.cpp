@@ -719,13 +719,20 @@ void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
         inputEventCallback_(inputEvent);
     }
 
-    // Forward to uinput unless blocked
-    bool shouldBlock = blockInput_.load() || 
-        (inputBlockCallback_ && inputBlockCallback_(inputEvent));
+    // When keyCallback_ is set, EventListener handles uinput forwarding and
+    // hotkey evaluation via OnBackendKeyEvent -> ProcessKeyboardEvent.
+    // Only handle uinput ourselves if there's no callback owner.
+    if (!keyCallback_) {
+        bool shouldBlock = blockInput_.load() ||
+            (inputBlockCallback_ && inputBlockCallback_(inputEvent));
 
-    if (!shouldBlock) {
-        SendUinputEvent(EV_KEY, mappedCode, ev.value);
-        SendSync();
+        if (!shouldBlock) {
+            SendUinputEvent(EV_KEY, mappedCode, ev.value);
+            SendSync();
+        } else if (!down) {
+            SendUinputEvent(EV_KEY, mappedCode, 0);
+            SendSync();
+        }
     }
 }
 
@@ -758,7 +765,7 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
             mouseCallback_(event);
         }
 
-        if (!blockInput_.load()) {
+        if (!mouseCallback_ && !blockInput_.load()) {
             SendUinputEvent(EV_REL, ev.code, scaled);
             SendSync();
         }
@@ -782,12 +789,12 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
             mouseCallback_(event);
         }
 
-        if (!blockInput_.load()) {
+        if (!mouseCallback_ && !blockInput_.load()) {
             SendUinputEvent(EV_REL, ev.code, scaled);
             SendSync();
         }
     } else {
-        if (!blockInput_.load()) {
+        if (!mouseCallback_ && !blockInput_.load()) {
             SendUinputEvent(EV_REL, ev.code, ev.value);
             SendSync();
         }
@@ -814,7 +821,7 @@ void EvdevAdapter::ProcessAbsoluteEvent(Device &dev, const input_event &ev) {
             mouseCallback_(event);
         }
 
-        if (!blockInput_.load()) {
+        if (!mouseCallback_ && !blockInput_.load()) {
             SendUinputEvent(EV_ABS, ev.code, ev.value);
             SendSync();
         }
@@ -847,13 +854,15 @@ void EvdevAdapter::ProcessMouseButtonEvent(Device &dev, const input_event &ev) {
         mouseCallback_(event);
     }
 
-    if (!blockInput_.load()) {
-        SendUinputEvent(EV_KEY, ev.code, ev.value);
-        SendSync();
-    } else if (!down) {
-        // Always release to prevent stuck buttons
-        SendUinputEvent(EV_KEY, ev.code, 0);
-        SendSync();
+    // When mouseCallback is set, EventListener handles uinput forwarding
+    if (!mouseCallback_) {
+        if (!blockInput_.load()) {
+            SendUinputEvent(EV_KEY, ev.code, ev.value);
+            SendSync();
+        } else if (!down) {
+            SendUinputEvent(EV_KEY, ev.code, 0);
+            SendSync();
+        }
     }
 }
 

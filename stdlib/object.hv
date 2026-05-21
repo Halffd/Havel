@@ -13,8 +13,8 @@ fn has(obj, key) { obj.has(key) }
 fn keys(obj) { obj.keys() }
 fn values(obj) { obj.values() }
 fn entries(obj) { obj.entries() }
-fn map(obj, fn) { obj.map(fn) }
-fn filter(obj, fn) { obj.filter(fn) }
+fn map(obj, pred) { obj.map(pred) }
+fn filter(obj, pred) { obj.filter(pred) }
 
 // Additional pure-Havel utilities not in C++ ObjectModule:
 

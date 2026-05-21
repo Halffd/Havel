@@ -12,7 +12,10 @@ fn indexOf(arr, v) { arr.indexOf(v) }
 fn find(arr, pred) { arr.find(pred) }
 fn map(arr, pred) { arr.map(pred) }
 fn filter(arr, pred) { arr.filter(pred) }
-fn reduce(arr, pred, init) { arr.reduce(pred, init) }
+fn reduce(arr, pred, init = nil) {
+    if init != nil { arr.reduce(pred, init) }
+    else { arr.reduce(pred) }
+}
 fn foreach(arr, pred) { arr.foreach(pred) }
 fn every(arr, pred) { arr.every(pred) }
 fn some(arr, pred) { arr.some(pred) }
@@ -70,7 +73,7 @@ fn flatten(arr) {
 
 fn zip(a, b) {
 result = []
-ln = min(#a, #b)
+ln = math.min(#a, #b)
 i = 0
 while i < ln {
 result.push([a[i], b[i]])

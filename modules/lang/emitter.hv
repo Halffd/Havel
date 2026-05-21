@@ -1008,13 +1008,17 @@ fn emitBlockWithReturn(emitter, node) {
             }
             return
         }
-        if last.kind == "ReturnStatement" {
-            emitStmt(emitter, last)
-            return
-        }
-        emitStmt(emitter, last)
-        bc.emit("PUSH_NULL")
-        return
+ if last.kind == "ReturnStatement" {
+ emitStmt(emitter, last)
+ return
+ }
+ if last.kind == "IfStatement" {
+ emitIfExpr(emitter, last)
+ return
+ }
+ emitStmt(emitter, last)
+ bc.emit("PUSH_NULL")
+ return
     }
     if node.kind == "ExpressionStatement" {
         if node.expr != null {

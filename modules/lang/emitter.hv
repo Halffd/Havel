@@ -100,11 +100,15 @@ fn emitStoreVar(emitter, name) {
 // ============================================================
 
 fn emitExpr(emitter, node) {
-    if node == null {
-        bc.emit("PUSH_NULL")
-        return
-    }
-    k = node.kind
+if node == null { return }
+  if node == null {
+    bc.emit("PUSH_NULL")
+    return
+  }
+  if node.line != null {
+    bc.set_source(node.line, node.col)
+  }
+  k = node.kind
 
     if k == "NumberLiteral" {
         raw = node.value
@@ -344,14 +348,18 @@ fn emitExpr(emitter, node) {
             bc.emit("OBJECT_SET")
             return
         }
-        if target.kind == "IndexExpression" {
-            emitExpr(emitter, target.obj)
-            emitExpr(emitter, target.index)
-            emitExpr(emitter, node.value)
-            bc.emit("DUP")
-            bc.emit("ARRAY_SET")
-            return
-        }
+if target.kind == "IndexExpression" {
+tempIdx = scopeLocalCount(emitter.scope)
+emitter.scope.count = emitter.scope.count + 1
+emitExpr(emitter, node.value)
+bc.emit("STORE_VAR", tempIdx)
+emitExpr(emitter, target.obj)
+emitExpr(emitter, target.index)
+bc.emit("LOAD_VAR", tempIdx)
+bc.emit("ARRAY_SET")
+bc.emit("LOAD_VAR", tempIdx)
+return
+}
         emitError("unsupported assignment target: " + str(target.kind), node.line, node.col)
         return
 
@@ -449,19 +457,19 @@ fn emitExpr(emitter, node) {
         funcIdx = emitter.func_idx
         emitter.func_idx = funcIdx + 1
         // Compile the lambda body now
-        compileLambda(emitter, funcIdx, node.params, node.body)
+        compileLambda(emitter, funcIdx, node.params, node.body, node.line)
         // Emit CLOSURE instruction
         bc.emit("CLOSURE", funcIdx)
         return
 
     }
     if k == "InterpolatedString" {
-        sid = bc.add_chunk_string("")
-        bc.emit("LOAD_CONST", bc.str_id(sid))
-        for seg in node.parts {
-            if seg.kind == "StringLiteral" {
-                strId = bc.add_chunk_string(seg.value)
-                bc.emit("LOAD_CONST", bc.str_id(strId))
+  emptyIdx = bc.add_string("")
+  bc.emit("LOAD_CONST", emptyIdx)
+  for seg in node.parts {
+    if seg.kind == "StringLiteral" {
+      strIdx = bc.add_string(seg.value)
+      bc.emit("LOAD_CONST", strIdx)
                 bc.emit("STRING_CONCAT")
             }
             else {
@@ -580,10 +588,13 @@ fn emitExpr(emitter, node) {
 // ============================================================
 
 fn emitStmt(emitter, node) {
-    if node == null {
-        return
-    }
-    k = node.kind
+  if node == null {
+    return
+  }
+  if node.line != null {
+    bc.set_source(node.line, node.col)
+  }
+  k = node.kind
 
     // ForStatement handler (inlined emitExpr for iterator to work around arg passing bug)
     if k == "ForStatement" {
@@ -771,7 +782,7 @@ fn emitStmt(emitter, node) {
         emitter.func_idx = funcIdx + 1
         emitter.func_map[node.name] = funcIdx
         // Compile the function body
-        compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx)
+        compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
         // Emit CLOSURE to create the closure value
         bc.emit("CLOSURE", funcIdx)
         // Store the closure in the variable
@@ -844,19 +855,14 @@ fn emitStmt(emitter, node) {
         return
 
     }
-    if k == "UseStatement" || k == "ImportStatement" {
-        // Import at runtime — emit IMPORT opcode
-        if node.module != null {
-            mid = bc.add_chunk_string(node.module)
-            bc.emit("IMPORT", bc.str_id(mid))
-        }
-        else {
-            bc.emit("PUSH_NULL")
-        }
-        bc.emit("POP")
-        return
-
-    }
+  if k == "UseStatement" {
+    emitUseStatement(emitter, node)
+    return
+  }
+  if k == "ImportStatement" {
+    emitImportStatement(emitter, node)
+    return
+  }
   if k == "SleepStatement" {
     emitExpr(emitter, node.duration)
     bc.emit("SLEEP")
@@ -898,8 +904,8 @@ fn emitStmt(emitter, node) {
     // emit as: config("name", fn)
     sid = globalIdx(emitter, "config")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    nameIdx = bc.add_chunk_string(node.name)
-    bc.emit("LOAD_CONST", bc.str_id(nameIdx))
+    nameIdx = bc.add_string(node.name)
+    bc.emit("LOAD_CONST", nameIdx)
     // Compile body as a function
     funcIdx = emitter.func_idx
     emitter.func_idx = funcIdx + 1
@@ -1037,7 +1043,7 @@ fn emitBlockWithReturn(emitter, node) {
 // Function compilation (with upvalue registration)
 // ============================================================
 
-fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx) {
+fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
     oldScope = emitter.scope
     newScope = Scope(oldScope)
     emitter.scope = newScope
@@ -1050,12 +1056,15 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx) {
             scopeDeclare(newScope, p)
         }
     }
-    paramCount = #params
-    localCount = paramCount + 16
-    // Save current function context and switch to new function
-    bc.func_push()
-    bc.func_new(name, paramCount, localCount)
-    emitBlockWithReturn(emitter, bodyNode)
+  paramCount = #params
+  localCount = paramCount + 16
+  // Save current function context and switch to new function
+  bc.func_push()
+  bc.func_new(name, paramCount, localCount)
+  if sourceLine != null {
+    bc.set_func_source_line(sourceLine)
+  }
+  emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
     // Set actual local count
     actualLocals = scopeLocalCount(newScope)
@@ -1065,7 +1074,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx) {
     emitter.scope = oldScope
 
 }
-fn compileLambda(emitter, funcIdx, params, bodyNode) {
+fn compileLambda(emitter, funcIdx, params, bodyNode, sourceLine) {
     name = "lambda_" + str(funcIdx)
     oldScope = emitter.scope
     newScope = Scope(oldScope)
@@ -1080,9 +1089,12 @@ fn compileLambda(emitter, funcIdx, params, bodyNode) {
     }
     paramCount = #params
     localCount = paramCount + 16
-    bc.func_push()
-    bc.func_new(name, paramCount, localCount)
-    emitBlockWithReturn(emitter, bodyNode)
+  bc.func_push()
+  bc.func_new(name, paramCount, localCount)
+  if sourceLine != null {
+    bc.set_func_source_line(sourceLine)
+  }
+  emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
     actualLocals = scopeLocalCount(newScope)
     bc.set_local_count(actualLocals)
@@ -1091,11 +1103,175 @@ fn compileLambda(emitter, funcIdx, params, bodyNode) {
 
 }
 // ============================================================
+// Import / Use statement emission
+// ============================================================
+
+fn emitUseStatement(emitter, node) {
+
+  // Form 5: use module as alias — bare module with alias (check before Form 1)
+  if node.alias != null {
+    if node.module != null {
+      if node.isFileImport != true {
+      if !node.isNamedImport {
+        if !node.isWildcard {
+          pathIdx = bc.add_string(node.module)
+          bc.emit("LOAD_CONST", pathIdx)
+          bc.emit("IMPORT")
+          sid = bc.add_chunk_string(node.alias)
+          bc.emit("STORE_GLOBAL", bc.str_id(sid))
+          return
+        }
+      }
+      }
+    }
+  }
+
+  // Form 1: use mod1, mod2 — bare module names, import each as whole object
+  if node.moduleNames != null {
+    if node.isFileImport != true {
+      for modName in node.moduleNames {
+      pathIdx = bc.add_string(modName)
+      bc.emit("LOAD_CONST", pathIdx)
+      bc.emit("IMPORT")
+      sid = bc.add_chunk_string(modName)
+      bc.emit("STORE_GLOBAL", bc.str_id(sid))
+      }
+      return
+    }
+  }
+
+  // Form 2: use * from "module" or use module.* — wildcard
+  if node.isWildcard == true {
+    path = node.filePath
+    if path == null { path = node.module }
+    pathIdx = bc.add_string(path)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    bc.emit("IMPORT_WILDCARD")
+    return
+  }
+
+  // Form 3: use { a, b as c } from "module" — named imports
+  if node.isNamedImport == true {
+    path = node.filePath
+    if path == null { path = node.module }
+    pathIdx = bc.add_string(path)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    iNames = node.importNames
+    iAliases = node.importAliases
+    if iNames != null {
+      for i in 0..(#iNames - 1) {
+        name = iNames[i]
+        alias = name
+      if iAliases != null {
+        if i < #iAliases {
+          alias = iAliases[i]
+        }
+      }
+      bc.emit("DUP")
+        keyIdx = bc.add_string(name)
+        bc.emit("LOAD_CONST", keyIdx)
+        bc.emit("OBJECT_GET")
+        sid = bc.add_chunk_string(alias)
+        bc.emit("STORE_GLOBAL", bc.str_id(sid))
+      }
+    }
+    bc.emit("POP")
+    return
+  }
+
+  // Form 4: use "file.hv" as alias or use "file.hv" — file import
+  if node.isFileImport == true && node.filePath != null {
+    pathIdx = bc.add_string(node.filePath)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+      if node.alias != null {
+        sid = bc.add_chunk_string(node.alias)
+        bc.emit("STORE_GLOBAL", bc.str_id(sid))
+      }
+      else {
+        fname = node.filePath
+        dot = #fname - 1
+      while dot >= 0 && fname[dot] != "." { dot = dot - 1 }
+      slash = -1
+      i = #fname - 1
+      while i >= 0 {
+        if fname[i] == "/" { slash = i; break }
+        i = i - 1
+      }
+      if dot > slash {
+        stem = fname.slice(slash + 1, dot)
+      }
+      else {
+        stem = fname.slice(slash + 1)
+      }
+      sid = bc.add_chunk_string(stem)
+      bc.emit("STORE_GLOBAL", bc.str_id(sid))
+    }
+  return
+}
+
+// Fallback: use module — bare module import as global
+  if node.module != null {
+    pathIdx = bc.add_string(node.module)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    sid = bc.add_chunk_string(node.module)
+    bc.emit("STORE_GLOBAL", bc.str_id(sid))
+    return
+  }
+}
+
+fn emitImportStatement(emitter, node) {
+  module = node.module
+
+  // import { a, b as c } from "module"
+  if node.importNames != null {
+    pathIdx = bc.add_string(module)
+    bc.emit("LOAD_CONST", pathIdx)
+    bc.emit("IMPORT")
+    for i in 0..(#node.importNames - 1) {
+      name = node.importNames[i]
+      alias = name
+      if node.importAliases != null {
+        if i < #node.importAliases {
+          alias = node.importAliases[i]
+        }
+      }
+      // wildcard: import * from "module"
+      if name == "*" {
+        bc.emit("IMPORT_WILDCARD")
+        return
+      }
+      bc.emit("DUP")
+      keyIdx = bc.add_string(name)
+      bc.emit("LOAD_CONST", keyIdx)
+      bc.emit("OBJECT_GET")
+      sid = bc.add_chunk_string(alias)
+      bc.emit("STORE_GLOBAL", bc.str_id(sid))
+    }
+    bc.emit("POP")
+    return
+  }
+
+  // bare: import "module" — store as global with module stem name
+  pathIdx = bc.add_string(module)
+  bc.emit("LOAD_CONST", pathIdx)
+  bc.emit("IMPORT")
+  sid = bc.add_chunk_string(module)
+  bc.emit("STORE_GLOBAL", bc.str_id(sid))
+}
+
+// ============================================================
 // Program compilation (two-pass: functions first, then main)
 // ============================================================
 
-fn compileProgram(emitter, program, skip_execute = false) {
-    bc.reset()
+fn compileProgram(emitter, program, skip_execute = false, sourceFile = null) {
+  bc.reset()
+  if sourceFile != null {
+    bc.set_source_file(sourceFile)
+  }
     // parse() returns {errors, ast} — unwrap if needed
     if program.ast != null {
         program = program.ast
@@ -1118,7 +1294,7 @@ fn compileProgram(emitter, program, skip_execute = false) {
     funcIdx = emitter.func_idx
     emitter.func_idx = funcIdx + 1
     emitter.func_map[decl.name] = funcIdx
-    compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx)
+    compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
   }
   // Pass 2: compile __main__
   bc.func_new("__main__", 0, 64)
@@ -1268,15 +1444,15 @@ fn emitClassDeclaration(emitter, node) {
   sid = globalIdx(emitter, "class.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
-  nameIdx = bc.add_chunk_string(node.name)
-  bc.emit("LOAD_CONST", bc.str_id(nameIdx))
+  nameIdx = bc.add_string(node.name)
+  bc.emit("LOAD_CONST", nameIdx)
   // Instance fields array
   bc.emit("ARRAY_NEW")
   if node.definition.fields != null {
     for f in node.definition.fields {
       if f.isClassField == null || !f.isClassField {
-        fidx = bc.add_chunk_string(f.name)
-        bc.emit("LOAD_CONST", bc.str_id(fidx))
+        fidx = bc.add_string(f.name)
+        bc.emit("LOAD_CONST", fidx)
         bc.emit("ARRAY_PUSH")
       }
     }
@@ -1294,8 +1470,8 @@ fn emitClassDeclaration(emitter, node) {
   if node.definition.fields != null {
     for f in node.definition.fields {
       if f.isClassField != null && f.isClassField {
-        fidx = bc.add_chunk_string(f.name)
-        bc.emit("LOAD_CONST", bc.str_id(fidx))
+        fidx = bc.add_string(f.name)
+        bc.emit("LOAD_CONST", fidx)
         bc.emit("ARRAY_PUSH")
       }
     }
@@ -1310,8 +1486,8 @@ fn emitClassDeclaration(emitter, node) {
       if f.isClassField != null && f.isClassField && f.defaultValue != null {
         bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
         emitExpr(emitter, f.defaultValue)
-        fieldIdx = bc.add_chunk_string(f.name)
-        bc.emit("LOAD_CONST", bc.str_id(fieldIdx))
+        fieldIdx = bc.add_string(f.name)
+        bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_SET")
         bc.emit("POP")
       }
@@ -1335,12 +1511,12 @@ fn emitClassMethodRegister(emitter, className, method) {
   classSid = globalIdx(emitter, className)
   bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
   // Method name
-  mnameIdx = bc.add_chunk_string(method.name)
-  bc.emit("LOAD_CONST", bc.str_id(mnameIdx))
+  mnameIdx = bc.add_string(method.name)
+  bc.emit("LOAD_CONST", mnameIdx)
   // Compile method body as a function
   funcIdx = emitter.func_idx
   emitter.func_idx = funcIdx + 1
-  compileFuncDecl(emitter, method.name, method.params, method.body, funcIdx)
+  compileFuncDecl(emitter, method.name, method.params, method.body, funcIdx, method.line)
   bc.emit("LOAD_CONST", bc.add_const(funcIdx))
   bc.emit("CALL", 3)
   bc.emit("POP")
@@ -1352,16 +1528,16 @@ fn emitStructDeclaration(emitter, node) {
   sid = globalIdx(emitter, "class.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
-  nameIdx = bc.add_chunk_string(node.name)
-  bc.emit("LOAD_CONST", bc.str_id(nameIdx))
+  nameIdx = bc.add_string(node.name)
+  bc.emit("LOAD_CONST", nameIdx)
   // Fields array
   bc.emit("ARRAY_NEW")
   if node.definition.fields != null {
     for f in node.definition.fields {
       fname = f
       if type(f) == "object" && f.name != null { fname = f.name }
-      fidx = bc.add_chunk_string(fname)
-      bc.emit("LOAD_CONST", bc.str_id(fidx))
+      fidx = bc.add_string(fname)
+      bc.emit("LOAD_CONST", fidx)
       bc.emit("ARRAY_PUSH")
     }
   }
@@ -1389,16 +1565,16 @@ fn emitEnumDeclaration(emitter, node) {
   sid = globalIdx(emitter, "enum.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
-  nameIdx = bc.add_chunk_string(node.name)
-  bc.emit("LOAD_CONST", bc.str_id(nameIdx))
+  nameIdx = bc.add_string(node.name)
+  bc.emit("LOAD_CONST", nameIdx)
   // Variant names
   bc.emit("ARRAY_NEW")
   if node.variants != null {
     for v in node.variants {
       vname = v
       if type(v) == "object" && v.name != null { vname = v.name }
-      vidx = bc.add_chunk_string(vname)
-      bc.emit("LOAD_CONST", bc.str_id(vidx))
+      vidx = bc.add_string(vname)
+      bc.emit("LOAD_CONST", vidx)
       bc.emit("ARRAY_PUSH")
     }
   }

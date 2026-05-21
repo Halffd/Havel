@@ -1,8 +1,0 @@
-MY_CONST = 99
-fn make_thing() {
-  fn inner() {
-    MY_CONST
-  }
-  {get: inner}
-
-}

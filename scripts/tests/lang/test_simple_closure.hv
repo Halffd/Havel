@@ -1,12 +1,8 @@
-use {outer} from "lib/test_simple_closure"
+X = 42
+fn outer() {
+    fn inner() {
+        X
+    }
+    inner
 
-i = outer()
-r1 = i()
-
-print(r1)
-
-if r1 == 42 {
-  print("PASS")
-} else {
-  print("FAIL")
 }

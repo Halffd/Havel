@@ -1,4 +1,4 @@
-// ========== ast.hv ==========
+// === BEGIN MODULE: ast ===
 // Havel AST — pure Havel implementation
 // Represents parsed source code as a tree of node objects
 // Each node has: kind, line, col, and kind-specific fields
@@ -780,8 +780,9 @@ fn prettyPrint(node, depth) {
 
     }
 }
+// === END MODULE: ast ===
 
-// ========== scope.hv ==========
+// === BEGIN MODULE: scope ===
 // scope.hv — Lexical scope, variable resolution, upvalue tracking
 // Works with bc.add_upvalue() to register closure captures with the VM
 
@@ -862,8 +863,9 @@ fn scopeLocalCount(scope) {
     scope.count
 
 }
+// === END MODULE: scope ===
 
-// ========== error.hv ==========
+// === BEGIN MODULE: error ===
 // error.hv — unified error reporting for the self-hosted Havel compiler
 // Mirrors the C++ ErrorSystem.h + ErrorPrinter.hpp design
 // Provides: ErrorReporter singleton, caret-style formatting, error codes,
@@ -987,7 +989,7 @@ fn HavelError(severity, stage, msg) {
   }
 }
 
-fn at(err, line, col, length) {
+fn errorAtLocation(err, line, col, length) {
   err.line = line
   err.col = col
   if length != null { err.length = length }
@@ -1046,7 +1048,7 @@ fn clear() {
 // Convenience: report an error at a location
 fn errorAt(stage, msg, line, col, code) {
   err = HavelError(SEVERITY_ERROR, stage, msg)
-  at(err, line, col, 1)
+  errorAtLocation(err, line, col, 1)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   if code != null { withCode(err, code) }
   report(err)
@@ -1055,7 +1057,7 @@ fn errorAt(stage, msg, line, col, code) {
 
 fn warningAt(stage, msg, line, col) {
   err = HavelError(SEVERITY_WARNING, stage, msg)
-  at(err, line, col, 1)
+  errorAtLocation(err, line, col, 1)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   report(err)
   err
@@ -1063,14 +1065,14 @@ fn warningAt(stage, msg, line, col) {
 
 fn infoAt(stage, msg, line, col) {
   err = HavelError(SEVERITY_INFO, stage, msg)
-  at(err, line, col, 1)
+  errorAtLocation(err, line, col, 1)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   report(err)
   err
 }
 
 // Convenience: just a plain error (no location)
-fn error(stage, msg) {
+fn reportError(stage, msg) {
   err = HavelError(SEVERITY_ERROR, stage, msg)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   report(err)
@@ -1244,13 +1246,15 @@ fn importLegacyErrors(errors, stage, sourceFile) {
   if errors == null { return }
   for err in errors {
     newErr = HavelError(SEVERITY_ERROR, stage, err.msg)
-    at(newErr, err.line, err.col, 1)
+    errorAtLocation(newErr, err.line, err.col, 1)
     if sourceFile != null { file(newErr, sourceFile) }
     report(newErr)
   }
 }
 
-// ========== debug.hv ==========
+// === END MODULE: error ===
+
+// === BEGIN MODULE: debug ===
 // debug.hv — debug flag system and trace logging for the self-hosted Havel compiler
 // Mirrors the C++ Debug.hpp + DebugFlags.hpp design
 // Provides: flag bag, trace helpers, token/AST/bytecode dump utilities
@@ -1597,7 +1601,9 @@ fn dumpScope(scope, indent) {
   }
 }
 
-// ========== lexer.hv ==========
+// === END MODULE: debug ===
+
+// === BEGIN MODULE: lexer ===
 // Havel lexer — pure Havel implementation
 // Tokenizes Havel source code into a list of {type, value, line, col} objects
 
@@ -3117,8 +3123,9 @@ fn printTokens(tokens) {
 
     }
 }
+// === END MODULE: lexer ===
 
-// ========== pratt.hv ==========
+// === BEGIN MODULE: pratt ===
 // Havel Pratt parser — pure Havel implementation
 // Top-down operator precedence parser matching the C++ Parser.cpp architecture
 // Consumes token list from "lexer".hv, produces AST nodes from "ast".hv
@@ -5984,8 +5991,958 @@ fn parseTokens(tokenList) {
     {ast: ast, errors: p.errors}
 
 }
+// === END MODULE: pratt ===
 
-// ========== emitter.hv ==========
+// === BEGIN MODULE: types ===
+use { isNode } from "ast"
+
+TYPE_INT = "int"
+TYPE_NUM = "num"
+TYPE_STR = "str"
+TYPE_BOOL = "bool"
+TYPE_NULL = "nil"
+TYPE_ARRAY = "array"
+TYPE_OBJECT = "object"
+TYPE_FN = "fn"
+TYPE_UNKNOWN = "any"
+
+fn isNumeric(t) { t == TYPE_INT || t == TYPE_NUM }
+
+fn inferLiteral(node) {
+    if node == null { TYPE_UNKNOWN }
+    else if node.kind == "NumberLiteral" {
+        v = node.value
+        if v == int(v) { TYPE_INT }
+        else { TYPE_NUM }
+    }
+    else if node.kind == "StringLiteral" { TYPE_STR }
+    else if node.kind == "BooleanLiteral" { TYPE_BOOL }
+    else if node.kind == "NullLiteral" { TYPE_NULL }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferBinary(leftType, oper, rightType) {
+    arithOps = {"+": true, "-": true, "*": true, "/": true, "%": true, "**": true, "\\": true, "%%": true}
+    bitOps = {"&": true, "|": true, "^": true, "<<": true, ">>": true}
+    cmpOps = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "is": true}
+    if arithOps[oper] != null {
+        strConcat = oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR)
+        bothNum = isNumeric(leftType) && isNumeric(rightType)
+        if strConcat { TYPE_STR }
+        else if bothNum {
+            if leftType == TYPE_NUM || rightType == TYPE_NUM { TYPE_NUM }
+            else { TYPE_INT }
+        }
+        else { TYPE_UNKNOWN }
+    }
+    else if bitOps[oper] != null {
+        if leftType == TYPE_INT && rightType == TYPE_INT { TYPE_INT }
+        else { TYPE_UNKNOWN }
+    }
+    else if cmpOps[oper] != null { TYPE_BOOL }
+  else if oper == "&&" || oper == "||" { TYPE_BOOL }
+  else if oper == "in" || oper == "not in" || oper == "matches" { TYPE_BOOL }
+  else if oper == "??" {
+        if rightType != TYPE_UNKNOWN { rightType }
+        else { leftType }
+    }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferUnary(oper, operandType) {
+    numType = isNumeric(operandType)
+    if oper == "-" {
+        if numType { operandType }
+        else { TYPE_UNKNOWN }
+    }
+    else if oper == "!" || oper == "not" { TYPE_BOOL }
+    else if oper == "#" {
+        if operandType == TYPE_STR { TYPE_INT }
+        else { TYPE_UNKNOWN }
+    }
+    else { TYPE_UNKNOWN }
+}
+
+fn TypeEnv(parent) {
+    {bindings: {}, parent: parent}
+}
+
+fn envLookup(env, name) {
+    cur = env
+    while cur != null {
+        if cur.bindings[name] != null { return cur.bindings[name] }
+        cur = cur.parent
+    }
+    TYPE_UNKNOWN
+}
+
+fn envSet(env, name, t) {
+    env.bindings[name] = t
+}
+
+fn inferExpr(node, env) {
+  if node == null { TYPE_UNKNOWN }
+  k = node.kind
+  if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
+    inferLiteral(node)
+  }
+  else if k == "RegexLiteral" { TYPE_OBJECT }
+  else if k == "Identifier" { envLookup(env, node.name) }
+  else if k == "BinaryExpression" {
+    lt = inferExpr(node.left, env)
+    rt = inferExpr(node.right, env)
+    if node.oper == "matches" { TYPE_BOOL }
+    else if node.oper == "not in" { TYPE_BOOL }
+    else { inferBinary(lt, node.oper, rt) }
+  }
+  else if k == "UnaryExpression" {
+    ot = inferExpr(node.operand, env)
+    if node.oper == "~" { TYPE_INT }
+    else { inferUnary(node.oper, ot) }
+  }
+  else if k == "UpdateExpression" {
+    inferExpr(node.operand, env)
+  }
+  else if k == "TernaryExpression" {
+    tt = inferExpr(node.true_expr, env)
+    ft = inferExpr(node.false_expr, env)
+    if tt == ft { tt }
+    else { TYPE_UNKNOWN }
+  }
+  else if k == "CallExpression" {
+    if node.callee.kind == "Identifier" {
+      calleeType = envLookup(env, node.callee.name)
+      fnSig = envLookup(env, "\$ret_" + node.callee.name)
+      if fnSig != TYPE_UNKNOWN { fnSig }
+      else { TYPE_UNKNOWN }
+    }
+    else if node.callee.kind == "MemberExpression" {
+      inferExpr(node.callee, env)
+      TYPE_UNKNOWN
+    }
+    else { TYPE_UNKNOWN }
+  }
+  else if k == "MemberExpression" {
+    inferExpr(node.obj, env)
+    TYPE_UNKNOWN
+  }
+  else if k == "IndexExpression" {
+    inferExpr(node.obj, env)
+    inferExpr(node.index, env)
+    TYPE_UNKNOWN
+  }
+  else if k == "ArrayLiteral" { TYPE_ARRAY }
+  else if k == "ObjectLiteral" { TYPE_OBJECT }
+  else if k == "LambdaExpression" { TYPE_FN }
+  else if k == "RangeExpression" { TYPE_ARRAY }
+  else if k == "InterpolatedString" { TYPE_STR }
+  else if k == "SpreadExpression" {
+    inferExpr(node.value, env)
+  }
+  else if k == "PipelineExpression" {
+    inferExpr(node.right, env)
+  }
+  else if k == "AtExpression" { TYPE_UNKNOWN }
+  else if k == "AtAtExpression" { TYPE_UNKNOWN }
+  else if k == "ShellCommand" { TYPE_STR }
+  else if k == "BacktickExpression" { TYPE_STR }
+  else if k == "MatchExpression" { TYPE_UNKNOWN }
+  else if k == "AssignmentExpression" {
+    inferExpr(node.value, env)
+  }
+  else if k == "CompoundAssignment" {
+    inferExpr(node.value, env)
+  }
+  else { TYPE_UNKNOWN }
+}
+
+fn inferStmt(node, env) {
+  if node == null { return }
+  k = node.kind
+  if k == "ExpressionStatement" { inferExpr(node.expr, env) }
+  else if k == "LetDeclaration" || k == "ValDeclaration" {
+    t = TYPE_UNKNOWN
+    if node.value != null { t = inferExpr(node.value, env) }
+    envSet(env, node.name, t)
+  }
+  else if k == "AssignmentExpression" {
+    newType = inferExpr(node.value, env)
+    if node.target.kind == "Identifier" {
+      existing = envLookup(env, node.target.name)
+      if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
+    }
+  }
+  else if k == "CompoundAssignment" {
+    inferExpr(node.value, env)
+  }
+  else if k == "ReturnStatement" {
+    if node.value != null { inferExpr(node.value, env) }
+  }
+  else if k == "IfStatement" {
+    inferExpr(node.condition, env)
+    inferStmt(node.then, env)
+    if node["else"] != null { inferStmt(node["else"], env) }
+  }
+  else if k == "WhileStatement" {
+    inferExpr(node.condition, env)
+    inferStmt(node.body, env)
+  }
+  else if k == "ForStatement" {
+    inferExpr(node.iterator, env)
+    envSet(env, node.name, TYPE_UNKNOWN)
+    inferStmt(node.body, env)
+  }
+  else if k == "LoopStatement" {
+    inferStmt(node.body, env)
+  }
+  else if k == "RepeatStatement" {
+    inferExpr(node.count, env)
+    inferStmt(node.body, env)
+  }
+  else if k == "BlockStatement" {
+    for s in node.body { inferStmt(s, env) }
+  }
+  else if k == "FnDeclaration" {
+    envSet(env, node.name, TYPE_FN)
+    childEnv = TypeEnv(env)
+    for p in node.params {
+      if type(p) == "object" && p.name != null { envSet(childEnv, p.name, TYPE_UNKNOWN) }
+      else { envSet(childEnv, p, TYPE_UNKNOWN) }
+    }
+    retType = TYPE_UNKNOWN
+    if node.body.kind == "BlockStatement" {
+      for s in node.body.body { inferStmt(s, childEnv) }
+      lastStmt = node.body.body[#node.body.body - 1]
+      if lastStmt != null && lastStmt.kind == "ReturnStatement" {
+        retType = inferExpr(lastStmt.value, childEnv)
+      }
+    }
+    else { retType = inferExpr(node.body, childEnv) }
+    if retType != TYPE_UNKNOWN {
+      envSet(env, "\$ret_" + node.name, retType)
+    }
+  }
+  else if k == "ClassDeclaration" {
+    envSet(env, node.name, TYPE_OBJECT)
+    childEnv = TypeEnv(env)
+    if node.definition.fields != null {
+      for f in node.definition.fields { envSet(childEnv, f, TYPE_UNKNOWN) }
+    }
+    if node.definition.methods != null {
+      for m in node.definition.methods {
+        if m != null && m.name != null {
+          envSet(childEnv, m.name, TYPE_FN)
+        }
+      }
+    }
+  }
+  else if k == "StructDeclaration" {
+    envSet(env, node.name, TYPE_OBJECT)
+  }
+  else if k == "MatchExpression" {
+    inferExpr(node.subject, env)
+    for c in node.cases {
+      if c.guard != null { inferExpr(c.guard, env) }
+      inferStmt(c.body, env)
+    }
+  }
+  else if k == "HotkeyBinding" {
+    inferStmt(node.body, env)
+  }
+  else if k == "ConfigBlock" {
+    inferStmt(node.body, env)
+  }
+  else if k == "UseStatement" || k == "ImportStatement" {}
+  else if k == "BreakStatement" || k == "ContinueStatement" {}
+  else if k == "ThrowStatement" {
+    if node.value != null { inferExpr(node.value, env) }
+  }
+  else if k == "TryStatement" {
+    inferStmt(node.try_block, env)
+    if node.catch_block != null { inferStmt(node.catch_block, env) }
+    if node.finally_block != null { inferStmt(node.finally_block, env) }
+  }
+  else if k == "SleepStatement" {}
+  else if k == "AtExpression" || k == "AtAtExpression" {
+    inferExpr(node, env)
+  }
+}
+
+fn inferProgram(program) {
+    n = program
+    if n.ast != null { n = n.ast }
+    env = TypeEnv(null)
+    for stmt in n.body { inferStmt(stmt, env) }
+    {types: env.bindings, env: env}
+}
+
+fn getVarType(inferenceResult, name) {
+    envLookup(inferenceResult.env, name)
+}
+
+fn getReturnType(inferenceResult, fnName) {
+    envLookup(inferenceResult.env, "\$ret_" + fnName)
+}
+
+// === END MODULE: types ===
+
+// === BEGIN MODULE: optimizer ===
+use { isNode } from "ast"
+
+fn isLiteral(node) {
+    if node == null { false }
+    else { node.kind == "NumberLiteral" || node.kind == "StringLiteral" || node.kind == "BooleanLiteral" || node.kind == "NullLiteral" }
+}
+
+fn literalValue(node) {
+    if node.kind == "NullLiteral" { null }
+    else { node.value }
+}
+
+fn numLiteral(v, orig) {
+    {kind: "NumberLiteral", value: v, line: orig.line, col: orig.col}
+}
+
+fn boolLiteral(v, orig) {
+    {kind: "BooleanLiteral", value: v, line: orig.line, col: orig.col}
+}
+
+fn strLiteral(v, orig) {
+    {kind: "StringLiteral", value: v, line: orig.line, col: orig.col}
+}
+
+fn nullLiteral(orig) {
+    {kind: "NullLiteral", line: orig.line, col: orig.col}
+}
+
+fn tryFoldArithmetic(oper, l, r, orig) {
+    result = null
+    if oper == "+" { result = l + r }
+    else if oper == "-" { result = l - r }
+    else if oper == "*" { result = l * r }
+    else if oper == "/" {
+        if r == 0 { null }
+        else { result = l / r }
+    }
+    else if oper == "%" {
+        if r == 0 { null }
+        else { result = l % r }
+    }
+    else if oper == "**" { result = l ** r }
+    else if oper == "\\" {
+        if r == 0 { null }
+        else { result = int(l) \ int(r) }
+    }
+    else if oper == "%%" {
+        if r == 0 { null }
+        else { result = int(l) %% int(r) }
+    }
+    if result != null { numLiteral(result, orig) }
+    else { null }
+}
+
+fn tryFoldBitwise(oper, l, r, orig) {
+    li = int(l)
+    ri = int(r)
+    result = null
+    if oper == "&" { result = li & ri }
+    else if oper == "|" { result = li | ri }
+    else if oper == "^" { result = li ^ ri }
+    else if oper == "<<" { result = li << ri }
+    else if oper == ">>" { result = li >> ri }
+    if result != null { numLiteral(result, orig) }
+    else { null }
+}
+
+fn tryFoldComparison(oper, l, r, orig) {
+    result = null
+    if oper == "==" { result = l == r }
+    else if oper == "!=" { result = l != r }
+    else if oper == "<" { result = l < r }
+    else if oper == ">" { result = l > r }
+    else if oper == "<=" { result = l <= r }
+    else if oper == ">=" { result = l >= r }
+    if result != null { boolLiteral(result, orig) }
+    else { null }
+}
+
+fn tryFoldLogical(oper, l, r, orig) {
+    if oper == "&&" {
+        if l == false || l == 0 || l == null { boolLiteral(false, orig) }
+        else if l == true { boolLiteral(bool(r), orig) }
+        else { null }
+    }
+    else if oper == "||" {
+        if l == true || (l != false && l != 0 && l != null) { boolLiteral(true, orig) }
+        else if l == false || l == 0 || l == null { boolLiteral(bool(r), orig) }
+        else { null }
+    }
+    else { null }
+}
+
+fn foldBinary(node) {
+    left = node.left
+    right = node.right
+    oper = node.oper
+    if !isLiteral(left) || !isLiteral(right) { return node }
+    lv = literalValue(left)
+    rv = literalValue(right)
+    lk = left.kind
+    rk = right.kind
+    bothNum = lk == "NumberLiteral" && rk == "NumberLiteral"
+    bothStr = lk == "StringLiteral" && rk == "StringLiteral"
+    bothBool = lk == "BooleanLiteral" && rk == "BooleanLiteral"
+    if oper == "+" && bothStr { return strLiteral(lv + rv, node) }
+    if bothNum {
+        result = tryFoldArithmetic(oper, lv, rv, node)
+        if result != null { return result }
+        result = tryFoldBitwise(oper, lv, rv, node)
+        if result != null { return result }
+    }
+    if bothNum || bothStr || bothBool {
+        result = tryFoldComparison(oper, lv, rv, node)
+        if result != null { return result }
+    }
+    if bothBool {
+        result = tryFoldLogical(oper, lv, rv, node)
+        if result != null { return result }
+    }
+    node
+}
+
+fn foldUnary(node) {
+    operand = node.operand
+    oper = node.oper
+    if !isLiteral(operand) { return node }
+    ov = literalValue(operand)
+    ok = operand.kind
+    if oper == "-" && ok == "NumberLiteral" { return numLiteral(-ov, node) }
+    if oper == "!" || oper == "not" {
+        if ok == "BooleanLiteral" { return boolLiteral(!ov, node) }
+        if ok == "NumberLiteral" { return boolLiteral(!bool(ov), node) }
+    }
+    if oper == "#" && ok == "StringLiteral" { return numLiteral(#ov, node) }
+    node
+}
+
+fn foldTernary(node) {
+    cond = node.condition
+    if !isLiteral(cond) { return node }
+    cv = literalValue(cond)
+    if cv == true || (cv != false && cv != 0 && cv != null) { return node.true_expr }
+    node.false_expr
+}
+
+fn constantFold(node) {
+    if node == null { return null }
+    nt = type(node)
+    if nt == "array" {
+        result = []
+        for item in node { result.push(constantFold(item)) }
+        return result
+    }
+    inn = isNode(node)
+    if !inn { return node }
+    k = node.kind
+    if k == "BinaryExpression" {
+        n = node
+        n.left = constantFold(n.left)
+        n.right = constantFold(n.right)
+        return foldBinary(n)
+    }
+    if k == "UnaryExpression" {
+        n = node
+        n.operand = constantFold(n.operand)
+        return foldUnary(n)
+    }
+    if k == "TernaryExpression" {
+        n = node
+        n.condition = constantFold(n.condition)
+        n.true_expr = constantFold(n.true_expr)
+        n.false_expr = constantFold(n.false_expr)
+        return foldTernary(n)
+    }
+    if k == "IfStatement" {
+        n = node
+        n.condition = constantFold(n.condition)
+        n.then = constantFold(n.then)
+        if n["else"] != null { n["else"] = constantFold(n["else"]) }
+        return n
+    }
+    if k == "ExpressionStatement" {
+        n = node
+        n.expr = constantFold(n.expr)
+        return n
+    }
+    if k == "ReturnStatement" {
+        n = node
+        if n.value != null { n.value = constantFold(n.value) }
+        return n
+    }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        n = node
+        if n.value != null { n.value = constantFold(n.value) }
+        return n
+    }
+    if k == "AssignmentExpression" {
+        n = node
+        n.value = constantFold(n.value)
+        return n
+    }
+    if k == "CompoundAssignment" {
+        n = node
+        n.value = constantFold(n.value)
+        return n
+    }
+    if k == "CallExpression" {
+        n = node
+        n.callee = constantFold(n.callee)
+        folded = []
+        for a in n.args { folded.push(constantFold(a)) }
+        n.args = folded
+        return n
+    }
+    if k == "ArrayLiteral" {
+        n = node
+        folded = []
+        for e in n.elements { folded.push(constantFold(e)) }
+        n.elements = folded
+        return n
+    }
+    if k == "ObjectLiteral" {
+        n = node
+        folded = []
+        for f in n.fields {
+            if f.kind == "ObjectField" { f.value = constantFold(f.value) }
+            folded.push(f)
+        }
+        n.fields = folded
+        return n
+    }
+    if k == "WhileStatement" {
+        n = node
+        n.condition = constantFold(n.condition)
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "ForStatement" {
+        n = node
+        n.iterator = constantFold(n.iterator)
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "LoopStatement" {
+        n = node
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "FnDeclaration" {
+        n = node
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "LambdaExpression" {
+        n = node
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "BlockStatement" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(constantFold(s)) }
+        n.body = folded
+        return n
+    }
+    if k == "Program" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(constantFold(s)) }
+        n.body = folded
+        return n
+    }
+    node
+}
+
+fn isAlwaysTrue(cond) {
+    if cond.kind == "BooleanLiteral" && cond.value { true }
+    else { false }
+}
+
+fn isAlwaysFalse(cond) {
+    if cond.kind == "BooleanLiteral" && !cond.value { true }
+    else if cond.kind == "NullLiteral" { true }
+    else { false }
+}
+
+fn deadCodeElimStmts(stmts) {
+    result = []
+    for stmt in stmts {
+        result.push(stmt)
+        if stmt.kind == "ReturnStatement" || stmt.kind == "BreakStatement" || stmt.kind == "ContinueStatement" || stmt.kind == "ThrowStatement" {
+            break
+        }
+    }
+    result
+}
+
+fn deadCodeElim(node) {
+    if node == null { return null }
+    nt = type(node)
+    if nt == "array" { return deadCodeElimStmts(node) }
+    inn = isNode(node)
+    if !inn { return node }
+    k = node.kind
+    if k == "Program" {
+        n = node
+        n.body = deadCodeElimStmts(n.body)
+        folded = []
+        for s in n.body { folded.push(deadCodeElim(s)) }
+        n.body = folded
+        return n
+    }
+    if k == "BlockStatement" {
+        n = node
+        n.body = deadCodeElimStmts(n.body)
+        folded = []
+        for s in n.body { folded.push(deadCodeElim(s)) }
+        n.body = folded
+        return n
+    }
+    if k == "IfStatement" {
+        n = node
+        n.condition = deadCodeElim(n.condition)
+        n.then = deadCodeElim(n.then)
+        if n["else"] != null { n["else"] = deadCodeElim(n["else"]) }
+        at = isAlwaysTrue(n.condition)
+        af = isAlwaysFalse(n.condition)
+        if at { return n.then }
+        if af {
+            elseBr = n["else"]
+            if elseBr != null { return elseBr }
+            return nullLiteral(n)
+        }
+        return n
+    }
+    if k == "WhileStatement" {
+        n = node
+        n.condition = deadCodeElim(n.condition)
+        af = isAlwaysFalse(n.condition)
+        if af { return nullLiteral(n) }
+        n.body = deadCodeElim(n.body)
+        n
+    }
+    if k == "ForStatement" {
+        n = node
+        n.iterator = deadCodeElim(n.iterator)
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "LoopStatement" {
+        n = node
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "FnDeclaration" {
+        n = node
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "LambdaExpression" {
+        n = node
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "ExpressionStatement" {
+        n = node
+        n.expr = deadCodeElim(n.expr)
+        return n
+    }
+    if k == "ReturnStatement" {
+        n = node
+        if n.value != null { n.value = deadCodeElim(n.value) }
+        return n
+    }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        n = node
+        if n.value != null { n.value = deadCodeElim(n.value) }
+        return n
+    }
+    node
+}
+
+fn collectUsedNames(body) {
+    names = {}
+    _walkNames(body, names, true)
+    names
+}
+
+fn _walkNames(node, names, reading) {
+    if node == null { return }
+    nt = type(node)
+    if nt == "array" {
+        for item in node { _walkNames(item, names, reading) }
+        return
+    }
+    inn = isNode(node)
+    if !inn { return }
+    k = node.kind
+    if k == "Identifier" {
+        if reading { names[node.name] = true }
+    }
+    else if k == "AssignmentExpression" {
+        _walkNames(node.value, names, true)
+        if node.target.kind == "Identifier" { names[node.target.name] = true }
+        else { _walkNames(node.target, names, true) }
+    }
+    else if k == "CompoundAssignment" {
+        _walkNames(node.value, names, true)
+        if node.target.kind == "Identifier" { names[node.target.name] = true }
+    }
+    else if k == "FnDeclaration" {
+        names[node.name] = true
+        _walkNames(node.body, names, true)
+    }
+    else if k == "CallExpression" {
+        _walkNames(node.callee, names, true)
+        for a in node.args { _walkNames(a, names, true) }
+    }
+    else if k == "BinaryExpression" {
+        _walkNames(node.left, names, true)
+        _walkNames(node.right, names, true)
+    }
+    else if k == "UnaryExpression" {
+        _walkNames(node.operand, names, true)
+    }
+    else if k == "MemberExpression" {
+        _walkNames(node.obj, names, true)
+    }
+    else if k == "IfStatement" {
+        _walkNames(node.condition, names, true)
+        _walkNames(node.then, names, true)
+        if node["else"] != null { _walkNames(node["else"], names, true) }
+    }
+    else if k == "WhileStatement" {
+        _walkNames(node.condition, names, true)
+        _walkNames(node.body, names, true)
+    }
+    else if k == "ForStatement" {
+        names[node.name] = true
+        _walkNames(node.iterator, names, true)
+        _walkNames(node.body, names, true)
+    }
+    else if k == "ReturnStatement" {
+        if node.value != null { _walkNames(node.value, names, true) }
+    }
+    else if k == "ExpressionStatement" {
+        _walkNames(node.expr, names, true)
+    }
+    else if k == "LetDeclaration" || k == "ValDeclaration" {
+        if node.value != null { _walkNames(node.value, names, true) }
+        names[node.name] = true
+    }
+    else if k == "Program" || k == "BlockStatement" {
+        for s in node.body { _walkNames(s, names, reading) }
+    }
+}
+
+fn isSimpleReturn(body) {
+    if body.kind == "ReturnStatement" && body.value != null { true }
+    else if body.kind == "BlockStatement" {
+        stmts = body.body
+        if #stmts == 1 && stmts[0].kind == "ReturnStatement" && stmts[0].value != null { true }
+        else { false }
+    }
+    else { false }
+}
+
+fn getReturnValue(body) {
+    if body.kind == "ReturnStatement" { body.value }
+    else { body.body[0].value }
+}
+
+fn inlineCalls(node, funcMap) {
+    if node == null { return null }
+    nt = type(node)
+    if nt == "array" {
+        result = []
+        for item in node { result.push(inlineCalls(item, funcMap)) }
+        return result
+    }
+    inn = isNode(node)
+    if !inn { return node }
+    k = node.kind
+    if k == "CallExpression" {
+        callee = node.callee
+        isTarget = callee.kind == "Identifier" && funcMap[callee.name] != null && #node.args == 0
+        if isTarget {
+            fnDecl = funcMap[callee.name]
+            isSimple = isSimpleReturn(fnDecl.body)
+            if isSimple {
+                returnExpr = getReturnValue(fnDecl.body)
+                return inlineCalls(returnExpr, funcMap)
+            }
+            return node
+        }
+        n = node
+        n.callee = inlineCalls(n.callee, funcMap)
+        folded = []
+        for a in n.args { folded.push(inlineCalls(a, funcMap)) }
+        n.args = folded
+        return n
+    }
+    if k == "BinaryExpression" {
+        n = node
+        n.left = inlineCalls(n.left, funcMap)
+        n.right = inlineCalls(n.right, funcMap)
+        return n
+    }
+    if k == "UnaryExpression" {
+        n = node
+        n.operand = inlineCalls(n.operand, funcMap)
+        return n
+    }
+    if k == "IfStatement" {
+        n = node
+        n.condition = inlineCalls(n.condition, funcMap)
+        n.then = inlineCalls(n.then, funcMap)
+        if n["else"] != null { n["else"] = inlineCalls(n["else"], funcMap) }
+        return n
+    }
+    if k == "FnDeclaration" {
+        n = node
+        n.body = inlineCalls(n.body, funcMap)
+        return n
+    }
+    if k == "LambdaExpression" {
+        n = node
+        n.body = inlineCalls(n.body, funcMap)
+        return n
+    }
+    if k == "ReturnStatement" {
+        n = node
+        if n.value != null { n.value = inlineCalls(n.value, funcMap) }
+        return n
+    }
+    if k == "ExpressionStatement" {
+        n = node
+        n.expr = inlineCalls(n.expr, funcMap)
+        return n
+    }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        n = node
+        if n.value != null { n.value = inlineCalls(n.value, funcMap) }
+        return n
+    }
+    if k == "Program" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(inlineCalls(s, funcMap)) }
+        n.body = folded
+        return n
+    }
+    if k == "BlockStatement" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(inlineCalls(s, funcMap)) }
+        n.body = folded
+        return n
+    }
+    node
+}
+
+fn inline(program) {
+    funcMap = {}
+    funcNames = {}
+    for stmt in program.body {
+        if stmt.kind == "FnDeclaration" {
+            p = stmt.params
+            if p != null && #p == 0 {
+                if isSimpleReturn(stmt.body) {
+                    funcMap[stmt.name] = stmt
+                    funcNames[stmt.name] = true
+                }
+            }
+        }
+    }
+    hasNames = false
+    for _k in funcNames { hasNames = true; break }
+    if !hasNames { return program }
+    used = collectUsedNames(program.body)
+    inlineMap = {}
+    for name in funcNames {
+        cnt = countUses(program.body, name)
+        if cnt == 1 { inlineMap[name] = funcMap[name] }
+    }
+    hasInline = false
+    for _k in inlineMap { hasInline = true; break }
+    if !hasInline { return program }
+    inlineCalls(program, inlineMap)
+}
+
+fn countUses(node, name) {
+    if node == null { return 0 }
+    nt = type(node)
+    if nt == "array" {
+        total = 0
+        for item in node { total = total + countUses(item, name) }
+        return total
+    }
+    inn = isNode(node)
+    if !inn { return 0 }
+    k = node.kind
+    if k == "CallExpression" {
+        c = 0
+        if node.callee.kind == "Identifier" && node.callee.name == name { c = 1 }
+        c = c + countUses(node.callee, name)
+        for a in node.args { c = c + countUses(a, name) }
+        return c
+    }
+    if k == "BinaryExpression" { return countUses(node.left, name) + countUses(node.right, name) }
+    if k == "UnaryExpression" { return countUses(node.operand, name) }
+    if k == "ExpressionStatement" { return countUses(node.expr, name) }
+    if k == "ReturnStatement" {
+        if node.value != null { return countUses(node.value, name) }
+        return 0
+    }
+    if k == "Program" || k == "BlockStatement" {
+        total = 0
+        for s in node.body { total = total + countUses(s, name) }
+        return total
+    }
+    if k == "FnDeclaration" { return countUses(node.body, name) }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        if node.value != null { return countUses(node.value, name) }
+        return 0
+    }
+    if k == "IfStatement" {
+        c = countUses(node.condition, name) + countUses(node.then, name)
+        if node["else"] != null { c = c + countUses(node["else"], name) }
+        return c
+    }
+    if k == "AssignmentExpression" { return countUses(node.value, name) }
+    0
+}
+
+fn optimize(program, passes) {
+    n = program
+    if n.ast != null { n = n.ast }
+    doFold = true
+    doDce = true
+    doInline = true
+    if passes != null {
+        if passes.fold != null { doFold = passes.fold }
+        if passes.dce != null { doDce = passes.dce }
+        if passes.inline != null { doInline = passes.inline }
+    }
+    if doFold { n = constantFold(n) }
+    if doDce { n = deadCodeElim(n) }
+    if doInline { n = inline(n) }
+    n
+}
+
+// === END MODULE: optimizer ===
+
+// === BEGIN MODULE: emitter ===
 // emitter.hv — AST → bytecode compiler
 // Walks the AST from "pratt".hv/ast.hv and emits bytecode via bc.* host functions
 // Uses scope.hv for variable resolution and upvalue tracking
@@ -7667,952 +8624,10 @@ fn emitHotkeyBinding(emitter, node) {
 
 }
 
-// ========== optimizer.hv ==========
-use { isNode } from "ast"
 
-fn isLiteral(node) {
-    if node == null { false }
-    else { node.kind == "NumberLiteral" || node.kind == "StringLiteral" || node.kind == "BooleanLiteral" || node.kind == "NullLiteral" }
-}
+// === END MODULE: emitter ===
 
-fn literalValue(node) {
-    if node.kind == "NullLiteral" { null }
-    else { node.value }
-}
-
-fn numLiteral(v, orig) {
-    {kind: "NumberLiteral", value: v, line: orig.line, col: orig.col}
-}
-
-fn boolLiteral(v, orig) {
-    {kind: "BooleanLiteral", value: v, line: orig.line, col: orig.col}
-}
-
-fn strLiteral(v, orig) {
-    {kind: "StringLiteral", value: v, line: orig.line, col: orig.col}
-}
-
-fn nullLiteral(orig) {
-    {kind: "NullLiteral", line: orig.line, col: orig.col}
-}
-
-fn tryFoldArithmetic(oper, l, r, orig) {
-    result = null
-    if oper == "+" { result = l + r }
-    else if oper == "-" { result = l - r }
-    else if oper == "*" { result = l * r }
-    else if oper == "/" {
-        if r == 0 { null }
-        else { result = l / r }
-    }
-    else if oper == "%" {
-        if r == 0 { null }
-        else { result = l % r }
-    }
-    else if oper == "**" { result = l ** r }
-    else if oper == "\\" {
-        if r == 0 { null }
-        else { result = int(l) \ int(r) }
-    }
-    else if oper == "%%" {
-        if r == 0 { null }
-        else { result = int(l) %% int(r) }
-    }
-    if result != null { numLiteral(result, orig) }
-    else { null }
-}
-
-fn tryFoldBitwise(oper, l, r, orig) {
-    li = int(l)
-    ri = int(r)
-    result = null
-    if oper == "&" { result = li & ri }
-    else if oper == "|" { result = li | ri }
-    else if oper == "^" { result = li ^ ri }
-    else if oper == "<<" { result = li << ri }
-    else if oper == ">>" { result = li >> ri }
-    if result != null { numLiteral(result, orig) }
-    else { null }
-}
-
-fn tryFoldComparison(oper, l, r, orig) {
-    result = null
-    if oper == "==" { result = l == r }
-    else if oper == "!=" { result = l != r }
-    else if oper == "<" { result = l < r }
-    else if oper == ">" { result = l > r }
-    else if oper == "<=" { result = l <= r }
-    else if oper == ">=" { result = l >= r }
-    if result != null { boolLiteral(result, orig) }
-    else { null }
-}
-
-fn tryFoldLogical(oper, l, r, orig) {
-    if oper == "&&" {
-        if l == false || l == 0 || l == null { boolLiteral(false, orig) }
-        else if l == true { boolLiteral(bool(r), orig) }
-        else { null }
-    }
-    else if oper == "||" {
-        if l == true || (l != false && l != 0 && l != null) { boolLiteral(true, orig) }
-        else if l == false || l == 0 || l == null { boolLiteral(bool(r), orig) }
-        else { null }
-    }
-    else { null }
-}
-
-fn foldBinary(node) {
-    left = node.left
-    right = node.right
-    oper = node.oper
-    if !isLiteral(left) || !isLiteral(right) { return node }
-    lv = literalValue(left)
-    rv = literalValue(right)
-    lk = left.kind
-    rk = right.kind
-    bothNum = lk == "NumberLiteral" && rk == "NumberLiteral"
-    bothStr = lk == "StringLiteral" && rk == "StringLiteral"
-    bothBool = lk == "BooleanLiteral" && rk == "BooleanLiteral"
-    if oper == "+" && bothStr { return strLiteral(lv + rv, node) }
-    if bothNum {
-        result = tryFoldArithmetic(oper, lv, rv, node)
-        if result != null { return result }
-        result = tryFoldBitwise(oper, lv, rv, node)
-        if result != null { return result }
-    }
-    if bothNum || bothStr || bothBool {
-        result = tryFoldComparison(oper, lv, rv, node)
-        if result != null { return result }
-    }
-    if bothBool {
-        result = tryFoldLogical(oper, lv, rv, node)
-        if result != null { return result }
-    }
-    node
-}
-
-fn foldUnary(node) {
-    operand = node.operand
-    oper = node.oper
-    if !isLiteral(operand) { return node }
-    ov = literalValue(operand)
-    ok = operand.kind
-    if oper == "-" && ok == "NumberLiteral" { return numLiteral(-ov, node) }
-    if oper == "!" || oper == "not" {
-        if ok == "BooleanLiteral" { return boolLiteral(!ov, node) }
-        if ok == "NumberLiteral" { return boolLiteral(!bool(ov), node) }
-    }
-    if oper == "#" && ok == "StringLiteral" { return numLiteral(#ov, node) }
-    node
-}
-
-fn foldTernary(node) {
-    cond = node.condition
-    if !isLiteral(cond) { return node }
-    cv = literalValue(cond)
-    if cv == true || (cv != false && cv != 0 && cv != null) { return node.true_expr }
-    node.false_expr
-}
-
-fn constantFold(node) {
-    if node == null { return null }
-    nt = type(node)
-    if nt == "array" {
-        result = []
-        for item in node { result.push(constantFold(item)) }
-        return result
-    }
-    inn = isNode(node)
-    if !inn { return node }
-    k = node.kind
-    if k == "BinaryExpression" {
-        n = node
-        n.left = constantFold(n.left)
-        n.right = constantFold(n.right)
-        return foldBinary(n)
-    }
-    if k == "UnaryExpression" {
-        n = node
-        n.operand = constantFold(n.operand)
-        return foldUnary(n)
-    }
-    if k == "TernaryExpression" {
-        n = node
-        n.condition = constantFold(n.condition)
-        n.true_expr = constantFold(n.true_expr)
-        n.false_expr = constantFold(n.false_expr)
-        return foldTernary(n)
-    }
-    if k == "IfStatement" {
-        n = node
-        n.condition = constantFold(n.condition)
-        n.then = constantFold(n.then)
-        if n["else"] != null { n["else"] = constantFold(n["else"]) }
-        return n
-    }
-    if k == "ExpressionStatement" {
-        n = node
-        n.expr = constantFold(n.expr)
-        return n
-    }
-    if k == "ReturnStatement" {
-        n = node
-        if n.value != null { n.value = constantFold(n.value) }
-        return n
-    }
-    if k == "LetDeclaration" || k == "ValDeclaration" {
-        n = node
-        if n.value != null { n.value = constantFold(n.value) }
-        return n
-    }
-    if k == "AssignmentExpression" {
-        n = node
-        n.value = constantFold(n.value)
-        return n
-    }
-    if k == "CompoundAssignment" {
-        n = node
-        n.value = constantFold(n.value)
-        return n
-    }
-    if k == "CallExpression" {
-        n = node
-        n.callee = constantFold(n.callee)
-        folded = []
-        for a in n.args { folded.push(constantFold(a)) }
-        n.args = folded
-        return n
-    }
-    if k == "ArrayLiteral" {
-        n = node
-        folded = []
-        for e in n.elements { folded.push(constantFold(e)) }
-        n.elements = folded
-        return n
-    }
-    if k == "ObjectLiteral" {
-        n = node
-        folded = []
-        for f in n.fields {
-            if f.kind == "ObjectField" { f.value = constantFold(f.value) }
-            folded.push(f)
-        }
-        n.fields = folded
-        return n
-    }
-    if k == "WhileStatement" {
-        n = node
-        n.condition = constantFold(n.condition)
-        n.body = constantFold(n.body)
-        return n
-    }
-    if k == "ForStatement" {
-        n = node
-        n.iterator = constantFold(n.iterator)
-        n.body = constantFold(n.body)
-        return n
-    }
-    if k == "LoopStatement" {
-        n = node
-        n.body = constantFold(n.body)
-        return n
-    }
-    if k == "FnDeclaration" {
-        n = node
-        n.body = constantFold(n.body)
-        return n
-    }
-    if k == "LambdaExpression" {
-        n = node
-        n.body = constantFold(n.body)
-        return n
-    }
-    if k == "BlockStatement" {
-        n = node
-        folded = []
-        for s in n.body { folded.push(constantFold(s)) }
-        n.body = folded
-        return n
-    }
-    if k == "Program" {
-        n = node
-        folded = []
-        for s in n.body { folded.push(constantFold(s)) }
-        n.body = folded
-        return n
-    }
-    node
-}
-
-fn isAlwaysTrue(cond) {
-    if cond.kind == "BooleanLiteral" && cond.value { true }
-    else { false }
-}
-
-fn isAlwaysFalse(cond) {
-    if cond.kind == "BooleanLiteral" && !cond.value { true }
-    else if cond.kind == "NullLiteral" { true }
-    else { false }
-}
-
-fn deadCodeElimStmts(stmts) {
-    result = []
-    for stmt in stmts {
-        result.push(stmt)
-        if stmt.kind == "ReturnStatement" || stmt.kind == "BreakStatement" || stmt.kind == "ContinueStatement" || stmt.kind == "ThrowStatement" {
-            break
-        }
-    }
-    result
-}
-
-fn deadCodeElim(node) {
-    if node == null { return null }
-    nt = type(node)
-    if nt == "array" { return deadCodeElimStmts(node) }
-    inn = isNode(node)
-    if !inn { return node }
-    k = node.kind
-    if k == "Program" {
-        n = node
-        n.body = deadCodeElimStmts(n.body)
-        folded = []
-        for s in n.body { folded.push(deadCodeElim(s)) }
-        n.body = folded
-        return n
-    }
-    if k == "BlockStatement" {
-        n = node
-        n.body = deadCodeElimStmts(n.body)
-        folded = []
-        for s in n.body { folded.push(deadCodeElim(s)) }
-        n.body = folded
-        return n
-    }
-    if k == "IfStatement" {
-        n = node
-        n.condition = deadCodeElim(n.condition)
-        n.then = deadCodeElim(n.then)
-        if n["else"] != null { n["else"] = deadCodeElim(n["else"]) }
-        at = isAlwaysTrue(n.condition)
-        af = isAlwaysFalse(n.condition)
-        if at { return n.then }
-        if af {
-            elseBr = n["else"]
-            if elseBr != null { return elseBr }
-            return nullLiteral(n)
-        }
-        return n
-    }
-    if k == "WhileStatement" {
-        n = node
-        n.condition = deadCodeElim(n.condition)
-        af = isAlwaysFalse(n.condition)
-        if af { return nullLiteral(n) }
-        n.body = deadCodeElim(n.body)
-        n
-    }
-    if k == "ForStatement" {
-        n = node
-        n.iterator = deadCodeElim(n.iterator)
-        n.body = deadCodeElim(n.body)
-        return n
-    }
-    if k == "LoopStatement" {
-        n = node
-        n.body = deadCodeElim(n.body)
-        return n
-    }
-    if k == "FnDeclaration" {
-        n = node
-        n.body = deadCodeElim(n.body)
-        return n
-    }
-    if k == "LambdaExpression" {
-        n = node
-        n.body = deadCodeElim(n.body)
-        return n
-    }
-    if k == "ExpressionStatement" {
-        n = node
-        n.expr = deadCodeElim(n.expr)
-        return n
-    }
-    if k == "ReturnStatement" {
-        n = node
-        if n.value != null { n.value = deadCodeElim(n.value) }
-        return n
-    }
-    if k == "LetDeclaration" || k == "ValDeclaration" {
-        n = node
-        if n.value != null { n.value = deadCodeElim(n.value) }
-        return n
-    }
-    node
-}
-
-fn collectUsedNames(body) {
-    names = {}
-    _walkNames(body, names, true)
-    names
-}
-
-fn _walkNames(node, names, reading) {
-    if node == null { return }
-    nt = type(node)
-    if nt == "array" {
-        for item in node { _walkNames(item, names, reading) }
-        return
-    }
-    inn = isNode(node)
-    if !inn { return }
-    k = node.kind
-    if k == "Identifier" {
-        if reading { names[node.name] = true }
-    }
-    else if k == "AssignmentExpression" {
-        _walkNames(node.value, names, true)
-        if node.target.kind == "Identifier" { names[node.target.name] = true }
-        else { _walkNames(node.target, names, true) }
-    }
-    else if k == "CompoundAssignment" {
-        _walkNames(node.value, names, true)
-        if node.target.kind == "Identifier" { names[node.target.name] = true }
-    }
-    else if k == "FnDeclaration" {
-        names[node.name] = true
-        _walkNames(node.body, names, true)
-    }
-    else if k == "CallExpression" {
-        _walkNames(node.callee, names, true)
-        for a in node.args { _walkNames(a, names, true) }
-    }
-    else if k == "BinaryExpression" {
-        _walkNames(node.left, names, true)
-        _walkNames(node.right, names, true)
-    }
-    else if k == "UnaryExpression" {
-        _walkNames(node.operand, names, true)
-    }
-    else if k == "MemberExpression" {
-        _walkNames(node.obj, names, true)
-    }
-    else if k == "IfStatement" {
-        _walkNames(node.condition, names, true)
-        _walkNames(node.then, names, true)
-        if node["else"] != null { _walkNames(node["else"], names, true) }
-    }
-    else if k == "WhileStatement" {
-        _walkNames(node.condition, names, true)
-        _walkNames(node.body, names, true)
-    }
-    else if k == "ForStatement" {
-        names[node.name] = true
-        _walkNames(node.iterator, names, true)
-        _walkNames(node.body, names, true)
-    }
-    else if k == "ReturnStatement" {
-        if node.value != null { _walkNames(node.value, names, true) }
-    }
-    else if k == "ExpressionStatement" {
-        _walkNames(node.expr, names, true)
-    }
-    else if k == "LetDeclaration" || k == "ValDeclaration" {
-        if node.value != null { _walkNames(node.value, names, true) }
-        names[node.name] = true
-    }
-    else if k == "Program" || k == "BlockStatement" {
-        for s in node.body { _walkNames(s, names, reading) }
-    }
-}
-
-fn isSimpleReturn(body) {
-    if body.kind == "ReturnStatement" && body.value != null { true }
-    else if body.kind == "BlockStatement" {
-        stmts = body.body
-        if #stmts == 1 && stmts[0].kind == "ReturnStatement" && stmts[0].value != null { true }
-        else { false }
-    }
-    else { false }
-}
-
-fn getReturnValue(body) {
-    if body.kind == "ReturnStatement" { body.value }
-    else { body.body[0].value }
-}
-
-fn inlineCalls(node, funcMap) {
-    if node == null { return null }
-    nt = type(node)
-    if nt == "array" {
-        result = []
-        for item in node { result.push(inlineCalls(item, funcMap)) }
-        return result
-    }
-    inn = isNode(node)
-    if !inn { return node }
-    k = node.kind
-    if k == "CallExpression" {
-        callee = node.callee
-        isTarget = callee.kind == "Identifier" && funcMap[callee.name] != null && #node.args == 0
-        if isTarget {
-            fnDecl = funcMap[callee.name]
-            isSimple = isSimpleReturn(fnDecl.body)
-            if isSimple {
-                returnExpr = getReturnValue(fnDecl.body)
-                return inlineCalls(returnExpr, funcMap)
-            }
-            return node
-        }
-        n = node
-        n.callee = inlineCalls(n.callee, funcMap)
-        folded = []
-        for a in n.args { folded.push(inlineCalls(a, funcMap)) }
-        n.args = folded
-        return n
-    }
-    if k == "BinaryExpression" {
-        n = node
-        n.left = inlineCalls(n.left, funcMap)
-        n.right = inlineCalls(n.right, funcMap)
-        return n
-    }
-    if k == "UnaryExpression" {
-        n = node
-        n.operand = inlineCalls(n.operand, funcMap)
-        return n
-    }
-    if k == "IfStatement" {
-        n = node
-        n.condition = inlineCalls(n.condition, funcMap)
-        n.then = inlineCalls(n.then, funcMap)
-        if n["else"] != null { n["else"] = inlineCalls(n["else"], funcMap) }
-        return n
-    }
-    if k == "FnDeclaration" {
-        n = node
-        n.body = inlineCalls(n.body, funcMap)
-        return n
-    }
-    if k == "LambdaExpression" {
-        n = node
-        n.body = inlineCalls(n.body, funcMap)
-        return n
-    }
-    if k == "ReturnStatement" {
-        n = node
-        if n.value != null { n.value = inlineCalls(n.value, funcMap) }
-        return n
-    }
-    if k == "ExpressionStatement" {
-        n = node
-        n.expr = inlineCalls(n.expr, funcMap)
-        return n
-    }
-    if k == "LetDeclaration" || k == "ValDeclaration" {
-        n = node
-        if n.value != null { n.value = inlineCalls(n.value, funcMap) }
-        return n
-    }
-    if k == "Program" {
-        n = node
-        folded = []
-        for s in n.body { folded.push(inlineCalls(s, funcMap)) }
-        n.body = folded
-        return n
-    }
-    if k == "BlockStatement" {
-        n = node
-        folded = []
-        for s in n.body { folded.push(inlineCalls(s, funcMap)) }
-        n.body = folded
-        return n
-    }
-    node
-}
-
-fn inline(program) {
-    funcMap = {}
-    funcNames = {}
-    for stmt in program.body {
-        if stmt.kind == "FnDeclaration" {
-            p = stmt.params
-            if p != null && #p == 0 {
-                if isSimpleReturn(stmt.body) {
-                    funcMap[stmt.name] = stmt
-                    funcNames[stmt.name] = true
-                }
-            }
-        }
-    }
-    hasNames = false
-    for _k in funcNames { hasNames = true; break }
-    if !hasNames { return program }
-    used = collectUsedNames(program.body)
-    inlineMap = {}
-    for name in funcNames {
-        cnt = countUses(program.body, name)
-        if cnt == 1 { inlineMap[name] = funcMap[name] }
-    }
-    hasInline = false
-    for _k in inlineMap { hasInline = true; break }
-    if !hasInline { return program }
-    inlineCalls(program, inlineMap)
-}
-
-fn countUses(node, name) {
-    if node == null { return 0 }
-    nt = type(node)
-    if nt == "array" {
-        total = 0
-        for item in node { total = total + countUses(item, name) }
-        return total
-    }
-    inn = isNode(node)
-    if !inn { return 0 }
-    k = node.kind
-    if k == "CallExpression" {
-        c = 0
-        if node.callee.kind == "Identifier" && node.callee.name == name { c = 1 }
-        c = c + countUses(node.callee, name)
-        for a in node.args { c = c + countUses(a, name) }
-        return c
-    }
-    if k == "BinaryExpression" { return countUses(node.left, name) + countUses(node.right, name) }
-    if k == "UnaryExpression" { return countUses(node.operand, name) }
-    if k == "ExpressionStatement" { return countUses(node.expr, name) }
-    if k == "ReturnStatement" {
-        if node.value != null { return countUses(node.value, name) }
-        return 0
-    }
-    if k == "Program" || k == "BlockStatement" {
-        total = 0
-        for s in node.body { total = total + countUses(s, name) }
-        return total
-    }
-    if k == "FnDeclaration" { return countUses(node.body, name) }
-    if k == "LetDeclaration" || k == "ValDeclaration" {
-        if node.value != null { return countUses(node.value, name) }
-        return 0
-    }
-    if k == "IfStatement" {
-        c = countUses(node.condition, name) + countUses(node.then, name)
-        if node["else"] != null { c = c + countUses(node["else"], name) }
-        return c
-    }
-    if k == "AssignmentExpression" { return countUses(node.value, name) }
-    0
-}
-
-fn optimize(program, passes) {
-    n = program
-    if n.ast != null { n = n.ast }
-    doFold = true
-    doDce = true
-    doInline = true
-    if passes != null {
-        if passes.fold != null { doFold = passes.fold }
-        if passes.dce != null { doDce = passes.dce }
-        if passes.inline != null { doInline = passes.inline }
-    }
-    if doFold { n = constantFold(n) }
-    if doDce { n = deadCodeElim(n) }
-    if doInline { n = inline(n) }
-    n
-}
-
-// ========== types.hv ==========
-use { isNode } from "ast"
-
-TYPE_INT = "int"
-TYPE_NUM = "num"
-TYPE_STR = "str"
-TYPE_BOOL = "bool"
-TYPE_NULL = "nil"
-TYPE_ARRAY = "array"
-TYPE_OBJECT = "object"
-TYPE_FN = "fn"
-TYPE_UNKNOWN = "any"
-
-fn isNumeric(t) { t == TYPE_INT || t == TYPE_NUM }
-
-fn inferLiteral(node) {
-    if node == null { TYPE_UNKNOWN }
-    else if node.kind == "NumberLiteral" {
-        v = node.value
-        if v == int(v) { TYPE_INT }
-        else { TYPE_NUM }
-    }
-    else if node.kind == "StringLiteral" { TYPE_STR }
-    else if node.kind == "BooleanLiteral" { TYPE_BOOL }
-    else if node.kind == "NullLiteral" { TYPE_NULL }
-    else { TYPE_UNKNOWN }
-}
-
-fn inferBinary(leftType, oper, rightType) {
-    arithOps = {"+": true, "-": true, "*": true, "/": true, "%": true, "**": true, "\\": true, "%%": true}
-    bitOps = {"&": true, "|": true, "^": true, "<<": true, ">>": true}
-    cmpOps = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "is": true}
-    if arithOps[oper] != null {
-        strConcat = oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR)
-        bothNum = isNumeric(leftType) && isNumeric(rightType)
-        if strConcat { TYPE_STR }
-        else if bothNum {
-            if leftType == TYPE_NUM || rightType == TYPE_NUM { TYPE_NUM }
-            else { TYPE_INT }
-        }
-        else { TYPE_UNKNOWN }
-    }
-    else if bitOps[oper] != null {
-        if leftType == TYPE_INT && rightType == TYPE_INT { TYPE_INT }
-        else { TYPE_UNKNOWN }
-    }
-    else if cmpOps[oper] != null { TYPE_BOOL }
-  else if oper == "&&" || oper == "||" { TYPE_BOOL }
-  else if oper == "in" || oper == "not in" || oper == "matches" { TYPE_BOOL }
-  else if oper == "??" {
-        if rightType != TYPE_UNKNOWN { rightType }
-        else { leftType }
-    }
-    else { TYPE_UNKNOWN }
-}
-
-fn inferUnary(oper, operandType) {
-    numType = isNumeric(operandType)
-    if oper == "-" {
-        if numType { operandType }
-        else { TYPE_UNKNOWN }
-    }
-    else if oper == "!" || oper == "not" { TYPE_BOOL }
-    else if oper == "#" {
-        if operandType == TYPE_STR { TYPE_INT }
-        else { TYPE_UNKNOWN }
-    }
-    else { TYPE_UNKNOWN }
-}
-
-fn TypeEnv(parent) {
-    {bindings: {}, parent: parent}
-}
-
-fn envLookup(env, name) {
-    cur = env
-    while cur != null {
-        if cur.bindings[name] != null { return cur.bindings[name] }
-        cur = cur.parent
-    }
-    TYPE_UNKNOWN
-}
-
-fn envSet(env, name, t) {
-    env.bindings[name] = t
-}
-
-fn inferExpr(node, env) {
-  if node == null { TYPE_UNKNOWN }
-  k = node.kind
-  if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
-    inferLiteral(node)
-  }
-  else if k == "RegexLiteral" { TYPE_OBJECT }
-  else if k == "Identifier" { envLookup(env, node.name) }
-  else if k == "BinaryExpression" {
-    lt = inferExpr(node.left, env)
-    rt = inferExpr(node.right, env)
-    if node.oper == "matches" { TYPE_BOOL }
-    else if node.oper == "not in" { TYPE_BOOL }
-    else { inferBinary(lt, node.oper, rt) }
-  }
-  else if k == "UnaryExpression" {
-    ot = inferExpr(node.operand, env)
-    if node.oper == "~" { TYPE_INT }
-    else { inferUnary(node.oper, ot) }
-  }
-  else if k == "UpdateExpression" {
-    inferExpr(node.operand, env)
-  }
-  else if k == "TernaryExpression" {
-    tt = inferExpr(node.true_expr, env)
-    ft = inferExpr(node.false_expr, env)
-    if tt == ft { tt }
-    else { TYPE_UNKNOWN }
-  }
-  else if k == "CallExpression" {
-    if node.callee.kind == "Identifier" {
-      calleeType = envLookup(env, node.callee.name)
-      fnSig = envLookup(env, "\$ret_" + node.callee.name)
-      if fnSig != TYPE_UNKNOWN { fnSig }
-      else { TYPE_UNKNOWN }
-    }
-    else if node.callee.kind == "MemberExpression" {
-      inferExpr(node.callee, env)
-      TYPE_UNKNOWN
-    }
-    else { TYPE_UNKNOWN }
-  }
-  else if k == "MemberExpression" {
-    inferExpr(node.obj, env)
-    TYPE_UNKNOWN
-  }
-  else if k == "IndexExpression" {
-    inferExpr(node.obj, env)
-    inferExpr(node.index, env)
-    TYPE_UNKNOWN
-  }
-  else if k == "ArrayLiteral" { TYPE_ARRAY }
-  else if k == "ObjectLiteral" { TYPE_OBJECT }
-  else if k == "LambdaExpression" { TYPE_FN }
-  else if k == "RangeExpression" { TYPE_ARRAY }
-  else if k == "InterpolatedString" { TYPE_STR }
-  else if k == "SpreadExpression" {
-    inferExpr(node.value, env)
-  }
-  else if k == "PipelineExpression" {
-    inferExpr(node.right, env)
-  }
-  else if k == "AtExpression" { TYPE_UNKNOWN }
-  else if k == "AtAtExpression" { TYPE_UNKNOWN }
-  else if k == "ShellCommand" { TYPE_STR }
-  else if k == "BacktickExpression" { TYPE_STR }
-  else if k == "MatchExpression" { TYPE_UNKNOWN }
-  else if k == "AssignmentExpression" {
-    inferExpr(node.value, env)
-  }
-  else if k == "CompoundAssignment" {
-    inferExpr(node.value, env)
-  }
-  else { TYPE_UNKNOWN }
-}
-
-fn inferStmt(node, env) {
-  if node == null { return }
-  k = node.kind
-  if k == "ExpressionStatement" { inferExpr(node.expr, env) }
-  else if k == "LetDeclaration" || k == "ValDeclaration" {
-    t = TYPE_UNKNOWN
-    if node.value != null { t = inferExpr(node.value, env) }
-    envSet(env, node.name, t)
-  }
-  else if k == "AssignmentExpression" {
-    newType = inferExpr(node.value, env)
-    if node.target.kind == "Identifier" {
-      existing = envLookup(env, node.target.name)
-      if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
-    }
-  }
-  else if k == "CompoundAssignment" {
-    inferExpr(node.value, env)
-  }
-  else if k == "ReturnStatement" {
-    if node.value != null { inferExpr(node.value, env) }
-  }
-  else if k == "IfStatement" {
-    inferExpr(node.condition, env)
-    inferStmt(node.then, env)
-    if node["else"] != null { inferStmt(node["else"], env) }
-  }
-  else if k == "WhileStatement" {
-    inferExpr(node.condition, env)
-    inferStmt(node.body, env)
-  }
-  else if k == "ForStatement" {
-    inferExpr(node.iterator, env)
-    envSet(env, node.name, TYPE_UNKNOWN)
-    inferStmt(node.body, env)
-  }
-  else if k == "LoopStatement" {
-    inferStmt(node.body, env)
-  }
-  else if k == "RepeatStatement" {
-    inferExpr(node.count, env)
-    inferStmt(node.body, env)
-  }
-  else if k == "BlockStatement" {
-    for s in node.body { inferStmt(s, env) }
-  }
-  else if k == "FnDeclaration" {
-    envSet(env, node.name, TYPE_FN)
-    childEnv = TypeEnv(env)
-    for p in node.params {
-      if type(p) == "object" && p.name != null { envSet(childEnv, p.name, TYPE_UNKNOWN) }
-      else { envSet(childEnv, p, TYPE_UNKNOWN) }
-    }
-    retType = TYPE_UNKNOWN
-    if node.body.kind == "BlockStatement" {
-      for s in node.body.body { inferStmt(s, childEnv) }
-      lastStmt = node.body.body[#node.body.body - 1]
-      if lastStmt != null && lastStmt.kind == "ReturnStatement" {
-        retType = inferExpr(lastStmt.value, childEnv)
-      }
-    }
-    else { retType = inferExpr(node.body, childEnv) }
-    if retType != TYPE_UNKNOWN {
-      envSet(env, "\$ret_" + node.name, retType)
-    }
-  }
-  else if k == "ClassDeclaration" {
-    envSet(env, node.name, TYPE_OBJECT)
-    childEnv = TypeEnv(env)
-    if node.definition.fields != null {
-      for f in node.definition.fields { envSet(childEnv, f, TYPE_UNKNOWN) }
-    }
-    if node.definition.methods != null {
-      for m in node.definition.methods {
-        if m != null && m.name != null {
-          envSet(childEnv, m.name, TYPE_FN)
-        }
-      }
-    }
-  }
-  else if k == "StructDeclaration" {
-    envSet(env, node.name, TYPE_OBJECT)
-  }
-  else if k == "MatchExpression" {
-    inferExpr(node.subject, env)
-    for c in node.cases {
-      if c.guard != null { inferExpr(c.guard, env) }
-      inferStmt(c.body, env)
-    }
-  }
-  else if k == "HotkeyBinding" {
-    inferStmt(node.body, env)
-  }
-  else if k == "ConfigBlock" {
-    inferStmt(node.body, env)
-  }
-  else if k == "UseStatement" || k == "ImportStatement" {}
-  else if k == "BreakStatement" || k == "ContinueStatement" {}
-  else if k == "ThrowStatement" {
-    if node.value != null { inferExpr(node.value, env) }
-  }
-  else if k == "TryStatement" {
-    inferStmt(node.try_block, env)
-    if node.catch_block != null { inferStmt(node.catch_block, env) }
-    if node.finally_block != null { inferStmt(node.finally_block, env) }
-  }
-  else if k == "SleepStatement" {}
-  else if k == "AtExpression" || k == "AtAtExpression" {
-    inferExpr(node, env)
-  }
-}
-
-fn inferProgram(program) {
-    n = program
-    if n.ast != null { n = n.ast }
-    env = TypeEnv(null)
-    for stmt in n.body { inferStmt(stmt, env) }
-    {types: env.bindings, env: env}
-}
-
-fn getVarType(inferenceResult, name) {
-    envLookup(inferenceResult.env, name)
-}
-
-fn getReturnType(inferenceResult, fnName) {
-    envLookup(inferenceResult.env, "\$ret_" + fnName)
-}
-
-// ========== launcher.hv ==========
+// === BEGIN MODULE: launcher ===
 // launcher.hv — pure Havel script launcher
 // Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
@@ -9052,3 +9067,87 @@ else {
 }
 
 shell.exit(result)
+
+// === END MODULE: launcher ===
+
+// === BEGIN MODULE: libtest ===
+fn Scope(parent) {
+    {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+}
+fn scopeDeclare(scope, name) {
+    if scope.locals[name] != null: return scope.locals[name]
+    idx = scope.count
+    scope.locals[name] = idx
+    scope.count = idx + 1
+    idx
+
+}
+fn compileProgramTest(emitter, program) {
+    bc.reset()
+    body = program.body
+    topStmts = []
+    funcDecls = []
+    for stmt in body {
+        if stmt.kind == "FnDeclaration" {
+            funcDecls.push(stmt)
+        }
+        else {
+            topStmts.push(stmt)
+
+        }
+    }
+    for i in 0..(#funcDecls - 1) {
+        decl = funcDecls[i]
+        funcIdx = emitter.func_idx
+        emitter.func_idx = funcIdx + 1
+        emitter.func_map[decl.name] = funcIdx
+        oldScope = emitter.scope
+        emitter.scope = Scope(null)
+        params = decl.params
+        for j in 0..(#params - 1) {
+            p = params[j]
+            pname = p
+            scopeDeclare(emitter.scope, pname)
+        }
+        lc = #params + 8
+        bc.func_new(decl.name, #params, lc)
+        bc.emit("PUSH_NULL")
+        bc.emit("RETURN")
+        emitter.scope = oldScope
+
+    }
+    bc.func_new("__main__", 0, 32)
+    bc.emit("LOAD_CONST", bc.add_const(42))
+    bc.emit("RETURN")
+    bc.execute_persistent("__main__")
+
+}
+// === END MODULE: libtest ===
+
+// === BEGIN MODULE: compiler_main ===
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+if #app.args < 2 {
+    print("usage: havel --run modules/compiler.hv -- <input.hv> <output.hvc>")
+    exit(1)
+}
+
+source = fs.read(app.args[0])
+tokens = tokenize(source)
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+    for err in result.errors {
+        print(err)
+    }
+    exit(1)
+}
+emitter = Emitter()
+compileProgram(emitter, result.ast, true)
+bc.serialize(app.args[1])
+print("written " + app.args[1])
+
+// === END MODULE: compiler_main ===

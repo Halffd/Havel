@@ -1,8 +1,0 @@
-use { tokenize } from "lexer"
-
-source = "print(\"hello\")"
-tokens = tokenize(source)
-print("token count: " + int(tokens.len))
-for t in tokens {
-    print(t.type + " [" + t.value + "]")
-}

@@ -1,9 +1,0 @@
-use { tokenize } from "lang/lexer"
-use { parseTokens } from "lang/pratt"
-use { compileProgram } from "lang/emitter"
-
-source = fs.read("/tmp/test_fib2.hv")
-tokens = tokenize(source)
-ast = parseTokens(tokens)
-result = compileProgram(ast, "test_fib2", true)
-bc.execute(result)

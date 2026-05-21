@@ -121,7 +121,7 @@ fn HavelError(severity, stage, msg) {
   }
 }
 
-fn at(err, line, col, length) {
+fn errorAtLocation(err, line, col, length) {
   err.line = line
   err.col = col
   if length != null { err.length = length }
@@ -180,7 +180,7 @@ fn clear() {
 // Convenience: report an error at a location
 fn errorAt(stage, msg, line, col, code) {
   err = HavelError(SEVERITY_ERROR, stage, msg)
-  at(err, line, col, 1)
+  errorAtLocation(err, line, col, 1)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   if code != null { withCode(err, code) }
   report(err)
@@ -189,7 +189,7 @@ fn errorAt(stage, msg, line, col, code) {
 
 fn warningAt(stage, msg, line, col) {
   err = HavelError(SEVERITY_WARNING, stage, msg)
-  at(err, line, col, 1)
+  errorAtLocation(err, line, col, 1)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   report(err)
   err
@@ -197,14 +197,14 @@ fn warningAt(stage, msg, line, col) {
 
 fn infoAt(stage, msg, line, col) {
   err = HavelError(SEVERITY_INFO, stage, msg)
-  at(err, line, col, 1)
+  errorAtLocation(err, line, col, 1)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   report(err)
   err
 }
 
 // Convenience: just a plain error (no location)
-fn error(stage, msg) {
+fn reportError(stage, msg) {
   err = HavelError(SEVERITY_ERROR, stage, msg)
   if reporter.sourceFile != null { file(err, reporter.sourceFile) }
   report(err)
@@ -378,7 +378,7 @@ fn importLegacyErrors(errors, stage, sourceFile) {
   if errors == null { return }
   for err in errors {
     newErr = HavelError(SEVERITY_ERROR, stage, err.msg)
-    at(newErr, err.line, err.col, 1)
+    errorAtLocation(newErr, err.line, err.col, 1)
     if sourceFile != null { file(newErr, sourceFile) }
     report(newErr)
   }

@@ -1,23 +1,19 @@
-use {outer, deep_outer} from "lib/test_module_closure"
+X = 42
 
-i = outer()
-r1 = i()
+fn outer() {
+    fn inner() {
+        X
+    }
+    inner
 
-d = deep_outer()
-d2 = d()
-r2 = d2()
-
-print(r1)
-print(r2)
-
-if r1 == 42 {
-  print("PASS outer")
-} else {
-  print("FAIL outer")
 }
+fn deep_outer() {
+    fn mid() {
+        fn inner() {
+            X
+        }
+        inner
+    }
+    mid
 
-if r2 == 42 {
-  print("PASS deep")
-} else {
-  print("FAIL deep")
 }

@@ -8,16 +8,21 @@ using havel::compiler::BytecodeChunk;
 using havel::compiler::BytecodeFunction;
 using havel::compiler::Instruction;
 using havel::compiler::OpCode;
+using havel::compiler::SourceLocation;
 using havel::compiler::Value;
 using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
 struct BuilderState {
-    std::unique_ptr<BytecodeChunk> chunk;
-    int32_t current_func_idx = -1;
-    std::vector<int32_t> saved_func_stack;
-    std::unordered_map<std::string, OpCode> opcode_map;
+  std::unique_ptr<BytecodeChunk> chunk;
+  int32_t current_func_idx = -1;
+  std::vector<int32_t> saved_func_stack;
+  std::unordered_map<std::string, OpCode> opcode_map;
+  uint32_t current_source_line = 0;
+  uint32_t current_source_col = 0;
+  bool has_source_location = false;
+  Value current_source_file;
 
 	BytecodeFunction *currentFunc() {
 		if (current_func_idx < 0) return nullptr;
@@ -186,6 +191,10 @@ struct BuilderState {
         {"DEBUG", OpCode::DEBUG},
         {"BEGIN_MODULE", OpCode::BEGIN_MODULE},
         {"END_MODULE", OpCode::END_MODULE},
+        {"INTERVAL_START", OpCode::INTERVAL_START},
+        {"INTERVAL_STOP", OpCode::INTERVAL_STOP},
+        {"TIMEOUT_START", OpCode::TIMEOUT_START},
+        {"TIMEOUT_CANCEL", OpCode::TIMEOUT_CANCEL},
     };
 }
 };
@@ -250,12 +259,67 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		for (size_t i = 1; i < args.size(); ++i) {
 			operands.push_back(args[i]);
 		}
-		fn->instructions.emplace_back(op, std::move(operands));
-		auto ip = fn->instructions.size() - 1;
-		return Value::makeInt(static_cast<int64_t>(ip));
-	});
+  fn->instructions.emplace_back(op, std::move(operands));
+  auto ip = fn->instructions.size() - 1;
+  if (g_builder.has_source_location) {
+    std::string srcFile;
+    if (g_builder.current_source_file.isStringId() || g_builder.current_source_file.isStringValId()) {
+      srcFile = api.resolveString(g_builder.current_source_file);
+    }
+    auto &instr = fn->instructions.back();
+    instr.location = SourceLocation{srcFile, g_builder.current_source_line, g_builder.current_source_col, 0};
+    fn->instruction_locations.push_back(SourceLocation{srcFile, g_builder.current_source_line, g_builder.current_source_col, 0});
+  } else {
+    fn->instruction_locations.push_back(SourceLocation{});
+  }
+  return Value::makeInt(static_cast<int64_t>(ip));
+  });
 
-api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
+  api.registerFunction("bc.set_source", [](const std::vector<Value> &args) -> Value {
+    if (args.size() >= 2 && args[0].isInt() && args[1].isInt()) {
+      g_builder.current_source_line = static_cast<uint32_t>(args[0].asInt());
+      g_builder.current_source_col = static_cast<uint32_t>(args[1].asInt());
+      g_builder.has_source_location = true;
+    } else if (args.size() >= 1 && args[0].isInt()) {
+      g_builder.current_source_line = static_cast<uint32_t>(args[0].asInt());
+      g_builder.current_source_col = 0;
+      g_builder.has_source_location = true;
+    }
+    if (g_builder.has_source_location && args.size() >= 3 && (args[2].isStringId() || args[2].isStringValId())) {
+      g_builder.current_source_file = args[2];
+    }
+    return Value::makeInt(0);
+  });
+
+  api.registerFunction("bc.clear_source", [](const std::vector<Value> &args) -> Value {
+    g_builder.has_source_location = false;
+    g_builder.current_source_line = 0;
+    g_builder.current_source_col = 0;
+    g_builder.current_source_file = Value::makeNull();
+    return Value::makeInt(0);
+  });
+
+  api.registerFunction("bc.set_func_source_line", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.set_func_source_line: no current function");
+    if (!args.empty() && args[0].isInt()) {
+      fn->source_line = static_cast<uint32_t>(args[0].asInt());
+    }
+    return Value::makeInt(0);
+  });
+
+  api.registerFunction("bc.set_source_file", [api](const std::vector<Value> &args) -> Value {
+    if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
+      g_builder.current_source_file = args[0];
+      auto *fn = g_builder.currentFunc();
+      if (fn) {
+        fn->source_file = api.resolveString(args[0]);
+      }
+    }
+    return Value::makeInt(0);
+  });
+
+  api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value {
     auto *fn = g_builder.currentFunc();
     if (!fn) throw std::runtime_error("bc.add_const: no current function");
     if (args.empty()) throw std::runtime_error("bc.add_const: requires value");
@@ -269,22 +333,22 @@ api.registerFunction("bc.add_const", [](const std::vector<Value> &args) -> Value
 });
 
 api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> Value {
-        auto *fn = g_builder.currentFunc();
-        if (!fn) throw std::runtime_error("bc.add_string: no current function");
-        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-            throw std::runtime_error("bc.add_string: requires string value");
-        }
-        auto resolved = api.resolveString(args[0]);
-        uint32_t strId = g_builder.chunk->addString(resolved);
-        Value constVal = Value::makeStringValId(strId);
-        auto &consts = fn->constants;
-        for (uint32_t i = 0; i < consts.size(); ++i) {
-            if (consts[i] == constVal) return Value::makeInt(static_cast<int64_t>(i));
-        }
-        uint32_t idx = static_cast<uint32_t>(consts.size());
-        consts.push_back(constVal);
-        return Value::makeInt(static_cast<int64_t>(idx));
-    });
+  auto *fn = g_builder.currentFunc();
+  if (!fn) throw std::runtime_error("bc.add_string: no current function");
+  if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+    throw std::runtime_error("bc.add_string: requires string value");
+  }
+  auto resolved = api.resolveString(args[0]);
+  uint32_t strId = g_builder.chunk->addString(resolved);
+  Value constVal = Value::makeStringValId(strId);
+  auto &consts = fn->constants;
+  for (uint32_t i = 0; i < consts.size(); ++i) {
+    if (consts[i] == constVal) return Value::makeInt(static_cast<int64_t>(i));
+  }
+  uint32_t idx = static_cast<uint32_t>(consts.size());
+  consts.push_back(constVal);
+  return Value::makeInt(static_cast<int64_t>(idx));
+});
 
 	api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -356,13 +420,13 @@ api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
 	});
 
 api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
-    if (g_builder.chunk->getFunctionCount() == 0) {
-        throw std::runtime_error("bc.execute: no functions in chunk");
-    }
-    std::string entry = "__main__";
-    if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
-        entry = api.resolveString(args[0]);
-    }
+  if (g_builder.chunk->getFunctionCount() == 0) {
+    throw std::runtime_error("bc.execute: no functions in chunk");
+  }
+  std::string entry = "__main__";
+  if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
+    entry = api.resolveString(args[0]);
+  }
 
     std::vector<Value> runArgs;
     for (size_t i = 1; i < args.size(); ++i) {
@@ -375,38 +439,39 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     auto saved_frame_arena = vm.frame_arena_;
     std::stack<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
-    auto saved_main_chunk = vm.getMainChunk();
+  auto saved_main_chunk = vm.getMainChunk();
 
-    // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
-    // (same-chunk closures should share the globals namespace, not capture a snapshot)
-    // Use aliasing shared_ptr: shares ownership with saved_main_chunk but points to inner chunk
-    auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
-    vm.setMainChunkShared(inner_chunk_ptr);
-vm.current_chunk = g_builder.chunk.get();
+  // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
+  // (same-chunk closures should share the globals namespace, not capture a snapshot)
+  // Use aliasing shared_ptr: shares ownership with saved_main_chunk but points to inner chunk
+  auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
+  vm.setMainChunkShared(inner_chunk_ptr);
+  vm.current_chunk = g_builder.chunk.get();
 
- try {
- vm.bc_execute_depth_++;
- auto result = vm.execute(*g_builder.chunk, entry, runArgs);
- vm.bc_execute_depth_--;
+  try {
+    vm.bc_execute_depth_++;
+    auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+    vm.bc_execute_depth_--;
 
- vm.current_chunk = saved_chunk;
- vm.frame_count_ = saved_frame_count;
- vm.frame_arena_ = std::move(saved_frame_arena);
- vm.stack = std::move(saved_stack);
- vm.locals = std::move(saved_locals);
- vm.setMainChunkShared(saved_main_chunk);
- return result;
- } catch (const std::exception &e) {
- vm.bc_execute_depth_--;
- vm.current_chunk = saved_chunk;
- vm.frame_count_ = saved_frame_count;
- vm.frame_arena_ = std::move(saved_frame_arena);
- vm.stack = std::move(saved_stack);
- vm.locals = std::move(saved_locals);
- vm.setMainChunkShared(saved_main_chunk);
- throw std::runtime_error(std::string("Bytecode error: ") + e.what());
- }
-});
+    vm.current_chunk = saved_chunk;
+    vm.frame_count_ = saved_frame_count;
+    vm.frame_arena_ = std::move(saved_frame_arena);
+    vm.stack = std::move(saved_stack);
+    vm.locals = std::move(saved_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    return result;
+  } catch (const std::exception &e) {
+    vm.bc_execute_depth_--;
+    vm.current_chunk = saved_chunk;
+    vm.frame_count_ = saved_frame_count;
+    vm.frame_arena_ = std::move(saved_frame_arena);
+    vm.stack = std::move(saved_stack);
+    vm.locals = std::move(saved_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    throw std::runtime_error(e.what());
+  } });
+
+
 
 api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {
     if (g_builder.chunk->getFunctionCount() == 0) {
@@ -445,19 +510,19 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
  vm.frame_arena_ = std::move(saved_frame_arena);
  vm.stack = std::move(saved_stack);
  vm.locals = std::move(saved_locals);
- vm.immutable_locals_ = std::move(saved_immutable_locals);
- vm.setMainChunkShared(saved_main_chunk);
- return result;
- } catch (const std::exception &e) {
- vm.bc_execute_depth_--;
- vm.current_chunk = saved_chunk;
- vm.frame_count_ = saved_frame_count;
- vm.frame_arena_ = std::move(saved_frame_arena);
- vm.stack = std::move(saved_stack);
- vm.locals = std::move(saved_locals);
- vm.immutable_locals_ = std::move(saved_immutable_locals);
- vm.setMainChunkShared(saved_main_chunk);
- throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+  vm.immutable_locals_ = std::move(saved_immutable_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    return result;
+  } catch (const std::exception &e) {
+    vm.bc_execute_depth_--;
+    vm.current_chunk = saved_chunk;
+    vm.frame_count_ = saved_frame_count;
+    vm.frame_arena_ = std::move(saved_frame_arena);
+    vm.stack = std::move(saved_stack);
+    vm.locals = std::move(saved_locals);
+    vm.immutable_locals_ = std::move(saved_immutable_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    throw std::runtime_error(e.what());
   }
 	});
 
@@ -574,8 +639,12 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
 api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
 api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
     api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
-    api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
-    api.setGlobal("bc", bcObj);
+  api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
+  api.setField(bcObj, "set_source", api.makeFunctionRef("bc.set_source"));
+  api.setField(bcObj, "clear_source", api.makeFunctionRef("bc.clear_source"));
+  api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));
+  api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
+  api.setGlobal("bc", bcObj);
 }
 
 } // namespace havel::stdlib

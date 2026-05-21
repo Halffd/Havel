@@ -385,15 +385,26 @@ Token Lexer::scanNumber() {
     number += advance();
   }
 
-  // Scan fractional part
-  if (!isAtEnd() && peek() == '.' && isDigit(peek(1))) {
-    number += advance(); // consume '.'
-    while (!isAtEnd() && isDigit(peek())) {
-      number += advance();
+    // Scan fractional part
+    if (!isAtEnd() && peek() == '.' && isDigit(peek(1))) {
+        number += advance(); // consume '.'
+        while (!isAtEnd() && isDigit(peek())) {
+            number += advance();
+        }
     }
-  }
 
-  return makeToken(number, TokenType::Number);
+    // Scan exponent part (e.g. 6.67430e-11, 1.5E+3)
+    if (!isAtEnd() && (peek() == 'e' || peek() == 'E')) {
+        number += advance(); // consume 'e' or 'E'
+        if (!isAtEnd() && (peek() == '+' || peek() == '-')) {
+            number += advance(); // consume sign
+        }
+        while (!isAtEnd() && isDigit(peek())) {
+            number += advance();
+        }
+    }
+
+    return makeToken(number, TokenType::Number);
 }
 
 std::string Lexer::processEscapeSequence(bool isFString, bool &suppressInterpolation) {

@@ -116,7 +116,7 @@ fn inferExpr(node, env) {
   else if k == "CallExpression" {
     if node.callee.kind == "Identifier" {
       calleeType = envLookup(env, node.callee.name)
-      fnSig = envLookup(env, "$ret_" + node.callee.name)
+      fnSig = envLookup(env, "\$ret_" + node.callee.name)
       if fnSig != TYPE_UNKNOWN { fnSig }
       else { TYPE_UNKNOWN }
     }
@@ -223,7 +223,7 @@ fn inferStmt(node, env) {
     }
     else { retType = inferExpr(node.body, childEnv) }
     if retType != TYPE_UNKNOWN {
-      envSet(env, "$ret_" + node.name, retType)
+      envSet(env, "\$ret_" + node.name, retType)
     }
   }
   else if k == "ClassDeclaration" {
@@ -285,5 +285,5 @@ fn getVarType(inferenceResult, name) {
 }
 
 fn getReturnType(inferenceResult, fnName) {
-    envLookup(inferenceResult.env, "$ret_" + fnName)
+    envLookup(inferenceResult.env, "\$ret_" + fnName)
 }

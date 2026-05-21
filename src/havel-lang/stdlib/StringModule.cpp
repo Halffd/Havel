@@ -8,7 +8,7 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
-static void registerStringFallback(const VMApi &api) {
+static Value registerStringFallback(const VMApi &api) {
   // Helper: convert string to lowercase
   auto toLower = [](const std::string &s) -> std::string {
     std::string result = s;
@@ -243,38 +243,13 @@ static void registerStringFallback(const VMApi &api) {
   api.setField(strObj, "startswith", api.makeFunctionRef("string.startswith"));
   api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
   api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
-  api.setGlobal("String", strObj);
-  api.setGlobal("string", strObj);
+    api.setGlobal("String", strObj);
+    api.setGlobal("string", strObj);
+    return strObj;
 }
 
 void registerStringModule(const VMApi &api) {
-auto &vm = api.vm();
-Value exports;
-try {
-exports = vm.loadModule("string");
-} catch (const std::exception& e) {
-registerStringFallback(api);
-return;
-} catch (...) {
-registerStringFallback(api);
-return;
-}
-
-  if (!exports.isObjectId()) {
     registerStringFallback(api);
-    return;
-  }
-
-  api.setGlobal("String", exports);
-  api.setGlobal("string", exports);
-
-  auto *obj = vm.getHeap().object(exports.asObjectId());
-  if (obj) {
-    for (const auto& [name, value] : *obj) {
-      if (name.empty() || name[0] == '_') continue;
-      api.setGlobal(name, value);
-    }
-  }
 }
 
 } // namespace havel::stdlib

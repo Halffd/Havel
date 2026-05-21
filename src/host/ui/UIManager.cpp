@@ -5,6 +5,10 @@
 #include "ExtensionUIBridge.hpp"
 
 // Include native backends conditionally based on compile-time flags
+#ifdef HAVE_QT_EXTENSION
+#include "QtBackend.hpp"
+#endif
+
 #ifdef HAVE_GTK_BACKEND
 #include "GtkBackend.hpp"
 #endif
@@ -168,7 +172,11 @@ bool UIManager::isInitialized() const {
 std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
     switch (api) {
         case UIBackend::Api::QT:
-            // Load Qt extension dynamically
+#ifdef HAVE_QT_EXTENSION
+            // Use in-process QtBackend when Qt is linked directly
+            return std::make_unique<QtBackend>();
+#else
+            // Fall back to dynamic extension loading
             {
                 auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
                 if (extBridge->loadExtension()) {
@@ -176,6 +184,7 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
                 }
                 return nullptr;
             }
+#endif
         case UIBackend::Api::GTK:
             #if defined(HAVE_GTK_BACKEND)
                 return std::make_unique<GtkBackend>();

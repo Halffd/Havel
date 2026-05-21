@@ -185,23 +185,6 @@ void IO::SendUInput(int keycode, bool down) {
   eventListener->SendUinputEvent(EV_KEY, keycode, down ? 1 : 0);
 }
 
-int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
-  // Suppress BadWindow errors on Wayland (common when XWayland windows
-  // disappear)
-  if (ee->error_code == 3) { // BadWindow error code is 3
-    return 0;                // Suppress BadWindow errors
-  }
-
-  // Only suppress access errors, not BadWindow errors
-  if ((ee->request_code == X_GrabButton || ee->request_code == X_GrabKey) &&
-      ee->error_code == 1) { // BadAccess error code is 1
-    return 0;                // Suppress access errors for grabbing
-  }
-
-  error("X11 error: request_code={}, error_code={}", ee->request_code,
-        ee->error_code);
-  return 0; // Don't crash
-}
 
 std::string IO::findEvdevDevice(const std::string &deviceName) {
         if (debugging::debug_io) debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
@@ -395,15 +378,16 @@ void IO::listInputDevices() {
 
 // Updated constructor
 IO::IO() {
-  XSetErrorHandler(IO::XErrorHandler);
+  debug("[IO] Starting IO constructor...");
   DisplayManager::Initialize();
-  display = DisplayManager::GetDisplay();
+  debug("[IO] DisplayManager initialized");
 
   // Initialize ImportManager
   importManager = std::make_shared<ImportManager>();
 
   // Initialize KeyMap
   KeyMap::Initialize();
+  debug("[IO] KeyMap initialized");
 
   // Register cleanup handler to ensure evdev ungrab on exit
   static bool cleanupRegistered = false;
@@ -453,12 +437,11 @@ if (executorModeStr == "executor") {
   hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
     if (debugging::debug_io) debug("HotkeyExecutor initialized with {} worker threads", workerThreads);
 
-  InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
 
 #ifdef __linux__
-  if (display) {
-    UpdateNumLockMask();
+  // EventListener needs DisplayManager to be initialized
+  {
     // Use new unified EventListener
         if (debugging::debug_io) debug("Using new unified EventListener");
 
@@ -468,6 +451,7 @@ if (executorModeStr == "executor") {
     auto keyboardDevices = Device::findKeyboards();
     for (const auto &kb : keyboardDevices) {
       devices.push_back(kb.eventPath);
+    debug("[IO] Finding keyboard devices...");
         if (debugging::debug_io) debug("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)", kb.name,
            kb.eventPath, kb.confidence * 100);
     }
@@ -534,7 +518,9 @@ eventListener->SetExecutorMode(executorMode_);
         }
         if (debugging::debug_io) debug("Starting EventListener with {} devices (grab={})", devices.size(),
               grab);
+        debug("[IO] About to call EventListener::Start()...");
         eventListener->Start(devices, grab);
+        debug("[IO] EventListener::Start() returned");
       } catch (const std::exception &e) {
         error("Failed to start unified EventListener: {}", e.what());
         globalEvdev = false;
@@ -548,6 +534,13 @@ eventListener->SetExecutorMode(executorMode_);
         if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
             listInputDevices();
         }
+    }
+
+    // Create IOBackend for platform-specific output (XTest, keybd_event, etc.)
+    ioBackend = IOBackend::Create(eventListener.get());
+    if (ioBackend) {
+        ioBackend->Initialize();
+        if (debugging::debug_io) debug("IOBackend initialized: {}", ioBackend->GetName());
     }
 #endif
 }
@@ -716,315 +709,25 @@ void IO::ClearGestures() {
 IO::~IO() { cleanup(); }
 
 void IO::cleanup() {
-  // EventListener handles all cleanup now
-
   // Stop EventListener if using new event system
   if (eventListener) {
-    // Force ungrab all evdev devices FIRST (before stopping thread)
     eventListener->ForceUngrabAllDevices();
     eventListener->Stop();
   }
 
-  // Ungrab all hotkeys before closing
-#ifdef __linux__
-  if (display && !globalEvdev) {
-    x11::Window root = DefaultRootWindow(display);
-
-    // First, ungrab all hotkeys from the instance
-    for (const auto &[id, hotkey] : instanceHotkeys) {
-      if (hotkey.key != 0 && !hotkey.evdev) {
-        KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
-        if (keycode != 0) {
-          Ungrab(keycode, hotkey.modifiers, root);
-        }
-      }
-    }
-
-    // Then, ungrab all static hotkeys
-    for (const auto &[id, hotkey] : hotkeys) {
-      if (hotkey.key != 0 && !hotkey.evdev) {
-        KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
-        if (keycode != 0) {
-          Ungrab(keycode, hotkey.modifiers, root);
-        }
-      }
-    }
-
-    // Sync to ensure all ungrabs are processed
-    XSync(display, x11::XFalse);
+  // IOBackend cleanup (X11 ungrab, etc.)
+  if (ioBackend) {
+    ioBackend->Cleanup();
   }
-#endif
-  // uinput cleanup handled by EventListener
-  display = nullptr;
-
-  // Additional safety: Force ungrab any remaining evdev devices
-#ifdef __linux__
-  // Force cleanup of any remaining evdev resources
-    if (debugging::debug_io) debug("Final cleanup completed - all devices should be ungrabbed");
-#endif
 
     if (debugging::debug_io) ::havel::debug("IO cleanup completed");
 }
 
-bool IO::GrabKeyboard() {
-  if (!display)
-    return false;
-
-  struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000}; // 1ms
-
-  // Try to grab keyboard, may need to wait for other processes to ungrab
-  for (int i = 0; i < 1000; i++) {
-    int result = XGrabKeyboard(display, DefaultRootWindow(display), x11::XTrue,
-                               GrabModeAsync, GrabModeAsync, CurrentTime);
-    if (result == x11::XSuccess) {
-                if (debugging::debug_io) debug("Successfully grabbed entire keyboard after {} attempts", i + 1);
-      return true;
-    }
-
-    nanosleep(&ts, nullptr);
-  }
-
-  error("Cannot grab keyboard after 1000 attempts");
-  return false;
-}
-bool IO::Grab(Key input, unsigned int modifiers, x11::Window root, bool grab,
-              bool isMouse) {
-  if (!display)
-    return false;
-
-  bool success = true;
-  bool isButton = isMouse || (input >= Button1 && input <= 7);
-
-  unsigned int modVariants[] = {0, LockMask, numlockmask,
-                                numlockmask | LockMask};
-
-  // Single loop - just grab the 4 variants of THIS key
-  for (unsigned int variant : modVariants) {
-    unsigned int finalMods = modifiers | variant;
-    int result;
-
-    if (isButton) {
-      result = XGrabButton(display, input, finalMods, root, x11::XTrue,
-                           ButtonPressMask | ButtonReleaseMask, GrabModeAsync,
-                           GrabModeAsync, x11::XNone, x11::XNone);
-    } else {
-      result = XGrabKey(display, input, finalMods, root, x11::XTrue,
-                        GrabModeAsync, GrabModeAsync);
-    }
-
-    if (result != x11::XSuccess) {
-      success = false;
-    }
-  }
-
-  XSync(display, x11::XFalse);
-  return success;
-}
-
-bool IO::GrabAllHotkeys() {
-  if (!display)
-    return false;
-
-  UpdateNumLockMask(); // Once at start
-
-  unsigned int modVariants[] = {0, LockMask, numlockmask,
-                                numlockmask | LockMask};
-
-  bool success = true;
-
-  // Single pass through your configured hotkeys
-  for (const auto &[id, hotkey] : hotkeys) {
-    if (hotkey.evdev || !hotkey.grab)
-      continue; // Skip evdev hotkeys
-
-    // Grab 4 variants of each configured hotkey
-    for (unsigned int variant : modVariants) {
-      unsigned int finalMods = hotkey.modifiers | variant;
-
-      int result =
-          XGrabKey(display, hotkey.key, finalMods, DefaultRootWindow(display),
-                   x11::XTrue, GrabModeAsync, GrabModeAsync);
-      if (result != x11::XSuccess) {
-        success = false;
-      }
-    }
-  }
-
-  XSync(display, x11::XFalse);
-  return success;
-}
-
-void IO::Ungrab(Key input, unsigned int modifiers, x11::Window root,
-                bool isMouse) {
-  if (!display)
-    return;
-
-  bool isButton = isMouse || (input >= Button1 && input <= 7);
-
-  unsigned int modVariants[] = {0, LockMask, numlockmask,
-                                numlockmask | LockMask};
-
-  for (unsigned int variant : modVariants) {
-    unsigned int finalMods = modifiers | variant;
-
-    if (isButton) {
-      XUngrabButton(display, input, finalMods, root);
-    } else {
-      XUngrabKey(display, input, finalMods, root);
-    }
-  }
-
-  XSync(display, x11::XFalse);
-}
-
 void IO::UngrabAll() {
-  if (!display)
-    return;
-  XUngrabKey(display, AnyKey, AnyModifier, DefaultRootWindow(display));
-  XUngrabButton(display, AnyButton, AnyModifier, DefaultRootWindow(display));
-  XSync(display, x11::XFalse);
+  if (ioBackend) ioBackend->UnregisterAll();
 }
 
-// Fast version - no retries
-bool IO::FastGrab(Key input, unsigned int modifiers, x11::Window root) {
-  if (!display)
-    return false;
 
-  unsigned int variants[] = {modifiers, modifiers | LockMask,
-                             modifiers | numlockmask,
-                             modifiers | numlockmask | LockMask};
-
-  // Just try once, no retries
-  for (unsigned int mods : variants) {
-    XGrabKey(display, input, mods, root, x11::XTrue, GrabModeAsync,
-             GrabModeAsync);
-  }
-
-  return true;
-}
-bool IO::ModifierMatch(unsigned int expected, unsigned int actual) {
-  return CLEANMASK(expected) == CLEANMASK(actual);
-}
-// X11 hotkey monitoring thread
-void IO::InitKeyMap() {
-    if (debugging::debug_io) ::havel::debug("Initializing key map");
-
-  // Initialize key mappings for common keys
-#ifdef __linux__
-  keyMap["esc"] = XK_Escape;
-  keyMap["enter"] = XK_Return;
-  keyMap["space"] = XK_space;
-  keyMap["tab"] = XK_Tab;
-  keyMap["backspace"] = XK_BackSpace;
-  keyMap["ctrl"] = XK_Control_L;
-  keyMap["alt"] = XK_Alt_L;
-  keyMap["shift"] = XK_Shift_L;
-  keyMap["win"] = XK_Super_L;
-  keyMap["lwin"] = XK_Super_L; // Add alias for Left Win
-  keyMap["rwin"] = XK_Super_R; // Add Right Win
-  keyMap["up"] = XK_Up;
-  keyMap["down"] = XK_Down;
-  keyMap["left"] = XK_Left;
-  keyMap["right"] = XK_Right;
-  keyMap["delete"] = XK_Delete;
-  keyMap["insert"] = XK_Insert;
-  keyMap["home"] = XK_Home;
-  keyMap["end"] = XK_End;
-  keyMap["pageup"] = XK_Page_Up;
-  keyMap["pagedown"] = XK_Page_Down;
-  keyMap["printscreen"] = XK_Print;
-  keyMap["scrolllock"] = XK_Scroll_Lock;
-  keyMap["pause"] = XK_Pause;
-  keyMap["capslock"] = XK_Caps_Lock;
-  keyMap["numlock"] = XK_Num_Lock;
-  keyMap["menu"] = XK_Menu; // Add Menu key
-
-  // Numpad keys
-  keyMap["kp_0"] = XK_KP_0;
-  keyMap["kp_1"] = XK_KP_1;
-  keyMap["kp_2"] = XK_KP_2;
-  keyMap["kp_3"] = XK_KP_3;
-  keyMap["kp_4"] = XK_KP_4;
-  keyMap["kp_5"] = XK_KP_5;
-  keyMap["kp_6"] = XK_KP_6;
-  keyMap["kp_7"] = XK_KP_7;
-  keyMap["kp_8"] = XK_KP_8;
-  keyMap["kp_9"] = XK_KP_9;
-  keyMap["kp_insert"] = XK_KP_Insert;      // KP 0
-  keyMap["kp_end"] = XK_KP_End;            // KP 1
-  keyMap["kp_down"] = XK_KP_Down;          // KP 2
-  keyMap["kp_pagedown"] = XK_KP_Page_Down; // KP 3
-  keyMap["kp_left"] = XK_KP_Left;          // KP 4
-  keyMap["kp_begin"] = XK_KP_Begin;        // KP 5
-  keyMap["kp_right"] = XK_KP_Right;        // KP 6
-  keyMap["kp_home"] = XK_KP_Home;          // KP 7
-  keyMap["kp_up"] = XK_KP_Up;              // KP 8
-  keyMap["kp_pageup"] = XK_KP_Page_Up;     // KP 9
-  keyMap["kp_delete"] = XK_KP_Delete;      // KP Decimal
-  keyMap["kp_decimal"] = XK_KP_Decimal;
-  keyMap["kp_add"] = XK_KP_Add;
-  keyMap["kp_subtract"] = XK_KP_Subtract;
-  keyMap["kp_multiply"] = XK_KP_Multiply;
-  keyMap["kp_divide"] = XK_KP_Divide;
-  keyMap["kp_enter"] = XK_KP_Enter;
-
-  // Function keys
-  keyMap["f1"] = XK_F1;
-  keyMap["f2"] = XK_F2;
-  keyMap["f3"] = XK_F3;
-  keyMap["f4"] = XK_F4;
-  keyMap["f5"] = XK_F5;
-  keyMap["f6"] = XK_F6;
-  keyMap["f7"] = XK_F7;
-  keyMap["f8"] = XK_F8;
-  keyMap["f9"] = XK_F9;
-  keyMap["f10"] = XK_F10;
-  keyMap["f11"] = XK_F11;
-  keyMap["f12"] = XK_F12;
-
-  // Media keys (using XF86keysym.h - ensure it's included)
-  keyMap["volumeup"] = XF86XK_AudioRaiseVolume;
-  keyMap["volumedown"] = XF86XK_AudioLowerVolume;
-  keyMap["mute"] = XF86XK_AudioMute;
-  keyMap["play"] = XF86XK_AudioPlay;
-  keyMap["pause"] = XF86XK_AudioPause;
-  keyMap["playpause"] = XF86XK_AudioPlay; // Often mapped to the same key
-  keyMap["stop"] = XF86XK_AudioStop;
-  keyMap["prev"] = XF86XK_AudioPrev;
-  keyMap["next"] = XF86XK_AudioNext;
-
-  // Punctuation and symbols
-  keyMap["comma"] = XK_comma; // Add comma
-  keyMap["period"] = XK_period;
-  keyMap["semicolon"] = XK_semicolon;
-  keyMap["slash"] = XK_slash;
-  keyMap["backslash"] = XK_backslash;
-  keyMap["bracketleft"] = XK_bracketleft;
-  keyMap["bracketright"] = XK_bracketright;
-  keyMap["minus"] = XK_minus; // Add minus
-  keyMap["equal"] = XK_equal; // Add equal
-  keyMap["grave"] = XK_grave; // Tilde key (~)
-  keyMap["apostrophe"] = XK_apostrophe;
-
-  // Letter keys (a-z)
-  for (char c = 'a'; c <= 'z'; ++c) {
-    keyMap[std::string(1, c)] = XStringToKeysym(std::string(1, c).c_str());
-  }
-
-  // Number keys (0-9)
-  for (char c = '0'; c <= '9'; ++c) {
-    keyMap[std::string(1, c)] = XStringToKeysym(std::string(1, c).c_str());
-  }
-
-  // Button names (for mouse events)
-  keyMap["button1"] = Button1;
-  keyMap["button2"] = Button2;
-  keyMap["button3"] = Button3;
-  keyMap["button4"] = Button4; // Wheel up
-  keyMap["button5"] = Button5; // Wheel down
-
-#endif
-}
 
 void IO::removeSpecialCharacters(str &keyName) {
   // Define the characters to remove
@@ -1121,68 +824,69 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
     return false;
   }
 
-  // For X11, use XTestFakeMotionEvent for pixel-perfect positioning
-  if (WindowManagerDetector::IsX11()) {
-    Display *display = DisplayManager::GetDisplay();
-    if (!display) {
-      error("MouseMoveTo: No X11 display available");
-      return false;
-    }
-
-    // Get current position for smooth animation
-    auto currentPos = GetMousePositionX11();
+  // Use IOBackend for absolute positioning (X11 XTest)
+  if (ioBackend) {
+    auto currentPos = ioBackend->GetCursorPosition();
     int currentX = currentPos.first;
     int currentY = currentPos.second;
-
-    // Calculate distance
     int dx = targetX - currentX;
     int dy = targetY - currentY;
     int distance = std::abs(dx) + std::abs(dy);
 
     if (distance < 3) {
-      // Already close enough, just jump directly
-      XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY,
-                           CurrentTime);
-      XFlush(display);
-      return true;
+      return ioBackend->MovePointerTo(targetX, targetY);
     }
 
-    // Calculate steps for smooth movement
-    if (speed <= 0)
-      speed = 5;
-    int steps = std::min(30, std::max(5, distance / (speed * 10)));
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, std::max(1, distance / (speed * 10))));
 
-    // Smooth animation using XTest
     for (int i = 0; i <= steps; ++i) {
       double progress = static_cast<double>(i) / steps;
-
-      // Calculate intermediate position
       int stepX = currentX + static_cast<int>(dx * progress);
       int stepY = currentY + static_cast<int>(dy * progress);
-
-      // Use XTest for exact positioning
-      XTestFakeMotionEvent(display, DefaultScreen(display), stepX, stepY,
-                           CurrentTime);
-      XFlush(display);
-
-      // Minimal sleep for smooth movement
+      ioBackend->MovePointerTo(stepX, stepY);
       int sleepMs = std::max(1, 5 / std::max(1, speed));
       std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
     }
 
-    // Ensure final position is exact
-    XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY,
-                         CurrentTime);
-    XFlush(display);
-
-    return true;
+    return ioBackend->MovePointerTo(targetX, targetY);
   }
 
-  // For Wayland, fall back to REL with feedback loop
-  int currentX = 0, currentY = 0;
-  (void)currentX;
-  (void)currentY;
-  return false;
+    // For Wayland, fall back to REL with feedback loop
+    auto currentPos = GetMousePosition();
+    int currentX = currentPos.first;
+    int currentY = currentPos.second;
+    int dx = targetX - currentX;
+    int dy = targetY - currentY;
+    int distance = std::abs(dx) + std::abs(dy);
+
+    if (distance == 0) return true;
+
+    if (distance < 3) {
+        eventListener->SendUinputEvent(EV_REL, REL_X, dx);
+        eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        return true;
+    }
+
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, distance / (speed * 10)));
+    int stepDx = dx / steps;
+    int stepDy = dy / steps;
+    int remainderDx = dx - stepDx * steps;
+    int remainderDy = dy - stepDy * steps;
+
+    for (int i = 0; i < steps; ++i) {
+        int mx = stepDx + (i == steps - 1 ? remainderDx : 0);
+        int my = stepDy + (i == steps - 1 ? remainderDy : 0);
+        if (mx != 0) eventListener->SendUinputEvent(EV_REL, REL_X, mx);
+        if (my != 0) eventListener->SendUinputEvent(EV_REL, REL_Y, my);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        int sleepMs = std::max(1, 5 / std::max(1, speed));
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    return true;
 }
 
 bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
@@ -1242,108 +946,26 @@ std::pair<int, int> IO::GetMousePosition() {
 }
 
 bool IO::InitializeXInput2() {
-  if (!display) {
-    error("Cannot initialize XInput2: No display");
-    return false;
-  }
-
-  int xi_opcode, event, xi_error;
-  if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event,
-                       &xi_error)) {
-    error("X Input extension not available");
-    return false;
-  }
-
-  // Check XInput2 version
-  int major = 2, minor = 0;
-  if (XIQueryVersion(display, &major, &minor) != x11::XSuccess) {
-    error("XInput2 not supported by server");
-    return false;
-  }
-
-  // Find the first pointer device that supports XInput2
-  XIDeviceInfo *devices;
-  int ndevices;
-  devices = XIQueryDevice(display, XIAllDevices, &ndevices);
-
-  for (int i = 0; i < ndevices; i++) {
-    XIDeviceInfo *dev = &devices[i];
-    if (dev->use == XISlavePointer || dev->use == XIFloatingSlave) {
-      xinput2DeviceId = dev->deviceid;
-      break;
-    }
-  }
-
-  XIFreeDeviceInfo(devices);
-
-  if (xinput2DeviceId == -1) {
-    error("No suitable XInput2 pointer device found");
-    return false;
-  }
-
-  return true;
+  if (ioBackend) return ioBackend->SetupXInput2();
+  return false;
 }
 
 bool IO::SetHardwareMouseSensitivity(double sensitivity) {
-  if (!display || xinput2DeviceId == -1) {
-    return false;
-  }
-
-  // Clamp sensitivity to a reasonable range for hardware
-  sensitivity = std::max(0.1, std::min(10.0, sensitivity));
-
-  // Convert sensitivity to X's acceleration (sensitivity^2 for better curve)
-  double accel_numerator = sensitivity * sensitivity * 10.0;
-  double accel_denominator = 10.0;
-  double threshold = 0.0; // No threshold for continuous acceleration
-
-  // Set the device's acceleration
-  XDevice *dev = XOpenDevice(display, xinput2DeviceId);
-  if (!dev) {
-    error("Failed to open XInput2 device");
-    return false;
-  }
-
-  XDeviceControl *control =
-      (XDeviceControl *)XGetDeviceControl(display, dev, DEVICE_RESOLUTION);
-  if (!control) {
-    XCloseDevice(display, dev);
-    return false;
-  }
-
-  XChangePointerControl(display, x11::XTrue, x11::XTrue,
-                        (int)(accel_numerator * 10),
-                        (int)(accel_denominator * 10), (int)threshold);
-
-  XFree(control);
-  XCloseDevice(display, dev);
-
-    if (debugging::debug_io) debug("Set hardware mouse sensitivity to: {}", sensitivity);
-  return true;
+  if (ioBackend) return ioBackend->SetHardwareSensitivity(sensitivity);
+  return false;
 }
 
 void IO::SendX11Key(const std::string &keyName, bool press) {
-#if defined(__linux__)
-  if (!display) {
-        havel::error("X11 display not initialized!");
-    return;
-  }
-
   Key keycode = GetKeyCode(keyName);
-
-  // Add state tracking to X11 as well
   if (press) {
-    if (!TryPressKey(keycode))
-      return; // Already pressed
+    if (!TryPressKey(keycode)) return;
   } else {
-    if (!TryReleaseKey(keycode))
-      return; // Not pressed
+    if (!TryReleaseKey(keycode)) return;
   }
-
-    if (Configs::Get().GetVerboseKeyLogging()) debug("Sending key: " + keyName + " (" + std::to_string(keycode) + ")");
-  XTestFakeKeyEvent(display, keycode, press, CurrentTime);
-  XFlush(display);
-#endif
+  if (ioBackend) {
+    if (press) ioBackend->PressKey(keycode);
+    else ioBackend->ReleaseKey(keycode);
+  }
 }
 // SendUInput removed - delegate to EventListener instead
 // EventListener now manages uinput through UinputDevice class
@@ -1592,8 +1214,7 @@ bool IO::Suspend() {
       for (auto &[id, hotkey] : hotkeys) {
         if (!hotkey.enabled && !hotkey.suspend) {
           if (!hotkey.evdev) {
-            Grab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow(),
-                 hotkey.grab);
+            GrabHotkey(id);
           }
           hotkey.enabled = true;
         }
@@ -1636,12 +1257,10 @@ bool IO::Suspend() {
       isSuspended = false;
       return true;
     } else {
-      // Suspend (was active, now suspending)
       for (auto &[id, hotkey] : hotkeys) {
         if (hotkey.enabled && !hotkey.suspend) {
           if (!hotkey.evdev) {
-            Ungrab(hotkey.key, hotkey.modifiers,
-                   DisplayManager::GetRootWindow());
+            UngrabHotkey(id);
           }
           hotkey.enabled = false;
         }
@@ -2408,107 +2027,26 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
     failedHotkeys.push_back(hk);
     return false;
   }
-  if (!hk.evdev && hk.x11 && !globalEvdev && display) {
-    bool isMouse = (hk.type == HotkeyType::MouseButton ||
-                    hk.type == HotkeyType::MouseWheel);
-    if (!Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.grab,
-              isMouse)) {
-      failedHotkeys.push_back(hk);
-    }
+  if (!hk.evdev && hk.x11 && !globalEvdev) {
+    GrabHotkey(hk.id);
   }
   return true;
-}
-void IO::UpdateNumLockMask() {
-  unsigned int i, j;
-  XModifierKeymap *modmap;
-
-  numlockmask = 0;
-  modmap = XGetModifierMapping(display);
-  for (i = 0; i < 8; i++) {
-    for (j = 0; j < static_cast<unsigned int>(modmap->max_keypermod); j++) {
-      if (modmap->modifiermap[i * modmap->max_keypermod + j] ==
-          XKeysymToKeycode(display, XK_Num_Lock)) {
-        numlockmask = (1 << i);
-      }
-    }
-  }
-  XFreeModifiermap(modmap);
-    if (debugging::debug_io) debug("NumLock mask: 0x{:x}", numlockmask);
 }
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {
     if (debugging::debug_io) ::havel::debug("Control send: {} keys: {}", control, keys);
-  // Use WindowManager to find the window
   wID hwnd = WindowManager::FindByTitle(control);
   if (!hwnd) {
         havel::warning("Window not found: {}", control);
     return;
   }
-
-  // Implementation to send keys to the window
 }
 
 // Send text using clipboard + paste (more reliable than key events for complex text)
 // BACKS UP AND RESTORES clipboard to avoid destroying user data
 void IO::SendText(const std::string &text) {
-  if (text.empty()) {
-    return;
-  }
-
-#ifdef WINDOWS
-  // Windows: Backup clipboard, set text, paste, restore
-  if (OpenClipboard(nullptr)) {
-    // Backup old clipboard
-    HANDLE hOldClip = GetClipboardData(CF_TEXT);
-    std::string oldText;
-    if (hOldClip) {
-      char* pOld = static_cast<char*>(GlobalLock(hOldClip));
-      if (pOld) {
-        oldText = pOld;
-        GlobalUnlock(hOldClip);
-      }
-    }
-    
-    // Set new text
-    EmptyClipboard();
-    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
-    if (hGlobal) {
-      char* pBuffer = static_cast<char*>(GlobalLock(hGlobal));
-      if (pBuffer) {
-        strcpy(pBuffer, text.c_str());
-        GlobalUnlock(hGlobal);
-        SetClipboardData(CF_TEXT, hGlobal);
-      }
-    }
-    
-    // Send Ctrl+V
-    keybd_event(VK_CONTROL, 0, 0, 0);
-    keybd_event('V', 0, 0, 0);
-    keybd_event('V', 0, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
-    
-    // Restore old clipboard
-    if (!oldText.empty()) {
-      EmptyClipboard();
-      hGlobal = GlobalAlloc(GMEM_MOVEABLE, oldText.size() + 1);
-      if (hGlobal) {
-        char* pBuffer = static_cast<char*>(GlobalLock(hGlobal));
-        if (pBuffer) {
-          strcpy(pBuffer, oldText.c_str());
-          GlobalUnlock(hGlobal);
-          SetClipboardData(CF_TEXT, hGlobal);
-        }
-      }
-    }
-    
-    CloseClipboard();
-  }
-#else
-  // Linux: Use ClipboardManager if available (backup/restore)
-  // Note: This is called from bridge layer with clipboardManager context
-  // Fallback to key events for now
-  Send(text.c_str());
-#endif
+  if (text.empty()) return;
+  if (ioBackend) ioBackend->TypeText(text);
 }
 
 // Method to get mouse position
@@ -2590,42 +2128,10 @@ void IO::MsgBox(const std::string &message) {
 
 // Assign a hotkey to a specific ID
 void IO::AssignHotkey(HotKey hotkey, int id) {
-  // Generate a unique ID if not provided
-  if (id == 0) {
-    id = ++hotkeyCount;
-  }
-
-  // Set the hotkey's id
+  if (id == 0) id = ++hotkeyCount;
   hotkey.id = id;
-
-  // Register the hotkey
   hotkeys[id] = hotkey;
-
-  // Platform-specific registration
-#ifdef __linux__
-  Display *display = DisplayManager::GetDisplay();
-  if (!display)
-    return;
-
-  x11::Window root = DefaultRootWindow(display);
-
-  KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
-  if (keycode == 0) {
-        havel::warning("Invalid key code for hotkey: {}", hotkey.alias);
-    return;
-  }
-
-  // Ungrab first in case it's already grabbed
-  XUngrabKey(display, keycode, hotkey.modifiers, root);
-
-  // Grab the key
-  if (XGrabKey(display, keycode, hotkey.modifiers, root, x11::XFalse,
-               GrabModeAsync, GrabModeAsync) != x11::XSuccess) {
-            havel::error("Failed to grab key: {}", hotkey.alias);
-  }
-
-  XFlush(display);
-#endif
+  if (ioBackend) ioBackend->RegisterHotkey(hotkey.key, hotkey.modifiers, false);
 }
 
 #ifdef WINDOWS
@@ -2666,33 +2172,31 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 #endif
 
 int IO::GetKeyboard() {
-  if (!display) {
-    display = havel::DisplayManager::GetDisplay();
-    if (!display) {
+  Display *dpy = havel::DisplayManager::GetDisplay();
+  if (!dpy) {
       error("Unable to open X display!");
       return EXIT_FAILURE;
-    }
   }
 
-  x11::Window window = XCreateSimpleWindow(display, DefaultRootWindow(display),
+  x11::Window window = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
                                            0, 0, 1, 1, 0, 0, 0);
-  if (XGrabKeyboard(display, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
+  if (XGrabKeyboard(dpy, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
                     CurrentTime) != GrabSuccess) {
         havel::error("Unable to grab keyboard!");
-    XDestroyWindow(display, window);
+    XDestroyWindow(dpy, window);
     return EXIT_FAILURE;
   }
 
   XEvent event;
   while (true) {
-    XNextEvent(display, &event);
+    XNextEvent(dpy, &event);
     if (event.type == x11::XKeyPress) {
     }
   }
 
-  XUngrabKeyboard(display, CurrentTime);
-  XDestroyWindow(display, window);
-  XCloseDisplay(display);
+  XUngrabKeyboard(dpy, CurrentTime);
+  XDestroyWindow(dpy, window);
+  XCloseDisplay(dpy);
   return 0;
 }
 
@@ -2736,142 +2240,57 @@ int IO::ParseModifiers(str str) {
   return modifiers;
 }
 bool IO::GetKeyState(const std::string &keyName) {
-  // Use EventListener if enabled
   if (eventListener) {
     int keycode = KeyMap::FromString(keyName);
-    if (keycode != 0) {
-      return eventListener->GetKeyState(keycode);
-    }
+    if (keycode != 0) return eventListener->GetKeyState(keycode);
   }
-
-  // Try evdev first if available
-  if (evdevRunning && !evdevKeyState.empty()) {
-    int keycode = StringToVirtualKey(keyName);
-    if (keycode != -1) {
-      return evdevKeyState[keycode];
-    }
+  if (ioBackend) {
+    int keycode = GetKeyCode(keyName);
+    if (keycode != 0) return ioBackend->IsKeyDown(keycode);
   }
-
-// Fallback to X11 if evdev not available
-#ifdef __linux__
-  if (display) {
-    Key keycode = GetKeyCode(keyName);
-    return GetKeyState(keycode);
-  }
-#endif
-
   return false;
 }
 
 bool IO::GetKeyState(int keycode) {
-  // Use EventListener if enabled
-  if (eventListener) {
-    return eventListener->GetKeyState(keycode);
-  }
-
-  // Direct keycode lookup - faster for known codes
-  if (evdevRunning) {
-    auto it = evdevKeyState.find(keycode);
-    return (it != evdevKeyState.end()) ? it->second : false;
-  }
-
-#ifdef __linux__
-  if (display) {
-    char keymap[32];
-    XQueryKeymap(display, keymap);
-
-    return (keymap[keycode / 8] & (1 << (keycode % 8))) != 0;
-  }
-#endif
-
+  if (eventListener) return eventListener->GetKeyState(keycode);
+  if (ioBackend) return ioBackend->IsKeyDown(keycode);
   return false;
 }
+
 bool IO::IsAnyKeyPressed() {
-  std::lock_guard<std::mutex> lk(keyStateMutex);
-  if (evdevRunning && !eventListener->evdevKeyState.empty()) {
+  if (eventListener) {
+    std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
-      if (isDown)
-        return true;
-    }
-    return false;
-  }
-
-#ifdef __linux__
-  if (display) {
-    char keymap[32];
-    XQueryKeymap(display, keymap);
-
-    // Check if any bit is set in the entire keymap
-    for (int i = 0; i < 32; i++) {
-      if (keymap[i] != 0)
-        return true;
+      if (isDown) return true;
     }
   }
-#endif
-
+  if (ioBackend && ioBackend->IsAnyKeyDown()) return true;
   return false;
 }
 
 bool IO::IsAnyKeyPressedExcept(const std::string &excludeKey) {
-  int excludeKeycode = EvdevNameToKeyCode(excludeKey);
-  std::lock_guard<std::mutex> lk(keyStateMutex);
-  if (evdevRunning && !eventListener->evdevKeyState.empty()) {
+  if (eventListener) {
+    int excludeKeycode = EvdevNameToKeyCode(excludeKey);
+    std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
-      if (isDown && keycode != excludeKeycode)
-        return true;
-    }
-    return false;
-  }
-
-#ifdef __linux__
-  if (display) {
-    excludeKeycode = StringToVirtualKey(excludeKey);
-    char keymap[32];
-    XQueryKeymap(display, keymap);
-
-    for (int keycode = 8; keycode < 256; keycode++) {
-      if (keycode != excludeKeycode &&
-          (keymap[keycode / 8] & (1 << (keycode % 8)))) {
-        return true;
-      }
+      if (isDown && keycode != excludeKeycode) return true;
     }
   }
-#endif
-
   return false;
 }
 
-// Bonus: exclude multiple keys
 bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
-  std::set<int> excludeCodes;
-  for (const auto &key : excludeKeys) {
-    int code = EvdevNameToKeyCode(key);
-    if (code != -1)
-      excludeCodes.insert(code);
-  }
-  std::lock_guard<std::mutex> lk(keyStateMutex);
-  if (evdevRunning && !eventListener->evdevKeyState.empty()) {
+  if (eventListener) {
+    std::set<int> excludeCodes;
+    for (const auto &key : excludeKeys) {
+      int code = EvdevNameToKeyCode(key);
+      if (code != -1) excludeCodes.insert(code);
+    }
+    std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
-      if (isDown && excludeCodes.find(keycode) == excludeCodes.end()) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // X11 fallback
-  if (display) {
-    char keymap[32];
-    XQueryKeymap(display, keymap);
-
-    for (int keycode = 8; keycode < 256; keycode++) {
-      if (excludeCodes.find(keycode) == excludeCodes.end() &&
-          (keymap[keycode / 8] & (1 << (keycode % 8)))) {
-        return true;
-      }
+      if (isDown && excludeCodes.find(keycode) == excludeCodes.end()) return true;
     }
   }
-
   return false;
 }
 bool IO::IsShiftPressed() {
@@ -2924,107 +2343,60 @@ Key IO::GetKeyCode(cstr keyName) {
 }
 void IO::PressKey(const std::string &keyName, bool press) {
     if (debugging::debug_io) ::havel::debug("Pressing key: {} (press: {})", keyName, press);
-
-#ifdef __linux__
-  Display *display = havel::DisplayManager::GetDisplay();
-  if (!display) {
-        havel::error("No X11 display available for key press");
-    return;
-  }
   Key keycode = GetKeyCode(keyName);
-
-  // Send fake key event
-  XTestFakeKeyEvent(display, keycode, press ? x11::XTrue : x11::XFalse,
-                    CurrentTime);
-  XFlush(display);
-#endif
+  if (ioBackend) {
+    if (press) ioBackend->PressKey(keycode);
+    else ioBackend->ReleaseKey(keycode);
+  }
 }
 
 bool IO::GrabHotkey(int hotkeyId) {
-#ifdef __linux__
-  if (!display)
-    return false;
-
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
-        havel::warning("Hotkey ID not found: {}", hotkeyId);
+    warning("Hotkey ID not found: {}", hotkeyId);
     return false;
   }
-
   const HotKey &hotkey = it->second;
-  x11::Window root = DefaultRootWindow(display);
-  KeyCode keycode = hotkey.key;
-
-  if (keycode == 0) {
-        havel::warning("Invalid keycode for hotkey: {}", hotkey.alias);
+  if (hotkey.key == 0) {
+    warning("Invalid keycode for hotkey: {}", hotkey.alias);
     return false;
   }
-
-  // Use our improved method to grab with all modifier variants
-  if (!hotkey.evdev) {
-    Grab(keycode, hotkey.modifiers, root, hotkey.grab);
+  if (!hotkey.evdev && ioBackend) {
+    ioBackend->RegisterHotkey(hotkey.key, hotkey.modifiers, false);
   }
   hotkeys[hotkeyId].enabled = true;
-
-    if (debugging::debug_hotkeys) ::havel::debug("Successfully grabbed hotkey: {}", hotkey.alias);
+  if (debugging::debug_hotkeys) debug("Grabbed hotkey: {}", hotkey.alias);
   return true;
-#else
-  return false;
-#endif
 }
-bool IO::UngrabHotkey(int hotkeyId) {
-#ifdef __linux__
-  if (!display)
-    return false;
 
+bool IO::UngrabHotkey(int hotkeyId) {
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
     error("Hotkey ID not found: {}", hotkeyId);
     return false;
   }
-
   const HotKey &hotkey = it->second;
-    if (debugging::debug_hotkeys) debug("Ungrabbing hotkey: {}", hotkey.alias);
-
+  if (debugging::debug_hotkeys) debug("Ungrabbing hotkey: {}", hotkey.alias);
   if (hotkey.key == 0) {
     error("Invalid keycode for hotkey: {}", hotkey.alias);
     return false;
   }
-
-  // Only ungrab X11 hotkeys (evdev hotkeys don't need ungrabbing)
-  if (!hotkey.evdev && display) {
-    x11::Window root = DefaultRootWindow(display);
-
-    // Check if any OTHER hotkeys are using the same key+modifiers
+  if (!hotkey.evdev && ioBackend) {
     bool hasOtherSameHotkey = false;
     for (const auto &[id, hk] : hotkeys) {
-      if (id != hotkeyId && hk.enabled && !hk.evdev && hk.key == hotkey.key &&
-          hk.modifiers == hotkey.modifiers) {
+      if (id != hotkeyId && hk.enabled && !hk.evdev &&
+          hk.key == hotkey.key && hk.modifiers == hotkey.modifiers) {
         hasOtherSameHotkey = true;
         break;
       }
     }
-
-    // Only ungrab if no other enabled hotkeys use this key+modifier combo
     if (!hasOtherSameHotkey) {
-      Ungrab(hotkey.key, hotkey.modifiers, root, false);
-        if (debugging::debug_hotkeys) debug("Physically ungrabbed key {} with modifiers 0x{:x}", hotkey.key,
-           hotkey.modifiers);
-    } else {
-        if (debugging::debug_hotkeys) debug("Not ungrabbing - other hotkeys still using key {} with modifiers "
-           "0x{:x}",
-           hotkey.key, hotkey.modifiers);
+      ioBackend->UnregisterHotkey(hotkey.key, hotkey.modifiers, false);
     }
   }
-
-  // Always disable the hotkey entry
   hotkeys[hotkeyId].enabled = false;
-
-    if (debugging::debug_hotkeys) debug("Successfully ungrabbed hotkey: {}", hotkey.alias);
+  if (debugging::debug_hotkeys) debug("Ungrabbed hotkey: {}", hotkey.alias);
   return true;
-#else
-  return false;
-#endif
 }
 
 void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
@@ -3086,41 +2458,23 @@ HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }
 ExecutorMode IO::GetExecutorMode() const { return executorMode_; }
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
-#ifdef __linux__
-  if (!display)
-    return false;
-
   bool success = true;
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.alias.find(prefix) == 0) {
-      if (!GrabHotkey(id)) {
-        success = false;
-      }
+      if (!GrabHotkey(id)) success = false;
     }
   }
   return success;
-#else
-  return false;
-#endif
 }
 
 bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
-#ifdef __linux__
-  if (!display)
-    return false;
-
   bool success = true;
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.alias.find(prefix) == 0) {
-      if (!UngrabHotkey(id)) {
-        success = false;
-      }
+      if (!UngrabHotkey(id)) success = false;
     }
   }
   return success;
-#else
-  return false;
-#endif
 }
 bool IO::EnableHotkey(const std::string &keyName) {
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
@@ -3225,14 +2579,6 @@ bool IO::RemoveHotkey(int hotkeyId) {
 }
 
 void IO::Map(const std::string &from, const std::string &to) {
-  // X11 mapping for backward compatibility
-  KeySym fromKey = StringToVirtualKey(from);
-  KeySym toKey = StringToVirtualKey(to);
-  if (fromKey != NoSymbol && toKey != NoSymbol) {
-    keyMapInternal[fromKey] = toKey;
-  }
-
-  // Evdev mapping
   int fromCode = EvdevNameToKeyCode(from);
   int toCode = EvdevNameToKeyCode(to);
   if (fromCode > 0 && toCode > 0) {
@@ -3248,14 +2594,6 @@ void IO::Map(const std::string &from, const std::string &to) {
 }
 
 void IO::Remap(const std::string &key1, const std::string &key2) {
-  // X11 remapping for backward compatibility
-  KeySym k1 = StringToVirtualKey(key1);
-  KeySym k2 = StringToVirtualKey(key2);
-  if (k1 != NoSymbol && k2 != NoSymbol) {
-    remappedKeys[k1] = k2;
-    remappedKeys[k2] = k1;
-  }
-
   // Evdev remapping
   int code1 = EvdevNameToKeyCode(key1);
   int code2 = EvdevNameToKeyCode(key2);
@@ -3306,41 +2644,6 @@ bool IO::IsKeyRemappedTo(int targetKey) {
   return false;
 }
 
-std::pair<int, int> IO::GetMousePositionX11() {
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("GetMousePositionX11: Display is null");
-    return {0, 0};
-  }
-
-  // Prefer XInput2 if available
-  if (xinput2Available && xinput2DeviceId != -1) {
-    ::Window root_return, child_return;
-    double root_x, root_y, win_x, win_y;
-    XIButtonState buttons;
-    XIModifierState mods;
-    XIGroupState group;
-    if (XIQueryPointer(display, xinput2DeviceId, DefaultRootWindow(display),
-                       &root_return, &child_return, &root_x, &root_y, &win_x,
-                       &win_y, &buttons, &mods, &group) == x11::XTrue) {
-      return {(int)root_x, (int)root_y};
-    }
-  }
-
-  // Fallback to legacy XQueryPointer
-  ::Window root = DefaultRootWindow(display);
-  ::Window root_return, child_return;
-  int root_x, root_y, win_x, win_y;
-  unsigned int mask;
-
-  if (XQueryPointer(display, root, &root_return, &child_return, &root_x,
-                    &root_y, &win_x, &win_y, &mask)) {
-    return {root_x, root_y};
-  } else {
-    error("GetMousePositionX11: XQueryPointer failed");
-    return {0, 0};
-  }
-}
 
 void havel::IO::setGlobalAltState(bool pressed) {
   globalAltPressed.store(pressed);
@@ -3359,11 +2662,11 @@ void IO::executeComboAction(const std::string &action) {
   else
     targetAlias = action;
 
-    if (debugging::debug_hotkeys) debug("Looking for hotkey with alias: '{}'", targetAlias);
+  if (debugging::debug_hotkeys) debug("Looking for hotkey with alias: '{}'", targetAlias);
 
   // Get current modifier state
   int currentMods = GetCurrentModifiers();
-    if (debugging::debug_hotkeys) debug("Current modifiers: 0x{:x}", currentMods);
+  if (debugging::debug_hotkeys) debug("Current modifiers: 0x{:x}", currentMods);
 
   for (auto &[id, hotkey] : hotkeys) {
     if (hotkey.enabled && hotkey.callback && hotkey.alias == targetAlias) {
@@ -3476,10 +2779,3 @@ void havel::IO::Scroll(int dy, int dx) {
   }
 }
 
-void havel::IO::SendKeyEvent(Key key, bool down) {
-  // Simple implementation using XTest extension
-  if (display) {
-    XTestFakeKeyEvent(display, key, down ? true : false, CurrentTime);
-    XFlush(display);
-  }
-}

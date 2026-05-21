@@ -128,9 +128,10 @@ public:
   void SetInputEventCallback(InputEventCallback callback) {
     inputEventCallback = std::move(callback);
   }
-  void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
-    inputBlockCallback = std::move(callback);
-  }
+    void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
+        inputBlockCallback = callback;
+        if (backend_) backend_->SetInputBlockCallback(callback);
+    }
 
   using KeyCallback = std::function<void(int keyCode)>;
   void SetKeyDownCallback(KeyCallback callback) {
@@ -262,8 +263,10 @@ private:
   ModifierState modifierState;
   std::unordered_map<int, bool> physicalKeyStates;
 
-  // Track pressed virtual keys sent to uinput to release on shutdown
-  std::unordered_set<int> pressedVirtualKeys;
+    // Track pressed virtual keys sent to uinput to release on shutdown
+    std::unordered_set<int> pressedVirtualKeys;
+    std::mutex sendInputMutex;
+    bool pendingRelBatch_ = false;
 
   // Key remapping (exact from IO.cpp)
   std::mutex remapMutex;

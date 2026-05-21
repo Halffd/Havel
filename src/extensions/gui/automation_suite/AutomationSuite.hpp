@@ -1,4 +1,5 @@
 #pragma once
+#ifdef HAVE_QT_EXTENSION
 #include "qt.hpp"
 
 #include "core/automation/PixelAutomation.hpp"
@@ -53,3 +54,5 @@ private:
     bool tray = false;
 };
 }
+
+#endif // HAVE_QT_EXTENSION

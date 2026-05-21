@@ -13,15 +13,19 @@
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #include "extensions/gui/common/SettingsWindow.hpp"
+#endif
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/app/AppService.hpp"
 #include "host/audio/AudioService.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
+#endif
 #include "host/automation/AutomationService.hpp"
 #include "host/brightness/BrightnessService.hpp"
 #include "host/browser/BrowserService.hpp"
@@ -34,8 +38,10 @@
 #include "host/mouse/MouseService.hpp"
 #include "host/network/NetworkService.hpp"
 #include "host/process/ProcessService.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "host/screenshot/ScreenshotService.hpp"
 #include "host/window/AltTabService.hpp"
+#endif
 #include "host/window/WindowService.hpp"
 #include "media/AudioManager.hpp"
 #include "media/MPVController.hpp"
@@ -43,8 +49,10 @@
 #include "window/WindowManager.hpp"
 #include "window/WindowManagerDetector.hpp"
 
+#ifdef HAVE_QT_EXTENSION
 #include <QClipboard>
 #include <QString>
+#endif
 #include <atomic>
 #include <algorithm>
 #include <chrono>
@@ -511,6 +519,7 @@ void SystemBridge::install(PipelineOptions &options) {
   options.system_object_initializer = [](compiler::VM *vm) {
     // System object
     auto systemObj = vm->createHostObject();
+    auto systemObjGuard = vm->makeRoot(Value::makeObjectId(systemObj.id));
     vm->setHostObjectField(
         systemObj, "detect",
         Value::makeHostFuncId(vm->getHostFunctionIndex("system.detect")));
@@ -521,6 +530,7 @@ void SystemBridge::install(PipelineOptions &options) {
 
     // Process object
     auto processObj = vm->createHostObject();
+    auto processObjGuard = vm->makeRoot(Value::makeObjectId(processObj.id));
     vm->setHostObjectField(
         processObj, "find",
         Value::makeHostFuncId(vm->getHostFunctionIndex("process.find")));
@@ -543,6 +553,7 @@ void SystemBridge::install(PipelineOptions &options) {
 
     // Extension object
     auto extensionObj = vm->createHostObject();
+    auto extensionObjGuard = vm->makeRoot(Value::makeObjectId(extensionObj.id));
     vm->setHostObjectField(
         extensionObj, "load",
         Value::makeHostFuncId(vm->getHostFunctionIndex("extension.load")));
@@ -557,9 +568,10 @@ void SystemBridge::install(PipelineOptions &options) {
         Value::makeHostFuncId(vm->getHostFunctionIndex("extension.addSearchPath")));
     vm->setGlobal("extension", Value::makeObjectId(extensionObj.id));
 
- // Mouse object
- auto mouseObj = vm->createHostObject();
- vm->setHostObjectField(
+  // Mouse object
+    auto mouseObj = vm->createHostObject();
+    auto mouseObjGuard = vm->makeRoot(Value::makeObjectId(mouseObj.id));
+    vm->setHostObjectField(
  mouseObj, "click",
  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.click")));
  vm->setHostObjectField(
@@ -591,9 +603,10 @@ void SystemBridge::install(PipelineOptions &options) {
  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
  vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
- // IO object
- auto ioObj = vm->createHostObject();
- vm->setHostObjectField(
+  // IO object
+    auto ioObj = vm->createHostObject();
+    auto ioObjGuard = vm->makeRoot(Value::makeObjectId(ioObj.id));
+    vm->setHostObjectField(
  ioObj, "send",
  Value::makeHostFuncId(vm->getHostFunctionIndex("io.send")));
  vm->setHostObjectField(
@@ -945,9 +958,10 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   } else {
     throw std::runtime_error("process.run() requires a string or array command");
   }
-    auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
-    auto obj = vm->createHostObject();
-    vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
+  auto result = ::havel::Launcher::run(cmd, ::havel::LaunchParams{});
+  auto obj = vm->createHostObject();
+  auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
+  vm->setHostObjectField(obj, "pid", Value::makeInt(result.pid));
     vm->setHostObjectField(obj, "exitCode", Value::makeInt(result.exitCode));
     vm->setHostObjectField(obj, "success", Value::makeBool(result.success));
     if (result.error.empty()) {
@@ -1041,10 +1055,11 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
         return Value::makeNull();
     }
 
-    auto *vm = static_cast<compiler::VM *>(ctx->vm);
-    auto obj = vm->createHostObject();
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
 
-    auto sysInfo = ::havel::HardwareDetector::detectSystem();
+  auto sysInfo = ::havel::HardwareDetector::detectSystem();
     if (debugging::debug_io) ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
 
   // Allocate strings on heap for non-empty values
@@ -1086,6 +1101,7 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
 
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   auto obj = vm->createHostObject();
+  auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
 
   // Use HardwareDetector for hardware detection
   auto hwInfo = ::havel::HardwareDetector::detectHardware();
@@ -1133,8 +1149,10 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
 
   // Storage array
   auto storageArr = vm->createHostArray();
+  auto storageArrGuard = vm->makeRoot(Value::makeArrayId(storageArr.id));
   for (const auto &device : hwInfo.storage) {
     auto storageObj = vm->createHostObject();
+    auto storageObjGuard = vm->makeRoot(Value::makeObjectId(storageObj.id));
     vm->setHostObjectField(storageObj, "name", makeStr(device.name));
     vm->setHostObjectField(storageObj, "model", makeStr(device.model));
     vm->setHostObjectField(storageObj, "size",
@@ -2038,6 +2056,7 @@ UIBridge::handleWindowFilter(const std::vector<Value> &args,
   // Create array of window objects
   auto *vm = static_cast<VM *>(ctx->vm);
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : matchingWindows) {
     auto winObj =
         createWindowObject(vm, ctx, win.id, win.title, win.windowClass, win.exe,
@@ -2165,10 +2184,11 @@ Value UIBridge::handleWindowList(const std::vector<Value> &args,
   auto windows = winService.getAllWindows();
   auto *vm = static_cast<VM *>(ctx->vm);
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : windows) {
     auto winObj = createWindowObject(vm, ctx, win.id, win.title,
-                                     win.windowClass, win.exe, win.pid,
-                                     win.cmdline);
+        win.windowClass, win.exe, win.pid,
+        win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
   }
   return Value::makeArrayId(arr.id);
@@ -2268,18 +2288,19 @@ Value UIBridge::handleWindowArea(const std::vector<Value> &args,
 Value UIBridge::handleWindowEach(const std::vector<Value> &args,
                                  const HostContext *ctx) {
   if (!ctx->windowManager || !ctx->vm)
-    return Value::makeNull();
-  ::havel::host::WindowService winService(ctx->windowManager);
-  auto windows = winService.getAllWindows();
-  auto *vm = static_cast<VM *>(ctx->vm);
-  auto arr = vm->createHostArray();
-  for (const auto &win : windows) {
+return Value::makeNull();
+::havel::host::WindowService winService(ctx->windowManager);
+auto windows = winService.getAllWindows();
+auto *vm = static_cast<VM *>(ctx->vm);
+auto arr = vm->createHostArray();
+auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
+for (const auto &win : windows) {
     auto winObj = createWindowObject(vm, ctx, win.id, win.title,
-                                     win.windowClass, win.exe, win.pid,
-                                     win.cmdline);
+        win.windowClass, win.exe, win.pid,
+        win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
-  }
-  return Value::makeArrayId(arr.id);
+}
+return Value::makeArrayId(arr.id);
 }
 
 Value UIBridge::handleWindowSort(const std::vector<Value> &args,
@@ -2309,12 +2330,13 @@ Value UIBridge::handleWindowSort(const std::vector<Value> &args,
               if (field == "id")
                 return a.id < b.id;
               return a.title < b.title;
-            });
+});
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : windows) {
     auto winObj = createWindowObject(vm, ctx, win.id, win.title,
-                                     win.windowClass, win.exe, win.pid,
-                                     win.cmdline);
+        win.windowClass, win.exe, win.pid,
+        win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
   }
   return Value::makeArrayId(arr.id);
@@ -2633,10 +2655,12 @@ Value UIBridge::handleGroupList(const std::vector<Value> &args,
   if (!ctx->vm)
     return Value::makeNull();
   auto *vm = static_cast<VM *>(ctx->vm);
-  auto &groups = getGroupStore();
-  auto arr = vm->createHostArray();
+auto &groups = getGroupStore();
+auto arr = vm->createHostArray();
+auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &[name, members] : groups) {
     auto obj = vm->createHostObject();
+    auto objGuard = vm->makeRoot(Value::makeObjectId(obj.id));
     auto nameRef = vm->createRuntimeString(name);
     vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
     vm->setHostObjectField(obj, "count",
@@ -2740,6 +2764,7 @@ Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
 Value
 UIBridge::handleClipboardGet(const std::vector<Value> &args,
                              const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   (void)args;
   if (!ctx->clipboardManager) {
     return Value::makeNull();
@@ -2750,12 +2775,14 @@ UIBridge::handleClipboardGet(const std::vector<Value> &args,
   }
   // TODO: string pool integration - for now return null
   (void)clipboard;
+#endif
   return Value::makeNull();
 }
 
 Value
 UIBridge::handleClipboardSet(const std::vector<Value> &args,
                              const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   if (args.empty() || !ctx->clipboardManager) {
     return Value::makeBool(false);
   }
@@ -2767,12 +2794,14 @@ UIBridge::handleClipboardSet(const std::vector<Value> &args,
     // clipboard->setText(QString::fromStdString(...));
     return Value::makeBool(true);
   }
+#endif
   return Value::makeBool(false);
 }
 
 Value
 UIBridge::handleClipboardClear(const std::vector<Value> &args,
                                const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   (void)args;
   if (!ctx->clipboardManager) {
     return Value::makeBool(false);
@@ -2783,6 +2812,8 @@ UIBridge::handleClipboardClear(const std::vector<Value> &args,
   }
   clipboard->clear();
   return Value::makeBool(true);
+#endif
+  return Value::makeBool(false);
 }
 
 Value
@@ -2790,9 +2821,11 @@ UIBridge::handleScreenshotFull(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto data = service.captureFullDesktop();
   (void)data;
+#endif
   return Value::makeNull();
 }
 
@@ -2805,14 +2838,17 @@ UIBridge::handleScreenshotMonitor(const std::vector<Value> &args,
     if (auto *v = (args[0].isInt() ? &args[0] : nullptr))
       monitor = static_cast<int>(v->asInt());
   }
+#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto data = service.captureMonitor(monitor);
   (void)data;
+#endif
   return Value::makeNull();
 }
 
 Value UIBridge::handleGUINotify(const std::vector<Value> &args,
                                         const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   if (!ctx || !ctx->guiManager) {
     return Value::makeBool(false);
   }
@@ -2838,6 +2874,7 @@ Value UIBridge::handleGUINotify(const std::vector<Value> &args,
   }
 
   ctx->guiManager->showNotification(*title, *message, icon, durationMs);
+#endif
   return Value::makeBool(true);
 }
 
@@ -3065,6 +3102,7 @@ InputBridge::handleHotkeyList(const std::vector<Value> &args,
   auto conditionalHotkeys = ctx->hotkeyManager->getConditionalHotkeyList();
 
   auto result = vm->createHostArray();
+  auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
 
   // Add simple hotkeys
   for (const auto &hk : hotkeys) {
@@ -3106,8 +3144,10 @@ InputBridge::handleAltTabShow(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.show();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3116,8 +3156,10 @@ InputBridge::handleAltTabHide(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.hide();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3126,8 +3168,10 @@ InputBridge::handleAltTabToggle(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.toggle();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3136,8 +3180,10 @@ InputBridge::handleAltTabNext(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.next();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3146,8 +3192,10 @@ InputBridge::handleAltTabPrevious(const std::vector<Value> &args,
                                   const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.previous();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3156,8 +3204,10 @@ InputBridge::handleAltTabSelect(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.select();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3165,6 +3215,7 @@ Value
 InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
                                     const HostContext *ctx) {
   (void)args;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   auto windows = altTab.getWindows();
   auto *vm = static_cast<VM *>(ctx->vm);
@@ -3172,6 +3223,7 @@ InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
     return Value::makeNull();
   }
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : windows) {
     auto winObj = vm->createHostObject();
     // TODO: string pool integration - for now return null for strings
@@ -3185,6 +3237,7 @@ InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
     vm->pushHostArrayValue(arr, Value::makeObjectId(winObj.id));
   }
   return Value::makeArrayId(arr.id);
+#endif
 }
 
 Value AsyncBridge::handleSleep(const std::vector<Value> &args,
@@ -4403,6 +4456,7 @@ AudioBridge::handleGetDevices(const std::vector<Value> &args,
 
   const auto &devices = ctx->audioManager->getDevices();
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
 
   for (const auto &dev : devices) {
     auto obj = vm->createHostObject();
@@ -4957,6 +5011,7 @@ DisplayBridge::handleGetMonitors(const std::vector<Value> &args,
 
   auto monitors = ::havel::DisplayManager::GetMonitors();
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
 
   for (const auto &mon : monitors) {
     auto obj = vm->createHostObject();
@@ -5162,6 +5217,7 @@ DisplayBridge::handleMonitorsResolution(const std::vector<Value> &args,
   auto *vm = static_cast<VM *>(ctx->vm);
   auto monitors = ::havel::DisplayManager::GetMonitors();
   auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &mon : monitors) {
     std::string res = std::to_string(mon.width) + "x" +
                       std::to_string(mon.height);

@@ -12,8 +12,10 @@
 #include "../host/window/WindowService.hpp"
 #include "../host/mode/ModeService.hpp"
 #include "../host/process/ProcessService.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "../host/clipboard/ClipboardService.hpp"
 #include "../host/clipboard/MonitoringClipboard.hpp"
+#endif
 #include "../host/audio/AudioService.hpp"
 #include "../host/brightness/BrightnessService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
@@ -78,33 +80,13 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     }
 
     // Clipboard service doesn't need constructor args
+#ifdef HAVE_QT_EXTENSION
     auto clipboardService = std::make_shared<host::ClipboardService>();
     registry.registerService<host::ClipboardService>(clipboardService);
 
     auto monitoringClipboard = std::make_shared<host::MonitoringClipboard>();
     registry.registerService<host::MonitoringClipboard>(monitoringClipboard);
-
-    // AudioManager is optional
-    if (hostAPI->GetAudioManager()) {
-        auto audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
-        registry.registerService<host::AudioService>(audioService);
-    }
-
-    // BrightnessManager is optional
-    if (hostAPI->GetBrightnessManager()) {
-        auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-        registry.registerService<host::BrightnessService>(brightnessService);
-    }
-    
-    // Screenshot service singleton (uses Qt directly)
-    auto screenshotService = std::shared_ptr<host::ScreenshotService>(
-        &host::ScreenshotService::getInstance(),
-        [](host::ScreenshotService*) {});
-    registry.registerService<host::ScreenshotService>(screenshotService);
-
-    // PixelAutomation service doesn't need constructor args (uses Qt/OpenCV directly)
-    auto pixelService = std::make_shared<host::PixelAutomationService>();
-    registry.registerService<host::PixelAutomationService>(pixelService);
+#endif
 
     // TextChunker service doesn't need constructor args (pure C++ logic)
     auto chunkerService = std::make_shared<host::TextChunkerService>();
@@ -119,8 +101,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     registry.registerService<host::MapManagerService>(mapManagerService);
 
     // AltTab service doesn't need constructor args (uses Qt directly)
+#ifdef HAVE_QT_EXTENSION
     auto altTabService = std::make_shared<host::AltTabService>();
     registry.registerService<host::AltTabService>(altTabService);
+#endif
 
   // Timer service (tracking/management)
   auto timerService = std::make_shared<host::TimerService>();

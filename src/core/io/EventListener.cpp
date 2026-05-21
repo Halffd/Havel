@@ -125,10 +125,11 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
 
 void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
   if (blockInput.load()) return;
+  if (debugging::debug_hotkeys) debug("⌨️ OnBackendKeyEvent: code={} down={} repeat={} value={}", ke.code, ke.down, ke.repeat, ke.down ? (ke.repeat ? 2 : 1) : 0);
   struct input_event ev;
   ev.type = EV_KEY;
   ev.code = ke.code;
-  ev.value = ke.down ? 1 : (ke.repeat ? 2 : 0);
+  ev.value = ke.down ? (ke.repeat ? 2 : 1) : 0;
   if (ke.code >= BTN_MOUSE && ke.code < BTN_JOYSTICK) {
     ProcessMouseEvent(ev);
   } else {
@@ -138,6 +139,14 @@ void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
 
 void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
   if (blockInput.load()) return;
+  if (debugging::debug_hotkeys) {
+    if (me.type == MouseEvent::Type::Button)
+      debug("🐭 OnBackendMouseEvent: button={} down={}", me.button, me.down);
+    else if (me.type == MouseEvent::Type::Move)
+      debug("🐭 OnBackendMouseEvent: move dx={} dy={}", me.dx, me.dy);
+    else if (me.type == MouseEvent::Type::Wheel)
+      debug("🐭 OnBackendMouseEvent: wheel={}", me.wheel);
+  }
   if (me.type == MouseEvent::Type::Move) {
     struct input_event ev;
     ev.type = EV_REL;
@@ -147,6 +156,7 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.code = REL_Y;
     ev.value = static_cast<int>(me.dy * mouseSensitivity);
     ProcessMouseEvent(ev);
+    SendUinputEvent(EV_SYN, SYN_REPORT, 0);
   } else if (me.type == MouseEvent::Type::Button) {
     struct input_event ev;
     ev.type = EV_KEY;
@@ -159,6 +169,7 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.code = REL_WHEEL;
     ev.value = me.wheel;
     ProcessMouseEvent(ev);
+    SendUinputEvent(EV_SYN, SYN_REPORT, 0);
   }
 }
 
@@ -221,17 +232,34 @@ bool EventListener::SetupUinput() {
 }
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
-  if (!backend_ || !backend_->SupportsSynthesis()) return;
+    if (!backend_ || !backend_->SupportsSynthesis()) return;
 
-  if (type == EV_KEY) {
-    backend_->SendKeyEvent(code, value == 1);
-    if (value == 1) pressedVirtualKeys.insert(code);
-    else if (value == 0) pressedVirtualKeys.erase(code);
-  }
+    std::lock_guard<std::mutex> lock(sendInputMutex);
+
+    if (type == EV_KEY) {
+        if (pendingRelBatch_) {
+            backend_->EndBatch();
+            pendingRelBatch_ = false;
+        }
+        backend_->SendKeyEvent(code, value != 0);
+        if (value == 1) pressedVirtualKeys.insert(code);
+        else if (value == 0) pressedVirtualKeys.erase(code);
+    } else if (type == EV_SYN) {
+        if (pendingRelBatch_) {
+            backend_->EndBatch();
+            pendingRelBatch_ = false;
+        }
+    } else {
+        if (!pendingRelBatch_) {
+            backend_->BeginBatch();
+            pendingRelBatch_ = true;
+        }
+        backend_->QueueEvent(type, code, value);
+    }
 }
 
 void EventListener::BeginUinputBatch() {
-  if (backend_) backend_->BeginBatch();
+    if (backend_) backend_->BeginBatch();
 }
 
 void EventListener::QueueUinputEvent(int type, int code, int value) {
@@ -239,7 +267,8 @@ void EventListener::QueueUinputEvent(int type, int code, int value) {
 }
 
 void EventListener::EndUinputBatch() {
-  if (backend_) backend_->EndBatch();
+    if (backend_) backend_->EndBatch();
+    pendingRelBatch_ = false;
 }
 
 void EventListener::EmergencyReleaseAllKeys() {
@@ -465,7 +494,7 @@ void EventListener::EventLoop() {
       if (s == sizeof(fdsi)) {
         if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
           if (debugging::debug_io) debug("Received shutdown signal {}", fdsi.ssi_signo);
-          RequestShutdownFromSignal(fdsi.ssi_signo);
+          SignalSafeShutdown(fdsi.ssi_signo, true);
           break;
         }
         }
@@ -638,6 +667,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     running.store(false);
     shutdown.store(true);
     ForceUngrabAllDevices();
+    EmergencyReleaseAllKeys();
     if (shutdownFd >= 0) {
       uint64_t val = 1;
       write(shutdownFd, &val, sizeof(val));
@@ -828,6 +858,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     std::vector<int> matchedHotkeyIds;
     bool shouldBlock = false;
 
+    if (debugging::debug_io) debug("🐭 Evaluating mouse button hotkeys (code={}, down={})", ev.code, down);
+
     // Evaluate hotkeys - lock both mutexes
     {
       std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
@@ -839,23 +871,22 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         if (!hotkey.enabled)
           continue;
 
-        // Handle combo hotkeys
         if (hotkey.type == HotkeyType::Combo) {
+          if (debugging::debug_hotkeys) debug("🔍 Evaluating COMBO hotkey '{}' (id={})", hotkey.alias, id);
           try {
             if (EvaluateCombo(hotkey)) {
-              matchedHotkeyIds.push_back(id); // Just store ID
+              if (debugging::debug_hotkeys) debug("🔥 COMBO hotkey MATCHED: '{}' (id={})", hotkey.alias, id);
+              matchedHotkeyIds.push_back(id);
               if (hotkey.grab)
                 shouldBlock = true;
             }
           } catch (const std::system_error &e) {
             error("System error evaluating mouse combo '{}': {}", hotkey.alias,
                   e.what());
-            // Continue with other hotkeys instead of crashing
             continue;
           } catch (const std::exception &e) {
             error("Exception evaluating mouse combo '{}': {}", hotkey.alias,
                   e.what());
-            // Continue with other hotkeys instead of crashing
             continue;
           }
           continue;
@@ -892,11 +923,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         }
 
         // Hotkey matched!
-        if (Conf().GetVerboseKeyLogging()) {
-          info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias,
-               ev.code, down);
+        if (debugging::debug_hotkeys || Conf().GetVerboseKeyLogging()) {
+          info("🔥 MOUSE hotkey MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
         }
-        matchedHotkeyIds.push_back(id); // Just store ID
+        matchedHotkeyIds.push_back(id);
         if (hotkey.grab)
           shouldBlock = true;
       }
@@ -904,6 +934,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
     // Execute callbacks outside critical section
     for (int hotkeyId : matchedHotkeyIds) {
+      if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey id={}", hotkeyId);
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
       auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
@@ -911,10 +942,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           HotkeyManager::RegisteredHotkeysMutex());
       if (it != HotkeyManager::RegisteredHotkeys().end() &&
           it->second.enabled) {
-        auto callback = it->second.callback; // Copy just the callback
-        lock.unlock();                       // Release before executing
+        if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey '{}' (id={})", it->second.alias, hotkeyId);
+        auto callback = it->second.callback;
+        lock.unlock();
 
-        // Use HotkeyExecutor instead of spawning threads
         if (hotkeyExecutor) {
           hotkeyExecutor->submit([callback]() {
             try {
@@ -1203,6 +1234,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 }
 
 void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
+  if (debugging::debug_hotkeys) debug("⌨️  Evaluating keyboard/movement hotkeys for virtualKey={}", virtualKey);
   std::vector<int> matchedHotkeyIds;
 
   {
@@ -1213,25 +1245,20 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
       if (!hotkey.enabled)
         continue;
 
-      // Only match keyboard and mouse movement hotkeys with our virtual
-      // movement keys
       std::lock_guard<std::mutex> ioLock(
           HotkeyManager::RegisteredHotkeysMutex());
       if (hotkey.type != HotkeyType::Keyboard &&
           hotkey.type != HotkeyType::MouseMove)
         continue;
 
-      // Check if the key matches
       if (static_cast<int>(hotkey.key) != virtualKey)
         continue;
 
-      // Modifier matching
       if (hotkey.modifiers != 0) {
         if (!CheckModifierMatch(hotkey.modifiers, hotkey.wildcard))
           continue;
       }
 
-      // Context checks
       if (!hotkey.contexts.empty()) {
         bool contextMatch =
             std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
@@ -1240,17 +1267,19 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
           continue;
       }
 
-      // Match!
+      if (debugging::debug_hotkeys) debug("🔥 KEYBOARD/MOVEMENT hotkey MATCHED: '{}' (id={})", hotkey.alias, id);
       matchedHotkeyIds.push_back(id);
     }
   }
 
   // Execute callbacks asynchronously to avoid blocking input thread
   for (int hotkeyId : matchedHotkeyIds) {
+    if (debugging::debug_hotkeys) info("🔥 EXECUTING keyboard/movement hotkey id={}", hotkeyId);
     std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
     auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
     if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
+      if (debugging::debug_hotkeys) info("🔥 EXECUTING keyboard/movement hotkey '{}' (id={})", it->second.alias, hotkeyId);
       auto callback = it->second.callback;
       lock.unlock();
 
@@ -1448,10 +1477,10 @@ bool EventListener::CheckModifierMatchExcludingModifier(
 }
 
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
+  if (debugging::debug_hotkeys) debug("⌨️ EvaluateHotkeys: code={} down={} repeat={}", evdevCode, down, repeat);
   std::vector<int> matchedHotkeyIds;
   bool shouldBlock = false;
 
-  // Check emergency shutdown key
   if (down && emergencyShutdownKey != 0 && evdevCode == emergencyShutdownKey) {
     error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
     running.store(false);
@@ -1472,8 +1501,10 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Check if this is a combo hotkey
       if (hotkey.type == HotkeyType::Combo) {
+        if (debugging::debug_hotkeys) debug("🔍 Evaluating keyboard COMBO '{}' (id={})", hotkey.alias, id);
         try {
           if (EvaluateCombo(hotkey)) {
+            if (debugging::debug_hotkeys) debug("🔥 KEYBOARD COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
             // Combo matched, collect for execution outside locks
             std::lock_guard<std::mutex> ioLock(
                 HotkeyManager::RegisteredHotkeysMutex());
@@ -1604,8 +1635,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Hotkey matched! Collect for execution outside locks
       hotkey.success = true; // Update the actual hotkey's success status
-      if (debugging::debug_io) debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, repeat: {}",
-            hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
+      if (debugging::debug_hotkeys) debug("🔥 KEYBOARD hotkey MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
 
       matchedHotkeyIds.push_back(id);
 
@@ -1617,6 +1647,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
   // Execute callbacks outside critical section
   for (int hotkeyId : matchedHotkeyIds) {
+    if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey id={}", hotkeyId);
     HotKey hotkeyCopy;
     bool found = false;
 
@@ -1626,7 +1657,8 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       if (it != HotkeyManager::RegisteredHotkeys().end() &&
           it->second.enabled) {
-        hotkeyCopy = it->second; // Copy just for execution
+        if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey '{}' (id={})", it->second.alias, hotkeyId);
+        hotkeyCopy = it->second;
         found = true;
       }
     }
@@ -1976,7 +2008,7 @@ void EventListener::HandleSignal(int sig) {
   case SIGTERM:
   case SIGINT:
     if (!shutdown.load()) {
-      RequestShutdownFromSignal(sig);
+      SignalSafeShutdown(sig, true);
     }
     break;
   case SIGHUP:
@@ -1997,6 +2029,7 @@ void EventListener::HandleSignal(int sig) {
 
 void EventListener::RequestShutdownFromSignal(int sig) {
   ForceUngrabAllDevices();
+  EmergencyReleaseAllKeys();
   asyncSignalRequested = sig;
   if (shutdownFd >= 0) {
     uint64_t val = 1;
@@ -2006,6 +2039,7 @@ void EventListener::RequestShutdownFromSignal(int sig) {
 
 void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
   ForceUngrabAllDevices();
+  EmergencyReleaseAllKeys();
   running.store(false);
   shutdown.store(true);
   if (shutdownFd >= 0) {

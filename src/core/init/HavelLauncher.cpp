@@ -36,12 +36,9 @@
 #include <llvm/IR/LegacyPassManager.h>
 #endif
 
-#ifdef HAVE_QT_EXTENSION
-#include <QApplication>
-#include <QProcess>
 #include "host/ui/UIManager.hpp"
-#endif
 #include <csignal>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -351,10 +348,8 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (cfg.mode == Mode::DAEMON) cfg.mode = Mode::SCRIPT_ONLY;
       cfg.minimalMode = true;
     }
-  } else if (arg == "--run" || arg == "run") {
-      // Pure script execution - auto enables minimal mode
+    } else if (arg == "--run" || arg == "run") {
       cfg.mode = Mode::SCRIPT_ONLY;
-      cfg.minimalMode = true;
       // Next argument should be the script file
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
@@ -490,7 +485,6 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 }
 
 int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
-#ifdef HAVE_QT_EXTENSION
   // Load scripts first
   std::string combinedCode;
   std::string combinedNames;
@@ -578,80 +572,83 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
     return 0;
   }
 
-  // Restart loop - keeps restarting until exit code is not 42
+  auto* backend = host::UIManager::instance().backend();
+
+  // Set application metadata BEFORE constructing havel::Havel
+  // (D2 precondition: ensureApp() must see the right metadata)
+  host::UIBackend::ApplicationMetadata meta;
+  meta.argc = &argc;
+  meta.argv = argv;
+  meta.applicationName = "havel";
+  meta.applicationVersion = "1.0";
+  meta.organizationName = "havel";
+  meta.quitOnLastWindowClosed = false; // Daemon keeps running without windows
+  backend->setApplicationMetadata(meta);
+
+  // Restart loop - QApplication is reused across iterations (D4)
   while (true) {
-    QApplication app(argc, argv);
-    app.setApplicationName("havel");
-    app.setApplicationVersion("1.0");
-    app.setOrganizationName("havel");
-    app.setQuitOnLastWindowClosed(false);
+    // Scope block ensures havel_inst destructor runs BEFORE resetPerRunState
+    // (D4 mandatory ordering: Havel destructor sees live widget map)
+    {
+      std::vector<std::string> args;
+      for (int i = 0; i < argc; ++i) {
+        args.emplace_back(argv[i]);
+      }
 
-    // Convert argc/argv to vector<string> for havel::Havel
-    std::vector<std::string> args;
-    for (int i = 0; i < argc; ++i) {
-      args.emplace_back(argv[i]);
-    }
+      havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
 
-    havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
+      if (!havel_inst.isInitialized()) {
+        error("Failed to initialize havel::Havel");
+        return 1;
+      }
 
-    if (!havel_inst.isInitialized()) {
-      error("Failed to initialize havel::Havel");
-      return 1;
-    }
+      // Execute with bytecode VM
+      if (!combinedCode.empty()) {
+        auto *bytecodeVM =
+            reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
+        auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
+            havel_inst.getHostBridge());
 
-    // Execute with bytecode VM
-    if (!combinedCode.empty()) {
-      auto *bytecodeVM =
-          reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
-      auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
-          havel_inst.getHostBridge());
+        if (bytecodeVM && hostBridge) {
+          info("Executing combined scripts with bytecode VM: {}", combinedNames);
 
-      if (bytecodeVM && hostBridge) {
-        info("Executing combined scripts with bytecode VM: {}", combinedNames);
+          havel::compiler::PipelineOptions options = hostBridge->options();
+          options.compile_unit_name = combinedNames;
+          options.vm_override = bytecodeVM;
+          options.debugBytecode = cfg.debugBytecode;
 
-        havel::compiler::PipelineOptions options = hostBridge->options();
-        options.compile_unit_name = combinedNames;
-        options.vm_override = bytecodeVM;
-        options.debugBytecode = cfg.debugBytecode;
-
-        try {
-          havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-          info("Execution completed successfully");
-        } catch (const std::exception &e) {
-          error("Execution error: {}", e.what());
+          try {
+            havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+            info("Execution completed successfully");
+          } catch (const std::exception &e) {
+            error("Execution error: {}", e.what());
+          }
         }
       }
+
+      info("Havel started successfully - running in system tray");
+
+      // Wire shutdown callback through UI module (D5)
+      havel_inst.setShutdownCallback([] {
+        host::UIManager::instance().backend()->quitEventLoop(0);
+      });
+
+      int exitCode = backend->runEventLoop();
+
+      // Handle restart exit code
+      if (exitCode != 42) {
+        return exitCode; // Normal exit
+      }
+      // havel_inst destructor runs here — sees live UIService widget map
     }
 
-    info("Havel started successfully - running in system tray");
-    
-    // Route event loop through UI module
-    auto* uiBackend = host::UIManager::instance().backend();
-    int exitCode = 0;
-    if (uiBackend) {
-      exitCode = uiBackend->runEventLoop();
-    } else {
-      // Fallback if UIBackend not available
-      exitCode = app.exec();
-    }
-
-    // Handle restart exit code - loop back to restart
-    if (exitCode == 42) {
-      info("Restart requested - relaunching application");
-      continue; // Loop back and restart
-    }
-
-    return exitCode; // Normal exit
+    // D4 step 2: reset per-run state after Havel destruction
+    backend->resetPerRunState();
+    info("Restart requested - relaunching application");
   }
-#else
-  (void)cfg; (void)argc; (void)argv;
-  error("Qt extension not available - daemon mode requires Qt");
-  return 1;
-#endif
 }
 
 int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
-#ifdef HAVE_QT_EXTENSION
   // Unify .hvc execution path with runScriptOnly.
   std::vector<std::string> hvcFiles;
   std::vector<std::string> hvFiles;
@@ -666,192 +663,141 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     return runBytecodeFiles(cfg, hvcFiles);
   }
 
-  while (true) {
-    std::string combinedCode;
-    std::string combinedNames;
-    for (const auto& f : cfg.scriptFiles) {
-      std::string content = readScriptFile(f);
-      if (!content.empty()) {
-        combinedCode += content + "\n";
-        if (!combinedNames.empty()) combinedNames += " + ";
-        combinedNames += f;
-      } else {
-      error("Cannot open script file: {}", f);
-      return 2;
-      }
-    }
-    if (!cfg.evalString.empty()) {
-      combinedCode += cfg.evalString + "\n";
+  std::string combinedCode;
+  std::string combinedNames;
+  for (const auto& f : cfg.scriptFiles) {
+    std::string content = readScriptFile(f);
+    if (!content.empty()) {
+      combinedCode += content + "\n";
       if (!combinedNames.empty()) combinedNames += " + ";
-      combinedNames += "<eval>";
+      combinedNames += f;
+    } else {
+    error("Cannot open script file: {}", f);
+    return 2;
     }
+  }
+  if (!cfg.evalString.empty()) {
+    combinedCode += cfg.evalString + "\n";
+    if (!combinedNames.empty()) combinedNames += " + ";
+    combinedNames += "<eval>";
+  }
 
-    if (combinedCode.empty()) {
-      error("No script code provided");
-      return 1;
+  if (combinedCode.empty()) {
+    error("No script code provided");
+    return 1;
+  }
+
+  // Parse once to check for hotkey bindings
+  havel::parser::Parser parser{{
+    .lexer = cfg.debugLexer,
+    .parser = cfg.debugParser,
+    .ast = cfg.debugAst
+  }};
+  std::unique_ptr<havel::ast::Program> program;
+  try {
+    program = parser.produceAST(combinedCode);
+  } catch (const std::exception& e) {}
+
+  // Helper: check for hotkey bindings in AST
+  auto checkHotkeys = [](const havel::ast::Program& prog) -> bool {
+    for (const auto& stmt : prog.body) {
+      if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding) return true;
     }
+    return false;
+  };
+  bool hasHotkeys = program && checkHotkeys(*program);
 
-    // LINT-ONLY MODE: Parse and type-check ONLY, no execution
-    if (cfg.lintOnly) {
-       havel::parser::Parser parser{{
-         .lexer = cfg.debugLexer,
-         .parser = cfg.debugParser,
-         .ast = cfg.debugAst
-       }};
-       std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
-       std::unique_ptr<havel::ast::Program> program;
-       try {
-         program = parser.produceAST(combinedCode);
-       } catch (const std::exception& e) {
-         // Parser aborted — still print what we collected
-       }
-       if (parser.hasErrors()) {
-         for (const auto& err : parser.getErrors()) {
-           std::string sourceLine;
-           if (err.line > 0) {
-             std::istringstream ss(combinedCode);
-             std::string line;
-             for (size_t i = 1; i <= err.line; ++i) {
-               if (!std::getline(ss, line)) break;
-               if (i == err.line) { sourceLine = line; break; }
-             }
-           }
-           std::string formatted = havel::ErrorPrinter::formatError(
-               "error", err.message, primaryFile,
-               err.line, err.column, 1, sourceLine);
-           std::cerr << formatted;
-         }
-         error("Linting failed with {} error(s)", parser.getErrors().size());
-         return 1;
-       }
-       if (program) {
-         // Also check compiler errors
-         havel::compiler::ByteCompiler compiler;
-         compiler.setCollectErrors(true);
-         try {
-           auto chunk = compiler.compile(*program);
-           (void)chunk;
-         } catch (const std::exception& e) {}
-         if (compiler.hasErrors()) {
-           for (const auto& err : compiler.errors()) {
-             std::string sourceLine;
-             if (err.line > 0) {
-               std::istringstream ss(combinedCode);
-               std::string line;
-               for (size_t i = 1; i <= err.line; ++i) {
-                 if (!std::getline(ss, line)) break;
-                 if (i == err.line) { sourceLine = line; break; }
-               }
-             }
-             std::string formatted = havel::ErrorPrinter::formatError(
-                 "error", err.what(), primaryFile,
-                 err.line, err.column, 1, sourceLine);
-             std::cerr << formatted;
-           }
-           error("Compilation failed with {} error(s)", compiler.errors().size());
-           return 1;
-         }
-       }
-       info("Linting successful");
-       return 0;
-    }
+  if (hasHotkeys) {
+    // Full mode with UI backend — needs IO, hotkeys, event loop
+    if (debugging::debug_io) debug("Hotkeys detected — using full execution mode");
 
-    if (debugging::debug_io) debug("Running combined scripts: {}", combinedNames);
-
-    int dummy_argc = 1;
-    char dummy_name[] = "havel-script";
-    char *dummy_argv[] = {dummy_name, nullptr};
-    QApplication app(dummy_argc, dummy_argv);
+    auto* backend = host::UIManager::instance().backend();
+    host::UIBackend::ApplicationMetadata meta;
+    meta.applicationName = "havel";
+    meta.applicationVersion = "1.0";
+    meta.organizationName = "havel";
+    meta.quitOnLastWindowClosed = true;
+    backend->setApplicationMetadata(meta);
 
     std::vector<std::string> args;
     for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
 
     havel::Havel havel_inst(false, combinedNames, false, true, args);
+    if (!havel_inst.isInitialized()) {
+      error("Failed to initialize havel::Havel");
+      return 1;
+    }
 
- if (!havel_inst.isInitialized()) {
- error("Failed to initialize havel::Havel");
- return 1;
- }
+    auto* bytecodeVM = havel_inst.getBytecodeVM();
+    auto* hostBridge = havel_inst.getHostBridge();
+    if (!bytecodeVM || !hostBridge) {
+      error("Bytecode VM not available");
+      return 1;
+    }
 
- auto *bytecodeVM = havel_inst.getBytecodeVM();
- auto *hostBridge = havel_inst.getHostBridge();
+    auto* hkManager = havel_inst.getHotkeyManagerPtr();
+    auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
+      havel_inst.getIOPtr(), hkManager, Configs::Get(),
+      havel_inst.getWindowManagerPtr(),
+      nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nullptr, nullptr,
+      hkManager ? hkManager->getModeManager().get() : nullptr,
+      std::vector<std::string>{}));
+    havel::initializeServiceRegistry(hostAPI);
 
- if (!bytecodeVM || !hostBridge) {
- error("Bytecode VM not available");
- return 1;
- }
-
- auto *hkManager = havel_inst.getHotkeyManagerPtr();
- auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
- havel_inst.getIOPtr(),
- hkManager,
- Configs::Get(),
- havel_inst.getWindowManagerPtr(),
- nullptr, nullptr, nullptr, nullptr, nullptr,
- nullptr, nullptr, nullptr, nullptr, nullptr,
- hkManager ? hkManager->getModeManager().get() : nullptr,
- std::vector<std::string>{}));
- havel::initializeServiceRegistry(hostAPI);
-
- // Set up timer checks during script execution
-    bytecodeVM->setTimerCheckFunction([hostBridge]() {
-      hostBridge->checkTimers();
-    });
+    bytecodeVM->setTimerCheckFunction([hostBridge]() { hostBridge->checkTimers(); });
 
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
       options.compile_unit_name = combinedNames;
       options.vm_override = bytecodeVM;
       options.debugBytecode = cfg.debugBytecode;
-  auto vmResult = havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-    if (debugging::debug_io) debug("Execution successful");
+      havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
     } catch (const std::exception &e) {
       error("Execution error: {}", e.what());
       return 1;
     }
 
-  if (hkManager) {
+    if (hkManager) {
       hkManager->printHotkeys();
       hkManager->updateAllConditionalHotkeys();
     }
 
-    // Set shutdown callback - route through UI module when available
-    auto* uiBackend = host::UIManager::instance().backend();
-    havel_inst.setShutdownCallback([&app, uiBackend]() { 
-      if (uiBackend) {
-        uiBackend->quitEventLoop(0);
-      }
-      app.quit();
+    havel_inst.setShutdownCallback([] {
+      host::UIManager::instance().backend()->quitEventLoop(0);
     });
 
-    bool hasHotkeys = hkManager && !hkManager->getHotkeyList().empty();
-    if (!hasHotkeys) {
-      info("No hotkeys registered - exiting");
+    if (!hkManager || hkManager->getHotkeyList().empty()) {
+      info("No hotkeys registered — exiting");
       return 0;
     }
 
     info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
-    
-    // Route event loop through UI module
-    int exitCode = 0;
-    if (uiBackend) {
-      exitCode = uiBackend->runEventLoop();
-    } else {
-      // Fallback if UIBackend not available
-      exitCode = app.exec();
-    }
-
-    if (exitCode == 42) continue;
+    int exitCode = backend->runEventLoop();
     return exitCode;
   }
 
-  return 0; // No restart in headless mode
-#else
-  (void)cfg; (void)argc; (void)argv;
-  error("Qt extension not available - script mode requires Qt");
-  return 1;
-#endif
-} // End of restart loop
+  // Headless mode — no UI backend, no hotkeys, pure bytecode execution
+  if (debugging::debug_io) debug("Running combined scripts (headless): {}", combinedNames);
+
+  try {
+    havel::HavelEngine engine({
+      .debugBytecode = cfg.debugBytecode,
+      .debugLexer = cfg.debugLexer,
+      .debugParser = cfg.debugParser,
+      .debugAst = cfg.debugAst,
+      .stopOnError = cfg.stopOnError,
+      .leanMinimalStartup = cfg.minimalMode
+    });
+    engine.initializeMinimal();
+    engine.execute(combinedCode, "__main__", combinedNames);
+    engine.shutdown();
+    return 0;
+  } catch (const std::exception &e) {
+    error("Execution error: {}", e.what());
+    return 1;
+  }
+}
 
 int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
                                                   const std::vector<std::string> &hvcFiles) {
@@ -1110,7 +1056,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
         .debugParser = cfg.debugParser,
         .debugAst = cfg.debugAst,
         .stopOnError = cfg.stopOnError,
-        .leanMinimalStartup = true
+        .leanMinimalStartup = cfg.minimalMode
       });
       engine.initializeMinimal();
 
@@ -1184,7 +1130,6 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
         return repl.run();
     } else {
-#ifdef HAVE_QT_EXTENSION
       info("Running scripts and starting REPL with full features...");
       std::string combinedCode;
       std::string combinedNames;
@@ -1197,12 +1142,13 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         }
       }
 
-      int dummy_argc = 1;
-      char dummy_name[] = "havel-script-repl";
-      char *dummy_argv[] = {dummy_name, nullptr};
-      QApplication app(dummy_argc, dummy_argv);
-      app.setQuitOnLastWindowClosed(false);
-      
+      auto* replBackend = host::UIManager::instance().backend();
+      host::UIBackend::ApplicationMetadata replMeta;
+      replMeta.applicationName = "havel";
+      replMeta.organizationName = "havel";
+      replMeta.quitOnLastWindowClosed = false;
+      replBackend->setApplicationMetadata(replMeta);
+
       std::vector<std::string> args;
       havel::Havel havel_inst(false, combinedNames, false, true, args);
       
@@ -1262,10 +1208,6 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
       // Enter REPL
       return repl.run();
-#else
-      error("Qt extension not available for full mode. Use --minimal flag.");
-      return 1;
-#endif
     }
   } catch (const std::exception &e) {
     error("Script+REPL error: {}", e.what());
@@ -1383,7 +1325,6 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
         return repl.run();
     } else {
-#ifdef HAVE_QT_EXTENSION
       info("Starting Havel REPL with full features (hotkeys, GUI)...");
       
       // Debug: Show mode information
@@ -1392,11 +1333,12 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         havel::debug(" - IO/Hotkeys: enabled");
 
       // Full mode - initialize Qt and havel::Havel
-      int dummy_argc = 1;
-      char dummy_name[] = "havel-repl";
-      char *dummy_argv[] = {dummy_name, nullptr};
-      QApplication app(dummy_argc, dummy_argv);
-      app.setQuitOnLastWindowClosed(false);
+      auto* replBackend = host::UIManager::instance().backend();
+      host::UIBackend::ApplicationMetadata replMeta;
+      replMeta.applicationName = "havel";
+      replMeta.organizationName = "havel";
+      replMeta.quitOnLastWindowClosed = false;
+      replBackend->setApplicationMetadata(replMeta);
 
       // Create havel::Havel with full features
       std::vector<std::string> args;
@@ -1444,10 +1386,6 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
       // Run REPL
       return repl.run();
-#else
-      error("Qt extension not available for full REPL mode. Use --minimal flag.");
-      return 1;
-#endif
     }
   } catch (const std::exception &e) {
     error("REPL error: {}", e.what());

@@ -31,6 +31,15 @@ public:
 
     virtual ~UIBackend() = default;
 
+    struct ApplicationMetadata {
+        int* argc = nullptr;
+        char** argv = nullptr;
+        std::string applicationName;
+        std::string applicationVersion;
+        std::string organizationName;
+        bool quitOnLastWindowClosed = false;
+    };
+
     // Backend info
     virtual Api getApi() const = 0;
     virtual std::string getApiName() const = 0;
@@ -99,6 +108,10 @@ public:
     // Event loop management (routed through UI module)
     virtual int runEventLoop() = 0;
     virtual void quitEventLoop(int exitCode = 0) = 0;
+
+    virtual void setApplicationMetadata(const ApplicationMetadata& meta) = 0;
+
+    virtual void resetPerRunState() = 0;
 
     // Window state
     virtual bool hasActiveWindows() const = 0;

@@ -30,7 +30,9 @@ struct ScreenRegion {
     ScreenRegion() = default;
     ScreenRegion(int x, int y, int w, int h) : x(x), y(y), w(w), h(h) {}
 
+#ifdef HAVE_QT_EXTENSION
     QRect toQRect() const;
+#endif
 
     static ScreenRegion fullScreen();
 };

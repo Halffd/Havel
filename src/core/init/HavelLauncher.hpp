@@ -1,9 +1,5 @@
 #pragma once
 
-#ifdef HAVE_QT_EXTENSION
-#include "qt.hpp"
-#endif
-
 #include <string>
 #include <vector>
 #include <memory>
@@ -41,9 +37,6 @@ public:
   int run(int argc, char *argv[]);
 
 private:
-#ifdef HAVE_QT_EXTENSION
-  std::unique_ptr<QApplication> app_;
-#endif
   struct LaunchConfig {
     Mode mode = Mode::DAEMON;
     std::vector<std::string> scriptFiles;

@@ -1,4 +1,5 @@
 #pragma once
+#ifdef HAVE_QT_EXTENSION
 #include "qt.hpp"
 
 // #include <QMainWindow>
@@ -24,3 +25,5 @@ private:
 };
 
 } // namespace havel
+
+#endif // HAVE_QT_EXTENSION

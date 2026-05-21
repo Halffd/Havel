@@ -1,0 +1,21 @@
+use { tokenize } from "lang/lexer"
+use { parseTokens } from "lang/pratt"
+use { Emitter, compileProgram } from "lang/emitter"
+
+source = fs.read("modules/compiler_bundle.hv")
+tokens = tokenize(source)
+print("tokenized: " + str(#tokens) + " tokens")
+result = parseTokens(tokens)
+if #result.errors > 0 {
+    print("parse errors: " + str(#result.errors))
+    for i in 0..(#result.errors - 1) {
+        print("  " + str(result.errors[i]))
+    }
+    exit(1)
+}
+print("parsed: " + str(#result.ast.body) + " top-level nodes")
+emitter = Emitter()
+compileProgram(emitter, result, true)
+print("compiled: " + str(bc.func_count()) + " functions")
+bc.serialize("/tmp/compiler_bundle.hvc")
+print("saved /tmp/compiler_bundle.hvc")

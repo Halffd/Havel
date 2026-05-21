@@ -1,0 +1,288 @@
+// launcher.hv — pure Havel script launcher
+// Handles --run, --test, --lint modes via the self-hosted pipeline
+// Usage: havel --run launcher.hv -- [flags] script.hv
+
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+use { inferProgram } from "types"
+
+fn readScriptFile(path) {
+    if !fs.exists(path) {
+        return null
+    }
+    content = fs.read(path)
+    if content == null { return null }
+    // Strip shebang line
+    if #content >= 2 && content[0] == "#" && content[1] == "!" {
+        idx = content.find("\n")
+        if idx != null && idx >= 0 {
+            content = content.substr(idx + 1)
+        }
+        else {
+            content = ""
+        }
+    }
+    content
+}
+
+fn parseArgs(args) {
+    cfg = {
+        mode: "run",
+        scriptFiles: [],
+        scriptArgs: [],
+        evalString: null,
+        testDir: null,
+        testTimeout: 10,
+        lintOnly: false,
+        debugBytecode: false,
+        debugLexer: false,
+        debugParser: false,
+        debugAst: false,
+        stopOnError: false,
+    }
+    i = 0
+    while i < #args {
+        arg = args[i]
+        if arg == "--run" || arg == "run" {
+            cfg.mode = "run"
+            i = i + 1
+            if i < #args { cfg.scriptFiles.push(args[i]) }
+        }
+        else if arg == "--test" || arg == "-t" {
+            cfg.mode = "test"
+            i = i + 1
+            if i < #args { cfg.testDir = args[i] }
+            // Optional timeout
+            i = i + 1
+            if i < #args {
+                n = int(args[i])
+                if n != null && n > 0 {
+                    cfg.testTimeout = n
+                }
+                else {
+                    i = i - 1
+                }
+            }
+        }
+        else if arg == "--lint" {
+            cfg.lintOnly = true
+            i = i + 1
+            if i < #args { cfg.scriptFiles.push(args[i]) }
+        }
+        else if arg == "--eval" || arg == "-E" {
+            i = i + 1
+            if i < #args {
+                cfg.evalString = args[i]
+                cfg.mode = "run"
+            }
+        }
+        else if arg == "--debug-bytecode" || arg == "-dbc" {
+            cfg.debugBytecode = true
+        }
+        else if arg == "--debug-lexer" || arg == "-dl" {
+            cfg.debugLexer = true
+        }
+        else if arg == "--debug-parser" || arg == "-dp" {
+            cfg.debugParser = true
+        }
+        else if arg == "--debug-ast" || arg == "-da" {
+            cfg.debugAst = true
+        }
+        else if arg == "--error" || arg == "-e" {
+            cfg.stopOnError = true
+        }
+        else if arg == "--" {
+            // Everything after -- is script arguments
+            j = i + 1
+            while j < #args {
+                cfg.scriptArgs.push(args[j])
+                j = j + 1
+            }
+            i = #args
+        }
+        else if arg == "--help" || arg == "-h" {
+            print("Usage: havel --run launcher.hv -- [flags] script.hv")
+            print("")
+            print("Modes:")
+            print("  --run script.hv    Run script via self-hosted pipeline")
+            print("  --test dir/ [N]    Run all .hv files in directory (timeout N seconds)")
+            print("  --lint script.hv   Check syntax/type errors without running")
+            print("  --eval CODE        Run inline code")
+            print("")
+            print("Flags:")
+            print("  --debug-bytecode   Print bytecode debug info")
+            print("  --debug-lexer      Print lexer debug info")
+            print("  --debug-parser     Print parser debug info")
+            print("  --debug-ast        Print AST debug info")
+            print("  --error            Stop on first error")
+            print("  --                 Pass remaining args to script as app.args")
+            shell.exit(0)
+        }
+        else {
+            // Bare argument = script file
+            cfg.scriptFiles.push(arg)
+        }
+        i = i + 1
+    }
+    cfg
+}
+
+fn runScript(cfg) {
+    // Combine all script files
+    combinedCode = ""
+    combinedNames = ""
+    for f in cfg.scriptFiles {
+        content = readScriptFile(f)
+        if content == null {
+            print("Error: Cannot open script file: " + f)
+            return 2
+        }
+        combinedCode = combinedCode + content + "\n"
+        if combinedNames != "" { combinedNames = combinedNames + " + " }
+        combinedNames = combinedNames + f
+    }
+    if cfg.evalString != null {
+        combinedCode = combinedCode + cfg.evalString + "\n"
+        if combinedNames != "" { combinedNames = combinedNames + " + " }
+        combinedNames = combinedNames + "<eval>"
+    }
+    // Read from stdin if no source
+    if combinedCode == "" && !shell.isatty() {
+        combinedCode = shell.read()
+        combinedNames = "<stdin>"
+    }
+    if combinedCode == "" { return 0 }
+
+    // Parse
+    result = parse(combinedCode)
+    if result.errors != null && #result.errors > 0 {
+        for err in result.errors {
+            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+        }
+        return 1
+    }
+
+    // Lint-only mode: parse + typecheck, no execution
+    if cfg.lintOnly {
+        types = inferProgram(result)
+        print("Linting successful")
+        return 0
+    }
+
+    // Typecheck
+    inferProgram(result)
+
+    // Compile and execute
+    emitter = Emitter()
+    bc.reset()
+    sourceFile = null
+    if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
+    if sourceFile == null { sourceFile = combinedNames }
+    compileProgram(emitter, result.ast, false, sourceFile)
+    0
+}
+
+fn runTests(cfg) {
+    if cfg.testDir == null {
+        print("Error: No test directory specified. Usage: --test <directory>")
+        return 1
+    }
+    // Find all .hv files
+    entries = fs.readDir(cfg.testDir)
+    if entries == null {
+        print("Error: Cannot read test directory: " + cfg.testDir)
+        return 1
+    }
+    testFiles = []
+    for e in entries {
+        name = e.name
+        if name == null { name = str(e) }
+        if name.endsWith(".hv") {
+            testFiles.push(cfg.testDir + "/" + name)
+        }
+    }
+    // Sort
+    testFiles.sort()
+    if #testFiles == 0 {
+        print("Error: No .hv files found in: " + cfg.testDir)
+        return 1
+    }
+
+    total = #testFiles
+    passed = 0
+    failed = 0
+    print("Running " + str(total) + " tests from '" + cfg.testDir + "'")
+
+    // Find havel binary
+    selfPath = shell.env("HAVEL_BIN")
+    if selfPath == null || selfPath == "" {
+        // Try common locations
+        if fs.exists("./build-debug/havel") {
+            selfPath = "./build-debug/havel"
+        }
+        else if fs.exists("../../build-debug/havel") {
+            selfPath = "../../build-debug/havel"
+        }
+        else {
+            selfPath = "havel"
+        }
+    }
+
+    for testFile in testFiles {
+        // Extract test name from path
+        parts = string.split(testFile, "/")
+        testName = parts[#parts - 1]
+
+        // Run test as subprocess with timeout
+        cmd = "timeout " + str(cfg.testTimeout) + " " + selfPath + " --run " + testFile
+        result = shell.exec(cmd)
+
+        if result != null && result.exitCode == 0 {
+            print("  PASS " + testName)
+            passed = passed + 1
+        }
+        else {
+            print("  FAIL " + testName)
+            if result != null && result.stderr != "" {
+                print("    " + result.stderr)
+            }
+            failed = failed + 1
+        }
+    }
+
+    print("")
+    print("Test Results:")
+    print("  Total:  " + str(total))
+    print("  Passed: " + str(passed))
+    print("  Failed: " + str(failed))
+    if failed > 0 { return 1 }
+    print("All tests passed!")
+    0
+}
+
+// ============================================================
+// Main entry point
+// ============================================================
+
+args = app.args
+if args == null || #args == 0 {
+    print("Usage: havel --run launcher.hv -- [flags] script.hv")
+    print("Use --help for more information")
+    shell.exit(1)
+}
+
+cfg = parseArgs(args)
+
+result = 0
+if cfg.mode == "run" {
+    result = runScript(cfg)
+}
+else if cfg.mode == "test" {
+    result = runTests(cfg)
+}
+else {
+    print("Unknown mode: " + cfg.mode)
+    result = 1
+}
+
+shell.exit(result)

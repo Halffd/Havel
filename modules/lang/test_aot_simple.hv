@@ -1,0 +1,11 @@
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+source = 'print("hello")'
+tokens = tokenize(source)
+result = parseTokens(tokens)
+emitter = Emitter()
+bc.reset()
+compileProgram(emitter, result.ast, true)
+bc.serialize("/tmp/simple_test.hvc")
+print("done")

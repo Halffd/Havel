@@ -52,7 +52,6 @@ fn Emitter() {
 
 }
 fn emitError(msg, line, col) {
-    print("compile error at " + str(line) + ":" + str(col) + " - " + msg)
 
 }
 fn globalIdx(emitter, name) {

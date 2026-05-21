@@ -1,4 +1,4 @@
-// === BEGIN MODULE: ast ===
+// ========== ast.hv ==========
 // Havel AST — pure Havel implementation
 // Represents parsed source code as a tree of node objects
 // Each node has: kind, line, col, and kind-specific fields
@@ -780,9 +780,8 @@ fn prettyPrint(node, depth) {
 
     }
 }
-// === END MODULE: ast ===
 
-// === BEGIN MODULE: scope ===
+// ========== scope.hv ==========
 // scope.hv — Lexical scope, variable resolution, upvalue tracking
 // Works with bc.add_upvalue() to register closure captures with the VM
 
@@ -863,11 +862,745 @@ fn scopeLocalCount(scope) {
     scope.count
 
 }
-// === END MODULE: scope ===
 
-// === BEGIN MODULE: lexer ===
+// ========== error.hv ==========
+// error.hv — unified error reporting for the self-hosted Havel compiler
+// Mirrors the C++ ErrorSystem.h + ErrorPrinter.hpp design
+// Provides: ErrorReporter singleton, caret-style formatting, error codes,
+// severity/stage classification, source line extraction
+
+// ============================================================
+// Constants
+// ============================================================
+
+SEVERITY_ERROR = 0
+SEVERITY_WARNING = 1
+SEVERITY_INFO = 2
+
+STAGE_LEXER = 0
+STAGE_PARSER = 1
+STAGE_EMITTER = 2
+STAGE_TYPES = 3
+STAGE_RUNTIME = 4
+
+SEVERITY_NAMES = {
+  "0": "error",
+  "1": "warning",
+  "2": "info"
+}
+
+STAGE_NAMES = {
+  "0": "Lexer",
+  "1": "Parser",
+  "2": "Emitter",
+  "3": "Types",
+  "4": "Runtime"
+}
+
+// ANSI color codes
+RED = "\033[1;31m"
+YELLOW = "\033[1;33m"
+CYAN = "\033[36m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+// Error codes (mirrors C++ ErrorSystem.h codes namespace)
+E001 = "E001"  // INVALID_CHAR
+E002 = "E002"  // UNTERMINATED_STRING
+E003 = "E003"  // UNTERMINATED_COMMENT
+E004 = "E004"  // INVALID_NUMBER
+E005 = "E005"  // INVALID_ESCAPE
+
+E010 = "E010"  // UNEXPECTED_TOKEN
+E011 = "E011"  // EXPECTED_EXPRESSION
+E012 = "E012"  // EXPECTED_IDENTIFIER
+E013 = "E013"  // UNTERMINATED_PARENS
+E014 = "E014"  // UNTERMINATED_BRACKET
+E015 = "E015"  // UNTERMINATED_BRACE
+E016 = "E016"  // EXPECTED_STATEMENT
+
+E020 = "E020"  // INVALID_TYPE
+E021 = "E021"  // DUPLICATE_FIELD
+E022 = "E022"  // INVALID_PATTERN
+
+E030 = "E030"  // UNDEFINED_VARIABLE
+E031 = "E031"  // UNDEFINED_FUNCTION
+E032 = "E032"  // TYPE_MISMATCH
+E033 = "E033"  // ARITY_MISMATCH
+E034 = "E034"  // NOT_CALLABLE
+E035 = "E035"  // NOT_INDEXABLE
+E036 = "E036"  // INVALID_ASSIGN_TARGET
+
+E040 = "E040"  // INVALID_OPCODE
+E041 = "E041"  // STACK_OVERFLOW
+E042 = "E042"  // STACK_UNDERFLOW
+
+E050 = "E050"  // DIVISION_BY_ZERO
+E051 = "E051"  // INDEX_OUT_OF_BOUNDS
+E052 = "E052"  // NULL_DEREFERENCE
+E055 = "E055"  // ASSERTION_FAILED
+
+E060 = "E060"  // MODULE_NOT_FOUND
+E061 = "E061"  // CIRCULAR_IMPORT
+
+// ============================================================
+// Source line cache — avoids re-reading the same file
+// ============================================================
+
+sourceCache = {}
+
+fn readSourceLine(filePath, lineNum) {
+  if lineNum == null || lineNum < 1 { return "" }
+  if filePath == null || filePath == "" || filePath == "<memory>" || filePath == "<stdin>" { return "" }
+  cached = sourceCache[filePath]
+  if cached == null {
+    content = fs.read(filePath)
+    if content == null { return "" }
+    cached = string.split(content, "\n")
+    sourceCache[filePath] = cached
+  }
+  idx = lineNum - 1
+  if idx < 0 || idx >= #cached { return "" }
+  cached[idx]
+}
+
+fn clearSourceCache() {
+  sourceCache = {}
+}
+
+// ============================================================
+// Error object constructor
+// ============================================================
+
+fn HavelError(severity, stage, msg) {
+  {
+    severity: severity,
+    stage: stage,
+    msg: msg,
+    line: null,
+    col: null,
+    length: 1,
+    file: null,
+    code: null,
+    sourceLine: null
+  }
+}
+
+fn at(err, line, col, length) {
+  err.line = line
+  err.col = col
+  if length != null { err.length = length }
+  err
+}
+
+fn file(err, filePath) {
+  err.file = filePath
+  err
+}
+
+fn withCode(err, code) {
+  err.code = code
+  err
+}
+
+fn withSourceLine(err, line) {
+  err.sourceLine = line
+  err
+}
+
+// ============================================================
+// ErrorReporter — singleton-style error accumulation
+// ============================================================
+
+fn ErrorReporter() {
+  {
+    errors: [],
+    errorCount: 0,
+    warningCount: 0,
+    sourceFile: null
+  }
+}
+
+// Global reporter instance
+reporter = ErrorReporter()
+
+fn setSourceFile(filePath) {
+  reporter.sourceFile = filePath
+}
+
+fn report(err) {
+  reporter.errors.push(err)
+  if err.severity == SEVERITY_ERROR { reporter.errorCount = reporter.errorCount + 1 }
+  if err.severity == SEVERITY_WARNING { reporter.warningCount = reporter.warningCount + 1 }
+}
+
+fn hasErrors() { reporter.errorCount > 0 }
+
+fn clear() {
+  reporter.errors = []
+  reporter.errorCount = 0
+  reporter.warningCount = 0
+}
+
+// Convenience: report an error at a location
+fn errorAt(stage, msg, line, col, code) {
+  err = HavelError(SEVERITY_ERROR, stage, msg)
+  at(err, line, col, 1)
+  if reporter.sourceFile != null { file(err, reporter.sourceFile) }
+  if code != null { withCode(err, code) }
+  report(err)
+  err
+}
+
+fn warningAt(stage, msg, line, col) {
+  err = HavelError(SEVERITY_WARNING, stage, msg)
+  at(err, line, col, 1)
+  if reporter.sourceFile != null { file(err, reporter.sourceFile) }
+  report(err)
+  err
+}
+
+fn infoAt(stage, msg, line, col) {
+  err = HavelError(SEVERITY_INFO, stage, msg)
+  at(err, line, col, 1)
+  if reporter.sourceFile != null { file(err, reporter.sourceFile) }
+  report(err)
+  err
+}
+
+// Convenience: just a plain error (no location)
+fn error(stage, msg) {
+  err = HavelError(SEVERITY_ERROR, stage, msg)
+  if reporter.sourceFile != null { file(err, reporter.sourceFile) }
+  report(err)
+  err
+}
+
+fn warning(stage, msg) {
+  err = HavelError(SEVERITY_WARNING, stage, msg)
+  if reporter.sourceFile != null { file(err, reporter.sourceFile) }
+  report(err)
+  err
+}
+
+// ============================================================
+// Formatting — rust-style caret errors with ANSI colors
+// ============================================================
+
+fn severityColor(severity) {
+  if severity == SEVERITY_ERROR { return RED }
+  if severity == SEVERITY_WARNING { return YELLOW }
+  CYAN
+}
+
+fn severityLabel(severity) {
+  label = SEVERITY_NAMES[severity]
+  if label == null { label = "error" }
+  label
+}
+
+fn stageLabel(stage) {
+  label = STAGE_NAMES[stage]
+  if label == null { label = "Compiler" }
+  label
+}
+
+fn padLeft(n, width) {
+  s = str(n)
+  while #s < width { s = " " + s }
+  s
+}
+
+// Format a single error with caret-style output
+// Produces output like:
+//   error: unknown binary opr 'foo'
+//    --> file.hv:12:8
+//     |
+//   12 | let x = foo + 1
+//     |         ^^^
+fn formatError(err, useColor) {
+  if useColor == null { useColor = true }
+
+  color = severityColor(err.severity)
+  label = severityLabel(err.severity)
+  stage = stageLabel(err.stage)
+
+  // Header line: "error[E030]: unknown binary opr 'foo'"
+  header = label
+  if err.code != null { header = header + "[" + err.code + "]" }
+  header = header + ": " + err.msg
+
+  if useColor {
+    header = color + header + RESET
+  }
+
+  // No location — just the header
+  if err.line == null || err.line < 1 {
+    return header
+  }
+
+  // Location line: " --> file.hv:12:8"
+  loc = " --> "
+  if err.file != null && err.file != "" { loc = loc + err.file + ":" }
+  loc = loc + str(err.line) + ":" + str(err.col)
+  if useColor { loc = CYAN + loc + RESET }
+
+  // Try to get source line
+  sourceLine = err.sourceLine
+  if sourceLine == null && err.file != null && err.file != "" {
+    sourceLine = readSourceLine(err.file, err.line)
+  }
+  if sourceLine == null { sourceLine = "" }
+
+  if sourceLine == "" {
+    return header + "\n" + loc
+  }
+
+  // Trim trailing whitespace from source line for display
+  trimmed = string.trimEnd(sourceLine)
+
+  lineStr = str(err.line)
+  lineW = #lineStr
+  if lineW < 3 { lineW = 3 }
+
+  // "   |"
+  pipePad = padLeft("", lineW)
+  // "12 | let x = foo + 1"
+  sourceOut = lineStr + " | " + trimmed
+  // "   |         ^^^"
+  caretCount = err.length
+  if caretCount == null || caretCount < 1 { caretCount = 1 }
+  colOffset = err.col
+  if colOffset == null || colOffset < 1 { colOffset = 1 }
+  spaces = colOffset - 1
+  caretStr = ""
+  i = 0
+  while i < spaces { caretStr = caretStr + " "; i = i + 1 }
+  i = 0
+  while i < caretCount { caretStr = caretStr + "^"; i = i + 1 }
+  if useColor { caretStr = color + caretStr + RESET }
+  caretLine = pipePad + " | " + caretStr
+
+  header + "\n" + loc + "\n" + pipePad + " |" + "\n" + sourceOut + "\n" + caretLine
+}
+
+// Format all accumulated errors
+fn formatAll(useColor) {
+  if useColor == null { useColor = true }
+  out = ""
+  for err in reporter.errors {
+    if out != "" { out = out + "\n" }
+    out = out + formatError(err, useColor)
+  }
+  out
+}
+
+// Print all accumulated errors to stdout
+fn printAll(useColor) {
+  if useColor == null { useColor = true }
+  for err in reporter.errors {
+    print(formatError(err, useColor))
+  }
+}
+
+// Print summary line: "2 error(s), 1 warning(s)"
+fn printSummary() {
+  if reporter.errorCount > 0 || reporter.warningCount > 0 {
+    msg = ""
+    if reporter.errorCount > 0 { msg = msg + str(reporter.errorCount) + " error(s)" }
+    if reporter.warningCount > 0 {
+      if msg != "" { msg = msg + ", " }
+      msg = msg + str(reporter.warningCount) + " warning(s)"
+    }
+    print(msg)
+  }
+}
+
+// ============================================================
+// Quick-report helpers for each pipeline stage
+// ============================================================
+
+// Lexer errors
+fn lexerError(msg, line, col, code) { errorAt(STAGE_LEXER, msg, line, col, code) }
+
+// Parser errors
+fn parserError(msg, line, col, code) { errorAt(STAGE_PARSER, msg, line, col, code) }
+
+// Emitter errors
+fn emitterError(msg, line, col, code) { errorAt(STAGE_EMITTER, msg, line, col, code) }
+
+// Type inference errors
+fn typeError(msg, line, col, code) { errorAt(STAGE_TYPES, msg, line, col, code) }
+
+// Runtime errors
+fn runtimeError(msg, line, col, code) { errorAt(STAGE_RUNTIME, msg, line, col, code) }
+
+// ============================================================
+// Compatibility: convert old-style {msg, line, col} objects
+// ============================================================
+
+fn importLegacyErrors(errors, stage, sourceFile) {
+  if errors == null { return }
+  for err in errors {
+    newErr = HavelError(SEVERITY_ERROR, stage, err.msg)
+    at(newErr, err.line, err.col, 1)
+    if sourceFile != null { file(newErr, sourceFile) }
+    report(newErr)
+  }
+}
+
+// ========== debug.hv ==========
+// debug.hv — debug flag system and trace logging for the self-hosted Havel compiler
+// Mirrors the C++ Debug.hpp + DebugFlags.hpp design
+// Provides: flag bag, trace helpers, token/AST/bytecode dump utilities
+
+// ============================================================
+// ANSI color codes (shared with error.hv but self-contained)
+// ============================================================
+
+DBG_RED = "\033[1;31m"
+DBG_GREEN = "\033[1;32m"
+DBG_YELLOW = "\033[1;33m"
+DBG_CYAN = "\033[36m"
+DBG_MAGENTA = "\033[35m"
+DBG_DIM = "\033[2m"
+DBG_BOLD = "\033[1m"
+DBG_RESET = "\033[0m"
+
+// ============================================================
+// Debug flag bag — parsed from CLI args, consumed by pipeline
+// ============================================================
+
+fn DebugFlags() {
+  {
+    lexer: false,
+    parser: false,
+    ast: false,
+    bytecode: false,
+    gc: false,
+    scope: false,
+    emitter: false,
+    types: false,
+    all: false,
+    color: true,
+    timing: false,
+    verbose: false
+  }
+}
+
+// Global debug flags instance
+flags = DebugFlags()
+
+fn isOn(flagName) {
+  if flags.all { return true }
+  rval = flags[flagName]
+  if rval != null { return rval }
+  false
+}
+
+fn setFlag(flagName, value) {
+  flags[flagName] = value
+  if flagName == "all" && value {
+    flags.lexer = true
+    flags.parser = true
+    flags.ast = true
+    flags.bytecode = true
+    flags.scope = true
+    flags.emitter = true
+    flags.types = true
+  }
+}
+
+// ============================================================
+// CLI arg parser for debug flags
+// Returns: updated cfg object with debug flags set
+// ============================================================
+
+fn parseDebugArgs(args) {
+  i = 0
+  while i < #args {
+    arg = args[i]
+    if arg == "-d" || arg == "--debug" {
+      flags.all = true
+      flags.verbose = true
+    }
+    if arg == "-dl" || arg == "--debug-lexer" { flags.lexer = true }
+    if arg == "-dp" || arg == "--debug-parser" { flags.parser = true }
+    if arg == "-da" || arg == "--debug-ast" { flags.ast = true }
+    if arg == "-dbc" || arg == "--debug-bytecode" { flags.bytecode = true }
+    if arg == "-dgc" || arg == "--debug-gc" { flags.gc = true }
+    if arg == "-ds" || arg == "--debug-scope" { flags.scope = true }
+    if arg == "-de" || arg == "--debug-emitter" { flags.emitter = true }
+    if arg == "-dt" || arg == "--debug-types" { flags.types = true }
+    if arg == "--no-color" { flags.color = false }
+    if arg == "--timing" { flags.timing = true }
+    if arg == "-v" || arg == "--verbose" { flags.verbose = true }
+    i = i + 1
+  }
+  if flags.all {
+    flags.lexer = true
+    flags.parser = true
+    flags.ast = true
+    flags.bytecode = true
+    flags.scope = true
+    flags.emitter = true
+    flags.types = true
+  }
+  flags
+}
+
+// ============================================================
+// Trace output — conditional print based on debug flags
+// ============================================================
+
+fn colorize(text, color) {
+  if flags.color { return color + text + DBG_RESET }
+  text
+}
+
+// Stage-prefixed trace: "[LEXER] ..." etc
+fn trace(stage, msg) {
+  prefix = "[" + stage + "]"
+  if flags.color {
+    prefix = DBG_DIM + prefix + DBG_RESET
+  }
+  print(prefix + " " + msg)
+}
+
+fn traceLexer(msg) { if isOn("lexer") { trace("LEXER", msg) } }
+fn traceParser(msg) { if isOn("parser") { trace("PARSER", msg) } }
+fn traceAst(msg) { if isOn("ast") { trace("AST", msg) } }
+fn traceBytecode(msg) { if isOn("bytecode") { trace("BC", msg) } }
+fn traceScope(msg) { if isOn("scope") { trace("SCOPE", msg) } }
+fn traceEmitter(msg) { if isOn("emitter") { trace("EMIT", msg) } }
+fn traceTypes(msg) { if isOn("types") { trace("TYPES", msg) } }
+fn traceGc(msg) { if isOn("gc") { trace("GC", msg) } }
+
+// ============================================================
+// Token dump — for --debug-lexer
+// ============================================================
+
+fn dumpToken(tok) {
+  if tok == null { return "<null>" }
+  rval = tok.value
+  if rval == null { rval = "" }
+  ttype = tok.type
+  if ttype == null { ttype = "?" }
+  line = tok.line
+  col = tok.col
+  if line == null { line = 0 }
+  if col == null { col = 0 }
+  s = str(line) + ":" + str(col) + " " + ttype + " '" + str(rval) + "'"
+  if flags.color {
+    if ttype == "Number" { s = DBG_CYAN + s + DBG_RESET }
+    if ttype == "String" { s = DBG_GREEN + s + DBG_RESET }
+    if ttype == "Identifier" { s = DBG_YELLOW + s + DBG_RESET }
+    if ttype == "NewLine" { s = DBG_DIM + s + DBG_RESET }
+    if ttype == "Keyword" { s = DBG_MAGENTA + s + DBG_RESET }
+  }
+  s
+}
+
+fn dumpTokenList(tokens) {
+  if !isOn("lexer") { return }
+  traceLexer("--- token stream (" + str(#tokens) + " tokens) ---")
+  for tok in tokens {
+    traceLexer("  " + dumpToken(tok))
+  }
+  traceLexer("--- end token stream ---")
+}
+
+// ============================================================
+// AST dump — for --debug-ast
+// ============================================================
+
+fn astKindName(node) {
+  if node == null { return "<null>" }
+  k = node.kind
+  if k == null { return "<unknown>" }
+  k
+}
+
+fn dumpAstNode(node, indent) {
+  if indent == null { indent = 0 }
+  if node == null {
+    traceAst("  " * indent + "null")
+    return
+  }
+  k = node.kind
+  if k == null { k = "?" }
+  pad = "  " * indent
+
+  // Summary line varies by node type
+  info = k
+  if k == "NumberLiteral" { info = k + " " + str(node.value) }
+  if k == "StringLiteral" { info = k + " \"" + str(node.value) + "\"" }
+  if k == "BoolLiteral" { info = k + " " + str(node.value) }
+  if k == "Identifier" { info = k + " " + str(node.name) }
+  if k == "FnDeclaration" {
+    name = node.name
+    if name == null { name = "<anon>" }
+    pcount = 0
+    if node.params != null { pcount = #node.params }
+    info = k + " " + name + "(" + str(pcount) + " params)"
+  }
+  if k == "VarDeclaration" { info = k + " " + str(node.name) }
+  if k == "LetDeclaration" { info = k + " " + str(node.name) }
+  if k == "Assignment" { info = k }
+  if k == "BinaryExpression" { info = k + " " + str(node.oper) }
+  if k == "UnaryExpression" { info = k + " " + str(node.oper) }
+  if k == "CallExpression" {
+    callee = node.callee
+    cname = "<expr>"
+    if callee != null && callee.kind == "Identifier" { cname = callee.name }
+    info = k + " " + cname
+  }
+  if k == "MemberExpression" { info = k + " ." + str(node.field) }
+  if k == "IndexExpression" { info = k }
+  if k == "ReturnStatement" { info = k }
+  if k == "IfStatement" { info = k }
+  if k == "WhileStatement" { info = k }
+  if k == "ForStatement" { info = k }
+  if k == "BlockStatement" {
+    count = 0
+    if node.body != null { count = #node.body }
+    info = k + " (" + str(count) + " stmts)"
+  }
+  if k == "ClassDeclaration" { info = k + " " + str(node.name) }
+  if k == "UseStatement" || k == "ImportStatement" { info = k + " " + str(node.module) }
+
+  line = node.line
+  col = node.col
+  if line != null { info = info + " @ " + str(line) + ":" + str(col) }
+
+  traceAst(pad + info)
+
+  // Recurse into children
+  if k == "BlockStatement" && node.body != null {
+    for child in node.body { dumpAstNode(child, indent + 1) }
+  }
+  if k == "FnDeclaration" {
+    if node.params != null {
+      for p in node.params { dumpAstNode(p, indent + 1) }
+    }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+  }
+  if k == "IfStatement" {
+    if node.condition != null { dumpAstNode(node.condition, indent + 1) }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+    elseBranch = node["else"]
+    if elseBranch != null { dumpAstNode(elseBranch, indent + 1) }
+  }
+  if k == "WhileStatement" || k == "LoopStatement" {
+    if node.condition != null { dumpAstNode(node.condition, indent + 1) }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+  }
+  if k == "ForStatement" {
+    if node.init != null { dumpAstNode(node.init, indent + 1) }
+    if node.condition != null { dumpAstNode(node.condition, indent + 1) }
+    if node.update != null { dumpAstNode(node.update, indent + 1) }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+  }
+  if k == "BinaryExpression" {
+    if node.left != null { dumpAstNode(node.left, indent + 1) }
+    if node.right != null { dumpAstNode(node.right, indent + 1) }
+  }
+  if k == "UnaryExpression" || k == "UpdateExpression" {
+    if node.operand != null { dumpAstNode(node.operand, indent + 1) }
+  }
+  if k == "CallExpression" {
+    if node.callee != null { dumpAstNode(node.callee, indent + 1) }
+    if node.args != null {
+      for a in node.args { dumpAstNode(a, indent + 1) }
+    }
+  }
+  if k == "MemberExpression" {
+    if node.object != null { dumpAstNode(node.object, indent + 1) }
+  }
+  if k == "IndexExpression" {
+    if node.obj != null { dumpAstNode(node.obj, indent + 1) }
+    if node.index != null { dumpAstNode(node.index, indent + 1) }
+  }
+  if k == "Assignment" || k == "CompoundAssignment" {
+    if node.target != null { dumpAstNode(node.target, indent + 1) }
+    if node.value != null { dumpAstNode(node.value, indent + 1) }
+  }
+  if k == "ReturnStatement" {
+    if node.value != null { dumpAstNode(node.value, indent + 1) }
+  }
+  if k == "ClassDeclaration" {
+    if node.definition != null { dumpAstNode(node.definition, indent + 1) }
+  }
+}
+
+fn dumpAst(program) {
+  if !isOn("ast") { return }
+  traceAst("--- AST dump ---")
+  if program == null {
+    traceAst("<null program>")
+    return
+  }
+  if program.body != null {
+    for node in program.body { dumpAstNode(node, 0) }
+  }
+  traceAst("--- end AST dump ---")
+}
+
+// ============================================================
+// Bytecode dump — for --debug-bytecode
+// ============================================================
+
+fn dumpBytecode() {
+  if !isOn("bytecode") { return }
+  traceBytecode("--- bytecode dump ---")
+  bc.debug_print()
+  traceBytecode("--- end bytecode dump ---")
+}
+
+// ============================================================
+// Timing helpers — for --timing flag
+// ============================================================
+
+timers = {}
+
+fn startTimer(name) {
+  timers[name] = time.now()
+}
+
+fn endTimer(name) {
+  start = timers[name]
+  if start == null { return }
+  elapsed = time.now() - start
+  ms = int(elapsed * 1000)
+  trace("TIMER", name + ": " + str(ms) + "ms")
+}
+
+// ============================================================
+// Scope dump — for --debug-scope
+// ============================================================
+
+fn dumpScope(scope, indent) {
+  if indent == null { indent = 0 }
+  if scope == null {
+    traceScope("  " * indent + "<null scope>")
+    return
+  }
+  pad = "  " * indent
+  name = scope.name
+  if name == null { name = "<anon>" }
+  count = scope.count
+  if count == null { count = 0 }
+  traceScope(pad + name + " (vars: " + str(count) + ")")
+  if scope.children != null {
+    for child in scope.children { dumpScope(child, indent + 1) }
+  }
+}
+
+// ========== lexer.hv ==========
 // Havel lexer — pure Havel implementation
 // Tokenizes Havel source code into a list of {type, value, line, col} objects
+
 
 // --- Token types ---
 TOKEN_TYPES = {
@@ -2384,13 +3117,13 @@ fn printTokens(tokens) {
 
     }
 }
-// === END MODULE: lexer ===
 
-// === BEGIN MODULE: pratt ===
+// ========== pratt.hv ==========
 // Havel Pratt parser — pure Havel implementation
 // Top-down operator precedence parser matching the C++ Parser.cpp architecture
 // Consumes token list from "lexer".hv, produces AST nodes from "ast".hv
 
+use { tokenize, TOKEN_TYPES, KEYWORDS } from "lexer"
 use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
       Program, BlockStatement, ExpressionStatement,
       NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
@@ -5251,13 +5984,13 @@ fn parseTokens(tokenList) {
     {ast: ast, errors: p.errors}
 
 }
-// === END MODULE: pratt ===
 
-// === BEGIN MODULE: emitter ===
+// ========== emitter.hv ==========
 // emitter.hv — AST → bytecode compiler
 // Walks the AST from "pratt".hv/ast.hv and emits bytecode via bc.* host functions
 // Uses scope.hv for variable resolution and upvalue tracking
 
+use { Scope, scopeDeclare, scopeResolve, scopeLocalCount } from "scope"
 
 fn charDigit(c) {
     // map single char to its digit value: 0-9, a-f, A-F
@@ -5307,7 +6040,6 @@ fn Emitter() {
 
 }
 fn emitError(msg, line, col) {
-    print("compile error at " + str(line) + ":" + str(col) + " - " + msg)
 
 }
 fn globalIdx(emitter, name) {
@@ -6935,28 +7667,1388 @@ fn emitHotkeyBinding(emitter, node) {
 
 }
 
+// ========== optimizer.hv ==========
+use { isNode } from "ast"
 
-// === END MODULE: emitter ===
-
-// === BEGIN MODULE: compiler_main ===
-
-if #app.args < 2 {
-    print("usage: havel --run modules/compiler.hv -- <input.hv> <output.hvc>")
-    exit(1)
+fn isLiteral(node) {
+    if node == null { false }
+    else { node.kind == "NumberLiteral" || node.kind == "StringLiteral" || node.kind == "BooleanLiteral" || node.kind == "NullLiteral" }
 }
 
-source = fs.read(app.args[0])
-tokens = tokenize(source)
-result = parseTokens(tokens)
-if result.errors != null && #result.errors > 0 {
-    for err in result.errors {
-        print(err)
+fn literalValue(node) {
+    if node.kind == "NullLiteral" { null }
+    else { node.value }
+}
+
+fn numLiteral(v, orig) {
+    {kind: "NumberLiteral", value: v, line: orig.line, col: orig.col}
+}
+
+fn boolLiteral(v, orig) {
+    {kind: "BooleanLiteral", value: v, line: orig.line, col: orig.col}
+}
+
+fn strLiteral(v, orig) {
+    {kind: "StringLiteral", value: v, line: orig.line, col: orig.col}
+}
+
+fn nullLiteral(orig) {
+    {kind: "NullLiteral", line: orig.line, col: orig.col}
+}
+
+fn tryFoldArithmetic(oper, l, r, orig) {
+    result = null
+    if oper == "+" { result = l + r }
+    else if oper == "-" { result = l - r }
+    else if oper == "*" { result = l * r }
+    else if oper == "/" {
+        if r == 0 { null }
+        else { result = l / r }
     }
-    exit(1)
+    else if oper == "%" {
+        if r == 0 { null }
+        else { result = l % r }
+    }
+    else if oper == "**" { result = l ** r }
+    else if oper == "\\" {
+        if r == 0 { null }
+        else { result = int(l) \ int(r) }
+    }
+    else if oper == "%%" {
+        if r == 0 { null }
+        else { result = int(l) %% int(r) }
+    }
+    if result != null { numLiteral(result, orig) }
+    else { null }
 }
-emitter = Emitter()
-compileProgram(emitter, result.ast, true)
-bc.serialize(app.args[1])
-print("written " + app.args[1])
 
-// === END MODULE: compiler_main ===
+fn tryFoldBitwise(oper, l, r, orig) {
+    li = int(l)
+    ri = int(r)
+    result = null
+    if oper == "&" { result = li & ri }
+    else if oper == "|" { result = li | ri }
+    else if oper == "^" { result = li ^ ri }
+    else if oper == "<<" { result = li << ri }
+    else if oper == ">>" { result = li >> ri }
+    if result != null { numLiteral(result, orig) }
+    else { null }
+}
+
+fn tryFoldComparison(oper, l, r, orig) {
+    result = null
+    if oper == "==" { result = l == r }
+    else if oper == "!=" { result = l != r }
+    else if oper == "<" { result = l < r }
+    else if oper == ">" { result = l > r }
+    else if oper == "<=" { result = l <= r }
+    else if oper == ">=" { result = l >= r }
+    if result != null { boolLiteral(result, orig) }
+    else { null }
+}
+
+fn tryFoldLogical(oper, l, r, orig) {
+    if oper == "&&" {
+        if l == false || l == 0 || l == null { boolLiteral(false, orig) }
+        else if l == true { boolLiteral(bool(r), orig) }
+        else { null }
+    }
+    else if oper == "||" {
+        if l == true || (l != false && l != 0 && l != null) { boolLiteral(true, orig) }
+        else if l == false || l == 0 || l == null { boolLiteral(bool(r), orig) }
+        else { null }
+    }
+    else { null }
+}
+
+fn foldBinary(node) {
+    left = node.left
+    right = node.right
+    oper = node.oper
+    if !isLiteral(left) || !isLiteral(right) { return node }
+    lv = literalValue(left)
+    rv = literalValue(right)
+    lk = left.kind
+    rk = right.kind
+    bothNum = lk == "NumberLiteral" && rk == "NumberLiteral"
+    bothStr = lk == "StringLiteral" && rk == "StringLiteral"
+    bothBool = lk == "BooleanLiteral" && rk == "BooleanLiteral"
+    if oper == "+" && bothStr { return strLiteral(lv + rv, node) }
+    if bothNum {
+        result = tryFoldArithmetic(oper, lv, rv, node)
+        if result != null { return result }
+        result = tryFoldBitwise(oper, lv, rv, node)
+        if result != null { return result }
+    }
+    if bothNum || bothStr || bothBool {
+        result = tryFoldComparison(oper, lv, rv, node)
+        if result != null { return result }
+    }
+    if bothBool {
+        result = tryFoldLogical(oper, lv, rv, node)
+        if result != null { return result }
+    }
+    node
+}
+
+fn foldUnary(node) {
+    operand = node.operand
+    oper = node.oper
+    if !isLiteral(operand) { return node }
+    ov = literalValue(operand)
+    ok = operand.kind
+    if oper == "-" && ok == "NumberLiteral" { return numLiteral(-ov, node) }
+    if oper == "!" || oper == "not" {
+        if ok == "BooleanLiteral" { return boolLiteral(!ov, node) }
+        if ok == "NumberLiteral" { return boolLiteral(!bool(ov), node) }
+    }
+    if oper == "#" && ok == "StringLiteral" { return numLiteral(#ov, node) }
+    node
+}
+
+fn foldTernary(node) {
+    cond = node.condition
+    if !isLiteral(cond) { return node }
+    cv = literalValue(cond)
+    if cv == true || (cv != false && cv != 0 && cv != null) { return node.true_expr }
+    node.false_expr
+}
+
+fn constantFold(node) {
+    if node == null { return null }
+    nt = type(node)
+    if nt == "array" {
+        result = []
+        for item in node { result.push(constantFold(item)) }
+        return result
+    }
+    inn = isNode(node)
+    if !inn { return node }
+    k = node.kind
+    if k == "BinaryExpression" {
+        n = node
+        n.left = constantFold(n.left)
+        n.right = constantFold(n.right)
+        return foldBinary(n)
+    }
+    if k == "UnaryExpression" {
+        n = node
+        n.operand = constantFold(n.operand)
+        return foldUnary(n)
+    }
+    if k == "TernaryExpression" {
+        n = node
+        n.condition = constantFold(n.condition)
+        n.true_expr = constantFold(n.true_expr)
+        n.false_expr = constantFold(n.false_expr)
+        return foldTernary(n)
+    }
+    if k == "IfStatement" {
+        n = node
+        n.condition = constantFold(n.condition)
+        n.then = constantFold(n.then)
+        if n["else"] != null { n["else"] = constantFold(n["else"]) }
+        return n
+    }
+    if k == "ExpressionStatement" {
+        n = node
+        n.expr = constantFold(n.expr)
+        return n
+    }
+    if k == "ReturnStatement" {
+        n = node
+        if n.value != null { n.value = constantFold(n.value) }
+        return n
+    }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        n = node
+        if n.value != null { n.value = constantFold(n.value) }
+        return n
+    }
+    if k == "AssignmentExpression" {
+        n = node
+        n.value = constantFold(n.value)
+        return n
+    }
+    if k == "CompoundAssignment" {
+        n = node
+        n.value = constantFold(n.value)
+        return n
+    }
+    if k == "CallExpression" {
+        n = node
+        n.callee = constantFold(n.callee)
+        folded = []
+        for a in n.args { folded.push(constantFold(a)) }
+        n.args = folded
+        return n
+    }
+    if k == "ArrayLiteral" {
+        n = node
+        folded = []
+        for e in n.elements { folded.push(constantFold(e)) }
+        n.elements = folded
+        return n
+    }
+    if k == "ObjectLiteral" {
+        n = node
+        folded = []
+        for f in n.fields {
+            if f.kind == "ObjectField" { f.value = constantFold(f.value) }
+            folded.push(f)
+        }
+        n.fields = folded
+        return n
+    }
+    if k == "WhileStatement" {
+        n = node
+        n.condition = constantFold(n.condition)
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "ForStatement" {
+        n = node
+        n.iterator = constantFold(n.iterator)
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "LoopStatement" {
+        n = node
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "FnDeclaration" {
+        n = node
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "LambdaExpression" {
+        n = node
+        n.body = constantFold(n.body)
+        return n
+    }
+    if k == "BlockStatement" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(constantFold(s)) }
+        n.body = folded
+        return n
+    }
+    if k == "Program" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(constantFold(s)) }
+        n.body = folded
+        return n
+    }
+    node
+}
+
+fn isAlwaysTrue(cond) {
+    if cond.kind == "BooleanLiteral" && cond.value { true }
+    else { false }
+}
+
+fn isAlwaysFalse(cond) {
+    if cond.kind == "BooleanLiteral" && !cond.value { true }
+    else if cond.kind == "NullLiteral" { true }
+    else { false }
+}
+
+fn deadCodeElimStmts(stmts) {
+    result = []
+    for stmt in stmts {
+        result.push(stmt)
+        if stmt.kind == "ReturnStatement" || stmt.kind == "BreakStatement" || stmt.kind == "ContinueStatement" || stmt.kind == "ThrowStatement" {
+            break
+        }
+    }
+    result
+}
+
+fn deadCodeElim(node) {
+    if node == null { return null }
+    nt = type(node)
+    if nt == "array" { return deadCodeElimStmts(node) }
+    inn = isNode(node)
+    if !inn { return node }
+    k = node.kind
+    if k == "Program" {
+        n = node
+        n.body = deadCodeElimStmts(n.body)
+        folded = []
+        for s in n.body { folded.push(deadCodeElim(s)) }
+        n.body = folded
+        return n
+    }
+    if k == "BlockStatement" {
+        n = node
+        n.body = deadCodeElimStmts(n.body)
+        folded = []
+        for s in n.body { folded.push(deadCodeElim(s)) }
+        n.body = folded
+        return n
+    }
+    if k == "IfStatement" {
+        n = node
+        n.condition = deadCodeElim(n.condition)
+        n.then = deadCodeElim(n.then)
+        if n["else"] != null { n["else"] = deadCodeElim(n["else"]) }
+        at = isAlwaysTrue(n.condition)
+        af = isAlwaysFalse(n.condition)
+        if at { return n.then }
+        if af {
+            elseBr = n["else"]
+            if elseBr != null { return elseBr }
+            return nullLiteral(n)
+        }
+        return n
+    }
+    if k == "WhileStatement" {
+        n = node
+        n.condition = deadCodeElim(n.condition)
+        af = isAlwaysFalse(n.condition)
+        if af { return nullLiteral(n) }
+        n.body = deadCodeElim(n.body)
+        n
+    }
+    if k == "ForStatement" {
+        n = node
+        n.iterator = deadCodeElim(n.iterator)
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "LoopStatement" {
+        n = node
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "FnDeclaration" {
+        n = node
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "LambdaExpression" {
+        n = node
+        n.body = deadCodeElim(n.body)
+        return n
+    }
+    if k == "ExpressionStatement" {
+        n = node
+        n.expr = deadCodeElim(n.expr)
+        return n
+    }
+    if k == "ReturnStatement" {
+        n = node
+        if n.value != null { n.value = deadCodeElim(n.value) }
+        return n
+    }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        n = node
+        if n.value != null { n.value = deadCodeElim(n.value) }
+        return n
+    }
+    node
+}
+
+fn collectUsedNames(body) {
+    names = {}
+    _walkNames(body, names, true)
+    names
+}
+
+fn _walkNames(node, names, reading) {
+    if node == null { return }
+    nt = type(node)
+    if nt == "array" {
+        for item in node { _walkNames(item, names, reading) }
+        return
+    }
+    inn = isNode(node)
+    if !inn { return }
+    k = node.kind
+    if k == "Identifier" {
+        if reading { names[node.name] = true }
+    }
+    else if k == "AssignmentExpression" {
+        _walkNames(node.value, names, true)
+        if node.target.kind == "Identifier" { names[node.target.name] = true }
+        else { _walkNames(node.target, names, true) }
+    }
+    else if k == "CompoundAssignment" {
+        _walkNames(node.value, names, true)
+        if node.target.kind == "Identifier" { names[node.target.name] = true }
+    }
+    else if k == "FnDeclaration" {
+        names[node.name] = true
+        _walkNames(node.body, names, true)
+    }
+    else if k == "CallExpression" {
+        _walkNames(node.callee, names, true)
+        for a in node.args { _walkNames(a, names, true) }
+    }
+    else if k == "BinaryExpression" {
+        _walkNames(node.left, names, true)
+        _walkNames(node.right, names, true)
+    }
+    else if k == "UnaryExpression" {
+        _walkNames(node.operand, names, true)
+    }
+    else if k == "MemberExpression" {
+        _walkNames(node.obj, names, true)
+    }
+    else if k == "IfStatement" {
+        _walkNames(node.condition, names, true)
+        _walkNames(node.then, names, true)
+        if node["else"] != null { _walkNames(node["else"], names, true) }
+    }
+    else if k == "WhileStatement" {
+        _walkNames(node.condition, names, true)
+        _walkNames(node.body, names, true)
+    }
+    else if k == "ForStatement" {
+        names[node.name] = true
+        _walkNames(node.iterator, names, true)
+        _walkNames(node.body, names, true)
+    }
+    else if k == "ReturnStatement" {
+        if node.value != null { _walkNames(node.value, names, true) }
+    }
+    else if k == "ExpressionStatement" {
+        _walkNames(node.expr, names, true)
+    }
+    else if k == "LetDeclaration" || k == "ValDeclaration" {
+        if node.value != null { _walkNames(node.value, names, true) }
+        names[node.name] = true
+    }
+    else if k == "Program" || k == "BlockStatement" {
+        for s in node.body { _walkNames(s, names, reading) }
+    }
+}
+
+fn isSimpleReturn(body) {
+    if body.kind == "ReturnStatement" && body.value != null { true }
+    else if body.kind == "BlockStatement" {
+        stmts = body.body
+        if #stmts == 1 && stmts[0].kind == "ReturnStatement" && stmts[0].value != null { true }
+        else { false }
+    }
+    else { false }
+}
+
+fn getReturnValue(body) {
+    if body.kind == "ReturnStatement" { body.value }
+    else { body.body[0].value }
+}
+
+fn inlineCalls(node, funcMap) {
+    if node == null { return null }
+    nt = type(node)
+    if nt == "array" {
+        result = []
+        for item in node { result.push(inlineCalls(item, funcMap)) }
+        return result
+    }
+    inn = isNode(node)
+    if !inn { return node }
+    k = node.kind
+    if k == "CallExpression" {
+        callee = node.callee
+        isTarget = callee.kind == "Identifier" && funcMap[callee.name] != null && #node.args == 0
+        if isTarget {
+            fnDecl = funcMap[callee.name]
+            isSimple = isSimpleReturn(fnDecl.body)
+            if isSimple {
+                returnExpr = getReturnValue(fnDecl.body)
+                return inlineCalls(returnExpr, funcMap)
+            }
+            return node
+        }
+        n = node
+        n.callee = inlineCalls(n.callee, funcMap)
+        folded = []
+        for a in n.args { folded.push(inlineCalls(a, funcMap)) }
+        n.args = folded
+        return n
+    }
+    if k == "BinaryExpression" {
+        n = node
+        n.left = inlineCalls(n.left, funcMap)
+        n.right = inlineCalls(n.right, funcMap)
+        return n
+    }
+    if k == "UnaryExpression" {
+        n = node
+        n.operand = inlineCalls(n.operand, funcMap)
+        return n
+    }
+    if k == "IfStatement" {
+        n = node
+        n.condition = inlineCalls(n.condition, funcMap)
+        n.then = inlineCalls(n.then, funcMap)
+        if n["else"] != null { n["else"] = inlineCalls(n["else"], funcMap) }
+        return n
+    }
+    if k == "FnDeclaration" {
+        n = node
+        n.body = inlineCalls(n.body, funcMap)
+        return n
+    }
+    if k == "LambdaExpression" {
+        n = node
+        n.body = inlineCalls(n.body, funcMap)
+        return n
+    }
+    if k == "ReturnStatement" {
+        n = node
+        if n.value != null { n.value = inlineCalls(n.value, funcMap) }
+        return n
+    }
+    if k == "ExpressionStatement" {
+        n = node
+        n.expr = inlineCalls(n.expr, funcMap)
+        return n
+    }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        n = node
+        if n.value != null { n.value = inlineCalls(n.value, funcMap) }
+        return n
+    }
+    if k == "Program" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(inlineCalls(s, funcMap)) }
+        n.body = folded
+        return n
+    }
+    if k == "BlockStatement" {
+        n = node
+        folded = []
+        for s in n.body { folded.push(inlineCalls(s, funcMap)) }
+        n.body = folded
+        return n
+    }
+    node
+}
+
+fn inline(program) {
+    funcMap = {}
+    funcNames = {}
+    for stmt in program.body {
+        if stmt.kind == "FnDeclaration" {
+            p = stmt.params
+            if p != null && #p == 0 {
+                if isSimpleReturn(stmt.body) {
+                    funcMap[stmt.name] = stmt
+                    funcNames[stmt.name] = true
+                }
+            }
+        }
+    }
+    hasNames = false
+    for _k in funcNames { hasNames = true; break }
+    if !hasNames { return program }
+    used = collectUsedNames(program.body)
+    inlineMap = {}
+    for name in funcNames {
+        cnt = countUses(program.body, name)
+        if cnt == 1 { inlineMap[name] = funcMap[name] }
+    }
+    hasInline = false
+    for _k in inlineMap { hasInline = true; break }
+    if !hasInline { return program }
+    inlineCalls(program, inlineMap)
+}
+
+fn countUses(node, name) {
+    if node == null { return 0 }
+    nt = type(node)
+    if nt == "array" {
+        total = 0
+        for item in node { total = total + countUses(item, name) }
+        return total
+    }
+    inn = isNode(node)
+    if !inn { return 0 }
+    k = node.kind
+    if k == "CallExpression" {
+        c = 0
+        if node.callee.kind == "Identifier" && node.callee.name == name { c = 1 }
+        c = c + countUses(node.callee, name)
+        for a in node.args { c = c + countUses(a, name) }
+        return c
+    }
+    if k == "BinaryExpression" { return countUses(node.left, name) + countUses(node.right, name) }
+    if k == "UnaryExpression" { return countUses(node.operand, name) }
+    if k == "ExpressionStatement" { return countUses(node.expr, name) }
+    if k == "ReturnStatement" {
+        if node.value != null { return countUses(node.value, name) }
+        return 0
+    }
+    if k == "Program" || k == "BlockStatement" {
+        total = 0
+        for s in node.body { total = total + countUses(s, name) }
+        return total
+    }
+    if k == "FnDeclaration" { return countUses(node.body, name) }
+    if k == "LetDeclaration" || k == "ValDeclaration" {
+        if node.value != null { return countUses(node.value, name) }
+        return 0
+    }
+    if k == "IfStatement" {
+        c = countUses(node.condition, name) + countUses(node.then, name)
+        if node["else"] != null { c = c + countUses(node["else"], name) }
+        return c
+    }
+    if k == "AssignmentExpression" { return countUses(node.value, name) }
+    0
+}
+
+fn optimize(program, passes) {
+    n = program
+    if n.ast != null { n = n.ast }
+    doFold = true
+    doDce = true
+    doInline = true
+    if passes != null {
+        if passes.fold != null { doFold = passes.fold }
+        if passes.dce != null { doDce = passes.dce }
+        if passes.inline != null { doInline = passes.inline }
+    }
+    if doFold { n = constantFold(n) }
+    if doDce { n = deadCodeElim(n) }
+    if doInline { n = inline(n) }
+    n
+}
+
+// ========== types.hv ==========
+use { isNode } from "ast"
+
+TYPE_INT = "int"
+TYPE_NUM = "num"
+TYPE_STR = "str"
+TYPE_BOOL = "bool"
+TYPE_NULL = "nil"
+TYPE_ARRAY = "array"
+TYPE_OBJECT = "object"
+TYPE_FN = "fn"
+TYPE_UNKNOWN = "any"
+
+fn isNumeric(t) { t == TYPE_INT || t == TYPE_NUM }
+
+fn inferLiteral(node) {
+    if node == null { TYPE_UNKNOWN }
+    else if node.kind == "NumberLiteral" {
+        v = node.value
+        if v == int(v) { TYPE_INT }
+        else { TYPE_NUM }
+    }
+    else if node.kind == "StringLiteral" { TYPE_STR }
+    else if node.kind == "BooleanLiteral" { TYPE_BOOL }
+    else if node.kind == "NullLiteral" { TYPE_NULL }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferBinary(leftType, oper, rightType) {
+    arithOps = {"+": true, "-": true, "*": true, "/": true, "%": true, "**": true, "\\": true, "%%": true}
+    bitOps = {"&": true, "|": true, "^": true, "<<": true, ">>": true}
+    cmpOps = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "is": true}
+    if arithOps[oper] != null {
+        strConcat = oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR)
+        bothNum = isNumeric(leftType) && isNumeric(rightType)
+        if strConcat { TYPE_STR }
+        else if bothNum {
+            if leftType == TYPE_NUM || rightType == TYPE_NUM { TYPE_NUM }
+            else { TYPE_INT }
+        }
+        else { TYPE_UNKNOWN }
+    }
+    else if bitOps[oper] != null {
+        if leftType == TYPE_INT && rightType == TYPE_INT { TYPE_INT }
+        else { TYPE_UNKNOWN }
+    }
+    else if cmpOps[oper] != null { TYPE_BOOL }
+  else if oper == "&&" || oper == "||" { TYPE_BOOL }
+  else if oper == "in" || oper == "not in" || oper == "matches" { TYPE_BOOL }
+  else if oper == "??" {
+        if rightType != TYPE_UNKNOWN { rightType }
+        else { leftType }
+    }
+    else { TYPE_UNKNOWN }
+}
+
+fn inferUnary(oper, operandType) {
+    numType = isNumeric(operandType)
+    if oper == "-" {
+        if numType { operandType }
+        else { TYPE_UNKNOWN }
+    }
+    else if oper == "!" || oper == "not" { TYPE_BOOL }
+    else if oper == "#" {
+        if operandType == TYPE_STR { TYPE_INT }
+        else { TYPE_UNKNOWN }
+    }
+    else { TYPE_UNKNOWN }
+}
+
+fn TypeEnv(parent) {
+    {bindings: {}, parent: parent}
+}
+
+fn envLookup(env, name) {
+    cur = env
+    while cur != null {
+        if cur.bindings[name] != null { return cur.bindings[name] }
+        cur = cur.parent
+    }
+    TYPE_UNKNOWN
+}
+
+fn envSet(env, name, t) {
+    env.bindings[name] = t
+}
+
+fn inferExpr(node, env) {
+  if node == null { TYPE_UNKNOWN }
+  k = node.kind
+  if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
+    inferLiteral(node)
+  }
+  else if k == "RegexLiteral" { TYPE_OBJECT }
+  else if k == "Identifier" { envLookup(env, node.name) }
+  else if k == "BinaryExpression" {
+    lt = inferExpr(node.left, env)
+    rt = inferExpr(node.right, env)
+    if node.oper == "matches" { TYPE_BOOL }
+    else if node.oper == "not in" { TYPE_BOOL }
+    else { inferBinary(lt, node.oper, rt) }
+  }
+  else if k == "UnaryExpression" {
+    ot = inferExpr(node.operand, env)
+    if node.oper == "~" { TYPE_INT }
+    else { inferUnary(node.oper, ot) }
+  }
+  else if k == "UpdateExpression" {
+    inferExpr(node.operand, env)
+  }
+  else if k == "TernaryExpression" {
+    tt = inferExpr(node.true_expr, env)
+    ft = inferExpr(node.false_expr, env)
+    if tt == ft { tt }
+    else { TYPE_UNKNOWN }
+  }
+  else if k == "CallExpression" {
+    if node.callee.kind == "Identifier" {
+      calleeType = envLookup(env, node.callee.name)
+      fnSig = envLookup(env, "\$ret_" + node.callee.name)
+      if fnSig != TYPE_UNKNOWN { fnSig }
+      else { TYPE_UNKNOWN }
+    }
+    else if node.callee.kind == "MemberExpression" {
+      inferExpr(node.callee, env)
+      TYPE_UNKNOWN
+    }
+    else { TYPE_UNKNOWN }
+  }
+  else if k == "MemberExpression" {
+    inferExpr(node.obj, env)
+    TYPE_UNKNOWN
+  }
+  else if k == "IndexExpression" {
+    inferExpr(node.obj, env)
+    inferExpr(node.index, env)
+    TYPE_UNKNOWN
+  }
+  else if k == "ArrayLiteral" { TYPE_ARRAY }
+  else if k == "ObjectLiteral" { TYPE_OBJECT }
+  else if k == "LambdaExpression" { TYPE_FN }
+  else if k == "RangeExpression" { TYPE_ARRAY }
+  else if k == "InterpolatedString" { TYPE_STR }
+  else if k == "SpreadExpression" {
+    inferExpr(node.value, env)
+  }
+  else if k == "PipelineExpression" {
+    inferExpr(node.right, env)
+  }
+  else if k == "AtExpression" { TYPE_UNKNOWN }
+  else if k == "AtAtExpression" { TYPE_UNKNOWN }
+  else if k == "ShellCommand" { TYPE_STR }
+  else if k == "BacktickExpression" { TYPE_STR }
+  else if k == "MatchExpression" { TYPE_UNKNOWN }
+  else if k == "AssignmentExpression" {
+    inferExpr(node.value, env)
+  }
+  else if k == "CompoundAssignment" {
+    inferExpr(node.value, env)
+  }
+  else { TYPE_UNKNOWN }
+}
+
+fn inferStmt(node, env) {
+  if node == null { return }
+  k = node.kind
+  if k == "ExpressionStatement" { inferExpr(node.expr, env) }
+  else if k == "LetDeclaration" || k == "ValDeclaration" {
+    t = TYPE_UNKNOWN
+    if node.value != null { t = inferExpr(node.value, env) }
+    envSet(env, node.name, t)
+  }
+  else if k == "AssignmentExpression" {
+    newType = inferExpr(node.value, env)
+    if node.target.kind == "Identifier" {
+      existing = envLookup(env, node.target.name)
+      if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
+    }
+  }
+  else if k == "CompoundAssignment" {
+    inferExpr(node.value, env)
+  }
+  else if k == "ReturnStatement" {
+    if node.value != null { inferExpr(node.value, env) }
+  }
+  else if k == "IfStatement" {
+    inferExpr(node.condition, env)
+    inferStmt(node.then, env)
+    if node["else"] != null { inferStmt(node["else"], env) }
+  }
+  else if k == "WhileStatement" {
+    inferExpr(node.condition, env)
+    inferStmt(node.body, env)
+  }
+  else if k == "ForStatement" {
+    inferExpr(node.iterator, env)
+    envSet(env, node.name, TYPE_UNKNOWN)
+    inferStmt(node.body, env)
+  }
+  else if k == "LoopStatement" {
+    inferStmt(node.body, env)
+  }
+  else if k == "RepeatStatement" {
+    inferExpr(node.count, env)
+    inferStmt(node.body, env)
+  }
+  else if k == "BlockStatement" {
+    for s in node.body { inferStmt(s, env) }
+  }
+  else if k == "FnDeclaration" {
+    envSet(env, node.name, TYPE_FN)
+    childEnv = TypeEnv(env)
+    for p in node.params {
+      if type(p) == "object" && p.name != null { envSet(childEnv, p.name, TYPE_UNKNOWN) }
+      else { envSet(childEnv, p, TYPE_UNKNOWN) }
+    }
+    retType = TYPE_UNKNOWN
+    if node.body.kind == "BlockStatement" {
+      for s in node.body.body { inferStmt(s, childEnv) }
+      lastStmt = node.body.body[#node.body.body - 1]
+      if lastStmt != null && lastStmt.kind == "ReturnStatement" {
+        retType = inferExpr(lastStmt.value, childEnv)
+      }
+    }
+    else { retType = inferExpr(node.body, childEnv) }
+    if retType != TYPE_UNKNOWN {
+      envSet(env, "\$ret_" + node.name, retType)
+    }
+  }
+  else if k == "ClassDeclaration" {
+    envSet(env, node.name, TYPE_OBJECT)
+    childEnv = TypeEnv(env)
+    if node.definition.fields != null {
+      for f in node.definition.fields { envSet(childEnv, f, TYPE_UNKNOWN) }
+    }
+    if node.definition.methods != null {
+      for m in node.definition.methods {
+        if m != null && m.name != null {
+          envSet(childEnv, m.name, TYPE_FN)
+        }
+      }
+    }
+  }
+  else if k == "StructDeclaration" {
+    envSet(env, node.name, TYPE_OBJECT)
+  }
+  else if k == "MatchExpression" {
+    inferExpr(node.subject, env)
+    for c in node.cases {
+      if c.guard != null { inferExpr(c.guard, env) }
+      inferStmt(c.body, env)
+    }
+  }
+  else if k == "HotkeyBinding" {
+    inferStmt(node.body, env)
+  }
+  else if k == "ConfigBlock" {
+    inferStmt(node.body, env)
+  }
+  else if k == "UseStatement" || k == "ImportStatement" {}
+  else if k == "BreakStatement" || k == "ContinueStatement" {}
+  else if k == "ThrowStatement" {
+    if node.value != null { inferExpr(node.value, env) }
+  }
+  else if k == "TryStatement" {
+    inferStmt(node.try_block, env)
+    if node.catch_block != null { inferStmt(node.catch_block, env) }
+    if node.finally_block != null { inferStmt(node.finally_block, env) }
+  }
+  else if k == "SleepStatement" {}
+  else if k == "AtExpression" || k == "AtAtExpression" {
+    inferExpr(node, env)
+  }
+}
+
+fn inferProgram(program) {
+    n = program
+    if n.ast != null { n = n.ast }
+    env = TypeEnv(null)
+    for stmt in n.body { inferStmt(stmt, env) }
+    {types: env.bindings, env: env}
+}
+
+fn getVarType(inferenceResult, name) {
+    envLookup(inferenceResult.env, name)
+}
+
+fn getReturnType(inferenceResult, fnName) {
+    envLookup(inferenceResult.env, "\$ret_" + fnName)
+}
+
+// ========== launcher.hv ==========
+// launcher.hv — pure Havel script launcher
+// Handles --run, --test, --lint modes via the self-hosted pipeline
+// Usage: havel --run launcher.hv -- [flags] script.hv
+
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+use { inferProgram } from "types"
+
+// --- Inline error reporting (until use-imports work in C++ compiled path) ---
+_launcherErrors = []
+_launcherWarnings = 0
+_sourceFile = "<unknown>"
+
+fn setSourceFile(path) { _sourceFile = path }
+fn clear() { _launcherErrors = []; _launcherWarnings = 0 }
+
+fn hasErrors() { #_launcherErrors > 0 }
+
+fn importLegacyErrors(errors, stage, srcFile) {
+  if errors == null { return }
+  for err in errors {
+    msg = err.msg
+    if msg == null { msg = str(err) }
+    line = err.line
+    if line == null { line = 0 }
+    col = err.col
+    if col == null { col = 0 }
+    _launcherErrors.push({msg: msg, line: line, col: col, stage: stage})
+  }
+}
+
+fn printAll() {
+  for err in _launcherErrors {
+    stageName = "Parse"
+    if err.stage == 0 { stageName = "Lexer" }
+    if err.stage == 2 { stageName = "Emitter" }
+    print(stageName + " error at " + str(err.line) + ":" + str(err.col) + " - " + err.msg)
+  }
+}
+
+fn printSummary() {
+  if #_launcherErrors > 0 {
+    print(str(#_launcherErrors) + " error(s) found")
+  }
+  if _launcherWarnings > 0 {
+    print(str(_launcherWarnings) + " warning(s)")
+  }
+}
+
+// --- Inline debug flag system (until use-imports work in C++ compiled path) ---
+_dbgFlags = {
+  lexer: false, parser: false, ast: false, bytecode: false,
+  scope: false, emitter: false, types: false, gc: false,
+  all: false, color: true, timing: false, verbose: false
+}
+
+fn isOn(name) {
+  if _dbgFlags.all { return true }
+  rval = _dbgFlags[name]
+  if rval != null { return rval }
+  false
+}
+
+fn setFlag(name, value) {
+  _dbgFlags[name] = value
+  if name == "all" && value {
+    _dbgFlags.lexer = true
+    _dbgFlags.parser = true
+    _dbgFlags.ast = true
+    _dbgFlags.bytecode = true
+    _dbgFlags.scope = true
+    _dbgFlags.emitter = true
+    _dbgFlags.types = true
+  }
+}
+
+fn parseDebugArgs(args) {
+  i = 0
+  while i < #args {
+    arg = args[i]
+    if arg == "-d" || arg == "--debug" { _dbgFlags.all = true; _dbgFlags.verbose = true }
+    if arg == "-dl" || arg == "--debug-lexer" { _dbgFlags.lexer = true }
+    if arg == "-dp" || arg == "--debug-parser" { _dbgFlags.parser = true }
+    if arg == "-da" || arg == "--debug-ast" { _dbgFlags.ast = true }
+    if arg == "-dbc" || arg == "--debug-bytecode" { _dbgFlags.bytecode = true }
+    if arg == "-dgc" || arg == "--debug-gc" { _dbgFlags.gc = true }
+    if arg == "-ds" || arg == "--debug-scope" { _dbgFlags.scope = true }
+    if arg == "-de" || arg == "--debug-emitter" { _dbgFlags.emitter = true }
+    if arg == "--no-color" { _dbgFlags.color = false }
+    if arg == "--timing" { _dbgFlags.timing = true }
+    i = i + 1
+  }
+  if _dbgFlags.all {
+    _dbgFlags.lexer = true
+    _dbgFlags.parser = true
+    _dbgFlags.ast = true
+    _dbgFlags.bytecode = true
+    _dbgFlags.scope = true
+    _dbgFlags.emitter = true
+    _dbgFlags.types = true
+  }
+}
+
+fn dumpAst(program) {
+  if program == null { return }
+  if program.body != null {
+    print("AST: " + str(#program.body) + " top-level statements")
+  }
+}
+
+fn dumpBytecode() {
+  if isOn("bytecode") {
+    print("Bytecode dump: (use -dbc flag for detail)")
+  }
+}
+
+_startTimes = {}
+fn startTimer(name) { _startTimes[name] = time.now() }
+fn endTimer(name) {
+  started = _startTimes[name]
+  if started != null {
+    elapsed = time.now() - started
+    print("[timing] " + name + ": " + str(int(elapsed * 1000)) + "ms")
+    _startTimes[name] = null
+  }
+}
+
+
+
+fn readScriptFile(path) {
+    if !fs.exists(path) {
+        return null
+    }
+    content = fs.read(path)
+    if content == null { return null }
+    // Strip shebang line
+    if #content >= 2 && content[0] == "#" && content[1] == "!" {
+        idx = content.find("\n")
+        if idx != null && idx >= 0 {
+            content = content.substr(idx + 1)
+        }
+        else {
+            content = ""
+        }
+    }
+    content
+}
+
+fn parseArgs(args) {
+    cfg = {
+        mode: "run",
+        scriptFiles: [],
+        scriptArgs: [],
+        evalString: null,
+        testDir: null,
+        testTimeout: 10,
+        lintOnly: false,
+        stopOnError: false,
+    }
+    i = 0
+    while i < #args {
+        arg = args[i]
+        if arg == "--run" || arg == "run" {
+            cfg.mode = "run"
+            i = i + 1
+            if i < #args { cfg.scriptFiles.push(args[i]) }
+        }
+        else if arg == "--test" || arg == "-t" {
+            cfg.mode = "test"
+            i = i + 1
+            if i < #args { cfg.testDir = args[i] }
+            // Optional timeout
+            i = i + 1
+            if i < #args {
+                n = int(args[i])
+                if n != null && n > 0 {
+                    cfg.testTimeout = n
+                }
+                else {
+                    i = i - 1
+                }
+            }
+        }
+        else if arg == "--lint" {
+            cfg.lintOnly = true
+            i = i + 1
+            if i < #args { cfg.scriptFiles.push(args[i]) }
+        }
+        else if arg == "--eval" || arg == "-E" {
+            i = i + 1
+            if i < #args {
+                cfg.evalString = args[i]
+                cfg.mode = "run"
+            }
+        }
+        else if arg == "--debug-bytecode" || arg == "-dbc" {
+    flags.set("bytecode", true)
+        }
+        else if arg == "--debug-lexer" || arg == "-dl" {
+    flags.set("lexer", true)
+        }
+        else if arg == "--debug-parser" || arg == "-dp" {
+    flags.set("parser", true)
+        }
+        else if arg == "--debug-ast" || arg == "-da" {
+    flags.set("ast", true)
+        }
+        else if arg == "--error" || arg == "-e" {
+            cfg.stopOnError = true
+        }
+        else if arg == "--" {
+            // Everything after -- is script arguments
+            j = i + 1
+            while j < #args {
+                cfg.scriptArgs.push(args[j])
+                j = j + 1
+            }
+            i = #args
+        }
+        else if arg == "--help" || arg == "-h" {
+            print("Usage: havel --run launcher.hv -- [flags] script.hv")
+            print("")
+            print("Modes:")
+            print("  --run script.hv    Run script via self-hosted pipeline")
+            print("  --test dir/ [N]    Run all .hv files in directory (timeout N seconds)")
+            print("  --lint script.hv   Check syntax/type errors without running")
+            print("  --eval CODE        Run inline code")
+            print("")
+            print("Flags:")
+    print("  -d / --debug            Enable all debug output")
+    print("  -dl / --debug-lexer     Print lexer debug info")
+    print("  -dp / --debug-parser    Print parser debug info")
+    print("  -da / --debug-ast       Print AST debug info")
+    print("  -dbc / --debug-bytecode Print bytecode debug info")
+    print("  -ds / --debug-scope     Print scope debug info")
+    print("  -de / --debug-emitter   Print emitter debug info")
+    print("  -dgc / --debug-gc       Print GC debug info")
+    print("  --timing                Print timing for each stage")
+    print("  --no-color              Disable ANSI colors in output")
+            print("  --debug-ast        Print AST debug info")
+            print("  --error            Stop on first error")
+            print("  --                 Pass remaining args to script as app.args")
+            shell.exit(0)
+        }
+        else {
+            // Bare argument = script file
+            cfg.scriptFiles.push(arg)
+        }
+        i = i + 1
+    }
+    cfg
+}
+
+fn runScript(cfg) {
+    // Combine all script files
+    combinedCode = ""
+    combinedNames = ""
+    for f in cfg.scriptFiles {
+        content = readScriptFile(f)
+        if content == null {
+            print("Error: Cannot open script file: " + f)
+            return 2
+        }
+        combinedCode = combinedCode + content + "\n"
+        if combinedNames != "" { combinedNames = combinedNames + " + " }
+        combinedNames = combinedNames + f
+    }
+    if cfg.evalString != null {
+        combinedCode = combinedCode + cfg.evalString + "\n"
+        if combinedNames != "" { combinedNames = combinedNames + " + " }
+        combinedNames = combinedNames + "<eval>"
+    }
+    // Read from stdin if no source
+    if combinedCode == "" && !shell.isatty() {
+        combinedCode = shell.read()
+        combinedNames = "<stdin>"
+    }
+    if combinedCode == "" { return 0 }
+
+  // Initialize debug flags from CLI args
+  parseDebugArgs(app.args)
+
+  // Set source file for error reporting
+  sourceFile = null
+  if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
+  if sourceFile == null { sourceFile = combinedNames }
+  setSourceFile(sourceFile)
+  clear()
+
+  // Tokenize + Parse (with debug output)
+  if isOn("timing") { startTimer("parse") }
+  result = parse(combinedCode)
+  if isOn("timing") { endTimer("parse") }
+
+  // Report parse errors via unified error system
+  if result.errors != null && #result.errors > 0 {
+    importLegacyErrors(result.errors, 1, sourceFile)
+    printAll()
+    printSummary()
+    return 1
+  }
+
+  // AST debug dump
+  if isOn("ast") { dumpAst(result.ast) }
+
+    // Lint-only mode: parse + typecheck, no execution
+    if cfg.lintOnly {
+        types = inferProgram(result)
+        print("Linting successful")
+        return 0
+    }
+
+    // Typecheck
+    inferProgram(result)
+
+  // Compile
+  if isOn("timing") { startTimer("compile") }
+  emitter = Emitter()
+  bc.reset()
+  compileProgram(emitter, result.ast, false, sourceFile)
+  if isOn("timing") { endTimer("compile") }
+
+  // Check for emitter errors
+  if hasErrors() {
+    printAll()
+    printSummary()
+    return 1
+  }
+
+  // Bytecode debug dump
+  dumpBytecode()
+
+  0
+}
+
+fn runTests(cfg) {
+    if cfg.testDir == null {
+        print("Error: No test directory specified. Usage: --test <directory>")
+        return 1
+    }
+    // Find all .hv files
+    entries = fs.readDir(cfg.testDir)
+    if entries == null {
+        print("Error: Cannot read test directory: " + cfg.testDir)
+        return 1
+    }
+    testFiles = []
+    for e in entries {
+        name = e.name
+        if name == null { name = str(e) }
+        if name.endsWith(".hv") {
+            testFiles.push(cfg.testDir + "/" + name)
+        }
+    }
+    // Sort
+    testFiles.sort()
+    if #testFiles == 0 {
+        print("Error: No .hv files found in: " + cfg.testDir)
+        return 1
+    }
+
+    total = #testFiles
+    passed = 0
+    failed = 0
+    print("Running " + str(total) + " tests from '" + cfg.testDir + "'")
+
+    // Find havel binary
+    selfPath = shell.env("HAVEL_BIN")
+    if selfPath == null || selfPath == "" {
+        // Try common locations
+        if fs.exists("./build-debug/havel") {
+            selfPath = "./build-debug/havel"
+        }
+        else if fs.exists("../../build-debug/havel") {
+            selfPath = "../../build-debug/havel"
+        }
+        else {
+            selfPath = "havel"
+        }
+    }
+
+    for testFile in testFiles {
+        // Extract test name from path
+        parts = string.split(testFile, "/")
+        testName = parts[#parts - 1]
+
+        // Run test as subprocess with timeout
+        cmd = "timeout " + str(cfg.testTimeout) + " " + selfPath + " --run " + testFile
+        result = shell.exec(cmd)
+
+        if result != null && result.exitCode == 0 {
+            print("  PASS " + testName)
+            passed = passed + 1
+        }
+        else {
+            print("  FAIL " + testName)
+            if result != null && result.stderr != "" {
+                print("    " + result.stderr)
+            }
+            failed = failed + 1
+        }
+    }
+
+    print("")
+    print("Test Results:")
+    print("  Total:  " + str(total))
+    print("  Passed: " + str(passed))
+    print("  Failed: " + str(failed))
+    if failed > 0 { return 1 }
+    print("All tests passed!")
+    0
+}
+
+// ============================================================
+// Main entry point
+// ============================================================
+
+args = app.args
+if args == null || #args == 0 {
+    print("Usage: havel --run launcher.hv -- [flags] script.hv")
+    print("Use --help for more information")
+    shell.exit(1)
+}
+
+cfg = parseArgs(args)
+
+result = 0
+if cfg.mode == "run" {
+    result = runScript(cfg)
+}
+else if cfg.mode == "test" {
+    result = runTests(cfg)
+}
+else {
+    print("Unknown mode: " + cfg.mode)
+    result = 1
+}
+
+shell.exit(result)

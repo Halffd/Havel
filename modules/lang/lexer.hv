@@ -529,18 +529,18 @@ fn Lexer(source) {
                     advance()
                 }
             }
-            else if current() == "$" and isFString {
-                isInterpolated = true
-                s = s + "$"
-                advance()
-                if current() == "@" or (current() != null and isAlpha(current())) {
-                    s = s + current()
-                    advance()
-                    while current() != null and isAlphaNum(current()) {
-                        s = s + current()
-                        advance()
-                    }
-                }
+  else if current() == "$" {
+    isInterpolated = true
+    s = s + "$"
+    advance()
+    if current() == "{" or current() == "@" or (current() != null and isAlpha(current())) {
+      s = s + current()
+      advance()
+      while current() != null and isAlphaNum(current()) {
+        s = s + current()
+        advance()
+      }
+    }
                 else {
                     s = s + current()
                     advance()
@@ -622,11 +622,19 @@ fn Lexer(source) {
                 s = s + "{"
                 advance()
             }
-            else if current() == "$" and isTriple {
-                isInterpolated = true
-                s = s + "$"
-                advance()
-            }
+  else if current() == "$" {
+    isInterpolated = true
+    s = s + "$"
+    advance()
+    if current() == "{" or current() == "@" or (current() != null and isAlpha(current())) {
+      s = s + current()
+      advance()
+      while current() != null and isAlphaNum(current()) {
+        s = s + current()
+        advance()
+      }
+    }
+  }
             else {
                 s = s + current()
                 advance()
@@ -711,6 +719,18 @@ fn Lexer(source) {
                     advance()
 
                 }
+            }
+        }
+        if current() == "e" or current() == "E" {
+            s = s + current()
+            advance()
+            if current() == "+" or current() == "-" {
+                s = s + current()
+                advance()
+            }
+            while isDigit(current()) {
+                s = s + current()
+                advance()
             }
         }
         addToken("Number", s)
@@ -1422,31 +1442,31 @@ fn Lexer(source) {
                 continue
 
             }
-            if c == "#" {
-                if afterExpression() {
-                    advance()
-                    addToken("Length", "#")
+    if c == "#" {
+        advance()
+        nextCh = current()
+        if afterExpression() or nextCh == "[" or nextCh == "{" or (nextCh != null && isAlpha(nextCh)) {
+            addToken("Length", "#")
+        }
+        else {
+            s = "#"
+            while current() != null and current() != "\n" and current() != "{" {
+                if current() == "=" and peek(1) == ">" {
+                    break
                 }
-                else {
-                    advance()
-                    s = "#"
-                    while current() != null and current() != "\n" and current() != "{" {
-                        if current() == "=" and peek(1) == ">" {
-                            break
-                        }
-                        s = s + current()
-                        advance()
-                    }
-                    if s == "#" {
-                        addToken("Length", "#")
-                    }
-                    else {
-                        addToken("Hotkey", s)
-                    }
-                }
-                continue
-
+                s = s + current()
+                advance()
             }
+            if s == "#" {
+                addToken("Length", "#")
+            }
+            else {
+                addToken("Hotkey", s)
+            }
+        }
+        continue
+
+    }
             if c == "~" {
                 advance()
                 addToken("Tilde", "~")

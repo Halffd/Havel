@@ -214,13 +214,43 @@ fn ValDeclaration(name, value, line, col) {
     {kind: "ValDeclaration", line: line, col: col, name: name, value: value}
 
 }
-fn UseStatement(module, names, line, col) {
-    {kind: "UseStatement", line: line, col: col, module: module, names: names}
-
+fn UseStatement(module, names, line, col, opts) {
+  n = {kind: "UseStatement", line: line, col: col, module: module, names: names,
+       isFileImport: false, isNamedImport: false, isWildcard: false,
+       filePath: null, alias: null, importNames: [], importAliases: [],
+       moduleNames: []}
+  if opts != null {
+    for k in opts.keys() {
+      n[k] = opts[k]
+    }
+  }
+  n
 }
-fn ImportStatement(module, names, line, col) {
-    {kind: "ImportStatement", line: line, col: col, module: module, names: names}
-
+fn ImportStatement(module, names, line, col, opts) {
+  n = {kind: "ImportStatement", line: line, col: col, module: module, names: names,
+       importNames: [], importAliases: []}
+  iNames = []
+  iAliases = []
+  if names != null {
+    for name in names {
+      parts = name.split(" as ")
+      iNames.push(parts[0])
+      if #parts > 1 {
+        iAliases.push(parts[1])
+      }
+      else {
+        iAliases.push(parts[0])
+      }
+    }
+  }
+  n.importNames = iNames
+  n.importAliases = iAliases
+  if opts != null {
+    for k in opts.keys() {
+      n[k] = opts[k]
+    }
+  }
+  n
 }
 fn HotkeyBinding(key, body, line, col) {
     {kind: "HotkeyBinding", line: line, col: col, key: key, body: body}

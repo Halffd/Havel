@@ -1,6 +1,7 @@
 #include "Scheduler.hpp"
 #include "Fiber.hpp"
 #include "../../../utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <thread>
 
@@ -35,7 +36,7 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
  	g->closure_id = closure_id;
  	g->state = GoroutineState::Created;
 
-    ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}", 
+    if (debugging::debug_io) ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}", 
                   g->id, name, function_id, closure_id, (int)priority);
 
  	g->fiber = new Fiber(g->id, function_id, 0, name);
@@ -62,13 +63,13 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 		if (priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(goroutines_[g_id].get());
-            ::havel::debug("[Scheduler] [PUSH FRONT] gid={} name='{}' priority=HOTKEY", g_id, name);
+            if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH FRONT] gid={} name='{}' priority=HOTKEY", g_id, name);
 		} else if (priority == FiberPriority::BACKGROUND) {
 			background_queue_.push_back(goroutines_[g_id].get());
-            ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=BACKGROUND", g_id, name);
+            if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=BACKGROUND", g_id, name);
 		} else {
 			runnable_queue_.push_back(goroutines_[g_id].get());
-            ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=NORMAL", g_id, name);
+            if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=NORMAL", g_id, name);
 		}
 	}
 
@@ -91,12 +92,6 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 Scheduler::Goroutine* Scheduler::pickNext() {
 	Goroutine* result = nullptr;
 
-    size_t hotkey_count = hotkey_queue_.size();
-    size_t runnable_count = runnable_queue_.size();
-    size_t bg_count = background_queue_.size();
-    ::havel::debug("[Scheduler] pickNext: queues hotkey={} runnable={} background={}", 
-                  hotkey_count, runnable_count, bg_count);
-
 	{
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 
@@ -114,7 +109,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 			}
 			if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 				result = g;
-                ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state);
+                if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state);
 				break;
 			}
 		}
@@ -133,7 +128,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 				}
 				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 					result = g;
-                    ::havel::debug("[Scheduler] pickNext: selected RUNNABLE gid={} state={}", g->id, (int)g->state);
+                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected RUNNABLE gid={} state={}", g->id, (int)g->state);
 					break;
 				}
 			}
@@ -153,7 +148,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 				}
 				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 					result = g;
-                    ::havel::debug("[Scheduler] pickNext: selected BACKGROUND gid={} state={}", g->id, (int)g->state);
+                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected BACKGROUND gid={} state={}", g->id, (int)g->state);
 					break;
 				}
 			}
@@ -163,11 +158,9 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	if (result) {
 		result->state = GoroutineState::Running;
 		current_ = result;
-        ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
+        if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
                       result->id, result->name, (int)result->state);
-	} else {
-        ::havel::debug("[Scheduler] [IDLE] no runnable goroutines");
-    }
+	}
 
 	return result;
 }

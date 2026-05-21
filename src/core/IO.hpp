@@ -1,8 +1,9 @@
 #pragma once
-#include "CallbackTypes.hpp" // Include callback types
-#include "MouseGestureTypes.hpp" // Include the mouse gesture types
+#include "CallbackTypes.hpp"
+#include "MouseGestureTypes.hpp"
 #include "io/Device.hpp"
 #include "io/HotkeyExecutor.hpp"
+#include "io/IOBackend.hpp"
 #include "io/KeyMap.hpp"
 #include "io/MouseController.hpp"
 #include "io/InputBackend.hpp"
@@ -10,28 +11,15 @@
 #include "havel-lang/runtime/ImportManager.hpp"
 #include "types.hpp"
 #include "x11.h"
-#include <X11/extensions/XInput2.h>
 #include <atomic>
-#include <condition_variable>
-#include <fcntl.h>
 #include <functional>
-#include <iostream>
-#include <linux/input.h>
-#include <linux/uinput.h>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
-#include <sys/ioctl.h>
-#include <thread>
-#include <unistd.h>
 #include <unordered_map>
 #include <vector>
-#define CLEANMASK(mask)                                                        \
-  (mask & ~(numlockmask | LockMask) &                                          \
-   (ShiftMask | ControlMask | Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask |      \
-    Mod5Mask))
 
 namespace havel {
 
@@ -176,41 +164,10 @@ public:
   }
 };
 class IO {
-  std::thread evdevThread;
-  std::atomic<bool> evdevRunning{false};
-  std::atomic<bool> mouseEvdevRunning{false};
-  std::string evdevDevicePath;
-  std::string mouseEvdevDevicePath;
-  int mouseDeviceFd = -1; // Track the mouse device file descriptor
-  std::thread mouseEvdevThread;
-  std::atomic<bool> globalAltPressed{false};
-  std::chrono::steady_clock::time_point lastLeftPress;
-  std::chrono::steady_clock::time_point lastRightPress;
-  // Unified modifier state (evdev-sourced)
-  std::atomic<int> currentEvdevModifiers{0};
-  ModifierState currentModifierState{};
-  // Active input tracking for combos (keycode or button code -> down time)
-  std::mutex activeInputsMutex;
-  std::unordered_map<int, std::chrono::steady_clock::time_point> activeInputs;
-  // Mouse button states
-  std::atomic<bool> leftButtonDown{false};
-  std::atomic<bool> rightButtonDown{false};
-  std::string emergencyHotkey = "^!esc";
-  // Deadlock protection
-  int evdevShutdownFd = -1; // eventfd for clean shutdown
-  std::atomic<bool> callbackInProgress{false};
-  std::chrono::steady_clock::time_point lastCallbackStart;
-  std::mutex callbackMutex;
-  std::condition_variable callbackCv;
-  std::atomic<int> pendingCallbacks{0};
-  static constexpr int CALLBACK_TIMEOUT_MS =
-      5000; // 5 second timeout for callbacks
-  static constexpr int WATCHDOG_INTERVAL_MS = 1000; // Check every second
+    // IOBackend adapter for platform-specific output (XTest, keybd_event, etc.)
+    std::unique_ptr<IOBackend> ioBackend;
 
-  // Track active callback threads for proper cleanup
-  std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
-
-    // New unified event listener
+    // Unified event listener (input processing, uinput forwarding)
     std::unique_ptr<EventListener> eventListener;
     std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
     std::shared_ptr<ImportManager> importManager = nullptr;
@@ -218,9 +175,11 @@ class IO {
     // Mouse controller for mouse operations
     std::unique_ptr<MouseController> mouseController;
 
-    // Optional InputBackend (new adapter pattern)
+    // Optional InputBackend (input device enumeration/adapter)
     std::unique_ptr<InputBackend> inputBackend;
     InputBackendType inputBackendType = InputBackendType::Unknown;
+
+    ModifierState currentModifierState{};
 
 public:
     bool isSuspended = false;
@@ -272,6 +231,9 @@ public:
   std::string GetActiveWindowClass();
   pID GetActiveWindowPID();
   std::string GetActiveWindowProcess();
+
+  // IOBackend access
+  IOBackend *GetIOBackend() { return ioBackend.get(); }
 
   // Key sending methods
   void Send(Key key, bool down = true);
@@ -398,7 +360,7 @@ public:
   }
   bool MouseUp(int button) { return Click(button, MouseAction::Release); }
 
-  static void PressKey(const std::string &keyName, bool press);
+  void PressKey(const std::string &keyName, bool press);
 
   // Utility methods
 
@@ -485,30 +447,24 @@ ExecutorMode GetExecutorMode() const;
   static double scrollSpeed;
   bool shutdown = false;
 
-  // X11 specific functions
-  std::pair<int, int> GetMousePositionX11();
-
   // Performance optimization: Keycode caching and batch event helpers
   static int GetKeyCacheLookup(const std::string &keyName);
   static std::vector<KeyToken> ParseKeyString(const std::string &keys);
   void SendBatchedKeyEvents(const std::vector<input_event> &events);
 
 private:
-  Display *display;
+  std::atomic<bool> globalAltPressed{false};
   std::mutex emergencyMutex;
   std::set<int> pressedKeys;
   std::mutex keyStateMutex;
   std::mutex hotkeySetMutex;
 
   template <typename T> static constexpr bool always_false = false;
-  unsigned int numlockmask = 0;
 
-  std::set<int> grabbedKeys; // Keys that should be blocked
+  std::set<int> grabbedKeys;
   std::mutex grabbedKeysMutex;
-  bool blockAllInput = false; // Emergency block all input
-  static int XErrorHandler(Display *dpy, XErrorEvent *ee);
+  bool blockAllInput = false;
 
-  // Track the original state of conditional hotkeys during suspend
   struct ConditionalHotkeyState {
     int id;
     bool wasGrabbed;
@@ -516,75 +472,39 @@ private:
   std::vector<ConditionalHotkeyState> suspendedConditionalHotkeyStates;
   bool wasSuspended = false;
 
-  void UpdateNumLockMask();
-  bool ModifierMatch(unsigned int expected, unsigned int actual);
-
 public:
   bool EmitClick(int btnCode, MouseAction action);
-
-  // X11 hotkey monitoring removed - use EventListener instead
 
   static Key EvdevNameToKeyCode(std::string keyName);
 
   bool MatchEvdevModifiers(int expectedModifiers,
                            const std::map<int, bool> &keyState);
-  // Platform specific implementations
-  std::map<std::string, Key> keyMap;
   std::map<int, bool> evdevKeyState;
-  // Track mouse button state for combos
   std::map<int, bool> evdevMouseButtonState;
   std::unique_ptr<HotkeyExecutor> hotkeyExecutor;
   ExecutorMode executorMode_ = ExecutorMode::Scheduler;
   std::unordered_map<std::string, HotKey> instanceHotkeys;
-  // Renamed to avoid conflict
   std::unordered_map<std::string, bool> hotkeyStates;
-  std::thread timerThread;
-  bool timerRunning = false;
   std::set<int> blockedKeys;
-  std::mutex x11Mutex;
 
   // Static members
   static bool hotkeyEnabled;
   static int hotkeyCount;
-
   static std::atomic<int> syntheticEventsExpected;
-  std::timed_mutex hotkeyMutex; // Use timed_mutex for try_lock_for() support
+  std::timed_mutex hotkeyMutex;
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
 
-  // Remap tracking (persistent across events)
   std::mutex remapMutex;
-  std::unordered_map<int, int> activeRemaps; // original -> mapped
+  std::unordered_map<int, int> activeRemaps;
 
-  // Mouse control members
   mutable std::mutex mouseMutex;
 
-  // XInput2 device ID for the pointer device
-  int xinput2DeviceId = -1;
-  bool xinput2Available = false;
-
-  // Key mapping and sending utilities
-  void InitKeyMap();
-  std::unordered_map<KeySym, KeySym> keyMapInternal;
-  std::unordered_map<KeySym, KeySym> remappedKeys;
   bool IsKeyRemappedTo(int targetKey);
-  // Evdev key mapping
-  std::unordered_map<int, int> evdevKeyMap; // Maps from scancode to scancode
-  std::unordered_map<int, int> evdevRemappedKeys; // Bidirectional remapping
-
-  void SendKeyEvent(Key key, bool down);
+  std::unordered_map<int, int> evdevKeyMap;
+  std::unordered_map<int, int> evdevRemappedKeys;
 
   static std::vector<IoEvent> ParseKeysString(const std::string &keys);
-
-  // Helper methods for X11 key grabbing
-  bool Grab(Key input, unsigned int modifiers, Window root, bool grab,
-            bool isMouse = false);
-
-  void Ungrab(Key input, unsigned int modifiers, Window root,
-              bool isMouse = false);
-  bool GrabKeyboard();
-  bool FastGrab(Key input, unsigned int modifiers, Window root);
-  bool GrabAllHotkeys();
   std::string findEvdevDevice(const std::string &deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();

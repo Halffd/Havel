@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 #include <string>
+
+#ifdef HAVE_QT_EXTENSION
 #include <QImage>
 #include <QScreen>
 
@@ -29,3 +31,4 @@ private:
 };
 
 } // namespace havel::host
+#endif // HAVE_QT_EXTENSION

@@ -11,6 +11,7 @@
 
 // GTK headers - using extern "C" for C headers
 extern "C" {
+#include <glib.h>
 #include <gtk/gtk.h>
 }
 
@@ -590,6 +591,32 @@ void GtkBackend::pumpEvents(int timeoutMs) {
         // In a real implementation, this would integrate with the main loop
         (void)timeoutMs;
     }
+}
+
+int GtkBackend::runEventLoop() {
+  if (!initialized_) return 1;
+  loop_ = g_main_loop_new(nullptr, false);
+  if (!loop_) return 1;
+  g_main_loop_run(loop_);
+  g_main_loop_unref(loop_);
+  loop_ = nullptr;
+  return 0;
+}
+
+void GtkBackend::quitEventLoop(int exitCode) {
+  (void)exitCode;
+  if (loop_ && g_main_loop_is_running(loop_)) {
+    g_main_loop_quit(loop_);
+  }
+}
+
+void GtkBackend::setApplicationMetadata(const ApplicationMetadata& meta) {
+  appMeta_ = meta;
+}
+
+void GtkBackend::resetPerRunState() {
+  widgets_.clear();
+  onAllWindowsClosedCallback_ = nullptr;
 }
 
 bool GtkBackend::hasActiveWindows() const {

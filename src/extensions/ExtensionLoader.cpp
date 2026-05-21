@@ -201,4 +201,13 @@ std::vector<std::string> ExtensionLoader::getLoadedExtensions() const {
   return names;
 }
 
+void* ExtensionLoader::getHandle(const std::string& name) const {
+  for (const auto& ext : loadedExtensions_) {
+    if (ext.name == name && ext.isLoaded) {
+      return ext.handle;
+    }
+  }
+  return nullptr;
+}
+
 } // namespace havel

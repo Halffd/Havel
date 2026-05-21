@@ -95,6 +95,12 @@ public:
     // Event pumping
     void pumpEvents(int timeoutMs) override;
 
+    // Event loop management (routed through UI module)
+    int runEventLoop() override;
+    void quitEventLoop(int exitCode = 0) override;
+    void setApplicationMetadata(const ApplicationMetadata& meta) override;
+    void resetPerRunState() override;
+
     // Window state
     bool hasActiveWindows() const override;
     void onAllWindowsClosed(std::function<void()> callback) override;
@@ -135,6 +141,8 @@ private:
     int windowHeight_ = 720;
     std::string windowTitle_ = "Havel UI";
     int targetFps_ = 60;
+    int exitCode_ = 0;
+    UIBackend::ApplicationMetadata appMeta_;
     
     std::unordered_map<std::string, std::shared_ptr<ui::UIElement>> elements_;
     std::unordered_map<std::string, std::string> elementValues_;

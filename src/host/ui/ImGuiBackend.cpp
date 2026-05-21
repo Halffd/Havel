@@ -641,6 +641,43 @@ void ImGuiBackend::pumpEvents(int timeoutMs) {
     glfwSwapBuffers(window_);
 }
 
+int ImGuiBackend::runEventLoop() {
+  if (!window_ || !initialized_) return 1;
+  running_ = true;
+  exitCode_ = 0;
+
+  while (running_ && !glfwWindowShouldClose(window_)) {
+    pumpEvents(0);
+    if (!running_) break;
+    glfwWaitEventsTimeout(1.0 / targetFps_);
+  }
+
+  running_ = false;
+  return exitCode_;
+}
+
+void ImGuiBackend::quitEventLoop(int exitCode) {
+  exitCode_ = exitCode;
+  running_ = false;
+}
+
+void ImGuiBackend::setApplicationMetadata(const ApplicationMetadata& meta) {
+  appMeta_ = meta;
+}
+
+void ImGuiBackend::resetPerRunState() {
+  elements_.clear();
+  elementValues_.clear();
+  elementOpen_.clear();
+  windowStack_.clear();
+  intValues_.clear();
+  floatValues_.clear();
+  boolValues_.clear();
+  textValues_.clear();
+  comboSelections_.clear();
+  onAllWindowsClosedCallback_ = nullptr;
+}
+
 bool ImGuiBackend::hasActiveWindows() const {
     return !windowStack_.empty();
 }

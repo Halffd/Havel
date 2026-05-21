@@ -13,15 +13,19 @@
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #include "extensions/gui/common/SettingsWindow.hpp"
+#endif
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "host/app/AppService.hpp"
 #include "host/audio/AudioService.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
+#endif
 #include "host/automation/AutomationService.hpp"
 #include "host/brightness/BrightnessService.hpp"
 #include "host/browser/BrowserService.hpp"
@@ -34,8 +38,10 @@
 #include "host/mouse/MouseService.hpp"
 #include "host/network/NetworkService.hpp"
 #include "host/process/ProcessService.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "host/screenshot/ScreenshotService.hpp"
 #include "host/window/AltTabService.hpp"
+#endif
 #include "host/window/WindowService.hpp"
 #include "media/AudioManager.hpp"
 #include "media/MPVController.hpp"
@@ -43,8 +49,10 @@
 #include "window/WindowManager.hpp"
 #include "window/WindowManagerDetector.hpp"
 
+#ifdef HAVE_QT_EXTENSION
 #include <QClipboard>
 #include <QString>
+#endif
 #include <atomic>
 #include <algorithm>
 #include <chrono>
@@ -2756,6 +2764,7 @@ Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
 Value
 UIBridge::handleClipboardGet(const std::vector<Value> &args,
                              const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   (void)args;
   if (!ctx->clipboardManager) {
     return Value::makeNull();
@@ -2766,12 +2775,14 @@ UIBridge::handleClipboardGet(const std::vector<Value> &args,
   }
   // TODO: string pool integration - for now return null
   (void)clipboard;
+#endif
   return Value::makeNull();
 }
 
 Value
 UIBridge::handleClipboardSet(const std::vector<Value> &args,
                              const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   if (args.empty() || !ctx->clipboardManager) {
     return Value::makeBool(false);
   }
@@ -2783,12 +2794,14 @@ UIBridge::handleClipboardSet(const std::vector<Value> &args,
     // clipboard->setText(QString::fromStdString(...));
     return Value::makeBool(true);
   }
+#endif
   return Value::makeBool(false);
 }
 
 Value
 UIBridge::handleClipboardClear(const std::vector<Value> &args,
                                const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   (void)args;
   if (!ctx->clipboardManager) {
     return Value::makeBool(false);
@@ -2799,6 +2812,8 @@ UIBridge::handleClipboardClear(const std::vector<Value> &args,
   }
   clipboard->clear();
   return Value::makeBool(true);
+#endif
+  return Value::makeBool(false);
 }
 
 Value
@@ -2806,9 +2821,11 @@ UIBridge::handleScreenshotFull(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto data = service.captureFullDesktop();
   (void)data;
+#endif
   return Value::makeNull();
 }
 
@@ -2821,14 +2838,17 @@ UIBridge::handleScreenshotMonitor(const std::vector<Value> &args,
     if (auto *v = (args[0].isInt() ? &args[0] : nullptr))
       monitor = static_cast<int>(v->asInt());
   }
+#ifdef HAVE_QT_EXTENSION
   auto& service = ::havel::host::ScreenshotService::getInstance();
   auto data = service.captureMonitor(monitor);
   (void)data;
+#endif
   return Value::makeNull();
 }
 
 Value UIBridge::handleGUINotify(const std::vector<Value> &args,
                                         const HostContext *ctx) {
+#ifdef HAVE_QT_EXTENSION
   if (!ctx || !ctx->guiManager) {
     return Value::makeBool(false);
   }
@@ -2854,6 +2874,7 @@ Value UIBridge::handleGUINotify(const std::vector<Value> &args,
   }
 
   ctx->guiManager->showNotification(*title, *message, icon, durationMs);
+#endif
   return Value::makeBool(true);
 }
 
@@ -3123,8 +3144,10 @@ InputBridge::handleAltTabShow(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.show();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3133,8 +3156,10 @@ InputBridge::handleAltTabHide(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.hide();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3143,8 +3168,10 @@ InputBridge::handleAltTabToggle(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.toggle();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3153,8 +3180,10 @@ InputBridge::handleAltTabNext(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.next();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3163,8 +3192,10 @@ InputBridge::handleAltTabPrevious(const std::vector<Value> &args,
                                   const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.previous();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3173,8 +3204,10 @@ InputBridge::handleAltTabSelect(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   (void)ctx;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   altTab.select();
+#endif
   return Value::makeBool(true);
 }
 
@@ -3182,6 +3215,7 @@ Value
 InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
                                     const HostContext *ctx) {
   (void)args;
+#ifdef HAVE_QT_EXTENSION
   ::havel::host::AltTabService altTab;
   auto windows = altTab.getWindows();
   auto *vm = static_cast<VM *>(ctx->vm);
@@ -3203,6 +3237,7 @@ InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
     vm->pushHostArrayValue(arr, Value::makeObjectId(winObj.id));
   }
   return Value::makeArrayId(arr.id);
+#endif
 }
 
 Value AsyncBridge::handleSleep(const std::vector<Value> &args,

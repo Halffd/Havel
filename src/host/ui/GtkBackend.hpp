@@ -25,6 +25,7 @@ typedef struct _GtkScrolledWindow GtkScrolledWindow;
 typedef struct _GtkMenu GtkMenu;
 typedef struct _GtkMenuItem GtkMenuItem;
 typedef struct _GtkStatusIcon GtkStatusIcon;
+typedef struct _GMainLoop GMainLoop;
 
 namespace havel::host {
 
@@ -103,6 +104,12 @@ public:
     // Event pumping
     void pumpEvents(int timeoutMs) override;
 
+    // Event loop management (routed through UI module)
+    int runEventLoop() override;
+    void quitEventLoop(int exitCode = 0) override;
+    void setApplicationMetadata(const ApplicationMetadata& meta) override;
+    void resetPerRunState() override;
+
     // Window state
     bool hasActiveWindows() const override;
     void onAllWindowsClosed(std::function<void()> callback) override;
@@ -135,6 +142,8 @@ private:
     std::string appId_ = "org.havel.ui";
     std::unordered_map<std::string, GtkWidget*> widgets_;
     std::function<void()> onAllWindowsClosedCallback_;
+    GMainLoop* loop_ = nullptr;
+    UIBackend::ApplicationMetadata appMeta_;
     bool initialized_ = false;
     bool trayVisible_ = false;
 

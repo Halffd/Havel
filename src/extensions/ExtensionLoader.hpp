@@ -62,6 +62,9 @@ public:
   
   /// Get list of loaded extensions
   std::vector<std::string> getLoadedExtensions() const;
+
+  /// Get dlopen handle for a loaded extension
+  void* getHandle(const std::string& name) const;
   
   /* ==========================================================================
    * Search paths

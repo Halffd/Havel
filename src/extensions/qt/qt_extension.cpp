@@ -2745,6 +2745,29 @@ static HavelValue* qt_canvasLassoSelect(int argc, HavelValue** argv) {
 
 } /* anonymous namespace */
 
+/* ============================================================================
+ * DLOPEN BRIDGE EXPORTS
+ * ============================================================================ */
+
+extern "C" int qt_run_event_loop() {
+    auto* bk = havel::host::UIManager::instance().backend();
+    return bk ? bk->runEventLoop() : -1;
+}
+
+extern "C" void qt_quit_event_loop(int exitCode) {
+    auto* bk = havel::host::UIManager::instance().backend();
+    if (bk) bk->quitEventLoop(exitCode);
+}
+
+extern "C" void qt_set_app_metadata(const char* appName, const char* orgName, int quitOnLastWindowClosed) {
+    havel::host::UIBackend::ApplicationMetadata meta;
+    if (appName) meta.applicationName = appName;
+    if (orgName) meta.organizationName = orgName;
+    meta.quitOnLastWindowClosed = quitOnLastWindowClosed != 0;
+    auto* bk = havel::host::UIManager::instance().backend();
+    if (bk) bk->setApplicationMetadata(meta);
+}
+
 extern "C" void havel_extension_init(HavelAPI* api) {
     /* Core */
     api->register_function("qt", "init", qt_init);

@@ -97,13 +97,17 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   modules::registerWindowMonitorModule(api);
   modules::registerHelpModule(api);
   modules::registerMouseModule(api);
-  modules::registerUIModule(api);
   modules::registerAutomationModule(api);
+#ifdef HAVE_QT_EXTENSION
+  modules::registerUIModule(api);
   modules::registerPixelModule(api);
+#endif
   modules::registerImageModule(api);
   modules::registerMediaModule(api);
+#ifdef HAVE_QT_EXTENSION
   modules::registerScreenshotModule(api);
   modules::registerAltTabModule(api);
+#endif
   modules::registerAppModule(api);
   modules::registerAudioModule(api);
   modules::registerBrightnessModule(api);
@@ -111,9 +115,11 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   modules::registerIOModule(api);
   modules::registerMapManagerModule(api);
   modules::registerModeModule(api);
+#ifdef HAVE_QT_EXTENSION
   modules::registerClipboardModule(api);
   modules::registerHistoryClipboardModule(api);
   modules::registerMonitoringClipboardModule(api);
+#endif
   modules::ffi::registerFFIModule(api);
 #endif
 }

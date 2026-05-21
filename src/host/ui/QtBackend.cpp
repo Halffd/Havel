@@ -1,6 +1,9 @@
 /*
  * QtBackend.cpp - Qt implementation of UIBackend
+ * Only compiled when HAVE_QT_EXTENSION is defined (in-process Qt backend).
  */
+#ifdef HAVE_QT_EXTENSION
+
 #include "QtBackend.hpp"
 #include "UIService.hpp"
 
@@ -194,6 +197,14 @@ void QtBackend::quitEventLoop(int exitCode) {
     service_->quitEventLoop(exitCode);
 }
 
+void QtBackend::setApplicationMetadata(const ApplicationMetadata& meta) {
+    service_->setApplicationMetadata(meta);
+}
+
+void QtBackend::resetPerRunState() {
+    service_->resetPerRunState();
+}
+
 bool QtBackend::hasActiveWindows() const {
     return service_->hasActiveWindows();
 }
@@ -247,3 +258,5 @@ void QtBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
 }
 
 } // namespace havel::host
+
+#endif // HAVE_QT_EXTENSION

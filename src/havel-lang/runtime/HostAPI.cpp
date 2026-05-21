@@ -15,9 +15,11 @@
 #include "core/io/MapManager.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
+#endif
 #include "media/AudioManager.hpp"
 #include "window/WindowManager.hpp"
 // #include <QGuiApplication>

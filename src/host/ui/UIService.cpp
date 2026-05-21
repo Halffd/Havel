@@ -1,6 +1,9 @@
 /*
  * UIService.cpp - Qt widget mapping implementation
+ * Only compiled when HAVE_QT_EXTENSION is defined (in-process Qt backend).
  */
+#ifdef HAVE_QT_EXTENSION
+
 #include "UIService.hpp"
 
 #include <QGuiApplication>
@@ -27,12 +30,60 @@ UIService::~UIService() {
   widgets_.clear();
 }
 
+void UIService::setApplicationMetadata(const UIBackend::ApplicationMetadata& meta) {
+  appMeta_ = meta;
+  appMetaSet_ = true;
+
+  if (QApplication::instance()) {
+    QApplication::setApplicationName(
+        QString::fromStdString(meta.applicationName));
+    QApplication::setOrganizationName(
+        QString::fromStdString(meta.organizationName));
+    if (!meta.applicationVersion.empty()) {
+      QApplication::setApplicationVersion(
+          QString::fromStdString(meta.applicationVersion));
+    }
+    QApplication::setQuitOnLastWindowClosed(meta.quitOnLastWindowClosed);
+  }
+}
+
+void UIService::resetPerRunState() {
+  for (auto &[id, window] : windows_) {
+    if (window) {
+      window->close();
+      delete window;
+    }
+  }
+  windows_.clear();
+  widgets_.clear();
+  openWindowCount_ = 0;
+  allWindowsClosedCallback_ = nullptr;
+  eventLoopRunning_ = false;
+  eventLoopExitCode_ = 0;
+}
+
 void UIService::ensureApp() {
   if (!QApplication::instance()) {
-    static int argc = 1;
-    static char *argv[] = {const_cast<char *>("havel"), nullptr};
-    new QApplication(argc, argv);
+    if (appMetaSet_ && appMeta_.argc && appMeta_.argv) {
+      new QApplication(*appMeta_.argc, appMeta_.argv);
+    } else {
+      static int argc = 1;
+      static char *argv[] = {const_cast<char *>("havel"), nullptr};
+      new QApplication(argc, argv);
+    }
     appOwned_ = true;
+
+    if (appMetaSet_) {
+      QApplication::setApplicationName(
+          QString::fromStdString(appMeta_.applicationName));
+      QApplication::setOrganizationName(
+          QString::fromStdString(appMeta_.organizationName));
+      if (!appMeta_.applicationVersion.empty()) {
+        QApplication::setApplicationVersion(
+            QString::fromStdString(appMeta_.applicationVersion));
+      }
+      QApplication::setQuitOnLastWindowClosed(appMeta_.quitOnLastWindowClosed);
+    }
   }
 }
 
@@ -1293,3 +1344,5 @@ void UIService::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
 }
 
 } // namespace havel::host
+
+#endif // HAVE_QT_EXTENSION

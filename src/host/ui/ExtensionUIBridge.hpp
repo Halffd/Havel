@@ -93,6 +93,8 @@ public:
   // Event loop management (routed through UI module)
   int runEventLoop() override;
   void quitEventLoop(int exitCode = 0) override;
+  void setApplicationMetadata(const ApplicationMetadata& meta) override;
+  void resetPerRunState() override;
 
   bool hasActiveWindows() const override;
   void onAllWindowsClosed(std::function<void()> callback) override;
@@ -108,9 +110,9 @@ public:
 void canvasFlush(std::shared_ptr<ui::UIElement> canvas) override;
 void canvasClear(std::shared_ptr<ui::UIElement> canvas) override;
 
- // Extension specific
-bool loadExtension();
-bool isExtensionLoaded() const;
+  // Extension specific
+  bool loadExtension();
+  bool isExtensionLoaded() const;
 
 private:
   std::string extensionName_;
@@ -120,9 +122,15 @@ private:
 
   // Element ID counter for extension bridge
   static ui::ElementId nextId_;
-  
+
   // Track created elements
   std::unordered_map<ui::ElementId, std::shared_ptr<ui::UIElement>> elements_;
+
+  // Cached function pointers for Qt extension symbols
+  void* resolveQtSymbols();
+  int (*qtRunEventLoop_)(int, char**) = nullptr;
+  void (*qtQuitEventLoop_)(int) = nullptr;
+  void (*qtSetAppMetadata_)(const char*, const char*, const char*, bool, int, char**) = nullptr;
 
   // Helper to create element
   std::shared_ptr<ui::UIElement> createElement(const std::string& type);

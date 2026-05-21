@@ -3,8 +3,11 @@
  *
  * Maps UIElement tree to actual Qt widgets/windows.
  * Handles realization, event wiring, and lifecycle.
+ * Only compiled when HAVE_QT_EXTENSION is defined (in-process Qt backend).
  */
 #pragma once
+
+#ifdef HAVE_QT_EXTENSION
 
 #include "modules/ui/UIElement.hpp"
 
@@ -32,6 +35,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include "UIBackend.hpp"
 
 #include <functional>
 #include <memory>
@@ -119,6 +124,10 @@ public:
   
   // quitEventLoop(exitCode) - quits the event loop with given exit code
   void quitEventLoop(int exitCode = 0);
+
+  // Application metadata
+  void setApplicationMetadata(const UIBackend::ApplicationMetadata& meta);
+  void resetPerRunState();
 
   // Check if any windows are still open
   bool hasActiveWindows() const;
@@ -213,6 +222,10 @@ private:
   // Ensure QApplication exists
   void ensureApp();
   bool appOwned_ = false;
+  UIBackend::ApplicationMetadata appMeta_;
+  bool appMetaSet_ = false;
 };
 
 } // namespace havel::host
+
+#endif // HAVE_QT_EXTENSION

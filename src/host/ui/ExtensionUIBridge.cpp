@@ -3,6 +3,7 @@
  */
 #include "ExtensionUIBridge.hpp"
 
+#include <dlfcn.h>
 #include <iostream>
 
 namespace havel {
@@ -323,19 +324,66 @@ bool ExtensionUIBridge::trayIsVisible() const {
   return false;
 }
 
+void* ExtensionUIBridge::resolveQtSymbols() {
+  if (!loader_) return nullptr;
+  void* handle = loader_->getHandle(extensionName_ + "_extension");
+  if (!handle) return nullptr;
+
+  auto getSym = [&](const char* name) -> void* {
+    return dlsym(handle, name);
+  };
+
+  qtRunEventLoop_ = reinterpret_cast<int (*)(int, char**)>(
+      getSym("qt_run_event_loop"));
+  qtQuitEventLoop_ = reinterpret_cast<void (*)(int)>(
+      getSym("qt_quit_event_loop"));
+  qtSetAppMetadata_ = reinterpret_cast<void (*)(const char*, const char*, const char*, bool, int, char**)>(
+      getSym("qt_set_app_metadata"));
+
+  return handle;
+}
+
+void ExtensionUIBridge::setApplicationMetadata(const ApplicationMetadata& meta) {
+  if (!loaded_) return;
+  if (!qtSetAppMetadata_) {
+    resolveQtSymbols();
+  }
+  if (qtSetAppMetadata_) {
+    qtSetAppMetadata_(meta.applicationName.c_str(),
+                      meta.applicationVersion.c_str(),
+                      meta.organizationName.c_str(),
+                      meta.quitOnLastWindowClosed,
+                      meta.argc ? *meta.argc : 0,
+                      meta.argv);
+  }
+}
+
+void ExtensionUIBridge::resetPerRunState() {
+  elements_.clear();
+}
+
 void ExtensionUIBridge::pumpEvents(int timeoutMs) {
   (void)timeoutMs;
 }
 
 int ExtensionUIBridge::runEventLoop() {
-  // ExtensionUIBridge doesn't manage event loop directly
-  // This should not be called in normal usage
+  if (!loaded_) return 1;
+  if (!qtRunEventLoop_) {
+    resolveQtSymbols();
+  }
+  if (qtRunEventLoop_) {
+    int dummyArgc = 1;
+    char* dummyArgv[] = {const_cast<char*>("havel-extension"), nullptr};
+    return qtRunEventLoop_(dummyArgc, dummyArgv);
+  }
+  // Fallback: pump loop if no real runEventLoop available
   return 0;
 }
 
 void ExtensionUIBridge::quitEventLoop(int exitCode) {
-  (void)exitCode;
-  // ExtensionUIBridge doesn't manage event loop directly
+  if (qtQuitEventLoop_) {
+    qtQuitEventLoop_(exitCode);
+  }
 }
 
 bool ExtensionUIBridge::hasActiveWindows() const {

@@ -16,6 +16,7 @@ set_property(CACHE UI_BACKEND PROPERTY STRINGS QT GTK IMGUI AUTO)
 option(ENABLE_GTK "Enable GTK4 native backend" OFF)
 option(ENABLE_IMGUI "Enable Dear ImGui native backend" OFF)
 option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
+option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynamic extension)" ON)
 
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
@@ -298,33 +299,24 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
     "src/extensions/ExtensionLoader.cpp"
-    # "src/havel-lang/compiler/bytecode/HavelAPI.cpp"  # C API - disabled
-    # "src/havel-lang/compiler/bytecode/HavelValue.cpp"  # C API - disabled
-    "src/host/app/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"
-    "src/host/automation/*.cpp"
     "src/host/brightness/*.cpp"
     "src/host/browser/*.cpp"
     "src/host/chunker/*.cpp"
-    "src/host/clipboard/*.cpp"
     "src/host/filesystem/*.cpp"
     "src/host/hotkey/*.cpp"
     "src/host/io/*.cpp"
     "src/host/media/*.cpp"
-    "src/host/module/*.cpp"
     "src/host/mouse/*.cpp"
     "src/host/mode/*.cpp"
     "src/host/network/*.cpp"
     "src/host/process/*.cpp"
- "src/host/screenshot/*.cpp"
- "src/host/image/*.cpp"
- "src/host/timer/*.cpp"
-    "src/host/ui/*.cpp"
-    "src/host/window/*.cpp"
-     "src/window/*.cpp"
-     "src/window/backends/*.cpp"
-     "src/window/strategies/*.cpp"
+    "src/host/image/*.cpp"
+    "src/host/timer/*.cpp"
+    "src/window/*.cpp"
+    "src/window/backends/*.cpp"
+    "src/window/strategies/*.cpp"
     "src/utils/*.cpp"
     "src/fs/*.cpp"
     "src/process/*.cpp"
@@ -333,11 +325,52 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/utils/*.cpp"
     "src/ai/ocr/*.cpp"
 )
+# Non-Qt host sources (always built)
+file(GLOB_RECURSE _HOST_CORE_SOURCES
+  "src/host/app/*.cpp"
+  "src/host/automation/AutomationService.cpp"
+)
+list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
+
+# Non-Qt host files in Qt-dependency directories (always built)
+list(APPEND CORE_SOURCES
+  "src/host/module/ModuleLoader.cpp"
+  "src/host/module/ModularHostBridges.cpp"
+  "src/host/ui/ExtensionUIBridge.cpp"
+  "src/host/ui/GtkBackend.cpp"
+  "src/host/ui/ImGuiBackend.cpp"
+  "src/host/ui/UIManager.cpp"
+  "src/host/window/WindowService.cpp"
+)
+
+# Qt-dependent core sources (only built when in-process Qt backend is enabled)
+if(ENABLE_QT_UI_BACKEND)
+  set(_QT_CORE_SOURCES
+    "src/host/automation/PixelAutomationService.cpp"
+    "src/host/clipboard/Clipboard.cpp"
+    "src/host/clipboard/ClipboardInfo.cpp"
+    "src/host/clipboard/ClipboardService.cpp"
+    "src/host/clipboard/HistoryClipboard.cpp"
+    "src/host/clipboard/MonitoringClipboard.cpp"
+    "src/host/screenshot/ScreenshotService.cpp"
+    "src/host/ui/QtBackend.cpp"
+    "src/host/ui/UIService.cpp"
+    "src/host/window/AltTabService.cpp"
+  )
+  list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
+endif()
+
+
 
 # Input backend adapters - re-enabled after API fixes
 
-# GUI sources (conditionally included based on backend)
-file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
+# GUI sources - only build when Qt UI backend is enabled
+# (all gui/* files unconditionally include qt.hpp)
+if(ENABLE_QT_UI_BACKEND)
+  file(GLOB_RECURSE GUI_SOURCES "src/extensions/gui/*/*.cpp")
+else()
+  set(GUI_SOURCES "")
+endif()
 
 # Note: gui extensions are independent GUI modules, each with its own __init__.py
 # for Python import support. Common utilities are in src/extensions/gui/common/
@@ -385,12 +418,26 @@ endif()
 
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
+# Remove Qt-dependent modules when in-process Qt UI backend is disabled
+if(NOT ENABLE_QT_UI_BACKEND)
+  file(GLOB_RECURSE _QT_MODULES
+    "src/modules/clipboardmgr/*.cpp"
+    "src/modules/ui/*.cpp"
+    "src/modules/screenshot/*.cpp"
+    "src/modules/alttab/*.cpp"
+    "src/modules/clipboard/*.cpp"
+    "src/modules/automation/PixelModule.cpp"
+  )
+  list(REMOVE_ITEM HOST_MODULES_SOURCES ${_QT_MODULES})
+endif()
 
 # Explicitly add new modules (GLOB might not catch new files)
 list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
-list(APPEND HOST_MODULES_SOURCES "src/modules/ui/UIModule.cpp")
+if(ENABLE_QT_UI_BACKEND)
+  list(APPEND HOST_MODULES_SOURCES "src/modules/ui/UIModule.cpp")
+endif()
 
 # Test sources (conditional)
 set(TEST_SOURCES "")
@@ -452,7 +499,7 @@ endif()
 set(UI_BACKEND_DEFS "")
 set(UI_BACKEND_INCLUDES "")
 
-if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE)
+if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE AND ENABLE_QT_UI_BACKEND)
     # Qt6 include directories - use standard paths
     list(APPEND UI_BACKEND_INCLUDES 
         /usr/include/qt6 
@@ -749,10 +796,16 @@ endif()  # QT_BACKEND_AVAILABLE
 # ==============================================================================
 add_library(havel_core STATIC ${CORE_SOURCES})
 add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
-add_library(havel_gui STATIC ${GUI_SOURCES})
+if(ENABLE_QT_UI_BACKEND)
+  add_library(havel_gui STATIC ${GUI_SOURCES})
+endif()
 
 # Shared configuration for the libraries
-foreach(lib havel_core havel_modules havel_gui)
+set(_LIBS havel_core havel_modules)
+if(ENABLE_QT_UI_BACKEND)
+  list(APPEND _LIBS havel_gui)
+endif()
+foreach(lib ${_LIBS})
 target_include_directories(${lib} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -795,7 +848,7 @@ target_link_libraries(havel PRIVATE
     -Wl,--start-group
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
     havel_modules
-    havel_gui
+    $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
     havel_core
     -Wl,--end-group
 )
@@ -960,8 +1013,8 @@ ${CURL_INCLUDE_DIRS}
 # Link libraries
 target_link_libraries(havel PRIVATE
     ${COMMON_LIBS}
-    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
-    $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
+    $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Gui>
+    $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Widgets>
     $<$<BOOL:${OpenCV_FOUND}>:${OPENCV_FFMPEG_WORKAROUND}>
     havel_extension_runtime
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -1043,10 +1096,10 @@ havel_core
 target_compile_definitions(havel_lang PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-$<$<BOOL:${QT_BACKEND_AVAILABLE}>:HAVE_QT_EXTENSION>
-$<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
-$<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
-$<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_CORE_LIB>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_GUI_LIB>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_WIDGETS_LIB>
 $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
 )
 
@@ -1102,10 +1155,10 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
   ${GENERATED_PROTO_DIR}
             $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtCore>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtWidgets>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:/usr/include/qt6/QtGui>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6/QtCore>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6/QtWidgets>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6/QtGui>
         )
         
 target_link_libraries(${test_name} PRIVATE
@@ -1113,8 +1166,8 @@ ${COMMON_LIBS}
 GTest::gtest
             GTest::gtest_main 
             Qt6::Test
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Widgets>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:Qt6::Gui>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Widgets>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Gui>
             havel_extension_runtime
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
         )
@@ -1127,10 +1180,10 @@ GTest::gtest
             $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
             $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
             $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:HAVE_QT_EXTENSION>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_CORE_LIB>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_GUI_LIB>
-            $<$<BOOL:${QT_BACKEND_AVAILABLE}>:QT_WIDGETS_LIB>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_CORE_LIB>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_GUI_LIB>
+            $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_WIDGETS_LIB>
         )
         
  # Add to CTest
@@ -1143,7 +1196,7 @@ GTest::gtest
  endforeach()
     
     # Special GUI test if it exists
-    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp" AND ENABLE_QT_UI_BACKEND)
         add_executable(test_gui tests/TestGUI.cpp)
         
 target_link_libraries(test_gui PRIVATE

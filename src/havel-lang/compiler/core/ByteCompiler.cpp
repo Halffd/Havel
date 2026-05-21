@@ -2245,8 +2245,9 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
             uint32_t name_sid = addStringConstant(moduleName);
             emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
             emit(OpCode::IMPORT);
-            uint32_t mod_sid = addStringConstant(moduleName);
-            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(mod_sid));
+            std::string storeName = (!statement.alias.empty()) ? statement.alias : moduleName;
+            uint32_t store_sid = addStringConstant(storeName);
+            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
         }
         return;
     }

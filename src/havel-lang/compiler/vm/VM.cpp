@@ -6384,6 +6384,8 @@ case OpCode::TAIL_CALL: {
     } else if (receiver.isRangeId()) {
       type_name = "range";
     } else {
+      for (uint32_t i = 0; i < arg_count; ++i) popStack();
+      popStack(); // receiver
       pushStack(Value::makeNull());
       break;
     }
@@ -9777,7 +9779,27 @@ Value exports = Value::makeObjectId(exportsObj.id);
     moduleLoader_.putCache(path, exports);
             return exports;
         }
-        COMPILER_THROW("Module not found: " + path);
+        // Fallback: try modules/ directory relative to executable
+        {
+            std::filesystem::path modulesPath;
+            std::error_code ec;
+            auto exePath = std::filesystem::read_symlink("/proc/self/exe", ec);
+            if (!ec && !exePath.empty()) {
+                modulesPath = exePath.parent_path() / ".." / "modules" / (path + ".hv");
+            } else {
+                modulesPath = std::filesystem::path("modules") / (path + ".hv");
+            }
+            if (std::filesystem::exists(modulesPath, ec)) {
+                resolved = ModuleLoader::ResolvedModule{
+                    ModuleLoader::ResolvedModule::UserSource,
+                    std::filesystem::canonical(modulesPath, ec).string(),
+                    path
+                };
+            }
+        }
+        if (!resolved) {
+            COMPILER_THROW("Module not found: " + path);
+        }
     }
 
     std::string canonicalKey = resolved->canonicalPath;

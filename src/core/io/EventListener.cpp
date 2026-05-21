@@ -125,11 +125,11 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
 
 void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
   if (blockInput.load()) return;
-  if (debugging::debug_hotkeys) debug("⌨️ OnBackendKeyEvent: code={} down={} repeat={}", ke.code, ke.down, ke.repeat);
+  if (debugging::debug_hotkeys) debug("⌨️ OnBackendKeyEvent: code={} down={} repeat={} value={}", ke.code, ke.down, ke.repeat, ke.down ? (ke.repeat ? 2 : 1) : 0);
   struct input_event ev;
   ev.type = EV_KEY;
   ev.code = ke.code;
-  ev.value = ke.down ? 1 : (ke.repeat ? 2 : 0);
+  ev.value = ke.down ? (ke.repeat ? 2 : 1) : 0;
   if (ke.code >= BTN_MOUSE && ke.code < BTN_JOYSTICK) {
     ProcessMouseEvent(ev);
   } else {
@@ -494,7 +494,7 @@ void EventListener::EventLoop() {
       if (s == sizeof(fdsi)) {
         if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
           if (debugging::debug_io) debug("Received shutdown signal {}", fdsi.ssi_signo);
-          RequestShutdownFromSignal(fdsi.ssi_signo);
+          SignalSafeShutdown(fdsi.ssi_signo, true);
           break;
         }
         }
@@ -2008,7 +2008,7 @@ void EventListener::HandleSignal(int sig) {
   case SIGTERM:
   case SIGINT:
     if (!shutdown.load()) {
-      RequestShutdownFromSignal(sig);
+      SignalSafeShutdown(sig, true);
     }
     break;
   case SIGHUP:

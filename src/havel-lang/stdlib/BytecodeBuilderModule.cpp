@@ -384,25 +384,28 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     vm.setMainChunkShared(inner_chunk_ptr);
 vm.current_chunk = g_builder.chunk.get();
 
-    try {
-        auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+ try {
+ vm.bc_execute_depth_++;
+ auto result = vm.execute(*g_builder.chunk, entry, runArgs);
+ vm.bc_execute_depth_--;
 
-        vm.current_chunk = saved_chunk;
-    vm.frame_count_ = saved_frame_count;
-    vm.frame_arena_ = std::move(saved_frame_arena);
-    vm.stack = std::move(saved_stack);
-    vm.locals = std::move(saved_locals);
-    vm.setMainChunkShared(saved_main_chunk);
-    return result;
-} catch (const std::exception &e) {
-    vm.current_chunk = saved_chunk;
-    vm.frame_count_ = saved_frame_count;
-    vm.frame_arena_ = std::move(saved_frame_arena);
-    vm.stack = std::move(saved_stack);
-    vm.locals = std::move(saved_locals);
-    vm.setMainChunkShared(saved_main_chunk);
-    throw std::runtime_error(std::string("Bytecode error: ") + e.what());
-}
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ return result;
+ } catch (const std::exception &e) {
+ vm.bc_execute_depth_--;
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+ }
 });
 
 api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {
@@ -433,25 +436,28 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
   vm.setMainChunkShared(inner_chunk_ptr);
   vm.current_chunk = g_builder.chunk.get();
 
-  try {
-    auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
-    vm.current_chunk = saved_chunk;
-    vm.frame_count_ = saved_frame_count;
-    vm.frame_arena_ = std::move(saved_frame_arena);
-    vm.stack = std::move(saved_stack);
-    vm.locals = std::move(saved_locals);
-    vm.immutable_locals_ = std::move(saved_immutable_locals);
-    vm.setMainChunkShared(saved_main_chunk);
-    return result;
-  } catch (const std::exception &e) {
-    vm.current_chunk = saved_chunk;
-    vm.frame_count_ = saved_frame_count;
-    vm.frame_arena_ = std::move(saved_frame_arena);
-    vm.stack = std::move(saved_stack);
-    vm.locals = std::move(saved_locals);
-    vm.immutable_locals_ = std::move(saved_immutable_locals);
-    vm.setMainChunkShared(saved_main_chunk);
-    throw std::runtime_error(std::string("Bytecode error: ") + e.what());
+ try {
+ vm.bc_execute_depth_++;
+ auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
+ vm.bc_execute_depth_--;
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.immutable_locals_ = std::move(saved_immutable_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ return result;
+ } catch (const std::exception &e) {
+ vm.bc_execute_depth_--;
+ vm.current_chunk = saved_chunk;
+ vm.frame_count_ = saved_frame_count;
+ vm.frame_arena_ = std::move(saved_frame_arena);
+ vm.stack = std::move(saved_stack);
+ vm.locals = std::move(saved_locals);
+ vm.immutable_locals_ = std::move(saved_immutable_locals);
+ vm.setMainChunkShared(saved_main_chunk);
+ throw std::runtime_error(std::string("Bytecode error: ") + e.what());
   }
 	});
 

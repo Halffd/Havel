@@ -812,7 +812,13 @@ VM::CallFrame &VM::currentFrame() {
 }
 
 Value VM::getConstant(uint32_t index) {
-  return currentFrame().function->constants[index];
+  auto& consts = currentFrame().function->constants;
+  if (index >= consts.size()) {
+    fprintf(stderr, "getConstant: index %u >= constants.size() %zu in function '%s'\n",
+            index, consts.size(), currentFrame().function->name.c_str());
+    return Value::makeNull();
+  }
+  return consts[index];
 }
 
 VM::ExecutionState VM::saveState() const {
@@ -4267,19 +4273,20 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
     return;
   }
 
- uint32_t function_index = 0;
- uint32_t closure_id = 0;
- const BytecodeChunk *resolve_chunk = current_chunk;
- std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
- if (callee_value.isFunctionObjId()) {
- function_index = callee_value.asFunctionObjId();
- } else if (callee_value.isClosureId()) {
- closure_id = callee_value.asClosureId();
- auto *closure = heap_.closure(closure_id);
- if (!closure) {
- COMPILER_THROW("Closure not found: " +
- std::to_string(closure_id));
- }
+uint32_t function_index = 0;
+uint32_t closure_id = 0;
+const BytecodeChunk *resolve_chunk = current_chunk;
+std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
+if (callee_value.isFunctionObjId()) {
+function_index = callee_value.asFunctionObjId();
+if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
+if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+resolve_chunk = main_chunk_.get();
+}
+}
+} else if (callee_value.isClosureId()) {
+closure_id = callee_value.asClosureId();
+auto *closure = heap_.closure(closure_id);
  function_index = closure->function_index;
  if (closure->chunk) {
  resolve_chunk = closure->chunk;
@@ -6391,9 +6398,9 @@ case OpCode::TAIL_CALL: {
     // 0. If receiver is an object, check for direct callable field FIRST.
     // Namespace objects like `process` have host function fields (e.g. `find`)
     // that must take priority over prototype methods (e.g. `object.find`).
-    if (receiver.isObjectId()) {
-      auto *instanceObj = heap_.object(receiver.asObjectId());
-      if (instanceObj) {
+if (receiver.isObjectId()) {
+    auto *instanceObj = heap_.object(receiver.asObjectId());
+    if (instanceObj) {
         auto it = instanceObj->find(method_name);
         if (it != instanceObj->end()) {
           if (it->second.isHostFuncId()) {
@@ -6513,25 +6520,7 @@ all_args.push_back(recv);
 all_args.insert(all_args.end(), args2.begin(), args2.end());
 }
 
-if (method_name == "join" || method_name == "map" || method_name == "filter") {
-fprintf(stderr, "[CALLMETHOD] %s: arg_count=%d found_host=%d found_via_module=%d isInstanceFunc=%d\n",
-method_name.c_str(), arg_count, found_host, found_via_module, isInstanceFunc);
-fprintf(stderr, "[CALLMETHOD] all_args.size=%zu\n", all_args.size());
-for (size_t i = 0; i < all_args.size(); i++) {
-fprintf(stderr, "[CALLMETHOD]   all_args[%zu] = ", i);
-if (all_args[i].isArrayId()) fprintf(stderr, "array\n");
-else if (all_args[i].isStringValId()) fprintf(stderr, "strval\n");
-else if (all_args[i].isStringId()) fprintf(stderr, "strid\n");
-else if (all_args[i].isInt()) fprintf(stderr, "int\n");
-else if (all_args[i].isNull()) fprintf(stderr, "null\n");
-else if (all_args[i].isFunctionObjId()) fprintf(stderr, "funcobj\n");
-else if (all_args[i].isClosureId()) fprintf(stderr, "closure\n");
-else if (all_args[i].isHostFuncId()) fprintf(stderr, "hostfunc\n");
-else fprintf(stderr, "other\n");
-}
-}
-
-    if (found_host) {
+if (found_host) {
       if (host_func_idx < host_function_names_.size()) {
         std::string resolved_name = host_function_names_[host_func_idx];
         auto fnIt = host_functions.find(resolved_name);
@@ -9503,10 +9492,20 @@ Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk) {
 Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited) {
     if (!chunk) return value;
 
-    if (value.isStringValId()) {
-        auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
-        return Value::makeStringId(strRef.id);
-    }
+if (value.isStringValId()) {
+auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
+return Value::makeStringId(strRef.id);
+}
+
+if (value.isFunctionObjId() && chunk != current_chunk) {
+auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+.function_index = value.asFunctionObjId(),
+.chunk_index = 0,
+.chunk = chunk,
+.module_globals = nullptr,
+.upvalues = {}});
+return Value::makeClosureId(closureRef.id);
+}
 
     if (value.isObjectId()) {
         auto* obj = heap_.object(value.asObjectId());
@@ -9542,9 +9541,10 @@ Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::u
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                   const std::unordered_map<std::string, Value>& moduleGlobals,
-                                  const std::string& canonicalKey,
-                                  const std::string& fieldPath) {
-    if (value.isFunctionObjId() && chunk) {
+                                  const std::string& canonicalKey, const std::string& fieldPath,
+                                  int depth) {
+  if (depth > 16) return value;
+  if (value.isFunctionObjId() && chunk) {
         uint32_t funcIdx = value.asFunctionObjId();
         const auto* moduleFunc = chunk->getFunction(funcIdx);
         uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
@@ -9552,27 +9552,11 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
 auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
 std::string fnCapturedKey = canonicalKey;
 std::string fnCapturedField = fieldPath;
-if (fieldPath == "join" || fieldPath == "split") {
-fprintf(stderr, "[MODFNDBG] CREATING wrapper for %s paramCount=%d\n", wrapperName.c_str(), paramCount);
-}
 registerHostFunction(wrapperName,
 [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
 std::vector<Value> callArgs = args;
 if (callArgs.size() > paramCount && paramCount > 0) {
 callArgs.erase(callArgs.begin());
-}
-if (fnCapturedField == "join" || fnCapturedField == "split") {
-std::string dbg2 = "[" + wrapperName + "] paramCount=" + std::to_string(paramCount) + " args=" + std::to_string(args.size()) + " callArgs=" + std::to_string(callArgs.size());
-for (size_t i = 0; i < callArgs.size(); i++) {
-dbg2 += " [" + std::to_string(i) + "]=";
-if (callArgs[i].isArrayId()) dbg2 += "array";
-else if (callArgs[i].isStringValId()) dbg2 += "strval";
-else if (callArgs[i].isStringId()) dbg2 += "strid";
-else if (callArgs[i].isInt()) dbg2 += "int";
-else if (callArgs[i].isNull()) dbg2 += "null";
-else dbg2 += "other";
-}
-fprintf(stderr, "[MODFNDBG] %s\n", dbg2.c_str());
 }
 auto* savedChunk = current_chunk;
                     auto savedGlobals = globals;
@@ -9588,22 +9572,7 @@ globals["_G"] = savedG;
 current_chunk = savedChunk;
 return Value::makeNull();
 }
-if (fnCapturedField == "join" || fnCapturedField == "split") {
-fprintf(stderr, "[MODFNDBG]   callee param_count=%d local_count=%d\n", callee->param_count, callee->local_count);
-for (uint32_t i = 0; i < callee->param_count && i < callArgs.size(); i++) {
-Value v = callArgs[i];
-fprintf(stderr, "[MODFNDBG]   param[%d] = ", i);
-if (v.isArrayId()) fprintf(stderr, "array\n");
-else if (v.isStringValId()) fprintf(stderr, "strval\n");
-else if (v.isStringId()) fprintf(stderr, "strid\n");
-else if (v.isInt()) fprintf(stderr, "int(%ld)\n", (long)v.asInt());
-else if (v.isNull()) fprintf(stderr, "null\n");
-else fprintf(stderr, "other\n");
-}
-fprintf(stderr, "[MODFNDBG]   moduleGlobals has 'delim'=%d 'sep'=%d 'arr'=%d 's'=%d\n",
-moduleGlobals.count("delim"), moduleGlobals.count("sep"), moduleGlobals.count("arr"), moduleGlobals.count("s"));
-}
-                    size_t base = locals.size();
+size_t base = locals.size();
                     size_t savedLocalsSize = base;
                     locals.resize(base + callee->local_count, nullptr);
                     uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
@@ -9634,18 +9603,20 @@ moduleGlobals.count("delim"), moduleGlobals.count("sep"), moduleGlobals.count("a
                 locals[base + i] = Value::makeNull();
             }
         }
-        runDispatchLoop(frame_count_ - 1);
-        Value result = popStack();
-        if (locals.size() > savedLocalsSize) {
-            locals.resize(savedLocalsSize);
-        }
-                    result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
-                        moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
-                    globals = std::move(savedGlobals);
-                    globals_mirror_object_id_ = savedMirrorId;
-                    globals["_G"] = savedG;
-                    current_chunk = savedChunk;
-                    return result;
+ runDispatchLoop(frame_count_ - 1);
+ Value result = popStack();
+ if (locals.size() > savedLocalsSize) {
+ locals.resize(savedLocalsSize);
+ }
+ if (bc_execute_depth_ == 0) {
+ result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+ moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
+ }
+ globals = std::move(savedGlobals);
+ globals_mirror_object_id_ = savedMirrorId;
+ globals["_G"] = savedG;
+ current_chunk = savedChunk;
+ return result;
                 });
         uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
         return Value::makeHostFuncId(hostIdx);
@@ -9722,16 +9693,18 @@ moduleGlobals.count("delim"), moduleGlobals.count("sep"), moduleGlobals.count("a
             }
         }
 
-        runDispatchLoop(frame_count_ - 1);
-        Value result = popStack();
-        result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
-            moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
-            globals = std::move(savedGlobals);
-            globals_mirror_object_id_ = savedMirrorId;
-            globals["_G"] = savedG;
-            current_chunk = savedChunk;
-            return result;
-        });
+ runDispatchLoop(frame_count_ - 1);
+ Value result = popStack();
+ if (bc_execute_depth_ == 0) {
+ result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+ moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+ }
+ globals = std::move(savedGlobals);
+ globals_mirror_object_id_ = savedMirrorId;
+ globals["_G"] = savedG;
+ current_chunk = savedChunk;
+ return result;
+ });
     uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
     return Value::makeHostFuncId(hostIdx);
   }
@@ -9741,7 +9714,7 @@ moduleGlobals.count("delim"), moduleGlobals.count("sep"), moduleGlobals.count("a
     if (!obj) return value;
     for (auto& [k, v] : *obj) {
       v = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
-                                    fieldPath.empty() ? k : (fieldPath + "." + k));
+                                    fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
     }
     return value;
   }
@@ -9751,7 +9724,7 @@ moduleGlobals.count("delim"), moduleGlobals.count("sep"), moduleGlobals.count("a
     if (!arr) return value;
     for (size_t i = 0; i < arr->size(); i++) {
       (*arr)[i] = deepWrapModuleFunctions((*arr)[i], chunk, moduleGlobals, canonicalKey,
-                                            fieldPath + "[" + std::to_string(i) + "]");
+                                            fieldPath + "[" + std::to_string(i) + "]", depth + 1);
     }
     return value;
   }
@@ -9884,23 +9857,26 @@ Value exports = Value::makeObjectId(exportsObj.id);
     bool saved_exception = has_current_exception_;
     Value saved_exception_val = current_exception_;
 
-    // Fresh globals for the module — populate with host globals so
-    // the module can call print(), len(), etc.
-    globals.clear();
-    // Register host function globals into sandbox (print, len, str, etc.)
-    for (const auto& [name, value] : host_function_globals_) {
+// Fresh globals for the module — populate with host globals so
+// the module can call print(), len(), etc.
+std::unordered_set<std::string> inheritedGlobalNames;
+globals.clear();
+// Register host function globals into sandbox (print, len, str, etc.)
+for (const auto& [name, value] : host_function_globals_) {
+    globals[name] = value;
+    inheritedGlobalNames.insert(name);
+}
+// Also carry over namespace objects (fs, sys, math, etc.) from the
+// caller's globals so module code can call fs.read(), sys.cwd(), etc.
+auto &callerGlobals = globals_stack_.back();
+for (const auto& [name, value] : callerGlobals) {
+    if (name.empty() || name[0] == '_') continue;
+    if (globals.count(name)) continue; // don't overwrite host function globals
+    if (value.isObjectId()) {
         globals[name] = value;
+        inheritedGlobalNames.insert(name);
     }
-    // Also carry over namespace objects (fs, sys, math, etc.) from the
-    // caller's globals so module code can call fs.read(), sys.cwd(), etc.
-    auto &callerGlobals = globals_stack_.back();
-    for (const auto& [name, value] : callerGlobals) {
-        if (name.empty() || name[0] == '_') continue;
-        if (globals.count(name)) continue; // don't overwrite host function globals
-        if (value.isObjectId()) {
-            globals[name] = value;
-        }
-    }
+}
     auto g_obj = createHostObject();
     globals_mirror_object_id_ = g_obj.id;
     globals["_G"] = Value::makeObjectId(g_obj.id);
@@ -9985,25 +9961,16 @@ Value exports = Value::makeObjectId(exportsObj.id);
 auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
 auto moduleGlobalsSnapshot = globals;
-fprintf(stderr, "[MODFNDBG] loadModule export loop for %s, globals_count=%zu\n", canonicalKey.c_str(), globals.size());
 int exportCount = 0;
 for (const auto& [name, value] : globals) {
-if (!name.empty() && name[0] != '_') {
-bool skip = !(host_function_globals_.count(name) == 0 || !value.isHostFuncId());
-if (name == "join" || name == "split" || name == "len") {
-fprintf(stderr, "[MODFNDBG]   global '%s' skip=%d isHostFunc=%d inHFG=%d\n",
-name.c_str(), skip, value.isHostFuncId(), (int)host_function_globals_.count(name));
+    if (!name.empty() && name[0] != '_' && !inheritedGlobalNames.count(name)) {
+        Value materialized = deepMaterializeStrings(value, current_chunk);
+        materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
+            canonicalKey, name);
+        (*obj)[name] = materialized;
+        exportCount++;
+    }
 }
-if (!skip) {
-Value materialized = deepMaterializeStrings(value, current_chunk);
-materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
-canonicalKey, name);
-(*obj)[name] = materialized;
-exportCount++;
-}
-}
-}
-fprintf(stderr, "[MODFNDBG] loadModule %s exported %d fields\n", canonicalKey.c_str(), exportCount);
     Value exports = Value::makeObjectId(exportsObj.id);
 
     // Restore caller's globals and execution state

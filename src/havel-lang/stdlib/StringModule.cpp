@@ -251,15 +251,11 @@ void registerStringModule(const VMApi &api) {
 auto &vm = api.vm();
 Value exports;
 try {
-fprintf(stderr, "[STRMOD] Attempting vm.loadModule(\"string\")...\n");
 exports = vm.loadModule("string");
-fprintf(stderr, "[STRMOD] loadModule succeeded, isObj=%d\n", exports.isObjectId());
 } catch (const std::exception& e) {
-fprintf(stderr, "[STRMOD] loadModule FAILED: %s\n", e.what());
 registerStringFallback(api);
 return;
 } catch (...) {
-fprintf(stderr, "[STRMOD] loadModule FAILED with unknown exception\n");
 registerStringFallback(api);
 return;
 }

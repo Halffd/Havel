@@ -186,8 +186,9 @@ struct CallFrame {
   std::stack<Value> stack;
   std::vector<Value> locals;
   std::vector<CallFrame> frame_arena_;
-  size_t frame_count_ = 0;
-  GCHeap heap_;
+ size_t frame_count_ = 0;
+ int bc_execute_depth_ = 0;
+ GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
     std::unordered_map<std::string, Value> globals;
@@ -830,7 +831,8 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
     Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
                                    const std::unordered_map<std::string, Value>& moduleGlobals,
                                    const std::string& canonicalKey,
-                                   const std::string& fieldPath);
+                                   const std::string& fieldPath,
+                                int depth = 0);
     Value loadModule(const std::string& path);
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }

@@ -2276,18 +2276,35 @@ fn Parser(tokenList) {
             skipNewlines()
 
         }
-        // Body
-        body = null
-        if current().type == "OpenBrace" or current().type == "Colon" {
-            body = parseBlock()
+    // Body
+    body = null
+    if current().type == "OpenBrace" or current().type == "Colon" {
+        body = parseBlock()
+    }
+    else if current().type == "If" or current().type == "While" or current().type == "For" or current().type == "Loop" or current().type == "Return" or current().type == "Ret" or current().type == "Let" or current().type == "Val" or current().type == "Try" or current().type == "Switch" or current().type == "Break" or current().type == "Continue" or current().type == "Throw" {
+        // Statement body — parse multiple statements like colon block
+        stmts = []
+        while notEOF() and current().type != "EOF" {
+            skipNewlines()
+            if current().type == "EOF": break
+            s = parseStatement()
+            if s != null and s.kind != "ErrorNode" {
+                stmts.push(s)
+            }
+            skipNewlines()
+            if current().type == "EOF": break
+            endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
+            if endTokens.has(current().type): break
         }
-        else {
-            // Expression body
-            bodyExpr = parseExpr(0)
-            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+        body = BlockStatement(stmts, l, c)
+    }
+    else {
+        // Expression body
+        bodyExpr = parseExpr(0)
+        body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
-        }
-        FnDeclaration(name, params, body, l, c)
+    }
+    FnDeclaration(name, params, body, l, c)
 
     }
     // ===================================================================
@@ -2332,86 +2349,202 @@ fn Parser(tokenList) {
     // ===================================================================
     // STATEMENT: import
     // ===================================================================
-    fn parseImportStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'import'
-        skipNewlines()
+fn parseImportStatement() {
+  l = current().line
+  c = current().col
+  advance()
+  skipNewlines()
 
-        module = advance().value
-        skipNewlines()
+  iNames = []
+  iAliases = []
 
-        names = []
-        if current().type == "OpenBrace" {
-            advance()
-            skipNewlines()
-            while current().type != "CloseBrace" and notEOF() {
-                skipNewlines()
-                if current().type == "CloseBrace": break
-                n = advance().value
-                // import { a as b }
-                if current().type == "As" {
-                    advance()
-                    alias = advance().value
-                    names.push(n + " as " + alias)
-                }
-                else {
-                    names.push(n)
-                }
-                skipNewlines()
-                if current().type == "Comma": advance()
-            }
-            expect("CloseBrace")
-
-        }
-        ImportStatement(module, names, l, c)
-
+  // import * from "module"
+  if current().type == "Multiply" {
+    advance()
+    skipNewlines()
+    if current().type == "From" {
+      advance()
+      skipNewlines()
     }
+    module = advance().value
+    return ImportStatement(module, ["*"], l, c, {isWildcard: true})
+  }
+
+  // import { names } from "module" or import a, b from "module"
+  if current().type == "OpenBrace" {
+    advance()
+    skipNewlines()
+    while current().type != "CloseBrace" and notEOF() {
+      skipNewlines()
+      if current().type == "CloseBrace": break
+      n = advance().value
+      a = n
+      if current().type == "As" {
+        advance()
+        skipNewlines()
+        a = advance().value
+      }
+      iNames.push(n)
+      iAliases.push(a)
+      skipNewlines()
+      if current().type == "Comma": advance()
+    }
+    expect("CloseBrace")
+    skipNewlines()
+    if current().type == "From" {
+      advance()
+      skipNewlines()
+    }
+    module = advance().value
+    return ImportStatement(module, iNames, l, c, {importNames: iNames, importAliases: iAliases})
+  }
+
+  // import identifier[, identifier...] from "module"
+  if current().type == "Identifier" {
+    n = advance().value
+    iNames.push(n)
+    iAliases.push(n)
+    skipNewlines()
+    while current().type == "Comma" {
+      advance()
+      skipNewlines()
+      n = advance().value
+      iNames.push(n)
+      iAliases.push(n)
+      skipNewlines()
+    }
+    if current().type == "From" {
+      advance()
+      skipNewlines()
+    }
+    module = advance().value
+    return ImportStatement(module, iNames, l, c, {importNames: iNames, importAliases: iAliases})
+  }
+
+  // bare: import "module"
+  module = advance().value
+  ImportStatement(module, [], l, c, null)
+
+}
     // ===================================================================
     // STATEMENT: use
     // ===================================================================
-    fn parseUseStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'use'
+fn parseUseStatement() {
+  l = current().line
+  c = current().col
+  advance()
+  skipNewlines()
+
+  // use { names } from "module" — named imports
+  if current().type == "OpenBrace" {
+    names = []
+    iNames = []
+    iAliases = []
+    advance()
+    skipNewlines()
+    while current().type != "CloseBrace" and notEOF() {
+      skipNewlines()
+      if current().type == "CloseBrace": break
+      n = advance().value
+      a = n
+      if current().type == "As" {
+        advance()
         skipNewlines()
-
-        // use { names } from "module" or use "module"
-        names = []
-        module = null
-        if current().type == "OpenBrace" {
-            advance()
-            skipNewlines()
-            while current().type != "CloseBrace" and notEOF() {
-                skipNewlines()
-                if current().type == "CloseBrace": break
-                n = advance().value
-                if current().type == "As" {
-                    advance()
-                    alias = advance().value
-                    names.push(n + " as " + alias)
-                }
-                else {
-                    names.push(n)
-                }
-                skipNewlines()
-                if current().type == "Comma": advance()
-            }
-            expect("CloseBrace")
-            skipNewlines()
-            if current().type == "From" {
-                advance()
-                skipNewlines()
-            }
-            module = advance().value
-        }
-        else {
-            module = advance().value
-
-        }
-        UseStatement(module, names, l, c)
-
+        a = advance().value
+      }
+      names.push(n)
+      iNames.push(n)
+      iAliases.push(a)
+      skipNewlines()
+      if current().type == "Comma": advance()
     }
+    expect("CloseBrace")
+    skipNewlines()
+    if current().type != "From" {
+      return UseStatement(null, names, l, c, null)
+    }
+    advance()
+    skipNewlines()
+    module = advance().value
+    return UseStatement(module, names, l, c, {isFileImport: true, isNamedImport: true,
+      filePath: module, importNames: iNames, importAliases: iAliases})
+  }
+
+  // use * from "module" — wildcard
+  if current().type == "Multiply" {
+    advance()
+    skipNewlines()
+    if current().type == "From" {
+      advance()
+      skipNewlines()
+    }
+    module = advance().value
+    return UseStatement(module, ["*"], l, c, {isFileImport: true, isWildcard: true,
+      filePath: module})
+  }
+
+  // use "file.hv" or use "file.hv" as alias
+  if current().type == "String" || current().type == "InterpolatedString" {
+    fpath = advance().value
+    skipNewlines()
+    alias = null
+    if current().type == "As" {
+      advance()
+      skipNewlines()
+      alias = advance().value
+    }
+    if alias != null {
+      return UseStatement(fpath, [], l, c, {isFileImport: true, filePath: fpath, alias: alias})
+    }
+    return UseStatement(fpath, ["*"], l, c, {isFileImport: true, filePath: fpath,
+      isWildcard: true})
+  }
+
+  // use module or use module as alias or use module, module2
+  firstMod = advance().value
+  skipNewlines()
+
+  // use module.* — wildcard via dot-star
+  if current().type == "Dot" {
+    advance()
+    skipNewlines()
+    if current().type == "Multiply" {
+      advance()
+      return UseStatement(firstMod, ["*"], l, c, {isWildcard: true, filePath: firstMod,
+        moduleNames: [firstMod]})
+    }
+    return UseStatement(firstMod, [], l, c, null)
+  }
+
+  // use module as alias
+  if current().type == "As" {
+    advance()
+    skipNewlines()
+    alias = advance().value
+    return UseStatement(firstMod, [], l, c, {alias: alias, moduleNames: [firstMod]})
+  }
+
+  // use module from "source"
+  if current().type == "From" {
+    advance()
+    skipNewlines()
+    source = advance().value
+    return UseStatement(source, [], l, c, {isFileImport: true, filePath: source, alias: firstMod})
+  }
+
+  // use module, module2, ... — multiple bare module names
+  mods = [firstMod]
+  while current().type == "Comma" {
+    advance()
+    skipNewlines()
+    if current().type == "Identifier" || current().type == "Keyword" {
+      mods.push(advance().value)
+      skipNewlines()
+    }
+  }
+  return UseStatement(firstMod, [], l, c, {moduleNames: mods})
+
+}
     // ===================================================================
     // STATEMENT: hotkey binding
     // ===================================================================

@@ -1,0 +1,19 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+if #app.args < 1 {
+    print("usage: havel --run modules/compiler_run.hv -- <input.hv>")
+    exit(1)
+}
+
+source = fs.read(app.args[0])
+tokens = tokenize(source)
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+    for err in result.errors { print(err) }
+    exit(1)
+}
+emitter = Emitter()
+compileProgram(emitter, result.ast, false)

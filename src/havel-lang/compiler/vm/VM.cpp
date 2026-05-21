@@ -814,8 +814,6 @@ VM::CallFrame &VM::currentFrame() {
 Value VM::getConstant(uint32_t index) {
   auto& consts = currentFrame().function->constants;
   if (index >= consts.size()) {
-    fprintf(stderr, "getConstant: index %u >= constants.size() %zu in function '%s'\n",
-            index, consts.size(), currentFrame().function->name.c_str());
     return Value::makeNull();
   }
   return consts[index];
@@ -3214,7 +3212,9 @@ void VM::registerDefaultHostGlobals() {
 }
 
 void VM::registerDefaultPrototypes() {
-  prototypes::registerStringPrototype(*this);
+    if (prototypes_registered_) return;
+    prototypes_registered_ = true;
+    prototypes::registerStringPrototype(*this);
   prototypes::registerArrayPrototype(*this);
   prototypes::registerNumberPrototype(*this);
   prototypes::registerBoolPrototype(*this);
@@ -3592,19 +3592,23 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     // Handle script-thrown exceptions
     if (!handleScriptThrow(thrown.value)) {
       std::string stackTrace = buildStackTrace(frame_count_);
-      uint32_t line = 0, column = 0;
-      if (frame_count_ > 0) {
-        auto &frame = frame_arena_[frame_count_ - 1];
-        if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
-          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-          line = loc.line;
-          column = loc.column;
-        }
-      }
-      std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
-      if (line > 0) {
-        errorMsg += " at line " + std::to_string(line);
-      }
+  uint32_t line = 0, column = 0;
+  std::string srcFile;
+  if (frame_count_ > 0) {
+    auto &frame = frame_arena_[frame_count_ - 1];
+    if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
+      const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+      line = loc.line;
+      column = loc.column;
+      srcFile = loc.filename;
+    }
+  }
+  std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
+  if (line > 0 && !srcFile.empty()) {
+    errorMsg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", errorMsg, srcFile, (size_t)line, (size_t)column, 0);
+  } else if (line > 0) {
+    errorMsg += " at line " + std::to_string(line);
+  }
       return VMExecutionResult::Error(errorMsg);
     }
     // Exception was caught and handled
@@ -3617,7 +3621,11 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
         const auto loc = nearestSourceLocation(*frame.function, frame.ip);
         if (loc.line > 0) {
-          msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+          if (!loc.filename.empty()) {
+            msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", msg, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+          } else {
+            msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+          }
         }
       }
     }
@@ -4042,21 +4050,25 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     } catch (const std::runtime_error &e) {
       // Convert runtime errors to script exceptions so they can be caught
       // by script-level try/catch blocks
-      std::string msg = e.what();
-      uint32_t line = 0;
-      uint32_t column = 0;
-      if (frame_count_ > 0) {
-        auto &frame = frame_arena_[frame_count_ - 1];
-        if (frame.function &&
-            frame.ip < frame.function->instruction_locations.size()) {
-          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-          line = loc.line;
-          column = loc.column;
-          if (loc.line > 0) {
+    std::string msg = e.what();
+    uint32_t line = 0;
+    uint32_t column = 0;
+    if (frame_count_ > 0) {
+      auto &frame = frame_arena_[frame_count_ - 1];
+      if (frame.function &&
+          frame.ip < frame.function->instruction_locations.size()) {
+        const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+        line = loc.line;
+        column = loc.column;
+        if (loc.line > 0) {
+          if (!loc.filename.empty()) {
+            msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+          } else {
             msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
           }
         }
       }
+    }
       // Try to handle as script exception first
       Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
       if (handleScriptThrow(exceptionValue)) {

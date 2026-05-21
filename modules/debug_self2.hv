@@ -1,0 +1,13 @@
+use { tokenize } from "lang/lexer"
+use { parseTokens } from "lang/pratt"
+
+source = fs.read("modules/compiler.hv")
+tokens = tokenize(source)
+result = parseTokens(tokens)
+print("errors: " + str(#result.errors))
+if #result.errors > 0 {
+    for i in 0..(#result.errors - 1) {
+        print("  " + str(i) + ": " + str(result.errors[i]))
+    }
+}
+print("ast body count: " + str(#result.ast.body))

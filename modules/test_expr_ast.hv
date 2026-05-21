@@ -1,0 +1,16 @@
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+
+source = "n <= 1"
+tokens = tokenize(source)
+result = parseTokens(tokens)
+ast = result.ast
+print("body count=" + str(#ast.body))
+stmt = ast.body[0]
+print("stmt kind=" + stmt.kind)
+if stmt.kind == "ExpressionStatement" {
+    print("expr kind=" + str(stmt.expr.kind))
+    if stmt.expr.kind == "BinaryExpression" {
+        print("  op=" + stmt.expr.op)
+    }
+}

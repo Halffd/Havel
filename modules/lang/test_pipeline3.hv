@@ -1,0 +1,9 @@
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+use { inferProgram } from "types"
+
+source = "val x = 3 + 4\nprint(x)"
+result = parse(source)
+emitter = Emitter()
+bc.reset()
+compileProgram(emitter, result.ast, false)

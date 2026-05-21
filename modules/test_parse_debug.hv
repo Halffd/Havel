@@ -1,0 +1,18 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+source = fs.read("/tmp/test_just_dollar.txt")
+tokens = tokenize(source)
+result = parseTokens(tokens)
+ast = result.ast
+// Check the CallExpression
+stmt = ast.body[0]
+print("stmt kind=" + stmt.kind)
+expr = stmt.expr
+print("expr kind=" + expr.kind)
+arg = expr.args[0]
+print("arg kind=" + arg.kind)
+print("arg parts count=" + str(#arg.parts))
+seg = arg.parts[0]
+print("seg kind=" + seg.kind)
+print("seg name=" + str(seg.name))

@@ -1,0 +1,20 @@
+use { tokenize } from "lang/lexer"
+use { parseTokens } from "lang/pratt"
+use { AssignmentExpression, IndexExpression, Identifier, NumberLiteral } from "lang/ast"
+source = "arr[1] = 99"
+tokens = tokenize(source)
+r = parseTokens(tokens)
+stmt = r.ast.body[0]
+print("stmt kind=" + str(stmt.kind))
+expr = stmt.expression
+print("expr kind=" + str(expr.kind))
+if expr.kind == "AssignmentExpression" {
+    print("target kind=" + str(expr.target.kind))
+    print("value kind=" + str(expr.value.kind))
+    if expr.target.kind == "IndexExpression" {
+        print("target.obj kind=" + str(expr.target.obj.kind))
+        print("target.obj name=" + str(expr.target.obj.name))
+        print("target.index kind=" + str(expr.target.index.kind))
+        print("target.index value=" + str(expr.target.index.value))
+    }
+}

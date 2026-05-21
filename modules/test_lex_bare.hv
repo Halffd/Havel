@@ -1,0 +1,7 @@
+use fs
+use { tokenize } from "lexer"
+source = fs.read("/tmp/test_bare_interp.txt")
+tokens = tokenize(source)
+for t in tokens {
+  print(t.type + " [" + str(t.value) + "]")
+}

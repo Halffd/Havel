@@ -1,0 +1,10 @@
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+use { inferProgram } from "types"
+
+code = 'val s = "hello"\nprint(#s)'
+emitter = Emitter()
+bc.reset()
+ast = parse(code)
+typed = inferProgram(ast.ast)
+compileProgram(emitter, ast.ast, false)

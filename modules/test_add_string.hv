@@ -1,0 +1,7 @@
+print("before add_string")
+idx = bc.add_string("test")
+print("idx=" + str(idx))
+idx2 = bc.add_string("")
+print("empty idx=" + str(idx2))
+PYEOF
+timeout 15 ./build-debug/havel --run /home/all/repos/havel/modules/test_add_string.hv 2>&1 | grep -v MODFNDBG | grep -v ObjectModule | grep -v "Expected" | grep -v "CALL_METHOD"

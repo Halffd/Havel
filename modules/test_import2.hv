@@ -1,0 +1,2 @@
+use { compileProgram } from "emitter"
+print("compileProgram is: " + str(compileProgram))

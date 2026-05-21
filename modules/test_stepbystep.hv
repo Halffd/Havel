@@ -1,0 +1,31 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+source = fs.read("/tmp/test_just_dollar.txt")
+tokens = tokenize(source)
+result = parseTokens(tokens)
+emitter = Emitter()
+bc.func_new("__main__")
+bc.set_local_count(0)
+print("about to emit")
+// Try manually emitting what the InterpolatedString handler should emit
+emptyIdx = bc.add_string("")
+print("emptyIdx=" + str(emptyIdx))
+bc.emit("LOAD_CONST", emptyIdx)
+print("LOAD_CONST empty done")
+// LOAD_GLOBAL x
+xIdx = bc.add_chunk_string("x")
+print("xIdx chunk=" + str(xIdx))
+bc.emit("LOAD_GLOBAL", bc.str_id(xIdx))
+print("LOAD_GLOBAL x done")
+bc.emit("TO_STRING")
+print("TO_STRING done")
+bc.emit("STRING_CONCAT")
+print("STRING_CONCAT done")
+bc.emit("PRINT")
+print("PRINT done")
+bc.emit("PUSH_NULL")
+bc.emit("RETURN")
+print("emission done, executing")
+bc.execute()

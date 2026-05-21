@@ -1,0 +1,29 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+
+source = "fn add(a, b)\n    return a + b"
+tokens = tokenize(source)
+result = parseTokens(tokens)
+ast = result.ast
+print("ast body count: " + str(#ast.body))
+for i in 0..(#ast.body - 1) {
+    stmt = ast.body[i]
+    print("stmt " + str(i) + " kind=" + stmt.kind)
+    if stmt.kind == "FunctionDeclaration" {
+        print("  body kind=" + str(stmt.body.kind))
+        if stmt.body.kind == "BlockStatement" {
+            print("  body count=" + str(#stmt.body.body))
+            for j in 0..(#stmt.body.body - 1) {
+                inner = stmt.body.body[j]
+                print("  body[" + str(j) + "] kind=" + inner.kind)
+                if inner.kind == "ExpressionStatement" {
+                    print("    expr kind=" + str(inner.expr.kind))
+                    if inner.expr.kind == "CallExpression" {
+                        print("    callee kind=" + str(inner.expr.callee.kind))
+                    }
+                }
+            }
+        }
+    }
+}

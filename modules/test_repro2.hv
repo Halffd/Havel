@@ -1,0 +1,14 @@
+use { emitExpr, emitStmt, Emitter } from "emitter"
+
+fn testDirect() {
+    em = Emitter()
+    bc.reset()
+    bc.func_new("test", 0, 64)
+    em.scope = {parent: null, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+    rangeNode = {kind: "RangeExpression", start: {kind: "NumberLiteral", value: "0", line: 1, col: 1}, end: {kind: "NumberLiteral", value: "2", line: 1, col: 3}, inclusive: false, line: 1, col: 1}
+    emitExpr(em, rangeNode)
+    print(bc.disasm())
+}
+
+testDirect()

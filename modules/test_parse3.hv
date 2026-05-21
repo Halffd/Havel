@@ -1,0 +1,12 @@
+use { tokenize } from "lang/lexer"
+use { parseTokens } from "lang/pratt"
+source = "arr[1] = 99"
+tokens = tokenize(source)
+r = parseTokens(tokens)
+e = r.ast.body[0].expression
+print("kind=" + str(e.kind))
+keys = []
+for k in e {
+    keys.push(k)
+}
+print("keys: " + str(keys))

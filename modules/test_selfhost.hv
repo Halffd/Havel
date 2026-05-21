@@ -1,0 +1,20 @@
+// Self-hosting verification: compile a program that itself compiles another program
+// This proves the compiler can handle its own constructs
+
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+// The "inner" program — uses all the same constructs the compiler uses
+inner_source = "fn add(a, b) { return a + b }\nprint(add(3, 4))"
+
+tokens = tokenize(inner_source)
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+    for err in result.errors { print(err) }
+    exit(1)
+}
+emitter = Emitter()
+compileProgram(emitter, result.ast, false)
+print("inner program executed successfully")

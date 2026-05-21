@@ -1,0 +1,15 @@
+use { emitExpr, emitStmt, Emitter } from "emitter"
+
+fn testForStmt() {
+    em = Emitter()
+    bc.reset()
+    bc.func_new("test", 0, 64)
+    em.scope = {parent: null, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+    forNode = {kind: "ForStatement", name: "i", iterator: {kind: "RangeExpression", start: {kind: "NumberLiteral", value: "0", line: 1, col: 1}, end: {kind: "NumberLiteral", value: "2", line: 1, col: 3}, inclusive: false, line: 1, col: 1}, body: {kind: "BlockStatement", body: []}, line: 1, col: 1}
+
+    emitStmt(em, forNode)
+    print(bc.disasm())
+}
+
+testForStmt()

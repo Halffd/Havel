@@ -1,0 +1,28 @@
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+
+source = "fn add(a, b)\n    return a + b"
+tokens = tokenize(source)
+result = parseTokens(tokens)
+ast = result.ast
+fnKind = ast.body[0].kind
+print("fn kind=" + fnKind)
+body = ast.body[0].body
+print("body kind=" + body.kind)
+if body.kind == "BlockStatement" {
+    print("body stmts=" + str(#body.body))
+    for j in 0..(#body.body - 1) {
+        inner = body.body[j]
+        print("  [" + str(j) + "] kind=" + inner.kind)
+        if inner.kind == "ReturnStatement" {
+            print("  RETURN value kind=" + str(inner.value.kind))
+        }
+        if inner.kind == "ExpressionStatement" {
+            print("  expr kind=" + str(inner.expr.kind))
+            if inner.expr.kind == "CallExpression" {
+                print("  callee kind=" + str(inner.expr.callee.kind))
+                print("  callee value=" + str(inner.expr.callee.value))
+            }
+        }
+    }
+}

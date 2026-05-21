@@ -1,0 +1,23 @@
+use { emitExpr, Emitter } from "emitter"
+
+fn myEmitStmt(em, node) {
+    k = node.kind
+    if k == "ForStatement" {
+        iterName = node.name
+        print("myEmitStmt: iterName=" + str(iterName) + " iter.kind=" + str(node.iterator.kind))
+        emitExpr(em, node.iterator)
+        print("myEmitStmt: after emitExpr ic=" + str(bc.instr_count()))
+    }
+}
+
+fn test() {
+    em = Emitter()
+    bc.reset()
+    bc.func_new("test", 0, 64)
+    em.scope = {parent: null, locals: {}, count: 0, upvalues: {}, upcount: 0}
+    forNode = {kind: "ForStatement", name: "i", iterator: {kind: "RangeExpression", start: {kind: "NumberLiteral", value: "0", line: 1, col: 1}, end: {kind: "NumberLiteral", value: "2", line: 1, col: 3}, inclusive: false, line: 1, col: 1}, body: {kind: "BlockStatement", body: []}, line: 1, col: 1}
+    myEmitStmt(em, forNode)
+    print(bc.disasm())
+}
+
+test()

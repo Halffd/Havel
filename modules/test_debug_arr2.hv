@@ -1,0 +1,11 @@
+use { tokenize } from "lang/lexer"
+use { parseTokens } from "lang/pratt"
+use { compileProgram } from "lang/emitter"
+
+source = "arr = [10, 20, 30]\narr[1] = 99\nprint(arr[1])"
+tokens = tokenize(source)
+result = parseTokens(tokens)
+ast = result.ast
+compileProgram(ast, "test", true)
+bc.serialize("/tmp/test_debug_arr2.hvc")
+print("done")

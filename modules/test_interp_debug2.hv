@@ -1,0 +1,15 @@
+use fs
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+source = fs.read("/tmp/test_interp_simple.txt")
+tokens = tokenize(source)
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+  for err in result.errors { print("PARSE ERROR: " + str(err)) }
+  exit(1)
+}
+emitter = Emitter()
+compileProgram(emitter, result.ast, true)
+bc.serialize("/tmp/test_interp.hvc")
+print("serialized to /tmp/test_interp.hvc")

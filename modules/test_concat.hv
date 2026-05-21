@@ -1,0 +1,14 @@
+use { tokenize } from "lexer"
+use { parseTokens } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+source = "print(\"hello\" + \" world\")"
+tokens = tokenize(source)
+result = parseTokens(tokens)
+if result.errors != null && #result.errors > 0 {
+    for err in result.errors { print(err) }
+    exit(1)
+}
+emitter = Emitter()
+compileProgram(emitter, result.ast, true)
+bc.execute()

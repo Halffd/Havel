@@ -1,0 +1,12 @@
+use { Emitter, compileProgram, emitExpr, emitStmt } from "emitter"
+
+em = Emitter()
+bc.reset()
+bc.func_new("test", 0, 16)
+
+testNode = {kind: "RangeExpression", start: {kind: "NumberLiteral", value: "0", line: 1, col: 1}, end: {kind: "NumberLiteral", value: "2", line: 1, col: 3}, inclusive: false, line: 1, col: 1}
+em.scope = {parent: null, locals: {}, count: 0, upvalues: {}, upcount: 0}
+
+print("before emitExpr: testNode.kind=" + str(testNode.kind))
+emitExpr(em, testNode)
+print("after emitExpr: instr_count=" + str(bc.instr_count()))

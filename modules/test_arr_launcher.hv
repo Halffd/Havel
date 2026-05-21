@@ -1,0 +1,9 @@
+use { tokenize } from "lang/lexer"
+use { parseTokens } from "lang/pratt"
+use { compileProgram } from "lang/emitter"
+
+source = "arr = [10, 20, 30]\nprint(arr[0])\nprint(arr[1])\narr[1] = 99\nprint(arr[1])"
+tokens = tokenize(source)
+result = parseTokens(tokens)
+ast = result.ast
+r = compileProgram(ast, "test", false)

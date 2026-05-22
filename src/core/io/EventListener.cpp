@@ -1988,11 +1988,17 @@ void EventListener::RegisterGestureHotkey(
 void EventListener::SetupSignalHandling() {
   sigset_t mask;
   sigemptyset(&mask);
-  sigaddset(&mask, SIGINT);
   sigaddset(&mask, SIGTERM);
   sigaddset(&mask, SIGHUP);
   sigprocmask(SIG_BLOCK, &mask, nullptr);
   signalHandler->SetupSignalfd();
+
+  // SIGINT must NOT be blocked so it reaches the handler immediately
+  struct sigaction sa;
+  sa.sa_flags = SA_RESTART;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = [](int) { _exit(0); };
+  sigaction(SIGINT, &sa, nullptr);
 }
 
 void EventListener::ProcessSignal() {

@@ -47,7 +47,6 @@ void SignalHandler::InstallAsyncHandlers() {
   sa.sa_handler = SignalCleanupHandler;
 
   // Catch all termination and interrupt signals
-  sigaction(SIGINT, &sa, nullptr);    // Ctrl+C
   sigaction(SIGTERM, &sa, nullptr);   // Termination
   sigaction(SIGQUIT, &sa, nullptr);   // Quit
   sigaction(SIGABRT, &sa, nullptr);   // Abort
@@ -82,7 +81,6 @@ bool SignalHandler::SetupSignalfd() {
   
   // Block all catchable signals for signalfd
   sigaddset(&signalMask, SIGTERM);
-  sigaddset(&signalMask, SIGINT);
   sigaddset(&signalMask, SIGHUP);
   sigaddset(&signalMask, SIGQUIT);
   sigaddset(&signalMask, SIGABRT);

@@ -26,6 +26,7 @@
 
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
+#include "process/Launcher.hpp"
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -33,23 +34,6 @@ using havel::compiler::VMApi;
 namespace fs = std::filesystem;
 
 namespace havel::stdlib {
-
-// Cross‑platform pipe helpers
-static FILE* openPipe(const std::string& cmd, const char* mode) {
-#ifdef _WIN32
-  return _popen(cmd.c_str(), mode);
-#else
-  return popen(cmd.c_str(), mode);
-#endif
-}
-
-static int closePipe(FILE* pipe) {
-#ifdef _WIN32
-  return _pclose(pipe);
-#else
-  return pclose(pipe);
-#endif
-}
 
 // Return a string describing the current platform
 static std::string getPlatform() {
@@ -165,16 +149,11 @@ void registerShellModule(const VMApi &api) {
       if (args.empty())
         throw std::runtime_error("shell.run() requires a command string");
       std::string cmd = api.resolveString(args[0]);
-      pid_t pid = fork();
-      if (pid == -1) {
-        return Value(static_cast<int64_t>(-1));
-      }
-      if (pid == 0) {
-        setsid();
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), (char *)nullptr);
-        _exit(127);
-      }
-      return Value(static_cast<int64_t>(pid));
+      LaunchParams params;
+      params.method = Method::Shell;
+      params.detachFromParent = true;
+      auto result = Launcher::run(cmd, params);
+      return Value(static_cast<int64_t>(result.success ? result.pid : -1));
     });
 
   // ----------------------------------------------------------------------
@@ -189,33 +168,15 @@ void registerShellModule(const VMApi &api) {
         throw std::runtime_error("shell.exec() requires a command string");
       std::string cmd = api.resolveString(args[0]);
 
-      std::string stdout_str;
-  FILE *pipe = openPipe(cmd, "r");
-  if (!pipe) {
-    auto result = api.makeObject();
-    api.setField(result, "stdout", api.makeString(""));
-    api.setField(result, "stderr", api.makeString(""));
-    api.setField(result, "exitCode",
-        Value::makeInt(static_cast<int64_t>(-1)));
-    return result;
-  }
+      auto presult = Launcher::runShell(cmd);
 
-  char buf[4096];
-  while (fgets(buf, sizeof(buf), pipe))
-    stdout_str += buf;
-  int exitCode = closePipe(pipe);
-
-  if (api.vm().getScheduler()) {
-    api.vm().getScheduler()->yieldCurrentAndCheckTimers();
-  }
-
-  auto result = api.makeObject();
-  api.setField(result, "stdout", api.makeString(stdout_str));
-  api.setField(result, "stderr", api.makeString(""));
-  api.setField(result, "exitCode",
-      Value::makeInt(static_cast<int64_t>(exitCode)));
-  return result;
-});
+      auto result = api.makeObject();
+      api.setField(result, "stdout", api.makeString(presult.stdout));
+      api.setField(result, "stderr", api.makeString(presult.stderr));
+      api.setField(result, "exitCode",
+          Value::makeInt(static_cast<int64_t>(presult.exitCode)));
+      return result;
+    });
 
   // ----------------------------------------------------------------------
   // shell.which – locate executable in PATH
@@ -745,7 +706,7 @@ if (!std::getline(std::cin, line))
       // Linux/BSD: try xdg-open, fallback to open
       cmd = "xdg-open \"" + path + "\" 2>/dev/null || open \"" + path + "\"";
 #endif
-      std::system(cmd.c_str());
+      Launcher::runDetached(cmd);
       return Value::makeNull();
     });
 

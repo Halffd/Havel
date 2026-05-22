@@ -42,9 +42,9 @@ fn defaults(target, source) {
   target
 }
 
-fn pick(obj, keys) {
+fn pick(obj, ks) {
   result = {}
-  for k in keys {
+  for k in ks {
     if obj.has(k) {
       result[k] = obj[k]
     }
@@ -52,10 +52,42 @@ fn pick(obj, keys) {
   result
 }
 
-fn omit(obj, keys) {
+fn omit(obj, ks) {
   result = {}
   for k in obj.keys() {
-    if !keys.includes(k) {
+    if !ks.includes(k) {
+      result[k] = obj[k]
+    }
+  }
+  result
+}
+
+fn rename(obj, oldKey, newKey) {
+  result = {}
+  for k in obj.keys() {
+    if k == oldKey {
+      result[newKey] = obj[k]
+    } else {
+      result[k] = obj[k]
+    }
+  }
+  result
+}
+
+fn pickBy(obj, pred) {
+  result = {}
+  for k in obj.keys() {
+    if pred(obj[k], k) {
+      result[k] = obj[k]
+    }
+  }
+  result
+}
+
+fn omitBy(obj, pred) {
+  result = {}
+  for k in obj.keys() {
+    if !pred(obj[k], k) {
       result[k] = obj[k]
     }
   }

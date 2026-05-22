@@ -6773,13 +6773,14 @@ if (at().type == havel::TokenType::String ||
         alias = advance().value;
     }
 
-    if (!alias.empty()) {
-        auto stmt = std::make_unique<havel::ast::UseStatement>(filePath, alias);
+        if (!alias.empty()) {
+            auto stmt = std::make_unique<havel::ast::UseStatement>(filePath, alias);
+            stmt->isFileImport = true;
+            return stmt;
+        }
+        auto stmt = std::make_unique<havel::ast::UseStatement>(filePath, std::string{});
         stmt->isFileImport = true;
         return stmt;
-    }
-    return std::make_unique<havel::ast::UseStatement>(
-        filePath, std::vector<std::string>{"*"});
     }
 
     // =========================================================================

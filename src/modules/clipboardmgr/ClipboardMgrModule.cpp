@@ -5,7 +5,7 @@
 #include "ClipboardMgrModule.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
-#include "core/IO.hpp"
+#include "core/io/IO.hpp"
 #include "gui/clipboard_manager/ClipboardManager.hpp"
 #include "gui/automation_suite/AutomationSuite.hpp"
 #include <QApplication>

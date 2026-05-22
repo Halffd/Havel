@@ -3,7 +3,7 @@
 #include "X11IOBackend.hpp"
 #include "WaylandIOBackend.hpp"
 #include "WindowsIOBackend.hpp"
-#include "../DisplayManager.hpp"
+#include "core/display/DisplayManager.hpp"
 
 namespace havel {
 

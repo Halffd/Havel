@@ -1,7 +1,7 @@
 #include "FFIMemory.hpp"
 #include "../../utils/Logger.hpp"
 #include "FFITypes.hpp"
-#include "../core/Value.hpp"
+#include "core/Value.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <limits>

@@ -1,5 +1,5 @@
 #include "MapManager.hpp"
-#include "../DisplayManager.hpp"
+#include "core/display/DisplayManager.hpp"
 #include "EventListener.hpp"
 #include <algorithm>
 #include <chrono>

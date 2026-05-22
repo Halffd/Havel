@@ -7,8 +7,8 @@
  * No VM, no interpreter, no HavelValue - just system logic.
  */
 #include "WindowService.hpp"
-#include "window/WindowManager.hpp"
-#include "window/WindowQuery.hpp"
+#include "core/window/WindowManager.hpp"
+#include "core/window/WindowQuery.hpp"
 
 namespace havel::host {
 

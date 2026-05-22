@@ -5,7 +5,7 @@
 // #include <QSystemTrayIcon>
 // #include <QMainWindow> // Added for QWindow (QMainWindow) definition
 
-#include "core/BrightnessManager.hpp"
+#include "core/brightness/BrightnessManager.hpp"
 namespace havel {
 
 class BrightnessPanel : public ::QMainWindow {

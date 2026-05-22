@@ -4,7 +4,7 @@
  * Pure C++ hotkey service implementation.
  * No VM, no interpreter, no HavelValue - just system logic.
  */
-#include "core/HotkeyManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/KeyTap.hpp"
 #include "HotkeyService.hpp"
 

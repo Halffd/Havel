@@ -4,7 +4,7 @@
  * Supports autovivification (__vivify) and auto-save (__autosave_root)
  */
 #include "ConfigModule.hpp"
-#include "core/ConfigManager.hpp"
+#include "core/config/ConfigManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 

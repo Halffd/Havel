@@ -1,7 +1,7 @@
 #pragma once
 #include "qt.hpp"
 
-#include "window/WindowManager.hpp"
+#include "core/window/WindowManager.hpp"
 // #include <QApplication>
 // #include <QDialog>
 // #include <QGenericArgument>

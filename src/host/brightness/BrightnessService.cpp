@@ -4,7 +4,7 @@
  * Pure C++ brightness service implementation.
  */
 #include "BrightnessService.hpp"
-#include "core/BrightnessManager.hpp"
+#include "core/brightness/BrightnessManager.hpp"
 
 namespace havel::host {
 

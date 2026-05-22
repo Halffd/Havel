@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/BytecodeIR.hpp"
+#include "compiler/core/BytecodeIR.hpp"
 #include "../../ast/AST.h"
 #include <optional>
 #include <string>

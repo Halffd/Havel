@@ -13,7 +13,7 @@
 #include <functional>
 #include "../../../host/module/ModularHostBridges.hpp"
 #include "../../../modules/window/WindowMonitorModule.hpp"
-#include "../../../core/HotkeyManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"

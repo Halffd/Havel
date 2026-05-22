@@ -2,8 +2,8 @@
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/DebugFlags.hpp"
-#include "../DisplayManager.hpp"
-#include "../io/X11Adapter.hpp"
+#include "core/display/DisplayManager.hpp"
+#include "core/io/X11Adapter.hpp"
 #include <unistd.h>
 #include <cstring>
 

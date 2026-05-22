@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../IO.hpp"
+#include "IO.hpp"
 #include <atomic>
 #include <chrono>
 #include <functional>

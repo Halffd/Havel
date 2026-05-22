@@ -1,7 +1,7 @@
 #include "BrowserModule.hpp"
-#include "../process/Launcher.hpp"
-#include "../utils/Logger.hpp"
-#include "../utils/DebugFlags.hpp"
+#include "core/process/Launcher.hpp"
+#include "../../utils/Logger.hpp"
+#include "../../utils/DebugFlags.hpp"
 #include <curl/curl.h>
 #include <fstream>
 #include <nlohmann/json.hpp>

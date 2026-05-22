@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/BytecodeIR.hpp"
+#include "compiler/core/BytecodeIR.hpp"
 #include "Closure.hpp"
 #include "../gc/GC.hpp"
 #include <shared_mutex>

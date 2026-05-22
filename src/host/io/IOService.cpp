@@ -4,7 +4,7 @@
  * Pure C++ IO service implementation.
  * No VM, no interpreter, no HavelValue - just system logic.
  */
-#include "core/IO.hpp"  // Include full IO definition for method calls (brings in all deps)
+#include "core/io/IO.hpp"  // Include full IO definition for method calls (brings in all deps)
 #include "IOService.hpp"
 #include <thread>
 #include <chrono>

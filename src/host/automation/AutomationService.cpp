@@ -5,7 +5,7 @@
  */
 #include "AutomationService.hpp"
 #include "core/automation/AutomationManager.hpp"
-#include "core/IO.hpp"
+#include "core/io/IO.hpp"
 
 namespace havel::host {
 

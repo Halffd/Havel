@@ -1,7 +1,7 @@
 // Havel.cpp
 // Implementation of embeddable C++ API
 
-#include "Havel.hpp"
+#include "core/init/Havel.hpp"
 #include "havel-lang/runtime/Environment.hpp"
 #include "havel-lang/types/HavelType.hpp"
 #include "havel-lang/ast/AST.h"

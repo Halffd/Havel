@@ -4,7 +4,7 @@
  * Pure C++ audio service implementation.
  */
 #include "AudioService.hpp"
-#include "media/AudioManager.hpp"
+#include "core/media/AudioManager.hpp"
 
 namespace havel::host {
 

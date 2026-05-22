@@ -1,0 +1,2781 @@
+#include "core/io/IO.hpp"
+#include "core/config/ConfigManager.hpp"
+#include "core/display/DisplayManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
+#include "KeyTap.hpp"
+#include "core/process/ProcessManager.hpp"
+#include "utils/DebugFlags.hpp"
+
+// Global storage for KeyTap instances
+static std::mutex g_keyTapMutex;
+static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
+
+#include "include/x11_includes.h"
+#include "EventListener.hpp"
+#include "HotkeyExecutor.hpp"
+#include "utils/Logger.hpp"
+#include "utils/Util.hpp"
+#include "core/window/WindowManager.hpp"
+#include "core/window/WindowManagerDetector.hpp"
+#include <chrono>
+#include <fcntl.h>
+#include <future>
+#include <linux/input.h>
+#include <linux/uinput.h>
+#include <mutex>
+#ifdef HAVE_QT_EXTENSION
+#include <qapplication.h>
+#include <qtmetamacros.h>
+#endif
+#include <sys/eventfd.h>
+#include <sys/resource.h>
+#include <sys/select.h>
+#include <unistd.h>
+
+// X11 includes
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/extensions/XI2proto.h>
+#include <X11/extensions/XInput.h>
+#include <X11/extensions/XInput2.h>
+#include <X11/extensions/XTest.h>
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <regex>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace havel {
+#if defined(WINDOWS)
+HHOOK IO::keyboardHook = NULL;
+#endif
+static auto &hotkeys = HotkeyManager::RegisteredHotkeys();
+static auto &hotkeysMutex = HotkeyManager::RegisteredHotkeysMutex();
+bool IO::hotkeyEnabled = true;
+int IO::hotkeyCount = 0;
+bool IO::globalEvdev = true;
+double IO::mouseSensitivity = 1.0;
+double IO::scrollSpeed = 1.0;
+std::atomic<int> IO::syntheticEventsExpected{0};
+// Scroll accumulation for fractional values
+static double scrollAccumY = 0.0;
+static double scrollAccumX = 0.0;
+// Static keycode cache - eliminates repeated lookups for same keys
+static std::unordered_map<std::string, int> g_keycodeCache;
+static std::mutex g_keycodeCacheMutex;
+
+int IO::GetKeyCacheLookup(const std::string &keyName) {
+  std::string lower = toLower(keyName);
+
+  // Fast path: check cache first
+  {
+    std::lock_guard<std::mutex> lock(g_keycodeCacheMutex);
+    auto it = g_keycodeCache.find(lower);
+    if (it != g_keycodeCache.end()) {
+      return it->second;
+    }
+  }
+
+  // Cache miss: do the expensive lookup
+  int code = EvdevNameToKeyCode(lower);
+
+  // Store in cache for next time
+  if (code != -1) {
+    std::lock_guard<std::mutex> lock(g_keycodeCacheMutex);
+    g_keycodeCache[lower] = code;
+  }
+
+  return code;
+}
+
+// Parse key string into tokens once instead of scanning repeatedly
+std::vector<KeyToken> IO::ParseKeyString(const std::string &keys) {
+  std::vector<KeyToken> tokens;
+  size_t i = 0;
+
+  static std::unordered_map<char, std::string> shorthandModifiers = {
+      {'^', "ctrl"}, {'!', "alt"},           {'+', "shift"},
+      {'#', "meta"}, {'@', "toggle_uinput"}, {'%', "toggle_x11"}};
+
+  while (i < keys.length()) {
+    // Handle special sequences like {key_name}
+    if (keys[i] == '{') {
+      size_t end = keys.find('}', i);
+      if (end != std::string::npos) {
+        std::string seq = keys.substr(i + 1, end - i - 1);
+        std::transform(seq.begin(), seq.end(), seq.begin(), ::tolower);
+
+        KeyToken token;
+
+        if (seq == "emergency_release" || seq == "panic") {
+          token.type = KeyToken::Special;
+          token.value = seq;
+        } else if (seq.ends_with(" down") || seq.ends_with(":down")) {
+          token.type = KeyToken::ModifierDown;
+          token.value = seq.substr(0, seq.size() - 5);
+          token.down = true;
+        } else if (seq.ends_with(" up") || seq.ends_with(":up")) {
+          token.type = KeyToken::ModifierUp;
+          token.value = seq.substr(0, seq.size() - 3);
+          token.down = false;
+        } else {
+          token.type = KeyToken::Key;
+          token.value = seq;
+          token.down = true;
+        }
+
+        tokens.push_back(token);
+        i = end + 1;
+        continue;
+      }
+    }
+
+    // Handle shorthand modifiers (^, +, !, #)
+    if (shorthandModifiers.count(keys[i])) {
+      std::string mod = shorthandModifiers[keys[i]];
+      KeyToken token;
+      token.type = KeyToken::Modifier;
+      token.value = mod;
+      token.down = true;
+      tokens.push_back(token);
+      ++i;
+      continue;
+    }
+
+    // Skip whitespace
+    if (isspace(keys[i])) {
+      ++i;
+      continue;
+    }
+
+    // Single character keys
+    KeyToken token;
+    token.type = KeyToken::Key;
+    token.value = std::string(1, keys[i]);
+    token.down = true;
+    tokens.push_back(token);
+    ++i;
+  }
+
+  return tokens;
+}
+
+// Batch write events with a single syscall
+void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
+  if (events.empty())
+    return;
+
+  // Delegate to EventListener
+  if (eventListener) {
+    eventListener->BeginUinputBatch();
+    for (const auto &ev : events) {
+      eventListener->QueueUinputEvent(ev.type, ev.code, ev.value);
+    }
+    eventListener->EndUinputBatch();
+  }
+}
+
+void IO::SendUInput(int keycode, bool down) {
+  if (!eventListener) {
+    warning("SendUInput called without EventListener");
+    return;
+  }
+  eventListener->SendUinputEvent(EV_KEY, keycode, down ? 1 : 0);
+}
+
+
+std::string IO::findEvdevDevice(const std::string &deviceName) {
+        if (debugging::debug_io) debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
+
+  std::ifstream proc("/proc/bus/input/devices");
+  if (!proc.is_open()) {
+    error("Cannot open /proc/bus/input/devices");
+    return "";
+  }
+
+  std::string line;
+  std::string currentName;
+  int deviceCount = 0;
+
+  while (std::getline(proc, line)) {
+        if (debugging::debug_io) debug("Line: {}", line);
+
+        if (line.starts_with("N: Name=")) {
+            deviceCount++;
+            currentName = line.substr(8);
+            if (!currentName.empty() && currentName[0] == '"') {
+                currentName = currentName.substr(1, currentName.length() - 2);
+            }
+            if (debugging::debug_io) debug(" Device #{}: '{}'", deviceCount, currentName);
+
+            if (currentName == deviceName) {
+                if (debugging::debug_io) debug(" EXACT MATCH FOUND!");
+            }
+        } else if (line.starts_with("H: Handlers=")) {
+            if (debugging::debug_io) debug(" Handlers: {}", line);
+
+            if (currentName == deviceName) {
+                if (debugging::debug_io) debug(" This is our target device!");
+
+        size_t eventPos = line.find("event");
+        if (eventPos != std::string::npos) {
+          std::string eventStr = line.substr(eventPos + 5);
+          size_t spacePos = eventStr.find(' ');
+          if (spacePos != std::string::npos) {
+            eventStr = eventStr.substr(0, spacePos);
+          }
+          std::string result = "/dev/input/event" + eventStr;
+                if (debugging::debug_io) debug(" SUCCESS: {}", result);
+          return result;
+        }
+      }
+    }
+  }
+
+    if (debugging::debug_io) debug("=== END DEBUG - Device not found ===");
+  return "";
+}
+std::string IO::getKeyboardDevice() {
+  std::string id = Configs::Get().Get<std::string>("Device.KeyboardID", "");
+    if (!id.empty()) {
+        if (debugging::debug_io) debug("Using keyboard device ID from config: '{}'", id);
+        return findEvdevDevice(id);
+    }
+
+    auto keyboards = Device::findKeyboards();
+
+    if (debugging::debug_io) debug("=== Keyboard Detection Results ===");
+    for (const auto &kb : keyboards) {
+        if (debugging::debug_io) debug("Found: '{}' confidence={:.1f}% reason='{}'", kb.name,
+            kb.confidence * 100, kb.reason);
+    }
+
+    if (!keyboards.empty()) {
+        if (debugging::debug_io) debug("Selected keyboard: '{}' -> {} (confidence: {:.1f}%)",
+         keyboards[0].name, keyboards[0].eventPath,
+         keyboards[0].confidence * 100);
+    return keyboards[0].eventPath;
+  }
+
+  error("❌ No suitable keyboard devices found");
+  return "";
+}
+
+std::string IO::getMouseDevice() {
+  std::string id = Configs::Get().Get<std::string>("Device.MouseID", "");
+    if (!id.empty()) {
+        if (debugging::debug_io) debug("Using mouse device ID from config: '{}'", id);
+        return findEvdevDevice(id);
+    }
+
+    auto mice = Device::findMice();
+
+    if (debugging::debug_io) debug("=== Mouse Detection Results ===");
+    for (const auto &mouse : mice) {
+        if (debugging::debug_io) debug("Found: '{}' confidence={:.1f}% reason='{}'", mouse.name,
+            mouse.confidence * 100, mouse.reason);
+    }
+
+    if (!mice.empty()) {
+        if (debugging::debug_io) debug("Selected mouse: '{}' -> {} (confidence: {:.1f}%)", mice[0].name,
+         mice[0].eventPath, mice[0].confidence * 100);
+    return mice[0].eventPath;
+  }
+
+  warning("❌ No suitable mouse devices found");
+  return "";
+}
+
+std::string IO::getGamepadDevice() {
+    auto gamepads = Device::findGamepads();
+
+    if (debugging::debug_io) debug("=== Gamepad Detection Results ===");
+    for (const auto &gamepad : gamepads) {
+        if (debugging::debug_io) debug("Found: '{}' confidence={:.1f}% reason='{}'", gamepad.name,
+            gamepad.confidence * 100, gamepad.reason);
+    }
+
+    if (!gamepads.empty()) {
+        if (debugging::debug_io) debug("Found gamepad: '{}' -> {} (confidence: {:.1f}%)", gamepads[0].name,
+         gamepads[0].eventPath, gamepads[0].confidence * 100);
+    return gamepads[0].eventPath;
+  }
+
+  return "";
+}
+
+std::vector<std::string> IO::GetInputDevices() {
+  std::vector<std::string> devices;
+  std::string keyboardDevice = getKeyboardDevice();
+  std::string mouseDevice = getMouseDevice();
+  std::string gamepadDevice;
+
+  if (!keyboardDevice.empty()) {
+    devices.push_back(keyboardDevice);
+  }
+
+  if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+      !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+    devices.push_back(mouseDevice);
+  }
+
+  bool enableGamepad = Configs::Get().Get<bool>("Device.EnableGamepad", false);
+  if (enableGamepad) {
+    gamepadDevice = getGamepadDevice();
+    if (!gamepadDevice.empty()) {
+      devices.push_back(gamepadDevice);
+    }
+  }
+
+  return devices;
+}
+
+std::string IO::GetActiveWindowTitle() {
+  return WindowManager::GetActiveWindowTitle();
+}
+
+std::string IO::GetActiveWindowClass() {
+  return WindowManager::GetActiveWindowClass();
+}
+
+std::string IO::GetActiveWindowProcess() {
+  return WindowManager::GetActiveWindowProcess();
+}
+
+void IO::listInputDevices() {
+    if (!debugging::debug_io) return;
+
+    auto devices = Device::getAllDevices();
+
+    ::havel::debug("=== Input Device Detection Results ===");
+
+    for (const auto &device : devices) {
+        ::havel::debug("{}", device.toString());
+    }
+
+    ::havel::debug("\n=== Summary ===");
+
+    auto keyboards = Device::findKeyboards();
+    ::havel::debug("Keyboards found: {}", keyboards.size());
+    for (const auto &kb : keyboards) {
+        ::havel::debug(" - {} ({:.0f}%)", kb.name, kb.confidence * 100);
+    }
+
+    auto mice = Device::findMice();
+    ::havel::debug("Mice found: {}", mice.size());
+    for (const auto &mouse : mice) {
+        ::havel::debug(" - {} ({:.0f}%)", mouse.name, mouse.confidence * 100);
+    }
+
+    auto gamepads = Device::findGamepads();
+    ::havel::debug("Gamepads/Joysticks found: {}", gamepads.size());
+    for (const auto &gamepad : gamepads) {
+        ::havel::debug(" - {} ({:.0f}%)", gamepad.name, gamepad.confidence * 100);
+    }
+}
+
+// Updated constructor
+IO::IO() {
+  debug("[IO] Starting IO constructor...");
+  DisplayManager::Initialize();
+  debug("[IO] DisplayManager initialized");
+
+  // Initialize ImportManager
+  importManager = std::make_shared<ImportManager>();
+
+  // Initialize KeyMap
+  KeyMap::Initialize();
+  debug("[IO] KeyMap initialized");
+
+  // Register cleanup handler to ensure evdev ungrab on exit
+  static bool cleanupRegistered = false;
+  if (!cleanupRegistered) {
+    std::atexit([]() {
+        if (debugging::debug_io) debug("atexit: forcing evdev ungrab on process exit");
+    });
+    cleanupRegistered = true;
+  }
+
+  // Read process priority and thread count from config
+  int processPriority = Configs::Get().Get<int>(
+      "Advanced.ProcessPriority", 0); // -20 (highest) to 19 (lowest)
+  int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads",
+                                              4); // Number of worker threads
+
+  // Set process priority (nice value)
+  if (processPriority != 0) {
+    processPriority = std::clamp(processPriority, -20, 19);
+        if (setpriority(PRIO_PROCESS, 0, processPriority) == 0) {
+            if (debugging::debug_io) debug("Process priority set to nice {}", processPriority);
+    } else {
+      warning("Failed to set process priority to {}: {}", processPriority,
+              strerror(errno));
+    }
+  }
+
+// Clamp worker threads to reasonable range
+workerThreads = std::clamp(workerThreads, 1, 32);
+
+// Read executor mode from config
+std::string executorModeStr = Configs::Get().Get<std::string>("IO.Executor", "Scheduler");
+std::transform(executorModeStr.begin(), executorModeStr.end(), executorModeStr.begin(),
+               [](unsigned char c){ return std::tolower(c); });
+if (executorModeStr == "executor") {
+  executorMode_ = ExecutorMode::Executor;
+} else if (executorModeStr == "sync") {
+  executorMode_ = ExecutorMode::Sync;
+} else if (executorModeStr == "thread") {
+  executorMode_ = ExecutorMode::Thread;
+} else {
+  executorMode_ = ExecutorMode::Scheduler;
+}
+    if (debugging::debug_io) debug("Hotkey executor mode: {} (config: IO.Executor={})", static_cast<int>(executorMode_), executorModeStr);
+
+  // Initialize HotkeyExecutor for thread-safe hotkey execution
+  hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
+    if (debugging::debug_io) debug("HotkeyExecutor initialized with {} worker threads", workerThreads);
+
+  mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
+
+#ifdef __linux__
+  // EventListener needs DisplayManager to be initialized
+  {
+    // Use new unified EventListener
+        if (debugging::debug_io) debug("Using new unified EventListener");
+
+    std::vector<std::string> devices;
+
+    // Get all keyboard devices (including auxiliary keyboards)
+    auto keyboardDevices = Device::findKeyboards();
+    for (const auto &kb : keyboardDevices) {
+      devices.push_back(kb.eventPath);
+    debug("[IO] Finding keyboard devices...");
+        if (debugging::debug_io) debug("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)", kb.name,
+           kb.eventPath, kb.confidence * 100);
+    }
+
+    std::string mouseDevice = getMouseDevice();
+    std::string gamepadDevice;
+
+    if (!mouseDevice.empty() &&
+        !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+      // Only add mouse device if it's not already in the keyboard devices
+      // list
+      bool alreadyAdded = false;
+      for (const auto &kb_device : keyboardDevices) {
+        if (kb_device.eventPath == mouseDevice) {
+          alreadyAdded = true;
+          break;
+        }
+      }
+      if (!alreadyAdded) {
+        devices.push_back(mouseDevice);
+            if (debugging::debug_io) debug("Adding mouse device: {}", mouseDevice);
+      }
+    }
+
+    bool enableGamepad =
+        Configs::Get().Get<bool>("Device.EnableGamepad", false);
+    if (enableGamepad) {
+      gamepadDevice = getGamepadDevice();
+      if (!gamepadDevice.empty()) {
+        devices.push_back(gamepadDevice);
+            if (debugging::debug_io) debug("Adding gamepad device: {}", gamepadDevice);
+      }
+    }
+
+    if (!devices.empty()) {
+      try {
+        eventListener = std::make_unique<EventListener>();
+        eventListener->SetupUinput();
+
+        if (hotkeyManager) {
+          eventListener->setHotkeyManager(hotkeyManager.get());
+        }
+
+        // Initialize MouseController
+        mouseController =
+            std::make_unique<MouseController>(eventListener.get());
+        mouseController->SetSensitivity(mouseSensitivity);
+        mouseController->SetScrollSpeed(
+            Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+
+// Pass HotkeyExecutor to EventListener for thread-safe execution
+eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
+eventListener->SetExecutorMode(executorMode_);
+
+        // Set mouse and scroll sensitivity on EventListener (for internal use)
+        eventListener->SetMouseSensitivity(mouseSensitivity);
+        eventListener->SetScrollSpeed(
+            Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+
+        globalEvdev = true;
+        bool grab = Configs::Get().Get<bool>("Device.GrabDevices", true);
+        if (ProcessManager::isTraced()) {
+          grab = false;
+        }
+        if (debugging::debug_io) debug("Starting EventListener with {} devices (grab={})", devices.size(),
+              grab);
+        debug("[IO] About to call EventListener::Start()...");
+        eventListener->Start(devices, grab);
+        debug("[IO] EventListener::Start() returned");
+      } catch (const std::exception &e) {
+        error("Failed to start unified EventListener: {}", e.what());
+        globalEvdev = false;
+      }
+    } else {
+      globalEvdev = false;
+      error("No input devices found for EventListener");
+    }
+
+        // Debug output - show what we detected
+        if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
+            listInputDevices();
+        }
+    }
+
+    // Create IOBackend for platform-specific output (XTest, keybd_event, etc.)
+    ioBackend = IOBackend::Create(eventListener.get());
+    if (ioBackend) {
+        ioBackend->Initialize();
+        if (debugging::debug_io) debug("IOBackend initialized: {}", ioBackend->GetName());
+    }
+#endif
+}
+
+void IO::SetInputBackend(const std::string &backendName) {
+    InputBackendType type = InputBackendType::Unknown;
+
+    if (backendName.empty() || backendName == "auto") {
+        type = InputBackend::DetectBestBackend();
+        info("Auto-detected input backend: {}", 
+            type == InputBackendType::Evdev ? "evdev" :
+            type == InputBackendType::X11 ? "x11" :
+            type == InputBackendType::Wayland ? "wayland" : "unknown");
+    } else if (backendName == "evdev") {
+        type = InputBackendType::Evdev;
+    } else if (backendName == "x11") {
+        type = InputBackendType::X11;
+    } else if (backendName == "wayland") {
+        type = InputBackendType::Wayland;
+    } else {
+        warn("Unknown input backend '{}', using auto-detection", backendName);
+        type = InputBackend::DetectBestBackend();
+    }
+
+    inputBackend = InputBackend::Create(type);
+    if (inputBackend) {
+        inputBackendType = type;
+        info("Input backend set to: {}", inputBackend->GetName());
+    } else {
+        error("Failed to create input backend type {}", static_cast<int>(type));
+    }
+}
+
+// Backend device management
+std::vector<std::string> IO::ListDevices() {
+    std::vector<std::string> result;
+    if (inputBackend) {
+        for (const auto &dev : inputBackend->EnumerateDevices()) {
+            result.push_back(dev.path);
+        }
+    }
+    return result;
+}
+
+bool IO::AddDevice(const std::string &path) {
+    if (inputBackend) {
+        return inputBackend->OpenDevice(path);
+    }
+    return false;
+}
+
+bool IO::RemoveDevice(const std::string &path) {
+    if (inputBackend) {
+        inputBackend->CloseDevice(path);
+        return true;
+    }
+    return false;
+}
+
+void IO::ClearDevices() {
+    if (inputBackend) {
+        auto devices = inputBackend->EnumerateDevices();
+        for (const auto &dev : devices) {
+            inputBackend->CloseDevice(dev.path);
+        }
+    }
+}
+
+DeviceInfo IO::GetDevice(const std::string &path) {
+    if (inputBackend) {
+        auto devices = inputBackend->EnumerateDevices();
+        for (const auto &dev : devices) {
+            if (dev.path == path) return dev;
+        }
+    }
+    return DeviceInfo{};
+}
+
+std::vector<DeviceInfo> IO::GetDevices() {
+    if (inputBackend) {
+        return inputBackend->EnumerateDevices();
+    }
+    return {};
+}
+
+// Evdev grab control
+bool IO::SetEvdevGrab(bool grab) {
+    if (inputBackend) {
+        if (grab) {
+            auto devices = inputBackend->EnumerateDevices();
+            for (const auto &dev : devices) {
+                inputBackend->GrabDevice(dev.path);
+            }
+            return true;
+        } else {
+            inputBackend->UngrabAllDevices();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IO::GetEvdevGrab() const {
+    if (inputBackend) {
+        return inputBackend->GetGrabbedDeviceCount() > 0;
+    }
+    return false;
+}
+
+bool IO::ToggleEvdevGrab() {
+    bool current = GetEvdevGrab();
+    return SetEvdevGrab(!current);
+}
+
+// Key repeat settings
+void IO::SetRepeatInterval(int ms) {
+    // Stored in config, used by EventListener
+    Configs::Get().Set<int>("Input.RepeatInterval", ms);
+}
+
+int IO::GetRepeatInterval() const {
+    return Configs::Get().Get<int>("Input.RepeatInterval", 50);
+}
+
+void IO::SetAutoRepeat(bool enabled) {
+    Configs::Get().Set<bool>("Input.AutoRepeat", enabled);
+}
+
+bool IO::GetAutoRepeat() const {
+    return Configs::Get().Get<bool>("Input.AutoRepeat", true);
+}
+
+// Mouse gesture methods
+void IO::AddGesture(int id, const std::string &pattern) {
+    if (eventListener) {
+        auto directions = eventListener->ParseGesturePattern(pattern);
+        eventListener->RegisterGestureHotkey(id, directions);
+    }
+}
+
+void IO::AddGesture(int id, const std::vector<MouseGestureDirection> &directions) {
+    if (eventListener) {
+        eventListener->RegisterGestureHotkey(id, directions);
+    }
+}
+
+void IO::RemoveGesture(int id) {
+    // Gesture removal would need to be implemented in EventListener
+    (void)id;
+}
+
+std::vector<int> IO::GetGestures() const {
+    return {};
+}
+
+bool IO::HasGestures() const {
+    return false;
+}
+
+void IO::ClearGestures() {
+    if (eventListener) {
+        eventListener->ResetMouseGesture();
+    }
+}
+
+IO::~IO() { cleanup(); }
+
+void IO::cleanup() {
+  // Stop EventListener if using new event system
+  if (eventListener) {
+    eventListener->ForceUngrabAllDevices();
+    eventListener->Stop();
+  }
+
+  // IOBackend cleanup (X11 ungrab, etc.)
+  if (ioBackend) {
+    ioBackend->Cleanup();
+  }
+
+    if (debugging::debug_io) ::havel::debug("IO cleanup completed");
+}
+
+void IO::UngrabAll() {
+  if (ioBackend) ioBackend->UnregisterAll();
+}
+
+
+
+void IO::removeSpecialCharacters(str &keyName) {
+  // Define the characters to remove
+  const std::string charsToRemove = "^+!#*&";
+
+  // Remove characters
+  keyName.erase(std::remove_if(keyName.begin(), keyName.end(),
+                               [&charsToRemove](char c) {
+                                 return charsToRemove.find(c) !=
+                                        std::string::npos;
+                               }),
+                keyName.end());
+}
+bool IO::EmitClick(int btnCode, MouseAction action) {
+  // Use EventListener's uinput for all mouse events
+  if (eventListener) {
+    // Map integer button codes to proper mouse button codes
+    int mouseBtnCode = btnCode;
+    if (btnCode >= 1 && btnCode <= 9) {
+      // Map 1-9 to BTN_LEFT through BTN_9
+      mouseBtnCode = BTN_LEFT + (btnCode - 1);
+    }
+
+    // Send events through EventListener
+    switch (action) {
+    case MouseAction::Release:
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
+      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+      return true;
+
+    case MouseAction::Hold:
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
+      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+      return true;
+
+    case MouseAction::Click: // Click (FAST)
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
+      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
+      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+      return true;
+
+    default:
+      error("Invalid mouse action: {}", static_cast<int>(action));
+      return false;
+    }
+  }
+
+  error("EmitClick: EventListener not available");
+  return false;
+}
+bool IO::MouseMove(int dx, int dy, int speed, float accel) {
+  // Use EventListener's uinput if available
+  if (eventListener) {
+    // Apply speed and acceleration (but NO sensitivity scaling)
+    if (speed <= 0)
+      speed = 1;
+    if (accel <= 0.0f)
+      accel = 1.0f;
+
+    // Apply acceleration curve
+    float acceleratedSpeed = speed * std::pow(accel, 1.5f);
+
+    // Calculate final movement
+    int actualDx = static_cast<int>(dx * acceleratedSpeed);
+    int actualDy = static_cast<int>(dy * acceleratedSpeed);
+
+    // Preserve direction for tiny movements
+    if (actualDx == 0 && dx != 0)
+      actualDx = (dx > 0) ? 1 : -1;
+    if (actualDy == 0 && dy != 0)
+      actualDy = (dy > 0) ? 1 : -1;
+
+        if (debugging::debug_io) debug("Mouse move: {} {}", actualDx, actualDy);
+
+    // Send using EventListener
+    if (actualDx != 0) {
+      eventListener->SendUinputEvent(EV_REL, REL_X, actualDx);
+    }
+    if (actualDy != 0) {
+      eventListener->SendUinputEvent(EV_REL, REL_Y, actualDy);
+    }
+    // Send sync event
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    return true;
+  }
+
+  error("MouseMove: EventListener not available");
+  return false;
+}
+bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
+  if (!eventListener) {
+    error("MouseMoveTo: EventListener not available");
+    return false;
+  }
+
+  // Use IOBackend for absolute positioning (X11 XTest)
+  if (ioBackend) {
+    auto currentPos = ioBackend->GetCursorPosition();
+    int currentX = currentPos.first;
+    int currentY = currentPos.second;
+    int dx = targetX - currentX;
+    int dy = targetY - currentY;
+    int distance = std::abs(dx) + std::abs(dy);
+
+    if (distance < 3) {
+      return ioBackend->MovePointerTo(targetX, targetY);
+    }
+
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, std::max(1, distance / (speed * 10))));
+
+    for (int i = 0; i <= steps; ++i) {
+      double progress = static_cast<double>(i) / steps;
+      int stepX = currentX + static_cast<int>(dx * progress);
+      int stepY = currentY + static_cast<int>(dy * progress);
+      ioBackend->MovePointerTo(stepX, stepY);
+      int sleepMs = std::max(1, 5 / std::max(1, speed));
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    return ioBackend->MovePointerTo(targetX, targetY);
+  }
+
+    // For Wayland, fall back to REL with feedback loop
+    auto currentPos = GetMousePosition();
+    int currentX = currentPos.first;
+    int currentY = currentPos.second;
+    int dx = targetX - currentX;
+    int dy = targetY - currentY;
+    int distance = std::abs(dx) + std::abs(dy);
+
+    if (distance == 0) return true;
+
+    if (distance < 3) {
+        eventListener->SendUinputEvent(EV_REL, REL_X, dx);
+        eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        return true;
+    }
+
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, distance / (speed * 10)));
+    int stepDx = dx / steps;
+    int stepDy = dy / steps;
+    int remainderDx = dx - stepDx * steps;
+    int remainderDy = dy - stepDy * steps;
+
+    for (int i = 0; i < steps; ++i) {
+        int mx = stepDx + (i == steps - 1 ? remainderDx : 0);
+        int my = stepDy + (i == steps - 1 ? remainderDy : 0);
+        if (mx != 0) eventListener->SendUinputEvent(EV_REL, REL_X, mx);
+        if (my != 0) eventListener->SendUinputEvent(EV_REL, REL_Y, my);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        int sleepMs = std::max(1, 5 / std::max(1, speed));
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    return true;
+}
+
+bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
+  if (!mouseController) {
+    error("Cannot click: MouseController not initialized");
+    return false;
+  }
+  return mouseController->ClickAt(x, y, button, speed, accel);
+}
+
+bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
+  if (!mouseController) {
+    error("Cannot move mouse: MouseController not initialized");
+    return false;
+  }
+  return mouseController->MoveSensitive(dx, dy, baseSpeed, accel);
+}
+
+bool IO::Scroll(double dy, double dx) {
+  if (!mouseController) {
+    error("Cannot scroll: MouseController not initialized");
+    return false;
+  }
+  return mouseController->Scroll(dy, dx);
+}
+
+void IO::SetMouseSensitivity(double sensitivity) {
+  mouseSensitivity = sensitivity;
+  if (mouseController) {
+    mouseController->SetSensitivity(sensitivity);
+  }
+  if (eventListener) {
+    eventListener->SetMouseSensitivity(sensitivity);
+  }
+}
+
+double IO::GetMouseSensitivity() const { return mouseSensitivity; }
+
+void IO::SetScrollSpeed(double speed) {
+  scrollSpeed = speed;
+  if (mouseController) {
+    mouseController->SetScrollSpeed(speed);
+  }
+  if (eventListener) {
+    eventListener->SetScrollSpeed(speed);
+  }
+}
+
+double IO::GetScrollSpeed() const { return scrollSpeed; }
+
+std::pair<int, int> IO::GetMousePosition() {
+  if (!mouseController) {
+    error("Cannot get mouse position: MouseController not initialized");
+    return {0, 0};
+  }
+  return mouseController->GetPosition();
+}
+
+bool IO::InitializeXInput2() {
+  if (ioBackend) return ioBackend->SetupXInput2();
+  return false;
+}
+
+bool IO::SetHardwareMouseSensitivity(double sensitivity) {
+  if (ioBackend) return ioBackend->SetHardwareSensitivity(sensitivity);
+  return false;
+}
+
+void IO::SendX11Key(const std::string &keyName, bool press) {
+  Key keycode = GetKeyCode(keyName);
+  if (press) {
+    if (!TryPressKey(keycode)) return;
+  } else {
+    if (!TryReleaseKey(keycode)) return;
+  }
+  if (ioBackend) {
+    if (press) ioBackend->PressKey(keycode);
+    else ioBackend->ReleaseKey(keycode);
+  }
+}
+// SendUInput removed - delegate to EventListener instead
+// EventListener now manages uinput through UinputDevice class
+// State tracking implementation
+bool IO::TryPressKey(int keycode) {
+  std::lock_guard<std::mutex> lock(keyStateMutex);
+  if (pressedKeys.count(keycode)) {
+    if (Configs::Get().GetVerboseKeyLogging())
+      debug("Key " + std::to_string(keycode) + " already pressed, ignoring");
+    return false; // Already pressed
+  }
+  pressedKeys.insert(keycode);
+  return true; // OK to press
+}
+
+bool IO::TryReleaseKey(int keycode) {
+  std::lock_guard<std::mutex> lock(keyStateMutex);
+  if (!pressedKeys.count(keycode)) {
+    if (Configs::Get().GetVerboseKeyLogging())
+      debug("Key " + std::to_string(keycode) +
+            " not pressed, ignoring release");
+    return false; // Not pressed
+  }
+  pressedKeys.erase(keycode);
+  return true; // OK to release
+}
+
+void IO::EmergencyReleaseAllKeys() {
+  std::lock_guard<std::mutex> lock(keyStateMutex);
+    havel::warning("EMERGENCY: Releasing {} stuck keys", pressedKeys.size());
+
+  // Copy the set to avoid iterator invalidation
+  std::set<int> keysToRelease = pressedKeys;
+  pressedKeys.clear();
+
+  // Delegate to EventListener for emergency release
+  if (eventListener) {
+    eventListener->EmergencyReleaseAllKeys();
+  }
+}
+
+// OPTIMIZED: Method to send keys with state tracking and event batching
+void IO::Send(cstr keys) {
+#if defined(WINDOWS)
+  // Windows implementation unchanged
+  for (size_t i = 0; i < keys.length(); ++i) {
+    if (keys[i] == '{') {
+      size_t end = keys.find('}', i);
+      if (end != std::string::npos) {
+        std::string sequence = keys.substr(i + 1, end - i - 1);
+        if (sequence == "Alt down") {
+          keybd_event(VK_MENU, 0, 0, 0);
+        } else if (sequence == "Alt up") {
+          keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+        } else if (sequence == "Ctrl down") {
+          keybd_event(VK_CONTROL, 0, 0, 0);
+        } else if (sequence == "Ctrl up") {
+          keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+        } else if (sequence == "Shift down") {
+          keybd_event(VK_SHIFT, 0, 0, 0);
+        } else if (sequence == "Shift up") {
+          keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
+        } else {
+          int virtualKey = StringToVirtualKey(sequence);
+          if (virtualKey) {
+            keybd_event(virtualKey, 0, 0, 0);
+            keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
+          }
+        }
+        i = end;
+        continue;
+      }
+    }
+
+    int virtualKey = StringToVirtualKey(std::string(1, keys[i]));
+    if (virtualKey) {
+      keybd_event(virtualKey, 0, 0, 0);
+      keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
+    }
+  }
+#else
+  // OPTIMIZATION #1: Pre-parse the key string once instead of scanning
+  // repeatedly
+  auto tokens = ParseKeyString(keys);
+
+  // Linux implementation with state tracking and optimizations
+  bool useUinput = true;
+  bool useX11 = false;
+  std::vector<std::string> activeModifiers;
+  std::unordered_map<std::string, std::string> modifierKeys = {
+      {"ctrl", "LCtrl"},    {"rctrl", "RCtrl"}, {"shift", "LShift"},
+      {"rshift", "RShift"}, {"alt", "LAlt"},    {"ralt", "RAlt"},
+      {"meta", "LMeta"},    {"rmeta", "RMeta"},
+  };
+
+  auto SendKeyImpl = [&](const std::string &keyName, bool down) {
+    if (useUinput || (!useX11 && globalEvdev)) {
+      // OPTIMIZATION #3: Cache keycode lookups to avoid repeated
+      // string->keycode conversions
+      int code = GetKeyCacheLookup(keyName);
+      if (Configs::Get().GetVerboseKeyLogging()) {
+        debug("Sending key: " + keyName + " (" + std::to_string(down) +
+             ") code: " + std::to_string(code));
+      }
+      if (code != -1) {
+        // Use EventListener's uinput if available, otherwise use old method
+        if (eventListener) {
+          eventListener->SendUinputEvent(EV_KEY, code, down ? 1 : 0);
+        } else {
+          SendUInput(code, down); // Fallback to old method
+        }
+      }
+    } else {
+      SendX11Key(keyName, down);
+    }
+  };
+
+  auto SendKey = [&](const std::string &keyName, bool down) {
+    SendKeyImpl(keyName, down);
+  };
+
+  // Release interfering modifiers
+  std::set<std::string> toRelease;
+  if (eventListener) {
+    auto modState = eventListener->GetModifierState();
+    auto checkMod = [&](bool leftPressed, bool rightPressed,
+                        const std::string &leftKey,
+                        const std::string &rightKey) {
+      if (leftPressed)
+        toRelease.insert(leftKey);
+      if (rightPressed)
+        toRelease.insert(rightKey);
+    };
+    checkMod(modState.leftCtrl, modState.rightCtrl, "ctrl", "rctrl");
+    checkMod(modState.leftShift, modState.rightShift, "shift", "rshift");
+    checkMod(modState.leftAlt, modState.rightAlt, "alt", "ralt");
+    checkMod(modState.leftMeta, modState.rightMeta, "meta", "rmeta");
+  }
+
+  for (const auto &mod : toRelease) {
+        if (debugging::debug_io) debug("Releasing modifier: {}", mod);
+    SendKey(modifierKeys[mod], false);
+  }
+
+  // OPTIMIZATION #2: Process pre-parsed tokens instead of rescanning
+  bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
+
+  // OPTIMIZATION #5: Batch all uinput events for reduced syscall overhead
+  // Events are queued and flushed in a single write() call
+  if (eventListener) {
+    eventListener->BeginUinputBatch();
+  }
+
+  for (const auto &token : tokens) {
+    switch (token.type) {
+    case KeyToken::Modifier: {
+      if (token.value == "toggle_uinput") {
+        useUinput = !useUinput;
+        if (Configs::Get().GetVerboseKeyLogging())
+          debug(useUinput ? "Switched to uinput" : "Switched to X11");
+      } else if (token.value == "toggle_x11") {
+        useX11 = !useX11;
+        if (Configs::Get().GetVerboseKeyLogging())
+          debug(useX11 ? "Switched to X11" : "Switched to uinput");
+      } else if (modifierKeys.count(token.value)) {
+        SendKey(modifierKeys[token.value], true);
+        activeModifiers.push_back(token.value);
+      }
+      break;
+    }
+
+    case KeyToken::Special: {
+      if (token.value == "emergency_release" || token.value == "panic") {
+        EmergencyReleaseAllKeys();
+      }
+      break;
+    }
+
+    case KeyToken::ModifierDown: {
+      if (modifierKeys.count(token.value)) {
+        SendKey(modifierKeys[token.value], true);
+        activeModifiers.push_back(token.value);
+      } else {
+        SendKey(token.value, true);
+      }
+      break;
+    }
+
+    case KeyToken::ModifierUp: {
+      if (modifierKeys.count(token.value)) {
+        SendKey(modifierKeys[token.value], false);
+        activeModifiers.erase(std::remove(activeModifiers.begin(),
+                                          activeModifiers.end(), token.value),
+                              activeModifiers.end());
+      } else {
+        SendKey(token.value, false);
+      }
+      break;
+    }
+
+    case KeyToken::Key: {
+            if (Configs::Get().GetVerboseKeyLogging()) debug("Sending key: " + token.value);
+      SendKey(token.value, true);
+      // OPTIMIZATION #4: Only sleep if explicitly configured (removed default
+      // 100μs sleep)
+      if (shouldSleep) {
+        // Flush batch before sleep to ensure key is sent
+        if (eventListener) {
+          eventListener->EndUinputBatch();
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        // Resume batching after sleep
+        if (eventListener) {
+          eventListener->BeginUinputBatch();
+        }
+      }
+      SendKey(token.value, false);
+      break;
+    }
+    }
+  }
+
+  // Flush any remaining batched events
+  if (eventListener) {
+    eventListener->EndUinputBatch();
+  }
+
+  // Release all held modifiers (fail-safe)
+  for (const auto &mod : activeModifiers) {
+        if (modifierKeys.count(mod)) {
+            if (Configs::Get().GetVerboseKeyLogging()) debug("Releasing modifier: " + mod);
+            SendKey(modifierKeys[mod], false);
+        } else {
+            if (Configs::Get().GetVerboseKeyLogging()) debug("Releasing key: " + mod);
+      SendKey(mod, false);
+    }
+  }
+  activeModifiers.clear();
+#endif
+}
+
+bool IO::Suspend() {
+  try {
+    if (isSuspended) {
+      // Resume (was suspended, now resuming)
+      for (auto &[id, hotkey] : hotkeys) {
+        if (!hotkey.enabled && !hotkey.suspend) {
+          if (!hotkey.evdev) {
+            GrabHotkey(id);
+          }
+          hotkey.enabled = true;
+        }
+      }
+
+      if (hotkeyManager) {
+        hotkeyManager->conditionalHotkeysEnabled = true;
+        hotkeyManager->setMode("default"); // Switch to default mode
+
+        // Restore conditional hotkeys to their original state before suspension
+        if (!suspendedConditionalHotkeyStates.empty()) {
+          std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
+          // Restore to the original state before suspension
+          for (const auto &state : suspendedConditionalHotkeyStates) {
+            auto &ch = *hotkeyManager->activeConditionalHotkeys;
+            auto it = std::find_if(ch.begin(), ch.end(),
+                                   [state](const auto &ch_item) {
+                                     return ch_item.id == state.id;
+                                   });
+            if (it != ch.end()) {
+              if (state.wasGrabbed && !it->currentlyGrabbed) {
+                // Previously grabbed, now restore
+                GrabHotkey(state.id);
+                it->currentlyGrabbed = true;
+              } else if (!state.wasGrabbed && it->currentlyGrabbed) {
+                // Previously not grabbed, now ungrab
+                UngrabHotkey(state.id);
+                it->currentlyGrabbed = false;
+              }
+            }
+          }
+          suspendedConditionalHotkeyStates.clear();
+        } else {
+          // No saved state, reevaluate as before
+          hotkeyManager->reevaluateConditionalHotkeys(*this);
+        }
+      }
+
+      wasSuspended = false;
+      isSuspended = false;
+      return true;
+    } else {
+      for (auto &[id, hotkey] : hotkeys) {
+        if (hotkey.enabled && !hotkey.suspend) {
+          if (!hotkey.evdev) {
+            UngrabHotkey(id);
+          }
+          hotkey.enabled = false;
+        }
+      }
+
+      if (hotkeyManager) {
+        // Track the original state of conditional hotkeys before suspension and
+        // update their states
+        hotkeyManager->conditionalHotkeysEnabled = false;
+        hotkeyManager->setMode("suspend"); // Switch to suspend mode
+
+        std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
+        suspendedConditionalHotkeyStates.clear();
+        for (auto &ch : *hotkeyManager->activeConditionalHotkeys) {
+          ConditionalHotkeyState state;
+          state.id = ch.id;
+          state.wasGrabbed = ch.currentlyGrabbed;
+          suspendedConditionalHotkeyStates.push_back(state);
+
+          // Ungrab during suspension and update the state
+          if (ch.currentlyGrabbed) {
+            UngrabHotkey(ch.id);
+            ch.currentlyGrabbed = false;
+          }
+        }
+      }
+
+      wasSuspended = true;
+      isSuspended = true;
+      return true;
+    }
+  } catch (const std::exception &e) {
+        havel::error("Error in IO::Suspend: {}", e.what());
+    return false;
+  }
+}
+// Method to suspend hotkeys
+bool IO::Suspend(int id) {
+  auto it = hotkeys.find(id);
+  if (it != hotkeys.end()) {
+    it->second.enabled = false;
+    return true;
+  }
+  return false;
+}
+
+// Method to resume hotkeys
+bool IO::Resume(int id) {
+  auto it = hotkeys.find(id);
+  if (it != hotkeys.end()) {
+    it->second.enabled = true;
+    return true;
+  }
+  return false;
+}
+
+// Method to resume all hotkeys (alias for Suspend() when already suspended)
+bool IO::Resume() {
+  return Suspend(); // Suspend() toggles, so call it again to resume
+}
+
+// Static method to exit the application
+void IO::ExitApp() {
+    warning("Static ExitApp called - initiating emergency shutdown sequence");
+
+  // This is a static method, so we can't access instance members directly
+  // However, we can use std::exit to ensure immediate termination
+  std::exit(0);
+}
+
+// Helper function to parse mouse button from string
+int IO::ParseMouseButton(const std::string &str) {
+  if (str == "LButton" || str == "Button1")
+    return BTN_LEFT;
+  if (str == "RButton" || str == "Button2")
+    return BTN_RIGHT;
+  if (str == "MButton" || str == "Button3")
+    return BTN_MIDDLE;
+  if (str == "XButton1" || str == "Button6" || str == "Side1")
+    return BTN_SIDE;
+  if (str == "XButton2" || str == "Button7" || str == "Side2")
+    return BTN_EXTRA;
+  if (str == "WheelUp" || str == "ScrollUp" || str == "Button4")
+    return 1; // Special value for wheel up
+  if (str == "WheelDown" || str == "ScrollDown" || str == "Button5")
+    return -1; // Special value for wheel down
+  return 0;
+}
+
+bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
+                   std::function<void()> callback) {
+  std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
+  HotKey hotkey;
+  hotkey.id = ++hotkeyCount;
+  hotkey.alias = alias;
+  hotkey.key = key;
+  hotkey.modifiers = modifiers;
+  hotkey.callback = callback;
+  hotkey.enabled = true;
+  hotkey.grab = false;
+  hotkey.suspend = false;
+  hotkey.success = true;
+  hotkey.type = HotkeyType::Keyboard;
+  hotkey.eventType = HotkeyEventType::Down;
+  hotkeys[hotkeyCount] = hotkey;
+  return true;
+}
+
+ParsedHotkey IO::ParseHotkeyString(const std::string &rawInput) {
+  ParsedHotkey result;
+  std::string hotkeyStr = rawInput;
+
+  // Parse event type suffix (:up, :down, :N, etc.)
+  size_t colonPos = hotkeyStr.rfind(':');
+  if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
+    std::string suffix = hotkeyStr.substr(colonPos + 1);
+
+    // Check if suffix is a number (repeat interval)
+    bool isNumber =
+        !suffix.empty() && std::all_of(suffix.begin(), suffix.end(), ::isdigit);
+
+    if (isNumber) {
+      // Parse as repeat interval in milliseconds
+      try {
+        result.repeatInterval = std::stoi(suffix);
+        hotkeyStr = hotkeyStr.substr(0, colonPos);
+      } catch (const std::exception &) {
+        // Invalid number, treat as event type
+        result.eventType = ParseHotkeyEventType(suffix);
+        hotkeyStr = hotkeyStr.substr(0, colonPos);
+      }
+    } else {
+      // Parse as event type
+      result.eventType = ParseHotkeyEventType(suffix);
+      hotkeyStr = hotkeyStr.substr(0, colonPos);
+    }
+  }
+
+  // Parse @evdev prefix with regex
+  std::regex evdevRegex(R"(@(.*))");
+  std::smatch matches;
+  if (std::regex_search(hotkeyStr, matches, evdevRegex)) {
+    result.isEvdev = true;
+    hotkeyStr = matches[1].str();
+  }
+
+  if (globalEvdev) {
+    result.isEvdev = true;
+  }
+
+  // Parse modifiers and flags
+  auto parsed = ParseModifiersAndFlags(hotkeyStr, result.isEvdev);
+  result.keyPart = parsed.keyPart;
+  result.modifiers = parsed.modifiers;
+  result.grab = parsed.grab;
+  result.suspend = parsed.suspend;
+  result.repeat = parsed.repeat;
+  result.wildcard = parsed.wildcard;
+  result.isEvdev = parsed.isEvdev || result.isEvdev;
+  result.isX11 = parsed.isX11;
+
+  return result;
+}
+
+ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
+                                        bool isEvdev) {
+  ParsedHotkey result;
+  result.isEvdev = isEvdev;
+
+  size_t i = 0;
+
+  // Parse text-based modifiers (loop until no more found)
+  std::vector<std::string> textModifiers = {"ctrl", "shift", "alt", "meta",
+                                            "win"};
+  bool foundTextModifier = false;
+
+  do {
+    foundTextModifier = false;
+
+    for (const auto &mod : textModifiers) {
+      if (i + mod.size() <= input.size() &&
+          input.substr(i, mod.size()) == mod) {
+        // Check if this is followed by '+' or end of string
+        if (i + mod.size() == input.size() || input[i + mod.size()] == '+') {
+          // Found text modifier
+          if (mod == "ctrl") {
+            result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
+          } else if (mod == "shift") {
+            result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+          } else if (mod == "alt") {
+            result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+          } else if (mod == "meta" || mod == "win") {
+            result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+          }
+
+          i += mod.size();
+          foundTextModifier = true;
+
+          // Skip the '+' if present
+          if (i < input.size() && input[i] == '+') {
+            ++i;
+          }
+
+          break; // Break inner for loop to restart with new position
+        }
+      }
+    }
+  } while (foundTextModifier);
+
+  while (i < input.size()) {
+    char c = input[i];
+
+    // Check for escaped/doubled characters (e.g., "++", "##")
+    if (i + 1 < input.size() && input[i] == input[i + 1]) {
+      // Found doubled character - treat remaining as literal key
+      // Skip first character and treat rest as key
+      result.keyPart = input.substr(i + 1);
+      return result;
+    }
+
+    switch (c) {
+    case '@':
+      result.isEvdev = true;
+      break;
+    case '%':
+      result.isX11 = true;
+      break;
+    case '^':
+      result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
+      break;
+    case '+':
+      result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+      break;
+    case '!':
+      result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+      break;
+    case '#':
+      result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+      break;
+    case '*':
+      // Wildcard - ignore all current modifiers but don't set repeat=false
+      result.wildcard = true;
+      break;
+    case '|':
+      result.repeat = false;
+      break;
+    case '~':
+      result.grab = false;
+      break;
+    case '$':
+      result.suspend = true;
+      break;
+    default:
+      // Not a modifier - rest is the key part
+      result.keyPart = input.substr(i);
+      return result;
+    }
+    ++i;
+  }
+
+  // If we got here, entire string was modifiers
+  result.keyPart = "";
+  return result;
+}
+
+KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
+  if (keyPart.empty()) {
+    return 0;
+  }
+
+  // Handle raw keycode (kc123)
+  if (keyPart.length() > 2 && keyPart.substr(0, 2) == "kc") {
+    try {
+      int kc = std::stoi(keyPart.substr(2));
+      if (kc > 0 && kc <= 767) {
+        return kc;
+      }
+    } catch (const std::exception &) {
+      return 0;
+    }
+    return 0;
+  }
+
+  // Handle evdev names
+  if (isEvdev) {
+    return EvdevNameToKeyCode(keyPart);
+  }
+
+  // Handle X11 names
+  std::string keyLower = toLower(keyPart);
+  return GetKeyCode(keyLower);
+}
+
+// KeyTap method for on tap syntax
+void IO::KeyTap(const std::string &key, std::function<void()> tapAction) {
+  if (!hotkeyManager) {
+    error("KeyTap: hotkeyManager not initialized");
+    return;
+  }
+
+  // Create KeyTap with tap action only
+  auto keyTap =
+      std::make_unique<havel::KeyTap>(hotkeyManager, key, tapAction,
+                                      "", // tap condition (empty = always)
+                                      "", // combo condition (empty = always)
+                                      nullptr, // combo action
+                                      true,    // grab down
+                                      true     // grab up
+      );
+
+  // Store in global storage to keep alive
+  std::lock_guard<std::mutex> lock(g_keyTapMutex);
+  g_keyTapStorage.push_back(std::move(keyTap));
+}
+
+// KeyCombo method for on combo syntax
+void IO::KeyCombo(const std::string &key, std::function<void()> comboAction) {
+  if (!hotkeyManager) {
+    error("KeyCombo: hotkeyManager not initialized");
+    return;
+  }
+
+  // Create KeyTap with combo action only
+  auto keyTap =
+      std::make_unique<havel::KeyTap>(hotkeyManager, key,
+                                      nullptr, // tap action
+                                      "",      // tap condition (empty = always)
+                                      "", // combo condition (empty = always)
+                                      comboAction, // combo action
+                                      true,        // grab down
+                                      true         // grab up
+      );
+
+  // Store in global storage to keep alive
+  std::lock_guard<std::mutex> lock(g_keyTapMutex);
+  g_keyTapStorage.push_back(std::move(keyTap));
+}
+
+HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
+                     int id) {
+  auto wrapped_action = [action, rawInput]() {
+    if (Configs::Get().GetVerboseKeyLogging())
+      debug("Hotkey pressed: " + rawInput);
+    action();
+  };
+
+  bool hasAction = static_cast<bool>(action);
+
+  // Parse the hotkey string
+  std::string processedInput = rawInput;
+  int comboTimeWindow = 500; // Default value
+
+  // Check for combo time window in format "alias::500"
+  size_t dblColonPos = processedInput.rfind("::");
+  if (dblColonPos != std::string::npos &&
+      dblColonPos + 2 < processedInput.size()) {
+    std::string timeStr = processedInput.substr(dblColonPos + 2);
+    try {
+      comboTimeWindow = std::stoi(timeStr);
+      // Remove the ::number part from the alias
+      processedInput = processedInput.substr(0, dblColonPos);
+    } catch (const std::exception &) {
+      // If conversion fails, keep the default value and don't modify the input
+    }
+  }
+
+  ParsedHotkey parsed = ParseHotkeyString(processedInput);
+
+  // Build base hotkey
+  HotKey hotkey;
+  hotkey.comboTimeWindow = comboTimeWindow;
+  hotkey.modifiers = parsed.modifiers;
+  hotkey.eventType = parsed.eventType;
+  hotkey.evdev = parsed.isEvdev;
+  hotkey.x11 = parsed.isX11;
+  hotkey.callback = wrapped_action;
+  hotkey.alias = rawInput;
+  hotkey.action = "";
+  hotkey.enabled = true;
+  hotkey.grab = parsed.grab;
+  hotkey.suspend = parsed.suspend;
+  hotkey.repeat = parsed.repeat;
+  hotkey.wildcard = parsed.wildcard;
+  hotkey.success = false;
+  hotkey.repeatInterval = parsed.repeatInterval;
+
+  // Check for mouse gesture pattern
+  bool isGesture = false;
+
+  // Check if the key part looks like a gesture pattern
+  // This could be predefined gestures like "circle", "square", "triangle", etc.
+  // or mouse-specific direction patterns like
+  // "mouseleft,mouseright,mouseup,mousedown"
+  std::string keyLower = toLower(parsed.keyPart);
+  bool isPredefinedGesture =
+      (keyLower == "circle" || keyLower == "square" || keyLower == "triangle" ||
+       keyLower == "zigzag" || keyLower == "check");
+
+  // Check if it's a comma-separated direction pattern (may include mouse
+  // directions)
+  bool hasComma = parsed.keyPart.find(',') != std::string::npos;
+
+  // Check if it's a single mouse direction (using the new mouse-specific names)
+  bool isMouseDirection =
+      (keyLower == "mouseleft" || keyLower == "mouseright" ||
+       keyLower == "mouseup" || keyLower == "mousedown" ||
+       keyLower == "mouseupleft" || keyLower == "mouseupright" ||
+       keyLower == "mousedownleft" || keyLower == "mousedownright");
+
+  // Check if it's a comma-separated pattern that looks like a gesture pattern
+  bool isGesturePattern = false;
+  if (hasComma) {
+    // Parse the comma-separated values to see if they look like gesture
+    // directions
+    std::string tempPattern =
+        parsed.keyPart; // Don't convert to lower yet, to check original
+    std::istringstream iss(tempPattern);
+    std::string part;
+    bool allPartsAreMouseDirections = true;
+
+    while (std::getline(iss, part, ',')) {
+      // Remove leading/trailing whitespace
+      part.erase(0, part.find_first_not_of(" \t\n\r"));
+      part.erase(part.find_last_not_of(" \t\n\r") + 1);
+
+      std::string lowerPart = toLower(part);
+
+      // Check if this part is a mouse direction
+      bool isMouseDir =
+          (lowerPart == "mouseleft" || lowerPart == "mouseright" ||
+           lowerPart == "mouseup" || lowerPart == "mousedown" ||
+           lowerPart == "mouseupleft" || lowerPart == "mouseupright" ||
+           lowerPart == "mousedownleft" || lowerPart == "mousedownright" ||
+           // Corner directions without mouse prefix (for backward
+           // compatibility)
+           lowerPart == "up-left" || lowerPart == "upleft" ||
+           lowerPart == "up-right" || lowerPart == "upright" ||
+           lowerPart == "down-left" || lowerPart == "downleft" ||
+           lowerPart == "down-right" || lowerPart == "downright");
+
+      if (!isMouseDir) {
+        allPartsAreMouseDirections = false;
+        break;
+      }
+    }
+
+    isGesturePattern = allPartsAreMouseDirections;
+  }
+
+  // Only treat as gesture if it's a predefined gesture, contains mouse-specific
+  // directions in comma pattern, or is a single mouse direction This avoids
+  // conflicting with regular arrow keys like "up", "down", "left", "right"
+  if (isPredefinedGesture || isGesturePattern || isMouseDirection) {
+    hotkey.type = HotkeyType::MouseGesture;
+    hotkey.gesturePattern = parsed.keyPart; // Store the gesture pattern string
+
+    // Determine gesture type and set up configuration based on the pattern
+    if (isPredefinedGesture) {
+      hotkey.gestureConfig.type = MouseGestureType::Shape;
+    } else if (isMouseDirection) {
+      hotkey.gestureConfig.type = MouseGestureType::Direction;
+    } else {
+      // It's a custom direction pattern
+      hotkey.gestureConfig.type = MouseGestureType::Freeform;
+    }
+
+    hotkey.success = true;
+    isGesture = true;
+  }
+
+  if (!isGesture) {
+    // Check for mouse button or wheel
+    int mouseButton = ParseMouseButton(parsed.keyPart);
+    if (mouseButton != 0) {
+      hotkey.type = (mouseButton == 1 || mouseButton == -1)
+                        ? HotkeyType::MouseWheel
+                        : HotkeyType::MouseButton;
+      hotkey.wheelDirection =
+          (mouseButton == 1 || mouseButton == -1) ? mouseButton : 0;
+      hotkey.mouseButton =
+          (mouseButton == 1 || mouseButton == -1) ? 0 : mouseButton;
+      hotkey.key = static_cast<Key>(mouseButton);
+      hotkey.success = true;
+    } else {
+      // Check for combo
+      size_t ampPos = parsed.keyPart.find('&');
+      if (ampPos != std::string::npos) {
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (ampPos != std::string::npos) {
+          std::string part = parsed.keyPart.substr(start, ampPos - start);
+          // Trim whitespace
+          size_t first = part.find_first_not_of(" \t");
+          size_t last = part.find_last_not_of(" \t");
+          if (first != std::string::npos) {
+            parts.push_back(part.substr(first, last - first + 1));
+          }
+          start = ampPos + 1;
+          ampPos = parsed.keyPart.find('&', start);
+        }
+        std::string lastPart = parsed.keyPart.substr(start);
+        // Trim whitespace from last part
+        size_t first = lastPart.find_first_not_of(" \t");
+        size_t last = lastPart.find_last_not_of(" \t");
+        if (first != std::string::npos) {
+          parts.push_back(lastPart.substr(first, last - first + 1));
+        }
+
+        hotkey.type = HotkeyType::Combo;
+        for (const auto &part : parts) {
+          // Preserve the @evdev flag for combo parts
+          // If the original hotkey had @, the parts should too
+          std::string partWithPrefix = parsed.isEvdev ? "@" + part : part;
+          auto subHotkey =
+              AddHotkey(partWithPrefix, std::function<void()>{}, 0);
+          hotkey.comboSequence.push_back(subHotkey);
+
+          // Track specific physical keys for precise modifier matching
+          // This ensures @RShift requires Right Shift specifically
+          if (subHotkey.type == HotkeyType::Keyboard) {
+            int keyCode = static_cast<int>(subHotkey.key);
+            if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL ||
+                keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT ||
+                keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT ||
+                keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
+              hotkey.requiredPhysicalKeys.push_back(keyCode);
+            }
+          }
+        }
+        hotkey.success = !hotkey.comboSequence.empty();
+        // Mark this combo as requiring a wheel event if any part is a wheel
+        hotkey.requiresWheel = std::any_of(
+            hotkey.comboSequence.begin(), hotkey.comboSequence.end(),
+            [](const HotKey &k) { return k.type == HotkeyType::MouseWheel; });
+      } else {
+        // Regular keyboard hotkey
+        KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+
+        if (keycode == 0) {
+        havel::error("Invalid key: '{}' in hotkey: {}", parsed.keyPart, rawInput);
+          return {};
+        }
+
+        hotkey.type = HotkeyType::Keyboard;
+        hotkey.key = static_cast<Key>(keycode);
+        hotkey.success = true;
+      }
+    }
+  }
+
+  // Add to maps if has action (skip for combo subs) - keyboard hotkey path
+  if (hasAction) {
+    std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
+
+    // Check for duplicate alias (case-insensitive) to prevent double
+    // registration
+    std::string normalizedAlias = toLower(rawInput);
+    for (const auto &[existingId, existingHotkey] : hotkeys) {
+      if (toLower(existingHotkey.alias) == normalizedAlias) {
+        warn("Duplicate hotkey alias detected: '{}' (registered as '{}'). "
+             "Skipping duplicate registration.",
+             rawInput, existingHotkey.alias);
+        return hotkey; // Return existing hotkey without re-registering
+      }
+    }
+
+    if (id == 0)
+      id = ++hotkeyCount;
+    hotkey.id = id; // Set the hotkey's id
+    hotkeys[id] = hotkey;
+    if (hotkey.x11)
+      x11Hotkeys.insert(id);
+    if (hotkey.evdev)
+      evdevHotkeys.insert(id);
+  }
+
+  return hotkey;
+}
+
+HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
+                          std::function<void()> action, int id) {
+  bool hasAction = static_cast<bool>(action);
+
+  // Use the same parser as keyboard hotkeys
+  ParsedHotkey parsed = ParseHotkeyString(hotkeyStr);
+
+  auto wrapped_action = [action, hotkeyStr, parsed]() {
+    if (Configs::Get().GetVerboseKeyLogging()) {
+      std::string eventTypeStr;
+      switch (parsed.eventType) {
+      case HotkeyEventType::Down:
+        eventTypeStr = "Down";
+        break;
+      case HotkeyEventType::Up:
+        eventTypeStr = "Up";
+        break;
+      case HotkeyEventType::Both:
+        eventTypeStr = "Both";
+        break;
+      default:
+        eventTypeStr = "Unknown";
+      }
+        if (debugging::debug_hotkeys) debug("Hotkey pressed: " + hotkeyStr +
+           " | Modifiers: " + std::to_string(parsed.modifiers) +
+           " | Key: " + parsed.keyPart + " | Event Type: " + eventTypeStr +
+           " | Grab: " + (parsed.grab ? "true" : "false") +
+           " | Suspend: " + (parsed.suspend ? "true" : "false") +
+           " | Repeat: " + (parsed.repeat ? "true" : "false") +
+           " | Wildcard: " + (parsed.wildcard ? "true" : "false"));
+    }
+    action();
+  };
+  // Build base hotkey
+  HotKey hotkey;
+  hotkey.alias = hotkeyStr;
+  hotkey.modifiers = parsed.modifiers;
+  hotkey.callback = wrapped_action;
+  hotkey.action = "";
+  hotkey.enabled = true;
+  hotkey.grab = parsed.grab;
+  hotkey.suspend = parsed.suspend;
+  hotkey.repeat = parsed.repeat;
+  hotkey.success = false;
+  hotkey.evdev = parsed.isEvdev;
+  hotkey.x11 = parsed.isX11;
+  hotkey.eventType = parsed.eventType;
+  hotkey.wildcard = parsed.wildcard;
+  hotkey.repeatInterval = parsed.repeatInterval;
+
+  // For mouse hotkeys, default to evdev unless explicitly X11
+  if (!parsed.isX11 && !parsed.isEvdev) {
+    hotkey.evdev = true;
+    hotkey.x11 = false;
+  }
+
+  // Check for mouse button or wheel
+  int button = ParseMouseButton(parsed.keyPart);
+  if (button != 0) {
+    bool isWheelEvent = (button == 1 || button == -1);
+    hotkey.type =
+        isWheelEvent ? HotkeyType::MouseWheel : HotkeyType::MouseButton;
+
+    if (isWheelEvent) {
+      // For wheel events, only set wheelDirection and leave key as 0
+      hotkey.wheelDirection = button;
+      hotkey.mouseButton = 0;
+      hotkey.key = 0; // Explicitly set to 0 for wheel events
+    } else {
+      // For regular mouse buttons
+      hotkey.wheelDirection = 0;
+      hotkey.mouseButton = button;
+      hotkey.key = static_cast<Key>(button);
+    }
+    hotkey.success = true;
+  } else {
+    // Check for combo
+    size_t ampPos = parsed.keyPart.find('&');
+    if (ampPos != std::string::npos) {
+      std::vector<std::string> parts;
+      size_t start = 0;
+      while (ampPos != std::string::npos) {
+        std::string part = parsed.keyPart.substr(start, ampPos - start);
+        // Trim whitespace
+        size_t first = part.find_first_not_of(" \t");
+        size_t last = part.find_last_not_of(" \t");
+        if (first != std::string::npos) {
+          parts.push_back(part.substr(first, last - first + 1));
+        }
+        start = ampPos + 1;
+        ampPos = parsed.keyPart.find('&', start);
+      }
+      std::string lastPart = parsed.keyPart.substr(start);
+      // Trim whitespace from last part
+      size_t first = lastPart.find_first_not_of(" \t");
+      size_t last = lastPart.find_last_not_of(" \t");
+      if (first != std::string::npos) {
+        parts.push_back(lastPart.substr(first, last - first + 1));
+      }
+
+      hotkey.type = HotkeyType::Combo;
+      for (const auto &part : parts) {
+        // Use AddHotkey() instead of AddMouseHotkey() to properly handle
+        // keyboard keys in combos (e.g., "RShift & WheelDown")
+        // Preserve the @evdev flag for combo parts
+        std::string partWithPrefix = parsed.isEvdev ? "@" + part : part;
+        auto subHotkey = AddHotkey(partWithPrefix, std::function<void()>{}, 0);
+        hotkey.comboSequence.push_back(subHotkey);
+
+        // Track specific physical keys for precise modifier matching
+        // This ensures @RShift requires Right Shift specifically
+        if (subHotkey.type == HotkeyType::Keyboard) {
+          int keyCode = static_cast<int>(subHotkey.key);
+          if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL ||
+              keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT ||
+              keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT ||
+              keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
+            hotkey.requiredPhysicalKeys.push_back(keyCode);
+          }
+        }
+      }
+      hotkey.success = !hotkey.comboSequence.empty();
+      // Mark this combo as requiring a wheel event if any part is a wheel
+      hotkey.requiresWheel = std::any_of(
+          hotkey.comboSequence.begin(), hotkey.comboSequence.end(),
+          [](const HotKey &k) { return k.type == HotkeyType::MouseWheel; });
+    } else {
+      // Not a mouse button/wheel, not a combo - try to parse as keyboard key
+      KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+      if (keycode != 0) {
+        hotkey.type = HotkeyType::Keyboard;
+        hotkey.key = static_cast<Key>(keycode);
+        hotkey.success = true;
+      } else {
+        // If it's not a valid key, mouse button, wheel, or combo, mark as
+        // failed
+        hotkey.type = HotkeyType::Keyboard;
+        hotkey.key = 0;
+        hotkey.success = false;
+      }
+    }
+  }
+
+  // Add to maps if has action (skip for combo subs) - mouse hotkey path
+  if (hasAction) {
+    std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
+
+    // Check for duplicate alias (case-insensitive) to prevent double
+    // registration
+    std::string normalizedAlias = toLower(hotkeyStr);
+    for (const auto &[existingId, existingHotkey] : hotkeys) {
+      if (toLower(existingHotkey.alias) == normalizedAlias) {
+        warn("Duplicate mouse hotkey alias detected: '{}' (registered as "
+             "'{}'). Skipping duplicate registration.",
+             hotkeyStr, existingHotkey.alias);
+        return hotkey; // Return existing hotkey without re-registering
+      }
+    }
+
+    if (id == 0)
+      id = ++hotkeyCount;
+    hotkey.id = id; // Set the hotkey's id
+    hotkeys[id] = hotkey;
+    if (hotkey.x11)
+      x11Hotkeys.insert(id);
+    if (hotkey.evdev)
+      evdevHotkeys.insert(id);
+  }
+
+  return hotkey;
+}
+bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
+                const std::string &condition, int id) {
+  bool isMouseHotkey = (toLower(rawInput).find("button") != std::string::npos ||
+                        toLower(rawInput).find("wheel") != std::string::npos ||
+                        toLower(rawInput).find("scroll") != std::string::npos);
+  HotKey hk;
+  if (isMouseHotkey) {
+    hk = AddMouseHotkey(rawInput, std::move(action), id);
+  } else {
+    hk = AddHotkey(rawInput, std::move(action), id);
+  }
+  if (!hk.success) {
+        havel::error("Failed to register hotkey: {}", rawInput);
+    failedHotkeys.push_back(hk);
+    return false;
+  }
+  if (!hk.evdev && hk.x11 && !globalEvdev) {
+    GrabHotkey(hk.id);
+  }
+  return true;
+}
+// Method to control send
+void IO::ControlSend(const std::string &control, const std::string &keys) {
+    if (debugging::debug_io) ::havel::debug("Control send: {} keys: {}", control, keys);
+  wID hwnd = WindowManager::FindByTitle(control);
+  if (!hwnd) {
+        havel::warning("Window not found: {}", control);
+    return;
+  }
+}
+
+// Send text using clipboard + paste (more reliable than key events for complex text)
+// BACKS UP AND RESTORES clipboard to avoid destroying user data
+void IO::SendText(const std::string &text) {
+  if (text.empty()) return;
+  if (ioBackend) ioBackend->TypeText(text);
+}
+
+// Method to get mouse position
+int IO::GetMouse() {
+  // No need to get root window here
+  // Window root = DisplayManager::GetRootWindow();
+  return 0;
+}
+
+Key IO::StringToVirtualKey(std::string keyName) {
+  removeSpecialCharacters(keyName);
+  keyName = ToLower(keyName);
+
+  // Use KeyMap for X11 lookup
+  unsigned long code = KeyMap::ToX11(keyName);
+  if (code != 0) {
+    return code;
+  }
+
+  // Fallback for single character
+  if (keyName.length() == 1) {
+    return XStringToKeysym(keyName.c_str());
+  }
+
+  return 0;
+}
+
+Key IO::StringToButton(const std::string &buttonNameRaw) {
+  std::string buttonName = ToLower(buttonNameRaw);
+
+  static const std::unordered_map<std::string, Key> buttonMap = {
+      {"button1", Button1},   {"button2", Button2},
+      {"button3", Button3},   {"button4", Button4},
+      {"wheelup", Button4},   {"scrollup", Button4},
+      {"button5", Button5},   {"wheeldown", Button5},
+      {"scrolldown", Button5}
+      // button6+ handled dynamically below
+  };
+
+  auto it = buttonMap.find(buttonName);
+  if (it != buttonMap.end())
+    return it->second;
+
+  // Check for "buttonN" where N >= 6
+  if (buttonName.rfind("button", 0) == 0) {
+    int btnNum = std::atoi(buttonName.c_str() + 6);
+    if (btnNum >= 6 && btnNum <= 32) // sane upper bound
+      return static_cast<Key>(btnNum);
+  }
+
+  return 0; // Invalid / unrecognized
+}
+Key IO::EvdevNameToKeyCode(std::string keyName) {
+  removeSpecialCharacters(keyName);
+  keyName = ToLower(keyName);
+
+  // Use KeyMap for lookup
+  int code = KeyMap::FromString(keyName);
+  if (code != 0) {
+    return code;
+  }
+
+  // Fallback for single character a-z and 0-9
+  if (keyName.length() == 1) {
+    char c = keyName[0];
+    if (c >= 'a' && c <= 'z')
+      return KEY_A + (c - 'a');
+    if (c >= '0' && c <= '9')
+      return (c == '0') ? KEY_0 : KEY_1 + (c - '1');
+  }
+
+  return 0;
+}
+
+// Display a message box
+void IO::MsgBox(const std::string &message) {
+ ::havel::info("Message Box: {}", message);
+ }
+
+// Assign a hotkey to a specific ID
+void IO::AssignHotkey(HotKey hotkey, int id) {
+  if (id == 0) id = ++hotkeyCount;
+  hotkey.id = id;
+  hotkeys[id] = hotkey;
+  if (ioBackend) ioBackend->RegisterHotkey(hotkey.key, hotkey.modifiers, false);
+}
+
+#ifdef WINDOWS
+LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+  if (nCode == HC_ACTION && wParam == WM_KEYDOWN) {
+    KBDLLHOOKSTRUCT *pKeyboard = (KBDLLHOOKSTRUCT *)lParam;
+
+    // Detect the state of modifier keys
+    bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool altPressed = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    bool winPressed = (GetKeyState(VK_LWIN) & 0x8000) != 0 ||
+                      (GetKeyState(VK_RWIN) & 0x8000) != 0;
+    for (const auto &[id, hotkey] : hotkeys) {
+      if (!hotkey.grab && hotkey.enabled) {
+        // Check if the virtual key matches and modifiers are valid
+        if (pKeyboard->vkCode == static_cast<DWORD>(hotkey.key.virtualKey)) {
+          // Check if the required modifiers are pressed
+          bool modifiersMatch =
+              ((hotkey.modifiers & MOD_SHIFT) ? shiftPressed : true) &&
+              ((hotkey.modifiers & MOD_CONTROL) ? ctrlPressed : true) &&
+              ((hotkey.modifiers & MOD_ALT) ? altPressed : true) &&
+              ((hotkey.modifiers & MOD_WIN) ? winPressed
+                                            : true); // Check Windows key
+
+          if (modifiersMatch) {
+            if (hotkey.callback) {
+              hotkey.callback(); // Call the associated action
+            }
+            break; // Exit after the first match
+          }
+        }
+      }
+    }
+  }
+  return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
+}
+#endif
+
+int IO::GetKeyboard() {
+  Display *dpy = havel::DisplayManager::GetDisplay();
+  if (!dpy) {
+      error("Unable to open X display!");
+      return EXIT_FAILURE;
+  }
+
+  x11::Window window = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
+                                           0, 0, 1, 1, 0, 0, 0);
+  if (XGrabKeyboard(dpy, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
+                    CurrentTime) != GrabSuccess) {
+        havel::error("Unable to grab keyboard!");
+    XDestroyWindow(dpy, window);
+    return EXIT_FAILURE;
+  }
+
+  XEvent event;
+  while (true) {
+    XNextEvent(dpy, &event);
+    if (event.type == x11::XKeyPress) {
+    }
+  }
+
+  XUngrabKeyboard(dpy, CurrentTime);
+  XDestroyWindow(dpy, window);
+  XCloseDisplay(dpy);
+  return 0;
+}
+
+int IO::ParseModifiers(str str) {
+  int modifiers = 0;
+#ifdef WINDOWS
+  if (str.find("+") != str::npos) {
+    modifiers |= MOD_SHIFT;
+    str.erase(str.find("+"), 1);
+  }
+  if (str.find("^") != str::npos) {
+    modifiers |= MOD_CONTROL;
+    str.erase(str.find("^"), 1);
+  }
+  if (str.find("!") != str::npos) {
+    modifiers |= MOD_ALT;
+    str.erase(str.find("!"), 1);
+  }
+  if (str.find("#") != str::npos) {
+    modifiers |= MOD_WIN;
+    str.erase(str.find("#"), 1);
+  }
+#else
+  if (str.find("+") != std::string::npos) {
+    modifiers |= ShiftMask;
+    str.erase(str.find("+"), 1);
+  }
+  if (str.find("^") != std::string::npos) {
+    modifiers |= ControlMask;
+    str.erase(str.find("^"), 1);
+  }
+  if (str.find("!") != std::string::npos) {
+    modifiers |= Mod1Mask;
+    str.erase(str.find("!"), 1);
+  }
+  if (str.find("#") != std::string::npos) {
+    modifiers |= Mod4Mask; // For Meta/Windows
+    str.erase(str.find("#"), 1);
+  }
+#endif
+  return modifiers;
+}
+bool IO::GetKeyState(const std::string &keyName) {
+  if (eventListener) {
+    int keycode = KeyMap::FromString(keyName);
+    if (keycode != 0) return eventListener->GetKeyState(keycode);
+  }
+  if (ioBackend) {
+    int keycode = GetKeyCode(keyName);
+    if (keycode != 0) return ioBackend->IsKeyDown(keycode);
+  }
+  return false;
+}
+
+bool IO::GetKeyState(int keycode) {
+  if (eventListener) return eventListener->GetKeyState(keycode);
+  if (ioBackend) return ioBackend->IsKeyDown(keycode);
+  return false;
+}
+
+bool IO::IsAnyKeyPressed() {
+  if (eventListener) {
+    std::lock_guard<std::mutex> lk(keyStateMutex);
+    for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
+      if (isDown) return true;
+    }
+  }
+  if (ioBackend && ioBackend->IsAnyKeyDown()) return true;
+  return false;
+}
+
+bool IO::IsAnyKeyPressedExcept(const std::string &excludeKey) {
+  if (eventListener) {
+    int excludeKeycode = EvdevNameToKeyCode(excludeKey);
+    std::lock_guard<std::mutex> lk(keyStateMutex);
+    for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
+      if (isDown && keycode != excludeKeycode) return true;
+    }
+  }
+  return false;
+}
+
+bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
+  if (eventListener) {
+    std::set<int> excludeCodes;
+    for (const auto &key : excludeKeys) {
+      int code = EvdevNameToKeyCode(key);
+      if (code != -1) excludeCodes.insert(code);
+    }
+    std::lock_guard<std::mutex> lk(keyStateMutex);
+    for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
+      if (isDown && excludeCodes.find(keycode) == excludeCodes.end()) return true;
+    }
+  }
+  return false;
+}
+bool IO::IsShiftPressed() {
+  if (eventListener) {
+    auto modState = eventListener->GetModifierState();
+    return modState.leftShift || modState.rightShift;
+  }
+  return currentModifierState.leftShift || currentModifierState.rightShift;
+}
+
+bool IO::IsCtrlPressed() {
+  if (eventListener) {
+    auto modState = eventListener->GetModifierState();
+    return modState.leftCtrl || modState.rightCtrl;
+  }
+  return currentModifierState.leftCtrl || currentModifierState.rightCtrl;
+}
+
+bool IO::IsAltPressed() {
+  if (eventListener) {
+    auto modState = eventListener->GetModifierState();
+    return modState.leftAlt || modState.rightAlt;
+  }
+  return currentModifierState.leftAlt || currentModifierState.rightAlt;
+}
+
+bool IO::IsWinPressed() {
+  if (eventListener) {
+    auto modState = eventListener->GetModifierState();
+    return modState.leftMeta || modState.rightMeta;
+  }
+  return currentModifierState.leftMeta || currentModifierState.rightMeta;
+}
+
+Key IO::GetKeyCode(cstr keyName) {
+  // Convert string to keysym
+  KeySym keysym = StringToVirtualKey(keyName);
+  if (keysym == NoSymbol) {
+        havel::warning("Unknown keysym for: {}", keyName);
+    return 0;
+  }
+
+  // Convert keysym to keycode
+  KeyCode keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
+  if (keycode == 0) {
+        havel::warning("Invalid keycode for keysym: {}", keyName);
+    return 0;
+  }
+  return keycode;
+}
+void IO::PressKey(const std::string &keyName, bool press) {
+    if (debugging::debug_io) ::havel::debug("Pressing key: {} (press: {})", keyName, press);
+  Key keycode = GetKeyCode(keyName);
+  if (ioBackend) {
+    if (press) ioBackend->PressKey(keycode);
+    else ioBackend->ReleaseKey(keycode);
+  }
+}
+
+bool IO::GrabHotkey(int hotkeyId) {
+  auto it = hotkeys.find(hotkeyId);
+  if (it == hotkeys.end()) {
+    warning("Hotkey ID not found: {}", hotkeyId);
+    return false;
+  }
+  const HotKey &hotkey = it->second;
+  if (hotkey.key == 0) {
+    warning("Invalid keycode for hotkey: {}", hotkey.alias);
+    return false;
+  }
+  if (!hotkey.evdev && ioBackend) {
+    ioBackend->RegisterHotkey(hotkey.key, hotkey.modifiers, false);
+  }
+  hotkeys[hotkeyId].enabled = true;
+  if (debugging::debug_hotkeys) debug("Grabbed hotkey: {}", hotkey.alias);
+  return true;
+}
+
+bool IO::UngrabHotkey(int hotkeyId) {
+  auto it = hotkeys.find(hotkeyId);
+  if (it == hotkeys.end()) {
+    error("Hotkey ID not found: {}", hotkeyId);
+    return false;
+  }
+  const HotKey &hotkey = it->second;
+  if (debugging::debug_hotkeys) debug("Ungrabbing hotkey: {}", hotkey.alias);
+  if (hotkey.key == 0) {
+    error("Invalid keycode for hotkey: {}", hotkey.alias);
+    return false;
+  }
+  if (!hotkey.evdev && ioBackend) {
+    bool hasOtherSameHotkey = false;
+    for (const auto &[id, hk] : hotkeys) {
+      if (id != hotkeyId && hk.enabled && !hk.evdev &&
+          hk.key == hotkey.key && hk.modifiers == hotkey.modifiers) {
+        hasOtherSameHotkey = true;
+        break;
+      }
+    }
+    if (!hasOtherSameHotkey) {
+      ioBackend->UnregisterHotkey(hotkey.key, hotkey.modifiers, false);
+    }
+  }
+  hotkeys[hotkeyId].enabled = false;
+  if (debugging::debug_hotkeys) debug("Ungrabbed hotkey: {}", hotkey.alias);
+  return true;
+}
+
+void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
+    if (debugging::debug_io) debug("IO::SetAnyKeyPressCallback called, eventListener={}",
+        (void *)eventListener.get());
+  if (!eventListener) {
+    warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will "
+         "not be registered");
+    warn("  This usually means no input devices were found or EventListener "
+         "failed to start");
+    warn("  Check if /dev/input/event* devices are accessible and grabDevices "
+         "is enabled");
+    return;
+  }
+  try {
+    // Double-check that eventListener is valid
+        if (debugging::debug_io) debug("Calling eventListener->SetAnyKeyPressCallback");
+        eventListener->SetAnyKeyPressCallback(callback);
+        if (debugging::debug_io) debug("SetAnyKeyPressCallback completed successfully");
+  } catch (const std::exception &e) {
+    error("IO::SetAnyKeyPressCallback failed: {}", e.what());
+  } catch (...) {
+    error("IO::SetAnyKeyPressCallback failed with unknown exception");
+  }
+}
+
+void IO::SetInputEventCallback(InputEventCallback callback) {
+  if (!eventListener) {
+    warn("IO::SetInputEventCallback: eventListener is null - callback will not "
+         "be registered");
+    return;
+  }
+  try {
+    eventListener->SetInputEventCallback(std::move(callback));
+  } catch (const std::exception &e) {
+    error("IO::SetInputEventCallback failed: {}", e.what());
+  } catch (...) {
+    error("IO::SetInputEventCallback failed with unknown exception");
+  }
+}
+
+void IO::SetInputBlockCallback(
+    std::function<bool(const InputEvent &)> callback) {
+  if (!eventListener) {
+    warn("IO::SetInputBlockCallback: eventListener is null - callback will not "
+         "be registered");
+    return;
+  }
+  try {
+    eventListener->SetInputBlockCallback(std::move(callback));
+  } catch (const std::exception &e) {
+    error("IO::SetInputBlockCallback failed: {}", e.what());
+  } catch (...) {
+    error("IO::SetInputBlockCallback failed with unknown exception");
+  }
+}
+
+HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }
+ExecutorMode IO::GetExecutorMode() const { return executorMode_; }
+
+bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
+  bool success = true;
+  for (const auto &[id, hotkey] : hotkeys) {
+    if (hotkey.alias.find(prefix) == 0) {
+      if (!GrabHotkey(id)) success = false;
+    }
+  }
+  return success;
+}
+
+bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
+  bool success = true;
+  for (const auto &[id, hotkey] : hotkeys) {
+    if (hotkey.alias.find(prefix) == 0) {
+      if (!UngrabHotkey(id)) success = false;
+    }
+  }
+  return success;
+}
+bool IO::EnableHotkey(const std::string &keyName) {
+  std::lock_guard<std::mutex> lock(hotkeySetMutex);
+  bool found = false;
+
+  // Find the hotkey by name and enable it
+  for (auto &[id, hotkey] : hotkeys) {
+    if (hotkey.alias == keyName) {
+      hotkey.enabled = true;
+      found = true;
+
+      // If the hotkey should be grabbed, re-grab it
+      if (hotkey.grab && !hotkey.evdev) {
+        GrabHotkey(id);
+      }
+    }
+  }
+
+  return found;
+}
+
+bool IO::DisableHotkey(const std::string &keyName) {
+  std::lock_guard<std::mutex> lock(hotkeySetMutex);
+  bool found = false;
+
+  // Find the hotkey by name and disable it
+  for (auto &[id, hotkey] : hotkeys) {
+    if (hotkey.alias == keyName) {
+      hotkey.enabled = false;
+      found = true;
+
+      // If the hotkey was grabbed, ungrab it
+      if (hotkey.grab && !hotkey.evdev) {
+        UngrabHotkey(id);
+      }
+    }
+  }
+
+  return found;
+}
+
+bool IO::ToggleHotkey(const std::string &keyName) {
+  std::lock_guard<std::mutex> lock(hotkeySetMutex);
+  bool found = false;
+
+  // Find the hotkey by name and toggle its state
+  for (auto &[id, hotkey] : hotkeys) {
+    if (hotkey.alias == keyName) {
+      hotkey.enabled = !hotkey.enabled;
+      found = true;
+
+      if (hotkey.enabled && hotkey.grab && !hotkey.evdev) {
+        GrabHotkey(id);
+      } else if (!hotkey.enabled && hotkey.grab && !hotkey.evdev) {
+        UngrabHotkey(id);
+      }
+    }
+  }
+
+  return found;
+}
+
+bool IO::RemoveHotkey(const std::string &keyName) {
+  std::lock_guard<std::mutex> lock(hotkeySetMutex);
+  bool found = false;
+
+  // Find the hotkey by name and remove it
+  for (auto it = hotkeys.begin(); it != hotkeys.end();) {
+    if (it->second.alias == keyName) {
+      int id = it->first;
+
+      // Ungrab if currently grabbed
+      if (it->second.grab && !it->second.evdev) {
+        UngrabHotkey(id);
+      }
+
+      it = hotkeys.erase(it);
+      found = true;
+    } else {
+      ++it;
+    }
+  }
+
+  return found;
+}
+
+bool IO::RemoveHotkey(int hotkeyId) {
+  std::lock_guard<std::mutex> lock(hotkeySetMutex);
+
+  auto it = hotkeys.find(hotkeyId);
+  if (it == hotkeys.end()) {
+    return false;
+  }
+
+  // Ungrab if currently grabbed
+  if (it->second.grab && !it->second.evdev) {
+    UngrabHotkey(hotkeyId);
+  }
+
+  hotkeys.erase(it);
+  return true;
+}
+
+void IO::Map(const std::string &from, const std::string &to) {
+  int fromCode = EvdevNameToKeyCode(from);
+  int toCode = EvdevNameToKeyCode(to);
+  if (fromCode > 0 && toCode > 0) {
+    evdevKeyMap[fromCode] = toCode;
+    if (eventListener) {
+      eventListener->AddKeyRemap(fromCode, toCode);
+    }
+        if (debugging::debug_io) debug("Mapped evdev key {} ({}) to {} ({})", from, fromCode, to, toCode);
+  } else {
+    warn("Failed to map keys: {} -> {} (from:{} to:{})", from, to, fromCode,
+         toCode);
+  }
+}
+
+void IO::Remap(const std::string &key1, const std::string &key2) {
+  // Evdev remapping
+  int code1 = EvdevNameToKeyCode(key1);
+  int code2 = EvdevNameToKeyCode(key2);
+  if (code1 > 0 && code2 > 0) {
+    evdevRemappedKeys[code1] = code2;
+    evdevRemappedKeys[code2] = code1;
+        if (debugging::debug_io) debug("Remapped evdev keys: {} ({}) <-> {} ({})", key1, code1, key2, code2);
+
+    // Also add to EventListener if enabled
+    if (eventListener) {
+      eventListener->AddKeyRemap(code1, code2);
+      eventListener->AddKeyRemap(code2, code1);
+    }
+  } else {
+    warn("Failed to remap keys: {} <-> {} ({} <-> {})", key1, key2, code1,
+         code2);
+  }
+}
+bool IO::MatchEvdevModifiers(int expectedModifiers,
+                             const std::map<int, bool> &keyState) {
+  auto isPressed = [&](int key) -> bool {
+    auto it = keyState.find(key);
+    return it != keyState.end() && it->second;
+  };
+
+  // Check each modifier type
+  std::vector<std::pair<int, std::pair<int, int>>> modifiers = {
+      {KEY_LEFTCTRL, {KEY_LEFTCTRL, KEY_RIGHTCTRL}},
+      {KEY_LEFTSHIFT, {KEY_LEFTSHIFT, KEY_RIGHTSHIFT}},
+      {KEY_LEFTALT, {KEY_LEFTALT, KEY_RIGHTALT}},
+      {KEY_LEFTMETA, {KEY_LEFTMETA, KEY_RIGHTMETA}}};
+
+  for (auto &[flag, keys] : modifiers) {
+    bool expected = (expectedModifiers & flag) != 0;
+    bool pressed = isPressed(keys.first) || isPressed(keys.second);
+
+    if (expected != pressed)
+      return false;
+  }
+
+  return true;
+}
+bool IO::IsKeyRemappedTo(int targetKey) {
+  for (const auto &[original, mapped] : activeRemaps) {
+    if (mapped == targetKey)
+      return true;
+  }
+  return false;
+}
+
+
+void havel::IO::setGlobalAltState(bool pressed) {
+  globalAltPressed.store(pressed);
+}
+
+bool havel::IO::getGlobalAltState() { return globalAltPressed.load(); }
+void IO::executeComboAction(const std::string &action) {
+    if (debugging::debug_hotkeys) debug("Executing combo action: {}", action);
+
+  // Transform action to hotkey alias
+  std::string targetAlias;
+  if (action == "alt_scroll_up")
+    targetAlias = "@!WheelUp";
+  else if (action == "alt_scroll_down")
+    targetAlias = "@!WheelDown";
+  else
+    targetAlias = action;
+
+  if (debugging::debug_hotkeys) debug("Looking for hotkey with alias: '{}'", targetAlias);
+
+  // Get current modifier state
+  int currentMods = GetCurrentModifiers();
+  if (debugging::debug_hotkeys) debug("Current modifiers: 0x{:x}", currentMods);
+
+  for (auto &[id, hotkey] : hotkeys) {
+    if (hotkey.enabled && hotkey.callback && hotkey.alias == targetAlias) {
+      // Check modifiers match
+      if (hotkey.modifiers == currentMods) {
+        if (debugging::debug_hotkeys) debug("Executing hotkey '{}' for action '{}'", hotkey.alias, action);
+        hotkey.callback();
+        return;
+      } else {
+                if (debugging::debug_hotkeys) debug("Modifiers don't match: expected={}, current={}",
+              hotkey.modifiers, currentMods);
+      }
+    }
+  }
+
+  warn("No handler found for combo action: {}", action);
+}
+// OPTIMIZED: Mouse button click methods with event batching
+// (removed - now inline in header)
+
+// Mouse button code conversion implementations
+int IO::GetMouseButtonCode(const std::string &arg) {
+  std::string s = toLower(arg);
+  if (s == "right")
+    return BTN_RIGHT;
+  if (s == "middle")
+    return BTN_MIDDLE;
+  if (s == "side1" || s == "xbutton1")
+    return BTN_SIDE;
+  if (s == "side2" || s == "xbutton2")
+    return BTN_EXTRA;
+  if (s == "side3" || s == "forward")
+    return BTN_FORWARD;
+  if (s == "side4" || s == "back")
+    return BTN_BACK;
+  if (s == "left")
+    return BTN_LEFT;
+  try {
+    if (std::stoi(s) > 0) {
+      return GetMouseButtonCode(std::stoi(s));
+    }
+  } catch (...) {
+    // not a number, continue
+  }
+  return BTN_LEFT; // fallback
+}
+
+int IO::GetMouseButtonCode(int idx) {
+  switch (idx) {
+  case 1:
+    return BTN_LEFT;
+  case 2:
+    return BTN_RIGHT;
+  case 3:
+    return BTN_MIDDLE;
+  case 4:
+    return BTN_SIDE;
+  case 5:
+    return BTN_EXTRA;
+  case 6:
+    return BTN_FORWARD;
+  case 7:
+    return BTN_BACK;
+  default:
+    return BTN_LEFT;
+  }
+}
+
+MouseAction IO::GetMouseAction(const std::string &action) {
+  std::string s = toLower(action);
+  if (s == "press" || s == "hold")
+    return MouseAction::Hold;
+  if (s == "release")
+    return MouseAction::Release;
+  if (s == "click")
+    return MouseAction::Click;
+  try {
+    if (std::stoi(s) > 0) {
+      return GetMouseAction(std::stoi(s));
+    }
+  } catch (...) {
+    // not a number, continue
+  }
+  return MouseAction::Click; // fallback
+}
+
+MouseAction IO::GetMouseAction(int idx) {
+  switch (idx) {
+  case 0:
+    return MouseAction::Hold;
+  case 1:
+    return MouseAction::Release;
+  case 2:
+    return MouseAction::Click;
+  default:
+    return MouseAction::Click;
+  }
+}
+
+} // namespace havel
+
+// Additional methods for HostAPI
+pID havel::IO::GetActiveWindowPID() {
+  return WindowManager::GetActiveWindowPID();
+}
+
+void havel::IO::Scroll(int dy, int dx) {
+  if (mouseController) {
+    mouseController->Scroll(dy, dx);
+  }
+}
+

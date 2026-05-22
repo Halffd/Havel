@@ -36,7 +36,7 @@
 #ifdef HAVEL_ENABLE_LLVM
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #endif
-#include "process/Launcher.hpp"
+#include "core/process/Launcher.hpp"
 #include "host/process/ProcessService.hpp"
 
 using havel::compiler::Value;

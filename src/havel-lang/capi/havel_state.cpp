@@ -2,7 +2,7 @@
 #include "havel.h"
 #include "../compiler/vm/VM.hpp"
 #include "../compiler/core/Pipeline.hpp"
-#include "../core/Value.hpp"
+#include "core/Value.hpp"
 #ifdef HAVE_LIBFFI
 #include "../ffi/FFITypes.hpp"
 #include "../ffi/FFIMemory.hpp"

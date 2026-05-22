@@ -6,7 +6,7 @@
  */
 #include "ModeService.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
-#include "core/ModeManager.hpp"
+#include "core/mode/ModeManager.hpp"
 
 namespace havel::host {
 

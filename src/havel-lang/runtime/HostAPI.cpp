@@ -6,22 +6,22 @@
 
 #ifndef HAVEL_PURE_VM
 #include "ImportManager.hpp"
-#include "core/BrightnessManager.hpp"
-#include "core/ConfigManager.hpp"
-#include "core/HotkeyManager.hpp"
-#include "core/IO.hpp"
+#include "core/brightness/BrightnessManager.hpp"
+#include "core/config/ConfigManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
+#include "core/io/IO.hpp"
 #include "core/automation/AutomationManager.hpp"
 #include "core/automation/PixelAutomation.hpp"
 #include "core/io/MapManager.hpp"
 #include "core/process/ProcessManager.hpp"
-#include "fs/FileManager.hpp"
+#include "utils/FileManager.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #endif
-#include "media/AudioManager.hpp"
-#include "window/WindowManager.hpp"
+#include "core/media/AudioManager.hpp"
+#include "core/window/WindowManager.hpp"
 // #include <QGuiApplication>
 
 namespace havel {

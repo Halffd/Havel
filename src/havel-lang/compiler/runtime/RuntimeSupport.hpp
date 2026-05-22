@@ -1,7 +1,7 @@
 #include "havel-lang/errors/ErrorSystem.h"
 #pragma once
 
-#include "../core/BytecodeIR.hpp"
+#include "compiler/core/BytecodeIR.hpp"
 #include <functional>
 #include <vector>
 #include <string>

@@ -1,6 +1,6 @@
 #include "core/init/HavelLauncher.hpp"
 #include "utils/Logger.hpp"
-#include "core/ConfigManager.hpp"
+#include "core/config/ConfigManager.hpp"
 #include <iostream>
 #include <string>
 #include <X11/Xlib.h>

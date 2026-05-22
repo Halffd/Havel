@@ -12,7 +12,7 @@
 #include "../../utils/Logger.hpp"
 #include "../../utils/CrashHandler.hpp"
 #include "../parser/Parser.h"
-#include "../utils/ErrorPrinter.hpp"
+#include "utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
 #include <iostream>

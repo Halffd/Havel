@@ -1,15 +1,21 @@
 /* SysModule.cpp - VM-native stdlib module (system information) */
 #include "SysModule.hpp"
 
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
+#include <sstream>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 
 #ifndef _WIN32
@@ -17,6 +23,7 @@
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <signal.h>
 #else
 #include <windows.h>
@@ -24,9 +31,13 @@
 #endif
 
 #include "havel-lang/core/Value.hpp"
+#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/concurrency/Fiber.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #endif
+#include "process/Launcher.hpp"
+#include "host/process/ProcessService.hpp"
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -78,6 +89,11 @@ static std::string readFileField(const std::string& path, const std::string& pre
   }
   return "";
 }
+
+#ifndef _WIN32
+static std::mutex g_spawnMutex;
+static std::unordered_map<int64_t, std::pair<int, int>> g_spawnPipes;
+#endif
 
 void registerSysModule(const VMApi &api) {
   api.registerFunction("sys.platform",
@@ -728,53 +744,161 @@ void registerSysModule(const VMApi &api) {
   });
 
   // ========================================================================
-  // process.run — run command and return {pid, exitCode, success, stdout, stderr, error}
+  // process.run — run command synchronously, return {pid, exitCode, success, stdout, stderr, error}
   // ========================================================================
   api.registerFunction("process.run", [api](const std::vector<Value>& args) {
-    if (api.vm().getScheduler()) {
+    if (api.vm().getScheduler())
       api.vm().getScheduler()->yieldCurrentAndCheckTimers();
-    }
     if (args.empty())
       throw std::runtime_error("process.run() requires a command");
     std::string cmd = api.resolveString(args[0]);
+
+    auto presult = Launcher::runSync(cmd);
+
     auto obj = api.makeObject();
-
-    std::string stdoutStr;
-    int exitCode = -1;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (pipe) {
-      char buf[4096];
-      while (fgets(buf, sizeof(buf), pipe)) stdoutStr += buf;
-      exitCode = pclose(pipe) / 256;
-    }
-
-    if (api.vm().getScheduler()) {
-      api.vm().getScheduler()->yieldCurrentAndCheckTimers();
-    }
-
-    api.setField(obj, "pid", Value::makeInt(0));
-    api.setField(obj, "exitCode", Value::makeInt(static_cast<int64_t>(exitCode)));
-    api.setField(obj, "success", Value::makeBool(exitCode == 0));
-    api.setField(obj, "error", exitCode == 0 ? Value::makeNull() : api.makeString("non-zero exit"));
-    api.setField(obj, "stdout", api.makeString(stdoutStr));
-    api.setField(obj, "stderr", api.makeString(""));
+    api.setField(obj, "pid", Value::makeInt(presult.pid));
+    api.setField(obj, "exitCode", Value::makeInt(static_cast<int64_t>(presult.exitCode)));
+    api.setField(obj, "success", Value::makeBool(presult.success));
+    api.setField(obj, "error", presult.success ? Value::makeNull() : api.makeString(presult.error));
+    api.setField(obj, "stdout", api.makeString(presult.stdout));
+    api.setField(obj, "stderr", api.makeString(presult.stderr));
     return obj;
   });
 
   // ========================================================================
-  // process.runDetached — run command without waiting
+  // process.runDetached — run command without waiting, return pid
   // ========================================================================
   api.registerFunction("process.runDetached", [api](const std::vector<Value>& args) {
     if (args.empty())
       throw std::runtime_error("process.runDetached() requires a command");
     std::string cmd = api.resolveString(args[0]);
+
+    auto presult = Launcher::runDetached(cmd);
+    return Value::makeInt(presult.pid);
+  });
+
+  // ========================================================================
+  // process.wait — wait for spawned process to finish, update fields on object
+  // ========================================================================
+  api.registerFunction("process.wait", [api](const std::vector<Value>& args) {
+    if (api.vm().getScheduler())
+      api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+    if (args.empty())
+      throw std::runtime_error("process.wait() requires process object");
+
+    Value procObj = args[0];
+    Value pidVal = api.getField(procObj, "pid");
+    if (!pidVal.isInt())
+      throw std::runtime_error("process.wait(): invalid process object");
 #ifndef _WIN32
-    std::string fullCmd = cmd + " &";
-    int ret = std::system(fullCmd.c_str());
-    return Value::makeBool(ret == 0);
+    pid_t pid = static_cast<pid_t>(pidVal.asInt());
+    if (pid <= 0)
+      throw std::runtime_error("process.wait(): process not started");
+
+    int status;
+    pid_t ret = waitpid(pid, &status, 0);
+
+    int exitCode = (ret > 0 && WIFEXITED(status)) ? WEXITSTATUS(status)
+                   : (ret > 0 && WIFSIGNALED(status)) ? -WTERMSIG(status) : -1;
+
+    std::string outStr, errStr;
+    {
+      auto pit = g_spawnPipes.find(pid);
+      if (pit != g_spawnPipes.end()) {
+        char buf[4096];
+        ssize_t n;
+        while ((n = read(pit->second.first, buf, sizeof(buf))) > 0)
+          outStr.append(buf, n);
+        while ((n = read(pit->second.second, buf, sizeof(buf))) > 0)
+          errStr.append(buf, n);
+        close(pit->second.first);
+        close(pit->second.second);
+        g_spawnPipes.erase(pit);
+      }
+    }
+
+    api.setField(procObj, "exitCode", Value::makeInt(exitCode));
+    api.setField(procObj, "success", Value::makeBool(exitCode == 0 && ret > 0));
+    api.setField(procObj, "stdout", api.makeString(outStr));
+    api.setField(procObj, "stderr", api.makeString(errStr));
+
+    return Value::makeInt(exitCode);
+#else
+    return Value::makeNull();
+#endif
+  });
+
+  // ========================================================================
+  // process.killObj — kill spawned process (use process.kill(pid, sig) for PID)
+  // ========================================================================
+  api.registerFunction("process.killObj", [api](const std::vector<Value>& args) {
+    if (args.empty())
+      throw std::runtime_error("process.killObj() requires process object");
+
+    Value procObj = args[0];
+    Value pidVal = api.getField(procObj, "pid");
+    if (!pidVal.isInt())
+      throw std::runtime_error("process.killObj(): invalid process object");
+
+#ifndef _WIN32
+    pid_t pid = static_cast<pid_t>(pidVal.asInt());
+    if (pid <= 0)
+      return Value::makeBool(false);
+
+    // Send SIGKILL directly to ensure process dies
+    return Value::makeBool(::kill(pid, SIGKILL) == 0);
 #else
     return Value::makeBool(false);
 #endif
+  });
+
+  // ========================================================================
+  // process.spawn — run command, return process object with .pid (data fields only)
+  // ========================================================================
+  api.registerFunction("process.spawn", [api](const std::vector<Value>& args) {
+    if (api.vm().getScheduler())
+      api.vm().getScheduler()->yieldCurrentAndCheckTimers();
+    if (args.empty())
+      throw std::runtime_error("process.spawn() requires a command");
+    std::string cmd = api.resolveString(args[0]);
+#ifndef _WIN32
+    int stdout_pipe[2], stderr_pipe[2];
+    if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0)
+      throw std::runtime_error("process.spawn() pipe failed");
+
+    pid_t pid = fork();
+    if (pid == -1) {
+      close(stdout_pipe[0]); close(stdout_pipe[1]);
+      close(stderr_pipe[0]); close(stderr_pipe[1]);
+      throw std::runtime_error("process.spawn() fork failed");
+    }
+
+    if (pid == 0) {
+      close(stdout_pipe[0]);
+      close(stderr_pipe[0]);
+      dup2(stdout_pipe[1], STDOUT_FILENO);
+      dup2(stderr_pipe[1], STDERR_FILENO);
+      close(stdout_pipe[1]);
+      close(stderr_pipe[1]);
+      execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+      _exit(127);
+    }
+
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
+
+    {
+      std::lock_guard<std::mutex> lock(g_spawnMutex);
+      g_spawnPipes[pid] = {stdout_pipe[0], stderr_pipe[0]};
+    }
+
+    auto obj = api.makeObject();
+    api.setField(obj, "pid", Value::makeInt(pid));
+#else
+    auto obj = api.makeObject();
+    api.setField(obj, "pid", Value::makeInt(-1));
+#endif
+    return obj;
   });
 
   // ========================================================================
@@ -795,6 +919,9 @@ void registerSysModule(const VMApi &api) {
   api.setField(processObj, "nice", api.makeFunctionRef("process.nice"));
   api.setField(processObj, "run", api.makeFunctionRef("process.run"));
   api.setField(processObj, "runDetached", api.makeFunctionRef("process.runDetached"));
+  api.setField(processObj, "spawn", api.makeFunctionRef("process.spawn"));
+  api.setField(processObj, "wait", api.makeFunctionRef("process.wait"));
+  api.setField(processObj, "killObj", api.makeFunctionRef("process.killObj"));
   api.setGlobal("process", processObj);
 }
 

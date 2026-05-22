@@ -549,6 +549,15 @@ void SystemBridge::install(PipelineOptions &options) {
     vm->setHostObjectField(
         processObj, "runDetached",
         Value::makeHostFuncId(vm->getHostFunctionIndex("process.runDetached")));
+    vm->setHostObjectField(
+        processObj, "spawn",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.spawn")));
+    vm->setHostObjectField(
+        processObj, "wait",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.wait")));
+    vm->setHostObjectField(
+        processObj, "killObj",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.killObj")));
     vm->setGlobal("process", Value::makeObjectId(processObj.id));
 
     // Extension object

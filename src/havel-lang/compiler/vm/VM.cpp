@@ -9891,26 +9891,29 @@ Value exports = Value::makeObjectId(exportsObj.id);
     bool saved_exception = has_current_exception_;
     Value saved_exception_val = current_exception_;
 
-// Fresh globals for the module — populate with host globals so
-// the module can call print(), len(), etc.
-std::unordered_set<std::string> inheritedGlobalNames;
-globals.clear();
-// Register host function globals into sandbox (print, len, str, etc.)
-for (const auto& [name, value] : host_function_globals_) {
-    globals[name] = value;
-    inheritedGlobalNames.insert(name);
-}
-// Also carry over namespace objects (fs, sys, math, etc.) from the
-// caller's globals so module code can call fs.read(), sys.cwd(), etc.
-auto &callerGlobals = globals_stack_.back();
-for (const auto& [name, value] : callerGlobals) {
-    if (name.empty() || name[0] == '_') continue;
-    if (globals.count(name)) continue; // don't overwrite host function globals
-    if (value.isObjectId()) {
+    // Fresh globals for the module — populate with host globals so
+    // the module can call print(), len(), str, etc.
+    std::unordered_set<std::string> inheritedGlobalNames;
+    std::unordered_map<std::string, Value> inheritedGlobalValues;
+    globals.clear();
+    // Register host function globals into sandbox (print, len, str, etc.)
+    for (const auto& [name, value] : host_function_globals_) {
         globals[name] = value;
         inheritedGlobalNames.insert(name);
+        inheritedGlobalValues[name] = value;
     }
-}
+    // Also carry over namespace objects (fs, sys, math, etc.) from the
+    // caller's globals so module code can call fs.read(), sys.cwd(), etc.
+    auto &callerGlobals = globals_stack_.back();
+    for (const auto& [name, value] : callerGlobals) {
+        if (name.empty() || name[0] == '_') continue;
+        if (globals.count(name)) continue; // don't overwrite host function globals
+        if (value.isObjectId()) {
+            globals[name] = value;
+            inheritedGlobalNames.insert(name);
+            inheritedGlobalValues[name] = value;
+        }
+    }
     auto g_obj = createHostObject();
     globals_mirror_object_id_ = g_obj.id;
     globals["_G"] = Value::makeObjectId(g_obj.id);
@@ -9992,19 +9995,35 @@ for (const auto& [name, value] : callerGlobals) {
     // restoring the caller's chunk. StringValId and FunctionObjId are
     // indices into the *module's* chunk — they'd resolve against the
     // caller's chunk after restore, producing garbage.
-auto exportsObj = createHostObject();
+    auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
-auto moduleGlobalsSnapshot = globals;
-int exportCount = 0;
-for (const auto& [name, value] : globals) {
-    if (!name.empty() && name[0] != '_' && !inheritedGlobalNames.count(name)) {
+    auto moduleGlobalsSnapshot = globals;
+    int exportCount = 0;
+    for (const auto& [name, value] : globals) {
+        if (name.empty() || name[0] == '_') continue;
+        // Skip inherited globals UNLESS the module redefined them
+        // (i.e., the value is different from what was inherited)
+        if (inheritedGlobalNames.count(name)) {
+            auto it = inheritedGlobalValues.find(name);
+            if (it != inheritedGlobalValues.end()) {
+                const auto& inheritedVal = it->second;
+                // If value is identical to what was inherited, skip it
+                // Use raw comparison: same type + same ID/index
+                bool same = false;
+                if (inheritedVal.isHostFuncId() && value.isHostFuncId() && inheritedVal.asHostFuncId() == value.asHostFuncId()) same = true;
+                else if (inheritedVal.isObjectId() && value.isObjectId() && inheritedVal.asObjectId() == value.asObjectId()) same = true;
+                else if (inheritedVal.isInt() && value.isInt() && inheritedVal.asInt() == value.asInt()) same = true;
+                else if (inheritedVal.isStringId() && value.isStringId() && inheritedVal.asStringId() == value.asStringId()) same = true;
+                else if (inheritedVal.isNull() && value.isNull()) same = true;
+                if (same) continue;
+            }
+        }
         Value materialized = deepMaterializeStrings(value, current_chunk);
         materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
             canonicalKey, name);
         (*obj)[name] = materialized;
         exportCount++;
     }
-}
     Value exports = Value::makeObjectId(exportsObj.id);
 
     // Restore caller's globals and execution state

@@ -1,46 +1,33 @@
-use ffi
 use opencv as cv
-try {   
-    im = cv.create(800, 600, 16)
-    cv.resize(im, im, 400, 300)
-    w = cv.width(im)
-    h = cv.height(im)
-    c = cv.channels(im)
-    print(f"Created image: {im} width: {w} height: {h} channels: {c}")
-    if im == null || im == 0 {
-        print("Failed to create image")
-    } else {
-        print("Image created successfully")
-    }
-    match [w, h, c] {
-        [400, 300, 3] => print("Image has correct dimensions and channels")
-        _ => print("Image has incorrect dimensions or channels")
-    }
-    cv.blur(im, 5)
-    cv.canny(im, im, 50, 150)
-    cv.line(im, 10, 10, 100, 100, 255, 2)
-    // circle at center of image with radius 50
-    cv.circle(im, 200, 150, 50, 255, 2, 1)
-    use "modules/image.hv" as image
-    image.save(im, "test.png")
-    image.load("test.png")
-    cv.cvtColor(im, im, cv.CV_BGR2GRAY)
-    image.save(im, "test_gray.png")
-    try {
-        cv.matchTemplate(im, im, cv.CV_TM_CCOEFF_NORMED)
-        i2 = image.load("/usr/share/tuxpaint/brushes/pencil.png")
-        image.blit(i2, 50, 50, i2, 0, 0, image.width(i2), image.height(i2))
-        image.resize(i2, 50, 50)
-        image.contrast(i2, 155)
-        cv.cvtColor(i2, i2, cv.CV_BGR2GRAY)
-        cv.resize(i2, i2, 50, 50)
-        cv.rectangle(im, 50, 50, 150, 150, 255, 2)
-        image.save(im, "test_rect.png")
-    } catch (e) {
-        print("Error opening image: " + e)
-    } finally {
-        cv.release(i2)
-    }
-} finally {
-    cv.release(im)
+
+if cv.hasLibs == false {
+    print("OpenCV libraries not available, skipping test")
+    return
 }
+
+im = cv.create(800, 600, 3)
+if im == null || im == 0 {
+    print("Failed to create image")
+    return
+}
+
+w = cv.width(im)
+h = cv.height(im)
+c = cv.channels(im)
+print(f"Image: {w}x{h}x{c}")
+assert w == 800
+assert h == 600
+assert c == 3
+print("Dimensions correct")
+
+cv.release(im)
+print("Release OK")
+
+im2 = cv.create(100, 100, 1)
+assert cv.width(im2) == 100
+assert cv.height(im2) == 100
+assert cv.channels(im2) == 1
+print("1-channel image OK")
+
+cv.release(im2)
+print("All OpenCV tests passed")

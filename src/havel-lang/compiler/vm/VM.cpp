@@ -9617,24 +9617,24 @@ size_t base = locals.size();
                 locals[base + i] = Value::makeNull();
             }
         }
- runDispatchLoop(frame_count_ - 1);
- Value result = popStack();
- if (locals.size() > savedLocalsSize) {
- locals.resize(savedLocalsSize);
- }
- if (bc_execute_depth_ == 0) {
- result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
- moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
- }
- globals = std::move(savedGlobals);
- globals_mirror_object_id_ = savedMirrorId;
- globals["_G"] = savedG;
- current_chunk = savedChunk;
- return result;
-                });
-        uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
-        return Value::makeHostFuncId(hostIdx);
-    }
+        runDispatchLoop(frame_count_ - 1);
+        Value result = popStack();
+        if (locals.size() > savedLocalsSize) {
+            locals.resize(savedLocalsSize);
+        }
+        if (bc_execute_depth_ == 0) {
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+                moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
+        }
+        globals = std::move(savedGlobals);
+        globals_mirror_object_id_ = savedMirrorId;
+        globals["_G"] = savedG;
+        current_chunk = savedChunk;
+        return result;
+    });
+    uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+    return Value::makeHostFuncId(hostIdx);
+}
 
   if (value.isClosureId() && chunk) {
     uint32_t closureId = value.asClosureId();
@@ -9723,25 +9723,30 @@ size_t base = locals.size();
     return Value::makeHostFuncId(hostIdx);
   }
 
-  if (value.isObjectId()) {
-    auto* obj = heap_.object(value.asObjectId());
-    if (!obj) return value;
-    for (auto& [k, v] : *obj) {
-      v = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
-                                    fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
+    if (value.isObjectId()) {
+        auto* srcObj = heap_.object(value.asObjectId());
+        if (!srcObj) return value;
+        ObjectRef copyRef = createHostObject();
+        auto* copyObj = heap_.object(copyRef.id);
+        for (const auto& [k, v] : *srcObj) {
+            (*copyObj)[k] = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
+                fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
+        }
+        return Value::makeObjectId(copyRef.id);
     }
-    return value;
-  }
 
-  if (value.isArrayId()) {
-    auto* arr = heap_.array(value.asArrayId());
-    if (!arr) return value;
-    for (size_t i = 0; i < arr->size(); i++) {
-      (*arr)[i] = deepWrapModuleFunctions((*arr)[i], chunk, moduleGlobals, canonicalKey,
-                                            fieldPath + "[" + std::to_string(i) + "]", depth + 1);
+    if (value.isArrayId()) {
+        auto* srcArr = heap_.array(value.asArrayId());
+        if (!srcArr) return value;
+        ArrayRef copyRef = createHostArray();
+        auto* copyArr = heap_.array(copyRef.id);
+        copyArr->reserve(srcArr->size());
+        for (size_t i = 0; i < srcArr->size(); i++) {
+            copyArr->push_back(deepWrapModuleFunctions((*srcArr)[i], chunk, moduleGlobals, canonicalKey,
+                fieldPath + "[" + std::to_string(i) + "]", depth + 1));
+        }
+        return Value::makeArrayId(copyRef.id);
     }
-    return value;
-  }
 
   return value;
 }

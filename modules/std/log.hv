@@ -1,0 +1,48 @@
+// Pure Havel log module
+
+_logState = {
+    entries: [],
+    key: "",
+}
+
+fn _format(level, msg) {
+    entry = "[" + level + "] " + msg
+    if _logState.key != "" {
+        entry = "[" + _logState.key + "] " + entry
+    }
+    _logState.entries.push(entry)
+    print(entry)
+    entry
+}
+
+fn info(msg) {
+    _format("INFO", msg)
+}
+
+fn warn(msg) {
+    _format("WARN", msg)
+}
+
+fn error(msg) {
+    _format("ERROR", msg)
+}
+
+fn debug(msg) {
+    _format("DEBUG", msg)
+}
+
+fn critical(msg) {
+    _format("FATAL", msg)
+}
+
+fn history() {
+    _logState.entries
+}
+
+fn set(key) {
+    _logState.key = key
+}
+
+fn get() {
+    _logState.key
+}

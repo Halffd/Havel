@@ -1,374 +1,168 @@
-// modules/string.hv
-// Pure Havel string module using FFI when needed, pure Havel otherwise
+// string.hv - Pure Havel string stdlib additions
+// Provides string.* namespace functions.
+// Loaded by: use "string"
+//
+// NOTE: C++ StringPrototype.cpp registers these prototype methods:
+//   len, upper, lower, has, includes, split, trim, capital, sub,
+//   startsWith, endsWith, repeat, padStart, padEnd, left, right,
+//   count, indexOf, find, lastIndexOf, findLast, findLastIndex,
+//   replace, match, slice, substr, concat, reversed, map, filter,
+//   each, format
+//
+// C++ prototypes (Step 1) take priority over Havel module methods (Step 1.5).
+// The Havel functions below work as NAMESPACE calls (string.upper(s))
+// but NOT as prototype dispatch (s.upper()) — that goes to C++.
+// The only methods below that work as prototype dispatch are the ones
+// NOT in the C++ list above: isUpper, isLower, isDigit, isLetter,
+// isAlphaNum, isSpace.
+//
+// Note: "repeat" and "match" are Havel reserved keywords —
+// use string.rep() / string.findMatch() as namespace aliases.
 
 // ============================================================
-// Core string operations (pure Havel, no FFI)
+// Namespace wrappers (for string.upper(s) style calls)
 // ============================================================
 
-fn upper(s) {
-    result = ""
-    i = 0
-    len = #s
-    while i < len {
-        ch = s[i:i+1]
-        if ch >= "a" && ch <= "z" {
-            result = result + char(ord(ch) - 32)
-        } else {
-            result = result + ch
-        }
-        i = i + 1
-    }
-    return result
+fn len(s) { s.len() }
+fn upper(s) { s.upper() }
+fn lower(s) { s.lower() }
+fn has(s, sub) { s.has(sub) }
+fn includes(s, sub) { s.includes(sub) }
+fn split(s, delim) { s.split(delim) }
+fn trim(s) { s.trim() }
+fn capital(s) { s.capital() }
+fn startsWith(s, prefix) { s.startsWith(prefix) }
+fn endsWith(s, suffix) { s.endsWith(suffix) }
+fn rep(s, n) { s.repeat(n) }
+fn count(s, sub) { s.count(sub) }
+fn indexOf(s, sub) { s.indexOf(sub) }
+fn find(s, sub, start = nil) {
+  if start != nil { s.find(sub, start) }
+  else { s.find(sub) }
 }
-
-fn lower(s) {
-    result = ""
-    i = 0
-    len = #s
-    while i < len {
-        ch = s[i:i+1]
-        if ch >= "A" && ch <= "Z" {
-            result = result + char(ord(ch) + 32)
-        } else {
-            result = result + ch
-        }
-        i = i + 1
-    }
-    return result
+fn lastIndexOf(s, sub) { s.lastIndexOf(sub) }
+fn findLast(s, sub) { s.findLast(sub) }
+fn findLastIndex(s, sub) { s.findLastIndex(sub) }
+fn replace(s, old, new) { s.replace(old, new) }
+fn findMatch(s, pattern) { s.match(pattern) }
+fn slice(s, start, end = nil) {
+  if end != nil { s.slice(start, end) }
+  else { s.slice(start) }
 }
-
-fn trim(s) {
-    start = 0
-    end = #s - 1
-    while start <= end {
-        ch = s[start:start+1]
-        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-            break
-        }
-        start = start + 1
-    }
-    while end >= start {
-        ch = s[end:end+1]
-        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-            break
-        }
-        end = end - 1
-    }
-    if start > end {
-        return ""
-    }
-    return s[start:end+1]
+fn sub(s, start, end = nil) {
+  if end != nil { s.sub(start, end) }
+  else { s.sub(start) }
 }
-
-fn split(s, delim) {
-    result = []
-    if delim == null {
-        delim = ","
-    }
-    pos = 0
-    dlen = #delim
-    slen = #s
-    while pos <= slen {
-        found = s.find(delim, pos)
-        if found == null || found < 0 {
-            result.push(s[pos:])
-            break
-        }
-        result.push(s[pos:found])
-        pos = found + dlen
-    }
-    return result
-}
-
-fn join(arr, delim) {
-    if delim == null {
-        delim = ""
-    }
-    result = ""
-    i = 0
-    len = #arr
-    while i < len {
-        if i > 0 {
-            result = result + delim
-        }
-        result = result + arr[i]
-        i = i + 1
-    }
-    return result
-}
-
-fn replace(s, old, new) {
-    if old == null || old == "" {
-        return s
-    }
-    result = ""
-    pos = 0
-    slen = #s
-    olen = #old
-    while true {
-        idx = s.find(old, pos)
-        if idx == null || idx < 0 {
-            result = result + s[pos:]
-            break
-        }
-        result = result + s[pos:idx] + new
-        pos = idx + olen
-    }
-    return result
-}
-
-fn startsWith(s, prefix) {
-    if #prefix > #s {
-        return false
-    }
-    return s[0:#prefix] == prefix
-}
-
-fn endsWith(s, suffix) {
-    if #suffix > #s {
-        return false
-    }
-    _start = #s - #suffix
-    return s[_start:] == suffix
-}
-
-fn contains(s, sub) {
-    return s.find(sub) != null && s.find(sub) >= 0
-}
-
-fn count(s, sub) {
-    if sub == null || sub == "" {
-        return 0
-    }
-    cnt = 0
-    pos = 0
-    slen = #s
-    olen = #sub
-    while pos <= slen {
-        idx = s.find(sub, pos)
-        if idx == null || idx < 0 {
-            break
-        }
-        cnt = cnt + 1
-        pos = idx + olen
-    }
-    return cnt
-}
-
-fn replicate(s, n) {
-    if n <= 0 {
-        return ""
-    }
-    result = ""
-    i = 0
-    while i < n {
-        result = result + s
-        i = i + 1
-    }
-    return result
-}
-
-fn padStart(s, width, pad) {
-    if pad == null {
-        pad = " "
-    }
-    if #s >= width {
-        return s
-    }
-    needed = width - #s
-    padLen = #pad
-    prefix = ""
-    i = 0
-    while i < needed {
-        _idx = i % padLen
-        prefix = prefix + pad[_idx:_idx + 1]
-        i = i + 1
-    }
-    return prefix + s
-}
-
-fn padEnd(s, width, pad) {
-    if pad == null {
-        pad = " "
-    }
-    if #s >= width {
-        return s
-    }
-    needed = width - #s
-    padLen = #pad
-    suffix = ""
-    i = 0
-    while i < needed {
-        _idx = i % padLen
-        suffix = suffix + pad[_idx:_idx + 1]
-        i = i + 1
-    }
-    return s + suffix
-}
-
-fn left(s, n) {
-    if n <= 0 {
-        return ""
-    }
-    if n >= #s {
-        return s
-    }
-    return s[0:n]
-}
-
-fn right(s, n) {
-    if n <= 0 {
-        return ""
-    }
-    if n >= #s {
-        return s
-    }
-    _start = #s - n
-    return s[_start:]
-}
-
+fn concat(s, other) { s.concat(other) }
+fn reversed(s) { s.reversed() }
+fn map(s, pred) { s.map(pred) }
+fn filter(s, pred) { s.filter(pred) }
+fn each(s, pred) { s.each(pred) }
+fn format(s, args) { s.format(args) }
+fn padStart(s, width, pad = " ") { s.padStart(width, pad) }
+fn padEnd(s, width, pad = " ") { s.padEnd(width, pad) }
+fn left(s, n) { s.left(n) }
+fn right(s, n) { s.right(n) }
 fn chars(s) {
-    result = []
-    i = 0
-    len = #s
-    while i < len {
-        result.push(s[i:i+1])
-        i = i + 1
-    }
-    return result
+  result = []
+  i = 0
+  ln = #s
+  while i < ln {
+    result.push(s[i:i+1])
+    i = i + 1
+  }
+  result
 }
-
 fn bytes(s) {
-    // Returns array of byte values (0-255)
-    result = []
-    i = 0
-    len = #s
-    while i < len {
-        result.push(ord(s[i:i+1]))
-        i = i + 1
-    }
-    return result
+  result = []
+  i = 0
+  ln = #s
+  while i < ln {
+    result.push(ord(s[i:i+1]))
+    i = i + 1
+  }
+  result
 }
 
 // ============================================================
-// FFI-based operations (if libc available)
+// Prototype-dispatchable methods (NOT in C++ StringPrototype)
+// These work both as s.isUpper() and string.isUpper(s)
 // ============================================================
 
-_libc = null
-_toupper = null
-_tolower = null
-_strlen = null
-
-fn _initLibc() {
-    if _libc != null {
-        return
-    }
-    _libc = ffi.open("libc.so.6")
-    if _libc != null {
-        _toupper = ffi.sym(_libc, "toupper")
-        _tolower = ffi.sym(_libc, "tolower")
-        _strlen = ffi.sym(_libc, "strlen")
-    }
+fn isUpper(s) {
+  if #s == 0 { return false }
+  i = 0
+  ln = #s
+  while i < ln {
+    ch = s[i:i+1]
+    if ch >= "A" && ch <= "Z" { }
+    else { return false }
+    i = i + 1
+  }
+  true
 }
 
-fn upperFast(s) {
-    _initLibc()
-    if _toupper == null {
-        return upper(s)
-    }
-    // Implementation would need to iterate over bytes
-    // For now, fall back to pure Havel
-    return upper(s)
+fn isLower(s) {
+  if #s == 0 { return false }
+  i = 0
+  ln = #s
+  while i < ln {
+    ch = s[i:i+1]
+    if ch >= "a" && ch <= "z" { }
+    else { return false }
+    i = i + 1
+  }
+  true
 }
 
-fn lowerFast(s) {
-    _initLibc()
-    if _tolower == null {
-        return lower(s)
-    }
-    return lower(s)
+fn isDigit(s) {
+  if #s == 0 { return false }
+  i = 0
+  ln = #s
+  while i < ln {
+    ch = s[i:i+1]
+    if ch >= "0" && ch <= "9" { }
+    else { return false }
+    i = i + 1
+  }
+  true
 }
 
-// ord() and char() are provided by the host runtime
-
-// ============================================================
-// Utility functions
-// ============================================================
-
-fn ord(ch) {
-    // Returns Unicode code point of first character
-    // Simplified: only ASCII for now
-    if ch == null || ch == "" {
-        return 0
-    }
-    // This is a limitation — real implementation needs UTF-8 decode
-    return ch[0]  // This won't work, need actual byte value
+fn isLetter(s) {
+  if #s == 0 { return false }
+  i = 0
+  ln = #s
+  while i < ln {
+    ch = s[i:i+1]
+    if (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") { }
+    else { return false }
+    i = i + 1
+  }
+  true
 }
 
-fn char(code) {
-    // Convert code point to string
-    // Simplified: only ASCII
-    if code < 0 || code > 127 {
-        return ""
-    }
-    // Need way to create string from code
-    return str(code)  // This is wrong, need actual char
+fn isAlphaNum(s) {
+  if #s == 0 { return false }
+  i = 0
+  ln = #s
+  while i < ln {
+    ch = s[i:i+1]
+    if (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9") { }
+    else { return false }
+    i = i + 1
+  }
+  true
 }
 
-// ============================================================
-// Utility functions
-// ============================================================
-
-fn isUpper(ch) {
-    if #ch != 1 {
-        return false
-    }
-    return ch >= "A" && ch <= "Z"
+fn isSpace(s) {
+  if #s == 0 { return false }
+  i = 0
+  ln = #s
+  while i < ln {
+    ch = s[i:i+1]
+    if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" { }
+    else { return false }
+    i = i + 1
+  }
+  true
 }
-
-fn isLower(ch) {
-    if #ch != 1 {
-        return false
-    }
-    return ch >= "a" && ch <= "z"
-}
-
-fn isDigit(ch) {
-    if #ch != 1 {
-        return false
-    }
-    return ch >= "0" && ch <= "9"
-}
-
-fn isLetter(ch) {
-    if #ch != 1 {
-        return false
-    }
-    return (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z")
-}
-
-fn isAlphaNum(ch) {
-    return isLetter(ch) || isDigit(ch)
-}
-
-fn isSpace(ch) {
-    if #ch != 1 {
-        return false
-    }
-    return ch == " " || ch == "\t" || ch == "\n" || ch == "\r"
-}
-
-// ============================================================
-// Reverse (by code units, not graphemes)
-// ============================================================
-
-fn reverse(s) {
-    result = ""
-    i = #s - 1
-    while i >= 0 {
-        result = result + s[i:i+1]
-        i = i - 1
-    }
-    return result
-}
-

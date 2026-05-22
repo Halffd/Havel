@@ -1,0 +1,43 @@
+// random.hv - Pure Havel random stdlib additions
+// Wraps C++ RandomModule.cpp host functions as module exports.
+// Loaded by: use "random"
+//
+// The C++ RandomModule registers random.* as host_function_globals_
+// but those are excluded from module exports. These wrappers are NEW
+// globals that DO get exported.
+
+fn num(max = nil) {
+  if max != nil { random.num(max) }
+  else { random.num() }
+}
+
+fn int(lo, hi = nil) {
+  if hi != nil { random.int(lo, hi) }
+  else { random.int(lo) }
+}
+
+fn range(start, stop = nil, step = nil) {
+  if step != nil { random.range(start, stop, step) }
+  else if stop != nil { random.range(start, stop) }
+  else { random.range(start) }
+}
+
+fn seed(s) { random.seed(s) }
+fn getSeed() { random.getSeed() }
+fn normal(mean = 0.0, std = 1.0) { random.normal(mean, std) }
+fn exp(lambda = 1.0) { random.exp(lambda) }
+fn uniform(lo = 0.0, hi = 1.0) { random.uniform(lo, hi) }
+fn gamma(shape = 1.0, scale = 1.0) { random.gamma(shape, scale) }
+fn beta(a = 1.0, b = 1.0) { random.beta(a, b) }
+fn poisson(lambda = 1.0) { random.poisson(lambda) }
+fn choice(arr) { random.choice(arr) }
+fn choices(arr, k) { random.choices(arr, k) }
+fn sample(arr, k) { random.sample(arr, k) }
+fn shuffle(arr) { random.shuffle(arr) }
+fn shuffled(arr) { random.shuffled(arr) }
+fn permutation(n) { random.permutation(n) }
+fn weighted(weights) { random.weighted(weights) }
+fn weightedChoice(arr, weights) { random.weightedChoice(arr, weights) }
+fn bool(prob = 0.5) { random.bool(prob) }
+fn byte() { random.byte() }
+fn bytes(n) { random.bytes(n) }

@@ -3225,6 +3225,7 @@ void VM::registerDefaultPrototypes() {
   prototypes::registerRangePrototype(*this);
 
     registerPrototypeMethodByName("thread", "send", "thread.send");
+    registerPrototypeMethodByName("thread", "join", "thread.join");
     registerPrototypeMethodByName("thread", "pause", "thread.pause");
     registerPrototypeMethodByName("thread", "resume", "thread.resume");
     registerPrototypeMethodByName("thread", "running", "thread.running");
@@ -4803,7 +4804,7 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
     if (it == open_upvalues.end() || !it->second) {
       continue;
     }
-    auto &cell = it->second;
+      auto &cell = it->second;
     if (index < locals.size()) {
       cell->closed_value = locals[index];
     } else {
@@ -6083,30 +6084,15 @@ if (upvalue_index >= closure->upvalues.size() ||
 !closure->upvalues[upvalue_index]) {
 COMPILER_THROW("LOAD_UPVALUE index out of range");
 }
-    const auto &cell = closure->upvalues[upvalue_index];
-    Value value;
-    if (cell->is_open) {
-        uint32_t abs_index = cell->locals_base + cell->open_index;
-        this->ensureLocalIndex(abs_index);
-        value = locals[abs_index];
-        // Diagnostic: detect string loaded from upvalue that should hold a function
-        if (value.isStringValId() && currentFrame().function) {
-            std::string sv = current_chunk ? current_chunk->getString(value.asStringValId()) : "?";
-            COMPILER_THROW("LOAD_UPVALUE[" + std::to_string(upvalue_index) + "] in " + currentFrame().function->name
-                + " ip=" + std::to_string(currentFrame().ip) + ": got string_val_id='" + sv
-                + "' from OPEN cell (locals_base=" + std::to_string(cell->locals_base)
-                + ", open_index=" + std::to_string(cell->open_index)
-                + ", abs=" + std::to_string(abs_index) + ")");
-        }
-    } else {
-        value = cell->closed_value;
-        if (value.isStringValId() && currentFrame().function) {
-            std::string sv = current_chunk ? current_chunk->getString(value.asStringValId()) : "?";
-            COMPILER_THROW("LOAD_UPVALUE[" + std::to_string(upvalue_index) + "] in " + currentFrame().function->name
-                + " ip=" + std::to_string(currentFrame().ip) + ": got string_val_id='" + sv
-                + "' from CLOSED cell)");
-        }
-    }
+        const auto &cell = closure->upvalues[upvalue_index];
+  Value value;
+  if (cell->is_open) {
+    uint32_t abs_index = cell->locals_base + cell->open_index;
+    this->ensureLocalIndex(abs_index);
+    value = locals[abs_index];
+  } else {
+    value = cell->closed_value;
+  }
     pushStack(value);
     break;
 }
@@ -6768,17 +6754,17 @@ case OpCode::CLOSURE: {
     closure.function_index = function_index;
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
-if (descriptor.captures_local) {
-uint32_t abs = this->toAbsoluteLocal(descriptor.index);
-this->ensureLocalIndex(abs);
-auto open_it = open_upvalues.find(abs);
-if (open_it == open_upvalues.end()) {
-auto cell = std::make_shared<GCHeap::UpvalueCell>();
-cell->is_open = true;
-cell->open_index = descriptor.index;
-cell->locals_base = currentFrame().locals_base;
-open_upvalues.emplace(abs, cell);
-closure.upvalues.push_back(std::move(cell));
+        if (descriptor.captures_local) {
+          uint32_t abs = this->toAbsoluteLocal(descriptor.index);
+          this->ensureLocalIndex(abs);
+          auto open_it = open_upvalues.find(abs);
+          if (open_it == open_upvalues.end()) {
+      auto cell = std::make_shared<GCHeap::UpvalueCell>();
+        cell->is_open = true;
+        cell->open_index = descriptor.index;
+        cell->locals_base = currentFrame().locals_base;
+        open_upvalues.emplace(abs, cell);
+            closure.upvalues.push_back(std::move(cell));
 } else {
 closure.upvalues.push_back(open_it->second);
 }
@@ -9570,10 +9556,12 @@ return Value::makeClosureId(closureRef.id);
 }
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                  const std::unordered_map<std::string, Value>& moduleGlobals,
-                                  const std::string& canonicalKey, const std::string& fieldPath,
-                                  int depth) {
-  if (depth > 16) return value;
+  const std::unordered_map<std::string, Value>& moduleGlobals,
+  const std::string& canonicalKey, const std::string& fieldPath, int depth) {
+  if (depth > 64) return value;
+  bool suspendedGc = false;
+  if (depth == 0) { suspendGC(); suspendedGc = true; }
+  auto resumeGcGuard = [&]() { if (suspendedGc) { resumeGC(); suspendedGc = false; } };
   if (value.isFunctionObjId() && chunk) {
         uint32_t funcIdx = value.asFunctionObjId();
         const auto* moduleFunc = chunk->getFunction(funcIdx);
@@ -9648,15 +9636,16 @@ size_t base = locals.size();
         current_chunk = savedChunk;
         return result;
     });
-    uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
-    return Value::makeHostFuncId(hostIdx);
-}
+        uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+        resumeGcGuard();
+        return Value::makeHostFuncId(hostIdx);
+    }
 
-  if (value.isClosureId() && chunk) {
-    uint32_t closureId = value.asClosureId();
-    auto* rc = heap_.closure(closureId);
-    if (!rc || !rc->chunk) return value;
-    if (rc->chunk != chunk.get()) return value;
+    if (value.isClosureId() && chunk) {
+        uint32_t closureId = value.asClosureId();
+        auto* rc = heap_.closure(closureId);
+        if (!rc || !rc->chunk) { resumeGcGuard(); return value; }
+        if (rc->chunk != chunk.get()) { resumeGcGuard(); return value; }
 
     uint32_t funcIdx = rc->function_index;
     auto moduleChunk = chunk;
@@ -9735,14 +9724,15 @@ size_t base = locals.size();
  current_chunk = savedChunk;
  return result;
  });
-    uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
-    return Value::makeHostFuncId(hostIdx);
-  }
+        uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+        resumeGcGuard();
+        return Value::makeHostFuncId(hostIdx);
+    }
 
     if (value.isObjectId()) {
         stack.push(value);
         auto* srcObj = heap_.object(value.asObjectId());
-        if (!srcObj) { stack.pop(); return value; }
+        if (!srcObj) { stack.pop(); resumeGcGuard(); return value; }
         std::vector<std::pair<std::string, Value>> entries;
         entries.reserve(srcObj->size());
         for (const auto& [k, v] : *srcObj) {
@@ -9755,13 +9745,14 @@ size_t base = locals.size();
             (*copyObj)[k] = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
                 fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
         }
+        resumeGcGuard();
         return Value::makeObjectId(copyRef.id);
     }
 
     if (value.isArrayId()) {
         stack.push(value);
         auto* srcArr = heap_.array(value.asArrayId());
-        if (!srcArr) { stack.pop(); return value; }
+        if (!srcArr) { stack.pop(); resumeGcGuard(); return value; }
         std::vector<Value> elements;
         elements.reserve(srcArr->size());
         for (size_t i = 0; i < srcArr->size(); i++) {
@@ -9775,10 +9766,12 @@ size_t base = locals.size();
             copyArr->push_back(deepWrapModuleFunctions(elements[i], chunk, moduleGlobals, canonicalKey,
                 fieldPath + "[" + std::to_string(i) + "]", depth + 1));
         }
+        resumeGcGuard();
         return Value::makeArrayId(copyRef.id);
     }
 
-  return value;
+    resumeGcGuard();
+    return value;
 }
 
 Value VM::loadModule(const std::string& path) {
@@ -10060,6 +10053,20 @@ Value exports = Value::makeObjectId(exportsObj.id);
         exportCount++;
     }
     Value exports = Value::makeObjectId(exportsObj.id);
+
+    // Merge C++ host module globals (e.g., math.ceil, math.sqrt) into exports
+    // when a .hv module shadows a native module. The .hv module's own exports
+    // take priority; host functions are only added for missing keys.
+    {
+        std::string prefix = path + ".";
+        for (const auto& [name, value] : host_function_globals_) {
+            if (name.rfind(prefix, 0) != 0) continue;
+            std::string localName = name.substr(prefix.size());
+            if (!obj->get(localName)) {
+                (*obj)[localName] = value;
+            }
+        }
+    }
 
     // Restore caller's globals and execution state
     globals = std::move(globals_stack_.back());

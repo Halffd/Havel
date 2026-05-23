@@ -540,15 +540,14 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     bool is_impl_method = impl_method_nodes_.count(&function) > 0;
 
   // Compute max local slot from resolver's function_local_counts
+  // For impl methods, resolver already accounts for self at slot 0
   uint32_t max_slot = static_cast<uint32_t>(function.parameters.size());
   if (is_impl_method) {
     max_slot = static_cast<uint32_t>(function.parameters.size()) + 1;
   }
   auto local_count_it = lexical_resolution_.function_local_counts.find(&function);
   if (local_count_it != lexical_resolution_.function_local_counts.end()) {
-    uint32_t resolver_max = is_impl_method
-        ? local_count_it->second + 1
-        : local_count_it->second;
+    uint32_t resolver_max = local_count_it->second;
     if (resolver_max > max_slot) {
       max_slot = resolver_max;
     }
@@ -583,12 +582,8 @@ if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
 current_function->upvalues = upvalues_it->second;
 }
 
-if (is_impl_method) {
-// Impl method: self is at slot 0, user params at slot 1+
-// Offset all local variable accesses by 1 (same as class instance methods)
-local_slot_offset_ = 1;
-
-// Store self (slot 0) into global "this" for @field access
+  if (is_impl_method) {
+    // Store self (slot 0) into global "this" for @field access
 {
 uint32_t this_id = addStringConstant("this");
 emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
@@ -880,12 +875,11 @@ void ByteCompiler::compileClassMethod(
                       : static_cast<uint32_t>(method.parameters.size() + 1);
 
   // Compute max slot from resolver's class_method_local_counts
+  // For instance methods, resolver already includes self at slot 0
   uint32_t max_slot = param_count;
   auto method_local_it = lexical_resolution_.class_method_local_counts.find(&method);
   if (method_local_it != lexical_resolution_.class_method_local_counts.end()) {
-    uint32_t resolver_max = is_class_method
-        ? method_local_it->second
-        : method_local_it->second + 1;
+    uint32_t resolver_max = method_local_it->second;
     if (resolver_max > max_slot) {
       max_slot = resolver_max;
     }
@@ -948,10 +942,8 @@ void ByteCompiler::compileClassMethod(
   }
 
   // Remap declaration slots for local variable access.
-  // For instance methods: resolver assigned slots starting at 0, but at
-  // runtime slot 0 holds self. We offset all local variable accesses by 1.
-  // For class methods: no offset needed (no self).
-  local_slot_offset_ = is_class_method ? 0 : 1;
+  // Resolver now accounts for self at slot 0 for instance methods.
+  local_slot_offset_ = 0;
 
   const std::string prev_class_name = current_class_name_;
   const std::string prev_parent_name = current_parent_class_name_;
@@ -1031,10 +1023,11 @@ void ByteCompiler::compileStructMethod(
       static_cast<uint32_t>(method.parameters.size() + 1);
 
   // Compute max slot from resolver's struct_method_local_counts
+  // Resolver already includes self at slot 0
   uint32_t max_slot = param_count;
   auto impl_local_it = lexical_resolution_.struct_method_local_counts.find(&method);
   if (impl_local_it != lexical_resolution_.struct_method_local_counts.end()) {
-    uint32_t resolver_max = impl_local_it->second + 1;
+    uint32_t resolver_max = impl_local_it->second;
     if (resolver_max > max_slot) {
       max_slot = resolver_max;
     }
@@ -1088,8 +1081,8 @@ void ByteCompiler::compileStructMethod(
     }
   }
 
-  // Offset local variable slots by 1 (slot 0 = self)
-  local_slot_offset_ = 1;
+  // Resolver now accounts for self at slot 0
+  local_slot_offset_ = 0;
 
   const std::string prev_class_name = current_class_name_;
   current_class_name_ = struct_name;

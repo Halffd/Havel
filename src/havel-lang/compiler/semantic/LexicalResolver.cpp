@@ -838,23 +838,17 @@ case ast::NodeType::BlockStatement: {
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
         static_cast<const ast::ClassDeclaration &>(statement);
-    // Create a scope for class fields so they're isolated per-class
-    beginScope();
-    // Declare class fields in this scope
-    for (const auto &field : classDecl.definition.fields) {
-      declareLocal(field.name, nullptr, false);
-    }
-    // Resolve class methods in the class scope so they can access fields
     for (const auto &method : classDecl.definition.methods) {
       if (method) {
         beginFunction(method.get());
-        // Declare method parameters
+        if (!method->isClassMethod) {
+          declareLocal("self", nullptr, false);
+        }
         for (const auto &param : method->parameters) {
           if (param && param->pattern) {
             collectPatternIdentifiers(*param->pattern);
           }
         }
-        // Resolve method body
         if (method->body) {
           for (const auto &stmt : method->body->body) {
             if (stmt) {
@@ -865,38 +859,33 @@ case ast::NodeType::BlockStatement: {
         endFunction();
       }
     }
-    endScope();
     break;
   }
 
-case ast::NodeType::StructDeclaration: {
-  const auto &structDecl =
-      static_cast<const ast::StructDeclaration &>(statement);
-  beginScope();
-  for (const auto &field : structDecl.definition.fields) {
-    declareLocal(field.name, nullptr, false);
-  }
-  for (const auto &method : structDecl.definition.methods) {
-    if (method) {
-      beginFunction(method.get());
-      for (const auto &param : method->parameters) {
-        if (param && param->pattern) {
-          collectPatternIdentifiers(*param->pattern);
-        }
-      }
-      if (method->body) {
-        for (const auto &stmt : method->body->body) {
-          if (stmt) {
-            resolveStatement(*stmt);
+  case ast::NodeType::StructDeclaration: {
+    const auto &structDecl =
+        static_cast<const ast::StructDeclaration &>(statement);
+    for (const auto &method : structDecl.definition.methods) {
+      if (method) {
+        beginFunction(method.get());
+        declareLocal("self", nullptr, false);
+        for (const auto &param : method->parameters) {
+          if (param && param->pattern) {
+            collectPatternIdentifiers(*param->pattern);
           }
         }
+        if (method->body) {
+          for (const auto &stmt : method->body->body) {
+            if (stmt) {
+              resolveStatement(*stmt);
+            }
+          }
+        }
+        endFunction();
       }
-      endFunction();
     }
+    break;
   }
-  endScope();
-  break;
-}
 
   case ast::NodeType::EnumDeclaration: {
     const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);
@@ -904,13 +893,13 @@ case ast::NodeType::StructDeclaration: {
     break;
   }
 
-case ast::NodeType::TraitDeclaration: {
-  const auto &traitDecl =
-      static_cast<const ast::TraitDeclaration &>(statement);
-  for (const auto &method : traitDecl.methods) {
-    if (method && method->defaultBody) {
-      beginFunction(method.get());
-      for (const auto &param : method->parameters) {
+  case ast::NodeType::TraitDeclaration: {
+    const auto &traitDecl =
+        static_cast<const ast::TraitDeclaration &>(statement);
+    for (const auto &method : traitDecl.methods) {
+      if (method && method->defaultBody) {
+        beginFunction(method.get());
+        for (const auto &param : method->parameters) {
         if (param && param->pattern) {
           collectPatternIdentifiers(*param->pattern);
         }
@@ -926,13 +915,13 @@ case ast::NodeType::TraitDeclaration: {
   break;
 }
 
-case ast::NodeType::ProtocolDeclaration: {
-  const auto &protDecl =
-      static_cast<const ast::ProtocolDeclaration &>(statement);
-  for (const auto &method : protDecl.methods) {
-    if (method && method->defaultBody) {
-      beginFunction(method.get());
-      for (const auto &param : method->parameters) {
+  case ast::NodeType::ProtocolDeclaration: {
+    const auto &protDecl =
+        static_cast<const ast::ProtocolDeclaration &>(statement);
+    for (const auto &method : protDecl.methods) {
+      if (method && method->defaultBody) {
+        beginFunction(method.get());
+        for (const auto &param : method->parameters) {
         if (param && param->pattern) {
           collectPatternIdentifiers(*param->pattern);
         }
@@ -948,12 +937,13 @@ case ast::NodeType::ProtocolDeclaration: {
   break;
 }
 
-case ast::NodeType::ImplDeclaration: {
-  const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
-  for (const auto &method : implDecl.funcs) {
-    if (method) {
-      beginFunction(method.get());
-      for (const auto &param : method->parameters) {
+  case ast::NodeType::ImplDeclaration: {
+    const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
+    for (const auto &method : implDecl.funcs) {
+      if (method) {
+        beginFunction(method.get());
+        declareLocal("self", nullptr, false);
+        for (const auto &param : method->parameters) {
         if (param && param->pattern) {
           collectPatternIdentifiers(*param->pattern);
         }
@@ -1782,7 +1772,7 @@ uint32_t LexicalResolver::addUpvalue(size_t function_index,
 
   uint32_t slot = static_cast<uint32_t>(ctx.upvalues.size());
   ctx.upvalues.push_back(UpvalueDescriptor{.index = source_index,
-                                           .captures_local = captures_local});
+                                            .captures_local = captures_local});
   ctx.upvalue_slots[name] = slot;
   return slot;
 }

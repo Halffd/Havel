@@ -172,10 +172,38 @@ private:
   void checkTokenLimit();
   void checkParseLoop(int &counter, const char* context);
 
-  // Helper methods - return const references to avoid copies
-  const Token &at(size_t offset = 0) const;
-  const Token &advance();
-  bool notEOF() const;
+    // Helper methods - return const references to avoid copies
+    const Token &at(size_t offset = 0) const;
+    const Token &advance();
+    bool notEOF() const;
+
+    // Create AST node with source location from current token
+    template <typename T, typename... Args>
+    std::unique_ptr<T> makeNode(Args &&...args) {
+        auto node = std::make_unique<T>(std::forward<Args>(args)...);
+        node->line = at().line;
+        node->column = at().column;
+        node->length = at().length;
+        return node;
+    }
+
+    // Create AST node with source location from a specific token
+    template <typename T, typename... Args>
+    std::unique_ptr<T> makeNodeAt(const Token &tok, Args &&...args) {
+        auto node = std::make_unique<T>(std::forward<Args>(args)...);
+        node->line = tok.line;
+        node->column = tok.column;
+        node->length = tok.length;
+        return node;
+    }
+
+    // Set location on an existing node from a token
+    template <typename T>
+    void setLoc(T &node, const Token &tok) {
+        node->line = tok.line;
+        node->column = tok.column;
+        node->length = tok.length;
+    }
 
   // Parser methods (following Tyler's structure)
   std::unique_ptr<ast::Statement> parseStatement();

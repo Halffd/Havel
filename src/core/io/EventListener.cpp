@@ -452,12 +452,18 @@ void EventListener::EventLoop() {
             hostBridge->checkTimers();
         }
 
-        // Poll again after scheduler work — events may have arrived
+        // Blocking poll for input events — monitors evdev fds for prompt event pickup
         if (backend_) {
-            backend_->PollEvents(0);
+            backend_->PollEvents(10);
         }
 
         if (shutdown.load()) break;
+
+        // Fast path: skip signal select when goroutines are still running
+        if (executionEngine && executionEngine->getScheduler() &&
+            executionEngine->getScheduler()->hasRunnableFibers()) {
+            continue;
+        }
 
     fd_set readfds;
     FD_ZERO(&readfds);

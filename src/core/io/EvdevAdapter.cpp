@@ -653,7 +653,7 @@ void EvdevAdapter::ProcessEvent(Device &dev, const input_event &ev) {
 
 void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
     auto now = std::chrono::steady_clock::now();
-    bool down = (ev.value == 1);
+    bool down = (ev.value == 1 || ev.value == 2);
     bool repeat = (ev.value == 2);
     uint32_t originalCode = ev.code;
     uint32_t mappedCode = RemapKey(originalCode, down);

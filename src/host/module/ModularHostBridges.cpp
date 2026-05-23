@@ -2974,13 +2974,19 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
     bool success = ctx->hotkeyManager->AddHotkey(
         hotkeyStr, [vm, callbackId, hotkeyContext]() {
             ::havel::debug("[ModularHostBridges] HOTKEY CALLBACK invoked for callbackId={}", callbackId);
-            vm->getScheduler()->deferToVM([vm, callbackId, hotkeyContext]() {
+            auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
                 uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
                 ::havel::debug("[ModularHostBridges] spawnCallback returned gid={}", gid);
                 if (gid == 0) {
                     ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
                 }
-            });
+            };
+            auto *sched = vm->getScheduler();
+            if (sched->isVMThread()) {
+                spawnHotkey();
+            } else {
+                sched->deferToVM(std::move(spawnHotkey));
+            }
         });
 
     // Register conditional hotkey (when/if mode conditions)
@@ -2992,12 +2998,18 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                 return !mode.empty() && mode != "default";
             },
         [vm, callbackId, hotkeyContext]() {
-            vm->getScheduler()->deferToVM([vm, callbackId, hotkeyContext]() {
+            auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
                 uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
                 if (gid == 0) {
                     ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
                 }
-            });
+            };
+            auto *sched = vm->getScheduler();
+            if (sched->isVMThread()) {
+                spawnHotkey();
+            } else {
+                sched->deferToVM(std::move(spawnHotkey));
+            }
         });
     }
 
@@ -3042,12 +3054,18 @@ Value InputBridge::handleHotkeyRegisterConditional(
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
     auto makeSpawn = [vm, callbackId, hotkeyContext]() {
-        vm->getScheduler()->deferToVM([vm, callbackId, hotkeyContext]() {
+        auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
             uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
             if (gid == 0) {
                 ::havel::error("[Hotkey] Conditional hotkey: failed to spawn goroutine for callback {}", callbackId);
             }
-        });
+        };
+        auto *sched = vm->getScheduler();
+        if (sched->isVMThread()) {
+            spawnHotkey();
+        } else {
+            sched->deferToVM(std::move(spawnHotkey));
+        }
     };
 
     auto trueAction = makeSpawn;

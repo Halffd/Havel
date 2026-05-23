@@ -3,11 +3,12 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
-#include <functional>
 
 #include "../../core/Value.hpp"
 
@@ -223,6 +224,10 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
    */
   void waitAll();
 
+  bool isVMThread() const {
+    return std::this_thread::get_id() == vm_thread_id_;
+  }
+
   // ===== Diagnostics =====
 
   size_t goroutineCount() const;
@@ -289,6 +294,9 @@ private:
 
   // Current goroutine (the one VM is executing)
   Goroutine* current_ = nullptr;
+
+  // Thread tracking for isVMThread() check
+  std::thread::id vm_thread_id_;
 };
 
 }  // namespace havel::compiler

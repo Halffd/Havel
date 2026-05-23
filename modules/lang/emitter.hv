@@ -1266,8 +1266,10 @@ fn emitImportStatement(emitter, node) {
 // Program compilation (two-pass: functions first, then main)
 // ============================================================
 
-fn compileProgram(emitter, program, skip_execute = false, sourceFile = null) {
-  bc.reset()
+fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, entryName = "__main__", noReset = false) {
+    if !noReset {
+        bc.reset()
+    }
   if sourceFile != null {
     bc.set_source_file(sourceFile)
   }
@@ -1296,7 +1298,7 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null) {
     compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
   }
   // Pass 2: compile __main__
-  bc.func_new("__main__", 0, 64)
+    bc.func_new(entryName, 0, 64)
   emitter.scope = Scope(null)
   // Emit CLOSURE + STORE_GLOBAL for each top-level function
   for i in 0..(#funcDecls - 1) {
@@ -1333,7 +1335,7 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null) {
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
   if !skip_execute {
-    bc.execute_persistent("__main__")
+        bc.execute_persistent(entryName)
   }
 
 }

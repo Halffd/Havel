@@ -71,8 +71,8 @@ public:
 private:
   // Thread-local storage for current context
   
-  thread_local static ContextData current_context_;
-  thread_local static bool context_available_;
+  static thread_local ContextData current_context_;
+  static thread_local bool context_available_;
 };
 
 /**

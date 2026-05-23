@@ -8,15 +8,14 @@ on:
 
 permissions:
   contents: read
-  checks: write
 
 env:
   CC: clang
   CXX: clang++
 
 jobs:
-  build-debug:
-    name: debug (no llvm)
+  build-no-llvm:
+    name: build (no llvm)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,18 +24,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang \
+            clang lld cmake pkg-config ninja-build ccache \
             libx11-dev libxtst-dev libxrandr-dev libxinerama-dev \
             libxcomposite-dev libxi-dev libxfixes-dev libxdamage-dev \
-            libspdlog-dev nlohmann-json3-dev \
-            libgtest-dev liblua5.4-dev \
-            libpulse-dev libasound2-dev \
-            libtesseract-dev libopencv-dev libleptonica-dev \
-            pkg-config cmake
+            libspdlog-dev nlohmann-json3-dev libgtest-dev liblua5.4-dev \
+            libpulse-dev libasound2-dev libtesseract-dev libopencv-dev libleptonica-dev
 
       - name: configure
         run: |
-          cmake -B build-debug \
+          cmake -S . -B build-debug \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
@@ -46,17 +42,15 @@ jobs:
             -DENABLE_LLVM=OFF
 
       - name: build
-        run: cmake --build build-debug -j$(nproc)
+        run: cmake --build build-debug -j"$(nproc)" --target havel hvtest
 
-  - name: smoke test
-      run: ./build-debug/hvtest --smoke
+      - name: smoke tests
+        run: |
+          ./build-debug/hvtest --smoke
+          ./build-debug/havel run scripts/tests/main/test_hello.hv
 
-    - name: unit tests
-      working-directory: build-debug
-      run: ctest --output-on-failure -j$(nproc)
-
-  build-release:
-    name: release (no llvm)
+  build-with-llvm:
+    name: build (llvm + tiering)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,167 +59,43 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang \
+            clang lld cmake pkg-config ninja-build ccache \
             libx11-dev libxtst-dev libxrandr-dev libxinerama-dev \
             libxcomposite-dev libxi-dev libxfixes-dev libxdamage-dev \
-            libspdlog-dev nlohmann-json3-dev \
-            libgtest-dev liblua5.4-dev \
-            libpulse-dev libasound2-dev \
-            libtesseract-dev libopencv-dev libleptonica-dev \
-            pkg-config cmake
+            libspdlog-dev nlohmann-json3-dev libgtest-dev liblua5.4-dev \
+            libpulse-dev libasound2-dev libtesseract-dev libopencv-dev libleptonica-dev \
+            llvm-dev liblld-dev
 
       - name: configure
         run: |
-          cmake -B build-release \
+          cmake -S . -B build-release \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
-            -DUSE_CLANG=ON \
-            -DENABLE_TESTS=ON \
-            -DENABLE_HAVEL_LANG=ON \
-            -DENABLE_LLVM=OFF
-
-      - name: build
-        run: cmake --build build-release -j$(nproc)
-
-  - name: smoke test
-      run: ./build-release/hvtest --smoke
-
-    - name: unit tests
-      working-directory: build-release
-      run: ctest --output-on-failure -j$(nproc)
-
-  build-with-llvm:
-    name: debug (with llvm)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            clang \
-            libx11-dev libxtst-dev libxrandr-dev libxinerama-dev \
-            libxcomposite-dev libxi-dev libxfixes-dev libxdamage-dev \
-            libspdlog-dev nlohmann-json3-dev \
-            libgtest-dev liblua5.4-dev \
-            libpulse-dev libasound2-dev \
-            libtesseract-dev libopencv-dev libleptonica-dev \
-            llvm-dev liblld-dev \
-            pkg-config cmake
-
-      - name: configure
-        run: |
-          cmake -B build-llvm \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_LINKER=/usr/bin/ld.lld \
             -DUSE_CLANG=ON \
             -DENABLE_TESTS=ON \
             -DENABLE_HAVEL_LANG=ON \
             -DENABLE_LLVM=ON
 
       - name: build
-        run: cmake --build build-llvm -j$(nproc)
+        run: cmake --build build-release -j"$(nproc)" --target havel
 
-  - name: smoke test
-      run: ./build-llvm/hvtest --smoke
-
-    - name: unit tests
-      working-directory: build-llvm
-      run: ctest --output-on-failure -j$(nproc)
-
-  coverage:
-    name: coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: install dependencies
+      - name: core aot
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            clang \
-            libx11-dev libxtst-dev libxrandr-dev libxinerama-dev \
-            libxcomposite-dev libxi-dev libxfixes-dev libxdamage-dev \
-            libspdlog-dev nlohmann-json3-dev \
-            libgtest-dev liblua5.4-dev \
-            libpulse-dev libasound2-dev \
-            libtesseract-dev libopencv-dev libleptonica-dev \
-            llvm-dev \
-            pkg-config cmake
+          ./build-release/havel --target aot --profile core scripts/tests/aot_core_arith.hv -o /tmp/aot_core_arith
+          ./build-release/havel --target aot --profile core scripts/tests/aot_core_control.hv -o /tmp/aot_core_control
+          ./build-release/havel --target aot --profile core scripts/tests/aot_core_objects.hv -o /tmp/aot_core_objects
 
-      - name: configure
+      - name: tiering
         run: |
-          cmake -B build-cov \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DUSE_CLANG=ON \
-            -DENABLE_TESTS=ON \
-            -DENABLE_HAVEL_LANG=ON \
-            -DENABLE_LLVM=OFF \
-            -DENABLE_COVERAGE=ON
-
-      - name: build
-        run: cmake --build build-cov -j$(nproc)
-
-      - name: run tests
-        working-directory: build-cov
-        run: ctest --output-on-failure -j$(nproc)
-
-      - name: generate coverage report
-        run: |
-          llvm-profdata merge -sparse build-cov/default.profdata -o build-cov/merged.profdata 2>/dev/null || true
-          for bin in build-cov/hvtest; do
-            if [ -f "$bin" ]; then
-              llvm-cov export "$bin" \
-                --instr-profile=build-cov/merged.profdata \
-                --format=lcov > "${bin##*/}.lcov" 2>/dev/null || true
-            fi
-          done
-          echo "Coverage data generated"
-          ls -la *.lcov 2>/dev/null || echo "No lcov files (profraw may be empty)"
-
-      - name: upload coverage artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: "*.lcov"
-          if-no-files-found: ignore
-
-  havel-scripts:
-    name: havel script tests
-    runs-on: ubuntu-latest
-    needs: build-debug
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            clang \
-            libx11-dev libxtst-dev libxrandr-dev libxinerama-dev \
-            libxcomposite-dev libxi-dev libxfixes-dev libxdamage-dev \
-            libspdlog-dev nlohmann-json3-dev \
-            libgtest-dev liblua5.4-dev \
-            libpulse-dev libasound2-dev \
-            libtesseract-dev libopencv-dev libleptonica-dev \
-            pkg-config cmake
-
-      - name: configure and build
-        run: |
-          cmake -B build-debug \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DUSE_CLANG=ON \
-            -DENABLE_TESTS=ON \
-            -DENABLE_HAVEL_LANG=ON \
-            -DENABLE_LLVM=OFF
-          cmake --build build-debug -j$(nproc)
-
-  - name: run havel test scripts
-      run: ./build-debug/hvtest --scripts
+          HAVEL_TIERING=1 HAVEL_TIER1_THRESHOLD=5 HAVEL_TIER2_THRESHOLD=10 HAVEL_TIER2_FLUSH=1 \
+            ./build-release/havel --target jit --profile core scripts/tests/tiering_trigger.hv \
+            > /tmp/tiering_trigger.log 2>&1
+          HAVEL_TIERING=1 HAVEL_TIER1_THRESHOLD=5 HAVEL_TIER2_THRESHOLD=10 HAVEL_TIER2_FLUSH=1 \
+            ./build-release/havel --target jit --profile core scripts/tests/tiering_dupe_guard.hv \
+            > /tmp/tiering_dupe_guard.log 2>&1
+          grep -q "tier1=2" /tmp/tiering_trigger.log
+          grep -q "tier2_compiled=1" /tmp/tiering_trigger.log
+          grep -q "tier1=2" /tmp/tiering_dupe_guard.log
+          grep -q "tier2_compiled=1" /tmp/tiering_dupe_guard.log

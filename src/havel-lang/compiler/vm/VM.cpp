@@ -1734,33 +1734,36 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep(): duration cannot be negative");
         }
 
-        // Sleep in small increments and yield to scheduler between chunks
-        const int SLEEP_CHUNK_MS = 10;  // Check timers every 10ms
-        auto end_time = std::chrono::steady_clock::now() +
-                       std::chrono::milliseconds(*duration_ms);
+        if (scheduler_) {
+          // Use the VM's goroutine suspension mechanism instead of blocking.
+          // This lets the scheduler put the goroutine to sleep and resume it
+          // after the duration, allowing the event loop to process input
+          // events (including exit requests from other hotkeys) while we wait.
+          suspension_requested_ = true;
+          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+          suspension_context_ = reinterpret_cast<void*>(
+              static_cast<intptr_t>(*duration_ms));
+          return Value::makeNull();
+        }
 
-        while (std::chrono::steady_clock::now() < end_time) {
-          auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-              end_time - std::chrono::steady_clock::now());
-          auto chunk = std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
-
-          if (chunk > 0) {
-            execution_mutex_.lock();
-            std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-            execution_mutex_.unlock();
-          }
-
-          // Yield to scheduler to allow other hotkeys to run
-          if (scheduler_) {
-            scheduler_->yieldCurrentAndCheckTimers();
-          }
-
-          // Check timers during sleep
-          if (timer_check_func_) {
-            timer_check_func_();
+        // No scheduler — fall back to blocking sleep with yields
+        {
+          const int SLEEP_CHUNK_MS = 10;
+          auto end_time = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(*duration_ms);
+          while (std::chrono::steady_clock::now() < end_time) {
+            if (exit_requested_.load()) return Value::makeNull();
+            auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                end_time - std::chrono::steady_clock::now());
+            auto chunk = std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
+            if (chunk > 0) {
+              execution_mutex_.lock();
+              std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+              execution_mutex_.unlock();
+            }
+            if (timer_check_func_) timer_check_func_();
           }
         }
-        
         return Value::makeNull();
       });
 
@@ -3545,36 +3548,9 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
         return VMExecutionResult::Returned(nullptr);
     }
 
-    if (suspension_requested_) {
-      suspension_requested_ = false;
-      
-      // Suspend the current fiber with the stored reason and context
-      // The context pointer contains thread_id or other relevant data
-      void* context = suspension_context_;
-      SuspensionReason reason = static_cast<SuspensionReason>(suspension_reason_);
-      suspension_context_ = nullptr;
-      
-      if (current_fiber) {
-        current_fiber->suspend(reason, context);
-        
-        
-        if (reason == SuspensionReason::THREAD_JOIN) {
-          uint32_t thread_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context));
-          registerThreadWait(thread_id, current_fiber);
-          
-          
-          // Enqueue callback to check thread completion periodically
-          // The callback should:
-          // 1. Check if the thread with thread_id has completed
-          // 2. If completed, unpark the fiber and unregisterThreadWait
-          // 3. Reschedule the callback if thread not done yet
-        }
-      }
-      
-      return VMExecutionResult::Suspended();
-    }
-
     // Increment IP if the instruction didn't modify it (no CALL/RETURN)
+    // MUST happen before suspension check so that on resume the IP already
+    // points past the instruction that requested suspension.
     if (frame_count_ > 0) {
       active_frame_idx = frame_count_ - 1;
       if (frame_count_ == entry_frame_count &&
@@ -3583,8 +3559,25 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       }
     }
 
-    
     if (suspension_requested_) {
+      suspension_requested_ = false;
+
+      // Suspend the current fiber with the stored reason and context
+      // The context pointer contains thread_id or other relevant data
+      void* context = suspension_context_;
+      SuspensionReason reason = static_cast<SuspensionReason>(suspension_reason_);
+      suspension_context_ = nullptr;
+
+      if (current_fiber) {
+        current_fiber->suspend(reason, context);
+
+
+        if (reason == SuspensionReason::THREAD_JOIN) {
+          uint32_t thread_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context));
+          registerThreadWait(thread_id, current_fiber);
+        }
+      }
+
       return VMExecutionResult::Suspended();
     }
 
@@ -9107,20 +9100,31 @@ globals[name] = value;
  }
  }
 
- // Main fiber: blocking sleep with timer processing
- {
- auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
- while (std::chrono::steady_clock::now() < deadline) {
- if (timer_check_func_) timer_check_func_();
- auto remaining = deadline - std::chrono::steady_clock::now();
- auto sleep_ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
- if (sleep_ms.count() > 0) {
- std::this_thread::sleep_for(std::chrono::milliseconds(std::min(static_cast<int64_t>(1), sleep_ms.count())));
- }
- }
- }
- pushStack(Value::makeNull());
- break;
+  // Main fiber: suspend goroutine via scheduler if available,
+  // otherwise fall back to blocking sleep
+  if (scheduler_) {
+    suspension_requested_ = true;
+    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+    suspension_context_ = reinterpret_cast<void*>(
+        static_cast<intptr_t>(ms));
+    pushStack(Value::makeNull());
+    break;
+  }
+
+  // No scheduler — blocking sleep with timer processing
+  {
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+  if (timer_check_func_) timer_check_func_();
+  auto remaining = deadline - std::chrono::steady_clock::now();
+  auto sleep_ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+  if (sleep_ms.count() > 0) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(std::min(static_cast<int64_t>(1), sleep_ms.count())));
+  }
+  }
+  }
+  pushStack(Value::makeNull());
+  break;
  }
 
   // ============================================================================

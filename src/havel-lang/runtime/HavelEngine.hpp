@@ -3,6 +3,9 @@
 #include "../compiler/vm/VM.hpp"
 #include "../compiler/runtime/HostBridge.hpp"
 #include "../compiler/core/Pipeline.hpp"
+#ifdef HAVEL_ENABLE_LLVM
+#include "../compiler/BytecodeOrcJIT.h"
+#endif
 #include "StdLibModules.hpp"
 #include "HostAPI.hpp"
 #include "../../modules/HostModules.hpp"
@@ -54,9 +57,24 @@ public:
         vm_ = std::make_shared<compiler::VM>(*hostContext_);
         hostContext_->vm = vm_.get();
 
-        
-        // Set up scheduler for goroutine/thread support
-        vm_->setScheduler(&compiler::Scheduler::instance());
+// Set up scheduler for goroutine/thread support
+vm_->setScheduler(&compiler::Scheduler::instance());
+
+#ifdef HAVEL_ENABLE_LLVM
+if (Configs::Get().Get<bool>("Compiler.JIT", true)) {
+jitCompiler_ = std::make_unique<compiler::BytecodeOrcJIT>();
+jitCompiler_->setDebugMode(Configs::Get().Get<bool>("Compiler.DebugJIT", false));
+jitCompiler_->setDumpAsmToFile(Configs::Get().Get<bool>("Compiler.OutputAsm", false));
+jitCompiler_->setDumpIR(Configs::Get().Get<bool>("Compiler.DumpIR", false));
+jitCompiler_->setShowWarnings(Configs::Get().Get<bool>("Compiler.JITWarnings", true));
+vm_->setHotFunctionCallback([jit_ptr = jitCompiler_.get()](const compiler::BytecodeFunction& func) {
+if (!jit_ptr->isCompiled(func.name)) {
+jit_ptr->compileFunction(func);
+}
+});
+vm_->setJITCompiler(jitCompiler_.get());
+}
+#endif
 
         hostBridge_ = compiler::createHostBridge(*hostContext_);
 
@@ -97,7 +115,7 @@ public:
 
         vm_->suspendGC();
         if (leanStartup) {
-            registerPureStdLib(*vm_);
+            registerCoreStdLib(*vm_);
         } else {
             registerStdLibWithVM(*hostBridge_);
         }
@@ -149,6 +167,12 @@ public:
         if (hostBridge_) {
             hostBridge_->shutdown();
         }
+        if (vm_) {
+            vm_->setJITCompiler(nullptr);
+        }
+#ifdef HAVEL_ENABLE_LLVM
+        jitCompiler_.reset();
+#endif
         vm_.reset();
         hostBridge_.reset();
         hostContext_.reset();
@@ -158,6 +182,9 @@ public:
 private:
 	EngineConfig config_;
 	std::shared_ptr<compiler::VM> vm_;
+#ifdef HAVEL_ENABLE_LLVM
+    std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
+#endif
 	std::unique_ptr<HostContext> hostContext_;
 	std::shared_ptr<compiler::HostBridge> hostBridge_;
 	std::unique_ptr<compiler::WatcherRegistry> watcher_registry_;

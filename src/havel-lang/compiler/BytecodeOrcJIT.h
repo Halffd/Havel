@@ -80,10 +80,8 @@ public:
     void setShowWarnings(bool enabled) { show_warnings_ = enabled; }
     void setLinkedLibraries(const std::vector<std::string>& libs) { linked_libraries_ = libs; }
     void addLinkedLibrary(const std::string& lib) { linked_libraries_.push_back(lib); }
-    void setFullAOT(bool enabled) { full_aot_ = enabled; }
     TargetOS targetOS() const { return target_os_; }
     bool showWarnings() const { return show_warnings_; }
-    bool fullAOT() const { return full_aot_; }
     const std::vector<std::string>& linkedLibraries() const { return linked_libraries_; }
     // Global JIT diagnostics state for script/runtime introspection.
     static void setLastError(std::string err);
@@ -96,6 +94,10 @@ public:
 
     // AOT: Translate function to LLVM IR (public for AOT compilation)
     void translate(const BytecodeFunction &func, llvm::Module &module);
+
+    // Check if a function contains opcodes the JIT/AOT path cannot handle
+    // (coroutine ops, fiber ops, etc.). These must stay in the interpreter.
+    static bool hasUnsupportedOpcodes(const BytecodeFunction &func);
 
 private:
     struct CachedFunction {
@@ -114,7 +116,6 @@ private:
     TargetOS target_os_ = TargetOS::Native;
     bool show_warnings_ = true;
     std::vector<std::string> linked_libraries_;
-    bool full_aot_ = false;
     std::string last_asm_;
     static std::mutex last_error_mutex_;
     static std::string last_error_;

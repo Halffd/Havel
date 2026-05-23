@@ -210,9 +210,13 @@ void havel_gc_unregister_roots(JITStackFrame* frame) {
 
 void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
     // Track deopt count per function to detect bad type assumptions
-    static thread_local std::unordered_map<std::string, uint32_t> deopt_counts;
-    auto& count = deopt_counts[func];
-    count++;
+    static std::mutex deopt_counts_mutex;
+    static std::unordered_map<std::string, uint32_t> deopt_counts;
+    uint32_t count = 0;
+    {
+        std::lock_guard<std::mutex> lock(deopt_counts_mutex);
+        count = ++deopt_counts[func];
+    }
     if (count == 1) {
         ::havel::warn("[JIT] First deopt in '{}' for types: l=0x{:x} r=0x{:x} — consider recompilation", func, l, r);
     } else if (count == 100) {
@@ -897,6 +901,59 @@ uint64_t havel_vm_string_concat(void* vm_ptr, uint64_t l_bits, uint64_t r_bits) 
   std::string result = lStr + rStr;
   auto ref = vm->createRuntimeString(std::move(result));
   return Value::makeStringId(ref.id).rawBits();
+}
+
+// Bitwise operations (only valid for int48 values)
+uint64_t havel_vm_bit_and(uint64_t a_bits, uint64_t b_bits) {
+  Value a, b;
+  std::memcpy(&a, &a_bits, sizeof(uint64_t));
+  std::memcpy(&b, &b_bits, sizeof(uint64_t));
+  if (a.isInt() && b.isInt()) return Value(a.asInt() & b.asInt()).rawBits();
+  return Value::makeNull().rawBits();
+}
+uint64_t havel_vm_bit_or(uint64_t a_bits, uint64_t b_bits) {
+  Value a, b;
+  std::memcpy(&a, &a_bits, sizeof(uint64_t));
+  std::memcpy(&b, &b_bits, sizeof(uint64_t));
+  if (a.isInt() && b.isInt()) return Value(a.asInt() | b.asInt()).rawBits();
+  return Value::makeNull().rawBits();
+}
+uint64_t havel_vm_bit_xor(uint64_t a_bits, uint64_t b_bits) {
+  Value a, b;
+  std::memcpy(&a, &a_bits, sizeof(uint64_t));
+  std::memcpy(&b, &b_bits, sizeof(uint64_t));
+  if (a.isInt() && b.isInt()) return Value(a.asInt() ^ b.asInt()).rawBits();
+  return Value::makeNull().rawBits();
+}
+uint64_t havel_vm_bit_not(uint64_t val_bits) {
+  Value v;
+  std::memcpy(&v, &val_bits, sizeof(uint64_t));
+  if (v.isInt()) return Value(~v.asInt()).rawBits();
+  return Value::makeNull().rawBits();
+}
+uint64_t havel_vm_bit_lsh(uint64_t a_bits, uint64_t b_bits) {
+  Value a, b;
+  std::memcpy(&a, &a_bits, sizeof(uint64_t));
+  std::memcpy(&b, &b_bits, sizeof(uint64_t));
+  if (a.isInt() && b.isInt()) return Value(a.asInt() << b.asInt()).rawBits();
+  return Value::makeNull().rawBits();
+}
+uint64_t havel_vm_bit_rsh(uint64_t a_bits, uint64_t b_bits) {
+  Value a, b;
+  std::memcpy(&a, &a_bits, sizeof(uint64_t));
+  std::memcpy(&b, &b_bits, sizeof(uint64_t));
+  if (a.isInt() && b.isInt()) return Value(a.asInt() >> b.asInt()).rawBits();
+  return Value::makeNull().rawBits();
+}
+
+// Fiber sleep in JIT/AOT context: can't suspend coroutine, so block the thread
+uint64_t havel_vm_fiber_sleep(void* vm_ptr, uint64_t ms_bits) {
+  if (!vm_ptr) return ms_bits;
+  Value v;
+  std::memcpy(&v, &ms_bits, sizeof(uint64_t));
+  int ms = v.isInt() ? static_cast<int>(v.asInt()) : 0;
+  if (ms > 0) std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  return ms_bits;
 }
 
 // Host function call
@@ -1916,6 +1973,13 @@ addSym("havel_vm_yield", reinterpret_cast<void*>(&havel_vm_yield));
 addSym("havel_vm_await", reinterpret_cast<void*>(&havel_vm_await));
 addSym("havel_vm_string_len", reinterpret_cast<void*>(&havel_vm_string_len));
 addSym("havel_vm_string_concat", reinterpret_cast<void*>(&havel_vm_string_concat));
+        addSym("havel_vm_bit_and", reinterpret_cast<void*>(&havel_vm_bit_and));
+        addSym("havel_vm_bit_or", reinterpret_cast<void*>(&havel_vm_bit_or));
+        addSym("havel_vm_bit_xor", reinterpret_cast<void*>(&havel_vm_bit_xor));
+        addSym("havel_vm_bit_not", reinterpret_cast<void*>(&havel_vm_bit_not));
+        addSym("havel_vm_bit_lsh", reinterpret_cast<void*>(&havel_vm_bit_lsh));
+        addSym("havel_vm_bit_rsh", reinterpret_cast<void*>(&havel_vm_bit_rsh));
+        addSym("havel_vm_fiber_sleep", reinterpret_cast<void*>(&havel_vm_fiber_sleep));
         addSym("havel_vm_call_host", reinterpret_cast<void*>(&havel_vm_call_host));
         addSym("havel_vm_call_method", reinterpret_cast<void*>(&havel_vm_call_method));
         addSym("havel_vm_eq", reinterpret_cast<void*>(&havel_vm_eq));
@@ -2059,6 +2123,22 @@ void BytecodeOrcJIT::initTargetMachine() {
         target_triple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Default));
 }
 
+bool BytecodeOrcJIT::hasUnsupportedOpcodes(const BytecodeFunction &func) {
+    for (const auto& instr : func.instructions) {
+        switch (instr.opcode) {
+            case OpCode::YIELD:
+            case OpCode::YIELD_RESUME:
+            case OpCode::GO_ASYNC:
+            case OpCode::FIBER_SLEEP:
+            case OpCode::FIBER_AWAIT:
+                return true;
+            default:
+                break;
+        }
+    }
+    return false;
+}
+
 void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     if (!lljit_) {
         setLastError("compile:" + func.name + ": JIT is not initialized");
@@ -2071,15 +2151,8 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
 
     // Coroutines are currently interpreter-only: JIT frame suspension/resume
     // semantics are not preserved for YIELD/GO_ASYNC paths yet.
-    for (const auto& instr : func.instructions) {
-        switch (instr.opcode) {
-            case OpCode::YIELD:
-            case OpCode::YIELD_RESUME:
-            case OpCode::GO_ASYNC:
-                return;
-            default:
-                break;
-        }
+    if (hasUnsupportedOpcodes(func)) {
+        return;
     }
 
     const uint64_t func_hash = computeFunctionHash(func);
@@ -4083,7 +4156,6 @@ case OpCode::LENGTH: {
                 llvm::Function::ExternalLinkage, "havel_vm_global_set", &module);
         }
         B.CreateCall(fnSet, {vmArg, llvm::ConstantInt::get(i32, nameId), v});
-        vstack.push_back(v); // Store returns the value
         break;
     }
     case OpCode::LOAD_UPVALUE: {
@@ -4107,7 +4179,6 @@ case OpCode::LENGTH: {
                 llvm::Function::ExternalLinkage, "havel_vm_upvalue_set", &module);
         }
         B.CreateCall(fnUp, {vmArg, llvm::ConstantInt::get(i32, slot), v});
-        vstack.push_back(v);
         break;
     }
 
@@ -4475,6 +4546,87 @@ case OpCode::LENGTH: {
                 llvm::Function::ExternalLinkage, "havel_vm_string_concat", &module);
         }
         vstack.push_back(B.CreateCall(fnCat, {vmArg, l, r}));
+        break;
+    }
+
+    // Bitwise operations
+    case OpCode::BIT_AND: {
+        llvm::Function* fn = module.getFunction("havel_vm_bit_and");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_bit_and", &module);
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {l, r}));
+        break;
+    }
+    case OpCode::BIT_OR: {
+        llvm::Function* fn = module.getFunction("havel_vm_bit_or");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_bit_or", &module);
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {l, r}));
+        break;
+    }
+    case OpCode::BIT_XOR: {
+        llvm::Function* fn = module.getFunction("havel_vm_bit_xor");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_bit_xor", &module);
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {l, r}));
+        break;
+    }
+    case OpCode::BIT_NOT: {
+        llvm::Function* fn = module.getFunction("havel_vm_bit_not");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_bit_not", &module);
+        llvm::Value* v = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {v}));
+        break;
+    }
+    case OpCode::BIT_LSH: {
+        llvm::Function* fn = module.getFunction("havel_vm_bit_lsh");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_bit_lsh", &module);
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {l, r}));
+        break;
+    }
+    case OpCode::BIT_RSH: {
+        llvm::Function* fn = module.getFunction("havel_vm_bit_rsh");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_bit_rsh", &module);
+        llvm::Value* r = vstack.back(); vstack.pop_back();
+        llvm::Value* l = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {l, r}));
+        break;
+    }
+
+    // Fiber operations in JIT/AOT context
+    case OpCode::FIBER_SLEEP: {
+        llvm::Function* fn = module.getFunction("havel_vm_fiber_sleep");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_fiber_sleep", &module);
+        llvm::Value* ms = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {vmArg, ms}));
+        break;
+    }
+    case OpCode::FIBER_AWAIT: {
+        llvm::Function* fn = module.getFunction("havel_vm_await");
+        if (!fn) fn = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_await", &module);
+        llvm::Value* val = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateCall(fn, {vmArg, val}));
         break;
     }
 

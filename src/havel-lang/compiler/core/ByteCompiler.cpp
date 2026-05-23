@@ -2485,6 +2485,27 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
     break;
   }
 
+  case ast::NodeType::StringLiteral: {
+    const auto &strPat = static_cast<const ast::StringLiteral &>(pattern);
+    if (strPat.isRegex) {
+      // Regex pattern: call string.match(regex) and check result is not null
+      uint32_t methodSid = addStringConstant("match");
+      emit(OpCode::LOAD_VAR, discSlot);
+      compileExpression(pattern);
+      emit(OpCode::CALL_METHOD, std::vector<Value>{
+        Value::makeStringValId(methodSid), Value::makeInt(1)
+      });
+      emit(OpCode::IS_NULL);
+      emit(OpCode::NOT);
+    } else {
+      // Plain string literal: exact match
+      compileExpression(pattern);
+      emit(OpCode::LOAD_VAR, discSlot);
+      emit(OpCode::EQ);
+    }
+    break;
+  }
+
   case ast::NodeType::WildcardPattern: {
     // Wildcard pattern: always matches
     emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));

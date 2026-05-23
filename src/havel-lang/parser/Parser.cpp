@@ -7773,8 +7773,13 @@ case havel::TokenType::Number: {
 
   case havel::TokenType::RegexLiteral: {
     advance();
-    return makeNode<havel::ast::StringLiteral>(
-        tk.value); // Store regex as string for now
+return makeNode<havel::ast::StringLiteral>(
+tk.value); // Store regex as string for now
+}
+
+case havel::TokenType::RegexString: {
+advance();
+return makeNode<havel::ast::StringLiteral>(tk.value, true);
   }
 
   case havel::TokenType::ShellCommand:

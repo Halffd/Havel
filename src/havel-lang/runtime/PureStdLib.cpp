@@ -32,7 +32,8 @@ void registerLogModule(const compiler::VMApi &api);
 
 namespace havel {
 
-void registerPureStdLib(compiler::VM &vm) {
+namespace {
+void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
   compiler::VMApi api(vm);
 
   stdlib::registerMathModule(api);
@@ -40,6 +41,11 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerObjectModule(api);
   stdlib::registerTypeModule(api);
   stdlib::registerArrayModule(api);
+
+  if (coreOnly) {
+    return;
+  }
+
   stdlib::registerRegexModule(api);
   stdlib::registerPhysicsModule(api);
   stdlib::registerTimeModule(api);
@@ -53,9 +59,18 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerFormatModule(api);
   stdlib::registerPackModule(api);
   stdlib::registerBitModule(api);
-    stdlib::registerOptionModule(api);
-    stdlib::registerBytecodeBuilderModule(api);
-  stdlib::registerLogModule(api);
+stdlib::registerOptionModule(api);
+stdlib::registerBytecodeBuilderModule(api);
+stdlib::registerLogModule(api);
+}
+} // namespace
+
+void registerPureStdLib(compiler::VM &vm) {
+registerStdLibSet(vm, false);
+}
+
+void registerCoreStdLib(compiler::VM &vm) {
+registerStdLibSet(vm, true);
 }
 
 } // namespace havel

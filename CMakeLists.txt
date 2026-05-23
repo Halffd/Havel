@@ -265,6 +265,7 @@ if(ENABLE_LLVM AND ENABLE_HAVEL_LANG)
         set(LLVM_LIBS "${LLVM_LINKFLAGS} ${LLVM_SYSTEM_LIBS}")
         string(STRIP "${LLVM_LIBS}" LLVM_LIBS)
         separate_arguments(LLVM_LIBS) # Convert space-separated string to CMake list
+        string(JOIN " " HAVEL_LLVM_LINK_FLAGS ${LLVM_LIBS})
         
         # Add LLVM library search directory to linker search path
         if(LLVM_LIBDIR)
@@ -791,6 +792,13 @@ endif()  # QT_BACKEND_AVAILABLE
 # MAIN EXECUTABLE
 # ==============================================================================
 add_library(havel_core STATIC ${CORE_SOURCES})
+set_source_files_properties(
+    src/core/hotkey/HotkeyActionContext.cpp
+    PROPERTIES COMPILE_FLAGS "-ftls-model=initial-exec"
+)
+target_compile_definitions(havel_core PRIVATE
+    $<$<BOOL:${ENABLE_LLVM}>:HAVEL_DEFAULT_LLVM_LINK_FLAGS=\"${HAVEL_LLVM_LINK_FLAGS}\">
+)
 add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
@@ -1111,16 +1119,26 @@ endif()
 
 # Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).
 if(ENABLE_HAVEL_LANG)
+    set_target_properties(havel_lang PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        INTERPROCEDURAL_OPTIMIZATION OFF
+    )
+
     add_library(havel_aot_core_shim STATIC
         src/havel-lang/runtime/AotCoreShim.cpp
     )
     target_include_directories(havel_aot_core_shim PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/include
     )
     target_link_libraries(havel_aot_core_shim PRIVATE
         havel_lang
     )
+    set_target_properties(havel_aot_core_shim PROPERTIES
+        INTERPROCEDURAL_OPTIMIZATION OFF
+    )
+    target_compile_options(havel_aot_core_shim PRIVATE -fno-lto)
 endif()
 
 # ==============================================================================

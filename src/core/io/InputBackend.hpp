@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <sys/eventfd.h>
 #include <thread>
 #include <unordered_map>
@@ -141,6 +142,9 @@ public:
     // Emergency shutdown
     virtual void SetEmergencyShutdownKey(uint32_t code) { (void)code; }
     virtual uint32_t GetEmergencyShutdownKey() const { return 0; }
+
+    // Query currently-pressed keys from kernel (used at startup to seed state)
+    virtual std::unordered_set<uint32_t> GetPressedKeys() const { return {}; }
 
     // Active input tracking
     virtual const std::unordered_map<uint32_t, ActiveInput>& GetActiveInputs() const {

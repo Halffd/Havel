@@ -880,9 +880,12 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
       info("Bytecode loaded successfully: {}", f);
     }
 
-    // Set main_chunk_ so CLOSURE correctly decides whether to snapshot globals
-    auto chunkPtr = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
-    vm->setMainChunkShared(chunkPtr);
+// Set main_chunk_ so CLOSURE correctly decides whether to snapshot globals
+auto chunkPtr = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
+vm->setMainChunkShared(chunkPtr);
+
+// Set script directory for module resolution (so `use` finds .hvc/.hv modules)
+vm->setCurrentScriptDir(std::filesystem::path(f).parent_path().string());
 
     // Populate app.args with script arguments (after --)
     if (!cfg.scriptArgs.empty()) {

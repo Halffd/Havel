@@ -11,6 +11,7 @@
 #include "../runtime/EventQueue.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "../runtime/HostBridge.hpp"
+#include "../runtime/RuntimeSupport.hpp"
 #include "compiler/core/ByteCompiler.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
@@ -9846,24 +9847,49 @@ Value exports = Value::makeObjectId(exportsObj.id);
         }
     }
 
-    std::string canonicalKey = resolved->canonicalPath;
+  std::string canonicalKey = resolved->canonicalPath;
 
-    // Circular dependency detection
-    if (modules_loading_.count(canonicalKey)) {
-        COMPILER_THROW("Circular dependency detected: " + path);
+  // Circular dependency detection
+  if (modules_loading_.count(canonicalKey)) {
+    COMPILER_THROW("Circular dependency detected: " + path);
+  }
+  modules_loading_.insert(canonicalKey);
+
+  std::string prev_script_dir = current_script_dir_;
+  std::shared_ptr<BytecodeChunk> chunk;
+
+  if (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache) {
+    // Load pre-compiled .hvc bytecode
+    std::ifstream file(resolved->canonicalPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to open bytecode file: " + resolved->canonicalPath);
     }
-    modules_loading_.insert(canonicalKey);
-
-    // Read source file
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buffer(size);
+    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to read bytecode file: " + resolved->canonicalPath);
+    }
+    ValueSerializer serializer;
+    auto deserialized = serializer.deserializeChunk(buffer);
+    if (!deserialized) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to deserialize bytecode: " + resolved->canonicalPath);
+    }
+    chunk = std::make_shared<BytecodeChunk>(std::move(*deserialized));
+    current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+  } else {
+    // Read source file and compile
     std::ifstream file(resolved->canonicalPath);
     if (!file.is_open()) {
-        modules_loading_.erase(canonicalKey);
-        COMPILER_THROW("Failed to open module file: " + resolved->canonicalPath);
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to open module file: " + resolved->canonicalPath);
     }
     std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     // Set script directory for relative imports within the module
-    std::string prev_script_dir = current_script_dir_;
     current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
 
     // Compile the module source using the real parser + ByteCompiler pipeline
@@ -9871,41 +9897,41 @@ Value exports = Value::makeObjectId(exportsObj.id);
     parser::Parser parser{{}};
     std::unique_ptr<ast::Program> program;
     try {
-        program = parser.produceAST(source);
+      program = parser.produceAST(source);
     } catch (const ::havel::LexError &e) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("Module " + path + " lexer error: " + e.what());
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " lexer error: " + e.what());
     } catch (const ::havel::parser::ParseError &e) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("Module " + path + " parse error: " + e.what());
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " parse error: " + e.what());
     }
     if (!program || parser.hasErrors()) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        std::string errors;
-        if (parser.hasErrors()) {
-            for (const auto &err : parser.getErrors()) errors += err.message + "\n";
-        }
-        COMPILER_THROW("Module " + path + " failed to parse: " + errors);
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      std::string errors;
+      if (parser.hasErrors()) {
+        for (const auto &err : parser.getErrors()) errors += err.message + "\n";
+      }
+      COMPILER_THROW("Module " + path + " failed to parse: " + errors);
     }
 
-	ByteCompiler compiler;
+    ByteCompiler compiler;
 
-	std::shared_ptr<BytecodeChunk> chunk;
     try {
-        chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+      chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
     } catch (const std::exception &e) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("Module " + path + " compilation error: " + std::string(e.what()));
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " compilation error: " + std::string(e.what()));
     }
     if (!chunk) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("Module " + path + " compiler returned null chunk");
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " compiler returned null chunk");
     }
+  }
 
     // Execute the module in a sandboxed globals context
     // Save current globals state

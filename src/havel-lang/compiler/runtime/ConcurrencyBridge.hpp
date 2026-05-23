@@ -13,6 +13,7 @@
 #include <queue>
 #include <condition_variable>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace havel::compiler {
 
@@ -105,6 +106,10 @@ private:
   std::unordered_map<uint32_t, std::vector<Value>> thread_mailboxes_;
   std::mutex threads_mutex_;
   uint32_t next_thread_id_ = 1;
+
+  
+  // Synchronous threads (no scheduler, executed immediately via vm_->call)
+  std::unordered_set<uint32_t> sync_threads_;
 
   
   // Tracks which threads have completed (for unparking waiting fibers)

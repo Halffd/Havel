@@ -1,6 +1,8 @@
 #include "ConcurrencyBridge.hpp"
 #include "../../../utils/Logger.hpp"
 #include "../vm/VM.hpp"
+#include "../../runtime/concurrency/Fiber.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 
 #include <chrono>
 
@@ -136,40 +138,25 @@ Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
     return Value::makeNull();
   }
 
+  
+  // If scheduler is available, spawn as a goroutine
+  if (vm_ && vm_->scheduler_) {
+    uint32_t gid = vm_->spawnGoroutine(args[0], {});
+    return Value::makeThreadId(gid);
+  }
+
+  // No scheduler: execute synchronously via vm_->call
+  // This runs the closure inline and returns immediately.
+  // The returned thread will be in "completed" state for threadJoin.
   uint32_t thread_id;
   {
     std::lock_guard<std::mutex> lock(threads_mutex_);
     thread_id = next_thread_id_++;
+    sync_threads_.insert(thread_id);
   }
 
-  
-  std::thread t([this, thread_id]() {
-    // Thread is now running
-    // TODO: Execute the Havel closure in a safe execution context
-    // For now, just sleep briefly
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    
-    // CRITICAL: Push event instead of setting flag
-    // This wakes up the scheduler without polling
-    if (event_queue_) {
-      event_queue_->push(Event(EventType::THREAD_COMPLETE, thread_id));
-    }
-  });
-
-  // Store thread in active map and initialize thread_info
-  {
-    std::lock_guard<std::mutex> lock(threads_mutex_);
-    active_threads_[thread_id] = std::move(t);
-    
-    // Initialize thread_info with RUNNING state
-    thread_info_[thread_id] = ManagedThread{
-        thread_id,
-        ThreadState::RUNNING,
-        &active_threads_[thread_id],
-        std::chrono::steady_clock::now(),
-        std::chrono::steady_clock::time_point()
-    };
-  }
+  Value result = vm_->call(args[0], {});
+  (void)result;
 
   return Value::makeThreadId(thread_id);
 }
@@ -182,20 +169,49 @@ Value ConcurrencyBridge::threadJoin(const std::vector<Value> &args) {
   uint32_t thread_id = args[0].asThreadId();
 
   
-  // If thread already completed, clean up and return
-  // Otherwise, caller's fiber will be suspended via THREAD_JOIN opcode
-  // and unparked when THREAD_COMPLETE event fires
-
-  std::lock_guard<std::mutex> lock(threads_mutex_);
-  
-  auto it = active_threads_.find(thread_id);
-  if (it == active_threads_.end()) {
-    return Value::makeNull();  // Thread not found or already cleaned up
+  // Check if this was a synchronous thread (no scheduler)
+  {
+    std::lock_guard<std::mutex> lock(threads_mutex_);
+    if (sync_threads_.count(thread_id)) {
+      sync_threads_.erase(thread_id);
+      return Value::makeNull();
+    }
   }
 
-  // If thread is joinable and we're here, it means it hasn't finished yet
-  // The caller's fiber will suspend and wait for event-driven wakeup
-  // Just return null for now - ExecutionEngine event handler will do the actual cleanup
+  // Check scheduler for goroutine state
+  if (vm_ && vm_->scheduler_) {
+    auto *sched = vm_->scheduler_;
+    auto *g = sched->get(thread_id);
+    if (!g || g->state == Scheduler::GoroutineState::Done) {
+      return Value::makeNull();
+    }
+
+    
+    // If we're inside a goroutine (ExecutionEngine mode), request fiber suspension
+    // The ExecutionEngine will unpark when goroutine completes
+    if (sched->current() != nullptr) {
+      vm_->requestSuspension(
+          static_cast<uint8_t>(SuspensionReason::THREAD_JOIN),
+          reinterpret_cast<void *>(static_cast<uintptr_t>(thread_id)));
+    } else {
+      // Main script (headless or full mode): execute goroutine synchronously
+      // This drives the goroutine to completion via vm_->call()
+      if (g->state == Scheduler::GoroutineState::Created) {
+        Value callee;
+        if (g->closure_id > 0) {
+          callee = Value::makeClosureId(g->closure_id);
+        } else {
+          callee = Value::makeFunctionObjId(g->function_id);
+        }
+        vm_->call(callee, g->locals);
+        g->state = Scheduler::GoroutineState::Done;
+        if (g->fiber) {
+          g->fiber->state = FiberState::DONE;
+        }
+      }
+    }
+  }
+
   return Value::makeNull();
 }
 

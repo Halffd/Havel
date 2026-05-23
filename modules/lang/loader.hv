@@ -1,0 +1,496 @@
+// modules/lang/loader.hv — self-hosted module loader
+// Resolves, reads, compiles, and caches Havel modules via the self-hosted pipeline
+
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+// ============================================================
+// Path utilities (pure Havel — no C++ path module)
+// ============================================================
+
+fn pathDirname(p) {
+    // "a/b/c.hv" -> "a/b", "/x.hv" -> "/", "x.hv" -> "."
+    if !p.includes("/") {
+        return "."
+    }
+    last = p.lastIndexOf("/")
+    if last == 0 {
+        return "/"
+    }
+    p.slice(0, last)
+}
+
+fn pathBasename(p) {
+    // "a/b/c.hv" -> "c.hv"
+    if !p.includes("/") {
+        return p
+    }
+    last = p.lastIndexOf("/")
+    p.slice(last + 1)
+}
+
+fn pathJoin(a, b) {
+    // "a/b", "c/d" -> "a/b/c/d"
+    if a == "" {
+        return b
+    }
+    if b == "" {
+        return a
+    }
+    if a.endsWith("/") {
+        return a + b
+    }
+    a + "/" + b
+}
+
+fn pathNormalize(p) {
+    // Collapse "//" -> "/", resolve ".." and "." segments
+    // Split, process segments, rebuild
+    parts = p.split("/")
+    out = []
+    isAbs = false
+    if #p > 0 && p[0] == "/" {
+        isAbs = true
+    }
+    for seg in parts {
+        if seg == "" || seg == "." {
+            continue
+        }
+        if seg == ".." {
+            if #out > 0 && out[#out - 1] != ".." {
+                out.pop()
+                continue
+            }
+            if isAbs {
+                continue
+            }
+        }
+        out.push(seg)
+    }
+    result = ""
+    for i in 0..(#out - 1) {
+        if i > 0 {
+            result = result + "/"
+        }
+        result = result + out[i]
+    }
+    if isAbs {
+        result = "/" + result
+    }
+    if result == "" {
+        return "."
+    }
+    result
+}
+
+fn pathCanonical(p) {
+    // Best-effort canonical: normalize + check if file exists
+    // (real canonical needs OS readlink which we don't have)
+    norm = pathNormalize(p)
+    norm
+}
+
+fn pathExt(p) {
+    // "foo.hv" -> ".hv", "bar" -> ""
+    base = pathBasename(p)
+    dot = base.lastIndexOf(".")
+    if dot <= 0 {
+        return ""
+    }
+    base.slice(dot)
+}
+
+fn pathStem(p) {
+    // "foo.hv" -> "foo"
+    base = pathBasename(p)
+    dot = base.lastIndexOf(".")
+    if dot <= 0 {
+        return base
+    }
+    base.slice(0, dot)
+}
+
+fn pathIsAbs(p) {
+    p.startsWith("/")
+}
+
+// ============================================================
+// Loader state
+// ============================================================
+
+// Module record: {path, exports, loading}
+// cache: canonicalPath -> Module record
+// loadingStack: tracks modules currently being loaded (circular detection)
+
+fn LoaderState() {
+    {
+        cache: {},
+        loadingStack: [],
+        searchPaths: [],
+        stdlibPath: "",
+        scriptDir: ""
+    }
+}
+
+// ============================================================
+// Module resolution
+// ============================================================
+
+fn loaderSetStdlibPath(state, p) {
+    state.stdlibPath = p
+}
+
+fn loaderSetScriptDir(state, p) {
+    state.scriptDir = p
+}
+
+fn loaderAddSearchPath(state, p) {
+    state.searchPaths.push(p)
+}
+
+fn loaderResolve(state, modulePath) {
+    // 1. Absolute path
+    if pathIsAbs(modulePath) {
+        if fs.exists(modulePath) {
+            return pathCanonical(modulePath)
+        }
+        return null
+    }
+
+    // 2. Explicit relative: ./ or ../
+    if modulePath.startsWith("./") || modulePath.startsWith("../") {
+        resolved = pathNormalize(pathJoin(state.scriptDir, modulePath))
+        // Try as-is
+        if fs.exists(resolved) {
+            return pathCanonical(resolved)
+        }
+        // Try with .hv extension
+        if fs.exists(resolved + ".hv") {
+            return pathCanonical(resolved + ".hv")
+        }
+        return null
+    }
+
+    // 3. Bare module name — search in order:
+    //    a. scriptDir/name.hv
+    //    b. scriptDir/name/name.hv
+    //    c. stdlibPath/name.hv
+    //    d. each searchPath/name.hv
+    //    e. each searchPath/name/name.hv
+    //    f. each searchPath with "/" in modulePath (e.g. "lang/lexer" -> searchPath/lang/lexer.hv)
+    name = modulePath
+
+    // a. scriptDir/name.hv
+    if state.scriptDir != "" {
+        candidate = pathJoin(state.scriptDir, name + ".hv")
+        if fs.exists(candidate) {
+            return pathCanonical(candidate)
+        }
+    }
+
+    // b. scriptDir/name/name.hv
+    if state.scriptDir != "" {
+        parts = name.split("/")
+        last = parts[#parts - 1]
+        candidate = pathJoin(state.scriptDir, pathJoin(name, last + ".hv"))
+        if fs.exists(candidate) {
+            return pathCanonical(candidate)
+        }
+    }
+
+    // c. stdlibPath/name.hv
+    if state.stdlibPath != "" {
+        candidate = pathJoin(state.stdlibPath, name + ".hv")
+        if fs.exists(candidate) {
+            return pathCanonical(candidate)
+        }
+    }
+
+    // d-f. search paths
+    for sp in state.searchPaths {
+        // name.hv
+        candidate = pathJoin(sp, name + ".hv")
+        if fs.exists(candidate) {
+            return pathCanonical(candidate)
+        }
+
+        // name/name.hv
+        parts = name.split("/")
+        if #parts > 0 {
+            last = parts[#parts - 1]
+            candidate = pathJoin(sp, pathJoin(name, last + ".hv"))
+            if fs.exists(candidate) {
+                return pathCanonical(candidate)
+            }
+        }
+    }
+
+    null
+}
+
+// ============================================================
+// AST helpers — collect export names from top-level declarations
+// ============================================================
+
+fn collectExports(ast) {
+    // Walk top-level body, collect fn/val/var names not prefixed with _
+    names = []
+    body = ast.body
+    if body == null {
+        return names
+    }
+    for stmt in body {
+        if stmt.kind == "FnDeclaration" {
+            nm = stmt.name
+            if !nm.startsWith("_") {
+                names.push(nm)
+            }
+        }
+        if stmt.kind == "LetDeclaration" || stmt.kind == "ValDeclaration" {
+            nm = stmt.name
+            if !nm.startsWith("_") {
+                names.push(nm)
+            }
+        }
+    }
+    names
+}
+
+fn collectUseDeps(ast) {
+    // Walk top-level body, collect file-import paths from UseStatements
+    deps = []
+    body = ast.body
+    if body == null {
+        return deps
+    }
+    for stmt in body {
+        if stmt.kind == "UseStatement" {
+            if stmt.isFileImport == true && stmt.filePath != null {
+                deps.push(stmt.filePath)
+            }
+            if stmt.isFileImport != true && stmt.module != null {
+                // bare use: use math, use string — these are stdlib modules
+                deps.push(stmt.module)
+            }
+        }
+        if stmt.kind == "ImportStatement" {
+            if stmt.module != null {
+                deps.push(stmt.module)
+            }
+        }
+    }
+    deps
+}
+
+// ============================================================
+// Core load function
+// ============================================================
+
+fn loaderLoad(state, modulePath) {
+// 1. Resolve
+canonical = loaderResolve(state, modulePath)
+if canonical == null {
+    print("loader: cannot resolve module '" + modulePath + "'")
+    return null
+}
+
+// 2. Check cache
+if state.cache[canonical] != null {
+    return state.cache[canonical]
+}
+
+// 3. Circular dependency detection
+for i in 0..(#state.loadingStack - 1) {
+    if state.loadingStack[i] == canonical {
+        print("loader: circular import detected: " + canonical)
+        return null
+    }
+}
+state.loadingStack.push(canonical)
+
+// 4. Read source
+source = fs.read(canonical)
+if source == null || #source == 0 {
+    print("loader: cannot read module: " + canonical)
+    state.loadingStack.pop()
+    return null
+}
+
+// 5. Parse
+tokens = tokenize(source)
+parseResult = parse(tokens)
+if parseResult.errors != null && #parseResult.errors > 0 {
+    print("loader: parse errors in " + canonical)
+    for e in parseResult.errors {
+        print("  " + str(e))
+    }
+    state.loadingStack.pop()
+    return null
+}
+ast = parseResult.ast
+if ast == null {
+    print("loader: no AST from " + canonical)
+    state.loadingStack.pop()
+    return null
+}
+
+// 6. Recursively load dependencies (depth-first)
+deps = collectUseDeps(ast)
+for dep in deps {
+    loaderLoad(state, dep)
+}
+
+// 7. Collect export names
+exportNames = collectExports(ast)
+
+// 8. Create a fresh emitter for this module, with func_idx
+//    starting at bc.func_count() so function indices don't collide
+//    with previously-compiled modules in the shared chunk
+em = Emitter()
+em.func_idx = bc.func_count()
+
+// 9. Sanitize canonical path into a valid entry function name
+safeName = canonical.replace("/", "_").replace(".", "_").replace("-", "_")
+entryName = "__init_" + safeName
+
+// 10. Compile with noReset=true (shared chunk) and unique entry name
+compileProgram(em, ast, false, canonical, entryName, true)
+
+// 11. Execute the module entry — sets up globals
+bc.execute_persistent(entryName)
+
+// 12. Build exports descriptor
+// The module's top-level names are now in VM globals.
+// Consumers access them via LOAD_GLOBAL at runtime.
+exports = {}
+for nm in exportNames {
+    exports[nm] = true
+}
+
+// 13. Cache the module record
+record = {path: canonical, exports: exports, exportNames: exportNames, entryName: entryName}
+state.cache[canonical] = record
+
+state.loadingStack.pop()
+record
+}
+
+    // 2. Check cache
+    if state.cache[canonical] != null {
+        return state.cache[canonical]
+    }
+
+    // 3. Circular dependency detection
+    for i in 0..(#state.loadingStack - 1) {
+        if state.loadingStack[i] == canonical {
+            print("loader: circular import detected: " + canonical)
+            return null
+        }
+    }
+    state.loadingStack.push(canonical)
+
+    // 4. Read source
+    source = fs.read(canonical)
+    if source == null || #source == 0 {
+        print("loader: cannot read module: " + canonical)
+        state.loadingStack.pop()
+        return null
+    }
+
+    // 5. Parse
+    tokens = tokenize(source)
+    parseResult = parse(tokens)
+    if parseResult.errors != null && #parseResult.errors > 0 {
+        print("loader: parse errors in " + canonical)
+        for e in parseResult.errors {
+            print("  " + str(e))
+        }
+        state.loadingStack.pop()
+        return null
+    }
+    ast = parseResult.ast
+    if ast == null {
+        print("loader: no AST from " + canonical)
+        state.loadingStack.pop()
+        return null
+    }
+
+    // 6. Recursively load dependencies
+    deps = collectUseDeps(ast)
+    for dep in deps {
+        loaderLoad(state, dep, emitter)
+    }
+
+    // 7. Collect export names
+    exportNames = collectExports(ast)
+
+    // 8. Compile with noReset=true and unique entry name
+    //    Sanitize canonical path into a valid function name
+    safeName = canonical.replace("/", "_").replace(".", "_")
+    entryName = "__init_" + safeName
+
+    compileProgram(emitter, ast, false, canonical, entryName, true)
+
+    // 9. Execute the module entry
+    bc.execute_persistent(entryName)
+
+    // 10. Build exports object (global names -> closures/values accessible via VM globals)
+    //     The module's top-level names are now in VM globals.
+    //     We store the export names list so consumers can access them.
+    exports = {}
+    for nm in exportNames {
+        // We can't directly read VM globals from Havel, so we store the name
+        // and rely on the fact that the globals are accessible at runtime
+        // via LOAD_GLOBAL with the correct string ID.
+        // For the self-hosted path, the caller gets an exports descriptor:
+        exports[nm] = true
+    }
+
+    // 11. Cache the module record
+    record = {path: canonical, exports: exports, exportNames: exportNames}
+    state.cache[canonical] = record
+
+    state.loadingStack.pop()
+    record
+}
+
+// ============================================================
+// Loader initialization — configure from known paths
+// ============================================================
+
+fn loaderInit() {
+    state = LoaderState()
+
+    // Detect stdlib path: relative to executable or cwd
+    cwd = sys.cwd()
+    // Check common locations
+    if fs.isDir(pathJoin(cwd, "modules/std")) {
+        state.stdlibPath = pathJoin(cwd, "modules/std")
+    }
+
+    // Add lang module paths
+    if fs.isDir(pathJoin(cwd, "modules/lang")) {
+        loaderAddSearchPath(state, pathJoin(cwd, "modules/lang"))
+    }
+    if fs.isDir(pathJoin(cwd, "modules")) {
+        loaderAddSearchPath(state, pathJoin(cwd, "modules"))
+    }
+    if fs.isDir(pathJoin(cwd, "modules/app")) {
+        loaderAddSearchPath(state, pathJoin(cwd, "modules/app"))
+    }
+    if fs.isDir(pathJoin(cwd, "scripts")) {
+        loaderAddSearchPath(state, pathJoin(cwd, "scripts"))
+    }
+
+    // Home packages
+    home = sys.home()
+    if home != "" {
+        pkgPath = pathJoin(pathJoin(home, ".havel"), "packages")
+        if fs.isDir(pkgPath) {
+            loaderAddSearchPath(state, pkgPath)
+        }
+    }
+
+    state
+}

@@ -1,9 +1,0 @@
-use { tokenize } from "lang/lexer"
-use { parseTokens } from "lang/pratt"
-use { compileProgram } from "lang/emitter"
-
-source = "print(42)"
-tokens = tokenize(source)
-result = parseTokens(tokens)
-ast = result.ast
-r = compileProgram(ast, "test", false)

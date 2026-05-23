@@ -1688,9 +1688,10 @@ case ast::NodeType::TryExpression:
       }
       emit(OpCode::LOAD_VAR, tempVal);
       { uint32_t _sid = addStringConstant(key); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::OBJECT_SET);
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
 
- // Call config.set(key, value) to save to file
+        // Call config.set(key, value) to save to file
  {
  uint32_t strId = addStringConstant("config.set");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
@@ -3479,20 +3480,21 @@ case ast::NodeType::CastExpression: {
     };
 
     auto emitStoreMemberWithResult = [&](const ast::MemberExpression &member) {
-      auto *property =
-          dynamic_cast<const ast::Identifier *>(member.property.get());
-      if (!member.object || !property) {
-        COMPILER_THROW(
-            "Member assignment expects identifier property target");
-      }
-      uint32_t temp_slot = next_local_index;
-      reserveLocalSlot(temp_slot);
-      emit(OpCode::STORE_VAR, temp_slot);
-      compileExpression(*member.object);
-      emit(OpCode::LOAD_VAR, temp_slot);
-      { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::OBJECT_SET);
-      emit(OpCode::LOAD_VAR, temp_slot);
+        auto *property =
+            dynamic_cast<const ast::Identifier *>(member.property.get());
+        if (!member.object || !property) {
+            COMPILER_THROW(
+                "Member assignment expects identifier property target");
+        }
+        uint32_t temp_slot = next_local_index;
+        reserveLocalSlot(temp_slot);
+        emit(OpCode::STORE_VAR, temp_slot);
+        compileExpression(*member.object);
+        emit(OpCode::LOAD_VAR, temp_slot);
+        { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
+        emit(OpCode::LOAD_VAR, temp_slot);
     };
 
     auto emitStoreIndexWithResult =
@@ -3650,6 +3652,8 @@ case ast::NodeType::CastExpression: {
         emit(OpCode::LOAD_VAR, temp_val); // [self, value]
         emit(OpCode::LOAD_VAR, temp_key); // [self, value, key]
         emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP); // discard pushed-back object
+        emit(OpCode::LOAD_VAR, temp_val); // result = RHS
         break;
     }
     if (target_atat) {
@@ -3683,9 +3687,11 @@ case ast::NodeType::CastExpression: {
         emit(OpCode::LOAD_VAR, temp_val); // [class_obj, value]
         emit(OpCode::LOAD_VAR, temp_key); // [class_obj, value, key]
         emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP); // discard pushed-back object
+        emit(OpCode::LOAD_VAR, temp_val); // result = RHS
         break;
-      }
-      COMPILER_THROW("Unsupported assignment target");
+    }
+    COMPILER_THROW("Unsupported assignment target");
     }
 
 auto emitCompound = [&](OpCode math_op) {
@@ -3788,10 +3794,11 @@ auto emitCompound = [&](OpCode math_op) {
         emit(OpCode::LOAD_VAR, temp_result);
         { uint32_t _sid = addStringConstant(property->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
     }
-      if (target_index) {
+    if (target_index) {
         if (!target_index->object || !target_index->index) {
           COMPILER_THROW("Index assignment expects object and index");
         }
@@ -3855,10 +3862,11 @@ auto emitCompound = [&](OpCode math_op) {
         emit(OpCode::LOAD_VAR, temp_result);
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
     }
-      if (target_atat) {
+    if (target_atat) {
         // @@field compound assignment
         std::string field_name;
         if (target_atat->field && target_atat->field->kind == ast::NodeType::Identifier) {
@@ -3891,10 +3899,11 @@ auto emitCompound = [&](OpCode math_op) {
         emit(OpCode::LOAD_VAR, temp_obj);
         { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
         emit(OpCode::LOAD_VAR, temp_result);
         return;
-      }
-      COMPILER_THROW("Unsupported compound assignment target");
+    }
+    COMPILER_THROW("Unsupported compound assignment target");
     };
 
     if (assignment.operator_ == "+=") {
@@ -4104,10 +4113,11 @@ case ast::NodeType::CallExpression:
         emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
       }
       emit(OpCode::LOAD_VAR, temp_val);   // [self, result]
-      { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };  // [self, result, key]
-      emit(OpCode::OBJECT_SET);
-      emit(OpCode::LOAD_VAR, temp_val);
-      break;
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); }; // [self, result, key]
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
+        emit(OpCode::LOAD_VAR, temp_val);
+        break;
     }
 
     if (target_atat) {
@@ -4134,13 +4144,14 @@ case ast::NodeType::CallExpression:
       // Build [class_obj, result, field_key]
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant(current_class_name_)));   // [class_obj]
       emit(OpCode::LOAD_VAR, temp_val);   // [class_obj, result]
-      { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };  // [class_obj, result, key]
-      emit(OpCode::OBJECT_SET);
-      emit(OpCode::LOAD_VAR, temp_val);
-      break;
+        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); }; // [class_obj, result, key]
+        emit(OpCode::OBJECT_SET);
+        emit(OpCode::POP);
+        emit(OpCode::LOAD_VAR, temp_val);
+        break;
     }
 
-// The argument must be an identifier
+    // The argument must be an identifier
 const auto *target_id =
 dynamic_cast<const ast::Identifier *>(update_expr.argument.get());
 if (!target_id) {

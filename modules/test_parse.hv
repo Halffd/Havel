@@ -1,7 +1,0 @@
-use { tokenize } from "lang/lexer"
-use { parseTokens } from "lang/pratt"
-source = "arr[1] = 99"
-tokens = tokenize(source)
-r = parseTokens(tokens)
-use { prettyPrint } from "lang/ast"
-print(prettyPrint(r.ast))

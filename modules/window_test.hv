@@ -1,9 +1,0 @@
-// Minimal window.hv test
-use ffi
-
-_xlib = ffi.open("libX11.so.6")
-print("window module loaded")
-
-fn test() {
-  "hello"
-}

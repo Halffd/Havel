@@ -1,2 +1,0 @@
-source = "x = 42; print(\"hello\")"
-print("source loaded")

@@ -18,7 +18,6 @@ void registerTimeModule(const compiler::VMApi &api);
 void registerTimerModule(const compiler::VMApi &api);
 void registerFsModule(const compiler::VMApi &api);
 void registerRandomModule(const compiler::VMApi &api);
-void registerLogModule(const compiler::VMApi &api);
 void registerDebugModule(const compiler::VMApi &api);
 void registerSysModule(const compiler::VMApi &api);
 void registerShellModule(const compiler::VMApi &api);
@@ -46,7 +45,6 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerTimerModule(api);
   stdlib::registerFsModule(api);
   stdlib::registerRandomModule(api);
-  stdlib::registerLogModule(api);
   stdlib::registerDebugModule(api);
   stdlib::registerSysModule(api);
   stdlib::registerShellModule(api);

@@ -1,0 +1,345 @@
+// debug.hv — debug flag system and trace logging for the self-hosted Havel compiler
+// Mirrors the C++ Debug.hpp + DebugFlags.hpp design
+// Provides: flag bag, trace helpers, token/AST/bytecode dump utilities
+
+// ============================================================
+// ANSI color codes (shared with error.hv but self-contained)
+// ============================================================
+
+DBG_RED = "\033[1;31m"
+DBG_GREEN = "\033[1;32m"
+DBG_YELLOW = "\033[1;33m"
+DBG_CYAN = "\033[36m"
+DBG_MAGENTA = "\033[35m"
+DBG_DIM = "\033[2m"
+DBG_BOLD = "\033[1m"
+DBG_RESET = "\033[0m"
+
+// ============================================================
+// Debug flag bag — parsed from CLI args, consumed by pipeline
+// ============================================================
+
+fn DebugFlags() {
+  {
+    lexer: false,
+    parser: false,
+    ast: false,
+    bytecode: false,
+    gc: false,
+    scope: false,
+    emitter: false,
+    types: false,
+    all: false,
+    color: true,
+    timing: false,
+    verbose: false
+  }
+}
+
+// Global debug flags instance
+flags = DebugFlags()
+
+fn isOn(flagName) {
+  if flags.all { return true }
+  rval = flags[flagName]
+  if rval != null { return rval }
+  false
+}
+
+fn setFlag(flagName, value) {
+  flags[flagName] = value
+  if flagName == "all" && value {
+    flags.lexer = true
+    flags.parser = true
+    flags.ast = true
+    flags.bytecode = true
+    flags.scope = true
+    flags.emitter = true
+    flags.types = true
+  }
+}
+
+// ============================================================
+// CLI arg parser for debug flags
+// Returns: updated cfg object with debug flags set
+// ============================================================
+
+fn parseDebugArgs(args) {
+  i = 0
+  while i < #args {
+    arg = args[i]
+    if arg == "-d" || arg == "--debug" {
+      flags.all = true
+      flags.verbose = true
+    }
+    if arg == "-dl" || arg == "--debug-lexer" { flags.lexer = true }
+    if arg == "-dp" || arg == "--debug-parser" { flags.parser = true }
+    if arg == "-da" || arg == "--debug-ast" { flags.ast = true }
+    if arg == "-dbc" || arg == "--debug-bytecode" { flags.bytecode = true }
+    if arg == "-dgc" || arg == "--debug-gc" { flags.gc = true }
+    if arg == "-ds" || arg == "--debug-scope" { flags.scope = true }
+    if arg == "-de" || arg == "--debug-emitter" { flags.emitter = true }
+    if arg == "-dt" || arg == "--debug-types" { flags.types = true }
+    if arg == "--no-color" { flags.color = false }
+    if arg == "--timing" { flags.timing = true }
+    if arg == "-v" || arg == "--verbose" { flags.verbose = true }
+    i = i + 1
+  }
+  if flags.all {
+    flags.lexer = true
+    flags.parser = true
+    flags.ast = true
+    flags.bytecode = true
+    flags.scope = true
+    flags.emitter = true
+    flags.types = true
+  }
+  flags
+}
+
+// ============================================================
+// Trace output — conditional print based on debug flags
+// ============================================================
+
+fn colorize(text, color) {
+  if flags.color { return color + text + DBG_RESET }
+  text
+}
+
+// Stage-prefixed trace: "[LEXER] ..." etc
+fn trace(stage, msg) {
+  prefix = "[" + stage + "]"
+  if flags.color {
+    prefix = DBG_DIM + prefix + DBG_RESET
+  }
+  print(prefix + " " + msg)
+}
+
+fn traceLexer(msg) { if isOn("lexer") { trace("LEXER", msg) } }
+fn traceParser(msg) { if isOn("parser") { trace("PARSER", msg) } }
+fn traceAst(msg) { if isOn("ast") { trace("AST", msg) } }
+fn traceBytecode(msg) { if isOn("bytecode") { trace("BC", msg) } }
+fn traceScope(msg) { if isOn("scope") { trace("SCOPE", msg) } }
+fn traceEmitter(msg) { if isOn("emitter") { trace("EMIT", msg) } }
+fn traceTypes(msg) { if isOn("types") { trace("TYPES", msg) } }
+fn traceGc(msg) { if isOn("gc") { trace("GC", msg) } }
+
+// ============================================================
+// Token dump — for --debug-lexer
+// ============================================================
+
+fn dumpToken(tok) {
+  if tok == null { return "<null>" }
+  rval = tok.value
+  if rval == null { rval = "" }
+  ttype = tok.type
+  if ttype == null { ttype = "?" }
+  line = tok.line
+  col = tok.col
+  if line == null { line = 0 }
+  if col == null { col = 0 }
+  s = str(line) + ":" + str(col) + " " + ttype + " '" + str(rval) + "'"
+  if flags.color {
+    if ttype == "Number" { s = DBG_CYAN + s + DBG_RESET }
+    if ttype == "String" { s = DBG_GREEN + s + DBG_RESET }
+    if ttype == "Identifier" { s = DBG_YELLOW + s + DBG_RESET }
+    if ttype == "NewLine" { s = DBG_DIM + s + DBG_RESET }
+    if ttype == "Keyword" { s = DBG_MAGENTA + s + DBG_RESET }
+  }
+  s
+}
+
+fn dumpTokenList(tokens) {
+  if !isOn("lexer") { return }
+  traceLexer("--- token stream (" + str(#tokens) + " tokens) ---")
+  for tok in tokens {
+    traceLexer("  " + dumpToken(tok))
+  }
+  traceLexer("--- end token stream ---")
+}
+
+// ============================================================
+// AST dump — for --debug-ast
+// ============================================================
+
+fn astKindName(node) {
+  if node == null { return "<null>" }
+  k = node.kind
+  if k == null { return "<unknown>" }
+  k
+}
+
+fn dumpAstNode(node, indent) {
+  if indent == null { indent = 0 }
+  if node == null {
+    traceAst("  " * indent + "null")
+    return
+  }
+  k = node.kind
+  if k == null { k = "?" }
+  pad = "  " * indent
+
+  // Summary line varies by node type
+  info = k
+  if k == "NumberLiteral" { info = k + " " + str(node.value) }
+  if k == "StringLiteral" { info = k + " \"" + str(node.value) + "\"" }
+  if k == "BoolLiteral" { info = k + " " + str(node.value) }
+  if k == "Identifier" { info = k + " " + str(node.name) }
+  if k == "FnDeclaration" {
+    name = node.name
+    if name == null { name = "<anon>" }
+    pcount = 0
+    if node.params != null { pcount = #node.params }
+    info = k + " " + name + "(" + str(pcount) + " params)"
+  }
+  if k == "VarDeclaration" { info = k + " " + str(node.name) }
+  if k == "LetDeclaration" { info = k + " " + str(node.name) }
+  if k == "Assignment" { info = k }
+  if k == "BinaryExpression" { info = k + " " + str(node.oper) }
+  if k == "UnaryExpression" { info = k + " " + str(node.oper) }
+  if k == "CallExpression" {
+    callee = node.callee
+    cname = "<expr>"
+    if callee != null && callee.kind == "Identifier" { cname = callee.name }
+    info = k + " " + cname
+  }
+  if k == "MemberExpression" { info = k + " ." + str(node.field) }
+  if k == "IndexExpression" { info = k }
+  if k == "ReturnStatement" { info = k }
+  if k == "IfStatement" { info = k }
+  if k == "WhileStatement" { info = k }
+  if k == "ForStatement" { info = k }
+  if k == "BlockStatement" {
+    count = 0
+    if node.body != null { count = #node.body }
+    info = k + " (" + str(count) + " stmts)"
+  }
+  if k == "ClassDeclaration" { info = k + " " + str(node.name) }
+  if k == "UseStatement" || k == "ImportStatement" { info = k + " " + str(node.module) }
+
+  line = node.line
+  col = node.col
+  if line != null { info = info + " @ " + str(line) + ":" + str(col) }
+
+  traceAst(pad + info)
+
+  // Recurse into children
+  if k == "BlockStatement" && node.body != null {
+    for child in node.body { dumpAstNode(child, indent + 1) }
+  }
+  if k == "FnDeclaration" {
+    if node.params != null {
+      for p in node.params { dumpAstNode(p, indent + 1) }
+    }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+  }
+  if k == "IfStatement" {
+    if node.condition != null { dumpAstNode(node.condition, indent + 1) }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+    elseBranch = node["else"]
+    if elseBranch != null { dumpAstNode(elseBranch, indent + 1) }
+  }
+  if k == "WhileStatement" || k == "LoopStatement" {
+    if node.condition != null { dumpAstNode(node.condition, indent + 1) }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+  }
+  if k == "ForStatement" {
+    if node.init != null { dumpAstNode(node.init, indent + 1) }
+    if node.condition != null { dumpAstNode(node.condition, indent + 1) }
+    if node.update != null { dumpAstNode(node.update, indent + 1) }
+    if node.body != null { dumpAstNode(node.body, indent + 1) }
+  }
+  if k == "BinaryExpression" {
+    if node.left != null { dumpAstNode(node.left, indent + 1) }
+    if node.right != null { dumpAstNode(node.right, indent + 1) }
+  }
+  if k == "UnaryExpression" || k == "UpdateExpression" {
+    if node.operand != null { dumpAstNode(node.operand, indent + 1) }
+  }
+  if k == "CallExpression" {
+    if node.callee != null { dumpAstNode(node.callee, indent + 1) }
+    if node.args != null {
+      for a in node.args { dumpAstNode(a, indent + 1) }
+    }
+  }
+  if k == "MemberExpression" {
+    if node.object != null { dumpAstNode(node.object, indent + 1) }
+  }
+  if k == "IndexExpression" {
+    if node.obj != null { dumpAstNode(node.obj, indent + 1) }
+    if node.index != null { dumpAstNode(node.index, indent + 1) }
+  }
+  if k == "Assignment" || k == "CompoundAssignment" {
+    if node.target != null { dumpAstNode(node.target, indent + 1) }
+    if node.value != null { dumpAstNode(node.value, indent + 1) }
+  }
+  if k == "ReturnStatement" {
+    if node.value != null { dumpAstNode(node.value, indent + 1) }
+  }
+  if k == "ClassDeclaration" {
+    if node.definition != null { dumpAstNode(node.definition, indent + 1) }
+  }
+}
+
+fn dumpAst(program) {
+  if !isOn("ast") { return }
+  traceAst("--- AST dump ---")
+  if program == null {
+    traceAst("<null program>")
+    return
+  }
+  if program.body != null {
+    for node in program.body { dumpAstNode(node, 0) }
+  }
+  traceAst("--- end AST dump ---")
+}
+
+// ============================================================
+// Bytecode dump — for --debug-bytecode
+// ============================================================
+
+fn dumpBytecode() {
+  if !isOn("bytecode") { return }
+  traceBytecode("--- bytecode dump ---")
+  bc.debug_print()
+  traceBytecode("--- end bytecode dump ---")
+}
+
+// ============================================================
+// Timing helpers — for --timing flag
+// ============================================================
+
+timers = {}
+
+fn startTimer(name) {
+  timers[name] = time.now()
+}
+
+fn endTimer(name) {
+  start = timers[name]
+  if start == null { return }
+  elapsed = time.now() - start
+  ms = int(elapsed * 1000)
+  trace("TIMER", name + ": " + str(ms) + "ms")
+}
+
+// ============================================================
+// Scope dump — for --debug-scope
+// ============================================================
+
+fn dumpScope(scope, indent) {
+  if indent == null { indent = 0 }
+  if scope == null {
+    traceScope("  " * indent + "<null scope>")
+    return
+  }
+  pad = "  " * indent
+  name = scope.name
+  if name == null { name = "<anon>" }
+  count = scope.count
+  if count == null { count = 0 }
+  traceScope(pad + name + " (vars: " + str(count) + ")")
+  if scope.children != null {
+    for child in scope.children { dumpScope(child, indent + 1) }
+  }
+}

@@ -225,11 +225,11 @@ hostBridge->install();
     } else {
         auto exePath = Env::executable();
         if (!exePath.empty()) {
-            stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "stdlib").string();
-        } else {
-            stdlibPath = "./stdlib";
+        stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+            } else {
+                stdlibPath = "./modules/std";
+            }
         }
-    }
         bytecodeVM->moduleLoader().setStdlibPath(stdlibPath);
     }
 
@@ -239,8 +239,11 @@ hostBridge->install();
             auto modulesPath = std::filesystem::path(exePath).parent_path()
                 / ".." / "modules";
             if (std::filesystem::exists(modulesPath)) {
-                bytecodeVM->moduleLoader().addSearchPath(
-                    std::filesystem::canonical(modulesPath).string());
+                auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
             }
         }
     }

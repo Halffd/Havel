@@ -1,7 +1,0 @@
-use { tokenize } from "lang/lexer"
-
-source = "#app.args"
-tokens = tokenize(source)
-for i in 0..(#tokens - 1) {
-    print(str(i) + ": type=" + tokens[i].type + " value=" + str(tokens[i].value))
-}

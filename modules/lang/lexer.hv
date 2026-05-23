@@ -1,6 +1,7 @@
 // Havel lexer — pure Havel implementation
 // Tokenizes Havel source code into a list of {type, value, line, col} objects
 
+
 // --- Token types ---
 TOKEN_TYPES = {
     "Identifier": "Identifier",

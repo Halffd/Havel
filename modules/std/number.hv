@@ -1,0 +1,98 @@
+// number.hv - Pure Havel number stdlib additions
+// Provides number.* namespace functions and prototype dispatch.
+// Loaded by: use "number"
+//
+// round/floor/ceil delegate to C++ math.* host functions.
+// toHex/toBin/toOct are pure Havel implementations.
+
+fn round(n) { math.round(n) }
+fn floor(n) { math.floor(n) }
+fn ceil(n) { math.ceil(n) }
+
+fn toHex(n) {
+  digits = "0123456789abcdef"
+  if n == 0 {
+    return "0x0"
+  }
+  neg = false
+  if n < 0 {
+    neg = true
+    n = 0 - n
+  }
+  result = ""
+  x = int(n)
+  while x > 0 {
+    result = digits[int(x % 16)] + result
+    x = int(x / 16)
+  }
+  if neg {
+    return "-0x" + result
+  }
+  "0x" + result
+}
+
+fn toBin(n) {
+  if n == 0 {
+    return "0b0"
+  }
+  neg = false
+  if n < 0 {
+    neg = true
+    n = 0 - n
+  }
+  result = ""
+  x = int(n)
+  while x > 0 {
+    r = int(x % 2)
+    if r == 0 {
+      result = "0" + result
+    } else {
+      result = "1" + result
+    }
+    x = int(x / 2)
+  }
+  if neg {
+    return "-0b" + result
+  }
+  "0b" + result
+}
+
+fn toOct(n) {
+  digits = "01234567"
+  if n == 0 {
+    return "0o0"
+  }
+  neg = false
+  if n < 0 {
+    neg = true
+    n = 0 - n
+  }
+  result = ""
+  x = int(n)
+  while x > 0 {
+    result = digits[int(x % 8)] + result
+    x = int(x / 8)
+  }
+  if neg {
+    return "-0o" + result
+  }
+  "0o" + result
+}
+
+fn isEven(n) { int(n) % 2 == 0 }
+fn isOdd(n) { int(n) % 2 != 0 }
+fn isInt(n) { n == int(n) }
+fn isPositive(n) { n > 0 }
+fn isNegative(n) { n < 0 }
+fn isZero(n) { n == 0 }
+fn abs(n) { if n < 0 { 0 - n } else { n } }
+fn sign(n) {
+  if n > 0 { return 1 }
+  if n < 0 { return -1 }
+  0
+}
+fn clamp(v, lo, hi) {
+  if v < lo { return lo }
+  if v > hi { return hi }
+  v
+}

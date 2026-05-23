@@ -1,7 +1,0 @@
-use fs
-use { tokenize } from "lexer"
-use { parseTokens } from "pratt"
-source = fs.read("/tmp/test_bare_interp.txt")
-tokens = tokenize(source)
-result = parseTokens(tokens)
-print(str(result.ast))

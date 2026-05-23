@@ -64,12 +64,29 @@ public:
             } else {
                 auto exePath = Env::executable();
                 if (!exePath.empty()) {
-                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "stdlib").string();
+                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
                 } else {
-                    stdlibPath = "./stdlib";
+                    stdlibPath = "./modules/std";
                 }
             }
             vm_->moduleLoader().setStdlibPath(stdlibPath);
+        }
+
+        // Add module search paths so `use "lexer"` etc. resolve at runtime
+        {
+            auto exePath = Env::executable();
+            std::string modulesRoot;
+            if (!exePath.empty()) {
+                modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
+            } else {
+                modulesRoot = "./modules";
+            }
+            auto canonicalRoot = std::filesystem::exists(modulesRoot)
+                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
+            vm_->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+            vm_->moduleLoader().addSearchPath(canonicalRoot + "/std");
+            vm_->moduleLoader().addSearchPath(canonicalRoot + "/app");
+            vm_->moduleLoader().addSearchPath(canonicalRoot);
         }
 
         vm_->suspendGC();

@@ -1,0 +1,18 @@
+// test shell.run (async)
+pid = shell.run("echo hello > /tmp/havel_shell_test")
+print(f"shell.run pid: {pid}")
+assert pid > 0
+
+// test shell.exec (capture output)
+res = shell.exec("echo hello world")
+print(f"stdout: [{res.stdout}]")
+print(f"exitCode: {res.exitCode}")
+assert res.stdout == "hello world\n"
+assert res.exitCode == 0
+
+// test shell.exec with failure
+res2 = shell.exec("false")
+print(f"false exitCode: {res2.exitCode}")
+assert res2.exitCode != 0
+
+print("shell module tests passed")

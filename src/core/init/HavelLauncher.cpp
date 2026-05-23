@@ -149,6 +149,18 @@ static void appendLinkLibraries(std::string &linkCmd,
     }
   }
 }
+
+static void appendDefaultLlvmLinkLibraries(std::string &linkCmd) {
+#ifdef HAVEL_DEFAULT_LLVM_LINK_FLAGS
+  constexpr const char *kDefaultLlvmLinkFlags = HAVEL_DEFAULT_LLVM_LINK_FLAGS;
+  if (kDefaultLlvmLinkFlags[0] != '\0') {
+    linkCmd += " ";
+    linkCmd += kDefaultLlvmLinkFlags;
+  }
+#else
+  (void)linkCmd;
+#endif
+}
 #endif
 
 int HavelLauncher::run(int argc, char *argv[]) {
@@ -833,12 +845,28 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
     // Register host functions with VM
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
     const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
+#ifdef HAVEL_ENABLE_LLVM
+    std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
+    if (cfg.useJIT) {
+      jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
+      jit->setDebugMode(cfg.debugJIT);
+      jit->setDumpIR(cfg.dumpIR);
+      jit->setDumpAsmToFile(cfg.outputAsmToFile);
+      jit->setShowWarnings(cfg.aotWarnings);
+      vm->setHotFunctionCallback([jit_ptr = jit.get()](const havel::compiler::BytecodeFunction &func) {
+        if (!jit_ptr->isCompiled(func.name)) {
+          jit_ptr->compileFunction(func);
+        }
+      });
+      vm->setJITCompiler(jit.get());
+    }
+#endif
     bridge->install(
         coreProfile ? havel::compiler::HostBridge::InstallProfile::Core
                     : havel::compiler::HostBridge::InstallProfile::Full,
         !coreProfile);
     if (coreProfile) {
-      havel::registerPureStdLib(*vm);
+      havel::registerCoreStdLib(*vm);
     } else {
       havel::registerStdLibWithVM(*bridge);
     }
@@ -1624,7 +1652,6 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
     // Import LLVM JIT for translation
     havel::compiler::BytecodeOrcJIT jit;
     jit.setShowWarnings(cfg.aotWarnings);
-    jit.setFullAOT(cfg.fullAot);
     jit.setLinkedLibraries(cfg.linkLibs);
     if (cfg.emitLLVM || cfg.debugJIT) {
         jit.setDumpIR(true);
@@ -1648,7 +1675,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
 
     for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
         const auto* func = chunk->getFunction(i);
-        if (func) {
+        if (func && !havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
             jit.translate(*func, *module);
         }
     }
@@ -1771,6 +1798,9 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
             }
             if (!coreProfile) {
                 appendLinkLibraries(linkCmd, jit.linkedLibraries());
+                if (jit.linkedLibraries().empty()) {
+                    appendDefaultLlvmLinkLibraries(linkCmd);
+                }
             }
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
@@ -1827,12 +1857,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
                     linkCmd += " -L\"" + libDir + "\"";
                 }
                 if (coreProfile) {
-                    linkCmd += " -lhavel_aot_core_shim -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+                    linkCmd += " -lhavel_aot_core_shim -lhavel_lang -lhavel_core";
                 } else {
                     linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
                 }
             }
             appendLinkLibraries(linkCmd, jit.linkedLibraries());
+            if (jit.linkedLibraries().empty()) {
+                appendDefaultLlvmLinkLibraries(linkCmd);
+            }
             int linkRc = std::system(linkCmd.c_str());
             if (linkRc != 0) {
                 error("Failed to link native AOT executable with command: {}", linkCmd);

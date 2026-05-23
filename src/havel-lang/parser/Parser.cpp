@@ -7788,8 +7788,12 @@ case havel::TokenType::Number: {
 
   case havel::TokenType::RegexLiteral: {
     advance();
-    return std::make_unique<havel::ast::StringLiteral>(
-        tk.value); // Store regex as string for now
+    return std::make_unique<havel::ast::StringLiteral>(tk.value, true);
+  }
+
+  case havel::TokenType::RegexString: {
+    advance();
+    return std::make_unique<havel::ast::StringLiteral>(tk.value, true);
   }
 
   case havel::TokenType::ShellCommand:

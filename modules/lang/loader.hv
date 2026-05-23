@@ -1,7 +1,6 @@
 // modules/lang/loader.hv — self-hosted module loader
 // Resolves, reads, compiles, and caches Havel modules via the self-hosted pipeline
 
-use { tokenize } from "lexer"
 use { parse } from "pratt"
 use { Emitter, compileProgram } from "emitter"
 
@@ -318,8 +317,7 @@ if source == null || #source == 0 {
 }
 
 // 5. Parse
-tokens = tokenize(source)
-parseResult = parse(tokens)
+    parseResult = parse(source)
 if parseResult.errors != null && #parseResult.errors > 0 {
     print("loader: parse errors in " + canonical)
     for e in parseResult.errors {
@@ -374,85 +372,6 @@ state.cache[canonical] = record
 
 state.loadingStack.pop()
 record
-}
-
-    // 2. Check cache
-    if state.cache[canonical] != null {
-        return state.cache[canonical]
-    }
-
-    // 3. Circular dependency detection
-    for i in 0..(#state.loadingStack - 1) {
-        if state.loadingStack[i] == canonical {
-            print("loader: circular import detected: " + canonical)
-            return null
-        }
-    }
-    state.loadingStack.push(canonical)
-
-    // 4. Read source
-    source = fs.read(canonical)
-    if source == null || #source == 0 {
-        print("loader: cannot read module: " + canonical)
-        state.loadingStack.pop()
-        return null
-    }
-
-    // 5. Parse
-    tokens = tokenize(source)
-    parseResult = parse(tokens)
-    if parseResult.errors != null && #parseResult.errors > 0 {
-        print("loader: parse errors in " + canonical)
-        for e in parseResult.errors {
-            print("  " + str(e))
-        }
-        state.loadingStack.pop()
-        return null
-    }
-    ast = parseResult.ast
-    if ast == null {
-        print("loader: no AST from " + canonical)
-        state.loadingStack.pop()
-        return null
-    }
-
-    // 6. Recursively load dependencies
-    deps = collectUseDeps(ast)
-    for dep in deps {
-        loaderLoad(state, dep, emitter)
-    }
-
-    // 7. Collect export names
-    exportNames = collectExports(ast)
-
-    // 8. Compile with noReset=true and unique entry name
-    //    Sanitize canonical path into a valid function name
-    safeName = canonical.replace("/", "_").replace(".", "_")
-    entryName = "__init_" + safeName
-
-    compileProgram(emitter, ast, false, canonical, entryName, true)
-
-    // 9. Execute the module entry
-    bc.execute_persistent(entryName)
-
-    // 10. Build exports object (global names -> closures/values accessible via VM globals)
-    //     The module's top-level names are now in VM globals.
-    //     We store the export names list so consumers can access them.
-    exports = {}
-    for nm in exportNames {
-        // We can't directly read VM globals from Havel, so we store the name
-        // and rely on the fact that the globals are accessible at runtime
-        // via LOAD_GLOBAL with the correct string ID.
-        // For the self-hosted path, the caller gets an exports descriptor:
-        exports[nm] = true
-    }
-
-    // 11. Cache the module record
-    record = {path: canonical, exports: exports, exportNames: exportNames}
-    state.cache[canonical] = record
-
-    state.loadingStack.pop()
-    record
 }
 
 // ============================================================

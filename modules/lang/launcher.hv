@@ -415,6 +415,8 @@ fn runSelfHosted(cfg) {
     inferProgram(result)
 
     // Initialize loader and pre-load all dependencies
+    // TODO: strip UseStatement nodes from AST before compiling main script,
+    //       otherwise IMPORT opcodes will re-load via C++ VM (double work)
     if isOn("timing") { startTimer("loader") }
     loaderState = loaderInit()
     if #cfg.scriptFiles > 0 {
@@ -431,6 +433,7 @@ fn runSelfHosted(cfg) {
     if isOn("timing") { endTimer("loader") }
 
     // Compile the main script into the shared chunk (noReset=true)
+    // skip_execute=false means compileProgram will call bc.execute_persistent automatically
     if isOn("timing") { startTimer("compile") }
     em = Emitter()
     em.func_idx = bc.func_count()
@@ -438,11 +441,6 @@ fn runSelfHosted(cfg) {
     mainEntry = "__init_" + safeName
     compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
     if isOn("timing") { endTimer("compile") }
-
-    // Execute the main script entry
-    if isOn("timing") { startTimer("execute") }
-    bc.execute_persistent(mainEntry)
-    if isOn("timing") { endTimer("execute") }
 
     // Check for emitter errors
     if hasErrors() {

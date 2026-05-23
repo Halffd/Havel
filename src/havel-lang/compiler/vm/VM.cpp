@@ -680,7 +680,9 @@ std::optional<std::string> keyFromValue(const Value &value, const GCHeap *heap =
 }
 
 std::optional<std::string> VM::resolveKey(const Value &value) const {
-    return ::havel::compiler::keyFromValue(value, &heap_, current_chunk);
+    const auto& cf = currentFrame();
+    const BytecodeChunk* chunk = cf.chunk ? cf.chunk : current_chunk;
+    return ::havel::compiler::keyFromValue(value, &heap_, chunk);
 }
 
 std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
@@ -5792,6 +5794,12 @@ void VM::execJumpIfTrue(const Instruction &instruction) {
 // ============================================================================
 
 void VM::executeInstruction(const Instruction &instruction) {
+    // Sync current_chunk with the current frame's chunk so string resolution
+    // is always correct for the executing function (fixes cross-chunk bugs
+    // when closures from one chunk call host functions that modify current_chunk).
+    if (frame_count_ > 0 && frame_arena_[frame_count_ - 1].chunk) {
+        current_chunk = frame_arena_[frame_count_ - 1].chunk;
+    }
     switch (instruction.opcode) {
   case OpCode::LOAD_CONST: {
     uint32_t const_index = instruction.operands[0].asInt();
@@ -5804,15 +5812,17 @@ case OpCode::LOAD_GLOBAL: {
                 !instruction.operands[0].isStringValId()) {
                 COMPILER_THROW("LOAD_GLOBAL expects string operand");
             }
-            // Get the string from the function's string table
+            // Get the string from the function's own chunk's string table
             uint32_t strIndex = instruction.operands[0].asStringValId();
-            const auto* func = currentFrame().function;
+            const auto& cf = currentFrame();
+            const auto* func = cf.function;
+            const BytecodeChunk* resolveChunk = cf.chunk ? cf.chunk : current_chunk;
             std::string name;
-            if (current_chunk) {
-                name = current_chunk->getString(strIndex);
+            if (resolveChunk) {
+                name = resolveChunk->getString(strIndex);
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
-}
+            }
 
     // First check regular globals (user variables shadow host functions)
             auto it = globals.find(name);
@@ -5834,18 +5844,20 @@ case OpCode::LOAD_GLOBAL: {
     break;
   }
 
-case OpCode::STORE_GLOBAL: {
-        if (instruction.operands.empty() ||
-            !instruction.operands[0].isStringValId()) {
-            COMPILER_THROW("STORE_GLOBAL expects string operand");
-        }
-        uint32_t strIndex = instruction.operands[0].asStringValId();
-        std::string name;
-        if (current_chunk) {
-            name = current_chunk->getString(strIndex);
-        } else {
-            name = "<unknown:" + std::to_string(strIndex) + ">";
-        }
+        case OpCode::STORE_GLOBAL: {
+            if (instruction.operands.empty() ||
+                !instruction.operands[0].isStringValId()) {
+                COMPILER_THROW("STORE_GLOBAL expects string operand");
+            }
+            uint32_t strIndex = instruction.operands[0].asStringValId();
+            const auto& cf_store = currentFrame();
+            const BytecodeChunk* resolveChunkStore = cf_store.chunk ? cf_store.chunk : current_chunk;
+            std::string name;
+            if (resolveChunkStore) {
+                name = resolveChunkStore->getString(strIndex);
+            } else {
+                name = "<unknown:" + std::to_string(strIndex) + ">";
+            }
             Value value = popStack();
 
     if (immutable_globals_.count(name)) {
@@ -5860,18 +5872,20 @@ case OpCode::STORE_GLOBAL: {
         break;
     }
 
-    case OpCode::STORE_IMMUT_GLOBAL: {
-        if (instruction.operands.empty() ||
-            !instruction.operands[0].isStringValId()) {
-            COMPILER_THROW("STORE_IMMUT_GLOBAL expects string operand");
-        }
-        uint32_t strIndex = instruction.operands[0].asStringValId();
-        std::string name;
-        if (current_chunk) {
-            name = current_chunk->getString(strIndex);
-        } else {
-            name = "<unknown:" + std::to_string(strIndex) + ">";
-        }
+        case OpCode::STORE_IMMUT_GLOBAL: {
+            if (instruction.operands.empty() ||
+                !instruction.operands[0].isStringValId()) {
+                COMPILER_THROW("STORE_IMMUT_GLOBAL expects string operand");
+            }
+            uint32_t strIndex = instruction.operands[0].asStringValId();
+            const auto& cf_imut = currentFrame();
+            const BytecodeChunk* resolveChunkImut = cf_imut.chunk ? cf_imut.chunk : current_chunk;
+            std::string name;
+            if (resolveChunkImut) {
+                name = resolveChunkImut->getString(strIndex);
+            } else {
+                name = "<unknown:" + std::to_string(strIndex) + ">";
+            }
         Value value = popStack();
 
         immutable_globals_.insert(name);
@@ -6345,12 +6359,14 @@ case OpCode::TAIL_CALL: {
       COMPILER_THROW("CALL_METHOD expects operands: <string method_name, uint32 arg_count>");
     }
 
-    uint32_t strIndex = instruction.operands[0].asStringValId();
-    std::string method_name;
-    if (current_chunk) {
-      method_name = current_chunk->getString(strIndex);
-    }
-    method_name = operatorSymbolToMethodName(method_name);
+            uint32_t strIndex = instruction.operands[0].asStringValId();
+            const auto& cf_cm = currentFrame();
+            const BytecodeChunk* resolveChunkCM = cf_cm.chunk ? cf_cm.chunk : current_chunk;
+            std::string method_name;
+            if (resolveChunkCM) {
+                method_name = resolveChunkCM->getString(strIndex);
+            }
+            method_name = operatorSymbolToMethodName(method_name);
     uint32_t arg_count = instruction.operands[1].asInt();
 
     // Receiver is at stack top - arg_count positions down
@@ -7109,7 +7125,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (container.isSetId()) {
-      auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+      auto key = resolveKey(index_or_key);
       if (!key) {
         COMPILER_THROW(
             "SET membership expects string/number/bool key");
@@ -7137,7 +7153,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         }
         // _G globals mirror: resolve from live globals maps
         if (container.asObjectId() == globals_mirror_object_id_) {
-        auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+        auto key = resolveKey(index_or_key);
         if (!key) {
           COMPILER_THROW("OBJECT index expects string/number/bool key");
         }
@@ -7157,7 +7173,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         pushStack(result);
         break;
       }
-      auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+      auto key = resolveKey(index_or_key);
       if (!key) {
         COMPILER_THROW("OBJECT index expects string/number/bool key");
       }
@@ -7211,7 +7227,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (container.isSetId()) {
-      auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+      auto key = resolveKey(index_or_key);
       if (!key) {
         COMPILER_THROW(
             "SET assignment expects string/number/bool key");
@@ -7249,7 +7265,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 break;
             }
         }
-        auto key = ::havel::compiler::keyFromValue(index_or_key, &heap_, current_chunk);
+        auto key = resolveKey(index_or_key);
 		if (!key) {
 			COMPILER_THROW("OBJECT index assignment expects valid key");
 		}
@@ -7292,7 +7308,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     // Handle function objects - support fn.name, fn.arity, fn.params, fn.prop
     if (object.isFunctionObjId()) {
       uint32_t funcIdx = object.asFunctionObjId();
-      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+      auto key = resolveKey(key_value);
       
       // First check for user-defined properties
       if (key) {
@@ -7337,7 +7353,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     // Handle closure objects - support closure.name, closure.arity, closure.prop
     if (object.isClosureId()) {
         uint32_t closureId = object.asClosureId();
-        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        auto key = resolveKey(key_value);
 
         // First check for user-defined properties
         if (key) {
@@ -7377,7 +7393,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     // Handle host function objects - support hostfn.name, hostfn.prop
     if (object.isHostFuncId()) {
         uint32_t hostIdx = object.asHostFuncId();
-        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        auto key = resolveKey(key_value);
 
         // First check for user-defined properties
         if (key) {
@@ -7420,7 +7436,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
           isClass = true;
         }
         if (isClass) {
-          auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+          auto key = resolveKey(key_value);
           if (key) {
             if (*key == "name") {
               auto* nameVal = obj->get("__name");
@@ -7485,7 +7501,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       }
       
         // Then check for prototype methods
-        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        auto key = resolveKey(key_value);
         if (key) {
             if (*key == "len" && array) {
                 pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
@@ -7521,7 +7537,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
             auto *s = heap_.string(object.asStringId());
             if (s) actualStr = *s;
         }
-        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        auto key = resolveKey(key_value);
         if (key) {
             if (*key == "len") {
                 pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
@@ -7547,7 +7563,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (object.isRangeId()) {
       auto *r = heap_.range(object.asRangeId());
       if (r) {
-        auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+        auto key = resolveKey(key_value);
         if (key) {
           if (*key == "step") {
             pushStack(Value::makeInt(r->step));
@@ -7566,7 +7582,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (object.isHostFuncId()) {
-      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+      auto key = resolveKey(key_value);
       if (key) {
         uint32_t idx = object.asHostFuncId();
         if (*key == "name" && idx < host_function_names_.size()) {
@@ -7582,7 +7598,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
     if (object.isSetId()) {
-      auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+      auto key = resolveKey(key_value);
       if (key && *key == "len") {
         auto *set = heap_.set(object.asSetId());
         pushStack(Value::makeInt(set ? static_cast<int64_t>(set->size()) : 0));
@@ -7632,7 +7648,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 			}
 			break;
 		}
-		auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+		auto key = resolveKey(key_value);
 		if (!key) {
 			COMPILER_THROW("OBJECT_GET expects string/number/bool key");
 		}
@@ -7693,7 +7709,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       break;
     }
 
-    auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+    auto key = resolveKey(key_value);
     if (!key) {
         COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
@@ -7789,7 +7805,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     Value value = popStack();
     Value object = popStack();
 
-    auto keyStr = ::havel::compiler::keyFromValue(key, &heap_, current_chunk);
+    auto keyStr = resolveKey(key);
     if (!keyStr) {
       COMPILER_THROW("OBJECT_SET expects string/number/bool key");
     }
@@ -7923,7 +7939,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 			break;
 		}
 
-		auto key = ::havel::compiler::keyFromValue(key_value, &heap_, current_chunk);
+		auto key = resolveKey(key_value);
 		if (!key) {
 			pushStack(Value::makeNull());
 			break;
@@ -8042,7 +8058,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_HAS expects object");
     }
-    auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
+    auto key = resolveKey(keyValue);
     if (!key) {
       COMPILER_THROW("OBJECT_HAS expects string/number/bool key");
     }
@@ -8061,7 +8077,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!object.isObjectId()) {
       COMPILER_THROW("OBJECT_DELETE expects object");
     }
-    auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
+    auto key = resolveKey(keyValue);
     if (!key) {
       COMPILER_THROW("OBJECT_DELETE expects string/number/bool key");
     }
@@ -8099,7 +8115,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
       if (!set) {
         COMPILER_THROW("ARRAY_DEL unknown set id");
       }
-      auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
+      auto key = resolveKey(keyValue);
       if (!key) {
         COMPILER_THROW("ARRAY_DEL expects string/number key for set");
       }
@@ -8120,7 +8136,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!set) {
       COMPILER_THROW("SET_DEL unknown set id");
     }
-    auto key = ::havel::compiler::keyFromValue(keyValue, &heap_, current_chunk);
+    auto key = resolveKey(keyValue);
     if (!key) {
       COMPILER_THROW("SET_DEL expects string/number key");
     }
@@ -9724,11 +9740,18 @@ size_t base = locals.size();
   }
 
     if (value.isObjectId()) {
+        stack.push(value);
         auto* srcObj = heap_.object(value.asObjectId());
-        if (!srcObj) return value;
+        if (!srcObj) { stack.pop(); return value; }
+        std::vector<std::pair<std::string, Value>> entries;
+        entries.reserve(srcObj->size());
+        for (const auto& [k, v] : *srcObj) {
+            entries.emplace_back(k, v);
+        }
+        stack.pop();
         ObjectRef copyRef = createHostObject();
         auto* copyObj = heap_.object(copyRef.id);
-        for (const auto& [k, v] : *srcObj) {
+        for (const auto& [k, v] : entries) {
             (*copyObj)[k] = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
                 fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
         }
@@ -9736,13 +9759,20 @@ size_t base = locals.size();
     }
 
     if (value.isArrayId()) {
+        stack.push(value);
         auto* srcArr = heap_.array(value.asArrayId());
-        if (!srcArr) return value;
+        if (!srcArr) { stack.pop(); return value; }
+        std::vector<Value> elements;
+        elements.reserve(srcArr->size());
+        for (size_t i = 0; i < srcArr->size(); i++) {
+            elements.push_back((*srcArr)[i]);
+        }
+        stack.pop();
         ArrayRef copyRef = createHostArray();
         auto* copyArr = heap_.array(copyRef.id);
-        copyArr->reserve(srcArr->size());
-        for (size_t i = 0; i < srcArr->size(); i++) {
-            copyArr->push_back(deepWrapModuleFunctions((*srcArr)[i], chunk, moduleGlobals, canonicalKey,
+        copyArr->reserve(elements.size());
+        for (size_t i = 0; i < elements.size(); i++) {
+            copyArr->push_back(deepWrapModuleFunctions(elements[i], chunk, moduleGlobals, canonicalKey,
                 fieldPath + "[" + std::to_string(i) + "]", depth + 1));
         }
         return Value::makeArrayId(copyRef.id);

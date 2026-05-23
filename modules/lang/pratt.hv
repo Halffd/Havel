@@ -1662,73 +1662,71 @@ fn Parser(tokenList) {
     // ===================================================================
     // BLOCK PARSING
     // ===================================================================
-    fn parseBlock() {
-        l = current().line
-        c = current().col
+fn parseBlock() {
+  l = current().line
+  c = current().col
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
 
-        if current().type == "OpenBrace" {
-            advance()
-            skipNewlines()
-            stmts = []
-            while current().type != "CloseBrace" and notEOF() {
-                skipNewlines()
-                if current().type == "CloseBrace": break
-                s = parseStatement()
-                if s != null and s.kind != "ErrorNode" {
-                    stmts.push(s)
-                }
-                else if s != null and s.kind == "ErrorNode" {
-                    // Skip error tokens and continue
-                    advance()
-                }
-                skipNewlinesAndSemicolons()
-            }
-            expect("CloseBrace")
-            BlockStatement(stmts, l, c)
-        }
-        else if current().type == "Colon" {
-            advance()
-            skipNewlines()
-            stmts = []
-            // Parse indented block — consume until we see dedent-like pattern
-            // In Havel, blocks after : end at the next token at same or lower indent
-            blockLine = l
-            while notEOF() and current().type != "EOF" {
-                skipNewlines()
-                if current().type == "EOF": break
-                s = parseStatement()
-                if s != null and s.kind != "ErrorNode" {
-                    stmts.push(s)
-                }
-                else if s != null and s.kind == "ErrorNode" {
-                    advance()
-                }
-                // Check for continuation
-                skipNewlines()
-                if current().type == "EOF": break
-                // A block ends when we see certain tokens that can't be in the block
-                endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
-                if endTokens.has(current().type): break
-            }
-            BlockStatement(stmts, blockLine, c)
-        }
-        else {
-            error("Expected '{' or ':' for block", l, c)
-
-        }
+  if current().type == "OpenBrace" {
+    advance()
+    skipNewlines()
+    stmts = []
+    while current().type != "CloseBrace" and notEOF() {
+      skipNewlines()
+      if current().type == "CloseBrace": break
+      s = parseStatement()
+      if s != null and s.kind != "ErrorNode" {
+        stmts.push(s)
+      }
+      if s != null and s.kind == "ErrorNode" {
+        advance()
+      }
+      skipNewlinesAndSemicolons()
     }
+    expect("CloseBrace")
+    allowBraceSugar = prevSugar
+    return BlockStatement(stmts, l, c)
+  }
+  if current().type == "Colon" {
+    advance()
+    skipNewlines()
+    stmts = []
+    blockLine = l
+    while notEOF() and current().type != "EOF" {
+      skipNewlines()
+      if current().type == "EOF": break
+      s = parseStatement()
+      if s != null and s.kind != "ErrorNode" {
+        stmts.push(s)
+      }
+      if s != null and s.kind == "ErrorNode" {
+        advance()
+      }
+      skipNewlines()
+      if current().type == "EOF": break
+      endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
+      if endTokens.has(current().type): break
+    }
+    allowBraceSugar = prevSugar
+    return BlockStatement(stmts, blockLine, c)
+  }
+  allowBraceSugar = prevSugar
+  error("Expected '{' or ':' for block", l, c)
+
+}
     // ===================================================================
     // STATEMENT PARSING
     // ===================================================================
-    fn parseStatement() {
-        if !notEOF(): return null
+fn parseStatement() {
+  if !notEOF(): return null
 
-        skipNewlines()
-        if !notEOF(): return null
+  skipNewlines()
+  if !notEOF(): return null
 
-        tt = current().type
-        l = current().line
-        c = current().col
+  tt = current().type
+  l = current().line
+  c = current().col
 
         // Hotkey binding: Hotkey token or @token => block
         if tt == "Hotkey" {
@@ -1853,57 +1851,55 @@ fn Parser(tokenList) {
     // ===================================================================
     // STATEMENT: if
     // ===================================================================
-    fn parseIfStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'if'
-        skipNewlines()
+fn parseIfStatement() {
+  l = current().line
+  c = current().col
+  advance() // consume 'if'
+  skipNewlines()
 
-        prevSugar = allowBraceSugar
-        allowBraceSugar = false
-        condition = parseExpr(0)
-        allowBraceSugar = prevSugar
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
+  condition = parseExpr(0)
+  allowBraceSugar = prevSugar
 
-        skipNewlines()
+  skipNewlines()
 
-        thenBranch = null
-        if current().type == "OpenBrace" {
-            thenBranch = parseBlock()
-        }
-        else if current().type == "Colon" {
-            advance()
-            skipNewlines()
-            thenBranch = parseBlock()
-        }
-        else {
-            thenBranch = parseStatement()
-            if thenBranch == null: thenBranch = BlockStatement([], l, c)
+  thenBranch = null
+  if current().type == "OpenBrace" {
+    thenBranch = parseBlock()
+  }
+  if thenBranch == null && current().type == "Colon" {
+    advance()
+    skipNewlines()
+    thenBranch = parseBlock()
+  }
+  if thenBranch == null {
+    thenBranch = parseStatement()
+    if thenBranch == null: thenBranch = BlockStatement([], l, c)
+  }
+  skipNewlines()
 
-        }
-        skipNewlines()
-
-        elseBranch = null
-        if current().type == "Else" {
-            advance()
-            skipNewlines()
-            if current().type == "If" {
-                elseBranch = parseIfStatement()
-            }
-            else if current().type == "OpenBrace" {
-                elseBranch = parseBlock()
-            }
-            else if current().type == "Colon" {
-                advance()
-                skipNewlines()
-                elseBranch = parseBlock()
-            }
-            else {
-                elseBranch = parseStatement()
-                if elseBranch == null: elseBranch = BlockStatement([], l, c)
-
-            }
-        }
-        IfStatement(condition, thenBranch, elseBranch, l, c)
+  elseBranch = null
+  if current().type == "Else" {
+    advance()
+    skipNewlines()
+    if current().type == "If" {
+      elseBranch = parseIfStatement()
+    }
+    if elseBranch == null && current().type == "OpenBrace" {
+      elseBranch = parseBlock()
+    }
+    if elseBranch == null && current().type == "Colon" {
+      advance()
+      skipNewlines()
+      elseBranch = parseBlock()
+    }
+    if elseBranch == null {
+      elseBranch = parseStatement()
+      if elseBranch == null: elseBranch = BlockStatement([], l, c)
+    }
+  }
+  IfStatement(condition, thenBranch, elseBranch, l, c)
 
     }
     // ===================================================================

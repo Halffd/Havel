@@ -347,8 +347,7 @@ fn runScript(cfg) {
     // Compile
     if isOn("timing") { startTimer("compile") }
     emitter = Emitter()
-    bc.reset()
-    compileProgram(emitter, result.ast, false, sourceFile)
+    compileProgram(emitter, result.ast, false, sourceFile, "__main__", false)
     if isOn("timing") { endTimer("compile") }
 
     // Check for emitter errors
@@ -531,31 +530,40 @@ fn runTests(cfg) {
 }
 
 // ============================================================
-// Main entry point
+// Main entry point — only runs when launcher.hv is the direct entry
+// (not when imported via 'use')
 // ============================================================
 
-args = app.args
-if args == null || #args == 0 {
-    print("Usage: havel --run launcher.hv -- [flags] script.hv")
-    print("Use --help for more information")
-    shell.exit(1)
+fn main() {
+    args = app.args
+    if args == null || #args == 0 {
+        print("Usage: havel --run launcher.hv -- [flags] script.hv")
+        print("Use --help for more information")
+        shell.exit(1)
+    }
+
+    cfg = parseArgs(args)
+
+    result = 0
+    if cfg.mode == "run" && cfg.selfHosted {
+        result = runSelfHosted(cfg)
+    }
+    if cfg.mode == "run" && !cfg.selfHosted {
+        result = runScript(cfg)
+    }
+    if cfg.mode == "test" {
+        result = runTests(cfg)
+    }
+    if cfg.mode != "run" && cfg.mode != "test" {
+        print("Unknown mode: " + cfg.mode)
+        result = 1
+    }
+
+    shell.exit(result)
 }
 
-cfg = parseArgs(args)
-
-result = 0
-if cfg.mode == "run" && cfg.selfHosted {
-    result = runSelfHosted(cfg)
+// Auto-run main only when this file is the top-level entry point
+// (app.args non-empty means we were invoked with -- flag args)
+if app.args != null && #app.args > 0 {
+    main()
 }
-if cfg.mode == "run" && !cfg.selfHosted {
-    result = runScript(cfg)
-}
-if cfg.mode == "test" {
-    result = runTests(cfg)
-}
-if cfg.mode != "run" && cfg.mode != "test" {
-    print("Unknown mode: " + cfg.mode)
-    result = 1
-}
-
-shell.exit(result)

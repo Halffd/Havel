@@ -361,10 +361,10 @@ bc.execute_persistent(entryName)
 // 12. Build exports descriptor
 // The module's top-level names are now in VM globals.
 // Consumers access them via LOAD_GLOBAL at runtime.
-exports = {}
-for nm in exportNames {
-    exports[nm] = true
-}
+  exports = {}
+  for nm in exportNames {
+    exports[nm] = bc.get_global(nm)
+  }
 
 // 13. Cache the module record
 record = {path: canonical, exports: exports, exportNames: exportNames, entryName: entryName}

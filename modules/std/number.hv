@@ -1,4 +1,5 @@
 // number.hv - Pure Havel number stdlib additions
+use "math"
 // Provides number.* namespace functions and prototype dispatch.
 // Loaded by: use "number"
 //

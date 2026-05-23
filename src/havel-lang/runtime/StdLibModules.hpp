@@ -23,5 +23,6 @@ void registerStdLibWithVM(compiler::HostBridge& bridge);
 // Register ONLY pure stdlib modules with VM
 namespace compiler { class VM; }
 void registerPureStdLib(compiler::VM& vm);
+void registerCoreStdLib(compiler::VM& vm);
 
 } // namespace havel

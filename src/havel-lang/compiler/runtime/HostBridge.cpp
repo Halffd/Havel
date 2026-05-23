@@ -313,6 +313,115 @@ auto *vm = static_cast<VM *>(ctx_->vm);
 return vm->execLengthOp(args[0]);
 };
 
+ // Helper: check if a value is callable (host func, closure, or function object)
+  auto isCallable = [](const Value &v) {
+    return v.isHostFuncId() || v.isClosureId() || v.isFunctionObjId();
+  };
+
+  // any(iterable, predicate) - check if any element satisfies predicate
+  options_.host_functions["any"] = [this, isCallable](
+                                       const std::vector<Value> &args) {
+    if (args.size() < 2 || !isCallable(args[1])) {
+      return Value::makeBool(false);
+    }
+
+    const auto &iterable = args[0];
+    const auto &predicate = args[1];
+
+    // Create iterator
+    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+    // Iterate and check predicate
+    while (true) {
+      auto result = ctx_->vm->iteratorNext(iterRef);
+
+      // Check if done
+      if (!result.isObjectId()) {
+        return Value::makeBool(false);
+      }
+      auto resultObjRef = ObjectRef{result.asObjectId(), true};
+
+      // Get done flag
+      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+      if (doneVal.isBool() && doneVal.asBool()) {
+        return Value::makeBool(false); // Reached end, no match found
+      }
+
+      // Get value
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
+
+      // Call predicate with value
+      std::vector<Value> predArgs;
+      predArgs.push_back(valueVal);
+      auto predResult = ctx_->vm->callFunction(predicate, predArgs);
+
+      if (predResult.isBool() && predResult.asBool()) {
+        return Value::makeBool(true); // Found a match
+      }
+      // For truthiness check (non-bool values that are truthy)
+      if (!predResult.isNull() && !predResult.isBool()) {
+        if (predResult.isInt() && predResult.asInt() != 0) {
+          return Value::makeBool(true);
+        }
+      }
+    }
+  };
+
+  // all(iterable, predicate) - check if all elements satisfy predicate
+  options_.host_functions["all"] = [this, isCallable](
+                                       const std::vector<Value> &args) {
+    if (args.size() < 2 || !isCallable(args[1])) {
+      return Value::makeBool(false);
+    }
+
+    const auto &iterable = args[0];
+    const auto &predicate = args[1];
+
+    // Create iterator
+    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+    // Iterate and check predicate - ALL must match
+    bool found_any = false;
+    while (true) {
+      auto result = ctx_->vm->iteratorNext(iterRef);
+
+      // Check if done
+      if (!result.isObjectId()) {
+        break;
+      }
+      auto resultObjRef = ObjectRef{result.asObjectId(), true};
+
+      // Get done flag
+      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+      if (doneVal.isBool() && doneVal.asBool()) {
+        break; // Reached end
+      }
+
+      // Get value
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
+      found_any = true;
+
+      // Call predicate with value
+      std::vector<Value> predArgs;
+      predArgs.push_back(valueVal);
+      auto predResult = ctx_->vm->callFunction(predicate, predArgs);
+
+      bool isTruthy = false;
+      if (predResult.isBool() && predResult.asBool()) {
+        isTruthy = true;
+      } else if (!predResult.isNull() && !predResult.isBool()) {
+        if (predResult.isInt() && predResult.asInt() != 0) {
+          isTruthy = true;
+        }
+      }
+
+      if (!isTruthy) {
+        return Value::makeBool(false); // Found element that doesn't match
+      }
+    }
+    return Value::makeBool(found_any);
+  };
+
   if (coreProfile) {
     // Core profile: keep host API lean.
     // Only generic helpers required by pure language/runtime.
@@ -1794,115 +1903,6 @@ options_.host_functions["array.filter"] =
         (void)start; (void)end;
         return args[0];
 };
-
- // Helper: check if a value is callable (host func, closure, or function object)
-  auto isCallable = [](const Value &v) {
-    return v.isHostFuncId() || v.isClosureId() || v.isFunctionObjId();
-  };
-
-  // any(iterable, predicate) - check if any element satisfies predicate
-  options_.host_functions["any"] = [this, isCallable](
-                                       const std::vector<Value> &args) {
-    if (args.size() < 2 || !isCallable(args[1])) {
-      return Value::makeBool(false);
-    }
-
-    const auto &iterable = args[0];
-    const auto &predicate = args[1];
-
-    // Create iterator
-    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
-
-    // Iterate and check predicate
-    while (true) {
-      auto result = ctx_->vm->iteratorNext(iterRef);
-
-      // Check if done
-      if (!result.isObjectId()) {
-        return Value::makeBool(false);
-      }
-      auto resultObjRef = ObjectRef{result.asObjectId(), true};
-
-      // Get done flag
-      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (doneVal.isBool() && doneVal.asBool()) {
-        return Value::makeBool(false); // Reached end, no match found
-      }
-
-      // Get value
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
-
-      // Call predicate with value
-      std::vector<Value> predArgs;
-      predArgs.push_back(valueVal);
-      auto predResult = ctx_->vm->callFunction(predicate, predArgs);
-
-      if (predResult.isBool() && predResult.asBool()) {
-        return Value::makeBool(true); // Found a match
-      }
-      // For truthiness check (non-bool values that are truthy)
-      if (!predResult.isNull() && !predResult.isBool()) {
-        if (predResult.isInt() && predResult.asInt() != 0) {
-          return Value::makeBool(true);
-        }
-      }
-    }
-  };
-
-  // all(iterable, predicate) - check if all elements satisfy predicate
-  options_.host_functions["all"] = [this, isCallable](
-                                       const std::vector<Value> &args) {
-    if (args.size() < 2 || !isCallable(args[1])) {
-      return Value::makeBool(false);
-    }
-
-    const auto &iterable = args[0];
-    const auto &predicate = args[1];
-
-    // Create iterator
-    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
-
-    // Iterate and check predicate - ALL must match
-    bool found_any = false;
-    while (true) {
-      auto result = ctx_->vm->iteratorNext(iterRef);
-
-      // Check if done
-      if (!result.isObjectId()) {
-        break;
-      }
-      auto resultObjRef = ObjectRef{result.asObjectId(), true};
-
-      // Get done flag
-      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
-      if (doneVal.isBool() && doneVal.asBool()) {
-        break; // Reached end
-      }
-
-      // Get value
-      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "second");
-      found_any = true;
-
-      // Call predicate with value
-      std::vector<Value> predArgs;
-      predArgs.push_back(valueVal);
-      auto predResult = ctx_->vm->callFunction(predicate, predArgs);
-
-      bool isTruthy = false;
-      if (predResult.isBool() && predResult.asBool()) {
-        isTruthy = true;
-      } else if (!predResult.isNull() && !predResult.isBool()) {
-        if (predResult.isInt() && predResult.asInt() != 0) {
-          isTruthy = true;
-        }
-      }
-
-      if (!isTruthy) {
-        return Value::makeBool(false); // Found element that doesn't match
-      }
-    }
-    return Value::makeBool(found_any);
-  };
 
   // Type system functions - the VM's registerDefaultHostFunctions() already
   // registers a working "type" function, so we don't need to register it here.

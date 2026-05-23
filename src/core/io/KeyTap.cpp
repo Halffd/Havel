@@ -1,5 +1,5 @@
 #include "KeyTap.hpp"
-#include "core/HotkeyManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include <iostream>

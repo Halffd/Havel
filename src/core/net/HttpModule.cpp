@@ -1,6 +1,6 @@
 #include "HttpModule.hpp"
-#include "../utils/Logger.hpp"
-#include "../utils/DebugFlags.hpp"
+#include "../../utils/Logger.hpp"
+#include "../../utils/DebugFlags.hpp"
 #include <curl/curl.h>
 #include <fstream>
 #include <sstream>

@@ -11,7 +11,7 @@
 #include "../runtime/EventQueue.hpp"
 #include "../../runtime/HostContext.hpp"
 #include "../runtime/HostBridge.hpp"
-#include "../core/ByteCompiler.hpp"
+#include "compiler/core/ByteCompiler.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 
@@ -32,7 +32,7 @@
 
 #include "VMApi.hpp"
 #include "../../stdlib/ShellModule.hpp"
-#include "../../../core/ConfigManager.hpp"
+#include "core/config/ConfigManager.hpp"
 
 // Helper macro for throwing runtime errors
 // Reports to unified ErrorReporter before throwing

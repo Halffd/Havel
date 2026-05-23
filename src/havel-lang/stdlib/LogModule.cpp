@@ -3,7 +3,7 @@
  */
 #include "LogModule.hpp"
 #include "../../utils/Logger.hpp"
-#include "core/ConfigManager.hpp"
+#include "core/config/ConfigManager.hpp"
 #include <sstream>
 #include <chrono>
 #include <iomanip>

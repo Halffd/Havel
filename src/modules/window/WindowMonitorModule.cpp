@@ -4,7 +4,7 @@
  * Uses EXISTING WindowMonitor from HotkeyManager (no duplicate instances)
  */
 #include "WindowMonitorModule.hpp"
-#include "window/WindowMonitor.hpp"
+#include "core/window/WindowMonitor.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 

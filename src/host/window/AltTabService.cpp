@@ -1,5 +1,5 @@
 #include "AltTabService.hpp"
-#include "window/WindowQuery.hpp"
+#include "core/window/WindowQuery.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/alt_tab/AltTab.hpp"

@@ -1,5 +1,5 @@
 #include "DebugUtils.hpp"
-#include "../core/BytecodeIR.hpp"
+#include "compiler/core/BytecodeIR.hpp"
 #include <sstream>
 #include <iomanip>
 #include <chrono>

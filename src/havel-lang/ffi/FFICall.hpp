@@ -10,7 +10,7 @@
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
-#include "../core/Value.hpp"
+#include "core/Value.hpp"
 
 #ifdef HAVE_LIBFFI
 #include <ffi.h>

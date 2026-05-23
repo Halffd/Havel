@@ -5,7 +5,7 @@
  * Separates config logic from evaluator.
  */
 #include "ConfigProcessor.hpp"
-#include "core/ConfigManager.hpp"
+#include "core/config/ConfigManager.hpp"
 #include "havel-lang/ast/AST.h"
 #include "utils/Logger.hpp"
 

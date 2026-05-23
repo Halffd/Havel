@@ -3,7 +3,7 @@
 #include "FFITypes.hpp"
 #include "FFIMemory.hpp"
 #include "FFIAccessors.hpp"
-#include "../core/Value.hpp"
+#include "core/Value.hpp"
 #include <regex>
 #ifdef _WIN32
 #include <windows.h>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../../runtime/HostContext.hpp"
-#include "../core/BytecodeIR.hpp"
-#include "../core/Pipeline.hpp"
+#include "compiler/core/BytecodeIR.hpp"
+#include "compiler/core/Pipeline.hpp"
 #include "EventQueue.hpp"
 
 #include <functional>

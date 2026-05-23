@@ -7,12 +7,12 @@
 #include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "havel-lang/stdlib/HotkeyModule.hpp"
 #include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
-#include "core/ConfigManager.hpp"
-#include "core/DisplayManager.hpp"
-#include "core/HardwareDetector.hpp"
-#include "core/HotkeyManager.hpp"
-#include "core/IO.hpp"
-#include "core/ModeManager.hpp"
+#include "core/config/ConfigManager.hpp"
+#include "core/display/DisplayManager.hpp"
+#include "core/detect/HardwareDetector.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
+#include "core/io/IO.hpp"
+#include "core/mode/ModeManager.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
@@ -43,11 +43,11 @@
 #include "host/window/AltTabService.hpp"
 #endif
 #include "host/window/WindowService.hpp"
-#include "media/AudioManager.hpp"
-#include "media/MPVController.hpp"
-#include "process/Launcher.hpp"
-#include "window/WindowManager.hpp"
-#include "window/WindowManagerDetector.hpp"
+#include "core/media/AudioManager.hpp"
+#include "core/media/MPVController.hpp"
+#include "core/process/Launcher.hpp"
+#include "core/window/WindowManager.hpp"
+#include "core/window/WindowManagerDetector.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include <QClipboard>

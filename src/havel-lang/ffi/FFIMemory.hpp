@@ -5,7 +5,7 @@
 #include <functional>
 #include <mutex>
 #include <unordered_map>
-#include "../core/Value.hpp"
+#include "core/Value.hpp"
 
 namespace havel::ffi {
 

@@ -1,6 +1,6 @@
 #include "ExecutionEngine.hpp"
 #include "../../../utils/Logger.hpp"
-#include "../../../core/HotkeyActionWrapper.hpp"
+#include "core/hotkey/HotkeyActionWrapper.hpp"
 #include "../../common/Debug.hpp"
 #include "../concurrency/Fiber.hpp"
 #include "../concurrency/DependencyTracker.hpp"

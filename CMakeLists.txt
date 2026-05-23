@@ -318,11 +318,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/window/backends/*.cpp"
     "src/window/strategies/*.cpp"
     "src/utils/*.cpp"
-    "src/fs/*.cpp"
-    "src/process/*.cpp"
     "src/media/*.cpp"
-    "src/io/*.cpp"
-    "src/utils/*.cpp"
     "src/ai/ocr/*.cpp"
 )
 # Non-Qt host sources (always built)
@@ -823,6 +819,7 @@ target_include_directories(${lib} PRIVATE
     $<$<BOOL:${OpenCV_FOUND}>:${OpenCV_INCLUDE_DIRS}>
     ${UI_BACKEND_INCLUDES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
+    $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang/compiler>
 )
     target_compile_definitions(${lib} PRIVATE
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>

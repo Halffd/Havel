@@ -4,7 +4,7 @@
 #include "InputBackend.hpp"
 #include "core/CallbackTypes.hpp"
 #include "../MouseGestureTypes.hpp" // Include mouse gesture types
-#include "core/HotkeyManager.hpp"  // Include HotkeyManager
+#include "core/hotkey/HotkeyManager.hpp"  // Include HotkeyManager
 #include <atomic>
 #include <chrono>
 #include <csignal>

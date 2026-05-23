@@ -1,6 +1,6 @@
 #pragma once
-#include "core/IO.hpp"
-#include "../HotkeyManager.hpp"
+#include "core/io/IO.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include <atomic>
 #include <chrono>
 #include <functional>

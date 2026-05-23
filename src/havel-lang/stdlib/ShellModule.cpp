@@ -26,7 +26,7 @@
 
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
-#include "process/Launcher.hpp"
+#include "core/process/Launcher.hpp"
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;

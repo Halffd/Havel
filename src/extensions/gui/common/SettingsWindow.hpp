@@ -4,7 +4,7 @@
 
 // #include <QMainWindow>
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
-#include "core/ConfigManager.hpp"
+#include "core/config/ConfigManager.hpp"
 
 namespace havel {
     class AutomationSuite;

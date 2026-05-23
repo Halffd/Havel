@@ -1,6 +1,6 @@
 #include "AltTab.hpp"
 #include "qt.hpp"
-#include "core/DisplayManager.hpp"
+#include "core/display/DisplayManager.hpp"
 #include <QApplication>
 #include <QCursor>
 #include <QGuiApplication>

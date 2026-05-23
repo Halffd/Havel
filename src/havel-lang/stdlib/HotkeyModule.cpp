@@ -1,6 +1,6 @@
 #ifndef HAVEL_PURE_VM
 #include "HotkeyModule.hpp"
-#include "../../core/HotkeyManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
 #include "../../utils/Logger.hpp"
 #include <mutex>

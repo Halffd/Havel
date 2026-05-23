@@ -1,7 +1,7 @@
 #ifdef __linux__
 
 #include "X11HotkeyMonitor.hpp"
-#include "../IO.hpp"
+#include "core/io/IO.hpp"
 #include "../../havel-lang/compiler/runtime/EventQueue.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>

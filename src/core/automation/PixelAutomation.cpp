@@ -12,12 +12,12 @@
 #include <opencv2/highgui.hpp>
 #endif
 
-#include "ai/ocr/OCR.hpp"
-#include "core/IO.hpp"
+#include "core/ocr/OCR.hpp"
+#include "core/io/IO.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #endif
-#include "window/WindowManager.hpp"
+#include "core/window/WindowManager.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include <QCursor>
 #include <QGuiApplication>

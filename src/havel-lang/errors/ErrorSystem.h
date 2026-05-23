@@ -12,7 +12,7 @@
 #include <optional>
 #include <sstream>
 #include <exception>
-#include "../utils/Logger.hpp"
+#include "../../utils/Logger.hpp"
 
 namespace havel::errors {
 using havel::debug;

@@ -1,7 +1,7 @@
 #include "ClipboardManager.hpp"
 #include "qt.hpp"
-#include "core/ConfigManager.hpp"
-#include "core/IO.hpp"
+#include "core/config/ConfigManager.hpp"
+#include "core/io/IO.hpp"
 #include <QApplication>
 #include <QThread>
 #include <QJsonDocument>

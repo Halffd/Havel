@@ -1,6 +1,6 @@
 #include "AutoRunner.hpp"
-#include "../utils/Timer.hpp"
-#include "../window/WindowManager.hpp"
+#include "../../utils/Timer.hpp"
+#include "core/window/WindowManager.hpp"
 #include <stdexcept>
 #include <utility>
 #include "utils/Logger.hpp"

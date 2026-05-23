@@ -1,6 +1,6 @@
 #include "ModuleResolver.hpp"
 #include "../module/ModuleLoader.hpp"
-#include "../core/BytecodeIR.hpp"
+#include "compiler/core/BytecodeIR.hpp"
 #include <cstdlib>
 #include <fstream>
 

@@ -1,5 +1,5 @@
 #include "Lexer.hpp"
-#include "../utils/Logger.hpp"
+#include "../../utils/Logger.hpp"
 #include <cctype>
 #include <iomanip>
 #include <iostream>

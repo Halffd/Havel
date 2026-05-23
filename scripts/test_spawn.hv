@@ -1,0 +1,48 @@
+use process
+
+print("=== test spawn ===")
+
+// Test 1: spawn basic
+p = process.spawn("echo hello spawn")
+assert(p.pid > 0, "spawn should return pid")
+x = process.wait(p)
+assert(p.exitCode == 0, "exit code 0")
+assert(p.success == true, "success")
+assert(p.stdout == "hello spawn\n", "stdout: " + p.stdout)
+print("  test 1: spawn + wait OK")
+
+// Test 2: spawn stderr
+p2 = process.spawn("echo stderr test >&2")
+process.wait(p2)
+assert(p2.exitCode == 0, "stderr exit")
+assert(p2.stderr == "stderr test\n", "stderr match")
+print("  test 2: stderr capture OK")
+
+// Test 3: spawn failure
+p3 = process.spawn("false")
+process.wait(p3)
+assert(p3.success == false, "should fail")
+assert(p3.exitCode == 1, "exit 1")
+print("  test 3: failure detection OK")
+
+// Test 4: spawn kill
+p4 = process.spawn("sleep 10")
+ok = process.killObj(p4)
+assert(ok == true, "kill succeed")
+process.wait(p4)
+assert(p4.success == false, "killed not succeed")
+assert(p4.exitCode < 0, "killed exit code negative: " + str(p4.exitCode))
+print("  test 4: kill OK")
+
+// Test 5: run
+r = process.run("echo hello run")
+assert(r.success == true, "run success")
+assert(r.stdout == "hello run\n", "run stdout")
+print("  test 5: process.run OK")
+
+// Test 6: runDetached
+dp = process.runDetached("echo detached")
+assert(dp > 0, "detached pid")
+print("  test 6: process.runDetached OK")
+
+print("\nall spawn tests passed")

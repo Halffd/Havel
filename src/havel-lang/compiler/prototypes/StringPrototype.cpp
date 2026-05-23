@@ -254,10 +254,17 @@ void registerStringPrototype(VM& vm) {
   });
 
 regProto("find", 2, [&vm](const std::vector<Value>& args) {
-    if (args.size() < 2) return Value::makeInt(-1);
+    if (args.size() < 2) return Value::makeNull();
     std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
     size_t pos = s.find(sub);
-    return Value::makeInt(pos == std::string::npos ? -1 : static_cast<int64_t>(pos));
+    if (pos == std::string::npos) return Value::makeNull();
+    auto objRef = vm.getHeap().allocateObject();
+    auto* obj = vm.getHeap().object(objRef.id);
+    if (obj) {
+      obj->set("index", Value::makeInt(static_cast<int64_t>(pos)));
+      obj->set("len", Value::makeInt(static_cast<int64_t>(sub.size())));
+    }
+    return Value::makeObjectId(objRef.id);
 });
 
 	regProto("lastIndexOf", 2, [&vm](const std::vector<Value>& args) {

@@ -27,6 +27,7 @@ void registerPackModule(const compiler::VMApi &api);
 void registerBitModule(const compiler::VMApi &api);
 void registerOptionModule(const compiler::VMApi &api);
 void registerBytecodeBuilderModule(const compiler::VMApi &api);
+void registerLogModule(const compiler::VMApi &api);
 } // namespace havel::stdlib
 
 namespace havel {
@@ -54,6 +55,7 @@ void registerPureStdLib(compiler::VM &vm) {
   stdlib::registerBitModule(api);
     stdlib::registerOptionModule(api);
     stdlib::registerBytecodeBuilderModule(api);
+  stdlib::registerLogModule(api);
 }
 
 } // namespace havel

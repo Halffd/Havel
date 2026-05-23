@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <chrono>
 #include <unordered_map>
+#include <deque>
 #include <sstream>
 
 // Use std::format if C++20, otherwise fallback to fmt library
@@ -162,9 +163,10 @@ private:
     void cleanupOldLogs();
     void openNewLogFile();
 
-    struct Impl;
-    std::unique_ptr<Impl> pImpl;
-    std::mutex mutex;
+struct Impl;
+  std::unique_ptr<Impl> pImpl;
+  mutable std::deque<std::string> history_;
+  mutable std::mutex mutex;
     Level currentLevel;
     bool consoleOutput;
     bool useTimestampedFiles = true;

@@ -526,7 +526,16 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
   }
 	});
 
-	api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
+	api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> Value {
+    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+        throw std::runtime_error("bc.get_global: requires name (string)");
+    }
+    auto name = api.resolveString(args[0]);
+    auto &vm = api.vm();
+    return vm.lookupGlobalByKey(name);
+});
+
+api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
 	    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
 	        throw std::runtime_error("bc.serialize: requires path (string)");
 	    }
@@ -632,6 +641,7 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
   api.setField(bcObj, "execute", api.makeFunctionRef("bc.execute"));
   api.setField(bcObj, "serialize", api.makeFunctionRef("bc.serialize"));
   api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
+api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
   api.setField(bcObj, "func_count", api.makeFunctionRef("bc.func_count"));
   api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));
   api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));

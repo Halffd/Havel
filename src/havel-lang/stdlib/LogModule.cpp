@@ -88,11 +88,11 @@ void registerLogModule(const VMApi &api) {
         return Value::makeNull();
     });
 
-    api.registerFunction("log.get", [&api, &logger](const std::vector<Value> &) -> Value {
+    api.registerFunction("log.get", [api, &logger](const std::vector<Value> &) -> Value {
         return api.makeString(logger.getLogFilePath());
     });
 
-    api.registerFunction("log.set", [&logger, &api](const std::vector<Value> &args) -> Value {
+    api.registerFunction("log.set", [&logger, api](const std::vector<Value> &args) -> Value {
         if (args.empty()) {
             throw std::runtime_error("log.set() requires a file path");
         }
@@ -115,7 +115,7 @@ void registerLogModule(const VMApi &api) {
         return Value::makeNull();
     });
 
-    api.registerFunction("log.history", [&logger, &api](const std::vector<Value> &) -> Value {
+    api.registerFunction("log.history", [&logger, api](const std::vector<Value> &) -> Value {
         auto history = logger.getHistory();
         auto arrId = api.makeArray();
         for (const auto &entry : history) {

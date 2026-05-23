@@ -104,9 +104,12 @@ void Logger::log(Level level, const std::string& message) {
 
     std::string timestamp = getCurrentTimestamp();
     std::string levelStr = getLevelString(level);
-    std::string logMessage = timestamp + " [" + levelStr + "] " + message + "\n";
+std::string logMessage = timestamp + " [" + levelStr + "] " + message + "\n";
 
-    // Write to file
+  history_.push_back(logMessage);
+  if (history_.size() > 200) history_.pop_front();
+
+  // Write to file
     if (pImpl->logFile.is_open()) {
         pImpl->logFile << logMessage;
         pImpl->logFile.flush();
@@ -266,32 +269,13 @@ void Logger::cleanupOldLogs() {
 }
 
 std::vector<std::string> Logger::getHistory(size_t maxLines) const {
-std::vector<std::string> history;
-if (pImpl->currentFilename.empty()) {
-  return history;
-}
-
-std::ifstream file(pImpl->currentFilename);
-if (!file) {
-  return history;
-}
-
-// Read all lines into a deque for efficient front removal
-std::deque<std::string> lines;
-std::string line;
-while (std::getline(file, line)) {
-  lines.push_back(line);
-  if (lines.size() > maxLines) {
-    lines.pop_front();
+  std::lock_guard<std::mutex> lock(mutex);
+  std::vector<std::string> result;
+  size_t start = history_.size() > maxLines ? history_.size() - maxLines : 0;
+  for (size_t i = start; i < history_.size(); ++i) {
+    result.push_back(history_[i]);
   }
-}
-
-  // Copy to output vector
-  for (const auto& l : lines) {
-    history.push_back(l);
-  }
-
-  return history;
+  return result;
 }
 
 std::string Logger::getLogFilePath() const { return pImpl->currentFilename; }

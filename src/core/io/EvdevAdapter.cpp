@@ -48,6 +48,7 @@ public:
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;
     uint32_t GetModifiers() const override;
+    std::unordered_set<uint32_t> GetPressedKeys() const override;
 
     bool SupportsGrab() const override { return true; }
     bool SupportsSynthesis() const override { return true; }
@@ -411,6 +412,12 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     int ret = poll(pfds.data(), pfds.size(), timeoutMs);
     if (ret <= 0) return false;
 
+    // Drain shutdown eventfd if signaled
+    if (shutdownFd_ >= 0 && pfds.back().revents & POLLIN) {
+        uint64_t val;
+        while (read(shutdownFd_, &val, sizeof(val)) == sizeof(val)) {}
+    }
+
     std::vector<std::pair<size_t, input_event>> events;
 
     {
@@ -646,7 +653,7 @@ void EvdevAdapter::ProcessEvent(Device &dev, const input_event &ev) {
 
 void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
     auto now = std::chrono::steady_clock::now();
-    bool down = (ev.value == 1);
+    bool down = (ev.value == 1 || ev.value == 2);
     bool repeat = (ev.value == 2);
     uint32_t originalCode = ev.code;
     uint32_t mappedCode = RemapKey(originalCode, down);
@@ -962,6 +969,25 @@ void EvdevAdapter::ReleasePressedKeys(Device &dev) {
     sync.type = EV_SYN;
     sync.code = SYN_REPORT;
     write(dev.fd, &sync, sizeof(sync));
+}
+
+std::unordered_set<uint32_t> EvdevAdapter::GetPressedKeys() const {
+    std::unordered_set<uint32_t> pressed;
+    std::lock_guard<std::mutex> lock(devicesMutex_);
+    for (const auto &dev : devices_) {
+        if (dev.fd < 0) continue;
+        if (!(dev.capabilities & CAP_KEYBOARD)) continue;
+
+        uint8_t keyBits[(KEY_MAX + 7) / 8] = {};
+        if (ioctl(dev.fd, EVIOCGKEY(sizeof(keyBits)), keyBits) < 0) continue;
+
+        for (int key = 0; key < KEY_MAX; ++key) {
+            if (keyBits[key / 8] & (1 << (key % 8))) {
+                pressed.insert(key);
+            }
+        }
+    }
+    return pressed;
 }
 
 void EvdevAdapter::DrainDeviceEvents(Device &dev) {

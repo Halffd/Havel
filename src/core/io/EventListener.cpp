@@ -194,6 +194,20 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 
   ResetInputState();
 
+  // Seed key state from kernel — query all currently-pressed keys via EVIOCGKEY
+  if (backend_) {
+      auto pressed = backend_->GetPressedKeys();
+      if (!pressed.empty()) {
+          debug("[EventListener] Seeding {} pressed keys from kernel state", pressed.size());
+          std::unique_lock<std::shared_mutex> lock(stateMutex);
+          for (uint32_t code : pressed) {
+              evdevKeyState[code] = true;
+              physicalKeyStates[code] = true;
+              UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
+          }
+      }
+  }
+
   running.store(true);
   shutdown.store(false);
   eventThread = std::thread(&EventListener::EventLoop, this);
@@ -408,11 +422,18 @@ void EventListener::setHotkeyManager(HotkeyManager *manager) {
 
 void EventListener::EventLoop() {
     while (running.load() && !shutdown.load()) {
+
+        // Always drain pending input events (non-blocking) before anything else
+        if (backend_) {
+            backend_->PollEvents(0);
+        }
+
+        if (shutdown.load()) break;
+
         if (executionEngine) {
             if (hostBridge) hostBridge->checkTimers();
             executionEngine->executeFrame();
 
-            // Check if the VM requested a clean exit (from a Havel script's exit() call)
             auto* vm = executionEngine->getVM();
             if (vm && vm->exit_requested_.load()) {
                 int code = vm->exit_code_.load();
@@ -431,12 +452,14 @@ void EventListener::EventLoop() {
             hostBridge->checkTimers();
         }
 
+        // Blocking poll for input events — monitors evdev fds for prompt event pickup
         if (backend_) {
             backend_->PollEvents(10);
         }
 
-        // Fast path: if there are pending goroutines (especially hotkeys),
-        // skip the select sleep and process them immediately
+        if (shutdown.load()) break;
+
+        // Fast path: skip signal select when goroutines are still running
         if (executionEngine && executionEngine->getScheduler() &&
             executionEngine->getScheduler()->hasRunnableFibers()) {
             continue;
@@ -510,16 +533,16 @@ void EventListener::EventLoop() {
   if (debugging::debug_io) debug("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
 
   auto shutdownStart = std::chrono::steady_clock::now();
-  const auto maxShutdownTime = std::chrono::seconds(5);
+  const auto maxShutdownTime = std::chrono::milliseconds(1000);
 
   while (pendingCallbacks.load() > 0) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - shutdownStart);
     if (elapsed > maxShutdownTime) {
-      error("Shutdown timeout: {} callbacks still pending", pendingCallbacks.load());
+      error("Shutdown timeout: {} callbacks still pending, force-exiting", pendingCallbacks.load());
       break;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   if (debugging::debug_io) debug("EventListener: Stopped");

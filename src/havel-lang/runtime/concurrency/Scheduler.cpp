@@ -403,6 +403,10 @@ void Scheduler::deferToVM(DeferredAction fn) {
 }
 
 size_t Scheduler::drainDeferredCallbacks() {
+  if (vm_thread_id_ == std::thread::id()) {
+    vm_thread_id_ = std::this_thread::get_id();
+  }
+
   std::deque<DeferredAction> acts;
   {
     std::lock_guard<std::mutex> lock(deferred_mutex_);

@@ -49,6 +49,7 @@ void GCHeap::reset() {
     allocations_since_last_ = 0;
     recovered_in_cycle_ = 0;
     external_roots_.clear();
+    external_roots_active_.clear();
     next_external_root_id_ = 1;
     collections_ = 0;
     last_pause_ns_ = 0;
@@ -416,20 +417,35 @@ const GCHeap::ErrorObject *GCHeap::error(uint32_t id) const {
 
 uint64_t GCHeap::pinExternalRoot(const Value &value) {
     const uint64_t id = next_external_root_id_++;
-    external_roots_[id] = value;
+    size_t idx = id - 1;
+    if (idx < external_roots_.size()) {
+        external_roots_[idx] = value;
+        external_roots_active_[idx] = true;
+    } else {
+        external_roots_.push_back(value);
+        external_roots_active_.push_back(true);
+    }
     return id;
 }
 
 bool GCHeap::unpinExternalRoot(uint64_t root_id) {
-    return external_roots_.erase(root_id) > 0;
+    if (root_id == 0) return false;
+    size_t idx = root_id - 1;
+    if (idx < external_roots_active_.size()) {
+        bool was_active = external_roots_active_[idx];
+        external_roots_active_[idx] = false;
+        return was_active;
+    }
+    return false;
 }
 
 std::optional<Value> GCHeap::externalRoot(uint64_t root_id) const {
-    auto it = external_roots_.find(root_id);
-    if (it == external_roots_.end()) {
-        return std::nullopt;
+    if (root_id == 0) return std::nullopt;
+    size_t idx = root_id - 1;
+    if (idx < external_roots_.size() && external_roots_active_[idx]) {
+        return external_roots_[idx];
     }
-    return it->second;
+    return std::nullopt;
 }
 
 GCHeap::Stats GCHeap::stats() const {
@@ -713,8 +729,10 @@ void GCHeap::markRoots() {
             markReference(value);
         }
     }
-    for (const auto &[_, value] : external_roots_) {
-        markReference(value);
+    for (size_t i = 0; i < external_roots_.size(); i++) {
+        if (external_roots_active_[i]) {
+            markReference(external_roots_[i]);
+        }
     }
     for (uint32_t closure_id : root_closures_snapshot_) {
         if (closure_id != 0) {

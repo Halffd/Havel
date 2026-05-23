@@ -283,7 +283,9 @@ struct Iterator {
     uint64_t pinExternalRoot(const Value &value);
     bool unpinExternalRoot(uint64_t root_id);
     std::optional<Value> externalRoot(uint64_t root_id) const;
-    size_t externalRootCount() const { return external_roots_.size(); }
+    size_t externalRootCount() const {
+        return std::count(external_roots_active_.begin(), external_roots_active_.end(), true);
+    }
     Stats stats() const;
 
     void maybeCollectGarbage(
@@ -407,7 +409,8 @@ private:
     size_t allocations_since_last_ = 0;
     size_t recovered_in_cycle_ = 0;
 
-    std::unordered_map<uint64_t, Value> external_roots_;
+    std::vector<Value> external_roots_;
+    std::vector<bool> external_roots_active_;
     uint64_t next_external_root_id_ = 1;
     uint64_t collections_ = 0;
     uint64_t last_pause_ns_ = 0;

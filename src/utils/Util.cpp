@@ -1,6 +1,7 @@
 #include "./Util.hpp"
 #include "./Logger.hpp"
 #include <limits.h>
+#include <unistd.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif

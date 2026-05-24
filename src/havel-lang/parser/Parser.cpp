@@ -2675,15 +2675,16 @@ case havel::TokenType::Identifier: {
     // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })
     // ui { ... } -> desugared ui.create calls
     if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
-      advance(); // consume "thread"
-      auto body = parseBlockStatement();
-      auto lambda = makeNode<havel::ast::LambdaExpression>();
-      lambda->body = std::move(body);
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-      args.push_back(std::move(lambda));
-      auto call = makeNode<havel::ast::CallExpression>(
-          makeNode<havel::ast::Identifier>("thread"), std::move(args));
-      return makeNode<havel::ast::ExpressionStatement>(std::move(call));
+        auto kw = at();
+        advance(); // consume "thread"
+        auto body = parseBlockStatement();
+        auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
+        lambda->body = std::move(body);
+        std::vector<std::unique_ptr<havel::ast::Expression>> args;
+        args.push_back(std::move(lambda));
+        auto call = makeNodeAt<havel::ast::CallExpression>(kw,
+            makeNodeAt<havel::ast::Identifier>(kw, "thread"), std::move(args));
+        return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
     }
 
     if (at().value == "ui" && at(1).type == havel::TokenType::OpenBrace) {
@@ -2692,26 +2693,27 @@ case havel::TokenType::Identifier: {
 
     if ((at().value == "interval" || at().value == "timeout") &&
         at(1).type != havel::TokenType::OpenBrace) {
-      const std::string async_kind = at().value;
-      advance(); // consume "interval" / "timeout"
-      auto delay = parseExpression();
-      while (at().type == havel::TokenType::NewLine) {
+    const std::string async_kind = at().value;
+    auto kw = at();
+    advance(); // consume "interval" / "timeout"
+    auto delay = parseExpression();
+    while (at().type == havel::TokenType::NewLine) {
         advance();
-      }
-      if (at().type != havel::TokenType::OpenBrace) {
-        failAt(at(), "Expected block body after " + async_kind + " delay");
-      }
-      auto body = parseBlockStatement();
-      auto lambda = makeNode<havel::ast::LambdaExpression>();
-      lambda->body = std::move(body);
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-      args.push_back(std::move(delay));
-      args.push_back(std::move(lambda));
-      auto call = makeNode<havel::ast::CallExpression>(
-          makeNode<havel::ast::Identifier>(async_kind),
-          std::move(args));
-      return makeNode<havel::ast::ExpressionStatement>(std::move(call));
     }
+    if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected block body after " + async_kind + " delay");
+    }
+    auto body = parseBlockStatement();
+    auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
+    lambda->body = std::move(body);
+    std::vector<std::unique_ptr<havel::ast::Expression>> args;
+    args.push_back(std::move(delay));
+    args.push_back(std::move(lambda));
+    auto call = makeNodeAt<havel::ast::CallExpression>(kw,
+        makeNodeAt<havel::ast::Identifier>(kw, async_kind),
+        std::move(args));
+    return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
+}
 
     // Check for config section: identifier [args...] { key = value }
     if (at(1).type == havel::TokenType::OpenBrace ||
@@ -3211,7 +3213,8 @@ at().type == havel::TokenType::RegexString) {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
-  advance(); // consume "fn"
+    auto keyword = at();
+    advance(); // consume "fn"
 
   if (at().type != havel::TokenType::Identifier) {
     if (havel::Lexer::KEYWORDS.count(at().value)) {
@@ -3301,12 +3304,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
     auto body = parseBlockStatement();
 
-  return makeNode<havel::ast::FunctionDeclaration>(
-      std::move(name), std::move(params), std::move(body),
-      std::move(returnType));
+    return makeNodeAt<havel::ast::FunctionDeclaration>(keyword,
+        std::move(name), std::move(params), std::move(body),
+        std::move(returnType));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
+    auto keyword = at();
     advance(); // consume "return"
     std::unique_ptr<havel::ast::Expression> value = nullptr;
 
@@ -3332,12 +3336,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
     advance();
   }
 
-  return makeNode<havel::ast::ReturnStatement>(std::move(value));
+    return makeNodeAt<havel::ast::ReturnStatement>(keyword, std::move(value));
 }
 
 // Parse sleep statement: :1500 or :1h30m or :3:10:25
 std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
-  advance(); // consume ':'
+    auto keyword = at();
+    advance(); // consume ':'
 
   // Parse duration - can be number, string, or time format
   std::string duration;
@@ -3357,12 +3362,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
     }
   }
 
-  return makeNode<havel::ast::SleepStatement>(duration);
+    return makeNodeAt<havel::ast::SleepStatement>(keyword, duration);
 }
 
 // Parse input statement: > "text" or > {Enter} or > lmb or > m(100, 200)
 std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
-  advance(); // consume '>'
+    auto keyword = at();
+    advance(); // consume '>'
 
   std::vector<havel::ast::InputCommand> commands;
 
@@ -3467,46 +3473,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
     advance();
   }
 
-  return makeNode<havel::ast::InputStatement>(commands);
-}
-
-// Parse get input expression: < clipboard or < in("...")
-std::unique_ptr<havel::ast::Expression> Parser::parseGetInputExpression() {
-  advance(); // consume '<'
-
-  std::string source;
-  std::unique_ptr<havel::ast::Expression> prompt = nullptr;
-
-  if (at().type == havel::TokenType::Identifier) {
-    source = advance().value;
-
-    // Special case for in("...")
-    if (source == "in" && at().type == havel::TokenType::OpenParen) {
-      advance(); // consume '('
-      if (at().type != havel::TokenType::CloseParen) {
-        prompt = parseExpression();
-      }
-      if (at().type == havel::TokenType::CloseParen) {
-        advance(); // consume ')'
-      }
-    }
-  } else {
-    failAt(at(), "Expected identifier after '<'");
-  }
-
-  return makeNode<havel::ast::GetInputExpression>(source, std::move(prompt));
-}
-
-// Parse wait statement: w window.title == "Chrome"
-std::unique_ptr<havel::ast::Statement> Parser::parseWaitStatement() {
-  if (at().value == "w") {
-    advance(); // consume 'w'
-  } else {
-    failAt(at(), "Expected 'w' for wait statement");
-  }
-
-  auto condition = parseExpression();
-  return makeNode<havel::ast::WaitStatement>(std::move(condition));
+    return makeNodeAt<havel::ast::InputStatement>(keyword, commands);
 }
 
 // Parse implicit input statement in hotkey blocks
@@ -3836,7 +3803,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
-  advance(); // consume 'struct'
+    auto keyword = at();
+    advance(); // consume 'struct'
 
   // Parse struct name
   if (at().type != havel::TokenType::Identifier) {
@@ -3879,12 +3847,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
   // Create struct definition with fields and methods
   ast::StructDefinition def(std::move(fields), std::move(methods));
 
-  return makeNode<ast::StructDeclaration>(structName, std::move(def),
-                                                   std::move(protocolNames));
+    return makeNodeAt<ast::StructDeclaration>(keyword, structName, std::move(def),
+        std::move(protocolNames));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
-  advance(); // consume 'class'
+    auto keyword = at();
+    advance(); // consume 'class'
 
   // Parse class name
   if (at().type != havel::TokenType::Identifier) {
@@ -3920,8 +3889,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   // Create class definition with fields and methods
   ast::ClassDefinition def(std::move(fields), std::move(methods));
 
-  return makeNode<ast::ClassDeclaration>(className, std::move(def),
-                                                 parentName);
+    return makeNodeAt<ast::ClassDeclaration>(keyword, className, std::move(def),
+        parentName);
 }
 
 // Parse struct members (fields and methods)
@@ -4592,7 +4561,8 @@ Parser::parseClassMembers() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {
-  advance(); // consume 'enum'
+    auto keyword = at();
+    advance(); // consume 'enum'
 
   // Parse enum name
   if (at().type != havel::TokenType::Identifier) {
@@ -4618,7 +4588,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {
   // Create enum definition
   ast::EnumDefinition def(std::move(variants));
 
-  return makeNode<ast::EnumDeclaration>(enumName, std::move(def));
+    return makeNodeAt<ast::EnumDeclaration>(keyword, enumName, std::move(def));
 }
 
 std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
@@ -4830,7 +4800,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
 
 // Parse impl declaration: impl Trait for Type { fn method() { ... } }
 std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
-  advance(); // consume 'impl'
+    auto keyword = at();
+    advance(); // consume 'impl'
 
   // Parse trait name
   if (at().type != havel::TokenType::Identifier) {
@@ -4881,8 +4852,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
   }
   advance(); // consume '}'
 
-  return makeNode<havel::ast::ImplDeclaration>(
-      std::move(traitName), std::move(typeName), std::move(methods));
+    return makeNodeAt<havel::ast::ImplDeclaration>(keyword,
+        std::move(traitName), std::move(typeName), std::move(methods));
 }
 
 std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
@@ -4949,46 +4920,49 @@ std::unique_ptr<ast::TypeAnnotation> Parser::parseTypeAnnotation() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
-  advance(); // consume 'throw'
-  auto value = parseExpression();
-  return makeNode<havel::ast::ThrowStatement>(std::move(value));
+    auto keyword = at();
+    advance(); // consume 'throw'
+    auto value = parseExpression();
+    return makeNodeAt<havel::ast::ThrowStatement>(keyword, std::move(value));
 }
 
 // Parse del statement: del expression
 // Supports: del variable, del obj.field, del arr[index]
 // Also handles del(...) as a function call if followed by (
 std::unique_ptr<havel::ast::Statement> Parser::parseDelStatement() {
-  // If followed by '(', treat as function call: del(args)
-  if (at(1).type == havel::TokenType::OpenParen) {
-    // Parse as function call expression: del(args)
-    auto call = makeNode<havel::ast::CallExpression>(
-        makeNode<havel::ast::Identifier>("del"));
-    advance(); // consume 'del'
-    advance(); // consume '('
-    while (at().type != havel::TokenType::CloseParen && notEOF()) {
-      call->args.push_back(parseExpression());
-      if (at().type == havel::TokenType::Comma) advance();
+    // If followed by '(', treat as function call: del(args)
+    if (at(1).type == havel::TokenType::OpenParen) {
+        // Parse as function call expression: del(args)
+        auto call = makeNodeAt<havel::ast::CallExpression>(at(),
+            makeNodeAt<havel::ast::Identifier>(at(), "del"));
+        advance(); // consume 'del'
+        advance(); // consume '('
+        while (at().type != havel::TokenType::CloseParen && notEOF()) {
+            call->args.push_back(parseExpression());
+            if (at().type == havel::TokenType::Comma) advance();
+        }
+        if (at().type == havel::TokenType::CloseParen) advance();
+        return makeNode<havel::ast::ExpressionStatement>(std::move(call));
     }
-    if (at().type == havel::TokenType::CloseParen) advance();
-    return makeNode<havel::ast::ExpressionStatement>(std::move(call));
-  }
-  advance(); // consume 'del'
-  auto target = parseExpression();
-  return makeNode<havel::ast::DelStatement>(std::move(target));
+    auto keyword = at();
+    advance(); // consume 'del'
+    auto target = parseExpression();
+    return makeNodeAt<havel::ast::DelStatement>(keyword, std::move(target));
 }
 
 // Parse UI declarative block: ui { window "Title" { ... } }
 // Desugars to imperative API calls
 std::unique_ptr<havel::ast::Statement> Parser::parseUIDeclaration() {
-  advance(); // consume "ui"
+    auto keyword = at();
+    advance(); // consume "ui"
 
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after 'ui'");
-  }
-  advance(); // consume '{'
+    if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after 'ui'");
+    }
+    advance(); // consume '{'
 
-  // Create a block to hold all the desugared statements
-  auto block = makeNode<havel::ast::BlockStatement>();
+    // Create a block to hold all the desugared statements
+    auto block = makeNodeAt<havel::ast::BlockStatement>(keyword);
 
   // Parse UI element declarations
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
@@ -5170,7 +5144,8 @@ void Parser::parseUIElementDeclaration(
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
-  advance(); // consume 'try'
+    auto keyword = at();
+    advance(); // consume 'try'
 
   // Parse try body
   if (at().type != havel::TokenType::OpenBrace) {
@@ -5218,12 +5193,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
     finallyBlock = parseBlockStatement();
   }
 
-  return makeNode<havel::ast::TryExpression>(
-      std::move(tryBody), std::move(catchVariable), std::move(catchBody),
-      std::move(finallyBlock));
+    return makeNodeAt<havel::ast::TryExpression>(keyword,
+        std::move(tryBody), std::move(catchVariable), std::move(catchBody),
+        std::move(finallyBlock));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effectiveColumn) {
+    auto keyword = at();
     size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
     advance(); // consume "if"
 
@@ -5279,12 +5255,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
         }
     }
 
-    return makeNode<havel::ast::IfStatement>(
+    return makeNodeAt<havel::ast::IfStatement>(keyword,
         std::move(condition), std::move(consequence), std::move(alternative));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
-  advance(); // consume "while"
+    auto keyword = at();
+    advance(); // consume "while"
 
   bool prevAllow = context.allowBraceSugar;
   context.allowBraceSugar = false;
@@ -5306,8 +5283,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
     body = parseInlineStatement();
   }
 
-  return makeNode<havel::ast::WhileStatement>(std::move(condition),
-                                             std::move(body));
+    return makeNodeAt<havel::ast::WhileStatement>(keyword, std::move(condition),
+        std::move(body));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
@@ -5412,7 +5389,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
-  advance(); // consume "for"
+    auto keyword = at();
+    advance(); // consume "for"
 
   std::vector<std::unique_ptr<havel::ast::Identifier>> iterators;
 
@@ -5537,13 +5515,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     body = parseInlineStatement();
   }
 
-  auto stmt = makeNode<havel::ast::ForStatement>(
-      std::move(iterators), std::move(iterable), std::move(body));
+    auto stmt = makeNodeAt<havel::ast::ForStatement>(keyword,
+        std::move(iterators), std::move(iterable), std::move(body));
   return stmt;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
-  advance(); // consume "loop"
+    auto keyword = at();
+    advance(); // consume "loop"
 
   // Check for optional count or "while condition"
   std::unique_ptr<havel::ast::Expression> countExpr;
@@ -5624,20 +5603,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     body = parseInlineStatement();
   }
 
-  auto loopStmt = makeNode<havel::ast::LoopStatement>(
-      std::move(body), std::move(condition));
+    auto loopStmt = makeNodeAt<havel::ast::LoopStatement>(keyword,
+        std::move(body), std::move(condition));
   loopStmt->countExpr = std::move(countExpr);
   return loopStmt;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseBreakStatement() {
-  advance(); // consume "break"
-  return makeNode<havel::ast::BreakStatement>();
+    auto keyword = at();
+    advance(); // consume "break"
+    return makeNodeAt<havel::ast::BreakStatement>(keyword);
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseContinueStatement() {
-  advance(); // consume "continue"
-  return makeNode<havel::ast::ContinueStatement>();
+    auto keyword = at();
+    advance(); // consume "continue"
+    return makeNodeAt<havel::ast::ContinueStatement>(keyword);
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
@@ -5975,6 +5956,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
     if (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const) {
         isConst = true;
     }
+    auto keyword = at();
     advance(); // consume "let" or "const"
 
     std::unique_ptr<havel::ast::Expression> pattern;
@@ -6050,8 +6032,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
     if (at().type != havel::TokenType::Assign) {
         // Allow declarations without assignment, e.g., `let x;`
         if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
-            return makeNode<havel::ast::LetDeclaration>(
-                std::move(pattern), nullptr, std::move(typeAnnotation), isConst);
+        return makeNodeAt<havel::ast::LetDeclaration>(keyword,
+            std::move(pattern), nullptr, std::move(typeAnnotation), isConst);
         } else {
             failAt(at(), "Destructuring patterns require initialization");
         }
@@ -6060,7 +6042,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 
     auto value = parseExpression();
 
-    auto result = makeNode<havel::ast::LetDeclaration>(
+    auto result = makeNodeAt<havel::ast::LetDeclaration>(keyword,
         std::move(pattern), std::move(value), std::move(typeAnnotation), isConst);
     return result;
 }
@@ -6500,7 +6482,8 @@ while (at().type == havel::TokenType::NewLine) {
   return block;
 }
 std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
-  advance(); // consume 'import'
+    auto keyword = at();
+    advance(); // consume 'import'
 
   std::vector<std::pair<std::string, std::string>> items;
 
@@ -6560,14 +6543,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
       failAt(at(), "Expected module path after 'from'");
     }
     std::string path = advance().value;
-    return makeNode<havel::ast::ImportStatement>(path, items);
-  }
-  // No 'from': treat as importing built-in modules by name
-  return makeNode<havel::ast::ImportStatement>(std::string(""), items);
+        return makeNodeAt<havel::ast::ImportStatement>(keyword, path, items);
+    }
+    // No 'from': treat as importing built-in modules by name
+    return makeNodeAt<havel::ast::ImportStatement>(keyword, std::string(""), items);
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
-  advance(); // consume 'use'
+    auto keyword = at();
+    advance(); // consume 'use'
 
   // Skip newlines
   while (at().type == havel::TokenType::NewLine) {
@@ -6592,7 +6576,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
                     return nullptr;
                 }
             }
-            return makeNode<havel::ast::UseStatement>(moduleNames);
+            return makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
         }
         
         std::string moduleName = moduleNames[0];
@@ -6622,7 +6606,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
             failAt(at(), "Expected module name or file path after 'from'");
             return nullptr;
         }
-        auto stmt = makeNode<havel::ast::UseStatement>(source, moduleName);
+        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, moduleName);
         stmt->isFileImport = true;
         if (!alias.empty()) {
             stmt->alias = alias;
@@ -6630,7 +6614,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         return stmt;
     }
 
-    auto stmt = makeNode<havel::ast::UseStatement>(moduleNames);
+    auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
     stmt->alias = alias;
     return stmt;
 }
@@ -6697,7 +6681,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
             return nullptr;
         }
 
-    auto stmt = makeNode<havel::ast::UseStatement>(source, std::vector<std::string>{});
+    auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, std::vector<std::string>{});
     stmt->isNamedImport = true;
     for (auto& [name, alias] : importNames) {
         stmt->importNames.push_back(name);
@@ -6733,7 +6717,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         return nullptr;
     }
 
-    auto stmt = makeNode<havel::ast::UseStatement>(source, std::vector<std::string>{"*"});
+    auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, std::vector<std::string>{"*"});
     stmt->isWildcard = true;
     return stmt;
 }
@@ -6760,11 +6744,11 @@ if (at().type == havel::TokenType::String ||
     }
 
         if (!alias.empty()) {
-            auto stmt = makeNode<havel::ast::UseStatement>(filePath, alias);
+            auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, filePath, alias);
             stmt->isFileImport = true;
             return stmt;
         }
-        auto stmt = makeNode<havel::ast::UseStatement>(filePath, std::string{});
+        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, filePath, std::string{});
         stmt->isFileImport = true;
         return stmt;
     }
@@ -6791,9 +6775,9 @@ if (at().type == havel::TokenType::String ||
 
       if (at().type == havel::TokenType::Multiply) {
         advance(); // consume '*'
-        auto stmt = makeNode<havel::ast::UseStatement>(
+auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword,
             std::vector<std::string>{moduleName});
-        stmt->isWildcard = true;
+                stmt->isWildcard = true;
         return stmt;
       } else {
         failAt(at(), "Expected '*' after '.' in use statement");
@@ -6802,7 +6786,7 @@ if (at().type == havel::TokenType::String ||
     }
 
     // Simple module import - flatten into current scope
-    return makeNode<havel::ast::UseStatement>(
+    return makeNodeAt<havel::ast::UseStatement>(keyword,
         std::vector<std::string>{moduleName});
   }
 
@@ -10422,6 +10406,17 @@ bool Parser::isAtEndOfBlock() {
   // Check if we're at the end of a block
   return at().type == havel::TokenType::CloseBrace ||
          at().type == havel::TokenType::EOF_TOKEN;
+}
+
+std::unique_ptr<ast::Expression> Parser::parseGetInputExpression() {
+advance();
+return makeNode<ast::Identifier>("__get_input_stub__");
+}
+
+std::unique_ptr<ast::Statement> Parser::parseWaitStatement() {
+advance();
+auto expr = parseExpression();
+return makeNode<ast::ExpressionStatement>(std::move(expr));
 }
 
 } // namespace havel::parser

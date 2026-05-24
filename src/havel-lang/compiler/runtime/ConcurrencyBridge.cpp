@@ -3,7 +3,7 @@
 #include "../vm/VM.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
-
+#include "../../runtime/concurrency/Thread.hpp"
 #include <chrono>
 
 namespace havel::compiler {
@@ -95,21 +95,32 @@ void ConcurrencyBridge::install(PipelineOptions &options) {
   };
   options.host_functions["interval.start"] = options.host_functions["interval_start"];
 
-  options.host_functions["interval_stop"] = [this](const std::vector<Value> &args) {
-    return intervalStop(args);
-  };
-  options.host_functions["interval.stop"] = options.host_functions["interval_stop"];
+options.host_functions["interval_stop"] = [this](const std::vector<Value> &args) {
+return intervalStop(args);
+};
+options.host_functions["interval.stop"] = options.host_functions["interval_stop"];
 
-  // Timeout operations (snake_case + dot aliases)
+options.host_functions["interval_pause"] = [this](const std::vector<Value> &args) {
+return intervalPause(args);
+};
+options.host_functions["interval.pause"] = options.host_functions["interval_pause"];
+
+options.host_functions["interval_resume"] = [this](const std::vector<Value> &args) {
+return intervalResume(args);
+};
+options.host_functions["interval.resume"] = options.host_functions["interval_resume"];
+
+// Timeout operations (snake_case + dot aliases)
   options.host_functions["timeout_start"] = [this](const std::vector<Value> &args) {
     return timeoutStart(args);
   };
   options.host_functions["timeout.start"] = options.host_functions["timeout_start"];
 
-  options.host_functions["timeout_cancel"] = [this](const std::vector<Value> &args) {
-    return timeoutCancel(args);
-  };
-  options.host_functions["timeout.cancel"] = options.host_functions["timeout_cancel"];
+options.host_functions["timeout_cancel"] = [this](const std::vector<Value> &args) {
+return timeoutCancel(args);
+};
+options.host_functions["timeout.cancel"] = options.host_functions["timeout_cancel"];
+options.host_functions["timeout.stop"] = options.host_functions["timeout_cancel"];
 
   // Channel operations (snake_case + dot aliases)
   options.host_functions["channel_new"] = [this](const std::vector<Value> &args) {
@@ -250,85 +261,132 @@ Value ConcurrencyBridge::threadReceive(const std::vector<Value> &args) {
 }
 
 Value ConcurrencyBridge::intervalStart(const std::vector<Value> &args) {
-  if (args.size() < 2 || !args[0].isInt() || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
-    return Value::makeNull();
-  }
+if (args.size() < 2 || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
+return Value::makeNull();
+}
 
-  int64_t interval_ms = args[0].asInt();
-  Value callback = args[1];
-  
-  std::lock_guard<std::mutex> lock(timers_mutex_);
-  uint32_t timer_id = next_timer_id_++;
-  
-  Timer timer;
-  timer.id = timer_id;
-  timer.next_run = std::chrono::steady_clock::now() + std::chrono::milliseconds(interval_ms);
-  timer.interval_ms = interval_ms;
-  timer.callback = callback;
-  timer.active = true;
-  
-  timers_.push_back(timer);
+if (!vm_) return Value::makeNull();
 
-  return Value::makeIntervalId(timer_id);
+int64_t interval_ms = 0;
+auto parsed = vm_->parseDuration(args[0]);
+if (!parsed) return Value::makeNull();
+interval_ms = *parsed;
+
+Value callback = args[1];
+auto intervalIdPtr = std::make_shared<uint32_t>(0);
+
+auto vm_cb = [this, callback, intervalIdPtr]() {
+auto *eq = vm_->getEventQueue();
+if (eq) {
+auto *payload = new std::pair<Value, uint32_t>(callback, *intervalIdPtr);
+eq->push(Event(EventType::TIMER_FIRE, 0, payload));
+} else {
+try {
+Value result = vm_->callFunction(callback, {});
+vm_->addIntervalResult(*intervalIdPtr, result);
+} catch (const std::exception &e) {
+::havel::error("[interval] Exception: {}", e.what());
+}
+}
+};
+
+auto intervalObj = std::make_shared<Interval>(static_cast<int>(interval_ms), std::move(vm_cb));
+auto intervalRef = vm_->getHeap().allocateIntervalObj(intervalObj);
+*intervalIdPtr = intervalRef.id;
+return Value::makeIntervalId(intervalRef.id);
 }
 
 Value ConcurrencyBridge::intervalStop(const std::vector<Value> &args) {
-  if (args.empty() || !args[0].isIntervalId()) {
-    return Value::makeNull();
-  }
+if (args.empty() || !args[0].isIntervalId()) {
+return Value::makeNull();
+}
 
-  uint32_t interval_id = args[0].asIntervalId();
+if (!vm_) return Value::makeNull();
 
-  std::lock_guard<std::mutex> lock(timers_mutex_);
-  for (auto &timer : timers_) {
-    if (timer.id == interval_id && timer.active) {
-      timer.active = false;
-      break;
-    }
-  }
+uint32_t interval_id = args[0].asIntervalId();
+auto *intervalObj = vm_->getHeap().interval(interval_id);
+if (intervalObj) {
+intervalObj->stop();
+}
 
-  return Value::makeNull();
+return Value::makeNull();
+}
+
+Value ConcurrencyBridge::intervalPause(const std::vector<Value> &args) {
+if (args.empty() || !args[0].isIntervalId()) {
+return Value::makeNull();
+}
+
+if (!vm_) return Value::makeNull();
+
+uint32_t interval_id = args[0].asIntervalId();
+auto *intervalObj = vm_->getHeap().interval(interval_id);
+if (intervalObj) {
+intervalObj->pause();
+}
+
+return Value::makeNull();
+}
+
+Value ConcurrencyBridge::intervalResume(const std::vector<Value> &args) {
+if (args.empty() || !args[0].isIntervalId()) {
+return Value::makeNull();
+}
+
+if (!vm_) return Value::makeNull();
+
+uint32_t interval_id = args[0].asIntervalId();
+auto *intervalObj = vm_->getHeap().interval(interval_id);
+if (intervalObj) {
+intervalObj->resume();
+}
+
+return Value::makeNull();
 }
 
 Value ConcurrencyBridge::timeoutStart(const std::vector<Value> &args) {
-  if (args.size() < 2 || !args[0].isInt() || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
-    return Value::makeNull();
-  }
+if (args.size() < 2 || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
+return Value::makeNull();
+}
 
-  int64_t delay_ms = args[0].asInt();
-  Value callback = args[1];
-  
-  std::lock_guard<std::mutex> lock(timers_mutex_);
-  uint32_t timer_id = next_timer_id_++;
-  
-  Timer timer;
-  timer.id = timer_id;
-  timer.next_run = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay_ms);
-  timer.interval_ms = 0;  // 0 means one-shot (timeout)
-  timer.callback = callback;
-  timer.active = true;
-  
-  timers_.push_back(timer);
+if (!vm_) return Value::makeNull();
 
-  return Value::makeTimeoutId(timer_id);
+auto parsed = vm_->parseDuration(args[0]);
+if (!parsed) return Value::makeNull();
+
+int ms = static_cast<int>(*parsed);
+Value callback = args[1];
+auto timeoutIdPtr = std::make_shared<uint32_t>(0);
+
+auto vm_cb = [this, callback, timeoutIdPtr]() {
+try {
+Value result = vm_->callFunction(callback, {});
+vm_->addTimeoutResult(*timeoutIdPtr, result);
+} catch (const std::exception &e) {
+::havel::error("[timeout] Exception: {}", e.what());
+}
+};
+
+auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
+auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);
+*timeoutIdPtr = timeoutRef.id;
+return Value::makeTimeoutId(timeoutRef.id);
 }
 
 Value ConcurrencyBridge::timeoutCancel(const std::vector<Value> &args) {
-  if (args.empty() || !args[0].isTimeoutId()) {
-    return Value::makeNull();
-  }
+if (args.empty() || !args[0].isTimeoutId()) {
+return Value::makeNull();
+}
 
-  uint32_t timeout_id = args[0].asTimeoutId();
+if (!vm_) return Value::makeNull();
 
-  std::lock_guard<std::mutex> lock(timers_mutex_);
-  for (auto &timer : timers_) {
-    if (timer.id == timeout_id && timer.active) {
-      timer.active = false;
-      break;
-    }
-  }
+uint32_t timeout_id = args[0].asTimeoutId();
+auto *timeoutObj = vm_->getHeap().timeout(timeout_id);
+if (timeoutObj) {
+timeoutObj->cancel();
+}
 
-  return Value::makeNull();
+return Value::makeNull();
 }
 
 Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
@@ -413,8 +471,8 @@ void ConcurrencyBridge::checkTimers() {
   std::lock_guard<std::mutex> lock(timers_mutex_);
   auto now = std::chrono::steady_clock::now();
   
-  for (auto &timer : timers_) {
-    if (timer.active && timer.next_run <= now) {
+for (auto &timer : timers_) {
+if (timer.active && !timer.paused && timer.next_run <= now) {
       // Execute the callback via VM if available
       if (vm_) {
         try {

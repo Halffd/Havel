@@ -2351,31 +2351,36 @@ registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
  auto closure = args[1];
  auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
- auto callback = [this, closure, intervalIdPtr]() {
- try {
- Value result = this->callFunction(closure, {});
- interval_results_[*intervalIdPtr] = result;
- } catch (const std::exception &e) {
- ::havel::error("[interval] Exception: {}", e.what());
- }
- };
+auto callback = [this, closure, intervalIdPtr]() {
+if (event_queue_) {
+auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
+event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
+} else {
+try {
+Value result = this->callFunction(closure, {});
+interval_results_[*intervalIdPtr] = result;
+} catch (const std::exception &e) {
+::havel::error("[interval] Exception: {}", e.what());
+}
+}
+};
 
- auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
  auto intervalRef = heap_.allocateIntervalObj(intervalObj);
  *intervalIdPtr = intervalRef.id;
  return Value::makeIntervalId(intervalRef.id);
  });
 
   // interval.pause(interval) - Pause interval
-  registerHostFunction("interval.pause", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isIntervalId()) {
-      COMPILER_THROW("interval.pause requires an interval argument");
-    }
-    
-    auto *intervalObj = heap_.interval(args[0].asIntervalId());
-    if (!intervalObj) {
-      COMPILER_THROW("interval.pause: invalid interval reference");
-    }
+registerHostFunction("interval.pause", 1, [this](const std::vector<Value> &args) {
+if (args.empty() || !args[0].isIntervalId()) {
+COMPILER_THROW("interval.pause requires an interval argument");
+}
+
+auto *intervalObj = heap_.interval(args[0].asIntervalId());
+if (!intervalObj) {
+COMPILER_THROW("interval.pause: invalid interval reference");
+}
     
     intervalObj->pause();
     return Value::makeNull();
@@ -2422,21 +2427,26 @@ registerHostFunction("interval.start", 2, [this](const std::vector<Value> &args)
  int ms = toInt(args[0]);
  auto closure = args[1];
  auto intervalIdPtr = std::make_shared<uint32_t>(0);
- auto callback = [this, closure, intervalIdPtr]() {
- try {
- Value result = this->callFunction(closure, {});
- interval_results_[*intervalIdPtr] = result;
- } catch (const std::exception &e) {
- ::havel::error("[interval] Exception: {}", e.what());
- }
- };
- auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
- auto intervalRef = heap_.allocateIntervalObj(intervalObj);
- *intervalIdPtr = intervalRef.id;
- return Value::makeIntervalId(intervalRef.id);
- });
+auto callback = [this, closure, intervalIdPtr]() {
+if (event_queue_) {
+auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
+event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
+} else {
+try {
+Value result = this->callFunction(closure, {});
+interval_results_[*intervalIdPtr] = result;
+} catch (const std::exception &e) {
+::havel::error("[interval] Exception: {}", e.what());
+}
+}
+};
+auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+*intervalIdPtr = intervalRef.id;
+return Value::makeIntervalId(intervalRef.id);
+});
 
-  // timeout(ms, closure) - Create one-shot delayed execution
+// timeout(ms, closure) - Create one-shot delayed execution
 registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
  if (args.size() < 2 || !args[0].isNumber()) {
  COMPILER_THROW("timeout requires milliseconds and closure");
@@ -2449,16 +2459,21 @@ registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
  auto closure = args[1];
  auto timeoutIdPtr = std::make_shared<uint32_t>(0);
 
- auto callback = [this, closure, timeoutIdPtr]() {
- try {
- Value result = this->callFunction(closure, {});
- timeout_results_[*timeoutIdPtr] = result;
- } catch (const std::exception &e) {
- ::havel::error("[timeout] Exception: {}", e.what());
- }
- };
+auto callback = [this, closure, timeoutIdPtr]() {
+if (event_queue_) {
+auto *payload = new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
+event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
+} else {
+try {
+Value result = this->callFunction(closure, {});
+timeout_results_[*timeoutIdPtr] = result;
+} catch (const std::exception &e) {
+::havel::error("[timeout] Exception: {}", e.what());
+}
+}
+};
 
- auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
  auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
  *timeoutIdPtr = timeoutRef.id;
  return Value::makeTimeoutId(timeoutRef.id);
@@ -2490,19 +2505,24 @@ registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
  int ms = toInt(args[0]);
  auto closure = args[1];
  auto timeoutIdPtr = std::make_shared<uint32_t>(0);
- auto callback = [this, closure, timeoutIdPtr]() {
- try {
- Value result = this->callFunction(closure, {});
- timeout_results_[*timeoutIdPtr] = result;
- } catch (const std::exception &e) {
- ::havel::error("[timeout] Exception: {}", e.what());
- }
- };
- auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
- auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
- *timeoutIdPtr = timeoutRef.id;
- return Value::makeTimeoutId(timeoutRef.id);
- });
+auto callback = [this, closure, timeoutIdPtr]() {
+if (event_queue_) {
+auto *payload = new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
+event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
+} else {
+try {
+Value result = this->callFunction(closure, {});
+timeout_results_[*timeoutIdPtr] = result;
+} catch (const std::exception &e) {
+::havel::error("[timeout] Exception: {}", e.what());
+}
+}
+};
+auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+*timeoutIdPtr = timeoutRef.id;
+return Value::makeTimeoutId(timeoutRef.id);
+});
 
     // GC control
     // "system.gc" is called via method dispatch (system.gc()) which prepends
@@ -3233,10 +3253,11 @@ void VM::registerDefaultPrototypes() {
     registerPrototypeMethodByName("thread", "pause", "thread.pause");
     registerPrototypeMethodByName("thread", "resume", "thread.resume");
     registerPrototypeMethodByName("thread", "running", "thread.running");
-    registerPrototypeMethodByName("interval", "pause", "interval.pause");
-    registerPrototypeMethodByName("interval", "resume", "interval.resume");
-    registerPrototypeMethodByName("interval", "stop", "interval.stop");
-    registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
+registerPrototypeMethodByName("interval", "pause", "interval.pause");
+registerPrototypeMethodByName("interval", "resume", "interval.resume");
+registerPrototypeMethodByName("interval", "stop", "interval.stop");
+registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
+registerPrototypeMethodByName("timeout", "stop", "timeout.stop");
 }
 
 Value VM::invokeHostFunction(const std::string &name,
@@ -4206,14 +4227,14 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  tail_call_depth_ = 0;
 
     // Handle host function call directly
-  if (callee_value.isHostFuncId()) {
-    uint32_t host_func_idx = callee_value.asHostFuncId();
-    if (host_func_idx >= host_function_names_.size()) {
-      COMPILER_THROW("Host function index out of range: " +
-                     std::to_string(host_func_idx));
-    }
-    const std::string &name = host_function_names_[host_func_idx];
-    auto it = host_functions.find(name);
+if (callee_value.isHostFuncId()) {
+uint32_t host_func_idx = callee_value.asHostFuncId();
+if (host_func_idx >= host_function_names_.size()) {
+COMPILER_THROW("Host function index out of range: " +
+std::to_string(host_func_idx));
+}
+const std::string &name = host_function_names_[host_func_idx];
+auto it = host_functions.find(name);
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
@@ -6398,12 +6419,12 @@ case OpCode::TAIL_CALL: {
       break;
     }
 
-    // Look up method: 0. Object instance field, 1. Host prototype, 2. Module monkey-patch, 3. Class prototype chain
-    uint32_t host_func_idx = 0;
-    bool found_host = false;
-    bool found_via_module = false;
-    bool isInstanceFunc = false;
-    Value vm_func = Value::makeNull();
+// Look up method: 0. Object instance field, 1. Host prototype, 2. Module monkey-patch, 3. Class prototype chain
+uint32_t host_func_idx = 0;
+bool found_host = false;
+bool found_via_module = false;
+bool isInstanceFunc = false;
+Value vm_func = Value::makeNull();
 
     // 0. If receiver is an object, check for direct callable field FIRST.
     // Namespace objects like `process` have host function fields (e.g. `find`)

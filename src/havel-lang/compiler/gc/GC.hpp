@@ -262,8 +262,8 @@ struct Iterator {
 
     ::havel::Thread* thread(uint32_t id);
     const ::havel::Thread* thread(uint32_t id) const;
-    ::havel::Interval* interval(uint32_t id);
-    const ::havel::Interval* interval(uint32_t id) const;
+::havel::Interval* interval(uint32_t id);
+const ::havel::Interval* interval(uint32_t id) const;
     ::havel::Timeout* timeout(uint32_t id);
     const ::havel::Timeout* timeout(uint32_t id) const;
 

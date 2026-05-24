@@ -722,7 +722,7 @@ current_function->is_generator = function.is_coroutine || (function.body ? funct
 }
 
 if (is_impl_method) {
-local_slot_offset_ = 0;
+
 current_class_name_ = "";
 }
 
@@ -939,11 +939,9 @@ void ByteCompiler::compileClassMethod(
     if (param->isVariadic) {
       current_function->variadic_param_index = method_param_slot;
     }
-  }
+}
 
-  // Remap declaration slots for local variable access.
-  // Resolver now accounts for self at slot 0 for instance methods.
-  local_slot_offset_ = 0;
+  
 
   const std::string prev_class_name = current_class_name_;
   const std::string prev_parent_name = current_parent_class_name_;
@@ -1006,7 +1004,7 @@ void ByteCompiler::compileClassMethod(
 
   current_class_name_ = prev_class_name;
   current_parent_class_name_ = prev_parent_name;
-  local_slot_offset_ = 0;
+  
   leaveFunction();
 }
 
@@ -1079,10 +1077,9 @@ void ByteCompiler::compileStructMethod(
     if (param->isVariadic) {
       current_function->variadic_param_index = method_param_slot;
     }
-  }
+}
 
-  // Resolver now accounts for self at slot 0
-  local_slot_offset_ = 0;
+
 
   const std::string prev_class_name = current_class_name_;
   current_class_name_ = struct_name;
@@ -1143,7 +1140,7 @@ void ByteCompiler::compileStructMethod(
   }
 
   current_class_name_ = prev_class_name;
-  local_slot_offset_ = 0;
+  
   leaveFunction();
 }
 
@@ -2399,7 +2396,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
         // Bind to variable
         auto binding = bindingFor(ident);
         if (binding && binding->kind == ResolvedBindingKind::Local) {
-          emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+          emit(OpCode::STORE_VAR, binding->slot);
         }
       }
     }
@@ -2415,7 +2412,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
         auto binding = bindingFor(ident);
         if (binding && binding->kind == ResolvedBindingKind::Local) {
           emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-          emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+          emit(OpCode::STORE_VAR, binding->slot);
         }
       }
     }
@@ -2444,7 +2441,7 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
           if (binding && binding->kind == ResolvedBindingKind::Local) {
             // DUP the value, store to pattern slot, then check existence
             emit(OpCode::DUP);
-            emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+            emit(OpCode::STORE_VAR, binding->slot);
           }
           // Check existence (non-null)
           emit(OpCode::IS_NULL);
@@ -2925,7 +2922,7 @@ break;
       emit(OpCode::CLOSURE, it->second);
     } else {
       emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjId(it->second)));
+           addConstant(Value::makeFunctionObjIdit->second));
     }
     break;
   }
@@ -2973,7 +2970,7 @@ break;
 
 switch (binding->kind) {
   case ResolvedBindingKind::Local:
-    emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
+    emit(OpCode::LOAD_VAR, binding->slot);
     break;
   case ResolvedBindingKind::Upvalue:
     emit(OpCode::LOAD_UPVALUE, binding->slot);
@@ -3461,7 +3458,7 @@ case ast::NodeType::CastExpression: {
       }
       emit(OpCode::DUP);
       if (binding.kind == ResolvedBindingKind::Local) {
-        emit(OpCode::STORE_VAR, effectiveSlot(binding.slot));
+        emit(OpCode::STORE_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
@@ -3480,7 +3477,7 @@ case ast::NodeType::CastExpression: {
                                  binding.name);
       }
       if (binding.kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, effectiveSlot(binding.slot));
+        emit(OpCode::LOAD_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
@@ -3585,7 +3582,7 @@ case ast::NodeType::CastExpression: {
             emit(OpCode::ARRAY_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
-              emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+              emit(OpCode::STORE_VAR, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Global) {
               {
                 uint32_t strId = addStringConstant(binding->name);
@@ -3626,7 +3623,7 @@ case ast::NodeType::CastExpression: {
             emit(OpCode::OBJECT_GET);
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
-              emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+              emit(OpCode::STORE_VAR, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Global) {
               {
                 uint32_t strId = addStringConstant(binding->name);
@@ -4005,7 +4002,7 @@ case ast::NodeType::MultipleAssignment: {
             emit(OpCode::DUP);
 
             if (binding->kind == ResolvedBindingKind::Local) {
-                emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+                emit(OpCode::STORE_VAR, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Upvalue) {
                 emit(OpCode::STORE_UPVALUE, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -4182,7 +4179,7 @@ target_id->symbol);
 
 // Optimization: use single INCLOCAL/DECLOCAL opcode for local variables
 if (binding->kind == ResolvedBindingKind::Local) {
-uint32_t slot = effectiveSlot(binding->slot);
+uint32_t slot = binding->slot;
 if (update_expr.isPrefix) {
 // Prefix: ++x or --x
 emit(isIncrement ? OpCode::INCLOCAL : OpCode::DECLOCAL, slot);
@@ -4197,7 +4194,7 @@ if (update_expr.isPrefix) {
       // Prefix: ++x or --x
       // Load, modify, store, return new value
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
+        emit(OpCode::LOAD_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -4214,7 +4211,7 @@ if (update_expr.isPrefix) {
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
       emit(OpCode::DUP); // Save result for return value
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+        emit(OpCode::STORE_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -4227,7 +4224,7 @@ if (update_expr.isPrefix) {
       // Postfix: x++ or x--
       // Load, dup, modify, store, pop new value, return old value
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, effectiveSlot(binding->slot));
+        emit(OpCode::LOAD_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -4244,7 +4241,7 @@ if (update_expr.isPrefix) {
       emit(isIncrement ? OpCode::ADD : OpCode::SUB);
       emit(OpCode::DUP); // Save new value for storage
       if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+        emit(OpCode::STORE_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Global) {
@@ -4574,7 +4571,7 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             const auto *objBinding = bindingFor(*objIdent);
             if (objBinding) {
                 if (objBinding->kind == ResolvedBindingKind::Local) {
-                    emit(OpCode::LOAD_VAR, effectiveSlot(objBinding->slot));
+                    emit(OpCode::LOAD_VAR, objBinding->slot);
                 } else if (objBinding->kind == ResolvedBindingKind::Upvalue) {
                     emit(OpCode::LOAD_UPVALUE, objBinding->slot);
                 } else {
@@ -6371,16 +6368,12 @@ const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const
   return &it->second;
 }
 
-uint32_t ByteCompiler::effectiveSlot(uint32_t slot) const {
-  return slot + local_slot_offset_;
-}
-
 uint32_t ByteCompiler::declarationSlot(const ast::Identifier &id) const {
   auto it = lexical_resolution_.declaration_slots.find(&id);
   if (it == lexical_resolution_.declaration_slots.end()) {
     COMPILER_THROW("Missing declaration slot for: " + id.symbol);
   }
-  return effectiveSlot(it->second);
+  return it->second;
 }
 
 void ByteCompiler::reserveLocalSlot(uint32_t slot) {
@@ -7148,7 +7141,7 @@ void ByteCompiler::compileDelTarget(const ast::Expression &target) {
       const auto *binding = bindingFor(id);
       if (binding && binding->kind == ResolvedBindingKind::Local) {
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-        emit(OpCode::STORE_VAR, effectiveSlot(binding->slot));
+        emit(OpCode::STORE_VAR, binding->slot);
       } else if (binding && binding->kind == ResolvedBindingKind::Upvalue) {
         COMPILER_THROW("Cannot del upvalue binding");
       } else {

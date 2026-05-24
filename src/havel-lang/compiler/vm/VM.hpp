@@ -738,9 +738,12 @@ public:
   Value callHostFunction(const Value &fn,
                                  const std::vector<Value> &args);
 
-  // General function call (handles both VM closures and host functions)
-  Value callFunction(const Value &fn,
-                             const std::vector<Value> &args);
+// General function call (handles both VM closures and host functions)
+Value callFunction(const Value &fn,
+const std::vector<Value> &args);
+
+void addIntervalResult(uint32_t id, Value result) { interval_results_[id] = std::move(result); }
+void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::move(result); }
 
   // Prototype system - methods on types
   void registerPrototypeMethod(const std::string &typeName,

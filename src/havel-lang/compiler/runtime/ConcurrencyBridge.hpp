@@ -120,13 +120,15 @@ private:
   std::unordered_map<uint32_t, ManagedThread> thread_info_;
   
   // Timer queue for main event loop
-  struct Timer {
-    uint32_t id;
-    std::chrono::steady_clock::time_point next_run;
-    int64_t interval_ms;  // 0 for one-shot (timeout), >0 for repeating (interval)
-    Value callback;
-    bool active;
-  };
+struct Timer {
+uint32_t id;
+std::chrono::steady_clock::time_point next_run;
+int64_t interval_ms;
+Value callback;
+bool active;
+bool paused = false;
+std::chrono::steady_clock::time_point paused_at;
+};
   std::vector<Timer> timers_;
   std::mutex timers_mutex_;
   uint32_t next_timer_id_ = 1;
@@ -154,11 +156,13 @@ private:
   Value threadSend(const std::vector<Value> &args);
   Value threadReceive(const std::vector<Value> &args);
 
-  Value intervalStart(const std::vector<Value> &args);
-  Value intervalStop(const std::vector<Value> &args);
+Value intervalStart(const std::vector<Value> &args);
+Value intervalStop(const std::vector<Value> &args);
+Value intervalPause(const std::vector<Value> &args);
+Value intervalResume(const std::vector<Value> &args);
 
-  Value timeoutStart(const std::vector<Value> &args);
-  Value timeoutCancel(const std::vector<Value> &args);
+Value timeoutStart(const std::vector<Value> &args);
+Value timeoutCancel(const std::vector<Value> &args);
 
   Value channelNew(const std::vector<Value> &args);
   Value channelSend(const std::vector<Value> &args);

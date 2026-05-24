@@ -611,8 +611,19 @@ if k == "ShellCommand" {
         return
 
     }
-  emitError("unsupported expr: " + k, node.line, node.col)
-  bc.emit("PUSH_NULL")
+	if k == "ThrowStatement" {
+		if node.value != null {
+			emitExpr(emitter, node.value)
+		}
+		else {
+			bc.emit("PUSH_NULL")
+		}
+		bc.emit("THROW")
+		bc.emit("PUSH_NULL")
+		return
+	}
+	emitError("unsupported expr: " + k, node.line, node.col)
+	bc.emit("PUSH_NULL")
 
 }
 // ============================================================
@@ -629,76 +640,81 @@ fn emitStmt(emitter, node) {
   k = node.kind
 
     // ForStatement handler (inlined emitExpr for iterator to work around arg passing bug)
-    if k == "ForStatement" {
-        iterName = node.name
-        iterNode = node.iterator
-        // Emit the iterable expression
-        // Inline emitExpr for RangeExpression to work around call arg bug
-        if iterNode.kind == "RangeExpression" {
-            emitExpr(emitter, iterNode.start)
-            emitExpr(emitter, iterNode.end)
-            if iterNode.inclusive {
-                bc.emit("LOAD_CONST", bc.add_const(1))
-                bc.emit("RANGE_STEP_NEW")
-            }
-            if !iterNode.inclusive {
-                bc.emit("RANGE_NEW")
-            }
-        }
-        if iterNode.kind != "RangeExpression" {
-            emitExpr(emitter, iterNode)
-        }
-        // STRING_PROMOTE for string iterables (harmless for others)
-        bc.emit("STRING_PROMOTE")
-        // Store iterable in temp slot
-        iterableIdx = scopeDeclare(emitter.scope, "__iterable__")
-        bc.emit("STORE_VAR", iterableIdx)
-        // Create iterator
-        bc.emit("LOAD_VAR", iterableIdx)
-        bc.emit("ITER_NEW")
-        iterIdx = scopeDeclare(emitter.scope, "__iter__")
-        bc.emit("STORE_VAR", iterIdx)
-        // Loop start
-        localIdx = scopeDeclare(emitter.scope, iterName)
-        loopTop = bc.instr_count()
-    emitter.breakStack.push([])
-    emitter.continueStack.push(loopTop)
-    // Call ITER_NEXT
-    bc.emit("LOAD_VAR", iterIdx)
-    bc.emit("ITER_NEXT")
-    // Store result in temp
-    resultIdx = scopeDeclare(emitter.scope, "__result__")
-    bc.emit("STORE_VAR", resultIdx)
-    // Check result.done
-    bc.emit("LOAD_VAR", resultIdx)
-    doneSid = bc.str_id(bc.add_chunk_string("done"))
-    bc.emit("LOAD_CONST", bc.add_const(doneSid))
-    bc.emit("OBJECT_GET")
-    doneJump = bc.emit("JUMP_IF_TRUE", 0)
-    // Get result.second (the value for single-var iteration)
-    bc.emit("LOAD_VAR", resultIdx)
-    secondSid = bc.str_id(bc.add_chunk_string("second"))
-    bc.emit("LOAD_CONST", bc.add_const(secondSid))
-    bc.emit("OBJECT_GET")
-    bc.emit("STORE_VAR", localIdx)
-    // Body
-    emitBlock(emitter, node.body)
-    // Loop back
-    bc.emit("JUMP", loopTop)
-    // Exit
-    bc.patch_jump(doneJump, bc.instr_count())
-    bc.emit("PUSH_NULL")
-    // Patch break jumps
-    breakTarget = bc.instr_count()
-    breakList = emitter.breakStack[#emitter.breakStack - 1]
-    i = 0
-    while i < #breakList:
-        bc.patch_jump(breakList[i], breakTarget)
-        i = i + 1
-    emitter.breakStack.pop()
-    emitter.continueStack.pop()
-    return
-    }
+if k == "ForStatement" {
+	iterName = node.name
+	iterNode = node.iterator
+	// Emit the iterable expression in the OUTER scope
+	// Inline emitExpr for RangeExpression to work around call arg bug
+	if iterNode.kind == "RangeExpression" {
+		emitExpr(emitter, iterNode.start)
+		emitExpr(emitter, iterNode.end)
+		if !iterNode.inclusive {
+			bc.emit("LOAD_CONST", bc.add_const(1))
+			bc.emit("SUB")
+		}
+		bc.emit("RANGE_NEW")
+	}
+	if iterNode.kind != "RangeExpression" {
+		emitExpr(emitter, iterNode)
+	}
+	// STRING_PROMOTE for string iterables (harmless for others)
+	bc.emit("STRING_PROMOTE")
+	// Push loop scope AFTER evaluating iterable
+	oldScope = emitter.scope
+	loopScope = Scope(oldScope)
+	emitter.scope = loopScope
+	// Store iterable in temp slot
+	iterableIdx = scopeDeclare(loopScope, "__iterable__")
+	bc.emit("STORE_VAR", iterableIdx)
+	// Create iterator
+	bc.emit("LOAD_VAR", iterableIdx)
+	bc.emit("ITER_NEW")
+	iterIdx = scopeDeclare(loopScope, "__iter__")
+	bc.emit("STORE_VAR", iterIdx)
+	// Loop start
+	localIdx = scopeDeclare(loopScope, iterName)
+	loopTop = bc.instr_count()
+	emitter.breakStack.push([])
+	emitter.continueStack.push(loopTop)
+	// Call ITER_NEXT
+	bc.emit("LOAD_VAR", iterIdx)
+	bc.emit("ITER_NEXT")
+	// Store result in temp
+	resultIdx = scopeDeclare(loopScope, "__result__")
+	bc.emit("STORE_VAR", resultIdx)
+	// Check result.done
+	bc.emit("LOAD_VAR", resultIdx)
+	doneSid = bc.str_id(bc.add_chunk_string("done"))
+	bc.emit("LOAD_CONST", bc.add_const(doneSid))
+	bc.emit("OBJECT_GET")
+	doneJump = bc.emit("JUMP_IF_TRUE", 0)
+	// Get result.second (the value for single-var iteration)
+	bc.emit("LOAD_VAR", resultIdx)
+	secondSid = bc.str_id(bc.add_chunk_string("second"))
+	bc.emit("LOAD_CONST", bc.add_const(secondSid))
+	bc.emit("OBJECT_GET")
+	bc.emit("STORE_VAR", localIdx)
+	// Body
+	emitBlock(emitter, node.body)
+	// Loop back
+	bc.emit("JUMP", loopTop)
+	// Exit
+	bc.patch_jump(doneJump, bc.instr_count())
+	bc.emit("PUSH_NULL")
+	// Patch break jumps
+	breakTarget = bc.instr_count()
+	breakList = emitter.breakStack[#emitter.breakStack - 1]
+	i = 0
+	while i < #breakList:
+		bc.patch_jump(breakList[i], breakTarget)
+		i = i + 1
+	emitter.breakStack.pop()
+	emitter.continueStack.pop()
+	// Propagate scope count to parent
+	oldScope.count = loopScope.count
+	emitter.scope = oldScope
+	return
+}
 
     if k == "ExpressionStatement" {
         emitExpr(emitter, node.expr)
@@ -711,76 +727,106 @@ fn emitStmt(emitter, node) {
         return
 
     }
-    if k == "WhileStatement" {
-    loopTop = bc.instr_count()
-    emitter.breakStack.push([])
-    emitter.continueStack.push(loopTop)
-    emitExpr(emitter, node.condition)
-    exitJump = bc.emit("JUMP_IF_FALSE", 0)
-    emitBlock(emitter, node.body)
-    bc.emit("JUMP", loopTop)
-    bc.patch_jump(exitJump, bc.instr_count())
-    // Patch break jumps
-    breakTarget = bc.instr_count()
-    breakList = emitter.breakStack[#emitter.breakStack - 1]
-    i = 0
-    while i < #breakList:
-        bc.patch_jump(breakList[i], breakTarget)
-        i = i + 1
-    emitter.breakStack.pop()
-    emitter.continueStack.pop()
-    return
+if k == "WhileStatement" {
+	loopTop = bc.instr_count()
+	emitter.breakStack.push([])
+	emitter.continueStack.push(loopTop)
+	emitExpr(emitter, node.condition)
+	exitJump = bc.emit("JUMP_IF_FALSE", 0)
+	// Push scope for body
+	oldWhileScope = emitter.scope
+	whileScope = Scope(oldWhileScope)
+	emitter.scope = whileScope
+	emitBlock(emitter, node.body)
+	oldWhileScope.count = whileScope.count
+	emitter.scope = oldWhileScope
+	bc.emit("JUMP", loopTop)
+	bc.patch_jump(exitJump, bc.instr_count())
+	// Patch break jumps
+	breakTarget = bc.instr_count()
+	breakList = emitter.breakStack[#emitter.breakStack - 1]
+	i = 0
+	while i < #breakList:
+		bc.patch_jump(breakList[i], breakTarget)
+		i = i + 1
+	emitter.breakStack.pop()
+	emitter.continueStack.pop()
+	return
 
-    }
+}
 
-    if k == "LoopStatement" {
-    loopTop = bc.instr_count()
-    emitter.breakStack.push([])
-    emitter.continueStack.push(loopTop)
-    emitBlock(emitter, node.body)
-    bc.emit("JUMP", loopTop)
-    breakTarget = bc.instr_count()
-    breakList = emitter.breakStack[#emitter.breakStack - 1]
-    i = 0
-    while i < #breakList:
-        bc.patch_jump(breakList[i], breakTarget)
-        i = i + 1
-    emitter.breakStack.pop()
-    emitter.continueStack.pop()
-    return
+if k == "LoopStatement" {
+	loopTop = bc.instr_count()
+	emitter.breakStack.push([])
+	emitter.continueStack.push(loopTop)
+	oldLoopScope = emitter.scope
+	loopScope = Scope(oldLoopScope)
+	emitter.scope = loopScope
+	emitBlock(emitter, node.body)
+	oldLoopScope.count = loopScope.count
+	emitter.scope = oldLoopScope
+	bc.emit("JUMP", loopTop)
+	breakTarget = bc.instr_count()
+	breakList = emitter.breakStack[#emitter.breakStack - 1]
+	i = 0
+	while i < #breakList:
+		bc.patch_jump(breakList[i], breakTarget)
+		i = i + 1
+	emitter.breakStack.pop()
+	emitter.continueStack.pop()
+	return
 
-    }
-    if k == "RepeatStatement" {
-        // repeat count { body } → for i in 0..count { body }
-        emitExpr(emitter, node.count)
-        bc.emit("LOAD_CONST", bc.add_const(0))
-        bc.emit("RANGE_NEW")
-        bc.emit("ITER_NEW")
-        _dummyIdx = scopeDeclare(emitter.scope, "_repeat_i")
-        loopTop = bc.instr_count()
-    emitter.breakStack.push([])
-    emitter.continueStack.push(loopTop)
-        bc.emit("DUP")
-        bc.emit("ITER_NEXT")
-        bc.emit("DUP")
-        doneKey = bc.add_string("done")
-        bc.emit("LOAD_CONST", doneKey)
-        bc.emit("OBJECT_GET")
-        exitJump = bc.emit("JUMP_IF_FALSE", 0)
-        bc.emit("POP")
-        valueKey = bc.add_string("value")
-        bc.emit("LOAD_CONST", valueKey)
-        bc.emit("OBJECT_GET")
-        bc.emit("STORE_VAR", _dummyIdx)
-        emitBlock(emitter, node.body)
-        bc.emit("JUMP", loopTop)
-        bc.patch_jump(exitJump, bc.instr_count())
-        bc.emit("POP")
-        emitter.breakStack.pop()
-        emitter.continueStack.pop()
-        return
+}
+if k == "RepeatStatement" {
+	// repeat count { body } → for i in 0..(count-1) { body }
+	bc.emit("LOAD_CONST", bc.add_const(0))
+	emitExpr(emitter, node.count)
+	bc.emit("LOAD_CONST", bc.add_const(1))
+	bc.emit("SUB")
+	bc.emit("RANGE_NEW")
+	bc.emit("STRING_PROMOTE")
+	bc.emit("ITER_NEW")
+	// Push scope for loop internals
+	oldRepeatScope = emitter.scope
+	repeatScope = Scope(oldRepeatScope)
+	emitter.scope = repeatScope
+	iterIdx = scopeDeclare(repeatScope, "_repeat_iter")
+	bc.emit("STORE_VAR", iterIdx)
+	_dummyIdx = scopeDeclare(repeatScope, "_repeat_i")
+	loopTop = bc.instr_count()
+	emitter.breakStack.push([])
+	emitter.continueStack.push(loopTop)
+	bc.emit("LOAD_VAR", iterIdx)
+	bc.emit("ITER_NEXT")
+	resultIdx = scopeDeclare(repeatScope, "_repeat_result")
+	bc.emit("STORE_VAR", resultIdx)
+	bc.emit("LOAD_VAR", resultIdx)
+	doneSid = bc.str_id(bc.add_chunk_string("done"))
+	bc.emit("LOAD_CONST", bc.add_const(doneSid))
+	bc.emit("OBJECT_GET")
+	exitJump = bc.emit("JUMP_IF_TRUE", 0)
+	bc.emit("LOAD_VAR", resultIdx)
+	secondSid = bc.str_id(bc.add_chunk_string("second"))
+	bc.emit("LOAD_CONST", bc.add_const(secondSid))
+	bc.emit("OBJECT_GET")
+	bc.emit("STORE_VAR", _dummyIdx)
+	emitBlock(emitter, node.body)
+	bc.emit("JUMP", loopTop)
+	bc.patch_jump(exitJump, bc.instr_count())
+	bc.emit("PUSH_NULL")
+	breakTarget = bc.instr_count()
+	breakList = emitter.breakStack[#emitter.breakStack - 1]
+	i = 0
+	while i < #breakList:
+		bc.patch_jump(breakList[i], breakTarget)
+		i = i + 1
+	emitter.breakStack.pop()
+	emitter.continueStack.pop()
+	oldRepeatScope.count = repeatScope.count
+	emitter.scope = oldRepeatScope
+	return
 
-    }
+}
     if k == "ReturnStatement" {
         if node.value != null {
             emitExpr(emitter, node.value)
@@ -845,14 +891,15 @@ fn emitStmt(emitter, node) {
 
     }
     if k == "BreakStatement" {
-        if #emitter.breakStack > 0 {
-            bc.emit("PUSH_NULL")
-            bc.emit("RETURN")
-        }
-        else {
-            emitError("break outside of loop", node.line, node.col)
-        }
-        return
+    if #emitter.breakStack > 0 {
+        jumpIp = bc.emit("JUMP", 0)
+        breakList = emitter.breakStack[#emitter.breakStack - 1]
+        breakList.push(jumpIp)
+    }
+    else {
+        emitError("break outside of loop", node.line, node.col)
+    }
+    return
 
     }
     if k == "ContinueStatement" {
@@ -877,33 +924,34 @@ fn emitStmt(emitter, node) {
         return
 
     }
-    if k == "TryStatement" {
-        bc.emit("PUSH_NULL")
-        tryStart = bc.emit("TRY_ENTER", 0)
-        emitBlock(emitter, node.try_block)
-        bc.emit("TRY_EXIT")
-        // Jump over catch/finally
-        overJump = bc.emit("JUMP", 0)
-        // Catch handler
-        bc.patch_jump(tryStart, bc.instr_count())
-        if node.catch_param != null {
-            cpIdx = scopeDeclare(emitter.scope, node.catch_param)
-            bc.emit("STORE_VAR", cpIdx)
-        }
-        else {
-            bc.emit("POP")
-        }
-        if node.catch_block != null {
-            emitBlock(emitter, node.catch_block)
-        }
-        // Finally
-        bc.patch_jump(overJump, bc.instr_count())
-        if node.finally_block != null {
-            emitBlock(emitter, node.finally_block)
-        }
-        return
+if k == "TryStatement" {
+	tryStart = bc.emit("TRY_ENTER", 0)
+	emitBlock(emitter, node.try_block)
+	bc.emit("TRY_EXIT")
+	overJump = bc.emit("JUMP", 0)
+	// Catch handler
+	bc.patch_jump(tryStart, bc.instr_count())
+	if node.catch_param != null {
+		bc.emit("LOAD_EXCEPTION")
+		cpIdx = scopeDeclare(emitter.scope, node.catch_param)
+		bc.emit("STORE_VAR", cpIdx)
+	}
+	else {
+		bc.emit("LOAD_EXCEPTION")
+		bc.emit("POP")
+	}
+	if node.catch_block != null {
+		emitBlock(emitter, node.catch_block)
+	}
+	endJump = bc.emit("JUMP", 0)
+	bc.patch_jump(overJump, bc.instr_count())
+	if node.finally_block != null {
+		emitBlock(emitter, node.finally_block)
+	}
+	bc.patch_jump(endJump, bc.instr_count())
+	return
 
-    }
+}
   if k == "UseStatement" {
     emitUseStatement(emitter, node)
     return
@@ -1016,6 +1064,36 @@ fn emitIfExpr(emitter, node) {
         bc.patch_jump(endJump, bc.instr_count())
 
     }
+}
+fn emitTryExpr(emitter, node) {
+	tryStart = bc.emit("TRY_ENTER", 0)
+	emitBlockWithReturn(emitter, node.try_block)
+	bc.emit("TRY_EXIT")
+	overJump = bc.emit("JUMP", 0)
+	// Catch handler
+	bc.patch_jump(tryStart, bc.instr_count())
+	if node.catch_param != null {
+		bc.emit("LOAD_EXCEPTION")
+		cpIdx = scopeDeclare(emitter.scope, node.catch_param)
+		bc.emit("STORE_VAR", cpIdx)
+	}
+	else {
+		bc.emit("LOAD_EXCEPTION")
+		bc.emit("POP")
+	}
+	if node.catch_block != null {
+		emitBlockWithReturn(emitter, node.catch_block)
+	}
+	else {
+		bc.emit("PUSH_NULL")
+	}
+	endJump = bc.emit("JUMP", 0)
+	bc.patch_jump(overJump, bc.instr_count())
+	if node.finally_block != null {
+		emitBlock(emitter, node.finally_block)
+	}
+	bc.patch_jump(endJump, bc.instr_count())
+
 }
 fn emitBlock(emitter, node) {
     if node == null {
@@ -1383,22 +1461,28 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
             emitIfExpr(emitter, last)
             bc.emit("RETURN")
         }
-        if last.kind != "ExpressionStatement" {
-    if last.kind != "IfStatement" {
-            emitStmt(emitter, last)
-            bc.emit("PUSH_NULL")
-            bc.emit("RETURN")
-        }
-    }
+	if last.kind != "ExpressionStatement" {
+		if last.kind != "IfStatement" {
+			if last.kind == "TryStatement" {
+				emitTryExpr(emitter, last)
+				bc.emit("RETURN")
+			}
+			else {
+				emitStmt(emitter, last)
+				bc.emit("PUSH_NULL")
+				bc.emit("RETURN")
+			}
+		}
+	}
     if n == 0 {
         bc.emit("PUSH_NULL")
         bc.emit("RETURN")
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
-  if !skip_execute {
-        bc.execute_persistent(entryName)
-}
+	if !skip_execute {
+		return bc.execute_persistent(entryName)
+	}
 
 }
 

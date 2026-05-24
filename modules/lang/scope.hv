@@ -2,7 +2,11 @@
 // Works with bc.add_upvalue() to register closure captures with the VM
 
 fn Scope(parent) {
-    {parent: parent, locals: {}, count: 0, upvalues: {}, upcount: 0}
+    startCount = 0
+    if parent != null {
+        startCount = parent.count
+    }
+    {parent: parent, locals: {}, count: startCount, upvalues: {}, upcount: 0, startCount: startCount}
 
 }
 fn scopeDeclare(scope, name) {
@@ -56,10 +60,11 @@ fn scopeResolve(scope, name) {
     if scope.parent == null {
         return null
     }
-    outer = scopeResolveLocal(scope.parent, name)
-    if outer != null {
-        upidx = scopeResolveUpvalue(scope, name)
-        return {kind: "upvalue", index: upidx}
+    // Walk parent chain — in flat function body, parent locals are
+    // directly accessible by slot index (same as "local")
+    found = scopeResolveLocal(scope.parent, name)
+    if found != null {
+        return {kind: "local", index: found.index}
     }
     null
 

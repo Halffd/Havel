@@ -1,0 +1,290 @@
+use { compileProgram, Emitter, Scope, scopeDeclare, globalIdx, emitStmt, emitExpr } from "emitter"
+use { ValDeclaration, LetDeclaration, NumberLiteral, ReturnStatement, FnDeclaration, Identifier, BinaryExpression, IfStatement, BlockStatement, ExpressionStatement, Program, WhileStatement, ForStatement, RangeExpression, BreakStatement, ContinueStatement, AssignmentExpression, UnaryExpression, StringLiteral, NullLiteral, BooleanLiteral, LambdaExpression, CallExpression, TernaryExpression, ThrowStatement, TryStatement, RepeatStatement, LoopStatement, ArrayLiteral, ObjectLiteral, ObjectField, MemberExpression, CompoundAssignment, UpdateExpression } from "ast"
+
+passed = 0
+failed = 0
+
+// Default params broken in Havel — must pass all args explicitly
+fn run(em, prog):
+    return compileProgram(em, prog, false, null, "__main__", false)
+
+fn check(name, got, expected):
+    if got == expected:
+        passed = passed + 1
+        return
+    print("FAIL: " + name + " got=" + str(got) + " expected=" + str(expected))
+    failed = failed + 1
+
+// Test: simple return
+em = Emitter()
+result = run(em, Program([ExpressionStatement(NumberLiteral(42, 0, 0), 0, 0)], 0, 0))
+check("return_42", result, 42)
+
+// Test: basic arithmetic
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(10, 0, 0), "+", NumberLiteral(20, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("add_10_20", result, 30)
+
+// Test: unary negate
+em = Emitter()
+result = run(em, Program([ExpressionStatement(UnaryExpression("-", NumberLiteral(5, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("negate_5", result, -5)
+
+// Test: not true
+em = Emitter()
+result = run(em, Program([ExpressionStatement(UnaryExpression("!", BooleanLiteral(true, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("not_true", result, false)
+
+// Test: if true returns then-branch
+em = Emitter()
+result = run(em, Program([IfStatement(BooleanLiteral(true, 0, 0), ReturnStatement(NumberLiteral(7, 0, 0), 0, 0), ReturnStatement(NumberLiteral(8, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("if_true", result, 7)
+
+// Test: if false returns else-branch
+em = Emitter()
+result = run(em, Program([IfStatement(BooleanLiteral(false, 0, 0), ReturnStatement(NumberLiteral(7, 0, 0), 0, 0), ReturnStatement(NumberLiteral(8, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("if_false", result, 8)
+
+// Test: function call
+em = Emitter()
+result = run(em, Program([
+    FnDeclaration("double", ["x"], ReturnStatement(BinaryExpression(Identifier("x", 0, 0), "*", NumberLiteral(2, 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(CallExpression(Identifier("double", 0, 0), [NumberLiteral(21, 0, 0)], 0, 0), 0, 0)
+], 0, 0))
+check("fn_double_21", result, 42)
+
+// Test: ternary true
+em = Emitter()
+result = run(em, Program([ExpressionStatement(TernaryExpression(BooleanLiteral(true, 0, 0), NumberLiteral(1, 0, 0), NumberLiteral(2, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("ternary_true", result, 1)
+
+// Test: ternary false
+em = Emitter()
+result = run(em, Program([ExpressionStatement(TernaryExpression(BooleanLiteral(false, 0, 0), NumberLiteral(1, 0, 0), NumberLiteral(2, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("ternary_false", result, 2)
+
+// Test: for loop with range (sum 0..4 = 0+1+2+3+4 = 10, inclusive)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("sum", NumberLiteral(0, 0, 0), 0, 0),
+    ForStatement("i", RangeExpression(NumberLiteral(0, 0, 0), NumberLiteral(4, 0, 0), true, 0, 0),
+        ExpressionStatement(AssignmentExpression(Identifier("sum", 0, 0), BinaryExpression(Identifier("sum", 0, 0), "+", Identifier("i", 0, 0), 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(Identifier("sum", 0, 0), 0, 0)
+], 0, 0))
+check("for_sum_0_4_inclusive", result, 10)
+
+// Test: for loop with break (sum until break at 3)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("sum", NumberLiteral(0, 0, 0), 0, 0),
+    ForStatement("i", RangeExpression(NumberLiteral(0, 0, 0), NumberLiteral(10, 0, 0), true, 0, 0),
+        BlockStatement([
+            ExpressionStatement(AssignmentExpression(Identifier("sum", 0, 0), BinaryExpression(Identifier("sum", 0, 0), "+", Identifier("i", 0, 0), 0, 0), 0, 0), 0, 0),
+            IfStatement(BinaryExpression(Identifier("i", 0, 0), "==", NumberLiteral(3, 0, 0), 0, 0), BreakStatement(0, 0), null, 0, 0)
+        ], 0, 0), 0, 0),
+    ExpressionStatement(Identifier("sum", 0, 0), 0, 0)
+], 0, 0))
+check("for_break_at_3", result, 6)
+
+// Test: while loop with break
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("x", NumberLiteral(0, 0, 0), 0, 0),
+    WhileStatement(BooleanLiteral(true, 0, 0),
+        BlockStatement([
+            IfStatement(BinaryExpression(Identifier("x", 0, 0), "==", NumberLiteral(5, 0, 0), 0, 0), BreakStatement(0, 0), null, 0, 0),
+            ExpressionStatement(AssignmentExpression(Identifier("x", 0, 0), BinaryExpression(Identifier("x", 0, 0), "+", NumberLiteral(1, 0, 0), 0, 0), 0, 0), 0, 0)
+        ], 0, 0), 0, 0),
+    ExpressionStatement(Identifier("x", 0, 0), 0, 0)
+], 0, 0))
+check("while_break_at_5", result, 5)
+
+// Test: nested if
+em = Emitter()
+result = run(em, Program([
+    IfStatement(
+        BinaryExpression(NumberLiteral(1, 0, 0), "<", NumberLiteral(2, 0, 0), 0, 0),
+        IfStatement(
+            BinaryExpression(NumberLiteral(3, 0, 0), "<", NumberLiteral(4, 0, 0), 0, 0),
+            ReturnStatement(NumberLiteral(100, 0, 0), 0, 0),
+            ReturnStatement(NumberLiteral(200, 0, 0), 0, 0),
+            0, 0),
+        ReturnStatement(NumberLiteral(300, 0, 0), 0, 0),
+        0, 0)
+], 0, 0))
+check("nested_if", result, 100)
+
+// Test: null literal
+em = Emitter()
+result = run(em, Program([ExpressionStatement(NullLiteral(0, 0), 0, 0)], 0, 0))
+check("null_literal", result == null, true)
+
+// Test: boolean literal
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BooleanLiteral(true, 0, 0), 0, 0)], 0, 0))
+check("bool_true", result, true)
+
+// Test: string literal
+em = Emitter()
+result = run(em, Program([ExpressionStatement(StringLiteral("hello", 0, 0), 0, 0)], 0, 0))
+check("string_hello", result, "hello")
+
+// Test: multiplication and subtraction
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(6, 0, 0), "*", NumberLiteral(7, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("mul_6_7", result, 42)
+
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(100, 0, 0), "-", NumberLiteral(58, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("sub_100_58", result, 42)
+
+// Test: comparison operators
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(1, 0, 0), "<", NumberLiteral(2, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("lt_1_2", result, true)
+
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(2, 0, 0), ">", NumberLiteral(1, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("gt_2_1", result, true)
+
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(1, 0, 0), "==", NumberLiteral(1, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("eq_1_1", result, true)
+
+em = Emitter()
+result = run(em, Program([ExpressionStatement(BinaryExpression(NumberLiteral(1, 0, 0), "!=", NumberLiteral(2, 0, 0), 0, 0), 0, 0)], 0, 0))
+check("neq_1_2", result, true)
+
+print(passed + " passed, " + failed + " failed")
+
+// ============================================================
+// Extended functional tests
+// ============================================================
+
+// Test: RepeatStatement (repeat 3 times, sum += 1)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("sum", NumberLiteral(0, 0, 0), 0, 0),
+    RepeatStatement(NumberLiteral(3, 0, 0),
+        ExpressionStatement(AssignmentExpression(Identifier("sum", 0, 0), BinaryExpression(Identifier("sum", 0, 0), "+", NumberLiteral(1, 0, 0), 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(Identifier("sum", 0, 0), 0, 0)
+], 0, 0))
+check("repeat_3", result, 3)
+
+// Test: LoopStatement with break (infinite loop + break)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("x", NumberLiteral(0, 0, 0), 0, 0),
+    LoopStatement(
+        BlockStatement([
+            IfStatement(BinaryExpression(Identifier("x", 0, 0), "==", NumberLiteral(7, 0, 0), 0, 0), BreakStatement(0, 0), null, 0, 0),
+            ExpressionStatement(AssignmentExpression(Identifier("x", 0, 0), BinaryExpression(Identifier("x", 0, 0), "+", NumberLiteral(1, 0, 0), 0, 0), 0, 0), 0, 0)
+        ], 0, 0), 0, 0),
+    ExpressionStatement(Identifier("x", 0, 0), 0, 0)
+], 0, 0))
+check("loop_break_7", result, 7)
+
+// Test: ContinueStatement in for loop (skip even numbers)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("sum", NumberLiteral(0, 0, 0), 0, 0),
+    ForStatement("i", RangeExpression(NumberLiteral(0, 0, 0), NumberLiteral(4, 0, 0), true, 0, 0),
+        BlockStatement([
+            IfStatement(BinaryExpression(BinaryExpression(Identifier("i", 0, 0), "%", NumberLiteral(2, 0, 0), 0, 0), "==", NumberLiteral(0, 0, 0), 0, 0), ContinueStatement(0, 0), null, 0, 0),
+            ExpressionStatement(AssignmentExpression(Identifier("sum", 0, 0), BinaryExpression(Identifier("sum", 0, 0), "+", Identifier("i", 0, 0), 0, 0), 0, 0), 0, 0)
+        ], 0, 0), 0, 0),
+    ExpressionStatement(Identifier("sum", 0, 0), 0, 0)
+], 0, 0))
+check("for_continue_skip_even", result, 4)
+
+// Test: nested for loop
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("sum", NumberLiteral(0, 0, 0), 0, 0),
+    ForStatement("i", RangeExpression(NumberLiteral(0, 0, 0), NumberLiteral(2, 0, 0), true, 0, 0),
+        ForStatement("j", RangeExpression(NumberLiteral(0, 0, 0), NumberLiteral(2, 0, 0), true, 0, 0),
+            ExpressionStatement(AssignmentExpression(Identifier("sum", 0, 0), BinaryExpression(Identifier("sum", 0, 0), "+", BinaryExpression(Identifier("i", 0, 0), "*", Identifier("j", 0, 0), 0, 0), 0, 0), 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(Identifier("sum", 0, 0), 0, 0)
+], 0, 0))
+// i=0: j=0..2 → 0*0+0*1+0*2=0; i=1: 1*0+1*1+1*2=3; i=2: 2*0+2*1+2*2=6; total=9
+check("nested_for_i_j", result, 9)
+
+// Test: ArrayLiteral
+em = Emitter()
+result = run(em, Program([
+    ExpressionStatement(ArrayLiteral([NumberLiteral(1, 0, 0), NumberLiteral(2, 0, 0), NumberLiteral(3, 0, 0)], 0, 0), 0, 0)
+], 0, 0))
+check("array_literal", #result, 3)
+
+// Test: ObjectLiteral
+em = Emitter()
+result = run(em, Program([
+    ExpressionStatement(ObjectLiteral([ObjectField("x", NumberLiteral(10, 0, 0), 0, 0), ObjectField("y", NumberLiteral(20, 0, 0), 0, 0)], 0, 0), 0, 0)
+], 0, 0))
+check("object_literal_x", result.x, 10)
+
+// Test: MemberExpression
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("obj", ObjectLiteral([ObjectField("val", NumberLiteral(42, 0, 0), 0, 0)], 0, 0), 0, 0),
+    ExpressionStatement(MemberExpression(Identifier("obj", 0, 0), "val", 0, 0), 0, 0)
+], 0, 0))
+check("member_expr_val", result, 42)
+
+// Test: TryStatement with ThrowStatement
+em = Emitter()
+result = run(em, Program([
+    TryStatement(
+        BlockStatement([ExpressionStatement(ThrowStatement(NumberLiteral(99, 0, 0), 0, 0), 0, 0)], 0, 0),
+        "e",
+        BlockStatement([ExpressionStatement(Identifier("e", 0, 0), 0, 0)], 0, 0),
+        null, 0, 0)
+], 0, 0))
+check("try_catch_throw", result, 99)
+
+// Test: for loop exclusive range (0..<5 = 0,1,2,3,4)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("sum", NumberLiteral(0, 0, 0), 0, 0),
+    ForStatement("i", RangeExpression(NumberLiteral(0, 0, 0), NumberLiteral(5, 0, 0), false, 0, 0),
+        ExpressionStatement(AssignmentExpression(Identifier("sum", 0, 0), BinaryExpression(Identifier("sum", 0, 0), "+", Identifier("i", 0, 0), 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(Identifier("sum", 0, 0), 0, 0)
+], 0, 0))
+check("for_exclusive_0_5", result, 10)
+
+// Test: compound assignment (+=)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("x", NumberLiteral(10, 0, 0), 0, 0),
+    ExpressionStatement(CompoundAssignment(Identifier("x", 0, 0), "+=", NumberLiteral(5, 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(Identifier("x", 0, 0), 0, 0)
+], 0, 0))
+check("compound_add_assign", result, 15)
+
+// Test: UpdateExpression (x++)
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("x", NumberLiteral(0, 0, 0), 0, 0),
+    ExpressionStatement(UpdateExpression(Identifier("x", 0, 0), "++", false, 0, 0), 0, 0),
+    ExpressionStatement(Identifier("x", 0, 0), 0, 0)
+], 0, 0))
+check("update_post_inc", result, 1)
+
+// Test: closure captures variable
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("x", NumberLiteral(10, 0, 0), 0, 0),
+    FnDeclaration("get_x", [], ReturnStatement(Identifier("x", 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(CallExpression(Identifier("get_x", 0, 0), [], 0, 0), 0, 0)
+], 0, 0))
+check("closure_capture", result, 10)
+
+// Test: lambda expression
+em = Emitter()
+result = run(em, Program([
+    LetDeclaration("f", LambdaExpression(["a", "b"], BinaryExpression(Identifier("a", 0, 0), "+", Identifier("b", 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(CallExpression(Identifier("f", 0, 0), [NumberLiteral(3, 0, 0), NumberLiteral(4, 0, 0)], 0, 0), 0, 0)
+], 0, 0))
+check("lambda_add", result, 7)
+
+print(passed + " passed, " + failed + " failed")

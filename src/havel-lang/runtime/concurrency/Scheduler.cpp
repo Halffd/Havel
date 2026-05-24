@@ -375,14 +375,16 @@ void Scheduler::requeueFront(Goroutine* g) {
                 g->fiber->stack.push(arg);
             }
             g->fiber->pushCall(g->hotkey_function_id,
-                               static_cast<uint32_t>(g->hotkey_args.size()));
+                static_cast<uint32_t>(g->hotkey_args.size()));
             auto& frame = g->fiber->currentFrame();
             frame.closure_id = g->hotkey_closure_id;
         }
         g->fiber->state = FiberState::CREATED;
         g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
     }
-	{
+    ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={}",
+        g->id, g->persistent, g->function_id, g->closure_id);
+    {
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(g);
@@ -391,7 +393,66 @@ void Scheduler::requeueFront(Goroutine* g) {
 		} else {
 			runnable_queue_.push_front(g);
 		}
-	}
+    }
+}
+
+bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
+    if (!g) return false;
+
+    bool isPending = (g->state == GoroutineState::Runnable ||
+        g->state == GoroutineState::Created ||
+        g->state == GoroutineState::Running);
+
+    ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
+        g->id, static_cast<int>(g->state), static_cast<int>(g->hotkey_policy), isPending);
+
+    switch (g->hotkey_policy) {
+    case HotkeyPolicy::Drop:
+        if (isPending) return false;
+        break;
+    case HotkeyPolicy::Replace:
+        break;
+    case HotkeyPolicy::Queue:
+        break;
+    case HotkeyPolicy::Coalesce:
+        if (isPending && !newArgs.empty()) {
+            g->hotkey_args = newArgs;
+            g->locals = newArgs;
+            if (g->fiber) {
+                g->fiber->stack.clear();
+                for (const auto& arg : newArgs) {
+                    g->fiber->stack.push(arg);
+                }
+            }
+            return true;
+        }
+        if (isPending) return true;
+        break;
+    }
+
+    if (!newArgs.empty()) {
+        g->hotkey_args = newArgs;
+    }
+    requeueFront(g);
+    return true;
+}
+
+bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
+    std::vector<Goroutine*> toWake;
+    {
+        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        for (auto& [id, g] : goroutines_) {
+            if (g && g->persistent && g->hotkey_alias == alias) {
+                toWake.push_back(g.get());
+            }
+        }
+    }
+    ::havel::debug("[Scheduler] wakeHotkeyByAlias('{}'): found {} persistent goroutines", alias, toWake.size());
+    bool found = false;
+    for (auto* g : toWake) {
+        if (wakeHotkey(g)) found = true;
+    }
+    return found;
 }
 
 bool Scheduler::hasRunnableFibers() const {

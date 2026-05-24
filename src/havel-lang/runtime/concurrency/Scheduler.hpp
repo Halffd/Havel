@@ -24,9 +24,16 @@ using ::havel::core::Value;
  * Background fibers run when nothing else is pending
  */
 enum class FiberPriority : uint8_t {
-    HOTKEY = 0,     // Immediate execution (keyboard/mouse interrupts)
-    NORMAL = 1,     // Standard cooperative tasks
-    BACKGROUND = 2  // Low-priority background work
+    HOTKEY = 0, // Immediate execution (keyboard/mouse interrupts)
+    NORMAL = 1, // Standard cooperative tasks
+    BACKGROUND = 2 // Low-priority background work
+};
+
+enum class HotkeyPolicy : uint8_t {
+    Drop = 0,      // If goroutine is pending, skip this trigger (default for keys)
+    Replace = 1,   // If goroutine is pending, reset it with fresh args and requeue
+    Queue = 2,     // Always spawn/requeue — old behavior (legacy)
+    Coalesce = 3   // If goroutine is pending, update its args in-place (for mouse/scroll)
 };
 
 /**
@@ -106,7 +113,7 @@ public:
     std::chrono::steady_clock::time_point created_time;
     uint64_t instructions_executed = 0;
 static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
-	static constexpr uint64_t HOTKEY_MAX_INSTRUCTIONS = 1000;
+ static constexpr uint64_t HOTKEY_MAX_INSTRUCTIONS = 100000;
 	uint64_t max_instructions_per_tick = DEFAULT_MAX_INSTRUCTIONS;
 
 	// Metadata
@@ -115,13 +122,15 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
 	// Execution priority (controls scheduler queue selection)
 	FiberPriority priority = FiberPriority::NORMAL;
 
-	// Persistent goroutine: re-suspend instead of Done on completion
-	// Used by hotkey system to avoid per-press goroutine allocation
-	bool persistent = false;
-	// Hotkey reset fields (stored from registration for reuse)
-	uint32_t hotkey_function_id = 0;
-	uint32_t hotkey_closure_id = 0;
-	std::vector<Value> hotkey_args;
+    // Persistent goroutine: re-suspend instead of Done on completion
+    // Used by hotkey system to avoid per-press goroutine allocation
+    bool persistent = false;
+    // Hotkey reset fields (stored from registration for reuse)
+    uint32_t hotkey_function_id = 0;
+    uint32_t hotkey_closure_id = 0;
+    std::vector<Value> hotkey_args;
+    HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
+    std::string hotkey_alias;
 
 	explicit Goroutine(uint32_t id_, const std::string& name_ = "",
 		FiberPriority prio = FiberPriority::NORMAL)
@@ -253,9 +262,17 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   // Add a pre-created Action Fiber to the scheduler with priority
   void addActionFiber(Fiber* fiber, FiberPriority priority = FiberPriority::NORMAL);
 
-  // Re-enqueue an existing goroutine to front of its priority queue
-  // Used by persistent hotkey goroutines to avoid per-press allocation
-  void requeueFront(Goroutine* g);
+    // Re-enqueue an existing goroutine to front of its priority queue
+    // Used by persistent hotkey goroutines to avoid per-press allocation
+    void requeueFront(Goroutine* g);
+
+    // Wake a persistent hotkey goroutine according to its policy
+    // Returns true if the goroutine was woken/requeued, false if dropped
+    bool wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs = {});
+
+    // Wake persistent hotkey goroutines matching the given alias
+    // Used by hotkey.trigger() to reach persistent goroutines without HotkeyManager
+    bool wakeHotkeyByAlias(const std::string& alias);
 
     // Check if there are runnable fibers
     bool hasRunnableFibers() const;

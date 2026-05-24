@@ -1188,23 +1188,29 @@ if (isDigit(c) || canBeNegativeNumber) {
       if (la < source.length() && (isAlpha(source[la]) || source[la] == '_')) {
         size_t la2 = la;
         size_t idStart = la;
-        while (la2 < source.length() && (isAlphaNumeric(source[la2]) || source[la2] == '_')) la2++;
-        // Check if the identifier is a keyword that starts a condition (if/when)
-        std::string ident = source.substr(idStart, la2 - idStart);
-        if (ident == "if" || ident == "when") {
-          identifierIsKeyword = true;
-        }
-        // Search for => within a reasonable window
-        size_t searchEnd = std::min(la2 + 200, source.length());
-        bool foundArrow = false;
-        for (size_t s = la2; s + 1 < searchEnd; s++) {
-          if (source[s] == '=' && source[s + 1] == '>') { foundArrow = true; break; }
-          if (source[s] == '\n') break;
-        }
-        if (foundArrow) {
-          isSlashHotkey = true;
-          hotkeyEnd = la2;
-        }
+ while (la2 < source.length() && (isAlphaNumeric(source[la2]) || source[la2] == '_')) la2++;
+ // If identifier is immediately followed by '/', this is a regex literal /pattern/
+ if (la2 < source.length() && source[la2] == '/') {
+ // Not a hotkey — will be handled by regex scan below
+ }
+ else {
+ // Check if the identifier is a keyword that starts a condition (if/when)
+ std::string ident = source.substr(idStart, la2 - idStart);
+ if (ident == "if" || ident == "when") {
+ identifierIsKeyword = true;
+ }
+ // Search for => within a reasonable window
+ size_t searchEnd = std::min(la2 + 200, source.length());
+ bool foundArrow = false;
+ for (size_t s = la2; s + 1 < searchEnd; s++) {
+ if (source[s] == '=' && source[s + 1] == '>') { foundArrow = true; break; }
+ if (source[s] == '\n') break;
+ }
+ if (foundArrow) {
+ isSlashHotkey = true;
+ hotkeyEnd = la2;
+ }
+ }
       }
       if (isSlashHotkey) {
         if (identifierIsKeyword) {
@@ -1229,31 +1235,32 @@ if (isDigit(c) || canBeNegativeNumber) {
       // Check if this looks like a regex (not division)
       // Simple heuristic: if previous non-whitespace token suggests expression
       // context
-      bool isRegexContext = tokens.empty() ||
-                            tokens.back().type == TokenType::OpenParen ||
-                            tokens.back().type == TokenType::OpenBracket ||
-                            tokens.back().type == TokenType::Comma ||
-                            tokens.back().type == TokenType::Assign ||
-                            tokens.back().type == TokenType::Arrow ||
-                            tokens.back().type == TokenType::And ||
-                            tokens.back().type == TokenType::Or ||
-                            tokens.back().type == TokenType::Not ||
-                            tokens.back().type == TokenType::In ||
-                            tokens.back().type == TokenType::Matches ||
-                            tokens.back().type == TokenType::Tilde ||
-                            tokens.back().type == TokenType::Colon ||
-                            tokens.back().type == TokenType::Question ||
-                            tokens.back().type == TokenType::Pipe ||
-                            tokens.back().type == TokenType::NewLine ||
-                            tokens.back().type == TokenType::Semicolon;
+ bool isRegexContext = tokens.empty() ||
+ tokens.back().type == TokenType::OpenParen ||
+ tokens.back().type == TokenType::OpenBracket ||
+ tokens.back().type == TokenType::OpenBrace ||
+ tokens.back().type == TokenType::Comma ||
+ tokens.back().type == TokenType::Assign ||
+ tokens.back().type == TokenType::Arrow ||
+ tokens.back().type == TokenType::And ||
+ tokens.back().type == TokenType::Or ||
+ tokens.back().type == TokenType::Not ||
+ tokens.back().type == TokenType::In ||
+ tokens.back().type == TokenType::Matches ||
+ tokens.back().type == TokenType::Tilde ||
+ tokens.back().type == TokenType::Colon ||
+ tokens.back().type == TokenType::Question ||
+ tokens.back().type == TokenType::Pipe ||
+ tokens.back().type == TokenType::NewLine ||
+ tokens.back().type == TokenType::Semicolon;
 
-      if (isRegexContext && !isDigit(peek())) {
-        tokens.push_back(scanRegexLiteral());
-        if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
-        }
-        continue;
-      }
+ if (isRegexContext && !isDigit(peek())) {
+ tokens.push_back(scanRegexLiteral());
+ if (debug_lexer) {
+ havel::debug("LEX: {}", tokens.back().toString());
+ }
+ continue;
+ }
     }
 
     // Handle return type arrow ->

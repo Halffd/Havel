@@ -7771,11 +7771,11 @@ case havel::TokenType::Number: {
     return makeNode<havel::ast::BacktickExpression>(tk.value);
   }
 
-  case havel::TokenType::RegexLiteral: {
-    advance();
-return makeNode<havel::ast::StringLiteral>(
-tk.value); // Store regex as string for now
-}
+ case havel::TokenType::RegexLiteral: {
+ advance();
+ return makeNode<havel::ast::StringLiteral>(
+ tk.value, true);
+ }
 
 case havel::TokenType::RegexString: {
 advance();
@@ -9241,11 +9241,16 @@ try {
             return nullptr;
         }
   }
-  // String literal
-  else if (at().type == havel::TokenType::String) {
-    auto tok = advance();
-    literal = makeNode<havel::ast::StringLiteral>(tok.value);
-  }
+ // String literal
+ else if (at().type == havel::TokenType::String) {
+ auto tok = advance();
+ literal = makeNode<havel::ast::StringLiteral>(tok.value);
+ }
+ // Regex literal /pattern/
+ else if (at().type == havel::TokenType::RegexLiteral) {
+ auto tok = advance();
+ literal = makeNode<havel::ast::StringLiteral>(tok.value, true);
+ }
   // Char literal
   else if (at().type == havel::TokenType::CharLiteral) {
     auto tok = advance();

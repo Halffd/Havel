@@ -1,0 +1,9 @@
+// Test that hotkey context object fields are accessible
+ctx = hotkey.register("test_key", fn() {
+    print "triggered"
+})
+
+print ctx
+print ctx.id
+print ctx.alias
+print ctx.key

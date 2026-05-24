@@ -17,9 +17,9 @@ b => {
        return
     print e
   }
-  interval(500, {
+  interval 500 {
     print("hello", z)
-  })
+  }
 }
 z = 0
 c => {

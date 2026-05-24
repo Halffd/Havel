@@ -1,0 +1,15 @@
+// Test that @id/@alias/@key work in hotkey handler
+dhk=test_key => {
+    print "handler fired"
+    tid = @id
+    print tid
+    print @alias
+    print @key
+}
+
+print "about to trigger"
+result = hotkey.trigger("test_key")
+print f"trigger result: {result}"
+sleep(1000)
+print "after sleep"
+exit(0)

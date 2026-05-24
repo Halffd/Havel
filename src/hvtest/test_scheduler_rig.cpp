@@ -888,6 +888,439 @@ static void test_loadFiberState_restores_current_chunk_from_top_frame() {
   assert(vm.frame_arena_[1].chunk == &chunk_b);
 }
 
+// ============================================================
+// HotkeyPolicy + wakeHotkey + requeueFront + wakeHotkeyByAlias
+// ============================================================
+
+static void test_requeueFront_resets_state_and_requeues() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(7, {Value::makeInt(42)}, 5, "hk_requeue");
+    auto* g = sched.get(gid);
+    CHECK(g != nullptr, "get() returned null");
+    g->persistent = true;
+    g->hotkey_function_id = 7;
+    g->hotkey_closure_id = 5;
+    g->hotkey_args = {Value::makeInt(42)};
+
+    auto* picked = sched.pickNext();
+    CHECK(picked != nullptr, "pickNext returned null");
+    CHECK_EQ(picked->id, gid, "wrong goroutine picked");
+    sched.clearCurrent();
+
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+    CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended");
+
+    sched.requeueFront(g);
+    CHECK(g->state == Scheduler::GoroutineState::Created, "requeueFront should set Created");
+    CHECK(g->suspension_reason == Scheduler::SuspensionReason::None, "reason should be None");
+    CHECK_EQ(g->function_id, 7u, "function_id should be restored from hotkey_args");
+    CHECK_EQ(g->closure_id, 5u, "closure_id should be restored from hotkey_args");
+    CHECK_EQ(g->locals.size(), 1u, "locals should be repopulated from hotkey_args");
+    CHECK_EQ(g->locals[0].asInt(), 42, "locals[0] should be hotkey_args[0]");
+    CHECK_EQ(g->stack.size(), 1u, "stack should be repopulated from hotkey_args for persistent goroutine");
+    CHECK_EQ(g->stack[0].asInt(), 42, "stack[0] should be hotkey_args[0]");
+
+    auto* re_picked = sched.pickNext();
+    CHECK(re_picked != nullptr, "should be pickable after requeueFront");
+    CHECK_EQ(re_picked->id, gid, "wrong goroutine after requeue");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_requeueFront_non_persistent_clears_args() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawn(3, {Value::makeInt(99)}, 0, "nonpersistent");
+    auto* g = sched.get(gid);
+
+    auto* picked = sched.pickNext();
+    CHECK(picked != nullptr, "pick");
+    sched.clearCurrent();
+
+    sched.requeueFront(g);
+    CHECK_EQ(g->function_id, 3u, "function_id preserved for non-persistent");
+    CHECK(g->locals.empty(), "non-persistent requeueFront should not populate locals from hotkey_args");
+
+    auto* re_picked = sched.pickNext();
+    CHECK(re_picked != nullptr, "should be pickable");
+    re_picked->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_drop_while_pending() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "drop_hk");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Drop;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(10)};
+
+    auto* picked = sched.pickNext();
+    CHECK(picked != nullptr, "pick");
+    CHECK(picked->state == Scheduler::GoroutineState::Running, "should be Running");
+    sched.clearCurrent();
+    sched.yield(g);
+    CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after yield");
+
+    bool result = sched.wakeHotkey(g);
+    CHECK(!result, "Drop policy should return false when goroutine is pending (Runnable)");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_drop_while_suspended() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "drop_hk_susp");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Drop;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(10)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkey(g);
+    CHECK(result, "Drop policy should return true when goroutine is Suspended");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after requeue");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_replace_while_pending() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "replace_hk");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Replace;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(10)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.yield(g);
+
+    bool result = sched.wakeHotkey(g, {Value::makeInt(20)});
+    CHECK(result, "Replace policy should return true even when pending");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 20, "hotkey_args should be updated with new args");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "should be requeued (Created)");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_replace_while_suspended() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(5)}, 0, "replace_susp");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Replace;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(5)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkey(g, {Value::makeInt(99)});
+    CHECK(result, "Replace policy should return true when Suspended");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 99, "args should be updated");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_queue_always_wakes() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(1)}, 0, "queue_hk");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Queue;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(1)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.yield(g);
+
+    bool result = sched.wakeHotkey(g, {Value::makeInt(2)});
+    CHECK(result, "Queue policy should always return true");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 2, "args updated for Queue");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "requeued");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_coalesce_while_pending() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(100)}, 0, "coalesce_hk");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Coalesce;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(100)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.yield(g);
+
+    bool result = sched.wakeHotkey(g, {Value::makeInt(200)});
+    CHECK(result, "Coalesce policy should return true when pending and has newArgs");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 200, "args should be updated in-place");
+    CHECK_EQ(g->locals[0].asInt(), 200, "locals should also be updated");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_coalesce_pending_no_args() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(50)}, 0, "coalesce_noargs");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Coalesce;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(50)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.yield(g);
+
+    bool result = sched.wakeHotkey(g, {});
+    CHECK(result, "Coalesce pending with no newArgs should return true (no-op wake)");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 50, "args should stay unchanged when no newArgs");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_coalesce_while_suspended() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(1)}, 0, "coalesce_susp");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Coalesce;
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {Value::makeInt(1)};
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkey(g, {Value::makeInt(2)});
+    CHECK(result, "Coalesce should return true when Suspended (requeues)");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 2, "args updated before requeue");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkey_null_goroutine() {
+    auto& sched = Scheduler::instance();
+    bool result = sched.wakeHotkey(nullptr);
+    CHECK(!result, "wakeHotkey(nullptr) should return false");
+}
+
+static void test_wakeHotkeyByAlias_finds_matching() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {}, 0, "alias_hk");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_alias = "my_key";
+    g->hotkey_function_id = 1;
+    g->hotkey_args = {};
+    g->hotkey_policy = HotkeyPolicy::Drop;
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkeyByAlias("my_key");
+    CHECK(result, "wakeHotkeyByAlias should find matching persistent goroutine");
+
+    bool no_result = sched.wakeHotkeyByAlias("nonexistent_key");
+    CHECK(!no_result, "wakeHotkeyByAlias should return false for unknown alias");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkeyByAlias_skips_non_persistent() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {}, 0, "non_persistent_alias");
+    auto* g = sched.get(gid);
+    g->persistent = false;
+    g->hotkey_alias = "ignored_key";
+
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkeyByAlias("ignored_key");
+    CHECK(!result, "wakeHotkeyByAlias should skip non-persistent goroutines");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkeyByAlias_multiple_same_alias() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t g1 = sched.spawnHotkey(1, {}, 0, "alias_dup1");
+    uint32_t g2 = sched.spawnHotkey(1, {}, 0, "alias_dup2");
+
+    auto* go1 = sched.get(g1);
+    auto* go2 = sched.get(g2);
+
+    go1->persistent = true;
+    go1->hotkey_alias = "shared_key";
+    go1->hotkey_function_id = 1;
+    go1->hotkey_policy = HotkeyPolicy::Drop;
+
+    go2->persistent = true;
+    go2->hotkey_alias = "shared_key";
+    go2->hotkey_function_id = 1;
+    go2->hotkey_policy = HotkeyPolicy::Drop;
+
+    auto* p1 = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(go2, Scheduler::SuspensionReason::HotkeyWait);
+
+    auto* p2 = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(go1, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkeyByAlias("shared_key");
+    CHECK(result, "should wake at least one goroutine with matching alias");
+
+    go1->state = Scheduler::GoroutineState::Done;
+    go2->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_wakeHotkeyByAlias_with_drop_policy_only_wakes_suspended() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t g1 = sched.spawnHotkey(1, {}, 0, "alias_drop_run");
+    uint32_t g2 = sched.spawnHotkey(1, {}, 0, "alias_drop_susp");
+
+    auto* go1 = sched.get(g1);
+    auto* go2 = sched.get(g2);
+
+    go1->persistent = true;
+    go1->hotkey_alias = "drop_key";
+    go1->hotkey_function_id = 1;
+    go1->hotkey_policy = HotkeyPolicy::Drop;
+
+    go2->persistent = true;
+    go2->hotkey_alias = "drop_key";
+    go2->hotkey_function_id = 1;
+    go2->hotkey_policy = HotkeyPolicy::Drop;
+
+    auto* p1 = sched.pickNext();
+    sched.clearCurrent();
+    sched.yield(go2);
+
+    auto* p2 = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(go1, Scheduler::SuspensionReason::HotkeyWait);
+
+    bool result = sched.wakeHotkeyByAlias("drop_key");
+    CHECK(result, "should wake the Suspended one (go1)");
+
+    go1->state = Scheduler::GoroutineState::Done;
+    go2->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_persistent_goroutine_fields() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(5, {Value::makeInt(77)}, 3, "persistent_check");
+    auto* g = sched.get(gid);
+
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Replace;
+    g->hotkey_alias = "test_alias";
+    g->hotkey_function_id = 5;
+    g->hotkey_closure_id = 3;
+    g->hotkey_args = {Value::makeInt(77)};
+
+    CHECK(g->persistent == true, "persistent should be true");
+    CHECK(g->hotkey_policy == HotkeyPolicy::Replace, "policy should be Replace");
+    CHECK(g->hotkey_alias == "test_alias", "alias mismatch");
+    CHECK_EQ(g->hotkey_function_id, 5u, "hotkey_function_id mismatch");
+    CHECK_EQ(g->hotkey_closure_id, 3u, "hotkey_closure_id mismatch");
+    CHECK_EQ(g->hotkey_args.size(), 1u, "hotkey_args should have 1 element");
+    CHECK_EQ(g->hotkey_args[0].asInt(), 77, "hotkey_args[0] value mismatch");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_hotkey_policy_default_is_drop() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(0, {}, 0, "default_policy");
+    auto* g = sched.get(gid);
+
+    CHECK(g->hotkey_policy == HotkeyPolicy::Drop, "default hotkey_policy should be Drop");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
+static void test_requeueFront_hotkey_goes_to_front_of_hotkey_queue() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t hk1 = sched.spawnHotkey(1, {}, 0, "hk1_front");
+    uint32_t normal = sched.spawn(1, {}, 0, "normal_front");
+    auto* g1 = sched.get(hk1);
+    auto* gn = sched.get(normal);
+
+    g1->persistent = true;
+    g1->hotkey_function_id = 1;
+    g1->hotkey_args = {};
+
+    auto* p = sched.pickNext();
+    CHECK_EQ(p->id, hk1, "hotkey should be picked first");
+    sched.clearCurrent();
+    sched.suspend(g1, Scheduler::SuspensionReason::HotkeyWait);
+
+    sched.requeueFront(g1);
+
+    auto* first = sched.pickNext();
+    CHECK(first != nullptr, "should have runnable");
+    CHECK_EQ(first->id, hk1, "requeued hk1 should be at front (before normal)");
+
+    first->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+
+    auto* second = sched.pickNext();
+    CHECK(second != nullptr, "should have normal");
+    CHECK_EQ(second->id, normal, "normal should be after requeued hotkey");
+
+    second->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
 void run_scheduler_tests() {
   std::cout << "=== Scheduler Tests ===\n\n";
 
@@ -1005,11 +1438,66 @@ void run_scheduler_tests() {
   test_save_load_roundtrip_nonzero_function_not_zero();
   std::cout << " PASS save/load roundtrip nonzero function stays nonzero\n";
 
-  test_loadFiberState_restores_current_chunk_from_top_frame();
-  std::cout << " PASS loadFiberState restores current_chunk from top frame\n";
+    test_loadFiberState_restores_current_chunk_from_top_frame();
+    std::cout << " PASS loadFiberState restores current_chunk from top frame\n";
 
-  constexpr int total = 25 + 14;
-  std::cout << "\n=== All " << total << " tests passed! ===\n";
+    // Hotkey policy + wakeHotkey + requeueFront + wakeHotkeyByAlias
+    test_requeueFront_resets_state_and_requeues();
+    std::cout << " PASS requeueFront resets state and requeues persistent goroutine\n";
+
+    test_requeueFront_non_persistent_clears_args();
+    std::cout << " PASS requeueFront non-persistent does not populate hotkey_args\n";
+
+    test_wakeHotkey_drop_while_pending();
+    std::cout << " PASS wakeHotkey Drop policy: returns false while pending\n";
+
+    test_wakeHotkey_drop_while_suspended();
+    std::cout << " PASS wakeHotkey Drop policy: wakes when suspended\n";
+
+    test_wakeHotkey_replace_while_pending();
+    std::cout << " PASS wakeHotkey Replace policy: resets with new args while pending\n";
+
+    test_wakeHotkey_replace_while_suspended();
+    std::cout << " PASS wakeHotkey Replace policy: wakes when suspended\n";
+
+    test_wakeHotkey_queue_always_wakes();
+    std::cout << " PASS wakeHotkey Queue policy: always wakes\n";
+
+    test_wakeHotkey_coalesce_while_pending();
+    std::cout << " PASS wakeHotkey Coalesce policy: updates args in-place while pending\n";
+
+    test_wakeHotkey_coalesce_pending_no_args();
+    std::cout << " PASS wakeHotkey Coalesce policy: returns true with no newArgs\n";
+
+    test_wakeHotkey_coalesce_while_suspended();
+    std::cout << " PASS wakeHotkey Coalesce policy: wakes when suspended\n";
+
+    test_wakeHotkey_null_goroutine();
+    std::cout << " PASS wakeHotkey returns false for nullptr\n";
+
+    test_wakeHotkeyByAlias_finds_matching();
+    std::cout << " PASS wakeHotkeyByAlias finds matching persistent goroutine\n";
+
+    test_wakeHotkeyByAlias_skips_non_persistent();
+    std::cout << " PASS wakeHotkeyByAlias skips non-persistent goroutines\n";
+
+    test_wakeHotkeyByAlias_multiple_same_alias();
+    std::cout << " PASS wakeHotkeyByAlias wakes multiple goroutines with same alias\n";
+
+    test_wakeHotkeyByAlias_with_drop_policy_only_wakes_suspended();
+    std::cout << " PASS wakeHotkeyByAlias with Drop policy only wakes suspended\n";
+
+    test_persistent_goroutine_fields();
+    std::cout << " PASS persistent goroutine fields (policy, alias, fn, closure, args)\n";
+
+    test_hotkey_policy_default_is_drop();
+    std::cout << " PASS hotkey_policy default is Drop\n";
+
+    test_requeueFront_hotkey_goes_to_front_of_hotkey_queue();
+    std::cout << " PASS requeueFront puts hotkey at front of hotkey queue\n";
+
+    constexpr int total = 25 + 14 + 18;
+    std::cout << "\n=== All " << total << " tests passed! ===\n";
 }
 
 } // namespace havel::test

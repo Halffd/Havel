@@ -1,0 +1,45 @@
+// test_executor_mode.hv - Test runtime ExecutorMode switching
+
+// Get the current mode (should be "scheduler" by default)
+current = io.getExecutorMode()
+print(f"current executor mode: {current}")
+
+// Switch to sync mode
+ok = io.setExecutorMode("sync")
+after_sync = io.getExecutorMode()
+print(f"set to sync: ok={ok} mode={after_sync}")
+
+// Switch to thread mode
+ok = io.setExecutorMode("thread")
+after_thread = io.getExecutorMode()
+print(f"set to thread: ok={ok} mode={after_thread}")
+
+// Switch to executor mode
+ok = io.setExecutorMode("executor")
+after_executor = io.getExecutorMode()
+print(f"set to executor: ok={ok} mode={after_executor}")
+
+// Switch back to scheduler
+ok = io.setExecutorMode("scheduler")
+after_scheduler = io.getExecutorMode()
+print(f"set to scheduler: ok={ok} mode={after_scheduler}")
+
+// Test case-insensitivity
+ok = io.setExecutorMode("Sync")
+after_ci = io.getExecutorMode()
+print(f"case-insensitive 'Sync': ok={ok} mode={after_ci}")
+
+// Reset to scheduler
+io.setExecutorMode("scheduler")
+
+// Test invalid mode returns false
+ok = io.setExecutorMode("invalid_mode")
+print(f"invalid mode: ok={ok}")
+assert(ok == false, "invalid mode should return false")
+
+// Verify still scheduler after invalid set
+still = io.getExecutorMode()
+assert(still == "scheduler", "mode should still be scheduler after invalid set")
+print(f"after invalid set, mode is still: {still}")
+
+print("executor mode test passed")

@@ -510,15 +510,21 @@ auto saved_locals = vm.locals;
 auto saved_immutable_locals = vm.immutable_locals_;
 auto saved_main_chunk = vm.getMainChunk();
 
-  // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
-  auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
-  vm.setMainChunkShared(inner_chunk_ptr);
-  vm.current_chunk = g_builder.chunk.get();
+// Move chunk out of builder into a shared_ptr so it survives any
+// bc.reset() calls during execution (e.g. from imported modules).
+// Replace the builder's chunk with a fresh empty one.
+auto exec_chunk = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
+g_builder.chunk = std::make_unique<BytecodeChunk>();
+g_builder.current_func_idx = -1;
+g_builder.saved_func_stack.clear();
 
- try {
- vm.bc_execute_depth_++;
- auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
- vm.bc_execute_depth_--;
+vm.setMainChunkShared(exec_chunk);
+vm.current_chunk = exec_chunk.get();
+
+try {
+vm.bc_execute_depth_++;
+auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
+vm.bc_execute_depth_--;
 vm.current_chunk = saved_chunk;
 vm.frame_count_ = saved_frame_count;
 vm.frame_arena_ = std::move(saved_frame_arena);

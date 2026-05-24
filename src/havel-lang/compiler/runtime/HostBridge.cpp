@@ -243,10 +243,12 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
   // Create hotkey global object if hotkey module is loaded.
   if (!coreProfile) addVmSetup([this](VM &vm) {
     auto hotkeyObj = vm.createHostObject();
-    if (vm.getHostFunctionIndex("hotkey.list") >= 0) {
-      vm.setHostObjectField(
-          hotkeyObj, "list",
-          Value::makeHostFuncId(vm.getHostFunctionIndex("hotkey.list")));
+    for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
+      std::string fn = std::string("hotkey.") + name;
+      int idx = vm.getHostFunctionIndex(fn);
+      if (idx >= 0) {
+        vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
+      }
     }
     vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
   });
@@ -1947,7 +1949,9 @@ options_.host_functions["array.filter"] =
         return Value::makeBool(false);
       };
 
-  // Run vm_setup callbacks
+}
+
+void HostBridge::runVmSetup() {
   for (auto &setupFn : vm_setup_callbacks_) {
     setupFn(*static_cast<VM *>(ctx_->vm));
   }

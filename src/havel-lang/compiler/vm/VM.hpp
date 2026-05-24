@@ -64,6 +64,19 @@ struct ScriptError final {
 //
 // Result of executing a single bytecode instruction in a Fiber
 
+// A pre-resolved direct function call that bypasses VM dispatch.
+// Used by the hotkey fast path: instead of spawning a goroutine and
+// running the bytecode dispatch loop, we iterate these calls directly.
+struct DirectCall {
+    uint32_t host_func_idx;
+    std::vector<Value> args;
+};
+
+// A sequence of direct calls for a host-only hotkey callback.
+struct DirectCallThunk {
+    std::vector<DirectCall> calls;
+};
+
 // ============================================================================
 struct VMExecutionResult {
   enum Type : uint8_t {
@@ -203,6 +216,7 @@ struct CallFrame {
         std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
         std::unordered_map<uint32_t, ObjectRef> closure_properties_;  // closure_id -> properties object
         std::unordered_map<uint32_t, ObjectRef> hostfunc_properties_; // host_func_idx -> properties object
+    std::unordered_map<CallbackId, DirectCallThunk> direct_call_thunks_;
 
         bool has_current_exception_ = false;
   Value current_exception_ = nullptr;
@@ -615,6 +629,31 @@ public:
     // Spawn a goroutine from a registered callback with explicit priority
     uint32_t spawnCallback(CallbackId id, FiberPriority priority, const std::vector<Value> &args = {});
 
+    // Create a persistent goroutine for a hotkey callback.
+    // Unlike spawnCallback, this goroutine:
+    //   - Is immediately parked (Suspended) after creation
+    //   - Is recycled on each trigger via Scheduler::requeueFront()
+    //   - Never transitions to Done (re-suspends in handleReturned)
+    // This eliminates per-press goroutine allocation for hotkeys.
+    uint32_t createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
+                                             const std::vector<Value> &args = {});
+
+    // Build a direct-call thunk for a hotkey callback.
+    // Analyzes the callback's bytecode; if it's host-only (only calls host
+    // functions with pre-resolvable arguments), returns a thunk that invokes
+    // the host functions directly, bypassing VM dispatch entirely.
+    DirectCallThunk buildDirectCallThunk(CallbackId id);
+
+    // Retrieve a stored thunk by callback ID (empty if none).
+    DirectCallThunk getDirectCallThunk(CallbackId id) const {
+        auto it = direct_call_thunks_.find(id);
+        if (it != direct_call_thunks_.end()) return it->second;
+        return {};
+    }
+    void storeDirectCallThunk(CallbackId id, DirectCallThunk thunk) {
+        direct_call_thunks_[id] = std::move(thunk);
+    }
+
   void garbageCollectionSafePoint(size_t work_budget = 0);
 
   
@@ -777,6 +816,9 @@ void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::m
   const std::unordered_map<std::string, BytecodeHostFunction> &
   getHostFunctions() const {
     return host_functions;
+  }
+  const std::vector<std::string>& getHostFunctionNames() const {
+    return host_function_names_;
   }
   std::optional<std::string> getHostFunctionName(uint32_t index) const;
 

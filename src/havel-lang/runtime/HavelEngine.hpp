@@ -132,6 +132,8 @@ vm_->setJITCompiler(jitCompiler_.get());
             vm_->registerHostFunction(name, fn);
         }
 
+        hostBridge_->runVmSetup();
+
         vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
 
 if (hostContext_->eventQueue) {
@@ -251,9 +253,25 @@ private:
                         anyExecuted = true;
                     }
                 }
-                g->state = compiler::Scheduler::GoroutineState::Done;
-                if (g->fiber) {
-                    g->fiber->state = compiler::FiberState::DONE;
+
+                // Persistent goroutines (hotkey system): re-suspend instead of Done.
+                // HandReturned would normally do this, but in batch/CLI mode the
+                // dispatch loop is synchronous and we must check here.
+                if (g->persistent) {
+                    g->state = compiler::Scheduler::GoroutineState::Suspended;
+                    g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
+                    if (g->fiber) {
+                        g->fiber->state = compiler::FiberState::SUSPENDED;
+                        g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+                    }
+                    if (sched->current() == g) {
+                        sched->clearCurrent();
+                    }
+                } else {
+                    g->state = compiler::Scheduler::GoroutineState::Done;
+                    if (g->fiber) {
+                        g->fiber->state = compiler::FiberState::DONE;
+                    }
                 }
             } while (anyExecuted);
         }

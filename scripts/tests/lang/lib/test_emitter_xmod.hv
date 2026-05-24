@@ -1,26 +1,93 @@
-use { emitStmt, emitExpr, Emitter, Scope, scopeDeclare, scopeResolve, globalIdx } from "emitter"
-use { ValDeclaration, NumberLiteral, ReturnStatement, FnDeclaration, IfStatement, BinaryExpression, Identifier } from "ast"
+use { emitStmt, emitExpr, Emitter, Scope, scopeDeclare, globalIdx, compileProgram } from "emitter"
+use { ValDeclaration, NumberLiteral, ReturnStatement, FnDeclaration, Identifier, BinaryExpression, IfStatement, LambdaExpression, ArrayLiteral, ObjectLiteral, ObjectField, BlockStatement, ExpressionStatement, AssignmentExpression, CallExpression, MemberExpression, WhileStatement, ForStatement, ClassDeclaration, Program, LetDeclaration, TernaryExpression, RangeExpression, BreakStatement, ContinueStatement, ThrowStatement, StringLiteral, BooleanLiteral, NullLiteral, UnaryExpression } from "ast"
+
+passed = 0
+failed = 0
+
+fn check(name, ok):
+  if ok
+    passed = passed + 1
+    return
+  print("FAIL: " + name)
+  failed = failed + 1
 
 em = Emitter()
 bc.reset()
 bc.func_new("__main__", 0, 32)
 em.scope = Scope(null)
-
-// Test 1: ValDeclaration with NumberLiteral
 emitStmt(em, ValDeclaration("x", NumberLiteral(42, 0, 0), 0, 0))
-print("test1 val decl ok")
+check("val_decl", true)
 
-// Test 2: ReturnStatement with number
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
 emitStmt(em, ReturnStatement(NumberLiteral(99, 0, 0), 0, 0))
-print("test2 return ok")
+check("return", true)
 
-// Test 3: IfStatement
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
 scopeDeclare(em.scope, "cond")
-emitStmt(em, IfStatement(
-    Identifier("cond", 0, 0),
-    ReturnStatement(NumberLiteral(1, 0, 0), 0, 0),
-    null,
-    0, 0))
-print("test3 if ok")
+emitStmt(em, IfStatement(Identifier("cond", 0, 0), ReturnStatement(NumberLiteral(1, 0, 0), 0, 0), null, 0, 0))
+check("if_stmt", true)
 
-print("all cross-module emitStmt tests passed!")
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitExpr(em, BinaryExpression(NumberLiteral(1, 0, 0), "+", NumberLiteral(2, 0, 0), 0, 0))
+check("binary", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitExpr(em, UnaryExpression("-", NumberLiteral(5, 0, 0), 0, 0))
+check("unary", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitStmt(em, FnDeclaration("add", ["a", "b"], ReturnStatement(BinaryExpression(Identifier("a", 0, 0), "+", Identifier("b", 0, 0), 0, 0), 0, 0), 0, 0))
+check("fn_decl", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitExpr(em, LambdaExpression(["x"], ReturnStatement(Identifier("x", 0, 0), 0, 0), 0, 0))
+check("lambda", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitExpr(em, ArrayLiteral([NumberLiteral(1, 0, 0), NumberLiteral(2, 0, 0)], 0, 0))
+check("array", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitExpr(em, ObjectLiteral([ObjectField("k", NumberLiteral(1, 0, 0), 0, 0)], 0, 0))
+check("object", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+scopeDeclare(em.scope, "i")
+emitStmt(em, WhileStatement(BinaryExpression(Identifier("i", 0, 0), "<", NumberLiteral(10, 0, 0), 0, 0), BlockStatement([ExpressionStatement(AssignmentExpression(Identifier("i", 0, 0), NumberLiteral(1, 0, 0), 0, 0), 0, 0)], 0, 0), 0, 0))
+check("while", true)
+
+em = Emitter()
+bc.reset()
+bc.func_new("__main__", 0, 32)
+em.scope = Scope(null)
+emitStmt(em, ClassDeclaration("Dog", null, [], [], 0, 0))
+check("class", true)
+
+print(passed + " passed, " + failed + " failed")

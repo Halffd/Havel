@@ -1305,7 +1305,7 @@ fn Parser(tokenList) {
                     advance()
                     p.variadic = true
                 }
-                params.push(p.name)
+                params.push(p)
                 skipNewlines()
                 if current().type == "Comma": advance()
             }
@@ -2238,27 +2238,27 @@ fn parseIfStatement() {
             while current().type != "CloseParen" and notEOF() {
                 skipNewlines()
                 if current().type == "CloseParen": break
-                // Param name
-                pname = advance().value
-                params.push(pname)
-                skipNewlines()
-                // Type annotation
-                if current().type == "Colon" {
-                    advance()
-                    advance() // consume type name (skip for now)
-                    skipNewlines()
-                }
-                // Default value
-                if current().type == "Assign" {
-                    advance()
-                    parseExpr(0) // parse but don't store for now
-                    skipNewlines()
-                }
-                // Variadic
-                if current().type == "Spread" {
-                    advance()
-                    skipNewlines()
-                }
+        // Param name
+        pname = advance().value
+        p = {name: pname}
+        // Type annotation
+        if current().type == "Colon" {
+          advance()
+          p.typeAnn = advance().value
+          skipNewlines()
+        }
+        // Default value
+        if current().type == "Assign" {
+          advance()
+          p.default = parseExpr(0)
+          skipNewlines()
+        }
+        // Variadic
+        if current().type == "Spread" {
+          advance()
+          skipNewlines()
+        }
+        params.push(p)
                 if current().type == "Comma": advance()
             }
             expect("CloseParen")

@@ -846,27 +846,27 @@ Token Lexer::scanBacktick(bool isMultiline) {
 }
 
 Token Lexer::scanRegexLiteral() {
-  std::string value;
-  std::string raw;
+ std::string value;
+ std::string raw;
 
-  // Consume characters until closing slash
-  while (!isAtEnd() && peek() != '/') {
-    char c = advance();
-    // Handle escape sequences
-    if (c == '\\' && !isAtEnd()) {
-      value += c;
-      c = advance();
-    }
-    value += c;
-    raw += c;
-  }
+ // Consume characters until closing slash
+ while (!isAtEnd() && peek() != '/') {
+ char c = advance();
+ // Handle escape sequences
+ if (c == '\\' && !isAtEnd()) {
+ value += c;
+ c = advance();
+ }
+ value += c;
+ raw += c;
+ }
 
-  // Consume closing slash
-  if (!isAtEnd()) {
-    advance();
-  }
+ // Consume closing slash
+ if (!isAtEnd()) {
+ advance();
+ }
 
-  return makeToken(value, TokenType::RegexLiteral, "/" + raw + "/");
+ return makeToken(value, TokenType::RegexLiteral, "/" + raw + "/");
 }
 
 Token Lexer::scanShellCommand(bool captureOutput) {
@@ -1162,36 +1162,50 @@ if (isDigit(c) || canBeNegativeNumber) {
         continue;
     }
 
-    // Handle regex literals: /pattern/
-    // Only if not followed by '/' (which would be // comment) or '*' (/*
-    // comment) and not preceded by something that would make it division
-    if (c == '/' && peek() != '/' && peek() != '*' && peek() != '=') {
-      // Check if this is a hotkey: / followed by => (with optional whitespace)
-      // e.g. "/ => { }" for the slash key
-      size_t la = position + 1;
-      while (la < source.length() && source[la] == ' ') la++;
-      if (la + 1 < source.length() && source[la] == '=' && source[la + 1] == '>') {
-        tokens.push_back(makeToken("/", TokenType::Hotkey));
-        advance(); // consume '/'
-        if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
-        }
-        continue;
-      }
+ // Handle regex literals: /pattern/
+ // Only if not followed by '/' (which would be // comment) or '*' (/*
+ // comment) and not preceded by something that would make it division
+ if (c == '/' && peek() != '/' && peek() != '*' && peek() != '=') {
+ // Check if this is a hotkey: / followed by => (with optional whitespace)
+ // e.g. "/ => { }" for the slash key
+ size_t la = position + 1;
+ while (la < source.length() && source[la] == ' ') la++;
+ if (la + 1 < source.length() && source[la] == '=' && source[la + 1] == '>') {
+ tokens.push_back(makeToken("/", TokenType::Hotkey));
+ if (debug_lexer) {
+ havel::debug("LEX: {}", tokens.back().toString());
+ }
+ continue;
+ }
 
-      // Check if this is a conditional hotkey: / identifier ... =>
-      // e.g. "/ if mode == "genshin" => { }" for slash key with condition
-      // Peek ahead: skip whitespace, check if identifier starts, then look for =>
-      bool isSlashHotkey = false;
-      size_t hotkeyEnd = 0;
-      bool identifierIsKeyword = false;
-      if (la < source.length() && (isAlpha(source[la]) || source[la] == '_')) {
-        size_t la2 = la;
-        size_t idStart = la;
+ // Check if this is a conditional hotkey: / identifier ... =>
+ // e.g. "/ if mode == "genshin" => { }" for slash key with condition
+ // Peek ahead: skip whitespace, check if identifier starts, then look for =>
+ bool isSlashHotkey = false;
+ size_t hotkeyEnd = 0;
+ bool identifierIsKeyword = false;
+ if (la < source.length() && (isAlpha(source[la]) || source[la] == '_')) {
+ size_t la2 = la;
+ size_t idStart = la;
  while (la2 < source.length() && (isAlphaNumeric(source[la2]) || source[la2] == '_')) la2++;
  // If identifier is immediately followed by '/', this is a regex literal /pattern/
  if (la2 < source.length() && source[la2] == '/') {
  // Not a hotkey — will be handled by regex scan below
+ }
+ else {
+ // Check if there's a closing '/' between the identifier and '=>'
+ // If so, this is /pattern/ regex, not a /hotkey => 
+ bool hasClosingSlashBeforeArrow = false;
+ {
+ size_t searchEnd2 = std::min(la2 + 200, source.length());
+ for (size_t s = la2; s + 1 < searchEnd2; s++) {
+ if (source[s] == '/' && s > la) { hasClosingSlashBeforeArrow = true; break; }
+ if (source[s] == '=' && source[s + 1] == '>') break;
+ if (source[s] == '\n') break;
+ }
+ }
+ if (hasClosingSlashBeforeArrow) {
+ // Not a hotkey — regex literal with pattern after identifier chars
  }
  else {
  // Check if the identifier is a keyword that starts a condition (if/when)
@@ -1211,30 +1225,31 @@ if (isDigit(c) || canBeNegativeNumber) {
  hotkeyEnd = la2;
  }
  }
-      }
-      if (isSlashHotkey) {
-        if (identifierIsKeyword) {
-          // / followed by condition keyword — only consume /
-          tokens.push_back(makeToken("/", TokenType::Hotkey));
-          advance(); // consume '/'
-        } else {
-          // /identifier — consume the whole thing as one token
-          std::string hotkeyValue = source.substr(position, hotkeyEnd - position);
-          advance(); // consume '/'
-          while (position < source.length() && position < hotkeyEnd) {
-            advance();
-          }
-          tokens.push_back(makeToken(hotkeyValue, TokenType::Hotkey));
-        }
-        if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
-        }
-        continue;
-      }
+ }
+ }
+ if (isSlashHotkey) {
+ if (identifierIsKeyword) {
+ // / followed by condition keyword — only consume /
+ tokens.push_back(makeToken("/", TokenType::Hotkey));
+ advance(); // consume '/'
+ } else {
+ // /identifier — consume the whole thing as one token
+ std::string hotkeyValue = source.substr(position, hotkeyEnd - position);
+ advance(); // consume '/'
+ while (position < source.length() && position < hotkeyEnd) {
+ advance();
+ }
+ tokens.push_back(makeToken(hotkeyValue, TokenType::Hotkey));
+ }
+ if (debug_lexer) {
+ havel::debug("LEX: {}", tokens.back().toString());
+ }
+ continue;
+ }
 
-      // Check if this looks like a regex (not division)
-      // Simple heuristic: if previous non-whitespace token suggests expression
-      // context
+ // Check if this looks like a regex (not division)
+ // Simple heuristic: if previous non-whitespace token suggests expression
+ // context
  bool isRegexContext = tokens.empty() ||
  tokens.back().type == TokenType::OpenParen ||
  tokens.back().type == TokenType::OpenBracket ||
@@ -1261,7 +1276,7 @@ if (isDigit(c) || canBeNegativeNumber) {
  }
  continue;
  }
-    }
+ }
 
     // Handle return type arrow ->
     if (c == '-' && peek() == '>') {

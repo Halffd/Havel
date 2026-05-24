@@ -70,6 +70,7 @@ public:
   // Module registration
   void registerModule(const HostModule &module);
   void addVmSetup(std::function<void(VM &)> setupFn);
+  void runVmSetup();
 
   // Execution policy (optional - for embedding)
   void setExecutionPolicy(const ExecutionPolicy &policy) {

@@ -352,6 +352,29 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 	}
 }
 
+void Scheduler::requeueFront(Goroutine* g) {
+	if (!g) return;
+	g->state = GoroutineState::Created;
+	g->suspension_reason = SuspensionReason::None;
+	g->ip = 0;
+	g->stack.clear();
+	g->locals.clear();
+	if (g->fiber) {
+		g->fiber->state = FiberState::CREATED;
+		g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
+	}
+	{
+		std::lock_guard<std::mutex> lock(priority_mutex_);
+		if (g->priority == FiberPriority::HOTKEY) {
+			hotkey_queue_.push_front(g);
+		} else if (g->priority == FiberPriority::BACKGROUND) {
+			background_queue_.push_front(g);
+		} else {
+			runnable_queue_.push_front(g);
+		}
+	}
+}
+
 bool Scheduler::hasRunnableFibers() const {
   std::lock_guard<std::mutex> lock(priority_mutex_);
   for (auto* g : hotkey_queue_) {

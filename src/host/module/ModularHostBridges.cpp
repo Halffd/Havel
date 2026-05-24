@@ -2894,6 +2894,8 @@ Value UIBridge::handleGUINotify(const std::vector<Value> &args,
 
 void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register"] = [ctx = ctx_](const auto &args) {
+    fprintf(stderr, "[LAMBDA] hotkey.register called with %zu args\n", args.size());
+    fflush(stderr);
     return handleHotkeyRegister(args, ctx);
   };
   options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
@@ -2943,7 +2945,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
     return Value::makeNull();
   }
 
-  if (!ctx || !ctx->hotkeyManager || !ctx->vm || !ctx->io) {
+  if (!ctx || !ctx->vm) {
     return Value::makeNull();
   }
 
@@ -2968,57 +2970,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Hotkey registered via hotkey.register", callbackId);
 
-    auto *modeMgr = ctx->modeManager;
-    auto *hotkeyMgr = ctx->hotkeyManager;
-
-    bool success = ctx->hotkeyManager->AddHotkey(
-        hotkeyStr, [vm, callbackId, hotkeyContext]() {
-            ::havel::debug("[ModularHostBridges] HOTKEY CALLBACK invoked for callbackId={}", callbackId);
-            auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
-                uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
-                ::havel::debug("[ModularHostBridges] spawnCallback returned gid={}", gid);
-                if (gid == 0) {
-                    ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
-                }
-            };
-            auto *sched = vm->getScheduler();
-            if (sched->isVMThread()) {
-                spawnHotkey();
-            } else {
-                sched->deferToVM(std::move(spawnHotkey));
-            }
-        });
-
-    // Register conditional hotkey (when/if mode conditions)
-    if (modeMgr && hotkeyMgr) {
-        ctx->hotkeyManager->AddContextualHotkey(
-            hotkeyStr,
-            [modeMgr]() {
-                std::string mode = modeMgr->getCurrentMode();
-                return !mode.empty() && mode != "default";
-            },
-        [vm, callbackId, hotkeyContext]() {
-            auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
-                uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
-                if (gid == 0) {
-                    ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
-                }
-            };
-            auto *sched = vm->getScheduler();
-            if (sched->isVMThread()) {
-                spawnHotkey();
-            } else {
-                sched->deferToVM(std::move(spawnHotkey));
-            }
-        });
-    }
-
-    // Return hotkey context object on success, null on failure
-  // This allows: let hk = ^t => { ... }
-if (success) {
-        return hotkeyContext;
-    }
-    return Value::makeNull();
+    return hotkeyContext;
 }
 
 Value InputBridge::handleHotkeyRegisterConditional(

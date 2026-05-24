@@ -64,7 +64,8 @@ public:
     ChannelWait,     // Suspended on recv() from empty channel
     ThreadWait,      // Suspended on thread.join()
     SleepWait,       // Suspended on sleep()
-    TimerWait        // Suspended on timeout
+    TimerWait,        // Suspended on timeout
+    HotkeyWait       // Parked waiting for next hotkey trigger (persistent)
   };
 
   /**
@@ -113,6 +114,14 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
 
 	// Execution priority (controls scheduler queue selection)
 	FiberPriority priority = FiberPriority::NORMAL;
+
+	// Persistent goroutine: re-suspend instead of Done on completion
+	// Used by hotkey system to avoid per-press goroutine allocation
+	bool persistent = false;
+	// Hotkey reset fields (stored from registration for reuse)
+	uint32_t hotkey_function_id = 0;
+	uint32_t hotkey_closure_id = 0;
+	std::vector<Value> hotkey_args;
 
 	explicit Goroutine(uint32_t id_, const std::string& name_ = "",
 		FiberPriority prio = FiberPriority::NORMAL)
@@ -243,6 +252,10 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   void clearCurrent();
   // Add a pre-created Action Fiber to the scheduler with priority
   void addActionFiber(Fiber* fiber, FiberPriority priority = FiberPriority::NORMAL);
+
+  // Re-enqueue an existing goroutine to front of its priority queue
+  // Used by persistent hotkey goroutines to avoid per-press allocation
+  void requeueFront(Goroutine* g);
 
     // Check if there are runnable fibers
     bool hasRunnableFibers() const;

@@ -284,14 +284,29 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
     }
- if (g) {
+ if (!g) return;
+
+ // Persistent goroutines (hotkey system): re-suspend instead of Done.
+ // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
+ if (g->persistent) {
+     g->state = Scheduler::GoroutineState::Suspended;
+     g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+     if (g->fiber) {
+         g->fiber->state = FiberState::SUSPENDED;
+         g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+     }
+     if (scheduler_->current() == g) {
+         scheduler_->clearCurrent();
+     }
+     return;
+ }
+
  g->state = Scheduler::GoroutineState::Done;
  if (g->fiber) {
  g->fiber->state = FiberState::DONE;
  }
  if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
  HotkeyActionWrapper::unregisterCallback(g->fiber->id);
- }
  }
  if (scheduler_->current() == g) {
  scheduler_->clearCurrent();

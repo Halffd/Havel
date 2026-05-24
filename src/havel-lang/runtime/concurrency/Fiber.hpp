@@ -154,7 +154,8 @@ enum class SuspensionReason : uint8_t {
     THREAD_JOIN,     // Waiting for thread to complete
     TIMER,           // Waiting for timer to fire
     SLEEP,           // Waiting for sleep to complete
-    EXTERNAL         // External system parked this fiber
+    EXTERNAL,        // External system parked this fiber
+    HOTKEY_WAIT      // Parked waiting for next hotkey trigger (persistent)
 };
 
 // ============================================================================

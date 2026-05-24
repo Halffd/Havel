@@ -647,24 +647,25 @@ fn emitStmt(emitter, node) {
 
     // ForStatement handler (inlined emitExpr for iterator to work around arg passing bug)
 if k == "ForStatement" {
-	iterName = node.name
-	iterNode = node.iterator
-	// Emit the iterable expression in the OUTER scope
-	// Inline emitExpr for RangeExpression to work around call arg bug
-	if iterNode.kind == "RangeExpression" {
-		emitExpr(emitter, iterNode.start)
-		emitExpr(emitter, iterNode.end)
-		if !iterNode.inclusive {
-			bc.emit("LOAD_CONST", bc.add_const(1))
-			bc.emit("SUB")
-		}
-		bc.emit("RANGE_NEW")
-	}
-	if iterNode.kind != "RangeExpression" {
-		emitExpr(emitter, iterNode)
-	}
-	// STRING_PROMOTE for string iterables (harmless for others)
-	bc.emit("STRING_PROMOTE")
+iterNameRaw = node.name
+iterName = iterNameRaw
+if iterNameRaw.kind == "Identifier" {
+iterName = iterNameRaw.name
+}
+iterNode = node.iterator
+if iterNode.kind == "RangeExpression" {
+emitExpr(emitter, iterNode.start)
+emitExpr(emitter, iterNode.end)
+if !iterNode.inclusive {
+bc.emit("LOAD_CONST", bc.add_const(1))
+bc.emit("SUB")
+}
+bc.emit("RANGE_NEW")
+}
+if iterNode.kind != "RangeExpression" {
+emitExpr(emitter, iterNode)
+}
+bc.emit("STRING_PROMOTE")
 	// Push loop scope AFTER evaluating iterable
 	oldScope = emitter.scope
 	loopScope = Scope(oldScope)
@@ -688,11 +689,11 @@ if k == "ForStatement" {
 	// Store result in temp
 	resultIdx = scopeDeclare(loopScope, "__result__")
 	bc.emit("STORE_VAR", resultIdx)
-	// Check result.done
-	bc.emit("LOAD_VAR", resultIdx)
-	doneSid = bc.str_id(bc.add_chunk_string("done"))
-	bc.emit("LOAD_CONST", bc.add_const(doneSid))
-	bc.emit("OBJECT_GET")
+// Check result.done
+bc.emit("LOAD_VAR", resultIdx)
+doneSid = bc.str_id(bc.add_chunk_string("done"))
+bc.emit("LOAD_CONST", bc.add_const(doneSid))
+bc.emit("OBJECT_GET")
 	doneJump = bc.emit("JUMP_IF_TRUE", 0)
 	// Get result.second (the value for single-var iteration)
 	bc.emit("LOAD_VAR", resultIdx)
@@ -1150,9 +1151,11 @@ fn emitBlockWithReturn(emitter, node) {
       bc.emit("PUSH_NULL")
       return
     }
-    for i in 0..(n - 2) {
-      emitStmt(emitter, stmts[i])
-    }
+si = 0
+while si < n - 1 {
+emitStmt(emitter, stmts[si])
+si = si + 1
+}
     last = stmts[n - 1]
     if last.kind == "ExpressionStatement" {
       if last.expr != null {
@@ -1175,7 +1178,11 @@ fn emitBlockWithReturn(emitter, node) {
     bc.emit("PUSH_NULL")
     return
   }
-  if node.kind == "ExpressionStatement" {
+  if node.kind == "IfStatement" {
+emitIfExpr(emitter, node)
+return
+}
+if node.kind == "ExpressionStatement" {
     if node.expr != null {
       emitExpr(emitter, node.expr)
     }
@@ -1344,23 +1351,25 @@ fn emitUseStatement(emitter, node) {
     bc.emit("IMPORT")
     iNames = node.importNames
     iAliases = node.importAliases
-    if iNames != null {
-      for i in 0..(#iNames - 1) {
-        name = iNames[i]
-        alias = name
-      if iAliases != null {
-        if i < #iAliases {
-          alias = iAliases[i]
-        }
-      }
-      bc.emit("DUP")
-        keyIdx = bc.add_string(name)
-        bc.emit("LOAD_CONST", keyIdx)
-        bc.emit("OBJECT_GET")
-        sid = bc.add_chunk_string(alias)
-        bc.emit("STORE_GLOBAL", bc.str_id(sid))
-      }
-    }
+if iNames != null {
+ii = 0
+while ii < #iNames {
+name = iNames[ii]
+alias = name
+if iAliases != null {
+if ii < #iAliases {
+alias = iAliases[ii]
+}
+}
+bc.emit("DUP")
+keyIdx = bc.add_string(name)
+bc.emit("LOAD_CONST", keyIdx)
+bc.emit("OBJECT_GET")
+sid = bc.add_chunk_string(alias)
+bc.emit("STORE_GLOBAL", bc.str_id(sid))
+ii = ii + 1
+}
+}
     bc.emit("POP")
     return
   }
@@ -1418,28 +1427,29 @@ fn emitImportStatement(emitter, node) {
   // import { a, b as c } from "module"
   if node.importNames != null {
     pathIdx = bc.add_string(module)
-    bc.emit("LOAD_CONST", pathIdx)
-    bc.emit("IMPORT")
-    for i in 0..(#node.importNames - 1) {
-      name = node.importNames[i]
-      alias = name
-      if node.importAliases != null {
-        if i < #node.importAliases {
-          alias = node.importAliases[i]
-        }
-      }
-      // wildcard: import * from "module"
-      if name == "*" {
-        bc.emit("IMPORT_WILDCARD")
-        return
-      }
-      bc.emit("DUP")
-      keyIdx = bc.add_string(name)
-      bc.emit("LOAD_CONST", keyIdx)
-      bc.emit("OBJECT_GET")
-      sid = bc.add_chunk_string(alias)
-      bc.emit("STORE_GLOBAL", bc.str_id(sid))
-    }
+bc.emit("LOAD_CONST", pathIdx)
+bc.emit("IMPORT")
+ii2 = 0
+while ii2 < #node.importNames {
+name = node.importNames[ii2]
+alias = name
+if node.importAliases != null {
+if ii2 < #node.importAliases {
+alias = node.importAliases[ii2]
+}
+}
+if name == "*" {
+bc.emit("IMPORT_WILDCARD")
+return
+}
+bc.emit("DUP")
+keyIdx = bc.add_string(name)
+bc.emit("LOAD_CONST", keyIdx)
+bc.emit("OBJECT_GET")
+sid = bc.add_chunk_string(alias)
+bc.emit("STORE_GLOBAL", bc.str_id(sid))
+ii2 = ii2 + 1
+}
     bc.emit("POP")
     return
   }
@@ -1479,37 +1489,43 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
 
         }
     }
-  // Pass 1: compile all function bodies
-  funcUpcounts = []
-  for i in 0..(#funcDecls - 1) {
-    decl = funcDecls[i]
-    funcIdx = emitter.func_idx
-    emitter.func_idx = funcIdx + 1
-    emitter.func_map[decl.name] = funcIdx
-    uc = compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
-    funcUpcounts.push(uc)
-  }
+// Pass 1: compile all function bodies
+funcUpcounts = []
+fi = 0
+while fi < #funcDecls {
+decl = funcDecls[fi]
+funcIdx = emitter.func_idx
+emitter.func_idx = funcIdx + 1
+emitter.func_map[decl.name] = funcIdx
+uc = compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
+funcUpcounts.push(uc)
+fi = fi + 1
+}
   // Pass 2: compile __main__
   bc.func_new(entryName, 0, 64)
   emitter.scope = Scope(null)
-  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
-  for i in 0..(#funcDecls - 1) {
-    decl = funcDecls[i]
-    fidx = emitter.func_map[decl.name]
-    if funcUpcounts[i] > 0 {
-      bc.emit("CLOSURE", fidx)
-    }
-    else {
-      fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
-      bc.emit("LOAD_CONST", fnConstIdx)
-    }
-    bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
-  }
-    // Emit top-level statements (all except last)
-    n = #topStmts
-    for i in 0..(n - 2) {
-        emitStmt(emitter, topStmts[i])
-    }
+// Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
+fi2 = 0
+while fi2 < #funcDecls {
+decl = funcDecls[fi2]
+fidx = emitter.func_map[decl.name]
+if funcUpcounts[fi2] > 0 {
+bc.emit("CLOSURE", fidx)
+}
+else {
+fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
+bc.emit("LOAD_CONST", fnConstIdx)
+}
+bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+fi2 = fi2 + 1
+}
+// Emit top-level statements (all except last)
+n = #topStmts
+si = 0
+while si < n - 1 {
+emitStmt(emitter, topStmts[si])
+si = si + 1
+}
     // Last expression is the return rvalue
     if n > 0 {
         last = topStmts[n - 1]

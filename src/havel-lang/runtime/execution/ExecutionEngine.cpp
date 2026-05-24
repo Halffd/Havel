@@ -26,12 +26,12 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
         [this](const Event& event) { onThreadComplete(event); });
     
     
-    event_queue_->onEvent(EventType::VAR_CHANGED,
-        [this](const Event& event) { onVariableChanged(event); });
-    
-    // TODO: Register handlers for other event types
-    // TIMER_FIRE, CHANNEL_SEND, etc.
-  }
+event_queue_->onEvent(EventType::VAR_CHANGED,
+[this](const Event& event) { onVariableChanged(event); });
+
+event_queue_->onEvent(EventType::TIMER_FIRE,
+[this](const Event& event) { onTimerFire(event); });
+}
 }
 
 ExecutionEngine::~ExecutionEngine() {
@@ -429,6 +429,29 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
     }
   
   return result;
+}
+
+void ExecutionEngine::onTimerFire(const Event& event) {
+auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+if (!payload) return;
+
+Value closure = payload->first;
+uint32_t timer_id = payload->second;
+bool is_timeout = (event.data1 == 1);
+delete payload;
+
+if (!vm_) return;
+
+try {
+Value result = vm_->callFunction(closure, {});
+if (is_timeout) {
+vm_->addTimeoutResult(timer_id, result);
+} else {
+vm_->addIntervalResult(timer_id, result);
+}
+} catch (const std::exception& e) {
+::havel::error("[ExecutionEngine] Timer callback exception: {}", e.what());
+}
 }
 
 } // namespace havel::compiler

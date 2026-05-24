@@ -121,6 +121,7 @@ private:
   
   
   void onVariableChanged(const Event& event);
+  void onTimerFire(const Event& event);
   
   
   // Evaluates a condition bytecode for a specific watcher

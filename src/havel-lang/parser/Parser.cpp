@@ -830,8 +830,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     case TokenType::MultilineString:
         return makeNodeAt<ast::StringLiteral>(token, token.value, false);
 
-    case TokenType::RegexString:
-        return makeNodeAt<ast::StringLiteral>(token, token.value, true);
+ case TokenType::RegexString:
+ case TokenType::RegexLiteral:
+ return makeNodeAt<ast::StringLiteral>(token, token.value, true);
 
     case TokenType::CharLiteral:
         return makeNodeAt<ast::CharLiteral>(token, token.value[0]);

@@ -2,6 +2,7 @@
 
 #include "../compiler/vm/VM.hpp"
 #include "../compiler/runtime/HostBridge.hpp"
+#include "../compiler/runtime/EventQueue.hpp"
 #include "../compiler/core/Pipeline.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "../compiler/BytecodeOrcJIT.h"
@@ -130,6 +131,30 @@ vm_->setJITCompiler(jitCompiler_.get());
         }
 
         vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
+
+if (hostContext_->eventQueue) {
+vm_->setEventQueue(hostContext_->eventQueue);
+hostContext_->eventQueue->onEvent(compiler::EventType::TIMER_FIRE,
+[this](const compiler::Event& event) {
+auto *payload = static_cast<std::pair<compiler::Value, uint32_t>*>(event.ptr);
+if (!payload) return;
+compiler::Value closure = payload->first;
+uint32_t timer_id = payload->second;
+bool is_timeout = (event.data1 == 1);
+delete payload;
+if (!vm_) return;
+try {
+compiler::Value result = vm_->callFunction(closure, {});
+if (is_timeout) {
+vm_->addTimeoutResult(timer_id, result);
+} else {
+vm_->addIntervalResult(timer_id, result);
+}
+} catch (const std::exception& e) {
+::havel::error("[HavelEngine] Timer callback exception: {}", e.what());
+}
+});
+}
 
         // Wire watcher registry for reactive when blocks
         watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();

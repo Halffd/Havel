@@ -1,5 +1,12 @@
-// sys.hv - Havel stdlib sys module
-// Wraps C++ host functions so they become proper module exports.
+// sys.hv — system info wrapping C++ sys.* and system.* host bridges
+// Host bridge: sys.platform, sys.arch, sys.version, sys.argv, sys.env,
+// sys.envAll, sys.cwd, sys.pid, sys.ppid, sys.exit, sys.hostname,
+// sys.username, sys.home, sys.tmpdir, sys.shell, sys.uptime,
+// system.detect, system.hardware
+
+// ============================================================
+// Core system info
+// ============================================================
 
 fn platform() { sys.platform() }
 fn arch() { sys.arch() }
@@ -17,3 +24,66 @@ fn home() { sys.home() }
 fn tmpdir() { sys.tmpdir() }
 fn shell() { sys.shell() }
 fn uptime() { sys.uptime() }
+
+// ============================================================
+// System detection — wraps system.detect
+// ============================================================
+
+fn detect() { system.detect() }
+
+fn hardware() { system.hardware() }
+
+// ============================================================
+// Convenience: OS detection
+// ============================================================
+
+fn isLinux() { sys.platform() == "Linux" }
+fn isMac() { sys.platform() == "MacOS" }
+fn isWindows() { sys.platform() == "Windows" }
+fn isBSD() { sys.platform() == "BSD" }
+
+// ============================================================
+// Convenience: detect() field shortcuts
+// ============================================================
+
+fn os() { system.detect().os }
+fn kernel() { system.detect().kernel }
+fn windowManager() { system.detect().windowManager }
+fn desktopEnv() { system.detect().desktopEnv }
+fn displayProtocol() { system.detect().displayProtocol }
+
+// ============================================================
+// Convenience: hardware() field shortcuts
+// ============================================================
+
+fn cpu() { system.hardware().cpu }
+fn cpuCores() { system.hardware().cpuCores }
+fn cpuThreads() { system.hardware().cpuThreads }
+fn cpuFreq() { system.hardware().cpuFrequency }
+fn cpuTemp() { system.hardware().cpuTemperature }
+fn gpu() { system.hardware().gpu }
+fn ramTotal() { system.hardware().ramTotal }
+fn ramFree() { system.hardware().ramFree }
+fn ramUsed() { system.hardware().ramUsed }
+fn motherboard() { system.hardware().motherboard }
+fn bios() { system.hardware().bios }
+fn storage() { system.hardware().storage }
+
+// ============================================================
+// Formatted system summary
+// ============================================================
+
+fn summary() {
+ d = system.detect()
+ h = system.hardware()
+ lines = []
+ lines.push("{d.os} {d.kernel} ({d.arch})")
+ lines.push("hostname: {d.hostname}")
+ lines.push("user: {d.user} shell: {d.shell}")
+ lines.push("WM: {d.windowManager} DE: {d.desktopEnv} display: {d.displayProtocol}")
+ lines.push("CPU: {h.cpu}")
+ lines.push("cores: {h.cpuCores} threads: {h.cpuThreads} freq: {h.cpuFrequency}MHz")
+ lines.push("RAM: {h.ramUsed}/{h.ramTotal} bytes")
+ lines.push("GPU: {h.gpu}")
+ lines.join("\n")
+}

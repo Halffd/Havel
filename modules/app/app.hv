@@ -1,0 +1,91 @@
+// app.hv — application lifecycle wrapping C++ app host object
+// Host bridge: app.args (array), app.restart() (function)
+
+// ============================================================
+// Command-line arguments
+// ============================================================
+
+fn args() {
+ app.args
+}
+
+fn argc() {
+ #app.args
+}
+
+// Get arg at index, null if out of bounds
+fn arg(i) {
+ a = app.args
+ if i < 0 || i >= #a { return null }
+ a[i]
+}
+
+// Get all args after the script name (i.e. user args)
+fn userArgs() {
+ a = app.args
+ if #a <= 1 { return [] }
+ a.slice(1)
+}
+
+// Check if flag exists in args
+fn hasFlag(flag) {
+ a = app.args
+ for v in a {
+  if v == flag { return true }
+ }
+ false
+}
+
+// Get value after a flag: --name value => returns value
+fn flagValue(flag) {
+ a = app.args
+ for i in 0..#a {
+  if a[i] == flag && i + 1 < #a { return a[i + 1] }
+ }
+ null
+}
+
+// ============================================================
+// Application lifecycle
+// ============================================================
+
+fn restart() {
+ app.restart()
+}
+
+// ============================================================
+// App info
+// ============================================================
+
+fn name() {
+ "havel"
+}
+
+fn version() {
+ sys.version()
+}
+
+fn pid() {
+ sys.pid()
+}
+
+fn ppid() {
+ sys.ppid()
+}
+
+fn cwd() {
+ sys.cwd()
+}
+
+// ============================================================
+// Exit helpers
+// ============================================================
+
+fn exit(code) {
+ sys.exit(code)
+}
+
+fn die(msg) {
+ print(msg)
+ sys.exit(1)
+}

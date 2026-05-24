@@ -6419,21 +6419,6 @@ case OpCode::TAIL_CALL: {
       pushStack(*it);
     }
 
-    if (method_name == "register") {
-        fprintf(stderr, "[CALL_METHOD] method=register receiver_type=%s isObject=%d arg_count=%u\n",
-                receiver.isObjectId() ? "object" : receiver.isStringValId() ? "string" : "other",
-                receiver.isObjectId(), arg_count);
-        if (receiver.isObjectId()) {
-            auto *obj = heap_.object(receiver.asObjectId());
-            if (obj) {
-                auto it = obj->find("register");
-                fprintf(stderr, "[CALL_METHOD] obj has 'register' field: %d, isHostFunc: %d\n",
-                        it != obj->end(), (it != obj->end() && it->second.isHostFuncId()));
-            }
-        }
-        fflush(stderr);
-    }
-
     // Determine type name for dispatch
     std::string type_name;
     if (receiver.isStringValId() || receiver.isStringId()) {
@@ -6600,17 +6585,8 @@ all_args.insert(all_args.end(), args2.begin(), args2.end());
 if (found_host) {
       if (host_func_idx < host_function_names_.size()) {
         std::string resolved_name = host_function_names_[host_func_idx];
-        {
-            fprintf(stderr, "[DEBUG] VM CALL: host_func_idx=%u resolved_name='%s' names_size=%zu hosts_size=%zu\n",
-                    host_func_idx, resolved_name.c_str(), host_function_names_.size(), host_functions.size());
-            fflush(stderr);
-        }
         auto fnIt = host_functions.find(resolved_name);
         if (fnIt != host_functions.end()) {
-          {
-              fprintf(stderr, "[DEBUG] VM FOUND host function, calling\n");
-              fflush(stderr);
-          }
           Value result = fnIt->second(all_args);
           pushStack(result);
           if (currentFrame().ip < currentFrame().function->type_feedback.size()) {

@@ -246,8 +246,6 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
       std::string fn = std::string("hotkey.") + name;
       int idx = vm.getHostFunctionIndex(fn);
-      fprintf(stderr, "[HotkeySetup] fn=%s idx=%d\n", fn.c_str(), idx);
-      fflush(stderr);
       if (idx >= 0) {
         vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
       }
@@ -1954,14 +1952,8 @@ options_.host_functions["array.filter"] =
 }
 
 void HostBridge::runVmSetup() {
-  auto *vm = static_cast<VM *>(ctx_->vm);
-  fprintf(stderr, "[HostBridge::runVmSetup] vm=%p, register idx=%d, list idx=%d\n",
-          (void*)vm,
-          vm->getHostFunctionIndex("hotkey.register"),
-          vm->getHostFunctionIndex("hotkey.list"));
-  fflush(stderr);
   for (auto &setupFn : vm_setup_callbacks_) {
-    setupFn(*vm);
+    setupFn(*static_cast<VM *>(ctx_->vm));
   }
 }
 

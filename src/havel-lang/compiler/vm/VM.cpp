@@ -1735,17 +1735,18 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep(): duration cannot be negative");
         }
 
-        if (scheduler_) {
-          // Use the VM's goroutine suspension mechanism instead of blocking.
-          // This lets the scheduler put the goroutine to sleep and resume it
-          // after the duration, allowing the event loop to process input
-          // events (including exit requests from other hotkeys) while we wait.
-          suspension_requested_ = true;
-          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
-          suspension_context_ = reinterpret_cast<void*>(
-              static_cast<intptr_t>(*duration_ms));
-          return Value::makeNull();
-        }
+if (scheduler_ && executing_in_fiber_) {
+// Use the VM's goroutine suspension mechanism instead of blocking.
+// This lets the scheduler put the goroutine to sleep and resume it
+// after the duration, allowing the event loop to process input
+// events (including exit requests from other hotkeys) while we wait.
+// Only valid when running inside a fiber/goroutine context.
+suspension_requested_ = true;
+suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+suspension_context_ = reinterpret_cast<void*>(
+static_cast<intptr_t>(*duration_ms));
+return Value::makeNull();
+}
 
         // No scheduler — fall back to blocking sleep with yields
         {
@@ -1762,7 +1763,8 @@ void VM::registerDefaultHostFunctions() {
               std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
               execution_mutex_.unlock();
             }
-            if (timer_check_func_) timer_check_func_();
+if (timer_check_func_) timer_check_func_();
+if (event_queue_) event_queue_->processAll();
           }
         }
         return Value::makeNull();
@@ -2338,21 +2340,23 @@ void VM::registerDefaultHostFunctions() {
         return Value::makeThreadId(threadRef.id);
     });
 
-  // interval(ms, closure) - Create repeating timer
+// interval(ms, closure) - Create repeating timer
 registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
- if (args.size() < 2 || !args[0].isNumber()) {
- COMPILER_THROW("interval requires milliseconds and closure");
- }
- if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
- COMPILER_THROW("interval requires a closure argument");
- }
+if (args.size() < 2 || !args[0].isNumber()) {
+COMPILER_THROW("interval requires milliseconds and closure");
+}
+if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+COMPILER_THROW("interval requires a closure argument");
+}
 
- int ms = toInt(args[0]);
- auto closure = args[1];
- auto intervalIdPtr = std::make_shared<uint32_t>(0);
+int ms = toInt(args[0]);
+auto closure = args[1];
+auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
+fprintf(stderr, "DEBUG: interval() creating, event_queue_=%p\n", (void*)event_queue_);
 auto callback = [this, closure, intervalIdPtr]() {
 if (event_queue_) {
+fprintf(stderr, "DEBUG: interval callback pushing TIMER_FIRE\n");
 auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
 event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
 } else {
@@ -3513,12 +3517,13 @@ VMExecutionResult::VMExecutionResult()
 //
 
 VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
-  if (!current_fiber) {
-    return VMExecutionResult::Error("No current fiber");
-  }
+if (!current_fiber) {
+return VMExecutionResult::Error("No current fiber");
+}
 
-  
-  // For now, execute from current VM state
+executing_in_fiber_ = true;
+
+// For now, execute from current VM state
   
   // Check if we have frames to execute
   if (frame_count_ == 0) {
@@ -3984,7 +3989,8 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
-    while (frame_count_ > stop_frame_depth) {
+executing_in_fiber_ = false;
+while (frame_count_ > stop_frame_depth) {
         // Check if exit was requested (from exit() host function)
         if (exit_requested_.load()) {
             break;
@@ -6390,6 +6396,11 @@ case OpCode::TAIL_CALL: {
 
     // Determine type name for dispatch
     std::string type_name;
+    uint32_t host_func_idx = 0;
+    bool found_host = false;
+    bool found_via_module = false;
+    bool isInstanceFunc = false;
+    Value vm_func = Value::makeNull();
     if (receiver.isStringValId() || receiver.isStringId()) {
       type_name = "string";
     } else if (receiver.isInt()) {
@@ -6410,21 +6421,38 @@ case OpCode::TAIL_CALL: {
       type_name = "interval";
     } else if (receiver.isTimeoutId()) {
       type_name = "timeout";
-    } else if (receiver.isRangeId()) {
-      type_name = "range";
+} else if (receiver.isRangeId()) {
+        type_name = "range";
+    } else if (receiver.isHostFuncId()) {
+        // Dotted host function call: e.g. interval.start(100, fn)
+        // Resolve "interval.start" by concatenating receiver name + "." + method_name
+        std::string receiver_name;
+        if (receiver.asHostFuncId() < host_function_names_.size()) {
+            receiver_name = host_function_names_[receiver.asHostFuncId()];
+        }
+        std::string dotted_name = receiver_name + "." + method_name;
+        for (size_t i = 0; i < host_function_names_.size(); ++i) {
+            if (host_function_names_[i] == dotted_name) {
+                host_func_idx = static_cast<uint32_t>(i);
+                found_host = true;
+                found_via_module = true; // Don't pass receiver as self
+                break;
+            }
+        }
+        if (!found_host) {
+            for (uint32_t i = 0; i < arg_count; ++i) popStack();
+            popStack();
+            pushStack(Value::makeNull());
+            break;
+        }
     } else {
-      for (uint32_t i = 0; i < arg_count; ++i) popStack();
-      popStack(); // receiver
-      pushStack(Value::makeNull());
-      break;
+        for (uint32_t i = 0; i < arg_count; ++i) popStack();
+        popStack(); // receiver
+        pushStack(Value::makeNull());
+        break;
     }
 
 // Look up method: 0. Object instance field, 1. Host prototype, 2. Module monkey-patch, 3. Class prototype chain
-uint32_t host_func_idx = 0;
-bool found_host = false;
-bool found_via_module = false;
-bool isInstanceFunc = false;
-Value vm_func = Value::makeNull();
 
     // 0. If receiver is an object, check for direct callable field FIRST.
     // Namespace objects like `process` have host function fields (e.g. `find`)

@@ -240,9 +240,10 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   
   // When an operation needs to wait (thread.join, channel.recv, etc)
   // it sets these flags to signal the VM to suspend the current fiber
-  bool suspension_requested_ = false;          // True if suspension needed
-  uint8_t suspension_reason_ = 0;              // Why is it suspending? (SuspensionReason enum value)
-  void* suspension_context_ = nullptr;         // Context pointer (thread_id, channel*, etc)
+bool suspension_requested_ = false; // True if suspension needed
+uint8_t suspension_reason_ = 0; // Why is it suspending? (SuspensionReason enum value)
+void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
+bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null current_fiber
 
  
  // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
@@ -660,6 +661,7 @@ public:
   
 	
 	void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
+class EventQueue* getEventQueue() const { return event_queue_; }
 
 	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }
 	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }

@@ -1427,20 +1427,17 @@ fn Parser(tokenList) {
 
         skipNewlines()
 
-        thenBranch = null
-        if current().type == "OpenBrace" {
-            thenBranch = parseBlock()
-        }
-        else if current().type == "Colon" {
-            advance()
-            skipNewlines()
-            thenBranch = parseBlock()
-        }
-        else {
-            thenBranch = parseStatement()
-            if thenBranch == null: thenBranch = BlockStatement([], l, c)
-
-        }
+ thenBranch = null
+ if current().type == "OpenBrace" {
+  thenBranch = parseBlock()
+ }
+ else if current().type == "Colon" {
+  thenBranch = parseBlock()
+ }
+ else {
+  thenBranch = parseStatement()
+  if thenBranch == null: thenBranch = BlockStatement([], l, c)
+ }
         skipNewlines()
 
         elseBranch = null
@@ -1453,11 +1450,9 @@ fn Parser(tokenList) {
             else if current().type == "OpenBrace" {
                 elseBranch = parseBlock()
             }
-            else if current().type == "Colon" {
-                advance()
-                skipNewlines()
-                elseBranch = parseBlock()
-            }
+ else if current().type == "Colon" {
+  elseBranch = parseBlock()
+ }
             else {
                 elseBranch = parseStatement()
                 if elseBranch == null: elseBranch = BlockStatement([], l, c)
@@ -1688,29 +1683,44 @@ fn parseBlock() {
     allowBraceSugar = prevSugar
     return BlockStatement(stmts, l, c)
   }
-  if current().type == "Colon" {
-    advance()
-    skipNewlines()
-    stmts = []
-    blockLine = l
-    while notEOF() and current().type != "EOF" {
-      skipNewlines()
-      if current().type == "EOF": break
-      s = parseStatement()
-      if s != null and s.kind != "ErrorNode" {
-        stmts.push(s)
-      }
-      if s != null and s.kind == "ErrorNode" {
-        advance()
-      }
-      skipNewlines()
-      if current().type == "EOF": break
-      endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
-      if endTokens.has(current().type): break
-    }
-    allowBraceSugar = prevSugar
-    return BlockStatement(stmts, blockLine, c)
+ if current().type == "Colon" {
+  // Find header indent by scanning backwards to first token on same line
+  headerIndent = c
+  scanPos = pos - 1
+  while scanPos >= 0 {
+   t = tokens[scanPos]
+   if t.line == l {
+    if t.type != "NewLine" and t.type != "Semicolon":
+     headerIndent = t.col
+   }
+   else { break }
+   scanPos = scanPos - 1
   }
+  advance()
+  skipNewlines()
+  stmts = []
+  blockLine = l
+  baseIndent = headerIndent + 1
+  while notEOF() and current().type != "EOF" {
+   skipNewlines()
+   if current().type == "EOF": break
+   if current().col < baseIndent: break
+   s = parseStatement()
+   if s != null and s.kind != "ErrorNode" {
+    stmts.push(s)
+   }
+   if s != null and s.kind == "ErrorNode" {
+    advance()
+   }
+   skipNewlines()
+   if current().type == "EOF": break
+   if current().col < baseIndent: break
+   endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
+   if endTokens.has(current().type): break
+  }
+  allowBraceSugar = prevSugar
+  return BlockStatement(stmts, blockLine, c)
+ }
   allowBraceSugar = prevSugar
   error("Expected '{' or ':' for block", l, c)
 
@@ -1868,11 +1878,9 @@ fn parseIfStatement() {
   if current().type == "OpenBrace" {
     thenBranch = parseBlock()
   }
-  if thenBranch == null && current().type == "Colon" {
-    advance()
-    skipNewlines()
-    thenBranch = parseBlock()
-  }
+ if thenBranch == null && current().type == "Colon" {
+  thenBranch = parseBlock()
+ }
   if thenBranch == null {
     thenBranch = parseStatement()
     if thenBranch == null: thenBranch = BlockStatement([], l, c)
@@ -1889,11 +1897,9 @@ fn parseIfStatement() {
     if elseBranch == null && current().type == "OpenBrace" {
       elseBranch = parseBlock()
     }
-    if elseBranch == null && current().type == "Colon" {
-      advance()
-      skipNewlines()
-      elseBranch = parseBlock()
-    }
+ if elseBranch == null && current().type == "Colon" {
+  elseBranch = parseBlock()
+ }
     if elseBranch == null {
       elseBranch = parseStatement()
       if elseBranch == null: elseBranch = BlockStatement([], l, c)
@@ -2272,28 +2278,32 @@ fn parseIfStatement() {
             skipNewlines()
 
         }
-    // Body
-    body = null
-    if current().type == "OpenBrace" or current().type == "Colon" {
+ // Body
+ body = null
+ if current().type == "OpenBrace" or current().type == "Colon" {
         body = parseBlock()
     }
-    else if current().type == "If" or current().type == "While" or current().type == "For" or current().type == "Loop" or current().type == "Return" or current().type == "Ret" or current().type == "Let" or current().type == "Val" or current().type == "Try" or current().type == "Switch" or current().type == "Break" or current().type == "Continue" or current().type == "Throw" {
-        // Statement body — parse multiple statements like colon block
-        stmts = []
-        while notEOF() and current().type != "EOF" {
-            skipNewlines()
-            if current().type == "EOF": break
-            s = parseStatement()
-            if s != null and s.kind != "ErrorNode" {
-                stmts.push(s)
-            }
-            skipNewlines()
-            if current().type == "EOF": break
-            endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
-            if endTokens.has(current().type): break
-        }
-        body = BlockStatement(stmts, l, c)
-    }
+ else if current().type == "If" or current().type == "While" or current().type == "For" or current().type == "Loop" or current().type == "Return" or current().type == "Ret" or current().type == "Let" or current().type == "Val" or current().type == "Try" or current().type == "Switch" or current().type == "Break" or current().type == "Continue" or current().type == "Throw" {
+  // Statement body — parse multiple statements like colon block
+  fnIndent = c
+  baseIndent = fnIndent + 1
+  stmts = []
+  while notEOF() and current().type != "EOF" {
+   skipNewlines()
+   if current().type == "EOF": break
+ if current().col < baseIndent: break
+ s = parseStatement()
+ if s != null and s.kind != "ErrorNode" {
+  stmts.push(s)
+ }
+ skipNewlines()
+ if current().type == "EOF": break
+ if current().col < baseIndent: break
+   endTokens = {"Else": true, "Catch": true, "Finally": true, "Case": true, "Default": true}
+   if endTokens.has(current().type): break
+  }
+  body = BlockStatement(stmts, l, c)
+ }
     else {
         // Expression body
         bodyExpr = parseExpr(0)

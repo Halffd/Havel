@@ -1198,9 +1198,9 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 uint32_t id = sweep_keys_[sweep_index_++];
                 work_budget--;
 
-                if (marked_intervals_.find(id) == marked_intervals_.end()) {
-                    intervals_.erase(id);
-                    recovered_in_cycle_++;
+if (marked_intervals_.find(id) == marked_intervals_.end()) {
+intervals_.erase(id);
+recovered_in_cycle_++;
                 }
             }
             if (sweep_index_ >= sweep_keys_.size()) {

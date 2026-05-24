@@ -4,6 +4,7 @@
 #include "../../runtime/concurrency/Fiber.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
+#include "EventQueue.hpp"
 #include <chrono>
 
 namespace havel::compiler {
@@ -359,11 +360,17 @@ Value callback = args[1];
 auto timeoutIdPtr = std::make_shared<uint32_t>(0);
 
 auto vm_cb = [this, callback, timeoutIdPtr]() {
+auto *eq = vm_->getEventQueue();
+if (eq) {
+auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
+eq->push(Event(EventType::TIMER_FIRE, 1, payload));
+} else {
 try {
 Value result = vm_->callFunction(callback, {});
 vm_->addTimeoutResult(*timeoutIdPtr, result);
 } catch (const std::exception &e) {
 ::havel::error("[timeout] Exception: {}", e.what());
+}
 }
 };
 

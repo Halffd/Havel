@@ -116,7 +116,7 @@ Interval::Interval(int intervalMs, std::function<void()> callback)
 }
 
 Interval::~Interval() {
-  stop();
+stop();
 }
 
 void Interval::pause() {
@@ -128,9 +128,9 @@ void Interval::resume() {
 }
 
 void Interval::stop() {
-  if (!running.load()) {
-    return;
-  }
+if (!running.load()) {
+return;
+}
   
   stopped.store(true);
   running.store(false);
@@ -141,28 +141,24 @@ void Interval::stop() {
 }
 
 void Interval::timerLoop() {
-  while (running.load() && !stopped.load()) {
-    if (paused.load()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      continue;
-    }
-    
-    // Sleep for interval duration
-    std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
-    
-    if (stopped.load() || paused.load()) {
-      continue;
-    }
-    
-    // Execute callback
-    try {
-      callback();
-    } catch (const std::exception &e) {
-        ::havel::error("[Interval] Callback exception: {}", e.what());
-    }
-  }
-  
-  running.store(false);
+while (running.load() && !stopped.load()) {
+if (paused.load()) {
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+continue;
+}
+
+std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
+
+if (stopped.load() || paused.load()) {
+continue;
+}
+
+try {
+callback();
+} catch (const std::exception &e) {
+::havel::error("[Interval] Callback exception: {}", e.what());
+}
+}
 }
 
 // ============================================================================

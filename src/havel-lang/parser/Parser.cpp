@@ -3813,36 +3813,77 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
   std::string structName = advance().value;
 
   // Parse protocol conformance: struct Name : ProtocolName [, ProtocolName2]
+  // Or colon body: struct Name :
+  // Disambiguate: ':' followed by identifier on same line = protocol conformance
+  // ':' followed by newline (or non-identifier) = colon body
   std::vector<std::string> protocolNames;
+  bool isColonBody = false;
+  size_t colonBaseIndent = 0;
+
   if (at().type == havel::TokenType::Colon) {
-    advance(); // consume ':'
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected protocol name after ':'");
-    }
-    protocolNames.push_back(advance().value);
-    while (at().type == havel::TokenType::Comma) {
-      advance(); // consume ','
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected protocol name after ','");
-      }
+    if (at(1).type == havel::TokenType::Identifier && at(1).line == at().line) {
+      // Protocol conformance
+      advance(); // consume ':'
       protocolNames.push_back(advance().value);
+      while (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected protocol name after ','");
+        }
+        protocolNames.push_back(advance().value);
+      }
+    } else {
+      // Colon body
+      isColonBody = true;
     }
   }
 
-  // Parse opening brace
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after struct name");
+  // Parse opening brace or colon body
+  if (isColonBody) {
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::Colon) {
+    // After protocol conformance, second ':' means colon body
+    isColonBody = true;
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+  } else {
+    failAt(at(), "Expected '{' or ':' after struct name");
   }
-  advance(); // consume '{'
 
   // Parse fields and methods
-  auto [fields, methods] = parseStructMembers();
+  auto [fields, methods] = parseStructMembers(isColonBody, colonBaseIndent);
 
-  // Parse closing brace
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close struct definition");
+  if (isColonBody) {
+    // Colon body ends by dedent — nothing to consume
+  } else {
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close struct definition");
+    }
+    advance(); // consume '}'
   }
-  advance(); // consume '}'
 
   // Create struct definition with fields and methods
   ast::StructDefinition def(std::move(fields), std::move(methods));
@@ -3862,29 +3903,74 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   std::string className = advance().value;
 
   // Check for inheritance syntax: class X : ParentClass
+  // But also: class X : (colon body with no parent)
+  // Disambiguate: if ':' followed by Identifier, it's inheritance
+  // If ':' followed by newline/not-identifier, it's colon body
   std::string parentName;
+  bool isColonBody = false;
+  size_t colonBaseIndent = 0;
+
   if (at().type == havel::TokenType::Colon) {
-    advance(); // consume ':'
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected parent class name after ':'");
+    if (at(1).type == havel::TokenType::Identifier && at(1).line == at().line) {
+      // Inheritance: class X : ParentClass
+      advance(); // consume ':'
+      parentName = advance().value;
+    } else {
+      // Colon body: class X :
+      isColonBody = true;
     }
-    parentName = advance().value;
   }
 
-  // Parse opening brace
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after class name");
+  // Parse opening brace or colon body
+  if (isColonBody) {
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::Colon) {
+    // After inheritance, second ':' means colon body
+    isColonBody = true;
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else if (at().type == havel::TokenType::OpenBrace) {
+    advance(); // consume '{'
+  } else {
+    if (parentName.empty()) {
+      failAt(at(), "Expected '{' or ':' after class name");
+    } else {
+      failAt(at(), "Expected '{' or ':' after parent class name");
+    }
   }
-  advance(); // consume '{'
 
   // Parse fields and methods
-  auto [fields, methods] = parseClassMembers();
+  auto [fields, methods] = parseClassMembers(isColonBody, colonBaseIndent);
 
-  // Parse closing brace
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close class definition");
+  if (isColonBody) {
+    // Colon body ends by dedent — nothing to consume
+  } else {
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close class definition");
+    }
+    advance(); // consume '}'
   }
-  advance(); // consume '}'
 
   // Create class definition with fields and methods
   ast::ClassDefinition def(std::move(fields), std::move(methods));
@@ -3895,12 +3981,21 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
 
 // Parse struct members (fields and methods)
 std::pair<std::vector<ast::StructFieldDef>,
-          std::vector<std::unique_ptr<ast::StructMethodDef>>>
-Parser::parseStructMembers() {
+std::vector<std::unique_ptr<ast::StructMethodDef>>>
+Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
   std::vector<ast::StructFieldDef> fields;
   std::vector<std::unique_ptr<ast::StructMethodDef>> methods;
 
-  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+  auto isEnd = [&]() -> bool {
+    if (isColonBody) {
+      return (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment)
+        ? false
+        : at().column < colonBaseIndent;
+    }
+    return at().type == havel::TokenType::CloseBrace;
+  };
+
+  while (!isEnd() && notEOF()) {
     // Skip newlines and comments
     if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Comment) {
@@ -4203,12 +4298,21 @@ Parser::parseStructMembers() {
 
 // Parse class members (fields and methods)
 std::pair<std::vector<ast::ClassFieldDef>,
-          std::vector<std::unique_ptr<ast::ClassMethodDef>>>
-Parser::parseClassMembers() {
+std::vector<std::unique_ptr<ast::ClassMethodDef>>>
+Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
   std::vector<ast::ClassFieldDef> fields;
   std::vector<std::unique_ptr<ast::ClassMethodDef>> methods;
 
-  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+  auto isEnd = [&]() -> bool {
+    if (isColonBody) {
+      return (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment)
+        ? false
+        : at().column < colonBaseIndent;
+    }
+    return at().type == havel::TokenType::CloseBrace;
+  };
+
+  while (!isEnd() && notEOF()) {
     // Skip newlines and comments
     if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Comment) {
@@ -4721,14 +4825,41 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
   }
   auto protName = makeIdentifier(advance());
 
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after protocol name");
+  if (at().type != havel::TokenType::OpenBrace && at().type != havel::TokenType::Colon) {
+    failAt(at(), "Expected '{' or ':' after protocol name");
   }
-  advance(); // consume '{'
+
+  bool isColonBody = (at().type == havel::TokenType::Colon);
+  size_t colonBaseIndent = 0;
+  if (isColonBody) {
+    size_t colonLine = at().line;
+    size_t headerIndent = at().column;
+    for (size_t i = position + 1; i-- > 0; ) {
+      if (tokens[i].line == colonLine && tokens[i].type != havel::TokenType::NewLine) {
+        headerIndent = tokens[i].column;
+      } else {
+        break;
+      }
+    }
+    advance(); // consume ':'
+    while (at().type == havel::TokenType::NewLine) { advance(); }
+    colonBaseIndent = headerIndent + 1;
+  } else {
+    advance(); // consume '{'
+  }
+
+  auto isEnd = [&]() -> bool {
+    if (isColonBody) {
+      return (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment)
+        ? false
+        : at().column < colonBaseIndent;
+    }
+    return at().type == havel::TokenType::CloseBrace;
+  };
 
   std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
 
-  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+  while (!isEnd() && notEOF()) {
     if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Comment) {
       advance();
@@ -4789,10 +4920,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
         std::move(methodName), std::move(params), std::move(defaultBody)));
   }
 
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close protocol definition");
+  if (isColonBody) {
+    // Colon body ends by dedent — nothing to consume
+  } else {
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' to close protocol definition");
+    }
+    advance(); // consume '}'
   }
-  advance(); // consume '}'
 
   return makeNode<havel::ast::ProtocolDeclaration>(std::move(protName),
                                                              std::move(methods));

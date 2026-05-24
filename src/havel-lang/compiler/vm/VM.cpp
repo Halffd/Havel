@@ -891,6 +891,12 @@ Value VM::callFunctionSync(const Value &fn,
 void VM::registerHostFunction(const std::string &name,
                                BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
+  for (uint32_t i = 0; i < host_function_names_.size(); i++) {
+    if (host_function_names_[i] == name) {
+      host_function_globals_[name] = Value::makeHostFuncId(i);
+      return;
+    }
+  }
     uint32_t idx = static_cast<uint32_t>(host_function_names_.size());
     host_function_names_.push_back(name);
     host_function_globals_[name] = Value::makeHostFuncId(idx);

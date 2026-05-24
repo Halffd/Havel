@@ -216,6 +216,10 @@ void Havel::initialize(bool isStartup) {
 // Register stdlib modules
 registerStdLibWithVM(*hostBridge);
 hostBridge->install();
+for (const auto& [name, fn] : hostBridge->options().host_functions) {
+    bytecodeVM->registerHostFunction(name, fn);
+}
+hostBridge->runVmSetup();
 
 {
     std::string stdlibPath;

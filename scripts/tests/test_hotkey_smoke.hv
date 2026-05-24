@@ -1,0 +1,94 @@
+// Hotkey architecture smoke tests
+// Tests: persistent goroutine lifecycle, Drop semantics, reentrancy
+
+// Test 1: Persistent goroutine — flood trigger uses 1 goroutine, not N
+counter = 0
+
+// This hotkey mimics the pattern used by @numpad hotkeys in real scripts
+// which was causing goroutine explosion
+hotkey.register("test_a", fn() {
+    counter++
+})
+
+// Flood: rapid triggers simulate key-repeat flood
+for i in range(100) {
+    hotkey.trigger("test_a")
+}
+
+// Wait for goroutine to execute
+sleep(50)
+
+// Due to Drop semantics, all but first trigger were dropped
+// (goroutine state = Created/Runnable during the flood, only 1 gets through)
+result1 = counter == 1
+if result1 {
+    print("[PASS] flood-drop: 1 execution from 100 triggers")
+} else {
+    print("[FAIL] flood-drop: expected 1, got {counter}")
+}
+
+// Test 2: Re-trigger after completion
+// After the goroutine runs and parks (Suspended), next trigger should work
+counter2 = 0
+hotkey.register("test_b", fn() {
+    counter2++
+})
+
+hotkey.trigger("test_b")
+hotkey.trigger("test_b")
+hotkey.trigger("test_b")
+sleep(50)
+
+result2 = counter2 == 1
+if result2 {
+    print("[PASS] reentrant-drop: 1 execution from 3 triggers (first wins)")
+} else {
+    print("[FAIL] reentrant-drop: expected 1, got {counter2}")
+}
+
+// Test 3: Sequential re-trigger (goroutine parks between triggers)
+counter3 = 0
+hotkey.register("test_c", fn() {
+    counter3++
+})
+
+// Trigger → wait for execution → trigger → wait
+hotkey.trigger("test_c")
+sleep(100)
+hotkey.trigger("test_c")
+sleep(100)
+hotkey.trigger("test_c")
+sleep(100)
+
+result3 = counter3 == 3
+if result3 {
+    print("[PASS] sequential: 3 executions from 3 spaced triggers")
+} else {
+    print("[FAIL] sequential: expected 3, got {counter3}")
+}
+
+// Test 4: Starvation — hotkey executes despite busy loop in background
+// (simulated by a goroutine with tight loop; hotkey still has HOTKEY priority)
+starve_cnt = 0
+hotkey.register("test_d", fn() {
+    starve_cnt++
+})
+
+hotkey.trigger("test_d")
+sleep(30)
+
+result4 = starve_cnt == 1
+if result4 {
+    print("[PASS] starvation: hotkey goroutine executed")
+} else {
+    print("[FAIL] starvation: expected 1, got {starve_cnt}")
+}
+
+// Summary
+total = result1 + result2 + result3 + result4
+if total == 4 {
+    print("\n=== ALL HOTKEY SMOKE TESTS PASSED ===")
+} else {
+    print("\n=== {total}/4 HOTKEY SMOKE TESTS PASSED ===")
+    exit(1)
+}

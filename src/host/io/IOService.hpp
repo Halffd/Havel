@@ -8,8 +8,10 @@
 
 #include <string>
 #include <utility>
+#include <algorithm>
+#include <cctype>
 
-namespace havel { class IO; }  // Forward declaration
+namespace havel { class IO; } // Forward declaration
 
 namespace havel::host {
 
@@ -184,6 +186,19 @@ public:
     /// Get mouse sensitivity
     /// @return sensitivity value
     double getMouseSensitivity() const;
+
+    // =========================================================================
+    // Executor mode operations
+    // =========================================================================
+
+    /// Set the executor mode for hotkey dispatch
+    /// @param mode Mode string: "scheduler", "executor", "sync", or "thread"
+    /// @return true if set successfully, false if invalid mode string
+    bool setExecutorMode(const std::string& mode);
+
+    /// Get the current executor mode
+    /// @return Mode string: "scheduler", "executor", "sync", or "thread"
+    std::string getExecutorMode() const;
 
 private:
     havel::IO* m_io;  // Non-owning pointer to core IO system

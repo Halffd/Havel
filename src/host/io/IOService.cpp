@@ -194,4 +194,44 @@ double IOService::getMouseSensitivity() const {
     return m_io ? m_io->GetMouseSensitivity() : 1.0;
 }
 
+// =========================================================================
+// Executor mode operations
+// =========================================================================
+
+bool IOService::setExecutorMode(const std::string& mode) {
+    if (!m_io) return false;
+
+    std::string modeLower = mode;
+    std::transform(modeLower.begin(), modeLower.end(), modeLower.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+
+    ExecutorMode em;
+    if (modeLower == "executor") {
+        em = ExecutorMode::Executor;
+    } else if (modeLower == "sync") {
+        em = ExecutorMode::Sync;
+    } else if (modeLower == "thread") {
+        em = ExecutorMode::Thread;
+    } else if (modeLower == "scheduler") {
+        em = ExecutorMode::Scheduler;
+    } else {
+        return false;
+    }
+
+    m_io->SetExecutorMode(em);
+    return true;
+}
+
+std::string IOService::getExecutorMode() const {
+    if (!m_io) return "scheduler";
+
+    switch (m_io->GetExecutorMode()) {
+        case ExecutorMode::Executor:  return "executor";
+        case ExecutorMode::Sync:      return "sync";
+        case ExecutorMode::Thread:    return "thread";
+        case ExecutorMode::Scheduler: return "scheduler";
+        default:                      return "scheduler";
+    }
+}
+
 } } // namespace havel::host

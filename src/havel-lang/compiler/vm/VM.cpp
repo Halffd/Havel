@@ -9966,6 +9966,14 @@ size_t base = locals.size();
                     argVal = deepMaterializeStrings(argVal, savedChunk);
                 }
                 locals[base + i] = std::move(argVal);
+            } else if (i < callee->default_values.size() &&
+                       callee->default_values[i].has_value()) {
+                const auto &dv = callee->default_values[i].value();
+                if (dv.isBool() && dv.asBool()) {
+                    locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+                } else {
+                    locals[base + i] = dv;
+                }
             } else {
                 locals[base + i] = Value::makeNull();
             }

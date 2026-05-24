@@ -415,9 +415,23 @@ api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
 		havel::compiler::UpvalueDescriptor desc;
 		desc.index = static_cast<uint32_t>(args[0].asInt());
 		desc.captures_local = args[1].asInt() != 0;
-		fn->upvalues.push_back(desc);
-		return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
-	});
+    fn->upvalues.push_back(desc);
+    return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
+    });
+
+api.registerFunction("bc.set_default_value", [](const std::vector<Value> &args) -> Value {
+    auto *fn = g_builder.currentFunc();
+    if (!fn) throw std::runtime_error("bc.set_default_value: no current function");
+    if (args.size() < 2 || !args[0].isInt()) {
+        throw std::runtime_error("bc.set_default_value: requires (param_index, value)");
+    }
+    uint32_t paramIdx = static_cast<uint32_t>(args[0].asInt());
+    while (fn->default_values.size() <= paramIdx) {
+        fn->default_values.push_back(std::nullopt);
+    }
+    fn->default_values[paramIdx] = args[1];
+    return Value::makeBool(true);
+});
 
 api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
   if (g_builder.chunk->getFunctionCount() == 0) {
@@ -606,15 +620,70 @@ api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Va
 		return api.makeString(out);
 	});
 
-  api.registerFunction("bc.is_string_id", [](const std::vector<Value> &args) -> Value {
+  api.registerFunction("bc.disasm_all", [api](const std::vector<Value> &) -> Value {
+    std::string out;
+    auto *chunk = g_builder.chunk.get();
+    if (!chunk) return api.makeString("<no chunk>");
+    // Build reverse opcode map
+    std::unordered_map<uint8_t, std::string> op_names;
+    for (auto &[name, op] : g_builder.opcode_map) {
+        op_names[static_cast<uint8_t>(op)] = name;
+    }
+    size_t count = chunk->getFunctionCount();
+    for (size_t fi = 0; fi < count; ++fi) {
+        auto *fn = chunk->getFunctionMutable(static_cast<uint32_t>(fi));
+        if (!fn) continue;
+        out += "function " + fn->name + " (params=" + std::to_string(fn->param_count)
+             + " locals=" + std::to_string(fn->local_count) + " upvalues=" + std::to_string(fn->upvalues.size()) + ")\n";
+        for (size_t i = 0; i < fn->instructions.size(); ++i) {
+            auto &instr = fn->instructions[i];
+            out += "  " + std::to_string(i) + ": ";
+            uint8_t opVal = static_cast<uint8_t>(instr.opcode);
+            auto nameIt = op_names.find(opVal);
+            out += (nameIt != op_names.end()) ? nameIt->second : std::to_string(opVal);
+            for (auto &op : instr.operands) {
+                if (op.isInt()) out += " " + std::to_string(op.asInt());
+                else if (op.isDouble()) out += " " + std::to_string(op.asDouble());
+                else if (op.isStringId()) out += " str[" + std::to_string(op.asStringValId()) + "]";
+                else out += " ?";
+            }
+            out += "\n";
+        }
+        if (!fn->constants.empty()) {
+            out += "constants:\n";
+            for (size_t i = 0; i < fn->constants.size(); ++i) {
+                out += "  [" + std::to_string(i) + "] ";
+                auto &c = fn->constants[i];
+                if (c.isInt()) out += std::to_string(c.asInt());
+                else if (c.isDouble()) out += std::to_string(c.asDouble());
+                else if (c.isStringId()) out += "str[" + std::to_string(c.asStringValId()) + "]";
+                else if (c.isFunctionObjId()) out += "func_obj[" + std::to_string(c.asFunctionObjId()) + "]";
+                else out += "?";
+                out += "\n";
+            }
+        }
+        out += "\n";
+    }
+    return api.makeString(out);
+});
+
+api.registerFunction("bc.is_string_id", [](const std::vector<Value> &args) -> Value {
     if (args.empty()) return Value::makeBool(false);
     return Value::makeBool(args[0].isStringId());
     });
 
 api.registerFunction("bc.is_string_val_id", [](const std::vector<Value> &args) -> Value {
-    if (args.empty()) return Value::makeBool(false);
-    return Value::makeBool(args[0].isStringValId());
-    });
+if (args.empty()) return Value::makeBool(false);
+return Value::makeBool(args[0].isStringValId());
+});
+
+api.registerFunction("bc.make_function_obj", [](const std::vector<Value> &args) -> Value {
+if (args.empty() || !args[0].isInt()) {
+throw std::runtime_error("bc.make_function_obj: requires function index (int)");
+}
+uint32_t idx = static_cast<uint32_t>(args[0].asInt());
+return Value::makeFunctionObjId(idx);
+});
 
 api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -646,15 +715,18 @@ api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
   api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));
   api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));
   api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
+api.setField(bcObj, "disasm_all", api.makeFunctionRef("bc.disasm_all"));
 api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
+api.setField(bcObj, "make_function_obj", api.makeFunctionRef("bc.make_function_obj"));
 api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
     api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
   api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
   api.setField(bcObj, "set_source", api.makeFunctionRef("bc.set_source"));
   api.setField(bcObj, "clear_source", api.makeFunctionRef("bc.clear_source"));
   api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));
-  api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
-  api.setGlobal("bc", bcObj);
+    api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
+    api.setField(bcObj, "set_default_value", api.makeFunctionRef("bc.set_default_value"));
+    api.setGlobal("bc", bcObj);
 }
 
 } // namespace havel::stdlib

@@ -644,8 +644,16 @@ api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Va
             for (auto &op : instr.operands) {
                 if (op.isInt()) out += " " + std::to_string(op.asInt());
                 else if (op.isDouble()) out += " " + std::to_string(op.asDouble());
-                else if (op.isStringId()) out += " str[" + std::to_string(op.asStringValId()) + "]";
-                else out += " ?";
+                else if (op.isFunctionObjId()) out += " func[" + std::to_string(op.asFunctionObjId()) + "]";
+                else if (op.isStringValId()) out += " str[" + std::to_string(op.asStringValId()) + "]";
+                else if (op.isStringId()) out += " strid[" + std::to_string(op.asStringId()) + "]";
+                else if (op.isBool()) out += " bool[" + std::to_string(op.asBool() ? 1 : 0) + "]";
+                else if (op.isNull()) out += " null";
+                else if (op.isObjectId()) out += " obj[" + std::to_string(op.asObjectId()) + "]";
+                else if (op.isArrayId()) out += " arr[" + std::to_string(op.asArrayId()) + "]";
+                else if (op.isHostFuncId()) out += " hostfn[" + std::to_string(op.asHostFuncId()) + "]";
+                else if (op.isClosureId()) out += " closure[" + std::to_string(op.asClosureId()) + "]";
+                else out += " ?raw=" + std::to_string(op.rawBits());
             }
             out += "\n";
         }
@@ -656,9 +664,12 @@ api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Va
                 auto &c = fn->constants[i];
                 if (c.isInt()) out += std::to_string(c.asInt());
                 else if (c.isDouble()) out += std::to_string(c.asDouble());
-                else if (c.isStringId()) out += "str[" + std::to_string(c.asStringValId()) + "]";
-                else if (c.isFunctionObjId()) out += "func_obj[" + std::to_string(c.asFunctionObjId()) + "]";
-                else out += "?";
+                else if (c.isFunctionObjId()) out += "func[" + std::to_string(c.asFunctionObjId()) + "]";
+                else if (c.isStringValId()) out += "str[" + std::to_string(c.asStringValId()) + "]";
+                else if (c.isStringId()) out += "strid[" + std::to_string(c.asStringId()) + "]";
+                else if (c.isBool()) out += "bool[" + std::to_string(c.asBool() ? 1 : 0) + "]";
+                else if (c.isNull()) out += "null";
+                else out += "?raw=" + std::to_string(c.rawBits());
                 out += "\n";
             }
         }

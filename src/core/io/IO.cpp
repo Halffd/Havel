@@ -422,16 +422,16 @@ workerThreads = std::clamp(workerThreads, 1, 32);
 std::string executorModeStr = Configs::Get().Get<std::string>("IO.Executor", "Scheduler");
 std::transform(executorModeStr.begin(), executorModeStr.end(), executorModeStr.begin(),
                [](unsigned char c){ return std::tolower(c); });
-if (executorModeStr == "executor") {
-  executorMode_ = ExecutorMode::Executor;
-} else if (executorModeStr == "sync") {
-  executorMode_ = ExecutorMode::Sync;
-} else if (executorModeStr == "thread") {
-  executorMode_ = ExecutorMode::Thread;
-} else {
-  executorMode_ = ExecutorMode::Scheduler;
-}
-    if (debugging::debug_io) debug("Hotkey executor mode: {} (config: IO.Executor={})", static_cast<int>(executorMode_), executorModeStr);
+    if (executorModeStr == "executor") {
+        executorMode_.store(ExecutorMode::Executor);
+    } else if (executorModeStr == "sync") {
+        executorMode_.store(ExecutorMode::Sync);
+    } else if (executorModeStr == "thread") {
+        executorMode_.store(ExecutorMode::Thread);
+    } else {
+        executorMode_.store(ExecutorMode::Scheduler);
+    }
+    if (debugging::debug_io) debug("Hotkey executor mode: {} (config: IO.Executor={})", static_cast<int>(executorMode_.load()), executorModeStr);
 
   // Initialize HotkeyExecutor for thread-safe hotkey execution
   hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
@@ -504,7 +504,7 @@ if (executorModeStr == "executor") {
 
 // Pass HotkeyExecutor to EventListener for thread-safe execution
 eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
-eventListener->SetExecutorMode(executorMode_);
+    eventListener->SetExecutorMode(executorMode_.load());
 
         // Set mouse and scroll sensitivity on EventListener (for internal use)
         eventListener->SetMouseSensitivity(mouseSensitivity);
@@ -2455,7 +2455,15 @@ void IO::SetInputBlockCallback(
 }
 
 HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }
-ExecutorMode IO::GetExecutorMode() const { return executorMode_; }
+ExecutorMode IO::GetExecutorMode() const { return executorMode_.load(); }
+
+void IO::SetExecutorMode(ExecutorMode mode) {
+    executorMode_.store(mode);
+    if (eventListener) {
+        eventListener->SetExecutorMode(mode);
+    }
+    if (debugging::debug_io) debug("ExecutorMode changed to {}", static_cast<int>(mode));
+}
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
   bool success = true;

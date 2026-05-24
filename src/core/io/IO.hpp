@@ -388,10 +388,11 @@ public:
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
   void SetInputEventCallback(InputEventCallback callback);
   void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback);
-  HotkeyExecutor *GetHotkeyExecutor() const;
-ExecutorMode GetExecutorMode() const;
+    HotkeyExecutor *GetHotkeyExecutor() const;
+    ExecutorMode GetExecutorMode() const;
+    void SetExecutorMode(ExecutorMode mode);
 
-  bool GrabHotkeysByPrefix(const std::string &prefix);
+    bool GrabHotkeysByPrefix(const std::string &prefix);
 
   bool UngrabHotkeysByPrefix(const std::string &prefix);
 
@@ -482,7 +483,7 @@ public:
   std::map<int, bool> evdevKeyState;
   std::map<int, bool> evdevMouseButtonState;
   std::unique_ptr<HotkeyExecutor> hotkeyExecutor;
-  ExecutorMode executorMode_ = ExecutorMode::Scheduler;
+    std::atomic<ExecutorMode> executorMode_{ExecutorMode::Scheduler};
   std::unordered_map<std::string, HotKey> instanceHotkeys;
   std::unordered_map<std::string, bool> hotkeyStates;
   std::set<int> blockedKeys;

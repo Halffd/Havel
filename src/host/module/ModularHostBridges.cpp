@@ -3094,9 +3094,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
               });
       }
     }
-  }
+}
+}
 
-  return hotkeyContext;
+return hotkeyContext;
 }
 
 Value InputBridge::handleHotkeyRegisterConditional(

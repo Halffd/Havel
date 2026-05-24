@@ -1,0 +1,20 @@
+// brightness module test
+print("Brightness:", brightness.get())
+print("Temp:", brightness.getTemperature())
+
+val old = brightness.get()
+if old > 0
+  brightness.increase(0.05)
+  print("After increase:", brightness.get())
+  brightness.decrease(0.05)
+  print("After decrease:", brightness.get())
+  brightness.set(0.8)
+  print("After set 0.8:", brightness.get())
+  brightness.setTemperature(4500)
+  print("After temp 4500:", brightness.getTemperature())
+  brightness.set(old)
+  brightness.setTemperature(6500)
+  print("Restored to", old)
+else
+  print("No monitors found (headless mode)")
+end

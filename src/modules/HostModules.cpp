@@ -110,11 +110,17 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
   auto timerService = std::make_shared<host::TimerService>();
   registry.registerService<host::TimerService>(timerService);
 
- // Automation service needs IO pointer
- if (hostAPI->GetIO()) {
- auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
- registry.registerService<host::AutomationService>(automationService);
- }
+  // Automation service needs IO pointer
+  if (hostAPI->GetIO()) {
+  auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
+  registry.registerService<host::AutomationService>(automationService);
+  }
+
+  // Brightness service (X11/Wayland gamma ramps)
+  if (hostAPI->GetBrightnessManager()) {
+    auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+    registry.registerService<host::BrightnessService>(brightnessService);
+  }
 
 
 

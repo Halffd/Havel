@@ -161,6 +161,9 @@ print(passed + " passed, " + failed + " failed")
 // Extended functional tests
 // ============================================================
 
+print("starting extended tests...")
+print("about to test RepeatStatement...")
+
 // Test: RepeatStatement (repeat 3 times, sum += 1)
 em = Emitter()
 result = run(em, Program([

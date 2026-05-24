@@ -16,6 +16,7 @@
 #include "../runtime/concurrency/Scheduler.hpp"
 #include "../runtime/concurrency/Fiber.hpp"
 #include "core/config/ConfigManager.hpp"
+#include "core/io/IO.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -43,7 +44,8 @@ public:
     HavelEngine& operator=(const HavelEngine&) = delete;
 
     void initializeMinimal() {
-        auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
+        io_holder_ = std::make_shared<IO>();
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), nullptr, Configs::Get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -207,6 +209,7 @@ vm_->addIntervalResult(timer_id, result);
 private:
 	EngineConfig config_;
 	std::shared_ptr<compiler::VM> vm_;
+	std::shared_ptr<IO> io_holder_;
 #ifdef HAVEL_ENABLE_LLVM
     std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
 #endif

@@ -661,7 +661,7 @@ public:
   
 	
 	void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
-class EventQueue* getEventQueue() const { return event_queue_; }
+	class EventQueue* getEventQueue() { return event_queue_; }
 
 	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }
 	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }

@@ -1277,6 +1277,26 @@ bool BrightnessManager::increaseGamma(const string &monitor, int amount) {
   }
 }
 
+bool BrightnessManager::increaseShadowLift(int amount) {
+  auto monitors = getConnectedMonitors();
+  if (monitors.empty()) return false;
+  bool success = false;
+  for (auto& m : monitors) {
+    if (setShadowLift(m, shadowLift[m] + amount)) success = true;
+  }
+  return success;
+}
+
+bool BrightnessManager::decreaseShadowLift(int amount) {
+  auto monitors = getConnectedMonitors();
+  if (monitors.empty()) return false;
+  bool success = false;
+  for (auto& m : monitors) {
+    if (setShadowLift(m, shadowLift[m] - amount)) success = true;
+  }
+  return success;
+}
+
 bool BrightnessManager::increaseShadowLift(int monitorIndex, int amount) {
   auto monitorName = getMonitor(monitorIndex);
   if (monitorName.empty())

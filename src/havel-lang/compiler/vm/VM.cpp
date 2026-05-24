@@ -4041,6 +4041,37 @@ while (frame_count_ > stop_frame_depth) {
       if (exit_requested_.load()) {
         break;
       }
+      if (suspension_requested_) {
+        // SUSPENDED or SLEEP was requested (e.g. by sleep() host function).
+        // In runDispatchLoop mode, handle SLEEP as blocking sleep since there's
+        // no scheduler event loop to resume us. Other suspension reasons
+        // (channel/thread) are not applicable in dispatch loop mode.
+        uint8_t reason = suspension_reason_;
+        void* ctx = suspension_context_;
+        suspension_requested_ = false;
+        suspension_context_ = nullptr;
+        if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+          int64_t ms = reinterpret_cast<intptr_t>(ctx);
+          if (ms > 0) {
+            const int CHUNK = 10;
+            auto deadline = std::chrono::steady_clock::now() +
+                            std::chrono::milliseconds(ms);
+            while (std::chrono::steady_clock::now() < deadline) {
+              if (exit_requested_.load()) break;
+              if (timer_check_func_) timer_check_func_();
+              auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  deadline - std::chrono::steady_clock::now());
+              auto chunk = std::min(static_cast<int>(remaining.count()), CHUNK);
+              if (chunk > 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+            }
+          }
+          // IP already incremented by auto-increment below — continue.
+        } else {
+          // Unknown suspension — break out so caller can handle
+          break;
+        }
+      }
     } catch (const ScriptThrow &thrown) {
       if (!handleScriptThrow(thrown.value)) {
         // Build stack trace for uncaught exception

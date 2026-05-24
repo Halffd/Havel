@@ -1,0 +1,38 @@
+print("=== brightness module ===")
+print("global:", type(brightness))
+
+val monitors = brightness.getMonitors()
+print("monitors:", monitors, "count:", #monitors)
+
+if #monitors > 0 {
+  print("monitor 0:", brightness.getMonitor(0))
+  print("brightness:", brightness.get())
+  print("temperature:", brightness.getTemperature())
+  print("gamma rgb:", brightness.getGammaRGB())
+  print("shadow lift:", brightness.getShadowLift())
+  print("is day:", brightness.isDay())
+  print("day/night enabled:", brightness.isDayNightModeEnabled())
+
+  val old = brightness.get()
+  if old > 0 {
+    brightness.increase(0.05)
+    print("after +0.05:", brightness.get())
+    brightness.decrease(0.05)
+    print("after -0.05:", brightness.get())
+  }
+
+  val oldTemp = brightness.getTemperature()
+  brightness.increaseTemperature(500)
+  print("after temp+500:", brightness.getTemperature())
+  brightness.decreaseTemperature(500)
+  print("after temp-500:", brightness.getTemperature())
+
+  brightness.set(old)
+  brightness.setTemperature(oldTemp)
+  print("restored")
+
+} else {
+  print("no monitors (headless)")
+}
+
+print("done")

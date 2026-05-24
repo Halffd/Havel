@@ -220,61 +220,62 @@ private:
 	std::unique_ptr<compiler::WatcherRegistry> watcher_registry_;
 	bool initialized_ = false;
 
-        void processGoroutines() {
-            auto* sched = vm_->getScheduler();
-            if (!sched) return;
+void processGoroutines() {
+    auto* sched = vm_->getScheduler();
+    if (!sched) return;
 
-            
-            // Ensure current_chunk is set for plain functions (not closures)
-            auto mainChunk = vm_->getMainChunk();
-            if (mainChunk) {
-                vm_->setCurrentChunkPublic(mainChunk.get());
+    // Ensure current_chunk is set for plain functions (not closures)
+    auto mainChunk = vm_->getMainChunk();
+    if (mainChunk) {
+        vm_->setCurrentChunkPublic(mainChunk.get());
+    }
+
+    bool anyExecuted = false;
+    do {
+        anyExecuted = false;
+        sched->wakeSleepingGoroutines();
+        auto* g = sched->pickNext();
+        if (!g) {
+            if (sched->suspendedCount() > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
             }
-
-            bool anyExecuted = false;
-            do {
-                anyExecuted = false;
-                sched->wakeSleepingGoroutines();
-                auto* g = sched->pickNext();
-                if (!g) {
-                    if (sched->suspendedCount() > 0) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                        continue;
-                    }
-                    break;
-                }
-
-                // Start and run this goroutine to completion
-                if (g->state == compiler::Scheduler::GoroutineState::Created) {
-                    bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
-                    if (ok) {
-                        g->state = compiler::Scheduler::GoroutineState::Runnable;
-                        vm_->runDispatchLoopPublic(0);
-                        anyExecuted = true;
-                    }
-                }
-
-                // Persistent goroutines (hotkey system): re-suspend instead of Done.
-                // HandReturned would normally do this, but in batch/CLI mode the
-                // dispatch loop is synchronous and we must check here.
-                if (g->persistent) {
-                    g->state = compiler::Scheduler::GoroutineState::Suspended;
-                    g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
-                    if (g->fiber) {
-                        g->fiber->state = compiler::FiberState::SUSPENDED;
-                        g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
-                    }
-                    if (sched->current() == g) {
-                        sched->clearCurrent();
-                    }
-                } else {
-                    g->state = compiler::Scheduler::GoroutineState::Done;
-                    if (g->fiber) {
-                        g->fiber->state = compiler::FiberState::DONE;
-                    }
-                }
-            } while (anyExecuted);
+            break;
         }
+
+        // Start and run this goroutine to completion
+        // pickNext() sets state to Running, so check both Created and Running
+        if (g->state == compiler::Scheduler::GoroutineState::Created ||
+            g->state == compiler::Scheduler::GoroutineState::Running) {
+            bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+            if (ok) {
+                g->state = compiler::Scheduler::GoroutineState::Runnable;
+                vm_->runDispatchLoopPublic(0);
+                anyExecuted = true;
+            }
+        }
+
+        // Persistent goroutines (hotkey system): re-suspend instead of Done.
+        // HandReturned would normally do this, but in batch/CLI mode the
+        // dispatch loop is synchronous and we must check here.
+        if (g->persistent) {
+            g->state = compiler::Scheduler::GoroutineState::Suspended;
+            g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
+            if (g->fiber) {
+                g->fiber->state = compiler::FiberState::SUSPENDED;
+                g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+            }
+            if (sched->current() == g) {
+                sched->clearCurrent();
+            }
+        } else {
+            g->state = compiler::Scheduler::GoroutineState::Done;
+            if (g->fiber) {
+                g->fiber->state = compiler::FiberState::DONE;
+            }
+        }
+    } while (anyExecuted);
+}
 };
 
 } // namespace havel

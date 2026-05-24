@@ -8887,19 +8887,21 @@ globals[name] = value;
         break;
     }
 
-  case OpCode::GO_ASYNC: {
-    // Spawn async function call
-    Value call_val = popStack();
-    
-    if (!call_val.isClosureId() && !call_val.isFunctionObjId()) {
-      COMPILER_THROW("GO_ASYNC expects a function");
-    }
-    
- // TODO: Implement async function execution
- // For now, push null
- pushStack(Value::makeNull());
- break;
- }
+case OpCode::GO_ASYNC: {
+Value call_val = popStack();
+
+if (!call_val.isClosureId() && !call_val.isFunctionObjId()) {
+COMPILER_THROW("GO_ASYNC expects a function");
+}
+
+if (scheduler_) {
+uint32_t gid = spawnGoroutine(call_val, {});
+pushStack(Value::makeThreadId(gid));
+} else {
+pushStack(Value::makeNull());
+}
+break;
+}
 
  case OpCode::FIBER_AWAIT: {
  Value awaitable = popStack();

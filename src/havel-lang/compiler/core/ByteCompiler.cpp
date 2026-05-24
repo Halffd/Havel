@@ -7096,24 +7096,20 @@ void ByteCompiler::compileYieldExpression(const ast::YieldExpression &expression
  emit(OpCode::FIBER_AWAIT);
  }
 
- void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
-  // go func() -> async function call
-  // For now, just compile the call expression (go is a statement modifier)
-  
-  if (!statement.call) {
-    COMPILER_THROW("Go statement missing call expression");
-  }
-  
-  // Compile the call expression
-  compileExpression(*statement.call);
-  
-  // Pop the result (go statements don't use the return value)
-  emit(OpCode::POP);
-  
-  // Note: go is a statement modifier that makes the call asynchronous
-  // The actual async execution is handled by the VM or runtime
-  // For now, this is a placeholder - a full implementation would
-  // require integration with the thread pool
+void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
+// go func() -> thread_spawn(func()) — spawns goroutine, discards thread handle
+
+if (!statement.call) {
+COMPILER_THROW("Go statement missing call expression");
+}
+
+{
+uint32_t strId = addStringConstant("thread_spawn");
+emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+}
+compileExpression(*statement.call);
+emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+emit(OpCode::POP);
 }
 
 void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {

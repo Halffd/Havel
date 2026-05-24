@@ -109,37 +109,67 @@ if node == null { return }
   }
   k = node.kind
 
-    if k == "NumberLiteral" {
-        raw = node.value
-        idx = 0
-        is_float = false
-        i = 0
-        while i < #raw {
-            c = raw[i]
-            if c == "." or c == "e" or c == "E" {
-                is_float = true
-                break
-            }
-            i = i + 1
+  if k == "NumberLiteral" {
+    raw = node.value
+    vt = type(raw)
+    if vt == "int" {
+      bc.emit("LOAD_CONST", bc.add_const(raw))
+      return
+    }
+    if vt == "num" {
+      bc.emit("LOAD_CONST", bc.add_const(raw))
+      return
+    }
+    idx = -1
+    is_float = false
+    i = 0
+    while i < #raw {
+      c = raw[i]
+      if c == "." {
+        is_float = true
+        break
+      }
+      if c == "e" {
+        is_float = true
+        break
+      }
+      if c == "E" {
+        is_float = true
+        break
+      }
+      i = i + 1
+    }
+    if is_float {
+      idx = bc.add_const(num(raw))
+    }
+    else if #raw > 2 {
+      if raw[0] == "0" {
+        c1 = raw[1]
+        if c1 == "x" {
+          idx = bc.add_const(parseHex(raw))
         }
-        idx = -1
-        if is_float {
-            idx = bc.add_const(num(raw))
+        else if c1 == "X" {
+          idx = bc.add_const(parseHex(raw))
         }
-        if !is_float && #raw > 2 && raw[0] == "0" && (raw[1] == "x" || raw[1] == "X") {
-            idx = bc.add_const(parseHex(raw))
+        else if c1 == "b" {
+          idx = bc.add_const(parseBin(raw))
         }
-        if !is_float && #raw > 2 && raw[0] == "0" && (raw[1] == "b" || raw[1] == "B") {
-            idx = bc.add_const(parseBin(raw))
+        else if c1 == "B" {
+          idx = bc.add_const(parseBin(raw))
         }
-        if !is_float && #raw > 2 && raw[0] == "0" && (raw[1] == "o" || raw[1] == "O") {
-            idx = bc.add_const(parseOct(raw))
+        else if c1 == "o" {
+          idx = bc.add_const(parseOct(raw))
         }
-        if idx == -1 {
-            idx = bc.add_const(int(raw))
+        else if c1 == "O" {
+          idx = bc.add_const(parseOct(raw))
         }
-        bc.emit("LOAD_CONST", idx)
-        return
+      }
+    }
+    if idx == -1 {
+      idx = bc.add_const(int(raw))
+    }
+    bc.emit("LOAD_CONST", idx)
+    return
 
     }
     if k == "StringLiteral" {
@@ -500,14 +530,13 @@ return
     return
 
   }
-  if k == "AtExpression" {
-    // @field → LOAD_VAR 0 (this), then OBJECT_GET field
-    if node.field != null && node.field.kind == "Identifier" {
+if k == "AtExpression" {
+  if node.field != null {
+    if node.field.kind == "Identifier" {
       bc.emit("LOAD_VAR", 0)
       keyIdx = bc.add_string(node.field.name)
       bc.emit("LOAD_CONST", keyIdx)
       bc.emit("OBJECT_GET")
-      // Check for directive methods (disable/enable/remove/toggle)
       directives = {"disable": true, "enable": true, "remove": true, "toggle": true}
       if directives[node.field.name] != null {
         bc.emit("CALL", 0)
@@ -516,14 +545,15 @@ return
     else {
       emitError("@ expression field must be identifier", node.line, node.col)
     }
-    return
-
   }
-  if k == "AtAtExpression" {
-    // @@field → LOAD_GLOBAL class name, then OBJECT_GET field
-    if node.field != null && node.field.kind == "Identifier" {
-      // We need the current class name — use "this" class lookup
-      // For now, load "this" and get the field from it
+  else {
+    emitError("@ expression field must be identifier", node.line, node.col)
+  }
+  return
+}
+if k == "AtAtExpression" {
+  if node.field != null {
+    if node.field.kind == "Identifier" {
       sid = globalIdx(emitter, "this")
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
       keyIdx = bc.add_string(node.field.name)
@@ -533,10 +563,14 @@ return
     else {
       emitError("@@ expression field must be identifier", node.line, node.col)
     }
-    return
-
   }
-  if k == "ShellCommand" {
+  else {
+    emitError("@@ expression field must be identifier", node.line, node.col)
+  }
+  return
+}
+
+if k == "ShellCommand" {
     // Shell command: $cmd or $!cmd
     // Emit as call to shell.exec or shell.capture
     if node.capture {
@@ -746,34 +780,38 @@ fn emitStmt(emitter, node) {
         return
 
     }
-    if k == "LetDeclaration" || k == "ValDeclaration" {
-        // Declare the variable in scope first
-        localIdx = scopeDeclare(emitter.scope, node.name)
-        if node.value != null {
-            emitExpr(emitter, node.value)
-        }
-        if node.value == null {
-            bc.emit("PUSH_NULL")
-        }
-        if localIdx >= 0 && k == "ValDeclaration" {
-            bc.emit("STORE_IMMUT_VAR", localIdx)
-            return
-        }
-        if localIdx >= 0 && k != "ValDeclaration" {
-            bc.emit("STORE_VAR", localIdx)
-            return
-        }
-        if localIdx < 0 && k == "ValDeclaration" {
-            bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-            return
-        }
-        if localIdx < 0 && k != "ValDeclaration" {
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-            return
-        }
-        return
-
+  if k == "LetDeclaration" {
+    localIdx = scopeDeclare(emitter.scope, node.name)
+    if node.value != null {
+      emitExpr(emitter, node.value)
     }
+    if node.value == null {
+      bc.emit("PUSH_NULL")
+    }
+    if localIdx >= 0 {
+      bc.emit("STORE_VAR", localIdx)
+    }
+    else {
+      bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    }
+    return
+  }
+  if k == "ValDeclaration" {
+    localIdx = scopeDeclare(emitter.scope, node.name)
+    if node.value != null {
+      emitExpr(emitter, node.value)
+    }
+    if node.value == null {
+      bc.emit("PUSH_NULL")
+    }
+    if localIdx >= 0 {
+      bc.emit("STORE_IMMUT_VAR", localIdx)
+    }
+    else {
+      bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    }
+    return
+  }
     if k == "FnDeclaration" {
         // Declare the function name in scope
         localIdx = scopeDeclare(emitter.scope, node.name)
@@ -923,12 +961,15 @@ fn emitStmt(emitter, node) {
     return
 
   }
-  if k == "ShellCommand" || k == "BacktickExpression" {
-    // As statement — emit as expression then pop
+  if k == "ShellCommand" {
     emitExpr(emitter, node)
     bc.emit("POP")
     return
-
+  }
+  if k == "BacktickExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
   }
   if k == "MatchExpression" {
     // Match as statement
@@ -984,77 +1025,81 @@ fn emitBlock(emitter, node) {
 
 }
 fn emitBlockWithReturn(emitter, node) {
-    if node == null {
-        bc.emit("PUSH_NULL")
-        return
-    }
-    if node.kind == "BlockStatement" {
-        stmts = node.body
-        n = #stmts
-        if n == 0 {
-            bc.emit("PUSH_NULL")
-            return
-        }
-        // Check for buggy BlockStatement([ExpressionStatement(null)]) from parseFnDeclaration
-        if n == 1 && stmts[0].kind == "ExpressionStatement" && stmts[0].expr == null {
-            bc.emit("PUSH_NULL")
-            return
-        }
-        for i in 0..(n - 2) {
-            emitStmt(emitter, stmts[i])
-        }
-        last = stmts[n - 1]
-        if last.kind == "ExpressionStatement" {
-            if last.expr != null {
-                emitExpr(emitter, last.expr)
-            }
-            else {
-                bc.emit("PUSH_NULL")
-            }
-            return
-        }
- if last.kind == "ReturnStatement" {
- emitStmt(emitter, last)
- return
- }
- if last.kind == "IfStatement" {
- emitIfExpr(emitter, last)
- return
- }
- emitStmt(emitter, last)
- bc.emit("PUSH_NULL")
- return
-    }
-    if node.kind == "ExpressionStatement" {
-        if node.expr != null {
-            emitExpr(emitter, node.expr)
-        }
-        else {
-            bc.emit("PUSH_NULL")
-        }
-        return
-    }
-    emitStmt(emitter, node)
+  if node == null {
     bc.emit("PUSH_NULL")
-
+    return
+  }
+  if node.kind == "BlockStatement" {
+    stmts = node.body
+    n = #stmts
+    if n == 0 {
+      bc.emit("PUSH_NULL")
+      return
+    }
+    isBuggyNullExpr = false
+    if n == 1 {
+      if stmts[0].kind == "ExpressionStatement" {
+        if stmts[0].expr == null {
+          isBuggyNullExpr = true
+        }
+      }
+    }
+    if isBuggyNullExpr {
+      bc.emit("PUSH_NULL")
+      return
+    }
+    for i in 0..(n - 2) {
+      emitStmt(emitter, stmts[i])
+    }
+    last = stmts[n - 1]
+    if last.kind == "ExpressionStatement" {
+      if last.expr != null {
+        emitExpr(emitter, last.expr)
+      }
+      else {
+        bc.emit("PUSH_NULL")
+      }
+      return
+    }
+    if last.kind == "ReturnStatement" {
+      emitStmt(emitter, last)
+      return
+    }
+    if last.kind == "IfStatement" {
+      emitIfExpr(emitter, last)
+      return
+    }
+    emitStmt(emitter, last)
+    bc.emit("PUSH_NULL")
+    return
+  }
+  if node.kind == "ExpressionStatement" {
+    if node.expr != null {
+      emitExpr(emitter, node.expr)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    return
+  }
+  emitStmt(emitter, node)
+  bc.emit("PUSH_NULL")
 }
 // ============================================================
 // Function compilation (with upvalue registration)
 // ============================================================
 
 fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
-    oldScope = emitter.scope
-    newScope = Scope(oldScope)
-    emitter.scope = newScope
-    // Declare parameters as locals
-    for p in params {
-        if type(p) == "object" && p.name != null {
-            scopeDeclare(newScope, p.name)
-        }
-        else {
-            scopeDeclare(newScope, p)
-        }
+  oldScope = emitter.scope
+  newScope = Scope(oldScope)
+  emitter.scope = newScope
+  for p in params {
+    if type(p) == "object" {
+      if p.name != null { scopeDeclare(newScope, p.name) }
+      else { scopeDeclare(newScope, p) }
     }
+    else { scopeDeclare(newScope, p) }
+  }
   paramCount = #params
   localCount = paramCount + 16
   // Save current function context and switch to new function
@@ -1078,16 +1123,15 @@ fn compileLambda(emitter, funcIdx, params, bodyNode, sourceLine) {
     oldScope = emitter.scope
     newScope = Scope(oldScope)
     emitter.scope = newScope
-    for p in params {
-        if type(p) == "object" && p.name != null {
-            scopeDeclare(newScope, p.name)
-        }
-        else {
-            scopeDeclare(newScope, p)
-        }
+  for p in params {
+    if type(p) == "object" {
+      if p.name != null { scopeDeclare(newScope, p.name) }
+      else { scopeDeclare(newScope, p) }
     }
-    paramCount = #params
-    localCount = paramCount + 16
+    else { scopeDeclare(newScope, p) }
+  }
+  paramCount = #params
+  localCount = paramCount + 16
   bc.func_push()
   bc.func_new(name, paramCount, localCount)
   if sourceLine != null {
@@ -1181,7 +1225,8 @@ fn emitUseStatement(emitter, node) {
   }
 
   // Form 4: use "file.hv" as alias or use "file.hv" — file import
-  if node.isFileImport == true && node.filePath != null {
+  if node.isFileImport == true {
+    if node.filePath != null {
     pathIdx = bc.add_string(node.filePath)
     bc.emit("LOAD_CONST", pathIdx)
     bc.emit("IMPORT")
@@ -1192,7 +1237,10 @@ fn emitUseStatement(emitter, node) {
       else {
         fname = node.filePath
         dot = #fname - 1
-      while dot >= 0 && fname[dot] != "." { dot = dot - 1 }
+      while dot >= 0 {
+        if fname[dot] == "." { break }
+        dot = dot - 1
+      }
       slash = -1
       i = #fname - 1
       while i >= 0 {
@@ -1219,6 +1267,7 @@ fn emitUseStatement(emitter, node) {
     sid = bc.add_chunk_string(node.module)
     bc.emit("STORE_GLOBAL", bc.str_id(sid))
     return
+  }
   }
 }
 
@@ -1322,7 +1371,8 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
             emitIfExpr(emitter, last)
             bc.emit("RETURN")
         }
-        if last.kind != "ExpressionStatement" && last.kind != "IfStatement" {
+        if last.kind != "ExpressionStatement" {
+    if last.kind != "IfStatement" {
             emitStmt(emitter, last)
             bc.emit("PUSH_NULL")
             bc.emit("RETURN")
@@ -1336,9 +1386,12 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
     emitter.scope = null
   if !skip_execute {
         bc.execute_persistent(entryName)
-  }
+}
 
 }
+
+}
+
 // ============================================================
 // Match expression emission
 // ============================================================
@@ -1424,13 +1477,30 @@ fn emitPatternMatch(emitter, pattern, subjectIdx) {
         bc.emit("TO_BOOL")
         return
     }
-    if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
-        // Literal equality check
-        bc.emit("LOAD_VAR", subjectIdx)
-        emitExpr(emitter, pattern)
-        bc.emit("EQ")
-        return
-    }
+  if k == "NumberLiteral" {
+    bc.emit("LOAD_VAR", subjectIdx)
+    emitExpr(emitter, pattern)
+    bc.emit("EQ")
+    return
+  }
+  if k == "StringLiteral" {
+    bc.emit("LOAD_VAR", subjectIdx)
+    emitExpr(emitter, pattern)
+    bc.emit("EQ")
+    return
+  }
+  if k == "BooleanLiteral" {
+    bc.emit("LOAD_VAR", subjectIdx)
+    emitExpr(emitter, pattern)
+    bc.emit("EQ")
+    return
+  }
+  if k == "NullLiteral" {
+    bc.emit("LOAD_VAR", subjectIdx)
+    emitExpr(emitter, pattern)
+    bc.emit("EQ")
+    return
+  }
     // Default: always match
     bc.emit("LOAD_CONST", bc.add_const(1))
     bc.emit("TO_BOOL")
@@ -1451,7 +1521,13 @@ fn emitClassDeclaration(emitter, node) {
   bc.emit("ARRAY_NEW")
   if node.definition.fields != null {
     for f in node.definition.fields {
-      if f.isClassField == null || !f.isClassField {
+      isField = f.isClassField
+      if isField == null {
+        fidx = bc.add_string(f.name)
+        bc.emit("LOAD_CONST", fidx)
+        bc.emit("ARRAY_PUSH")
+      }
+      else if !isField {
         fidx = bc.add_string(f.name)
         bc.emit("LOAD_CONST", fidx)
         bc.emit("ARRAY_PUSH")
@@ -1459,9 +1535,14 @@ fn emitClassDeclaration(emitter, node) {
     }
   }
   // Parent
-  if node.parentName != null && node.parentName != "" {
-    parentSid = globalIdx(emitter, node.parentName)
-    bc.emit("LOAD_GLOBAL", bc.str_id(parentSid))
+  if node.parentName != null {
+    if node.parentName != "" {
+      parentSid = globalIdx(emitter, node.parentName)
+      bc.emit("LOAD_GLOBAL", bc.str_id(parentSid))
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
   }
   else {
     bc.emit("PUSH_NULL")
@@ -1470,31 +1551,36 @@ fn emitClassDeclaration(emitter, node) {
   bc.emit("ARRAY_NEW")
   if node.definition.fields != null {
     for f in node.definition.fields {
-      if f.isClassField != null && f.isClassField {
-        fidx = bc.add_string(f.name)
-        bc.emit("LOAD_CONST", fidx)
-        bc.emit("ARRAY_PUSH")
+      isField = f.isClassField
+      if isField != null {
+        if isField {
+          fidx = bc.add_string(f.name)
+          bc.emit("LOAD_CONST", fidx)
+          bc.emit("ARRAY_PUSH")
+        }
       }
     }
   }
   bc.emit("CALL", 4)
-  // Store class object as global
   nameSid = globalIdx(emitter, node.name)
   bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
-  // Initialize class fields with default values
   if node.definition.fields != null {
     for f in node.definition.fields {
-      if f.isClassField != null && f.isClassField && f.defaultValue != null {
+      isField = f.isClassField
+      if isField != null {
+        if isField {
+          if f.defaultValue != null {
         bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
         emitExpr(emitter, f.defaultValue)
         fieldIdx = bc.add_string(f.name)
         bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_SET")
         bc.emit("POP")
+          }
+        }
       }
     }
   }
-  // Register methods
   if node.definition.methods != null {
     for m in node.definition.methods {
       if m != null {
@@ -1536,7 +1622,9 @@ fn emitStructDeclaration(emitter, node) {
   if node.definition.fields != null {
     for f in node.definition.fields {
       fname = f
-      if type(f) == "object" && f.name != null { fname = f.name }
+      if type(f) == "object" {
+        if f.name != null { fname = f.name }
+      }
       fidx = bc.add_string(fname)
       bc.emit("LOAD_CONST", fidx)
       bc.emit("ARRAY_PUSH")
@@ -1572,8 +1660,10 @@ fn emitEnumDeclaration(emitter, node) {
   bc.emit("ARRAY_NEW")
   if node.variants != null {
     for v in node.variants {
-      vname = v
-      if type(v) == "object" && v.name != null { vname = v.name }
+    vname = v
+    if type(v) == "object" {
+      if v.name != null { vname = v.name }
+    }
       vidx = bc.add_string(vname)
       bc.emit("LOAD_CONST", vidx)
       bc.emit("ARRAY_PUSH")
@@ -1601,14 +1691,18 @@ fn emitImplDeclaration(emitter, node) {
         if node.typeName.kind == "Identifier" {
             typeName = node.typeName.name
         }
-        if node.typeName.kind != "Identifier" && type(node.typeName) == "str" {
-            typeName = node.typeName
-        }
+    if node.typeName.kind != "Identifier" {
+      if type(node.typeName) == "str" {
+        typeName = node.typeName
+      }
+    }
     }
   if node.funcs != null {
     for m in node.funcs {
-      if m != null && m.name != null {
-        emitClassMethodRegister(emitter, typeName, m)
+      if m != null {
+        if m.name != null {
+          emitClassMethodRegister(emitter, typeName, m)
+        }
       }
     }
   }

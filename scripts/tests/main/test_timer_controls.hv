@@ -1,0 +1,39 @@
+// Test interval and timeout with pause/resume/stop
+print("=== Timer Controls Test ===")
+
+counter = 0
+t1 = interval(100, fn() {
+    counter = counter + 1
+    print("tick {counter}")
+})
+
+sleep(350)
+print("Pausing interval...")
+t1.pause()
+sleep(200)
+print("Resuming interval...")
+t1.resume()
+sleep(350)
+print("Stopping interval...")
+t1.stop()
+print("Final counter: {counter}")
+
+print("")
+print("=== Timeout Test ===")
+t2 = timeout(200, fn() {
+    print("Timeout fired!")
+})
+sleep(350)
+
+print("")
+print("=== Timeout Stop Test ===")
+t3 = timeout(500, fn() {
+    print("This should NOT print")
+})
+sleep(100)
+t3.stop()
+print("Timeout stopped before firing")
+sleep(500)
+
+print("")
+print("=== Done ===")

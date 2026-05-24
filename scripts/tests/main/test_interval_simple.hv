@@ -1,0 +1,10 @@
+// Simple interval test with debug
+print("test start")
+
+t1 = interval(100, fn() {
+    print("tick")
+})
+
+print("interval created, sleeping...")
+sleep(500)
+print("done")

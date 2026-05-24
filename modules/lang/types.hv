@@ -8,282 +8,391 @@ TYPE_NULL = "nil"
 TYPE_ARRAY = "array"
 TYPE_OBJECT = "object"
 TYPE_FN = "fn"
+TYPE_TUPLE = "tuple"
+TYPE_SET = "set"
 TYPE_UNKNOWN = "any"
 
-fn isNumeric(t) { t == TYPE_INT || t == TYPE_NUM }
+fn isNumeric(t) {
+  if t == TYPE_INT { true }
+  else if t == TYPE_NUM { true }
+  else { false }
+}
+
+fn _isIntValue(v) {
+  t = type(v)
+  if t == "int" { true }
+  else if t == "num" {
+    if v == int(v) { true }
+    else { false }
+  }
+  else if t == "str" {
+    i = 0
+    len = #v
+    if len > 2 {
+      if v[0] == "0" {
+        c1 = v[1]
+        if c1 == "x" { return true }
+        if c1 == "X" { return true }
+        if c1 == "b" { return true }
+        if c1 == "B" { return true }
+        if c1 == "o" { return true }
+        if c1 == "O" { return true }
+      }
+    }
+    while i < len {
+      c = v[i]
+      if c == "." { return false }
+      if c == "e" { return false }
+      if c == "E" { return false }
+      i = i + 1
+    }
+    true
+  }
+  else { false }
+}
 
 fn inferLiteral(node) {
-    if node == null { TYPE_UNKNOWN }
-    else if node.kind == "NumberLiteral" {
-        v = node.value
-        if v == int(v) { TYPE_INT }
-        else { TYPE_NUM }
-    }
-    else if node.kind == "StringLiteral" { TYPE_STR }
-    else if node.kind == "BooleanLiteral" { TYPE_BOOL }
-    else if node.kind == "NullLiteral" { TYPE_NULL }
-    else { TYPE_UNKNOWN }
+  if node == null { return TYPE_UNKNOWN }
+  k = node.kind
+  if k == "NumberLiteral" {
+    iv = _isIntValue(node.value)
+    result = TYPE_UNKNOWN
+    if iv { result = TYPE_INT }
+    else { result = TYPE_NUM }
+    result
+  }
+  else if k == "StringLiteral" { TYPE_STR }
+  else if k == "BooleanLiteral" { TYPE_BOOL }
+  else if k == "NullLiteral" { TYPE_NULL }
+  else { TYPE_UNKNOWN }
+}
+
+fn _isArithOp(oper) {
+  if oper == "+" { true }
+  else if oper == "-" { true }
+  else if oper == "*" { true }
+  else if oper == "/" { true }
+  else if oper == "%" { true }
+  else if oper == "**" { true }
+  else if oper == "\\" { true }
+  else if oper == "%%" { true }
+  else { false }
+}
+
+fn _isBitOp(oper) {
+  if oper == "&" { true }
+  else if oper == "|" { true }
+  else if oper == "^" { true }
+  else if oper == "<<" { true }
+  else if oper == ">>" { true }
+  else { false }
+}
+
+fn _isCmpOp(oper) {
+  if oper == "==" { true }
+  else if oper == "!=" { true }
+  else if oper == "<" { true }
+  else if oper == ">" { true }
+  else if oper == "<=" { true }
+  else if oper == ">=" { true }
+  else if oper == "is" { true }
+  else { false }
 }
 
 fn inferBinary(leftType, oper, rightType) {
-    arithOps = {"+": true, "-": true, "*": true, "/": true, "%": true, "**": true, "\\": true, "%%": true}
-    bitOps = {"&": true, "|": true, "^": true, "<<": true, ">>": true}
-    cmpOps = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "is": true}
-    if arithOps[oper] != null {
-        strConcat = oper == "+" && (leftType == TYPE_STR || rightType == TYPE_STR)
-        bothNum = isNumeric(leftType) && isNumeric(rightType)
-        if strConcat { TYPE_STR }
-        else if bothNum {
-            if leftType == TYPE_NUM || rightType == TYPE_NUM { TYPE_NUM }
-            else { TYPE_INT }
-        }
-        else { TYPE_UNKNOWN }
+  if _isArithOp(oper) {
+    if oper == "+" {
+      if leftType == TYPE_STR { return TYPE_STR }
+      if rightType == TYPE_STR { return TYPE_STR }
     }
-    else if bitOps[oper] != null {
-        if leftType == TYPE_INT && rightType == TYPE_INT { TYPE_INT }
-        else { TYPE_UNKNOWN }
+    leftNum = isNumeric(leftType)
+    rightNum = isNumeric(rightType)
+    if leftNum {
+      if rightNum {
+        if leftType == TYPE_NUM { return TYPE_NUM }
+        if rightType == TYPE_NUM { return TYPE_NUM }
+        return TYPE_INT
+      }
     }
-    else if cmpOps[oper] != null { TYPE_BOOL }
-  else if oper == "&&" || oper == "||" { TYPE_BOOL }
-  else if oper == "in" || oper == "not in" || oper == "matches" { TYPE_BOOL }
-  else if oper == "??" {
-        if rightType != TYPE_UNKNOWN { rightType }
-        else { leftType }
+    return TYPE_UNKNOWN
+  }
+  if _isBitOp(oper) {
+    if leftType == TYPE_INT {
+      if rightType == TYPE_INT { return TYPE_INT }
     }
-    else { TYPE_UNKNOWN }
+    return TYPE_UNKNOWN
+  }
+  if _isCmpOp(oper) { return TYPE_BOOL }
+  if oper == "&&" { return TYPE_BOOL }
+  if oper == "||" { return TYPE_BOOL }
+  if oper == "in" { return TYPE_BOOL }
+  if oper == "not in" { return TYPE_BOOL }
+  if oper == "matches" { return TYPE_BOOL }
+  if oper == "??" {
+    if rightType != TYPE_UNKNOWN { rightType }
+    else { leftType }
+  }
+  TYPE_UNKNOWN
 }
 
 fn inferUnary(oper, operandType) {
-    numType = isNumeric(operandType)
-    if oper == "-" {
-        if numType { operandType }
-        else { TYPE_UNKNOWN }
-    }
-    else if oper == "!" || oper == "not" { TYPE_BOOL }
-    else if oper == "#" {
-        if operandType == TYPE_STR { TYPE_INT }
-        else { TYPE_UNKNOWN }
-    }
+  if oper == "-" {
+    numOk = isNumeric(operandType)
+    result = TYPE_UNKNOWN
+    if numOk { result = operandType }
+    result
+  }
+  else if oper == "!" { TYPE_BOOL }
+  else if oper == "not" { TYPE_BOOL }
+  else if oper == "#" {
+    if operandType == TYPE_STR { TYPE_INT }
+    else if operandType == TYPE_ARRAY { TYPE_INT }
     else { TYPE_UNKNOWN }
+  }
+  else if oper == "~" { TYPE_INT }
+  else { TYPE_UNKNOWN }
 }
 
 fn TypeEnv(parent) {
-    {bindings: {}, parent: parent}
+  {bindings: {}, parent: parent}
 }
 
 fn envLookup(env, name) {
-    cur = env
-    while cur != null {
-        if cur.bindings[name] != null { return cur.bindings[name] }
-        cur = cur.parent
-    }
-    TYPE_UNKNOWN
+  cur = env
+  while cur != null {
+    v = cur.bindings[name]
+    if v != null { return v }
+    cur = cur.parent
+  }
+  TYPE_UNKNOWN
+}
+
+fn envHas(env, name) {
+  cur = env
+  while cur != null {
+    v = cur.bindings[name]
+    if v != null { return true }
+    cur = cur.parent
+  }
+  false
 }
 
 fn envSet(env, name, t) {
-    env.bindings[name] = t
+  env.bindings[name] = t
 }
 
 fn inferExpr(node, env) {
-  if node == null { TYPE_UNKNOWN }
+  if node == null { return TYPE_UNKNOWN }
   k = node.kind
-  if k == "NumberLiteral" || k == "StringLiteral" || k == "BooleanLiteral" || k == "NullLiteral" {
-    inferLiteral(node)
-  }
-  else if k == "RegexLiteral" { TYPE_OBJECT }
-  else if k == "Identifier" { envLookup(env, node.name) }
-  else if k == "BinaryExpression" {
+  if k == null { return TYPE_UNKNOWN }
+  if k == "NumberLiteral" { return inferLiteral(node) }
+  if k == "StringLiteral" { return inferLiteral(node) }
+  if k == "BooleanLiteral" { return inferLiteral(node) }
+  if k == "NullLiteral" { return inferLiteral(node) }
+  if k == "RegexLiteral" { return TYPE_OBJECT }
+  if k == "Identifier" { return envLookup(env, node.name) }
+  if k == "BinaryExpression" {
     lt = inferExpr(node.left, env)
     rt = inferExpr(node.right, env)
-    if node.oper == "matches" { TYPE_BOOL }
-    else if node.oper == "not in" { TYPE_BOOL }
-    else { inferBinary(lt, node.oper, rt) }
+    return inferBinary(lt, node.oper, rt)
   }
-  else if k == "UnaryExpression" {
+  if k == "UnaryExpression" {
     ot = inferExpr(node.operand, env)
-    if node.oper == "~" { TYPE_INT }
-    else { inferUnary(node.oper, ot) }
+    return inferUnary(node.oper, ot)
   }
-  else if k == "UpdateExpression" {
-    inferExpr(node.operand, env)
-  }
-  else if k == "TernaryExpression" {
+  if k == "UpdateExpression" { return inferExpr(node.operand, env) }
+  if k == "TernaryExpression" {
     tt = inferExpr(node.true_expr, env)
     ft = inferExpr(node.false_expr, env)
     if tt == ft { tt }
     else { TYPE_UNKNOWN }
   }
-  else if k == "CallExpression" {
+  if k == "CallExpression" {
     if node.callee.kind == "Identifier" {
-      calleeType = envLookup(env, node.callee.name)
       fnSig = envLookup(env, "\$ret_" + node.callee.name)
-      if fnSig != TYPE_UNKNOWN { fnSig }
-      else { TYPE_UNKNOWN }
+      if fnSig != TYPE_UNKNOWN { return fnSig }
     }
-    else if node.callee.kind == "MemberExpression" {
-      inferExpr(node.callee, env)
-      TYPE_UNKNOWN
-    }
-    else { TYPE_UNKNOWN }
+    return TYPE_UNKNOWN
   }
-  else if k == "MemberExpression" {
-    inferExpr(node.obj, env)
-    TYPE_UNKNOWN
-  }
-  else if k == "IndexExpression" {
-    inferExpr(node.obj, env)
-    inferExpr(node.index, env)
-    TYPE_UNKNOWN
-  }
-  else if k == "ArrayLiteral" { TYPE_ARRAY }
-  else if k == "ObjectLiteral" { TYPE_OBJECT }
-  else if k == "LambdaExpression" { TYPE_FN }
-  else if k == "RangeExpression" { TYPE_ARRAY }
-  else if k == "InterpolatedString" { TYPE_STR }
-  else if k == "SpreadExpression" {
-    inferExpr(node.value, env)
-  }
-  else if k == "PipelineExpression" {
-    inferExpr(node.right, env)
-  }
-  else if k == "AtExpression" { TYPE_UNKNOWN }
-  else if k == "AtAtExpression" { TYPE_UNKNOWN }
-  else if k == "ShellCommand" { TYPE_STR }
-  else if k == "BacktickExpression" { TYPE_STR }
-  else if k == "MatchExpression" { TYPE_UNKNOWN }
-  else if k == "AssignmentExpression" {
-    inferExpr(node.value, env)
-  }
-  else if k == "CompoundAssignment" {
-    inferExpr(node.value, env)
-  }
-  else { TYPE_UNKNOWN }
+  if k == "MemberExpression" { return TYPE_UNKNOWN }
+  if k == "IndexExpression" { return TYPE_UNKNOWN }
+  if k == "ArrayLiteral" { return TYPE_ARRAY }
+  if k == "ObjectLiteral" { return TYPE_OBJECT }
+  if k == "SetLiteral" { return TYPE_SET }
+  if k == "TupleLiteral" { return TYPE_TUPLE }
+  if k == "LambdaExpression" { return TYPE_FN }
+  if k == "RangeExpression" { return TYPE_ARRAY }
+  if k == "InterpolatedString" { return TYPE_STR }
+  if k == "SpreadExpression" { return inferExpr(node.value, env) }
+  if k == "PipelineExpression" { return inferExpr(node.right, env) }
+  if k == "AtExpression" { return TYPE_UNKNOWN }
+  if k == "AtAtExpression" { return TYPE_UNKNOWN }
+  if k == "ShellCommand" { return TYPE_STR }
+  if k == "BacktickExpression" { return TYPE_STR }
+  if k == "MatchExpression" { return TYPE_UNKNOWN }
+  if k == "AssignmentExpression" { return inferExpr(node.value, env) }
+  if k == "CompoundAssignment" { return inferExpr(node.value, env) }
+  TYPE_UNKNOWN
 }
 
 fn inferStmt(node, env) {
   if node == null { return }
   k = node.kind
-  if k == "ExpressionStatement" { inferExpr(node.expr, env) }
-  else if k == "LetDeclaration" || k == "ValDeclaration" {
+  if k == null { return }
+  if k == "ExpressionStatement" { inferExpr(node.expr, env); return }
+  if k == "LetDeclaration" {
     t = TYPE_UNKNOWN
     if node.value != null { t = inferExpr(node.value, env) }
     envSet(env, node.name, t)
+    return
   }
-  else if k == "AssignmentExpression" {
+  if k == "ValDeclaration" {
+    t = TYPE_UNKNOWN
+    if node.value != null { t = inferExpr(node.value, env) }
+    envSet(env, node.name, t)
+    return
+  }
+  if k == "AssignmentExpression" {
     newType = inferExpr(node.value, env)
     if node.target.kind == "Identifier" {
       existing = envLookup(env, node.target.name)
       if existing == TYPE_UNKNOWN { envSet(env, node.target.name, newType) }
     }
+    return
   }
-  else if k == "CompoundAssignment" {
-    inferExpr(node.value, env)
+  if k == "CompoundAssignment" { inferExpr(node.value, env); return }
+  if k == "ReturnStatement" {
+    if node.value != null { return inferExpr(node.value, env) }
+    return
   }
-  else if k == "ReturnStatement" {
-    if node.value != null { inferExpr(node.value, env) }
-  }
-  else if k == "IfStatement" {
+  if k == "IfStatement" {
     inferExpr(node.condition, env)
     inferStmt(node.then, env)
-    if node["else"] != null { inferStmt(node["else"], env) }
+    elseBranch = node["else"]
+    if elseBranch != null { inferStmt(elseBranch, env) }
+    return
   }
-  else if k == "WhileStatement" {
+  if k == "WhileStatement" {
     inferExpr(node.condition, env)
     inferStmt(node.body, env)
+    return
   }
-  else if k == "ForStatement" {
+  if k == "ForStatement" {
     inferExpr(node.iterator, env)
     envSet(env, node.name, TYPE_UNKNOWN)
     inferStmt(node.body, env)
+    return
   }
-  else if k == "LoopStatement" {
-    inferStmt(node.body, env)
-  }
-  else if k == "RepeatStatement" {
+  if k == "LoopStatement" { inferStmt(node.body, env); return }
+  if k == "RepeatStatement" {
     inferExpr(node.count, env)
     inferStmt(node.body, env)
+    return
   }
-  else if k == "BlockStatement" {
+  if k == "BlockStatement" {
     for s in node.body { inferStmt(s, env) }
+    return
   }
-  else if k == "FnDeclaration" {
+  if k == "FnDeclaration" {
     envSet(env, node.name, TYPE_FN)
     childEnv = TypeEnv(env)
     for p in node.params {
-      if type(p) == "object" && p.name != null { envSet(childEnv, p.name, TYPE_UNKNOWN) }
+      if type(p) == "object" {
+        if p.name != null { envSet(childEnv, p.name, TYPE_UNKNOWN) }
+      }
       else { envSet(childEnv, p, TYPE_UNKNOWN) }
     }
     retType = TYPE_UNKNOWN
     if node.body.kind == "BlockStatement" {
       for s in node.body.body { inferStmt(s, childEnv) }
-      lastStmt = node.body.body[#node.body.body - 1]
-      if lastStmt != null && lastStmt.kind == "ReturnStatement" {
-        retType = inferExpr(lastStmt.value, childEnv)
-      }
-    }
-    else { retType = inferExpr(node.body, childEnv) }
-    if retType != TYPE_UNKNOWN {
-      envSet(env, "\$ret_" + node.name, retType)
-    }
-  }
-  else if k == "ClassDeclaration" {
-    envSet(env, node.name, TYPE_OBJECT)
-    childEnv = TypeEnv(env)
-    if node.definition.fields != null {
-      for f in node.definition.fields { envSet(childEnv, f, TYPE_UNKNOWN) }
-    }
-    if node.definition.methods != null {
-      for m in node.definition.methods {
-        if m != null && m.name != null {
-          envSet(childEnv, m.name, TYPE_FN)
+      bodyLen = #node.body.body
+      if bodyLen > 0 {
+        lastStmt = node.body.body[bodyLen - 1]
+        if lastStmt.kind == "ReturnStatement" {
+          if lastStmt.value != null { retType = inferExpr(lastStmt.value, childEnv) }
+        }
+        else if lastStmt.kind == "ExpressionStatement" {
+          retType = inferExpr(lastStmt.expr, childEnv)
         }
       }
     }
+    else { retType = inferExpr(node.body, childEnv) }
+    if retType != TYPE_UNKNOWN { envSet(env, "\$ret_" + node.name, retType) }
+    return
   }
-  else if k == "StructDeclaration" {
+  if k == "ClassDeclaration" {
     envSet(env, node.name, TYPE_OBJECT)
+    childEnv = TypeEnv(env)
+    if node.definition != null {
+      if node.definition.fields != null {
+        for f in node.definition.fields {
+          if type(f) == "object" {
+            if f.name != null { envSet(childEnv, f.name, TYPE_UNKNOWN) }
+          }
+          else { envSet(childEnv, f, TYPE_UNKNOWN) }
+        }
+      }
+      if node.definition.methods != null {
+        for m in node.definition.methods {
+          if m != null {
+            if m.name != null { envSet(childEnv, m.name, TYPE_FN) }
+          }
+        }
+      }
+    }
+    return
   }
-  else if k == "MatchExpression" {
+  if k == "StructDeclaration" { envSet(env, node.name, TYPE_OBJECT); return }
+  if k == "EnumDeclaration" { envSet(env, node.name, TYPE_OBJECT); return }
+  if k == "ProtocolDeclaration" { envSet(env, node.name, TYPE_OBJECT); return }
+  if k == "ImplDeclaration" { return }
+  if k == "MatchExpression" {
     inferExpr(node.subject, env)
     for c in node.cases {
       if c.guard != null { inferExpr(c.guard, env) }
-      inferStmt(c.body, env)
+      if c.body != null { inferStmt(c.body, env) }
     }
+    return
   }
-  else if k == "HotkeyBinding" {
-    inferStmt(node.body, env)
-  }
-  else if k == "ConfigBlock" {
-    inferStmt(node.body, env)
-  }
-  else if k == "UseStatement" || k == "ImportStatement" {}
-  else if k == "BreakStatement" || k == "ContinueStatement" {}
-  else if k == "ThrowStatement" {
+  if k == "HotkeyBinding" { inferStmt(node.body, env); return }
+  if k == "ConfigBlock" { inferStmt(node.body, env); return }
+  if k == "UseStatement" { return }
+  if k == "ImportStatement" { return }
+  if k == "BreakStatement" { return }
+  if k == "ContinueStatement" { return }
+  if k == "ThrowStatement" {
     if node.value != null { inferExpr(node.value, env) }
+    return
   }
-  else if k == "TryStatement" {
+  if k == "TryStatement" {
     inferStmt(node.try_block, env)
     if node.catch_block != null { inferStmt(node.catch_block, env) }
     if node.finally_block != null { inferStmt(node.finally_block, env) }
+    return
   }
-  else if k == "SleepStatement" {}
-  else if k == "AtExpression" || k == "AtAtExpression" {
-    inferExpr(node, env)
-  }
+  if k == "SleepStatement" { return }
 }
 
 fn inferProgram(program) {
-    n = program
-    if n.ast != null { n = n.ast }
-    env = TypeEnv(null)
-    for stmt in n.body { inferStmt(stmt, env) }
-    {types: env.bindings, env: env}
+  n = program
+  if n.ast != null { n = n.ast }
+  env = TypeEnv(null)
+  for stmt in n.body { inferStmt(stmt, env) }
+  {types: env.bindings, env: env}
 }
 
 fn getVarType(inferenceResult, name) {
-    envLookup(inferenceResult.env, name)
+  envLookup(inferenceResult.env, name)
 }
 
 fn getReturnType(inferenceResult, fnName) {
-    envLookup(inferenceResult.env, "\$ret_" + fnName)
+  envLookup(inferenceResult.env, "\$ret_" + fnName)
+}
+
+fn hasVar(inferenceResult, name) {
+  envHas(inferenceResult.env, name)
+}
+
+fn allTypes(inferenceResult) {
+  inferenceResult.env.bindings
 }

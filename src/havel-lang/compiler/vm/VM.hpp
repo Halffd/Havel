@@ -30,6 +30,7 @@ class Fiber;
 class Scheduler;
 class WatcherRegistry;
 enum class FiberPriority : uint8_t;
+enum class HotkeyPolicy : uint8_t;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
@@ -271,7 +272,15 @@ bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null
  std::unordered_map<uint32_t, Value> interval_results_;
 
 	
-	class EventQueue* event_queue_ = nullptr;
+ class EventQueue* event_queue_ = nullptr;
+ struct PendingTimerCallback {
+ Value closure;
+ uint32_t timer_id;
+ bool is_timeout;
+ };
+ std::vector<PendingTimerCallback> pending_timer_callbacks_;
+ bool timer_handler_registered_ = false;
+ void executePendingTimerCallbacks();
 
  WatcherRegistry* watcher_registry_ = nullptr;
  Scheduler* scheduler_ = nullptr;
@@ -636,7 +645,8 @@ public:
     //   - Never transitions to Done (re-suspends in handleReturned)
     // This eliminates per-press goroutine allocation for hotkeys.
     uint32_t createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
-                                             const std::vector<Value> &args = {});
+        const std::vector<Value> &args = {}, HotkeyPolicy policy = HotkeyPolicy(0),
+        const std::string &alias = "");
 
     // Build a direct-call thunk for a hotkey callback.
     // Analyzes the callback's bytecode; if it's host-only (only calls host
@@ -699,7 +709,7 @@ public:
   const GCHeap& getHeap() const { return heap_; }
   
 	
-	void setEventQueue(class EventQueue* eq) { event_queue_ = eq; }
+ void setEventQueue(class EventQueue* eq);
 	class EventQueue* getEventQueue() { return event_queue_; }
 
 	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }

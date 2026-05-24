@@ -756,6 +756,20 @@ VM::VM(const ::havel::HostContext &ctx) {
 
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
 
+void VM::setEventQueue(class EventQueue* eq) {
+ event_queue_ = eq;
+ if (eq && !timer_handler_registered_) {
+ timer_handler_registered_ = true;
+ eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
+ auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+ if (!payload) return;
+ bool is_timeout = (event.data1 == 1);
+ pending_timer_callbacks_.push_back({payload->first, payload->second, is_timeout});
+ delete payload;
+ });
+ }
+}
+
 VM::~VM() {
   if (tier2_flush_on_shutdown_) {
     // Optional drain mode: let queued tier2 compiles finish before shutdown.
@@ -886,6 +900,25 @@ Value VM::callFunctionSync(const Value &fn,
   }
 
   return result;
+}
+
+void VM::executePendingTimerCallbacks() {
+ if (pending_timer_callbacks_.empty()) return;
+ auto callbacks = std::move(pending_timer_callbacks_);
+ pending_timer_callbacks_.clear();
+ for (auto& cb : callbacks) {
+ if (exit_requested_.load()) break;
+ try {
+ Value result = callFunctionSync(cb.closure, {});
+ if (cb.is_timeout) {
+ addTimeoutResult(cb.timer_id, result);
+ } else {
+ addIntervalResult(cb.timer_id, result);
+ }
+ } catch (const std::exception& e) {
+ ::havel::error("[VM] Timer callback exception: {}", e.what());
+ }
+ }
 }
 
 void VM::registerHostFunction(const std::string &name,
@@ -1741,18 +1774,13 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep(): duration cannot be negative");
         }
 
-if (scheduler_ && executing_in_fiber_) {
-// Use the VM's goroutine suspension mechanism instead of blocking.
-// This lets the scheduler put the goroutine to sleep and resume it
-// after the duration, allowing the event loop to process input
-// events (including exit requests from other hotkeys) while we wait.
-// Only valid when running inside a fiber/goroutine context.
-suspension_requested_ = true;
-suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
-suspension_context_ = reinterpret_cast<void*>(
-static_cast<intptr_t>(*duration_ms));
-return Value::makeNull();
-}
+        if (scheduler_) {
+            suspension_requested_ = true;
+            suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+            suspension_context_ = reinterpret_cast<void*>(
+                static_cast<intptr_t>(*duration_ms));
+            return Value::makeNull();
+        }
 
         // No scheduler — fall back to blocking sleep with yields
         {
@@ -4011,14 +4039,19 @@ while (frame_count_ > stop_frame_depth) {
         }
     }
 
-        // Periodically check for expired timers
-        if (timer_check_func_) {
-            instructions_since_timer_check_++;
-            if (instructions_since_timer_check_ >= TIMER_CHECK_INTERVAL) {
-                timer_check_func_();
-                instructions_since_timer_check_ = 0;
-            }
-        }
+ // Periodically check for expired timers and drain event queue
+ if (timer_check_func_) {
+ instructions_since_timer_check_++;
+ if (instructions_since_timer_check_ >= TIMER_CHECK_INTERVAL) {
+ timer_check_func_();
+ instructions_since_timer_check_ = 0;
+ }
+ }
+ if (event_queue_ && instructions_since_timer_check_ == 0) {
+ event_queue_->processAll();
+ }
+ // Execute timer callbacks that were queued by the TIMER_FIRE handler
+ executePendingTimerCallbacks();
     
     // CRITICAL: Capture ALL frame data by value BEFORE any mutation!
     // doCall() may cause vector reallocation, invalidating all
@@ -4047,37 +4080,104 @@ while (frame_count_ > stop_frame_depth) {
       if (exit_requested_.load()) {
         break;
       }
-      if (suspension_requested_) {
-        // SUSPENDED or SLEEP was requested (e.g. by sleep() host function).
-        // In runDispatchLoop mode, handle SLEEP as blocking sleep since there's
-        // no scheduler event loop to resume us. Other suspension reasons
-        // (channel/thread) are not applicable in dispatch loop mode.
-        uint8_t reason = suspension_reason_;
-        void* ctx = suspension_context_;
-        suspension_requested_ = false;
-        suspension_context_ = nullptr;
-        if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-          int64_t ms = reinterpret_cast<intptr_t>(ctx);
-          if (ms > 0) {
-            const int CHUNK = 10;
-            auto deadline = std::chrono::steady_clock::now() +
-                            std::chrono::milliseconds(ms);
-            while (std::chrono::steady_clock::now() < deadline) {
-              if (exit_requested_.load()) break;
-              if (timer_check_func_) timer_check_func_();
-              auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-                  deadline - std::chrono::steady_clock::now());
-              auto chunk = std::min(static_cast<int>(remaining.count()), CHUNK);
-              if (chunk > 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+        if (suspension_requested_) {
+            uint8_t reason = suspension_reason_;
+            void* ctx = suspension_context_;
+            suspension_requested_ = false;
+            suspension_context_ = nullptr;
+            if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+                int64_t ms = reinterpret_cast<intptr_t>(ctx);
+                if (ms > 0 && scheduler_) {
+                    auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(ms);
+                    auto *current_g = scheduler_->current();
+                    if (current_g) {
+                        current_g->resume_at_time = deadline;
+                        scheduler_->suspend(current_g,
+                            Scheduler::SuspensionReason::SleepWait);
+                        saveFiberState(current_g->fiber);
+                    }
+                    ::havel::debug("[VM] runDispatchLoop: scheduler-aware sleep for {}ms, current_gid={}",
+                        ms, current_g ? current_g->id : 0);
+ while (std::chrono::steady_clock::now() < deadline) {
+ if (exit_requested_.load()) break;
+ scheduler_->wakeSleepingGoroutines();
+ if (event_queue_) event_queue_->processAll();
+ executePendingTimerCallbacks();
+ bool hasRunnable = scheduler_->hasRunnableFibers();
+                        if (!hasRunnable) {
+                            std::this_thread::sleep_for(
+                                std::chrono::milliseconds(1));
+                            continue;
+                        }
+                        auto *g = scheduler_->pickNext();
+                        if (!g) continue;
+                        if (g == current_g) {
+                            break;
+                        }
+            ::havel::debug("[VM] runDispatchLoop: running goroutine {} while main sleeps", g->id);
+            bool needsInit = (g->state == Scheduler::GoroutineState::Created ||
+                              g->state == Scheduler::GoroutineState::Running) ||
+                             (g->fiber && g->fiber->call_stack.empty());
+            if (needsInit) {
+                startGoroutineCall(g->function_id,
+                    g->closure_id, g->locals);
+                g->state = Scheduler::GoroutineState::Runnable;
+                if (g->fiber) saveFiberState(g->fiber);
+            } else if (g->fiber) {
+                loadFiberState(g->fiber);
             }
-          }
-          // IP already incremented by auto-increment below — continue.
-        } else {
-          // Unknown suspension — break out so caller can handle
-          break;
+ // Run instructions up to goroutine's per-tick budget
+ uint64_t budget = g->max_instructions_per_tick;
+ uint64_t steps = 0;
+ while (steps < budget) {
+ steps++;
+ if (g->fiber && g->fiber->state == FiberState::DONE) break;
+ if (exit_requested_.load()) break;
+ auto r = executeOneStep(g->fiber);
+ if (g->fiber) saveFiberState(g->fiber);
+ if (r.type == VMExecutionResult::RETURNED ||
+ r.type == VMExecutionResult::ERROR) {
+ g->state = Scheduler::GoroutineState::Done;
+ if (g->fiber) g->fiber->state = FiberState::DONE;
+ break;
+ }
+ if (r.type == VMExecutionResult::SUSPENDED) {
+ break;
+ }
+ }
+                        // Yield the goroutine back
+                        if (g->state != Scheduler::GoroutineState::Done &&
+                            g->state != Scheduler::GoroutineState::Suspended) {
+                            scheduler_->yield(g);
+                        }
+                    }
+                    // Resume the original goroutine
+                    if (current_g && current_g->fiber) {
+                        loadFiberState(current_g->fiber);
+                    }
+                } else if (ms > 0) {
+                    // No scheduler — fall back to blocking sleep
+                    const int CHUNK = 10;
+                    auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(ms);
+ while (std::chrono::steady_clock::now() < deadline) {
+ if (exit_requested_.load()) break;
+ if (timer_check_func_) timer_check_func_();
+ if (event_queue_) event_queue_->processAll();
+ executePendingTimerCallbacks();
+ auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            deadline - std::chrono::steady_clock::now());
+                        auto chunk = std::min(static_cast<int>(remaining.count()), CHUNK);
+                        if (chunk > 0)
+                            std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+                    }
+                }
+            } else {
+                // Unknown suspension — break out so caller can handle
+                break;
+            }
         }
-      }
     } catch (const ScriptThrow &thrown) {
       if (!handleScriptThrow(thrown.value)) {
         // Build stack trace for uncaught exception
@@ -5917,9 +6017,9 @@ case OpCode::LOAD_GLOBAL: {
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
-            Value value = popStack();
+        Value value = popStack();
 
-    if (immutable_globals_.count(name)) {
+        if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
             if (existing != globals.end() && existing->second == value) {
                 break;
@@ -9405,7 +9505,7 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
 }
 
 uint32_t VM::createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
-                                             const std::vector<Value> &args) {
+    const std::vector<Value> &args, HotkeyPolicy policy, const std::string &alias) {
     if (!scheduler_) {
         ::havel::warn("[VM] createPersistentHotkeyCallback: No scheduler available");
         return 0;
@@ -9443,6 +9543,8 @@ uint32_t VM::createPersistentHotkeyCallback(CallbackId id, FiberPriority priorit
         g->hotkey_function_id = function_index;
         g->hotkey_closure_id = closure_id;
         g->hotkey_args = args;
+        g->hotkey_policy = policy;
+        g->hotkey_alias = alias;
         // Park immediately: set Suspended so pickNext skips it until first trigger
         g->state = Scheduler::GoroutineState::Suspended;
         g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;

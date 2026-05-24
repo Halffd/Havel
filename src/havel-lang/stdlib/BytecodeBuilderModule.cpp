@@ -501,14 +501,14 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         runArgs.push_back(args[i]);
     }
 
-  auto &vm = api.vm();
-  auto saved_chunk = vm.current_chunk;
-  auto saved_frame_count = vm.frame_count_;
-  auto saved_frame_arena = vm.frame_arena_;
-  std::stack<Value> saved_stack = vm.stack;
-  auto saved_locals = vm.locals;
-  auto saved_immutable_locals = vm.immutable_locals_;
-  auto saved_main_chunk = vm.getMainChunk();
+auto &vm = api.vm();
+auto saved_chunk = vm.current_chunk;
+auto saved_frame_count = vm.frame_count_;
+auto saved_frame_arena = vm.frame_arena_;
+std::stack<Value> saved_stack = vm.stack;
+auto saved_locals = vm.locals;
+auto saved_immutable_locals = vm.immutable_locals_;
+auto saved_main_chunk = vm.getMainChunk();
 
   // Set main_chunk_ to the inner chunk so CLOSURE doesn't snapshot globals
   auto inner_chunk_ptr = std::shared_ptr<BytecodeChunk>(saved_main_chunk, g_builder.chunk.get());
@@ -519,23 +519,23 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
  vm.bc_execute_depth_++;
  auto result = vm.executePersistent(*g_builder.chunk, entry, runArgs);
  vm.bc_execute_depth_--;
- vm.current_chunk = saved_chunk;
- vm.frame_count_ = saved_frame_count;
- vm.frame_arena_ = std::move(saved_frame_arena);
- vm.stack = std::move(saved_stack);
- vm.locals = std::move(saved_locals);
-  vm.immutable_locals_ = std::move(saved_immutable_locals);
-    vm.setMainChunkShared(saved_main_chunk);
-    return result;
-  } catch (const std::exception &e) {
-    vm.bc_execute_depth_--;
-    vm.current_chunk = saved_chunk;
-    vm.frame_count_ = saved_frame_count;
-    vm.frame_arena_ = std::move(saved_frame_arena);
-    vm.stack = std::move(saved_stack);
-    vm.locals = std::move(saved_locals);
-    vm.immutable_locals_ = std::move(saved_immutable_locals);
-    vm.setMainChunkShared(saved_main_chunk);
+vm.current_chunk = saved_chunk;
+vm.frame_count_ = saved_frame_count;
+vm.frame_arena_ = std::move(saved_frame_arena);
+vm.stack = std::move(saved_stack);
+vm.locals = std::move(saved_locals);
+vm.immutable_locals_ = std::move(saved_immutable_locals);
+vm.setMainChunkShared(saved_main_chunk);
+return result;
+} catch (const std::exception &e) {
+vm.bc_execute_depth_--;
+vm.current_chunk = saved_chunk;
+vm.frame_count_ = saved_frame_count;
+vm.frame_arena_ = std::move(saved_frame_arena);
+vm.stack = std::move(saved_stack);
+vm.locals = std::move(saved_locals);
+vm.immutable_locals_ = std::move(saved_immutable_locals);
+vm.setMainChunkShared(saved_main_chunk);
     throw std::runtime_error(e.what());
   }
 	});

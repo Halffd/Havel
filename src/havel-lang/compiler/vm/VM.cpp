@@ -3367,27 +3367,27 @@ if (debug_mode) {
  return result;
  }
 
- Value VM::executePersistent(const BytecodeChunk &chunk,
- const std::string &function_name,
- const std::vector<Value> &args) {
- const BytecodeChunk *saved_chunk = current_chunk;
- current_chunk = &chunk;
+Value VM::executePersistent(const BytecodeChunk &chunk,
+    const std::string &function_name,
+    const std::vector<Value> &args) {
+  const BytecodeChunk *saved_chunk = current_chunk;
+  current_chunk = &chunk;
 
   const auto *entry = chunk.getFunction(function_name);
   if (!entry) {
     COMPILER_THROW("Function not found: " + function_name);
   }
 
+  suspendGC();
+
   // Clear stack and locals for this execution, but PRESERVE:
   // - globals (user-defined variables persist)
   // - heap (objects allocated by user persist)
   // - struct_type_ids (type information persists)
-  while (!stack.empty()) {
-    stack.pop();
-  }
+  while (!stack.empty()) { stack.pop(); }
   locals.clear();
   frame_count_ = 0;
-// DON'T reset heap - preserves user globals
+  // DON'T reset heap - preserves user globals
     if (!host_globals_registered_) {
         registerDefaultHostGlobals();
         host_globals_registered_ = true;
@@ -3420,16 +3420,17 @@ if (debug_mode) {
 
     runDispatchLoop(0);
 
-    current_chunk = saved_chunk;
+  current_chunk = saved_chunk;
+  resumeGC();
 
- if (stack.empty()) {
- return nullptr;
- }
+  if (stack.empty()) {
+    return nullptr;
+  }
 
- Value result = stack.top();
- stack.pop();
- return result;
- }
+  Value result = stack.top();
+  stack.pop();
+  return result;
+}
 
  // ============================================================================
  

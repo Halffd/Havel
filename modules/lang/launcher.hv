@@ -103,10 +103,10 @@ fn parseDebugArgs(args) {
 }
 
 fn dumpAst(program) {
-    if program == null { return }
-    if program.body != null {
-        print("AST: " + str(#program.body) + " top-level statements")
-    }
+ if program == null { return }
+ if program.body != null {
+  print("AST: " + str(#program.body) + " top-level statements")
+ }
 }
 
  fn dumpBytecode() {
@@ -242,11 +242,30 @@ fn parseArgs(args) {
             continue
         }
 
-        if arg == "--self-hosted" || arg == "-S" {
-            cfg.selfHosted = true
-            i = i + 1
-            continue
-        }
+ if arg == "--self-hosted" || arg == "-S" {
+  cfg.selfHosted = true
+  i = i + 1
+  continue
+ }
+
+ if arg == "-d" || arg == "--debug" {
+  setFlag("all", true)
+  setFlag("verbose", true)
+  i = i + 1
+  continue
+ }
+
+ if arg == "--timing" {
+  setFlag("timing", true)
+  i = i + 1
+  continue
+ }
+
+ if arg == "--no-color" {
+  setFlag("color", false)
+  i = i + 1
+  continue
+ }
 
         if arg == "--" {
             j = i + 1

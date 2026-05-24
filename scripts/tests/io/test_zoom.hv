@@ -1,0 +1,208 @@
+print("-------- System Info --------")
+print("system.detect: " + type(system.detect))
+sys = system.detect()
+print("system.detect: " + type(sys))
+print("sys: " + sys)
+windows = mac = bsd = linux = unknownOS = false
+match sys.os {
+  "Windows" => windows = true
+"MacOS" => mac = true
+"BSD" => bsd = true
+"Linux" => linux = true
+"Unknown" => unknownOS = true
+  _ => {}
+}
+wl = match sys.os {
+  "Linux" => sys.displayProtocol == "Wayland"
+  _ => false
+}
+displayName = ""
+shell = sys.shell
+user = sys.user
+home = sys.home
+
+if linux {
+  wl = sys.displayProtocol == "Wayland"
+  displayName = sys.display ?? ":0"
+  print("wl: $wl")
+print("displayName: $displayName")
+}
+wm = sys.windowManager.lower()
+print("wm: $wm")
+if wm == "Unknown" || wm == "unknown" {
+  print("wm is unknown, checking for compiz")
+if process.exists("compiz") {
+    wm = "compiz"
+    print("wm is now: $wm")
+  }
+}
+hypr = kde = i3 = compiz = cinnamon = gnome = wf = xfce = false
+match wm {
+    "hyprland" => hypr = true
+"kde plasma" => kde = true
+"i3" => i3 = true
+"compiz" => compiz = true
+"cinnamon" => cinnamon = true
+"gnome" || "gnome on x11" || "gnome on wayland" => gnome = true
+"wayfire" => wf = true
+"xfce" => xfce = true
+    _ => {}
+}
+kdewl = kde && wl
+if !xfce {
+  if len(process.find("xfce4-session")) > 0 {
+    xfce = true
+  }
+}
+xfcewl = xfce && wl
+other = !any([hypr, kde, kdewl, i3, compiz, cinnamon, gnome, wf, xfce, xfcewl])
+hardware = system.hardware()
+print("hardware: " + hardware)
+[cpu, gpu, ram, motherboard, storage] = [hardware.cpu, hardware.gpu, hardware.ram, hardware.motherboard, hardware.storage]
+storageCount = storage ?? storage.len() ?? 0
+totalStorage = storage.reduce((acc, s) => acc + s.size, 0)
+print("storageCount: " + storageCount)
+print("totalStorage: " + totalStorage)
+print(f"OS: {sys.os} ({sys.arch})")
+print(f"Kernel: {sys.kernel}")
+print(f"Uptime: {sys.uptime} seconds")
+print(f"Shell: {shell}")
+print(f"User: {user} @ {home}")
+
+// hardware details
+print(f"CPU: {cpu}")
+print(f"RAM: {ram / 1024/1024/1024} GB")
+print(f"GPU: {gpu}")
+print(f"Motherboard: {motherboard}")
+
+zoomLevel = 1.0
+print("wl: $wl")
+print("wm: $wm")
+fn qdbus (cmd) {
+  res = runDetached("qdbus $cmd")
+  return res.stdout
+}
+print("kwinZoom")
+fn kwinZoom (cmd) {
+  runDetached("qdbus $cmd")
+  out = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+  zoomLevel = out
+}
+inc = 0.25
+fn zoom (level) {
+  if level < 0 {
+    level = 0
+  } else if level > 4 {
+    level = 4
+  }
+  print("zoom level: " + level)
+  print("current zoomLevel: " + zoomLevel)
+  print("hypr: " + hypr)
+  if hypr {
+    if level == 0 {
+      zoomLevel -= inc
+    }
+    if level == 1 {
+      zoomLevel += inc
+    }
+    if level == 2 {
+      zoomLevel = 1.0
+    }
+    if level == 3 {
+      zoomLevel = 1.7
+    }
+    if level == 4 {
+      zoomLevel = 2.0
+    }
+    if zoomLevel < 1.0 {
+      zoomLevel = 1.0
+    }
+    if zoomLevel > 8.0 {
+      zoomLevel = 8.0
+    }
+    cmd = "hyprctl keyword cursor:zoom_factor $zoomLevel"
+    run(cmd)
+  } else {
+    print("kde: " + kde)
+    if level == 0 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
+      }
+      if zoomLevel <= 0 || !kde {
+        send("^{Down}")
+        zoomLevel -= 0.1
+      }
+    } else if level == 1 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
+      }
+      if zoomLevel <= 0 || !kde {
+        send("^{Up}")
+        zoomLevel += 0.1
+      }
+    } else if level == 2 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus")
+      }
+      if zoomLevel <= 0 || !kde {
+        send("^{Down}")
+        zoomLevel = 1.0
+      }
+    } else if level == 3 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + zoom3Value)
+      }
+      if zoomLevel <= 0 || !kde {
+        send("^+/")
+        zoomLevel = 1.5
+      }
+    } else if level == 4 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus")
+      }
+      if zoomLevel <= 0 || !kde {
+        send("^+/")
+        send("^Up")
+        send("^Up")
+      }
+    }
+
+    if zoomLevel < 1.0 {
+      zoomLevel = 1.0
+    }
+  }
+  print("zoomLevel: " + zoomLevel)
+}
+print("zoomToggle")
+fn zoomToggle () {
+  if kde {
+    zoomLevel = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+  }
+  if zoomLevel <= 1.0 {
+    zoom(3)
+  } else {
+    zoom(2)
+  }
+  print("zoomLevel: " + zoomLevel)
+}
+print("Testing zoom functions")
+print(time.now())
+print("Zooming in 5 times and sleeping for 1 second in between")
+loop 5 { zoom(1); sleep 1000 }
+print(time.now())
+print("Zooming out 5 times and sleeping for 2 seconds in between")
+loop 5 { zoom(0); sleep 2000 }
+print(time.now())
+zoom(2)
+print("Sleeping for 3 seconds")
+sleep 3000
+zoom(3)
+print(time.now())
+print("Sleeping for 5 seconds")
+sleep 5000
+zoomToggle()
+print(time.now())
+print("Sleeping for 4 seconds")
+sleep 4000
+zoomToggle()
+print(time.now())

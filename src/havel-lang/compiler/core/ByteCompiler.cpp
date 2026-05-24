@@ -2922,7 +2922,7 @@ break;
       emit(OpCode::CLOSURE, it->second);
     } else {
       emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeFunctionObjIdit->second));
+           addConstant(Value::makeFunctionObjId(it->second)));
     }
     break;
   }

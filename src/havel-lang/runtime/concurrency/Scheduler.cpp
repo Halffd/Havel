@@ -353,16 +353,35 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 }
 
 void Scheduler::requeueFront(Goroutine* g) {
-	if (!g) return;
-	g->state = GoroutineState::Created;
-	g->suspension_reason = SuspensionReason::None;
-	g->ip = 0;
-	g->stack.clear();
-	g->locals.clear();
-	if (g->fiber) {
-		g->fiber->state = FiberState::CREATED;
-		g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
-	}
+    if (!g) return;
+    g->state = GoroutineState::Created;
+    g->suspension_reason = SuspensionReason::None;
+    g->ip = 0;
+    g->stack.clear();
+    g->locals.clear();
+    if (g->persistent && !g->hotkey_args.empty()) {
+        g->locals = g->hotkey_args;
+        for (const auto& arg : g->hotkey_args) {
+            g->stack.push_back(arg);
+        }
+        g->function_id = g->hotkey_function_id;
+        g->closure_id = g->hotkey_closure_id;
+    }
+    if (g->fiber) {
+        g->fiber->stack.clear();
+        g->fiber->call_stack.clear();
+        if (g->persistent && !g->hotkey_args.empty()) {
+            for (const auto& arg : g->hotkey_args) {
+                g->fiber->stack.push(arg);
+            }
+            g->fiber->pushCall(g->hotkey_function_id,
+                               static_cast<uint32_t>(g->hotkey_args.size()));
+            auto& frame = g->fiber->currentFrame();
+            frame.closure_id = g->hotkey_closure_id;
+        }
+        g->fiber->state = FiberState::CREATED;
+        g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
+    }
 	{
 		std::lock_guard<std::mutex> lock(priority_mutex_);
 		if (g->priority == FiberPriority::HOTKEY) {

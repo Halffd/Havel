@@ -48,7 +48,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
-    {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: []}
+    {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1}
 
 }
 fn emitError(msg, line, col) {
@@ -481,16 +481,22 @@ return
         }
         return
     }
-    if k == "LambdaExpression" {
-        funcIdx = emitter.func_idx
-        emitter.func_idx = funcIdx + 1
-        // Compile the lambda body now
-        compileLambda(emitter, funcIdx, node.params, node.body, node.line)
-        // Emit CLOSURE instruction
-        bc.emit("CLOSURE", funcIdx)
-        return
+if k == "LambdaExpression" {
+funcIdx = emitter.func_idx
+emitter.func_idx = funcIdx + 1
+// Compile the lambda body now
+upcount = compileLambda(emitter, funcIdx, node.params, node.body, node.line)
+// If lambda captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+if upcount > 0 {
+bc.emit("CLOSURE", funcIdx)
+}
+else {
+fnConstIdx = bc.add_const(bc.make_function_obj(funcIdx))
+bc.emit("LOAD_CONST", fnConstIdx)
+}
+return
 
-    }
+}
     if k == "InterpolatedString" {
   emptyIdx = bc.add_string("")
   bc.emit("LOAD_CONST", emptyIdx)
@@ -870,26 +876,32 @@ if k == "RepeatStatement" {
     }
     return
   }
-    if k == "FnDeclaration" {
-        // Declare the function name in scope
-        localIdx = scopeDeclare(emitter.scope, node.name)
-        funcIdx = emitter.func_idx
-        emitter.func_idx = funcIdx + 1
-        emitter.func_map[node.name] = funcIdx
-        // Compile the function body
-        compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
-        // Emit CLOSURE to create the closure value
-        bc.emit("CLOSURE", funcIdx)
-        // Store the closure in the variable
-        if localIdx >= 0 {
-            bc.emit("STORE_VAR", localIdx)
-        }
-        else {
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        }
-        return
+if k == "FnDeclaration" {
+// Declare the function name in scope
+localIdx = scopeDeclare(emitter.scope, node.name)
+funcIdx = emitter.func_idx
+emitter.func_idx = funcIdx + 1
+emitter.func_map[node.name] = funcIdx
+// Compile the function body
+upcount = compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
+// If function captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+if upcount > 0 {
+bc.emit("CLOSURE", funcIdx)
+}
+else {
+fnConstIdx = bc.add_const(bc.make_function_obj(funcIdx))
+bc.emit("LOAD_CONST", fnConstIdx)
+}
+// Store the closure in the variable
+if localIdx >= 0 {
+bc.emit("STORE_VAR", localIdx)
+}
+else {
+bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+}
+return
 
-    }
+}
     if k == "BreakStatement" {
     if #emitter.breakStack > 0 {
         jumpIp = bc.emit("JUMP", 0)
@@ -1181,7 +1193,9 @@ fn emitBlockWithReturn(emitter, node) {
 
 fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
   oldScope = emitter.scope
-  newScope = Scope(oldScope)
+  fid = emitter.nextFuncId
+  emitter.nextFuncId = fid + 1
+  newScope = Scope(oldScope, fid)
   emitter.scope = newScope
   for p in params {
     if type(p) == "object" {
@@ -1192,47 +1206,84 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
   }
   paramCount = #params
   localCount = paramCount + 16
-  // Save current function context and switch to new function
   bc.func_push()
   bc.func_new(name, paramCount, localCount)
   if sourceLine != null {
     bc.set_func_source_line(sourceLine)
   }
+  di = 0
+  for p in params {
+    if type(p) == "object" && p.default != null {
+      dv = p.default
+      if type(dv) == "object" && dv.kind == "StringLiteral" {
+        sid = bc.add_chunk_string(dv.value)
+        bc.set_default_value(di, bc.str_id(sid))
+      } else if type(dv) == "object" && dv.kind == "NumberLiteral" {
+        bc.set_default_value(di, num(dv.value))
+      } else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
+        bc.set_default_value(di, bool(dv.value))
+      } else if type(dv) == "object" && dv.kind == "NullLiteral" {
+        bc.set_default_value(di, null)
+      }
+    }
+    di = di + 1
+  }
   emitBlockWithReturn(emitter, bodyNode)
-    bc.emit("RETURN")
-    // Set actual local count
-    actualLocals = scopeLocalCount(newScope)
-    bc.set_local_count(actualLocals)
-    // Restore previous function context
-    bc.func_pop()
-    emitter.scope = oldScope
+  bc.emit("RETURN")
+  actualLocals = scopeLocalCount(newScope)
+  bc.set_local_count(actualLocals)
+  upcount = newScope.upcount
+  bc.func_pop()
+  emitter.scope = oldScope
+  upcount
 
 }
 fn compileLambda(emitter, funcIdx, params, bodyNode, sourceLine) {
-    name = "lambda_" + str(funcIdx)
-    oldScope = emitter.scope
-    newScope = Scope(oldScope)
-    emitter.scope = newScope
-  for p in params {
-    if type(p) == "object" {
-      if p.name != null { scopeDeclare(newScope, p.name) }
-      else { scopeDeclare(newScope, p) }
-    }
-    else { scopeDeclare(newScope, p) }
-  }
-  paramCount = #params
-  localCount = paramCount + 16
-  bc.func_push()
+name = "lambda_" + str(funcIdx)
+oldScope = emitter.scope
+fid = emitter.nextFuncId
+emitter.nextFuncId = fid + 1
+newScope = Scope(oldScope, fid)
+emitter.scope = newScope
+for p in params {
+if type(p) == "object" {
+if p.name != null { scopeDeclare(newScope, p.name) }
+else { scopeDeclare(newScope, p) }
+}
+else { scopeDeclare(newScope, p) }
+}
+paramCount = #params
+localCount = paramCount + 16
+bc.func_push()
   bc.func_new(name, paramCount, localCount)
   if sourceLine != null {
     bc.set_func_source_line(sourceLine)
   }
+  di = 0
+  for p in params {
+    if type(p) == "object" && p.default != null {
+      dv = p.default
+      if type(dv) == "object" && dv.kind == "StringLiteral" {
+        sid = bc.add_chunk_string(dv.value)
+        bc.set_default_value(di, bc.str_id(sid))
+      } else if type(dv) == "object" && dv.kind == "NumberLiteral" {
+        bc.set_default_value(di, num(dv.value))
+      } else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
+        bc.set_default_value(di, bool(dv.value))
+      } else if type(dv) == "object" && dv.kind == "NullLiteral" {
+        bc.set_default_value(di, null)
+      }
+    }
+    di = di + 1
+  }
   emitBlockWithReturn(emitter, bodyNode)
-    bc.emit("RETURN")
-    actualLocals = scopeLocalCount(newScope)
-    bc.set_local_count(actualLocals)
-    bc.func_pop()
-    emitter.scope = oldScope
+bc.emit("RETURN")
+actualLocals = scopeLocalCount(newScope)
+bc.set_local_count(actualLocals)
+upcount = newScope.upcount
+bc.func_pop()
+emitter.scope = oldScope
+upcount
 
 }
 // ============================================================
@@ -1406,7 +1457,7 @@ fn emitImportStatement(emitter, node) {
 // ============================================================
 
 fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, entryName = "__main__", noReset = false) {
-    if !noReset {
+  if !noReset {
         bc.reset()
     }
   if sourceFile != null {
@@ -1428,23 +1479,32 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
 
         }
     }
-    // Pass 1: compile all function bodies
+  // Pass 1: compile all function bodies
+  funcUpcounts = []
   for i in 0..(#funcDecls - 1) {
     decl = funcDecls[i]
     funcIdx = emitter.func_idx
     emitter.func_idx = funcIdx + 1
     emitter.func_map[decl.name] = funcIdx
-    compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
+    uc = compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
+    funcUpcounts.push(uc)
   }
   // Pass 2: compile __main__
-    bc.func_new(entryName, 0, 64)
+  bc.func_new(entryName, 0, 64)
   emitter.scope = Scope(null)
-  // Emit CLOSURE + STORE_GLOBAL for each top-level function
+  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
   for i in 0..(#funcDecls - 1) {
-        decl = funcDecls[i]
-        bc.emit("CLOSURE", emitter.func_map[decl.name])
-        bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+    decl = funcDecls[i]
+    fidx = emitter.func_map[decl.name]
+    if funcUpcounts[i] > 0 {
+      bc.emit("CLOSURE", fidx)
     }
+    else {
+      fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
+      bc.emit("LOAD_CONST", fnConstIdx)
+    }
+    bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+  }
     // Emit top-level statements (all except last)
     n = #topStmts
     for i in 0..(n - 2) {

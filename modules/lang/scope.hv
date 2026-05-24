@@ -2,21 +2,24 @@
 // Works with bc.add_upvalue() to register closure captures with the VM
 
 fn Scope(parent, funcId) {
-  startCount = 0
-  if parent != null {
-    startCount = parent.count
-  }
-  fid = funcId
-  if fid == null {
-    if parent != null {
-      fid = parent.funcId
-    }
-    else {
-      fid = 0
-    }
-  }
-  {parent: parent, locals: {}, count: startCount, upvalues: {}, upcount: 0, startCount: startCount, funcId: fid}
-
+startCount = 0
+if parent != null {
+if funcId != null && funcId != parent.funcId {
+startCount = 0
+} else {
+startCount = parent.count
+}
+}
+fid = funcId
+if fid == null {
+if parent != null {
+fid = parent.funcId
+}
+else {
+fid = 0
+}
+}
+{parent: parent, locals: {}, count: startCount, upvalues: {}, upcount: 0, startCount: startCount, funcId: fid}
 }
 fn scopeDeclare(scope, name) {
   existing = scope.locals[name]

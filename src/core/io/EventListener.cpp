@@ -1038,8 +1038,14 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
           const auto &hotkey = hotkeyIt->second;
           if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
-            if (hotkeyManager) {
-              hotkeyManager->handleHotkeyTrigger(hotkeyId);
+            auto callback = hotkey.callback;
+            lock.unlock();
+            if (hotkeyExecutor) {
+              hotkeyExecutor->submit([callback]() {
+                try { callback(); } catch (...) {}
+              });
+            } else {
+              std::thread([callback]() { callback(); }).detach();
             }
             break;
           }
@@ -1181,27 +1187,31 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       isProcessingWheelEvent = false;
       currentWheelDirection = 0;
 
-      // Execute callbacks outside critical section
       for (int hotkeyId : wheelHotkeyIds) {
-        HotKey hotkeyCopy;
-        bool found = false;
+        if (debugging::debug_hotkeys) info("🔥 EXECUTING wheel hotkey id={}", hotkeyId);
+        std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+        auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-        {
-          std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-          auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
+        std::lock_guard<std::mutex> ioLock(
+            HotkeyManager::RegisteredHotkeysMutex());
+        if (it != HotkeyManager::RegisteredHotkeys().end() &&
+            it->second.enabled) {
+          if (debugging::debug_hotkeys) info("🔥 EXECUTING wheel hotkey '{}' (id={})", it->second.alias, hotkeyId);
+          auto callback = it->second.callback;
+          lock.unlock();
 
-          if (it != HotkeyManager::RegisteredHotkeys().end() &&
-              it->second.enabled) {
-            hotkeyCopy = it->second; // Copy just for execution
-            found = true;
-            std::lock_guard<std::mutex> ioLock(
-                HotkeyManager::RegisteredHotkeysMutex());
-          }
-        }
-
-        if (found) {
-          if (hotkeyManager) {
-            hotkeyManager->handleHotkeyTrigger(hotkeyCopy.id);
+          if (hotkeyExecutor) {
+            hotkeyExecutor->submit([callback]() {
+              try {
+                callback();
+              } catch (const std::exception &e) {
+                error("Wheel hotkey callback exception: {}", e.what());
+              } catch (...) {
+                error("Wheel hotkey callback unknown exception");
+              }
+            });
+          } else {
+            std::thread([callback]() { callback(); }).detach();
           }
         }
       }
@@ -1671,24 +1681,25 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
   // Execute callbacks outside critical section
   for (int hotkeyId : matchedHotkeyIds) {
     if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey id={}", hotkeyId);
-    HotKey hotkeyCopy;
-    bool found = false;
+    std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+    auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-    {
-      std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-      auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
+    if (it != HotkeyManager::RegisteredHotkeys().end() &&
+        it->second.enabled) {
+      if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey '{}' (id={})", it->second.alias, hotkeyId);
+      auto callback = it->second.callback;
+      lock.unlock();
 
-      if (it != HotkeyManager::RegisteredHotkeys().end() &&
-          it->second.enabled) {
-        if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey '{}' (id={})", it->second.alias, hotkeyId);
-        hotkeyCopy = it->second;
-        found = true;
-      }
-    }
-
-    if (found) {
-      if (hotkeyManager) {
-        hotkeyManager->handleHotkeyTrigger(hotkeyCopy.id);
+      if (hotkeyExecutor) {
+        hotkeyExecutor->submit([callback]() {
+          try { callback(); } catch (const std::exception &e) {
+            error("Hotkey callback exception: {}", e.what());
+          } catch (...) {
+            error("Hotkey callback unknown exception");
+          }
+        });
+      } else {
+        std::thread([callback]() { callback(); }).detach();
       }
     }
   }
@@ -1947,8 +1958,14 @@ void EventListener::ProcessMouseGesture(int dx, int dy) {
 
     const auto &hotkey = hotkeyIt->second;
     if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
-      if (hotkeyManager) {
-        hotkeyManager->handleHotkeyTrigger(hotkeyId);
+      auto callback = hotkey.callback;
+      lock.unlock();
+      if (hotkeyExecutor) {
+        hotkeyExecutor->submit([callback]() {
+          try { callback(); } catch (...) {}
+        });
+      } else {
+        std::thread([callback]() { callback(); }).detach();
       }
       break;
     }

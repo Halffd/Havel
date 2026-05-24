@@ -185,6 +185,9 @@ fn zoomToggle () {
   }
   print("zoomLevel: " + zoomLevel)
 }
+a => zoomToggle()
+!WheelUp => zoom(1)
+!WheelDown => zoom(0)
 print("Testing zoom functions")
 print(time.now())
 print("Zooming in 5 times and sleeping for 1 second in between")

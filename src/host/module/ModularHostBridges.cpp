@@ -217,9 +217,15 @@ void IOBridge::install(PipelineOptions &options) {
  options.host_functions["keyUp"] = [ctx = ctx_](const auto &args) {
  return handleKeyUp(args, ctx);
  };
- options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
- return handleSuspend(args, ctx);
- };
+options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
+    return handleSuspend(args, ctx);
+};
+options.host_functions["io.getExecutorMode"] = [ctx = ctx_](const auto &args) {
+    return handleGetExecutorMode(args, ctx);
+};
+options.host_functions["io.setExecutorMode"] = [ctx = ctx_](const auto &args) {
+    return handleSetExecutorMode(args, ctx);
+};
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -491,16 +497,46 @@ Value IOBridge::handleKeyUp(const std::vector<Value> &args,
  }
 
 Value IOBridge::handleSuspend(const std::vector<Value> &,
- const HostContext *ctx) {
- if (!ctx->io) return Value::makeBool(false);
- ::havel::host::IOService ioService(ctx->io);
- if (ioService.isSuspended()) {
- ioService.resume();
- return Value::makeBool(false);
- }
- ioService.suspend();
- return Value::makeBool(true);
- }
+                              const HostContext *ctx) {
+    if (!ctx->io) return Value::makeBool(false);
+    ::havel::host::IOService ioService(ctx->io);
+    if (ioService.isSuspended()) {
+        ioService.resume();
+        return Value::makeBool(false);
+    }
+    ioService.suspend();
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleGetExecutorMode(const std::vector<Value> &,
+                                      const HostContext *ctx) {
+    if (!ctx->io) {
+        return Value::makeNull();
+    }
+    ::havel::host::IOService ioService(ctx->io);
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string mode = ioService.getExecutorMode();
+    if (!vm) return Value::makeNull();
+    auto ref = vm->getHeap().allocateString(mode);
+    return Value::makeStringId(ref.id);
+}
+
+Value IOBridge::handleSetExecutorMode(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+    if (args.empty() || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string modeStr;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        modeStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    } else {
+        return Value::makeBool(false);
+    }
+    ::havel::host::IOService ioService(ctx->io);
+    bool ok = ioService.setExecutorMode(modeStr);
+    return Value::makeBool(ok);
+}
 
 // ============================================================================
 // SystemBridge Implementation
@@ -649,10 +685,16 @@ void SystemBridge::install(PipelineOptions &options) {
  vm->setHostObjectField(
  ioObj, "suspend",
  Value::makeHostFuncId(vm->getHostFunctionIndex("suspend")));
- vm->setHostObjectField(
- ioObj, "getClipboard",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.getClipboard")));
- vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+    vm->setHostObjectField(
+        ioObj, "getClipboard",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.getClipboard")));
+    vm->setHostObjectField(
+        ioObj, "getExecutorMode",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.getExecutorMode")));
+    vm->setHostObjectField(
+        ioObj, "setExecutorMode",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.setExecutorMode")));
+    vm->setGlobal("io", Value::makeObjectId(ioObj.id));
   };
 
   // File operations
@@ -1442,10 +1484,10 @@ options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
   options.host_functions["clipboard.clear"] = [ctx = ctx_](const auto &args) {
     return handleClipboardClear(args, ctx);
   };
-  options.host_functions["io.getClipboard"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardGet(args, ctx);
-  };
-  options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
+    options.host_functions["io.getClipboard"] = [ctx = ctx_](const auto &args) {
+        return handleClipboardGet(args, ctx);
+    };
+    options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotFull(args, ctx);
   };
   options.host_functions["screenshot.monitor"] = [ctx =
@@ -2937,24 +2979,35 @@ void InputBridge::install(PipelineOptions &options) {
 
 Value
 InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
-                                  const HostContext *ctx) {
-  // Args: [hotkey_string, callback_closure]
-  if (args.size() < 2) {
-    return Value::makeNull();
-  }
+    const HostContext *ctx) {
+    // Args: [hotkey_string, callback_closure, options?]
+    // options is an object with optional "policy" key: "drop"|"replace"|"queue"|"coalesce"
+    if (args.size() < 2) {
+        return Value::makeNull();
+    }
 
-  if (!ctx || !ctx->vm) {
-    return Value::makeNull();
-  }
+    if (!ctx || !ctx->vm) {
+        return Value::makeNull();
+    }
 
-  // Get hotkey string
-  auto *vm = static_cast<VM *>(ctx->vm);
-  std::string hotkeyStr;
-  if (args[0].isStringValId()) {
-    hotkeyStr = vm->resolveStringKey(args[0]);
-  } else {
-    return Value::makeNull();
-  }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string hotkeyStr;
+    if (args[0].isStringValId()) {
+        hotkeyStr = vm->resolveStringKey(args[0]);
+    } else {
+        return Value::makeNull();
+    }
+
+    HotkeyPolicy policy = HotkeyPolicy::Drop;
+    if (args.size() >= 3 && args[2].isObjectId()) {
+        auto policyVal = vm->objectGetWithClassChain(args[2].asObjectId(), "policy");
+        if (policyVal.isStringValId()) {
+            std::string policyStr = vm->resolveStringKey(policyVal);
+            if (policyStr == "replace") policy = HotkeyPolicy::Replace;
+            else if (policyStr == "queue") policy = HotkeyPolicy::Queue;
+            else if (policyStr == "coalesce") policy = HotkeyPolicy::Coalesce;
+        }
+    }
 
   // Generate unique hotkey ID
   std::string hotkeyId =
@@ -2964,140 +3017,103 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
 
   // Create hotkey context object using HotkeyModule
-  auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-      vm, hotkeyId, hotkeyStr, hotkeyStr, "",
-      "Hotkey registered via hotkey.register", callbackId);
+    auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
+        vm, hotkeyId, hotkeyStr, hotkeyStr, "",
+        "Hotkey registered via hotkey.register", callbackId);
 
-  // If hotkeyManager is available, register the hotkey with the OS
-  if (ctx->hotkeyManager) {
-    auto *modeMgr = ctx->modeManager;
-    auto *hotkeyMgr = ctx->hotkeyManager;
+    if (hotkeyContext.isObjectId()) {
+        vm->pinExternalRoot(hotkeyContext);
+    }
 
-    // Try to build a direct-call thunk for the callback.
-    DirectCallThunk thunk = vm->buildDirectCallThunk(callbackId);
-    bool hasFastPath = !thunk.calls.empty();
+    // Always create a persistent goroutine for the hotkey callback.
+    // This avoids per-press goroutine allocation and allows wakeHotkeyByAlias
+    // to find and trigger it even without a HotkeyManager (headless mode).
+    uint32_t persistentGid = vm->createPersistentHotkeyCallback(
+        callbackId, FiberPriority::HOTKEY, {hotkeyContext}, policy, hotkeyStr);
 
-    if (hasFastPath) {
-      auto invokeFast = [vm, thunk = std::move(thunk)]() {
-        auto &hostFns = vm->getHostFunctions();
-        auto &fnNames = vm->getHostFunctionNames();
-        for (auto &call : thunk.calls) {
-          if (call.host_func_idx < fnNames.size()) {
-            auto it = hostFns.find(fnNames[call.host_func_idx]);
-            if (it != hostFns.end()) {
-              it->second(call.args);
-            }
-          }
-        }
-      };
-      auto wrapped = [vm, invokeFast = std::move(invokeFast)]() {
-        if (auto *sched = vm->getScheduler(); sched && sched->isVMThread()) {
-          invokeFast();
-        } else {
-          invokeFast();
-        }
-      };
-      ctx->hotkeyManager->AddHotkey(hotkeyStr, std::move(wrapped));
-      if (modeMgr && hotkeyMgr) {
-        ctx->hotkeyManager->AddContextualHotkey(
-            hotkeyStr,
-            [modeMgr]() {
-              std::string mode = modeMgr->getCurrentMode();
-              return !mode.empty() && mode != "default";
-            },
-            [vm, invokeFast = std::move(invokeFast)]() {
-              if (auto *sched = vm->getScheduler(); sched && sched->isVMThread()) {
-                invokeFast();
-              } else {
-                invokeFast();
-              }
-            });
-      }
-    } else {
-      uint32_t persistentGid = vm->createPersistentHotkeyCallback(
-          callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+    // If hotkeyManager is available, wire the OS callback to wake the persistent goroutine
+    if (ctx->hotkeyManager) {
+        auto *modeMgr = ctx->modeManager;
+        auto *hotkeyMgr = ctx->hotkeyManager;
 
-      if (persistentGid != 0) {
-        auto wakeHotkey = [vm, persistentGid]() {
-          auto *sched = vm->getScheduler();
-          if (!sched) return;
-          auto *g = sched->get(persistentGid);
-          if (!g) return;
-          if (g->state == Scheduler::GoroutineState::Running) return;
-          if (g->state == Scheduler::GoroutineState::Runnable) return;
-          if (g->state == Scheduler::GoroutineState::Created) return;
-          sched->requeueFront(g);
-        };
-        ctx->hotkeyManager->AddHotkey(
-            hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
-              auto *sched = vm->getScheduler();
-              if (!sched) return;
-              if (sched->isVMThread()) {
-                wakeHotkey();
-              } else {
-                sched->deferToVM(std::move(wakeHotkey));
-              }
-            });
-        if (modeMgr && hotkeyMgr) {
-          ctx->hotkeyManager->AddContextualHotkey(
-              hotkeyStr,
-              [modeMgr]() {
-                std::string mode = modeMgr->getCurrentMode();
-                return !mode.empty() && mode != "default";
-              },
-              [vm, wakeHotkey]() {
+        if (persistentGid != 0) {
+            auto wakeHotkey = [vm, persistentGid]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
-                if (sched->isVMThread()) {
-                  wakeHotkey();
-                } else {
-                  sched->deferToVM(wakeHotkey);
-                }
-              });
-        }
-  } else {
-  ctx->hotkeyManager->AddHotkey(
-      hotkeyStr, [vm, callbackId, hotkeyContext]() {
-        auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
-          uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
-          if (gid == 0) {
-            ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
-          }
-        };
-        auto *sched = vm->getScheduler();
-        if (sched && sched->isVMThread()) {
-          spawnHotkey();
-        } else if (sched) {
-          sched->deferToVM(std::move(spawnHotkey));
-        }
-      });
-  if (modeMgr && hotkeyMgr) {
-    ctx->hotkeyManager->AddContextualHotkey(
-        hotkeyStr,
-        [modeMgr]() {
-          std::string mode = modeMgr->getCurrentMode();
-          return !mode.empty() && mode != "default";
-        },
-        [vm, callbackId, hotkeyContext]() {
-          auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
-            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
-            if (gid == 0) {
-              ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
+                auto *g = sched->get(persistentGid);
+                if (!g) return;
+                sched->wakeHotkey(g);
+            };
+            ctx->hotkeyManager->AddHotkey(
+                hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
+                    auto *sched = vm->getScheduler();
+                    if (!sched) return;
+                    if (sched->isVMThread()) {
+                        wakeHotkey();
+                    } else {
+                        sched->deferToVM(std::move(wakeHotkey));
+                    }
+                });
+            if (modeMgr && hotkeyMgr) {
+                ctx->hotkeyManager->AddContextualHotkey(
+                    hotkeyStr,
+                    [modeMgr]() {
+                        std::string mode = modeMgr->getCurrentMode();
+                        return !mode.empty() && mode != "default";
+                    },
+                    [vm, wakeHotkey]() {
+                        auto *sched = vm->getScheduler();
+                        if (!sched) return;
+                        if (sched->isVMThread()) {
+                            wakeHotkey();
+                        } else {
+                            sched->deferToVM(wakeHotkey);
+                        }
+                    });
             }
-          };
-          auto *sched = vm->getScheduler();
-          if (sched && sched->isVMThread()) {
-            spawnHotkey();
-          } else if (sched) {
-            sched->deferToVM(std::move(spawnHotkey));
-          }
-        });
-  }
-  }
-  }
-  }
+        } else {
+            // Fallback: spawn a new goroutine per keypress
+            ctx->hotkeyManager->AddHotkey(
+                hotkeyStr, [vm, callbackId, hotkeyContext]() {
+                    auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
+                        uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+                        if (gid == 0) {
+                            ::havel::error("[Hotkey] Failed to spawn goroutine for callback {}", callbackId);
+                        }
+                    };
+                    auto *sched = vm->getScheduler();
+                    if (sched && sched->isVMThread()) {
+                        spawnHotkey();
+                    } else if (sched) {
+                        sched->deferToVM(std::move(spawnHotkey));
+                    }
+                });
+            if (modeMgr && hotkeyMgr) {
+                ctx->hotkeyManager->AddContextualHotkey(
+                    hotkeyStr,
+                    [modeMgr]() {
+                        std::string mode = modeMgr->getCurrentMode();
+                        return !mode.empty() && mode != "default";
+                    },
+                    [vm, callbackId, hotkeyContext]() {
+                        auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
+                            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
+                            if (gid == 0) {
+                                ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
+                            }
+                        };
+                        auto *sched = vm->getScheduler();
+                        if (sched && sched->isVMThread()) {
+                            spawnHotkey();
+                        } else if (sched) {
+                            sched->deferToVM(std::move(spawnHotkey));
+                        }
+                    });
+            }
+        }
+    }
 
-  return hotkeyContext;
+    return hotkeyContext;
 }
 
 Value InputBridge::handleHotkeyRegisterConditional(
@@ -3129,6 +3145,10 @@ Value InputBridge::handleHotkeyRegisterConditional(
     auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
         "Conditional hotkey via when block", callbackId);
+
+    if (hotkeyContext.isObjectId()) {
+        vm->pinExternalRoot(hotkeyContext);
+    }
 
     auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
 
@@ -3196,12 +3216,19 @@ InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
   auto *vm = static_cast<VM *>(ctx->vm);
   std::string alias = vm->resolveStringKey(args[0]);
 
-  if (ctx->hotkeyManager) {
-    ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
-    ctx->hotkeyManager->triggerForTest(alias);
-  }
+    if (ctx->hotkeyManager) {
+        ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
+        ctx->hotkeyManager->triggerForTest(alias);
+    }
 
-  return Value::makeBool(true);
+    // Also wake any persistent hotkey goroutines matching this alias
+    if (auto *vm = static_cast<VM *>(ctx->vm); vm) {
+        if (auto *sched = vm->getScheduler(); sched) {
+            sched->wakeHotkeyByAlias(alias);
+        }
+    }
+
+    return Value::makeBool(true);
 }
 
 Value
@@ -3356,23 +3383,39 @@ InputBridge::handleAltTabGetWindows(const std::vector<Value> &args,
 }
 
 Value AsyncBridge::handleSleep(const std::vector<Value> &args,
-                                       const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("sleep() requires milliseconds");
-  }
-  int64_t ms = 0;
-  if (args[0].isInt()) {
-    ms = args[0].asInt();
-  } else if (args[0].isDouble()) {
-    ms = static_cast<int64_t>(args[0].asDouble());
-  } else {
-    throw std::runtime_error("sleep() requires a number");
-  }
-  if (ms < 0) {
-    throw std::runtime_error("sleep() milliseconds must be non-negative");
-  }
-	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-  return Value::makeNull();
+    const HostContext *ctx) {
+    if (args.empty()) {
+        throw std::runtime_error("sleep() requires milliseconds");
+    }
+    int64_t ms = 0;
+    if (args[0].isInt()) {
+        ms = args[0].asInt();
+    } else if (args[0].isDouble()) {
+        ms = static_cast<int64_t>(args[0].asDouble());
+    } else {
+        throw std::runtime_error("sleep() requires a number");
+    }
+    if (ms < 0) {
+        throw std::runtime_error("sleep() milliseconds must be non-negative");
+    }
+
+    if (ms == 0) return Value::makeNull();
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto *sched = vm ? vm->getScheduler() : nullptr;
+    if (sched) {
+        auto *current = sched->current();
+        if (current) {
+            current->resume_at_time = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(ms);
+            sched->suspend(current, Scheduler::SuspensionReason::SleepWait);
+            return Value::makeNull();
+        }
+    }
+
+    // Fallback: blocking sleep (no scheduler)
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    return Value::makeNull();
 }
 
 Value AsyncBridge::handleTimeNow(const std::vector<Value> &args,

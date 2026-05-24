@@ -75,11 +75,15 @@ public:
   const HostContext *ctx);
  static Value handleSuspend(const std::vector<Value> &args,
   const HostContext *ctx);
- static Value handleKeyDown(const std::vector<Value> &args,
-  const HostContext *ctx);
- static Value handleKeyUp(const std::vector<Value> &args,
-  const HostContext *ctx);
- };
+    static Value handleKeyDown(const std::vector<Value> &args,
+                               const HostContext *ctx);
+    static Value handleKeyUp(const std::vector<Value> &args,
+                             const HostContext *ctx);
+    static Value handleGetExecutorMode(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleSetExecutorMode(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+};
 /**
  * SystemBridge - File system and process control
  */

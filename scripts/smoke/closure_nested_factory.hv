@@ -1,0 +1,15 @@
+// smoke: closure-nested-factory = 44
+fn makeMultiplier(a):
+  fn scale(b):
+    fn apply(c):
+      return a * b * c
+    return apply
+  return scale
+
+double = makeMultiplier(2)
+quad = double(2)
+val __result = quad(5) + double(3)(4)
+if __result != 44:
+  print("FAIL closure-nested-factory: expected 44, got " + str(__result))
+  process.exit(1)
+return __result

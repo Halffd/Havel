@@ -1,0 +1,13 @@
+// smoke: closure-escape-before-return = 7
+fn outer():
+  x = 3
+  fn inner():
+    return x + 4
+  return inner
+
+f = outer()
+val __result = f()
+if __result != 7:
+  print("FAIL closure-escape-before-return: expected 7, got " + str(__result))
+  process.exit(1)
+return __result

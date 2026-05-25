@@ -1,0 +1,8 @@
+// smoke: string-prototype-upper = 1
+s = "hello".upper()
+val __result = s == "HELLO" ? 1 : 0
+if __result != 1 {
+ print("FAIL string-prototype-upper: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

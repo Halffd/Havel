@@ -1,0 +1,8 @@
+// smoke: string-trim = 1
+s = string.trim("  hi  ")
+val __result = s == "hi" ? 1 : 0
+if __result != 1 {
+ print("FAIL string-trim: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

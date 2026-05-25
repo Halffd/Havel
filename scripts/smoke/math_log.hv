@@ -1,0 +1,12 @@
+// smoke: math-log = 1
+// log(e) == 1
+v = math.log(E)
+// Use tolerance: |v - 1.0| < 0.0001
+diff = v - 1.0
+if diff < 0 { diff = 0 - diff }
+val __result = diff < 0.0001 ? 1 : 0
+if __result != 1 {
+ print("FAIL math-log: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

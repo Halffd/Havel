@@ -1,0 +1,18 @@
+// smoke: closure-array-upvalue = 3
+fn makeStack():
+  items = []
+  fn push(v):
+    items.push(v)
+  fn size():
+    return items.len()
+  return [push, size]
+
+stack = makeStack()
+stack[0](1)
+stack[0](2)
+stack[0](3)
+val __result = stack[1]()
+if __result != 3:
+  print("FAIL closure-array-upvalue: expected 3, got " + str(__result))
+  process.exit(1)
+return __result

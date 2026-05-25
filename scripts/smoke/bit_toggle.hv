@@ -1,0 +1,8 @@
+// smoke: bit-toggle = 7
+// toggle bit 0 of 0b110 (6) -> 0b111 (7)
+val __result = bit.toggle(6, 0)
+if __result != 7 {
+ print("FAIL bit-toggle: expected 7, got " + str(__result))
+ process.exit(1)
+}
+return __result

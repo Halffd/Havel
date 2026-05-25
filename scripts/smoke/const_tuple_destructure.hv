@@ -1,0 +1,9 @@
+// smoke: const-tuple-destructure = 21
+const (a, b, c) = (5, 7, 9)
+total = a + b + c
+val __result = total
+if __result != 21 {
+ print("FAIL const-tuple-destructure: expected 21, got " + str(__result))
+ process.exit(1)
+}
+return __result

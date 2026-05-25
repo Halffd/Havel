@@ -1,0 +1,11 @@
+// smoke: time-weekday-range = 1
+w = time.weekday()
+ok = 1
+if w < 0 { ok = 0 }
+if w > 6 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL time-weekday-range: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

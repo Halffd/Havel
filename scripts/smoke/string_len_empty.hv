@@ -1,0 +1,7 @@
+// smoke: string-len-empty = 0
+val __result = string.len("")
+if __result != 0 {
+ print("FAIL string-len-empty: expected 0, got " + str(__result))
+ process.exit(1)
+}
+return __result

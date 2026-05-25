@@ -1,0 +1,7 @@
+// smoke: stdlib-string-len = 5
+val __result = string.len("hello")
+if __result != 5 {
+ print("FAIL stdlib-string-len: expected 5, got " + str(__result))
+ process.exit(1)
+}
+return __result

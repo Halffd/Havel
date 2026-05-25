@@ -1,0 +1,11 @@
+// smoke: time-day-range = 1
+d = time.day()
+ok = 1
+if d < 1 { ok = 0 }
+if d > 31 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL time-day-range: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

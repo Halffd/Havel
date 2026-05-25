@@ -1,0 +1,14 @@
+// smoke: random-choice-from-array = 1
+// choice picks from an array
+arr = [10, 20, 30]
+v = choice(arr)
+ok = 0
+if v == 10 { ok = 1 }
+if v == 20 { ok = 1 }
+if v == 30 { ok = 1 }
+val __result = ok
+if __result != 1 {
+ print("FAIL random-choice-from-array: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

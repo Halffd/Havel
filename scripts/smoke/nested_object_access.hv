@@ -1,0 +1,8 @@
+// smoke: nested-object-access = 42
+obj = {inner: {value: 42}}
+    val __result = obj.inner.value
+    if __result != 42 {
+     print("FAIL nested-object-access: expected 42, got " + str(__result))
+     process.exit(1)
+    }
+    return __result

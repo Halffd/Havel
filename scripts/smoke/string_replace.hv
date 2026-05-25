@@ -1,0 +1,8 @@
+// smoke: string-replace = 1
+v = string.replace("hello", "l", "r")
+val __result = v == "herlo" ? 1 : 0
+if __result != 1 {
+ print("FAIL string-replace: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

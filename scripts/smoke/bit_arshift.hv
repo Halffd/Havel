@@ -1,0 +1,8 @@
+// smoke: bit-arshift = -2
+// arithmetic right shift of negative: -8 >> 2 = -2
+val __result = bit.arshift(-8, 2)
+if __result != -2 {
+ print("FAIL bit-arshift: expected -2, got " + str(__result))
+ process.exit(1)
+}
+return __result

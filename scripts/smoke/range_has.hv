@@ -1,0 +1,11 @@
+// smoke: range-has = 1
+r = 1..5
+if r.has(3) {
+  if !r.has(10) { return 1 }
+}
+val __result = 0
+if __result != 1 {
+ print("FAIL range-has: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

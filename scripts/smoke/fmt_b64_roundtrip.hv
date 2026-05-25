@@ -1,0 +1,16 @@
+// smoke: fmt-b64-roundtrip = 1
+original = "test"
+encoded = fmt.b64(original)
+decoded = fmt.b64decode(encoded)
+// decoded is a byte array; check first 4 bytes match "test"
+ok = 1
+if decoded[0] != 116 { ok = 0 }  // 't'
+if decoded[1] != 101 { ok = 0 }  // 'e'
+if decoded[2] != 115 { ok = 0 }  // 's'
+if decoded[3] != 116 { ok = 0 }  // 't'
+val __result = ok
+if __result != 1 {
+ print("FAIL fmt-b64-roundtrip: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

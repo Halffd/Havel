@@ -1,0 +1,8 @@
+// smoke: null-coalescing = 42
+x = null ?? 42
+val __result = x
+if __result != 42 {
+ print("FAIL null-coalescing: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

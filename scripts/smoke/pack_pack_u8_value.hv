@@ -1,0 +1,8 @@
+// smoke: pack-pack-u8-value = 42
+data = pack.pack("u", 42)
+val __result = data[0]
+if __result != 42 {
+ print("FAIL pack-pack-u8-value: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

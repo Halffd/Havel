@@ -1,0 +1,16 @@
+// smoke: closure-return = 9
+fn makeGetter(v) {
+    x = v
+    fn get() {
+        return x
+    }
+    return get
+}
+
+getter = makeGetter(9)
+val __result = getter()
+if __result != 9 {
+ print("FAIL closure-return: expected 9, got " + str(__result))
+ process.exit(1)
+}
+return __result

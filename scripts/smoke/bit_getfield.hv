@@ -1,0 +1,8 @@
+// smoke: bit-getfield = 3
+// get bits [2:4) of 0b1110 (14) = 0b11 (3)
+val __result = bit.getfield(14, 1, 2)
+if __result != 3 {
+ print("FAIL bit-getfield: expected 3, got " + str(__result))
+ process.exit(1)
+}
+return __result

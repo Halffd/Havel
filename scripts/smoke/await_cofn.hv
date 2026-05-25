@@ -1,0 +1,11 @@
+// smoke: await-cofn = 99
+co fn task() {
+  return 99
+}
+result = <-task()
+val __result = result
+if __result != 99 {
+ print("FAIL await-cofn: expected 99, got " + str(__result))
+ process.exit(1)
+}
+return __result

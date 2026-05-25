@@ -1,0 +1,7 @@
+// smoke: toNumber-int = 42
+val __result = toNumber(42)
+if __result != 42 {
+ print("FAIL toNumber-int: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

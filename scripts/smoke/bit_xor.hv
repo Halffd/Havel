@@ -1,0 +1,7 @@
+// smoke: bit-xor = 6
+val __result = bit.xor(12, 10)
+if __result != 6 {
+ print("FAIL bit-xor: expected 6, got " + str(__result))
+ process.exit(1)
+}
+return __result

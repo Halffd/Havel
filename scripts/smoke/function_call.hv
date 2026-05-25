@@ -1,0 +1,13 @@
+// smoke: function-call = 5
+fn add(a, b) {
+    return a + b
+}
+
+x = add(2, 3)
+print(x)
+val __result = x
+if __result != 5 {
+ print("FAIL function-call: expected 5, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,14 @@
+// smoke: gc-allocation-stress = 2000
+i = 0
+while i < 2000 {
+    arr = [i, i + 1, i + 2]
+    obj = {v: i}
+    s = {i}
+    i += 1
+}
+val __result = i
+if __result != 2000 {
+ print("FAIL gc-allocation-stress: expected 2000, got " + str(__result))
+ process.exit(1)
+}
+return __result

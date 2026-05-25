@@ -1,0 +1,8 @@
+// smoke: fmt-format-hex-spec = 1
+s = fmt.format("{:x}", 255)
+val __result = s == "ff" ? 1 : 0
+if __result != 1 {
+ print("FAIL fmt-format-hex-spec: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

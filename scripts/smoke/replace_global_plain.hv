@@ -1,0 +1,8 @@
+// smoke: replace-global-plain = 1
+s = replace("hello", "l", "r")
+val __result = s == "herlo" ? 1 : 0
+if __result != 1 {
+ print("FAIL replace-global-plain: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

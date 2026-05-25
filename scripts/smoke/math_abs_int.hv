@@ -1,0 +1,8 @@
+// smoke: math-abs-int = 1
+v = math.abs(3)
+val __result = v == 3.0 ? 1 : 0
+if __result != 1 {
+ print("FAIL math-abs-int: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,9 @@
+// smoke: spread-in-array = 4
+base = [1, 2]
+merged = [...base, 3, 4]
+val __result = merged[3]
+if __result != 4 {
+ print("FAIL spread-in-array: expected 4, got " + str(__result))
+ process.exit(1)
+}
+return __result

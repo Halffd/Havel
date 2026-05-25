@@ -1,0 +1,9 @@
+// smoke: fmt-b64decode-returns-array = 2
+encoded = fmt.b64("AB")
+decoded = fmt.b64decode(encoded)
+val __result = decoded.len
+if __result != 2 {
+ print("FAIL fmt-b64decode-returns-array: expected 2, got " + str(__result))
+ process.exit(1)
+}
+return __result

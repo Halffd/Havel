@@ -1,0 +1,10 @@
+// smoke: assignment-local = 10
+x = 1
+x = x + 4
+x += 5
+val __result = x
+if __result != 10 {
+ print("FAIL assignment-local: expected 10, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,18 @@
+// smoke: set-create-and-assign = 1
+s = {1, 2}
+s[3] = true
+s[2] = false
+if s[1] {
+    if s[2] {
+        return 0
+    }
+}
+if s[3] {
+    return 1
+}
+val __result = 0
+if __result != 1 {
+ print("FAIL set-create-and-assign: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

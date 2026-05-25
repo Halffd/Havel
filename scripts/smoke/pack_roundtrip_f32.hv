@@ -1,0 +1,11 @@
+// smoke: pack-roundtrip-f32 = 3
+data = pack.pack("f", 3.14)
+result = pack.unpack("f", data)
+// f32 has limited precision; 3.14 becomes ~3.140000104904175
+// check it is approximately right by checking int part
+val __result = int(result[0])
+if __result != 3 {
+ print("FAIL pack-roundtrip-f32: expected 3, got " + str(__result))
+ process.exit(1)
+}
+return __result

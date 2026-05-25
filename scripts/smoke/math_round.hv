@@ -1,0 +1,8 @@
+// smoke: math-round = 1
+v = math.round(3.5)
+val __result = v == 4.0 ? 1 : 0
+if __result != 1 {
+ print("FAIL math-round: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

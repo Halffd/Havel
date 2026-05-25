@@ -1,0 +1,7 @@
+// smoke: string-find-found = 6
+val __result = string.find("hello world", "world")
+if __result != 6 {
+ print("FAIL string-find-found: expected 6, got " + str(__result))
+ process.exit(1)
+}
+return __result

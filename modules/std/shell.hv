@@ -83,10 +83,10 @@ fn writeLines(path, lines) {
 }
 
 // Copy file content to string, transform, write back
-fn transformFile(path, fn) {
- content = shell.read(path)
- if content == null { return null }
- result = fn(content)
+fn transformFile(path, cb) {
+  content = shell.read(path)
+  if content == null { return null }
+  result = cb(content)
  shell.write(path, result)
  result
 }

@@ -77,10 +77,10 @@ fn debugIf(cond, msg) { if cond { debug(msg) } }
 // Benchmark helper — log elapsed time for a block
 // ============================================================
 
-fn bench(label, fn) {
- start = time.now()
- fn()
- elapsed = time.now() - start
+fn bench(label, cb) {
+  start = time.now()
+  cb()
+  elapsed = time.now() - start
  ms = int(elapsed * 1000)
  info("{label}: {ms}ms")
 }

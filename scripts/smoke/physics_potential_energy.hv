@@ -1,0 +1,9 @@
+// smoke: physics-potential-energy = 1
+// PE = m * g * h = 10 * 9.80665 * 5 = 490.3325
+v = potential_energy(10, 5)
+val __result = v > 490 ? 1 : 0
+if __result != 1 {
+ print("FAIL physics-potential-energy: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

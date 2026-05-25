@@ -1,0 +1,8 @@
+// smoke: string-repeat = 6
+s = "ha" * 3
+val __result = #s
+if __result != 6 {
+ print("FAIL string-repeat: expected 6, got " + str(__result))
+ process.exit(1)
+}
+return __result

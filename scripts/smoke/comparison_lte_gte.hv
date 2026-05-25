@@ -1,0 +1,11 @@
+// smoke: comparison-lte-gte = 1
+a = (5 <= 5)
+b = (10 >= 10)
+c = (5 <= 4)
+if a { if b { if !c { return 1 } } }
+val __result = 0
+if __result != 1 {
+ print("FAIL comparison-lte-gte: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

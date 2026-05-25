@@ -1,0 +1,11 @@
+// smoke: math-random-range = 1
+v = math.random()
+ok = 1
+if v < 0 { ok = 0 }
+if v >= 1 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL math-random-range: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

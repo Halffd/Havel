@@ -1,0 +1,9 @@
+// smoke: log-history-returns-array = 1
+log.info("hist-test")
+h = log.history()
+val __result = isArray(h) ? 1 : 0
+if __result != 1 {
+ print("FAIL log-history-returns-array: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

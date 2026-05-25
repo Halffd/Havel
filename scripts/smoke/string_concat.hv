@@ -1,0 +1,8 @@
+// smoke: string-concat = 11
+s = "hello" + " " + "world"
+val __result = #s
+if __result != 11 {
+ print("FAIL string-concat: expected 11, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,7 @@
+// smoke: isNumber-int = 1
+val __result = isNumber(42) ? 1 : 0
+if __result != 1 {
+ print("FAIL isNumber-int: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

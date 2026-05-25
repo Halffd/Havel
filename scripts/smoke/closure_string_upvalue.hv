@@ -1,0 +1,16 @@
+// smoke: closure-string-upvalue = havel
+fn makeGreeter():
+  name = "havel"
+  fn greet():
+    return name
+  fn setName(v):
+    name = v
+  return [greet, setName]
+
+pair = makeGreeter()
+pair[1]("havel")
+val __result = pair[0]()
+if __result != "havel":
+  print("FAIL closure-string-upvalue: expected havel, got " + str(__result))
+  process.exit(1)
+return __result

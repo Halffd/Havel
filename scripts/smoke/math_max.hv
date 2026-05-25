@@ -1,0 +1,8 @@
+// smoke: math-max = 1
+v = math.max(3, 7)
+val __result = v == 7.0 ? 1 : 0
+if __result != 1 {
+ print("FAIL math-max: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

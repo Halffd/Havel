@@ -1,0 +1,12 @@
+// smoke: first-class-call = 42
+fn add(a, b) {
+    return a + b
+}
+
+f = add
+val __result = f(20, 22)
+if __result != 42 {
+ print("FAIL first-class-call: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

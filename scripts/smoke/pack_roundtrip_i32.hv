@@ -1,0 +1,9 @@
+// smoke: pack-roundtrip-i32 = 100000
+data = pack.pack("l", 100000)
+    result = pack.unpack("l", data)
+val __result = result[0]
+if __result != 100000 {
+ print("FAIL pack-roundtrip-i32: expected 100000, got " + str(__result))
+ process.exit(1)
+}
+return __result

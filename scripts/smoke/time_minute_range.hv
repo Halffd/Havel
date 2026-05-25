@@ -1,0 +1,11 @@
+// smoke: time-minute-range = 1
+m = time.minute()
+ok = 1
+if m < 0 { ok = 0 }
+if m > 59 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL time-minute-range: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

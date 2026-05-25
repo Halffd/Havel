@@ -1,0 +1,10 @@
+// smoke: comparison-eq-neq = 1
+a = (10 == 10)
+b = (10 != 9)
+if a { if b { return 1 } }
+val __result = 0
+if __result != 1 {
+ print("FAIL comparison-eq-neq: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

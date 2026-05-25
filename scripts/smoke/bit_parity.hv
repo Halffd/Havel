@@ -1,0 +1,8 @@
+// smoke: bit-parity = 0
+// parity of 0b1111 (even number of 1s) = 0
+val __result = bit.parity(15)
+if __result != 0 {
+ print("FAIL bit-parity: expected 0, got " + str(__result))
+ process.exit(1)
+}
+return __result

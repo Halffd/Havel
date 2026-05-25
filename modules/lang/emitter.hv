@@ -94,7 +94,6 @@ fn emitStoreVar(emitter, name) {
   }
   // Variable not found in scope — bare assignment creates local inside function, global at top level
   funcRoot = scopeFindFuncRoot(emitter.scope)
-  print("DBG emitStoreVar name=" + name + " funcRoot=" + str(funcRoot) + " funcRoot.parent=" + str(funcRoot.parent))
   if funcRoot.parent != null {
     // Inside a function — declare as local in the current scope
     idx = scopeDeclare(emitter.scope, name)
@@ -1504,9 +1503,12 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
 
         }
     }
-// Pass 1: compile all function bodies
-funcUpcounts = []
-fi = 0
+ // Module scope — used as parent for top-level functions
+ moduleScope = Scope(null)
+ emitter.scope = moduleScope
+ // Pass 1: compile all function bodies
+ funcUpcounts = []
+ fi = 0
 while fi < #funcDecls {
 decl = funcDecls[fi]
 funcIdx = emitter.func_idx
@@ -1516,10 +1518,10 @@ uc = compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.l
 funcUpcounts.push(uc)
 fi = fi + 1
 }
-	// Pass 2: compile __main__
-	bc.func_new(entryName, 0, 64)
-	traceEmitter("func_new " + entryName + " (main)")
-	emitter.scope = Scope(null)
+ // Pass 2: compile __main__
+ bc.func_new(entryName, 0, 64)
+ traceEmitter("func_new " + entryName + " (main)")
+ emitter.scope = moduleScope
 // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
 fi2 = 0
 while fi2 < #funcDecls {

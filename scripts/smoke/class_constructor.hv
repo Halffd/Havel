@@ -1,0 +1,13 @@
+// smoke: class-constructor = 42
+class Vec2 {
+  x, y
+  fn @(x, y) { @x = x; @y = y }
+  fn sum() { return @x + @y }
+}
+v = Vec2(20, 22)
+val __result = v.sum()
+if __result != 42 {
+ print("FAIL class-constructor: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

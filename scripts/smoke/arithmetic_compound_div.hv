@@ -1,0 +1,9 @@
+// smoke: arithmetic-compound-div = 42
+x = 84
+    x /= 2
+    val __result = int(x)
+    if __result != 42 {
+     print("FAIL arithmetic-compound-div: expected 42, got " + str(__result))
+     process.exit(1)
+    }
+    return __result

@@ -1,0 +1,7 @@
+// smoke: bitwise-xor = 240
+val __result = 0xFF ^ 0x0F
+if __result != 240 {
+ print("FAIL bitwise-xor: expected 240, got " + str(__result))
+ process.exit(1)
+}
+return __result

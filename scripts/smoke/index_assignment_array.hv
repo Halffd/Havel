@@ -1,0 +1,10 @@
+// smoke: index-assignment-array = 15
+arr = [1, 2]
+arr[1] = 10
+arr[3] = 5
+val __result = arr[1] + arr[3]
+if __result != 15 {
+ print("FAIL index-assignment-array: expected 15, got " + str(__result))
+ process.exit(1)
+}
+return __result

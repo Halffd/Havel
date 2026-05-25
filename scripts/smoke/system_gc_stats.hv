@@ -1,0 +1,24 @@
+// smoke: system-gc-stats = 1
+before = system.gcStats()
+i = 0
+while i < 64 {
+    obj = {v: i}
+    i += 1
+}
+system.gc()
+after = system.gcStats()
+if after.collections >= before.collections {
+    if after.heapSize >= 0 {
+        if after.objectCount >= 0 {
+            if after.lastPauseNs >= 0 {
+                return 1
+            }
+        }
+    }
+}
+val __result = 0
+if __result != 1 {
+ print("FAIL system-gc-stats: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

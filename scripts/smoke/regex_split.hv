@@ -1,0 +1,8 @@
+// smoke: regex-split = 3
+arr = regex_split(",", "a,b,c")
+val __result = arr.len
+if __result != 3 {
+ print("FAIL regex-split: expected 3, got " + str(__result))
+ process.exit(1)
+}
+return __result

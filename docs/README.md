@@ -1,7 +1,21 @@
 
 **Havel** is a powerful utility for managing windows and hotkeys across multiple platforms, with a focus on Linux X11 environments. It allows for complex window management, hotkey configurations, and automated tasks via its own Havel scripting language.
 
-## 📋 Table of Contents
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Language Reference](language-reference.md) | Syntax, types, control flow, modules |
+| [Hotkey System](hotkey-system.md) | Hotkey registration, policies, prototype API, conditional hotkeys |
+| [Mode System](mode-system.md) | Mode definition, transitions, conditional hotkey integration |
+| [Host Functions](host-functions.md) | Complete reference for all built-in functions |
+| [Runtime Architecture](runtime-architecture.md) | Compiler pipeline, VM, scheduler, event system |
+| [Grammar](GRAMMAR.md) | Formal grammar (EBNF), AST node types |
+| [Operators](OPERATORS.md) | Operator reference and precedence |
+| [Classes & Structs](CLASSES_AND_STRUCTS.md) | Struct and class system details |
+| [FFI](ffi/README.md) | Foreign function interface |
+
+## Table of Contents
 - [Features](#features)
 - [Installation](#installation)
 - [Syntax Reference](#syntax-reference)

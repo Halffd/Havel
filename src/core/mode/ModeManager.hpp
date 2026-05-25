@@ -142,8 +142,10 @@ public:
   
   
   void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
-  
-  
+
+  using ModeChangeCallback = std::function<void(const std::string &newMode, const std::string &oldMode)>;
+  void setOnModeChange(ModeChangeCallback cb) { onModeChange_ = std::move(cb); }
+
   void registerVarChangedHandler();
 
 private:
@@ -159,6 +161,7 @@ private:
   
   
   compiler::EventQueue* eventQueue_ = nullptr;
+  ModeChangeCallback onModeChange_;
 
   void triggerEnter(ModeDefinition &mode);
   void triggerExit(ModeDefinition &mode);

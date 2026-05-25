@@ -152,11 +152,15 @@ namespace havel
       return false;
     };
 
-    conditionalManager.SetConditionEvaluator(evalCondition);
-    conditionalManager.setModeManager(modeManager);
+  conditionalManager.SetConditionEvaluator(evalCondition);
+  conditionalManager.setModeManager(modeManager);
 
-    initializeInputCallbacks();
-  }
+  modeManager->setOnModeChange([this](const std::string &newMode, const std::string &oldMode) {
+    conditionalManager.SetMode(newMode);
+  });
+
+  initializeInputCallbacks();
+}
 
   void HotkeyManager::setEventQueue(compiler::EventQueue *eq)
   {

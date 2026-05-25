@@ -36,49 +36,60 @@ std::string ModeManager::getPreviousMode() const {
 }
 
 void ModeManager::setMode(const std::string &modeName) {
-  std::lock_guard<std::mutex> lock(modeMutex);
+  ModeChangeCallback cb;
+  std::string oldMode;
+  std::string newMode;
+  {
+    std::lock_guard<std::mutex> lock(modeMutex);
 
-  if (currentMode == modeName) {
-    return; // No change
-  }
+    if (currentMode == modeName) {
+      return; // No change
+    }
 
-  std::string oldMode = currentMode;
+    oldMode = currentMode;
 
-  // Find and exit current mode
-  for (auto &mode : modes) {
-    if (mode.name == currentMode && mode.isActive) {
-      mode.isActive = false;
-      if (mode.onExit) {
-        mode.onExit();
-      }
-      if (mode.onExitTo) {
-        mode.onExitTo(modeName);
+    // Find and exit current mode
+    for (auto &mode : modes) {
+      if (mode.name == currentMode && mode.isActive) {
+        mode.isActive = false;
+        if (mode.onExit) {
+          mode.onExit();
+        }
+        if (mode.onExitTo) {
+          mode.onExitTo(modeName);
+        }
       }
     }
-  }
 
-  // Set previous mode
-  previousMode = currentMode;
-  currentMode = modeName;
+    // Set previous mode
+    previousMode = currentMode;
+    currentMode = modeName;
+    newMode = modeName;
 
-  // Find and enter new mode
-  for (auto &mode : modes) {
-    if (mode.name == modeName) {
-      mode.isActive = true;
-      mode.enterTime = std::chrono::steady_clock::now();
-      mode.transitionCount++;
-      if (mode.onEnter) {
-        mode.onEnter();
+    // Find and enter new mode
+    for (auto &mode : modes) {
+      if (mode.name == modeName) {
+        mode.isActive = true;
+        mode.enterTime = std::chrono::steady_clock::now();
+        mode.transitionCount++;
+        if (mode.onEnter) {
+          mode.onEnter();
+        }
+        if (mode.onEnterFrom) {
+          mode.onEnterFrom(oldMode);
+        }
+        break;
       }
-      if (mode.onEnterFrom) {
-        mode.onEnterFrom(oldMode);
-      }
-      break;
     }
+
+    // Trigger transition callbacks
+    triggerTransition(oldMode, modeName);
+    cb = onModeChange_;
   }
 
-  // Trigger transition callbacks
-  triggerTransition(oldMode, modeName);
+  if (cb) {
+    cb(newMode, oldMode);
+  }
 }
 
 std::chrono::milliseconds
@@ -165,93 +176,106 @@ void ModeManager::triggerTransition(const std::string &fromMode,
 }
 
 void ModeManager::update(ExprEvaluator evaluator) {
-  std::lock_guard<std::mutex> lock(modeMutex);
-
-  // First, update all signals
-  for (auto &signal : signalList) {
-    if (signal.conditionExpr && evaluator) {
-      signal.value = evaluator(*signal.conditionExpr);
-    }
-  }
-
-  std::string newActiveMode = currentMode;
+  ModeChangeCallback cb;
+  std::string oldMode;
+  std::string newMode;
   bool modeChanged = false;
 
-  if (debugging::debug_hotkeys) debug("ModeManager::update() - checking {} modes, current={}", modes.size(),
-        currentMode);
+  {
+    std::lock_guard<std::mutex> lock(modeMutex);
 
-  // Sort modes by priority (higher priority first)
-  std::vector<ModeDefinition *> sortedModes;
-  for (auto &mode : modes) {
-    sortedModes.push_back(&mode);
-  }
-  std::sort(sortedModes.begin(), sortedModes.end(),
-            [](const ModeDefinition *a, const ModeDefinition *b) {
-              return a->priority > b->priority;
-            });
-
-  // Check all mode conditions in priority order
-  for (auto *modePtr : sortedModes) {
-    auto &mode = *modePtr;
-    bool shouldActivate = false;
-    bool hasCondition = false;
-
-    // Try callback-based condition first
-    if (mode.conditionCallback) {
-      shouldActivate = mode.conditionCallback();
-      hasCondition = true;
-    }
-    // Fall back to AST-based condition if callback not available
-    else if (mode.conditionExpr && evaluator) {
-      shouldActivate = evaluator(*mode.conditionExpr);
-      hasCondition = true;
+    // First, update all signals
+    for (auto &signal : signalList) {
+      if (signal.conditionExpr && evaluator) {
+        signal.value = evaluator(*signal.conditionExpr);
+      }
     }
 
-    if (!hasCondition)
-      continue;
+    std::string newActiveMode = currentMode;
 
-    if (debugging::debug_hotkeys) debug("  Mode '{}' (priority {}) condition = {}", mode.name, mode.priority,
-          shouldActivate ? "true" : "false");
+    if (debugging::debug_hotkeys) debug("ModeManager::update() - checking {} modes, current={}", modes.size(),
+      currentMode);
 
-    if (shouldActivate && !mode.isActive) {
-      // Mode condition met, activate it
-      // First exit current mode if different
-      if (currentMode != mode.name) {
-        for (auto &activeMode : modes) {
-          if (activeMode.isActive && activeMode.name != mode.name) {
-            if (debugging::debug_hotkeys) debug("  Exiting mode '{}'", activeMode.name);
-            triggerExit(activeMode);
+    // Sort modes by priority (higher priority first)
+    std::vector<ModeDefinition *> sortedModes;
+    for (auto &mode : modes) {
+      sortedModes.push_back(&mode);
+    }
+    std::sort(sortedModes.begin(), sortedModes.end(),
+      [](const ModeDefinition *a, const ModeDefinition *b) {
+        return a->priority > b->priority;
+      });
+
+    // Check all mode conditions in priority order
+    for (auto *modePtr : sortedModes) {
+      auto &mode = *modePtr;
+      bool shouldActivate = false;
+      bool hasCondition = false;
+
+      // Try callback-based condition first
+      if (mode.conditionCallback) {
+        shouldActivate = mode.conditionCallback();
+        hasCondition = true;
+      }
+      // Fall back to AST-based condition if callback not available
+      else if (mode.conditionExpr && evaluator) {
+        shouldActivate = evaluator(*mode.conditionExpr);
+        hasCondition = true;
+      }
+
+      if (!hasCondition)
+        continue;
+
+      if (debugging::debug_hotkeys) debug(" Mode '{}' (priority {}) condition = {}", mode.name, mode.priority,
+        shouldActivate ? "true" : "false");
+
+      if (shouldActivate && !mode.isActive) {
+        // Mode condition met, activate it
+        // First exit current mode if different
+        if (currentMode != mode.name) {
+          for (auto &activeMode : modes) {
+            if (activeMode.isActive && activeMode.name != mode.name) {
+              if (debugging::debug_hotkeys) debug(" Exiting mode '{}'", activeMode.name);
+              triggerExit(activeMode);
+            }
           }
         }
-      }
-      if (debugging::debug_hotkeys) debug("  Entering mode '{}'", mode.name);
-      triggerEnter(mode);
-      modeChanged = true;
-      newActiveMode = mode.name;
-    } else if (!shouldActivate && mode.isActive && mode.name == currentMode) {
-      // Current mode condition no longer met
-      if (debugging::debug_hotkeys) debug("  Exiting mode '{}' (condition no longer met)", mode.name);
-      triggerExit(mode);
-      newActiveMode = "default";
-      modeChanged = true;
-    }
-  }
-
-  // If no mode is active, switch to default
-  if (newActiveMode == "default" && currentMode != "default") {
-    for (auto &mode : modes) {
-      if (mode.isActive) {
-        if (debugging::debug_hotkeys) debug("  Exiting mode '{}' (no mode active)", mode.name);
+        if (debugging::debug_hotkeys) debug(" Entering mode '{}'", mode.name);
+        triggerEnter(mode);
+        modeChanged = true;
+        newActiveMode = mode.name;
+      } else if (!shouldActivate && mode.isActive && mode.name == currentMode) {
+        // Current mode condition no longer met
+        if (debugging::debug_hotkeys) debug(" Exiting mode '{}' (condition no longer met)", mode.name);
         triggerExit(mode);
+        newActiveMode = "default";
+        modeChanged = true;
       }
     }
-    previousMode = currentMode;
-    currentMode = "default";
-    modeChanged = true;
+
+    // If no mode is active, switch to default
+    if (newActiveMode == "default" && currentMode != "default") {
+      for (auto &mode : modes) {
+        if (mode.isActive) {
+          if (debugging::debug_hotkeys) debug(" Exiting mode '{}' (no mode active)", mode.name);
+          triggerExit(mode);
+        }
+      }
+      previousMode = currentMode;
+      currentMode = "default";
+      modeChanged = true;
+    }
+
+    if (modeChanged) {
+      oldMode = previousMode;
+      newMode = currentMode;
+      info("Mode changed to '{}'", currentMode);
+      cb = onModeChange_;
+    }
   }
 
-  if (modeChanged) {
-    info("Mode changed to '{}'", currentMode);
+  if (cb) {
+    cb(newMode, oldMode);
   }
 }
 

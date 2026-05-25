@@ -4,22 +4,23 @@
 
 use { tokenize, TOKEN_TYPES, KEYWORDS } from "lexer"
 use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
-      Program, BlockStatement, ExpressionStatement,
-      NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
-      Identifier, BinaryExpression, UnaryExpression, UpdateExpression,
-      CallExpression, MemberExpression, IndexExpression,
-      AssignmentExpression, CompoundAssignment,
-      ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression,
-      IfStatement, WhileStatement, ForStatement, LoopStatement,
-      RepeatStatement, BreakStatement, ContinueStatement,
-      FnDeclaration, LambdaExpression, ReturnStatement,
-      LetDeclaration, ValDeclaration, UseStatement, ImportStatement,
-      HotkeyBinding, BacktickExpression, ShellCommand,
-      RangeExpression, TernaryExpression, PipelineExpression,
-      ThrowStatement, TryStatement, MatchExpression, MatchCase,
-      InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
-      ConfigBlock, SleepStatement, ErrorNode,
-      isNode, prettyPrint } from "ast"
+	Program, BlockStatement, ExpressionStatement,
+	NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
+	Identifier, BinaryExpression, UnaryExpression, UpdateExpression,
+	CallExpression, MemberExpression, IndexExpression,
+	AssignmentExpression, CompoundAssignment,
+	ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression,
+	IfStatement, WhileStatement, ForStatement, LoopStatement,
+	RepeatStatement, BreakStatement, ContinueStatement,
+	FnDeclaration, LambdaExpression, ReturnStatement,
+	LetDeclaration, ValDeclaration, UseStatement, ImportStatement,
+	HotkeyBinding, BacktickExpression, ShellCommand,
+	RangeExpression, TernaryExpression, PipelineExpression,
+	ThrowStatement, TryStatement, MatchExpression, MatchCase,
+	InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
+	ConfigBlock, SleepStatement, ErrorNode,
+	ClassDeclaration, StructDeclaration, EnumDeclaration,
+	isNode, prettyPrint } from "ast"
 
 // --- Binding power constants (matching C++ switch-based values) ---
 BP_NONE = 0
@@ -1295,11 +1296,11 @@ fn Parser(tokenList) {
                     advance()
                     p.typeAnn = advance().value
                 }
-                // Default value
-                if current().type == "Assign" {
-                    advance()
-                    p.default = parseExpr(0)
-                }
+		// Default value
+		if current().type == "Assign" {
+			advance()
+			p.defval = parseExpr(0)
+		}
                 // Variadic
                 if current().type == "Spread" {
                     advance()
@@ -1846,9 +1847,11 @@ fn parseStatement() {
         if tt == "Interval": return parseIntervalStatement()
         if tt == "Timeout": return parseTimeoutStatement()
 
-        // Type declarations
-        if tt == "Struct" or tt == "Class" or tt == "Enum" or tt == "Trait" or tt == "Prot" or tt == "Impl" {
-            return parseTypeDeclStatement()
+	// Type declarations
+	if tt == "Class" { return parseClassDeclaration() }
+	if tt == "Struct" { return parseStructDeclaration() }
+	if tt == "Enum" or tt == "Trait" or tt == "Prot" or tt == "Impl" {
+		return parseTypeDeclStatement()
 
         }
         // Expression statement
@@ -2253,12 +2256,12 @@ fn parseIfStatement() {
           p.typeAnn = advance().value
           skipNewlines()
         }
-        // Default value
-        if current().type == "Assign" {
-          advance()
-          p.default = parseExpr(0)
-          skipNewlines()
-        }
+	// Default value
+	if current().type == "Assign" {
+		advance()
+		p.defval = parseExpr(0)
+		skipNewlines()
+	}
         // Variadic
         if current().type == "Spread" {
           advance()
@@ -2787,27 +2790,288 @@ fn parseUseStatement() {
         node
 
     }
-    // ===================================================================
-    // STATEMENT: type declarations (stub — just consume and return error)
-    // ===================================================================
-    fn parseTypeDeclStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume struct/class/etc
-        skipNewlines()
-        name = advance().value
-        skipNewlines()
-        // Try to parse body
-        body = null
-        if current().type == "OpenBrace" or current().type == "Colon" {
-            body = parseBlock()
-        }
-        else {
-            body = BlockStatement([], l, c)
-        }
-        ConfigBlock("type:" + name, body, l, c)
+// ===================================================================
+// STATEMENT: class declaration
+// ===================================================================
+fn parseClassDeclaration() {
+	l = current().line
+	c = current().col
+	advance() // consume 'class'
+	skipNewlines()
+	name = current().value
+	advance() // consume class name
+	parentName = ""
+	isColonBody = false
+	// Check for inheritance: class X : ParentClass
+	// vs colon body: class X :
+	if current().type == "Colon" {
+		nextTok = at(1)
+		if nextTok.type == "Identifier" && nextTok.line == current().line {
+			advance() // consume ':'
+			parentName = current().value
+			advance() // consume parent name
+		} else {
+			isColonBody = true
+		}
+	}
+	// After inheritance, check for colon body
+	if !isColonBody && current().type == "Colon" {
+		isColonBody = true
+	}
+	fields = []
+	methods = []
+	if isColonBody {
+		advance() // consume ':'
+		skipNewlines()
+		_parseClassMembers(methods, fields)
+	} else if current().type == "OpenBrace" {
+		advance() // consume '{'
+		skipNewlines()
+		_parseClassMembers(methods, fields)
+		if current().type == "CloseBrace" {
+			advance() // consume '}'
+		}
+	}
+	ClassDeclaration(name, parentName, fields, methods, l, c)
 
-    }
+}
+
+fn _parseClassMembers(methods, fields) {
+	while notEOF() && current().type != "CloseBrace" && current().type != "EOF" {
+		skipNewlinesAndSemicolons()
+		if !notEOF() || current().type == "CloseBrace" || current().type == "EOF" { break }
+		tt = current().type
+		if tt == "Fn" {
+			m = _parseClassMethod()
+			methods.push(m)
+			continue
+		}
+		if tt == "Op" {
+			advance() // consume 'op'
+			m = _parseClassOperatorMethod()
+			methods.push(m)
+			continue
+		}
+		// Field definition: name [: Type] [= default] or @@name [: Type] [= default]
+		isClassField = false
+		if tt == "AtAt" {
+			isClassField = true
+			advance() // consume '@@'
+		}
+		fname = current().value
+		fline = current().line
+		fcol = current().col
+		advance() // consume field name
+		// Skip optional type annotation
+		if current().type == "Colon" {
+			advance() // consume ':'
+			skipNewlines()
+			if current().type == "Identifier" {
+				advance() // consume type name
+			}
+		}
+		// Optional default value
+		defaultValue = null
+		if current().type == "Assign" {
+			advance() // consume '='
+			defaultValue = parseExpr(0)
+		}
+		// Optional comma
+		if current().type == "Comma" {
+			advance()
+		}
+		fields.push({name: fname, isClassField: isClassField, defaultValue: defaultValue, line: fline, col: fcol})
+	}
+
+}
+
+fn _parseClassMethod() {
+	advance() // consume 'fn'
+	mline = current().line
+	mcol = current().col
+	methodName = current().value
+	// Handle constructor: fn @()
+	if current().type == "At" {
+		advance() // consume '@'
+		methodName = "init"
+	} else {
+		advance() // consume method name
+	}
+	// Parse params
+	params = []
+	if current().type == "OpenParen" {
+		advance() // consume '('
+		while notEOF() && current().type != "CloseParen" {
+			skipNewlines()
+			if current().type == "CloseParen" { break }
+			pname = current().value
+ p = {name: pname}
+ p.default = null
+ advance() // consume param name
+ // Optional default value
+ if current().type == "Assign" {
+ advance() // consume '='
+ p.default = parseExpr(0)
+ }
+			params.push(p)
+			skipNewlines()
+			if current().type == "Comma" { advance() }
+		}
+		if current().type == "CloseParen" {
+			advance() // consume ')'
+		}
+	}
+	skipNewlines()
+	// Parse body
+	body = parseBlock()
+	{name: methodName, params: params, body: body, line: mline, col: mcol}
+
+}
+
+fn _parseClassOperatorMethod() {
+	mline = current().line
+	mcol = current().col
+	// Already consumed 'op'
+	// Map operator token to method name
+	tv = current().value
+	tt = current().type
+	methodName = ""
+	if tv == "+" { methodName = "op_add" }
+	else if tv == "-" { methodName = "op_sub" }
+	else if tv == "*" { methodName = "op_mul" }
+	else if tv == "/" { methodName = "op_div" }
+	else if tv == "==" { methodName = "op_eq" }
+	else if tv == "!=" { methodName = "op_ne" }
+	else if tv == "<" { methodName = "op_lt" }
+	else if tv == ">" { methodName = "op_gt" }
+	else if tv == "<=" { methodName = "op_le" }
+	else if tv == ">=" { methodName = "op_ge" }
+	else if tv == "[]" { methodName = "op_index" }
+	else if tv == "[]=" { methodName = "op_index_set" }
+	else if current().type == "OpenBracket" {
+		advance() // consume '['
+		if current().type == "CloseBracket" {
+			advance() // consume ']'
+			if current().type == "Assign" {
+				advance() // consume '='
+				methodName = "op_index_set"
+			} else {
+				methodName = "op_index"
+			}
+		}
+	}
+	else if current().type == "OpenParen" {
+		methodName = "op_call"
+	}
+	else if tv == "#" { methodName = "op_length" }
+	else if current().type == "Not" { methodName = "op_not" }
+	else if tv == "repr" { methodName = "op_repr" }
+	else { methodName = "op_" + tv }
+	if methodName != "" && methodName.startsWith("op_") && current().type != "OpenBracket" && current().type != "OpenParen" {
+		advance() // consume the operator token
+	}
+	// Parse params
+	params = []
+	if current().type == "OpenParen" {
+		advance() // consume '('
+		while notEOF() && current().type != "CloseParen" {
+			skipNewlines()
+			if current().type == "CloseParen" { break }
+			pname = current().value
+ p = {name: pname}
+ p.default = null
+ advance()
+ if current().type == "Assign" {
+ advance()
+ p.default = parseExpr(0)
+ }
+			params.push(p)
+			skipNewlines()
+			if current().type == "Comma" { advance() }
+		}
+		if current().type == "CloseParen" {
+			advance()
+		}
+	}
+	skipNewlines()
+	body = parseBlock()
+	{name: methodName, params: params, body: body, line: mline, col: mcol}
+
+}
+
+// ===================================================================
+// STATEMENT: struct declaration
+// ===================================================================
+fn parseStructDeclaration() {
+	l = current().line
+	c = current().col
+	advance() // consume 'struct'
+	skipNewlines()
+	name = current().value
+	advance() // consume struct name
+	fields = []
+	methods = []
+	// struct Foo(field1, field2) or struct Foo { ... }
+	if current().type == "OpenParen" {
+		advance() // consume '('
+		while notEOF() && current().type != "CloseParen" {
+			skipNewlines()
+			if current().type == "CloseParen" { break }
+			fname = current().value
+			f = {name: fname, isClassField: false, defaultValue: null, line: current().line, col: current().col}
+			advance() // consume field name
+			// Optional default value
+			if current().type == "Assign" {
+				advance()
+				f.defaultValue = parseExpr(0)
+			}
+			fields.push(f)
+			skipNewlines()
+			if current().type == "Comma" { advance() }
+		}
+		if current().type == "CloseParen" {
+			advance() // consume ')'
+		}
+	}
+	skipNewlines()
+	if current().type == "OpenBrace" {
+		advance() // consume '{'
+		skipNewlines()
+		_parseClassMembers(methods, fields)
+		if current().type == "CloseBrace" {
+			advance() // consume '}'
+		}
+	} else if current().type == "Colon" {
+		advance() // consume ':'
+		skipNewlines()
+		_parseClassMembers(methods, fields)
+	}
+	StructDeclaration(name, fields, methods, null, l, c)
+
+}
+
+// ===================================================================
+// STATEMENT: type declarations (stub — just consume and return ConfigBlock)
+// ===================================================================
+fn parseTypeDeclStatement() {
+	l = current().line
+	c = current().col
+	advance() // consume enum/trait/prot/impl
+	skipNewlines()
+	name = current().value
+	advance() // consume name
+	skipNewlines()
+	// Try to parse body
+	body = null
+	if current().type == "OpenBrace" or current().type == "Colon" {
+		body = parseBlock()
+	}
+	else {
+		body = BlockStatement([], l, c)
+	}
+	ConfigBlock("type:" + name, body, l, c)
+
+}
     // ===================================================================
     // PRODUCE AST — main entry point
     // ===================================================================

@@ -2,7 +2,7 @@
 // Walks the AST from "pratt".hv/ast.hv and emits bytecode via bc.* host functions
 // Uses scope.hv for variable resolution and upvalue tracking
 
-use { Scope, scopeDeclare, scopeResolve, scopeLocalCount } from "scope"
+use { Scope, scopeDeclare, scopeResolve, scopeLocalCount, scopeFindFuncRoot } from "scope"
 use { traceEmitter, isOn } from "debug"
 
 fn charDigit(c) {
@@ -81,20 +81,29 @@ fn emitLoadVar(emitter, name) {
 
 }
 fn emitStoreVar(emitter, name) {
-    resolved = scopeResolve(emitter.scope, name)
-    if resolved != null {
-        if resolved.kind == "local" {
-            bc.emit("STORE_VAR", resolved.index)
-            return
-        }
-        if resolved.kind == "upvalue" {
-            bc.emit("STORE_UPVALUE", resolved.index)
-            return
-        }
+  resolved = scopeResolve(emitter.scope, name)
+  if resolved != null {
+    if resolved.kind == "local" {
+      bc.emit("STORE_VAR", resolved.index)
+      return
     }
-    bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
+    if resolved.kind == "upvalue" {
+      bc.emit("STORE_UPVALUE", resolved.index)
+      return
+    }
+  }
+  // Variable not found in scope — bare assignment creates local inside function, global at top level
+  funcRoot = scopeFindFuncRoot(emitter.scope)
+  print("DBG emitStoreVar name=" + name + " funcRoot=" + str(funcRoot) + " funcRoot.parent=" + str(funcRoot.parent))
+  if funcRoot.parent != null {
+    // Inside a function — declare as local in the current scope
+    idx = scopeDeclare(emitter.scope, name)
+    bc.emit("STORE_VAR", idx)
+    return
+  }
+  bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
 
-}
+ }
 // ============================================================
 // Expression emission
 // ============================================================
@@ -1222,8 +1231,8 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
 	}
 	di = 0
 	for p in params {
-		if type(p) == "object" && p.default != null {
-			dv = p.default
+	if type(p) == "object" && (p.defval != null || p.default != null) {
+		dv = p.defval != null ? p.defval : p.default
 			if type(dv) == "object" && dv.kind == "StringLiteral" {
 				sid = bc.add_chunk_string(dv.value)
 				bc.set_default_value(di, bc.str_id(sid))
@@ -1272,8 +1281,8 @@ localCount = paramCount + 16
 	}
 	di = 0
 	for p in params {
-		if type(p) == "object" && p.default != null {
-			dv = p.default
+	if type(p) == "object" && (p.defval != null || p.default != null) {
+		dv = p.defval != null ? p.defval : p.default
 			if type(dv) == "object" && dv.kind == "StringLiteral" {
 				sid = bc.add_chunk_string(dv.value)
 				bc.set_default_value(di, bc.str_id(sid))
